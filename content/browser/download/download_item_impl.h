@@ -56,6 +56,8 @@ class CONTENT_EXPORT DownloadItemImpl
                    const base::FilePath& target_path,
                    const std::vector<GURL>& url_chain,
                    const GURL& referrer_url,
+                   const std::string& mime_type,
+                   const std::string& original_mime_type,
                    const base::Time& start_time,
                    const base::Time& end_time,
                    const std::string& etag,
@@ -111,6 +113,8 @@ class CONTENT_EXPORT DownloadItemImpl
   virtual const std::vector<GURL>& GetUrlChain() const OVERRIDE;
   virtual const GURL& GetOriginalUrl() const OVERRIDE;
   virtual const GURL& GetReferrerUrl() const OVERRIDE;
+  virtual const GURL& GetTabUrl() const OVERRIDE;
+  virtual const GURL& GetTabReferrerUrl() const OVERRIDE;
   virtual std::string GetSuggestedFilename() const OVERRIDE;
   virtual std::string GetContentDisposition() const OVERRIDE;
   virtual std::string GetMimeType() const OVERRIDE;
@@ -416,6 +420,12 @@ class CONTENT_EXPORT DownloadItemImpl
 
   // The URL of the page that initiated the download.
   GURL referrer_url_;
+
+  // The URL of the tab that initiated the download.
+  GURL tab_url_;
+
+  // The URL of the referrer of the tab that initiated the download.
+  GURL tab_referrer_url_;
 
   // Filename suggestion from DownloadSaveInfo. It could, among others, be the
   // suggested filename in 'download' attribute of an anchor. Details:

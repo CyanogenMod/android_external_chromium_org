@@ -10,7 +10,7 @@
 
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_types.h"
-#include "content/public/browser/notification_types.h"
+#include "content/public/common/page_transition_types.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_data.h"
 #include "sync/api/sync_error.h"
@@ -58,7 +58,7 @@ class TypedUrlSyncableService : public syncer::SyncableService {
   // Called directly by HistoryBackend when local url data changes.
   void OnUrlsModified(URLRows* changed_urls);
   void OnUrlVisited(content::PageTransition transition, URLRow* row);
-  void OnUrlsDeleted(bool all_history, bool archived, URLRows* rows);
+  void OnUrlsDeleted(bool all_history, bool expired, URLRows* rows);
 
  protected:
   void GetSyncedUrls(std::set<GURL>* urls) {

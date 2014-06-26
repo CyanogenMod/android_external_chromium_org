@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,22 +6,111 @@
 
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/window_animations.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/window.h"
-#include "ui/views/corewm/window_animations.h"
 
 namespace ash {
 
+// Returns the window immediately below |window| in the current container.
+aura::Window* GetWindowBelow(aura::Window* window) {
+  aura::Window* parent = window->parent();
+  if (!parent)
+    return NULL;
+  aura::Window::Windows::const_iterator iter =
+      std::find(parent->children().begin(), parent->children().end(), window);
+  CHECK(*iter == window);
+  if (iter != parent->children().begin())
+    return *(iter - 1);
+  else
+    return NULL;
+}
+
+// This class restores and moves a window to the front of the stacking order for
+// the duration of the class's scope.
+class ScopedShowWindow : public aura::WindowObserver {
+ public:
+  ScopedShowWindow();
+  virtual ~ScopedShowWindow();
+
+  // Show |window| at the top of the stacking order.
+  void Show(aura::Window* window);
+
+  // Cancel restoring the window on going out of scope.
+  void CancelRestore();
+
+  aura::Window* window() { return window_; }
+
+  // aura::WindowObserver:
+  virtual void OnWillRemoveWindow(aura::Window* window) OVERRIDE;
+
+ private:
+  // The window being shown.
+  aura::Window* window_;
+
+  // The window immediately below where window_ belongs.
+  aura::Window* stack_window_above_;
+
+  // If true, minimize window_ on going out of scope.
+  bool minimized_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScopedShowWindow);
+};
+
+ScopedShowWindow::ScopedShowWindow()
+    : window_(NULL),
+      stack_window_above_(NULL),
+      minimized_(false) {
+}
+
+ScopedShowWindow::~ScopedShowWindow() {
+  if (window_) {
+    window_->parent()->RemoveObserver(this);
+
+    // Restore window's stacking position.
+    if (stack_window_above_)
+      window_->parent()->StackChildAbove(window_, stack_window_above_);
+    else
+      window_->parent()->StackChildAtBottom(window_);
+
+    // Restore minimized state.
+    if (minimized_)
+      wm::GetWindowState(window_)->Minimize();
+  }
+}
+
+void ScopedShowWindow::Show(aura::Window* window) {
+  DCHECK(!window_);
+  window_ = window;
+  stack_window_above_ = GetWindowBelow(window);
+  minimized_ = wm::GetWindowState(window)->IsMinimized();
+  window_->parent()->AddObserver(this);
+  window_->Show();
+  wm::GetWindowState(window_)->Activate();
+}
+
+void ScopedShowWindow::CancelRestore() {
+  if (!window_)
+    return;
+  window_->parent()->RemoveObserver(this);
+  window_ = stack_window_above_ = NULL;
+}
+
+void ScopedShowWindow::OnWillRemoveWindow(aura::Window* window) {
+  if (window == window_) {
+    CancelRestore();
+  } else if (window == stack_window_above_) {
+    // If the window this window was above is removed, use the next window down
+    // as the restore marker.
+    stack_window_above_ = GetWindowBelow(stack_window_above_);
+  }
+}
+
 WindowCycleList::WindowCycleList(const WindowList& windows)
     : windows_(windows),
-      current_index_(-1) {
+      current_index_(0) {
   ash::Shell::GetInstance()->mru_window_tracker()->SetIgnoreActivations(true);
-  // Locate the currently active window in the list to use as our start point.
-  aura::Window* active_window = wm::GetActiveWindow();
-
-  // The active window may not be in the cycle list, which is expected if there
-  // are additional modal windows on the screen.
-  current_index_ = GetWindowIndex(active_window);
 
   for (WindowList::const_iterator i = windows_.begin(); i != windows_.end();
        ++i) {
@@ -35,51 +124,48 @@ WindowCycleList::~WindowCycleList() {
        ++i) {
     (*i)->RemoveObserver(this);
   }
+  if (showing_window_)
+    showing_window_->CancelRestore();
 }
 
-void WindowCycleList::Step(Direction direction) {
+void WindowCycleList::Step(WindowCycleController::Direction direction) {
   if (windows_.empty())
     return;
 
-  if (current_index_ == -1) {
-    // We weren't able to find our active window in the shell delegate's
-    // provided window list.  Just switch to the first (or last) one.
-    current_index_ = (direction == FORWARD ? 0 : windows_.size() - 1);
-  } else {
-    // When there is only one window, we should give a feedback to user.
-    if (windows_.size() == 1) {
-      AnimateWindow(windows_[0],
-                    views::corewm::WINDOW_ANIMATION_TYPE_BOUNCE);
-      return;
-    }
-    // We're in a valid cycle, so step forward or backward.
-    current_index_ += (direction == FORWARD ? 1 : -1);
+  // When there is only one window, we should give feedback to the user. If the
+  // window is minimized, we should also show it.
+  if (windows_.size() == 1) {
+    ::wm::AnimateWindow(windows_[0], ::wm::WINDOW_ANIMATION_TYPE_BOUNCE);
+    windows_[0]->Show();
+    wm::GetWindowState(windows_[0])->Activate();
+    return;
   }
+
+  DCHECK(static_cast<size_t>(current_index_) < windows_.size());
+
+  // We're in a valid cycle, so step forward or backward.
+  current_index_ += direction == WindowCycleController::FORWARD ? 1 : -1;
+
   // Wrap to window list size.
   current_index_ = (current_index_ + windows_.size()) % windows_.size();
   DCHECK(windows_[current_index_]);
-  // Make sure the next window is visible.
-  windows_[current_index_]->Show();
-  wm::ActivateWindow(windows_[current_index_]);
-}
 
-int WindowCycleList::GetWindowIndex(aura::Window* window) {
-  WindowList::const_iterator it =
-      std::find(windows_.begin(), windows_.end(), window);
-  if (it == windows_.end())
-    return -1;  // Not found.
-  return it - windows_.begin();
+  // Make sure the next window is visible.
+  showing_window_.reset(new ScopedShowWindow);
+  showing_window_->Show(windows_[current_index_]);
 }
 
 void WindowCycleList::OnWindowDestroyed(aura::Window* window) {
+  window->RemoveObserver(this);
+
   WindowList::iterator i = std::find(windows_.begin(), windows_.end(), window);
   DCHECK(i != windows_.end());
   int removed_index = static_cast<int>(i - windows_.begin());
   windows_.erase(i);
-  if (current_index_ > removed_index)
+  if (current_index_ > removed_index ||
+      current_index_ == static_cast<int>(windows_.size())) {
     current_index_--;
-  else if (current_index_ == static_cast<int>(windows_.size()))
-    current_index_--;
+  }
 }
 
 }  // namespace ash

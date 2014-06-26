@@ -14,6 +14,20 @@
         'use_snappy': 0,
       },
     }],
+    ['OS=="android"', {
+      'targets': [{
+        'target_name': 'env_chromium_unittests_apk',
+        'type': 'none',
+        'dependencies': [
+          '<(DEPTH)/base/base.gyp:base_java',
+          'env_chromium_unittests',
+        ],
+        'variables': {
+          'test_suite_name': 'env_chromium_unittests',
+        },
+        'includes': [ '../../build/apk_test.gypi' ],
+      }],
+    }],
   ],
   'target_defaults': {
     'defines': [
@@ -179,6 +193,15 @@
       ],
       'sources': [
         'env_chromium_unittest.cc',
+      ],
+      'conditions': [
+        ['OS=="android"', {
+          'type': 'shared_library',
+          'dependencies': [
+            '../../testing/android/native_test.gyp:native_test_native_code',
+            '../../tools/android/forwarder2/forwarder.gyp:forwarder2',
+          ],
+        }],
       ],
     },
     {
@@ -370,6 +393,16 @@
       ],
       'sources': [
         'src/db/write_batch_test.cc',
+      ],
+    },
+    {
+      'target_name': 'leveldb_main',
+      'type': 'executable',
+      'dependencies': [
+        'leveldb_testutil',
+      ],
+      'sources': [
+        'src/db/leveldb_main.cc',
       ],
     },
   ],

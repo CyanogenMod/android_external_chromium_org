@@ -8,10 +8,13 @@
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
-class PasswordStore;
 class Profile;
+
+namespace password_manager {
+class PasswordStore;
+}
 
 #if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
 // Local profile ids are used to associate resources stored outside the profile
@@ -22,20 +25,21 @@ typedef int LocalProfileId;
 #endif
 
 // A wrapper of PasswordStore so we can use it as a profiled keyed service.
-class PasswordStoreService : public BrowserContextKeyedService {
+class PasswordStoreService : public KeyedService {
  public:
   // |password_store| needs to be not-NULL, and the constructor expects that
   // Init() was already called successfully on it.
-  explicit PasswordStoreService(scoped_refptr<PasswordStore> password_store);
+  explicit PasswordStoreService(
+      scoped_refptr<password_manager::PasswordStore> password_store);
   virtual ~PasswordStoreService();
 
-  scoped_refptr<PasswordStore> GetPasswordStore();
+  scoped_refptr<password_manager::PasswordStore> GetPasswordStore();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
  private:
-  scoped_refptr<PasswordStore> password_store_;
+  scoped_refptr<password_manager::PasswordStore> password_store_;
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreService);
 };
 
@@ -43,8 +47,9 @@ class PasswordStoreService : public BrowserContextKeyedService {
 // Profiles.
 class PasswordStoreFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static scoped_refptr<PasswordStore> GetForProfile(
-      Profile* profile, Profile::ServiceAccessType set);
+  static scoped_refptr<password_manager::PasswordStore> GetForProfile(
+      Profile* profile,
+      Profile::ServiceAccessType set);
 
   static PasswordStoreFactory* GetInstance();
 
@@ -59,7 +64,7 @@ class PasswordStoreFactory : public BrowserContextKeyedServiceFactory {
 #endif
 
   // BrowserContextKeyedServiceFactory:
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
   virtual void RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;

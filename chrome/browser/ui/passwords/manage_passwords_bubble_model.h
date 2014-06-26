@@ -5,7 +5,10 @@
 #ifndef CHROME_BROWSER_UI_PASSWORDS_MANAGE_PASSWORDS_BUBBLE_MODEL_H_
 #define CHROME_BROWSER_UI_PASSWORDS_MANAGE_PASSWORDS_BUBBLE_MODEL_H_
 
+#include "chrome/browser/ui/passwords/manage_passwords_bubble.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/password_manager/core/browser/password_manager_metrics_util.h"
+#include "components/password_manager/core/common/password_manager_ui.h"
 #include "content/public/browser/web_contents_observer.h"
 
 class ManagePasswordsIconController;
@@ -18,58 +21,82 @@ class WebContents;
 // password management actions.
 class ManagePasswordsBubbleModel : public content::WebContentsObserver {
  public:
+  enum PasswordAction { REMOVE_PASSWORD, ADD_PASSWORD };
+
+  // Creates a ManagePasswordsBubbleModel, which holds a raw pointer to the
+  // WebContents in which it lives. Defaults to a display disposition of
+  // AUTOMATIC_WITH_PASSWORD_PENDING, and a dismissal reason of NOT_DISPLAYED.
+  // The bubble's state is updated from the ManagePasswordsUIController
+  // associated with |web_contents| upon creation.
   explicit ManagePasswordsBubbleModel(content::WebContents* web_contents);
   virtual ~ManagePasswordsBubbleModel();
 
-  enum ManagePasswordsBubbleState {
-    PASSWORD_TO_BE_SAVED,
-    MANAGE_PASSWORDS_AFTER_SAVING,
-    MANAGE_PASSWORDS
-  };
+  // Called by the view code when the bubble is shown.
+  void OnBubbleShown(ManagePasswordsBubble::DisplayReason reason);
 
-  // Called by the view code when the cancel button in clicked by the user.
-  void OnCancelClicked();
+  // Called by the view code when the bubble is hidden.
+  void OnBubbleHidden();
+
+  // Called by the view code when the "Nope" button in clicked by the user.
+  void OnNopeClicked();
+
+  // Called by the view code when the "Never for this site." button in clicked
+  // by the user.
+  void OnNeverForThisSiteClicked();
+
+  // Called by the view code when the site is unblacklisted.
+  void OnUnblacklistClicked();
 
   // Called by the view code when the save button in clicked by the user.
   void OnSaveClicked();
+
+  // Called by the view code when the "Done" button is clicked by the user.
+  void OnDoneClicked();
 
   // Called by the view code when the manage link is clicked by the user.
   void OnManageLinkClicked();
 
   // Called by the view code to delete or add a password form to the
   // PasswordStore.
-  void OnPasswordAction(autofill::PasswordForm password_form, bool remove);
+  void OnPasswordAction(const autofill::PasswordForm& password_form,
+                        PasswordAction action);
 
-  // Called by the view code when the ManagePasswordItemView is destroyed and
-  // the user chose to delete the password.
-  // TODO(npentrel): Remove this once best_matches_ are newly made on bubble
-  // opening.
-  void DeleteFromBestMatches(autofill::PasswordForm password_form);
+  password_manager::ui::State state() const { return state_; }
 
-  ManagePasswordsBubbleState manage_passwords_bubble_state() {
-    return manage_passwords_bubble_state_;
-  }
-
-  bool password_submitted() { return password_submitted_; }
-  const base::string16& title() { return title_; }
-  const autofill::PasswordForm& pending_credentials() {
+  const base::string16& title() const { return title_; }
+  const autofill::PasswordForm& pending_credentials() const {
     return pending_credentials_;
   }
-  const autofill::PasswordFormMap& best_matches() { return best_matches_; }
-  const base::string16& manage_link() { return manage_link_; }
+  const autofill::PasswordFormMap& best_matches() const {
+    return best_matches_;
+  }
+  const base::string16& manage_link() const { return manage_link_; }
+
+#if defined(UNIT_TEST)
+  // Gets and sets the reason the bubble was displayed.
+  password_manager::metrics_util::UIDisplayDisposition display_disposition()
+      const {
+    return display_disposition_;
+  }
+
+  // Gets the reason the bubble was dismissed.
+  password_manager::metrics_util::UIDismissalReason dismissal_reason() const {
+    return dismissal_reason_;
+  }
+
+  // State setter.
+  void set_state(password_manager::ui::State state) { state_ = state; }
+#endif
 
  private:
-  // content::WebContentsObserver
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
-
-  content::WebContents* web_contents_;
-  ManagePasswordsBubbleState manage_passwords_bubble_state_;
-  bool password_submitted_;
+  password_manager::ui::State state_;
   base::string16 title_;
   autofill::PasswordForm pending_credentials_;
   autofill::PasswordFormMap best_matches_;
   base::string16 manage_link_;
+
+  password_manager::metrics_util::UIDisplayDisposition display_disposition_;
+  password_manager::metrics_util::UIDismissalReason dismissal_reason_;
 
   DISALLOW_COPY_AND_ASSIGN(ManagePasswordsBubbleModel);
 };

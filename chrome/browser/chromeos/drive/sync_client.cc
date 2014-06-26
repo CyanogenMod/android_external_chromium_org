@@ -13,6 +13,7 @@
 #include "chrome/browser/chromeos/drive/file_system/download_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/chromeos/drive/sync/entry_update_performer.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/task_util.h"
@@ -70,14 +71,13 @@ void CollectBacklog(ResourceMetadata* metadata,
         break;
     }
 
-    FileCacheEntry cache_entry;
-    if (it->GetCacheEntry(&cache_entry)) {
-      if (cache_entry.is_pinned() && !cache_entry.is_present())
-        to_fetch->push_back(local_id);
+    if (entry.file_specific_info().cache_state().is_pinned() &&
+        !entry.file_specific_info().cache_state().is_present())
+      to_fetch->push_back(local_id);
 
-      if (cache_entry.is_dirty())
-        should_update = true;
-    }
+    if (entry.file_specific_info().cache_state().is_dirty())
+      should_update = true;
+
     if (should_update)
       to_update->push_back(local_id);
   }
@@ -88,28 +88,23 @@ void CollectBacklog(ResourceMetadata* metadata,
 void CheckExistingPinnedFiles(ResourceMetadata* metadata,
                               FileCache* cache,
                               std::vector<std::string>* local_ids) {
-  scoped_ptr<FileCache::Iterator> it = cache->GetIterator();
+  scoped_ptr<ResourceMetadata::Iterator> it = metadata->GetIterator();
   for (; !it->IsAtEnd(); it->Advance()) {
-    const FileCacheEntry& cache_entry = it->GetValue();
+    const ResourceEntry& entry = it->GetValue();
+    const FileCacheEntry& cache_state =
+        entry.file_specific_info().cache_state();
     const std::string& local_id = it->GetID();
-    if (!cache_entry.is_pinned() || !cache_entry.is_present())
+    if (!cache_state.is_pinned() || !cache_state.is_present())
       continue;
-
-    ResourceEntry entry;
-    FileError error = metadata->GetResourceEntryById(local_id, &entry);
-    if (error != FILE_ERROR_OK) {
-      LOG(WARNING) << "Entry not found: " << local_id;
-      continue;
-    }
 
     // If MD5s don't match, it indicates the local cache file is stale, unless
     // the file is dirty (the MD5 is "local"). We should never re-fetch the
     // file when we have a locally modified version.
-    if (entry.file_specific_info().md5() == cache_entry.md5() ||
-        cache_entry.is_dirty())
+    if (entry.file_specific_info().md5() == cache_state.md5() ||
+        cache_state.is_dirty())
       continue;
 
-    error = cache->Remove(local_id);
+    FileError error = cache->Remove(local_id);
     if (error != FILE_ERROR_OK) {
       LOG(WARNING) << "Failed to remove cache entry: " << local_id;
       continue;
@@ -124,6 +119,12 @@ void CheckExistingPinnedFiles(ResourceMetadata* metadata,
     local_ids->push_back(local_id);
   }
   DCHECK(!it->HasError());
+}
+
+// Runs the task and returns a dummy cancel closure.
+base::Closure RunTaskAndReturnDummyCancelClosure(const base::Closure& task) {
+  task.Run();
+  return base::Closure();
 }
 
 }  // namespace
@@ -234,8 +235,7 @@ void SyncClient::AddFetchTaskInternal(const std::string& local_id,
       base::Unretained(download_operation_.get()),
       local_id,
       ClientContext(BACKGROUND),
-      base::Bind(&SyncClient::OnGetFileContentInitialized,
-                 weak_ptr_factory_.GetWeakPtr()),
+      GetFileContentInitializedCallback(),
       google_apis::GetContentCallback(),
       base::Bind(&SyncClient::OnFetchFileComplete,
                  weak_ptr_factory_.GetWeakPtr(),
@@ -248,13 +248,14 @@ void SyncClient::AddUpdateTaskInternal(const ClientContext& context,
                                        const base::TimeDelta& delay) {
   SyncTask task;
   task.task = base::Bind(
-      &EntryUpdatePerformer::UpdateEntry,
-      base::Unretained(entry_update_performer_.get()),
-      local_id,
-      context,
-      base::Bind(&SyncClient::OnUpdateComplete,
-                 weak_ptr_factory_.GetWeakPtr(),
-                 local_id));
+      &RunTaskAndReturnDummyCancelClosure,
+      base::Bind(&EntryUpdatePerformer::UpdateEntry,
+                 base::Unretained(entry_update_performer_.get()),
+                 local_id,
+                 context,
+                 base::Bind(&SyncClient::OnUpdateComplete,
+                            weak_ptr_factory_.GetWeakPtr(),
+                            local_id)));
   AddTask(SyncTasks::key_type(UPDATE, local_id), task, delay);
 }
 
@@ -295,7 +296,7 @@ void SyncClient::StartTask(const SyncTasks::key_type& key) {
   switch (task->state) {
     case PENDING:
       task->state = RUNNING;
-      task->task.Run();
+      task->cancel_closure = task->task.Run();
       break;
     case RUNNING:  // Do nothing.
       break;
@@ -327,23 +328,6 @@ void SyncClient::AddFetchTasks(const std::vector<std::string>* local_ids) {
 
   for (size_t i = 0; i < local_ids->size(); ++i)
     AddFetchTask((*local_ids)[i]);
-}
-
-void SyncClient::OnGetFileContentInitialized(
-    FileError error,
-    scoped_ptr<ResourceEntry> entry,
-    const base::FilePath& local_cache_file_path,
-    const base::Closure& cancel_download_closure) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (error != FILE_ERROR_OK)
-    return;
-
-  const SyncTasks::key_type key(FETCH, entry->local_id());
-  SyncTasks::iterator it = tasks_.find(key);
-  DCHECK(it != tasks_.end());
-
-  it->second.cancel_closure = cancel_download_closure;
 }
 
 bool SyncClient::OnTaskComplete(SyncType type, const std::string& local_id) {

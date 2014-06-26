@@ -16,10 +16,9 @@
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
 #include "components/password_manager/core/browser/password_store_change.h"
+#include "components/password_manager/core/browser/password_store_sync.h"
+#include "sync/api/syncable_service.h"
 
-class PasswordStore;
-class PasswordStoreConsumer;
-class PasswordSyncableService;
 class Task;
 
 namespace autofill {
@@ -33,16 +32,35 @@ class PasswordModelAssociator;
 class PasswordModelWorker;
 }
 
+namespace password_manager {
+class PasswordStore;
+}  // namespace password_manager
+
 namespace passwords_helper {
-void AddLogin(PasswordStore* store, const autofill::PasswordForm& form);
-void RemoveLogin(PasswordStore* store, const autofill::PasswordForm& form);
-void UpdateLogin(PasswordStore* store, const autofill::PasswordForm& form);
+void AddLogin(password_manager::PasswordStore* store,
+              const autofill::PasswordForm& form);
+void RemoveLogin(password_manager::PasswordStore* store,
+                 const autofill::PasswordForm& form);
+void UpdateLogin(password_manager::PasswordStore* store,
+                 const autofill::PasswordForm& form);
 }
+
+namespace syncer {
+class SyncableService;
+}
+
+namespace password_manager {
+
+class PasswordStoreConsumer;
+class PasswordSyncableService;
 
 // Interface for storing form passwords in a platform-specific secure way.
 // The login request/manipulation API is not threadsafe and must be used
 // from the UI thread.
-class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
+// PasswordStoreSync is a hidden base class because only PasswordSyncableService
+// needs to access these methods.
+class PasswordStore : protected PasswordStoreSync,
+                      public base::RefCountedThreadSafe<PasswordStore> {
  public:
   // Whether or not it's acceptable for Chrome to request access to locked
   // passwords, which requires prompting the user for permission.
@@ -59,7 +77,7 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
     explicit GetLoginsRequest(PasswordStoreConsumer* consumer);
     virtual ~GetLoginsRequest();
 
-    void set_ignore_logins_cutoff(const base::Time& cutoff) {
+    void set_ignore_logins_cutoff(base::Time cutoff) {
       ignore_logins_cutoff_ = cutoff;
     }
 
@@ -109,20 +127,24 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
       scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner);
 
   // Reimplement this to add custom initialization. Always call this too.
-  virtual bool Init();
+  virtual bool Init(const syncer::SyncableService::StartSyncFlare& flare);
 
   // Adds the given PasswordForm to the secure password store asynchronously.
   virtual void AddLogin(const autofill::PasswordForm& form);
 
   // Updates the matching PasswordForm in the secure password store (async).
-  void UpdateLogin(const autofill::PasswordForm& form);
+  virtual void UpdateLogin(const autofill::PasswordForm& form);
 
   // Removes the matching PasswordForm from the secure password store (async).
-  void RemoveLogin(const autofill::PasswordForm& form);
+  virtual void RemoveLogin(const autofill::PasswordForm& form);
 
   // Removes all logins created in the given date range.
-  void RemoveLoginsCreatedBetween(const base::Time& delete_begin,
-                                  const base::Time& delete_end);
+  virtual void RemoveLoginsCreatedBetween(base::Time delete_begin,
+                                          base::Time delete_end);
+
+  // Removes all logins synced in the given date range.
+  virtual void RemoveLoginsSyncedBetween(base::Time delete_begin,
+                                         base::Time delete_end);
 
   // Searches for a matching PasswordForm, and notifies |consumer| on
   // completion. The request will be cancelled if the consumer is destroyed.
@@ -139,15 +161,15 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // Gets the complete list of PasswordForms that are not blacklist entries--and
   // are thus auto-fillable. |consumer| will be notified on completion.
   // The request will be cancelled if the consumer is destroyed.
-  void GetAutofillableLogins(PasswordStoreConsumer* consumer);
+  virtual void GetAutofillableLogins(PasswordStoreConsumer* consumer);
 
   // Gets the complete list of PasswordForms that are blacklist entries,
   // and notify |consumer| on completion. The request will be cancelled if the
   // consumer is destroyed.
-  void GetBlacklistLogins(PasswordStoreConsumer* consumer);
+  virtual void GetBlacklistLogins(PasswordStoreConsumer* consumer);
 
   // Reports usage metrics for the database.
-  void ReportMetrics();
+  virtual void ReportMetrics();
 
   // Adds an observer to be notified when the password store data changes.
   void AddObserver(Observer* observer);
@@ -155,56 +177,53 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // Removes |observer| from the observer list.
   void RemoveObserver(Observer* observer);
 
+  // Schedules the given |task| to be run on the PasswordStore's TaskRunner.
+  bool ScheduleTask(const base::Closure& task);
+
   // Before you destruct the store, call Shutdown to indicate that the store
   // needs to shut itself down.
   virtual void Shutdown();
 
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+  base::WeakPtr<syncer::SyncableService> GetPasswordSyncableService();
+#endif
+
  protected:
   friend class base::RefCountedThreadSafe<PasswordStore>;
-  // Sync's interaction with password store needs to be synchronous.
-  // Since the synchronous methods are private these classes are made
-  // as friends. This can be fixed by moving the private impl to a new
-  // class. See http://crbug.com/307750
-  friend class browser_sync::PasswordChangeProcessor;
-  friend class browser_sync::PasswordDataTypeController;
-  friend class browser_sync::PasswordModelAssociator;
-  friend class browser_sync::PasswordModelWorker;
-  friend class PasswordSyncableService;
-  friend void passwords_helper::AddLogin(PasswordStore*,
-                                         const autofill::PasswordForm&);
-  friend void passwords_helper::RemoveLogin(PasswordStore*,
-                                            const autofill::PasswordForm&);
-  friend void passwords_helper::UpdateLogin(PasswordStore*,
-                                            const autofill::PasswordForm&);
   FRIEND_TEST_ALL_PREFIXES(PasswordStoreTest, IgnoreOldWwwGoogleLogins);
 
   typedef base::Callback<PasswordStoreChangeList(void)> ModificationTask;
 
   virtual ~PasswordStore();
 
-  // Schedules the given |task| to be run on the PasswordStore's TaskRunner.
-  bool ScheduleTask(const base::Closure& task);
-
   // Get the TaskRunner to use for PasswordStore background tasks.
   // By default, a SingleThreadTaskRunner on the DB thread is used, but
   // subclasses can override.
   virtual scoped_refptr<base::SingleThreadTaskRunner> GetBackgroundTaskRunner();
 
-  // These will be run in PasswordStore's own thread.
+  // Methods below will be run in PasswordStore's own thread.
   // Synchronous implementation that reports usage metrics.
   virtual void ReportMetricsImpl() = 0;
-  // Synchronous implementation to add the given login.
+
+  // Bring PasswordStoreSync methods to the scope of PasswordStore. Otherwise,
+  // base::Bind can't be used with them because it fails to cast PasswordStore
+  // to PasswordStoreSync.
   virtual PasswordStoreChangeList AddLoginImpl(
       const autofill::PasswordForm& form) = 0;
-  // Synchronous implementation to update the given login.
   virtual PasswordStoreChangeList UpdateLoginImpl(
       const autofill::PasswordForm& form) = 0;
-  // Synchronous implementation to remove the given login.
   virtual PasswordStoreChangeList RemoveLoginImpl(
       const autofill::PasswordForm& form) = 0;
+
   // Synchronous implementation to remove the given logins.
   virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
-      const base::Time& delete_begin, const base::Time& delete_end) = 0;
+      base::Time delete_begin,
+      base::Time delete_end) = 0;
+
+  // Synchronous implementation to remove the given logins.
+  virtual PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
+      base::Time delete_begin,
+      base::Time delete_end) = 0;
 
   typedef base::Callback<void(const std::vector<autofill::PasswordForm*>&)>
       ConsumerCallbackRunner;  // Owns all PasswordForms in the vector.
@@ -223,14 +242,6 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // Finds all blacklist PasswordForms, and notifies the consumer.
   virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) = 0;
 
-  // Finds all non-blacklist PasswordForms, and fills the vector.
-  virtual bool FillAutofillableLogins(
-      std::vector<autofill::PasswordForm*>* forms) = 0;
-
-  // Finds all blacklist PasswordForms, and fills the vector.
-  virtual bool FillBlacklistLogins(
-      std::vector<autofill::PasswordForm*>* forms) = 0;
-
   // Dispatches the result to the PasswordStoreConsumer on the original caller's
   // thread so the callback can be executed there. This should be the UI thread.
   virtual void ForwardLoginsResult(GetLoginsRequest* request);
@@ -245,6 +256,8 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // background tasks -- see |GetBackgroundTaskRunner|.
   scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner_;
 
+  scoped_ptr<PasswordSyncableService> syncable_service_;
+
  private:
   // Schedule the given |func| to be run in the PasswordStore's own thread with
   // responses delivered to |consumer| on the current thread.
@@ -258,10 +271,12 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
   // method will actually modify the password store data.
   virtual void WrapModificationTask(ModificationTask task);
 
+  // PasswordStoreSync:
   // Called by WrapModificationTask() once the underlying data-modifying
   // operation has been performed. Notifies observers that password store data
   // may have been changed.
-  void NotifyLoginsChanged(const PasswordStoreChangeList& changes);
+  virtual void NotifyLoginsChanged(
+      const PasswordStoreChangeList& changes) OVERRIDE;
 
   // Copies |matched_forms| into the request's result vector, then calls
   // |ForwardLoginsResult|. Temporarily used as an adapter between the API of
@@ -271,6 +286,15 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
       PasswordStore::GetLoginsRequest* request,
       const std::vector<autofill::PasswordForm*>& matched_forms);
 
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+  // Creates PasswordSyncableService instance on the background thread.
+  void InitSyncableService(
+      const syncer::SyncableService::StartSyncFlare& flare);
+
+  // Deletes PasswordSyncableService instance on the background thread.
+  void DestroySyncableService();
+#endif
+
   // The observers.
   scoped_refptr<ObserverListThreadSafe<Observer> > observers_;
 
@@ -278,5 +302,7 @@ class PasswordStore : public base::RefCountedThreadSafe<PasswordStore> {
 
   DISALLOW_COPY_AND_ASSIGN(PasswordStore);
 };
+
+}  // namespace password_manager
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_PASSWORD_STORE_H_

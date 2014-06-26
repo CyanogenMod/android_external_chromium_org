@@ -13,7 +13,8 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
+#include "chrome/browser/translate/translate_service.h"
 #include "chrome/common/pref_names.h"
 #include "components/translate/core/browser/translate_download_manager.h"
 #include "components/translate/core/browser/translate_error_details.h"
@@ -71,7 +72,7 @@ void TranslateInternalsHandler::Observe(
       content::Source<content::WebContents>(source).ptr();
 
   if (web_contents->GetBrowserContext()->IsOffTheRecord() ||
-      !TranslateManager::IsTranslatableURL(language_detection_details->url)) {
+      !TranslateService::IsTranslatableURL(language_detection_details->url)) {
     return;
   }
 
@@ -126,7 +127,7 @@ void TranslateInternalsHandler::OnRemovePrefItem(const base::ListValue* args) {
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
   PrefService* prefs = profile->GetOriginalProfile()->GetPrefs();
   scoped_ptr<TranslatePrefs> translate_prefs(
-      TranslateTabHelper::CreateTranslatePrefs(prefs));
+      ChromeTranslateClient::CreateTranslatePrefs(prefs));
 
   std::string pref_name;
   if (!args->GetString(0, &pref_name))

@@ -7,24 +7,23 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "google_apis/gcm/protocol/checkin.pb.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
-#include "url/gurl.h"
 
 namespace gcm {
 
 namespace {
-const char kCheckinURL[] = "https://android.clients.google.com/checkin";
 const char kRequestContentType[] = "application/x-protobuf";
-const int kRequestVersionValue = 2;
+const int kRequestVersionValue = 3;
 const int kDefaultUserSerialNumber = 0;
 
 // This enum is also used in an UMA histogram (GCMCheckinRequestStatus
 // enum defined in tools/metrics/histograms/histogram.xml). Hence the entries
 // here shouldn't be deleted or re-ordered and new ones should be added to
-// the end.
+// the end, and update the GetCheckinRequestStatusString(...) below.
 enum CheckinRequestStatus {
   SUCCESS,                    // Checkin completed successfully.
   URL_FETCHING_FAILED,        // URL fetching failed.
@@ -40,25 +39,70 @@ enum CheckinRequestStatus {
   STATUS_COUNT
 };
 
-void RecordCheckinStatusToUMA(CheckinRequestStatus status) {
+// Returns string representation of enum CheckinRequestStatus.
+std::string GetCheckinRequestStatusString(CheckinRequestStatus status) {
+  switch (status) {
+    case SUCCESS:
+      return "SUCCESS";
+    case URL_FETCHING_FAILED:
+      return "URL_FETCHING_FAILED";
+    case HTTP_BAD_REQUEST:
+      return "HTTP_BAD_REQUEST";
+    case HTTP_UNAUTHORIZED:
+      return "HTTP_UNAUTHORIZED";
+    case HTTP_NOT_OK:
+      return "HTTP_NOT_OK";
+    case RESPONSE_PARSING_FAILED:
+      return "RESPONSE_PARSING_FAILED";
+    case ZERO_ID_OR_TOKEN:
+      return "ZERO_ID_OR_TOKEN";
+    default:
+      NOTREACHED();
+      return "UNKNOWN_STATUS";
+  }
+}
+
+// Records checkin status to both stats recorder and reports to UMA.
+void RecordCheckinStatusAndReportUMA(CheckinRequestStatus status,
+                                     GCMStatsRecorder* recorder,
+                                     bool will_retry) {
   UMA_HISTOGRAM_ENUMERATION("GCM.CheckinRequestStatus", status, STATUS_COUNT);
+  if (status == SUCCESS)
+    recorder->RecordCheckinSuccess();
+  else {
+    recorder->RecordCheckinFailure(GetCheckinRequestStatusString(status),
+                                   will_retry);
+  }
 }
 
 }  // namespace
 
-CheckinRequest::CheckinRequest(
-    const CheckinRequestCallback& callback,
-    const net::BackoffEntry::Policy& backoff_policy,
-    const checkin_proto::ChromeBuildProto& chrome_build_proto,
+CheckinRequest::RequestInfo::RequestInfo(
     uint64 android_id,
     uint64 security_token,
-    net::URLRequestContextGetter* request_context_getter)
+    const std::string& settings_digest,
+    const checkin_proto::ChromeBuildProto& chrome_build_proto)
+    : android_id(android_id),
+      security_token(security_token),
+      settings_digest(settings_digest),
+      chrome_build_proto(chrome_build_proto) {
+}
+
+CheckinRequest::RequestInfo::~RequestInfo() {}
+
+CheckinRequest::CheckinRequest(
+    const GURL& checkin_url,
+    const RequestInfo& request_info,
+    const net::BackoffEntry::Policy& backoff_policy,
+    const CheckinRequestCallback& callback,
+    net::URLRequestContextGetter* request_context_getter,
+    GCMStatsRecorder* recorder)
     : request_context_getter_(request_context_getter),
       callback_(callback),
       backoff_entry_(&backoff_policy),
-      chrome_build_proto_(chrome_build_proto),
-      android_id_(android_id),
-      security_token_(security_token),
+      checkin_url_(checkin_url),
+      request_info_(request_info),
+      recorder_(recorder),
       weak_ptr_factory_(this) {
 }
 
@@ -68,13 +112,15 @@ void CheckinRequest::Start() {
   DCHECK(!url_fetcher_.get());
 
   checkin_proto::AndroidCheckinRequest request;
-  request.set_id(android_id_);
-  request.set_security_token(security_token_);
+  request.set_id(request_info_.android_id);
+  request.set_security_token(request_info_.security_token);
   request.set_user_serial_number(kDefaultUserSerialNumber);
   request.set_version(kRequestVersionValue);
+  if (!request_info_.settings_digest.empty())
+    request.set_digest(request_info_.settings_digest);
 
   checkin_proto::AndroidCheckinProto* checkin = request.mutable_checkin();
-  checkin->mutable_chrome_build()->CopyFrom(chrome_build_proto_);
+  checkin->mutable_chrome_build()->CopyFrom(request_info_.chrome_build_proto);
 #if defined(CHROME_OS)
   checkin->set_type(checkin_proto::DEVICE_CHROME_OS);
 #else
@@ -85,9 +131,11 @@ void CheckinRequest::Start() {
   CHECK(request.SerializeToString(&upload_data));
 
   url_fetcher_.reset(
-      net::URLFetcher::Create(GURL(kCheckinURL), net::URLFetcher::POST, this));
+      net::URLFetcher::Create(checkin_url_, net::URLFetcher::POST, this));
   url_fetcher_->SetRequestContext(request_context_getter_);
   url_fetcher_->SetUploadData(kRequestContentType, upload_data);
+  recorder_->RecordCheckinInitiated(request_info_.android_id);
+  request_start_time_ = base::TimeTicks::Now();
   url_fetcher_->Start();
 }
 
@@ -101,6 +149,8 @@ void CheckinRequest::RetryWithBackoff(bool update_backoff) {
     DVLOG(1) << "Delay GCM checkin for: "
              << backoff_entry_.GetTimeUntilRelease().InMilliseconds()
              << " milliseconds.";
+    recorder_->RecordCheckinDelayedDueToBackoff(
+        backoff_entry_.GetTimeUntilRelease().InMilliseconds());
     base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&CheckinRequest::RetryWithBackoff,
@@ -118,7 +168,7 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
   checkin_proto::AndroidCheckinResponse response_proto;
   if (!source->GetStatus().is_success()) {
     LOG(ERROR) << "Failed to get checkin response. Fetcher failed. Retrying.";
-    RecordCheckinStatusToUMA(URL_FETCHING_FAILED);
+    RecordCheckinStatusAndReportUMA(URL_FETCHING_FAILED, recorder_, true);
     RetryWithBackoff(true);
     return;
   }
@@ -131,9 +181,10 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
     // UNAUTHORIZED indicates that security token didn't match the android id.
     LOG(ERROR) << "No point retrying the checkin with status: "
                << response_status << ". Checkin failed.";
-    RecordCheckinStatusToUMA(response_status == net::HTTP_BAD_REQUEST ?
-        HTTP_BAD_REQUEST : HTTP_UNAUTHORIZED);
-    callback_.Run(0,0);
+    CheckinRequestStatus status = response_status == net::HTTP_BAD_REQUEST ?
+        HTTP_BAD_REQUEST : HTTP_UNAUTHORIZED;
+    RecordCheckinStatusAndReportUMA(status, recorder_, false);
+    callback_.Run(response_proto);
     return;
   }
 
@@ -142,8 +193,9 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
       !response_proto.ParseFromString(response_string)) {
     LOG(ERROR) << "Failed to get checkin response. HTTP Status: "
                << response_status << ". Retrying.";
-    RecordCheckinStatusToUMA(response_status != net::HTTP_OK ?
-        HTTP_NOT_OK : RESPONSE_PARSING_FAILED);
+    CheckinRequestStatus status = response_status != net::HTTP_OK ?
+        HTTP_NOT_OK : RESPONSE_PARSING_FAILED;
+    RecordCheckinStatusAndReportUMA(status, recorder_, true);
     RetryWithBackoff(true);
     return;
   }
@@ -153,13 +205,17 @@ void CheckinRequest::OnURLFetchComplete(const net::URLFetcher* source) {
       response_proto.android_id() == 0 ||
       response_proto.security_token() == 0) {
     LOG(ERROR) << "Android ID or security token is 0. Retrying.";
-    RecordCheckinStatusToUMA(ZERO_ID_OR_TOKEN);
+    RecordCheckinStatusAndReportUMA(ZERO_ID_OR_TOKEN, recorder_, true);
     RetryWithBackoff(true);
     return;
   }
 
-  RecordCheckinStatusToUMA(SUCCESS);
-  callback_.Run(response_proto.android_id(), response_proto.security_token());
+  RecordCheckinStatusAndReportUMA(SUCCESS, recorder_, false);
+  UMA_HISTOGRAM_COUNTS("GCM.CheckinRetryCount",
+                       backoff_entry_.failure_count());
+  UMA_HISTOGRAM_TIMES("GCM.CheckinCompleteTime",
+                      base::TimeTicks::Now() - request_start_time_);
+  callback_.Run(response_proto);
 }
 
 }  // namespace gcm

@@ -5,32 +5,35 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_PLUGIN_MANAGER_H_
 #define CHROME_BROWSER_EXTENSIONS_PLUGIN_MANAGER_H_
 
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include <set>
+#include <string>
+
+#include "base/scoped_observer.h"
 #include "chrome/common/extensions/manifest_handlers/nacl_modules_handler.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class GURL;
 class Profile;
 
-namespace extensions {
+namespace content {
+class BrowserContext;
+}
 
-class PluginManager : public ProfileKeyedAPI,
-                      public content::NotificationObserver {
+namespace extensions {
+class ExtensionRegistry;
+
+class PluginManager : public BrowserContextKeyedAPI,
+                      public ExtensionRegistryObserver {
  public:
-  explicit PluginManager(Profile* profile);
+  explicit PluginManager(content::BrowserContext* context);
   virtual ~PluginManager();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<PluginManager>* GetFactoryInstance();
-
-  // content::NotificationObserver impelmentation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<PluginManager>* GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<PluginManager>;
+  friend class BrowserContextKeyedAPIFactory<PluginManager>;
 
   // We implement some Pepper plug-ins using NaCl to take advantage of NaCl's
   // strong sandbox. Typically, these NaCl modules are stored in extensions
@@ -47,15 +50,25 @@ class PluginManager : public ProfileKeyedAPI,
 
   extensions::NaClModuleInfo::List::iterator FindNaClModule(const GURL& url);
 
-  // ProfileKeyedAPI implementation.
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "PluginManager"; }
   static const bool kServiceIsNULLWhileTesting = true;
 
   extensions::NaClModuleInfo::List nacl_module_list_;
 
-  content::NotificationRegistrar registrar_;
-
   Profile* profile_;
+
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 };
 
 }  // namespace extensions

@@ -93,12 +93,16 @@ void CloudPolicyManager::CheckAndPublishPolicy() {
   if (IsInitializationComplete(POLICY_DOMAIN_CHROME) &&
       !waiting_for_policy_refresh_) {
     scoped_ptr<PolicyBundle> bundle(new PolicyBundle);
-    bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
-        .CopyFrom(store()->policy_map());
+    GetChromePolicy(
+        &bundle->Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string())));
     if (component_policy_service_)
       bundle->MergeFrom(component_policy_service_->policy());
     UpdatePolicy(bundle.Pass());
   }
+}
+
+void CloudPolicyManager::GetChromePolicy(PolicyMap* policy_map) {
+  policy_map->CopyFrom(store()->policy_map());
 }
 
 void CloudPolicyManager::CreateComponentCloudPolicyService(
@@ -110,8 +114,8 @@ void CloudPolicyManager::CreateComponentCloudPolicyService(
   // Called at most once.
   DCHECK(!component_policy_service_);
 
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-           switches::kEnableComponentCloudPolicy) ||
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableComponentCloudPolicy) ||
       policy_cache_path.empty()) {
     return;
   }

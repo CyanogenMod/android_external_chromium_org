@@ -48,7 +48,8 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
                     MessageCenterTray* tray,
                     int max_height,
                     bool initially_settings_visible,
-                    bool top_down);
+                    bool top_down,
+                    const base::string16& title);
   virtual ~MessageCenterView();
 
   void SetNotifications(const NotificationList::Notifications& notifications);
@@ -61,14 +62,15 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   void SetSettingsVisible(bool visible);
   void OnSettingsChanged();
   bool settings_visible() const { return settings_visible_; }
+  MessageCenterTray* tray() { return tray_; }
 
   void SetIsClosing(bool is_closing);
 
  protected:
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
 
@@ -104,7 +106,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterView : public views::View,
   MessageCenter* message_center_;  // Weak reference.
   MessageCenterTray* tray_;  // Weak reference.
 
-  // Map notification_id->NotificationView*. It contains all NotificaitonViews
+  // Map notification_id->NotificationView*. It contains all NotificationViews
   // currently displayed in MessageCenter.
   typedef std::map<std::string, NotificationView*> NotificationViewsMap;
   NotificationViewsMap notification_views_;  // Weak.

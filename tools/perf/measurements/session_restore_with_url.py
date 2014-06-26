@@ -9,8 +9,8 @@ class SessionRestoreWithUrl(session_restore.SessionRestore):
 
   def __init__(self):
     super(SessionRestoreWithUrl, self).__init__(
-        action_name_to_run='navigate_steps')
+        action_name_to_run='RunNavigateSteps')
 
   def CanRunForPage(self, page):
     # Run for every page in the page set that has a startup url.
-    return page.navigate_steps[0]['action'] == 'set_startup_url'
+    return bool(page.startup_url)

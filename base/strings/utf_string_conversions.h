@@ -44,14 +44,10 @@ BASE_EXPORT std::string UTF16ToUTF8(const string16& utf16);
 BASE_EXPORT std::wstring ASCIIToWide(const StringPiece& ascii);
 BASE_EXPORT string16 ASCIIToUTF16(const StringPiece& ascii);
 
-}  // namespace base
+// Converts to 7-bit ASCII by truncating. The result must be known to be ASCII
+// beforehand.
+BASE_EXPORT std::string UTF16ToASCII(const string16& utf16);
 
-// We are trying to get rid of wstring as much as possible, but it's too big a
-// mess to do it all at once.  These synonyms should be used when we really
-// should just be passing a string16 around, but we haven't finished porting
-// whatever module uses wstring and the conversion is being used as a stopgap.
-// This makes it easy to grep for the ones that should be removed.
-#define WideToUTF16Hack WideToUTF16
-#define UTF16ToWideHack UTF16ToWide
+}  // namespace base
 
 #endif  // BASE_STRINGS_UTF_STRING_CONVERSIONS_H_

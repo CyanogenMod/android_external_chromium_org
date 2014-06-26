@@ -56,10 +56,12 @@ class IndexWriter {
 
   const IndexedDBIndexMetadata index_metadata_;
   IndexedDBDatabase::IndexKeys index_keys_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexWriter);
 };
 
 bool MakeIndexWriters(
-    scoped_refptr<IndexedDBTransaction> transaction,
+    IndexedDBTransaction* transaction,
     IndexedDBBackingStore* store,
     int64 database_id,
     const IndexedDBObjectStoreMetadata& metadata,

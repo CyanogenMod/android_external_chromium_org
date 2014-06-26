@@ -49,8 +49,6 @@ struct SYNC_EXPORT SyncStatus {
 
   bool syncing;
 
-  // Total updates available.  If zero, nothing left to download.
-  int64 updates_available;
   // Total updates received by the syncer since browser start.
   int updates_received;
   // Total updates received that are echoes of our own changes.
@@ -64,18 +62,6 @@ struct SYNC_EXPORT SyncStatus {
   // Total number of overwrites due to conflict resolver since browser start.
   int num_local_overwrites_total;
   int num_server_overwrites_total;
-
-  // Count of empty and non empty getupdates;
-  int nonempty_get_updates;
-  int empty_get_updates;
-
-  // Count of sync cycles that successfully committed items;
-  int sync_cycles_with_commits;
-  int sync_cycles_without_commits;
-
-  // Count of useless and useful syncs we perform.
-  int useless_sync_cycles;
-  int useful_sync_cycles;
 
   // Nudge counts for each possible source
   int nudge_source_notification;

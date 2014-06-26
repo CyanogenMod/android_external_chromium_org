@@ -8,13 +8,18 @@
 #include <vector>
 
 #include "base/android/jni_array.h"
+#include "base/time/time.h"
 #include "jni/UsbMidiDeviceAndroid_jni.h"
 
 namespace media {
 
 UsbMidiDeviceAndroid::UsbMidiDeviceAndroid(ObjectRef raw_device,
                                            UsbMidiDeviceDelegate* delegate)
-    : raw_device_(raw_device), delegate_(delegate) {}
+    : raw_device_(raw_device), delegate_(delegate) {
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_UsbMidiDeviceAndroid_registerSelf(
+      env, raw_device_.obj(), reinterpret_cast<jlong>(this));
+}
 
 UsbMidiDeviceAndroid::~UsbMidiDeviceAndroid() {
   JNIEnv* env = base::android::AttachCurrentThread();
@@ -40,6 +45,18 @@ void UsbMidiDeviceAndroid::Send(int endpoint_number,
 
   Java_UsbMidiDeviceAndroid_send(
       env, raw_device_.obj(), endpoint_number, data_to_pass.obj());
+}
+
+void UsbMidiDeviceAndroid::OnData(JNIEnv* env,
+                                  jobject caller,
+                                  jint endpoint_number,
+                                  jbyteArray data) {
+  std::vector<uint8> bytes;
+  base::android::JavaByteArrayToByteVector(env, data, &bytes);
+
+  const uint8* head = bytes.size() ? &bytes[0] : NULL;
+  delegate_->ReceiveUsbMidiData(this, endpoint_number, head, bytes.size(),
+                                base::TimeTicks::HighResNow());
 }
 
 bool UsbMidiDeviceAndroid::RegisterUsbMidiDevice(JNIEnv* env) {

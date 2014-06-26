@@ -7,49 +7,48 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
-#include "third_party/WebKit/public/web/WebFormElement.h"
+#include "components/autofill/core/browser/autofill_client.h"
 
 class GURL;
 
 namespace autofill {
 
-class AutofillDriverImpl;
+class ContentAutofillDriver;
 struct FormData;
 class FormStructure;
 
 // Driver for the requestAutocomplete flow.
 class RequestAutocompleteManager {
  public:
-  explicit RequestAutocompleteManager(AutofillDriverImpl* autofill_driver);
+  explicit RequestAutocompleteManager(ContentAutofillDriver* autofill_driver);
   ~RequestAutocompleteManager();
 
   // Requests an interactive autocomplete UI to be shown for |frame_url| with
   // |form|.
   void OnRequestAutocomplete(const FormData& form, const GURL& frame_url);
 
+  // Requests that any running interactive autocomplete be cancelled.
+  void OnCancelRequestAutocomplete();
+
  private:
   // Tells the renderer that the current interactive autocomplete dialog
-  // finished with the |result| saying if it was successfull or not, and
-  // |form_data| containing the filled form data.
+  // finished with the |result| saying if it was successful or not, and
+  // |form_structure| containing the filled form data. |debug_message| will
+  // be printed to the developer console.
   void ReturnAutocompleteResult(
-      blink::WebFormElement::AutocompleteResult result,
-      const FormData& form_data);
+      AutofillClient::RequestAutocompleteResult result,
+      const base::string16& debug_message,
+      const FormStructure* form_structure);
 
   // Shows the requestAutocomplete dialog for |source_url| with data from |form|
   // and calls |callback| once the interaction is complete.
   void ShowRequestAutocompleteDialog(
       const FormData& form,
       const GURL& source_url,
-      const base::Callback<void(const FormStructure*)>& callback);
-
-  // If |result| is not null, derives a FormData object from it and passes it
-  // back to the page along an |AutocompleteResultSuccess| result. Otherwise, it
-  // passes to the page an empty FormData along an
-  // |AutocompleteResultErrorCancel| result.
-  void ReturnAutocompleteData(const FormStructure* result);
+      const AutofillClient::ResultCallback& callback);
 
   // The autofill driver owns and outlives |this|.
-  AutofillDriverImpl* const autofill_driver_;  // weak.
+  ContentAutofillDriver* const autofill_driver_;  // weak.
 
   base::WeakPtrFactory<RequestAutocompleteManager> weak_ptr_factory_;
 };

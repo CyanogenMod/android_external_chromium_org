@@ -12,7 +12,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 ////////////////////////////////////////////////////////////////////////////////
 // StatusAreaLayoutManager, public:
@@ -56,9 +55,9 @@ void StatusAreaLayoutManager::SetChildBounds(
     return;
   }
 
-  // If the size matches, no need to do anything. We don't check the location as
-  // that is managed by the shelf.
-  if (requested_bounds == child->bounds())
+  // If the bounds match, no need to do anything. Check for target bounds to
+  // ensure any active animation is retargeted.
+  if (requested_bounds == child->GetTargetBounds())
     return;
 
   SetChildBoundsDirect(child, requested_bounds);
@@ -77,5 +76,4 @@ void StatusAreaLayoutManager::LayoutStatusArea() {
   shelf_->shelf_layout_manager()->LayoutShelf();
 }
 
-}  // namespace internal
 }  // namespace ash

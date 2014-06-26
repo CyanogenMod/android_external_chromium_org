@@ -7,12 +7,12 @@
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/prerender/prerender_histograms.h"
 #include "chrome/browser/prerender/prerender_local_predictor.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_view_host.h"
@@ -45,7 +45,7 @@ void ReportTabHelperURLSeenToLocalPredictor(
 // static
 void PrerenderTabHelper::CreateForWebContentsWithPasswordManager(
     content::WebContents* web_contents,
-    PasswordManager* password_manager) {
+    password_manager::PasswordManager* password_manager) {
   if (!FromWebContents(web_contents)) {
     web_contents->SetUserData(UserDataKey(),
                               new PrerenderTabHelper(web_contents,
@@ -53,8 +53,9 @@ void PrerenderTabHelper::CreateForWebContentsWithPasswordManager(
   }
 }
 
-PrerenderTabHelper::PrerenderTabHelper(content::WebContents* web_contents,
-                                       PasswordManager* password_manager)
+PrerenderTabHelper::PrerenderTabHelper(
+    content::WebContents* web_contents,
+    password_manager::PasswordManager* password_manager)
     : content::WebContentsObserver(web_contents),
       origin_(ORIGIN_NONE),
       next_load_is_control_prerender_(false),

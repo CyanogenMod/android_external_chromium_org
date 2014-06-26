@@ -14,7 +14,6 @@ import shutil
 import signal
 import sys
 import threading
-import traceback
 
 from pylib import android_commands
 from pylib import constants
@@ -118,6 +117,11 @@ def AddGTestOptions(option_parser):
                            help='Timeout to wait for each test',
                            type='int',
                            default=60)
+  option_parser.add_option('--isolate_file_path',
+                           '--isolate-file-path',
+                           dest='isolate_file_path',
+                           help='.isolate file path to override the default '
+                                'path')
   # TODO(gkanwar): Move these to Common Options once we have the plumbing
   # in our other test types to handle these commands
   AddCommonOptions(option_parser)
@@ -187,7 +191,7 @@ def AddJavaTestOptions(option_parser):
                                  'chromium build directory.'))
 
 
-def ProcessJavaTestOptions(options, error_func):
+def ProcessJavaTestOptions(options):
   """Processes options/arguments and populates |options| with defaults."""
 
   if options.annotation_str:
@@ -210,7 +214,7 @@ def AddInstrumentationTestOptions(option_parser):
   option_parser.usage = '%prog instrumentation [options]'
   option_parser.commands_dict = {}
   option_parser.example = ('%prog instrumentation '
-                           '--test-apk=ChromiumTestShellTest')
+                           '--test-apk=ChromeShellTest')
 
   AddJavaTestOptions(option_parser)
   AddCommonOptions(option_parser)
@@ -246,7 +250,7 @@ def ProcessInstrumentationOptions(options, error_func):
     instrumentation tests.
   """
 
-  ProcessJavaTestOptions(options, error_func)
+  ProcessJavaTestOptions(options)
 
   if options.java_only and options.python_only:
     error_func('Options java_only (-j) and python_only (-p) '
@@ -273,6 +277,10 @@ def ProcessInstrumentationOptions(options, error_func):
       constants.SDK_BUILD_TEST_JAVALIB_DIR,
       '%s.jar' %  options.test_apk)
 
+  options.test_support_apk_path = '%sSupport%s' % (
+        os.path.splitext(options.test_apk_path))
+
+
   return instrumentation_test_options.InstrumentationOptions(
       options.tool,
       options.cleanup_test_files,
@@ -287,7 +295,9 @@ def ProcessInstrumentationOptions(options, error_func):
       options.coverage_dir,
       options.test_apk,
       options.test_apk_path,
-      options.test_apk_jar_path)
+      options.test_apk_jar_path,
+      options.test_support_apk_path
+      )
 
 
 def AddUIAutomatorTestOptions(option_parser):
@@ -296,8 +306,8 @@ def AddUIAutomatorTestOptions(option_parser):
   option_parser.usage = '%prog uiautomator [options]'
   option_parser.commands_dict = {}
   option_parser.example = (
-      '%prog uiautomator --test-jar=chromium_testshell_uiautomator_tests'
-      ' --package=chromium_test_shell')
+      '%prog uiautomator --test-jar=chrome_shell_uiautomator_tests'
+      ' --package=chrome_shell')
   option_parser.add_option(
       '--package',
       help=('Package under test. Possible values: %s' %
@@ -324,7 +334,7 @@ def ProcessUIAutomatorOptions(options, error_func):
     uiautomator tests.
   """
 
-  ProcessJavaTestOptions(options, error_func)
+  ProcessJavaTestOptions(options)
 
   if not options.package:
     error_func('--package is required.')
@@ -368,7 +378,7 @@ def AddMonkeyTestOptions(option_parser):
   option_parser.usage = '%prog monkey [options]'
   option_parser.commands_dict = {}
   option_parser.example = (
-      '%prog monkey --package=chromium_test_shell')
+      '%prog monkey --package=chrome_shell')
 
   option_parser.add_option(
       '--package',
@@ -449,6 +459,9 @@ def AddPerfTestOptions(option_parser):
       help=('A JSON file containing steps that are flaky '
             'and will have its exit code ignored.'))
   option_parser.add_option(
+      '--output-json-list',
+      help='Write a simple list of names from --steps into the given file.')
+  option_parser.add_option(
       '--print-step',
       help='The name of a previously executed perf step to print.')
   option_parser.add_option(
@@ -485,12 +498,12 @@ def ProcessPerfTestOptions(options, args, error_func):
   if options.single_step:
     single_step = ' '.join(args[2:])
   return perf_test_options.PerfOptions(
-      options.steps, options.flaky_steps, options.print_step,
-      options.no_timeout, options.test_filter, options.dry_run,
-      single_step)
+      options.steps, options.flaky_steps, options.output_json_list,
+      options.print_step, options.no_timeout, options.test_filter,
+      options.dry_run, single_step)
 
 
-def _RunGTests(options, error_func, devices):
+def _RunGTests(options, devices):
   """Subcommand of RunTestsCommands which runs gtests."""
   ProcessGTestOptions(options)
 
@@ -506,6 +519,7 @@ def _RunGTests(options, error_func, devices):
         options.run_disabled,
         options.test_arguments,
         options.timeout,
+        options.isolate_file_path,
         suite_name)
     runner_factory, tests = gtest_setup.Setup(gtest_options, devices)
 
@@ -528,7 +542,7 @@ def _RunGTests(options, error_func, devices):
   return exit_code
 
 
-def _RunLinkerTests(options, error_func, devices):
+def _RunLinkerTests(options, devices):
   """Subcommand of RunTestsCommands which runs linker tests."""
   runner_factory, tests = linker_setup.Setup(options, devices)
 
@@ -628,17 +642,27 @@ def _RunMonkeyTests(options, error_func, devices):
   return exit_code
 
 
-def _RunPerfTests(options, args, error_func, devices):
+def _RunPerfTests(options, args, error_func):
   """Subcommand of RunTestsCommands which runs perf tests."""
   perf_options = ProcessPerfTestOptions(options, args, error_func)
+
+  # Just save a simple json with a list of test names.
+  if perf_options.output_json_list:
+    return perf_test_runner.OutputJsonList(
+        perf_options.steps, perf_options.output_json_list)
+
   # Just print the results from a single previously executed step.
   if perf_options.print_step:
     return perf_test_runner.PrintTestOutput(perf_options.print_step)
 
-  runner_factory, tests = perf_setup.Setup(perf_options)
+  runner_factory, tests, devices = perf_setup.Setup(perf_options)
 
+  # shard=False means that each device will get the full list of tests
+  # and then each one will decide their own affinity.
+  # shard=True means each device will pop the next test available from a queue,
+  # which increases throughput but have no affinity.
   results, _ = test_dispatcher.RunTests(
-      tests, runner_factory, devices, shard=True, test_timeout=None,
+      tests, runner_factory, devices, shard=False, test_timeout=None,
       num_retries=options.num_retries)
 
   report_results.LogFull(
@@ -716,9 +740,9 @@ def RunTestsCommand(command, options, args, option_parser):
     raise Exception('Failed to reset test server port.')
 
   if command == 'gtest':
-    return _RunGTests(options, option_parser.error, devices)
+    return _RunGTests(options, devices)
   elif command == 'linker':
-    return _RunLinkerTests(options, option_parser.error, devices)
+    return _RunLinkerTests(options, devices)
   elif command == 'instrumentation':
     return _RunInstrumentationTests(options, option_parser.error, devices)
   elif command == 'uiautomator':
@@ -726,18 +750,18 @@ def RunTestsCommand(command, options, args, option_parser):
   elif command == 'monkey':
     return _RunMonkeyTests(options, option_parser.error, devices)
   elif command == 'perf':
-    return _RunPerfTests(options, args, option_parser.error, devices)
+    return _RunPerfTests(options, args, option_parser.error)
   else:
     raise Exception('Unknown test type.')
 
 
-def HelpCommand(command, options, args, option_parser):
+def HelpCommand(command, _options, args, option_parser):
   """Display help for a certain command, or overall help.
 
   Args:
     command: String indicating the command that was received to trigger
         this function.
-    options: optparse options dictionary.
+    options: optparse options dictionary. unused.
     args: List of extra args from optparse.
     option_parser: optparse.OptionParser object.
 
@@ -793,12 +817,12 @@ VALID_COMMANDS = {
     }
 
 
-def DumpThreadStacks(signal, frame):
+def DumpThreadStacks(_signal, _frame):
   for thread in threading.enumerate():
     reraiser_thread.LogThreadStack(thread)
 
 
-def main(argv):
+def main():
   signal.signal(signal.SIGUSR1, DumpThreadStacks)
   option_parser = command_option_parser.CommandOptionParser(
       commands_dict=VALID_COMMANDS)
@@ -806,4 +830,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())

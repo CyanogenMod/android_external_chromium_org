@@ -52,6 +52,8 @@ class MockConnectionToClientEventHandler :
   MockConnectionToClientEventHandler();
   virtual ~MockConnectionToClientEventHandler();
 
+  MOCK_METHOD1(OnConnectionAuthenticating,
+               void(ConnectionToClient* connection));
   MOCK_METHOD1(OnConnectionAuthenticated, void(ConnectionToClient* connection));
   MOCK_METHOD1(OnConnectionChannelsConnected,
                void(ConnectionToClient* connection));
@@ -96,6 +98,7 @@ class MockInputStub : public InputStub {
   virtual ~MockInputStub();
 
   MOCK_METHOD1(InjectKeyEvent, void(const KeyEvent& event));
+  MOCK_METHOD1(InjectTextEvent, void(const TextEvent& event));
   MOCK_METHOD1(InjectMouseEvent, void(const MouseEvent& event));
 
  private:

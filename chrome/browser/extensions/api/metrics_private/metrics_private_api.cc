@@ -8,17 +8,12 @@
 
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/prefs/pref_service.h"
-#include "chrome/browser/browser_process.h"
+#include "base/metrics/sparse_histogram.h"
+#include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/common/extensions/api/metrics_private.h"
-#include "chrome/common/pref_names.h"
 #include "components/variations/variations_associated_data.h"
 #include "content/public/browser/user_metrics.h"
 #include "extensions/common/extension.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/settings/cros_settings.h"
-#endif  // OS_CHROMEOS
 
 namespace extensions {
 
@@ -28,6 +23,7 @@ namespace GetVariationParams = api::metrics_private::GetVariationParams;
 namespace GetFieldTrial = api::metrics_private::GetFieldTrial;
 namespace RecordUserAction = api::metrics_private::RecordUserAction;
 namespace RecordValue = api::metrics_private::RecordValue;
+namespace RecordSparseValue = api::metrics_private::RecordSparseValue;
 namespace RecordPercentage = api::metrics_private::RecordPercentage;
 namespace RecordCount = api::metrics_private::RecordCount;
 namespace RecordSmallCount = api::metrics_private::RecordSmallCount;
@@ -43,34 +39,13 @@ const size_t kMaxBuckets = 10000; // We don't ever want more than these many
                                   // and would cause crazy memory usage
 } // namespace
 
-// Returns true if the user opted in to sending crash reports.
-// TODO(vadimt): Unify with CrashesUI::CrashReportingUIEnabled
-static bool IsCrashReportingEnabled() {
-#if defined(GOOGLE_CHROME_BUILD)
-#if defined(OS_CHROMEOS)
-  bool reporting_enabled = false;
-  chromeos::CrosSettings::Get()->GetBoolean(chromeos::kStatsReportingPref,
-                                            &reporting_enabled);
-  return reporting_enabled;
-#elif defined(OS_ANDROID)
-  // Android has its own settings for metrics / crash uploading.
-  PrefService* prefs = g_browser_process->local_state();
-  return prefs->GetBoolean(prefs::kCrashReportingEnabled);
-#else
-  PrefService* prefs = g_browser_process->local_state();
-  return prefs->GetBoolean(prefs::kMetricsReportingEnabled);
-#endif
-#else
-  return false;
-#endif
-}
-
-bool MetricsPrivateGetIsCrashReportingEnabledFunction::RunImpl() {
-  SetResult(new base::FundamentalValue(IsCrashReportingEnabled()));
+bool MetricsPrivateGetIsCrashReportingEnabledFunction::RunSync() {
+  SetResult(new base::FundamentalValue(
+      ChromeMetricsServiceAccessor::IsCrashReportingEnabled()));
   return true;
 }
 
-bool MetricsPrivateGetFieldTrialFunction::RunImpl() {
+bool MetricsPrivateGetFieldTrialFunction::RunSync() {
   std::string name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &name));
 
@@ -78,35 +53,25 @@ bool MetricsPrivateGetFieldTrialFunction::RunImpl() {
   return true;
 }
 
-bool MetricsPrivateGetVariationParamsFunction::RunImpl() {
+bool MetricsPrivateGetVariationParamsFunction::RunSync() {
   scoped_ptr<GetVariationParams::Params> params(
       GetVariationParams::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   GetVariationParams::Results::Params result;
-  if (!chrome_variations::GetVariationParams(
+  if (chrome_variations::GetVariationParams(
       params->name, &result.additional_properties)) {
-    SetError("Variation parameters are unavailable.");
-    return false;
+    SetResult(result.ToValue().release());
   }
-
-  SetResult(result.ToValue().release());
   return true;
 }
 
-bool MetricsPrivateRecordUserActionFunction::RunImpl() {
+bool MetricsPrivateRecordUserActionFunction::RunSync() {
   scoped_ptr<RecordUserAction::Params> params(
       RecordUserAction::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   content::RecordComputedAction(params->name);
-  return true;
-}
-
-bool MetricsHistogramHelperFunction::GetNameAndSample(std::string* name,
-                                                      int* sample) {
-  EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, name));
-  EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(1, sample));
   return true;
 }
 
@@ -139,11 +104,14 @@ bool MetricsHistogramHelperFunction::RecordValue(
         base::HistogramBase::kUmaTargetedHistogramFlag);
   }
 
-  counter->Add(sample);
+  // The histogram can be NULL if it is constructed with bad arguments.  Ignore
+  // that data for this API.  An error message will be logged.
+  if (counter)
+    counter->Add(sample);
   return true;
 }
 
-bool MetricsPrivateRecordValueFunction::RunImpl() {
+bool MetricsPrivateRecordValueFunction::RunSync() {
   scoped_ptr<RecordValue::Params> params(RecordValue::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -158,7 +126,17 @@ bool MetricsPrivateRecordValueFunction::RunImpl() {
                      params->metric.buckets, params->value);
 }
 
-bool MetricsPrivateRecordPercentageFunction::RunImpl() {
+bool MetricsPrivateRecordSparseValueFunction::RunSync() {
+  scoped_ptr<RecordSparseValue::Params> params(
+      RecordSparseValue::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+  // This particular UMA_HISTOGRAM_ macro is okay for
+  // non-runtime-constant strings.
+  UMA_HISTOGRAM_SPARSE_SLOWLY(params->metric_name, params->value);
+  return true;
+}
+
+bool MetricsPrivateRecordPercentageFunction::RunSync() {
   scoped_ptr<RecordPercentage::Params> params(
       RecordPercentage::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -166,14 +144,14 @@ bool MetricsPrivateRecordPercentageFunction::RunImpl() {
                      1, 101, 102, params->value);
 }
 
-bool MetricsPrivateRecordCountFunction::RunImpl() {
+bool MetricsPrivateRecordCountFunction::RunSync() {
   scoped_ptr<RecordCount::Params> params(RecordCount::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   return RecordValue(params->metric_name, base::HISTOGRAM,
                      1, 1000000, 50, params->value);
 }
 
-bool MetricsPrivateRecordSmallCountFunction::RunImpl() {
+bool MetricsPrivateRecordSmallCountFunction::RunSync() {
   scoped_ptr<RecordSmallCount::Params> params(
       RecordSmallCount::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -181,7 +159,7 @@ bool MetricsPrivateRecordSmallCountFunction::RunImpl() {
                      1, 100, 50, params->value);
 }
 
-bool MetricsPrivateRecordMediumCountFunction::RunImpl() {
+bool MetricsPrivateRecordMediumCountFunction::RunSync() {
   scoped_ptr<RecordMediumCount::Params> params(
       RecordMediumCount::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -189,7 +167,7 @@ bool MetricsPrivateRecordMediumCountFunction::RunImpl() {
                      1, 10000, 50, params->value);
 }
 
-bool MetricsPrivateRecordTimeFunction::RunImpl() {
+bool MetricsPrivateRecordTimeFunction::RunSync() {
   scoped_ptr<RecordTime::Params> params(RecordTime::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
   static const int kTenSecMs = 10 * 1000;
@@ -197,7 +175,7 @@ bool MetricsPrivateRecordTimeFunction::RunImpl() {
                      1, kTenSecMs, 50, params->value);
 }
 
-bool MetricsPrivateRecordMediumTimeFunction::RunImpl() {
+bool MetricsPrivateRecordMediumTimeFunction::RunSync() {
   scoped_ptr<RecordMediumTime::Params> params(
       RecordMediumTime::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -206,7 +184,7 @@ bool MetricsPrivateRecordMediumTimeFunction::RunImpl() {
                      1, kThreeMinMs, 50, params->value);
 }
 
-bool MetricsPrivateRecordLongTimeFunction::RunImpl() {
+bool MetricsPrivateRecordLongTimeFunction::RunSync() {
   scoped_ptr<RecordLongTime::Params> params(
       RecordLongTime::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());

@@ -21,8 +21,8 @@
 #include "third_party/WebKit/public/platform/WebVector.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/rect.h"
@@ -104,11 +104,11 @@ PasswordGenerationAgent::PasswordGenerationAgent(
       password_edited_(false),
       enabled_(password_generation::IsPasswordGenerationEnabled()) {
   DVLOG(2) << "Password Generation is " << (enabled_ ? "Enabled" : "Disabled");
-  render_view_->GetWebView()->setPasswordGeneratorClient(this);
 }
 PasswordGenerationAgent::~PasswordGenerationAgent() {}
 
-void PasswordGenerationAgent::DidFinishDocumentLoad(blink::WebFrame* frame) {
+void PasswordGenerationAgent::DidFinishDocumentLoad(
+    blink::WebLocalFrame* frame) {
   // In every navigation, the IPC message sent by the password autofill manager
   // to query whether the current form is blacklisted or not happens when the
   // document load finishes, so we need to clear previous states here before we
@@ -131,7 +131,7 @@ void PasswordGenerationAgent::DidFinishDocumentLoad(blink::WebFrame* frame) {
   }
 }
 
-void PasswordGenerationAgent::DidFinishLoad(blink::WebFrame* frame) {
+void PasswordGenerationAgent::DidFinishLoad(blink::WebLocalFrame* frame) {
   if (!enabled_)
     return;
 
@@ -188,21 +188,6 @@ bool PasswordGenerationAgent::ShouldAnalyzeDocument(
   }
 
   return true;
-}
-
-void PasswordGenerationAgent::openPasswordGenerator(
-    blink::WebInputElement& element) {
-  blink::WebElement button(element.passwordGeneratorButtonElement());
-  gfx::Rect rect(button.boundsInViewportSpace());
-  scoped_ptr<PasswordForm> password_form(
-      CreatePasswordForm(element.form()));
-  // We should not have shown the icon we can't create a valid PasswordForm.
-  DCHECK(password_form.get());
-
-  Send(new AutofillHostMsg_ShowPasswordGenerationPopup(routing_id(),
-                                                       rect,
-                                                       element.maxLength(),
-                                                       *password_form));
 }
 
 bool PasswordGenerationAgent::OnMessageReceived(const IPC::Message& message) {
@@ -281,24 +266,26 @@ void PasswordGenerationAgent::DetermineGenerationElement() {
       password_generation::GENERATION_AVAILABLE);
 }
 
-void PasswordGenerationAgent::FocusedNodeChanged(const blink::WebNode& node) {
+bool PasswordGenerationAgent::FocusedNodeHasChanged(
+    const blink::WebNode& node) {
   if (!generation_element_.isNull())
     generation_element_.setShouldRevealPassword(false);
 
   if (node.isNull() || !node.isElementNode())
-    return;
+    return false;
 
   const blink::WebElement web_element = node.toConst<blink::WebElement>();
   if (!web_element.document().frame())
-    return;
+    return false;
 
   const blink::WebInputElement* element = toWebInputElement(&web_element);
   if (!element || *element != generation_element_)
-    return;
+    return false;
 
   if (password_is_generated_) {
     generation_element_.setShouldRevealPassword(true);
     ShowEditingPopup();
+    return true;
   }
 
   // Only trigger if the password field is empty.
@@ -306,7 +293,10 @@ void PasswordGenerationAgent::FocusedNodeChanged(const blink::WebNode& node) {
       element->isEnabled() &&
       element->value().isEmpty()) {
     ShowGenerationPopup();
+    return true;
   }
+
+  return false;
 }
 
 bool PasswordGenerationAgent::TextDidChangeInTextField(

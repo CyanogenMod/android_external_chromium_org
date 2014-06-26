@@ -12,8 +12,9 @@
 #include "base/location.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -23,9 +24,9 @@
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/gestures/gesture_types.h"
+#include "ui/events/test/events_test_utils.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/image/image_skia_rep.h"
-#include "ui/views/test/test_views_delegate.h"
 #include "ui/views/view.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_aura.h"
@@ -80,8 +81,7 @@ class DragTestView : public views::View {
     gfx::ImageSkiaRep image_rep(gfx::Size(10, 20), 1.0f);
     gfx::ImageSkia image_skia(image_rep);
 
-    drag_utils::SetDragImageOnDataObject(
-        image_skia, image_skia.size(), gfx::Vector2d(), data);
+    drag_utils::SetDragImageOnDataObject(image_skia, gfx::Vector2d(), data);
   }
 
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
@@ -147,11 +147,9 @@ class CompletableLinearAnimation : public gfx::LinearAnimation {
   int duration_;
 };
 
-class TestDragDropController : public internal::DragDropController {
+class TestDragDropController : public DragDropController {
  public:
-  TestDragDropController() : internal::DragDropController() {
-    Reset();
-  }
+  TestDragDropController() : DragDropController() { Reset(); }
 
   void Reset() {
     drag_start_received_ = false;
@@ -283,8 +281,12 @@ void DispatchGesture(ui::EventType gesture_type, gfx::Point location) {
       ui::EventTimeForNow(),
       ui::GestureEventDetails(gesture_type, 0, 0),
       1);
-  Shell::GetPrimaryRootWindow()->GetDispatcher()->DispatchGestureEvent(
-      &gesture_event);
+  ui::EventSource* event_source =
+      Shell::GetPrimaryRootWindow()->GetHost()->GetEventSource();
+  ui::EventSourceTestApi event_source_test(event_source);
+  ui::EventDispatchDetails details =
+      event_source_test.SendEventToProcessor(&gesture_event);
+  CHECK(!details.dispatcher_destroyed);
 }
 
 }  // namespace
@@ -300,7 +302,6 @@ class DragDropControllerTest : public AshTestBase {
     drag_drop_controller_->set_should_block_during_drag_drop(false);
     aura::client::SetDragDropClient(Shell::GetPrimaryRootWindow(),
                                     drag_drop_controller_.get());
-    views_delegate_.reset(new views::TestViewsDelegate);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -332,7 +333,7 @@ class DragDropControllerTest : public AshTestBase {
         NULL;
   }
 
-  internal::DragDropTracker* drag_drop_tracker() {
+  DragDropTracker* drag_drop_tracker() {
     return drag_drop_controller_->drag_drop_tracker_.get();
   }
 
@@ -345,7 +346,6 @@ class DragDropControllerTest : public AshTestBase {
 
  protected:
   scoped_ptr<TestDragDropController> drag_drop_controller_;
-  scoped_ptr<views::TestViewsDelegate> views_delegate_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DragDropControllerTest);
@@ -738,7 +738,7 @@ TEST_F(DragDropControllerTest, SyntheticEventsDuringDragDrop) {
     ui::MouseEvent mouse_move(ui::ET_MOUSE_MOVED, mouse_move_location,
                               mouse_move_location, 0, 0);
     ui::EventDispatchDetails details = Shell::GetPrimaryRootWindow()->
-        GetDispatcher()->OnEventFromSource(&mouse_move);
+        GetHost()->event_processor()->OnEventFromSource(&mouse_move);
     ASSERT_FALSE(details.dispatcher_destroyed);
   }
 

@@ -29,7 +29,7 @@ class CONTENT_EXPORT BrowserCompositorOutputSurface
 
   // cc::OutputSurface implementation.
   virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
-  virtual void Reshape(const gfx::Size& size, float scale_factor) OVERRIDE;
+  virtual void OnSwapBuffersComplete() OVERRIDE;
 
   // ui::CompositorOutputSurface::Observer implementation.
   virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
@@ -39,6 +39,10 @@ class CONTENT_EXPORT BrowserCompositorOutputSurface
                                       base::TimeDelta interval);
 
   void SetReflector(ReflectorImpl* reflector);
+
+#if defined(OS_MACOSX)
+  void OnSurfaceDisplayed();
+#endif
 
  protected:
   // Constructor used by the accelerated implementation.

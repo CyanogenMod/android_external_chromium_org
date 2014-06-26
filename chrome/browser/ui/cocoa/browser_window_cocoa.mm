@@ -20,13 +20,13 @@
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
+#include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands_mac.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_base_controller.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_menu_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser/edit_search_engine_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/browser/password_generation_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -37,23 +37,25 @@
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/nsmenuitem_additions.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_base_controller.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_menu_bubble_controller.h"
 #include "chrome/browser/ui/cocoa/restart_browser.h"
 #include "chrome/browser/ui/cocoa/status_bubble_mac.h"
 #include "chrome/browser/ui/cocoa/task_manager_mac.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/web_dialog_window_controller.h"
-#import "chrome/browser/ui/cocoa/website_settings_bubble_controller.h"
+#import "chrome/browser/ui/cocoa/website_settings/website_settings_bubble_controller.h"
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "components/autofill/core/common/password_form.h"
+#include "components/translate/core/browser/language_state.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -73,7 +75,7 @@ namespace {
 NSPoint GetPointForBubble(content::WebContents* web_contents,
                           int x_offset,
                           int y_offset) {
-  NSView* view = web_contents->GetView()->GetNativeView();
+  NSView* view = web_contents->GetNativeView();
   NSRect bounds = [view bounds];
   NSPoint point;
   point.x = NSMinX(bounds) + x_offset;
@@ -127,7 +129,13 @@ void BrowserWindowCocoa::Show() {
     [window() setAnimationBehavior:NSWindowAnimationBehaviorNone];
   }
 
-  [window() makeKeyAndOrderFront:controller_];
+  {
+    TRACE_EVENT0("ui", "BrowserWindowCocoa::Show makeKeyAndOrderFront");
+    // This call takes up a substantial part of startup time, and an even more
+    // substantial part of startup time when any CALayers are part of the
+    // window's NSView heirarchy.
+    [window() makeKeyAndOrderFront:controller_];
+  }
 
   // When creating windows from nibs it is necessary to |makeKeyAndOrderFront:|
   // prior to |orderOut:| then |miniaturize:| when restoring windows in the
@@ -279,11 +287,11 @@ void BrowserWindowCocoa::UpdateLoadingAnimations(bool should_animate) {
 }
 
 void BrowserWindowCocoa::SetStarredState(bool is_starred) {
-  [controller_ setStarredState:is_starred ? YES : NO];
+  [controller_ setStarredState:is_starred];
 }
 
 void BrowserWindowCocoa::SetTranslateIconToggled(bool is_lit) {
-  NOTIMPLEMENTED();
+  [controller_ setCurrentPageIsTranslated:is_lit];
 }
 
 void BrowserWindowCocoa::OnActiveTabChanged(content::WebContents* old_contents,
@@ -484,11 +492,17 @@ void BrowserWindowCocoa::ShowBookmarkAppBubble(
   NOTIMPLEMENTED();
 }
 
-void BrowserWindowCocoa::ShowTranslateBubble(
-    content::WebContents* contents,
-    TranslateTabHelper::TranslateStep step,
-    TranslateErrors::Type error_type) {
-  NOTIMPLEMENTED();
+void BrowserWindowCocoa::ShowTranslateBubble(content::WebContents* contents,
+                                             translate::TranslateStep step,
+                                             TranslateErrors::Type error_type) {
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(contents);
+  LanguageState& language_state = chrome_translate_client->GetLanguageState();
+  language_state.SetTranslateEnabled(true);
+
+  [controller_ showTranslateBubbleForWebContents:contents
+                                            step:step
+                                       errorType:error_type];
 }
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -632,8 +646,8 @@ bool BrowserWindowCocoa::IsFullscreenWithoutChrome() {
 
 WindowOpenDisposition BrowserWindowCocoa::GetDispositionForPopupBounds(
     const gfx::Rect& bounds) {
-  // In Lion fullscreen mode, convert popups into tabs.
-  if (chrome::mac::SupportsSystemFullscreen() && IsFullscreen())
+  // When using Cocoa's System Fullscreen mode, convert popups into tabs.
+  if ([controller_ isInSystemFullscreen])
     return NEW_FOREGROUND_TAB;
   return NEW_POPUP;
 }
@@ -691,9 +705,16 @@ void BrowserWindowCocoa::ShowAvatarBubble(WebContents* web_contents,
   [menu showWindow:nil];
 }
 
-void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton() {
+void BrowserWindowCocoa::ShowAvatarBubbleFromAvatarButton(
+    AvatarBubbleMode mode,
+    const signin::ManageAccountsParams& manage_accounts_params) {
   AvatarBaseController* controller = [controller_ avatarButtonController];
-  [controller showAvatarBubble:[controller buttonView]];
+  NSView* anchor = [controller buttonView];
+  if ([anchor isHiddenOrHasHiddenAncestor])
+    anchor = [[controller_ toolbarController] wrenchButton];
+  [controller showAvatarBubble:anchor
+                      withMode:mode
+               withServiceType:manage_accounts_params.service_type];
 }
 
 void BrowserWindowCocoa::ShowPasswordGenerationBubble(
@@ -723,35 +744,21 @@ int
 BrowserWindowCocoa::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
   if (browser_->bookmark_bar_state() != BookmarkBar::DETACHED)
     return 0;
-  // TODO(sail): please make this work with cocoa, then enable
-  // BrowserTest.GetSizeForNewRenderView and
-  // WebContentsImplBrowserTest.GetSizeForNewRenderView.
-  // This function should return the extra height of the render view when
-  // detached bookmark bar is hidden.
-  // However, I (kuan) return 0 for now to retain the original behavior,
-  // because I encountered the following problem on cocoa:
-  // 1) When a navigation is requested,
-  //    WebContentsImpl::CreateRenderViewForRenderManager creates the new
-  //    RenderWidgetHostView at the size specified by
-  //    WebContentsDelegate::GetSizeForNewRenderView implemented by Browser.
-  // 2) When the pending navigation entry is committed,
-  //    WebContentsImpl::UpdateRenderViewSizeForRenderManager udpates the size
-  //    of WebContentsView to the size in (1).
-  // 3) WebContentsImpl::DidNavigateMainFramePostCommit() is called, where
-  //    the detached bookmark bar is hidden, resulting in relayout of tab
-  //    contents area.
-  // On cocoa, (2) causes RenderWidgetHostView to resize (enlarge) further.
-  // e.g. if size in (1) is size A, and this function returns height H, height
-  // of RenderWidgetHostView after (2) becomes A.height() + H; it's supposed to
-  // stay at A.height().
-  // Then, in (3), WebContentsView and RenderWidgetHostView enlarge even
-  // further, both by another H, i.e. WebContentsView's height becomes
-  // A.height() + H and RenderWidgetHostView's height becomes A.height() + 2H.
-  // Strangely, the RenderWidgetHostView for the previous navigation entry also
-  // gets enlarged by H.
-  // I believe these "automatic" resizing are caused by setAutoresizingMask of
-  // of the cocoa view in WebContentsViewMac, which defeats the purpose of
-  // WebContentsDelegate::GetSizeForNewRenderView i.e. to prevent resizing of
-  // RenderWidgetHostView in (2) and (3).
-  return 0;
+  return 40;
+}
+
+void BrowserWindowCocoa::ExecuteExtensionCommand(
+    const extensions::Extension* extension,
+    const extensions::Command& command) {
+  [cocoa_controller() executeExtensionCommand:extension->id() command:command];
+}
+
+void BrowserWindowCocoa::ShowPageActionPopup(
+    const extensions::Extension* extension) {
+  [cocoa_controller() activatePageAction:extension->id()];
+}
+
+void BrowserWindowCocoa::ShowBrowserActionPopup(
+    const extensions::Extension* extension) {
+  [cocoa_controller() activateBrowserAction:extension->id()];
 }

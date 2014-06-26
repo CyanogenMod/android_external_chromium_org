@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/auto_reset.h"
+#include "base/callback.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/json/json_writer.h"
@@ -13,16 +14,21 @@
 #include "base/values.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/api/media_galleries/media_galleries_api.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_folder_finder.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
+#include "chrome/browser/media_galleries/media_galleries_scan_result_controller.h"
 #include "chrome/browser/media_galleries/media_galleries_test_util.h"
 #include "chrome/browser/media_galleries/media_scan_manager.h"
 #include "chrome/common/chrome_paths.h"
 #include "components/storage_monitor/storage_info.h"
 #include "components/storage_monitor/storage_monitor.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "media/base/test_data_util.h"
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 #include "chrome/browser/media_galleries/fileapi/picasa_finder.h"
@@ -37,7 +43,15 @@
 #include "chrome/browser/media_galleries/fileapi/iapps_finder_impl.h"
 #endif  // OS_MACOSX
 
+#if !defined(DISABLE_NACL)
+#include "base/command_line.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
+#include "ppapi/shared_impl/ppapi_switches.h"
+#endif
+
 using extensions::PlatformAppBrowserTest;
+using storage_monitor::StorageInfo;
+using storage_monitor::StorageMonitor;
 
 namespace {
 
@@ -50,11 +64,6 @@ base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("C:\\qux");
 base::FilePath::CharType kDevicePath[] = FILE_PATH_LITERAL("/qux");
 #endif
 
-void DoNothingMediaFolderFinderResultCallback(
-    bool /*success*/,
-    const MediaFolderFinder::MediaFolderFinderResults& /*results*/) {
-}
-
 class DoNothingMediaFolderFinder : public MediaFolderFinder {
  public:
   explicit DoNothingMediaFolderFinder(
@@ -65,8 +74,7 @@ class DoNothingMediaFolderFinder : public MediaFolderFinder {
 
   static MediaFolderFinder* CreateDoNothingMediaFolderFinder(
       const MediaFolderFinderResultsCallback& callback) {
-    return new DoNothingMediaFolderFinder(
-        base::Bind(&DoNothingMediaFolderFinderResultCallback));
+    return new DoNothingMediaFolderFinder(callback);
   }
 
   virtual void StartScan() OVERRIDE {}
@@ -75,6 +83,30 @@ class DoNothingMediaFolderFinder : public MediaFolderFinder {
 };
 
 }  // namespace
+
+class TestMediaGalleriesAddScanResultsFunction
+    : public extensions::MediaGalleriesAddScanResultsFunction {
+ public:
+  static ExtensionFunction* Factory() {
+    return new TestMediaGalleriesAddScanResultsFunction;
+  }
+
+ protected:
+  virtual ~TestMediaGalleriesAddScanResultsFunction() {}
+
+  // Accepts the dialog as soon as it is created.
+  virtual MediaGalleriesScanResultController* MakeDialog(
+      content::WebContents* web_contents,
+      const extensions::Extension& extension,
+      const base::Closure& on_finish) OVERRIDE {
+    MediaGalleriesScanResultController* controller =
+        extensions::MediaGalleriesAddScanResultsFunction::MakeDialog(
+            web_contents, extension, on_finish);
+    controller->dialog_->AcceptDialogForTesting();
+    // The dialog is closing or closed so don't return it.
+    return NULL;
+  }
+};
 
 class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
  protected:
@@ -143,9 +175,8 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
         StorageInfo::REMOVABLE_MASS_STORAGE_WITH_DCIM, kDeviceId);
 
     StorageMonitor::GetInstance()->receiver()->ProcessAttach(
-        StorageInfo(device_id_, base::string16(), kDevicePath,
-                    base::ASCIIToUTF16(kDeviceName), base::string16(),
-                    base::string16(), 0));
+        StorageInfo(device_id_, kDevicePath, base::ASCIIToUTF16(kDeviceName),
+                    base::string16(), base::string16(), 0));
     content::RunAllPendingInMessageLoop();
   }
 
@@ -170,7 +201,8 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
   // This function makes a single fake gallery. This is needed to test platforms
   // with no default media galleries, such as CHROMEOS. This fake gallery is
   // pre-populated with a test.jpg and test.txt.
-  void MakeSingleFakeGallery() {
+  void MakeSingleFakeGallery(MediaGalleryPrefId* pref_id) {
+    ASSERT_FALSE(fake_gallery_temp_dir_.IsValid());
     ASSERT_TRUE(fake_gallery_temp_dir_.CreateUniqueTempDir());
 
     MediaGalleriesPreferences* preferences = GetAndInitializePreferences();
@@ -178,28 +210,34 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     MediaGalleryPrefInfo gallery_info;
     ASSERT_FALSE(preferences->LookUpGalleryByPath(fake_gallery_temp_dir_.path(),
                                                   &gallery_info));
-    preferences->AddGallery(gallery_info.device_id,
-                            gallery_info.path,
-                            MediaGalleryPrefInfo::kAutoDetected,
-                            gallery_info.volume_label,
-                            gallery_info.vendor_name,
-                            gallery_info.model_name,
-                            gallery_info.total_size_in_bytes,
-                            gallery_info.last_attach_time,
-                            0, 0, 0);
+    MediaGalleryPrefId id = preferences->AddGallery(
+        gallery_info.device_id,
+        gallery_info.path,
+        MediaGalleryPrefInfo::kAutoDetected,
+        gallery_info.volume_label,
+        gallery_info.vendor_name,
+        gallery_info.model_name,
+        gallery_info.total_size_in_bytes,
+        gallery_info.last_attach_time,
+        0, 0, 0);
+    if (pref_id)
+      *pref_id = id;
 
     content::RunAllPendingInMessageLoop();
 
-    base::FilePath test_data_path(GetCommonDataDir());
-    base::FilePath write_path = fake_gallery_temp_dir_.path();
-
     // Valid file, should show up in JS as a FileEntry.
-    ASSERT_TRUE(base::CopyFile(test_data_path.AppendASCII("test.jpg"),
-                               write_path.AppendASCII("test.jpg")));
+    AddFileToSingleFakeGallery(GetCommonDataDir().AppendASCII("test.jpg"));
 
     // Invalid file, should not show up as a FileEntry in JS at all.
-    ASSERT_TRUE(base::CopyFile(test_data_path.AppendASCII("test.txt"),
-                               write_path.AppendASCII("test.txt")));
+    AddFileToSingleFakeGallery(GetCommonDataDir().AppendASCII("test.txt"));
+  }
+
+  void AddFileToSingleFakeGallery(const base::FilePath& source_path) {
+    ASSERT_TRUE(fake_gallery_temp_dir_.IsValid());
+
+    ASSERT_TRUE(base::CopyFile(
+        source_path,
+        fake_gallery_temp_dir_.path().Append(source_path.BaseName())));
   }
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
@@ -329,9 +367,8 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
         &xml_contents, 0, std::string("$path2"), in_both_jpg.value());
 
     base::FilePath album_xml = iphoto_data_root.AppendASCII("AlbumData.xml");
-    ASSERT_NE(-1, file_util::WriteFile(album_xml,
-                                       xml_contents.c_str(),
-                                       xml_contents.size()));
+    ASSERT_NE(-1, base::WriteFile(album_xml,
+                                  xml_contents.c_str(), xml_contents.size()));
   }
 #endif  // defined(OS_MACOSX)
 
@@ -339,6 +376,11 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
     return test_data_dir_.AppendASCII("api_test")
                          .AppendASCII("media_galleries")
                          .AppendASCII("common");
+  }
+
+  base::FilePath GetWallpaperTestDataDir() const {
+    return test_data_dir_.AppendASCII("api_test")
+                         .AppendASCII("wallpaper");
   }
 
   int num_galleries() const {
@@ -358,7 +400,23 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
         &DoNothingMediaFolderFinder::CreateDoNothingMediaFolderFinder));
   }
 
+  void SetRootsForFolderFinder(const std::vector<base::FilePath>& roots) {
+    MediaScanManager* scan_manager =
+        g_browser_process->media_file_system_registry()->media_scan_manager();
+    scan_manager->SetMediaFolderFinderFactory(base::Bind(
+        &MediaGalleriesPlatformAppBrowserTest::CreateMediaFolderFinderWithRoots,
+        roots));
+  }
+
  private:
+  static MediaFolderFinder* CreateMediaFolderFinderWithRoots(
+      const std::vector<base::FilePath>& roots,
+      const MediaFolderFinder::MediaFolderFinderResultsCallback& callback) {
+    MediaFolderFinder* finder = new MediaFolderFinder(callback);
+    finder->SetRootsForTesting(roots);
+    return finder;
+  }
+
   MediaGalleriesPreferences* GetAndInitializePreferences() {
     MediaGalleriesPreferences* preferences =
         g_browser_process->media_file_system_registry()->GetPreferences(
@@ -375,9 +433,70 @@ class MediaGalleriesPlatformAppBrowserTest : public PlatformAppBrowserTest {
   scoped_ptr<EnsureMediaDirectoriesExists> ensure_media_directories_exists_;
 };
 
+#if !defined(DISABLE_NACL)
+class MediaGalleriesPlatformAppPpapiTest
+    : public MediaGalleriesPlatformAppBrowserTest {
+ protected:
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    MediaGalleriesPlatformAppBrowserTest::SetUpCommandLine(command_line);
+    command_line->AppendSwitch(switches::kEnablePepperTesting);
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    MediaGalleriesPlatformAppBrowserTest::SetUpOnMainThread();
+
+    ASSERT_TRUE(PathService::Get(chrome::DIR_GEN_TEST_DATA, &app_dir_));
+    app_dir_ = app_dir_.AppendASCII("ppapi")
+                       .AppendASCII("tests")
+                       .AppendASCII("extensions")
+                       .AppendASCII("media_galleries")
+                       .AppendASCII("newlib");
+  }
+
+  const base::FilePath& app_dir() const {
+    return app_dir_;
+  }
+
+ private:
+  base::FilePath app_dir_;
+};
+
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppPpapiTest, SendFilesystem) {
+  RemoveAllGalleries();
+  MakeSingleFakeGallery(NULL);
+
+  const extensions::Extension* extension = LoadExtension(app_dir());
+  ASSERT_TRUE(extension);
+
+  ResultCatcher catcher;
+  AppLaunchParams params(browser()->profile(),
+                         extension,
+                         extensions::LAUNCH_CONTAINER_NONE,
+                         NEW_WINDOW);
+  params.command_line = *CommandLine::ForCurrentProcess();
+  OpenApplication(params);
+
+  bool result = true;
+  if (!catcher.GetNextResult()) {
+    message_ = catcher.message();
+    result = false;
+  }
+  content::RunAllPendingInMessageLoop();  // avoid race on exit in registry.
+  ASSERT_TRUE(result) << message_;
+}
+
+#endif  // !defined(DISABLE_NACL)
+
+// Test is flaky, it fails on certain bots, namely WinXP Tests(1) and Linux
+// (dbg)(1)(32).  See crbug.com/354425.
+#if (defined(ARCH_CPU_X86)) && (defined(OS_WIN) || defined(OS_LINUX))
+#define MAYBE_MediaGalleriesNoAccess DISABLED_MediaGalleriesNoAccess
+#else
+#define MAYBE_MediaGalleriesNoAccess MediaGalleriesNoAccess
+#endif
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
-                       MediaGalleriesNoAccess) {
-  MakeSingleFakeGallery();
+                       MAYBE_MediaGalleriesNoAccess) {
+  MakeSingleFakeGallery(NULL);
 
   base::ListValue custom_args;
   custom_args.AppendInteger(num_galleries() + 1);
@@ -398,7 +517,7 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
                        MediaGalleriesRead) {
   RemoveAllGalleries();
-  MakeSingleFakeGallery();
+  MakeSingleFakeGallery(NULL);
   base::ListValue custom_args;
   custom_args.AppendInteger(test_jpg_size());
 
@@ -406,16 +525,23 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
       << message_;
 }
 
+// Test is flaky, it fails on certain bots, namely WinXP Tests(1) and Linux
+// (dbg)(1)(32).  See crbug.com/354425.
+#if (defined(ARCH_CPU_X86)) && (defined(OS_WIN) || defined(OS_LINUX))
+#define MAYBE_MediaGalleriesCopyTo DISABLED_MediaGalleriesCopyTo
+#else
+#define MAYBE_MediaGalleriesCopyTo MediaGalleriesCopyTo
+#endif
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
-                       MediaGalleriesCopyTo) {
+                       MAYBE_MediaGalleriesCopyTo) {
   RemoveAllGalleries();
-  MakeSingleFakeGallery();
+  MakeSingleFakeGallery(NULL);
   ASSERT_TRUE(RunMediaGalleriesTest("copy_to_access")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
                        MediaGalleriesDelete) {
-  MakeSingleFakeGallery();
+  MakeSingleFakeGallery(NULL);
   base::ListValue custom_args;
   custom_args.AppendInteger(num_galleries() + 1);
   ASSERT_TRUE(RunMediaGalleriesTestWithArg("delete_access", custom_args))
@@ -480,7 +606,72 @@ IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest,
 }
 #endif  // defined(OS_MACOSX)
 
-IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest, Scan) {
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest, CancelScan) {
   InstallDoNothingFolderFinder();
+  ASSERT_TRUE(RunMediaGalleriesTest("cancel_scan")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest, Scan) {
+  base::ScopedTempDir scan_root;
+  ASSERT_TRUE(scan_root.CreateUniqueTempDir());
+  std::vector<base::FilePath> roots;
+  roots.push_back(scan_root.path());
+  SetRootsForFolderFinder(roots);
+
+  // Override addScanResults so that the dialog is accepted as soon as it is
+  // created.
+  ASSERT_TRUE(extensions::ExtensionFunctionDispatcher::OverrideFunction(
+      "mediaGalleries.addScanResults",
+      &TestMediaGalleriesAddScanResultsFunction::Factory));
+
+  // Add some files and directories to the scan root for testing. Only the
+  // "f" directory should be found.
+  std::string dummy_data;
+  dummy_data.resize(1);
+  ASSERT_TRUE(base::CreateDirectory(scan_root.path().AppendASCII("a/b")));
+  ASSERT_EQ(static_cast<int>(dummy_data.size()),
+            base::WriteFile(scan_root.path().AppendASCII("a/b/c.jpg"),
+                            dummy_data.c_str(), dummy_data.size()));
+  ASSERT_TRUE(base::CreateDirectory(scan_root.path().AppendASCII("a/d")));
+  dummy_data.resize(201 * 1024);  // 200k is the min size for the folder finder.
+  ASSERT_EQ(static_cast<int>(dummy_data.size()),
+            base::WriteFile(scan_root.path().AppendASCII("a/d/e.txt"),
+                            dummy_data.c_str(), dummy_data.size()));
+  ASSERT_TRUE(base::CreateDirectory(scan_root.path().AppendASCII("f")));
+  ASSERT_EQ(static_cast<int>(dummy_data.size()),
+            base::WriteFile(scan_root.path().AppendASCII("f/g.jpg"),
+                            dummy_data.c_str(), dummy_data.size()));
+
   ASSERT_TRUE(RunMediaGalleriesTest("scan")) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest, ToURL) {
+  RemoveAllGalleries();
+  MediaGalleryPrefId pref_id;
+  MakeSingleFakeGallery(&pref_id);
+
+  base::ListValue custom_args;
+  custom_args.AppendInteger(base::checked_cast<int>(pref_id));
+  custom_args.AppendString(
+      browser()->profile()->GetPath().BaseName().MaybeAsASCII());
+
+  ASSERT_TRUE(RunMediaGalleriesTestWithArg("tourl", custom_args)) << message_;
+}
+
+IN_PROC_BROWSER_TEST_F(MediaGalleriesPlatformAppBrowserTest, GetMetadata) {
+  RemoveAllGalleries();
+  MakeSingleFakeGallery(NULL);
+
+  AddFileToSingleFakeGallery(media::GetTestDataFilePath("90rotation.mp4"));
+  AddFileToSingleFakeGallery(media::GetTestDataFilePath("id3_png_test.mp3"));
+  AddFileToSingleFakeGallery(GetWallpaperTestDataDir().AppendASCII("test.jpg"));
+
+  base::ListValue custom_args;
+#if defined(USE_PROPRIETARY_CODECS)
+  custom_args.AppendBoolean(true);
+#else
+  custom_args.AppendBoolean(false);
+#endif
+  ASSERT_TRUE(RunMediaGalleriesTestWithArg("media_metadata", custom_args))
+      << message_;
 }

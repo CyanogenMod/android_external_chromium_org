@@ -6,7 +6,7 @@
  * TestFixture for kiosk app settings WebUI testing.
  * @extends {testing.Test}
  * @constructor
- **/
+ */
 function AppListStartPageWebUITest() {}
 
 /**
@@ -19,9 +19,10 @@ function mockAudioContext() {
 
 mockAudioContext.prototype = {
   createMediaStreamSource: function(stream) {
-    return {connect: function(audioProc) {}};
+    return {connect: function(audioProc) {},
+            disconnect: function() {}};
   },
-  createScriptProcessor: function(bufSize, channels, channels) {
+  createScriptProcessor: function(bufSize, in_channels, out_channels) {
     return {connect: function(destination) {},
             disconnect: function() {}};
   }
@@ -108,9 +109,15 @@ AppListStartPageWebUITest.prototype = {
    * @param {Function} error The error callback.
    */
   mockGetUserMedia_: function(constraint, success, error) {
+    function getAudioTracks() {
+    }
     assertTrue(constraint.audio);
     assertNotEquals(null, error, 'error callback must not be null');
-    success();
+    var audioTracks = [];
+    for (var i = 0; i < 2; ++i) {
+      audioTracks.push(this.audioTrackMocks[i].proxy());
+    }
+    success({getAudioTracks: function() { return audioTracks; }});
   },
 
   /** @override */
@@ -123,11 +130,11 @@ AppListStartPageWebUITest.prototype = {
       appList.startPage.setRecommendedApps(this.recommendedApps_);
     }.bind(this)));
     this.mockHandler.stubs().launchApp(ANYTHING);
-    this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
 
     this.registerMockSpeechRecognition_();
-    window.webkitAudioContext = mockAudioContext;
+    window.AudioContext = mockAudioContext;
     navigator.webkitGetUserMedia = this.mockGetUserMedia_.bind(this);
+    this.audioTrackMocks = [mock(MediaStreamTrack), mock(MediaStreamTrack)];
   }
 };
 
@@ -152,6 +159,7 @@ TEST_F('AppListStartPageWebUITest', 'ClickToLaunch', function() {
 });
 
 TEST_F('AppListStartPageWebUITest', 'SpeechRecognitionState', function() {
+  this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
   appList.startPage.onAppListShown();
   this.mockHandler.expects(once()).setSpeechRecognitionState('RECOGNIZING');
   appList.startPage.toggleSpeechRecognition();
@@ -159,6 +167,9 @@ TEST_F('AppListStartPageWebUITest', 'SpeechRecognitionState', function() {
   Mock4JS.clearMocksToVerify();
 
   this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
+  for (var i = 0; i < this.audioTrackMocks.length; ++i) {
+    this.audioTrackMocks[i].expects(once()).stop();
+  }
   appList.startPage.toggleSpeechRecognition();
   Mock4JS.verifyAllMocks();
   Mock4JS.clearMocksToVerify();
@@ -170,10 +181,14 @@ TEST_F('AppListStartPageWebUITest', 'SpeechRecognitionState', function() {
 
   this.mockHandler.expects(once()).setSpeechRecognitionState('STOPPING');
   this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
+  for (var i = 0; i < this.audioTrackMocks.length; ++i) {
+    this.audioTrackMocks[i].expects(once()).stop();
+  }
   appList.startPage.onAppListHidden();
 });
 
 TEST_F('AppListStartPageWebUITest', 'SpeechRecognition', function() {
+  this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
   appList.startPage.onAppListShown();
   this.mockHandler.expects(once()).setSpeechRecognitionState('RECOGNIZING');
   appList.startPage.toggleSpeechRecognition();
@@ -192,5 +207,8 @@ TEST_F('AppListStartPageWebUITest', 'SpeechRecognition', function() {
 
   this.mockHandler.expects(once()).speechResult('test,true');
   this.mockHandler.expects(once()).setSpeechRecognitionState('READY');
+  for (var i = 0; i < this.audioTrackMocks.length; ++i) {
+    this.audioTrackMocks[i].expects(once()).stop();
+  }
   this.sendSpeechResult('test', true);
 });

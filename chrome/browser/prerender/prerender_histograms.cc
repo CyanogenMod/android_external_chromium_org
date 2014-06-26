@@ -349,6 +349,19 @@ void PrerenderHistograms::RecordTimeUntilUsed(
           50));
 }
 
+void PrerenderHistograms::RecordAbandonTimeUntilUsed(
+    Origin origin,
+    base::TimeDelta time_until_used) const {
+  PREFIXED_HISTOGRAM(
+      "AbandonTimeUntilUsed", origin,
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          name,
+          time_until_used,
+          base::TimeDelta::FromMilliseconds(10),
+          base::TimeDelta::FromSeconds(30),
+          50));
+}
+
 void PrerenderHistograms::RecordPerSessionCount(Origin origin,
                                                 int count) const {
   PREFIXED_HISTOGRAM(
@@ -404,6 +417,18 @@ void PrerenderHistograms::RecordCookieStatus(Origin origin,
                                 PrerenderContents::kNumCookieStatuses));
 }
 
+void PrerenderHistograms::RecordCookieSendType(
+    Origin origin,
+    uint8 experiment_id,
+    int cookie_send_type) const {
+  DCHECK_GE(cookie_send_type, 0);
+  DCHECK_LT(cookie_send_type, PrerenderContents::kNumCookieSendTypes);
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "CookieSendType", origin, experiment_id,
+      UMA_HISTOGRAM_ENUMERATION(name, cookie_send_type,
+                                PrerenderContents::kNumCookieSendTypes));
+}
+
 void PrerenderHistograms::RecordPrerenderPageVisitedStatus(
     Origin origin,
     uint8 experiment_id,
@@ -413,31 +438,36 @@ void PrerenderHistograms::RecordPrerenderPageVisitedStatus(
       UMA_HISTOGRAM_BOOLEAN(name, visited_before));
 }
 
-void PrerenderHistograms::RecordNetworkBytes(bool used,
+void PrerenderHistograms::RecordNetworkBytes(Origin origin,
+                                             bool used,
                                              int64 prerender_bytes,
                                              int64 profile_bytes) {
   const int kHistogramMin = 1;
   const int kHistogramMax = 100000000;  // 100M.
   const int kBucketCount = 50;
 
-  if (used) {
-    UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytes.Used",
-                                prerender_bytes,
-                                kHistogramMin,
-                                kHistogramMax,
-                                kBucketCount);
-  } else {
-    UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytes.Wasted",
-                                prerender_bytes,
-                                kHistogramMin,
-                                kHistogramMax,
-                                kBucketCount);
-  }
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytes.TotalForProfile",
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytesTotalForProfile",
                               profile_bytes,
                               kHistogramMin,
-                              kHistogramMax,
+                              1000000000,  // 1G
                               kBucketCount);
+
+  if (prerender_bytes == 0)
+    return;
+
+  if (used) {
+    PREFIXED_HISTOGRAM(
+        "NetworkBytesUsed",
+        origin,
+        UMA_HISTOGRAM_CUSTOM_COUNTS(
+            name, prerender_bytes, kHistogramMin, kHistogramMax, kBucketCount));
+  } else {
+    PREFIXED_HISTOGRAM(
+        "NetworkBytesWasted",
+        origin,
+        UMA_HISTOGRAM_CUSTOM_COUNTS(
+            name, prerender_bytes, kHistogramMin, kHistogramMax, kBucketCount));
+  }
 }
 
 uint8 PrerenderHistograms::GetCurrentExperimentId() const {

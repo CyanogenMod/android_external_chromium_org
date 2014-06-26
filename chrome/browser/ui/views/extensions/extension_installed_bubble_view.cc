@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
+#include "chrome/browser/ui/views/location_bar/page_action_with_badge_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
@@ -89,11 +90,9 @@ class InstalledBubbleContent : public views::View,
   InstalledBubbleContent(Browser* browser,
                          const Extension* extension,
                          ExtensionInstalledBubble::BubbleType type,
-                         const SkBitmap* icon,
-                         ExtensionInstalledBubbleView* bubble)
+                         const SkBitmap* icon)
       : browser_(browser),
         extension_id_(extension->id()),
-        bubble_(bubble),
         type_(type),
         flavors_(NONE),
         height_of_signin_promo_(0u),
@@ -236,10 +235,8 @@ class InstalledBubbleContent : public views::View,
 
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE {
-    if (sender == close_button_)
-      bubble_->StartFade(false);
-    else
-      NOTREACHED() << "Unknown view";
+    DCHECK_EQ(sender, close_button_);
+    GetWidget()->Close();
   }
 
   // Implements the views::LinkListener interface.
@@ -376,7 +373,7 @@ class InstalledBubbleContent : public views::View,
     return height;
   }
 
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     int width = kHorizOuterMargin;
     width += kIconSize;
     width += views::kPanelHorizMargin;
@@ -483,9 +480,6 @@ class InstalledBubbleContent : public views::View,
   // The id of the extension just installed.
   const std::string extension_id_;
 
-  // The ExtensionInstalledBubbleView showing us.
-  ExtensionInstalledBubbleView* bubble_;
-
   // The string that contains the link text at the beginning of the sign-in
   // promo text.
   base::string16 signin_promo_link_text_;
@@ -578,23 +572,22 @@ bool ExtensionInstalledBubbleView::MaybeShowNow() {
   SetLayoutManager(new views::FillLayout());
   AddChildView(new InstalledBubbleContent(
       bubble_.browser(), bubble_.extension(), bubble_.type(),
-      &bubble_.icon(), this));
+      &bubble_.icon()));
 
-  views::BubbleDelegateView::CreateBubble(this);
+  views::BubbleDelegateView::CreateBubble(this)->Show();
 
   // The bubble widget is now the parent and owner of |this| and takes care of
   // deletion when the bubble or browser go away.
   bubble_.IgnoreBrowserClosing();
 
-  StartFade(true);
   return true;
 }
 
-gfx::Rect ExtensionInstalledBubbleView::GetAnchorRect() {
+gfx::Rect ExtensionInstalledBubbleView::GetAnchorRect() const {
   // For omnibox keyword bubbles, move the arrow to point to the left edge
   // of the omnibox, just to the right of the icon.
   if (bubble_.type() == bubble_.OMNIBOX_KEYWORD) {
-    LocationBarView* location_bar_view =
+    const LocationBarView* location_bar_view =
         BrowserView::GetBrowserViewForBrowser(bubble_.browser())->
         GetLocationBarView();
     return gfx::Rect(location_bar_view->GetOmniboxViewOrigin(),

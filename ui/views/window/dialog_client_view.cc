@@ -175,7 +175,7 @@ void DialogClientView::OnDidChangeFocus(View* focused_before,
 ////////////////////////////////////////////////////////////////////////////////
 // DialogClientView, View overrides:
 
-gfx::Size DialogClientView::GetPreferredSize() {
+gfx::Size DialogClientView::GetPreferredSize() const {
   // Initialize the size to fit the buttons and extra view row.
   gfx::Size size(
       (ok_button_ ? ok_button_->GetPreferredSize().width() : 0) +
@@ -265,13 +265,6 @@ void DialogClientView::ViewHierarchyChanged(
     const ViewHierarchyChangedDetails& details) {
   ClientView::ViewHierarchyChanged(details);
   if (details.is_add && details.child == this) {
-    // The old dialog style needs an explicit background color, while the new
-    // dialog style simply inherits the bubble's frame view color.
-    const DialogDelegate* dialog = GetDialogDelegate();
-    if (dialog && !dialog->UseNewStyleForThisDialog())
-      set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
-          GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
-
     focus_manager_ = GetFocusManager();
     if (focus_manager_)
       GetFocusManager()->AddFocusChangeListener(this);
@@ -301,6 +294,17 @@ void DialogClientView::NativeViewHierarchyChanged() {
     focus_manager_ = focus_manager;
     if (focus_manager_)
       focus_manager_->AddFocusChangeListener(this);
+  }
+}
+
+void DialogClientView::OnNativeThemeChanged(const ui::NativeTheme* theme) {
+  // The old dialog style needs an explicit background color, while the new
+  // dialog style simply inherits the bubble's frame view color.
+  const DialogDelegate* dialog = GetDialogDelegate();
+
+  if (dialog && !dialog->UseNewStyleForThisDialog()) {
+    set_background(views::Background::CreateSolidBackground(GetNativeTheme()->
+        GetSystemColor(ui::NativeTheme::kColorId_DialogBackground)));
   }
 }
 
@@ -383,7 +387,7 @@ LabelButton* DialogClientView::CreateDialogButton(ui::DialogButton type) {
   button->SetFocusable(true);
 
   const int kDialogMinButtonWidth = 75;
-  button->set_min_width(kDialogMinButtonWidth);
+  button->set_min_size(gfx::Size(kDialogMinButtonWidth, 0));
   button->SetGroup(kButtonGroup);
   return button;
 }

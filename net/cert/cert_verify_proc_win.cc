@@ -61,12 +61,11 @@ struct FreeCertContextFunctor {
 typedef crypto::ScopedCAPIHandle<HCERTCHAINENGINE, FreeChainEngineFunctor>
     ScopedHCERTCHAINENGINE;
 
-typedef scoped_ptr_malloc<const CERT_CHAIN_CONTEXT,
-                          FreeCertChainContextFunctor>
+typedef scoped_ptr<const CERT_CHAIN_CONTEXT, FreeCertChainContextFunctor>
     ScopedPCCERT_CHAIN_CONTEXT;
 
-typedef scoped_ptr_malloc<const CERT_CONTEXT,
-                          FreeCertContextFunctor> ScopedPCCERT_CONTEXT;
+typedef scoped_ptr<const CERT_CONTEXT, FreeCertContextFunctor>
+    ScopedPCCERT_CONTEXT;
 
 //-----------------------------------------------------------------------------
 
@@ -200,7 +199,7 @@ bool CertSubjectCommonNameHasNull(PCCERT_CONTEXT cert) {
                            &name_info,
                            &name_info_size);
   if (rv) {
-    scoped_ptr_malloc<CERT_NAME_INFO> scoped_name_info(name_info);
+    scoped_ptr<CERT_NAME_INFO, base::FreeDeleter> scoped_name_info(name_info);
 
     // The Subject field may have multiple common names.  According to the
     // "PKI Layer Cake" paper, CryptoAPI uses every common name in the
@@ -349,8 +348,9 @@ void GetCertChainInfo(PCCERT_CHAIN_CONTEXT chain_context,
 
 // Decodes the cert's certificatePolicies extension into a CERT_POLICIES_INFO
 // structure and stores it in *output.
-void GetCertPoliciesInfo(PCCERT_CONTEXT cert,
-                         scoped_ptr_malloc<CERT_POLICIES_INFO>* output) {
+void GetCertPoliciesInfo(
+    PCCERT_CONTEXT cert,
+    scoped_ptr<CERT_POLICIES_INFO, base::FreeDeleter>* output) {
   PCERT_EXTENSION extension = CertFindExtension(szOID_CERT_POLICIES,
                                                 cert->pCertInfo->cExtension,
                                                 cert->pCertInfo->rgExtension);
@@ -385,10 +385,15 @@ enum CRLSetResult {
 // CheckRevocationWithCRLSet attempts to check each element of |chain|
 // against |crl_set|. It returns:
 //   kCRLSetRevoked: if any element of the chain is known to have been revoked.
-//   kCRLSetUnknown: if there is no fresh information about some element in
-//       the chain.
-//   kCRLSetOk: if every element in the chain is covered by a fresh CRLSet and
-//       is unrevoked.
+//   kCRLSetUnknown: if there is no fresh information about the leaf
+//       certificate in the chain or if the CRLSet has expired.
+//
+//       Only the leaf certificate is considered for coverage because some
+//       intermediates have CRLs with no revocations (after filtering) and
+//       those CRLs are pruned from the CRLSet at generation time. This means
+//       that some EV sites would otherwise take the hit of an OCSP lookup for
+//       no reason.
+//   kCRLSetOk: otherwise.
 CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
                                        CRLSet* crl_set) {
   if (chain->cChain == 0)
@@ -401,7 +406,13 @@ CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
   if (num_elements == 0)
     return kCRLSetOk;
 
-  bool covered = true;
+  // error is set to true if any errors are found. It causes such chains to be
+  // considered as not covered.
+  bool error = false;
+  // last_covered is set to the coverage state of the previous certificate. The
+  // certificates are iterated over backwards thus, after the iteration,
+  // |last_covered| contains the coverage state of the leaf certificate.
+  bool last_covered = false;
 
   // We iterate from the root certificate down to the leaf, keeping track of
   // the issuer's SPKI at each step.
@@ -416,7 +427,7 @@ CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
     base::StringPiece spki;
     if (!asn1::ExtractSPKIFromDERCert(der_bytes, &spki)) {
       NOTREACHED();
-      covered = false;
+      error = true;
       continue;
     }
 
@@ -441,18 +452,19 @@ CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
       case CRLSet::REVOKED:
         return kCRLSetRevoked;
       case CRLSet::UNKNOWN:
-        covered = false;
+        last_covered = false;
         continue;
       case CRLSet::GOOD:
+        last_covered = true;
         continue;
       default:
         NOTREACHED();
-        covered = false;
+        error = true;
         continue;
     }
   }
 
-  if (!covered || crl_set->IsExpired())
+  if (error || !last_covered || crl_set->IsExpired())
     return kCRLSetUnknown;
   return kCRLSetOk;
 }
@@ -570,7 +582,7 @@ int CertVerifyProcWin::VerifyInternal(
       const_cast<LPSTR*>(usage);
 
   // Get the certificatePolicies extension of the certificate.
-  scoped_ptr_malloc<CERT_POLICIES_INFO> policies_info;
+  scoped_ptr<CERT_POLICIES_INFO, base::FreeDeleter> policies_info;
   LPSTR ev_policy_oid = NULL;
   if (flags & CertVerifier::VERIFY_EV_CERT) {
     GetCertPoliciesInfo(cert_handle, &policies_info);

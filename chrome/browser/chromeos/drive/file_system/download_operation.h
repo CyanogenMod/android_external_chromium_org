@@ -25,6 +25,7 @@ namespace drive {
 
 class JobScheduler;
 class ResourceEntry;
+struct ClientContext;
 
 namespace internal {
 class FileCache;
@@ -46,7 +47,7 @@ class DownloadOperation {
   ~DownloadOperation();
 
   // Ensures that the file content specified by |local_id| is locally
-  // downloaded.
+  // downloaded and returns a closure to cancel the task.
   // For hosted documents, this method may create a JSON file representing the
   // file.
   // For regular files, if the locally cached file is found, returns it.
@@ -61,7 +62,7 @@ class DownloadOperation {
   // |initialized_callback| and |get_content_callback| can be null if not
   // needed.
   // |completion_callback| must not be null.
-  void EnsureFileDownloadedByLocalId(
+  base::Closure EnsureFileDownloadedByLocalId(
       const std::string& local_id,
       const ClientContext& context,
       const GetFileContentInitializedCallback& initialized_callback,
@@ -70,7 +71,7 @@ class DownloadOperation {
 
   // Does the same thing as EnsureFileDownloadedByLocalId for the file
   // specified by |file_path|.
-  void EnsureFileDownloadedByPath(
+  base::Closure EnsureFileDownloadedByPath(
       const base::FilePath& file_path,
       const ClientContext& context,
       const GetFileContentInitializedCallback& initialized_callback,
@@ -88,14 +89,6 @@ class DownloadOperation {
       const ClientContext& context,
       base::FilePath* drive_file_path,
       base::FilePath* cache_file_path,
-      FileError error);
-
-  // Part of EnsureFileDownloaded(). Called when it is ready to start
-  // downloading the file.
-  void EnsureFileDownloadedAfterPrepareForDownloadFile(
-      scoped_ptr<DownloadParams> params,
-      const ClientContext& context,
-      const base::FilePath& drive_file_path,
       base::FilePath* temp_download_file_path,
       FileError error);
 
@@ -111,6 +104,7 @@ class DownloadOperation {
   void EnsureFileDownloadedAfterUpdateLocalState(
       const base::FilePath& file_path,
       scoped_ptr<DownloadParams> params,
+      scoped_ptr<ResourceEntry> entry_after_update,
       base::FilePath* cache_file_path,
       FileError error);
 

@@ -8,7 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/views/controls/button/checkbox.h"
@@ -133,8 +133,8 @@ void MessageBoxView::SetLink(const base::string16& text,
   ResetLayoutManager();
 }
 
-void MessageBoxView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_ALERT;
+void MessageBoxView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_ALERT;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -146,7 +146,7 @@ void MessageBoxView::ViewHierarchyChanged(
     if (prompt_field_)
       prompt_field_->SelectAll(true);
 
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
   }
 }
 
@@ -177,21 +177,13 @@ void MessageBoxView::Init(const InitParams& params) {
   if (params.options & DETECT_DIRECTIONALITY) {
     std::vector<base::string16> texts;
     SplitStringIntoParagraphs(params.message, &texts);
-    // If the text originates from a web page, its alignment is based on its
-    // first character with strong directionality.
-    base::i18n::TextDirection message_direction =
-        base::i18n::GetFirstStrongCharacterDirection(params.message);
-    gfx::HorizontalAlignment alignment =
-        (message_direction == base::i18n::RIGHT_TO_LEFT) ?
-        gfx::ALIGN_RIGHT : gfx::ALIGN_LEFT;
     for (size_t i = 0; i < texts.size(); ++i) {
       Label* message_label = new Label(texts[i]);
-      // Don't set multi-line to true if the text is empty, else the label will
-      // have a height of 0.
+      // Avoid empty multi-line labels, which have a height of 0.
       message_label->SetMultiLine(!texts[i].empty());
       message_label->SetAllowCharacterBreak(true);
-      message_label->set_directionality_mode(Label::AUTO_DETECT_DIRECTIONALITY);
-      message_label->SetHorizontalAlignment(alignment);
+      message_label->set_directionality_mode(gfx::DIRECTIONALITY_FROM_TEXT);
+      message_label->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
       message_labels_.push_back(message_label);
     }
   } else {

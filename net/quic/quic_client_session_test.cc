@@ -13,10 +13,12 @@
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/quic_decrypter.h"
 #include "net/quic/crypto/quic_encrypter.h"
+#include "net/quic/crypto/quic_server_info.h"
 #include "net/quic/quic_default_packet_writer.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_client_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/quic/test_tools/simple_quic_framer.h"
 #include "net/socket/socket_test_util.h"
 #include "net/udp/datagram_client_socket.h"
 
@@ -27,23 +29,21 @@ namespace test {
 namespace {
 
 const char kServerHostname[] = "www.example.com";
+const uint16 kServerPort = 80;
 
 class TestPacketWriter : public QuicDefaultPacketWriter {
  public:
-  TestPacketWriter() {
-  }
+  TestPacketWriter(QuicVersion version) : version_(version) {}
 
   // QuicPacketWriter
   virtual WriteResult WritePacket(
       const char* buffer, size_t buf_len,
       const IPAddressNumber& self_address,
       const IPEndPoint& peer_address) OVERRIDE {
-    QuicFramer framer(QuicSupportedVersions(), QuicTime::Zero(), true);
-    FramerVisitorCapturingFrames visitor;
-    framer.set_visitor(&visitor);
+    SimpleQuicFramer framer(SupportedVersions(version_));
     QuicEncryptedPacket packet(buffer, buf_len);
     EXPECT_TRUE(framer.ProcessPacket(packet));
-    header_ = *visitor.header();
+    header_ = framer.header();
     return WriteResult(WRITE_STATUS_OK, packet.length());
   }
 
@@ -57,17 +57,22 @@ class TestPacketWriter : public QuicDefaultPacketWriter {
   const QuicPacketHeader& header() { return header_; }
 
  private:
+  QuicVersion version_;
   QuicPacketHeader header_;
 };
 
 class QuicClientSessionTest : public ::testing::TestWithParam<QuicVersion> {
  protected:
   QuicClientSessionTest()
-      : writer_(new TestPacketWriter()),
+      : writer_(new TestPacketWriter(GetParam())),
         connection_(
             new PacketSavingConnection(false, SupportedVersions(GetParam()))),
         session_(connection_, GetSocket().Pass(), writer_.Pass(), NULL, NULL,
-                 kServerHostname, DefaultQuicConfig(), &crypto_config_,
+                 make_scoped_ptr((QuicServerInfo*)NULL),
+                 QuicServerId(kServerHostname, kServerPort, false,
+                              PRIVACY_MODE_DISABLED),
+                 DefaultQuicConfig(), &crypto_config_,
+                 base::MessageLoop::current()->message_loop_proxy().get(),
                  &net_log_) {
     session_.config()->SetDefaults();
     crypto_config_.SetDefaults();

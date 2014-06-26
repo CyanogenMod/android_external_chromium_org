@@ -16,6 +16,7 @@
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/ssl_client_cert_type.h"
 #include "net/ssl/ssl_config_service.h"
 
 // Avoid including misc OpenSSL headers, i.e.:
@@ -27,6 +28,8 @@ typedef struct evp_pkey_st EVP_PKEY;
 typedef struct ssl_st SSL;
 // <openssl/x509.h>
 typedef struct x509_st X509;
+// <openssl/ossl_type.h>
+typedef struct x509_store_ctx_st X509_STORE_CTX;
 
 namespace net {
 
@@ -87,20 +90,28 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
                    const CompletionCallback& callback) OVERRIDE;
   virtual int Write(IOBuffer* buf, int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+
+ protected:
+  // SSLClientSocket implementation.
+  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const OVERRIDE;
 
  private:
+  class PeerCertificateChain;
   class SSLContext;
   friend class SSLClientSocket;
   friend class SSLContext;
 
-  bool Init();
+  int Init();
   void DoReadCallback(int result);
   void DoWriteCallback(int result);
 
   bool DoTransportIO();
   int DoHandshake();
+  int DoChannelIDLookup();
+  int DoChannelIDLookupComplete(int result);
   int DoVerifyCert(int result);
   int DoVerifyCertComplete(int result);
   void DoConnectCallback(int result);
@@ -127,9 +138,10 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // a certificate for this client.
   int ClientCertRequestCallback(SSL* ssl, X509** x509, EVP_PKEY** pkey);
 
-  // Callback from the SSL layer that indicates the remote server supports TLS
-  // Channel IDs.
-  void ChannelIDRequestCallback(SSL* ssl, EVP_PKEY** pkey);
+  // CertVerifyCallback is called to verify the server's certificates. We do
+  // verification after the handshake so this function only enforces that the
+  // certificates don't change during renegotiation.
+  int CertVerifyCallback(X509_STORE_CTX *store_ctx);
 
   // Callback from the SSL layer to check which NPN protocol we are supporting
   int SelectNextProtoCallback(unsigned char** out, unsigned char* outlen,
@@ -169,9 +181,14 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   int transport_write_error_;
 
   // Set when handshake finishes.
+  scoped_ptr<PeerCertificateChain> server_cert_chain_;
   scoped_refptr<X509Certificate> server_cert_;
   CertVerifyResult server_cert_verify_result_;
   bool completed_handshake_;
+
+  // Set when Read() or Write() successfully reads or writes data to or from the
+  // network.
+  bool was_ever_used_;
 
   // Stores client authentication information between ClientAuthHandler and
   // GetSSLCertRequestInfo calls.
@@ -179,6 +196,9 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // List of DER-encoded X.509 DistinguishedName of certificate authorities
   // allowed by the server.
   std::vector<std::string> cert_authorities_;
+  // List of SSLClientCertType values for client certificates allowed by the
+  // server.
+  std::vector<SSLClientCertType> cert_key_types_;
 
   CertVerifier* const cert_verifier_;
   scoped_ptr<SingleRequestCertVerifier> verifier_;
@@ -204,6 +224,8 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   enum State {
     STATE_NONE,
     STATE_HANDSHAKE,
+    STATE_CHANNEL_ID_LOOKUP,
+    STATE_CHANNEL_ID_LOOKUP_COMPLETE,
     STATE_VERIFY_CERT,
     STATE_VERIFY_CERT_COMPLETE,
   };
@@ -214,8 +236,6 @@ class SSLClientSocketOpenSSL : public SSLClientSocket {
   // Written by the |server_bound_cert_service_|.
   std::string channel_id_private_key_;
   std::string channel_id_cert_;
-  // The return value of the last call to |server_bound_cert_service_|.
-  int channel_id_request_return_value_;
   // True if channel ID extension was negotiated.
   bool channel_id_xtn_negotiated_;
   // The request handle for |server_bound_cert_service_|.

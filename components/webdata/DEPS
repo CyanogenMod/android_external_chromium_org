@@ -1,6 +1,4 @@
 include_rules = [
-  # WebData is used by iOS, which does not use content.
-  "-content",
   "+sql",
   "+ui",
 ]
@@ -18,7 +16,7 @@ specific_include_rules = {
     "+chrome/browser/webdata/web_data_service_factory.h",
     "+chrome/browser/webdata/web_intents_table.h",
     "+components/autofill/core",
-    "+components/signin/core/webdata",
+    "+components/signin/core/browser/webdata",
     "+content/public/test",
   ],
 }

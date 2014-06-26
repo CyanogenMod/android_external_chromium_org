@@ -22,25 +22,25 @@
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/extensions/api/proxy/proxy_api.h"
-#include "chrome/browser/extensions/api/web_request/web_request_api.h"
-#include "chrome/browser/extensions/event_router_forwarder.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/net/chrome_extensions_network_delegate.h"
 #include "chrome/browser/net/client_hints.h"
 #include "chrome/browser/net/connect_interceptor.h"
-#include "chrome/browser/net/spdyproxy/data_saving_metrics.h"
 #include "chrome/browser/performance_monitor/performance_monitor.h"
+#include "chrome/browser/prerender/prerender_tracker.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/task_manager/task_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_metrics.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_protocol.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
+#include "components/domain_reliability/monitor.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_request_info.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/browser/info_map.h"
-#include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -51,6 +51,13 @@
 #include "net/http/http_response_headers.h"
 #include "net/socket_stream/socket_stream.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_context.h"
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/io_thread.h"
+#include "components/precache/content/precache_manager.h"
+#include "components/precache/content/precache_manager_factory.h"
+#endif
 
 #if defined(OS_CHROMEOS)
 #include "base/command_line.h"
@@ -60,11 +67,6 @@
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #include "components/policy/core/browser/url_blacklist_manager.h"
-#endif
-
-#if defined(OS_ANDROID)
-#include "components/precache/content/precache_manager.h"
-#include "components/precache/content/precache_manager_factory.h"
 #endif
 
 using content::BrowserThread;
@@ -86,22 +88,6 @@ bool ChromeNetworkDelegate::g_never_throttle_requests_ = false;
 namespace {
 
 const char kDNTHeader[] = "DNT";
-
-// If the |request| failed due to problems with a proxy, forward the error to
-// the proxy extension API.
-void ForwardProxyErrors(net::URLRequest* request,
-                        extensions::EventRouterForwarder* event_router,
-                        void* profile) {
-  if (request->status().status() == net::URLRequestStatus::FAILED) {
-    switch (request->status().error()) {
-      case net::ERR_PROXY_AUTH_UNSUPPORTED:
-      case net::ERR_PROXY_CONNECTION_FAILED:
-      case net::ERR_TUNNEL_CONNECTION_FAILED:
-        extensions::ProxyEventRouter::GetInstance()->OnProxyError(
-            event_router, profile, request->status().error());
-    }
-  }
-}
 
 // Returns whether a URL parameter, |first_parameter| (e.g. foo=bar), has the
 // same key as the the |second_parameter| (e.g. foo=baz). Both parameters
@@ -172,58 +158,10 @@ void ForceGoogleSafeSearchCallbackWrapper(
   callback.Run(rv);
 }
 
-enum RequestStatus { REQUEST_STARTED, REQUEST_DONE };
-
-// Notifies the extensions::ProcessManager that a request has started or stopped
-// for a particular RenderFrame.
-void NotifyEPMRequestStatus(RequestStatus status,
-                            void* profile_id,
-                            int process_id,
-                            int render_frame_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  Profile* profile = reinterpret_cast<Profile*>(profile_id);
-  if (!g_browser_process->profile_manager()->IsValidProfile(profile))
-    return;
-
-  extensions::ProcessManager* process_manager =
-      extensions::ExtensionSystem::Get(profile)->process_manager();
-  // This may be NULL in unit tests.
-  if (!process_manager)
-    return;
-
-  // Will be NULL if the request was not issued on behalf of a renderer (e.g. a
-  // system-level request).
-  content::RenderFrameHost* render_frame_host =
-      content::RenderFrameHost::FromID(process_id, render_frame_id);
-  if (render_frame_host) {
-    if (status == REQUEST_STARTED) {
-      process_manager->OnNetworkRequestStarted(render_frame_host);
-    } else if (status == REQUEST_DONE) {
-      process_manager->OnNetworkRequestDone(render_frame_host);
-    } else {
-      NOTREACHED();
-    }
-  }
-}
-
-void ForwardRequestStatus(
-    RequestStatus status, net::URLRequest* request, void* profile_id) {
-  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
-  if (!info)
-    return;
-
-  int process_id, render_frame_id;
-  if (info->GetAssociatedRenderFrame(&process_id, &render_frame_id)) {
-    BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-        base::Bind(&NotifyEPMRequestStatus,
-                   status, profile_id, process_id, render_frame_id));
-  }
-}
-
 void UpdateContentLengthPrefs(
     int received_content_length,
     int original_content_length,
-    spdyproxy::DataReductionRequestType data_reduction_type,
+    data_reduction_proxy::DataReductionProxyRequestType request_type,
     Profile* profile) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_GE(received_content_length, 0);
@@ -247,33 +185,32 @@ void UpdateContentLengthPrefs(
   // the browser preference will be taken.
   bool with_data_reduction_proxy_enabled =
       ProfileManager::GetActiveUserProfile()->GetPrefs()->GetBoolean(
-          prefs::kSpdyProxyAuthEnabled);
+          data_reduction_proxy::prefs::kDataReductionProxyEnabled);
 #else
   bool with_data_reduction_proxy_enabled = false;
 #endif
 
-  spdyproxy::UpdateContentLengthPrefs(received_content_length,
-                                      original_content_length,
-                                      with_data_reduction_proxy_enabled,
-                                      data_reduction_type, prefs);
+  data_reduction_proxy::UpdateContentLengthPrefs(received_content_length,
+                                         original_content_length,
+                                         with_data_reduction_proxy_enabled,
+                                         request_type, prefs);
 }
 
 void StoreAccumulatedContentLength(
     int received_content_length,
     int original_content_length,
-    spdyproxy::DataReductionRequestType data_reduction_type,
+    data_reduction_proxy::DataReductionProxyRequestType request_type,
     Profile* profile) {
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&UpdateContentLengthPrefs,
                  received_content_length, original_content_length,
-                 data_reduction_type, profile));
+                 request_type, profile));
 }
 
 void RecordContentLengthHistograms(
     int64 received_content_length,
     int64 original_content_length,
     const base::TimeDelta& freshness_lifetime) {
-#if defined(OS_ANDROID)
   // Add the current resource to these histograms only when a valid
   // X-Original-Content-Length header is present.
   if (original_content_length >= 0) {
@@ -311,7 +248,6 @@ void RecordContentLengthHistograms(
     return;
   UMA_HISTOGRAM_COUNTS("Net.HttpContentLengthCacheable24Hours",
                        received_content_length);
-#endif  // defined(OS_ANDROID)
 }
 
 #if defined(OS_ANDROID)
@@ -334,6 +270,14 @@ void RecordPrecacheStatsOnUIThread(const GURL& url,
 
   precache_manager->RecordStatsForFetch(url, fetch_time, size, was_cached);
 }
+
+void RecordIOThreadToRequestStartOnUIThread(
+    const base::TimeTicks& request_start) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  base::TimeDelta request_lag = request_start -
+      g_browser_process->io_thread()->creation_time();
+  UMA_HISTOGRAM_TIMES("Net.IOThreadCreationToHTTPRequestStart", request_lag);
+}
 #endif  // defined(OS_ANDROID)
 
 }  // namespace
@@ -341,23 +285,35 @@ void RecordPrecacheStatsOnUIThread(const GURL& url,
 ChromeNetworkDelegate::ChromeNetworkDelegate(
     extensions::EventRouterForwarder* event_router,
     BooleanPrefMember* enable_referrers)
-    : event_router_(event_router),
-      profile_(NULL),
+    : profile_(NULL),
       enable_referrers_(enable_referrers),
       enable_do_not_track_(NULL),
       force_google_safe_search_(NULL),
+#if defined(ENABLE_CONFIGURATION_POLICY)
       url_blacklist_manager_(NULL),
+#endif
+      domain_reliability_monitor_(NULL),
       received_content_length_(0),
-      original_content_length_(0) {
-  DCHECK(event_router);
+      original_content_length_(0),
+      first_request_(true),
+      prerender_tracker_(NULL),
+      data_reduction_proxy_params_(NULL),
+      data_reduction_proxy_usage_stats_(NULL) {
   DCHECK(enable_referrers);
+  extensions_delegate_.reset(
+      ChromeExtensionsNetworkDelegate::Create(event_router));
 }
 
 ChromeNetworkDelegate::~ChromeNetworkDelegate() {}
 
 void ChromeNetworkDelegate::set_extension_info_map(
     extensions::InfoMap* extension_info_map) {
-  extension_info_map_ = extension_info_map;
+  extensions_delegate_->set_extension_info_map(extension_info_map);
+}
+
+void ChromeNetworkDelegate::set_profile(void* profile) {
+  profile_ = profile;
+  extensions_delegate_->set_profile(profile);
 }
 
 void ChromeNetworkDelegate::set_cookie_settings(
@@ -412,8 +368,10 @@ void ChromeNetworkDelegate::AllowAccessToAllFiles() {
 base::Value* ChromeNetworkDelegate::HistoricNetworkStatsInfoToValue() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   PrefService* prefs = g_browser_process->local_state();
-  int64 total_received = prefs->GetInt64(prefs::kHttpReceivedContentLength);
-  int64 total_original = prefs->GetInt64(prefs::kHttpOriginalContentLength);
+  int64 total_received = prefs->GetInt64(
+      data_reduction_proxy::prefs::kHttpReceivedContentLength);
+  int64 total_original = prefs->GetInt64(
+      data_reduction_proxy::prefs::kHttpOriginalContentLength);
 
   base::DictionaryValue* dict = new base::DictionaryValue();
   // Use strings to avoid overflow.  base::Value only supports 32-bit integers.
@@ -438,22 +396,45 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     GURL* new_url) {
+#if defined(OS_ANDROID)
+  // This UMA tracks the time to the first user-initiated request start, so
+  // only non-null profiles are considered.
+  if (first_request_ && profile_) {
+    bool record_timing = true;
+    if (data_reduction_proxy_params_) {
+      record_timing =
+          (request->url() != data_reduction_proxy_params_->probe_url()) &&
+          (request->url() != data_reduction_proxy_params_->warmup_url());
+    }
+    if (record_timing) {
+      first_request_ = false;
+      net::LoadTimingInfo timing_info;
+      request->GetLoadTimingInfo(&timing_info);
+      BrowserThread::PostTask(
+          BrowserThread::UI, FROM_HERE,
+          base::Bind(&RecordIOThreadToRequestStartOnUIThread,
+                     timing_info.request_start));
+    }
+  }
+#endif  // defined(OS_ANDROID)
+
 #if defined(ENABLE_CONFIGURATION_POLICY)
   // TODO(joaodasilva): This prevents extensions from seeing URLs that are
   // blocked. However, an extension might redirect the request to another URL,
   // which is not blocked.
+  int error = net::ERR_BLOCKED_BY_ADMINISTRATOR;
   if (url_blacklist_manager_ &&
-      url_blacklist_manager_->IsRequestBlocked(*request)) {
+      url_blacklist_manager_->IsRequestBlocked(*request, &error)) {
     // URL access blocked by policy.
     request->net_log().AddEvent(
         net::NetLog::TYPE_CHROME_POLICY_ABORTED_REQUEST,
         net::NetLog::StringCallback("url",
                                     &request->url().possibly_invalid_spec()));
-    return net::ERR_BLOCKED_BY_ADMINISTRATOR;
+    return error;
   }
 #endif
 
-  ForwardRequestStatus(REQUEST_STARTED, request, profile_);
+  extensions_delegate_->ForwardStartRequestStatus(request);
 
   if (!enable_referrers_->GetValue())
     request->SetReferrer(std::string());
@@ -477,9 +458,8 @@ int ChromeNetworkDelegate::OnBeforeURLRequest(
                                   base::Unretained(new_url));
   }
 
-  int rv = ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRequest(
-      profile_, extension_info_map_.get(), request, wrapped_callback,
-      new_url);
+  int rv = extensions_delegate_->OnBeforeURLRequest(
+      request, wrapped_callback, new_url);
 
   if (force_safe_search && rv == net::OK && new_url->is_empty())
     ForceGoogleSafeSearch(request, new_url);
@@ -495,39 +475,48 @@ int ChromeNetworkDelegate::OnBeforeSendHeaders(
     const net::CompletionCallback& callback,
     net::HttpRequestHeaders* headers) {
   TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request, "SendRequest");
-  return ExtensionWebRequestEventRouter::GetInstance()->OnBeforeSendHeaders(
-      profile_, extension_info_map_.get(), request, callback, headers);
+  return extensions_delegate_->OnBeforeSendHeaders(request, callback, headers);
 }
 
 void ChromeNetworkDelegate::OnSendHeaders(
     net::URLRequest* request,
     const net::HttpRequestHeaders& headers) {
-  ExtensionWebRequestEventRouter::GetInstance()->OnSendHeaders(
-      profile_, extension_info_map_.get(), request, headers);
+  extensions_delegate_->OnSendHeaders(request, headers);
 }
 
 int ChromeNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
-  return ExtensionWebRequestEventRouter::GetInstance()->OnHeadersReceived(
-      profile_, extension_info_map_.get(), request, callback,
-      original_response_headers, override_response_headers);
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
+  if (data_reduction_proxy::MaybeBypassProxyAndPrepareToRetry(
+      data_reduction_proxy_params_,
+      request,
+      original_response_headers,
+      override_response_headers)) {
+    return net::OK;
+  }
+
+  return extensions_delegate_->OnHeadersReceived(
+      request,
+      callback,
+      original_response_headers,
+      override_response_headers,
+      allowed_unsafe_redirect_url);
 }
 
 void ChromeNetworkDelegate::OnBeforeRedirect(net::URLRequest* request,
                                              const GURL& new_location) {
-  ExtensionWebRequestEventRouter::GetInstance()->OnBeforeRedirect(
-      profile_, extension_info_map_.get(), request, new_location);
+  if (domain_reliability_monitor_)
+    domain_reliability_monitor_->OnBeforeRedirect(request);
+  extensions_delegate_->OnBeforeRedirect(request, new_location);
 }
 
 
 void ChromeNetworkDelegate::OnResponseStarted(net::URLRequest* request) {
   TRACE_EVENT_ASYNC_STEP_PAST0("net", "URLRequest", request, "ResponseStarted");
-  ExtensionWebRequestEventRouter::GetInstance()->OnResponseStarted(
-      profile_, extension_info_map_.get(), request);
-  ForwardProxyErrors(request, event_router_.get(), profile_);
+  extensions_delegate_->OnResponseStarted(request);
 }
 
 void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
@@ -547,6 +536,9 @@ void ChromeNetworkDelegate::OnRawBytesRead(const net::URLRequest& request,
 
 void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
                                         bool started) {
+  if (data_reduction_proxy_usage_stats_)
+    data_reduction_proxy_usage_stats_->OnUrlRequestCompleted(request, started);
+
   TRACE_EVENT_ASYNC_END0("net", "URLRequest", request);
   if (request->status().status() == net::URLRequestStatus::SUCCESS) {
     // For better accuracy, we use the actual bytes read instead of the length
@@ -576,19 +568,19 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
       int64 original_content_length =
           request->response_info().headers->GetInt64HeaderValue(
               "x-original-content-length");
-      spdyproxy::DataReductionRequestType data_reduction_type =
-          spdyproxy::GetDataReductionRequestType(request);
+      data_reduction_proxy::DataReductionProxyRequestType request_type =
+          data_reduction_proxy::GetDataReductionProxyRequestType(request);
 
       base::TimeDelta freshness_lifetime =
           request->response_info().headers->GetFreshnessLifetime(
               request->response_info().response_time);
       int64 adjusted_original_content_length =
-          spdyproxy::GetAdjustedOriginalContentLength(
-              data_reduction_type, original_content_length,
+          data_reduction_proxy::GetAdjustedOriginalContentLength(
+              request_type, original_content_length,
               received_content_length);
       AccumulateContentLength(received_content_length,
                               adjusted_original_content_length,
-                              data_reduction_type);
+                              request_type);
       RecordContentLengthHistograms(received_content_length,
                                     original_content_length,
                                     freshness_lifetime);
@@ -598,34 +590,26 @@ void ChromeNetworkDelegate::OnCompleted(net::URLRequest* request,
           << " url: " << request->url();
     }
 
-    bool is_redirect = request->response_headers() &&
-        net::HttpResponseHeaders::IsRedirectResponseCode(
-            request->response_headers()->response_code());
-    if (!is_redirect) {
-      ExtensionWebRequestEventRouter::GetInstance()->OnCompleted(
-          profile_, extension_info_map_.get(), request);
-    }
+    extensions_delegate_->OnCompleted(request, started);
   } else if (request->status().status() == net::URLRequestStatus::FAILED ||
              request->status().status() == net::URLRequestStatus::CANCELED) {
-    ExtensionWebRequestEventRouter::GetInstance()->OnErrorOccurred(
-            profile_, extension_info_map_.get(), request, started);
+    extensions_delegate_->OnCompleted(request, started);
   } else {
     NOTREACHED();
   }
-  ForwardProxyErrors(request, event_router_.get(), profile_);
-
-  ForwardRequestStatus(REQUEST_DONE, request, profile_);
+  if (domain_reliability_monitor_)
+    domain_reliability_monitor_->OnCompleted(request, started);
+  extensions_delegate_->ForwardProxyErrors(request);
+  extensions_delegate_->ForwardDoneRequestStatus(request);
 }
 
 void ChromeNetworkDelegate::OnURLRequestDestroyed(net::URLRequest* request) {
-  ExtensionWebRequestEventRouter::GetInstance()->OnURLRequestDestroyed(
-      profile_, request);
+  extensions_delegate_->OnURLRequestDestroyed(request);
 }
 
 void ChromeNetworkDelegate::OnPACScriptError(int line_number,
                                              const base::string16& error) {
-  extensions::ProxyEventRouter::GetInstance()->OnPACScriptError(
-      event_router_.get(), profile_, line_number, error);
+  extensions_delegate_->OnPACScriptError(line_number, error);
 }
 
 net::NetworkDelegate::AuthRequiredResponse
@@ -634,9 +618,8 @@ ChromeNetworkDelegate::OnAuthRequired(
     const net::AuthChallengeInfo& auth_info,
     const AuthCallback& callback,
     net::AuthCredentials* credentials) {
-  return ExtensionWebRequestEventRouter::GetInstance()->OnAuthRequired(
-      profile_, extension_info_map_.get(), request, auth_info,
-      callback, credentials);
+  return extensions_delegate_->OnAuthRequired(
+      request, auth_info, callback, credentials);
 }
 
 bool ChromeNetworkDelegate::OnCanGetCookies(
@@ -651,6 +634,19 @@ bool ChromeNetworkDelegate::OnCanGetCookies(
 
   int render_process_id = -1;
   int render_frame_id = -1;
+
+  // |is_for_blocking_resource| indicates whether the cookies read were for a
+  // blocking resource (eg script, css). It is only temporarily added for
+  // diagnostic purposes, per bug 353678. Will be removed again once data
+  // collection is finished.
+  bool is_for_blocking_resource = false;
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(&request);
+  if (info && ((!info->IsAsync()) ||
+               info->GetResourceType() == ResourceType::STYLESHEET ||
+               info->GetResourceType() == ResourceType::SCRIPT)) {
+    is_for_blocking_resource = true;
+  }
+
   if (content::ResourceRequestInfo::GetRenderFrameForRequest(
           &request, &render_process_id, &render_frame_id)) {
     BrowserThread::PostTask(
@@ -658,7 +654,7 @@ bool ChromeNetworkDelegate::OnCanGetCookies(
         base::Bind(&TabSpecificContentSettings::CookiesRead,
                    render_process_id, render_frame_id,
                    request.url(), request.first_party_for_cookies(),
-                   cookie_list, !allow));
+                   cookie_list, !allow, is_for_blocking_resource));
   }
 
   return allow;
@@ -686,6 +682,13 @@ bool ChromeNetworkDelegate::OnCanSetCookie(const net::URLRequest& request,
                    cookie_line, *options, !allow));
   }
 
+  if (prerender_tracker_) {
+    prerender_tracker_->OnCookieChangedForURL(
+        render_process_id,
+        request.context()->cookie_store()->GetCookieMonster(),
+        request.url());
+  }
+
   return allow;
 }
 
@@ -710,6 +713,7 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
   static const char* const kLocalAccessWhiteList[] = {
       "/home/chronos/user/Downloads",
       "/home/chronos/user/log",
+      "/home/chronos/user/WebRTC Logs",
       "/media",
       "/opt/oem",
       "/usr/share/chromeos-assets",
@@ -717,15 +721,20 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
       "/var/log",
   };
 
-  // The actual location of "/home/chronos/user/Downloads" is the Downloads
-  // directory under the profile path ("/home/chronos/user' is a hard link to
-  // current primary logged in profile.) For the support of multi-profile
-  // sessions, we are switching to use explicit "$PROFILE_PATH/Downloads" path
-  // and here whitelist such access.
+  // The actual location of "/home/chronos/user/Xyz" is the Xyz directory under
+  // the profile path ("/home/chronos/user' is a hard link to current primary
+  // logged in profile.) For the support of multi-profile sessions, we are
+  // switching to use explicit "$PROFILE_PATH/Xyz" path and here whitelist such
+  // access.
   if (!profile_path_.empty()) {
     const base::FilePath downloads = profile_path_.AppendASCII("Downloads");
     if (downloads == path.StripTrailingSeparators() || downloads.IsParent(path))
       return true;
+    const base::FilePath webrtc_logs = profile_path_.AppendASCII("WebRTC Logs");
+    if (webrtc_logs == path.StripTrailingSeparators() ||
+        webrtc_logs.IsParent(path)) {
+      return true;
+    }
   }
 #elif defined(OS_ANDROID)
   // Access to files in external storage is allowed.
@@ -757,10 +766,8 @@ bool ChromeNetworkDelegate::OnCanAccessFile(const net::URLRequest& request,
 
 bool ChromeNetworkDelegate::OnCanThrottleRequest(
     const net::URLRequest& request) const {
-  if (g_never_throttle_requests_) {
+  if (g_never_throttle_requests_)
     return false;
-  }
-
   return request.first_party_for_cookies().scheme() ==
       extensions::kExtensionScheme;
 }
@@ -800,12 +807,12 @@ int ChromeNetworkDelegate::OnBeforeSocketStreamConnect(
 void ChromeNetworkDelegate::AccumulateContentLength(
     int64 received_content_length,
     int64 original_content_length,
-    spdyproxy::DataReductionRequestType data_reduction_type) {
+    data_reduction_proxy::DataReductionProxyRequestType request_type) {
   DCHECK_GE(received_content_length, 0);
   DCHECK_GE(original_content_length, 0);
   StoreAccumulatedContentLength(received_content_length,
                                 original_content_length,
-                                data_reduction_type,
+                                request_type,
                                 reinterpret_cast<Profile*>(profile_));
   received_content_length_ += received_content_length;
   original_content_length_ += original_content_length;

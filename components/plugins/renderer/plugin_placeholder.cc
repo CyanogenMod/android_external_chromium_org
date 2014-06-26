@@ -18,8 +18,8 @@
 #include "gin/object_template_builder.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -27,7 +27,7 @@
 
 using base::UserMetricsAction;
 using blink::WebElement;
-using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebMouseEvent;
 using blink::WebNode;
 using blink::WebPlugin;
@@ -42,7 +42,7 @@ namespace plugins {
 gin::WrapperInfo PluginPlaceholder::kWrapperInfo = {gin::kEmbedderNativeGin};
 
 PluginPlaceholder::PluginPlaceholder(content::RenderFrame* render_frame,
-                                     WebFrame* frame,
+                                     WebLocalFrame* frame,
                                      const WebPluginParams& params,
                                      const std::string& html_data,
                                      GURL placeholderDataUrl)
@@ -126,14 +126,14 @@ void PluginPlaceholder::HidePlugin() {
     if (EndsWith(width_str, "px", false)) {
       width_str = width_str.substr(0, width_str.length() - 2);
     }
-    TrimWhitespace(width_str, TRIM_TRAILING, &width_str);
+    base::TrimWhitespace(width_str, base::TRIM_TRAILING, &width_str);
     width_str += "[\\s]*px";
     std::string height_str("height:[\\s]*");
     height_str += element.getAttribute("height").utf8().data();
     if (EndsWith(height_str, "px", false)) {
       height_str = height_str.substr(0, height_str.length() - 2);
     }
-    TrimWhitespace(height_str, TRIM_TRAILING, &height_str);
+    base::TrimWhitespace(height_str, base::TRIM_TRAILING, &height_str);
     height_str += "[\\s]*px";
     WebNode parent = element;
     while (!parent.parentNode().isNull()) {
@@ -245,7 +245,7 @@ void PluginPlaceholder::SetIdentifier(const std::string& identifier) {
   identifier_ = identifier;
 }
 
-blink::WebFrame* PluginPlaceholder::GetFrame() { return frame_; }
+blink::WebLocalFrame* PluginPlaceholder::GetFrame() { return frame_; }
 
 const blink::WebPluginParams& PluginPlaceholder::GetPluginParams() const {
   return plugin_params_;

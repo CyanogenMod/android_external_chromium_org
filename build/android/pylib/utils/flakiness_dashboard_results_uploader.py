@@ -3,56 +3,30 @@
 # found in the LICENSE file.
 
 """Uploads the results to the flakiness dashboard server."""
+# pylint: disable=E1002,R0201
 
 import logging
 import os
 import shutil
-import subprocess
-import sys
 import tempfile
 import xml
 
 
-# Include path when ran from a Chromium checkout.
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                 os.pardir, os.pardir, os.pardir, os.pardir,
-                                 'third_party', 'WebKit', 'Tools', 'Scripts')))
-
-# Include path when ran from a WebKit checkout.
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                 os.pardir, os.pardir, os.pardir, os.pardir,
-                                 os.pardir, os.pardir, os.pardir,
-                                 'Tools', 'Scripts')))
-
-from webkitpy.common.system import executive, filesystem
-from webkitpy.layout_tests.layout_package import json_results_generator
-
 #TODO(craigdh): pylib/utils/ should not depend on pylib/.
 from pylib import cmd_helper
 from pylib import constants
+from pylib.utils import json_results_generator
 from pylib.utils import repo_utils
 
-
-# The JSONResultsGenerator gets the filesystem.join operation from the Port
-# object. Creating a Port object requires specifying information that only
-# makes sense for running WebKit layout tests, so we provide a dummy object
-# that contains the fields required by the generator.
-class PortDummy(object):
-  def __init__(self):
-    self._executive = executive.Executive()
-    self._filesystem = filesystem.FileSystem()
 
 
 class JSONResultsGenerator(json_results_generator.JSONResultsGeneratorBase):
   """Writes test results to a JSON file and handles uploading that file to
   the test results server.
   """
-  def __init__(self, port, builder_name, build_name, build_number, tmp_folder,
+  def __init__(self, builder_name, build_name, build_number, tmp_folder,
                test_results_map, test_results_server, test_type, master_name):
     super(JSONResultsGenerator, self).__init__(
-        port=port,
         builder_name=builder_name,
         build_name=build_name,
         build_number=build_number,
@@ -66,14 +40,14 @@ class JSONResultsGenerator(json_results_generator.JSONResultsGeneratorBase):
         master_name=master_name)
 
   #override
-  def _get_modifier_char(self, test_name):
+  def _GetModifierChar(self, test_name):
     if test_name not in self._test_results_map:
       return self.__class__.NO_DATA_RESULT
 
     return self._test_results_map[test_name].modifier
 
   #override
-  def _get_svn_revision(self, in_directory):
+  def _GetSVNRevision(self, in_directory):
     """Returns the git/svn revision for the given directory.
 
     Args:
@@ -125,7 +99,7 @@ class ResultsUploader(object):
       # TODO(frankf): Use factory properties (see buildbot/bb_device_steps.py)
       # This requires passing the actual master name (e.g. 'ChromiumFYI' not
       # 'chromium.fyi').
-      from slave import slave_utils
+      from slave import slave_utils # pylint: disable=F0401
       self._build_name = slave_utils.SlaveBuildName(constants.DIR_SOURCE_ROOT)
       self._master_name = slave_utils.GetActiveMaster()
     else:
@@ -173,7 +147,6 @@ class ResultsUploader(object):
 
     try:
       results_generator = JSONResultsGenerator(
-          port=PortDummy(),
           builder_name=self._builder_name,
           build_name=self._build_name,
           build_number=self._build_number,
@@ -184,11 +157,11 @@ class ResultsUploader(object):
           master_name=self._master_name)
 
       json_files = ["incremental_results.json", "times_ms.json"]
-      results_generator.generate_json_output()
-      results_generator.generate_times_ms_file()
-      results_generator.upload_json_files(json_files)
+      results_generator.GenerateJSONOutput()
+      results_generator.GenerateTimesMSFile()
+      results_generator.UploadJSONFiles(json_files)
     except Exception as e:
-      logging.error("Uploading results to test server failed: %s." % e);
+      logging.error("Uploading results to test server failed: %s." % e)
     finally:
       shutil.rmtree(tmp_folder)
 

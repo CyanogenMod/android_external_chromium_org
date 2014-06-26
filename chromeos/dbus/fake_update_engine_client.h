@@ -28,6 +28,9 @@ class FakeUpdateEngineClient : public UpdateEngineClient {
   virtual bool HasObserver(Observer* observer) OVERRIDE;
   virtual void RequestUpdateCheck(const UpdateCheckCallback& callback) OVERRIDE;
   virtual void RebootAfterUpdate() OVERRIDE;
+  virtual void Rollback() OVERRIDE;
+  virtual void CanRollbackCheck(
+      const RollbackCheckCallback& callback) OVERRIDE;
   virtual Status GetLastStatus() OVERRIDE;
   virtual void SetChannel(const std::string& target_channel,
                           bool is_powerwash_allowed) OVERRIDE;
@@ -41,6 +44,10 @@ class FakeUpdateEngineClient : public UpdateEngineClient {
     status_queue_.push(status);
   }
 
+  // Sends status change notification.
+  void NotifyObserversThatStatusChanged(
+      const UpdateEngineClient::Status& status);
+
   // Sets the default UpdateEngineClient::Status. GetLastStatus() returns the
   // value set here if |status_queue_| is empty.
   void set_default_status(const UpdateEngineClient::Status& status);
@@ -49,16 +56,30 @@ class FakeUpdateEngineClient : public UpdateEngineClient {
   void set_update_check_result(
       const UpdateEngineClient::UpdateCheckResult& result);
 
-  // Returns how many times RebootAfterUpdate() is called.
-  int reboot_after_update_call_count() {
-    return reboot_after_update_call_count_;
+  void set_can_rollback_check_result(bool result) {
+      can_rollback_stub_result_ = result;
   }
 
+  // Returns how many times RebootAfterUpdate() is called.
+  int reboot_after_update_call_count() const {
+      return reboot_after_update_call_count_;
+  }
+
+  // Returns how many times Rollback() is called.
+  int rollback_call_count() const { return rollback_call_count_; }
+
+  // Returns how many times Rollback() is called.
+  int can_rollback_call_count() const { return can_rollback_call_count_; }
+
  private:
+  ObserverList<Observer> observers_;
   std::queue<UpdateEngineClient::Status> status_queue_;
   UpdateEngineClient::Status default_status_;
   UpdateEngineClient::UpdateCheckResult update_check_result_;
+  bool can_rollback_stub_result_;
   int reboot_after_update_call_count_;
+  int rollback_call_count_;
+  int can_rollback_call_count_;
 };
 
 }  // namespace chromeos

@@ -6,9 +6,10 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension_constants.h"
+#include "extensions/renderer/script_context.h"
+#include "third_party/WebKit/public/web/WebDOMFileSystem.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "v8/include/v8.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -22,26 +23,31 @@ void GetMediaFileSystemObject(const v8::FunctionCallbackInfo<v8::Value>& args) {
   CHECK_EQ(1, args.Length());
   CHECK(args[0]->IsString());
 
-  std::string fsid(*v8::String::Utf8Value(args[0]));
-  CHECK(!fsid.empty());
+  std::string fs_mount(*v8::String::Utf8Value(args[0]));
+  CHECK(!fs_mount.empty());
 
-  blink::WebFrame* webframe = blink::WebFrame::frameForCurrentContext();
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForCurrentContext();
   const GURL origin = GURL(webframe->document().securityOrigin().toString());
-  const std::string fs_name = fileapi::GetIsolatedFileSystemName(origin, fsid);
-  const std::string root_url =
-      fileapi::GetIsolatedFileSystemRootURIString(
-          origin, fsid, extension_misc::kMediaFileSystemPathPart);
+  std::string fs_name =
+      fileapi::GetFileSystemName(origin, fileapi::kFileSystemTypeExternal);
+  fs_name.append("_");
+  fs_name.append(fs_mount);
+  const GURL root_url(
+      fileapi::GetExternalFileSystemRootURIString(origin, fs_mount));
   args.GetReturnValue().Set(
-      webframe->createFileSystem(blink::WebFileSystemTypeIsolated,
-                                 blink::WebString::fromUTF8(fs_name),
-                                 blink::WebString::fromUTF8(root_url)));
+      blink::WebDOMFileSystem::create(webframe,
+                                      blink::WebFileSystemTypeExternal,
+                                      blink::WebString::fromUTF8(fs_name),
+                                      root_url)
+          .toV8Value(args.Holder(), args.GetIsolate()));
 }
 
 }  // namespace
 
 MediaGalleriesCustomBindings::MediaGalleriesCustomBindings(
-    Dispatcher* dispatcher, ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher, context) {
+    ScriptContext* context)
+    : ObjectBackedNativeHandler(context) {
   RouteFunction("GetMediaFileSystemObject",
                 base::Bind(&GetMediaFileSystemObject));
 }

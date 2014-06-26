@@ -5,6 +5,8 @@
 #ifndef ASH_SYSTEM_TRAY_TRAY_CONSTANTS_H_
 #define ASH_SYSTEM_TRAY_TRAY_CONSTANTS_H_
 
+#include "ash/ash_export.h"
+
 typedef unsigned int SkColor;
 
 namespace ash {
@@ -15,10 +17,10 @@ extern const int kPaddingFromOuterEdgeOfLauncherVerticalAlignment;
 extern const int kPaddingFromInnerEdgeOfLauncherVerticalAlignment;
 extern const int kPaddingFromBottomOfScreenVerticalAlignment;
 
-extern const int kAlternateLayoutBubblePaddingHorizontalBottom;
-extern const int kAlternateLayoutBubblePaddingHorizontalSide;
-extern const int kAlternateLayoutBubblePaddingVerticalBottom;
-extern const int kAlternateLayoutBubblePaddingVerticalSide;
+extern const int kBubblePaddingHorizontalBottom;
+extern const int kBubblePaddingHorizontalSide;
+extern const int kBubblePaddingVerticalBottom;
+extern const int kBubblePaddingVerticalSide;
 
 extern const int kPaddingFromEdgeOfShelf;
 extern const int kTrayBubbleAnchorTopInsetBottomAnchor;
@@ -26,6 +28,8 @@ extern const int kTrayBubbleAnchorTopInsetBottomAnchor;
 extern const int kTrayImageItemHorizontalPaddingBottomAlignment;
 extern const int kTrayImageItemHorizontalPaddingVerticalAlignment;
 extern const int kTrayImageItemVerticalPaddingVerticalAlignment;
+
+ASH_EXPORT extern const int kTrayItemSize;
 
 extern const int kTrayLabelItemHorizontalPaddingBottomAlignment;
 extern const int kTrayLabelItemVerticalPaddingVerticalAlignment;
@@ -38,8 +42,9 @@ extern const int kTrayPopupAutoCloseDelayForTextInSeconds;
 extern const int kTrayPopupPaddingHorizontal;
 extern const int kTrayPopupPaddingBetweenItems;
 extern const int kTrayPopupTextSpacingVertical;
+extern const int kTrayPopupUserCardVerticalPadding;
 
-extern const int kTrayPopupItemHeight;
+const int kTrayPopupItemHeight = 48;
 extern const int kTrayPopupDetailsIconWidth;
 extern const int kTrayPopupDetailsLabelExtraLeftMargin;
 extern const int kTrayPopupScrollSeparatorHeight;
@@ -67,13 +72,16 @@ extern const int kNotificationIconWidth;
 extern const int kNotificationButtonWidth;
 extern const int kTrayNotificationContentsWidth;
 
-// Returns kTraySpacing or kAlternateTraySpacing as applicable
-// (Determined by ash::switches::UseAlternateShelfLayout).
-int GetTraySpacing();
+extern const int kTrayAvatarCornerRadius;
+extern const int kTrayAvatarSize;
 
-// Returns kShelfItemHeight or kAlternateShelfItemHeight as applicable
-// (Determined by ash::switches::UseAlternateShelfLayout).
-int GetShelfItemHeight();
+extern const int kTraySpacing;
+extern const int kShelfItemHeight;
+
+namespace test {
+const int kSettingsTrayItemViewId = 10000;
+const int kAccessibilityTrayItemViewId = 10001;
+}  // namespace test
 
 }  // namespace ash
 

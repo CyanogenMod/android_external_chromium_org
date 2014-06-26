@@ -10,7 +10,7 @@
 #include "remoting/base/constants.h"
 #include "remoting/proto/event.pb.h"
 #include "remoting/proto/internal.pb.h"
-#include "remoting/protocol/util.h"
+#include "remoting/protocol/message_serialization.h"
 
 namespace remoting {
 namespace protocol {
@@ -35,6 +35,14 @@ void ClientEventDispatcher::InjectKeyEvent(const KeyEvent& event) {
   EventMessage message;
   message.set_sequence_number(base::Time::Now().ToInternalValue());
   message.mutable_key_event()->CopyFrom(event);
+  writer_.Write(SerializeAndFrameMessage(message), base::Closure());
+}
+
+void ClientEventDispatcher::InjectTextEvent(const TextEvent& event) {
+  DCHECK(event.has_text());
+  EventMessage message;
+  message.set_sequence_number(base::Time::Now().ToInternalValue());
+  message.mutable_text_event()->CopyFrom(event);
   writer_.Write(SerializeAndFrameMessage(message), base::Closure());
 }
 

@@ -14,48 +14,50 @@ using content::BrowserThread;
 
 namespace component_updater {
 
-CrxDownloader::Result::Result() : error(0) {}
+CrxDownloader::Result::Result()
+    : error(0), downloaded_bytes(-1), total_bytes(-1) {
+}
 
 CrxDownloader::DownloadMetrics::DownloadMetrics()
     : downloader(kNone),
       error(0),
-      bytes_downloaded(-1),
-      bytes_total(-1),
-      download_time_ms(0) {}
+      downloaded_bytes(-1),
+      total_bytes(-1),
+      download_time_ms(0) {
+}
 
 // On Windows, the first downloader in the chain is a background downloader,
 // which uses the BITS service.
 CrxDownloader* CrxDownloader::Create(
     bool is_background_download,
     net::URLRequestContextGetter* context_getter,
-    scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const DownloadCallback& download_callback) {
+    scoped_refptr<base::SequencedTaskRunner> task_runner) {
   scoped_ptr<CrxDownloader> url_fetcher_downloader(
       new UrlFetcherDownloader(scoped_ptr<CrxDownloader>().Pass(),
                                context_getter,
-                               task_runner,
-                               download_callback));
-#if defined (OS_WIN)
+                               task_runner));
+#if defined(OS_WIN)
   if (is_background_download) {
     return new BackgroundDownloader(url_fetcher_downloader.Pass(),
                                     context_getter,
-                                    task_runner,
-                                    download_callback);
+                                    task_runner);
   }
 #endif
 
   return url_fetcher_downloader.release();
 }
 
-CrxDownloader::CrxDownloader(
-    scoped_ptr<CrxDownloader> successor,
-    const DownloadCallback& download_callback)
-    : successor_(successor.Pass()),
-      download_callback_(download_callback) {
-      DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+CrxDownloader::CrxDownloader(scoped_ptr<CrxDownloader> successor)
+    : successor_(successor.Pass()) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 CrxDownloader::~CrxDownloader() {
+}
+
+void CrxDownloader::set_progress_callback(
+    const ProgressCallback& progress_callback) {
+  progress_callback_ = progress_callback;
 }
 
 GURL CrxDownloader::url() const {
@@ -68,26 +70,28 @@ CrxDownloader::download_metrics() const {
     return download_metrics_;
 
   std::vector<DownloadMetrics> retval(successor_->download_metrics());
-  retval.insert(retval.begin(),
-                download_metrics_.begin(),
-                download_metrics_.end());
+  retval.insert(
+      retval.begin(), download_metrics_.begin(), download_metrics_.end());
   return retval;
 }
 
-void CrxDownloader::StartDownloadFromUrl(const GURL& url) {
+void CrxDownloader::StartDownloadFromUrl(
+    const GURL& url,
+    const DownloadCallback& download_callback) {
   std::vector<GURL> urls;
   urls.push_back(url);
-  StartDownload(urls);
+  StartDownload(urls, download_callback);
 }
 
-void CrxDownloader::StartDownload(const std::vector<GURL>& urls) {
+void CrxDownloader::StartDownload(const std::vector<GURL>& urls,
+                                  const DownloadCallback& download_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (urls.empty()) {
     // Make a result and complete the download with a generic error for now.
     Result result;
     result.error = -1;
-    download_callback_.Run(result);
+    download_callback.Run(result);
     return;
   }
 
@@ -97,6 +101,7 @@ void CrxDownloader::StartDownload(const std::vector<GURL>& urls) {
   // reset at this point, and the iterator will be valid in all conditions.
   urls_ = urls;
   current_url_ = urls_.begin();
+  download_callback_ = download_callback;
 
   DoStartDownload(*current_url_);
 }
@@ -133,7 +138,7 @@ void CrxDownloader::OnDownloadComplete(
     // of urls. Otherwise, the request ends here since the current downloader
     // has tried all urls and it can't fall back on any other downloader.
     if (successor_ && !urls_.empty()) {
-      successor_->StartDownload(urls_);
+      successor_->StartDownload(urls_, download_callback_);
       return;
     }
   }
@@ -141,5 +146,13 @@ void CrxDownloader::OnDownloadComplete(
   download_callback_.Run(result);
 }
 
-}  // namespace component_updater
+void CrxDownloader::OnDownloadProgress(const Result& result) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
+  if (progress_callback_.is_null())
+    return;
+
+  progress_callback_.Run(result);
+}
+
+}  // namespace component_updater

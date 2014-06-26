@@ -12,7 +12,7 @@
 #include "chrome/browser/local_discovery/privet_device_lister.h"
 #include "chrome/browser/local_discovery/privet_http.h"
 #include "chrome/browser/notifications/notification_delegate.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class NotificationUIManager;
 
@@ -26,8 +26,11 @@ class ServiceDiscoverySharedClient;
 class PrivetDeviceLister;
 class PrivetHTTPAsynchronousFactory;
 class PrivetHTTPResolution;
-class PrivetTrafficDetector;
 struct DeviceDescription;
+
+#if defined(ENABLE_MDNS)
+class PrivetTrafficDetector;
+#endif  // ENABLE_MDNS
 
 // Contains logic related to notifications not tied actually displaying them.
 class PrivetNotificationsListener  {
@@ -86,7 +89,7 @@ class PrivetNotificationsListener  {
 };
 
 class PrivetNotificationService
-    : public BrowserContextKeyedService,
+    : public KeyedService,
       public PrivetDeviceLister::Delegate,
       public PrivetNotificationsListener::Delegate,
       public base::SupportsWeakPtr<PrivetNotificationService> {
@@ -116,9 +119,12 @@ class PrivetNotificationService
   content::BrowserContext* profile_;
   scoped_ptr<PrivetDeviceLister> device_lister_;
   scoped_refptr<ServiceDiscoverySharedClient> service_discovery_client_;
-  scoped_refptr<PrivetTrafficDetector> traffic_detector_;
   scoped_ptr<PrivetNotificationsListener> privet_notifications_listener_;
   BooleanPrefMember enable_privet_notification_member_;
+
+#if defined(ENABLE_MDNS)
+  scoped_refptr<PrivetTrafficDetector> traffic_detector_;
+#endif  // ENABLE_MDNS
 };
 
 class PrivetNotificationDelegate : public NotificationDelegate {
@@ -127,7 +133,7 @@ class PrivetNotificationDelegate : public NotificationDelegate {
 
   // NotificationDelegate implementation.
   virtual std::string id() const OVERRIDE;
-  virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
   virtual void Display() OVERRIDE;
   virtual void Error() OVERRIDE;
   virtual void Close(bool by_user) OVERRIDE;

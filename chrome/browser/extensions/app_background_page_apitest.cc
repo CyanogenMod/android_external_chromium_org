@@ -20,6 +20,7 @@
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/nacl/browser/nacl_process_host.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_notification_tracker.h"
 #include "content/public/test/test_utils.h"
@@ -27,7 +28,6 @@
 #include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
-#include "ppapi/shared_impl/ppapi_switches.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -51,9 +51,9 @@ class AppBackgroundPageApiTest : public ExtensionApiTest {
       return false;
     }
     base::FilePath manifest_path = app_dir_.path().AppendASCII("manifest.json");
-    int bytes_written = file_util::WriteFile(manifest_path,
-                                             app_manifest.data(),
-                                             app_manifest.size());
+    int bytes_written = base::WriteFile(manifest_path,
+                                        app_manifest.data(),
+                                        app_manifest.size());
     if (bytes_written != static_cast<int>(app_manifest.size())) {
       LOG(ERROR) << "Unable to write complete manifest to file. Return code="
                  << bytes_written;
@@ -121,18 +121,15 @@ namespace {
 class AppBackgroundPageNaClTest : public AppBackgroundPageApiTest {
  public:
   AppBackgroundPageNaClTest()
-      : extension_(NULL) {
-    PathService::Get(chrome::DIR_GEN_TEST_DATA, &app_dir_);
-    app_dir_ = app_dir_.AppendASCII(
-        "ppapi/tests/extensions/background_keepalive/newlib");
-  }
+      : extension_(NULL) {}
   virtual ~AppBackgroundPageNaClTest() {
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     AppBackgroundPageApiTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitchASCII(
-        switches::kPpapiKeepAliveThrottle, "50");
+#if !defined(DISABLE_NACL)
+    nacl::NaClProcessHost::SetPpapiKeepAliveThrottleForTesting(50);
+#endif
     command_line->AppendSwitchASCII(
         extensions::switches::kEventPageIdleTime, "1000");
     command_line->AppendSwitchASCII(
@@ -143,12 +140,15 @@ class AppBackgroundPageNaClTest : public AppBackgroundPageApiTest {
 
  protected:
   void LaunchTestingApp() {
-    extension_ = LoadExtension(app_dir_);
+    base::FilePath app_dir;
+    PathService::Get(chrome::DIR_GEN_TEST_DATA, &app_dir);
+    app_dir = app_dir.AppendASCII(
+        "ppapi/tests/extensions/background_keepalive/newlib");    
+    extension_ = LoadExtension(app_dir);
     ASSERT_TRUE(extension_);
   }
 
  private:
-  base::FilePath app_dir_;
   const Extension* extension_;
 };
 
@@ -600,7 +600,15 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageApiTest, UnloadExtensionWhileHidden) {
 }
 
 // Verify active NaCl embeds cause many keepalive impulses to be sent.
-IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest, BackgroundKeepaliveActive) {
+// Disabled on Windows due to flakiness: http://crbug.com/346278
+#if defined(OS_WIN)
+#define MAYBE_BackgroundKeepaliveActive DISABLED_BackgroundKeepaliveActive
+#else
+#define MAYBE_BackgroundKeepaliveActive BackgroundKeepaliveActive
+#endif
+IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest,
+                       MAYBE_BackgroundKeepaliveActive) {
+#if !defined(DISABLE_NACL)
   ExtensionTestMessageListener nacl_modules_loaded("nacl_modules_loaded", true);
   LaunchTestingApp();
   extensions::ProcessManager* manager =
@@ -612,6 +620,7 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest, BackgroundKeepaliveActive) {
   manager->SetKeepaliveImpulseCallbackForTesting(
       active_impulse_counter.SetGoalAndGetCallback(20));
   active_impulse_counter.Wait();
+#endif
 }
 
 // Verify that nacl modules that go idle will not send keepalive impulses.
@@ -625,6 +634,7 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest, BackgroundKeepaliveActive) {
 #endif
 IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest,
                        MAYBE_BackgroundKeepaliveIdle) {
+#if !defined(DISABLE_NACL)
   ExtensionTestMessageListener nacl_modules_loaded("nacl_modules_loaded", true);
   LaunchTestingApp();
   extensions::ProcessManager* manager =
@@ -636,5 +646,6 @@ IN_PROC_BROWSER_TEST_F(AppBackgroundPageNaClTest,
       idle_impulse_counter.SetGoalAndGetCallback(1));
   nacl_modules_loaded.Reply("be idle");
   idle_impulse_counter.Wait();
+#endif
 }
 

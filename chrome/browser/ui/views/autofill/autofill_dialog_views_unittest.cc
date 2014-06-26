@@ -15,6 +15,7 @@
 #include "components/web_modal/test_web_contents_modal_dialog_host.h"
 #include "components/web_modal/test_web_contents_modal_dialog_manager_delegate.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "content/public/common/url_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/controls/webview/webview.h"
@@ -56,7 +57,7 @@ class AutofillDialogViewsTest : public TestWithBrowserView {
 
     view_delegate_.SetProfile(profile());
 
-    AddTab(browser(), GURL());
+    AddTab(browser(), GURL(url::kAboutBlankURL));
     TabStripModel* tab_strip_model = browser()->tab_strip_model();
     content::WebContents* contents = tab_strip_model->GetWebContentsAt(0);
     ASSERT_TRUE(contents);
@@ -182,6 +183,17 @@ TEST_F(AutofillDialogViewsTest, LoadingFocus) {
   EXPECT_TRUE(scrollable_area->IsFocusable());
   EXPECT_FALSE(loading_shield->IsFocusable());
   EXPECT_FALSE(sign_in_web_view->IsFocusable());
+}
+
+TEST_F(AutofillDialogViewsTest, ImeEventDoesntCrash) {
+  // IMEs create synthetic events with no backing native event.
+  views::FocusManager* focus_manager = dialog()->GetWidget()->GetFocusManager();
+  views::View* focused_view = focus_manager->GetFocusedView();
+  ASSERT_STREQ(DecoratedTextfield::kViewClassName,
+               focused_view->GetClassName());
+  EXPECT_FALSE(dialog()->HandleKeyEvent(
+      static_cast<views::Textfield*>(focused_view),
+      ui::KeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0, false)));
 }
 
 }  // namespace autofill

@@ -10,7 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "extensions/common/extension_set.h"
 
 namespace content {
@@ -24,7 +24,7 @@ class ExtensionRegistryObserver;
 // ExtensionRegistry holds sets of the installed extensions for a given
 // BrowserContext. An incognito browser context and its master browser context
 // share a single registry.
-class ExtensionRegistry : public BrowserContextKeyedService {
+class ExtensionRegistry : public KeyedService {
  public:
   // Flags to pass to GetExtensionById() to select which sets to look in.
   enum IncludeFlag {
@@ -36,7 +36,7 @@ class ExtensionRegistry : public BrowserContextKeyedService {
     EVERYTHING = (1 << 4) - 1,
   };
 
-  ExtensionRegistry();
+  explicit ExtensionRegistry(content::BrowserContext* browser_context);
   virtual ~ExtensionRegistry();
 
   // Returns the instance for the given |browser_context|.
@@ -57,13 +57,42 @@ class ExtensionRegistry : public BrowserContextKeyedService {
     return blacklisted_extensions_;
   }
 
+  // Returns a set of all installed, disabled, blacklisted, and terminated
+  // extensions.
+  scoped_ptr<ExtensionSet> GenerateInstalledExtensionsSet() const;
+
   // The usual observer interface.
   void AddObserver(ExtensionRegistryObserver* observer);
   void RemoveObserver(ExtensionRegistryObserver* observer);
 
+  // Invokes the observer method OnExtensionLoaded(). The extension must be
+  // enabled at the time of the call.
+  void TriggerOnLoaded(const Extension* extension);
+
   // Invokes the observer method OnExtensionUnloaded(). The extension must not
   // be enabled at the time of the call.
-  void TriggerOnUnloaded(const Extension* extension);
+  void TriggerOnUnloaded(const Extension* extension,
+                         UnloadedExtensionInfo::Reason reason);
+
+  // If this is a fresh install then |is_update| is false and there must not be
+  // any installed extension with |extension|'s ID. If this is an update then
+  // |is_update| is true and must be an installed extension with |extension|'s
+  // ID, and |old_name| must be non-empty.
+  // If true, |from_ephemeral| indicates that the extension was previously
+  // installed ephemerally and has been promoted to a regular installed
+  // extension. |is_update| should also be true.
+  void TriggerOnWillBeInstalled(const Extension* extension,
+                                bool is_update,
+                                bool from_ephemeral,
+                                const std::string& old_name);
+
+  // Invokes the observer method OnExtensionInstalled(). The extension must be
+  // contained in one of the registry's extension sets.
+  void TriggerOnInstalled(const Extension* extension);
+
+  // Invokes the observer method OnExtensionUninstalled(). The extension must
+  // not be any installed extension with |extension|'s ID.
+  void TriggerOnUninstalled(const Extension* extension);
 
   // Find an extension by ID using |include_mask| to pick the sets to search:
   //  * enabled_extensions()     --> ExtensionRegistry::ENABLED
@@ -108,7 +137,7 @@ class ExtensionRegistry : public BrowserContextKeyedService {
   void SetDisabledModificationCallback(
       const ExtensionSet::ModificationCallback& callback);
 
-  // BrowserContextKeyedService implementation:
+  // KeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
  private:
@@ -128,6 +157,8 @@ class ExtensionRegistry : public BrowserContextKeyedService {
   ExtensionSet blacklisted_extensions_;
 
   ObserverList<ExtensionRegistryObserver> observers_;
+
+  content::BrowserContext* const browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionRegistry);
 };

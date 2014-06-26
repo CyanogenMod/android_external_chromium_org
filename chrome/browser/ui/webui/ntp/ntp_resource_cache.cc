@@ -18,7 +18,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -38,6 +37,7 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
@@ -80,10 +80,6 @@ const char kLearnMoreIncognitoUrl[] =
 // The URL for the Learn More page shown on guest session new tab.
 const char kLearnMoreGuestSessionUrl[] =
     "https://www.google.com/support/chromeos/bin/answer.py?answer=1057090";
-
-base::string16 GetUrlWithLang(const GURL& url) {
-  return base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(url).spec());
-}
 
 std::string SkColorToRGBAString(SkColor color) {
   // We convert the alpha using DoubleToString because StringPrintf will use
@@ -175,8 +171,6 @@ NTPResourceCache::NTPResourceCache(Profile* profile)
 
   // Watch for pref changes that cause us to need to invalidate the HTML cache.
   profile_pref_change_registrar_.Init(profile_->GetPrefs());
-  profile_pref_change_registrar_.Add(prefs::kSyncAcknowledgedSyncTypes,
-                                     callback);
   profile_pref_change_registrar_.Add(prefs::kShowBookmarkBar, callback);
   profile_pref_change_registrar_.Add(prefs::kNtpShownPage, callback);
   profile_pref_change_registrar_.Add(prefs::kSignInPromoShowNTPBubble,
@@ -230,7 +224,7 @@ NTPResourceCache::WindowType NTPResourceCache::GetWindowType(
 }
 
 base::RefCountedMemory* NTPResourceCache::GetNewTabHTML(WindowType win_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (win_type == GUEST) {
     if (!new_tab_guest_html_.get())
       CreateNewTabGuestHTML();
@@ -250,7 +244,7 @@ base::RefCountedMemory* NTPResourceCache::GetNewTabHTML(WindowType win_type) {
 }
 
 base::RefCountedMemory* NTPResourceCache::GetNewTabCSS(WindowType win_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (win_type == GUEST) {
     if (!new_tab_guest_css_.get())
       CreateNewTabGuestCSS();
@@ -293,45 +287,31 @@ void NTPResourceCache::CreateNewTabIncognitoHTML() {
   base::DictionaryValue localized_strings;
   localized_strings.SetString("title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
-  int new_tab_message_ids = IDS_NEW_TAB_OTR_MESSAGE;
+  int new_tab_description_ids = IDS_NEW_TAB_OTR_DESCRIPTION;
+  int new_tab_heading_ids = IDS_NEW_TAB_OTR_HEADING;
+  int new_tab_link_ids = IDS_NEW_TAB_OTR_LEARN_MORE_LINK;
+  int new_tab_warning_ids = IDS_NEW_TAB_OTR_MESSAGE_WARNING;
   int new_tab_html_idr = IDR_INCOGNITO_TAB_HTML;
   const char* new_tab_link = kLearnMoreIncognitoUrl;
 
-  // TODO(altimofeev): consider implementation without 'if def' usage.
-#if defined(OS_CHROMEOS)
   if (profile_->IsGuestSession()) {
-    new_tab_message_ids = IDS_NEW_TAB_GUEST_SESSION_MESSAGE;
-    new_tab_html_idr = IDR_GUEST_SESSION_TAB_HTML;
-    new_tab_link = kLearnMoreGuestSessionUrl;
-
-    policy::BrowserPolicyConnectorChromeOS* connector =
-        g_browser_process->platform_part()->browser_policy_connector_chromeos();
-    std::string enterprise_domain = connector->GetEnterpriseDomain();
-    if (!enterprise_domain.empty()) {
-      // Device is enterprise enrolled.
-      localized_strings.SetString("enterpriseInfoVisible", "true");
-      base::string16 enterprise_info = l10n_util::GetStringFUTF16(
-          IDS_DEVICE_OWNED_BY_NOTICE,
-          base::UTF8ToUTF16(enterprise_domain));
-      localized_strings.SetString("enterpriseInfoMessage", enterprise_info);
-      localized_strings.SetString("learnMore",
-          l10n_util::GetStringUTF16(IDS_LEARN_MORE));
-      localized_strings.SetString("enterpriseInfoHintLink",
-          GetUrlWithLang(GURL(chrome::kLearnMoreEnterpriseURL)));
-    } else {
-      localized_strings.SetString("enterpriseInfoVisible", "false");
-    }
+    localized_strings.SetString("guestTabDescription",
+        l10n_util::GetStringUTF16(new_tab_description_ids));
+    localized_strings.SetString("guestTabHeading",
+        l10n_util::GetStringUTF16(new_tab_heading_ids));
+  } else {
+    localized_strings.SetString("incognitoTabDescription",
+        l10n_util::GetStringUTF16(new_tab_description_ids));
+    localized_strings.SetString("incognitoTabHeading",
+        l10n_util::GetStringUTF16(new_tab_heading_ids));
+    localized_strings.SetString("incognitoTabWarning",
+        l10n_util::GetStringUTF16(new_tab_warning_ids));
   }
-#endif
 
-  localized_strings.SetString("content",
-      l10n_util::GetStringFUTF16(new_tab_message_ids,
-                                 GetUrlWithLang(GURL(new_tab_link))));
-  localized_strings.SetString("extensionsmessage",
-      l10n_util::GetStringFUTF16(
-          IDS_NEW_TAB_OTR_EXTENSIONS_MESSAGE,
-          l10n_util::GetStringUTF16(IDS_PRODUCT_NAME),
-          base::ASCIIToUTF16(chrome::kChromeUIExtensionsURL)));
+  localized_strings.SetString("learnMore",
+      l10n_util::GetStringUTF16(new_tab_link_ids));
+  localized_strings.SetString("learnMoreLink", new_tab_link);
+
   bool bookmark_bar_attached = profile_->GetPrefs()->GetBoolean(
       prefs::kShowBookmarkBar);
   localized_strings.SetBoolean("bookmarkbarattached", bookmark_bar_attached);
@@ -352,16 +332,48 @@ void NTPResourceCache::CreateNewTabGuestHTML() {
   base::DictionaryValue localized_strings;
   localized_strings.SetString("title",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_TITLE));
-  const char* new_tab_link = kLearnMoreGuestSessionUrl;
-  localized_strings.SetString("content",
-      l10n_util::GetStringFUTF16(IDS_NEW_TAB_GUEST_SESSION_MESSAGE,
-                                 GetUrlWithLang(GURL(new_tab_link))));
+  const char* guest_tab_link = kLearnMoreGuestSessionUrl;
+  int guest_tab_ids = IDR_GUEST_TAB_HTML;
+  int guest_tab_description_ids = IDS_NEW_TAB_GUEST_SESSION_DESCRIPTION;
+  int guest_tab_heading_ids = IDS_NEW_TAB_GUEST_SESSION_HEADING;
+  int guest_tab_link_ids = IDS_NEW_TAB_GUEST_SESSION_LEARN_MORE_LINK;
+
+#if defined(OS_CHROMEOS)
+  guest_tab_ids = IDR_GUEST_SESSION_TAB_HTML;
+  guest_tab_link = kLearnMoreGuestSessionUrl;
+
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  std::string enterprise_domain = connector->GetEnterpriseDomain();
+
+  if (!enterprise_domain.empty()) {
+    // Device is enterprise enrolled.
+    localized_strings.SetString("enterpriseInfoVisible", "true");
+    base::string16 enterprise_info = l10n_util::GetStringFUTF16(
+        IDS_DEVICE_OWNED_BY_NOTICE,
+        base::UTF8ToUTF16(enterprise_domain));
+    localized_strings.SetString("enterpriseInfoMessage", enterprise_info);
+    localized_strings.SetString("enterpriseLearnMore",
+        l10n_util::GetStringUTF16(IDS_LEARN_MORE));
+    localized_strings.SetString("enterpriseInfoHintLink",
+                                chrome::kLearnMoreEnterpriseURL);
+  } else {
+    localized_strings.SetString("enterpriseInfoVisible", "false");
+  }
+#endif
+
+  localized_strings.SetString("guestTabDescription",
+      l10n_util::GetStringUTF16(guest_tab_description_ids));
+  localized_strings.SetString("guestTabHeading",
+      l10n_util::GetStringUTF16(guest_tab_heading_ids));
+  localized_strings.SetString("learnMore",
+      l10n_util::GetStringUTF16(guest_tab_link_ids));
+  localized_strings.SetString("learnMoreLink", guest_tab_link);
 
   webui::SetFontAndTextDirection(&localized_strings);
 
   static const base::StringPiece guest_tab_html(
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_GUEST_TAB_HTML));
+      ResourceBundle::GetSharedInstance().GetRawDataResource(guest_tab_ids));
 
   std::string full_html = webui::GetI18nTemplateHtml(
       guest_tab_html, &localized_strings);
@@ -445,7 +457,9 @@ void NTPResourceCache::CreateNewTabHTML() {
   load_time_data.SetString("learnMore",
       l10n_util::GetStringUTF16(IDS_LEARN_MORE));
   load_time_data.SetString("webStoreLink",
-      GetUrlWithLang(GURL(extension_urls::GetWebstoreLaunchURL())));
+      google_util::AppendGoogleLocaleParam(
+          GURL(extension_urls::GetWebstoreLaunchURL()),
+          g_browser_process->GetApplicationLocale()).spec());
   load_time_data.SetString("appInstallHintText",
       l10n_util::GetStringUTF16(IDS_NEW_TAB_APP_INSTALL_HINT_LABEL));
   load_time_data.SetBoolean("isDiscoveryInNTPEnabled",
@@ -471,9 +485,9 @@ void NTPResourceCache::CreateNewTabHTML() {
   // feature is enabled.
   load_time_data.SetBoolean("isSwipeTrackingFromScrollEventsEnabled",
                             is_swipe_tracking_from_scroll_events_enabled_);
-  // Managed users can not have apps installed currently so there's no need to
-  // show the app cards.
-  if (profile_->IsManaged())
+  // Supervised users can not have apps installed currently so there's no need
+  // to show the app cards.
+  if (profile_->IsSupervised())
     should_show_apps_page_ = false;
 
   load_time_data.SetBoolean("showApps", should_show_apps_page_);
@@ -490,12 +504,6 @@ void NTPResourceCache::CreateNewTabHTML() {
     load_time_data.SetString("applaunchtypetab",
         l10n_util::GetStringUTF16(IDS_APP_CONTEXT_MENU_OPEN_TAB));
   }
-
-#if defined(OS_MACOSX)
-  load_time_data.SetBoolean(
-      "disableCreateAppShortcut",
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableAppShims));
-#endif
 
 #if defined(OS_CHROMEOS)
   load_time_data.SetString("expandMenu",

@@ -19,7 +19,7 @@
 #include "chrome/browser/prefs/pref_service_mock_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/chrome_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_pref_store.h"
 #include "extensions/browser/extension_pref_value_map.h"
@@ -117,20 +117,21 @@ void TestExtensionPrefs::RecreateExtensionPrefs() {
       extension_pref_value_map_.get(),
       ExtensionsBrowserClient::Get()->CreateAppSorting().Pass(),
       extensions_disabled_,
+      std::vector<ExtensionPrefsObserver*>(),
       // Guarantee that no two extensions get the same installation time
       // stamp and we can reliably assert the installation order in the tests.
-      scoped_ptr<ExtensionPrefs::TimeProvider>(
-          new IncrementalTimeProvider())));
+      scoped_ptr<ExtensionPrefs::TimeProvider>(new IncrementalTimeProvider())));
 }
 
-scoped_refptr<Extension> TestExtensionPrefs::AddExtension(std::string name) {
+scoped_refptr<Extension> TestExtensionPrefs::AddExtension(
+    const std::string& name) {
   base::DictionaryValue dictionary;
   dictionary.SetString(manifest_keys::kName, name);
   dictionary.SetString(manifest_keys::kVersion, "0.1");
   return AddExtensionWithManifest(dictionary, Manifest::INTERNAL);
 }
 
-scoped_refptr<Extension> TestExtensionPrefs::AddApp(std::string name) {
+scoped_refptr<Extension> TestExtensionPrefs::AddApp(const std::string& name) {
   base::DictionaryValue dictionary;
   dictionary.SetString(manifest_keys::kName, name);
   dictionary.SetString(manifest_keys::kVersion, "0.1");
@@ -163,12 +164,13 @@ scoped_refptr<Extension> TestExtensionPrefs::AddExtensionWithManifestAndFlags(
   EXPECT_TRUE(Extension::IdIsValid(extension->id()));
   prefs_->OnExtensionInstalled(extension.get(),
                                Extension::ENABLED,
-                               false,
-                               syncer::StringOrdinal::CreateInitialOrdinal());
+                               syncer::StringOrdinal::CreateInitialOrdinal(),
+                               std::string());
   return extension;
 }
 
-std::string TestExtensionPrefs::AddExtensionAndReturnId(std::string name) {
+std::string TestExtensionPrefs::AddExtensionAndReturnId(
+    const std::string& name) {
   scoped_refptr<Extension> extension(AddExtension(name));
   return extension->id();
 }

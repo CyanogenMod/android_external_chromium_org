@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_CHROMEOS_NET_NETWORK_PORTAL_DETECTOR_H_
 
 #include "base/basictypes.h"
+#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "net/url_request/url_fetcher.h"
 
 namespace chromeos {
@@ -38,6 +39,7 @@ class NetworkPortalDetector {
 
     CaptivePortalStatus status;
     int response_code;
+    base::TimeTicks time;
   };
 
   class Observer {
@@ -75,9 +77,9 @@ class NetworkPortalDetector {
   // Removes |observer| from the observers list.
   virtual void RemoveObserver(Observer* observer) = 0;
 
-  // Returns Captive Portal state for a given |network|.
+  // Returns Captive Portal state for the network specified by |service_path|.
   virtual CaptivePortalState GetCaptivePortalState(
-      const chromeos::NetworkState* network) = 0;
+      const std::string& service_path) = 0;
 
   // Returns true if portal detection is enabled.
   virtual bool IsEnabled() = 0;
@@ -94,12 +96,9 @@ class NetworkPortalDetector {
   // started.
   virtual bool StartDetectionIfIdle() = 0;
 
-  // Enables lazy detection mode. In this mode portal detection after
-  // first 3 consecutive attemps will be performed once in 5 seconds.
-  virtual void EnableLazyDetection() = 0;
-
-  // Dizables lazy detection mode.
-  virtual void DisableLazyDetection() = 0;
+  // Sets current strategy according to |id|. If current detection id
+  // doesn't equal to |id|, detection is restarted.
+  virtual void SetStrategy(PortalDetectorStrategy::StrategyId id) = 0;
 
   // Initializes network portal detector for testing. The
   // |network_portal_detector| will be owned by the internal pointer
@@ -113,11 +112,17 @@ class NetworkPortalDetector {
   // Deletes the instance of the NetworkPortalDetector.
   static void Shutdown();
 
-  // Gets the instance of the NetworkPortalDetector.
+  // Gets the instance of the NetworkPortalDetector. Return value should
+  // be used carefully in tests, because it can be changed "on the fly"
+  // by calls to InitializeForTesting().
   static NetworkPortalDetector* Get();
 
   // Returns non-localized string representation of |status|.
   static std::string CaptivePortalStatusString(CaptivePortalStatus status);
+
+  // Returns |true| if NetworkPortalDetector was Initialized and it is safe to
+  // call Get.
+  static bool IsInitialized();
 
  protected:
   NetworkPortalDetector() {}

@@ -7,13 +7,12 @@ import logging
 import os
 import sys
 
-from telemetry import decorators
 from telemetry.core import browser
 from telemetry.core import possible_browser
-from telemetry.core import platform
 from telemetry.core import util
 from telemetry.core.backends.webdriver import webdriver_ie_backend
-from telemetry.page import cloud_storage
+from telemetry.core.platform import factory
+from telemetry.util import support_binaries
 
 # Try to import the selenium python lib which may be not available.
 util.AddDirToPythonPath(
@@ -40,14 +39,13 @@ class PossibleWebDriverBrowser(possible_browser.PossibleBrowser):
   def __init__(self, browser_type, finder_options):
     target_os = sys.platform.lower()
     super(PossibleWebDriverBrowser, self).__init__(browser_type, target_os,
-        finder_options)
+        finder_options, False)
     assert browser_type in ALL_BROWSER_TYPES, \
         'Please add %s to ALL_BROWSER_TYPES' % browser_type
 
   @property
-  @decorators.Cache
   def _platform_backend(self):
-    return platform.CreatePlatformBackendForCurrentOS()
+    return factory.GetPlatformBackendForCurrentOS()
 
   def CreateWebDriverBackend(self, platform_backend):
     raise NotImplementedError()
@@ -77,9 +75,8 @@ class PossibleDesktopIE(PossibleWebDriverBrowser):
   def CreateWebDriverBackend(self, platform_backend):
     assert webdriver
     def DriverCreator():
-      ie_driver_exe = os.path.join(util.GetTelemetryDir(), 'bin',
-                                   'IEDriverServer_%s.exe' % self._architecture)
-      cloud_storage.GetIfChanged(ie_driver_exe, cloud_storage.PUBLIC_BUCKET)
+      ie_driver_exe = support_binaries.FindPath(
+          'IEDriverServer_%s' % self._architecture, 'win')
       return webdriver.Ie(executable_path=ie_driver_exe)
     return webdriver_ie_backend.WebDriverIEBackend(
         platform_backend, DriverCreator, self.finder_options.browser_options)

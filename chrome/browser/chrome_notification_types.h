@@ -131,12 +131,6 @@ enum NotificationType {
   // Details<InfoBar::RemovedDetails>.
   NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
 
-  // This message is sent when an InfoBar is replacing another infobar in an
-  // InfoBarService.  The source is a Source<InfoBarService> with a pointer to
-  // the InfoBarService the InfoBar was removed from.  The details is a
-  // Details<InfoBar::ReplacedDetails>.
-  NOTIFICATION_TAB_CONTENTS_INFOBAR_REPLACED,
-
   // Used to fire notifications about how long various events took to
   // complete.  E.g., this is used to get more fine grained timings from the
   // new tab page.  The source is a WebContents and the details is a
@@ -293,6 +287,12 @@ enum NotificationType {
   // The details are none and the source is the new profile.
   NOTIFICATION_PROFILE_ADDED,
 
+  // Sent early in the process of destroying a Profile, at the time a user
+  // initiates the deletion of a profile versus the much later time when the
+  // profile object is actually destroyed (use NOTIFICATION_PROFILE_DESTROYED).
+  // The details are none and the source is a Profile*.
+  NOTIFICATION_PROFILE_DESTRUCTION_STARTED,
+
   // Sent before a Profile is destroyed. This notification is sent both for
   // normal and OTR profiles.
   // The details are none and the source is a Profile*.
@@ -308,13 +308,6 @@ enum NotificationType {
   // details the TopSites.
   NOTIFICATION_TOP_SITES_LOADED,
 
-  // Sent by TopSites when it has finished updating its most visited URLs
-  // cache after querying the history service. The source is the TopSites and
-  // the details a CancelableRequestProvider::Handle from the history service
-  // query.
-  // Used only in testing.
-  NOTIFICATION_TOP_SITES_UPDATED,
-
   // Sent by TopSites when the either one of the most visited urls changed, or
   // one of the images changes. The source is the TopSites, the details not
   // used.
@@ -327,20 +320,11 @@ enum NotificationType {
   // V8HeapStatsDetails object.
   NOTIFICATION_RENDERER_V8_HEAP_STATS_COMPUTED,
 
-  // Sent when a renderer process is notified of a new FPS value. The source
-  // is the ID of the renderer process, and the details are an FPSDetails
-  // object.
-  NOTIFICATION_RENDERER_FPS_COMPUTED,
-
   // Non-history storage services --------------------------------------------
 
   // Sent when a TemplateURL is removed from the model. The source is the
   // Profile, and the details the id of the TemplateURL being removed.
   NOTIFICATION_TEMPLATE_URL_REMOVED,
-
-  // Sent when the prefs relating to the default search engine have changed due
-  // to policy.  Source and details are unused.
-  NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
 
   // The state of a web resource has been changed. A resource may have been
   // added, removed, or altered. Source is WebResourceService, and the
@@ -364,18 +348,6 @@ enum NotificationType {
 
   // This is sent from Instant when the omnibox focus state changes.
   NOTIFICATION_OMNIBOX_FOCUS_CHANGED,
-
-  // Sent when the Google URL for a profile has been updated.  Some services
-  // cache this value and need to update themselves when it changes.  See
-  // google_util::GetGoogleURLAndUpdateIfNecessary().  The source is the
-  // Profile, the details a GoogleURLTracker::UpdatedDetails containing the old
-  // and new URLs.
-  //
-  // Note that because incognito mode requests for the GoogleURLTracker are
-  // redirected to the non-incognito profile's copy, this notification will only
-  // ever fire on non-incognito profiles; thus listeners should use
-  // GetOriginalProfile() when constructing a Source to filter against.
-  NOTIFICATION_GOOGLE_URL_UPDATED,
 
   // Printing ----------------------------------------------------------------
 
@@ -412,21 +384,19 @@ enum NotificationType {
   // unloaded and reloaded. The source is a Profile.
   NOTIFICATION_EXTENSIONS_READY,
 
-  // Sent when an extension icon being displayed in the location bar is updated.
-  // The source is the Profile and the details are the WebContents for
-  // the tab.
-  NOTIFICATION_EXTENSION_LOCATION_BAR_UPDATED,
-
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when a new extension is loaded. The details are an Extension, and
   // the source is a Profile.
-  NOTIFICATION_EXTENSION_LOADED,
+  NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
 
   // An error occured while attempting to load an extension. The details are a
   // string with details about why the load failed.
   NOTIFICATION_EXTENSION_LOAD_ERROR,
 
   // Sent when an extension is enabled. Under most circumstances, listeners
-  // will want to use NOTIFICATION_EXTENSION_LOADED. This notification is only
+  // will want to use NOTIFICATION_EXTENSION_LOADED_DEPRECATED. This
+  // notification is only
   // fired when the "Enable" button is hit in the extensions tab.  The details
   // are an Extension, and the source is a Profile.
   NOTIFICATION_EXTENSION_ENABLED,
@@ -439,30 +409,36 @@ enum NotificationType {
   // UpdatedExtensionPermissionsInfo, and the source is a Profile.
   NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when new extensions are installed, or existing extensions are updated.
   // The details are an InstalledExtensionInfo, and the source is a Profile.
-  NOTIFICATION_EXTENSION_INSTALLED,
+  NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
 
   // An error occured during extension install. The details are a string with
   // details about why the install failed.
   NOTIFICATION_EXTENSION_INSTALL_ERROR,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when an extension has been uninstalled. The details are an Extension,
   // and the source is a Profile.
-  NOTIFICATION_EXTENSION_UNINSTALLED,
+  NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
 
   // Sent when an extension uninstall is not allowed because the extension is
   // not user manageable.  The details are an Extension, and the source is a
   // Profile.
   NOTIFICATION_EXTENSION_UNINSTALL_NOT_ALLOWED,
 
+  // DEPRECATED: Use ExtensionRegistry::AddObserver instead.
+  //
   // Sent when an extension is unloaded. This happens when an extension is
   // uninstalled or disabled. The details are an UnloadedExtensionInfo, and
   // the source is a Profile.
   //
   // Note that when this notification is sent, ExtensionService has already
   // removed the extension from its internal state.
-  NOTIFICATION_EXTENSION_UNLOADED,
+  NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
 
   // Sent when an Extension object is removed from ExtensionService. This
   // can happen when an extension is uninstalled, upgraded, or blacklisted,
@@ -594,20 +570,6 @@ enum NotificationType {
   // found update.
   NOTIFICATION_EXTENSION_UPDATE_FOUND,
 
-  // Desktop Notifications ---------------------------------------------------
-
-  // This notification is sent when a balloon is connected to a renderer
-  // process to render the balloon contents.  The source is a
-  // Source<BalloonHost> with a pointer to the the balloon.  A
-  // NOTIFY_BALLOON_DISCONNECTED is guaranteed before the source pointer
-  // becomes junk. No details expected.
-  NOTIFICATION_NOTIFY_BALLOON_CONNECTED,
-
-  // This message is sent after a balloon is disconnected from the renderer
-  // process. The source is a Source<BalloonHost> with a pointer to the
-  // balloon host (the pointer is usable). No details are expected.
-  NOTIFICATION_NOTIFY_BALLOON_DISCONNECTED,
-
   // Upgrade notifications ---------------------------------------------------
 
   // Sent when Chrome believes an update has been installed and available for
@@ -621,6 +583,10 @@ enum NotificationType {
 
   // Sent when the current install is outdated. No details are expected.
   NOTIFICATION_OUTDATED_INSTALL,
+
+  // Sent when the current install is outdated and auto-update (AU) is disabled.
+  // No details are expected.
+  NOTIFICATION_OUTDATED_INSTALL_NO_AU,
 
   // Software incompatibility notifications ----------------------------------
 
@@ -695,25 +661,6 @@ enum NotificationType {
   // are a ChromeCookieDetails object.
   NOTIFICATION_COOKIE_CHANGED,
 
-  // Signin Manager ----------------------------------------------------------
-  // TODO(blundell): Eliminate SigninManager notifications once
-  // crbug.com/333997 is fixed.
-
-  // Sent when a user signs into Google services such as sync.
-  // The source is the Profile. The details are a
-  // GoogleServiceSigninSuccessDetails object.
-  NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-
-  // Sent when a user fails to sign into Google services such as sync.
-  // The source is the Profile. The details are a GoogleServiceAuthError
-  // object.
-  NOTIFICATION_GOOGLE_SIGNIN_FAILED,
-
-  // Sent when the currently signed-in user for a user has been signed out.
-  // The source is the Profile. The details are a
-  // GoogleServiceSignoutDetails object.
-  NOTIFICATION_GOOGLE_SIGNED_OUT,
-
   // Download Notifications --------------------------------------------------
 
   // Sent when a download is initiated. It is possible that the download will
@@ -760,30 +707,13 @@ enum NotificationType {
   // all and the details are AuthenticationNotificationDetails.
   NOTIFICATION_LOGIN_AUTHENTICATION,
 
-  // Sent when GAIA iframe has been loaded. First paint event after this fires
-  // NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
-  // Possible scenarios:
-  // 1. Boot into device that has user pods display disabled or no users.
-  //    Note that booting with network not connected would first generate
-  //    NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN.
-  // 2. From the user pods list, open "Add User" for the second time
-  //    (see below).
-  // TODO(nkostylev): Send this notification any time "Add User" is activated
-  //                  even if it has been silently preloaded on boot.
-  // Not sent on "silent preload" i.e. when booting into login screen
-  // with user pods, GAIA frame is silently preloaded in the background.
-  // Activating it ("Add User") for the first time would not generate this
-  // notification.
-  NOTIFICATION_LOGIN_WEBUI_LOADED,
-
   // Sent when a network error message is displayed on the WebUI login screen.
   // First paint event of this fires NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE.
   NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN,
 
   // Sent when the specific part of login/lock WebUI is considered to be
   // visible. That moment is tracked as the first paint event after one of the:
-  // 1. NOTIFICATION_LOGIN_WEBUI_LOADED
-  // 2. NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN
+  // NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN
   //
   // Possible series of notifications:
   // 1. Boot into fresh OOBE
@@ -794,7 +724,6 @@ enum NotificationType {
   //    if no network is connected or flaky network
   //    (NOTIFICATION_LOGIN_NETWORK_ERROR_SHOWN +
   //     NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE)
-  //    NOTIFICATION_LOGIN_WEBUI_LOADED
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
   // 4. Boot into retail mode
   //    NOTIFICATION_LOGIN_OR_LOCK_WEBUI_VISIBLE
@@ -853,22 +782,6 @@ enum NotificationType {
   // EnterPuk dialog, either because the user cancelled, or entered a
   // PIN or PUK.
   NOTIFICATION_ENTER_PIN_ENDED,
-
-  // Sent when large cursor is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_LARGE_CURSOR,
-
-  // Sent when high contrast mode is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
-
-  // Sent when screen magnifier is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER,
-
-  // Sent when spoken feedback is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-
-  // Sent when a11y on-screen keyboard is toggled.
-  NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-
 #endif
 
 #if defined(TOOLKIT_VIEWS)

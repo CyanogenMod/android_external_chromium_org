@@ -8,10 +8,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
-#include "chrome/common/extensions/permissions/settings_override_permission.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
+#include "extensions/common/permissions/settings_override_permission.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -64,11 +64,12 @@ class SettingsOverridePermissionTest : public ExtensionManifestTest {
 TEST_F(SettingsOverridePermissionTest, HomePage) {
   scoped_refptr<Extension> extension(GetPermissionSet(kHomepage));
   scoped_refptr<const PermissionSet> permission_set(
-      extension->GetActivePermissions());
+      extension->permissions_data()->active_permissions());
 
+#if defined(OS_WIN)
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   std::vector<base::string16> warnings =
-      PermissionsData::GetPermissionMessageStrings(extension.get());
+      extension->permissions_data()->GetPermissionMessageStrings();
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Change your home page to: google.com/",
             base::UTF16ToUTF8(warnings[0]));
@@ -76,16 +77,23 @@ TEST_F(SettingsOverridePermissionTest, HomePage) {
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
   EXPECT_FALSE(permission_set->HasAPIPermission(
       APIPermission::kSearchProvider));
+#else
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+  EXPECT_FALSE(
+      permission_set->HasAPIPermission(APIPermission::kSearchProvider));
+#endif
 }
 
-TEST_F(SettingsOverridePermissionTest, SartupPages) {
+TEST_F(SettingsOverridePermissionTest, StartupPages) {
   scoped_refptr<Extension> extension(GetPermissionSet(kStartupPages));
   scoped_refptr<const PermissionSet> permission_set(
-      extension->GetActivePermissions());
+      extension->permissions_data()->active_permissions());
 
+#if defined(OS_WIN)
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
   std::vector<base::string16> warnings =
-      PermissionsData::GetPermissionMessageStrings(extension.get());
+      extension->permissions_data()->GetPermissionMessageStrings();
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Change your start page to: startup.com/startup.html",
             base::UTF16ToUTF8(warnings[0]));
@@ -93,45 +101,71 @@ TEST_F(SettingsOverridePermissionTest, SartupPages) {
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   EXPECT_FALSE(permission_set->HasAPIPermission(
       APIPermission::kSearchProvider));
+#else
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+  EXPECT_FALSE(
+      permission_set->HasAPIPermission(APIPermission::kSearchProvider));
+#endif
 }
 
 TEST_F(SettingsOverridePermissionTest, SearchSettings) {
   scoped_refptr<Extension> extension(GetPermissionSet(kSearchProvider));
   scoped_refptr<const PermissionSet> permission_set(
-      extension->GetActivePermissions());
+      extension->permissions_data()->active_permissions());
 
+#if defined(OS_WIN)
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kSearchProvider));
   std::vector<base::string16> warnings =
-      PermissionsData::GetPermissionMessageStrings(extension.get());
+      extension->permissions_data()->GetPermissionMessageStrings();
   ASSERT_EQ(1u, warnings.size());
   EXPECT_EQ("Change your search settings to: google.com",
             base::UTF16ToUTF8(warnings[0]));
 
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+#else
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+  EXPECT_FALSE(
+      permission_set->HasAPIPermission(APIPermission::kSearchProvider));
+#endif
 }
 
 TEST_F(SettingsOverridePermissionTest, All) {
   scoped_refptr<Extension> extension(GetPermissionSet(
       kSearchProvider | kStartupPages | kHomepage));
   scoped_refptr<const PermissionSet> permission_set(
-      extension->GetActivePermissions());
+      extension->permissions_data()->active_permissions());
 
+#if defined(OS_WIN)
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kSearchProvider));
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+#else
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+  EXPECT_FALSE(
+      permission_set->HasAPIPermission(APIPermission::kSearchProvider));
+#endif
 }
 
 TEST_F(SettingsOverridePermissionTest, Some) {
   scoped_refptr<Extension> extension(GetPermissionSet(
       kSearchProvider | kHomepage));
   scoped_refptr<const PermissionSet> permission_set(
-      extension->GetActivePermissions());
+      extension->permissions_data()->active_permissions());
 
-
+#if defined(OS_WIN)
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kSearchProvider));
   EXPECT_TRUE(permission_set->HasAPIPermission(APIPermission::kHomepage));
   EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+#else
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kHomepage));
+  EXPECT_FALSE(permission_set->HasAPIPermission(APIPermission::kStartupPages));
+  EXPECT_FALSE(
+      permission_set->HasAPIPermission(APIPermission::kSearchProvider));
+#endif
 }
 
 }  // namespace

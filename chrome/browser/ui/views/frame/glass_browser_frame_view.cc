@@ -10,15 +10,16 @@
 #include "chrome/app/chrome_dll_resource.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/themes/theme_properties.h"
-#include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/new_avatar_button.h"
+#include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
+#include "chrome/browser/ui/views/profiles/new_avatar_button.h"
 #include "chrome/browser/ui/views/tabs/tab.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -87,8 +88,7 @@ GlassBrowserFrameView::GlassBrowserFrameView(BrowserFrame* frame,
   if (browser_view->ShouldShowWindowIcon())
     InitThrobberIcons();
 
-  if (browser_view->IsRegularOrGuestSession() &&
-      switches::IsNewProfileManagement())
+  if (browser_view->IsRegularOrGuestSession() && switches::IsNewAvatarMenu())
     UpdateNewStyleAvatarInfo(this, NewAvatarButton::NATIVE_BUTTON);
   else
     UpdateAvatarInfo();
@@ -113,7 +113,7 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
   // The new avatar button is optionally displayed to the left of the
   // minimize button.
   if (new_avatar_button()) {
-    DCHECK(switches::IsNewProfileManagement());
+    DCHECK(switches::IsNewAvatarMenu());
     minimize_button_offset -= new_avatar_button()->width();
   }
 
@@ -126,11 +126,12 @@ gfx::Rect GlassBrowserFrameView::GetBoundsForTabStrip(
   // a tab strip until the left end of this window without considering the size
   // of window controls in RTL languages.
   if (base::i18n::IsRTL()) {
-    if (!browser_view()->ShouldShowAvatar() && frame()->IsMaximized())
+    if (!browser_view()->ShouldShowAvatar() && frame()->IsMaximized()) {
       tabstrip_x += avatar_bounds_.x();
-    else if (browser_view()->IsRegularOrGuestSession() &&
-        switches::IsNewProfileManagement())
+    } else if (browser_view()->IsRegularOrGuestSession() &&
+               switches::IsNewAvatarMenu()) {
       tabstrip_x = width() - minimize_button_offset;
+    }
 
     minimize_button_offset = width();
   }
@@ -162,7 +163,7 @@ void GlassBrowserFrameView::UpdateThrobber(bool running) {
   }
 }
 
-gfx::Size GlassBrowserFrameView::GetMinimumSize() {
+gfx::Size GlassBrowserFrameView::GetMinimumSize() const {
   gfx::Size min_size(browser_view()->GetMinimumSize());
 
   // Account for the client area insets.
@@ -234,9 +235,10 @@ int GlassBrowserFrameView::NonClientHitTest(const gfx::Point& point) {
   // See if we're in the sysmenu region.  We still have to check the tabstrip
   // first so that clicks in a tab don't get treated as sysmenu clicks.
   int nonclient_border_thickness = NonClientBorderThickness();
-  if (gfx::Rect(nonclient_border_thickness, GetSystemMetrics(SM_CXSIZEFRAME),
-                GetSystemMetrics(SM_CXSMICON),
-                GetSystemMetrics(SM_CYSMICON)).Contains(point))
+  if (gfx::Rect(nonclient_border_thickness,
+                gfx::win::GetSystemMetricsInDIP(SM_CXSIZEFRAME),
+                gfx::win::GetSystemMetricsInDIP(SM_CXSMICON),
+                gfx::win::GetSystemMetricsInDIP(SM_CYSMICON)).Contains(point))
     return (frame_component == HTCLIENT) ? HTCLIENT : HTSYSMENU;
 
   if (frame_component != HTNOWHERE)
@@ -263,8 +265,7 @@ void GlassBrowserFrameView::OnPaint(gfx::Canvas* canvas) {
 }
 
 void GlassBrowserFrameView::Layout() {
-  if (browser_view()->IsRegularOrGuestSession() &&
-      switches::IsNewProfileManagement())
+  if (browser_view()->IsRegularOrGuestSession() && switches::IsNewAvatarMenu())
     LayoutNewStyleAvatar();
   else
     LayoutAvatar();
@@ -285,8 +286,11 @@ bool GlassBrowserFrameView::HitTestRect(const gfx::Rect& rect) const {
 // GlassBrowserFrameView, views::ButtonListener overrides:
 void GlassBrowserFrameView::ButtonPressed(views::Button* sender,
                                           const ui::Event& event) {
-  if (sender == new_avatar_button())
-    browser_view()->ShowAvatarBubbleFromAvatarButton();
+  if (sender == new_avatar_button()) {
+    browser_view()->ShowAvatarBubbleFromAvatarButton(
+        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+        signin::ManageAccountsParams());
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -294,7 +298,7 @@ void GlassBrowserFrameView::ButtonPressed(views::Button* sender,
 
 int GlassBrowserFrameView::FrameBorderThickness() const {
   return (frame()->IsMaximized() || frame()->IsFullscreen()) ?
-      0 : GetSystemMetrics(SM_CXSIZEFRAME);
+      0 : gfx::win::GetSystemMetricsInDIP(SM_CXSIZEFRAME);
 }
 
 int GlassBrowserFrameView::NonClientBorderThickness() const {
@@ -438,26 +442,29 @@ void GlassBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
 }
 
 void GlassBrowserFrameView::LayoutNewStyleAvatar() {
-  DCHECK(switches::IsNewProfileManagement());
+  DCHECK(switches::IsNewAvatarMenu());
   if (!new_avatar_button())
     return;
 
   gfx::Size label_size = new_avatar_button()->GetPreferredSize();
-  int button_size_with_offset = kNewAvatarButtonOffset + label_size.width();
 
   int button_x = frame()->GetMinimizeButtonOffset() -
       kNewAvatarButtonOffset - label_size.width();
-
   if (base::i18n::IsRTL())
     button_x = width() - frame()->GetMinimizeButtonOffset() +
         kNewAvatarButtonOffset;
 
-  int button_y = frame()->IsMaximized() ? NonClientTopBorderHeight() : 1;
+  // We need to offset the button correctly in maximized mode, so that the
+  // custom glass style aligns with the native control glass style. The
+  // glass shadow is off by 1px, which was determined by visual inspection.
+  int button_y = !frame()->IsMaximized() ? 1 :
+      NonClientTopBorderHeight() + kTabstripTopShadowThickness - 1;
+
   new_avatar_button()->SetBounds(
       button_x,
       button_y,
       label_size.width(),
-      button_y + gfx::win::GetSystemMetricsInDIP(SM_CXMENUSIZE));
+      gfx::win::GetSystemMetricsInDIP(SM_CYMENUSIZE) + 1);
 }
 
 void GlassBrowserFrameView::LayoutAvatar() {
@@ -562,10 +569,11 @@ void GlassBrowserFrameView::Observe(
   switch (type) {
     case chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED:
       if (browser_view()->IsRegularOrGuestSession() &&
-          switches::IsNewProfileManagement())
+          switches::IsNewAvatarMenu()) {
         UpdateNewStyleAvatarInfo(this, NewAvatarButton::NATIVE_BUTTON);
-      else
+      } else {
         UpdateAvatarInfo();
+      }
       break;
     default:
       NOTREACHED() << "Got a notification we didn't register for!";

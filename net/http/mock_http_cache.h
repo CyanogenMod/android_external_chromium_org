@@ -13,7 +13,7 @@
 #include "base/containers/hash_tables.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
-#include "net/http/http_transaction_unittest.h"
+#include "net/http/http_transaction_test_util.h"
 
 //-----------------------------------------------------------------------------
 // Mock disk cache (a very basic memory cache implementation).
@@ -176,6 +176,9 @@ class MockHttpCache {
 
   // Wrapper around http_cache()->CreateTransaction(net::DEFAULT_PRIORITY...)
   int CreateTransaction(scoped_ptr<net::HttpTransaction>* trans);
+
+  // Wrapper to bypass the cache lock for new transactions.
+  void BypassCacheLock();
 
   // Helper function for reading response info from the disk cache.
   static bool ReadResponseInfo(disk_cache::Entry* disk_entry,

@@ -12,8 +12,8 @@
         'mojo_environment_chromium',
         'mojo_gles2',
         'mojo_gles2_bindings',
+        'mojo_js_bindings_lib',
         'mojo_native_viewport_bindings',
-        'mojo_system',
       ],
       'export_dependent_settings': [
         '../base/base.gyp:base',
@@ -22,40 +22,49 @@
         'mojo_gles2',
         'mojo_gles2_bindings',
         'mojo_native_viewport_bindings',
-        'mojo_system',
       ],
       'sources': [
         'apps/js/mojo_runner_delegate.cc',
         'apps/js/mojo_runner_delegate.h',
         'apps/js/bindings/threading.cc',
         'apps/js/bindings/threading.h',
-        'apps/js/bindings/core.cc',
-        'apps/js/bindings/core.h',
         'apps/js/bindings/gl/context.cc',
         'apps/js/bindings/gl/context.h',
         'apps/js/bindings/gl/module.cc',
         'apps/js/bindings/gl/module.h',
-        'apps/js/bindings/handle.cc',
-        'apps/js/bindings/handle.h',
         'apps/js/bindings/monotonic_clock.cc',
         'apps/js/bindings/monotonic_clock.h',
-        'apps/js/bindings/support.cc',
-        'apps/js/bindings/support.h',
-        'apps/js/bindings/waiting_callback.cc',
-        'apps/js/bindings/waiting_callback.h',
       ],
     },
     {
-      'target_name': 'mojo_js_unittests',
+      'target_name': 'mojo_apps_js_bindings',
+      'type': 'static_library',
+      'sources': [
+        'apps/js/test/js_to_cpp.mojom',
+      ],
+      'includes': [ 'public/tools/bindings/mojom_bindings_generator.gypi' ],
+      'export_dependent_settings': [
+        'mojo_cpp_bindings',
+      ],
+      'dependencies': [
+        'mojo_cpp_bindings',
+      ],
+    },
+    {
+      'target_name': 'mojo_apps_js_unittests',
       'type': 'executable',
       'dependencies': [
         '../gin/gin.gyp:gin_test',
+        'mojo_apps_js_bindings',
+        'mojo_common_lib',
+        'mojo_common_test_support',
         'mojo_js_lib',
         'mojo_run_all_unittests',
-        'mojo_sample_service',
+        'mojo_public_test_interfaces',
       ],
       'sources': [
-        'apps/js/test/run_js_tests.cc',
+        'apps/js/test/js_to_cpp_unittest.cc',
+        'apps/js/test/run_apps_js_tests.cc',
       ],
     },
     {
@@ -63,10 +72,31 @@
       'type': 'shared_library',
       'dependencies': [
         'mojo_js_lib',
+        'mojo_system_impl',
       ],
       'sources': [
         'apps/js/main.cc',
       ],
     },
+  ],
+  'conditions': [
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'mojo_apps_js_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'mojo_apps_js_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'mojo_apps_js_unittests.isolate',
+          ],
+          'sources': [
+            'mojo_apps_js_unittests.isolate',
+          ],
+        },
+      ],
+    }],
   ],
 }

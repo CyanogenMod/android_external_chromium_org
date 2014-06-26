@@ -16,16 +16,20 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread.h"
+#include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/input_method/input_method_configuration.h"
 #include "chrome/browser/chromeos/input_method/mock_input_method_manager.h"
-#include "chrome/browser/chromeos/login/authenticator.h"
-#include "chrome/browser/chromeos/login/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/auth/authenticator.h"
+#include "chrome/browser/chromeos/login/auth/key.h"
+#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
@@ -33,9 +37,12 @@
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/rlz/rlz.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/chrome_unit_test_suite.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chromeos/chromeos_switches.h"
@@ -65,6 +72,7 @@
 #include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/message_center/message_center.h"
 
 #if defined(ENABLE_RLZ)
 #include "rlz/lib/rlz_value_store.h"
@@ -159,6 +167,14 @@ class LoginUtilsTest : public testing::Test,
         prepared_profile_(NULL) {}
 
   virtual void SetUp() OVERRIDE {
+    ChromeUnitTestSuite::InitializeProviders();
+    ChromeUnitTestSuite::InitializeResourceBundle();
+
+    content_client_.reset(new ChromeContentClient);
+    content::SetContentClient(content_client_.get());
+    browser_content_client_.reset(new chrome::ChromeContentBrowserClient());
+    content::SetBrowserClientForTesting(browser_content_client_.get());
+
     // This test is not a full blown InProcessBrowserTest, and doesn't have
     // all the usual threads running. However a lot of subsystems pulled from
     // ProfileImpl post to IO (usually from ProfileIOData), and DCHECK that
@@ -193,7 +209,6 @@ class LoginUtilsTest : public testing::Test,
     CommandLine* command_line = CommandLine::ForCurrentProcess();
     command_line->AppendSwitchASCII(
         policy::switches::kDeviceManagementUrl, kDMServer);
-    command_line->AppendSwitchASCII(switches::kLoginProfile, "user");
 
     // DBusThreadManager should be initialized before io_thread_state_, as
     // DBusThreadManager is used from chromeos::ProxyConfigServiceImpl,
@@ -202,6 +217,7 @@ class LoginUtilsTest : public testing::Test,
 
     SystemSaltGetter::Initialize();
     LoginState::Initialize();
+    DeviceOAuth2TokenServiceFactory::Initialize();
 
     EXPECT_CALL(mock_statistics_provider_, GetMachineStatistic(_, _))
         .WillRepeatedly(Return(false));
@@ -248,12 +264,17 @@ class LoginUtilsTest : public testing::Test,
     RLZTracker::EnableZeroDelayForTesting();
 #endif
 
+    // Message center is used by UserManager.
+    message_center::MessageCenter::Initialize();
+
     RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
     cryptohome::AsyncMethodCaller::Shutdown();
     mock_async_method_caller_ = NULL;
+
+    message_center::MessageCenter::Shutdown();
 
     test_user_manager_.reset();
 
@@ -263,7 +284,14 @@ class LoginUtilsTest : public testing::Test,
     // LoginUtils instance must not outlive Profile instances.
     LoginUtils::Set(NULL);
 
+    system::StatisticsProvider::SetTestProvider(NULL);
+
+    // The invalidator has to shut down before DeviceOAuth2TokenServiceFactory
+    // and the ProfileManager.
+    connector_->ShutdownInvalidator();
+
     input_method::Shutdown();
+    DeviceOAuth2TokenServiceFactory::Shutdown();
     LoginState::Shutdown();
     SystemSaltGetter::Shutdown();
 
@@ -274,6 +302,10 @@ class LoginUtilsTest : public testing::Test,
     browser_process_->SetBrowserPolicyConnector(NULL);
     QuitIOLoop();
     RunUntilIdle();
+
+    browser_content_client_.reset();
+    content_client_.reset();
+    content::SetContentClient(NULL);
   }
 
   void TearDownOnIO() {
@@ -333,7 +365,7 @@ class LoginUtilsTest : public testing::Test,
   }
 
 #if defined(ENABLE_RLZ)
-  virtual void OnRlzInitialized(Profile* profile) OVERRIDE {
+  virtual void OnRlzInitialized() OVERRIDE {
     rlz_initialized_cb_.Run();
   }
 #endif
@@ -374,25 +406,21 @@ class LoginUtilsTest : public testing::Test,
 
     scoped_refptr<Authenticator> authenticator =
         LoginUtils::Get()->CreateAuthenticator(this);
+    UserContext user_context(username);
+    user_context.SetKey(Key("password"));
+    user_context.SetUserIDHash(username);
     authenticator->CompleteLogin(ProfileHelper::GetSigninProfile(),
-                                 UserContext(username,
-                                             "password",
-                                             std::string(),
-                                             username));   // username_hash
+                                 user_context);
 
-    const bool kUsingOAuth = true;
-    // Setting |kHasCookies| to false prevents ProfileAuthData::Transfer from
-    // waiting for an IO task before proceeding.
-    const bool kHasCookies = false;
+    // Setting |kHasAuthCookies| to false prevents ProfileAuthData::Transfer
+    // from waiting for an IO task before proceeding.
+    const bool kHasAuthCookies = false;
     const bool kHasActiveSession = false;
-    LoginUtils::Get()->PrepareProfile(
-        UserContext(username,
-                    "password",
-                    std::string(),
-                    username,
-                    kUsingOAuth,
-                    UserContext::AUTH_FLOW_GAIA_WITHOUT_SAML),
-        std::string(), kHasCookies, kHasActiveSession, this);
+    user_context.SetAuthFlow(UserContext::AUTH_FLOW_GAIA_WITHOUT_SAML);
+    LoginUtils::Get()->PrepareProfile(user_context,
+                                      kHasAuthCookies,
+                                      kHasActiveSession,
+                                      this);
     device_settings_test_helper.Flush();
     RunUntilIdle();
 
@@ -455,6 +483,9 @@ class LoginUtilsTest : public testing::Test,
   // Must be the first member variable as browser_process_ and local_state_
   // rely on this being set up.
   TestingBrowserProcessInitializer initializer_;
+
+  scoped_ptr<ChromeContentClient> content_client_;
+  scoped_ptr<chrome::ChromeContentBrowserClient> browser_content_client_;
 
   base::Closure fake_io_thread_work_;
   base::WaitableEvent fake_io_thread_completion_;
@@ -562,7 +593,7 @@ TEST_F(LoginUtilsTest, RlzInitialized) {
   // RLZ value for homepage access point should have been initialized.
   base::string16 rlz_string;
   EXPECT_TRUE(RLZTracker::GetAccessPointRlz(
-      RLZTracker::CHROME_HOME_PAGE, &rlz_string));
+      RLZTracker::ChromeHomePage(), &rlz_string));
   EXPECT_EQ(base::string16(), rlz_string);
 }
 #endif

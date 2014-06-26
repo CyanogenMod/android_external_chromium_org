@@ -7,12 +7,17 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/stack_trace.h"
+#include "base/i18n/icu_util.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/sys_info.h"
+#include "base/test/test_timeouts.h"
+#include "content/public/app/content_main.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
+#include "content/public/test/test_launcher.h"
 #include "content/public/test/test_utils.h"
 #include "net/base/net_errors.h"
 #include "net/dns/mock_host_resolver.h"
@@ -27,7 +32,6 @@
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
-#include "base/power_monitor/power_monitor_device_source.h"
 #endif
 
 #if defined(OS_ANDROID)
@@ -38,7 +42,9 @@
 
 #if defined(USE_AURA)
 #include "content/browser/compositor/image_transport_factory.h"
-#include "ui/compositor/test/test_context_factory.h"
+#if defined(USE_X11)
+#include "ui/aura/window_tree_host_x11.h"
+#endif
 #endif
 
 namespace content {
@@ -119,15 +125,25 @@ class LocalHostResolverProc : public net::HostResolverProc {
 extern int BrowserMain(const MainFunctionParams&);
 
 BrowserTestBase::BrowserTestBase()
-    : enable_pixel_output_(false), use_software_compositing_(false) {
+    : expected_exit_code_(0),
+      enable_pixel_output_(false),
+      use_software_compositing_(false) {
 #if defined(OS_MACOSX)
   base::mac::SetOverrideAmIBundled(true);
-  base::PowerMonitorDeviceSource::AllocateSystemIOPorts();
+#endif
+
+#if defined(USE_AURA) && defined(USE_X11)
+  aura::test::SetUseOverrideRedirectWindowByDefault(true);
 #endif
 
 #if defined(OS_POSIX)
   handle_sigterm_ = true;
 #endif
+
+  // This is called through base::TestSuite initially. It'll also be called
+  // inside BrowserMain, so tell the code to ignore the check that it's being
+  // called more than once
+  base::i18n::AllowMultipleInitializeCallsForTesting();
 
   embedded_test_server_.reset(new net::test_server::EmbeddedTestServer);
 }
@@ -143,6 +159,12 @@ BrowserTestBase::~BrowserTestBase() {
 void BrowserTestBase::SetUp() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
+  // Override the child process connection timeout since tests can exceed that
+  // when sharded.
+  command_line->AppendSwitchASCII(
+      switches::kIPCConnectionTimeout,
+      base::IntToString(TestTimeouts::action_max_timeout().InSeconds()));
+
   // The tests assume that file:// URIs can freely access other file:// URIs.
   command_line->AppendSwitch(switches::kAllowFileAccessFromFiles);
 
@@ -154,9 +176,7 @@ void BrowserTestBase::SetUp() {
 
   if (use_software_compositing_) {
     command_line->AppendSwitch(switches::kDisableGpu);
-    command_line->AppendSwitch(switches::kEnableSoftwareCompositing);
 #if defined(USE_AURA)
-    command_line->AppendSwitch(switches::kUIEnableSoftwareCompositing);
     command_line->AppendSwitch(switches::kUIDisableThreadedCompositing);
 #endif
   }
@@ -207,15 +227,8 @@ void BrowserTestBase::SetUp() {
     use_osmesa = false;
 #endif
 
-  if (command_line->HasSwitch(switches::kUseGL)) {
-    NOTREACHED() <<
-        "kUseGL should not be used with tests. Try kUseGpuInTests instead.";
-  }
-
-  if (use_osmesa && !use_software_compositing_) {
-    command_line->AppendSwitchASCII(
-        switches::kUseGL, gfx::kGLImplementationOSMesaName);
-  }
+  if (use_osmesa && !use_software_compositing_)
+    command_line->AppendSwitch(switches::kOverrideUseGLWithOSMesaForTests);
 
   scoped_refptr<net::HostResolverProc> local_resolver =
       new LocalHostResolverProc();
@@ -225,22 +238,19 @@ void BrowserTestBase::SetUp() {
   net::ScopedDefaultHostResolverProc scoped_local_host_resolver_proc(
       rule_based_resolver_.get());
   SetUpInProcessBrowserTestFixture();
-  MainFunctionParams params(*command_line);
-  params.ui_task =
+
+  base::Closure* ui_task =
       new base::Closure(
           base::Bind(&BrowserTestBase::ProxyRunTestOnMainThreadLoop, this));
 
 #if defined(OS_ANDROID)
-  BrowserMainRunner::Create()->Initialize(params);
-  // We are done running the test by now. During teardown we
-  // need to be able to perform IO.
-  base::ThreadRestrictions::SetIOAllowed(true);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(base::IgnoreResult(&base::ThreadRestrictions::SetIOAllowed),
-                 true));
-#else
+  MainFunctionParams params(*command_line);
+  params.ui_task = ui_task;
+  // TODO(phajdan.jr): Check return code, http://crbug.com/374738 .
   BrowserMain(params);
+#else
+  GetContentMainParams()->ui_task = ui_task;
+  EXPECT_EQ(expected_exit_code_, ContentMain(*GetContentMainParams()));
 #endif
   TearDownInProcessBrowserTestFixture();
 }

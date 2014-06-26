@@ -5,7 +5,6 @@
 #include "net/quic/quic_headers_stream.h"
 
 #include "net/quic/quic_session.h"
-#include "net/quic/quic_spdy_decompressor.h"
 
 using base::StringPiece;
 
@@ -77,7 +76,7 @@ class QuicHeadersStream::SpdyFramerVisitor
       // that had the fin bit set.
       return;
     }
-    CloseConnection("SPDY DATA frame recevied.");
+    CloseConnection("SPDY DATA frame received.");
   }
 
   virtual void OnError(SpdyFramer* framer) OVERRIDE {
@@ -87,42 +86,55 @@ class QuicHeadersStream::SpdyFramerVisitor
   virtual void OnDataFrameHeader(SpdyStreamId stream_id,
                                  size_t length,
                                  bool fin) OVERRIDE {
-    CloseConnection("SPDY DATA frame recevied.");
+    CloseConnection("SPDY DATA frame received.");
   }
 
   virtual void OnRstStream(SpdyStreamId stream_id,
                            SpdyRstStreamStatus status) OVERRIDE {
-    CloseConnection("SPDY RST_STREAM frame recevied.");
+    CloseConnection("SPDY RST_STREAM frame received.");
   }
 
   virtual void OnSetting(SpdySettingsIds id,
                          uint8 flags,
                          uint32 value) OVERRIDE {
-    CloseConnection("SPDY SETTINGS frame recevied.");
+    CloseConnection("SPDY SETTINGS frame received.");
   }
 
-  virtual void OnPing(SpdyPingId unique_id) OVERRIDE {
-    CloseConnection("SPDY PING frame recevied.");
+  virtual void OnSettingsAck() OVERRIDE {
+    CloseConnection("SPDY SETTINGS frame received.");
+  }
+
+  virtual void OnSettingsEnd() OVERRIDE {
+    CloseConnection("SPDY SETTINGS frame received.");
+  }
+
+  virtual void OnPing(SpdyPingId unique_id, bool is_ack) OVERRIDE {
+    CloseConnection("SPDY PING frame received.");
   }
 
   virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
                         SpdyGoAwayStatus status) OVERRIDE {
-    CloseConnection("SPDY GOAWAY frame recevied.");
+    CloseConnection("SPDY GOAWAY frame received.");
   }
 
-  virtual void OnHeaders(SpdyStreamId stream_id, bool fin) OVERRIDE {
-    CloseConnection("SPDY HEADERS frame recevied.");
+  virtual void OnHeaders(SpdyStreamId stream_id, bool fin, bool end) OVERRIDE {
+    CloseConnection("SPDY HEADERS frame received.");
   }
 
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
                               uint32 delta_window_size) OVERRIDE {
-    CloseConnection("SPDY WINDOW_UPDATE frame recevied.");
+    CloseConnection("SPDY WINDOW_UPDATE frame received.");
   }
 
   virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id) OVERRIDE {
+                             SpdyStreamId promised_stream_id,
+                             bool end) OVERRIDE {
     LOG(DFATAL) << "PUSH_PROMISE frame received from a SPDY/3 framer";
-    CloseConnection("SPDY PUSH_PROMISE frame recevied.");
+    CloseConnection("SPDY PUSH_PROMISE frame received.");
+  }
+
+  virtual void OnContinuation(SpdyStreamId stream_id, bool end) OVERRIDE {
+    CloseConnection("SPDY CONTINUATION frame received.");
   }
 
   // SpdyFramerDebugVisitorInterface implementation
@@ -162,13 +174,17 @@ QuicHeadersStream::QuicHeadersStream(QuicSession* session)
       spdy_framer_visitor_(new SpdyFramerVisitor(this)) {
   spdy_framer_.set_visitor(spdy_framer_visitor_.get());
   spdy_framer_.set_debug_visitor(spdy_framer_visitor_.get());
+  // TODO(jri): Set headers to be always FEC protected.
+  DisableFlowControl();
 }
 
 QuicHeadersStream::~QuicHeadersStream() {}
 
-size_t QuicHeadersStream::WriteHeaders(QuicStreamId stream_id,
-                                       const SpdyHeaderBlock& headers,
-                                       bool fin) {
+size_t QuicHeadersStream::WriteHeaders(
+    QuicStreamId stream_id,
+    const SpdyHeaderBlock& headers,
+    bool fin,
+    QuicAckNotifier::DelegateInterface* ack_notifier_delegate) {
   scoped_ptr<SpdySerializedFrame> frame;
   if (session()->is_server()) {
     SpdySynReplyIR syn_reply(stream_id);
@@ -181,7 +197,8 @@ size_t QuicHeadersStream::WriteHeaders(QuicStreamId stream_id,
     syn_stream.set_fin(fin);
     frame.reset(spdy_framer_.SerializeFrame(syn_stream));
   }
-  WriteOrBufferData(StringPiece(frame->data(), frame->size()), false);
+  WriteOrBufferData(StringPiece(frame->data(), frame->size()), false,
+                    ack_notifier_delegate);
   return frame->size();
 }
 
@@ -198,7 +215,7 @@ void QuicHeadersStream::OnSynStream(SpdyStreamId stream_id,
   if (!session()->is_server()) {
     CloseConnectionWithDetails(
         QUIC_INVALID_HEADERS_STREAM_DATA,
-        "SPDY SYN_STREAM frame recevied at the client");
+        "SPDY SYN_STREAM frame received at the client");
     return;
   }
   DCHECK_EQ(kInvalidStreamId, stream_id_);
@@ -211,7 +228,7 @@ void QuicHeadersStream::OnSynReply(SpdyStreamId stream_id, bool fin) {
   if (session()->is_server()) {
     CloseConnectionWithDetails(
         QUIC_INVALID_HEADERS_STREAM_DATA,
-        "SPDY SYN_REPLY frame recevied at the server");
+        "SPDY SYN_REPLY frame received at the server");
     return;
   }
   DCHECK_EQ(kInvalidStreamId, stream_id_);

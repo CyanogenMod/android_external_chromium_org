@@ -16,7 +16,8 @@
 #include "ui/base/models/simple_menu_model.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
+#include "ash/session/user_info.h"
 #include "ash/shell.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_util.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
@@ -127,6 +128,10 @@ void SystemMenuModelBuilder::AppendTeleportMenu(ui::SimpleMenuModel* model) {
           chrome::MultiUserWindowManager::MULTI_PROFILE_MODE_SEPARATED)
     return;
 
+  // Don't show the menu for incognito windows.
+  if (browser()->profile()->IsOffTheRecord())
+    return;
+
   // To show the menu we need at least two logged in users.
   ash::SessionStateDelegate* delegate =
       ash::Shell::GetInstance()->session_state_delegate();
@@ -147,13 +152,13 @@ void SystemMenuModelBuilder::AppendTeleportMenu(ui::SimpleMenuModel* model) {
   model->AddSeparator(ui::NORMAL_SEPARATOR);
   DCHECK(logged_in_users <= 3);
   for (int user_index = 1; user_index < logged_in_users; ++user_index) {
+    const ash::UserInfo* user_info = delegate->GetUserInfo(user_index);
     model->AddItem(
-        user_index == 1 ? IDC_VISIT_DESKTOP_OF_LRU_USER_2 :
-                          IDC_VISIT_DESKTOP_OF_LRU_USER_3,
-        l10n_util::GetStringFUTF16(
-            IDS_VISIT_DESKTOP_OF_LRU_USER,
-            delegate->GetUserDisplayName(user_index),
-            base::ASCIIToUTF16(delegate->GetUserEmail(user_index))));
+        user_index == 1 ? IDC_VISIT_DESKTOP_OF_LRU_USER_2
+                        : IDC_VISIT_DESKTOP_OF_LRU_USER_3,
+        l10n_util::GetStringFUTF16(IDS_VISIT_DESKTOP_OF_LRU_USER,
+                                   user_info->GetDisplayName(),
+                                   base::ASCIIToUTF16(user_info->GetEmail())));
   }
 #endif
 }

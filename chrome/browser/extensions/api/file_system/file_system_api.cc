@@ -31,9 +31,11 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/granted_file_entry.h"
 #include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -50,7 +52,7 @@
 #endif
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/file_manager/filesystem_api_util.h"
 #endif
 
 using apps::SavedFileEntry;
@@ -128,18 +130,11 @@ base::FilePath PrettifyPath(const base::FilePath& source_path) {
 // Prettifies |source_path|, by replacing the user's home directory with "~"
 // (if applicable).
 base::FilePath PrettifyPath(const base::FilePath& source_path) {
-#if defined(OS_WIN) || defined(OS_POSIX)
-#if defined(OS_WIN)
-  int home_key = base::DIR_PROFILE;
-#elif defined(OS_POSIX)
-  int home_key = base::DIR_HOME;
-#endif
   base::FilePath home_path;
   base::FilePath display_path = base::FilePath::FromUTF8Unsafe("~");
-  if (PathService::Get(home_key, &home_path)
+  if (PathService::Get(base::DIR_HOME, &home_path)
       && home_path.AppendRelativePath(source_path, &display_path))
     return display_path;
-#endif
   return source_path;
 }
 #endif  // defined(OS_MACOSX)
@@ -219,13 +214,11 @@ bool GetFileTypesFromAcceptOption(
 const char kLastChooseEntryDirectory[] = "last_choose_file_directory";
 
 const int kGraylistedPaths[] = {
+  base::DIR_HOME,
 #if defined(OS_WIN)
-  base::DIR_PROFILE,
   base::DIR_PROGRAM_FILES,
   base::DIR_PROGRAM_FILESX86,
   base::DIR_WINDOWS,
-#elif defined(OS_POSIX)
-  base::DIR_HOME,
 #endif
 };
 
@@ -255,9 +248,19 @@ void SetLastChooseEntryDirectory(ExtensionPrefs* prefs,
                              base::CreateFilePathValue(path));
 }
 
+std::vector<base::FilePath> GetGrayListedDirectories() {
+  std::vector<base::FilePath> graylisted_directories;
+  for (size_t i = 0; i < arraysize(kGraylistedPaths); ++i) {
+    base::FilePath graylisted_path;
+    if (PathService::Get(kGraylistedPaths[i], &graylisted_path))
+      graylisted_directories.push_back(graylisted_path);
+  }
+  return graylisted_directories;
+}
+
 }  // namespace file_system_api
 
-bool FileSystemGetDisplayPathFunction::RunImpl() {
+bool FileSystemGetDisplayPathFunction::RunSync() {
   std::string filesystem_name;
   std::string filesystem_path;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &filesystem_name));
@@ -281,10 +284,10 @@ FileSystemEntryFunction::FileSystemEntryFunction()
       is_directory_(false),
       response_(NULL) {}
 
-void FileSystemEntryFunction::CheckWritableFiles(
+void FileSystemEntryFunction::PrepareFilesForWritableApp(
     const std::vector<base::FilePath>& paths) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  app_file_handler_util::CheckWritableFiles(
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  app_file_handler_util::PrepareFilesForWritableApp(
       paths,
       GetProfile(),
       is_directory_,
@@ -296,7 +299,7 @@ void FileSystemEntryFunction::CheckWritableFiles(
 
 void FileSystemEntryFunction::RegisterFileSystemsAndSendResponse(
     const std::vector<base::FilePath>& paths) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!render_view_host_)
     return;
 
@@ -321,13 +324,12 @@ void FileSystemEntryFunction::AddEntryToResponse(
     const base::FilePath& path,
     const std::string& id_override) {
   DCHECK(response_);
-  extensions::app_file_handler_util::GrantedFileEntry file_entry =
-      extensions::app_file_handler_util::CreateFileEntry(
-          GetProfile(),
-          GetExtension(),
-          render_view_host_->GetProcess()->GetID(),
-          path,
-          is_directory_);
+  GrantedFileEntry file_entry = app_file_handler_util::CreateFileEntry(
+      GetProfile(),
+      GetExtension(),
+      render_view_host_->GetProcess()->GetID(),
+      path,
+      is_directory_);
   base::ListValue* entries;
   bool success = response_->GetList("entries", &entries);
   DCHECK(success);
@@ -345,13 +347,13 @@ void FileSystemEntryFunction::AddEntryToResponse(
 
 void FileSystemEntryFunction::HandleWritableFileError(
     const base::FilePath& error_path) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   error_ = base::StringPrintf(kWritableFileErrorFormat,
                               error_path.BaseName().AsUTF8Unsafe().c_str());
   SendResponse(false);
 }
 
-bool FileSystemGetWritableEntryFunction::RunImpl() {
+bool FileSystemGetWritableEntryFunction::RunAsync() {
   std::string filesystem_name;
   std::string filesystem_path;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &filesystem_name));
@@ -382,25 +384,26 @@ bool FileSystemGetWritableEntryFunction::RunImpl() {
 }
 
 void FileSystemGetWritableEntryFunction::CheckPermissionAndSendResponse() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (is_directory_ &&
-      !extension_->HasAPIPermission(APIPermission::kFileSystemDirectory)) {
+      !extension_->permissions_data()->HasAPIPermission(
+          APIPermission::kFileSystemDirectory)) {
     error_ = kRequiresFileSystemDirectoryError;
     SendResponse(false);
   }
   std::vector<base::FilePath> paths;
   paths.push_back(path_);
-  CheckWritableFiles(paths);
+  PrepareFilesForWritableApp(paths);
 }
 
 void FileSystemGetWritableEntryFunction::SetIsDirectoryOnFileThread() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
   if (base::DirectoryExists(path_)) {
     is_directory_ = true;
   }
 }
 
-bool FileSystemIsWritableEntryFunction::RunImpl() {
+bool FileSystemIsWritableEntryFunction::RunSync() {
   std::string filesystem_name;
   std::string filesystem_path;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &filesystem_name));
@@ -436,7 +439,7 @@ class FileSystemChooseEntryFunction::FilePicker
     select_file_dialog_ = ui::SelectFileDialog::Create(
         this, new ChromeSelectFilePolicy(web_contents));
     gfx::NativeWindow owning_window = web_contents ?
-        platform_util::GetTopLevel(web_contents->GetView()->GetNativeView()) :
+        platform_util::GetTopLevel(web_contents->GetNativeView()) :
         NULL;
 
     if (g_skip_picker_for_test) {
@@ -638,7 +641,7 @@ void FileSystemChooseEntryFunction::RegisterTempExternalFileSystemForTest(
 void FileSystemChooseEntryFunction::SetInitialPathOnFileThread(
     const base::FilePath& suggested_name,
     const base::FilePath& previous_path) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
   if (!previous_path.empty() && base::DirectoryExists(previous_path)) {
     initial_path_ = previous_path.Append(suggested_name);
   } else {
@@ -679,12 +682,23 @@ void FileSystemChooseEntryFunction::FilesSelected(
     }
     content::WebContents* web_contents = app_window->web_contents();
 
+    DCHECK_EQ(paths.size(), 1u);
+#if defined(OS_CHROMEOS)
+    base::FilePath check_path =
+        file_manager::util::IsUnderNonNativeLocalPath(GetProfile(), paths[0])
+            ? paths[0]
+            : base::MakeAbsoluteFilePath(paths[0]);
+#else
+    base::FilePath check_path = base::MakeAbsoluteFilePath(paths[0]);
+#endif
+
     content::BrowserThread::PostTask(
         content::BrowserThread::FILE,
         FROM_HERE,
         base::Bind(
             &FileSystemChooseEntryFunction::ConfirmDirectoryAccessOnFileThread,
             this,
+            check_path,
             paths,
             web_contents));
     return;
@@ -699,17 +713,10 @@ void FileSystemChooseEntryFunction::FileSelectionCanceled() {
 }
 
 void FileSystemChooseEntryFunction::ConfirmDirectoryAccessOnFileThread(
+    const base::FilePath& check_path,
     const std::vector<base::FilePath>& paths,
     content::WebContents* web_contents) {
-  DCHECK_EQ(paths.size(), 1u);
-#if defined(OS_CHROMEOS)
-  const base::FilePath path =
-      drive::util::IsUnderDriveMountPoint(paths[0]) ? paths[0] :
-          base::MakeAbsoluteFilePath(paths[0]);
-#else
-  const base::FilePath path = base::MakeAbsoluteFilePath(paths[0]);
-#endif
-  if (path.empty()) {
+  if (check_path.empty()) {
     content::BrowserThread::PostTask(
         content::BrowserThread::UI,
         FROM_HERE,
@@ -721,7 +728,8 @@ void FileSystemChooseEntryFunction::ConfirmDirectoryAccessOnFileThread(
   for (size_t i = 0; i < arraysize(kGraylistedPaths); i++) {
     base::FilePath graylisted_path;
     if (PathService::Get(kGraylistedPaths[i], &graylisted_path) &&
-        (path == graylisted_path || path.IsParent(graylisted_path))) {
+        (check_path == graylisted_path ||
+         check_path.IsParent(graylisted_path))) {
       if (g_skip_directory_confirmation_for_test) {
         if (g_allow_directory_access_for_test) {
           break;
@@ -763,7 +771,7 @@ void FileSystemChooseEntryFunction::ConfirmDirectoryAccessOnFileThread(
 void FileSystemChooseEntryFunction::OnDirectoryAccessConfirmed(
     const std::vector<base::FilePath>& paths) {
   if (app_file_handler_util::HasFileSystemWritePermission(extension_)) {
-    CheckWritableFiles(paths);
+    PrepareFilesForWritableApp(paths);
     return;
   }
 
@@ -831,7 +839,7 @@ void FileSystemChooseEntryFunction::BuildSuggestion(
   }
 }
 
-bool FileSystemChooseEntryFunction::RunImpl() {
+bool FileSystemChooseEntryFunction::RunAsync() {
   scoped_ptr<ChooseEntry::Params> params(ChooseEntry::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -862,7 +870,8 @@ bool FileSystemChooseEntryFunction::RunImpl() {
       picker_type = ui::SelectFileDialog::SELECT_SAVEAS_FILE;
     } else if (options->type == file_system::CHOOSE_ENTRY_TYPE_OPENDIRECTORY) {
       is_directory_ = true;
-      if (!extension_->HasAPIPermission(APIPermission::kFileSystemDirectory)) {
+      if (!extension_->permissions_data()->HasAPIPermission(
+              APIPermission::kFileSystemDirectory)) {
         error_ = kRequiresFileSystemDirectoryError;
         return false;
       }
@@ -900,7 +909,7 @@ bool FileSystemChooseEntryFunction::RunImpl() {
   return true;
 }
 
-bool FileSystemRetainEntryFunction::RunImpl() {
+bool FileSystemRetainEntryFunction::RunAsync() {
   std::string entry_id;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &entry_id));
   SavedFilesService* saved_files_service = SavedFilesService::Get(GetProfile());
@@ -947,7 +956,7 @@ void FileSystemRetainEntryFunction::SetIsDirectoryOnFileThread() {
   is_directory_ = base::DirectoryExists(path_);
 }
 
-bool FileSystemIsRestorableFunction::RunImpl() {
+bool FileSystemIsRestorableFunction::RunSync() {
   std::string entry_id;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &entry_id));
   SetResult(new base::FundamentalValue(SavedFilesService::Get(
@@ -955,7 +964,7 @@ bool FileSystemIsRestorableFunction::RunImpl() {
   return true;
 }
 
-bool FileSystemRestoreEntryFunction::RunImpl() {
+bool FileSystemRestoreEntryFunction::RunAsync() {
   std::string entry_id;
   bool needs_new_entry;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &entry_id));

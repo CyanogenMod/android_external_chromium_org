@@ -201,7 +201,7 @@ class SpdyWebSocketStreamTest
     host_port_pair_.set_port(80);
     spdy_session_key_ = SpdySessionKey(host_port_pair_,
                                        ProxyServer::Direct(),
-                                       kPrivacyModeDisabled);
+                                       PRIVACY_MODE_DISABLED);
 
     spdy_settings_to_send_[spdy_settings_id_to_set_] =
         SettingsFlagsAndValue(
@@ -295,8 +295,7 @@ INSTANTIATE_TEST_CASE_P(
     NextProto,
     SpdyWebSocketStreamTest,
     testing::Values(kProtoDeprecatedSPDY2,
-                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4a2,
-                    kProtoHTTP2Draft04));
+                    kProtoSPDY3, kProtoSPDY31, kProtoSPDY4));
 
 // TODO(toyoshim): Replace old framing data to new one, then use HEADERS and
 // data frames.
@@ -563,18 +562,20 @@ TEST_P(SpdyWebSocketStreamTest, IOPending) {
   Prepare(1);
   scoped_ptr<SpdyFrame> settings_frame(
       spdy_util_.ConstructSpdySettings(spdy_settings_to_send_));
+  scoped_ptr<SpdyFrame> settings_ack(spdy_util_.ConstructSpdySettingsAck());
   MockWrite writes[] = {
-    CreateMockWrite(*request_frame_.get(), 1),
-    CreateMockWrite(*message_frame_.get(), 3),
-    CreateMockWrite(*closing_frame_.get(), 5)
+    CreateMockWrite(*settings_ack, 1),
+    CreateMockWrite(*request_frame_.get(), 2),
+    CreateMockWrite(*message_frame_.get(), 4),
+    CreateMockWrite(*closing_frame_.get(), 6)
   };
 
   MockRead reads[] = {
     CreateMockRead(*settings_frame.get(), 0),
-    CreateMockRead(*response_frame_.get(), 2),
-    CreateMockRead(*message_frame_.get(), 4),
-    CreateMockRead(*closing_frame_.get(), 6),
-    MockRead(SYNCHRONOUS, 0, 7)  // EOF cause OnCloseSpdyStream event.
+    CreateMockRead(*response_frame_.get(), 3),
+    CreateMockRead(*message_frame_.get(), 5),
+    CreateMockRead(*closing_frame_.get(), 7),
+    MockRead(SYNCHRONOUS, 0, 8)  // EOF cause OnCloseSpdyStream event.
   };
 
   DeterministicSocketData data(reads, arraysize(reads),
@@ -623,7 +624,7 @@ TEST_P(SpdyWebSocketStreamTest, IOPending) {
 
   SendRequest();
 
-  data.RunFor(7);
+  data.RunFor(8);
   completion_callback_.WaitForResult();
 
   websocket_stream_.reset();

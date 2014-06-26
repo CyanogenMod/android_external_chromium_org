@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
@@ -31,17 +32,16 @@ TEST(ErrorEncoding, OnlyAMethod) {
   EXPECT_EQ(-75, error);
 }
 
-TEST(ErrorEncoding, PlatformFileError) {
+TEST(ErrorEncoding, FileError) {
   const MethodID in_method = kWritableFileClose;
-  const base::PlatformFileError pfe =
-      base::PLATFORM_FILE_ERROR_INVALID_OPERATION;
-  const Status s = MakeIOError("Somefile.txt", "message", in_method, pfe);
+  const base::File::Error fe = base::File::FILE_ERROR_INVALID_OPERATION;
+  const Status s = MakeIOError("Somefile.txt", "message", in_method, fe);
   MethodID method;
   int error;
   EXPECT_EQ(METHOD_AND_PFE,
             ParseMethodAndError(s.ToString().c_str(), &method, &error));
   EXPECT_EQ(in_method, method);
-  EXPECT_EQ(pfe, error);
+  EXPECT_EQ(fe, error);
 }
 
 TEST(ErrorEncoding, Errno) {
@@ -113,7 +113,7 @@ TYPED_TEST(ChromiumEnvMultiPlatformTests, DirectorySyncing) {
   MyEnv<TypeParam> env;
 
   base::ScopedTempDir dir;
-  dir.CreateUniqueTempDir();
+  ASSERT_TRUE(dir.CreateUniqueTempDir());
   base::FilePath dir_path = dir.path();
   std::string some_data = "some data";
   Slice data = some_data;
@@ -176,7 +176,7 @@ TEST(ChromiumEnv, BackupTables) {
   options.env = IDBEnv();
 
   base::ScopedTempDir scoped_temp_dir;
-  scoped_temp_dir.CreateUniqueTempDir();
+  ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
   base::FilePath dir = scoped_temp_dir.path();
 
   DB* db;
@@ -208,7 +208,6 @@ TEST(ChromiumEnv, BackupTables) {
 
   // Ensure that deleting an ldb file also deletes its backup.
   int orig_ldb_files = CountFilesWithExtension(dir, FPL(".ldb"));
-  int orig_bak_files = CountFilesWithExtension(dir, FPL(".bak"));
   EXPECT_GT(ldb_files, 0);
   EXPECT_EQ(ldb_files, bak_files);
   EXPECT_TRUE(GetFirstLDBFile(dir, &ldb_file));
@@ -221,19 +220,19 @@ TEST(ChromiumEnv, BackupTables) {
 
 TEST(ChromiumEnv, GetChildrenEmptyDir) {
   base::ScopedTempDir scoped_temp_dir;
-  scoped_temp_dir.CreateUniqueTempDir();
+  ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
   base::FilePath dir = scoped_temp_dir.path();
 
   Env* env = IDBEnv();
   std::vector<std::string> result;
   leveldb::Status status = env->GetChildren(dir.AsUTF8Unsafe(), &result);
   EXPECT_TRUE(status.ok());
-  EXPECT_EQ(0, result.size());
+  EXPECT_EQ(0U, result.size());
 }
 
 TEST(ChromiumEnv, GetChildrenPriorResults) {
   base::ScopedTempDir scoped_temp_dir;
-  scoped_temp_dir.CreateUniqueTempDir();
+  ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
   base::FilePath dir = scoped_temp_dir.path();
 
   base::FilePath new_file_dir = dir.Append(FPL("tmp_file"));
@@ -247,12 +246,12 @@ TEST(ChromiumEnv, GetChildrenPriorResults) {
   std::vector<std::string> result;
   leveldb::Status status = env->GetChildren(dir.AsUTF8Unsafe(), &result);
   EXPECT_TRUE(status.ok());
-  EXPECT_EQ(1, result.size());
+  EXPECT_EQ(1U, result.size());
 
   // And a second time should also return one result
   status = env->GetChildren(dir.AsUTF8Unsafe(), &result);
   EXPECT_TRUE(status.ok());
-  EXPECT_EQ(1, result.size());
+  EXPECT_EQ(1U, result.size());
 }
 
 int main(int argc, char** argv) { return base::TestSuite(argc, argv).Run(); }

@@ -19,7 +19,6 @@ class DictionaryValue;
 namespace chromeos {
 
 class DeviceState;
-class FavoriteState;
 class NetworkState;
 class NetworkTypePattern;
 
@@ -29,7 +28,6 @@ class CHROMEOS_EXPORT ManagedState {
  public:
   enum ManagedType {
     MANAGED_TYPE_NETWORK,
-    MANAGED_TYPE_FAVORITE,
     MANAGED_TYPE_DEVICE
   };
 
@@ -43,7 +41,6 @@ class CHROMEOS_EXPORT ManagedState {
   // NULL if it is not.
   NetworkState* AsNetworkState();
   DeviceState* AsDeviceState();
-  FavoriteState* AsFavoriteState();
 
   // Called by NetworkStateHandler when a property was received. The return
   // value indicates if the state changed and is used to reduce the number of
@@ -64,6 +61,10 @@ class CHROMEOS_EXPORT ManagedState {
   virtual bool InitialPropertiesReceived(
       const base::DictionaryValue& properties);
 
+  // Fills |dictionary| with a minimal set of state properties for the network
+  // type. See implementations for which properties are included.
+  virtual void GetStateProperties(base::DictionaryValue* dictionary) const;
+
   const ManagedType managed_type() const { return managed_type_; }
   const std::string& path() const { return path_; }
   const std::string& name() const { return name_; }
@@ -75,7 +76,10 @@ class CHROMEOS_EXPORT ManagedState {
     update_requested_ = update_requested;
   }
 
+  // Returns true if |type_| matches |pattern|.
   bool Matches(const NetworkTypePattern& pattern) const;
+
+  static std::string TypeToString(ManagedType type);
 
  protected:
   ManagedState(ManagedType type, const std::string& path);

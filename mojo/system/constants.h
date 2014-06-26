@@ -10,10 +10,13 @@
 namespace mojo {
 namespace system {
 
-// Maximum of open (Mojo) handles.
+// Maximum number of open (Mojo) handles.
 // TODO(vtl): This doesn't count "live" handles, some of which may live in
 // messages.
 const size_t kMaxHandleTableSize = 1000000;
+
+// Maximum number of active memory mappings.
+const size_t kMaxMappingTableSize = 1000000;
 
 const size_t kMaxWaitManyNumHandles = kMaxHandleTableSize;
 
@@ -33,6 +36,11 @@ const size_t kDefaultDataPipeCapacityBytes = 1024 * 1024;  // 1 MB.
 // Alignment for the "start" of the data buffer used by data pipes. (The
 // alignment of elements will depend on this and the element size.)
 const size_t kDataPipeBufferAlignmentBytes = 16;
+
+// TODO(vtl): Set this hard limit appropriately (e.g., higher on 64-bit). (This
+// will also entail some auditing to make sure I'm not messing up my checks
+// anywhere.)
+const size_t kMaxSharedMemoryNumBytes = 1024 * 1024 * 1024;  // 1 GB.
 
 }  // namespace system
 }  // namespace mojo

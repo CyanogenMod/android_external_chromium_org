@@ -16,12 +16,14 @@
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
+#include "base/time/time.h"
 #include "base/tracked_objects.h"
-#include "components/webdata/encryptor/encryptor.h"
+#include "google_apis/gcm/base/encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
+#include "third_party/leveldatabase/src/include/leveldb/write_batch.h"
 
 namespace gcm {
 
@@ -35,29 +37,42 @@ const int kMessagesPerAppLimit = 20;
 const char kDeviceAIDKey[] = "device_aid_key";
 // Key for this device's android security token.
 const char kDeviceTokenKey[] = "device_token_key";
+// Lowest lexicographically ordered app ids.
+// Used for prefixing app id.
+const char kRegistrationKeyStart[] = "reg1-";
+// Key guaranteed to be higher than all app ids.
+// Used for limiting iteration.
+const char kRegistrationKeyEnd[] = "reg2-";
 // Lowest lexicographically ordered incoming message key.
 // Used for prefixing messages.
 const char kIncomingMsgKeyStart[] = "incoming1-";
 // Key guaranteed to be higher than all incoming message keys.
 // Used for limiting iteration.
 const char kIncomingMsgKeyEnd[] = "incoming2-";
-// Key for next serial number assigned to the user.
-const char kNextSerialNumberKey[] = "next_serial_number_key";
 // Lowest lexicographically ordered outgoing message key.
 // Used for prefixing outgoing messages.
 const char kOutgoingMsgKeyStart[] = "outgoing1-";
 // Key guaranteed to be higher than all outgoing message keys.
 // Used for limiting iteration.
 const char kOutgoingMsgKeyEnd[] = "outgoing2-";
-// Lowest lexicographically ordered username.
-// Used for prefixing username to serial number mappings.
-const char kUserSerialNumberKeyStart[] = "user1-";
-// Key guaranteed to be higher than all usernames.
+// Lowest lexicographically ordered G-service settings key.
+// Used for prefixing G-services settings.
+const char kGServiceSettingKeyStart[] = "gservice1-";
+// Key guaranteed to be higher than all G-services settings keys.
 // Used for limiting iteration.
-const char kUserSerialNumberKeyEnd[] = "user2-";
+const char kGServiceSettingKeyEnd[] = "gservice2-";
+// Key for digest of the last G-services settings update.
+const char kGServiceSettingsDigestKey[] = "gservices_digest";
+// Key used to timestamp last checkin (marked with G services settings update).
+const char kLastCheckinTimeKey[] = "last_checkin_time";
 
-// Value indicating that serial number was not assigned.
-const int64 kSerialNumberMissing = -1LL;
+std::string MakeRegistrationKey(const std::string& app_id) {
+  return kRegistrationKeyStart + app_id;
+}
+
+std::string ParseRegistrationKey(const std::string& key) {
+  return key.substr(arraysize(kRegistrationKeyStart) - 1);
+}
 
 std::string MakeIncomingKey(const std::string& persistent_id) {
   return kIncomingMsgKeyStart + persistent_id;
@@ -67,16 +82,16 @@ std::string MakeOutgoingKey(const std::string& persistent_id) {
   return kOutgoingMsgKeyStart + persistent_id;
 }
 
-std::string MakeUserSerialNumberKey(const std::string& username) {
-  return kUserSerialNumberKeyStart + username;
-}
-
 std::string ParseOutgoingKey(const std::string& key) {
   return key.substr(arraysize(kOutgoingMsgKeyStart) - 1);
 }
 
-std::string ParseUsername(const std::string& key) {
-  return key.substr(arraysize(kUserSerialNumberKeyStart) - 1);
+std::string MakeGServiceSettingKey(const std::string& setting_name) {
+  return kGServiceSettingKeyStart + setting_name;
+}
+
+std::string ParseGServiceSettingKey(const std::string& key) {
+  return key.substr(arraysize(kGServiceSettingKeyStart) - 1);
 }
 
 // Note: leveldb::Slice keeps a pointer to the data in |s|, which must therefore
@@ -92,14 +107,21 @@ class GCMStoreImpl::Backend
     : public base::RefCountedThreadSafe<GCMStoreImpl::Backend> {
  public:
   Backend(const base::FilePath& path,
-          scoped_refptr<base::SequencedTaskRunner> foreground_runner);
+          scoped_refptr<base::SequencedTaskRunner> foreground_runner,
+          scoped_ptr<Encryptor> encryptor);
 
   // Blocking implementations of GCMStoreImpl methods.
   void Load(const LoadCallback& callback);
+  void Close();
   void Destroy(const UpdateCallback& callback);
   void SetDeviceCredentials(uint64 device_android_id,
                             uint64 device_security_token,
                             const UpdateCallback& callback);
+  void AddRegistration(const std::string& app_id,
+                       const linked_ptr<RegistrationInfo>& registration,
+                       const UpdateCallback& callback);
+  void RemoveRegistration(const std::string& app_id,
+                          const UpdateCallback& callback);
   void AddIncomingMessage(const std::string& persistent_id,
                           const UpdateCallback& callback);
   void RemoveIncomingMessages(const PersistentIdList& persistent_ids,
@@ -116,29 +138,40 @@ class GCMStoreImpl::Backend
                            const UpdateCallback& callback);
   void RemoveUserSerialNumber(const std::string& username,
                               const UpdateCallback& callback);
-  void SetNextSerialNumber(int64 serial_number, const UpdateCallback& callback);
+  void SetLastCheckinTime(const base::Time& last_checkin_time,
+                          const UpdateCallback& callback);
+  void SetGServicesSettings(
+      const std::map<std::string, std::string>& settings,
+      const std::string& digest,
+      const UpdateCallback& callback);
 
  private:
   friend class base::RefCountedThreadSafe<Backend>;
   ~Backend();
 
   bool LoadDeviceCredentials(uint64* android_id, uint64* security_token);
+  bool LoadRegistrations(RegistrationInfoMap* registrations);
   bool LoadIncomingMessages(std::vector<std::string>* incoming_messages);
   bool LoadOutgoingMessages(OutgoingMessageMap* outgoing_messages);
-  bool LoadNextSerialNumber(int64* next_serial_number);
-  bool LoadUserSerialNumberMap(
-      std::map<std::string, int64>* user_serial_number_map);
+  bool LoadLastCheckinTime(base::Time* last_checkin_time);
+  bool LoadGServicesSettings(std::map<std::string, std::string>* settings,
+                             std::string* digest);
 
   const base::FilePath path_;
   scoped_refptr<base::SequencedTaskRunner> foreground_task_runner_;
+  scoped_ptr<Encryptor> encryptor_;
 
   scoped_ptr<leveldb::DB> db_;
 };
 
 GCMStoreImpl::Backend::Backend(
     const base::FilePath& path,
-    scoped_refptr<base::SequencedTaskRunner> foreground_task_runner)
-    : path_(path), foreground_task_runner_(foreground_task_runner) {}
+    scoped_refptr<base::SequencedTaskRunner> foreground_task_runner,
+    scoped_ptr<Encryptor> encryptor)
+    : path_(path),
+      foreground_task_runner_(foreground_task_runner),
+      encryptor_(encryptor.Pass()) {
+}
 
 GCMStoreImpl::Backend::~Backend() {}
 
@@ -170,16 +203,20 @@ void GCMStoreImpl::Backend::Load(const LoadCallback& callback) {
 
   if (!LoadDeviceCredentials(&result->device_android_id,
                              &result->device_security_token) ||
+      !LoadRegistrations(&result->registrations) ||
       !LoadIncomingMessages(&result->incoming_messages) ||
       !LoadOutgoingMessages(&result->outgoing_messages) ||
-      !LoadNextSerialNumber(
-           &result->serial_number_mappings.next_serial_number) ||
-      !LoadUserSerialNumberMap(
-           &result->serial_number_mappings.user_serial_numbers)) {
+      !LoadLastCheckinTime(&result->last_checkin_time) ||
+      !LoadGServicesSettings(&result->gservices_settings,
+                             &result->gservices_digest)) {
     result->device_android_id = 0;
     result->device_security_token = 0;
+    result->registrations.clear();
     result->incoming_messages.clear();
     result->outgoing_messages.clear();
+    result->gservices_settings.clear();
+    result->gservices_digest.clear();
+    result->last_checkin_time = base::Time::FromInternalValue(0LL);
     foreground_task_runner_->PostTask(FROM_HERE,
                                       base::Bind(callback,
                                                  base::Passed(&result)));
@@ -193,16 +230,17 @@ void GCMStoreImpl::Backend::Load(const LoadCallback& callback) {
       UMA_HISTOGRAM_COUNTS("GCM.StoreSizeKB",
                            static_cast<int>(file_size / 1024));
     }
+    UMA_HISTOGRAM_COUNTS("GCM.RestoredRegistrations",
+                         result->registrations.size());
     UMA_HISTOGRAM_COUNTS("GCM.RestoredOutgoingMessages",
                          result->outgoing_messages.size());
     UMA_HISTOGRAM_COUNTS("GCM.RestoredIncomingMessages",
                          result->incoming_messages.size());
-    UMA_HISTOGRAM_COUNTS(
-        "GCM.NumUsers",
-        result->serial_number_mappings.user_serial_numbers.size());
   }
 
-  DVLOG(1) << "Succeeded in loading " << result->incoming_messages.size()
+  DVLOG(1) << "Succeeded in loading " << result->registrations.size()
+           << " registrations, "
+           << result->incoming_messages.size()
            << " unacknowledged incoming messages and "
            << result->outgoing_messages.size()
            << " unacknowledged outgoing messages.";
@@ -211,6 +249,11 @@ void GCMStoreImpl::Backend::Load(const LoadCallback& callback) {
                                     base::Bind(callback,
                                                base::Passed(&result)));
   return;
+}
+
+void GCMStoreImpl::Backend::Close() {
+  DVLOG(1) << "Closing GCM store.";
+  db_.reset();
 }
 
 void GCMStoreImpl::Backend::Destroy(const UpdateCallback& callback) {
@@ -241,8 +284,8 @@ void GCMStoreImpl::Backend::SetDeviceCredentials(
   write_options.sync = true;
 
   std::string encrypted_token;
-  Encryptor::EncryptString(base::Uint64ToString(device_security_token),
-                           &encrypted_token);
+  encryptor_->EncryptString(base::Uint64ToString(device_security_token),
+                            &encrypted_token);
   std::string android_id_str = base::Uint64ToString(device_android_id);
   leveldb::Status s =
       db_->Put(write_options,
@@ -257,6 +300,51 @@ void GCMStoreImpl::Backend::SetDeviceCredentials(
     return;
   }
   LOG(ERROR) << "LevelDB put failed: " << s.ToString();
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+}
+
+void GCMStoreImpl::Backend::AddRegistration(
+    const std::string& app_id,
+    const linked_ptr<RegistrationInfo>& registration,
+    const UpdateCallback& callback) {
+  DVLOG(1) << "Saving registration info for app: " << app_id;
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  std::string key = MakeRegistrationKey(app_id);
+  std::string value = registration->SerializeAsString();
+  const leveldb::Status status = db_->Put(write_options,
+                                          MakeSlice(key),
+                                          MakeSlice(value));
+  if (status.ok()) {
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, true));
+    return;
+  }
+  LOG(ERROR) << "LevelDB put failed: " << status.ToString();
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+}
+
+void GCMStoreImpl::Backend::RemoveRegistration(const std::string& app_id,
+                                               const UpdateCallback& callback) {
+  if (!db_.get()) {
+    LOG(ERROR) << "GCMStore db doesn't exist.";
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+    return;
+  }
+  leveldb::WriteOptions write_options;
+  write_options.sync = true;
+
+  leveldb::Status status = db_->Delete(write_options, MakeSlice(app_id));
+  if (status.ok()) {
+    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, true));
+    return;
+  }
+  LOG(ERROR) << "LevelDB remove failed: " << status.ToString();
   foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
 }
 
@@ -397,77 +485,59 @@ void GCMStoreImpl::Backend::RemoveOutgoingMessages(
                                                AppIdToMessageCountMap()));
 }
 
-void GCMStoreImpl::Backend::AddUserSerialNumber(
-    const std::string& username,
-    int64 serial_number,
+void GCMStoreImpl::Backend::SetLastCheckinTime(
+    const base::Time& last_checkin_time,
     const UpdateCallback& callback) {
-  DVLOG(1) << "Saving username to serial number mapping for user: " << username;
-  if (!db_.get()) {
-    LOG(ERROR) << "GCMStore db doesn't exist.";
-    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
-    return;
-  }
   leveldb::WriteOptions write_options;
   write_options.sync = true;
 
-  std::string key = MakeUserSerialNumberKey(username);
-  std::string serial_number_str = base::Int64ToString(serial_number);
-  const leveldb::Status status =
+  int64 last_checkin_time_internal = last_checkin_time.ToInternalValue();
+  const leveldb::Status s =
       db_->Put(write_options,
-               MakeSlice(key),
-               MakeSlice(serial_number_str));
-  if (status.ok()) {
-    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, true));
-    return;
-  }
-  LOG(ERROR) << "LevelDB put failed: " << status.ToString();
-  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+               MakeSlice(kLastCheckinTimeKey),
+               MakeSlice(base::Int64ToString(last_checkin_time_internal)));
+
+  if (!s.ok())
+    LOG(ERROR) << "LevelDB set last checkin time failed: " << s.ToString();
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
 }
 
-void GCMStoreImpl::Backend::RemoveUserSerialNumber(
-    const std::string& username,
+void GCMStoreImpl::Backend::SetGServicesSettings(
+    const std::map<std::string, std::string>& settings,
+    const std::string& settings_digest,
     const UpdateCallback& callback) {
-  if (!db_.get()) {
-    LOG(ERROR) << "GCMStore db doesn't exist.";
-    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
-    return;
+  leveldb::WriteBatch write_batch;
+
+  // Remove all existing settings.
+  leveldb::ReadOptions read_options;
+  read_options.verify_checksums = true;
+  scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(read_options));
+  for (iter->Seek(MakeSlice(kGServiceSettingKeyStart));
+       iter->Valid() && iter->key().ToString() < kGServiceSettingKeyEnd;
+       iter->Next()) {
+    write_batch.Delete(iter->key());
   }
+
+  // Add the new settings.
+  for (std::map<std::string, std::string>::const_iterator iter =
+           settings.begin();
+       iter != settings.end(); ++iter) {
+    write_batch.Put(MakeSlice(MakeGServiceSettingKey(iter->first)),
+                    MakeSlice(iter->second));
+  }
+
+  // Update the settings digest.
+  write_batch.Put(MakeSlice(kGServiceSettingsDigestKey),
+                  MakeSlice(settings_digest));
+
+  // Write it all in a batch.
   leveldb::WriteOptions write_options;
   write_options.sync = true;
 
-  leveldb::Status status = db_->Delete(write_options, MakeSlice(username));
-  if (status.ok()) {
-    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, true));
-    return;
-  }
-  LOG(ERROR) << "LevelDB remove failed: " << status.ToString();
-  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
-}
-
-void GCMStoreImpl::Backend::SetNextSerialNumber(
-    int64 next_serial_number,
-    const UpdateCallback& callback) {
-  DVLOG(1) << "Updating the value of next user serial number to: "
-           << next_serial_number;
-  if (!db_.get()) {
-    LOG(ERROR) << "GCMStore db doesn't exist.";
-    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
-    return;
-  }
-  leveldb::WriteOptions write_options;
-  write_options.sync = true;
-
-  std::string serial_number_str = base::Int64ToString(next_serial_number);
-  const leveldb::Status status =
-      db_->Put(write_options,
-               MakeSlice(kNextSerialNumberKey),
-               MakeSlice(serial_number_str));
-  if (status.ok()) {
-    foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, true));
-    return;
-  }
-  LOG(ERROR) << "LevelDB put failed: " << status.ToString();
-  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, false));
+  leveldb::Status s = db_->Write(write_options, &write_batch);
+  if (!s.ok())
+    LOG(ERROR) << "LevelDB GService Settings update failed: " << s.ToString();
+  foreground_task_runner_->PostTask(FROM_HERE, base::Bind(callback, s.ok()));
 }
 
 bool GCMStoreImpl::Backend::LoadDeviceCredentials(uint64* android_id,
@@ -487,7 +557,7 @@ bool GCMStoreImpl::Backend::LoadDeviceCredentials(uint64* android_id,
   }
   if (s.ok()) {
     std::string decrypted_token;
-    Encryptor::DecryptString(result, &decrypted_token);
+    encryptor_->DecryptString(result, &decrypted_token);
     if (!base::StringToUint64(decrypted_token, security_token)) {
       LOG(ERROR) << "Failed to restore security token.";
       return false;
@@ -502,6 +572,33 @@ bool GCMStoreImpl::Backend::LoadDeviceCredentials(uint64* android_id,
 
   LOG(ERROR) << "Error reading credentials from store.";
   return false;
+}
+
+bool GCMStoreImpl::Backend::LoadRegistrations(
+    RegistrationInfoMap* registrations) {
+  leveldb::ReadOptions read_options;
+  read_options.verify_checksums = true;
+
+  scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(read_options));
+  for (iter->Seek(MakeSlice(kRegistrationKeyStart));
+       iter->Valid() && iter->key().ToString() < kRegistrationKeyEnd;
+       iter->Next()) {
+    leveldb::Slice s = iter->value();
+    if (s.size() <= 1) {
+      LOG(ERROR) << "Error reading registration with key " << s.ToString();
+      return false;
+    }
+    std::string app_id = ParseRegistrationKey(iter->key().ToString());
+    linked_ptr<RegistrationInfo> registration(new RegistrationInfo);
+    if (!registration->ParseFromString(iter->value().ToString())) {
+      LOG(ERROR) << "Failed to parse registration with app id " << app_id;
+      return false;
+    }
+    DVLOG(1) << "Found registration with app id " << app_id;
+    (*registrations)[app_id] = registration;
+  }
+
+  return true;
 }
 
 bool GCMStoreImpl::Backend::LoadIncomingMessages(
@@ -558,68 +655,63 @@ bool GCMStoreImpl::Backend::LoadOutgoingMessages(
   return true;
 }
 
-bool GCMStoreImpl::Backend::LoadNextSerialNumber(int64* next_serial_number) {
+bool GCMStoreImpl::Backend::LoadLastCheckinTime(
+    base::Time* last_checkin_time) {
   leveldb::ReadOptions read_options;
   read_options.verify_checksums = true;
 
   std::string result;
-  leveldb::Status status =
-      db_->Get(read_options, MakeSlice(kNextSerialNumberKey), &result);
-  if (status.ok()) {
-    if (!base::StringToInt64(result, next_serial_number)) {
-      LOG(ERROR) << "Failed to restore the next serial number.";
-      return false;
-    }
-    return true;
-  }
+  leveldb::Status s = db_->Get(read_options,
+                               MakeSlice(kLastCheckinTimeKey),
+                               &result);
+  int64 time_internal = 0LL;
+  if (s.ok() && !base::StringToInt64(result, &time_internal))
+    LOG(ERROR) << "Failed to restore last checkin time. Using default = 0.";
 
-  if (status.IsNotFound()) {
-    DVLOG(1) << "No next serial number found.";
-    return true;
-  }
+  // In case we cannot read last checkin time, we default it to 0, as we don't
+  // want that situation to cause the whole load to fail.
+  *last_checkin_time = base::Time::FromInternalValue(time_internal);
 
-  LOG(ERROR) << "Error when reading the next serial number.";
-  return false;
+  return true;
 }
 
-bool GCMStoreImpl::Backend::LoadUserSerialNumberMap(
-    std::map<std::string, int64>* user_serial_number_map) {
+bool GCMStoreImpl::Backend::LoadGServicesSettings(
+    std::map<std::string, std::string>* settings,
+    std::string* digest) {
   leveldb::ReadOptions read_options;
   read_options.verify_checksums = true;
 
+  // Load all of the GServices settings.
   scoped_ptr<leveldb::Iterator> iter(db_->NewIterator(read_options));
-  for (iter->Seek(MakeSlice(kUserSerialNumberKeyStart));
-       iter->Valid() && iter->key().ToString() < kUserSerialNumberKeyEnd;
+  for (iter->Seek(MakeSlice(kGServiceSettingKeyStart));
+       iter->Valid() && iter->key().ToString() < kGServiceSettingKeyEnd;
        iter->Next()) {
-    std::string username = ParseUsername(iter->key().ToString());
-    if (username.empty()) {
-      LOG(ERROR) << "Error reading username. It should not be empty.";
+    std::string value = iter->value().ToString();
+    if (value.empty()) {
+      LOG(ERROR) << "Error reading GService Settings " << value;
       return false;
     }
-    std::string serial_number_string = iter->value().ToString();
-    int64 serial_number = kSerialNumberMissing;
-    if (!base::StringToInt64(serial_number_string, &serial_number)) {
-      LOG(ERROR) << "Error reading user serial number for user: " << username;
-      return false;
-    }
-
-    (*user_serial_number_map)[username] = serial_number;
+    std::string id = ParseGServiceSettingKey(iter->key().ToString());
+    (*settings)[id] = value;
+    DVLOG(1) << "Found G Service setting with key: " << id
+             << ", and value: " << value;
   }
+
+  // Load the settings digest. It's ok if it is empty.
+  db_->Get(read_options, MakeSlice(kGServiceSettingsDigestKey), digest);
 
   return true;
 }
 
 GCMStoreImpl::GCMStoreImpl(
-    bool use_mock_keychain,
     const base::FilePath& path,
-    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner)
-    : backend_(new Backend(path, base::MessageLoopProxy::current())),
+    scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
+    scoped_ptr<Encryptor> encryptor)
+    : backend_(new Backend(path,
+                           base::MessageLoopProxy::current(),
+                           encryptor.Pass())),
       blocking_task_runner_(blocking_task_runner),
       weak_ptr_factory_(this) {
-// On OSX, prevent the Keychain permissions popup during unit tests.
-#if defined(OS_MACOSX)
-  Encryptor::UseMockKeychain(use_mock_keychain);
-#endif
 }
 
 GCMStoreImpl::~GCMStoreImpl() {}
@@ -632,6 +724,14 @@ void GCMStoreImpl::Load(const LoadCallback& callback) {
                  base::Bind(&GCMStoreImpl::LoadContinuation,
                             weak_ptr_factory_.GetWeakPtr(),
                             callback)));
+}
+
+void GCMStoreImpl::Close() {
+  weak_ptr_factory_.InvalidateWeakPtrs();
+  app_message_counts_.clear();
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::Close, backend_));
 }
 
 void GCMStoreImpl::Destroy(const UpdateCallback& callback) {
@@ -649,6 +749,29 @@ void GCMStoreImpl::SetDeviceCredentials(uint64 device_android_id,
                  backend_,
                  device_android_id,
                  device_security_token,
+                 callback));
+}
+
+void GCMStoreImpl::AddRegistration(
+    const std::string& app_id,
+    const linked_ptr<RegistrationInfo>& registration,
+    const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::AddRegistration,
+                 backend_,
+                 app_id,
+                 registration,
+                 callback));
+}
+
+void GCMStoreImpl::RemoveRegistration(const std::string& app_id,
+                                          const UpdateCallback& callback) {
+  blocking_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&GCMStoreImpl::Backend::RemoveRegistration,
+                 backend_,
+                 app_id,
                  callback));
 }
 
@@ -754,35 +877,26 @@ void GCMStoreImpl::RemoveOutgoingMessages(
                             callback)));
 }
 
-void GCMStoreImpl::SetNextSerialNumber(int64 next_serial_number,
-                                       const UpdateCallback& callback) {
+void GCMStoreImpl::SetLastCheckinTime(const base::Time& last_checkin_time,
+                                      const UpdateCallback& callback) {
   blocking_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&GCMStoreImpl::Backend::SetNextSerialNumber,
+      base::Bind(&GCMStoreImpl::Backend::SetLastCheckinTime,
                  backend_,
-                 next_serial_number,
+                 last_checkin_time,
                  callback));
 }
 
-void GCMStoreImpl::AddUserSerialNumber(const std::string& username,
-                                       int64 serial_number,
-                                       const UpdateCallback& callback) {
+void GCMStoreImpl::SetGServicesSettings(
+    const std::map<std::string, std::string>& settings,
+    const std::string& digest,
+    const UpdateCallback& callback) {
   blocking_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&GCMStoreImpl::Backend::AddUserSerialNumber,
+      base::Bind(&GCMStoreImpl::Backend::SetGServicesSettings,
                  backend_,
-                 username,
-                 serial_number,
-                 callback));
-}
-
-void GCMStoreImpl::RemoveUserSerialNumber(const std::string& username,
-                                          const UpdateCallback& callback) {
-  blocking_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&GCMStoreImpl::Backend::RemoveUserSerialNumber,
-                 backend_,
-                 username,
+                 settings,
+                 digest,
                  callback));
 }
 

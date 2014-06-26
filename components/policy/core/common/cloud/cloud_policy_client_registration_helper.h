@@ -6,6 +6,7 @@
 #define COMPONENTS_POLICY_CORE_COMMON_CLOUD_CLOUD_POLICY_CLIENT_REGISTRATION_HELPER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -32,12 +33,8 @@ class POLICY_EXPORT CloudPolicyClientRegistrationHelper
       public CloudPolicyClient::Observer {
  public:
   // |context| and |client| are not owned and must outlive this object.
-  // If |should_force_load_policy| then the cloud policy registration is
-  // performed even if Gaia indicates that this account doesn't have management
-  // enabled.
   CloudPolicyClientRegistrationHelper(
       CloudPolicyClient* client,
-      bool should_force_load_policy,
       enterprise_management::DeviceRegisterRequest::Type registration_type);
   virtual ~CloudPolicyClientRegistrationHelper();
 
@@ -56,6 +53,15 @@ class POLICY_EXPORT CloudPolicyClientRegistrationHelper
   // |callback| is invoked when the registration is complete.
   void StartRegistrationWithLoginToken(const std::string& login_refresh_token,
                                        const base::Closure& callback);
+
+  // Starts the client registration process. |access_token| must be a valid
+  // OAuth access token for the scopes returned by the |GetScopes| static
+  // function.
+  void StartRegistrationWithAccessToken(const std::string& access_token,
+                                        const base::Closure& callback);
+
+  // Returns the scopes required for policy client registration.
+  static std::vector<std::string> GetScopes();
 #endif
 
  private:
@@ -103,7 +109,6 @@ class POLICY_EXPORT CloudPolicyClientRegistrationHelper
 
   net::URLRequestContextGetter* context_;
   CloudPolicyClient* client_;
-  bool should_force_load_policy_;
   enterprise_management::DeviceRegisterRequest::Type registration_type_;
   base::Closure callback_;
 

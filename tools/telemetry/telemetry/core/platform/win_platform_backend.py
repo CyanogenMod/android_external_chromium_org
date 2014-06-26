@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -83,7 +83,7 @@ class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
     if kill_process_tree:
       cmd.append('/T')
     subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                     stderr=subprocess.STDOUT).wait()
+                     stderr=subprocess.STDOUT).communicate()
 
   def GetSystemProcessInfo(self):
     # [3:] To skip 2 blank lines and header.
@@ -144,21 +144,18 @@ class WinPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
     os_version = platform.uname()[3]
 
     if os_version.startswith('5.1.'):
-      return platform_backend.OSVersion('xp', 5.1)
+      return platform_backend.XP
     if os_version.startswith('6.0.'):
-      return platform_backend.OSVersion('vista', 6.0)
+      return platform_backend.VISTA
     if os_version.startswith('6.1.'):
-      return platform_backend.OSVersion('win7', 6.1)
+      return platform_backend.WIN7
     if os_version.startswith('6.2.'):
-      return platform_backend.OSVersion('win8', 6.2)
+      return platform_backend.WIN8
 
     raise NotImplementedError('Unknown win version %s.' % os_version)
 
   def CanFlushIndividualFilesFromSystemCache(self):
     return True
-
-  def GetFlushUtilityName(self):
-    return 'clear_system_cache.exe'
 
   def _GetWin32ProcessInfo(self, func, pid):
     mask = (win32con.PROCESS_QUERY_INFORMATION |

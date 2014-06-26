@@ -7,6 +7,8 @@
 
 #include "base/basictypes.h"
 #include "native_client/src/untrusted/irt/irt.h"
+#include "ppapi/nacl_irt/public/irt_nonsfi.h"
+#include "ppapi/nacl_irt/public/irt_ppapi.h"
 
 namespace nacl {
 namespace nonsfi {
@@ -21,6 +23,11 @@ extern const struct nacl_irt_thread kIrtThread;
 extern const struct nacl_irt_futex kIrtFutex;
 extern const struct nacl_irt_tls kIrtTls;
 extern const struct nacl_irt_clock kIrtClock;
+extern const struct nacl_irt_ppapihook kIrtPpapiHook;
+extern const struct nacl_irt_resource_open kIrtResourceOpen;
+extern const struct nacl_irt_random kIrtRandom;
+extern const struct nacl_irt_exception_handling kIrtExceptionHandling;
+extern const struct nacl_irt_icache kIrtIcache;
 
 }  // namespace nonsfi
 }  // namespace nacl

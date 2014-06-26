@@ -1,6 +1,6 @@
 {
   "-- Template --": {
-    "intro": "Top-level entries map a policy name to its test parameters, described below.",
+    "intro": "Top-level entries map a policy name to its test parameters, described below. The name of the top level entry should be of the form <policy name>[.suffix]. The optional suffix is used for defining multiple test cases for a single policy.",
 
     "os": ["List of operating systems that support this policy. Valid values:", "win", "linux", "mac", "chromeos", "Defaults to empty if not specified."],
     "official_only": "Whether this policy exists in official builds only. Defaults to |false| if not specified.",
@@ -10,10 +10,13 @@
     "pref_mappings": [
       { "pref": "The affected preference's name.",
         "local_state": "Whether |pref| is registered in local state's PrefService instead of the profile's PrefService. Defaults to |false| if not specified.",
+        "check_for_mandatory": "Should the preference be tested when a mandatory value is set for the policy? Defaults to |true| if not specified.",
+        "check_for_recommended": "Should the preference be tested when a recommended value is set for the policy? Defaults to |true| if not specified.",
+        "note": "When |can_be_recommended| is |false|, the policy is never set to a recommended value so |check_for_recommended| has no effect.",
         "note": "The following entries should be specified if controlled setting indicators exist for |pref| in the settings UI.",
         "indicator_test_setup_js": "Any JavaScript that should be executed before testing the indicators. This should be specified only if an explicit user action must be simulated (e.g. clicking a button).",
         "indicator_selector": "A CSS selector that locates all controlled setting indicators for |pref|. This is appended to the selector 'span.controlled-setting-indicator' and if not specified, defaults to '[pref=(the value of |pref|)', e.g. '[pref=homepage]'.",
-        "note 2": "Any number of test cases may be specified in the following array.",
+        "note": "Any number of test cases may be specified in the following array.",
         "indicator_tests": [
           { "policy": "A policy dictionary that should affect |pref| when set as mandatory or recommended policy.",
             "value": "The value that |pref| should take on. This must only be specified if |pref| has multiple controlled setting indicators, each corresponding to a specific value (e.g. indicators next to radio buttons).",
@@ -22,7 +25,7 @@
         ]
       }
     ],
-    "note 2": "The following entry should be specified if there is a controlled setting indicator that reacts to the policy directly, without a preference serving as an intermediary.",
+    "note": "The following entry should be specified if there is a controlled setting indicator that reacts to the policy directly, without a preference serving as an intermediary.",
     "indicator_selector": "A CSS selector that locates the controlled setting indicator directly affected by the policy. This is appended to the selector 'span.controlled-setting-indicator'."
   },
 
@@ -233,6 +236,30 @@
     ]
   },
 
+  "RemoteAccessHostAllowGnubbyAuth": {
+    "os": [],
+    "test_policy": { "RemoteAccessHostAllowGnubbyAuth": true },
+    "pref_mappings": [
+      { "pref": "remote_access.host_allow_gnubby_auth" }
+    ]
+  },
+
+  "RemoteAccessHostAllowRelayedConnection": {
+    "os": [],
+    "test_policy": { "RemoteAccessHostAllowRelayedConnection": true },
+    "pref_mappings": [
+      { "pref": "remote_access.host_allow_relayed_connection" }
+    ]
+  },
+
+  "RemoteAccessHostUdpPortRange": {
+    "os": [],
+    "test_policy": { "RemoteAccessHostUdpPortRange": "12400-12409" },
+    "pref_mappings": [
+      { "pref": "remote_access.host_udp_port_range" }
+    ]
+  },
+
   "PrintingEnabled": {
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "PrintingEnabled": false },
@@ -376,6 +403,11 @@
     ]
   },
 
+  "EnableWebBasedSignin": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": { "EnableWebBasedSignin": false }
+  },
+
   "UserDataDir": {
     "note": "TODO(joaodasilva): To test that this policy works correctly, it would need to be set before the browser is launched. PolicyPrefsTest should be refactored to support this and a test for this policy added."
   },
@@ -404,8 +436,8 @@
     ]
   },
 
-  "DownloadDirectory": {
-    "os": ["win", "mac", "linux"],
+  "DownloadDirectory.0": {
+    "os": ["win", "mac", "linux", "chromeos"],
     "can_be_recommended": true,
     "test_policy": { "DownloadDirectory": "${user_home}/test-downloads" },
     "pref_mappings": [
@@ -415,8 +447,21 @@
         ]
       },
       { "pref": "download.prompt_for_download",
+        "check_for_recommended" : false,
         "indicator_tests": [
           { "policy": { "DownloadDirectory": "${user_home}/test-downloads" } }
+        ]
+      }
+    ]
+  },
+
+  "DownloadDirectory.1": {
+    "os": ["chromeos"],
+    "test_policy": { "DownloadDirectory": "${google_drive}/downloads" },
+    "pref_mappings": [
+      { "pref": "gdata.disabled",
+        "indicator_tests": [
+          { "policy": { "DownloadDirectory": "${google_drive}/downloads" } }
         ]
       }
     ]
@@ -499,13 +544,7 @@
   },
 
   "EnableOriginBoundCerts": {
-    "os": ["win", "mac", "linux"],
-    "test_policy": { "EnableOriginBoundCerts": true },
-    "pref_mappings": [
-      { "pref": "ssl.origin_bound_certs.enabled",
-        "local_state": true
-      }
-    ]
+    "note": "This policy is retired, see http://crbug.com/354749."
   },
 
   "DisableSSLRecordSplitting": {
@@ -717,10 +756,10 @@
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "DefaultSearchProviderEnabled": false },
     "pref_mappings": [
-      { "pref": "default_search_provider.enabled",
+      { "pref": "default_search_provider_data.template_url_data",
         "indicator_tests": [
           { "policy": { "DefaultSearchProviderEnabled": false } },
-          { "policy": { "DefaultSearchProviderEnabled": true, "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}" } }
+          { "policy": { "DefaultSearchProviderEnabled": true, "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google" } }
         ]
       }
     ]
@@ -728,9 +767,9 @@
 
   "DefaultSearchProviderName": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderName": "google.com" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderName": "google.com" },
     "pref_mappings": [
-      { "pref": "default_search_provider.name" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
@@ -738,15 +777,15 @@
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google" },
     "pref_mappings": [
-      { "pref": "default_search_provider.keyword" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderSearchURL": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google" },
     "pref_mappings": [
-      { "pref": "default_search_provider.search_url",
+      { "pref": "default_search_provider_data.template_url_data",
         "indicator_selector": "[setting=search-engine]",
         "indicator_tests": [
           { "policy": { "DefaultSearchProviderEnabled": true, "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}" } }
@@ -757,97 +796,97 @@
 
   "DefaultSearchProviderSuggestURL": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderSuggestURL": "http://www.google.com/suggest?q={searchTerms}" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderSuggestURL": "http://www.google.com/suggest?q={searchTerms}" },
     "pref_mappings": [
-      { "pref": "default_search_provider.suggest_url" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderInstantURL": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderInstantURL": "http://www.google.com/instant?q={searchTerms}" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderInstantURL": "http://www.google.com/instant?q={searchTerms}" },
     "pref_mappings": [
-      { "pref": "default_search_provider.instant_url" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderNewTabURL": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderNewTabURL": "http://www.google.com/newtab" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderNewTabURL": "http://www.google.com/newtab" },
     "pref_mappings": [
-      { "pref": "default_search_provider.new_tab_url" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderIconURL": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderIconURL": "http://www.google.com/favicon.ico" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderIconURL": "http://www.google.com/favicon.ico" },
     "pref_mappings": [
-      { "pref": "default_search_provider.icon_url" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderEncodings": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderEncodings": ["UTF-8"] },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderEncodings": ["UTF-8"] },
     "pref_mappings": [
-      { "pref": "default_search_provider.encodings" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderAlternateURLs": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderAlternateURLs": ["http://www.google.com/#q={searchTerms}", "http://www.google.com/search#q={searchTerms}"] },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderAlternateURLs": ["http://www.google.com/#q={searchTerms}", "http://www.google.com/search#q={searchTerms}"] },
     "pref_mappings": [
-      { "pref": "default_search_provider.alternate_urls" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderSearchTermsReplacementKey": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderSearchTermsReplacementKey": "espv" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderSearchTermsReplacementKey": "espv" },
     "pref_mappings": [
-      { "pref": "default_search_provider.search_terms_replacement_key" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderImageURL": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderImageURL": "http://www.google.com/searchbyimage/upload" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderImageURL": "http://www.google.com/searchbyimage/upload" },
     "pref_mappings": [
-      { "pref": "default_search_provider.image_url" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderSearchURLPostParams": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderSearchURLPostParams": "" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderSearchURLPostParams": "" },
     "pref_mappings": [
-      { "pref": "default_search_provider.search_url_post_params" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderSuggestURLPostParams": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderSuggestURLPostParams": "" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderSuggestURLPostParams": "" },
     "pref_mappings": [
-      { "pref": "default_search_provider.suggest_url_post_params" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderInstantURLPostParams": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderInstantURLPostParams": "" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderInstantURLPostParams": "" },
     "pref_mappings": [
-      { "pref": "default_search_provider.instant_url_post_params" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
   "DefaultSearchProviderImageURLPostParams": {
     "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderImageURLPostParams": "image_content={imageThumbnail},image_url={imageURL},sbisrc={imageSearchSource}" },
+    "test_policy": { "DefaultSearchProviderSearchURL": "http://www.google.com/?q={searchTerms}", "DefaultSearchProviderKeyword": "google", "DefaultSearchProviderImageURLPostParams": "image_content={imageThumbnail},image_url={imageURL},sbisrc={imageSearchSource}" },
     "pref_mappings": [
-      { "pref": "default_search_provider.image_url_post_params" }
+      { "pref": "default_search_provider_data.template_url_data" }
     ]
   },
 
@@ -1330,6 +1369,14 @@
     ]
   },
 
+  "ShowAppsShortcutInBookmarkBar": {
+    "os": ["win", "linux", "mac"],
+    "test_policy": { "ShowAppsShortcutInBookmarkBar": false },
+    "pref_mappings": [
+      { "pref": "bookmark_bar.show_apps_shortcut" }
+    ]
+  },
+
   "AllowFileSelectionDialogs": {
     "os": ["win", "mac", "linux"],
     "test_policy": { "AllowFileSelectionDialogs": false },
@@ -1443,11 +1490,7 @@
   },
 
   "EnableMemoryInfo": {
-    "os": ["win", "linux", "mac", "chromeos"],
-    "test_policy": { "EnableMemoryInfo": true },
-    "pref_mappings": [
-      { "pref": "enable_memory_info" }
-    ]
+    "note": "This policy is retired, see http://crbug.com/350339."
   },
 
   "DisablePrintPreview": {
@@ -1522,6 +1565,27 @@
     ]
   },
 
+  "WPADQuickCheckEnabled": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": { "WPADQuickCheckEnabled": true },
+    "pref_mappings": [
+      { "pref": "proxy.quick_check_enabled",
+        "local_state": true
+      }
+    ]
+  },
+
+  "RegisteredProtocolHandlers": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "can_be_recommended": true,
+    "test_policy": { "RegisteredProtocolHandlers": {"protocol": "test", "url": "http://example.com/%s", "default": "true"} },
+    "pref_mappings": [
+      { "pref": "custom_handlers.policy.registered_protocol_handlers",
+        "check_for_mandatory": false
+      }
+    ]
+  },
+
   "HideWebStoreIcon": {
     "os": ["win", "linux", "mac", "chromeos"],
     "test_policy": { "HideWebStoreIcon": true },
@@ -1555,10 +1619,21 @@
     "test_policy": {
       "UserAvatarImage": {
         "url": "http://localhost/",
-        "hash": "01234567890012345678900123456789001234567890"
+        "hash": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
       }
     },
     "indicator_selector": "#account-picture-indicator"
+  },
+
+  "WallpaperImage": {
+    "os": ["chromeos"],
+    "test_policy": {
+      "WallpaperImage": {
+        "url": "http://localhost/",
+        "hash": "baddecafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecaf"
+      }
+    },
+    "indicator_selector": "#wallpaper-indicator"
   },
 
   "----- Chrome OS policies ------------------------------------------------": {},
@@ -1853,6 +1928,30 @@
     ]
   },
 
+  "PowerManagementIdleSettings": {
+    "os": ["chromeos"],
+    "test_policy": { "PowerManagementIdleSettings" : { "AC": { "Delays": { "ScreenDim": 5000, "ScreenOff": 7000, "IdleWarning": 8000, "Idle": 9000 }, "IdleAction": "Logout" }, "Battery": { "Delays": { "ScreenDim": 1000, "ScreenOff": 3000, "IdleWarning": 4000, "Idle": 5000 }, "IdleAction": "Logout"} } },
+    "pref_mappings": [
+      { "pref": "power.ac_screen_dim_delay_ms" },
+      { "pref": "power.ac_screen_off_delay_ms" },
+      { "pref": "power.ac_idle_warning_delay_ms" },
+      { "pref": "power.ac_idle_delay_ms" },
+      { "pref": "power.battery_screen_dim_delay_ms" },
+      { "pref": "power.battery_screen_off_delay_ms" },
+      { "pref": "power.battery_idle_warning_delay_ms" },
+      { "pref": "power.battery_idle_delay_ms" }
+    ]
+  },
+
+  "ScreenLockDelays": {
+    "os": ["chromeos"],
+    "test_policy": { "ScreenLockDelays": { "AC": 6000, "Battery": 2000 } },
+    "pref_mappings": [
+      { "pref": "power.ac_screen_lock_delay_ms" },
+      { "pref": "power.battery_screen_lock_delay_ms" }
+    ]
+  },
+
   "TermsOfServiceURL": {
     "os": ["chromeos"],
     "test_policy": { "TermsOfServiceURL": "http://www.example.com/terms_of_service.txt" },
@@ -1934,6 +2033,18 @@
     ]
   },
 
+  "KeyboardDefaultToFunctionKeys": {
+    "os": ["chromeos"],
+    "test_policy": { "KeyboardDefaultToFunctionKeys": true },
+    "pref_mappings": [
+      { "pref": "settings.language.send_function_keys",
+        "indicator_tests": [
+          { "policy": { "KeyboardDefaultToFunctionKeys": true } }
+        ]
+      }
+    ]
+  },
+
   "AttestationEnabledForUser": {
     "os": ["chromeos"],
     "test_policy": { "AttestationEnabledForUser": true },
@@ -2000,6 +2111,26 @@
     "test_policy": { "NativeMessagingUserLevelHosts": false },
     "pref_mappings": [
       { "pref": "native_messaging.user_level_hosts" }
+    ]
+  },
+
+  "EnableDeprecatedWebPlatformFeatures": {
+    "os": ["win", "linux", "mac", "chromeos"],
+    "test_policy": {
+      "EnableDeprecatedWebPlatformFeatures": [
+        "ShowModalDialog_EffectiveUntil20150430"
+      ]
+    },
+    "pref_mappings": [
+      { "pref": "enable_deprecated_web_platform_features" }
+    ]
+  },
+
+  "TouchVirtualKeyboardEnabled": {
+    "os": ["chromeos"],
+    "test_policy": { "TouchVirtualKeyboardEnabled": false },
+    "pref_mappings": [
+      { "pref": "ui.touch_virtual_keyboard_enabled" }
     ]
   },
 
@@ -2130,6 +2261,9 @@
   },
 
   "DeviceLocalAccountPromptForNetworkWhenOffline": {
+  },
+
+  "DeviceBlockDevmode": {
   },
 
   "DeviceLoginScreenPowerManagement": {

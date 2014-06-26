@@ -36,6 +36,7 @@ class ShellURLRequestContextGetter : public net::URLRequestContextGetter {
       base::MessageLoop* io_loop,
       base::MessageLoop* file_loop,
       ProtocolHandlerMap* protocol_handlers,
+      URLRequestInterceptorScopedVector request_interceptors,
       net::NetLog* net_log);
 
   // net::URLRequestContextGetter implementation.
@@ -60,6 +61,7 @@ class ShellURLRequestContextGetter : public net::URLRequestContextGetter {
   scoped_ptr<net::URLRequestContextStorage> storage_;
   scoped_ptr<net::URLRequestContext> url_request_context_;
   ProtocolHandlerMap protocol_handlers_;
+  URLRequestInterceptorScopedVector request_interceptors_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellURLRequestContextGetter);
 };

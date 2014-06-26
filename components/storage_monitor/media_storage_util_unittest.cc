@@ -25,6 +25,8 @@ const char kImageCaptureDeviceId[] = "ic:xyz";
 
 using content::BrowserThread;
 
+namespace storage_monitor {
+
 class MediaStorageUtilTest : public testing::Test {
  public:
   MediaStorageUtilTest()
@@ -41,9 +43,8 @@ class MediaStorageUtilTest : public testing::Test {
   }
 
   void ProcessAttach(const std::string& id,
-                     const base::string16& name,
                      const base::FilePath::StringType& location) {
-    StorageInfo info(id, name, location, base::string16(), base::string16(),
+    StorageInfo info(id, location, base::string16(), base::string16(),
                      base::string16(), 0);
     monitor_->receiver()->ProcessAttach(info);
   }
@@ -118,6 +119,8 @@ TEST_F(MediaStorageUtilTest, CanCreateFileSystemForImageCapture) {
   EXPECT_TRUE(MediaStorageUtil::CanCreateFileSystem(kImageCaptureDeviceId,
                                                     base::FilePath()));
   EXPECT_FALSE(MediaStorageUtil::CanCreateFileSystem(
+      "dcim:xyz", base::FilePath()));
+  EXPECT_FALSE(MediaStorageUtil::CanCreateFileSystem(
       "dcim:xyz", base::FilePath(FILE_PATH_LITERAL("relative"))));
   EXPECT_FALSE(MediaStorageUtil::CanCreateFileSystem(
       "dcim:xyz", base::FilePath(FILE_PATH_LITERAL("../refparent"))));
@@ -139,8 +142,7 @@ TEST_F(MediaStorageUtilTest, DetectDeviceFiltered) {
   event.Wait();
   EXPECT_FALSE(devices.find(kImageCaptureDeviceId) != devices.end());
 
-  ProcessAttach(kImageCaptureDeviceId, base::ASCIIToUTF16("name"),
-                FILE_PATH_LITERAL("/location"));
+  ProcessAttach(kImageCaptureDeviceId, FILE_PATH_LITERAL("/location"));
   devices.insert(kImageCaptureDeviceId);
   event.Reset();
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
@@ -150,3 +152,5 @@ TEST_F(MediaStorageUtilTest, DetectDeviceFiltered) {
 
   EXPECT_TRUE(devices.find(kImageCaptureDeviceId) != devices.end());
 }
+
+}  // namespace storage_monitor

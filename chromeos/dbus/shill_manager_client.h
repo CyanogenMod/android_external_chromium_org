@@ -57,16 +57,37 @@ class CHROMEOS_EXPORT ShillManagerClient : public DBusClient {
     // Used to reset all properties; does not notify observers.
     virtual void ClearProperties() = 0;
 
-    // Add/Remove/ClearService should only be called from ShillServiceClient.
+    // Set manager property.
+    virtual void SetManagerProperty(const std::string& key,
+                                    const base::Value& value) = 0;
+
+    // Modify services in the Manager's list.
     virtual void AddManagerService(const std::string& service_path,
-                                   bool add_to_visible_list,
-                                   bool add_to_watch_list) = 0;
+                                   bool notify_observers) = 0;
     virtual void RemoveManagerService(const std::string& service_path) = 0;
     virtual void ClearManagerServices() = 0;
 
-    // Called by ShillServiceClient when a service's State property changes.
-    // Services are sorted first by Active vs. Inactive State, then by Type.
-    virtual void SortManagerServices() = 0;
+    // Called by ShillServiceClient when a service's State property changes,
+    // before notifying observers. Sets the DefaultService property to empty
+    // if the state changes to a non-connected state.
+    virtual void ServiceStateChanged(const std::string& service_path,
+                                     const std::string& state) = 0;
+
+    // Called by ShillServiceClient when a service's State or Visibile
+    // property changes. If |notify| is true, notifies observers if a list
+    // changed. Services are sorted first by active, inactive, or disabled
+    // state, then by type.
+    virtual void SortManagerServices(bool notify) = 0;
+
+    // Sets up the default fake environment based on default initial states
+    // or states provided by the command line.
+    virtual void SetupDefaultEnvironment() = 0;
+
+    // Returns the interactive delay specified on the command line, 0 for none.
+    virtual int GetInteractiveDelay() const = 0;
+
+    // Sets the 'best' service to connect to on a ConnectToBestServices call.
+    virtual void SetBestServiceToConnect(const std::string& service_path) = 0;
 
    protected:
     virtual ~TestInterface() {}

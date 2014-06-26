@@ -13,11 +13,8 @@
   'dependencies': [
     '<(DEPTH)/chrome/chrome.gyp:<(dll_name)_dll',
   ],
-  'variables': {
-    'dest_dir': '<(PRODUCT_DIR)/syzygy',
-  },
   'conditions': [
-    ['asan!=1', {
+    ['syzyasan==0 and syzygy_optimize==1', {
       # Reorder chrome DLL executable.
       # If there's a matching chrome.dll-ordering.json file present in
       # the output directory, chrome.dll will be ordered according to
@@ -42,7 +39,8 @@
           ],
         },
       ],
-    }, {
+    }],
+    ['syzyasan==1 and syzygy_optimize==0', {
       # Instrument chrome DLL executable with SyzyAsan.
       'actions': [
         {

@@ -112,7 +112,10 @@ const char kOnOsUpgrade[] = "on-os-upgrade";
 // exit code: 0 if EULA not accepted, 1 if EULA accepted, and E_FAIL on error.
 const char kQueryEULAAcceptance[] = "query-eula-acceptance";
 
-// Register Chrome as a valid browser on the current sytem. This option
+// Requests that setup attempt to reenable autoupdates for Chrome.
+const char kReenableAutoupdates[] = "reenable-autoupdates";
+
+// Register Chrome as a valid browser on the current system. This option
 // requires that setup.exe is running as admin. If this option is specified,
 // options kInstallArchive and kUninstall are ignored.
 const char kRegisterChromeBrowser[] = "register-chrome-browser";
@@ -150,6 +153,9 @@ const char kSelfDestruct[] = "self-destruct";
 
 // Install Chrome to system wise location. The default is per user install.
 const char kSystemLevel[] = "system-level";
+
+// Signals to setup.exe that it should trigger the active setup command.
+const char kTriggerActiveSetup[] = "trigger-active-setup";
 
 // If present, setup will uninstall chrome.
 const char kUninstall[] = "uninstall";
@@ -215,6 +221,7 @@ const wchar_t kChromeFrameHelperDll[] = L"chrome_frame_helper.dll";
 const wchar_t kChromeFrameHelperExe[] = L"chrome_frame_helper.exe";
 const wchar_t kChromeFrameHelperWndClass[] = L"ChromeFrameHelperWindowClass";
 const wchar_t kChromeLauncherExe[] = L"chrome_launcher.exe";
+const wchar_t kChromeMetroDll[] = L"metro_driver.dll";
 const wchar_t kChromeNewExe[] = L"new_chrome.exe";
 const wchar_t kChromeOldExe[] = L"old_chrome.exe";
 const wchar_t kCmdInstallApp[] = L"install-application";
@@ -231,7 +238,6 @@ const wchar_t kGoogleChromeInstallSubDir2[] = L"Chrome";
 const wchar_t kInstallBinaryDir[] = L"Application";
 const wchar_t kInstallerDir[] = L"Installer";
 const wchar_t kInstallTempDir[] = L"Temp";
-const wchar_t kInstallUserDataDir[] = L"User Data";
 const wchar_t kLnkExt[] = L".lnk";
 const wchar_t kNaClExe[] = L"nacl64.exe";
 const wchar_t kSetupExe[] = L"setup.exe";

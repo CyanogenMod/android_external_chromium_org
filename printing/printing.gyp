@@ -53,7 +53,6 @@
         'page_range.h',
         'page_setup.cc',
         'page_setup.h',
-        'page_size_margins.cc',
         'page_size_margins.h',
         'pdf_metafile_cg_mac.cc',
         'pdf_metafile_cg_mac.h',
@@ -61,16 +60,13 @@
         'pdf_metafile_skia.h',
         'print_destination_interface.h',
         'print_destination_none.cc',
-        'print_destination_win.cc',
         'print_dialog_gtk_interface.h',
         'print_job_constants.cc',
         'print_job_constants.h',
         'print_settings.cc',
         'print_settings.h',
-        'print_settings_initializer.cc',
-        'print_settings_initializer.h',
-        'print_settings_initializer_gtk.cc',
-        'print_settings_initializer_gtk.h',
+        'print_settings_conversion.cc',
+        'print_settings_conversion.h',
         'print_settings_initializer_mac.cc',
         'print_settings_initializer_mac.h',
         'print_settings_initializer_win.cc',
@@ -100,16 +96,6 @@
           'dependencies': [
             '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
-        }], 
-        ['toolkit_uses_gtk == 0',{
-            'sources/': [['exclude', '_cairo\\.cc$']]
-          }, {  # else: toolkit_uses_gtk == 1
-          'dependencies': [
-            # For FT_Init_FreeType and friends.
-            '../build/linux/system.gyp:freetype2',
-            '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:gtkprint',
-          ],
         }],
         # Mac-Aura does not support printing.
         ['OS=="mac" and use_aura==1',{
@@ -127,14 +113,8 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../win8/win8.gyp:win8_util',
+            '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
-          'conditions': [
-            ['use_aura==1', {
-              'dependencies': [
-                '<(DEPTH)/ui/aura/aura.gyp:aura',
-              ],
-          }]],
           'defines': [
             # PRINT_BACKEND_AVAILABLE disables the default dummy implementation
             # of the print backend and enables a custom implementation instead.
@@ -146,9 +126,6 @@
             'backend/print_backend_win.cc',
             'printing_context_win.cc',
             'printing_context_win.h',
-          ],
-          'sources!': [
-            'print_destination_none.cc',
           ],
         }],
         ['chromeos==1',{
@@ -165,11 +142,6 @@
             'cups_version': '<!(cups-config --api-version)',
           },
           'conditions': [
-            ['OS!="mac"', {
-              'dependencies': [
-                '../build/linux/system.gyp:libgcrypt',
-              ],
-            }],
             ['cups_version in ["1.6", "1.7"]', {
               'cflags': [
                 # CUPS 1.6 deprecated the PPD APIs, but we will stay with this
@@ -236,13 +208,13 @@
       'target_name': 'printing_unittests',
       'type': 'executable',
       'dependencies': [
-        'printing',
-        '../testing/gtest.gyp:gtest',
         '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
+        '../testing/gtest.gyp:gtest',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/ui.gyp:ui',
+        'printing',
       ],
       'sources': [
         'emf_win_unittest.cc',
@@ -257,7 +229,6 @@
         'units_unittest.cc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_gtk_unittest\\.cc$']]}],
         ['OS!="mac"', {'sources/': [['exclude', '_mac_unittest\\.(cc|mm?)$']]}],
         ['OS!="win"', {'sources/': [['exclude', '_win_unittest\\.cc$']]}],
         ['use_cups==1', {
@@ -268,14 +239,9 @@
             'backend/cups_helper_unittest.cc',
           ],
         }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            ['linux_use_tcmalloc == 1', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -309,7 +275,7 @@
                   ],
                 },
               }],
-              [ 'os_bsd==1', {
+              ['os_bsd==1', {
                 'cflags': [
                   '<!@(python cups_config_helper.py --cflags)',
                 ],
@@ -331,7 +297,6 @@
           ],
           'variables': {
             'jni_gen_package': 'printing',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../build/jni_generator.gypi' ],
         },

@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
+#include "base/prefs/pref_member.h"
 #include "base/strings/string16.h"
 #include "components/autofill/core/browser/autofill_metrics.h"
 #include "components/autofill/core/browser/autofill_profile.h"
@@ -19,6 +20,7 @@
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/webdata/common/web_data_service_consumer.h"
 
 class PrefService;
@@ -42,7 +44,8 @@ namespace autofill {
 // Handles loading and saving Autofill profile information to the web database.
 // This class also stores the profiles loaded from the database for use during
 // Autofill.
-class PersonalDataManager : public WebDataServiceConsumer,
+class PersonalDataManager : public KeyedService,
+                            public WebDataServiceConsumer,
                             public AutofillWebDataServiceObserverOnUIThread {
  public:
   // A pair of GUID and variant index. Represents a single FormGroup and a
@@ -136,12 +139,14 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // Loads profiles that can suggest data for |type|. |field_contents| is the
   // part the user has already typed. |field_is_autofilled| is true if the field
   // has already been autofilled. |other_field_types| represents the rest of
-  // form. Identifying info is loaded into the last four outparams.
+  // form. |filter| is run on each potential suggestion. If |filter| returns
+  // true, the profile added to the last four outparams (else it's omitted).
   void GetProfileSuggestions(
       const AutofillType& type,
       const base::string16& field_contents,
       bool field_is_autofilled,
       const std::vector<ServerFieldType>& other_field_types,
+      const base::Callback<bool(const AutofillProfile&)>& filter,
       std::vector<base::string16>* values,
       std::vector<base::string16>* labels,
       std::vector<base::string16>* icons,
@@ -195,6 +200,23 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // will only update when Chrome is restarted.
   virtual const std::string& GetDefaultCountryCodeForNewAddress() const;
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // If Chrome has not prompted for access to the user's address book, the
+  // method prompts the user for permission and blocks the process. Otherwise,
+  // this method has no effect. The return value reflects whether the user was
+  // prompted with a modal dialog.
+  bool AccessAddressBook();
+
+  // Whether an autofill suggestion should be displayed to prompt the user to
+  // grant Chrome access to the user's address book.
+  bool ShouldShowAccessAddressBookSuggestion(AutofillType type);
+
+  // The Chrome binary is in the process of being changed, or has been changed.
+  // Future attempts to access the Address Book might incorrectly present a
+  // blocking dialog.
+  void BinaryChanging();
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+
  protected:
   // Only PersonalDataManagerFactory and certain tests can create instances of
   // PersonalDataManager.
@@ -235,7 +257,7 @@ class PersonalDataManager : public WebDataServiceConsumer,
   virtual void LoadProfiles();
 
   // Loads the auxiliary profiles.  Currently Mac and Android only.
-  virtual void LoadAuxiliaryProfiles() const;
+  virtual void LoadAuxiliaryProfiles(bool record_metrics) const;
 
   // Loads the saved credit cards from the web database.
   virtual void LoadCreditCards();
@@ -254,6 +276,9 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // query handle.
   void CancelPendingQuery(WebDataServiceBase::Handle* handle);
 
+  // Notifies observers that personal data has changed.
+  void NotifyPersonalDataChanged();
+
   // The first time this is called, logs an UMA metrics for the number of
   // profiles the user has. On subsequent calls, does nothing.
   void LogProfileCount() const;
@@ -264,6 +289,10 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // Overrideable for testing.
   virtual std::string CountryCodeForCurrentTimezone() const;
 
+  // Sets which PrefService to use and observe. |pref_service| is not owned by
+  // this class and must outlive |this|.
+  void SetPrefService(PrefService* pref_service);
+
   // For tests.
   const AutofillMetrics* metric_logger() const { return metric_logger_.get(); }
 
@@ -273,10 +302,6 @@ class PersonalDataManager : public WebDataServiceConsumer,
 
   void set_metric_logger(const AutofillMetrics* metric_logger) {
     metric_logger_.reset(metric_logger);
-  }
-
-  void set_pref_service(PrefService* pref_service) {
-    pref_service_ = pref_service;
   }
 
   // The backing database that this PersonalDataManager uses.
@@ -313,6 +338,15 @@ class PersonalDataManager : public WebDataServiceConsumer,
   // Prefers verified profiles over unverified ones.
   std::string MostCommonCountryCodeFromProfiles() const;
 
+  // Called when the value of prefs::kAutofillEnabled changes.
+  void EnabledPrefChanged();
+
+  // Functionally equivalent to GetProfiles(), but also records metrics if
+  // |record_metrics| is true. Metrics should be recorded when the returned
+  // profiles will be used to populate the fields shown in an Autofill popup.
+  const std::vector<AutofillProfile*>& GetProfiles(
+      bool record_metrics) const;
+
   const std::string app_locale_;
 
   // The default country code for new addresses.
@@ -330,6 +364,9 @@ class PersonalDataManager : public WebDataServiceConsumer,
 
   // Whether we have already logged the number of profiles this session.
   mutable bool has_logged_profile_count_;
+
+  // An observer to listen for changes to prefs::kAutofillEnabled.
+  scoped_ptr<BooleanPrefMember> enabled_pref_;
 
   DISALLOW_COPY_AND_ASSIGN(PersonalDataManager);
 };

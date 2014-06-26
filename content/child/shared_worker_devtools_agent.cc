@@ -34,8 +34,6 @@ bool SharedWorkerDevToolsAgent::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_Detach, OnDetach)
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_DispatchOnInspectorBackend,
                         OnDispatchOnInspectorBackend)
-    IPC_MESSAGE_HANDLER(DevToolsAgentMsg_PauseWorkerContextOnStart,
-                        OnPauseWorkerContextOnStart)
     IPC_MESSAGE_HANDLER(DevToolsAgentMsg_ResumeWorkerContext,
                         OnResumeWorkerContext)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -56,11 +54,12 @@ void SharedWorkerDevToolsAgent::SaveDevToolsAgentState(
                                                  state.utf8()));
 }
 
-void SharedWorkerDevToolsAgent::OnAttach() {
+void SharedWorkerDevToolsAgent::OnAttach(const std::string& host_id) {
   webworker_->attachDevTools();
 }
 
-void SharedWorkerDevToolsAgent::OnReattach(const std::string& state) {
+void SharedWorkerDevToolsAgent::OnReattach(const std::string& host_id,
+                                           const std::string& state) {
   webworker_->reattachDevTools(WebString::fromUTF8(state));
 }
 
@@ -71,10 +70,6 @@ void SharedWorkerDevToolsAgent::OnDetach() {
 void SharedWorkerDevToolsAgent::OnDispatchOnInspectorBackend(
     const std::string& message) {
   webworker_->dispatchDevToolsMessage(WebString::fromUTF8(message));
-}
-
-void SharedWorkerDevToolsAgent::OnPauseWorkerContextOnStart() {
-  webworker_->pauseWorkerContextOnStart();
 }
 
 void SharedWorkerDevToolsAgent::OnResumeWorkerContext() {

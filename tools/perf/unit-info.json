@@ -5,8 +5,20 @@
     "improvement_direction": "down",
     "why": "Percent CPU usage. Used by cpu metric."
   },
+  "bit/s": {
+    "improvement_direction": "down",
+    "why": "Bitrate."
+  },
+  "bytes/s": {
+    "improvement_direction": "down",
+    "why": "Bitrate."
+  },
   "bytes": {
     "improvement_direction": "down"
+  },
+  "Celsius": {
+    "improvement_direction": "down",
+    "why": "Colder machines are faster."
   },
   "commit_count": {
     "improvement_direction": "up",
@@ -15,6 +27,10 @@
   "count": {
     "improvement_direction": "down",
     "why": "Processes"
+  },
+  "dB": {
+    "improvement_direction": "up",
+    "why": "Decibels peak signal-to-noise ratio. Used by WebRTC quality tests."
   },
   "files": {
     "improvement_direction": "down",
@@ -39,9 +55,21 @@
   "frame_time": {
     "improvement_direction": "down"
   },
+  "Hz": {
+    "improvement_direction": "up",
+    "why": "Higher frequencies are faster."
+  },
+  "janks": {
+    "improvement_direction": "down",
+    "why": "Fewer janks is better."
+  },
   "kb": {
     "improvement_direction": "down",
     "why": "Synonym for KB, used in memory and io metrics."
+  },
+  "available_kB": {
+    "improvement_direction": "up",
+    "why": "kB of memory available. More memory available is better."
   },
   "KB": {
     "improvement_direction": "down",
@@ -56,6 +84,26 @@
   },
   "MB": {
     "improvement_direction": "down"
+  },
+  "mips": {
+    "improvement_direction": "up",
+    "why": "More instructions processed per time unit."
+  },
+  "mpixels_sec": {
+    "improvement_direction": "up",
+    "why": "More pixels processed per time unit."
+  },
+  "mtexel_sec": {
+    "improvement_direction": "up",
+    "why": "More texels processed per time unit."
+  },
+  "mtri_sec": {
+    "improvement_direction": "up",
+    "why": "More triangles processed per time unit."
+  },
+  "mvtx_sec": {
+    "improvement_direction": "up",
+    "why": "More vertices processed per time unit."
   },
   "ms": {
     "improvement_direction": "down",
@@ -137,5 +185,9 @@
   },
   "us": {
     "improvement_direction": "down"
+  },
+  "vsyncs": {
+    "improvement_direction": "down",
+    "why": "Used in smoothness benchmarks. Number of vsyncs to generate a frame, never < 1.0"
   }
 }

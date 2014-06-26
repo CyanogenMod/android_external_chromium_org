@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/search/search_model.h"
 #include "chrome/common/instant_types.h"
 #include "chrome/common/ntp_logging_events.h"
+#include "chrome/common/omnibox_focus_state.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "ui/base/window_open_disposition.h"
@@ -27,8 +28,10 @@ struct LoadCommittedDetails;
 class GURL;
 class InstantPageTest;
 class InstantService;
+class OmniboxView;
 class Profile;
 class SearchIPCRouterTest;
+class SearchTabHelperDelegate;
 
 // Per-tab search "helper".  Acts as the owner and controller of the tab's
 // search UI model.
@@ -51,9 +54,14 @@ class SearchTabHelper : public content::WebContentsObserver,
   // Sets up the initial state correctly for a preloaded NTP.
   void InitForPreloadedNTP();
 
-  // Invoked when the OmniboxEditModel changes state in some way that might
+  // Invoked when the omnibox input state is changed in some way that might
   // affect the search mode.
-  void OmniboxEditModelChanged(bool user_input_in_progress, bool cancelling);
+  void OmniboxInputStateChanged();
+
+  // Called to indicate that the omnibox focus state changed with the given
+  // |reason|.
+  void OmniboxFocusChanged(OmniboxFocusState state,
+                           OmniboxFocusChangeReason reason);
 
   // Invoked when the active navigation entry is updated in some way that might
   // affect the search mode. This is used by Instant when it "fixes up" the
@@ -86,6 +94,8 @@ class SearchTabHelper : public content::WebContentsObserver,
   // Returns true if the underlying page is a search results page.
   bool IsSearchResultsPage();
 
+  void set_delegate(SearchTabHelperDelegate* delegate) { delegate_ = delegate; }
+
  private:
   friend class content::WebContentsUserData<SearchTabHelper>;
   friend class InstantPageTest;
@@ -105,6 +115,8 @@ class SearchTabHelper : public content::WebContentsObserver,
                            OnChromeIdentityCheckSignedOutMatch);
   FRIEND_TEST_ALL_PREFIXES(SearchTabHelperTest,
                            OnChromeIdentityCheckSignedOutMismatch);
+  FRIEND_TEST_ALL_PREFIXES(SearchTabHelperTest,
+                           OnChromeIdentityCheckMatchNotSyncing);
   FRIEND_TEST_ALL_PREFIXES(SearchTabHelperWindowTest,
                            OnProvisionalLoadFailRedirectNTPToLocal);
   FRIEND_TEST_ALL_PREFIXES(SearchTabHelperWindowTest,
@@ -162,8 +174,10 @@ class SearchTabHelper : public content::WebContentsObserver,
   virtual void OnUndoMostVisitedDeletion(const GURL& url) OVERRIDE;
   virtual void OnUndoAllMostVisitedDeletions() OVERRIDE;
   virtual void OnLogEvent(NTPLoggingEventType event) OVERRIDE;
-  virtual void OnLogImpression(int position,
-                               const base::string16& provider) OVERRIDE;
+  virtual void OnLogMostVisitedImpression(
+      int position, const base::string16& provider) OVERRIDE;
+  virtual void OnLogMostVisitedNavigation(
+      int position, const base::string16& provider) OVERRIDE;
   virtual void PasteIntoOmnibox(const base::string16& text) OVERRIDE;
   virtual void OnChromeIdentityCheck(const base::string16& identity) OVERRIDE;
 
@@ -199,10 +213,14 @@ class SearchTabHelper : public content::WebContentsObserver,
   // Instant URL and trim the history correctly.
   void RedirectToLocalNTP();
 
-  const bool is_search_enabled_;
+  // Returns whether input is in progress, i.e. if the omnibox has focus and the
+  // active tab is in mode SEARCH_SUGGESTIONS.
+  bool IsInputInProgress() const;
 
-  // Tracks the last value passed to OmniboxEditModelChanged().
-  bool user_input_in_progress_;
+  // Returns the OmniboxView for |web_contents_| or NULL if not available.
+  OmniboxView* GetOmniboxView() const;
+
+  const bool is_search_enabled_;
 
   // Model object for UI that cares about search state.
   SearchModel model_;
@@ -212,6 +230,11 @@ class SearchTabHelper : public content::WebContentsObserver,
   SearchIPCRouter ipc_router_;
 
   InstantService* instant_service_;
+
+  // Delegate for notifying our owner about the SearchTabHelper state. Not owned
+  // by us.
+  // NULL on iOS and Android because they don't use the Instant framework.
+  SearchTabHelperDelegate* delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchTabHelper);
 };

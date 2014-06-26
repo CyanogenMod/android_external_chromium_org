@@ -23,7 +23,7 @@ namespace net {
 static const int kLogFormatVersion = 1;
 
 NetLogLogger::NetLogLogger(FILE* file, const base::Value& constants)
-    : file_(file), added_events_(false) {
+    : file_(file), log_level_(NetLog::LOG_ALL_BUT_BYTES), added_events_(false) {
   DCHECK(file);
 
   // Write constants to the output file.  This allows loading files that have
@@ -40,8 +40,13 @@ NetLogLogger::~NetLogLogger() {
     fprintf(file_.get(), "]}");
 }
 
+void NetLogLogger::set_log_level(net::NetLog::LogLevel log_level) {
+  DCHECK(!net_log());
+  log_level_ = log_level;
+}
+
 void NetLogLogger::StartObserving(net::NetLog* net_log) {
-  net_log->AddThreadSafeObserver(this, net::NetLog::LOG_ALL_BUT_BYTES);
+  net_log->AddThreadSafeObserver(this, log_level_);
 }
 
 void NetLogLogger::StopObserving() {
@@ -70,6 +75,18 @@ base::DictionaryValue* NetLogLogger::GetConstants() {
   // Add a dictionary with information on the relationship between event type
   // enums and their symbolic names.
   constants_dict->Set("logEventTypes", net::NetLog::GetEventTypesAsValue());
+
+  // Add a dictionary with information about the relationship between CertStatus
+  // flags and their symbolic names.
+  {
+    base::DictionaryValue* dict = new base::DictionaryValue();
+
+#define CERT_STATUS_FLAG(label, value) dict->SetInteger(#label, value);
+#include "net/cert/cert_status_flags_list.h"
+#undef CERT_STATUS_FLAG
+
+    constants_dict->Set("certStatusFlag", dict);
+  }
 
   // Add a dictionary with information about the relationship between load flag
   // enums and their symbolic names.
@@ -163,7 +180,8 @@ base::DictionaryValue* NetLogLogger::GetConstants() {
 
     dict->SetInteger("LOG_ALL", net::NetLog::LOG_ALL);
     dict->SetInteger("LOG_ALL_BUT_BYTES", net::NetLog::LOG_ALL_BUT_BYTES);
-    dict->SetInteger("LOG_BASIC", net::NetLog::LOG_BASIC);
+    dict->SetInteger("LOG_STRIP_PRIVATE_DATA",
+                     net::NetLog::LOG_STRIP_PRIVATE_DATA);
 
     constants_dict->Set("logLevelType", dict);
   }

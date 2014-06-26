@@ -5,25 +5,17 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_APP_LIST_WIN_ACTIVATION_TRACKER_WIN_H_
 #define CHROME_BROWSER_UI_VIEWS_APP_LIST_WIN_ACTIVATION_TRACKER_WIN_H_
 
-#include "base/basictypes.h"
-#include "base/callback.h"
+#include "base/macros.h"
 #include "base/timer/timer.h"
 #include "ui/app_list/views/app_list_view_observer.h"
 
-namespace app_list {
-class AppListView;
-}
+class AppListServiceWin;
 
 // Periodically checks to see if an AppListView has lost focus using a timer.
 class ActivationTrackerWin : public app_list::AppListViewObserver {
  public:
-  ActivationTrackerWin(app_list::AppListView* view,
-                       const base::Closure& on_should_dismiss);
+  explicit ActivationTrackerWin(AppListServiceWin* service);
   ~ActivationTrackerWin();
-
-  void ReactivateOnNextFocusLoss() {
-    reactivate_on_next_focus_loss_ = true;
-  }
 
   // app_list::AppListViewObserver:
   virtual void OnActivationChanged(views::Widget* widget, bool active) OVERRIDE;
@@ -32,9 +24,7 @@ class ActivationTrackerWin : public app_list::AppListViewObserver {
 
  private:
   // Dismisses the app launcher if it has lost focus and the user is not trying
-  // to pin it. If it is time to dismiss the app launcher, but
-  // ReactivateOnNextFocusLoss has been called, reactivates the app launcher
-  // instead of dismissing it.
+  // to pin it.
   void MaybeDismissAppList();
 
   // Determines whether the app launcher should be dismissed. This should be
@@ -43,16 +33,7 @@ class ActivationTrackerWin : public app_list::AppListViewObserver {
   // app list).
   bool ShouldDismissAppList();
 
-  // The window to track the active state of.
-  app_list::AppListView* view_;
-
-  // Called to request |view_| be closed.
-  base::Closure on_should_dismiss_;
-
-  // True if we are anticipating that the app list will lose focus, and we want
-  // to take it back. This is used when switching out of Metro mode, and the
-  // browser regains focus after showing the app list.
-  bool reactivate_on_next_focus_loss_;
+  AppListServiceWin* service_;  // Weak. Owns this.
 
   // Records whether, on the previous timer tick, the taskbar had focus without
   // the right mouse button being down. We allow the taskbar to have focus for

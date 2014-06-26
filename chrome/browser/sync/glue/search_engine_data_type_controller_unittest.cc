@@ -10,12 +10,12 @@
 #include "base/tracked_objects.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
-#include "chrome/browser/sync/glue/fake_generic_change_processor.h"
 #include "chrome/browser/sync/glue/search_engine_data_type_controller.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/profile_mock.h"
 #include "components/sync_driver/data_type_controller_mock.h"
+#include "components/sync_driver/fake_generic_change_processor.h"
 #include "sync/api/fake_syncable_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -28,19 +28,9 @@ using testing::SetArgumentPointee;
 namespace browser_sync {
 namespace {
 
-ACTION(MakeSharedChangeProcessor) {
-  return new SharedChangeProcessor();
-}
-
-ACTION_P(ReturnAndRelease, change_processor) {
-  return change_processor->release();
-}
-
 class SyncSearchEngineDataTypeControllerTest : public testing::Test {
  public:
-  SyncSearchEngineDataTypeControllerTest()
-      : change_processor_(new FakeGenericChangeProcessor()) {
-  }
+  SyncSearchEngineDataTypeControllerTest() { }
 
   virtual void SetUp() {
     test_util_.SetUp();
@@ -49,9 +39,9 @@ class SyncSearchEngineDataTypeControllerTest : public testing::Test {
     // Feed the DTC test_util_'s profile so it is reused later.
     // This allows us to control the associated TemplateURLService.
     search_engine_dtc_ =
-        new SearchEngineDataTypeController(profile_sync_factory_.get(),
-                                           test_util_.profile(),
-                                           service_.get());
+        new SearchEngineDataTypeController(
+            profile_sync_factory_.get(), test_util_.profile(),
+            DataTypeController::DisableTypeCallback());
   }
 
   virtual void TearDown() {
@@ -69,26 +59,14 @@ class SyncSearchEngineDataTypeControllerTest : public testing::Test {
   }
 
   void SetStartExpectations() {
-    // Ownership gets passed to caller of CreateGenericChangeProcessor.
+    search_engine_dtc_->SetGenericChangeProcessorFactoryForTest(
+        make_scoped_ptr<GenericChangeProcessorFactory>(
+            new FakeGenericChangeProcessorFactory(make_scoped_ptr(
+                new FakeGenericChangeProcessor(profile_sync_factory_.get())))));
     EXPECT_CALL(model_load_callback_, Run(_, _));
     EXPECT_CALL(*profile_sync_factory_,
                 GetSyncableServiceForType(syncer::SEARCH_ENGINES)).
         WillOnce(Return(syncable_service_.AsWeakPtr()));
-    EXPECT_CALL(*profile_sync_factory_, CreateSharedChangeProcessor()).
-        WillOnce(MakeSharedChangeProcessor());
-    EXPECT_CALL(*profile_sync_factory_,
-                CreateGenericChangeProcessor(_, _, _, _)).
-        WillOnce(ReturnAndRelease(&change_processor_));
-  }
-
-  void SetActivateExpectations() {
-    EXPECT_CALL(*service_.get(),
-                ActivateDataType(syncer::SEARCH_ENGINES, _, _));
-  }
-
-  void SetStopExpectations() {
-    EXPECT_CALL(*service_.get(),
-                DeactivateDataType(syncer::SEARCH_ENGINES));
   }
 
   void Start() {
@@ -107,7 +85,6 @@ class SyncSearchEngineDataTypeControllerTest : public testing::Test {
   scoped_refptr<SearchEngineDataTypeController> search_engine_dtc_;
   scoped_ptr<ProfileSyncComponentsFactoryMock> profile_sync_factory_;
   scoped_ptr<ProfileSyncServiceMock> service_;
-  scoped_ptr<FakeGenericChangeProcessor> change_processor_;
   syncer::FakeSyncableService syncable_service_;
   StartCallbackMock start_callback_;
   ModelLoadCallbackMock model_load_callback_;
@@ -117,7 +94,6 @@ TEST_F(SyncSearchEngineDataTypeControllerTest, StartURLServiceReady) {
   SetStartExpectations();
   // We want to start ready.
   PreloadTemplateURLService();
-  SetActivateExpectations();
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _, _));
 
   EXPECT_EQ(DataTypeController::NOT_RUNNING, search_engine_dtc_->state());
@@ -128,9 +104,6 @@ TEST_F(SyncSearchEngineDataTypeControllerTest, StartURLServiceReady) {
 }
 
 TEST_F(SyncSearchEngineDataTypeControllerTest, StartURLServiceNotReady) {
-  EXPECT_CALL(*profile_sync_factory_, CreateSharedChangeProcessor()).
-      WillOnce(MakeSharedChangeProcessor());
-
   EXPECT_CALL(model_load_callback_, Run(_, _));
   EXPECT_FALSE(syncable_service_.syncing());
   search_engine_dtc_->LoadModels(
@@ -147,21 +120,9 @@ TEST_F(SyncSearchEngineDataTypeControllerTest, StartURLServiceNotReady) {
   base::RunLoop().RunUntilIdle();
 }
 
-TEST_F(SyncSearchEngineDataTypeControllerTest, StartFirstRun) {
-  SetStartExpectations();
-  PreloadTemplateURLService();
-  SetActivateExpectations();
-  change_processor_->set_sync_model_has_user_created_nodes(false);
-  EXPECT_CALL(start_callback_, Run(DataTypeController::OK_FIRST_RUN, _, _));
-
-  Start();
-  EXPECT_TRUE(syncable_service_.syncing());
-}
-
 TEST_F(SyncSearchEngineDataTypeControllerTest, StartAssociationFailed) {
   SetStartExpectations();
   PreloadTemplateURLService();
-  SetStopExpectations();
   EXPECT_CALL(start_callback_,
               Run(DataTypeController::ASSOCIATION_FAILED, _, _));
   syncable_service_.set_merge_data_and_start_syncing_error(
@@ -178,25 +139,9 @@ TEST_F(SyncSearchEngineDataTypeControllerTest, StartAssociationFailed) {
   EXPECT_FALSE(syncable_service_.syncing());
 }
 
-TEST_F(SyncSearchEngineDataTypeControllerTest,
-       StartAssociationTriggersUnrecoverableError) {
-  SetStartExpectations();
-  PreloadTemplateURLService();
-  EXPECT_CALL(start_callback_,
-              Run(DataTypeController::UNRECOVERABLE_ERROR, _, _));
-  // Set up association to fail with an unrecoverable error.
-  change_processor_->set_sync_model_has_user_created_nodes_success(false);
-
-  Start();
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, search_engine_dtc_->state());
-  EXPECT_FALSE(syncable_service_.syncing());
-}
-
 TEST_F(SyncSearchEngineDataTypeControllerTest, Stop) {
   SetStartExpectations();
   PreloadTemplateURLService();
-  SetActivateExpectations();
-  SetStopExpectations();
   EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _, _));
 
   EXPECT_EQ(DataTypeController::NOT_RUNNING, search_engine_dtc_->state());
@@ -205,25 +150,6 @@ TEST_F(SyncSearchEngineDataTypeControllerTest, Stop) {
   EXPECT_EQ(DataTypeController::RUNNING, search_engine_dtc_->state());
   EXPECT_TRUE(syncable_service_.syncing());
   search_engine_dtc_->Stop();
-  EXPECT_EQ(DataTypeController::NOT_RUNNING, search_engine_dtc_->state());
-  EXPECT_FALSE(syncable_service_.syncing());
-}
-
-TEST_F(SyncSearchEngineDataTypeControllerTest,
-       OnSingleDatatypeUnrecoverableError) {
-  SetStartExpectations();
-  PreloadTemplateURLService();
-  SetActivateExpectations();
-  EXPECT_CALL(*service_.get(), DisableBrokenDatatype(_, _, _)).
-      WillOnce(InvokeWithoutArgs(search_engine_dtc_.get(),
-                                 &SearchEngineDataTypeController::Stop));
-  SetStopExpectations();
-
-  EXPECT_CALL(start_callback_, Run(DataTypeController::OK, _, _));
-  Start();
-  // This should cause search_engine_dtc_->Stop() to be called.
-  search_engine_dtc_->OnSingleDatatypeUnrecoverableError(FROM_HERE, "Test");
-  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(DataTypeController::NOT_RUNNING, search_engine_dtc_->state());
   EXPECT_FALSE(syncable_service_.syncing());
 }

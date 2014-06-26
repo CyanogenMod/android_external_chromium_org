@@ -24,6 +24,11 @@ class TabStripModelObserverBridge;
  @private
   NSWindow* parentWindow_;  // weak
   NSPoint anchor_;
+  // Offset of the anchor point relative to the parent window's upper-left-hand
+  // corner. Used to ensure that if the parent window is resized with the bubble
+  // remaining visible, the bubble continues to be anchored correctly.
+  NSPoint anchorOffset_;
+
   IBOutlet InfoBubbleView* bubble_;  // to set arrow position
   // Bridge for tab change notifications.
   scoped_ptr<TabStripModelObserverBridge> tabStripObserverBridge_;
@@ -78,9 +83,14 @@ class TabStripModelObserverBridge;
         parentWindow:(NSWindow*)parentWindow
           anchoredAt:(NSPoint)anchoredAt;
 
-// Creates an autoreleased separator view with a given frame. The height of the
-// frame is ignored.
-- (NSBox*)separatorWithFrame:(NSRect)frame;
+// Creates an autoreleased horizontal separator view with a given frame. The
+// height of the frame is ignored.
+- (NSBox*)horizontalSeparatorWithFrame:(NSRect)frame;
+
+// Creates an autoreleased vertical separator view with a given frame. The
+// width of frame is ignored.
+- (NSBox*)verticalSeparatorWithFrame:(NSRect)frame;
+
 
 @end
 

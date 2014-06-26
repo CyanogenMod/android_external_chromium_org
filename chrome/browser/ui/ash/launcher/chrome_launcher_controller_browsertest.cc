@@ -11,6 +11,7 @@
 #include "ash/display/display_controller.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_button.h"
+#include "ash/shelf/shelf_constants.h"
 #include "ash/shelf/shelf_model.h"
 #include "ash/shelf/shelf_util.h"
 #include "ash/shelf/shelf_view.h"
@@ -24,7 +25,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
-#include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
@@ -41,8 +41,10 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/settings_window_manager.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -90,13 +92,9 @@ class TestAppWindowRegistryObserver : public apps::AppWindowRegistry::Observer {
   }
 
   // Overridden from AppWindowRegistry::Observer:
-  virtual void OnAppWindowAdded(AppWindow* app_window) OVERRIDE {}
-
   virtual void OnAppWindowIconChanged(AppWindow* app_window) OVERRIDE {
     ++icon_updates_;
   }
-
-  virtual void OnAppWindowRemoved(AppWindow* app_window) OVERRIDE {}
 
   int icon_updates() { return icon_updates_; }
 
@@ -273,7 +271,7 @@ class ShelfAppBrowserTest : public ExtensionBrowserTest {
                        aura::test::EventGenerator* generator,
                        ash::test::ShelfViewTestAPI* test,
                        RipOffCommand command) {
-    ash::internal::ShelfButton* button = test->GetButton(index);
+    ash::ShelfButton* button = test->GetButton(index);
     gfx::Point start_point = button->GetBoundsInScreen().CenterPoint();
     gfx::Point rip_off_point(start_point.x(), 0);
     generator->MoveMouseTo(start_point.x(), start_point.y());
@@ -345,7 +343,7 @@ typedef LauncherPlatformAppBrowserTest ShelfAppBrowserMinimizeOnClick;
 // Test that we can launch a platform app and get a running item.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchUnpinned) {
   int item_count = shelf_model()->item_count();
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window = CreateAppWindow(extension);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -362,7 +360,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchPinned) {
   int item_count = shelf_model()->item_count();
 
   // First get app_id.
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   const std::string app_id = extension->id();
 
   // Then create a shortcut.
@@ -392,7 +390,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchPinned) {
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, PinRunning) {
   // Run.
   int item_count = shelf_model()->item_count();
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window = CreateAppWindow(extension);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -431,7 +429,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, UnpinRunning) {
   int item_count = shelf_model()->item_count();
 
   // First get app_id.
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   const std::string app_id = extension->id();
 
   // Then create a shortcut.
@@ -479,7 +477,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, MultipleWindows) {
   int item_count = shelf_model()->item_count();
 
   // First run app.
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window1 = CreateAppWindow(extension);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -516,7 +514,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, MultipleApps) {
   int item_count = shelf_model()->item_count();
 
   // First run app.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window1 = CreateAppWindow(extension1);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -526,7 +524,8 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, MultipleApps) {
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
 
   // Then run second app.
-  const Extension* extension2 = LoadAndLaunchPlatformApp("launch_2");
+  const Extension* extension2 = LoadAndLaunchPlatformApp("launch_2",
+                                                         "Launched");
   AppWindow* window2 = CreateAppWindow(extension2);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -557,7 +556,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowActivation) {
   int item_count = shelf_model()->item_count();
 
   // First run app.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window1 = CreateAppWindow(extension1);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -567,7 +566,8 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowActivation) {
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
 
   // Then run second app.
-  const Extension* extension2 = LoadAndLaunchPlatformApp("launch_2");
+  const Extension* extension2 = LoadAndLaunchPlatformApp("launch_2",
+                                                         "Launched");
   AppWindow* window2 = CreateAppWindow(extension2);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -633,10 +633,51 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowActivation) {
   EXPECT_EQ(item_count, shelf_model()->item_count());
 }
 
+// Verify that ChromeLauncherController::CanInstall() returns true for ephemeral
+// apps and false when the app is promoted to a regular installed app.
+IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, InstallEphemeralApp) {
+  int item_count = shelf_model()->item_count();
+
+  // Sanity check to verify that ChromeLauncherController::CanInstall() returns
+  // false for apps that are fully installed.
+  const Extension* app = LoadAndLaunchPlatformApp("launch", "Launched");
+  ASSERT_TRUE(app);
+  CreateAppWindow(app);
+  ++item_count;
+  ASSERT_EQ(item_count, shelf_model()->item_count());
+  const ash::ShelfItem& app_item = GetLastLauncherItem();
+  ash::ShelfID app_id = app_item.id;
+  EXPECT_FALSE(controller_->CanInstall(app_id));
+
+  // Add an ephemeral app.
+  const Extension* ephemeral_app = InstallEphemeralAppWithSourceAndFlags(
+      test_data_dir_.AppendASCII("platform_apps").AppendASCII("launch_2"),
+      1,
+      extensions::Manifest::INTERNAL,
+      Extension::NO_FLAGS);
+  ASSERT_TRUE(ephemeral_app);
+  CreateAppWindow(ephemeral_app);
+  ++item_count;
+  ASSERT_EQ(item_count, shelf_model()->item_count());
+  const ash::ShelfItem& ephemeral_item = GetLastLauncherItem();
+  ash::ShelfID ephemeral_id = ephemeral_item.id;
+
+  // Verify that the shelf item for the ephemeral app can be installed.
+  EXPECT_TRUE(controller_->CanInstall(ephemeral_id));
+
+  // Promote the ephemeral app to a regular installed app.
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile())->extension_service();
+  service->PromoteEphemeralApp(ephemeral_app, false);
+
+  // Verify that the shelf item for the app can no longer be installed.
+  EXPECT_FALSE(controller_->CanInstall(ephemeral_id));
+}
+
 // Confirm that Click behavior for app windows is correnct.
 IN_PROC_BROWSER_TEST_F(ShelfAppBrowserNoMinimizeOnClick, AppClickBehavior) {
   // Launch a platform app and create a window for it.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window1 = CreateAppWindow(extension1);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
@@ -674,7 +715,7 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserNoMinimizeOnClick, AppClickBehavior) {
 IN_PROC_BROWSER_TEST_F(ShelfAppBrowserMinimizeOnClick,
                        PackagedAppClickBehaviorInMinimizeMode) {
   // Launch one platform app and create a window for it.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow* window1 = CreateAppWindow(extension1);
   EXPECT_TRUE(window1->GetNativeWindow()->IsVisible());
   EXPECT_TRUE(window1->GetBaseWindow()->IsActive());
@@ -734,7 +775,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, AppPanelClickBehavior) {
   CommandLine::ForCurrentProcess()->AppendSwitch(
       extensions::switches::kEnableExperimentalExtensionApis);
   // Launch a platform app and create a panel window for it.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow::CreateParams params;
   params.window_type = AppWindow::WINDOW_TYPE_PANEL;
   params.focused = false;
@@ -768,7 +809,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, BrowserActivation) {
   int item_count = shelf_model()->item_count();
 
   // First run app.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   CreateAppWindow(extension1);
   ++item_count;
   ASSERT_EQ(item_count, shelf_model()->item_count());
@@ -790,10 +831,8 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, SetIcon) {
       extensions::switches::kEnableExperimentalExtensionApis);
 
   int base_shelf_item_count = shelf_model()->item_count();
-  ExtensionTestMessageListener launched_listener("Launched", false);
   ExtensionTestMessageListener completed_listener("Completed", false);
-  LoadAndLaunchPlatformApp("app_icon");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("app_icon", "Launched");
   ASSERT_TRUE(completed_listener.WaitUntilSatisfied());
 
   // Now wait until the WebContent has decoded the icons and chrome has
@@ -816,12 +855,12 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, SetIcon) {
       GetItemController(app_item.id);
   const LauncherItemController* panel_item_controller =
       GetItemController(panel_item.id);
-  // Icons for Apps are set by the ShellWindowLauncherController, so
+  // Icons for Apps are set by the AppWindowLauncherController, so
   // image_set_by_controller() should be set.
   EXPECT_TRUE(app_item_controller->image_set_by_controller());
   EXPECT_TRUE(panel_item_controller->image_set_by_controller());
   // Ensure icon heights are correct (see test.js in app_icon/ test directory)
-  EXPECT_EQ(48, app_item.image.height());
+  EXPECT_EQ(ash::kShelfSize, app_item.image.height());
   EXPECT_EQ(64, panel_item.image.height());
 }
 
@@ -1331,7 +1370,7 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, AltNumberTabsTabbing) {
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest,
                        AltNumberAppsTabbing) {
   // First run app.
-  const Extension* extension1 = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension1 = LoadAndLaunchPlatformApp("launch", "Launched");
   ui::BaseWindow* window1 = CreateAppWindow(extension1)->GetBaseWindow();
   const ash::ShelfItem& item1 = GetLastLauncherItem();
   ash::ShelfID app_id = item1.id;
@@ -1340,7 +1379,8 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest,
   EXPECT_EQ(ash::TYPE_PLATFORM_APP, item1.type);
   EXPECT_EQ(ash::STATUS_ACTIVE, item1.status);
 
-  const Extension* extension2 = LoadAndLaunchPlatformApp("launch_2");
+  const Extension* extension2 = LoadAndLaunchPlatformApp("launch_2",
+                                                         "Launched");
   ui::BaseWindow* window2 = CreateAppWindow(extension2)->GetBaseWindow();
 
   // By now the browser should be active. Issue Alt keystrokes several times to
@@ -1364,7 +1404,7 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest,
 // Test that we can launch a platform app panel and get a running item.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchPanelWindow) {
   int item_count = shelf_model()->item_count();
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow::CreateParams params;
   params.window_type = AppWindow::WINDOW_TYPE_PANEL;
   params.focused = false;
@@ -1380,9 +1420,46 @@ IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, LaunchPanelWindow) {
   EXPECT_EQ(item_count, shelf_model()->item_count());
 }
 
+// Test that we get correct shelf presence with hidden app windows.
+IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, HiddenAppWindows) {
+  int item_count = shelf_model()->item_count();
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
+  AppWindow::CreateParams params;
+
+  // Create a hidden window.
+  params.hidden = true;
+  AppWindow* window_1 = CreateAppWindowFromParams(extension, params);
+  EXPECT_EQ(item_count, shelf_model()->item_count());
+
+  // Create a visible window.
+  params.hidden = false;
+  AppWindow* window_2 = CreateAppWindowFromParams(extension, params);
+  ++item_count;
+  EXPECT_EQ(item_count, shelf_model()->item_count());
+
+  // Minimize the visible window.
+  window_2->Minimize();
+  EXPECT_EQ(item_count, shelf_model()->item_count());
+
+  // Hide the visible window.
+  window_2->Hide();
+  --item_count;
+  EXPECT_EQ(item_count, shelf_model()->item_count());
+
+  // Show the originally hidden window.
+  window_1->Show(AppWindow::SHOW_ACTIVE);
+  ++item_count;
+  EXPECT_EQ(item_count, shelf_model()->item_count());
+
+  // Close the originally hidden window.
+  CloseAppWindow(window_1);
+  --item_count;
+  EXPECT_EQ(item_count, shelf_model()->item_count());
+}
+
 // Test attention states of windows.
 IN_PROC_BROWSER_TEST_F(LauncherPlatformAppBrowserTest, WindowAttentionStatus) {
-  const Extension* extension = LoadAndLaunchPlatformApp("launch");
+  const Extension* extension = LoadAndLaunchPlatformApp("launch", "Launched");
   AppWindow::CreateParams params;
   params.window_type = AppWindow::WINDOW_TYPE_PANEL;
   params.focused = false;
@@ -1737,9 +1814,11 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTestWithMultiMonitor,
   EXPECT_EQ(3, model_->item_count());
   EXPECT_TRUE(grid_view->forward_events_to_drag_and_drop_host_for_test());
 
-  // Move it where the item originally was and check that it disappears again.
-  generator.MoveMouseTo(bounds_grid_1.CenterPoint().x(),
-                        bounds_grid_1.CenterPoint().y());
+  // Move it to an empty slot on grid_view.
+  gfx::Rect empty_slot_rect = bounds_grid_1;
+  empty_slot_rect.Offset(0, bounds_grid_1.height());
+  generator.MoveMouseTo(empty_slot_rect.CenterPoint().x(),
+                        empty_slot_rect.CenterPoint().y());
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(2, model_->item_count());
   EXPECT_FALSE(grid_view->forward_events_to_drag_and_drop_host_for_test());
@@ -1773,8 +1852,8 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, DragOffShelf) {
             GetIndexOfShelfItemType(ash::TYPE_BROWSER_SHORTCUT));
   // Make sure that the hide state has been unset after the snap back animation
   // finished.
-  ash::internal::ShelfButton* button = test.GetButton(browser_index);
-  EXPECT_FALSE(button->state() & ash::internal::ShelfButton::STATE_HIDDEN);
+  ash::ShelfButton* button = test.GetButton(browser_index);
+  EXPECT_FALSE(button->state() & ash::ShelfButton::STATE_HIDDEN);
 
   // Test #2: Ripping out the application and canceling the operation should
   // not change anything.
@@ -2028,4 +2107,29 @@ IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, V1AppNavigation) {
   // Make sure that the app is really gone.
   base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(ash::STATUS_CLOSED, model_->ItemByID(id)->status);
+}
+
+// Checks that a opening a settings window creates a new launcher item.
+IN_PROC_BROWSER_TEST_F(ShelfAppBrowserTest, SettingsWindow) {
+  chrome::SettingsWindowManager* settings_manager =
+      chrome::SettingsWindowManager::GetInstance();
+  ash::ShelfModel* shelf_model = ash::Shell::GetInstance()->shelf_model();
+
+  // Get the number of items in the shelf and browser menu.
+  int item_count = shelf_model->item_count();
+  size_t browser_count = NumberOfDetectedLauncherBrowsers(false);
+
+  // Open a settings window. Number of browser items should remain unchanged,
+  // number of shelf items should increase.
+  settings_manager->ShowChromePageForProfile(
+      browser()->profile(),
+      chrome::GetSettingsUrl(std::string()));
+  Browser* settings_browser =
+      settings_manager->FindBrowserForProfile(browser()->profile());
+  ASSERT_TRUE(settings_browser);
+  EXPECT_EQ(browser_count, NumberOfDetectedLauncherBrowsers(false));
+  EXPECT_EQ(item_count + 1, shelf_model->item_count());
+
+  // TODO(stevenjb): Test multiprofile on Chrome OS when test support is addded.
+  // crbug.com/230464.
 }

@@ -8,7 +8,10 @@
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/render_messages.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
+#include "content/public/renderer/pepper_plugin_instance.h"
+#include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -20,53 +23,68 @@
 
 namespace {
 
-const char* kPredefinedAllowedUMAOrigins[] = {
-  "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see crbug.com/317833
-  "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see crbug.com/317833
+const char* const kPredefinedAllowedUMAOrigins[] = {
+    "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see http://crbug.com/317833
+    "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see http://crbug.com/317833
 };
 
-const char* kWhitelistedHistogramHashes[] = {
-  "F131550DAB7A7C6E6633EF81FB5998CC0482AC63",  // see crbug.com/317833
-  "13955AB4DAD798384DFB4304734FCF2A95F353CC",  // see crbug.com/317833
-  "404E800582901F1B937B8E287235FC603A5DEDFB"   // see crbug.com/317833
+const char* const kWhitelistedHistogramPrefixes[] = {
+    "CD190EA2B764EDF0BB97552A638D32072F3CFD41",  // see http://crbug.com/317833
 };
 
-std::string HashHistogram(const std::string& histogram) {
-  const std::string id_hash = base::SHA1HashString(histogram);
+const char* const kWhitelistedPluginBaseNames[] = {
+    "libwidevinecdmadapter.so"  // see http://crbug.com/368743
+};
+
+std::string HashPrefix(const std::string& histogram) {
+  const std::string id_hash =
+      base::SHA1HashString(histogram.substr(0, histogram.find('.')));
   DCHECK_EQ(id_hash.length(), base::kSHA1Length);
   return base::HexEncode(id_hash.c_str(), id_hash.length());
 }
 
 }  // namespace
 
-PepperUMAHost::PepperUMAHost(
-    content::RendererPpapiHost* host,
-    PP_Instance instance,
-    PP_Resource resource)
+PepperUMAHost::PepperUMAHost(content::RendererPpapiHost* host,
+                             PP_Instance instance,
+                             PP_Resource resource)
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       document_url_(host->GetDocumentURL(instance)),
       is_plugin_in_process_(host->IsRunningInProcess()) {
+  if (host->GetPluginInstance(instance)) {
+    plugin_base_name_ =
+        host->GetPluginInstance(instance)->GetModulePath().BaseName();
+  }
+
   for (size_t i = 0; i < arraysize(kPredefinedAllowedUMAOrigins); ++i)
     allowed_origins_.insert(kPredefinedAllowedUMAOrigins[i]);
-  for (size_t i = 0; i < arraysize(kWhitelistedHistogramHashes); ++i)
-    allowed_histograms_.insert(kWhitelistedHistogramHashes[i]);
+  for (size_t i = 0; i < arraysize(kWhitelistedHistogramPrefixes); ++i)
+    allowed_histogram_prefixes_.insert(kWhitelistedHistogramPrefixes[i]);
+  for (size_t i = 0; i < arraysize(kWhitelistedPluginBaseNames); ++i)
+    allowed_plugin_base_names_.insert(kWhitelistedPluginBaseNames[i]);
 }
 
-PepperUMAHost::~PepperUMAHost() {
-}
+PepperUMAHost::~PepperUMAHost() {}
 
 int32_t PepperUMAHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperUMAHost, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperUMAHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramCustomTimes,
-        OnHistogramCustomTimes);
+                                      OnHistogramCustomTimes)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramCustomCounts,
-        OnHistogramCustomCounts);
+                                      OnHistogramCustomCounts)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_UMA_HistogramEnumeration,
-        OnHistogramEnumeration);
-  IPC_END_MESSAGE_MAP()
+                                      OnHistogramEnumeration)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(
+        PpapiHostMsg_UMA_IsCrashReportingEnabled, OnIsCrashReportingEnabled)
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
+}
+
+bool PepperUMAHost::IsPluginWhitelisted() {
+  return ChromeContentRendererClient::IsExtensionOrSharedModuleWhitelisted(
+      document_url_, allowed_origins_);
 }
 
 bool PepperUMAHost::IsHistogramAllowed(const std::string& histogram) {
@@ -74,12 +92,14 @@ bool PepperUMAHost::IsHistogramAllowed(const std::string& histogram) {
     return true;
   }
 
-  bool is_whitelisted =
-      ChromeContentRendererClient::IsExtensionOrSharedModuleWhitelisted(
-          document_url_, allowed_origins_);
-  if (is_whitelisted &&
-      allowed_histograms_.find(HashHistogram(histogram)) !=
-          allowed_histograms_.end()) {
+  if (IsPluginWhitelisted() &&
+      allowed_histogram_prefixes_.find(HashPrefix(histogram)) !=
+          allowed_histogram_prefixes_.end()) {
+    return true;
+  }
+
+  if (allowed_plugin_base_names_.find(plugin_base_name_.MaybeAsASCII()) !=
+      allowed_plugin_base_names_.end()) {
     return true;
   }
 
@@ -88,9 +108,9 @@ bool PepperUMAHost::IsHistogramAllowed(const std::string& histogram) {
 }
 
 #define RETURN_IF_BAD_ARGS(_min, _max, _buckets) \
-  do { \
-    if (_min >= _max || _buckets <= 1) \
-      return PP_ERROR_BADARGUMENT; \
+  do {                                           \
+    if (_min >= _max || _buckets <= 1)           \
+      return PP_ERROR_BADARGUMENT;               \
   } while (0)
 
 int32_t PepperUMAHost::OnHistogramCustomTimes(
@@ -105,14 +125,16 @@ int32_t PepperUMAHost::OnHistogramCustomTimes(
   }
   RETURN_IF_BAD_ARGS(min, max, bucket_count);
 
-  base::HistogramBase* counter =
-      base::Histogram::FactoryTimeGet(
-          name,
-          base::TimeDelta::FromMilliseconds(min),
-          base::TimeDelta::FromMilliseconds(max),
-          bucket_count,
-          base::HistogramBase::kUmaTargetedHistogramFlag);
-  counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
+  base::HistogramBase* counter = base::Histogram::FactoryTimeGet(
+      name,
+      base::TimeDelta::FromMilliseconds(min),
+      base::TimeDelta::FromMilliseconds(max),
+      bucket_count,
+      base::HistogramBase::kUmaTargetedHistogramFlag);
+  // The histogram can be NULL if it is constructed with bad arguments.  Ignore
+  // that data for this API.  An error message will be logged.
+  if (counter)
+    counter->AddTime(base::TimeDelta::FromMilliseconds(sample));
   return PP_OK;
 }
 
@@ -128,14 +150,16 @@ int32_t PepperUMAHost::OnHistogramCustomCounts(
   }
   RETURN_IF_BAD_ARGS(min, max, bucket_count);
 
-  base::HistogramBase* counter =
-      base::Histogram::FactoryGet(
-          name,
-          min,
-          max,
-          bucket_count,
-          base::HistogramBase::kUmaTargetedHistogramFlag);
-  counter->Add(sample);
+  base::HistogramBase* counter = base::Histogram::FactoryGet(
+      name,
+      min,
+      max,
+      bucket_count,
+      base::HistogramBase::kUmaTargetedHistogramFlag);
+  // The histogram can be NULL if it is constructed with bad arguments.  Ignore
+  // that data for this API.  An error message will be logged.
+  if (counter)
+    counter->Add(sample);
   return PP_OK;
 }
 
@@ -149,14 +173,27 @@ int32_t PepperUMAHost::OnHistogramEnumeration(
   }
   RETURN_IF_BAD_ARGS(0, boundary_value, boundary_value + 1);
 
-  base::HistogramBase* counter =
-      base::LinearHistogram::FactoryGet(
-          name,
-          1,
-          boundary_value,
-          boundary_value + 1,
-          base::HistogramBase::kUmaTargetedHistogramFlag);
-  counter->Add(sample);
+  base::HistogramBase* counter = base::LinearHistogram::FactoryGet(
+      name,
+      1,
+      boundary_value,
+      boundary_value + 1,
+      base::HistogramBase::kUmaTargetedHistogramFlag);
+  // The histogram can be NULL if it is constructed with bad arguments.  Ignore
+  // that data for this API.  An error message will be logged.
+  if (counter)
+    counter->Add(sample);
   return PP_OK;
 }
 
+int32_t PepperUMAHost::OnIsCrashReportingEnabled(
+    ppapi::host::HostMessageContext* context) {
+  if (!IsPluginWhitelisted())
+    return PP_ERROR_NOACCESS;
+  bool enabled = false;
+  content::RenderThread::Get()->Send(
+      new ChromeViewHostMsg_IsCrashReportingEnabled(&enabled));
+  if (enabled)
+    return PP_OK;
+  return PP_ERROR_FAILED;
+}

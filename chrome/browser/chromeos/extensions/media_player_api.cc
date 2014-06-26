@@ -10,28 +10,30 @@
 
 namespace extensions {
 
-MediaPlayerAPI::MediaPlayerAPI(Profile* profile) : profile_(profile) {
-}
+MediaPlayerAPI::MediaPlayerAPI(content::BrowserContext* context)
+    : browser_context_(context) {}
 
 MediaPlayerAPI::~MediaPlayerAPI() {
 }
 
 // static
-MediaPlayerAPI* MediaPlayerAPI::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<MediaPlayerAPI>::GetForProfile(profile);
+MediaPlayerAPI* MediaPlayerAPI::Get(content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<MediaPlayerAPI>::Get(context);
 }
 
 MediaPlayerEventRouter* MediaPlayerAPI::media_player_event_router() {
   if (!media_player_event_router_)
-    media_player_event_router_.reset(new MediaPlayerEventRouter(profile_));
+    media_player_event_router_.reset(
+        new MediaPlayerEventRouter(browser_context_));
   return media_player_event_router_.get();
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<MediaPlayerAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<MediaPlayerAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<MediaPlayerAPI>* MediaPlayerAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<MediaPlayerAPI>*
+MediaPlayerAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 

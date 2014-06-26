@@ -14,9 +14,12 @@
         '../../../base/base.gyp:base',
         '../../../chrome/chrome.gyp:common',
         '../../../ipc/ipc.gyp:ipc',
+        '../../../media/cast/cast.gyp:cast_transport',
         '../../../ppapi/ppapi_internal.gyp:ppapi_ipc',
         '../../../skia/skia.gyp:skia',
+        '../../../third_party/libjingle/libjingle.gyp:libjingle',
         '../../../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',
+        '../../../third_party/WebKit/public/blink.gyp:blink',
         '../../../ui/accessibility/accessibility.gyp:ax_gen',
         '../message_lib/message_lib.gyp:ipc_message_lib',
       ],
@@ -25,8 +28,20 @@
         'rand_util.h',
         'rand_util.cc',
       ],
+      'conditions': [
+        ['asan==1', {
+          'cflags!': [
+            # Compiling mutate.cc with ASan takes too long, see
+            # http://crbug.com/360158.
+            '-fsanitize=address',
+          ],
+        }],
+      ],
       'include_dirs': [
         '../../..',
+      ],
+      'defines': [
+        'USE_CUPS',
       ],
     },
     {
@@ -36,9 +51,12 @@
         '../../../base/base.gyp:base',
         '../../../chrome/chrome.gyp:common',
         '../../../ipc/ipc.gyp:ipc',
+        '../../../media/cast/cast.gyp:cast_transport',
         '../../../ppapi/ppapi_internal.gyp:ppapi_ipc',
         '../../../skia/skia.gyp:skia',
+        '../../../third_party/libjingle/libjingle.gyp:libjingle',
         '../../../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',
+        '../../../third_party/WebKit/public/blink.gyp:blink',
         '../../../ui/accessibility/accessibility.gyp:ax_gen',
         '../message_lib/message_lib.gyp:ipc_message_lib',
       ],
@@ -47,8 +65,20 @@
         'rand_util.h',
         'rand_util.cc',
       ],
+      'conditions': [
+        ['asan==1', {
+          'cflags!': [
+            # Compiling generate.cc with ASan takes too long, see
+            # http://crbug.com/360158.
+            '-fsanitize=address',
+          ],
+        }],
+      ],
       'include_dirs': [
         '../../..',
+      ],
+      'defines': [
+        'USE_CUPS',
       ],
     },
     {
@@ -63,6 +93,9 @@
       ],
       'include_dirs': [
         '../../..',
+      ],
+      'defines': [
+        'USE_CUPS',
       ],
     },
   ],

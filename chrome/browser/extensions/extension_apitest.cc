@@ -8,7 +8,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/test/test_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,11 +16,12 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/api/test/test_api.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "net/base/escape.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
@@ -33,6 +33,7 @@ const char kTestCustomArg[] = "customArg";
 const char kTestServerPort[] = "testServer.port";
 const char kTestDataDirectory[] = "testDataDirectory";
 const char kTestWebSocketPort[] = "testWebSocketPort";
+const char kFtpServerPort[] = "ftpServer.port";
 const char kSpawnedTestServerPort[] = "spawnedTestServer.port";
 
 scoped_ptr<net::test_server::HttpResponse> HandleServerRedirectRequest(
@@ -280,8 +281,9 @@ bool ExtensionApiTest::RunExtensionSubtest(const std::string& extension_name,
 #if defined(OS_WIN) && !defined(NDEBUG)
   LOG(WARNING) << "Workaround for 177163, prematurely returning";
   return true;
-#endif
+#else
   return RunExtensionTestImpl(extension_name, page_url, NULL, flags);
+#endif
 }
 
 
@@ -445,6 +447,21 @@ bool ExtensionApiTest::StartWebSocketServer(
 
   test_config_->SetInteger(kTestWebSocketPort,
                            websocket_server_->host_port_pair().port());
+
+  return true;
+}
+
+bool ExtensionApiTest::StartFTPServer(const base::FilePath& root_directory) {
+  ftp_server_.reset(new net::SpawnedTestServer(
+      net::SpawnedTestServer::TYPE_FTP,
+      net::SpawnedTestServer::kLocalhost,
+      root_directory));
+
+  if (!ftp_server_->Start())
+    return false;
+
+  test_config_->SetInteger(kFtpServerPort,
+                           ftp_server_->host_port_pair().port());
 
   return true;
 }

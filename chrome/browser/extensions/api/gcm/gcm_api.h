@@ -5,12 +5,12 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_GCM_GCM_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_GCM_GCM_API_H_
 
-#include "chrome/browser/services/gcm/gcm_event_router.h"
 #include "chrome/common/extensions/api/gcm.h"
+#include "components/gcm_driver/gcm_client.h"
 #include "extensions/browser/extension_function.h"
-#include "google_apis/gcm/gcm_client.h"
 
 namespace gcm {
+class GCMDriver;
 class GCMProfileService;
 }  // namespace gcm
 
@@ -26,7 +26,7 @@ class GcmApiFunction : public AsyncExtensionFunction {
   virtual ~GcmApiFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE FINAL;
+  virtual bool RunAsync() OVERRIDE FINAL;
 
   // Actual implementation of specific functions.
   virtual bool DoWork() = 0;
@@ -34,7 +34,7 @@ class GcmApiFunction : public AsyncExtensionFunction {
   // Checks that the GCM API is enabled.
   bool IsGcmApiEnabled() const;
 
-  gcm::GCMProfileService* GCMProfileService() const;
+  gcm::GCMDriver* GetGCMDriver() const;
 };
 
 class GcmRegisterFunction : public GcmApiFunction {
@@ -52,6 +52,22 @@ class GcmRegisterFunction : public GcmApiFunction {
  private:
   void CompleteFunctionWithResult(const std::string& registration_id,
                                   gcm::GCMClient::Result result);
+};
+
+class GcmUnregisterFunction : public GcmApiFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("gcm.unregister", GCM_UNREGISTER);
+
+  GcmUnregisterFunction();
+
+ protected:
+  virtual ~GcmUnregisterFunction();
+
+  // Register function implementation.
+  virtual bool DoWork() OVERRIDE FINAL;
+
+ private:
+  void CompleteFunctionWithResult(gcm::GCMClient::Result result);
 };
 
 class GcmSendFunction : public GcmApiFunction {
@@ -75,20 +91,17 @@ class GcmSendFunction : public GcmApiFunction {
   bool ValidateMessageData(const gcm::GCMClient::MessageData& data) const;
 };
 
-class GcmJsEventRouter : public gcm::GCMEventRouter {
+class GcmJsEventRouter {
  public:
   explicit GcmJsEventRouter(Profile* profile);
 
   virtual ~GcmJsEventRouter();
 
-  // GCMEventRouter:
-  virtual void OnMessage(
-      const std::string& app_id,
-      const gcm::GCMClient::IncomingMessage& message) OVERRIDE;
-  virtual void OnMessagesDeleted(const std::string& app_id) OVERRIDE;
-  virtual void OnSendError(const std::string& app_id,
-                           const std::string& message_id,
-                           gcm::GCMClient::Result result) OVERRIDE;
+  void OnMessage(const std::string& app_id,
+                 const gcm::GCMClient::IncomingMessage& message);
+  void OnMessagesDeleted(const std::string& app_id);
+  void OnSendError(const std::string& app_id,
+                   const gcm::GCMClient::SendErrorDetails& send_error_details);
 
  private:
   // The application we route the event to is running in context of the

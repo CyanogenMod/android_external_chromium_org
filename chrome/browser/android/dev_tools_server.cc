@@ -13,13 +13,13 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/devtools/devtools_adb_bridge.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
@@ -37,18 +37,29 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "grit/devtools_discovery_page_resources.h"
+#include "content/public/common/user_agent.h"
+#include "grit/browser_resources.h"
 #include "jni/DevToolsServer_jni.h"
 #include "net/socket/unix_domain_socket_posix.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 using content::DevToolsAgentHost;
 using content::RenderViewHost;
 using content::WebContents;
 
 namespace {
+
+// TL;DR: Do not change this string.
+//
+// Desktop Chrome relies on this format to identify debuggable apps on Android
+// (see the code under chrome/browser/devtools/device).
+// If this string ever changes it would not be sufficient to change the
+// corresponding string on the client side. Since debugging an older version of
+// Chrome for Android from a newer version of desktop Chrome is a very common
+// scenario, the client code will have to be modified to recognize both the old
+// and the new format.
+const char kDevToolsChannelNameFormat[] = "%s_devtools_remote";
 
 const char kFrontEndURL[] =
     "http://chrome-devtools-frontend.appspot.com/serve_rev/%s/devtools.html";
@@ -58,7 +69,7 @@ const char kTetheringSocketName[] = "chrome_devtools_tethering_%d_%d";
 const char kTargetTypePage[] = "page";
 const char kTargetTypeOther[] = "other";
 
-static GURL GetFaviconURL(WebContents* web_contents) {
+static GURL GetFaviconURLForContents(WebContents* web_contents) {
   content::NavigationController& controller = web_contents->GetController();
   content::NavigationEntry* entry = controller.GetActiveEntry();
   if (entry != NULL && entry->GetURL().is_valid())
@@ -69,13 +80,15 @@ static GURL GetFaviconURL(WebContents* web_contents) {
 class TargetBase : public content::DevToolsTarget {
  public:
   // content::DevToolsTarget implementation:
+  virtual std::string GetParentId() const OVERRIDE { return std::string(); }
+
   virtual std::string GetTitle() const OVERRIDE { return title_; }
 
   virtual std::string GetDescription() const OVERRIDE { return std::string(); }
 
-  virtual GURL GetUrl() const OVERRIDE { return url_; }
+  virtual GURL GetURL() const OVERRIDE { return url_; }
 
-  virtual GURL GetFaviconUrl() const OVERRIDE { return favicon_url_; }
+  virtual GURL GetFaviconURL() const OVERRIDE { return favicon_url_; }
 
   virtual base::TimeTicks GetLastActivityTime() const OVERRIDE {
     return last_activity_time_;
@@ -85,7 +98,7 @@ class TargetBase : public content::DevToolsTarget {
   explicit TargetBase(WebContents* web_contents)
       : title_(base::UTF16ToUTF8(web_contents->GetTitle())),
         url_(web_contents->GetURL()),
-        favicon_url_(GetFaviconURL(web_contents)),
+        favicon_url_(GetFaviconURLForContents(web_contents)),
         last_activity_time_(web_contents->GetLastActiveTime()) {
   }
 
@@ -141,7 +154,7 @@ class TabTarget : public TargetBase {
     if (!web_contents) {
       // The tab has been pushed out of memory, pull it back.
       TabAndroid* tab = model->GetTabAt(index);
-      tab->RestoreIfNeeded();
+      tab->LoadIfNeeded();
       web_contents = model->GetWebContentsAt(index);
       if (!web_contents)
         return NULL;
@@ -213,7 +226,7 @@ class NonTabTarget : public TargetBase {
 
   virtual std::string GetType() const OVERRIDE {
     if (TabModelList::begin() == TabModelList::end()) {
-      // If there are no tab models we must be running in ChromiumTestShell.
+      // If there are no tab models we must be running in ChromeShell.
       // Return the 'page' target type for backwards compatibility.
       return kTargetTypePage;
     }
@@ -292,24 +305,21 @@ class DevToolsServerDelegate : public content::DevToolsHttpHandlerDelegate {
 
   virtual scoped_ptr<content::DevToolsTarget> CreateNewTarget(
       const GURL& url) OVERRIDE {
-    Profile* profile = ProfileManager::GetActiveUserProfile();
-    TabModel* tab_model = TabModelList::GetTabModelWithProfile(profile);
+    if (TabModelList::empty())
+      return scoped_ptr<content::DevToolsTarget>();
+    TabModel* tab_model = TabModelList::get(0);
     if (!tab_model)
       return scoped_ptr<content::DevToolsTarget>();
     WebContents* web_contents = tab_model->CreateNewTabForDevTools(url);
     if (!web_contents)
       return scoped_ptr<content::DevToolsTarget>();
 
-    for (int i = 0; i < tab_model->GetTabCount(); ++i) {
-      if (web_contents != tab_model->GetWebContentsAt(i))
-        continue;
-      TabAndroid* tab = tab_model->GetTabAt(i);
-      return scoped_ptr<content::DevToolsTarget>(
-          TabTarget::CreateForWebContents(tab->GetAndroidId(), web_contents));
-    }
+    TabAndroid* tab = TabAndroid::FromWebContents(web_contents);
+    if (!tab)
+      return scoped_ptr<content::DevToolsTarget>();
 
-    // Newly created tab not found, return no target.
-    return scoped_ptr<content::DevToolsTarget>();
+    return scoped_ptr<content::DevToolsTarget>(
+        TabTarget::CreateForWebContents(tab->GetAndroidId(), web_contents));
   }
 
   virtual void EnumerateTargets(TargetCallback callback) OVERRIDE {
@@ -417,9 +427,9 @@ void DevToolsServer::Start() {
           socket_name_,
           base::StringPrintf("%s_%d", socket_name_.c_str(), getpid()),
           base::Bind(&content::CanUserConnectToDevTools)),
-      base::StringPrintf(kFrontEndURL,
-                         webkit_glue::GetWebKitRevision().c_str()),
-      new DevToolsServerDelegate());
+      base::StringPrintf(kFrontEndURL, content::GetWebKitRevision().c_str()),
+      new DevToolsServerDelegate(),
+      base::FilePath());
 }
 
 void DevToolsServer::Stop() {
@@ -439,27 +449,27 @@ bool RegisterDevToolsServer(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-static jint InitRemoteDebugging(JNIEnv* env,
+static jlong InitRemoteDebugging(JNIEnv* env,
                                 jobject obj,
                                 jstring socket_name_prefix) {
   DevToolsServer* server = new DevToolsServer(
       base::android::ConvertJavaStringToUTF8(env, socket_name_prefix));
-  return reinterpret_cast<jint>(server);
+  return reinterpret_cast<intptr_t>(server);
 }
 
-static void DestroyRemoteDebugging(JNIEnv* env, jobject obj, jint server) {
+static void DestroyRemoteDebugging(JNIEnv* env, jobject obj, jlong server) {
   delete reinterpret_cast<DevToolsServer*>(server);
 }
 
 static jboolean IsRemoteDebuggingEnabled(JNIEnv* env,
                                          jobject obj,
-                                         jint server) {
+                                         jlong server) {
   return reinterpret_cast<DevToolsServer*>(server)->IsStarted();
 }
 
 static void SetRemoteDebuggingEnabled(JNIEnv* env,
                                       jobject obj,
-                                      jint server,
+                                      jlong server,
                                       jboolean enabled) {
   DevToolsServer* devtools_server = reinterpret_cast<DevToolsServer*>(server);
   if (enabled) {

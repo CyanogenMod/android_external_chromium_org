@@ -32,8 +32,6 @@
 #include "third_party/WebKit/public/web/WebStorageEventDispatcher.h"
 #include "v8/include/v8.h"
 #include "webkit/browser/database/vfs_backend.h"
-#include "webkit/child/webkitplatformsupport_impl.h"
-#include "webkit/renderer/compositor_bindings/web_compositor_support_impl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/mac_util.h"
@@ -123,7 +121,11 @@ blink::WebIDBFactory* TestWebKitPlatformSupport::idbFactory() {
 
 blink::WebURLLoader* TestWebKitPlatformSupport::createURLLoader() {
   return url_loader_factory_->CreateURLLoader(
-      webkit_glue::WebKitPlatformSupportImpl::createURLLoader());
+      BlinkPlatformImpl::createURLLoader());
+}
+
+blink::WebString TestWebKitPlatformSupport::userAgent() {
+  return blink::WebString::fromUTF8("DumpRenderTree/0.0.0.0");
 }
 
 blink::WebData TestWebKitPlatformSupport::loadResource(const char* name) {
@@ -143,7 +145,7 @@ blink::WebData TestWebKitPlatformSupport::loadResource(const char* name) {
         "\x82";
     return blink::WebData(red_square, arraysize(red_square));
   }
-  return webkit_glue::WebKitPlatformSupportImpl::loadResource(name);
+  return blink::WebData();
 }
 
 blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
@@ -169,7 +171,7 @@ blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
     case blink::WebLocalizedString::WeekFormatTemplate:
       return base::ASCIIToUTF16("Week $2, $1");
     default:
-      return WebKitPlatformSupportImpl::queryLocalizedString(name);
+      return blink::WebString();
   }
 }
 
@@ -180,7 +182,7 @@ blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
     return base::ASCIIToUTF16("range underflow");
   if (name == blink::WebLocalizedString::ValidationRangeOverflow)
     return base::ASCIIToUTF16("range overflow");
-  return WebKitPlatformSupportImpl::queryLocalizedString(name, value);
+  return BlinkPlatformImpl::queryLocalizedString(name, value);
 }
 
 blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
@@ -191,7 +193,7 @@ blink::WebString TestWebKitPlatformSupport::queryLocalizedString(
     return base::ASCIIToUTF16("too long");
   if (name == blink::WebLocalizedString::ValidationStepMismatch)
     return base::ASCIIToUTF16("step mismatch");
-  return WebKitPlatformSupportImpl::queryLocalizedString(name, value1, value2);
+  return BlinkPlatformImpl::queryLocalizedString(name, value1, value2);
 }
 
 blink::WebString TestWebKitPlatformSupport::defaultLocale() {
@@ -200,8 +202,7 @@ blink::WebString TestWebKitPlatformSupport::defaultLocale() {
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
 void TestWebKitPlatformSupport::SetThemeEngine(blink::WebThemeEngine* engine) {
-  active_theme_engine_ = engine ?
-      engine : WebKitPlatformSupportChildImpl::themeEngine();
+  active_theme_engine_ = engine ? engine : BlinkPlatformImpl::themeEngine();
 }
 
 blink::WebThemeEngine* TestWebKitPlatformSupport::themeEngine() {
@@ -213,33 +214,8 @@ blink::WebCompositorSupport* TestWebKitPlatformSupport::compositorSupport() {
   return &compositor_support_;
 }
 
-base::string16 TestWebKitPlatformSupport::GetLocalizedString(int message_id) {
-  return base::string16();
-}
-
-base::StringPiece TestWebKitPlatformSupport::GetDataResource(
-    int resource_id,
-    ui::ScaleFactor scale_factor) {
-  return base::StringPiece();
-}
-
-webkit_glue::ResourceLoaderBridge*
-TestWebKitPlatformSupport::CreateResourceLoader(
-    const webkit_glue::ResourceLoaderBridge::RequestInfo& request_info) {
-  NOTREACHED();
-  return NULL;
-}
-
-webkit_glue::WebSocketStreamHandleBridge*
-TestWebKitPlatformSupport::CreateWebSocketStreamBridge(
-    blink::WebSocketStreamHandle* handle,
-    webkit_glue::WebSocketStreamHandleDelegate* delegate) {
-  NOTREACHED();
-  return NULL;
-}
-
 blink::WebGestureCurve* TestWebKitPlatformSupport::createFlingAnimationCurve(
-    int device_source,
+    blink::WebGestureDevice device_source,
     const blink::WebFloatPoint& velocity,
     const blink::WebSize& cumulative_scroll) {
   // Caller will retain and release.
@@ -294,12 +270,6 @@ TestWebKitPlatformSupport::createLayerTreeViewForTesting() {
 
   view->Initialize();
   return view.release();
-}
-
-blink::WebLayerTreeView*
-TestWebKitPlatformSupport::createLayerTreeViewForTesting(TestViewType type) {
-  DCHECK_EQ(TestViewTypeUnitTest, type);
-  return createLayerTreeViewForTesting();
 }
 
 blink::WebData TestWebKitPlatformSupport::readFromFile(

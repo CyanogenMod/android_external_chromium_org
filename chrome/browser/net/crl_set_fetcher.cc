@@ -5,6 +5,7 @@
 #include "chrome/browser/net/crl_set_fetcher.h"
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "base/file_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
@@ -46,6 +47,16 @@ void CRLSetFetcher::StartInitialLoad(ComponentUpdateService* cus) {
   }
 }
 
+void CRLSetFetcher::DeleteFromDisk() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (!BrowserThread::PostTask(
+          BrowserThread::FILE, FROM_HERE,
+          base::Bind(&CRLSetFetcher::DoDeleteFromDisk, this))) {
+    NOTREACHED();
+  }
+}
+
 void CRLSetFetcher::DoInitialLoadFromDisk() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
@@ -73,11 +84,16 @@ void CRLSetFetcher::DoInitialLoadFromDisk() {
 
 void CRLSetFetcher::LoadFromDisk(base::FilePath path,
                                  scoped_refptr<net::CRLSet>* out_crl_set) {
+  TRACE_EVENT0("CRLSetFetcher", "LoadFromDisk");
+
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   std::string crl_set_bytes;
-  if (!base::ReadFileToString(path, &crl_set_bytes))
-    return;
+  {
+    TRACE_EVENT0("CRLSetFetcher", "ReadFileToString");
+    if (!base::ReadFileToString(path, &crl_set_bytes))
+      return;
+  }
 
   if (!net::CRLSet::Parse(crl_set_bytes, out_crl_set)) {
     LOG(WARNING) << "Failed to parse CRL set from " << path.MaybeAsASCII();
@@ -140,6 +156,16 @@ void CRLSetFetcher::RegisterComponent(uint32 sequence_of_loaded_crl) {
   }
 }
 
+void CRLSetFetcher::DoDeleteFromDisk() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+
+  base::FilePath crl_set_file_path;
+  if (!GetCRLSetFilePath(&crl_set_file_path))
+    return;
+
+  DeleteFile(crl_set_file_path, false /* not recursive */);
+}
+
 void CRLSetFetcher::OnUpdateError(int error) {
   LOG(WARNING) << "CRLSetFetcher got error " << error
                << " from component installer";
@@ -171,7 +197,7 @@ bool CRLSetFetcher::Install(const base::DictionaryValue& manifest,
       return false;
     }
     int size = base::checked_cast<int>(crl_set_bytes.size());
-    if (file_util::WriteFile(save_to, crl_set_bytes.data(), size) != size) {
+    if (base::WriteFile(save_to, crl_set_bytes.data(), size) != size) {
       LOG(WARNING) << "Failed to save new CRL set to disk";
       // We don't return false here because we can still use this CRL set. When
       // we restart we might revert to an older version, then we'll
@@ -187,7 +213,7 @@ bool CRLSetFetcher::Install(const base::DictionaryValue& manifest,
             << "->#" << new_crl_set->sequence();
     const std::string new_crl_set_bytes = new_crl_set->Serialize();
     int size = base::checked_cast<int>(new_crl_set_bytes.size());
-    if (file_util::WriteFile(save_to, new_crl_set_bytes.data(), size) != size) {
+    if (base::WriteFile(save_to, new_crl_set_bytes.data(), size) != size) {
       LOG(WARNING) << "Failed to save new CRL set to disk";
       // We don't return false here because we can still use this CRL set. When
       // we restart we might revert to an older version, then we'll

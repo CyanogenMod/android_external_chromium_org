@@ -3,14 +3,14 @@
 # found in the LICENSE file.
 
 """Thread and ThreadGroup that reraise exceptions on the main thread."""
+# pylint: disable=W0212
 
 import logging
 import sys
 import threading
-import time
 import traceback
 
-import watchdog_timer
+from pylib.utils import watchdog_timer
 
 
 class TimeoutError(Exception):
@@ -38,7 +38,7 @@ def LogThreadStack(thread):
 class ReraiserThread(threading.Thread):
   """Thread class that can reraise exceptions."""
 
-  def __init__(self, func, args=[], kwargs={}, name=None):
+  def __init__(self, func, args=None, kwargs=None, name=None):
     """Initialize thread.
 
     Args:
@@ -48,10 +48,15 @@ class ReraiserThread(threading.Thread):
       name: thread name, defaults to Thread-N.
     """
     super(ReraiserThread, self).__init__(name=name)
+    if not args:
+      args = []
+    if not kwargs:
+      kwargs = {}
     self.daemon = True
     self._func = func
     self._args = args
     self._kwargs = kwargs
+    self._ret = None
     self._exc_info = None
 
   def ReraiseIfException(self):
@@ -59,11 +64,16 @@ class ReraiserThread(threading.Thread):
     if self._exc_info:
       raise self._exc_info[0], self._exc_info[1], self._exc_info[2]
 
+  def GetReturnValue(self):
+    """Reraise exception if present, otherwise get the return value."""
+    self.ReraiseIfException()
+    return self._ret
+
   #override
   def run(self):
     """Overrides Thread.run() to add support for reraising exceptions."""
     try:
-      self._func(*self._args, **self._kwargs)
+      self._ret = self._func(*self._args, **self._kwargs)
     except:
       self._exc_info = sys.exc_info()
       raise
@@ -72,12 +82,14 @@ class ReraiserThread(threading.Thread):
 class ReraiserThreadGroup(object):
   """A group of ReraiserThread objects."""
 
-  def __init__(self, threads=[]):
+  def __init__(self, threads=None):
     """Initialize thread group.
 
     Args:
       threads: a list of ReraiserThread objects; defaults to empty.
     """
+    if not threads:
+      threads = []
     self._threads = threads
 
   def Add(self, thread):
@@ -132,3 +144,14 @@ class ReraiserThreadGroup(object):
       for thread in (t for t in self._threads if t.isAlive()):
         LogThreadStack(thread)
       raise
+
+  def GetAllReturnValues(self, watcher=watchdog_timer.WatchdogTimer(None)):
+    """Get all return values, joining all threads if necessary.
+
+    Args:
+      watcher: same as in |JoinAll|. Only used if threads are alive.
+    """
+    if any([t.isAlive() for t in self._threads]):
+      self.JoinAll(watcher)
+    return [t.GetReturnValue() for t in self._threads]
+

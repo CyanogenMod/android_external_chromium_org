@@ -4,8 +4,6 @@
 
 #include "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
 
-#include <vector>
-
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
@@ -19,18 +17,14 @@
 
 #if !defined(OS_ANDROID)
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
-#include "google_apis/gaia/oauth2_access_token_fetcher.h"
+#include "google_apis/gaia/oauth2_access_token_fetcher_impl.h"
 #endif
 
 namespace policy {
 
-// OAuth2 scope for the userinfo service.
-const char kServiceScopeGetUserInfo[] =
-    "https://www.googleapis.com/auth/userinfo.email";
-
 // The key under which the hosted-domain value is stored in the UserInfo
 // response.
-const char kGetHostedDomainKey[] = "hd";
+const char kGetHostedDomainKey[] = "domain";
 
 typedef base::Callback<void(const std::string&)> StringCallback;
 
@@ -77,7 +71,7 @@ void CloudPolicyClientRegistrationHelper::TokenServiceHelper::FetchAccessToken(
 
   OAuth2TokenService::ScopeSet scopes;
   scopes.insert(GaiaConstants::kDeviceManagementServiceOAuth);
-  scopes.insert(kServiceScopeGetUserInfo);
+  scopes.insert(GaiaConstants::kOAuthWrapBridgeUserInfoScope);
   token_request_ = token_service->StartRequest(account_id, scopes, this);
 }
 
@@ -134,16 +128,12 @@ void CloudPolicyClientRegistrationHelper::LoginTokenHelper::FetchAccessToken(
   // Start fetching an OAuth2 access token for the device management and
   // userinfo services.
   oauth2_access_token_fetcher_.reset(
-      new OAuth2AccessTokenFetcher(this, context));
-  std::vector<std::string> scopes;
-  scopes.push_back(GaiaConstants::kDeviceManagementServiceOAuth);
-  scopes.push_back(kServiceScopeGetUserInfo);
+      new OAuth2AccessTokenFetcherImpl(this, context, login_refresh_token));
   GaiaUrls* gaia_urls = GaiaUrls::GetInstance();
   oauth2_access_token_fetcher_->Start(
       gaia_urls->oauth2_chrome_client_id(),
       gaia_urls->oauth2_chrome_client_secret(),
-      login_refresh_token,
-      scopes);
+      GetScopes());
 }
 
 void CloudPolicyClientRegistrationHelper::LoginTokenHelper::OnGetTokenSuccess(
@@ -161,11 +151,9 @@ void CloudPolicyClientRegistrationHelper::LoginTokenHelper::OnGetTokenFailure(
 
 CloudPolicyClientRegistrationHelper::CloudPolicyClientRegistrationHelper(
     CloudPolicyClient* client,
-    bool should_force_load_policy,
     enterprise_management::DeviceRegisterRequest::Type registration_type)
     : context_(client->GetRequestContext()),
       client_(client),
-      should_force_load_policy_(should_force_load_policy),
       registration_type_(registration_type) {
   DCHECK(context_);
   DCHECK(client_);
@@ -213,6 +201,24 @@ void CloudPolicyClientRegistrationHelper::StartRegistrationWithLoginToken(
       base::Bind(&CloudPolicyClientRegistrationHelper::OnTokenFetched,
                  base::Unretained(this)));
 }
+
+void CloudPolicyClientRegistrationHelper::StartRegistrationWithAccessToken(
+    const std::string& access_token,
+    const base::Closure& callback) {
+  DCHECK(!client_->is_registered());
+  callback_ = callback;
+  client_->AddObserver(this);
+  OnTokenFetched(access_token);
+}
+
+// static
+std::vector<std::string>
+CloudPolicyClientRegistrationHelper::GetScopes() {
+  std::vector<std::string> scopes;
+  scopes.push_back(GaiaConstants::kDeviceManagementServiceOAuth);
+  scopes.push_back(GaiaConstants::kOAuthWrapBridgeUserInfoScope);
+  return scopes;
+}
 #endif
 
 void CloudPolicyClientRegistrationHelper::OnTokenFetched(
@@ -248,7 +254,7 @@ void CloudPolicyClientRegistrationHelper::OnGetUserInfoFailure(
 void CloudPolicyClientRegistrationHelper::OnGetUserInfoSuccess(
     const base::DictionaryValue* data) {
   user_info_fetcher_.reset();
-  if (!data->HasKey(kGetHostedDomainKey) && !should_force_load_policy_) {
+  if (!data->HasKey(kGetHostedDomainKey)) {
     DVLOG(1) << "User not from a hosted domain - skipping registration";
     RequestCompleted();
     return;
@@ -266,7 +272,7 @@ void CloudPolicyClientRegistrationHelper::OnGetUserInfoSuccess(
   // Kick off registration of the CloudPolicyClient with our newly minted
   // oauth_access_token_.
   client_->Register(registration_type_, oauth_access_token_,
-                    std::string(), false, std::string());
+                    std::string(), false, std::string(), std::string());
 }
 
 void CloudPolicyClientRegistrationHelper::OnPolicyFetched(

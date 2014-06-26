@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "sync/internal_api/public/base/model_type.h"
@@ -13,18 +14,13 @@
 
 namespace {
 
-class EnableDisableTest : public SyncTest {
+class EnableDisableSingleClientTest : public SyncTest {
  public:
-  explicit EnableDisableTest(TestType test_type) : SyncTest(test_type) {}
-  virtual ~EnableDisableTest() {}
- private:
-  DISALLOW_COPY_AND_ASSIGN(EnableDisableTest);
-};
-
-class EnableDisableSingleClientTest : public EnableDisableTest {
- public:
-  EnableDisableSingleClientTest() : EnableDisableTest(SINGLE_CLIENT) {}
+  EnableDisableSingleClientTest() : SyncTest(SINGLE_CLIENT) {}
   virtual ~EnableDisableSingleClientTest() {}
+
+  // Don't use self-notifications as they can trigger additional sync cycles.
+  virtual bool TestUsesSelfNotifications() OVERRIDE { return false; }
  private:
   DISALLOW_COPY_AND_ASSIGN(EnableDisableSingleClientTest);
 };
@@ -33,8 +29,12 @@ bool DoesTopLevelNodeExist(syncer::UserShare* user_share,
                            syncer::ModelType type) {
     syncer::ReadTransaction trans(FROM_HERE, user_share);
     syncer::ReadNode node(&trans);
-    return node.InitByTagLookup(syncer::ModelTypeToRootTag(type)) ==
-        syncer::BaseNode::INIT_OK;
+    return node.InitTypeRoot(type) == syncer::BaseNode::INIT_OK;
+}
+
+bool IsUnready(const browser_sync::FailedDataTypesHandler& failed_handler,
+               syncer::ModelType type) {
+  return failed_handler.GetUnreadyErrorTypes().Has(type);
 }
 
 IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, EnableOneAtATime) {
@@ -43,14 +43,11 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, EnableOneAtATime) {
   // Setup sync with no enabled types.
   ASSERT_TRUE(GetClient(0)->SetupSync(syncer::ModelTypeSet()));
 
-  // TODO(rlarocque, 97780): It should be possible to disable notifications
-  // before calling SetupSync().  We should move this line back to the top
-  // of this function when this is supported.
-  DisableNotifications();
-
   const syncer::ModelTypeSet registered_types =
-      GetClient(0)->service()->GetRegisteredDataTypes();
-  syncer::UserShare* user_share = GetClient(0)->service()->GetUserShare();
+      GetSyncService(0)->GetRegisteredDataTypes();
+  syncer::UserShare* user_share = GetSyncService(0)->GetUserShare();
+  const browser_sync::FailedDataTypesHandler& failed_handler =
+      GetSyncService(0)->failed_data_types_handler();
   for (syncer::ModelTypeSet::Iterator it = registered_types.First();
        it.Good(); it.Inc()) {
     ASSERT_TRUE(GetClient(0)->EnableSyncForDatatype(it.Get()));
@@ -65,7 +62,8 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, EnableOneAtATime) {
     }
 
     if (!syncer::ProxyTypes().Has(it.Get())) {
-      ASSERT_TRUE(DoesTopLevelNodeExist(user_share, it.Get()))
+      ASSERT_TRUE(DoesTopLevelNodeExist(user_share, it.Get()) ||
+                  IsUnready(failed_handler, it.Get()))
           << syncer::ModelTypeToString(it.Get());
     }
 
@@ -79,8 +77,6 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, EnableOneAtATime) {
                                         syncer::SESSIONS));
     }
   }
-
-  EnableNotifications();
 }
 
 IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, DisableOneAtATime) {
@@ -89,29 +85,28 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, DisableOneAtATime) {
   // Setup sync with no disabled types.
   ASSERT_TRUE(GetClient(0)->SetupSync());
 
-  // TODO(rlarocque, 97780): It should be possible to disable notifications
-  // before calling SetupSync().  We should move this line back to the top
-  // of this function when this is supported.
-  DisableNotifications();
-
   const syncer::ModelTypeSet registered_types =
-      GetClient(0)->service()->GetRegisteredDataTypes();
+      GetSyncService(0)->GetRegisteredDataTypes();
 
-  syncer::UserShare* user_share = GetClient(0)->service()->GetUserShare();
+  syncer::UserShare* user_share = GetSyncService(0)->GetUserShare();
+
+  const browser_sync::FailedDataTypesHandler& failed_handler =
+      GetSyncService(0)->failed_data_types_handler();
 
   // Make sure all top-level nodes exist first.
   for (syncer::ModelTypeSet::Iterator it = registered_types.First();
        it.Good(); it.Inc()) {
     if (!syncer::ProxyTypes().Has(it.Get())) {
-      ASSERT_TRUE(DoesTopLevelNodeExist(user_share, it.Get()));
+      ASSERT_TRUE(DoesTopLevelNodeExist(user_share, it.Get()) ||
+                  IsUnready(failed_handler, it.Get()));
     }
   }
 
   for (syncer::ModelTypeSet::Iterator it = registered_types.First();
        it.Good(); it.Inc()) {
-    // MANAGED_USERS and MANAGED_USER_SETTINGS are always synced.
-    if (it.Get() == syncer::MANAGED_USERS ||
-        it.Get() == syncer::MANAGED_USER_SHARED_SETTINGS ||
+    // SUPERVISED_USERS and SUPERVISED_USER_SHARED_SETTINGS are always synced.
+    if (it.Get() == syncer::SUPERVISED_USERS ||
+        it.Get() == syncer::SUPERVISED_USER_SHARED_SETTINGS ||
         it.Get() == syncer::SYNCED_NOTIFICATIONS ||
         it.Get() == syncer::SYNCED_NOTIFICATION_APP_INFO)
       continue;
@@ -134,7 +129,7 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, DisableOneAtATime) {
     }
 
     syncer::UserShare* user_share =
-        GetClient(0)->service()->GetUserShare();
+        GetSyncService(0)->GetUserShare();
 
     ASSERT_FALSE(DoesTopLevelNodeExist(user_share, it.Get()))
         << syncer::ModelTypeToString(it.Get());
@@ -157,8 +152,6 @@ IN_PROC_BROWSER_TEST_F(EnableDisableSingleClientTest, DisableOneAtATime) {
                                          syncer::PRIORITY_PREFERENCES));
     }
   }
-
-  EnableNotifications();
 }
 
 }  // namespace

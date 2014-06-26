@@ -61,10 +61,6 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
     return ash::user::LOGGED_IN_OWNER;
   }
 
-  virtual bool IsOobeCompleted() const OVERRIDE {
-    return true;
-  }
-
   virtual void ChangeProfilePicture() OVERRIDE {
   }
 
@@ -105,6 +101,9 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
   }
 
   virtual void ShowDateSettings() OVERRIDE {
+  }
+
+  virtual void ShowSetTimeDialog() OVERRIDE {
   }
 
   virtual void ShowNetworkSettings(const std::string& service_path) OVERRIDE {
@@ -251,6 +250,10 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
     return false;
   }
 
+  virtual bool GetBluetoothDiscovering() OVERRIDE {
+    return false;
+  }
+
   virtual void ChangeProxySettings() OVERRIDE {
   }
 
@@ -281,6 +284,20 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
   virtual void ActiveUserWasChanged() OVERRIDE {
   }
 
+  virtual bool IsNetworkBehindCaptivePortal(
+      const std::string& service_path) const OVERRIDE {
+    return false;
+  }
+
+  virtual bool IsSearchKeyMappedToCapsLock() OVERRIDE {
+    return false;
+  }
+
+  virtual ash::tray::UserAccountsDelegate* GetUserAccountsDelegate(
+      const std::string& user_id) OVERRIDE {
+    return NULL;
+  }
+
  private:
   ash::SystemTrayNotifier* GetSystemTrayNotifier() {
     return ash::Shell::GetInstance()->system_tray_notifier();
@@ -302,6 +319,7 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
       ash::UpdateObserver::UpdateSeverity severity =
           ash::UpdateObserver::UPDATE_NORMAL;
       switch (detector->upgrade_notification_stage()) {
+        case UpgradeDetector::UPGRADE_ANNOYANCE_CRITICAL:
         case UpgradeDetector::UPGRADE_ANNOYANCE_SEVERE:
           severity = ash::UpdateObserver::UPDATE_SEVERE_RED;
           break;
@@ -312,6 +330,7 @@ class SystemTrayDelegateWin : public ash::SystemTrayDelegate,
           severity = ash::UpdateObserver::UPDATE_LOW_GREEN;
           break;
         case UpgradeDetector::UPGRADE_ANNOYANCE_LOW:
+        case UpgradeDetector::UPGRADE_ANNOYANCE_NONE:
           severity = ash::UpdateObserver::UPDATE_NORMAL;
           break;
       }

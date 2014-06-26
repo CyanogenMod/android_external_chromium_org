@@ -9,7 +9,7 @@
 #include <map>
 #include <string>
 
-#include "base/callback_forward.h"
+#include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "extensions/common/extension.h"
@@ -100,6 +100,11 @@ class ExtensionSet {
   // bulk extension data (e.g. if called from
   // EventBindings::HandleContextCreated)
   const Extension* GetExtensionOrAppByURL(const GURL& url) const;
+
+  // Returns the app specified by the given |url|, if one exists. This will
+  // return NULL if there is no entry with |url|, or if the extension with
+  // |url| is not an app.
+  const Extension* GetAppByURL(const GURL& url) const;
 
   // Returns the hosted app whose web extent contains the URL.
   const Extension* GetHostedAppByURL(const GURL& url) const;

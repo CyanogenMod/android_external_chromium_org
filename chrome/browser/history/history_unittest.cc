@@ -39,6 +39,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "chrome/browser/history/download_row.h"
@@ -53,15 +54,19 @@
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/thumbnail_score.h"
 #include "chrome/tools/profiles/thumbnail-inl.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
+#include "sync/api/attachments/attachment_id.h"
+#include "sync/api/attachments/attachment_service_proxy_for_test.h"
+#include "sync/api/fake_sync_change_processor.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_change_processor.h"
+#include "sync/api/sync_change_processor_wrapper_for_test.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_merge_result.h"
@@ -88,13 +93,13 @@ class BackendDelegate : public HistoryBackend::Delegate {
       : history_test_(history_test) {
   }
 
-  virtual void NotifyProfileError(int backend_id,
-                                  sql::InitStatus init_status) OVERRIDE {}
-  virtual void SetInMemoryBackend(int backend_id,
-                                  InMemoryHistoryBackend* backend) OVERRIDE;
-  virtual void BroadcastNotifications(int type,
-                                      HistoryDetails* details) OVERRIDE;
-  virtual void DBLoaded(int backend_id) OVERRIDE {}
+  virtual void NotifyProfileError(sql::InitStatus init_status) OVERRIDE {}
+  virtual void SetInMemoryBackend(
+      scoped_ptr<InMemoryHistoryBackend> backend) OVERRIDE;
+  virtual void BroadcastNotifications(
+      int type,
+      scoped_ptr<HistoryDetails> details) OVERRIDE;
+  virtual void DBLoaded() OVERRIDE {}
   virtual void NotifyVisitDBObserversOnAddVisit(
       const BriefVisitInfo& info) OVERRIDE {}
  private:
@@ -117,8 +122,8 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
   // Creates the HistoryBackend and HistoryDatabase on the current thread,
   // assigning the values to backend_ and db_.
   void CreateBackendAndDatabase() {
-    backend_ = new HistoryBackend(history_dir_, 0, new BackendDelegate(this),
-                                  NULL);
+    backend_ =
+        new HistoryBackend(history_dir_, new BackendDelegate(this), NULL);
     backend_->Init(std::string(), false);
     db_ = backend_->db_.get();
     DCHECK(in_mem_backend_) << "Mem backend should have been set by "
@@ -134,6 +139,16 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
     ASSERT_NO_FATAL_FAILURE(
         ExecuteSQLScript(data_path, history_dir_.Append(
             chrome::kHistoryFilename)));
+  }
+
+  void CreateArchivedDB() {
+    base::FilePath data_path;
+    ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &data_path));
+    data_path = data_path.AppendASCII("History");
+    data_path = data_path.AppendASCII("archived_history.4.sql");
+    ASSERT_NO_FATAL_FAILURE(
+        ExecuteSQLScript(data_path, history_dir_.Append(
+            chrome::kArchivedHistoryFilename)));
   }
 
   // testing::Test
@@ -170,6 +185,8 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
                          base::FilePath(FILE_PATH_LITERAL("target-path")),
                          url_chain,
                          GURL("http://referrer.com/"),
+                         "application/vnd.oasis.opendocument.text",
+                         "application/octet-stream",
                          time,
                          time,
                          std::string(),
@@ -199,23 +216,21 @@ class HistoryBackendDBTest : public HistoryUnitTestBase {
   HistoryDatabase* db_;  // Cached reference to the backend's database.
 };
 
-void BackendDelegate::SetInMemoryBackend(int backend_id,
-                                         InMemoryHistoryBackend* backend) {
+void BackendDelegate::SetInMemoryBackend(
+    scoped_ptr<InMemoryHistoryBackend> backend) {
   // Save the in-memory backend to the history test object, this happens
   // synchronously, so we don't have to do anything fancy.
-  history_test_->in_mem_backend_.reset(backend);
+  history_test_->in_mem_backend_.swap(backend);
 }
 
-void BackendDelegate::BroadcastNotifications(int type,
-                                             HistoryDetails* details) {
+void BackendDelegate::BroadcastNotifications(
+    int type,
+    scoped_ptr<HistoryDetails> details) {
   // Currently, just send the notifications directly to the in-memory database.
   // We may want do do something more fancy in the future.
-  content::Details<HistoryDetails> det(details);
+  content::Details<HistoryDetails> det(details.get());
   history_test_->in_mem_backend_->Observe(type,
       content::Source<HistoryBackendDBTest>(NULL), det);
-
-  // The backend passes ownership of the details pointer to us.
-  delete details;
 }
 
 TEST_F(HistoryBackendDBTest, ClearBrowsingData_Downloads) {
@@ -254,6 +269,8 @@ TEST_F(HistoryBackendDBTest, ClearBrowsingData_Downloads) {
   EXPECT_FALSE(downloads[0].opened);
   EXPECT_EQ("by_ext_id", downloads[0].by_ext_id);
   EXPECT_EQ("by_ext_name", downloads[0].by_ext_name);
+  EXPECT_EQ("application/vnd.oasis.opendocument.text", downloads[0].mime_type);
+  EXPECT_EQ("application/octet-stream", downloads[0].original_mime_type);
 
   db_->QueryDownloads(&downloads);
   EXPECT_EQ(1U, downloads.size());
@@ -617,6 +634,90 @@ TEST_F(HistoryBackendDBTest, MigrateDownloadValidators) {
   }
 }
 
+TEST_F(HistoryBackendDBTest, PurgeArchivedDatabase) {
+  ASSERT_NO_FATAL_FAILURE(CreateDBVersion(27));
+  ASSERT_NO_FATAL_FAILURE(CreateArchivedDB());
+
+  ASSERT_TRUE(base::PathExists(
+      history_dir_.Append(chrome::kArchivedHistoryFilename)));
+
+  CreateBackendAndDatabase();
+  DeleteBackend();
+
+  // We do not retain expired history entries in an archived database as of M37.
+  // Verify that any legacy archived database is deleted on start-up.
+  ASSERT_FALSE(base::PathExists(
+      history_dir_.Append(chrome::kArchivedHistoryFilename)));
+}
+
+TEST_F(HistoryBackendDBTest, MigrateDownloadMimeType) {
+  Time now(base::Time::Now());
+  ASSERT_NO_FATAL_FAILURE(CreateDBVersion(28));
+  {
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "INSERT INTO downloads (id, current_path, target_path, start_time, "
+          "received_bytes, total_bytes, state, danger_type, interrupt_reason, "
+          "end_time, opened, referrer, by_ext_id, by_ext_name, etag, "
+          "last_modified) VALUES "
+          "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"));
+      s.BindInt64(0, 1);
+      s.BindString(1, "current_path");
+      s.BindString(2, "target_path");
+      s.BindInt64(3, now.ToTimeT());
+      s.BindInt64(4, 100);
+      s.BindInt64(5, 100);
+      s.BindInt(6, 1);
+      s.BindInt(7, 0);
+      s.BindInt(8, 0);
+      s.BindInt64(9, now.ToTimeT());
+      s.BindInt(10, 1);
+      s.BindString(11, "referrer");
+      s.BindString(12, "by extension ID");
+      s.BindString(13, "by extension name");
+      s.BindString(14, "etag");
+      s.BindInt64(15, now.ToTimeT());
+      ASSERT_TRUE(s.Run());
+    }
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "INSERT INTO downloads_url_chains (id, chain_index, url) VALUES "
+          "(?, ?, ?)"));
+      s.BindInt64(0, 4);
+      s.BindInt64(1, 0);
+      s.BindString(2, "url");
+      ASSERT_TRUE(s.Run());
+    }
+  }
+  // Re-open the db using the HistoryDatabase, which should migrate to the
+  // current version, creating themime_type abd original_mime_type columns.
+  CreateBackendAndDatabase();
+  DeleteBackend();
+  {
+    // Re-open the db for manual manipulation.
+    sql::Connection db;
+    ASSERT_TRUE(db.Open(history_dir_.Append(chrome::kHistoryFilename)));
+    // The version should have been updated.
+    int cur_version = HistoryDatabase::GetCurrentVersion();
+    ASSERT_LE(29, cur_version);
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "SELECT value FROM meta WHERE key = 'version'"));
+      EXPECT_TRUE(s.Step());
+      EXPECT_EQ(cur_version, s.ColumnInt(0));
+    }
+    {
+      sql::Statement s(db.GetUniqueStatement(
+          "SELECT mime_type, original_mime_type from downloads"));
+      EXPECT_TRUE(s.Step());
+      EXPECT_EQ(std::string(), s.ColumnString(0));
+      EXPECT_EQ(std::string(), s.ColumnString(1));
+    }
+  }
+}
+
 TEST_F(HistoryBackendDBTest, ConfirmDownloadRowCreateAndDelete) {
   // Create the DB.
   CreateBackendAndDatabase();
@@ -673,6 +774,8 @@ TEST_F(HistoryBackendDBTest, DownloadNukeRecordsMissingURLs) {
                        base::FilePath(FILE_PATH_LITERAL("foo-path")),
                        url_chain,
                        GURL(std::string()),
+                       "application/octet-stream",
+                       "application/octet-stream",
                        now,
                        now,
                        std::string(),
@@ -870,20 +973,10 @@ TEST_F(HistoryBackendDBTest,
   }
 }
 
-// The tracker uses RenderProcessHost pointers for scoping but never
-// dereferences them. We use ints because it's easier. This function converts
-// between the two.
-static void* MakeFakeHost(int id) {
-  void* host = 0;
-  memcpy(&host, &id, sizeof(id));
-  return host;
-}
-
 class HistoryTest : public testing::Test {
  public:
   HistoryTest()
       : got_thumbnail_callback_(false),
-        redirect_query_success_(false),
         query_url_success_(false) {
   }
 
@@ -915,7 +1008,7 @@ class HistoryTest : public testing::Test {
     history_dir_ = temp_dir_.path().AppendASCII("HistoryTest");
     ASSERT_TRUE(base::CreateDirectory(history_dir_));
     history_service_.reset(new HistoryService);
-    if (!history_service_->Init(history_dir_, NULL)) {
+    if (!history_service_->Init(history_dir_)) {
       history_service_.reset();
       ADD_FAILURE();
     }
@@ -935,7 +1028,7 @@ class HistoryTest : public testing::Test {
   void CleanupHistoryService() {
     DCHECK(history_service_);
 
-    history_service_->NotifyRenderProcessHostDestruction(0);
+    history_service_->ClearCachedDataForContextID(0);
     history_service_->SetOnBackendDestroyTask(base::MessageLoop::QuitClosure());
     history_service_->Cleanup();
     history_service_.reset();
@@ -951,22 +1044,23 @@ class HistoryTest : public testing::Test {
   // information about the given URL and returns true. If the URL was not
   // found, this will return false and those structures will not be changed.
   bool QueryURL(HistoryService* history, const GURL& url) {
-    history_service_->QueryURL(url, true, &consumer_,
-                               base::Bind(&HistoryTest::SaveURLAndQuit,
-                                          base::Unretained(this)));
+    history_service_->QueryURL(
+        url,
+        true,
+        base::Bind(&HistoryTest::SaveURLAndQuit, base::Unretained(this)),
+        &tracker_);
     base::MessageLoop::current()->Run();  // Will be exited in SaveURLAndQuit.
     return query_url_success_;
   }
 
   // Callback for HistoryService::QueryURL.
-  void SaveURLAndQuit(HistoryService::Handle handle,
-                      bool success,
-                      const URLRow* url_row,
-                      VisitVector* visit_vector) {
+  void SaveURLAndQuit(bool success,
+                      const URLRow& url_row,
+                      const VisitVector& visits) {
     query_url_success_ = success;
     if (query_url_success_) {
-      query_url_row_ = *url_row;
-      query_url_visits_.swap(*visit_vector);
+      query_url_row_ = url_row;
+      query_url_visits_ = visits;
     } else {
       query_url_row_ = URLRow();
       query_url_visits_.clear();
@@ -976,25 +1070,22 @@ class HistoryTest : public testing::Test {
 
   // Fills in saved_redirects_ with the redirect information for the given URL,
   // returning true on success. False means the URL was not found.
-  bool QueryRedirectsFrom(HistoryService* history, const GURL& url) {
+  void QueryRedirectsFrom(HistoryService* history, const GURL& url) {
     history_service_->QueryRedirectsFrom(
-        url, &consumer_,
+        url,
         base::Bind(&HistoryTest::OnRedirectQueryComplete,
-                   base::Unretained(this)));
+                   base::Unretained(this)),
+        &tracker_);
     base::MessageLoop::current()->Run();  // Will be exited in *QueryComplete.
-    return redirect_query_success_;
   }
 
   // Callback for QueryRedirects.
-  void OnRedirectQueryComplete(HistoryService::Handle handle,
-                               GURL url,
-                               bool success,
-                               history::RedirectList* redirects) {
-    redirect_query_success_ = success;
-    if (redirect_query_success_)
-      saved_redirects_.swap(*redirects);
-    else
-      saved_redirects_.clear();
+  void OnRedirectQueryComplete(const history::RedirectList* redirects) {
+    saved_redirects_.clear();
+    if (!redirects->empty()) {
+      saved_redirects_.insert(
+          saved_redirects_.end(), redirects->begin(), redirects->end());
+    }
     base::MessageLoop::current()->Quit();
   }
 
@@ -1023,9 +1114,9 @@ class HistoryTest : public testing::Test {
   // Set by the redirect callback when we get data. You should be sure to
   // clear this before issuing a redirect request.
   history::RedirectList saved_redirects_;
-  bool redirect_query_success_;
 
   // For history requests.
+  base::CancelableTaskTracker tracker_;
   CancelableRequestConsumer consumer_;
 
   // For saving URL info after a call to QueryURL
@@ -1070,9 +1161,9 @@ TEST_F(HistoryTest, AddRedirect) {
   // Add the sequence of pages as a server with no referrer. Note that we need
   // to have a non-NULL page ID scope.
   history_service_->AddPage(
-      first_redirects.back(), base::Time::Now(), MakeFakeHost(1),
-      0, GURL(), first_redirects, content::PAGE_TRANSITION_LINK,
-      history::SOURCE_BROWSED, true);
+      first_redirects.back(), base::Time::Now(),
+      reinterpret_cast<ContextID>(1), 0, GURL(), first_redirects,
+      content::PAGE_TRANSITION_LINK, history::SOURCE_BROWSED, true);
 
   // The first page should be added once with a link visit type (because we set
   // LINK when we added the original URL, and a referrer of nowhere (0).
@@ -1109,7 +1200,8 @@ TEST_F(HistoryTest, AddRedirect) {
   second_redirects.push_back(first_redirects[1]);
   second_redirects.push_back(GURL("http://last.page.com/"));
   history_service_->AddPage(second_redirects[1], base::Time::Now(),
-                   MakeFakeHost(1), 1, second_redirects[0], second_redirects,
+                   reinterpret_cast<ContextID>(1), 1,
+                   second_redirects[0], second_redirects,
                    static_cast<content::PageTransition>(
                        content::PAGE_TRANSITION_LINK |
                        content::PAGE_TRANSITION_CLIENT_REDIRECT),
@@ -1299,12 +1391,12 @@ TEST_F(HistoryTest, SetTitle) {
 TEST_F(HistoryTest, DISABLED_Segments) {
   ASSERT_TRUE(history_service_.get());
 
-  static const void* scope = static_cast<void*>(this);
+  static ContextID context_id = static_cast<ContextID>(this);
 
   // Add a URL.
   const GURL existing_url("http://www.google.com/");
   history_service_->AddPage(
-      existing_url, base::Time::Now(), scope, 0, GURL(),
+      existing_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
 
@@ -1324,7 +1416,7 @@ TEST_F(HistoryTest, DISABLED_Segments) {
   // Add a URL which doesn't create a segment.
   const GURL link_url("http://yahoo.com/");
   history_service_->AddPage(
-      link_url, base::Time::Now(), scope, 0, GURL(),
+      link_url, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_LINK,
       history::SOURCE_BROWSED, false);
 
@@ -1344,7 +1436,7 @@ TEST_F(HistoryTest, DISABLED_Segments) {
   // Add a page linked from existing_url.
   history_service_->AddPage(
       GURL("http://www.google.com/foo"), base::Time::Now(),
-      scope, 3, existing_url, history::RedirectList(),
+      context_id, 3, existing_url, history::RedirectList(),
       content::PAGE_TRANSITION_LINK, history::SOURCE_BROWSED,
       false);
 
@@ -1374,15 +1466,15 @@ TEST_F(HistoryTest, MostVisitedURLs) {
   const GURL url3("http://www.google.com/url3/");
   const GURL url4("http://www.google.com/url4/");
 
-  static const void* scope = static_cast<void*>(this);
+  static ContextID context_id = static_cast<ContextID>(this);
 
   // Add two pages.
   history_service_->AddPage(
-      url0, base::Time::Now(), scope, 0, GURL(),
+      url0, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->AddPage(
-      url1, base::Time::Now(), scope, 0, GURL(),
+      url1, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1398,7 +1490,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Add another page.
   history_service_->AddPage(
-      url2, base::Time::Now(), scope, 0, GURL(),
+      url2, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1415,7 +1507,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Revisit url2, making it the top URL.
   history_service_->AddPage(
-      url2, base::Time::Now(), scope, 0, GURL(),
+      url2, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1432,7 +1524,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Revisit url1, making it the top URL.
   history_service_->AddPage(
-      url1, base::Time::Now(), scope, 0, GURL(),
+      url1, base::Time::Now(), context_id, 0, GURL(),
       history::RedirectList(), content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1454,7 +1546,7 @@ TEST_F(HistoryTest, MostVisitedURLs) {
 
   // Visit url4 using redirects.
   history_service_->AddPage(
-      url4, base::Time::Now(), scope, 0, GURL(),
+      url4, base::Time::Now(), context_id, 0, GURL(),
       redirects, content::PAGE_TRANSITION_TYPED,
       history::SOURCE_BROWSED, false);
   history_service_->QueryMostVisitedURLs(
@@ -1537,71 +1629,6 @@ TEST_F(HistoryTest, HistoryDBTaskCanceled) {
   ASSERT_FALSE(task->done_invoked);
 }
 
-// Dummy SyncChangeProcessor used to help review what SyncChanges are pushed
-// back up to Sync.
-//
-// TODO(akalin): Unify all the various test implementations of
-// syncer::SyncChangeProcessor.
-class TestChangeProcessor : public syncer::SyncChangeProcessor {
- public:
-  TestChangeProcessor() {}
-  virtual ~TestChangeProcessor() {}
-
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE {
-    changes_.insert(changes_.end(), change_list.begin(), change_list.end());
-    return syncer::SyncError();
-  }
-
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
-    return syncer::SyncDataList();
-  }
-
-  const syncer::SyncChangeList& GetChanges() const {
-    return changes_;
-  }
-
- private:
-  syncer::SyncChangeList changes_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestChangeProcessor);
-};
-
-// SyncChangeProcessor implementation that delegates to another one.
-// This is necessary since most things expect a
-// scoped_ptr<SyncChangeProcessor>.
-//
-// TODO(akalin): Unify this too.
-class SyncChangeProcessorDelegate : public syncer::SyncChangeProcessor {
- public:
-  explicit SyncChangeProcessorDelegate(syncer::SyncChangeProcessor* recipient)
-      : recipient_(recipient) {
-    DCHECK(recipient_);
-  }
-
-  virtual ~SyncChangeProcessorDelegate() {}
-
-  // syncer::SyncChangeProcessor implementation.
-  virtual syncer::SyncError ProcessSyncChanges(
-      const tracked_objects::Location& from_here,
-      const syncer::SyncChangeList& change_list) OVERRIDE {
-    return recipient_->ProcessSyncChanges(from_here, change_list);
-  }
-
-  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const
-      OVERRIDE {
-    return recipient_->GetAllSyncData(type);
-  }
-
- private:
-  // The recipient of all sync changes.
-  syncer::SyncChangeProcessor* const recipient_;
-
-  DISALLOW_COPY_AND_ASSIGN(SyncChangeProcessorDelegate);
-};
-
 // Create a local delete directive and process it while sync is
 // online, and then when offline. The delete directive should be sent to sync,
 // no error should be returned for the first time, and an error should be
@@ -1626,35 +1653,39 @@ TEST_F(HistoryTest, ProcessLocalDeleteDirectiveSyncOnline) {
       (base::Time::UnixEpoch() + base::TimeDelta::FromMicroseconds(1))
       .ToInternalValue());
 
-  TestChangeProcessor change_processor;
+  syncer::FakeSyncChangeProcessor change_processor;
 
   EXPECT_FALSE(
       history_service_->MergeDataAndStartSyncing(
-          syncer::HISTORY_DELETE_DIRECTIVES,
-          syncer::SyncDataList(),
-          scoped_ptr<syncer::SyncChangeProcessor>(
-              new SyncChangeProcessorDelegate(&change_processor)),
-          scoped_ptr<syncer::SyncErrorFactory>()).error().IsSet());
+                            syncer::HISTORY_DELETE_DIRECTIVES,
+                            syncer::SyncDataList(),
+                            scoped_ptr<syncer::SyncChangeProcessor>(
+                                new syncer::SyncChangeProcessorWrapperForTest(
+                                    &change_processor)),
+                            scoped_ptr<syncer::SyncErrorFactory>())
+          .error()
+          .IsSet());
 
   syncer::SyncError err =
       history_service_->ProcessLocalDeleteDirective(delete_directive);
   EXPECT_FALSE(err.IsSet());
-  EXPECT_EQ(1u, change_processor.GetChanges().size());
+  EXPECT_EQ(1u, change_processor.changes().size());
 
   history_service_->StopSyncing(syncer::HISTORY_DELETE_DIRECTIVES);
   err = history_service_->ProcessLocalDeleteDirective(delete_directive);
   EXPECT_TRUE(err.IsSet());
-  EXPECT_EQ(1u, change_processor.GetChanges().size());
+  EXPECT_EQ(1u, change_processor.changes().size());
 }
 
 // Closure function that runs periodically to check result of delete directive
 // processing. Stop when timeout or processing ends indicated by the creation
 // of sync changes.
 void CheckDirectiveProcessingResult(
-    Time timeout, const TestChangeProcessor* change_processor,
+    Time timeout,
+    const syncer::FakeSyncChangeProcessor* change_processor,
     uint32 num_changes) {
   if (base::Time::Now() > timeout ||
-      change_processor->GetChanges().size() >= num_changes) {
+      change_processor->changes().size() >= num_changes) {
     return;
   }
 
@@ -1694,8 +1725,12 @@ TEST_F(HistoryTest, ProcessGlobalIdDeleteDirective) {
       .ToInternalValue());
   global_id_directive->set_start_time_usec(3);
   global_id_directive->set_end_time_usec(10);
-  directives.push_back(
-      syncer::SyncData::CreateRemoteData(1, entity_specs, base::Time()));
+  directives.push_back(syncer::SyncData::CreateRemoteData(
+      1,
+      entity_specs,
+      base::Time(),
+      syncer::AttachmentIdList(),
+      syncer::AttachmentServiceProxyForTest::Create()));
 
   // 2nd directive.
   global_id_directive->Clear();
@@ -1704,17 +1739,24 @@ TEST_F(HistoryTest, ProcessGlobalIdDeleteDirective) {
       .ToInternalValue());
   global_id_directive->set_start_time_usec(13);
   global_id_directive->set_end_time_usec(19);
-  directives.push_back(
-      syncer::SyncData::CreateRemoteData(2, entity_specs, base::Time()));
+  directives.push_back(syncer::SyncData::CreateRemoteData(
+      2,
+      entity_specs,
+      base::Time(),
+      syncer::AttachmentIdList(),
+      syncer::AttachmentServiceProxyForTest::Create()));
 
-  TestChangeProcessor change_processor;
+  syncer::FakeSyncChangeProcessor change_processor;
   EXPECT_FALSE(
       history_service_->MergeDataAndStartSyncing(
-          syncer::HISTORY_DELETE_DIRECTIVES,
-          directives,
-          scoped_ptr<syncer::SyncChangeProcessor>(
-              new SyncChangeProcessorDelegate(&change_processor)),
-          scoped_ptr<syncer::SyncErrorFactory>()).error().IsSet());
+                            syncer::HISTORY_DELETE_DIRECTIVES,
+                            directives,
+                            scoped_ptr<syncer::SyncChangeProcessor>(
+                                new syncer::SyncChangeProcessorWrapperForTest(
+                                    &change_processor)),
+                            scoped_ptr<syncer::SyncErrorFactory>())
+          .error()
+          .IsSet());
 
   // Inject a task to check status and keep message loop filled before directive
   // processing finishes.
@@ -1738,12 +1780,12 @@ TEST_F(HistoryTest, ProcessGlobalIdDeleteDirective) {
             query_url_visits_[4].visit_time);
 
   // Expect two sync changes for deleting processed directives.
-  const syncer::SyncChangeList& sync_changes = change_processor.GetChanges();
+  const syncer::SyncChangeList& sync_changes = change_processor.changes();
   ASSERT_EQ(2u, sync_changes.size());
   EXPECT_EQ(syncer::SyncChange::ACTION_DELETE, sync_changes[0].change_type());
-  EXPECT_EQ(1, sync_changes[0].sync_data().GetRemoteId());
+  EXPECT_EQ(1, syncer::SyncDataRemote(sync_changes[0].sync_data()).GetId());
   EXPECT_EQ(syncer::SyncChange::ACTION_DELETE, sync_changes[1].change_type());
-  EXPECT_EQ(2, sync_changes[1].sync_data().GetRemoteId());
+  EXPECT_EQ(2, syncer::SyncDataRemote(sync_changes[1].sync_data()).GetId());
 }
 
 // Create delete directives for time ranges.  The expected entries should be
@@ -1771,26 +1813,35 @@ TEST_F(HistoryTest, ProcessTimeRangeDeleteDirective) {
           ->mutable_time_range_directive();
   time_range_directive->set_start_time_usec(2);
   time_range_directive->set_end_time_usec(5);
-  directives.push_back(syncer::SyncData::CreateRemoteData(1,
-                                                          entity_specs,
-                                                          base::Time()));
+  directives.push_back(syncer::SyncData::CreateRemoteData(
+      1,
+      entity_specs,
+      base::Time(),
+      syncer::AttachmentIdList(),
+      syncer::AttachmentServiceProxyForTest::Create()));
 
   // 2nd directive.
   time_range_directive->Clear();
   time_range_directive->set_start_time_usec(8);
   time_range_directive->set_end_time_usec(10);
-  directives.push_back(syncer::SyncData::CreateRemoteData(2,
-                                                          entity_specs,
-                                                          base::Time()));
+  directives.push_back(syncer::SyncData::CreateRemoteData(
+      2,
+      entity_specs,
+      base::Time(),
+      syncer::AttachmentIdList(),
+      syncer::AttachmentServiceProxyForTest::Create()));
 
-  TestChangeProcessor change_processor;
+  syncer::FakeSyncChangeProcessor change_processor;
   EXPECT_FALSE(
       history_service_->MergeDataAndStartSyncing(
-          syncer::HISTORY_DELETE_DIRECTIVES,
-          directives,
-          scoped_ptr<syncer::SyncChangeProcessor>(
-              new SyncChangeProcessorDelegate(&change_processor)),
-          scoped_ptr<syncer::SyncErrorFactory>()).error().IsSet());
+                            syncer::HISTORY_DELETE_DIRECTIVES,
+                            directives,
+                            scoped_ptr<syncer::SyncChangeProcessor>(
+                                new syncer::SyncChangeProcessorWrapperForTest(
+                                    &change_processor)),
+                            scoped_ptr<syncer::SyncErrorFactory>())
+          .error()
+          .IsSet());
 
   // Inject a task to check status and keep message loop filled before
   // directive processing finishes.
@@ -1810,12 +1861,12 @@ TEST_F(HistoryTest, ProcessTimeRangeDeleteDirective) {
             query_url_visits_[2].visit_time);
 
   // Expect two sync changes for deleting processed directives.
-  const syncer::SyncChangeList& sync_changes = change_processor.GetChanges();
+  const syncer::SyncChangeList& sync_changes = change_processor.changes();
   ASSERT_EQ(2u, sync_changes.size());
   EXPECT_EQ(syncer::SyncChange::ACTION_DELETE, sync_changes[0].change_type());
-  EXPECT_EQ(1, sync_changes[0].sync_data().GetRemoteId());
+  EXPECT_EQ(1, syncer::SyncDataRemote(sync_changes[0].sync_data()).GetId());
   EXPECT_EQ(syncer::SyncChange::ACTION_DELETE, sync_changes[1].change_type());
-  EXPECT_EQ(2, sync_changes[1].sync_data().GetRemoteId());
+  EXPECT_EQ(2, syncer::SyncDataRemote(sync_changes[1].sync_data()).GetId());
 }
 
 TEST_F(HistoryBackendDBTest, MigratePresentations) {

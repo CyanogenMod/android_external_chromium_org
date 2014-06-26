@@ -14,11 +14,11 @@ namespace processes_api_constants {
 // Process object properties.
 extern const char kCpuKey[];
 extern const char kCssCacheKey[];
-extern const char kFPSKey[];
 extern const char kIdKey[];
 extern const char kImageCacheKey[];
 extern const char kJsMemoryAllocatedKey[];
 extern const char kJsMemoryUsedKey[];
+extern const char kNaClDebugPortKey[];
 extern const char kNetworkKey[];
 extern const char kOsProcessIdKey[];
 extern const char kPrivateMemoryKey[];
@@ -26,6 +26,7 @@ extern const char kProfileKey[];
 extern const char kScriptCacheKey[];
 extern const char kSqliteMemoryKey[];
 extern const char kTabsListKey[];
+extern const char kTitleKey[];
 extern const char kTypeKey[];
 
 // Process types.

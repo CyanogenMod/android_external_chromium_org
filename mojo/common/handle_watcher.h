@@ -8,13 +8,12 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/run_loop.h"
 #include "mojo/common/mojo_common_export.h"
-#include "mojo/public/system/core_cpp.h"
+#include "mojo/public/cpp/system/core.h"
 
 namespace base {
 class Thread;
-class TickClock;
-class TimeTicks;
 }
 
 namespace mojo {
@@ -34,33 +33,22 @@ class MOJO_COMMON_EXPORT HandleWatcher {
   // words, Start() performs one asynchronous watch at a time. It is ok to call
   // Start() multiple times, but it cancels any existing watches. |callback| is
   // notified when the handle is ready, invalid or deadline has passed and is
-  // notified on the thread Start() was invoked on.
+  // notified on the thread Start() was invoked on. If the current thread exits
+  // before the handle is ready, then |callback| is invoked with a result of
+  // MOJO_RESULT_ABORTED.
   void Start(const Handle& handle,
-             MojoWaitFlags wait_flags,
+             MojoHandleSignals handle_signals,
              MojoDeadline deadline,
              const base::Callback<void(MojoResult)>& callback);
 
   // Stops listening. Does nothing if not in the process of listening.
   void Stop();
 
-  // Returns now. Used internally; generally not useful.
-  static base::TimeTicks NowTicks();
-
-  // Converts a MojoDeadline into a TimeTicks.
-  static base::TimeTicks MojoDeadlineToTimeTicks(MojoDeadline deadline);
-
  private:
-  friend class test::HandleWatcherTest;
-  struct StartState;
-
-  // See description of |StartState::weak_factory| for details.
-  void OnHandleReady(MojoResult result);
+  class State;
 
   // If non-NULL Start() has been invoked.
-  scoped_ptr<StartState> start_state_;
-
-  // Used for getting the time. Only set by tests.
-  static base::TickClock* tick_clock_;
+  scoped_ptr<State> state_;
 
   DISALLOW_COPY_AND_ASSIGN(HandleWatcher);
 };

@@ -26,6 +26,32 @@ base::LazyInstance<base::ThreadLocalPointer<GLContext> >::Leaky
     current_real_context_ = LAZY_INSTANCE_INITIALIZER;
 }  // namespace
 
+GLContext::ScopedReleaseCurrent::ScopedReleaseCurrent() : canceled_(false) {}
+
+GLContext::ScopedReleaseCurrent::~ScopedReleaseCurrent() {
+  if (!canceled_ && GetCurrent()) {
+    GetCurrent()->ReleaseCurrent(NULL);
+  }
+}
+
+void GLContext::ScopedReleaseCurrent::Cancel() {
+  canceled_ = true;
+}
+
+GLContext::FlushEvent::FlushEvent() {
+}
+
+GLContext::FlushEvent::~FlushEvent() {
+}
+
+void GLContext::FlushEvent::Signal() {
+  flag_.Set();
+}
+
+bool GLContext::FlushEvent::IsSignaled() {
+  return flag_.IsSet();
+}
+
 GLContext::GLContext(GLShareGroup* share_group) : share_group_(share_group) {
   if (!share_group_.get())
     share_group_ = new GLShareGroup;
@@ -38,6 +64,13 @@ GLContext::~GLContext() {
   if (GetCurrent() == this) {
     SetCurrent(NULL);
   }
+}
+
+scoped_refptr<GLContext::FlushEvent> GLContext::SignalFlush() {
+  DCHECK(IsCurrent(NULL));
+  scoped_refptr<FlushEvent> flush_event = new FlushEvent();
+  flush_events_.push_back(flush_event);
+  return flush_event;
 }
 
 bool GLContext::GetTotalGpuMemory(size_t* bytes) {
@@ -125,6 +158,12 @@ GLContext* GLContext::GetRealCurrent() {
 void GLContext::SetCurrent(GLSurface* surface) {
   current_context_.Pointer()->Set(surface ? this : NULL);
   GLSurface::SetCurrent(surface);
+  // Leave the real GL api current so that unit tests work correctly.
+  // TODO(sievers): Remove this, but needs all gpu_unittest classes
+  // to create and make current a context.
+  if (!surface && GetGLImplementation() != kGLImplementationMockGL) {
+    SetGLApiToNoContext();
+  }
 }
 
 GLStateRestorer* GLContext::GetGLStateRestorer() {
@@ -170,6 +209,12 @@ void GLContext::OnReleaseVirtuallyCurrent(GLContext* virtual_context) {
 
 void GLContext::SetRealGLApi() {
   SetGLToRealGLApi();
+}
+
+void GLContext::OnFlush() {
+  for (size_t n = 0; n < flush_events_.size(); n++)
+    flush_events_[n]->Signal();
+  flush_events_.clear();
 }
 
 GLContextReal::GLContextReal(GLShareGroup* share_group)

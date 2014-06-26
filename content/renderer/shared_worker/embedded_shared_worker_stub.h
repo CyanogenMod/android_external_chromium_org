@@ -5,6 +5,8 @@
 #ifndef CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
 #define CONTENT_RENDERER_SHARED_WORKER_EMBEDDED_SHARED_WORKER_STUB_H
 
+#include <vector>
+
 #include "content/child/child_message_filter.h"
 #include "content/child/scoped_child_process_reference.h"
 #include "ipc/ipc_listener.h"
@@ -25,6 +27,7 @@ class WebWorkerPermissionClientProxy;
 
 namespace content {
 class SharedWorkerDevToolsAgent;
+class WebApplicationCacheHostImpl;
 class WebMessagePortChannelImpl;
 
 class EmbeddedSharedWorkerStub : public IPC::Listener,
@@ -35,6 +38,7 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
       const base::string16& name,
       const base::string16& content_security_policy,
       blink::WebContentSecurityPolicyType security_policy_type,
+      bool pause_on_start,
       int route_id);
 
   // IPC::Listener implementation.
@@ -63,6 +67,9 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
   void Shutdown();
   bool Send(IPC::Message* message);
 
+  // WebSharedWorker will own |channel|.
+  void ConnectToChannel(WebMessagePortChannelImpl* channel);
+
   void OnConnect(int sent_message_port_id, int routing_id);
   void OnTerminateWorkerContext();
 
@@ -77,6 +84,7 @@ class EmbeddedSharedWorkerStub : public IPC::Listener,
   PendingChannelList pending_channels_;
 
   ScopedChildProcessReference process_ref_;
+  WebApplicationCacheHostImpl* app_cache_host_;
   DISALLOW_COPY_AND_ASSIGN(EmbeddedSharedWorkerStub);
 };
 

@@ -34,6 +34,7 @@ POLICY_EXPORT extern const char kValueRequestRegister[];
 POLICY_EXPORT extern const char kValueRequestApiAuthorization[];
 POLICY_EXPORT extern const char kValueRequestUnregister[];
 POLICY_EXPORT extern const char kValueRequestUploadCertificate[];
+POLICY_EXPORT extern const char kValueRequestDeviceStateRetrieval[];
 POLICY_EXPORT extern const char kValueUserAffiliationManaged[];
 POLICY_EXPORT extern const char kValueUserAffiliationNone[];
 
@@ -50,6 +51,9 @@ enum PolicyFetchStatus {
 };
 
 }  // namespace dm_protocol
+
+// The header used to transmit the policy ID for this client.
+POLICY_EXPORT extern const char kChromePolicyHeader[];
 
 // Information about the verification key used to verify that policy signing
 // keys are valid.
@@ -94,6 +98,8 @@ enum DeviceManagementStatus {
   DM_STATUS_SERVICE_MISSING_LICENSES,
   // Service error: The administrator has deprovisioned this client.
   DM_STATUS_SERVICE_DEPROVISIONED,
+  // Service error: Device registration for the wrong domain.
+  DM_STATUS_SERVICE_DOMAIN_MISMATCH,
   // Service error: Policy not found. Error code defined by the DM folks.
   DM_STATUS_SERVICE_POLICY_NOT_FOUND = 902,
 };

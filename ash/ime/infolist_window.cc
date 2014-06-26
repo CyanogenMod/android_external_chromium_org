@@ -18,9 +18,9 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/corewm/window_animations.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace ash {
 namespace ime {
@@ -94,7 +94,7 @@ class InfolistEntryView : public views::View {
 
  private:
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   void UpdateBackground();
 
@@ -143,7 +143,7 @@ void InfolistEntryView::SetEntry(const ui::InfolistEntry& entry) {
   UpdateBackground();
 }
 
-gfx::Size InfolistEntryView::GetPreferredSize() {
+gfx::Size InfolistEntryView::GetPreferredSize() const {
   return gfx::Size(kInfolistEntryWidth, GetHeightForWidth(kInfolistEntryWidth));
 }
 
@@ -172,7 +172,8 @@ InfolistWindow::InfolistWindow(views::View* candidate_window,
       title_font_list_(gfx::Font(kJapaneseFontName, kFontSizeDelta + 15)),
       description_font_list_(gfx::Font(kJapaneseFontName,
                                        kFontSizeDelta + 11)) {
-  set_move_with_anchor(true);
+  set_use_focusless(true);
+  set_accept_events(false);
   set_margins(gfx::Insets());
 
   set_background(
@@ -211,9 +212,9 @@ InfolistWindow::~InfolistWindow() {
 
 void InfolistWindow::InitWidget() {
   views::Widget* widget = views::BubbleDelegateView::CreateBubble(this);
-  views::corewm::SetWindowVisibilityAnimationType(
+  wm::SetWindowVisibilityAnimationType(
       widget->GetNativeView(),
-      views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+      wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
 
   // BubbleFrameView will be initialized through CreateBubble.
   GetBubbleFrameView()->SetBubbleBorder(

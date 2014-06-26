@@ -30,21 +30,18 @@ class View;
 }
 
 namespace ash {
-
-namespace internal {
 class FocusCycler;
+class ShelfDelegate;
+class ShelfIconObserver;
 class ShelfLayoutManager;
+class ShelfModel;
 class ShelfView;
-}
+class ShelfWidget;
 
 namespace test {
 class ShelfTestAPI;
 }
 
-class ShelfDelegate;
-class ShelfIconObserver;
-class ShelfModel;
-class ShelfWidget;
 
 class ASH_EXPORT Shelf {
  public:
@@ -66,7 +63,7 @@ class ASH_EXPORT Shelf {
 
   // Returns the screen bounds of the item for the specified window. If there is
   // no item for the specified window an empty rect is returned.
-  gfx::Rect GetScreenBoundsOfItemIconForWindow(aura::Window* window);
+  gfx::Rect GetScreenBoundsOfItemIconForWindow(const aura::Window* window);
 
   // Updates the icon position given the current window bounds. This is used
   // when dragging panels to reposition them with respect to the other panels.
@@ -115,7 +112,7 @@ class ASH_EXPORT Shelf {
   friend class test::ShelfTestAPI;
 
   // ShelfView used to display icons.
-  internal::ShelfView* shelf_view_;
+  ShelfView* shelf_view_;
 
   ShelfAlignment alignment_;
 

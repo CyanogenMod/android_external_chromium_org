@@ -5,13 +5,13 @@
 
 import unittest
 
-from appengine_wrappers import GetAppVersion
 from app_yaml_helper import AppYamlHelper
 from content_providers import IgnoreMissingContentProviders
 from cron_servlet import CronServlet
 from empty_dir_file_system import EmptyDirFileSystem
+from environment import GetAppVersion
 from extensions_paths import (
-    APP_YAML, CONTENT_PROVIDERS, EXTENSIONS, PUBLIC_TEMPLATES, SERVER2,
+    APP_YAML, CONTENT_PROVIDERS, CHROME_EXTENSIONS, PUBLIC_TEMPLATES, SERVER2,
     STATIC_DOCS)
 from gcs_file_system_provider import CloudStorageFileSystemProvider
 from github_file_system_provider import GithubFileSystemProvider
@@ -109,6 +109,12 @@ class CronServletTest(unittest.TestCase):
           'static.txt': 'static.txt contents'
         },
         'templates': {
+          'articles': {
+            'activeTab.html': 'activeTab.html contents'
+          },
+          'intros': {
+            'browserAction.html': 'activeTab.html contents'
+          },
           'private': {
             'table_of_contents.html': 'table_of_contents.html contents',
           },
@@ -155,7 +161,7 @@ class CronServletTest(unittest.TestCase):
       to it.
       '''
       mock_file_system = MockFileSystem(
-          TestFileSystem(test_data, relative_to=EXTENSIONS))
+          TestFileSystem(test_data, relative_to=CHROME_EXTENSIONS))
       updates_for_revision = (
           updates if revision is None else updates[:int(revision)])
       for update in updates_for_revision:

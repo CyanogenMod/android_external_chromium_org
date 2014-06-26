@@ -12,11 +12,8 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
@@ -24,9 +21,13 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_profile.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
+#include "chrome/test/base/testing_browser_process.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/signin/core/browser/fake_auth_status_provider.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
@@ -193,8 +194,8 @@ class TestWebUI : public content::WebUI {
     return NULL;
   }
   virtual void SetController(content::WebUIController* controller) OVERRIDE {}
-  virtual ui::ScaleFactor GetDeviceScaleFactor() const OVERRIDE {
-    return ui::SCALE_FACTOR_100P;
+  virtual float GetDeviceScaleFactor() const OVERRIDE {
+    return 1.0f;
   }
   virtual const base::string16& GetOverriddenTitle() const OVERRIDE {
     return temp_string_;
@@ -208,7 +209,8 @@ class TestWebUI : public content::WebUI {
     return 0;
   }
   virtual void SetBindings(int bindings) OVERRIDE {}
-  virtual void SetFrameXPath(const std::string& xpath) OVERRIDE {}
+  virtual void OverrideJavaScriptFrame(
+      const std::string& frame_name) OVERRIDE {}
   virtual void AddMessageHandler(
       content::WebUIMessageHandler* handler) OVERRIDE {}
   virtual void RegisterMessageCallback(
@@ -278,11 +280,18 @@ class SyncSetupHandlerTest : public testing::Test {
   SyncSetupHandlerTest() : error_(GoogleServiceAuthError::NONE) {}
   virtual void SetUp() OVERRIDE {
     error_ = GoogleServiceAuthError::AuthErrorNone();
-    profile_.reset(ProfileSyncServiceMock::MakeSignedInTestingProfile());
 
+    TestingProfile::Builder builder;
+    builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
+                              FakeSigninManagerBase::Build);
+    profile_ = builder.Build();
+
+    // Sign in the user.
     mock_signin_ = static_cast<SigninManagerBase*>(
-        SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), FakeSigninManagerBase::Build));
+        SigninManagerFactory::GetForProfile(profile_.get()));
+    mock_signin_->SetAuthenticatedUsername(GetTestUser());
+    profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                    GetTestUser());
 
     mock_pss_ = static_cast<ProfileSyncServiceMock*>(
         ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -295,6 +304,8 @@ class SyncSetupHandlerTest : public testing::Test {
         Return(base::Time()));
     ON_CALL(*mock_pss_, GetExplicitPassphraseTime()).WillByDefault(
         Return(base::Time()));
+    ON_CALL(*mock_pss_, GetRegisteredDataTypes())
+        .WillByDefault(Return(syncer::ModelTypeSet()));
 
     mock_pss_->Initialize();
 
@@ -319,12 +330,6 @@ class SyncSetupHandlerTest : public testing::Test {
     // An initialized ProfileSyncService will have already completed sync setup
     // and will have an initialized sync backend.
     ASSERT_TRUE(mock_signin_->IsInitialized());
-    EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
-        .WillRepeatedly(Return(true));
-    EXPECT_CALL(*mock_pss_, HasSyncSetupCompleted())
-        .WillRepeatedly(Return(true));
     EXPECT_CALL(*mock_pss_, sync_initialized()).WillRepeatedly(Return(true));
   }
 
@@ -370,6 +375,10 @@ class SyncSetupHandlerTest : public testing::Test {
       handler_->sync_startup_tracker_->OnStateChanged();
   }
 
+  virtual std::string GetTestUser() {
+    return std::string(kTestUser);
+  }
+
   content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<Profile> profile_;
   ProfileSyncServiceMock* mock_pss_;
@@ -379,11 +388,15 @@ class SyncSetupHandlerTest : public testing::Test {
   scoped_ptr<TestingSyncSetupHandler> handler_;
 };
 
+class SyncSetupHandlerFirstSigninTest : public SyncSetupHandlerTest {
+  virtual std::string GetTestUser() OVERRIDE { return std::string(); }
+};
+
 TEST_F(SyncSetupHandlerTest, Basic) {
 }
 
 #if !defined(OS_CHROMEOS)
-TEST_F(SyncSetupHandlerTest, DisplayBasicLogin) {
+TEST_F(SyncSetupHandlerFirstSigninTest, DisplayBasicLogin) {
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(false));
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
@@ -427,14 +440,26 @@ TEST_F(SyncSetupHandlerTest, ShowSyncSetupWhenNotSignedIn) {
             LoginUIServiceFactory::GetForProfile(
                 profile_.get())->current_login_ui());
 }
-#endif
+#endif  // !defined(OS_CHROMEOS)
+
+// Verifies that the sync setup is terminated correctly when the
+// sync is disabled.
+TEST_F(SyncSetupHandlerTest, HandleSetupUIWhenSyncDisabled) {
+  EXPECT_CALL(*mock_pss_, IsManaged()).WillRepeatedly(Return(true));
+  handler_->HandleShowSetupUI(NULL);
+
+  // Sync setup is closed when sync is disabled.
+  EXPECT_EQ(NULL,
+            LoginUIServiceFactory::GetForProfile(
+                profile_.get())->current_login_ui());
+  ASSERT_FALSE(handler_->is_configuring_sync());
+}
 
 // Verifies that the handler correctly handles a cancellation when
 // it is displaying the spinner to the user.
 TEST_F(SyncSetupHandlerTest, DisplayConfigureWithBackendDisabledAndCancel) {
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
-  profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, kTestUser);
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, HasSyncSetupCompleted())
@@ -462,7 +487,6 @@ TEST_F(SyncSetupHandlerTest,
        DisplayConfigureWithBackendDisabledAndSyncStartupCompleted) {
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
-  profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, kTestUser);
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, HasSyncSetupCompleted())
@@ -517,7 +541,6 @@ TEST_F(SyncSetupHandlerTest,
        DisplayConfigureWithBackendDisabledAndCancelAfterSigninSuccess) {
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
-  profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, kTestUser);
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, HasSyncSetupCompleted())
@@ -545,7 +568,6 @@ TEST_F(SyncSetupHandlerTest,
        DisplayConfigureWithBackendDisabledAndSigninFailed) {
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
-  profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername, kTestUser);
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, HasSyncSetupCompleted())
@@ -856,8 +878,9 @@ TEST_F(SyncSetupHandlerTest, ShowSigninOnAuthError) {
   SetupInitializedProfileSyncService();
   mock_signin_->SetAuthenticatedUsername(kTestUser);
   FakeAuthStatusProvider provider(
-      SigninGlobalError::GetForProfile(profile_.get()));
-  provider.SetAuthError(kTestUser, error_);
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())->
+          signin_error_controller());
+  provider.SetAuthError(kTestUser, kTestUser, error_);
   EXPECT_CALL(*mock_pss_, IsSyncEnabledAndLoggedIn())
       .WillRepeatedly(Return(true));
   EXPECT_CALL(*mock_pss_, IsOAuthRefreshTokenAvailable())
@@ -929,7 +952,7 @@ TEST_F(SyncSetupHandlerTest, ShowSetupManuallySyncAll) {
   EXPECT_CALL(*mock_pss_, IsUsingSecondaryPassphrase())
       .WillRepeatedly(Return(false));
   SetupInitializedProfileSyncService();
-  browser_sync::SyncPrefs sync_prefs(profile_->GetPrefs());
+  sync_driver::SyncPrefs sync_prefs(profile_->GetPrefs());
   sync_prefs.SetKeepEverythingSynced(false);
   SetDefaultExpectationsForConfigPage();
   // This should display the sync setup dialog (not login).
@@ -951,7 +974,7 @@ TEST_F(SyncSetupHandlerTest, ShowSetupSyncForAllTypesIndividually) {
     EXPECT_CALL(*mock_pss_, IsUsingSecondaryPassphrase())
         .WillRepeatedly(Return(false));
     SetupInitializedProfileSyncService();
-    browser_sync::SyncPrefs sync_prefs(profile_->GetPrefs());
+    sync_driver::SyncPrefs sync_prefs(profile_->GetPrefs());
     sync_prefs.SetKeepEverythingSynced(false);
     SetDefaultExpectationsForConfigPage();
     syncer::ModelTypeSet types;

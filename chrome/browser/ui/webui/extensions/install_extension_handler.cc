@@ -13,14 +13,13 @@
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/drop_data.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/feature_switch.h"
 #include "grit/generated_resources.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace extensions {
@@ -63,7 +62,7 @@ void InstallExtensionHandler::RegisterMessages() {
 void InstallExtensionHandler::HandleStartDragMessage(
     const base::ListValue* args) {
   content::DropData* drop_data =
-      web_ui()->GetWebContents()->GetView()->GetDropData();
+      web_ui()->GetWebContents()->GetDropData();
   if (!drop_data) {
     DLOG(ERROR) << "No current drop data.";
     return;
@@ -74,13 +73,15 @@ void InstallExtensionHandler::HandleStartDragMessage(
     return;
   }
 
-  const content::DropData::FileInfo& file_info = drop_data->filenames.front();
+  const ui::FileInfo& file_info = drop_data->filenames.front();
 
-  file_to_install_ = base::FilePath::FromUTF16Unsafe(file_info.path);
+  file_to_install_ = file_info.path;
   // Use the display name if provided, for checking file names
   // (.path is likely a random hash value in that case).
-  file_display_name_ =
-      file_info.display_name.empty() ? file_info.path : file_info.display_name;
+  // TODO(dcheng): It would be nice to make this a FilePath too.
+  file_display_name_ = file_info.display_name.empty()
+                           ? file_info.path.AsUTF16Unsafe()
+                           : file_info.display_name.AsUTF16Unsafe();
 }
 
 void InstallExtensionHandler::HandleStopDragMessage(
@@ -106,7 +107,7 @@ void InstallExtensionHandler::HandleInstallMessage(
   crx_installer->set_error_on_unsupported_requirements(true);
   crx_installer->set_off_store_install_allow_reason(
       CrxInstaller::OffStoreInstallAllowedFromSettingsPage);
-  crx_installer->set_install_wait_for_idle(false);
+  crx_installer->set_install_immediately(true);
 
   const bool kCaseSensitive = false;
 

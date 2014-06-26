@@ -7,7 +7,7 @@
 #include <assert.h>
 #include <stddef.h>
 
-#include "mojo/public/gles2/gles2.h"
+#include "mojo/public/c/gles2/gles2.h"
 #include "mojo/public/gles2/gles2_interface.h"
 
 static mojo::GLES2Support* g_gles2_support = NULL;
@@ -15,7 +15,7 @@ static mojo::GLES2Interface* g_gles2_interface = NULL;
 
 extern "C" {
 
-void MojoGLES2Initialize(MojoAsyncWaiter* async_waiter) {
+void MojoGLES2Initialize(const MojoAsyncWaiter* async_waiter) {
   assert(g_gles2_support);
   return g_gles2_support->Initialize(async_waiter);
 }
@@ -75,7 +75,7 @@ void* MojoGLES2GetContextSupport(MojoGLES2Context context) {
   ReturnType gl##Function PARAMETERS {                             \
     return g_gles2_interface->Function ARGUMENTS;                  \
   }
-#include "mojo/public/gles2/gles2_call_visitor_autogen.h"
+#include "mojo/public/c/gles2/gles2_call_visitor_autogen.h"
 #undef VISIT_GL_CALL
 
 }  // extern "C"

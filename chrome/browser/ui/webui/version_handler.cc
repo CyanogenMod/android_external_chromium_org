@@ -10,7 +10,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/metrics/variations/variations_util.h"
+#include "components/variations/active_field_trials.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_ui.h"
@@ -25,7 +25,7 @@ namespace {
 void GetFilePaths(const base::FilePath& profile_path,
                   base::string16* exec_path_out,
                   base::string16* profile_path_out) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
 
   base::FilePath executable_path = base::MakeAbsoluteFilePath(
       CommandLine::ForCurrentProcess()->GetProgram());
@@ -101,7 +101,7 @@ void VersionHandler::HandleRequestVersionInfo(const base::ListValue* args) {
   }
 #else
   // In release mode, display the hashes only.
-  chrome_variations::GetFieldTrialActiveGroupIdsAsStrings(&variations);
+  variations::GetFieldTrialActiveGroupIdsAsStrings(&variations);
 #endif
 
   base::ListValue variations_list;
@@ -116,7 +116,7 @@ void VersionHandler::HandleRequestVersionInfo(const base::ListValue* args) {
 
 void VersionHandler::OnGotFilePaths(base::string16* executable_path_data,
                                     base::string16* profile_path_data) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   base::StringValue exec_path(*executable_path_data);
   base::StringValue profile_path(*profile_path_data);

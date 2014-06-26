@@ -113,6 +113,8 @@ DownloadItemImpl::DownloadItemImpl(DownloadItemImplDelegate* delegate,
                                    const base::FilePath& target_path,
                                    const std::vector<GURL>& url_chain,
                                    const GURL& referrer_url,
+                                   const std::string& mime_type,
+                                   const std::string& original_mime_type,
                                    const base::Time& start_time,
                                    const base::Time& end_time,
                                    const std::string& etag,
@@ -133,6 +135,8 @@ DownloadItemImpl::DownloadItemImpl(DownloadItemImplDelegate* delegate,
       referrer_url_(referrer_url),
       transition_type_(PAGE_TRANSITION_LINK),
       has_user_gesture_(false),
+      mime_type_(mime_type),
+      original_mime_type_(original_mime_type),
       total_bytes_(total_bytes),
       received_bytes_(received_bytes),
       bytes_per_sec_(0),
@@ -175,6 +179,8 @@ DownloadItemImpl::DownloadItemImpl(
               TARGET_DISPOSITION_PROMPT : TARGET_DISPOSITION_OVERWRITE),
       url_chain_(info.url_chain),
       referrer_url_(info.referrer_url),
+      tab_url_(info.tab_url),
+      tab_referrer_url_(info.tab_referrer_url),
       suggested_filename_(base::UTF16ToUTF8(info.save_info->suggested_name)),
       forced_file_path_(info.save_info->file_path),
       transition_type_(info.transition_type),
@@ -550,6 +556,14 @@ const GURL& DownloadItemImpl::GetReferrerUrl() const {
   return referrer_url_;
 }
 
+const GURL& DownloadItemImpl::GetTabUrl() const {
+  return tab_url_;
+}
+
+const GURL& DownloadItemImpl::GetTabReferrerUrl() const {
+  return tab_referrer_url_;
+}
+
 std::string DownloadItemImpl::GetSuggestedFilename() const {
   return suggested_filename_;
 }
@@ -649,7 +663,6 @@ void DownloadItemImpl::DeleteFile(const base::Callback<void(bool)>& callback) {
       base::Bind(&DeleteDownloadedFile, current_path_),
       base::Bind(&DeleteDownloadedFileDone,
                  weak_ptr_factory_.GetWeakPtr(), callback));
-  current_path_.clear();
 }
 
 bool DownloadItemImpl::IsDangerous() const {
@@ -1039,7 +1052,7 @@ void DownloadItemImpl::DestinationUpdate(int64 bytes_so_far,
   if (received_bytes_ > total_bytes_)
     total_bytes_ = 0;
 
-  if (bound_net_log_.IsLoggingAllEvents()) {
+  if (bound_net_log_.IsLogging()) {
     bound_net_log_.AddEvent(
         net::NetLog::TYPE_DOWNLOAD_ITEM_UPDATED,
         net::NetLog::Int64Callback("bytes_so_far", received_bytes_));
@@ -1424,6 +1437,7 @@ void DownloadItemImpl::OnResumeRequestStarted(
 // An error occurred somewhere.
 void DownloadItemImpl::Interrupt(DownloadInterruptReason reason) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_NE(DOWNLOAD_INTERRUPT_REASON_NONE, reason);
 
   // Somewhat counter-intuitively, it is possible for us to receive an
   // interrupt after we've already been interrupted.  The generation of
@@ -1443,11 +1457,15 @@ void DownloadItemImpl::Interrupt(DownloadInterruptReason reason) {
   ResumeMode resume_mode = GetResumeMode();
 
   if (state_ == IN_PROGRESS_INTERNAL) {
-    // Cancel (delete file) if we're going to restart; no point in leaving
-    // data around we aren't going to use.  Also cancel if resumption isn't
-    // enabled for the same reason.
+    // Cancel (delete file) if:
+    // 1) we're going to restart.
+    // 2) Resumption isn't possible (download was cancelled or blocked due to
+    //    security restrictions).
+    // 3) Resumption isn't enabled.
+    // No point in leaving data around we aren't going to use.
     ReleaseDownloadFile(resume_mode == RESUME_MODE_IMMEDIATE_RESTART ||
                         resume_mode == RESUME_MODE_USER_RESTART ||
+                        resume_mode == RESUME_MODE_INVALID ||
                         !IsDownloadResumptionEnabled());
 
     // Cancel the originating URL request.

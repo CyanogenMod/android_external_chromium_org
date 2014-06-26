@@ -7,7 +7,6 @@
 #include "ash/accelerators/magnifier_key_scroller.h"
 #include "ash/accelerators/spoken_feedback_toggler.h"
 #include "ash/accessibility_delegate.h"
-#include "ash/media_delegate.h"
 #include "ash/wm/mru_window_tracker.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
@@ -20,12 +19,14 @@
 #include "chrome/browser/chromeos/background/ash_user_wallpaper_delegate.h"
 #include "chrome/browser/chromeos/display/display_configuration_observer.h"
 #include "chrome/browser/chromeos/display/display_preferences.h"
-#include "chrome/browser/chromeos/extensions/media_player_api.h"
-#include "chrome/browser/chromeos/extensions/media_player_event_router.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/signin/signin_error_notifier_factory_ash.h"
 #include "chrome/browser/speech/tts_controller.h"
-#include "chrome/browser/ui/ash/caps_lock_delegate_chromeos.h"
+#include "chrome/browser/sync/sync_error_notifier_factory_ash.h"
 #include "chrome/browser/ui/ash/chrome_new_window_delegate_chromeos.h"
+#include "chrome/browser/ui/ash/media_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/session_state_delegate_chromeos.h"
 #include "chrome/browser/ui/ash/system_tray_delegate_chromeos.h"
 #include "chrome/browser/ui/browser.h"
@@ -33,8 +34,6 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/power_manager_client.h"
 #include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -45,23 +44,23 @@
 namespace {
 
 void InitAfterSessionStart() {
-  // Restor focus after the user session is started.  It's needed
-  // because some windows can be opened in background while login UI
-  // is still active because we currently restore browser windows
-  // before login UI is deleted.
+  // Restore focus after the user session is started.  It's needed because some
+  // windows can be opened in background while login UI is still active because
+  // we currently restore browser windows before login UI is deleted.
   ash::Shell* shell = ash::Shell::GetInstance();
   ash::MruWindowTracker::WindowList mru_list =
       shell->mru_window_tracker()->BuildMruWindowList();
   if (!mru_list.empty())
     mru_list.front()->Focus();
 
-  // Enable magnifier scroll keys as there may be no mouse cursor in
-  // kiosk mode.
+#if defined(USE_X11)
+  // Enable magnifier scroll keys as there may be no mouse cursor in kiosk mode.
   ash::MagnifierKeyScroller::SetEnabled(chrome::IsRunningInForcedAppMode());
 
   // Enable long press action to toggle spoken feedback with hotrod
   // remote which can't handle shortcut.
   ash::SpokenFeedbackToggler::SetEnabled(chrome::IsRunningInForcedAppMode());
+#endif
 }
 
 class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
@@ -148,6 +147,11 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
         ShouldShowAccessibilityMenu();
   }
 
+  virtual bool IsBrailleDisplayConnected() const OVERRIDE {
+    DCHECK(chromeos::AccessibilityManager::Get());
+    return chromeos::AccessibilityManager::Get()->IsBrailleDisplayConnected();
+  }
+
   virtual void SilenceSpokenFeedback() const OVERRIDE {
     TtsController::GetInstance()->Stop();
   }
@@ -174,7 +178,15 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
           AccessibilityAlertInfo event(
               profile, l10n_util::GetStringUTF8(IDS_A11Y_ALERT_WINDOW_NEEDED));
           SendControlAccessibilityNotification(
-              ui::AccessibilityTypes::EVENT_ALERT, &event);
+              ui::AX_EVENT_ALERT, &event);
+          break;
+        }
+        case ash::A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED: {
+          AccessibilityAlertInfo event(
+              profile, l10n_util::GetStringUTF8(
+                  IDS_A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED));
+          SendControlAccessibilityNotification(
+              ui::AX_EVENT_ALERT, &event);
           break;
         }
         case ash::A11Y_ALERT_NONE:
@@ -195,33 +207,6 @@ class AccessibilityDelegateImpl : public ash::AccessibilityDelegate {
   DISALLOW_COPY_AND_ASSIGN(AccessibilityDelegateImpl);
 };
 
-class MediaDelegateImpl : public ash::MediaDelegate {
- public:
-  MediaDelegateImpl() {}
-  virtual ~MediaDelegateImpl() {}
-
-  virtual void HandleMediaNextTrack() OVERRIDE {
-    extensions::MediaPlayerAPI::Get(
-        ProfileManager::GetActiveUserProfile())->
-            media_player_event_router()->NotifyNextTrack();
-  }
-
-  virtual void HandleMediaPlayPause() OVERRIDE {
-    extensions::MediaPlayerAPI::Get(
-        ProfileManager::GetActiveUserProfile())->
-            media_player_event_router()->NotifyTogglePlayState();
-  }
-
-  virtual void HandleMediaPrevTrack() OVERRIDE {
-    extensions::MediaPlayerAPI::Get(
-        ProfileManager::GetActiveUserProfile())->
-            media_player_event_router()->NotifyPrevTrack();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(MediaDelegateImpl);
-};
-
 }  // anonymous namespace
 
 bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
@@ -237,16 +222,8 @@ void ChromeShellDelegate::PreInit() {
       new chromeos::DisplayConfigurationObserver());
 }
 
-void ChromeShellDelegate::Shutdown() {
-  content::RecordAction(base::UserMetricsAction("Shutdown"));
-  chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->
-      RequestShutdown();
-}
-
-ash::CapsLockDelegate* ChromeShellDelegate::CreateCapsLockDelegate() {
-  chromeos::input_method::XKeyboard* xkeyboard =
-      chromeos::input_method::InputMethodManager::Get()->GetXKeyboard();
-  return new CapsLockDelegate(xkeyboard);
+void ChromeShellDelegate::PreShutdown() {
+  display_configuration_observer_.reset();
 }
 
 ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
@@ -262,7 +239,7 @@ ash::NewWindowDelegate* ChromeShellDelegate::CreateNewWindowDelegate() {
 }
 
 ash::MediaDelegate* ChromeShellDelegate::CreateMediaDelegate() {
-  return new MediaDelegateImpl;
+  return new MediaDelegateChromeOS;
 }
 
 ash::SystemTrayDelegate* ChromeShellDelegate::CreateSystemTrayDelegate() {
@@ -277,17 +254,20 @@ void ChromeShellDelegate::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED:
+    case chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED: {
+      Profile* profile = content::Details<Profile>(details).ptr();
+      if (!chromeos::ProfileHelper::IsSigninProfile(profile) &&
+          !profile->IsGuestSession() && !profile->IsSupervised()) {
+        // Start the error notifier services to show auth/sync notifications.
+        SigninErrorNotifierFactory::GetForProfile(profile);
+        SyncErrorNotifierFactory::GetForProfile(profile);
+      }
       ash::Shell::GetInstance()->OnLoginUserProfilePrepared();
       break;
+    }
     case chrome::NOTIFICATION_SESSION_STARTED:
       InitAfterSessionStart();
       ash::Shell::GetInstance()->ShowShelf();
-      break;
-    case chrome::NOTIFICATION_APP_TERMINATING:
-      // Let classes unregister themselves as observers of the
-      // ash::Shell singleton before the shell is destroyed.
-      display_configuration_observer_.reset();
       break;
     default:
       NOTREACHED() << "Unexpected notification " << type;
@@ -300,8 +280,5 @@ void ChromeShellDelegate::PlatformInit() {
                  content::NotificationService::AllSources());
   registrar_.Add(this,
                  chrome::NOTIFICATION_SESSION_STARTED,
-                 content::NotificationService::AllSources());
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_APP_TERMINATING,
                  content::NotificationService::AllSources());
 }

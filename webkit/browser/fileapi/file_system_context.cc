@@ -8,6 +8,7 @@
 #include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/task_runner_util.h"
+#include "net/url_request/url_request.h"
 #include "url/gurl.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/copy_or_move_file_validator.h"
@@ -50,10 +51,29 @@ void DidGetMetadataForResolveURL(
     base::File::Error error,
     const base::File::Info& file_info) {
   if (error != base::File::FILE_OK) {
-    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    if (error == base::File::FILE_ERROR_NOT_FOUND) {
+      callback.Run(base::File::FILE_OK, info, path,
+                   FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
+    } else {
+      callback.Run(error, FileSystemInfo(), base::FilePath(),
+                   FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
+    }
     return;
   }
-  callback.Run(error, info, path, file_info.is_directory);
+  callback.Run(error, info, path, file_info.is_directory ?
+      FileSystemContext::RESOLVED_ENTRY_DIRECTORY :
+      FileSystemContext::RESOLVED_ENTRY_FILE);
+}
+
+void RelayResolveURLCallback(
+    scoped_refptr<base::MessageLoopProxy> message_loop,
+    const FileSystemContext::ResolveURLCallback& callback,
+    base::File::Error result,
+    const FileSystemInfo& info,
+    const base::FilePath& file_path,
+    FileSystemContext::ResolvedEntryType type) {
+  message_loop->PostTask(
+      FROM_HERE, base::Bind(callback, result, info, file_path, type));
 }
 
 }  // namespace
@@ -70,21 +90,25 @@ int FileSystemContext::GetPermissionPolicy(FileSystemType type) {
     case kFileSystemTypeNativeForPlatformApp:
     case kFileSystemTypeNativeLocal:
     case kFileSystemTypeCloudDevice:
+    case kFileSystemTypeProvided:
+    case kFileSystemTypeDeviceMediaAsFileStorage:
       return FILE_PERMISSION_USE_FILE_PERMISSION;
 
     case kFileSystemTypeRestrictedNativeLocal:
       return FILE_PERMISSION_READ_ONLY |
              FILE_PERMISSION_USE_FILE_PERMISSION;
 
-    // Following types are only accessed via IsolatedFileSystem, and
-    // don't have their own permission policies.
     case kFileSystemTypeDeviceMedia:
-    case kFileSystemTypeDragged:
-    case kFileSystemTypeForTransientFile:
     case kFileSystemTypeIphoto:
     case kFileSystemTypeItunes:
     case kFileSystemTypeNativeMedia:
     case kFileSystemTypePicasa:
+      return FILE_PERMISSION_USE_FILE_PERMISSION;
+
+    // Following types are only accessed via IsolatedFileSystem, and
+    // don't have their own permission policies.
+    case kFileSystemTypeDragged:
+    case kFileSystemTypeForTransientFile:
     case kFileSystemTypePluginPrivate:
       return FILE_PERMISSION_ALWAYS_DENY;
 
@@ -113,6 +137,7 @@ FileSystemContext::FileSystemContext(
     quota::SpecialStoragePolicy* special_storage_policy,
     quota::QuotaManagerProxy* quota_manager_proxy,
     ScopedVector<FileSystemBackend> additional_backends,
+    const std::vector<URLRequestAutoMountHandler>& auto_mount_handlers,
     const base::FilePath& partition_path,
     const FileSystemOptions& options)
     : io_task_runner_(io_task_runner),
@@ -133,6 +158,7 @@ FileSystemContext::FileSystemContext(
           special_storage_policy,
           options)),
       additional_backends_(additional_backends.Pass()),
+      auto_mount_handlers_(auto_mount_handlers),
       external_mount_points_(external_mount_points),
       partition_path_(partition_path),
       is_incognito_(options.is_incognito()),
@@ -307,43 +333,59 @@ void FileSystemContext::OpenFileSystem(
     return;
   }
 
-  backend->OpenFileSystem(origin_url, type, mode, callback);
+  backend->ResolveURL(
+      CreateCrackedFileSystemURL(origin_url, type, base::FilePath()),
+      mode,
+      callback);
 }
 
 void FileSystemContext::ResolveURL(
     const FileSystemURL& url,
     const ResolveURLCallback& callback) {
-  DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
   DCHECK(!callback.is_null());
 
-  if (!FileSystemContext::IsSandboxFileSystem(url.type())) {
-#ifdef OS_CHROMEOS
-    // Do not have to open a non-sandboxed filesystem.
-    // TODO(nhiroki): For now we assume this path is called only on ChromeOS,
-    // but this assumption may be broken in the future and we should handle
-    // more generally. http://crbug.com/304062.
-    FileSystemInfo info = GetFileSystemInfoForChromeOS(url.origin());
-    DidOpenFileSystemForResolveURL(
-        url, callback, info.root_url, info.name, base::File::FILE_OK);
-    return;
-#endif
-    callback.Run(base::File::FILE_ERROR_SECURITY,
-                 FileSystemInfo(), base::FilePath(), false);
+  // If not on IO thread, forward before passing the task to the backend.
+  if (!io_task_runner_->RunsTasksOnCurrentThread()) {
+    ResolveURLCallback relay_callback =
+        base::Bind(&RelayResolveURLCallback,
+                   base::MessageLoopProxy::current(), callback);
+    io_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&FileSystemContext::ResolveURL, this, url, relay_callback));
     return;
   }
 
   FileSystemBackend* backend = GetFileSystemBackend(url.type());
   if (!backend) {
     callback.Run(base::File::FILE_ERROR_SECURITY,
-                 FileSystemInfo(), base::FilePath(), false);
+                 FileSystemInfo(), base::FilePath(),
+                 FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
     return;
   }
 
-  backend->OpenFileSystem(
-      url.origin(), url.type(),
+  backend->ResolveURL(
+      url,
       OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT,
       base::Bind(&FileSystemContext::DidOpenFileSystemForResolveURL,
-                 this, url, callback));
+                 this,
+                 url,
+                 callback));
+}
+
+void FileSystemContext::AttemptAutoMountForURLRequest(
+    const net::URLRequest* url_request,
+    const std::string& storage_domain,
+    const StatusCallback& callback) {
+  FileSystemURL filesystem_url(url_request->url());
+  if (filesystem_url.type() == kFileSystemTypeExternal) {
+    for (size_t i = 0; i < auto_mount_handlers_.size(); i++) {
+      if (auto_mount_handlers_[i].Run(url_request, filesystem_url,
+                                      storage_domain, callback)) {
+        return;
+      }
+    }
+  }
+  callback.Run(base::File::FILE_ERROR_NOT_FOUND);
 }
 
 void FileSystemContext::DeleteFileSystem(
@@ -435,6 +477,20 @@ bool FileSystemContext::CanServeURLRequest(const FileSystemURL& url) const {
   }
 #endif
   return !is_incognito_ || !FileSystemContext::IsSandboxFileSystem(url.type());
+}
+
+bool FileSystemContext::ShouldFlushOnWriteCompletion(
+    FileSystemType type) const {
+  if (IsSandboxFileSystem(type)) {
+    // Disable Flush() for each write operation on SandboxFileSystems since it
+    // hurts the performance, assuming the FileSystems are stored in a local
+    // disk, we don't need to keep calling fsync() for it.
+    // On the other hand, other FileSystems that may stored on a removable media
+    // should be Flush()ed as soon as a write operation is completed, so that
+    // written data is saved over sudden media removal.
+    return false;
+  }
+  return true;
 }
 
 void FileSystemContext::OpenPluginPrivateFileSystem(
@@ -547,7 +603,8 @@ void FileSystemContext::DidOpenFileSystemForResolveURL(
   DCHECK(io_task_runner_->RunsTasksOnCurrentThread());
 
   if (error != base::File::FILE_OK) {
-    callback.Run(error, FileSystemInfo(), base::FilePath(), false);
+    callback.Run(error, FileSystemInfo(), base::FilePath(),
+                 FileSystemContext::RESOLVED_ENTRY_NOT_FOUND);
     return;
   }
 

@@ -12,7 +12,7 @@ CastIPCDispatcher* CastIPCDispatcher::global_instance_ = NULL;
 
 CastIPCDispatcher::CastIPCDispatcher(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
-    : channel_(NULL),
+    : sender_(NULL),
       io_message_loop_(io_message_loop) {
   DCHECK(io_message_loop_);
   DCHECK(!global_instance_);
@@ -20,8 +20,7 @@ CastIPCDispatcher::CastIPCDispatcher(
 
 CastIPCDispatcher::~CastIPCDispatcher() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  // Unfortunately, you do not always get a OnFilterRemoved call.
-  global_instance_ = NULL;
+  DCHECK(!global_instance_);
 }
 
 CastIPCDispatcher* CastIPCDispatcher::Get() {
@@ -30,8 +29,8 @@ CastIPCDispatcher* CastIPCDispatcher::Get() {
 
 void CastIPCDispatcher::Send(IPC::Message* message) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  if (channel_) {
-    channel_->Send(message);
+  if (sender_) {
+    sender_->Send(message);
   } else {
     delete message;
   }
@@ -51,30 +50,29 @@ bool CastIPCDispatcher::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(CastIPCDispatcher, message)
     IPC_MESSAGE_HANDLER(CastMsg_ReceivedPacket, OnReceivedPacket)
     IPC_MESSAGE_HANDLER(CastMsg_NotifyStatusChange, OnNotifyStatusChange)
-    IPC_MESSAGE_HANDLER(CastMsg_RtpStatistics, OnRtpStatistics)
+    IPC_MESSAGE_HANDLER(CastMsg_RawEvents, OnRawEvents)
     IPC_MESSAGE_UNHANDLED(handled = false);
   IPC_END_MESSAGE_MAP();
   return handled;
 }
 
-void CastIPCDispatcher::OnFilterAdded(IPC::Channel* channel) {
+void CastIPCDispatcher::OnFilterAdded(IPC::Sender* sender) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   DCHECK(!global_instance_);
   global_instance_ = this;
-  channel_ = channel;
+  sender_ = sender;
 }
 
 void CastIPCDispatcher::OnFilterRemoved() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(this, global_instance_);
   global_instance_ = NULL;
-  channel_ = NULL;
+  sender_ = NULL;
 }
 
 void CastIPCDispatcher::OnChannelClosing() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(this, global_instance_);
-  channel_ = NULL;
 }
 
 void CastIPCDispatcher::OnReceivedPacket(
@@ -84,8 +82,8 @@ void CastIPCDispatcher::OnReceivedPacket(
   if (sender) {
     sender->OnReceivedPacket(packet);
   } else {
-    LOG(ERROR) << "CastIPCDispatcher::OnReceivedPacket "
-               << "on non-existing channel.";
+    DVLOG(1) << "CastIPCDispatcher::OnReceivedPacket "
+             << "on non-existing channel.";
   }
 }
 
@@ -96,22 +94,18 @@ void CastIPCDispatcher::OnNotifyStatusChange(
   if (sender) {
     sender->OnNotifyStatusChange(status);
   } else {
-    LOG(ERROR)
+    DVLOG(1)
         << "CastIPCDispatcher::OnNotifystatusChange on non-existing channel.";
   }
 }
 
-void CastIPCDispatcher::OnRtpStatistics(
+void CastIPCDispatcher::OnRawEvents(
     int32 channel_id,
-    bool audio,
-    const media::cast::transport::RtcpSenderInfo& sender_info,
-    base::TimeTicks time_sent,
-    uint32 rtp_timestamp) {
+    const std::vector<media::cast::PacketEvent>& packet_events) {
   CastTransportSenderIPC* sender = id_map_.Lookup(channel_id);
   if (sender) {
-    sender->OnRtpStatistics(audio, sender_info, time_sent, rtp_timestamp);
+    sender->OnRawEvents(packet_events);
   } else {
-    LOG(ERROR)
-        << "CastIPCDispatcher::OnNotifystatusChange on non-existing channel.";
+    DVLOG(1) << "CastIPCDispatcher::OnRawEvents on non-existing channel.";
   }
 }

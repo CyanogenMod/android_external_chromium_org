@@ -4,14 +4,16 @@
 
 package org.chromium.content_shell_apk;
 
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
 import android.content.ComponentName;
 import android.content.Intent;
 import android.net.Uri;
 import android.test.ActivityInstrumentationTestCase2;
 import android.text.TextUtils;
+import android.view.ViewGroup;
 
-import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
-
+import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.ContentViewCore;
@@ -22,6 +24,11 @@ import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_shell.Shell;
 
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.lang.reflect.Method;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -79,7 +86,7 @@ public class ContentShellTestBase extends ActivityInstrumentationTestCase2<Conte
         launchContentShellWithUrl(UrlUtils.getTestFileUrl(url));
         assertNotNull(getActivity());
         assertTrue(waitForActiveShellToBeDoneLoading());
-        assertEquals(UrlUtils.getTestFileUrl(url), getContentView().getUrl());
+        assertEquals(UrlUtils.getTestFileUrl(url), getContentViewCore().getUrl());
     }
 
     /**
@@ -98,17 +105,10 @@ public class ContentShellTestBase extends ActivityInstrumentationTestCase2<Conte
     }
 
     /**
-     * Returns the current ContentView.
-     */
-    protected ContentView getContentView() {
-        return getActivity().getActiveShell().getContentView();
-    }
-
-    /**
      * Returns the current ContentViewCore or null if there is no ContentView.
      */
     protected ContentViewCore getContentViewCore() {
-        return getContentView() == null ? null : getContentView().getContentViewCore();
+        return getActivity().getActiveShell().getContentViewCore();
     }
 
     /**
@@ -138,7 +138,7 @@ public class ContentShellTestBase extends ActivityInstrumentationTestCase2<Conte
                                 // loading because it has no URL set yet.  The second is that
                                 // we've set a URL and it actually is loading.
                                 isLoaded.set(!shell.isLoading()
-                                        && !TextUtils.isEmpty(shell.getContentView().getUrl()));
+                                        && !TextUtils.isEmpty(shell.getContentViewCore().getUrl()));
                             } else {
                                 isLoaded.set(false);
                             }
@@ -156,19 +156,19 @@ public class ContentShellTestBase extends ActivityInstrumentationTestCase2<Conte
     /**
      * Loads a URL in the specified content view.
      *
-     * @param contentView The content view to load the URL in.
+     * @param viewCore The content view core to load the URL in.
      * @param callbackHelperContainer The callback helper container used to monitor progress.
      * @param params The URL params to use.
      */
     protected void loadUrl(
-            final ContentView contentView, TestCallbackHelperContainer callbackHelperContainer,
+            final ContentViewCore viewCore, TestCallbackHelperContainer callbackHelperContainer,
             final LoadUrlParams params) throws Throwable {
         handleBlockingCallbackAction(
                 callbackHelperContainer.getOnPageFinishedHelper(),
                 new Runnable() {
                     @Override
                     public void run() {
-                        contentView.loadUrl(params);
+                        viewCore.loadUrl(params);
                     }
                 });
     }
@@ -202,5 +202,50 @@ public class ContentShellTestBase extends ActivityInstrumentationTestCase2<Conte
                 return getContentViewCore().getScale() == expectedScale;
             }
         }));
+    }
+
+    /**
+     * Replaces the {@link ContentViewCore#mContainerView} with a newly created
+     * {@link ContentView}.
+     */
+    @SuppressWarnings("javadoc")
+    protected void replaceContainerView() throws Throwable {
+        ThreadUtils.runOnUiThreadBlocking(new Runnable() {
+                @Override
+            public void run() {
+                ContentView cv = ContentView.newInstance(getActivity(), getContentViewCore());
+                ((ViewGroup) getContentViewCore().getContainerView().getParent()).addView(cv);
+                getContentViewCore().setContainerView(cv);
+                getContentViewCore().setContainerViewInternals(cv);
+                cv.requestFocus();
+            }
+        });
+    }
+
+    @Override
+    protected void runTest() throws Throwable {
+        super.runTest();
+        try {
+            Method method = getClass().getMethod(getName(), (Class[]) null);
+            if (method.isAnnotationPresent(RerunWithUpdatedContainerView.class)) {
+                replaceContainerView();
+                super.runTest();
+            }
+        } catch (Throwable e) {
+            throw new Throwable("@RerunWithUpdatedContainerView failed."
+                    + " See ContentShellTestBase#runTest.", e);
+        }
+    }
+
+    /**
+     * Annotation for tests that should be executed a second time after replacing
+     * the ContentViewCore's container view (see {@link #runTest()}).
+     *
+     * <p>Please note that {@link #setUp()} is only invoked once before both runs,
+     * and that any state changes produced by the first run are visible to the second run.
+     */
+    @Target(ElementType.METHOD)
+    @Retention(RetentionPolicy.RUNTIME)
+    public @interface RerunWithUpdatedContainerView {
     }
 }

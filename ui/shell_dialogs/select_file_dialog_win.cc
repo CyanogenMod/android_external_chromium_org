@@ -26,16 +26,14 @@
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
 #include "grit/ui_strings.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/base_shell_dialog_win.h"
 #include "ui/shell_dialogs/shell_dialogs_delegate.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/remote_window_tree_host_win.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/window.h"
-#endif
+#include "win8/viewer/metro_viewer_process_host.h"
 
 namespace {
 
@@ -546,14 +544,13 @@ void SelectFileDialogImpl::SelectFileImpl(
     void* params) {
   has_multiple_file_type_choices_ =
       file_types ? file_types->extensions.size() > 1 : true;
-#if defined(USE_AURA)
   // If the owning_window passed in is in metro then we need to forward the
   // file open/save operations to metro.
   if (GetShellDialogsDelegate() &&
       GetShellDialogsDelegate()->IsWindowInMetro(owning_window)) {
     if (type == SELECT_SAVEAS_FILE) {
-      aura::HandleSaveFile(
-          base::UTF16ToWide(title),
+      win8::MetroViewerProcessHost::HandleSaveFile(
+          title,
           default_path,
           GetFilterForFileTypes(file_types),
           file_type_index,
@@ -564,8 +561,8 @@ void SelectFileDialogImpl::SelectFileImpl(
                      base::Unretained(listener_)));
       return;
     } else if (type == SELECT_OPEN_FILE) {
-      aura::HandleOpenFile(
-          base::UTF16ToWide(title),
+      win8::MetroViewerProcessHost::HandleOpenFile(
+          title,
           default_path,
           GetFilterForFileTypes(file_types),
           base::Bind(&ui::SelectFileDialog::Listener::FileSelected,
@@ -574,8 +571,8 @@ void SelectFileDialogImpl::SelectFileImpl(
                      base::Unretained(listener_)));
       return;
     } else if (type == SELECT_OPEN_MULTI_FILE) {
-      aura::HandleOpenMultipleFiles(
-          base::UTF16ToWide(title),
+      win8::MetroViewerProcessHost::HandleOpenMultipleFiles(
+          title,
           default_path,
           GetFilterForFileTypes(file_types),
           base::Bind(&ui::SelectFileDialog::Listener::MultiFilesSelected,
@@ -591,8 +588,8 @@ void SelectFileDialogImpl::SelectFileImpl(
         title_string = l10n_util::GetStringUTF16(
             IDS_SELECT_UPLOAD_FOLDER_DIALOG_TITLE);
       }
-      aura::HandleSelectFolder(
-          base::UTF16ToWide(title_string),
+      win8::MetroViewerProcessHost::HandleSelectFolder(
+          title_string,
           base::Bind(&ui::SelectFileDialog::Listener::FileSelected,
                      base::Unretained(listener_)),
           base::Bind(&ui::SelectFileDialog::Listener::FileSelectionCanceled,
@@ -601,11 +598,9 @@ void SelectFileDialogImpl::SelectFileImpl(
     }
   }
   HWND owner = owning_window && owning_window->GetRootWindow()
-      ? owning_window->GetDispatcher()->host()->GetAcceleratedWidget() : NULL;
-#else
-  HWND owner = owning_window;
-#endif
-  ExecuteSelectParams execute_params(type, base::UTF16ToWide(title),
+      ? owning_window->GetHost()->GetAcceleratedWidget() : NULL;
+
+  ExecuteSelectParams execute_params(type, title,
                                      default_path, file_types, file_type_index,
                                      default_extension, BeginRun(owner),
                                      owner, params);
@@ -620,13 +615,9 @@ bool SelectFileDialogImpl::HasMultipleFileTypeChoicesImpl() {
 }
 
 bool SelectFileDialogImpl::IsRunning(gfx::NativeWindow owning_window) const {
-#if defined(USE_AURA)
   if (!owning_window->GetRootWindow())
     return false;
-  HWND owner = owning_window->GetDispatcher()->host()->GetAcceleratedWidget();
-#else
-  HWND owner = owning_window;
-#endif
+  HWND owner = owning_window->GetHost()->GetAcceleratedWidget();
   return listener_ && IsRunningDialogForOwner(owner);
 }
 
@@ -648,8 +639,7 @@ void SelectFileDialogImpl::ExecuteSelectFile(
     if (title.empty() && params.type == SELECT_UPLOAD_FOLDER) {
       // If it's for uploading don't use default dialog title to
       // make sure we clearly tell it's for uploading.
-      title = base::UTF16ToWide(
-          l10n_util::GetStringUTF16(IDS_SELECT_UPLOAD_FOLDER_DIALOG_TITLE));
+      title = l10n_util::GetStringUTF16(IDS_SELECT_UPLOAD_FOLDER_DIALOG_TITLE);
     }
     success = RunSelectFolderDialog(title,
                                     params.run_state.owner,

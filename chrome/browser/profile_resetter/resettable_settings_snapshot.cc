@@ -10,18 +10,21 @@
 #include "base/synchronization/cancellation_flag.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/feedback/feedback_data.h"
-#include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
+#include "components/feedback/feedback_data.h"
+#include "components/feedback/feedback_util.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_registry.h"
 #include "grit/generated_resources.h"
 #include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
+
+using feedback::FeedbackData;
 
 namespace {
 
@@ -71,13 +74,12 @@ ResettableSettingsSnapshot::ResettableSettingsSnapshot(
   if (dse)
     dse_url_ = dse->url();
 
-  ExtensionService* extension_service = profile->GetExtensionService();
-  DCHECK(extension_service);
-  const extensions::ExtensionSet* enabled_ext = extension_service->extensions();
-  enabled_extensions_.reserve(enabled_ext->size());
+  const extensions::ExtensionSet& enabled_ext =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
+  enabled_extensions_.reserve(enabled_ext.size());
 
-  for (extensions::ExtensionSet::const_iterator it = enabled_ext->begin();
-       it != enabled_ext->end(); ++it)
+  for (extensions::ExtensionSet::const_iterator it = enabled_ext.begin();
+       it != enabled_ext.end(); ++it)
     enabled_extensions_.push_back(std::make_pair((*it)->id(), (*it)->name()));
 
   // ExtensionSet is sorted but it seems to be an implementation detail.
@@ -197,7 +199,7 @@ std::string SerializeSettingsReport(const ResettableSettingsSnapshot& snapshot,
          i != shortcuts.end(); ++i) {
       base::string16 arguments;
       // Replace "\"" to simplify server-side analysis.
-      base::ReplaceChars(i->second, base::ASCIIToUTF16("\"").c_str(),
+      base::ReplaceChars(i->second, base::ASCIIToUTF16("\""),
                          base::ASCIIToUTF16("\'"), &arguments);
       list->AppendString(arguments);
     }
@@ -229,7 +231,7 @@ void SendSettingsFeedback(const std::string& report,
   feedback_data->set_description(report);
 
   feedback_data->set_image(make_scoped_ptr(new std::string));
-  feedback_data->set_profile(profile);
+  feedback_data->set_context(profile);
 
   feedback_data->set_page_url("");
   feedback_data->set_user_email("");
@@ -248,7 +250,7 @@ scoped_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
           g_browser_process->GetApplicationLocale());
   AddPair(list.get(),
           l10n_util::GetStringUTF16(IDS_RESET_PROFILE_SETTINGS_USER_AGENT),
-          content::GetUserAgent(GURL()));
+          GetUserAgent());
   chrome::VersionInfo version_info;
   std::string version = version_info.Version();
   version += chrome::VersionInfo::GetVersionStringModifier();
@@ -310,7 +312,7 @@ scoped_ptr<base::ListValue> GetReadableFeedbackForSnapshot(
   if (dse) {
     AddPair(list.get(),
             l10n_util::GetStringUTF16(IDS_RESET_PROFILE_SETTINGS_DSE),
-            TemplateURLService::GenerateSearchURL(dse).host());
+            dse->GenerateSearchURL(service->search_terms_data()).host());
   }
 
   if (snapshot.shortcuts_determined()) {

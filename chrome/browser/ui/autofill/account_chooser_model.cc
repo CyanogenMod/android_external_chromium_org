@@ -48,10 +48,6 @@ AccountChooserModel::AccountChooserModel(
 
 AccountChooserModel::~AccountChooserModel() {}
 
-void AccountChooserModel::MenuWillShow() {
-  ui::SimpleMenuModel::MenuWillShow();
-}
-
 void AccountChooserModel::SelectWalletAccount(size_t user_index) {
   DCHECK(user_index == 0U || user_index < wallet_accounts_.size());
   checked_item_ = kWalletAccountsStartId + user_index;
@@ -137,30 +133,19 @@ void AccountChooserModel::ExecuteCommand(int command_id, int event_flags) {
   }
   metric_logger_.LogDialogUiEvent(chooser_event);
 
-  if (command_id == kWalletAddAccountId) {
-    delegate_->AddAccount();
-    return;
-  }
-
-  checked_item_ = command_id;
-  ReconstructMenuItems();
-  delegate_->AccountChoiceChanged();
-}
-
-void AccountChooserModel::MenuWillShow(ui::SimpleMenuModel* source) {
-  delegate_->AccountChooserWillShow();
+  DoAccountSwitch(command_id);
 }
 
 void AccountChooserModel::SetHadWalletError() {
   // Any non-sign-in error disables all Wallet accounts.
   had_wallet_error_ = true;
   ClearWalletAccounts();
-  ExecuteCommand(kAutofillItemId, 0);
+  DoAccountSwitch(kAutofillItemId);
 }
 
 void AccountChooserModel::SetHadWalletSigninError() {
   ClearWalletAccounts();
-  ExecuteCommand(kAutofillItemId, 0);
+  DoAccountSwitch(kAutofillItemId);
 }
 
 bool AccountChooserModel::WalletIsSelected() const {
@@ -186,6 +171,20 @@ void AccountChooserModel::ReconstructMenuItems() {
                            IDS_AUTOFILL_DIALOG_ADD_ACCOUNT);
   AddCheckItemWithStringId(kAutofillItemId,
                            IDS_AUTOFILL_DIALOG_PAY_WITHOUT_WALLET);
+}
+
+void AccountChooserModel::DoAccountSwitch(int command_id) {
+  if (checked_item_ == command_id)
+    return;
+
+  if (command_id == kWalletAddAccountId) {
+    delegate_->AddAccount();
+    return;
+  }
+
+  checked_item_ = command_id;
+  ReconstructMenuItems();
+  delegate_->AccountChoiceChanged();
 }
 
 }  // namespace autofill

@@ -15,10 +15,9 @@
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
-#include "content/public/browser/web_contents_observer.h"
-#include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/gfx/display_observer.h"
+#include "ui/wm/public/activation_change_observer.h"
 
 namespace aura {
 class Window;
@@ -68,9 +67,10 @@ class BrowserStatusMonitor : public aura::client::ActivationChangeObserver,
   virtual void OnBrowserRemoved(Browser* browser) OVERRIDE;
 
   // gfx::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // TabStripModelObserver overrides:
   virtual void ActiveTabChanged(content::WebContents* old_contents,
@@ -88,6 +88,11 @@ class BrowserStatusMonitor : public aura::client::ActivationChangeObserver,
                             content::WebContents* contents,
                             int index) OVERRIDE;
 
+  // Called from our own |LocalWebContentsObserver| when web contents did go
+  // away without any other notification. This might happen in case of
+  // application uninstalls, page crashes, ...).
+  void WebContentsDestroyed(content::WebContents* web_contents);
+
  protected:
   // Add a V1 application to the shelf. This can get overwritten for multi
   // profile implementations.
@@ -101,24 +106,8 @@ class BrowserStatusMonitor : public aura::client::ActivationChangeObserver,
   bool IsV1AppInShelf(Browser* browser);
 
  private:
-  // This class monitors the WebContent of the all tab and notifies a navigation
-  // to the BrowserStatusMonitor.
-  class LocalWebContentsObserver : public content::WebContentsObserver {
-   public:
-    LocalWebContentsObserver(content::WebContents* contents,
-                             BrowserStatusMonitor* monitor);
-    virtual ~LocalWebContentsObserver();
-
-    // content::WebContentsObserver overrides:
-    virtual void DidNavigateMainFrame(
-        const content::LoadCommittedDetails& details,
-        const content::FrameNavigateParams& params) OVERRIDE;
-
-   private:
-    BrowserStatusMonitor* monitor_;
-
-    DISALLOW_COPY_AND_ASSIGN(LocalWebContentsObserver);
-  };
+  class LocalWebContentsObserver;
+  class SettingsWindowObserver;
 
   typedef std::map<Browser*, std::string> BrowserToAppIDMap;
   typedef std::map<content::WebContents*, LocalWebContentsObserver*>
@@ -130,8 +119,12 @@ class BrowserStatusMonitor : public aura::client::ActivationChangeObserver,
   // Remove LocalWebContentsObserver for |contents|.
   void RemoveWebContentsObserver(content::WebContents* contents);
 
-  // Retruns the ShelfID for |contents|.
+  // Returns the ShelfID for |contents|.
   ash::ShelfID GetShelfIDForWebContents(content::WebContents* contents);
+
+  // Sets the shelf id for browsers represented by the browser shortcut item.
+  void SetShelfIDForBrowserWindowContents(Browser* browser,
+                                          content::WebContents* web_contents);
 
   ChromeLauncherController* launcher_controller_;
 
@@ -143,8 +136,8 @@ class BrowserStatusMonitor : public aura::client::ActivationChangeObserver,
   ScopedObserver<aura::Window, aura::WindowObserver> observed_root_windows_;
 
   BrowserToAppIDMap browser_to_app_id_map_;
-
   WebContentsToObserverMap webcontents_to_observer_map_;
+  scoped_ptr<SettingsWindowObserver> settings_window_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserStatusMonitor);
 };

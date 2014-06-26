@@ -9,15 +9,13 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/files/file_path.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/shared_memory.h"
-#include "base/strings/string_piece.h"
-#include "chrome/common/extensions/extension_messages.h"
+#include "base/scoped_observer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/user_script.h"
 
@@ -29,13 +27,17 @@ class Profile;
 
 namespace extensions {
 
+class ContentVerifier;
+class ExtensionRegistry;
+
 typedef std::map<std::string, ExtensionSet::ExtensionPathAndDefaultLocale>
     ExtensionsInfo;
 
 // Manages a segment of shared memory that contains the user scripts the user
 // has installed.  Lives on the UI thread.
 class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
-                         public content::NotificationObserver {
+                         public content::NotificationObserver,
+                         public ExtensionRegistryObserver {
  public:
   explicit UserScriptMaster(Profile* profile);
 
@@ -49,10 +51,13 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
   }
 
   // Called by the script reloader when new scripts have been loaded.
-  void NewScriptsAvailable(base::SharedMemory* handle);
+  void NewScriptsAvailable(scoped_ptr<base::SharedMemory> handle);
 
   // Return true if we have any scripts ready.
   bool ScriptsReady() const { return shared_memory_.get() != NULL; }
+
+  // Returns the content verifier for our browser context.
+  ContentVerifier* content_verifier();
 
  protected:
   friend class base::RefCountedThreadSafe<UserScriptMaster>;
@@ -78,7 +83,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
     // Start loading of scripts.
     // Will always send a message to the master upon completion.
     void StartLoad(const UserScriptList& external_scripts,
-                   const ExtensionsInfo& extension_info_);
+                   const ExtensionsInfo& extensions_info);
 
     // The master is going away; don't call it back.
     void DisownMaster() {
@@ -100,7 +105,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
 
     // Runs on the master thread.
     // Notify the master that new scripts are available.
-    void NotifyMaster(base::SharedMemory* memory);
+    void NotifyMaster(scoped_ptr<base::SharedMemory> memory);
 
     // Runs on the File thread.
     // Load the specified user scripts, calling NotifyMaster when done.
@@ -112,7 +117,7 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
 
     // Uses extensions_info_ to build a map of localization messages.
     // Returns NULL if |extension_id| is invalid.
-    SubstitutionMap* GetLocalizationMessages(std::string extension_id);
+    SubstitutionMap* GetLocalizationMessages(const std::string& extension_id);
 
     // A pointer back to our master.
     // May be NULL if DisownMaster() is called.
@@ -125,6 +130,8 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
     // Expected to always outlive us.
     content::BrowserThread::ID master_thread_id_;
 
+    scoped_refptr<ContentVerifier> verifier_;
+
     DISALLOW_COPY_AND_ASSIGN(ScriptReloader);
   };
 
@@ -134,9 +141,21 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Sends the renderer process a new set of user scripts.
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // Sends the renderer process a new set of user scripts. If
+  // |changed_extensions| is not empty, this signals that only the scripts from
+  // those extensions should be updated. Otherwise, all extensions will be
+  // updated.
   void SendUpdate(content::RenderProcessHost* process,
-                  base::SharedMemory* shared_memory);
+                  base::SharedMemory* shared_memory,
+                  const std::set<std::string>& changed_extensions);
 
   // Manages our notification registrations.
   content::NotificationRegistrar registrar_;
@@ -153,6 +172,10 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
   // Maps extension info needed for localization to an extension ID.
   ExtensionsInfo extensions_info_;
 
+  // The IDs of the extensions which have changed since the last update sent to
+  // the renderer.
+  std::set<std::string> changed_extensions_;
+
   // If the extensions service has finished loading its initial set of
   // extensions.
   bool extensions_service_ready_;
@@ -164,6 +187,10 @@ class UserScriptMaster : public base::RefCountedThreadSafe<UserScriptMaster>,
 
   // The profile for which the scripts managed here are installed.
   Profile* profile_;
+
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(UserScriptMaster);
 };

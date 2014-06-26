@@ -24,11 +24,15 @@ class URLRequestContextGetter;
 namespace policy {
 
 class AppPackUpdater;
+class DeviceCloudPolicyInitializer;
+class DeviceCloudPolicyInvalidator;
 class DeviceCloudPolicyManagerChromeOS;
 class DeviceLocalAccountPolicyService;
+class DeviceManagementService;
 class EnterpriseInstallAttributes;
 class NetworkConfigurationUpdater;
 class ProxyPolicyProvider;
+class ServerBackedStateKeysBroker;
 
 // Extends ChromeBrowserPolicyConnector with the setup specific to ChromeOS.
 class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
@@ -40,6 +44,13 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
   virtual void Init(
       PrefService* local_state,
       scoped_refptr<net::URLRequestContextGetter> request_context) OVERRIDE;
+
+  // Destroys the |device_cloud_policy_invalidator_|. This cannot wait until
+  // Shutdown() because that method is only called during
+  // BrowserProcessImpl::StartTearDown() but the invalidator may be observing
+  // the global DeviceOAuth2TokenService that is destroyed earlier by
+  // ChromeBrowserMainPartsChromeos::PostMainMessageLoopRun().
+  void ShutdownInvalidator();
 
   virtual void Shutdown() OVERRIDE;
 
@@ -66,12 +77,20 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
     return device_cloud_policy_manager_;
   }
 
+  DeviceCloudPolicyInitializer* GetDeviceCloudPolicyInitializer() {
+    return device_cloud_policy_initializer_.get();
+  }
+
   DeviceLocalAccountPolicyService* GetDeviceLocalAccountPolicyService() {
     return device_local_account_policy_service_.get();
   }
 
   EnterpriseInstallAttributes* GetInstallAttributes() {
     return install_attributes_.get();
+  }
+
+  ServerBackedStateKeysBroker* GetStateKeysBroker() {
+    return state_keys_broker_.get();
   }
 
   // The browser-global PolicyService is created before Profiles are ready, to
@@ -85,10 +104,17 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
   // delegate, if there is one.
   void SetUserPolicyDelegate(ConfigurationPolicyProvider* user_policy_provider);
 
+  // Returns the device management service for consumer management.
+  DeviceManagementService* consumer_device_management_service() const {
+    return consumer_device_management_service_.get();
+  }
+
   // Sets the install attributes for testing. Must be called before the browser
-  // is created. Takes ownership of |attributes|.
+  // is created. RemoveInstallAttributesForTesting must be called after the test
+  // to free the attributes.
   static void SetInstallAttributesForTesting(
       EnterpriseInstallAttributes* attributes);
+  static void RemoveInstallAttributesForTesting();
 
   // Registers device refresh rate pref.
   static void RegisterPrefs(PrefRegistrySimple* registry);
@@ -97,11 +123,16 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
   // Set the timezone as soon as the policies are available.
   void SetTimezoneIfPolicyAvailable();
 
+  void OnDeviceCloudPolicyManagerConnected();
+
   // Components of the device cloud policy implementation.
+  scoped_ptr<ServerBackedStateKeysBroker> state_keys_broker_;
   scoped_ptr<EnterpriseInstallAttributes> install_attributes_;
   DeviceCloudPolicyManagerChromeOS* device_cloud_policy_manager_;
+  scoped_ptr<DeviceCloudPolicyInitializer> device_cloud_policy_initializer_;
   scoped_ptr<DeviceLocalAccountPolicyService>
       device_local_account_policy_service_;
+  scoped_ptr<DeviceCloudPolicyInvalidator> device_cloud_policy_invalidator_;
 
   // This policy provider is used on Chrome OS to feed user policy into the
   // global PolicyService instance. This works by installing the cloud policy
@@ -113,6 +144,8 @@ class BrowserPolicyConnectorChromeOS : public ChromeBrowserPolicyConnector {
 
   scoped_ptr<AppPackUpdater> app_pack_updater_;
   scoped_ptr<NetworkConfigurationUpdater> network_configuration_updater_;
+
+  scoped_ptr<DeviceManagementService> consumer_device_management_service_;
 
   base::WeakPtrFactory<BrowserPolicyConnectorChromeOS> weak_ptr_factory_;
 

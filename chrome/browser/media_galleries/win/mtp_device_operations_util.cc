@@ -102,25 +102,25 @@ bool IsDirectory(IPortableDeviceValues* properties_values) {
           content_type == WPD_CONTENT_TYPE_FUNCTIONAL_OBJECT);
 }
 
-// Returns the friendly name of the object from the property key values
-// specified by the |properties_values|.
-base::string16 GetObjectName(IPortableDeviceValues* properties_values,
-                       bool is_directory) {
+// Returns the name of the object from |properties_values|. If the object has
+// no filename, try to use a friendly name instead. e.g. with MTP storage roots.
+base::string16 GetObjectName(IPortableDeviceValues* properties_values) {
   DCHECK(properties_values);
-  base::win::ScopedCoMem<base::char16> buffer;
-  REFPROPERTYKEY key =
-      is_directory ? WPD_OBJECT_NAME : WPD_OBJECT_ORIGINAL_FILE_NAME;
-  HRESULT hr = properties_values->GetStringValue(key, &buffer);
   base::string16 result;
+  base::win::ScopedCoMem<base::char16> buffer;
+  HRESULT hr = properties_values->GetStringValue(WPD_OBJECT_ORIGINAL_FILE_NAME,
+                                                 &buffer);
+  if (FAILED(hr))
+    hr = properties_values->GetStringValue(WPD_OBJECT_NAME, &buffer);
   if (SUCCEEDED(hr))
     result.assign(buffer);
   return result;
 }
 
 // Gets the last modified time of the object from the property key values
-// specified by the |properties_values|. On success, returns true and fills in
+// specified by the |properties_values|. On success, fills in
 // |last_modified_time|.
-bool GetLastModifiedTime(IPortableDeviceValues* properties_values,
+void GetLastModifiedTime(IPortableDeviceValues* properties_values,
                          base::Time* last_modified_time) {
   DCHECK(properties_values);
   DCHECK(last_modified_time);
@@ -128,40 +128,41 @@ bool GetLastModifiedTime(IPortableDeviceValues* properties_values,
   HRESULT hr = properties_values->GetValue(WPD_OBJECT_DATE_MODIFIED,
                                            last_modified_date.Receive());
   if (FAILED(hr))
-    return false;
+    return;
 
-  bool last_modified_time_set = (last_modified_date.get().vt == VT_DATE);
-  if (last_modified_time_set) {
-    SYSTEMTIME system_time;
-    FILETIME file_time;
-    if (VariantTimeToSystemTime(last_modified_date.get().date, &system_time) &&
-        SystemTimeToFileTime(&system_time, &file_time)) {
-      *last_modified_time = base::Time::FromFileTime(file_time);
-    } else {
-      last_modified_time_set = false;
-    }
+  // Some PTP devices don't provide an mtime. Try using the ctime instead.
+  if (last_modified_date.get().vt != VT_DATE) {
+    last_modified_date.Reset();
+    HRESULT hr = properties_values->GetValue(WPD_OBJECT_DATE_CREATED,
+                                             last_modified_date.Receive());
+    if (FAILED(hr))
+      return;
   }
-  return last_modified_time_set;
+
+  SYSTEMTIME system_time;
+  FILETIME file_time;
+  if (last_modified_date.get().vt == VT_DATE &&
+      VariantTimeToSystemTime(last_modified_date.get().date, &system_time) &&
+      SystemTimeToFileTime(&system_time, &file_time)) {
+    *last_modified_time = base::Time::FromFileTime(file_time);
+  }
 }
 
 // Gets the size of the file object in bytes from the property key values
-// specified by the |properties_values|. On success, returns true and fills
-// in |size|.
-bool GetObjectSize(IPortableDeviceValues* properties_values, int64* size) {
+// specified by the |properties_values|. On failure, return -1.
+int64 GetObjectSize(IPortableDeviceValues* properties_values) {
   DCHECK(properties_values);
-  DCHECK(size);
   ULONGLONG actual_size;
   HRESULT hr = properties_values->GetUnsignedLargeIntegerValue(WPD_OBJECT_SIZE,
                                                                &actual_size);
   bool success = SUCCEEDED(hr) && (actual_size <= kint64max);
-  if (success)
-    *size = static_cast<int64>(actual_size);
-  return success;
+  return success ? static_cast<int64>(actual_size) : -1;
 }
 
 // Gets the details of the object specified by the |object_id| given the media
 // transfer protocol |device|. On success, returns true and fills in |name|,
-// |is_directory|, |size| and |last_modified_time|.
+// |is_directory|, |size|. |last_modified_time| will be filled in if possible,
+// but failure to get it doesn't prevent success.
 bool GetObjectDetails(IPortableDevice* device,
                       const base::string16 object_id,
                       base::string16* name,
@@ -197,6 +198,7 @@ bool GetObjectDetails(IPortableDevice* device,
       FAILED(properties_to_read->Add(WPD_OBJECT_ORIGINAL_FILE_NAME)) ||
       FAILED(properties_to_read->Add(WPD_OBJECT_NAME)) ||
       FAILED(properties_to_read->Add(WPD_OBJECT_DATE_MODIFIED)) ||
+      FAILED(properties_to_read->Add(WPD_OBJECT_DATE_CREATED)) ||
       FAILED(properties_to_read->Add(WPD_OBJECT_SIZE)))
     return false;
 
@@ -208,7 +210,7 @@ bool GetObjectDetails(IPortableDevice* device,
     return false;
 
   *is_directory = IsDirectory(properties_values.get());
-  *name = GetObjectName(properties_values.get(), *is_directory);
+  *name = GetObjectName(properties_values.get());
   if (name->empty())
     return false;
 
@@ -219,35 +221,40 @@ bool GetObjectDetails(IPortableDevice* device,
     *last_modified_time = base::Time();
     return true;
   }
-  return (GetObjectSize(properties_values.get(), size) &&
-      GetLastModifiedTime(properties_values.get(), last_modified_time));
+
+  // Try to get the last modified time, but don't fail if we can't.
+  GetLastModifiedTime(properties_values.get(), last_modified_time);
+
+  int64 object_size = GetObjectSize(properties_values.get());
+  if (object_size < 0)
+    return false;
+  *size = object_size;
+  return true;
 }
 
 // Creates an MTP device object entry for the given |device| and |object_id|.
 // On success, returns true and fills in |entry|.
-bool GetMTPDeviceObjectEntry(IPortableDevice* device,
-                             const base::string16& object_id,
-                             MTPDeviceObjectEntry* entry) {
+MTPDeviceObjectEntry GetMTPDeviceObjectEntry(IPortableDevice* device,
+                                             const base::string16& object_id) {
   base::ThreadRestrictions::AssertIOAllowed();
   DCHECK(device);
   DCHECK(!object_id.empty());
-  DCHECK(entry);
   base::string16 name;
   bool is_directory;
   int64 size;
   base::Time last_modified_time;
-  if (!GetObjectDetails(device, object_id, &name, &is_directory, &size,
-                        &last_modified_time))
-    return false;
-  *entry = MTPDeviceObjectEntry(object_id, name, is_directory, size,
-                                last_modified_time);
-  return true;
+  MTPDeviceObjectEntry entry;
+  if (GetObjectDetails(device, object_id, &name, &is_directory, &size,
+                       &last_modified_time)) {
+    entry = MTPDeviceObjectEntry(object_id, name, is_directory, size,
+                                 last_modified_time);
+  }
+  return entry;
 }
 
 // Gets the entries of the directory specified by |directory_object_id| from
-// the given MTP |device|. Set |get_all_entries| to true to get all the entries
-// of the directory. To request a specific object entry, put the object name in
-// |object_name|. Leave |object_name| blank to request all entries. On
+// the given MTP |device|. To request a specific object entry, put the object
+// name in |object_name|. Leave |object_name| blank to request all entries. On
 // success returns true and set |object_entries|.
 bool GetMTPDeviceObjectEntries(IPortableDevice* device,
                                const base::string16& directory_object_id,
@@ -272,21 +279,20 @@ bool GetMTPDeviceObjectEntries(IPortableDevice* device,
     hr = enum_object_ids->Next(num_objects_to_request,
                                object_ids.get(),
                                &num_objects_fetched);
-    for (DWORD index = 0; index < num_objects_fetched; ++index) {
-      MTPDeviceObjectEntry entry;
-      if (GetMTPDeviceObjectEntry(device,
-                                  object_ids[index],
-                                  &entry)) {
-        if (get_all_entries) {
-          object_entries->push_back(entry);
-        } else if (entry.name == object_name) {
-          object_entries->push_back(entry);  // Object entry found.
-          break;
-        }
+    for (DWORD i = 0; i < num_objects_fetched; ++i) {
+      MTPDeviceObjectEntry entry =
+          GetMTPDeviceObjectEntry(device, object_ids[i]);
+      if (entry.object_id.empty())
+        continue;
+      if (get_all_entries) {
+        object_entries->push_back(entry);
+      } else if (entry.name == object_name) {
+        object_entries->push_back(entry);  // Object entry found.
+        break;
       }
     }
-    for (DWORD index = 0; index < num_objects_fetched; ++index)
-      CoTaskMemFree(object_ids[index]);
+    for (DWORD i = 0; i < num_objects_fetched; ++i)
+      CoTaskMemFree(object_ids[i]);
   }
   return true;
 }
@@ -321,8 +327,8 @@ base::File::Error GetFileEntryInfo(
   DCHECK(device);
   DCHECK(!object_id.empty());
   DCHECK(file_entry_info);
-  MTPDeviceObjectEntry entry;
-  if (!GetMTPDeviceObjectEntry(device, object_id, &entry))
+  MTPDeviceObjectEntry entry = GetMTPDeviceObjectEntry(device, object_id);
+  if (entry.object_id.empty())
     return base::File::FILE_ERROR_NOT_FOUND;
 
   file_entry_info->size = entry.size;
@@ -386,7 +392,7 @@ DWORD CopyDataChunkToLocalFile(IStream* stream,
       base::checked_cast<int>(
           std::min(bytes_read,
                    base::checked_cast<DWORD>(buffer.length())));
-  if (file_util::AppendToFile(local_path, buffer.c_str(), data_len) != data_len)
+  if (base::AppendToFile(local_path, buffer.c_str(), data_len) != data_len)
     return 0U;
   return data_len;
 }

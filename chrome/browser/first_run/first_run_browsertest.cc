@@ -89,8 +89,7 @@ class FirstRunMasterPrefsBrowserTestBase : public InProcessBrowserTest {
     ASSERT_TRUE(text_.get());
 
     ASSERT_TRUE(base::CreateTemporaryFile(&prefs_file_));
-    EXPECT_TRUE(file_util::WriteFile(prefs_file_, text_->c_str(),
-                                     text_->size()));
+    EXPECT_TRUE(base::WriteFile(prefs_file_, text_->c_str(), text_->size()));
     first_run::SetMasterPrefsPathForTesting(prefs_file_);
 
     // This invokes BrowserMain, and does the import, so must be done last.
@@ -142,9 +141,13 @@ class FirstRunMasterPrefsBrowserTestT
 // bot configurations do not have another profile (browser) to import from and
 // thus the import must not be expected to have occurred.
 int MaskExpectedImportState(int expected_import_state) {
-  scoped_refptr<ImporterList> importer_list(new ImporterList());
-  importer_list->DetectSourceProfilesHack(
-      g_browser_process->GetApplicationLocale(), false);
+  scoped_ptr<ImporterList> importer_list(new ImporterList());
+  base::RunLoop run_loop;
+  importer_list->DetectSourceProfiles(
+      g_browser_process->GetApplicationLocale(),
+      false,  // include_interactive_profiles?
+      run_loop.QuitClosure());
+  run_loop.Run();
   int source_profile_count = importer_list->count();
 #if defined(OS_WIN)
   // On Windows, the importer's DetectIEProfiles() will always add to the count.
@@ -153,7 +156,6 @@ int MaskExpectedImportState(int expected_import_state) {
 #endif
   if (source_profile_count == 0)
     return expected_import_state & ~first_run::AUTO_IMPORT_PROFILE_IMPORTED;
-
   return expected_import_state;
 }
 
@@ -287,8 +289,10 @@ INSTANTIATE_TEST_CASE_P(
     FirstRunMasterPrefsWithTrackedPreferences,
     testing::Values(
         chrome_prefs::internals::kSettingsEnforcementGroupNoEnforcement,
-        chrome_prefs::internals::kSettingsEnforcementGroupEnforceOnload,
-        chrome_prefs::internals::kSettingsEnforcementGroupEnforceAlways));
-
+        chrome_prefs::internals::kSettingsEnforcementGroupEnforceAlways,
+        chrome_prefs::internals::
+            kSettingsEnforcementGroupEnforceAlwaysWithDSE,
+        chrome_prefs::internals::
+            kSettingsEnforcementGroupEnforceAlwaysWithExtensionsAndDSE));
 
 #endif  // !defined(OS_CHROMEOS)

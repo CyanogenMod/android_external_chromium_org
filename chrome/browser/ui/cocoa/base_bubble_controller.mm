@@ -8,19 +8,27 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/string_util.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
+#import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 @interface BaseBubbleController (Private)
+- (void)registerForNotifications;
 - (void)updateOriginFromAnchor;
 - (void)activateTabWithContents:(content::WebContents*)newContents
                previousContents:(content::WebContents*)oldContents
                         atIndex:(NSInteger)index
                          reason:(int)reason;
+- (void)recordAnchorOffset;
+- (void)parentWindowDidResize:(NSNotification*)notification;
+- (void)parentWindowWillClose:(NSNotification*)notification;
+- (void)parentWindowWillBecomeFullScreen:(NSNotification*)notification;
+- (void)closeCleanup;
 @end
 
 @implementation BaseBubbleController
@@ -41,13 +49,7 @@
     anchor_ = anchoredAt;
     shouldOpenAsKeyWindow_ = YES;
     shouldCloseOnResignKey_ = YES;
-
-    // Watch to see if the parent window closes, and if so, close this one.
-    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-    [center addObserver:self
-               selector:@selector(parentWindowWillClose:)
-                   name:NSWindowWillCloseNotification
-                 object:parentWindow_];
+    [self registerForNotifications];
   }
   return self;
 }
@@ -84,13 +86,7 @@
     [theWindow setContentView:contentView.get()];
     bubble_ = contentView.get();
 
-    // Watch to see if the parent window closes, and if so, close this one.
-    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-    [center addObserver:self
-               selector:@selector(parentWindowWillClose:)
-                   name:NSWindowWillCloseNotification
-                 object:parentWindow_];
-
+    [self registerForNotifications];
     [self awakeFromNib];
   }
   return self;
@@ -119,12 +115,41 @@
   [super dealloc];
 }
 
+- (void)registerForNotifications {
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  // Watch to see if the parent window closes, and if so, close this one.
+  [center addObserver:self
+             selector:@selector(parentWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:parentWindow_];
+  // Watch for the full screen event, if so, close the bubble
+  [center addObserver:self
+             selector:@selector(parentWindowWillBecomeFullScreen:)
+                 name:NSWindowWillEnterFullScreenNotification
+               object:parentWindow_];
+  // Watch for parent window's resizing, to ensure this one is always
+  // anchored correctly.
+  [center addObserver:self
+             selector:@selector(parentWindowDidResize:)
+                 name:NSWindowDidResizeNotification
+               object:parentWindow_];
+}
+
 - (void)setAnchorPoint:(NSPoint)anchor {
   anchor_ = anchor;
   [self updateOriginFromAnchor];
 }
 
-- (NSBox*)separatorWithFrame:(NSRect)frame {
+- (void)recordAnchorOffset {
+  // The offset of the anchor from the parent's upper-left-hand corner is kept
+  // to ensure the bubble stays anchored correctly if the parent is resized.
+  anchorOffset_ = NSMakePoint(NSMinX([parentWindow_ frame]),
+                              NSMaxY([parentWindow_ frame]));
+  anchorOffset_.x -= anchor_.x;
+  anchorOffset_.y -= anchor_.y;
+}
+
+- (NSBox*)horizontalSeparatorWithFrame:(NSRect)frame {
   frame.size.height = 1.0;
   base::scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
   [spacer setBoxType:NSBoxSeparator];
@@ -133,13 +158,58 @@
   return [spacer.release() autorelease];
 }
 
+- (NSBox*)verticalSeparatorWithFrame:(NSRect)frame {
+  frame.size.width = 1.0;
+  base::scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
+  [spacer setBoxType:NSBoxSeparator];
+  [spacer setBorderType:NSLineBorder];
+  [spacer setAlphaValue:0.2];
+  return [spacer.release() autorelease];
+}
+
+- (void)parentWindowDidResize:(NSNotification*)notification {
+  if (!parentWindow_)
+    return;
+
+  DCHECK_EQ(parentWindow_, [notification object]);
+  NSPoint newOrigin = NSMakePoint(NSMinX([parentWindow_ frame]),
+                                  NSMaxY([parentWindow_ frame]));
+  newOrigin.x -= anchorOffset_.x;
+  newOrigin.y -= anchorOffset_.y;
+  [self setAnchorPoint:newOrigin];
+}
+
 - (void)parentWindowWillClose:(NSNotification*)notification {
   parentWindow_ = nil;
   [self close];
 }
 
+- (void)parentWindowWillBecomeFullScreen:(NSNotification*)notification {
+  parentWindow_ = nil;
+  [self close];
+}
+
+- (void)closeCleanup {
+  if (eventTap_) {
+    [NSEvent removeMonitor:eventTap_];
+    eventTap_ = nil;
+  }
+  if (resignationObserver_) {
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:resignationObserver_
+                  name:NSWindowDidResignKeyNotification
+                object:nil];
+    resignationObserver_ = nil;
+  }
+
+  tabStripObserverBridge_.reset();
+
+  NSWindow* window = [self window];
+  [[window parentWindow] removeChildWindow:window];
+}
+
 - (void)windowWillClose:(NSNotification*)notification {
-  // We caught a close so we don't need to watch for the parent closing.
+  [self closeCleanup];
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [self autorelease];
 }
@@ -159,25 +229,11 @@
   else
     [window orderFront:nil];
   [self registerKeyStateEventTap];
+  [self recordAnchorOffset];
 }
 
 - (void)close {
-  // The bubble will be closing, so remove the event taps.
-  if (eventTap_) {
-    [NSEvent removeMonitor:eventTap_];
-    eventTap_ = nil;
-  }
-  if (resignationObserver_) {
-    [[NSNotificationCenter defaultCenter]
-        removeObserver:resignationObserver_
-                  name:NSWindowDidResignKeyNotification
-                object:nil];
-    resignationObserver_ = nil;
-  }
-
-  tabStripObserverBridge_.reset();
-
-  [[[self window] parentWindow] removeChildWindow:[self window]];
+  [self closeCleanup];
   [super close];
 }
 
@@ -191,7 +247,23 @@
     // If the window isn't visible, it is already closed, and this notification
     // has been sent as part of the closing operation, so no need to close.
     [self close];
+  } else if ([window isVisible]) {
+    // The bubble should not receive key events when it is no longer key window,
+    // so disable sharing parent key state. Share parent key state is only used
+    // to enable the close/minimize/maximize buttons of the parent window when
+    // the bubble has key state, so disabling it here is safe.
+    InfoBubbleWindow* bubbleWindow =
+        base::mac::ObjCCastStrict<InfoBubbleWindow>([self window]);
+    [bubbleWindow setAllowShareParentKeyState:NO];
   }
+}
+
+- (void)windowDidBecomeKey:(NSNotification*)notification {
+  // Re-enable share parent key state to make sure the close/minimize/maximize
+  // buttons of the parent window are active.
+  InfoBubbleWindow* bubbleWindow =
+      base::mac::ObjCCastStrict<InfoBubbleWindow>([self window]);
+  [bubbleWindow setAllowShareParentKeyState:YES];
 }
 
 // Since the bubble shares first responder with its parent window, set
@@ -210,14 +282,16 @@
   // The eventTap_ catches clicks within the application that are outside the
   // window.
   eventTap_ = [NSEvent
-      addLocalMonitorForEventsMatchingMask:NSLeftMouseDownMask
+      addLocalMonitorForEventsMatchingMask:NSLeftMouseDownMask |
+                                           NSRightMouseDownMask
       handler:^NSEvent* (NSEvent* event) {
           if (event.window != window) {
-            // Call via the runloop because this block is called in the
-            // middle of event dispatch.
-            [self performSelector:@selector(windowDidResignKey:)
-                       withObject:note
-                       afterDelay:0];
+            // Do it right now, because if this event is right mouse event,
+            // it may pop up a menu. windowDidResignKey: will not run until
+            // the menu is closed.
+            if ([self respondsToSelector:@selector(windowDidResignKey:)]) {
+              [self windowDidResignKey:note];
+            }
           }
           return event;
       }];

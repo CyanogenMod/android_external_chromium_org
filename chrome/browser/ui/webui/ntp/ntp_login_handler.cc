@@ -19,7 +19,6 @@
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/sync/profile_sync_service.h"
@@ -32,6 +31,8 @@
 #include "chrome/browser/web_resource/promo_resource_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -75,7 +76,7 @@ base::string16 CreateSpanWithClass(const base::string16& content,
       net::EscapeForHTML(content) + base::ASCIIToUTF16("</span>");
 }
 
-} // namespace
+}  // namespace
 
 NTPLoginHandler::NTPLoginHandler() {
 }
@@ -114,11 +115,8 @@ void NTPLoginHandler::RegisterMessages() {
 void NTPLoginHandler::Observe(int type,
                               const content::NotificationSource& source,
                               const content::NotificationDetails& details) {
-  if (type == chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED) {
-    UpdateLogin();
-  } else {
-    NOTREACHED();
-  }
+  DCHECK_EQ(chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED, type);
+  UpdateLogin();
 }
 
 void NTPLoginHandler::HandleInitializeSyncLogin(const base::ListValue* args) {
@@ -135,7 +133,6 @@ void NTPLoginHandler::HandleShowSyncLoginUI(const base::ListValue* args) {
     return;
 
   if (username.empty()) {
-#if !defined(OS_ANDROID)
     // The user isn't signed in, show the sign in promo.
     if (signin::ShouldShowPromo(profile)) {
       signin::Source source =
@@ -145,7 +142,6 @@ void NTPLoginHandler::HandleShowSyncLoginUI(const base::ListValue* args) {
       chrome::ShowBrowserSignin(browser, source);
       RecordInHistogram(NTP_SIGN_IN_PROMO_CLICKED);
     }
-#endif
   } else if (args->GetSize() == 4) {
     // The user is signed in, show the profiles menu.
     double x = 0;
@@ -161,7 +157,8 @@ void NTPLoginHandler::HandleShowSyncLoginUI(const base::ListValue* args) {
     success = args->GetDouble(3, &height);
     DCHECK(success);
 
-    double zoom = content::ZoomLevelToZoomFactor(web_contents->GetZoomLevel());
+    double zoom = content::ZoomLevelToZoomFactor(
+        content::HostZoomMap::GetZoomLevel(web_contents));
     gfx::Rect rect(x * zoom, y * zoom, width * zoom, height * zoom);
 
     browser->window()->ShowAvatarBubble(web_ui()->GetWebContents(), rect);
@@ -226,15 +223,11 @@ void NTPLoginHandler::UpdateLogin() {
       }
     }
   } else {
-#if !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
-    // Android uses a custom sign in promo. Don't call the function
-    // signin::ShouldShowPromo() since it does a bunch of checks that are not
-    // required here.  We only want to suppress this login status for users that
-    // are not allowed to sign in.  Chromeos does not show this status header
-    // at all.
+#if !defined(OS_CHROMEOS)
+    // Chromeos does not show this status header.
     SigninManager* signin = SigninManagerFactory::GetForProfile(
         profile->GetOriginalProfile());
-    if (!profile->IsManaged() && signin->IsSigninAllowed()) {
+    if (!profile->IsSupervised() && signin->IsSigninAllowed()) {
       base::string16 signed_in_link = l10n_util::GetStringUTF16(
           IDS_SYNC_PROMO_NOT_SIGNED_IN_STATUS_LINK);
       signed_in_link = CreateSpanWithClass(signed_in_link, "link-span");

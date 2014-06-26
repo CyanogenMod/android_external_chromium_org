@@ -14,10 +14,9 @@
 #include "ash/test/shelf_view_test_api.h"
 #include "ash/test/test_shelf_item_delegate.h"
 #include "ash/wm/window_util.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/corewm_switches.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -25,8 +24,8 @@
 #include "base/win/windows_version.h"
 #endif
 
-using ash::internal::ShelfView;
-using ash::internal::ShelfButton;
+using ash::ShelfView;
+using ash::ShelfButton;
 
 namespace ash {
 

@@ -6,15 +6,20 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
+#include "chromeos/ime/extension_ime_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/manifest_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -27,63 +32,58 @@ struct WhitelistedComponentExtensionIME {
   const char* path;
 } whitelisted_component_extension[] = {
   {
-    // ChromeOS Keyboards extension.
-    "jhffeifommiaekmbkkjlpmilogcfdohp",
-    "/usr/share/chromeos-assets/input_methods/keyboard_layouts",
-  },
-  {
     // ChromeOS Hangul Input.
-    "bdgdidmhaijohebebipajioienkglgfo",
+    extension_ime_util::kHangulExtensionId,
     "/usr/share/chromeos-assets/input_methods/hangul",
   },
 #if defined(OFFICIAL_BUILD)
   {
-    // Official Google Japanese Input.
-    "fpfbhcjppmaeaijcidgiibchfbnhbelj",
-    "/usr/share/chromeos-assets/input_methods/nacl_mozc",
-  },
-  {
-    // Google Chinese Input (zhuyin)
-    "goedamlknlnjaengojinmfgpmdjmkooo",
-    "/usr/share/chromeos-assets/input_methods/zhuyin",
-  },
-  {
-    // Google Chinese Input (pinyin)
-    "nmblnjkfdkabgdofidlkienfnnbjhnab",
-    "/usr/share/chromeos-assets/input_methods/pinyin",
-  },
-  {
-    // Google Chinese Input (cangjie)
-    "gjhclobljhjhgoebiipblnmdodbmpdgd",
-    "/usr/share/chromeos-assets/input_methods/cangjie",
+    // Official Google XKB Input.
+    extension_ime_util::kXkbExtensionId,
+    "/usr/share/chromeos-assets/input_methods/google_xkb",
   },
   {
     // Google input tools.
-    "gjaehgfemfahhmlgpdfknkhdnemmolop",
+    extension_ime_util::kT13nExtensionId,
     "/usr/share/chromeos-assets/input_methods/input_tools",
   },
 #else
   {
+    // Open-sourced ChromeOS xkb extension.
+    extension_ime_util::kXkbExtensionId,
+    "/usr/share/chromeos-assets/input_methods/xkb",
+  },
+  {
+    // Open-sourced ChromeOS Keyboards extension.
+    extension_ime_util::kM17nExtensionId,
+    "/usr/share/chromeos-assets/input_methods/keyboard_layouts",
+  },
+  {
     // Open-sourced Pinyin Chinese Input Method.
-    "cpgalbafkoofkjmaeonnfijgpfennjjn",
+    extension_ime_util::kChinesePinyinExtensionId,
     "/usr/share/chromeos-assets/input_methods/pinyin",
   },
   {
     // Open-sourced Zhuyin Chinese Input Method.
-    "ekbifjdfhkmdeeajnolmgdlmkllopefi",
+    extension_ime_util::kChineseZhuyinExtensionId,
     "/usr/share/chromeos-assets/input_methods/zhuyin",
   },
   {
     // Open-sourced Cangjie Chinese Input Method.
-    "aeebooiibjahgpgmhkeocbeekccfknbj",
+    extension_ime_util::kChineseCangjieExtensionId,
     "/usr/share/chromeos-assets/input_methods/cangjie",
   },
   {
-    // Open-sourced Mozc Japanese Input.
-    "bbaiamgfapehflhememkfglaehiobjnk",
+    // Japanese Mozc Input.
+    extension_ime_util::kMozcExtensionId,
     "/usr/share/chromeos-assets/input_methods/nacl_mozc",
   },
 #endif
+  {
+    // Braille hardware keyboard IME that works together with ChromeVox.
+    extension_misc::kBrailleImeExtensionId,
+    extension_misc::kBrailleImeExtensionPath,
+  },
 };
 
 extensions::ComponentLoader* GetComponentLoader() {
@@ -116,23 +116,24 @@ bool ComponentExtensionIMEManagerImpl::Load(const std::string& extension_id,
                                             const std::string& manifest,
                                             const base::FilePath& file_path) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (loaded_extension_id_.find(extension_id) != loaded_extension_id_.end())
+  Profile* profile = ProfileManager::GetActiveUserProfile();
+  extensions::ExtensionSystem* extension_system =
+      extensions::ExtensionSystem::Get(profile);
+  ExtensionService* extension_service = extension_system->extension_service();
+  if (extension_service->GetExtensionById(extension_id, false))
     return false;
   const std::string loaded_extension_id =
       GetComponentLoader()->Add(manifest, file_path);
   DCHECK_EQ(loaded_extension_id, extension_id);
-  loaded_extension_id_.insert(extension_id);
   return true;
 }
 
-bool ComponentExtensionIMEManagerImpl::Unload(const std::string& extension_id,
+void ComponentExtensionIMEManagerImpl::Unload(const std::string& extension_id,
                                               const base::FilePath& file_path) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (loaded_extension_id_.find(extension_id) == loaded_extension_id_.end())
-    return false;
+  // Remove(extension_id) does nothing when the extension has already been
+  // removed or not been registered.
   GetComponentLoader()->Remove(extension_id);
-  loaded_extension_id_.erase(extension_id);
-  return true;
 }
 
 scoped_ptr<base::DictionaryValue> ComponentExtensionIMEManagerImpl::GetManifest(
@@ -140,7 +141,7 @@ scoped_ptr<base::DictionaryValue> ComponentExtensionIMEManagerImpl::GetManifest(
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
   std::string error;
   scoped_ptr<base::DictionaryValue> manifest(
-      extension_file_util::LoadManifest(file_path, &error));
+      extensions::file_util::LoadManifest(file_path, &error));
   if (!manifest.get())
     LOG(ERROR) << "Failed at getting manifest";
   if (!extension_l10n_util::LocalizeExtension(file_path,
@@ -176,6 +177,7 @@ bool ComponentExtensionIMEManagerImpl::IsInitialized() {
 
 // static
 bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
+    const ComponentExtensionIME& component_extension,
     const base::DictionaryValue& dict,
     ComponentExtensionEngine* out) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
@@ -219,6 +221,33 @@ bool ComponentExtensionIMEManagerImpl::ReadEngineComponent(
     if (layouts->GetString(i, &buffer))
       out->layouts.push_back(buffer);
   }
+
+  std::string url_string;
+  if (dict.GetString(extensions::manifest_keys::kInputView,
+                     &url_string)) {
+    GURL url = extensions::Extension::GetResourceURL(
+        extensions::Extension::GetBaseURLFromExtensionId(
+            component_extension.id),
+        url_string);
+    if (!url.is_valid())
+      return false;
+    out->input_view_url = url;
+  }
+
+  if (dict.GetString(extensions::manifest_keys::kOptionsPage,
+                     &url_string)) {
+    GURL url = extensions::Extension::GetResourceURL(
+        extensions::Extension::GetBaseURLFromExtensionId(
+            component_extension.id),
+        url_string);
+    if (!url.is_valid())
+      return false;
+    out->options_page_url = url;
+  } else {
+    // Fallback to extension level options page.
+    out->options_page_url = component_extension.options_page_url;
+  }
+
   return true;
 }
 
@@ -241,15 +270,6 @@ bool ComponentExtensionIMEManagerImpl::ReadExtensionInfo(
       return false;
     out->options_page_url = url;
   }
-  if (manifest.GetString(extensions::manifest_keys::kInputView,
-                         &url_string)) {
-    GURL url = extensions::Extension::GetResourceURL(
-        extensions::Extension::GetBaseURLFromExtensionId(extension_id),
-        url_string);
-    if (!url.is_valid())
-      return false;
-    out->input_view_url = url;
-  }
   // It's okay to return true on no option page and/or input view page case.
   return true;
 }
@@ -264,6 +284,12 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
     component_ime.path = base::FilePath(
         whitelisted_component_extension[i].path);
 
+    if (!component_ime.path.IsAbsolute()) {
+      base::FilePath resources_path;
+      if (!PathService::Get(chrome::DIR_RESOURCES, &resources_path))
+        NOTREACHED();
+      component_ime.path = resources_path.Append(component_ime.path);
+    }
     const base::FilePath manifest_path =
         component_ime.path.Append("manifest.json");
 
@@ -296,7 +322,7 @@ void ComponentExtensionIMEManagerImpl::ReadComponentExtensionsInfo(
         continue;
 
       ComponentExtensionEngine engine;
-      ReadEngineComponent(*dictionary, &engine);
+      ReadEngineComponent(component_ime, *dictionary, &engine);
       component_ime.engines.push_back(engine);
     }
     out_imes->push_back(component_ime);

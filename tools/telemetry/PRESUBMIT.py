@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import os
@@ -19,6 +19,12 @@ def _CommonChecks(input_api, output_api):
     results.append(output_api.PresubmitError(
       'Docs are stale. Please run:\n' +
       '$ %s' % os.path.abspath(update_docs_path)))
+
+  # Importing telemetry.web_components actually brings tvcm into the path.
+  import telemetry.web_components # pylint: disable=W0612
+  from tvcm import presubmit_checker
+  checker = presubmit_checker.PresubmitChecker(input_api, output_api)
+  results += checker.RunChecks()
 
   results.extend(input_api.canned_checks.RunPylint(
         input_api, output_api,

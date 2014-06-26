@@ -25,8 +25,8 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
-#include "chrome/common/favicon/favicon_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/favicon_base/favicon_types.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -313,6 +313,10 @@ void RecentTabsSubMenuModel::ExecuteCommand(int command_id, int event_flags) {
   }
 }
 
+int RecentTabsSubMenuModel::GetFirstRecentTabsCommandId() {
+  return WindowVectorIndexToCommandId(0);
+}
+
 const gfx::FontList* RecentTabsSubMenuModel::GetLabelFontListAt(
     int index) const {
   int command_id = GetCommandIdAt(index);
@@ -574,7 +578,7 @@ void RecentTabsSubMenuModel::AddDeviceFavicon(
     case browser_sync::SyncedSession::TYPE_UNSET:
       favicon_id = IDR_LAPTOP_FAVICON;
       break;
-  };
+  }
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   SetIcon(index_in_menu, rb.GetNativeImageNamed(favicon_id));
@@ -609,20 +613,19 @@ void RecentTabsSubMenuModel::AddTabFavicon(int command_id, const GURL& url) {
   if (!favicon_service)
     return;
 
-  favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(url,
-                                          chrome::FAVICON,
-                                          gfx::kFaviconSize),
+  favicon_service->GetFaviconImageForPageURL(
+      FaviconService::FaviconForPageURLParams(
+          url, favicon_base::FAVICON, gfx::kFaviconSize),
       base::Bind(&RecentTabsSubMenuModel::OnFaviconDataAvailable,
                  weak_ptr_factory_.GetWeakPtr(),
                  command_id),
-      is_local_tab ? &local_tab_cancelable_task_tracker_ :
-                     &other_devices_tab_cancelable_task_tracker_);
+      is_local_tab ? &local_tab_cancelable_task_tracker_
+                   : &other_devices_tab_cancelable_task_tracker_);
 }
 
 void RecentTabsSubMenuModel::OnFaviconDataAvailable(
     int command_id,
-    const chrome::FaviconImageResult& image_result) {
+    const favicon_base::FaviconImageResult& image_result) {
   if (image_result.image.IsEmpty())
     return;
   int index_in_menu = GetIndexOfCommandId(command_id);
@@ -650,7 +653,8 @@ void RecentTabsSubMenuModel::ClearLocalEntries() {
   while (last_local_model_index_ >= 0)
     RemoveItemAt(last_local_model_index_--);
 
-  // Cancel asynchronous FaviconService::GetFaviconImageForURL() tasks of all
+  // Cancel asynchronous FaviconService::GetFaviconImageForPageURL() tasks of
+  // all
   // local tabs.
   local_tab_cancelable_task_tracker_.TryCancelAll();
 

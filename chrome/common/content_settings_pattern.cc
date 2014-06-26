@@ -22,9 +22,9 @@
 namespace {
 
 std::string GetDefaultPort(const std::string& scheme) {
-  if (scheme == content::kHttpScheme)
+  if (scheme == url::kHttpScheme)
     return "80";
-  if (scheme == content::kHttpsScheme)
+  if (scheme == url::kHttpsScheme)
     return "443";
   return std::string();
 }
@@ -179,16 +179,16 @@ bool ContentSettingsPattern::Builder::Canonicalize(PatternParts* parts) {
   const std::string scheme(StringToLowerASCII(parts->scheme));
   parts->scheme = scheme;
 
-  if (parts->scheme == std::string(content::kFileScheme) &&
+  if (parts->scheme == std::string(url::kFileScheme) &&
       !parts->is_path_wildcard) {
-      GURL url(std::string(content::kFileScheme) +
-               std::string(content::kStandardSchemeSeparator) + parts->path);
-      parts->path = url.path();
+    GURL url(std::string(url::kFileScheme) +
+             std::string(url::kStandardSchemeSeparator) + parts->path);
+    parts->path = url.path();
   }
 
   // Canonicalize the host part.
   const std::string host(parts->host);
-  url_canon::CanonHostInfo host_info;
+  url::CanonHostInfo host_info;
   std::string canonicalized_host(net::CanonicalizeHost(host, &host_info));
   if (host_info.IsIPAddress() && parts->has_domain_wildcard)
     return false;
@@ -213,7 +213,7 @@ bool ContentSettingsPattern::Builder::Validate(const PatternParts& parts) {
   }
 
   // file:// URL patterns have an empty host and port.
-  if (parts.scheme == std::string(content::kFileScheme)) {
+  if (parts.scheme == std::string(url::kFileScheme)) {
     if (parts.has_domain_wildcard || !parts.host.empty() || !parts.port.empty())
       return false;
     if (parts.is_path_wildcard)
@@ -243,8 +243,8 @@ bool ContentSettingsPattern::Builder::Validate(const PatternParts& parts) {
 
   // Test if the scheme is supported or a wildcard.
   if (!parts.is_scheme_wildcard &&
-      parts.scheme != std::string(content::kHttpScheme) &&
-      parts.scheme != std::string(content::kHttpsScheme)) {
+      parts.scheme != std::string(url::kHttpScheme) &&
+      parts.scheme != std::string(url::kHttpsScheme)) {
     return false;
   }
   return true;
@@ -254,7 +254,7 @@ bool ContentSettingsPattern::Builder::Validate(const PatternParts& parts) {
 bool ContentSettingsPattern::Builder::LegacyValidate(
     const PatternParts& parts) {
   // If the pattern is for a "file-pattern" test if it is valid.
-  if (parts.scheme == std::string(content::kFileScheme) &&
+  if (parts.scheme == std::string(url::kFileScheme) &&
       !parts.is_scheme_wildcard &&
       parts.host.empty() &&
       parts.port.empty())
@@ -278,8 +278,8 @@ bool ContentSettingsPattern::Builder::LegacyValidate(
 
   // Test if the scheme is supported or a wildcard.
   if (!parts.is_scheme_wildcard &&
-      parts.scheme != std::string(content::kHttpScheme) &&
-      parts.scheme != std::string(content::kHttpsScheme)) {
+      parts.scheme != std::string(url::kHttpScheme) &&
+      parts.scheme != std::string(url::kHttpsScheme)) {
     return false;
   }
   return true;
@@ -339,18 +339,18 @@ ContentSettingsPattern ContentSettingsPattern::FromURL(
     // also have a "http" scheme.
     if (local_url->HostIsIPAddress()) {
       builder->WithScheme(local_url->scheme())->WithHost(local_url->host());
-    } else if (local_url->SchemeIs(content::kHttpScheme)) {
+    } else if (local_url->SchemeIs(url::kHttpScheme)) {
       builder->WithSchemeWildcard()->WithDomainWildcard()->WithHost(
           local_url->host());
-    } else if (local_url->SchemeIs(content::kHttpsScheme)) {
+    } else if (local_url->SchemeIs(url::kHttpsScheme)) {
       builder->WithScheme(local_url->scheme())->WithDomainWildcard()->WithHost(
           local_url->host());
     } else {
       // Unsupported scheme
     }
     if (local_url->port().empty()) {
-      if (local_url->SchemeIs(content::kHttpsScheme))
-        builder->WithPort(GetDefaultPort(content::kHttpsScheme));
+      if (local_url->SchemeIs(url::kHttpsScheme))
+        builder->WithPort(GetDefaultPort(url::kHttpsScheme));
       else
         builder->WithPortWildcard();
     } else {
@@ -457,7 +457,7 @@ bool ContentSettingsPattern::Matches(
   // TODO(markusheintz): Content settings should be defined for all files on
   // a machine. Unless there is a good use case for supporting paths for file
   // patterns, stop supporting path for file patterns.
-  if (!parts_.is_scheme_wildcard && scheme == content::kFileScheme)
+  if (!parts_.is_scheme_wildcard && scheme == url::kFileScheme)
     return parts_.is_path_wildcard ||
         parts_.path == std::string(local_url->path());
 

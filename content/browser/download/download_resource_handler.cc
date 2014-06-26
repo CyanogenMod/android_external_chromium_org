@@ -24,6 +24,9 @@
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager_delegate.h"
+#include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/power_save_blocker.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/resource_response.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -32,6 +35,12 @@
 #include "net/url_request/url_request_context.h"
 
 namespace content {
+
+struct DownloadResourceHandler::DownloadTabInfo {
+  GURL tab_url;
+  GURL tab_referrer_url;
+};
+
 namespace {
 
 void CallStartedCBOnUIThread(
@@ -49,6 +58,7 @@ void CallStartedCBOnUIThread(
 // DownloadResourceHandler members from the UI thread.
 static void StartOnUIThread(
     scoped_ptr<DownloadCreateInfo> info,
+    DownloadResourceHandler::DownloadTabInfo* tab_info,
     scoped_ptr<ByteStreamReader> stream,
     const DownloadUrlParameters::OnStartedCallback& started_cb) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -59,10 +69,32 @@ static void StartOnUIThread(
     // download.
     if (!started_cb.is_null())
       started_cb.Run(NULL, DOWNLOAD_INTERRUPT_REASON_USER_CANCELED);
+
+    // |stream| gets deleted on non-FILE thread, but it's ok since
+    // we're not using stream_writer_ yet.
+
     return;
   }
 
+  info->tab_url = tab_info->tab_url;
+  info->tab_referrer_url = tab_info->tab_referrer_url;
+
   download_manager->StartDownload(info.Pass(), stream.Pass(), started_cb);
+}
+
+void InitializeDownloadTabInfoOnUIThread(
+    const DownloadRequestHandle& request_handle,
+    DownloadResourceHandler::DownloadTabInfo* tab_info) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  WebContents* web_contents = request_handle.GetWebContents();
+  if (web_contents) {
+    NavigationEntry* entry = web_contents->GetController().GetVisibleEntry();
+    if (entry) {
+      tab_info->tab_url = entry->GetURL();
+      tab_info->tab_referrer_url = entry->GetReferrer().url;
+    }
+  }
 }
 
 }  // namespace
@@ -84,16 +116,31 @@ DownloadResourceHandler::DownloadResourceHandler(
       was_deferred_(false),
       on_response_started_called_(false) {
   RecordDownloadCount(UNTHROTTLED_COUNT);
+
+  // Do UI thread initialization asap after DownloadResourceHandler creation
+  // since the tab could be navigated before StartOnUIThread gets called.
+  const ResourceRequestInfoImpl* request_info = GetRequestInfo();
+  tab_info_ = new DownloadTabInfo();
+  BrowserThread::PostTask(
+      BrowserThread::UI,
+      FROM_HERE,
+      base::Bind(&InitializeDownloadTabInfoOnUIThread,
+                 DownloadRequestHandle(AsWeakPtr(),
+                                       request_info->GetChildID(),
+                                       request_info->GetRouteID(),
+                                       request_info->GetRequestID()),
+                 tab_info_));
+  power_save_blocker_ = PowerSaveBlocker::Create(
+      PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
+      "Download in progress");
 }
 
-bool DownloadResourceHandler::OnUploadProgress(int request_id,
-                                               uint64 position,
+bool DownloadResourceHandler::OnUploadProgress(uint64 position,
                                                uint64 size) {
   return true;
 }
 
 bool DownloadResourceHandler::OnRequestRedirected(
-    int request_id,
     const GURL& url,
     ResourceResponse* response,
     bool* defer) {
@@ -105,7 +152,6 @@ bool DownloadResourceHandler::OnRequestRedirected(
 
 // Send the download creation information to the download thread.
 bool DownloadResourceHandler::OnResponseStarted(
-    int request_id,
     ResourceResponse* response,
     bool* defer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -113,8 +159,7 @@ bool DownloadResourceHandler::OnResponseStarted(
   DCHECK(!on_response_started_called_);
   on_response_started_called_ = true;
 
-  VLOG(20) << __FUNCTION__ << "()" << DebugString()
-           << " request_id = " << request_id;
+  VLOG(20) << __FUNCTION__ << "()" << DebugString();
   download_start_time_ = base::TimeTicks::Now();
 
   // If it's a download, we don't want to poison the cache with it.
@@ -190,15 +235,26 @@ bool DownloadResourceHandler::OnResponseStarted(
       info->original_mime_type.clear();
   }
 
+  // Blink verifies that the requester of this download is allowed to set a
+  // suggested name for the security origin of the downlaod URL. However, this
+  // assumption doesn't hold if there were cross origin redirects. Therefore,
+  // clear the suggested_name for such requests.
+  if (info->url_chain.size() > 1 &&
+      info->url_chain.front().GetOrigin() != info->url_chain.back().GetOrigin())
+    info->save_info->suggested_name.clear();
+
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&StartOnUIThread,
                  base::Passed(&info),
+                 base::Owned(tab_info_),
                  base::Passed(&stream_reader),
                  // Pass to StartOnUIThread so that variable
                  // access is always on IO thread but function
                  // is called on UI thread.
                  started_cb_));
+  // Now owned by the task that was just posted.
+  tab_info_ = NULL;
   // Guaranteed to be called in StartOnUIThread
   started_cb_.Reset();
 
@@ -219,22 +275,18 @@ void DownloadResourceHandler::CallStartedCB(
   started_cb_.Reset();
 }
 
-bool DownloadResourceHandler::OnWillStart(int request_id,
-                                          const GURL& url,
-                                          bool* defer) {
+bool DownloadResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   return true;
 }
 
-bool DownloadResourceHandler::OnBeforeNetworkStart(int request_id,
-                                                   const GURL& url,
+bool DownloadResourceHandler::OnBeforeNetworkStart(const GURL& url,
                                                    bool* defer) {
   return true;
 }
 
 // Create a new buffer, which will be handed to the download thread for file
 // writing and deletion.
-bool DownloadResourceHandler::OnWillRead(int request_id,
-                                         scoped_refptr<net::IOBuffer>* buf,
+bool DownloadResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                          int* buf_size,
                                          int min_size) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -249,8 +301,7 @@ bool DownloadResourceHandler::OnWillRead(int request_id,
 }
 
 // Pass the buffer to the download file writer.
-bool DownloadResourceHandler::OnReadCompleted(int request_id, int bytes_read,
-                                              bool* defer) {
+bool DownloadResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(read_buffer_.get());
 
@@ -290,14 +341,12 @@ bool DownloadResourceHandler::OnReadCompleted(int request_id, int bytes_read,
 }
 
 void DownloadResourceHandler::OnResponseCompleted(
-    int request_id,
     const net::URLRequestStatus& status,
     const std::string& security_info,
     bool* defer) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   int response_code = status.is_success() ? request()->GetResponseCode() : 0;
   VLOG(20) << __FUNCTION__ << "()" << DebugString()
-           << " request_id = " << request_id
            << " status.status() = " << status.status()
            << " status.error() = " << status.error()
            << " response_code = " << response_code;
@@ -406,9 +455,7 @@ void DownloadResourceHandler::OnResponseCompleted(
   read_buffer_ = NULL;
 }
 
-void DownloadResourceHandler::OnDataDownloaded(
-    int request_id,
-    int bytes_downloaded) {
+void DownloadResourceHandler::OnDataDownloaded(int bytes_downloaded) {
   NOTREACHED();
 }
 
@@ -477,6 +524,11 @@ DownloadResourceHandler::~DownloadResourceHandler() {
   // Remove output stream callback if a stream exists.
   if (stream_writer_)
     stream_writer_->RegisterCallback(base::Closure());
+
+  // tab_info_ must be destroyed on UI thread, since
+  // InitializeDownloadTabInfoOnUIThread might still be using it.
+  if (tab_info_)
+    BrowserThread::DeleteSoon(BrowserThread::UI, FROM_HERE, tab_info_);
 
   UMA_HISTOGRAM_TIMES("SB2.DownloadDuration",
                       base::TimeTicks::Now() - download_start_time_);

@@ -4,6 +4,7 @@
 
 #include "tools/gn/target_generator.h"
 
+#include "tools/gn/action_target_generator.h"
 #include "tools/gn/binary_target_generator.h"
 #include "tools/gn/build_settings.h"
 #include "tools/gn/config.h"
@@ -15,7 +16,6 @@
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/scheduler.h"
 #include "tools/gn/scope.h"
-#include "tools/gn/script_target_generator.h"
 #include "tools/gn/token.h"
 #include "tools/gn/value.h"
 #include "tools/gn/value_extractors.h"
@@ -37,9 +37,19 @@ TargetGenerator::~TargetGenerator() {
 void TargetGenerator::Run() {
   // All target types use these.
   FillDependentConfigs();
+  if (err_->has_error())
+    return;
+
   FillData();
+  if (err_->has_error())
+    return;
+
   FillDependencies();
-  FillGypFile();
+  if (err_->has_error())
+    return;
+
+  if (!Visibility::FillItemVisibility(target_, scope_, err_))
+    return;
 
   // Do type-specific generation.
   DoRun();
@@ -75,8 +85,13 @@ void TargetGenerator::GenerateTarget(Scope* scope,
   if (output_type == functions::kCopy) {
     CopyTargetGenerator generator(target.get(), scope, function_call, err);
     generator.Run();
-  } else if (output_type == functions::kCustom) {
-    ScriptTargetGenerator generator(target.get(), scope, function_call, err);
+  } else if (output_type == functions::kAction) {
+    ActionTargetGenerator generator(target.get(), scope, function_call,
+                                    Target::ACTION, err);
+    generator.Run();
+  } else if (output_type == functions::kActionForEach) {
+    ActionTargetGenerator generator(target.get(), scope, function_call,
+                                    Target::ACTION_FOREACH, err);
     generator.Run();
   } else if (output_type == functions::kExecutable) {
     BinaryTargetGenerator generator(target.get(), scope, function_call,
@@ -102,8 +117,16 @@ void TargetGenerator::GenerateTarget(Scope* scope,
                "I am very confused.");
   }
 
-  if (!err->has_error())
-    scope->settings()->build_settings()->ItemDefined(target.PassAs<Item>());
+  if (err->has_error())
+    return;
+
+  // Save this target for the file.
+  Scope::ItemVector* collector = scope->GetItemCollector();
+  if (!collector) {
+    *err = Err(function_call, "Can't define a target in this context.");
+    return;
+  }
+  collector->push_back(new scoped_ptr<Item>(target.PassAs<Item>()));
 }
 
 const BuildSettings* TargetGenerator::GetBuildSettings() const {
@@ -122,16 +145,38 @@ void TargetGenerator::FillSources() {
   target_->sources().swap(dest_sources);
 }
 
-void TargetGenerator::FillSourcePrereqs() {
-  const Value* value = scope_->GetValue(variables::kSourcePrereqs, true);
+void TargetGenerator::FillPublic() {
+  const Value* value = scope_->GetValue(variables::kPublic, true);
   if (!value)
     return;
 
-  Target::FileList dest_reqs;
+  // If the public headers are defined, don't default to public.
+  target_->set_all_headers_public(false);
+
+  Target::FileList dest_public;
   if (!ExtractListOfRelativeFiles(scope_->settings()->build_settings(), *value,
-                                  scope_->GetSourceDir(), &dest_reqs, err_))
+                                  scope_->GetSourceDir(), &dest_public, err_))
     return;
-  target_->source_prereqs().swap(dest_reqs);
+  target_->public_headers().swap(dest_public);
+}
+
+void TargetGenerator::FillInputs() {
+  const Value* value = scope_->GetValue(variables::kInputs, true);
+  if (!value) {
+    // Older versions used "source_prereqs". Allow use of this variable until
+    // all callers are updated.
+    // TODO(brettw) remove this eventually.
+    value = scope_->GetValue("source_prereqs", true);
+
+    if (!value)
+      return;
+  }
+
+  Target::FileList dest_inputs;
+  if (!ExtractListOfRelativeFiles(scope_->settings()->build_settings(), *value,
+                                  scope_->GetSourceDir(), &dest_inputs, err_))
+    return;
+  target_->inputs().swap(dest_inputs);
 }
 
 void TargetGenerator::FillConfigs() {
@@ -159,42 +204,17 @@ void TargetGenerator::FillData() {
 
 void TargetGenerator::FillDependencies() {
   FillGenericDeps(variables::kDeps, &target_->deps());
+  if (err_->has_error())
+    return;
   FillGenericDeps(variables::kDatadeps, &target_->datadeps());
+  if (err_->has_error())
+    return;
 
   // This is a list of dependent targets to have their configs fowarded, so
   // it goes here rather than in FillConfigs.
   FillForwardDependentConfigs();
-
-  FillHardDep();
-}
-
-void TargetGenerator::FillGypFile() {
-  const Value* gyp_file_value = scope_->GetValue(variables::kGypFile, true);
-  if (!gyp_file_value)
+  if (err_->has_error())
     return;
-  if (!gyp_file_value->VerifyTypeIs(Value::STRING, err_))
-    return;
-
-  target_->set_gyp_file(scope_->GetSourceDir().ResolveRelativeFile(
-      gyp_file_value->string_value()));
-}
-
-void TargetGenerator::FillHardDep() {
-  const Value* hard_dep_value = scope_->GetValue(variables::kHardDep, true);
-  if (!hard_dep_value)
-    return;
-  if (!hard_dep_value->VerifyTypeIs(Value::BOOLEAN, err_))
-    return;
-  target_->set_hard_dep(hard_dep_value->boolean_value());
-}
-
-void TargetGenerator::FillExternal() {
-  const Value* value = scope_->GetValue(variables::kExternal, true);
-  if (!value)
-    return;
-  if (!value->VerifyTypeIs(Value::BOOLEAN, err_))
-    return;
-  target_->set_external(value->boolean_value());
 }
 
 void TargetGenerator::FillOutputs() {
@@ -215,7 +235,7 @@ void TargetGenerator::FillOutputs() {
             outputs[i].value(), value->list_value()[i], err_))
       return;
   }
-  target_->script_values().outputs().swap(outputs);
+  target_->action_values().outputs().swap(outputs);
 }
 
 void TargetGenerator::FillGenericConfigs(const char* var_name,

@@ -14,136 +14,115 @@ namespace {
 
 using std::string;
 
-const char kName[] = "headername";
-const uint32 kNameStringLength = arraysize(kName) - 1;
-const char kValue[] = "Header Value";
-const uint32 kValueStringLength = arraysize(kValue) - 1;
+class HpackEntryTest : public ::testing::Test {
+ protected:
+  HpackEntryTest()
+      : name_("header-name"),
+        value_("header value"),
+        total_insertions_(0),
+        table_size_(0) {}
 
-// Make sure a default-constructed entry is still valid and starts off
-// empty, unreferenced, and untouched.
-TEST(HpackEntryTest, DefaultConstructor) {
+  // These builders maintain the same external table invariants that a "real"
+  // table (ie HpackHeaderTable) would.
+  HpackEntry StaticEntry() {
+    return HpackEntry(name_, value_, true, total_insertions_++);
+  }
+  HpackEntry DynamicEntry() {
+    ++table_size_;
+    size_t index = total_insertions_++;
+    return HpackEntry(name_, value_, false, index);
+  }
+  void DropEntry() { --table_size_; }
+
+  size_t IndexOf(const HpackEntry& entry) const {
+    if (entry.IsStatic()) {
+      return 1 + entry.InsertionIndex() + table_size_;
+    } else {
+      return total_insertions_ - entry.InsertionIndex();
+    }
+  }
+
+  size_t Size() {
+    return name_.size() + value_.size() + HpackEntry::kSizeOverhead;
+  }
+
+  string name_, value_;
+
+ private:
+  // Referenced by HpackEntry instances.
+  size_t total_insertions_;
+  size_t table_size_;
+};
+
+TEST_F(HpackEntryTest, StaticConstructor) {
+  HpackEntry entry(StaticEntry());
+
+  EXPECT_EQ(name_, entry.name());
+  EXPECT_EQ(value_, entry.value());
+  EXPECT_TRUE(entry.IsStatic());
+  EXPECT_EQ(1u, IndexOf(entry));
+  EXPECT_EQ(0u, entry.state());
+  EXPECT_EQ(Size(), entry.Size());
+}
+
+TEST_F(HpackEntryTest, DynamicConstructor) {
+  HpackEntry entry(DynamicEntry());
+
+  EXPECT_EQ(name_, entry.name());
+  EXPECT_EQ(value_, entry.value());
+  EXPECT_FALSE(entry.IsStatic());
+  EXPECT_EQ(1u, IndexOf(entry));
+  EXPECT_EQ(0u, entry.state());
+  EXPECT_EQ(Size(), entry.Size());
+}
+
+TEST_F(HpackEntryTest, LookupConstructor) {
+  HpackEntry entry(name_, value_);
+
+  EXPECT_EQ(name_, entry.name());
+  EXPECT_EQ(value_, entry.value());
+  EXPECT_FALSE(entry.IsStatic());
+  EXPECT_EQ(0u, IndexOf(entry));
+  EXPECT_EQ(0u, entry.state());
+  EXPECT_EQ(Size(), entry.Size());
+}
+
+TEST_F(HpackEntryTest, DefaultConstructor) {
   HpackEntry entry;
+
   EXPECT_TRUE(entry.name().empty());
   EXPECT_TRUE(entry.value().empty());
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
+  EXPECT_EQ(0u, entry.state());
   EXPECT_EQ(HpackEntry::kSizeOverhead, entry.Size());
 }
 
-// Make sure a non-default-constructed HpackEntry starts off with
-// copies of the given name and value, and unreferenced and untouched.
-TEST(HpackEntryTest, NormalConstructor) {
-  string name = kName;
-  string value = kValue;
-  HpackEntry entry(name, value);
-  EXPECT_EQ(name, entry.name());
-  EXPECT_EQ(value, entry.value());
+TEST_F(HpackEntryTest, IndexUpdate) {
+  HpackEntry static1(StaticEntry());
+  HpackEntry static2(StaticEntry());
 
-  ++name[0];
-  ++value[0];
-  EXPECT_NE(name, entry.name());
-  EXPECT_NE(value, entry.name());
+  EXPECT_EQ(1u, IndexOf(static1));
+  EXPECT_EQ(2u, IndexOf(static2));
 
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
-  EXPECT_EQ(
-      kNameStringLength + kValueStringLength + HpackEntry::kSizeOverhead,
-      entry.Size());
-}
+  HpackEntry dynamic1(DynamicEntry());
+  HpackEntry dynamic2(DynamicEntry());
 
-// Make sure twiddling the referenced bit doesn't affect the touch
-// count when it's kUntouched.
-TEST(HpackEntryTest, IsReferencedUntouched) {
-  HpackEntry entry(kName, kValue);
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
+  EXPECT_EQ(1u, IndexOf(dynamic2));
+  EXPECT_EQ(2u, IndexOf(dynamic1));
+  EXPECT_EQ(3u, IndexOf(static1));
+  EXPECT_EQ(4u, IndexOf(static2));
 
-  entry.SetReferenced(true);
-  EXPECT_TRUE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
+  DropEntry();  // Drops |dynamic1|.
 
-  entry.SetReferenced(false);
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
-}
+  EXPECT_EQ(1u, IndexOf(dynamic2));
+  EXPECT_EQ(2u, IndexOf(static1));
+  EXPECT_EQ(3u, IndexOf(static2));
 
-// Make sure changing the touch count doesn't affect the referenced
-// bit when it's false.
-TEST(HpackEntryTest, TouchCountNotReferenced) {
-  HpackEntry entry(kName, kValue);
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
+  HpackEntry dynamic3(DynamicEntry());
 
-  entry.AddTouches(0);
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(0u, entry.TouchCount());
-
-  entry.AddTouches(255);
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(255u, entry.TouchCount());
-
-  // Assumes kUntouched is 1 + max touch count.
-  entry.AddTouches(HpackEntry::kUntouched - 256);
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched - 1, entry.TouchCount());
-
-  entry.ClearTouches();
-  EXPECT_FALSE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
-}
-
-// Make sure changing the touch count doesn't affect the referenced
-// bit when it's true.
-TEST(HpackEntryTest, TouchCountReferenced) {
-  HpackEntry entry(kName, kValue);
-  entry.SetReferenced(true);
-  EXPECT_TRUE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
-
-  entry.AddTouches(0);
-  EXPECT_TRUE(entry.IsReferenced());
-  EXPECT_EQ(0u, entry.TouchCount());
-
-  entry.AddTouches(255);
-  EXPECT_TRUE(entry.IsReferenced());
-  EXPECT_EQ(255u, entry.TouchCount());
-
-  // Assumes kUntouched is 1 + max touch count.
-  entry.AddTouches(HpackEntry::kUntouched - 256);
-  EXPECT_TRUE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched - 1, entry.TouchCount());
-
-  entry.ClearTouches();
-  EXPECT_TRUE(entry.IsReferenced());
-  EXPECT_EQ(HpackEntry::kUntouched, entry.TouchCount());
-}
-
-// Make sure equality takes into account all entry fields.
-TEST(HpackEntryTest, Equals) {
-  HpackEntry entry1(kName, kValue);
-  HpackEntry entry2(kName, kValue);
-  EXPECT_TRUE(entry1.Equals(entry2));
-
-  entry2.SetReferenced(true);
-  EXPECT_FALSE(entry1.Equals(entry2));
-  entry2.SetReferenced(false);
-  EXPECT_TRUE(entry1.Equals(entry2));
-
-  entry2.AddTouches(0);
-  EXPECT_FALSE(entry1.Equals(entry2));
-  entry2.ClearTouches();
-  EXPECT_TRUE(entry1.Equals(entry2));
-
-  entry2.AddTouches(1);
-  EXPECT_FALSE(entry1.Equals(entry2));
-  entry2.ClearTouches();
-  EXPECT_TRUE(entry1.Equals(entry2));
-
-  HpackEntry entry3(kName, string(kValue) + kValue);
-  EXPECT_FALSE(entry1.Equals(entry3));
-
-  HpackEntry entry4(string(kName) + kName, kValue);
-  EXPECT_FALSE(entry1.Equals(entry4));
+  EXPECT_EQ(1u, IndexOf(dynamic3));
+  EXPECT_EQ(2u, IndexOf(dynamic2));
+  EXPECT_EQ(3u, IndexOf(static1));
+  EXPECT_EQ(4u, IndexOf(static2));
 }
 
 }  // namespace

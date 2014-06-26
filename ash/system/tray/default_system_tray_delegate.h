@@ -22,7 +22,6 @@ class ASH_EXPORT DefaultSystemTrayDelegate : public SystemTrayDelegate {
   virtual void Shutdown() OVERRIDE;
   virtual bool GetTrayVisibilityOnStartup() OVERRIDE;
   virtual user::LoginStatus GetUserLoginStatus() const OVERRIDE;
-  virtual bool IsOobeCompleted() const OVERRIDE;
   virtual void ChangeProfilePicture() OVERRIDE;
   virtual const std::string GetEnterpriseDomain() const OVERRIDE;
   virtual const base::string16 GetEnterpriseMessage() const OVERRIDE;
@@ -35,6 +34,7 @@ class ASH_EXPORT DefaultSystemTrayDelegate : public SystemTrayDelegate {
   virtual void ShowSettings() OVERRIDE;
   virtual bool ShouldShowSettings() OVERRIDE;
   virtual void ShowDateSettings() OVERRIDE;
+  virtual void ShowSetTimeDialog() OVERRIDE;
   virtual void ShowNetworkSettings(const std::string& service_path) OVERRIDE;
   virtual void ShowBluetoothSettings() OVERRIDE;
   virtual void ShowDisplaySettings() OVERRIDE;
@@ -80,6 +80,7 @@ class ASH_EXPORT DefaultSystemTrayDelegate : public SystemTrayDelegate {
   virtual void ShowOtherNetworkDialog(const std::string& type) OVERRIDE;
   virtual bool GetBluetoothAvailable() OVERRIDE;
   virtual bool GetBluetoothEnabled() OVERRIDE;
+  virtual bool GetBluetoothDiscovering() OVERRIDE;
   virtual void ChangeProxySettings() OVERRIDE;
   virtual VolumeControlDelegate* GetVolumeControlDelegate() const OVERRIDE;
   virtual void SetVolumeControlDelegate(
@@ -90,6 +91,11 @@ class ASH_EXPORT DefaultSystemTrayDelegate : public SystemTrayDelegate {
       base::TimeDelta* session_length_limit) OVERRIDE;
   virtual int GetSystemTrayMenuWidth() OVERRIDE;
   virtual void ActiveUserWasChanged() OVERRIDE;
+  virtual bool IsNetworkBehindCaptivePortal(
+      const std::string& service_path) const OVERRIDE;
+  virtual bool IsSearchKeyMappedToCapsLock() OVERRIDE;
+  virtual tray::UserAccountsDelegate* GetUserAccountsDelegate(
+      const std::string& user_id) OVERRIDE;
 
  private:
   bool bluetooth_enabled_;

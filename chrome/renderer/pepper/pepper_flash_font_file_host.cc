@@ -28,22 +28,23 @@ PepperFlashFontFileHost::PepperFlashFontFileHost(
       fd_(-1) {
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   fd_ = content::MatchFontWithFallback(
-      description.face.c_str(), description.weight >=
-          PP_BROWSERFONT_TRUSTED_WEIGHT_BOLD,
-      description.italic, charset);
+      description.face.c_str(),
+      description.weight >= PP_BROWSERFONT_TRUSTED_WEIGHT_BOLD,
+      description.italic,
+      charset,
+      PP_BROWSERFONT_TRUSTED_FAMILY_DEFAULT);
 #endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 }
 
-PepperFlashFontFileHost::~PepperFlashFontFileHost() {
-}
+PepperFlashFontFileHost::~PepperFlashFontFileHost() {}
 
 int32_t PepperFlashFontFileHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperFlashFontFileHost, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperFlashFontFileHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FlashFontFile_GetFontTable,
                                       OnGetFontTable)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -59,8 +60,8 @@ int32_t PepperFlashFontFileHost::OnGetFontTable(
       contents.resize(length);
       uint8_t* contents_ptr =
           reinterpret_cast<uint8_t*>(const_cast<char*>(contents.c_str()));
-      if (content::GetFontTable(fd_, table, 0 /* offset */,
-                                contents_ptr, &length)) {
+      if (content::GetFontTable(
+              fd_, table, 0 /* offset */, contents_ptr, &length)) {
         result = PP_OK;
       } else {
         contents.clear();

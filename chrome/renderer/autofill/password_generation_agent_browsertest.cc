@@ -14,6 +14,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebWidget.h"
 
 using blink::WebDocument;
@@ -171,7 +172,7 @@ TEST_F(PasswordGenerationAgentTest, FillTest) {
   // https://bugs.webkit.org/show_bug.cgi?id=90224 has been fixed.
   element = document.getElementById(WebString::fromUTF8("first_password"));
   ASSERT_FALSE(element.isNull());
-  EXPECT_EQ(element, document.focusedNode());
+  EXPECT_EQ(element, document.focusedElement());
 }
 
 TEST_F(PasswordGenerationAgentTest, EditingTest) {

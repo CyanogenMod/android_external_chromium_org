@@ -36,12 +36,16 @@ class ShellExtensionSystem : public ExtensionSystem {
   explicit ShellExtensionSystem(content::BrowserContext* browser_context);
   virtual ~ShellExtensionSystem();
 
-  // Loads an unpacked application from a directory and attempts to launch it.
-  // Returns true on success.
-  bool LoadAndLaunchApp(const base::FilePath& app_dir);
+  // Loads an unpacked application from a directory. Returns true on success.
+  bool LoadApp(const base::FilePath& app_dir);
 
-  // BrowserContextKeyedService implementation:
+  // Launch the currently loaded app.
+  void LaunchApp();
+
+  // KeyedService implementation:
   virtual void Shutdown() OVERRIDE;
+
+  scoped_refptr<Extension> extension() { return extension_; }
 
   // ExtensionSystem implementation:
   virtual void InitForRegularProfile(bool extensions_enabled) OVERRIDE;
@@ -67,9 +71,17 @@ class ShellExtensionSystem : public ExtensionSystem {
       const std::string& extension_id,
       const UnloadedExtensionInfo::Reason reason) OVERRIDE;
   virtual const OneShotEvent& ready() const OVERRIDE;
+  virtual ContentVerifier* content_verifier() OVERRIDE;
+  virtual scoped_ptr<ExtensionSet> GetDependentExtensions(
+      const Extension* extension) OVERRIDE;
 
  private:
   content::BrowserContext* browser_context_;  // Not owned.
+
+  // Extension ID for the app.
+  std::string app_id_;
+
+  scoped_refptr<Extension> extension_;
 
   // Data to be accessed on the IO thread. Must outlive process_manager_.
   scoped_refptr<InfoMap> info_map_;

@@ -18,19 +18,19 @@ var CookiesView = options.CookiesView;
 var CreateProfileOverlay = options.CreateProfileOverlay;
 var EditDictionaryOverlay = cr.IsMac ? null : options.EditDictionaryOverlay;
 var FactoryResetOverlay = options.FactoryResetOverlay;
-<if expr="pp_ifdef('enable_google_now')">
+<if expr="enable_google_now">
 var GeolocationOptions = options.GeolocationOptions;
 </if>
 var FontSettings = options.FontSettings;
 var HandlerOptions = options.HandlerOptions;
 var HomePageOverlay = options.HomePageOverlay;
+var HotwordConfirmDialog = options.HotwordConfirmDialog;
 var ImportDataOverlay = options.ImportDataOverlay;
 var LanguageOptions = options.LanguageOptions;
 var ManageProfileOverlay = options.ManageProfileOverlay;
 var ManagedUserCreateConfirmOverlay = options.ManagedUserCreateConfirmOverlay;
 var ManagedUserImportOverlay = options.ManagedUserImportOverlay;
 var ManagedUserLearnMoreOverlay = options.ManagedUserLearnMoreOverlay;
-var MediaGalleriesManager = options.MediaGalleriesManager;
 var OptionsFocusManager = options.OptionsFocusManager;
 var OptionsPage = options.OptionsPage;
 var PasswordManager = options.PasswordManager;
@@ -42,6 +42,7 @@ var SearchEngineManager = options.SearchEngineManager;
 var SearchPage = options.SearchPage;
 var StartupOverlay = options.StartupOverlay;
 var SyncSetupOverlay = options.SyncSetupOverlay;
+var ThirdPartyImeConfirmOverlay = options.ThirdPartyImeConfirmOverlay;
 
 /**
  * DOMContentLoaded handler, sets up the page.
@@ -105,16 +106,8 @@ function load() {
             $('spelling-enabled-control').metric),
         BrowserOptions.getInstance());
   }
-  OptionsPage.registerOverlay(
-      new ConfirmDialog(
-          'hotwordConfirm',
-          loadTimeData.getString('hotwordConfirmOverlayTabTitle'),
-          'hotword-confirm-overlay',
-          $('hotword-confirm-ok'),
-          $('hotword-confirm-cancel'),
-          $('hotword-search-enable').pref,
-          $('hotword-search-enable').metric),
-      BrowserOptions.getInstance());
+  OptionsPage.registerOverlay(new HotwordConfirmDialog(),
+                              BrowserOptions.getInstance());
   OptionsPage.registerOverlay(ContentSettings.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('privacyContentSettingsButton')]);
@@ -153,16 +146,11 @@ function load() {
   if (!cr.isChromeOS) {
     OptionsPage.registerOverlay(ManagedUserCreateConfirmOverlay.getInstance(),
                                 BrowserOptions.getInstance());
-    if (!loadTimeData.getBoolean('disableCreateExistingManagedUsers')) {
-      OptionsPage.registerOverlay(ManagedUserImportOverlay.getInstance(),
-                                  BrowserOptions.getInstance());
-    }
+    OptionsPage.registerOverlay(ManagedUserImportOverlay.getInstance(),
+                                CreateProfileOverlay.getInstance());
     OptionsPage.registerOverlay(ManagedUserLearnMoreOverlay.getInstance(),
                                 CreateProfileOverlay.getInstance());
   }
-  OptionsPage.registerOverlay(MediaGalleriesManager.getInstance(),
-                              ContentSettings.getInstance(),
-                              [$('manage-galleries-button')]);
   OptionsPage.registerOverlay(PasswordManager.getInstance(),
                               BrowserOptions.getInstance(),
                               [$('manage-passwords')]);
@@ -192,6 +180,8 @@ function load() {
     OptionsPage.registerOverlay(ChangePictureOptions.getInstance(),
                                 BrowserOptions.getInstance(),
                                 [$('account-picture')]);
+    OptionsPage.registerOverlay(ConsumerManagementOverlay.getInstance(),
+                                BrowserOptions.getInstance());
     OptionsPage.registerOverlay(DetailsInternetPage.getInstance(),
                                 BrowserOptions.getInstance());
     OptionsPage.registerOverlay(DisplayOptions.getInstance(),
@@ -207,6 +197,8 @@ function load() {
                                 [$('pointer-settings-button')]);
     OptionsPage.registerOverlay(PreferredNetworks.getInstance(),
                                 BrowserOptions.getInstance());
+    OptionsPage.registerOverlay(ThirdPartyImeConfirmOverlay.getInstance(),
+                                LanguageOptions.getInstance());
   }
 
   if (!cr.isWindows && !cr.isMac) {
@@ -230,15 +222,11 @@ function load() {
   AutomaticSettingsResetBanner.getInstance().initialize();
   OptionsPage.initialize();
 
-  var path = document.location.pathname;
-
-  if (path.length > 1) {
-    // Skip starting slash and remove trailing slash (if any).
-    var pageName = path.slice(1).replace(/\/$/, '');
-    OptionsPage.showPageByName(pageName, true, {replaceState: true});
-  } else {
-    OptionsPage.showDefaultPage();
-  }
+  var pageName = OptionsPage.getPageNameFromPath();
+  // Still update history so that chrome://settings/nonexistant redirects
+  // appropriately to chrome://settings/. If the URL matches, updateHistory_
+  // will avoid the extra replaceState.
+  OptionsPage.showPageByName(pageName, true, {replaceState: true});
 
   var subpagesNavTabs = document.querySelectorAll('.subpages-nav-tabs');
   for (var i = 0; i < subpagesNavTabs.length; i++) {
@@ -249,6 +237,7 @@ function load() {
 
   window.setTimeout(function() {
     document.documentElement.classList.remove('loading');
+    chrome.send('onFinishedLoadingOptions');
   });
 }
 
@@ -267,5 +256,6 @@ window.onbeforeunload = function() {
  * @param {Event} e The |popstate| event.
  */
 window.onpopstate = function(e) {
-  options.OptionsPage.setState(e.state);
+  var pageName = options.OptionsPage.getPageNameFromPath();
+  options.OptionsPage.setState(pageName, e.state);
 };

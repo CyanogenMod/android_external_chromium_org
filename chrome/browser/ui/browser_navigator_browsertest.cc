@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
@@ -26,8 +27,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
-#include "ipc/ipc_message.h"
 
 using content::WebContents;
 
@@ -116,11 +115,10 @@ Browser* BrowserNavigatorTest::CreateEmptyBrowserForType(Browser::Type type,
   return browser;
 }
 
-Browser* BrowserNavigatorTest::CreateEmptyBrowserForApp(Browser::Type type,
-                                                        Profile* profile) {
+Browser* BrowserNavigatorTest::CreateEmptyBrowserForApp(Profile* profile) {
   Browser* browser = new Browser(
       Browser::CreateParams::CreateForApp(
-          Browser::TYPE_POPUP, "Test", gfx::Rect(), profile,
+          "Test", false /* trusted_source */, gfx::Rect(), profile,
           chrome::GetActiveDesktop()));
   chrome::AddTabAt(browser, GURL(), -1, true);
   return browser;
@@ -132,7 +130,7 @@ WebContents* BrowserNavigatorTest::CreateWebContents() {
       browser()->tab_strip_model()->GetActiveWebContents();
   if (base_web_contents) {
     create_params.initial_size =
-        base_web_contents->GetView()->GetContainerSize();
+        base_web_contents->GetContainerBounds().size();
   }
   return WebContents::Create(create_params);
 }
@@ -194,8 +192,14 @@ void BrowserNavigatorTest::RunDoNothingIfIncognitoIsForcedTest(
   // The page should not be opened.
   EXPECT_EQ(browser, p.browser);
   EXPECT_EQ(1, browser->tab_strip_model()->count());
-  EXPECT_EQ(GURL(content::kAboutBlankURL),
+  EXPECT_EQ(GURL(url::kAboutBlankURL),
             browser->tab_strip_model()->GetActiveWebContents()->GetURL());
+}
+
+void BrowserNavigatorTest::SetUpCommandLine(base::CommandLine* command_line) {
+  // Disable settings-in-a-window so that we can use the settings page and
+  // sub-pages to test browser navigation.
+  command_line->AppendSwitch(::switches::kDisableSettingsWindow);
 }
 
 void BrowserNavigatorTest::Observe(
@@ -512,11 +516,10 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest, Disposition_NewPopupFromPopup) {
 }
 
 // This test verifies that navigating with WindowOpenDisposition = NEW_POPUP
-// from an app frame results in a new Browser with TYPE_APP_POPUP.
+// from an app frame results in a new Browser with TYPE_POPUP.
 IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
                        Disposition_NewPopupFromAppWindow) {
-  Browser* app_browser = CreateEmptyBrowserForApp(Browser::TYPE_TABBED,
-                                                  browser()->profile());
+  Browser* app_browser = CreateEmptyBrowserForApp(browser()->profile());
   chrome::NavigateParams p(MakeNavigateParams(app_browser));
   p.disposition = NEW_POPUP;
   p.window_bounds = gfx::Rect(0, 0, 200, 200);
@@ -537,11 +540,10 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
 }
 
 // This test verifies that navigating with WindowOpenDisposition = NEW_POPUP
-// from an app popup results in a new Browser also of TYPE_APP_POPUP.
+// from an app popup results in a new Browser also of TYPE_POPUP.
 IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
                        Disposition_NewPopupFromAppPopup) {
-  Browser* app_browser = CreateEmptyBrowserForApp(Browser::TYPE_TABBED,
-                                                  browser()->profile());
+  Browser* app_browser = CreateEmptyBrowserForApp(browser()->profile());
   // Open an app popup.
   chrome::NavigateParams p1(MakeNavigateParams(app_browser));
   p1.disposition = NEW_POPUP;
@@ -593,6 +595,24 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest, Disposition_NewPopupUnfocused) {
   EXPECT_FALSE(p.browser->window()->IsActive());
 #endif
 }
+
+// This test verifies that navigating with WindowOpenDisposition = NEW_POPUP
+// and trusted_source = true results in a new Browser where is_trusted_source()
+// is true.
+IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest, Disposition_NewPopupTrusted) {
+  chrome::NavigateParams p(MakeNavigateParams());
+  p.disposition = NEW_POPUP;
+  p.trusted_source = true;
+  p.window_bounds = gfx::Rect(0, 0, 200, 200);
+  // Wait for new popup to to load and gain focus.
+  ui_test_utils::NavigateToURL(&p);
+
+  // Navigate() should have opened a new popup window of TYPE_TRUSTED_POPUP.
+  EXPECT_NE(browser(), p.browser);
+  EXPECT_TRUE(p.browser->is_type_popup());
+  EXPECT_TRUE(p.browser->is_trusted_source());
+}
+
 
 // This test verifies that navigating with WindowOpenDisposition = NEW_WINDOW
 // always opens a new window.
@@ -721,7 +741,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest, DISABLED_TargetContents_Popup) {
   // All platforms should respect size however provided width > 400 (Mac has a
   // minimum window width of 400).
   EXPECT_EQ(p.window_bounds.size(),
-            p.target_contents->GetView()->GetContainerSize());
+            p.target_contents->GetContainerBounds().size());
 
   // We should have two windows, the new popup and the browser() provided by the
   // framework.
@@ -1070,7 +1090,7 @@ IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
 IN_PROC_BROWSER_TEST_F(BrowserNavigatorTest,
                        NavigateFromBlankToOptionsInSameTab) {
   chrome::NavigateParams p(MakeNavigateParams());
-  p.url = GURL(content::kAboutBlankURL);
+  p.url = GURL(url::kAboutBlankURL);
   ui_test_utils::NavigateToURL(&p);
 
   {

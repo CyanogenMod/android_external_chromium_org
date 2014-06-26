@@ -45,6 +45,11 @@ class FilePickerSessionBase;
 
 struct MetroViewerHostMsg_SaveAsDialogParams;
 
+enum MetroTerminateMethod {
+  TERMINATE_USING_KEY_SEQUENCE = 1,
+  TERMINATE_USING_PROCESS_EXIT = 2,
+};
+
 class ChromeAppViewAsh
     : public mswr::RuntimeClass<winapp::Core::IFrameworkView>,
       public metro_driver::ImePopupObserver,
@@ -103,6 +108,8 @@ class ChromeAppViewAsh
   void OnImeUpdateTextInputClient(
       const std::vector<int32>& input_scopes,
       const std::vector<metro_viewer::CharacterBounds>& character_bounds);
+
+  void OnMetroExit(MetroTerminateMethod method);
 
   HWND core_window_hwnd() const { return  core_window_hwnd_; }
 
@@ -225,6 +232,12 @@ class ChromeAppViewAsh
   // For IME support.
   scoped_ptr<metro_driver::InputSource> input_source_;
   scoped_ptr<metro_driver::TextService> text_service_;
+
+  // The metro device scale factor as reported by the winrt interfaces.
+  float metro_dpi_scale_;
+  // The win32 dpi scale which is queried via GetDeviceCaps. Please refer to
+  // ui/gfx/win/dpi.cc for more information.
+  float win32_dpi_scale_;
 };
 
 #endif  // WIN8_METRO_DRIVER_CHROME_APP_VIEW_ASH_H_

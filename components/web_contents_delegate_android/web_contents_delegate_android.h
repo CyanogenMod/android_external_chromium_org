@@ -5,7 +5,7 @@
 #ifndef COMPONENTS_WEB_CONTENTS_DELEGATE_ANDROID_WEB_CONTENTS_DELEGATE_ANDROID_H_
 #define COMPONENTS_WEB_CONTENTS_DELEGATE_ANDROID_WEB_CONTENTS_DELEGATE_ANDROID_H_
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
@@ -60,9 +60,12 @@ class WebContentsDelegateAndroid : public content::WebContentsDelegate {
       const std::vector<content::ColorSuggestion>& suggestions) OVERRIDE;
   virtual void NavigationStateChanged(const content::WebContents* source,
                                       unsigned changed_flags) OVERRIDE;
+  virtual void VisibleSSLStateChanged(
+      const content::WebContents* source) OVERRIDE;
   virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
   virtual void DeactivateContents(content::WebContents* contents) OVERRIDE;
-  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source,
+                                   bool to_different_document) OVERRIDE;
   virtual void LoadProgressChanged(content::WebContents* source,
                                    double load_progress) OVERRIDE;
   virtual void RendererUnresponsive(content::WebContents* source) OVERRIDE;

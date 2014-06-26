@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_function.h"
 
@@ -17,39 +17,56 @@ class ExtensionInputMethodEventRouter;
 
 namespace extensions {
 
-// Implements the experimental.inputMethod.get method.
-class GetInputMethodFunction : public SyncExtensionFunction {
+// Implements the inputMethodPrivate.getCurrentInputMethod method.
+class GetCurrentInputMethodFunction : public UIThreadExtensionFunction {
  public:
-  GetInputMethodFunction();
+  GetCurrentInputMethodFunction() {}
 
  protected:
-  virtual ~GetInputMethodFunction();
+  virtual ~GetCurrentInputMethodFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual ResponseAction Run() OVERRIDE;
 
  private:
-  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.get", INPUTMETHODPRIVATE_GET)
+  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.getCurrentInputMethod",
+                             INPUTMETHODPRIVATE_GETCURRENTINPUTMETHOD)
 };
 
-// Notify the initialization is done to input method engine.
-// TODO(nona): remove this function.
-class StartImeFunction : public SyncExtensionFunction {
+// Implements the inputMethodPrivate.setCurrentInputMethod method.
+class SetCurrentInputMethodFunction : public UIThreadExtensionFunction {
  public:
-  StartImeFunction();
+  SetCurrentInputMethodFunction() {}
 
  protected:
-  virtual ~StartImeFunction();
+  virtual ~SetCurrentInputMethodFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual ResponseAction Run() OVERRIDE;
 
  private:
-  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.startIme",
-                             INPUTMETHODPRIVATE_STARTIME)
+  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.setCurrentInputMethod",
+                             INPUTMETHODPRIVATE_SETCURRENTINPUTMETHOD)
 };
 
-class InputMethodAPI : public ProfileKeyedAPI,
+// Implements the inputMethodPrivate.getInputMethods method.
+class GetInputMethodsFunction : public UIThreadExtensionFunction {
+ public:
+  GetInputMethodsFunction() {}
+
+ protected:
+  virtual ~GetInputMethodsFunction() {}
+
+  virtual ResponseAction Run() OVERRIDE;
+
+ private:
+  DECLARE_EXTENSION_FUNCTION("inputMethodPrivate.getInputMethods",
+                             INPUTMETHODPRIVATE_GETINPUTMETHODS)
+};
+
+class InputMethodAPI : public BrowserContextKeyedAPI,
                        public extensions::EventRouter::Observer {
  public:
+  static const char kOnInputMethodChanged[];
+
   explicit InputMethodAPI(content::BrowserContext* context);
   virtual ~InputMethodAPI();
 
@@ -57,10 +74,10 @@ class InputMethodAPI : public ProfileKeyedAPI,
   // Window System) id.
   static std::string GetInputMethodForXkb(const std::string& xkb_id);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<InputMethodAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<InputMethodAPI>* GetFactoryInstance();
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   virtual void Shutdown() OVERRIDE;
 
   // EventRouter::Observer implementation.
@@ -68,9 +85,9 @@ class InputMethodAPI : public ProfileKeyedAPI,
       OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<InputMethodAPI>;
+  friend class BrowserContextKeyedAPIFactory<InputMethodAPI>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "InputMethodAPI";
   }

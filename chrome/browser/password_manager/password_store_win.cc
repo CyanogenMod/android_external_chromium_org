@@ -11,13 +11,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/webdata/web_data_service.h"
-#include "components/webdata/encryptor/ie7_password_win.h"
+#include "components/os_crypt/ie7_password_win.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/browser_thread.h"
 
 using autofill::PasswordForm;
 using content::BrowserThread;
+using password_manager::PasswordStoreDefault;
 
 // Handles requests to WebDataService.
 class PasswordStoreWin::DBHandler : public WebDataServiceConsumer {
@@ -166,7 +167,7 @@ void PasswordStoreWin::DBHandler::OnWebDataServiceRequestDone(
 PasswordStoreWin::PasswordStoreWin(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
     scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
-    LoginDatabase* login_database,
+    password_manager::LoginDatabase* login_database,
     WebDataService* web_data_service)
     : PasswordStoreDefault(main_thread_runner,
                            db_thread_runner,

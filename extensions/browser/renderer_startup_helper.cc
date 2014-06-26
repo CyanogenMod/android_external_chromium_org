@@ -5,15 +5,14 @@
 #include "extensions/browser/renderer_startup_helper.h"
 
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/features/feature_channel.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/extensions_client.h"
 #include "ui/base/webui/web_ui_util.h"
@@ -42,10 +41,6 @@ void RendererStartupHelper::Observe(
       if (!ExtensionsBrowserClient::Get()->IsSameContext(
                browser_context_, process->GetBrowserContext()))
         break;
-
-      // Extensions need to know the channel for API restrictions.
-      process->Send(new ExtensionMsg_SetChannel(
-          extensions::GetCurrentChannel()));
 
       // Platform apps need to know the system font.
       scoped_ptr<base::DictionaryValue> fonts(new base::DictionaryValue);
@@ -108,8 +103,7 @@ RendererStartupHelperFactory::RendererStartupHelperFactory()
 
 RendererStartupHelperFactory::~RendererStartupHelperFactory() {}
 
-BrowserContextKeyedService*
-RendererStartupHelperFactory::BuildServiceInstanceFor(
+KeyedService* RendererStartupHelperFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   return new RendererStartupHelper(context);
 }

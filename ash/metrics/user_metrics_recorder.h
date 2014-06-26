@@ -97,21 +97,18 @@ enum UserMetricsAction {
   UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MAXIMIZE,
   UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MINIMIZE,
   UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_RESTORE,
-  UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE,
   UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_LEFT,
   UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_RIGHT,
-  UMA_WINDOW_MAXIMIZE_BUTTON_MINIMIZE,
-  UMA_WINDOW_MAXIMIZE_BUTTON_RESTORE,
-  UMA_WINDOW_MAXIMIZE_BUTTON_SHOW_BUBBLE,
 
-  // Thumbnail sized overview of windows triggered. This is a subset of
-  // UMA_WINDOW_SELECTION triggered by lingering during alt+tab cycles or
-  // pressing the overview key.
+  // Thumbnail sized overview of windows triggered by pressing the overview key.
   UMA_WINDOW_OVERVIEW,
 
-  // Window selection started by beginning an alt+tab cycle or pressing the
-  // overview key. This does not count each step through an alt+tab cycle.
-  UMA_WINDOW_SELECTION,
+  // Selecting a window in overview mode by pressing the enter key.
+  UMA_WINDOW_OVERVIEW_ENTER_KEY,
+
+  // Window selection started by beginning an alt+tab cycle. This does not count
+  // each step through an alt+tab cycle.
+  UMA_WINDOW_CYCLE,
 };
 
 // User Metrics Recorder provides a repeating callback (RecordPeriodicMetrics)

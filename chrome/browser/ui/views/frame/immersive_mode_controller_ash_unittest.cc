@@ -229,7 +229,7 @@ TEST_F(ImmersiveModeControllerAshTest, TabAndBrowserFullscreen) {
   AddTab(browser(), GURL("about:blank"));
 
   // The shelf should start out as visible.
-  ash::internal::ShelfLayoutManager* shelf =
+  ash::ShelfLayoutManager* shelf =
       ash::Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   ASSERT_EQ(ash::SHELF_VISIBLE, shelf->visibility_state());
 
@@ -271,13 +271,6 @@ class ImmersiveModeControllerAshTestHostedApp
                                        true) {
   }
   virtual ~ImmersiveModeControllerAshTestHostedApp() {}
-
-  // ImmersiveModeControllerAshTest override:
-  virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        ash::switches::kAshEnableImmersiveFullscreenForAllWindows);
-    ImmersiveModeControllerAshTest::SetUp();
-  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ImmersiveModeControllerAshTestHostedApp);

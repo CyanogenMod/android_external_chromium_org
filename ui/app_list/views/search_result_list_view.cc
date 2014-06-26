@@ -10,6 +10,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/views/search_result_list_view_delegate.h"
 #include "ui/app_list/views/search_result_view.h"
@@ -21,6 +22,7 @@
 namespace {
 
 const int kMaxResults = 6;
+const int kExperimentAppListMaxResults = 3;
 const int kTimeoutIndicatorHeight = 2;
 const int kTimeoutFramerate = 60;
 const SkColor kTimeoutIndicatorColor = SkColorSetRGB(30, 144, 255);
@@ -43,8 +45,12 @@ SearchResultListView::SearchResultListView(
   results_container_->SetLayoutManager(
       new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0));
 
-  for (int i = 0; i < kMaxResults; ++i)
-    results_container_->AddChildView(new SearchResultView(this, this));
+  int max_results = kMaxResults;
+  if (app_list::switches::IsExperimentalAppListEnabled())
+    max_results = kExperimentAppListMaxResults;
+
+  for (int i = 0; i < max_results; ++i)
+    results_container_->AddChildView(new SearchResultView(this));
   AddChildView(results_container_);
 
   auto_launch_indicator_->set_background(
@@ -86,7 +92,7 @@ void SearchResultListView::SetSelectedIndex(int selected_index) {
     SearchResultView* selected_view  = GetResultViewAt(selected_index_);
     selected_view->ClearSelectedAction();
     selected_view->SchedulePaint();
-    selected_view->NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_FOCUS,
+    selected_view->NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS,
                                             true);
   }
   if (auto_launch_animation_)
@@ -198,11 +204,11 @@ void SearchResultListView::Layout() {
   results_container_->SetBoundsRect(GetLocalBounds());
 }
 
-gfx::Size SearchResultListView::GetPreferredSize() {
+gfx::Size SearchResultListView::GetPreferredSize() const {
   return results_container_->GetPreferredSize();
 }
 
-int SearchResultListView::GetHeightForWidth(int w) {
+int SearchResultListView::GetHeightForWidth(int w) const {
   return results_container_->GetHeightForWidth(w);
 }
 
@@ -216,7 +222,7 @@ void SearchResultListView::VisibilityChanged(views::View* starting_from,
 
 void SearchResultListView::AnimationEnded(const gfx::Animation* animation) {
   DCHECK_EQ(auto_launch_animation_.get(), animation);
-  delegate_->OpenResult(results_->GetItemAt(0), true, ui::EF_NONE);
+  view_delegate_->OpenSearchResult(results_->GetItemAt(0), true, ui::EF_NONE);
 
   // The auto-launch has to be canceled explicitly. Think that one of searcher
   // is extremely slow. Sometimes the events would happen in the following
@@ -260,15 +266,15 @@ void SearchResultListView::ListItemsChanged(size_t start, size_t count) {
 
 void SearchResultListView::SearchResultActivated(SearchResultView* view,
                                                  int event_flags) {
-  if (delegate_ && view->result())
-    delegate_->OpenResult(view->result(), false, event_flags);
+  if (view_delegate_ && view->result())
+    view_delegate_->OpenSearchResult(view->result(), false, event_flags);
 }
 
 void SearchResultListView::SearchResultActionActivated(SearchResultView* view,
                                                        size_t action_index,
                                                        int event_flags) {
-  if (delegate_ && view->result()) {
-    delegate_->InvokeResultAction(
+  if (view_delegate_ && view->result()) {
+    view_delegate_->InvokeSearchResultAction(
         view->result(), action_index, event_flags);
   }
 }

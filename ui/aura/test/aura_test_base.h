@@ -12,7 +12,6 @@
 #include "ui/aura/test/aura_test_helper.h"
 
 namespace aura {
-class RootWindow;
 class Window;
 class WindowDelegate;
 namespace test {
@@ -42,7 +41,8 @@ class AuraTestBase : public testing::Test {
   bool DispatchEventUsingWindowDispatcher(ui::Event* event);
 
   Window* root_window() { return helper_->root_window(); }
-  RootWindow* dispatcher() { return helper_->dispatcher(); }
+  WindowTreeHost* host() { return helper_->host(); }
+  ui::EventProcessor* event_processor() { return helper_->event_processor(); }
   TestScreen* test_screen() { return helper_->test_screen(); }
 
  private:

@@ -25,15 +25,12 @@ class WebView;
 }
 
 namespace content {
-class GamepadController;
-class TextInputController;
-}
-
-namespace WebTestRunner {
 
 class AccessibilityController;
 class EventSender;
+class GamepadController;
 class TestRunner;
+class TextInputController;
 class WebTestDelegate;
 class WebTestProxyBase;
 
@@ -64,8 +61,8 @@ public:
 private:
     scoped_ptr<AccessibilityController> m_accessibilityController;
     scoped_ptr<EventSender> m_eventSender;
-    scoped_ptr<content::GamepadController> m_gamepadController;
-    scoped_ptr<content::TextInputController> m_textInputController;
+    scoped_ptr<GamepadController> m_gamepadController;
+    scoped_ptr<TextInputController> m_textInputController;
     scoped_ptr<TestRunner> m_testRunner;
     WebTestDelegate* m_delegate;
     WebTestProxyBase* m_proxy;
@@ -80,6 +77,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(TestInterfaces);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_TESTINTERFACES_H_

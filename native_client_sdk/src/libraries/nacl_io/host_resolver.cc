@@ -2,13 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef __STDC_LIMIT_MACROS
+#define __STDC_LIMIT_MACROS
+#endif
+
 #include "nacl_io/host_resolver.h"
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "nacl_io/kernel_proxy.h"
+#include "nacl_io/log.h"
 #include "nacl_io/ossocket.h"
 #include "nacl_io/pepper_interface.h"
 
@@ -58,8 +64,7 @@ void CreateAddrInfo(const addrinfo* hints,
       break;
     }
     case AF_INET: {
-      sockaddr_in* in =
-          static_cast<sockaddr_in*>(malloc(sizeof(sockaddr_in)));
+      sockaddr_in* in = static_cast<sockaddr_in*>(malloc(sizeof(sockaddr_in)));
       *in = *(sockaddr_in*)addr;
       ai->ai_family = AF_INET;
       ai->ai_addr = reinterpret_cast<sockaddr*>(in);
@@ -196,10 +201,17 @@ struct hostent* HostResolver::gethostbyname(const char* name) {
   }
 
   freeaddrinfo(ai);
+
+#if !defined(h_addr)
+  // Copy element zero of h_addr_list to h_addr when h_addr is not defined
+  // as in some libc's h_addr may be a separate member instead of a macro.
+  hostent_.h_addr = hostent_.h_addr_list[0];
+#endif
+
   return &hostent_;
 }
 
-void HostResolver::freeaddrinfo(struct addrinfo *res) {
+void HostResolver::freeaddrinfo(struct addrinfo* res) {
   while (res) {
     struct addrinfo* cur = res;
     res = res->ai_next;
@@ -209,14 +221,17 @@ void HostResolver::freeaddrinfo(struct addrinfo *res) {
   }
 }
 
-int HostResolver::getaddrinfo(const char* node, const char* service,
+int HostResolver::getaddrinfo(const char* node,
+                              const char* service,
                               const struct addrinfo* hints_in,
                               struct addrinfo** result) {
   *result = NULL;
   struct addrinfo* end = NULL;
 
-  if (node == NULL && service == NULL)
+  if (node == NULL && service == NULL) {
+    LOG_TRACE("node and service are NULL.");
     return EAI_NONAME;
+  }
 
   // Check the service name (port).  Currently we only handle numeric
   // services.
@@ -224,9 +239,10 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
   if (service != NULL) {
     char* cp;
     port = strtol(service, &cp, 10);
-    if (port > 0 && port <= 65535 && *cp == '\0') {
+    if (port >= 0 && port <= UINT16_MAX && *cp == '\0') {
       port = htons(port);
     } else {
+      LOG_TRACE("Service \"%s\" not supported.", service);
       return EAI_SERVICE;
     }
   }
@@ -242,6 +258,7 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
     case AF_UNSPEC:
       break;
     default:
+      LOG_TRACE("Unknown family: %d.", hints->ai_family);
       return EAI_FAMILY;
   }
 
@@ -291,16 +308,23 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
     return 0;
   }
 
-  if (NULL == ppapi_)
+  if (NULL == ppapi_) {
+    LOG_ERROR("ppapi_ is NULL.");
     return EAI_SYSTEM;
+  }
 
   // Use PPAPI interface to resolve nodename
   HostResolverInterface* resolver_iface = ppapi_->GetHostResolverInterface();
-  VarInterface* var_interface = ppapi_->GetVarInterface();
+  VarInterface* var_iface = ppapi_->GetVarInterface();
   NetAddressInterface* netaddr_iface = ppapi_->GetNetAddressInterface();
 
-  if (NULL == resolver_iface || NULL == var_interface || NULL == netaddr_iface)
+  if (!(resolver_iface && var_iface && netaddr_iface)) {
+    LOG_ERROR("Got NULL interface(s): %s%s%s",
+              resolver_iface ? "" : "HostResolver ",
+              var_iface ? "" : "Var ",
+              netaddr_iface ? "" : "NetAddress");
     return EAI_SYSTEM;
+  }
 
   ScopedResource scoped_resolver(ppapi_,
                                  resolver_iface->Create(ppapi_->GetInstance()));
@@ -330,20 +354,20 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
     PP_Var name_var = resolver_iface->GetCanonicalName(resolver);
     if (PP_VARTYPE_STRING == name_var.type) {
       uint32_t len = 0;
-      const char* tmp = var_interface->VarToUtf8(name_var, &len);
+      const char* tmp = var_iface->VarToUtf8(name_var, &len);
       // For some reason GetCanonicalName alway returns an empty
       // string so this condition is never true.
       // TODO(sbc): investigate this issue with PPAPI team.
       if (len > 0) {
         // Copy and NULL-terminate the UTF8 string var.
-        canon_name = static_cast<char*>(malloc(len+1));
+        canon_name = static_cast<char*>(malloc(len + 1));
         strncpy(canon_name, tmp, len);
         canon_name[len] = '\0';
       }
     }
     if (!canon_name)
       canon_name = strdup(node);
-    var_interface->Release(name_var);
+    var_iface->Release(name_var);
   }
 
   int num_addresses = resolver_iface->GetNetAddressCount(resolver);
@@ -374,8 +398,7 @@ int HostResolver::getaddrinfo(const char* node, const char* service,
           assert(false);
           break;
         }
-        memcpy(&addr_in6.sin6_addr.s6_addr, pp_addr.addr,
-               sizeof(in6_addr));
+        memcpy(&addr_in6.sin6_addr.s6_addr, pp_addr.addr, sizeof(in6_addr));
         sockaddr = (struct sockaddr*)&addr_in6;
         break;
       }
@@ -402,13 +425,13 @@ void HostResolver::hostent_cleanup() {
     free(hostent_.h_name);
   }
   if (NULL != hostent_.h_aliases) {
-    for (int i = 0;  NULL != hostent_.h_aliases[i]; i++) {
+    for (int i = 0; NULL != hostent_.h_aliases[i]; i++) {
       free(hostent_.h_aliases[i]);
     }
     free(hostent_.h_aliases);
   }
   if (NULL != hostent_.h_addr_list) {
-    for (int i = 0;  NULL != hostent_.h_addr_list[i]; i++) {
+    for (int i = 0; NULL != hostent_.h_addr_list[i]; i++) {
       free(hostent_.h_addr_list[i]);
     }
     free(hostent_.h_addr_list);
@@ -416,6 +439,10 @@ void HostResolver::hostent_cleanup() {
   hostent_.h_name = NULL;
   hostent_.h_aliases = NULL;
   hostent_.h_addr_list = NULL;
+#if !defined(h_addr)
+  // Initialize h_addr separately in the case where it is not a macro.
+  hostent_.h_addr = NULL;
+#endif
 }
 
 }  // namespace nacl_io

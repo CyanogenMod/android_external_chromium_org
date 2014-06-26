@@ -7,8 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "content/public/browser/native_web_keyboard_event.h"
+#include "extensions/browser/extension_host.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
@@ -35,7 +35,7 @@ class ExtensionViewViews : public views::NativeViewHost {
   virtual ~ExtensionViewViews();
 
   // views::NativeViewHost:
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void SetVisible(bool is_visible) OVERRIDE;
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
   virtual void ViewHierarchyChanged(

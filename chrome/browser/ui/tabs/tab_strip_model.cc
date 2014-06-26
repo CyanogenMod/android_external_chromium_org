@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 
+#include "apps/ui/web_contents_sizer.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -25,8 +26,6 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
-
 using base::UserMetricsAction;
 using content::WebContents;
 
@@ -74,7 +73,7 @@ class CloseTracker {
 
    private:
     // WebContentsObserver:
-    virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
+    virtual void WebContentsDestroyed() OVERRIDE {
       parent_->OnWebContentsDestroyed(this);
     }
 
@@ -162,7 +161,7 @@ class TabStripModel::WebContentsData : public content::WebContentsObserver {
  private:
   // Make sure that if someone deletes this WebContents out from under us, it
   // is properly removed from the tab strip.
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // The WebContents being tracked by this WebContentsData. The
   // WebContentsObserver does keep a reference, but when the WebContents is
@@ -225,13 +224,12 @@ void TabStripModel::WebContentsData::SetWebContents(WebContents* contents) {
   Observe(contents);
 }
 
-void TabStripModel::WebContentsData::WebContentsDestroyed(
-    WebContents* web_contents) {
-  DCHECK_EQ(contents_, web_contents);
+void TabStripModel::WebContentsData::WebContentsDestroyed() {
+  DCHECK_EQ(contents_, web_contents());
 
   // Note that we only detach the contents here, not close it - it's
   // already been closed. We just want to undo our bookkeeping.
-  int index = tab_strip_model_->GetIndexOfWebContents(web_contents);
+  int index = tab_strip_model_->GetIndexOfWebContents(web_contents());
   DCHECK_NE(TabStripModel::kNoTab, index);
   tab_strip_model_->DetachWebContentsAt(index);
 }
@@ -243,7 +241,8 @@ TabStripModel::TabStripModel(TabStripModelDelegate* delegate, Profile* profile)
     : delegate_(delegate),
       profile_(profile),
       closing_all_(false),
-      in_notify_(false) {
+      in_notify_(false),
+      weak_factory_(this) {
   DCHECK(delegate_);
   order_controller_.reset(new TabStripModelOrderController(this));
 }
@@ -837,8 +836,8 @@ void TabStripModel::AddWebContents(WebContents* contents,
   // new background tab.
   if (WebContents* old_contents = GetActiveWebContents()) {
     if ((add_types & ADD_ACTIVE) == 0) {
-      contents->GetView()->SizeContents(
-          old_contents->GetView()->GetContainerSize());
+      apps::ResizeWebContents(contents,
+                              old_contents->GetContainerBounds().size());
     }
   }
 }
@@ -1190,6 +1189,11 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
 
   CloseTracker close_tracker(GetWebContentsFromIndices(indices));
 
+  base::WeakPtr<TabStripModel> ref(weak_factory_.GetWeakPtr());
+  const bool closing_all = indices.size() == contents_data_.size();
+  if (closing_all)
+    FOR_EACH_OBSERVER(TabStripModelObserver, observers_, WillCloseAllTabs());
+
   // We only try the fast shutdown path if the whole browser process is *not*
   // shutting down. Fast shutdown during browser termination is handled in
   // BrowserShutdown.
@@ -1242,6 +1246,11 @@ bool TabStripModel::InternalCloseTabs(const std::vector<int>& indices,
 
     InternalCloseTab(closing_contents, index,
                      (close_types & CLOSE_CREATE_HISTORICAL_TAB) != 0);
+  }
+
+  if (ref && closing_all && !retval) {
+    FOR_EACH_OBSERVER(TabStripModelObserver, observers_,
+                      CloseAllTabsCanceled());
   }
 
   return retval;

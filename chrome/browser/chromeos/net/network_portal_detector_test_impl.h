@@ -21,7 +21,8 @@ class NetworkPortalDetectorTestImpl : public NetworkPortalDetector {
   NetworkPortalDetectorTestImpl();
   virtual ~NetworkPortalDetectorTestImpl();
 
-  void SetDefaultNetworkPathForTesting(const std::string& service_path);
+  void SetDefaultNetworkPathForTesting(const std::string& service_path,
+                                       const std::string& guid);
   void SetDetectionResultsForTesting(const std::string& service_path,
                                      const CaptivePortalState& state);
   void NotifyObserversForTesting();
@@ -31,21 +32,25 @@ class NetworkPortalDetectorTestImpl : public NetworkPortalDetector {
   virtual void AddAndFireObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual CaptivePortalState GetCaptivePortalState(
-      const chromeos::NetworkState* network) OVERRIDE;
+      const std::string& service_path) OVERRIDE;
   virtual bool IsEnabled() OVERRIDE;
   virtual void Enable(bool start_detection) OVERRIDE;
   virtual bool StartDetectionIfIdle() OVERRIDE;
-  virtual void EnableLazyDetection() OVERRIDE;
-  virtual void DisableLazyDetection() OVERRIDE;
+
+  virtual void SetStrategy(PortalDetectorStrategy::StrategyId id) OVERRIDE;
+
+  PortalDetectorStrategy::StrategyId strategy_id() const {
+    return strategy_id_;
+  }
 
  private:
   typedef std::string NetworkId;
   typedef base::hash_map<NetworkId, CaptivePortalState> CaptivePortalStateMap;
 
-
   ObserverList<Observer> observers_;
   scoped_ptr<NetworkState> default_network_;
   CaptivePortalStateMap portal_state_map_;
+  PortalDetectorStrategy::StrategyId strategy_id_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkPortalDetectorTestImpl);
 };

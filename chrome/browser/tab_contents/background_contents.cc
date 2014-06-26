@@ -6,11 +6,10 @@
 
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_web_contents_observer.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_ui_controller_factory.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
@@ -48,7 +47,7 @@ BackgroundContents::BackgroundContents(
       web_contents_.get(), extensions::VIEW_TYPE_BACKGROUND_CONTENTS);
   web_contents_->SetDelegate(this);
   content::WebContentsObserver::Observe(web_contents_.get());
-  extensions::ExtensionWebContentsObserver::CreateForWebContents(
+  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents_.get());
 
   // Close ourselves when the application is shutting down.
@@ -122,6 +121,12 @@ void BackgroundContents::AddNewContents(WebContents* source,
                                         bool* was_blocked) {
   delegate_->AddWebContents(
       new_contents, disposition, initial_pos, user_gesture, was_blocked);
+}
+
+bool BackgroundContents::IsNeverVisible(content::WebContents* web_contents) {
+  DCHECK_EQ(extensions::VIEW_TYPE_BACKGROUND_CONTENTS,
+            extensions::GetViewType(web_contents));
+  return true;
 }
 
 void BackgroundContents::RenderProcessGone(base::TerminationStatus status) {

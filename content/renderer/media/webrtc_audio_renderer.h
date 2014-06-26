@@ -96,6 +96,10 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   // Used to DCHECK on the expected state.
   bool IsStarted() const;
 
+  // Accessors to the sink audio parameters.
+  int channels() const { return sink_params_.channels(); }
+  int sample_rate() const { return sink_params_.sample_rate(); }
+
  private:
   // MediaStreamAudioRenderer implementation.  This is private since we want
   // callers to use proxy objects.
@@ -190,12 +194,8 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   // Audio data source from the browser process.
   WebRtcAudioRendererSource* source_;
 
-  // Buffers used for temporary storage during render callbacks.
-  // Allocated during initialization.
-  scoped_ptr<int16[]> buffer_;
-
-  // Protects access to |state_|, |source_| and |sink_|.
-  base::Lock lock_;
+  // Protects access to |state_|, |source_|, |sink_| and |current_time_|.
+  mutable base::Lock lock_;
 
   // Ref count for the MediaPlayers which are playing audio.
   int play_ref_count_;
@@ -214,12 +214,13 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   // Delay due to the FIFO in milliseconds.
   int fifo_delay_milliseconds_;
 
+  base::TimeDelta current_time_;
+
   // Saved volume and playing state of the root renderer.
   PlayingState playing_state_;
 
-  // The preferred sample rate and buffer sizes provided via the ctor.
-  const int sample_rate_;
-  const int frames_per_buffer_;
+  // Audio params used by the sink of the renderer.
+  media::AudioParameters sink_params_;
 
   // Maps audio sources to a list of active audio renderers.
   // Pointers to PlayingState objects are only kept in this map while the

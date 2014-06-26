@@ -13,7 +13,7 @@
 #include "chrome/browser/chromeos/first_run/steps/app_list_step.h"
 #include "chrome/browser/chromeos/first_run/steps/help_step.h"
 #include "chrome/browser/chromeos/first_run/steps/tray_step.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "ui/views/widget/widget.h"
 
@@ -28,7 +28,7 @@ chromeos::FirstRunController* g_instance;
 void RecordCompletion(chromeos::first_run::TutorialCompletion type) {
   UMA_HISTOGRAM_ENUMERATION("CrosFirstRun.TutorialCompletion",
                             type,
-                            chromeos::first_run::kTutorialCompletionSize);
+                            chromeos::first_run::TUTORIAL_COMPLETION_SIZE);
 }
 
 }  // namespace
@@ -120,7 +120,7 @@ void FirstRunController::OnNextButtonClicked(const std::string& step_name) {
 }
 
 void FirstRunController::OnHelpButtonClicked() {
-  RecordCompletion(first_run::kTutorialCompletedWithKeepExploring);
+  RecordCompletion(first_run::TUTORIAL_COMPLETED_WITH_KEEP_EXPLORING);
   on_actor_finalized_ = base::Bind(chrome::ShowHelpForProfile,
                                    user_profile_,
                                    chrome::HOST_DESKTOP_TYPE_ASH,
@@ -153,7 +153,7 @@ void FirstRunController::OnActorDestroyed() {
 }
 
 void FirstRunController::OnCancelled() {
-  RecordCompletion(first_run::kTutorialNotFinished);
+  RecordCompletion(first_run::TUTORIAL_NOT_FINISHED);
   Stop();
 }
 
@@ -170,7 +170,7 @@ void FirstRunController::ShowNextStep() {
   AdvanceStep();
   if (!GetCurrentStep()) {
     actor_->Finalize();
-    RecordCompletion(first_run::kTutorialCompletedWithGotIt);
+    RecordCompletion(first_run::TUTORIAL_COMPLETED_WITH_GOT_IT);
     return;
   }
   GetCurrentStep()->Show();

@@ -9,10 +9,7 @@
 #include "media/base/buffers.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/formats/mp4/rcheck.h"
-
-namespace {
-static const uint32 kSampleIsDifferenceSampleFlagMask = 0x10000;
-}
+#include "media/formats/mp4/sample_to_group_iterator.h"
 
 namespace media {
 namespace mp4 {
@@ -22,6 +19,8 @@ struct SampleInfo {
   int duration;
   int cts_offset;
   bool is_keyframe;
+  bool is_random_access_point;
+  uint32 cenc_group_description_index;
 };
 
 struct TrackRunInfo {
@@ -40,6 +39,8 @@ struct TrackRunInfo {
   std::vector<uint8> aux_info_sizes;  // Populated if default_size == 0.
   int aux_info_total_size;
 
+  std::vector<CencSampleEncryptionInfoEntry> sample_encryption_info;
+
   TrackRunInfo();
   ~TrackRunInfo();
 };
@@ -57,10 +58,22 @@ TrackRunInfo::TrackRunInfo()
 TrackRunInfo::~TrackRunInfo() {}
 
 TimeDelta TimeDeltaFromRational(int64 numer, int64 denom) {
-  DCHECK_LT((numer > 0 ? numer : -numer),
-            kint64max / base::Time::kMicrosecondsPerSecond);
-  return TimeDelta::FromMicroseconds(
-        base::Time::kMicrosecondsPerSecond * numer / denom);
+  // To avoid overflow, split the following calculation:
+  // (numer * base::Time::kMicrosecondsPerSecond) / denom
+  // into:
+  //  (numer / denom) * base::Time::kMicrosecondsPerSecond +
+  // ((numer % denom) * base::Time::kMicrosecondsPerSecond) / denom
+  int64 a = numer / denom;
+  DCHECK_LE((a > 0 ? a : -a), kint64max / base::Time::kMicrosecondsPerSecond);
+  int64 timea_in_us = a * base::Time::kMicrosecondsPerSecond;
+
+  int64 b = numer % denom;
+  DCHECK_LE((b > 0 ? b : -b), kint64max / base::Time::kMicrosecondsPerSecond);
+  int64 timeb_in_us = (b * base::Time::kMicrosecondsPerSecond) / denom;
+
+  DCHECK((timeb_in_us < 0) || (timea_in_us <= kint64max - timeb_in_us));
+  DCHECK((timeb_in_us > 0) || (timea_in_us >= kint64min - timeb_in_us));
+  return TimeDelta::FromMicroseconds(timea_in_us + timeb_in_us);
 }
 
 TrackRunIterator::TrackRunIterator(const Movie* moov,
@@ -77,7 +90,8 @@ static void PopulateSampleInfo(const TrackExtends& trex,
                                const int64 edit_list_offset,
                                const uint32 i,
                                SampleInfo* sample_info,
-                               const SampleDependsOn sample_depends_on) {
+                               const SampleDependsOn sdtp_sample_depends_on,
+                               bool is_sync_sample) {
   if (i < trun.sample_sizes.size()) {
     sample_info->size = trun.sample_sizes[i];
   } else if (tfhd.default_sample_size > 0) {
@@ -110,9 +124,24 @@ static void PopulateSampleInfo(const TrackExtends& trex,
     flags = trex.default_sample_flags;
   }
 
+  SampleDependsOn sample_depends_on =
+      static_cast<SampleDependsOn>((flags >> 24) & 0x3);
+
+  if (sample_depends_on == kSampleDependsOnUnknown)
+    sample_depends_on = sdtp_sample_depends_on;
+
+  // ISO/IEC 14496-12  Section 8.8.3.1 : The negation of |sample_is_sync_sample|
+  // provides the same information as the sync sample table [8.6.2]. When
+  // |sample_is_sync_sample| is true for a sample, it is the same as if the
+  // sample were not in a movie fragment and marked with an entry in the sync
+  // sample table (or, if all samples are sync samples, the sync sample table
+  // were absent).
+  bool sample_is_sync_sample = !(flags & kSampleIsNonSyncSample);
+  sample_info->is_random_access_point = sample_is_sync_sample;
+
   switch (sample_depends_on) {
     case kSampleDependsOnUnknown:
-      sample_info->is_keyframe = !(flags & kSampleIsDifferenceSampleFlagMask);
+      sample_info->is_keyframe = sample_is_sync_sample;
       break;
 
     case kSampleDependsOnOthers:
@@ -203,10 +232,13 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
       }
     }
 
+    SampleToGroupIterator sample_to_group_itr(traf.sample_to_group);
+    bool is_sample_to_group_valid = sample_to_group_itr.IsValid();
+
     int64 run_start_dts = traf.decode_time.decode_time;
     int sample_count_sum = 0;
-    bool is_sync_sample_box_present =
-        trak->media.information.sample_table.sync_sample.is_present;
+    const SyncSample& sync_sample =
+        trak->media.information.sample_table.sync_sample;
     for (size_t j = 0; j < traf.runs.size(); j++) {
       const TrackFragmentRun& trun = traf.runs[j];
       TrackRunInfo tri;
@@ -214,6 +246,7 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
       tri.timescale = trak->media.header.timescale;
       tri.start_dts = run_start_dts;
       tri.sample_start_offset = trun.data_offset;
+      tri.sample_encryption_info = traf.sample_group_description.entries;
 
       tri.is_audio = (stsd.type == kAudio);
       if (tri.is_audio) {
@@ -267,20 +300,44 @@ bool TrackRunIterator::Init(const MovieFragment& moof) {
       tri.samples.resize(trun.sample_count);
       for (size_t k = 0; k < trun.sample_count; k++) {
         PopulateSampleInfo(*trex, traf.header, trun, edit_list_offset,
-                           k, &tri.samples[k], traf.sdtp.sample_depends_on(k));
+                           k, &tri.samples[k], traf.sdtp.sample_depends_on(k),
+                           sync_sample.IsSyncSample(k));
         run_start_dts += tri.samples[k].duration;
 
-        // ISO-14496-12 Section 8.20.1 : If the sync sample box is not present,
-        // every sample is a random access point.
-        //
-        // NOTE: MPEG's "is random access point" concept is equivalent to this
-        // and downstream code's "is keyframe" concept.
-        if (!is_sync_sample_box_present)
-          tri.samples[k].is_keyframe = true;
+        if (!is_sample_to_group_valid) {
+          // Set group description index to 0 to read encryption information
+          // from TrackEncryption Box.
+          tri.samples[k].cenc_group_description_index = 0;
+          continue;
+        }
+
+        // ISO-14496-12 Section 8.9.2.3 and 8.9.4 : group description index
+        // (1) ranges from 1 to the number of sample group entries in the track
+        // level SampleGroupDescription Box, or (2) takes the value 0 to
+        // indicate that this sample is a member of no group, in this case, the
+        // sample is associated with the default values specified in
+        // TrackEncryption Box, or (3) starts at 0x10001, i.e. the index value
+        // 1, with the value 1 in the top 16 bits, to reference fragment-local
+        // SampleGroupDescription Box.
+        // Case (1) is not supported currently. We might not need it either as
+        // the same functionality can be better achieved using (2).
+        uint32 index = sample_to_group_itr.group_description_index();
+        if (index >= SampleToGroupEntry::kFragmentGroupDescriptionIndexBase) {
+          index -= SampleToGroupEntry::kFragmentGroupDescriptionIndexBase;
+          RCHECK(index != 0 && index <= tri.sample_encryption_info.size());
+        } else if (index != 0) {
+          NOTIMPLEMENTED() << "'sgpd' box in 'moov' is not supported.";
+          return false;
+        }
+        tri.samples[k].cenc_group_description_index = index;
+        is_sample_to_group_valid = sample_to_group_itr.Advance();
       }
       runs_.push_back(tri);
       sample_count_sum += trun.sample_count;
     }
+
+    // We should have iterated through all samples in SampleToGroup Box.
+    RCHECK(!sample_to_group_itr.IsValid());
   }
 
   std::sort(runs_.begin(), runs_.end(), CompareMinTrackRunDataOffset());
@@ -313,7 +370,7 @@ void TrackRunIterator::AdvanceSample() {
 // info is available in the stream.
 bool TrackRunIterator::AuxInfoNeedsToBeCached() {
   DCHECK(IsRunValid());
-  return is_encrypted() && aux_info_size() > 0 && cenc_info_.size() == 0;
+  return aux_info_size() > 0 && cenc_info_.size() == 0;
 }
 
 // This implementation currently only caches CENC auxiliary info.
@@ -327,8 +384,10 @@ bool TrackRunIterator::CacheAuxInfo(const uint8* buf, int buf_size) {
     if (!info_size)
       info_size = run_itr_->aux_info_sizes[i];
 
-    BufferReader reader(buf + pos, info_size);
-    RCHECK(cenc_info_[i].Parse(track_encryption().default_iv_size, &reader));
+    if (IsSampleEncrypted(i)) {
+      BufferReader reader(buf + pos, info_size);
+      RCHECK(cenc_info_[i].Parse(GetIvSize(i), &reader));
+    }
     pos += info_size;
   }
 
@@ -375,8 +434,8 @@ uint32 TrackRunIterator::track_id() const {
 }
 
 bool TrackRunIterator::is_encrypted() const {
-  DCHECK(IsRunValid());
-  return track_encryption().is_encrypted;
+  DCHECK(IsSampleValid());
+  return IsSampleEncrypted(sample_itr_ - run_itr_->samples.begin());
 }
 
 int64 TrackRunIterator::aux_info_offset() const {
@@ -435,6 +494,11 @@ bool TrackRunIterator::is_keyframe() const {
   return sample_itr_->is_keyframe;
 }
 
+bool TrackRunIterator::is_random_access_point() const {
+  DCHECK(IsSampleValid());
+  return sample_itr_->is_random_access_point;
+}
+
 const TrackEncryption& TrackRunIterator::track_encryption() const {
   if (is_audio())
     return audio_description().sinf.info.track_encryption;
@@ -442,10 +506,17 @@ const TrackEncryption& TrackRunIterator::track_encryption() const {
 }
 
 scoped_ptr<DecryptConfig> TrackRunIterator::GetDecryptConfig() {
+  DCHECK(is_encrypted());
+
+  if (cenc_info_.empty()) {
+    DCHECK_EQ(0, aux_info_size());
+    MEDIA_LOG(log_cb_) << "Aux Info is not available.";
+    return scoped_ptr<DecryptConfig>();
+  }
+
   size_t sample_idx = sample_itr_ - run_itr_->samples.begin();
-  DCHECK(sample_idx < cenc_info_.size());
+  DCHECK_LT(sample_idx, cenc_info_.size());
   const FrameCENCInfo& cenc_info = cenc_info_[sample_idx];
-  DCHECK(is_encrypted() && !AuxInfoNeedsToBeCached());
 
   size_t total_size = 0;
   if (!cenc_info.subsamples.empty() &&
@@ -455,12 +526,47 @@ scoped_ptr<DecryptConfig> TrackRunIterator::GetDecryptConfig() {
     return scoped_ptr<DecryptConfig>();
   }
 
-  const std::vector<uint8>& kid = track_encryption().default_kid;
+  const std::vector<uint8>& kid = GetKeyId(sample_idx);
   return scoped_ptr<DecryptConfig>(new DecryptConfig(
       std::string(reinterpret_cast<const char*>(&kid[0]), kid.size()),
       std::string(reinterpret_cast<const char*>(cenc_info.iv),
                   arraysize(cenc_info.iv)),
       cenc_info.subsamples));
+}
+
+uint32 TrackRunIterator::GetGroupDescriptionIndex(uint32 sample_index) const {
+  DCHECK(IsRunValid());
+  DCHECK_LT(sample_index, run_itr_->samples.size());
+  return run_itr_->samples[sample_index].cenc_group_description_index;
+}
+
+const CencSampleEncryptionInfoEntry&
+TrackRunIterator::GetSampleEncryptionInfoEntry(
+    uint32 group_description_index) const {
+  DCHECK(IsRunValid());
+  DCHECK_NE(group_description_index, 0u);
+  DCHECK_LE(group_description_index, run_itr_->sample_encryption_info.size());
+  // |group_description_index| is 1-based. Subtract by 1 to index the vector.
+  return run_itr_->sample_encryption_info[group_description_index - 1];
+}
+
+bool TrackRunIterator::IsSampleEncrypted(size_t sample_index) const {
+  uint32 index = GetGroupDescriptionIndex(sample_index);
+  return (index == 0) ? track_encryption().is_encrypted
+                      : GetSampleEncryptionInfoEntry(index).is_encrypted;
+}
+
+const std::vector<uint8>& TrackRunIterator::GetKeyId(
+    size_t sample_index) const {
+  uint32 index = GetGroupDescriptionIndex(sample_index);
+  return (index == 0) ? track_encryption().default_kid
+                      : GetSampleEncryptionInfoEntry(index).key_id;
+}
+
+uint8 TrackRunIterator::GetIvSize(size_t sample_index) const {
+  uint32 index = GetGroupDescriptionIndex(sample_index);
+  return (index == 0) ? track_encryption().default_iv_size
+                      : GetSampleEncryptionInfoEntry(index).iv_size;
 }
 
 }  // namespace mp4

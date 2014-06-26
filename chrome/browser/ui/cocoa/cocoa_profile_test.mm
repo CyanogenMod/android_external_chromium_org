@@ -6,7 +6,7 @@
 
 #include "base/run_loop.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 
 CocoaProfileTest::CocoaProfileTest()
@@ -48,9 +49,6 @@ void CocoaProfileTest::SetUp() {
   profile_ = profile_manager_.CreateTestingProfile("default");
   ASSERT_TRUE(profile_);
 
-  profile_->CreateBookmarkModel(true);
-  test::WaitForBookmarkModelToLoad(profile_);
-
   // TODO(shess): These are needed in case someone creates a browser
   // window off of browser_.  pkasting indicates that other
   // platforms use a stub |BrowserWindow| and thus don't need to do
@@ -60,6 +58,10 @@ void CocoaProfileTest::SetUp() {
       profile_, &TemplateURLServiceFactory::BuildInstanceFor);
   AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
       profile_, &AutocompleteClassifierFactory::BuildInstanceFor);
+
+  profile_->CreateBookmarkModel(true);
+  test::WaitForBookmarkModelToLoad(
+      BookmarkModelFactory::GetForProfile(profile_));
 
   browser_.reset(CreateBrowser());
   ASSERT_TRUE(browser_.get());

@@ -7,19 +7,15 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "base/threading/thread.h"
 
 namespace base {
 class SequencedTaskRunner;
 class Value;
 }  // namespace base
-
-namespace net {
-class FileStream;
-}  // namespace net
 
 namespace remoting {
 
@@ -29,7 +25,7 @@ class NativeMessagingReader {
  public:
   typedef base::Callback<void(scoped_ptr<base::Value>)> MessageCallback;
 
-  explicit NativeMessagingReader(base::PlatformFile handle);
+  explicit NativeMessagingReader(base::File file);
   ~NativeMessagingReader();
 
   // Begin reading messages from the Native Messaging client webapp, calling
@@ -50,7 +46,7 @@ class NativeMessagingReader {
   void InvokeEofCallback();
 
   // Holds the information that the read thread needs to access, such as the
-  // FileStream, and the TaskRunner used for posting notifications back to this
+  // File, and the TaskRunner used for posting notifications back to this
   // class.
   scoped_ptr<Core> core_;
 

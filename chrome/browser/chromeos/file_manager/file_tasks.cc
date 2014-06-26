@@ -6,7 +6,9 @@
 
 #include "apps/launcher.h"
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/file_task_executor.h"
@@ -16,7 +18,6 @@
 #include "chrome/browser/chromeos/file_manager/open_util.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend.h"
 #include "chrome/browser/drive/drive_app_registry.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -25,8 +26,12 @@
 #include "chrome/common/extensions/api/file_browser_handlers/file_browser_handler.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
 #include "chrome/common/pref_names.h"
+#include "chromeos/chromeos_switches.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
+#include "google_apis/drive/gdata_wapi_parser.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -41,10 +46,6 @@ namespace {
 
 // The values "file" and "app" are confusing, but cannot be changed easily as
 // these are used in default task IDs stored in preferences.
-//
-// TODO(satorux): We should rename them to "file_browser_handler" and
-// "file_handler" respectively when switching from preferences to
-// chrome.storage crbug.com/267359
 const char kFileBrowserHandlerTaskType[] = "file";
 const char kFileHandlerTaskType[] = "app";
 const char kDriveAppTaskType[] = "drive";
@@ -105,6 +106,28 @@ void KeepOnlyFileManagerInternalTasks(std::vector<FullTaskDescriptor>* tasks) {
       filtered.push_back((*tasks)[i]);
   }
   tasks->swap(filtered);
+}
+
+void ChooseSuitableGalleryHandler(std::vector<FullTaskDescriptor>* task_list) {
+  const bool disable_new_gallery =
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+          chromeos::switches::kFileManagerEnableNewGallery) == "false";
+  std::vector<FullTaskDescriptor>::iterator it = task_list->begin();
+  while (it != task_list->end()) {
+    if (disable_new_gallery) {
+      if (it->task_descriptor().app_id == kGalleryAppId)
+        it = task_list->erase(it);
+      else
+        ++it;
+    } else {
+      if (it->task_descriptor().app_id == kFileManagerAppId &&
+          it->task_descriptor().action_id == "gallery") {
+        it = task_list->erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
 }
 
 }  // namespace
@@ -207,7 +230,6 @@ bool ParseTaskID(const std::string& task_id, TaskDescriptor* task) {
   // Parse a legacy task ID that only contain two parts. Drive tasks are
   // identified by a prefix "drive-app:" on the extension ID. The legacy task
   // IDs can be stored in preferences.
-  // TODO(satorux): We should get rid of this code: crbug.com/267359.
   if (count == 2) {
     if (StartsWithASCII(result[0], kDriveTaskExtensionPrefix, true)) {
       task->task_type = TASK_TYPE_DRIVE_APP;
@@ -267,11 +289,12 @@ bool ExecuteFileTask(Profile* profile,
         file_urls,
         done);
   } else if (task.task_type == TASK_TYPE_FILE_HANDLER) {
+    std::vector<base::FilePath> paths;
     for (size_t i = 0; i != file_urls.size(); ++i) {
-      apps::LaunchPlatformAppWithFileHandler(
-          profile, extension, task.action_id, file_urls[i].path());
+      paths.push_back(file_urls[i].path());
     }
-
+    apps::LaunchPlatformAppWithFileHandler(
+        profile, extension, task.action_id, paths);
     if (!done.is_null())
       done.Run(extensions::api::file_browser_private::TASK_RESULT_MESSAGE_SENT);
     return true;
@@ -388,10 +411,9 @@ void FindFileHandlerTasks(
           NULL);  // exists
 
       result_list->push_back(FullTaskDescriptor(
-          TaskDescriptor(extension->id(),
-                         file_tasks::TASK_TYPE_FILE_HANDLER,
-                         (*i)->id),
-          (*i)->title,
+          TaskDescriptor(
+              extension->id(), file_tasks::TASK_TYPE_FILE_HANDLER, (*i)->id),
+          extension->name(),
           best_icon,
           false /* is_default */));
     }
@@ -467,6 +489,7 @@ void FindAllTypesOfTasks(
   if (ContainsGoogleDocument(path_mime_set))
     KeepOnlyFileManagerInternalTasks(result_list);
 
+  ChooseSuitableGalleryHandler(result_list);
   ChooseAndSetDefaultTask(*profile->GetPrefs(), path_mime_set, result_list);
 }
 

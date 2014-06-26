@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 """A very very simple mock object harness."""
@@ -66,6 +66,9 @@ class MockObject(object):
     assert isinstance(value, MockObject)
     object.__setattr__(self, name, value)
 
+  def SetAttribute(self, name, value):
+    setattr(self, name, value)
+
   def ExpectCall(self, func_name, *args):
     assert self._trace.next_call_index == 0
     if not hasattr(self, func_name):
@@ -93,3 +96,17 @@ class MockObject(object):
       return expected_call.return_value
     handler.is_hook = True
     setattr(self, func_name, handler)
+
+
+class MockTimer(object):
+  def __init__(self):
+    self._elapsed_time = 0
+
+  def Sleep(self, time):
+    self._elapsed_time += time
+
+  def GetTime(self):
+    return self._elapsed_time
+
+  def SetTime(self, time):
+    self._elapsed_time = time

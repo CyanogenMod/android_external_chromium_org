@@ -11,6 +11,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
+#include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
@@ -20,6 +21,7 @@
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "chrome/common/attrition_experiments.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/installer/util/browser_distribution.h"
@@ -85,11 +87,14 @@ int GetDirectoryWriteTimeInHours(const wchar_t* path) {
   return ::GetFileTime(file, NULL, NULL, &time) ? FileTimeToHours(time) : -1;
 }
 
-// Returns the directory last-write time age in hours, relative to current
-// time, so if it returns 14 it means that the directory was last written 14
-// hours ago. Returns -1 if there was an error retrieving the directory.
-int GetDirectoryWriteAgeInHours(const wchar_t* path) {
-  int dir_time = GetDirectoryWriteTimeInHours(path);
+// Returns the time in hours since the last write to the user data directory.
+// A return value of 14 means that the directory was last written 14 hours ago.
+// Returns -1 if there was an error retrieving the directory.
+int GetUserDataDirectoryWriteAgeInHours() {
+  base::FilePath user_data_dir;
+  if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
+    return -1;
+  int dir_time = GetDirectoryWriteTimeInHours(user_data_dir.value().c_str());
   if (dir_time < 0)
     return dir_time;
   FILETIME time;
@@ -425,27 +430,17 @@ void LaunchBrowserUserExperiment(const CommandLine& base_cmd_line,
         return;
       }
     }
-    // Check browser usage inactivity by the age of the last-write time of the
-    // most recently-used chrome user data directory.
-    std::vector<base::FilePath> user_data_dirs;
-    BrowserDistribution* dist = BrowserDistribution::GetSpecificDistribution(
-        BrowserDistribution::CHROME_BROWSER);
-    GetChromeUserDataPaths(dist, &user_data_dirs);
-    int dir_age_hours = -1;
-    for (size_t i = 0; i < user_data_dirs.size(); ++i) {
-      int this_age = GetDirectoryWriteAgeInHours(
-          user_data_dirs[i].value().c_str());
-      if (this_age >= 0 && (dir_age_hours < 0 || this_age < dir_age_hours))
-        dir_age_hours = this_age;
-    }
-
     const bool experiment_enabled = false;
-    const int kThirtyDays = 30 * 24;
-
     if (!experiment_enabled) {
       VLOG(1) << "Toast experiment is disabled.";
       return;
-    } else if (dir_age_hours < 0) {
+    }
+
+    // Check browser usage inactivity by the age of the last-write time of the
+    // relevant chrome user data directory.
+    const int kThirtyDays = 30 * 24;
+    const int dir_age_hours = GetUserDataDirectoryWriteAgeInHours();
+    if (dir_age_hours < 0) {
       // This means that we failed to find the user data dir. The most likely
       // cause is that this user has not ever used chrome at all which can
       // happen in a system-level install.
@@ -476,7 +471,7 @@ void LaunchBrowserUserExperiment(const CommandLine& base_cmd_line,
   cmd_line.AppendSwitchASCII(switches::kInactiveUserToast,
                              base::IntToString(flavor));
   cmd_line.AppendSwitchASCII(switches::kExperimentGroup,
-                             WideToASCII(base_group));
+                             base::UTF16ToASCII(base_group));
   LaunchSetup(&cmd_line, system_level);
 }
 

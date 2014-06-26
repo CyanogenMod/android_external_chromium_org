@@ -12,13 +12,31 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/common/metrics/proto/chrome_experiments.pb.h"
+#include "components/google/core/browser/google_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/http/http_request_headers.h"
 #include "url/gurl.h"
 
 namespace chrome_variations {
+
+namespace {
+
+const char* kSuffixesToSetHeadersFor[] = {
+  ".android.com",
+  ".doubleclick.com",
+  ".doubleclick.net",
+  ".ggpht.com",
+  ".googleadservices.com",
+  ".googleapis.com",
+  ".googlesyndication.com",
+  ".googleusercontent.com",
+  ".googlevideo.com",
+  ".gstatic.com",
+  ".ytimg.com",
+};
+
+}  // namespace
 
 VariationsHttpHeaderProvider* VariationsHttpHeaderProvider::GetInstance() {
   return Singleton<VariationsHttpHeaderProvider>::get();
@@ -30,7 +48,11 @@ void VariationsHttpHeaderProvider::AppendHeaders(
     bool uma_enabled,
     net::HttpRequestHeaders* headers) {
   // Note the criteria for attaching Chrome experiment headers:
-  // 1. We only transmit to *.google.<TLD> or *.youtube.<TLD> domains.
+  // 1. We only transmit to Google owned domains which can evaluate experiments.
+  //    1a. These include hosts which have a standard postfix such as:
+  //         *.doubleclick.net or *.googlesyndication.com or
+  //         exactly www.googleadservices.com or
+  //         international TLD domains *.google.<TLD> or *.youtube.<TLD>.
   // 2. Only transmit for non-Incognito profiles.
   // 3. For the X-Chrome-UMA-Enabled bit, only set it if UMA is in fact enabled
   //    for this install of Chrome.
@@ -61,16 +83,30 @@ void VariationsHttpHeaderProvider::AppendHeaders(
 bool VariationsHttpHeaderProvider::SetDefaultVariationIds(
     const std::string& variation_ids) {
   default_variation_ids_set_.clear();
+  default_trigger_id_set_.clear();
   std::vector<std::string> entries;
   base::SplitString(variation_ids, ',', &entries);
   for (std::vector<std::string>::const_iterator it = entries.begin();
        it != entries.end(); ++it) {
-    int variation_id = 0;
-    if (!base::StringToInt(*it, &variation_id)) {
+    if (it->empty()) {
       default_variation_ids_set_.clear();
+      default_trigger_id_set_.clear();
       return false;
     }
-    default_variation_ids_set_.insert(variation_id);
+    bool trigger_id = StartsWithASCII(*it, "t", true);
+    // Remove the "t" prefix if it's there.
+    std::string entry = trigger_id ? it->substr(1) : *it;
+
+    int variation_id = 0;
+    if (!base::StringToInt(entry, &variation_id)) {
+      default_variation_ids_set_.clear();
+      default_trigger_id_set_.clear();
+      return false;
+    }
+    if (trigger_id)
+      default_trigger_id_set_.insert(variation_id);
+    else
+      default_variation_ids_set_.insert(variation_id);
   }
   return true;
 }
@@ -87,11 +123,17 @@ void VariationsHttpHeaderProvider::OnFieldTrialGroupFinalized(
     const std::string& group_name) {
   VariationID new_id =
       GetGoogleVariationID(GOOGLE_WEB_PROPERTIES, trial_name, group_name);
-  if (new_id == EMPTY_ID)
+  VariationID new_trigger_id = GetGoogleVariationID(
+      GOOGLE_WEB_PROPERTIES_TRIGGER, trial_name, group_name);
+  if (new_id == EMPTY_ID && new_trigger_id == EMPTY_ID)
     return;
 
   base::AutoLock scoped_lock(lock_);
-  variation_ids_set_.insert(new_id);
+  if (new_id != EMPTY_ID)
+    variation_ids_set_.insert(new_id);
+  if (new_trigger_id != EMPTY_ID)
+    variation_trigger_ids_set_.insert(new_trigger_id);
+
   UpdateVariationIDsHeaderValue();
 }
 
@@ -117,6 +159,12 @@ void VariationsHttpHeaderProvider::InitVariationIDsCacheIfNeeded() {
                              it->group_name);
     if (id != EMPTY_ID)
       variation_ids_set_.insert(id);
+
+    const VariationID trigger_id =
+        GetGoogleVariationID(GOOGLE_WEB_PROPERTIES_TRIGGER, it->trial_name,
+                             it->group_name);
+    if (trigger_id != EMPTY_ID)
+      variation_trigger_ids_set_.insert(trigger_id);
   }
   UpdateVariationIDsHeaderValue();
 
@@ -137,14 +185,18 @@ void VariationsHttpHeaderProvider::UpdateVariationIDsHeaderValue() {
   // base64 encoded before transmitting as a string.
   variation_ids_header_.clear();
 
-  if (variation_ids_set_.empty() && default_variation_ids_set_.empty())
+  if (variation_ids_set_.empty() && default_variation_ids_set_.empty() &&
+      variation_trigger_ids_set_.empty() && default_trigger_id_set_.empty()) {
     return;
+  }
 
   // This is the bottleneck for the creation of the header, so validate the size
   // here. Force a hard maximum on the ID count in case the Variations server
   // returns too many IDs and DOSs receiving servers with large requests.
-  DCHECK_LE(variation_ids_set_.size(), 10U);
-  if (variation_ids_set_.size() > 20)
+  const size_t total_id_count =
+      variation_ids_set_.size() + variation_trigger_ids_set_.size();
+  DCHECK_LE(total_id_count, 10U);
+  if (total_id_count > 20)
     return;
 
   // Merge the two sets of experiment ids.
@@ -157,6 +209,17 @@ void VariationsHttpHeaderProvider::UpdateVariationIDsHeaderValue() {
   for (std::set<VariationID>::const_iterator it = all_variation_ids_set.begin();
        it != all_variation_ids_set.end(); ++it) {
     proto.add_variation_id(*it);
+  }
+
+  std::set<VariationID> all_trigger_ids_set = default_trigger_id_set_;
+  for (std::set<VariationID>::const_iterator it =
+           variation_trigger_ids_set_.begin();
+       it != variation_trigger_ids_set_.end(); ++it) {
+    all_trigger_ids_set.insert(*it);
+  }
+  for (std::set<VariationID>::const_iterator it = all_trigger_ids_set.begin();
+       it != all_trigger_ids_set.end(); ++it) {
+    proto.add_trigger_variation_id(*it);
   }
 
   std::string serialized;
@@ -178,21 +241,19 @@ bool VariationsHttpHeaderProvider::ShouldAppendHeaders(const GURL& url) {
     return true;
   }
 
-  // The below mirrors logic in IsGoogleDomainUrl(), but for youtube.<TLD>.
   if (!url.is_valid() || !url.SchemeIsHTTPOrHTTPS())
     return false;
 
+  // Some domains don't have international TLD extensions, so testing for them
+  // is very straight forward.
   const std::string host = url.host();
-  const size_t tld_length = net::registry_controlled_domains::GetRegistryLength(
-      host,
-      net::registry_controlled_domains::EXCLUDE_UNKNOWN_REGISTRIES,
-      net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES);
-  if ((tld_length == 0) || (tld_length == std::string::npos))
-    return false;
+  for (size_t i = 0; i < arraysize(kSuffixesToSetHeadersFor); ++i) {
+    if (EndsWith(host, kSuffixesToSetHeadersFor[i], false))
+      return true;
+  }
 
-  const std::string host_minus_tld(host, 0, host.length() - tld_length);
-  return LowerCaseEqualsASCII(host_minus_tld, "youtube.") ||
-      EndsWith(host_minus_tld, ".youtube.", false);
+  return google_util::IsYoutubeDomainUrl(url, google_util::ALLOW_SUBDOMAIN,
+                                         google_util::ALLOW_NON_STANDARD_PORTS);
 }
 
 }  // namespace chrome_variations

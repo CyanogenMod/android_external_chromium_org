@@ -4,24 +4,20 @@
 
 #include "ui/views/corewm/tooltip_aura.h"
 
-#include "base/command_line.h"
 #include "base/strings/string_split.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/text_utils.h"
+#include "ui/native_theme/native_theme.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
-#include "ui/views/corewm/corewm_switches.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
 
-const SkColor kTooltipBackground = 0xFFFFFFCC;
-const SkColor kTooltipBorder = 0xFF646450;
-const int kTooltipBorderWidth = 1;
 const int kTooltipHorizontalPadding = 3;
 
 // Max visual tooltip width. If a tooltip is greater than this width, it will
@@ -63,12 +59,6 @@ TooltipAura::TooltipAura(gfx::ScreenType screen_type)
     : screen_type_(screen_type),
       widget_(NULL),
       tooltip_window_(NULL) {
-  label_.set_background(
-      views::Background::CreateSolidBackground(kTooltipBackground));
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
-    label_.SetBorder(
-        views::Border::CreateSolidBorder(kTooltipBorderWidth, kTooltipBorder));
-  }
   label_.set_owned_by_client();
   label_.SetMultiLine(true);
 }
@@ -144,7 +134,7 @@ void TooltipAura::TrimTooltipToFit(const gfx::FontList& font_list,
     if (line_width > available_width) {
       *width = available_width;
       result.append(gfx::ElideText(*l, font_list, available_width,
-                                   gfx::ELIDE_AT_END));
+                                   gfx::ELIDE_TAIL));
     } else {
       *width = std::max(*width, line_width);
       result.append(*l);
@@ -156,25 +146,9 @@ void TooltipAura::TrimTooltipToFit(const gfx::FontList& font_list,
 int TooltipAura::GetMaxWidth(const gfx::Point& location) const {
   // TODO(varunjain): implementation duplicated in tooltip_manager_aura. Figure
   // out a way to merge.
-  gfx::Rect display_bounds = GetBoundsForTooltip(location);
-  return (display_bounds.width() + 1) / 2;
-}
-
-gfx::Rect TooltipAura::GetBoundsForTooltip(
-    const gfx::Point& origin) const {
-  DCHECK(tooltip_window_);
-  gfx::Rect widget_bounds;
-  // For Desktop aura we constrain the tooltip to the bounds of the Widget
-  // (which comes from the RootWindow).
-  if (screen_type_ == gfx::SCREEN_TYPE_NATIVE &&
-      gfx::SCREEN_TYPE_NATIVE != gfx::SCREEN_TYPE_ALTERNATE) {
-    widget_bounds = tooltip_window_->GetDispatcher()->host()->GetBounds();
-  }
   gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
-  gfx::Rect bounds(screen->GetDisplayNearestPoint(origin).bounds());
-  if (!widget_bounds.IsEmpty())
-    bounds.Intersect(widget_bounds);
-  return bounds;
+  gfx::Rect display_bounds(screen->GetDisplayNearestPoint(location).bounds());
+  return (display_bounds.width() + 1) / 2;
 }
 
 void TooltipAura::SetTooltipBounds(const gfx::Point& mouse_pos,
@@ -184,7 +158,8 @@ void TooltipAura::SetTooltipBounds(const gfx::Point& mouse_pos,
                          tooltip_height);
 
   tooltip_rect.Offset(kCursorOffsetX, kCursorOffsetY);
-  gfx::Rect display_bounds = GetBoundsForTooltip(mouse_pos);
+  gfx::Screen* screen = gfx::Screen::GetScreenByType(screen_type_);
+  gfx::Rect display_bounds(screen->GetDisplayNearestPoint(mouse_pos).bounds());
 
   // If tooltip is out of bounds on the x axis, we simply shift it
   // horizontally by the offset.
@@ -200,22 +175,6 @@ void TooltipAura::SetTooltipBounds(const gfx::Point& mouse_pos,
 
   tooltip_rect.AdjustToFit(display_bounds);
   widget_->SetBounds(tooltip_rect);
-}
-
-void TooltipAura::CreateWidget() {
-  if (widget_) {
-    // If the window for which the tooltip is being displayed changes and if the
-    // tooltip window and the tooltip widget belong to different rootwindows
-    // then we need to recreate the tooltip widget under the active root window
-    // hierarchy to get it to display.
-    if (widget_->GetNativeWindow()->GetRootWindow() ==
-        tooltip_window_->GetRootWindow())
-      return;
-    DestroyWidget();
-  }
-  widget_ = CreateTooltipWidget(tooltip_window_);
-  widget_->SetContentsView(&label_);
-  widget_->AddObserver(this);
 }
 
 void TooltipAura::DestroyWidget() {
@@ -239,17 +198,31 @@ void TooltipAura::SetText(aura::Window* window,
   int width = max_width + 2 * kTooltipHorizontalPadding;
   int height = label_.GetHeightForWidth(max_width) +
       2 * kTooltipVerticalPadding;
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kNoDropShadows)) {
-    width += 2 * kTooltipBorderWidth;
-    height += 2 * kTooltipBorderWidth;
+
+  if (!widget_) {
+    widget_ = CreateTooltipWidget(tooltip_window_);
+    widget_->SetContentsView(&label_);
+    widget_->AddObserver(this);
   }
-  CreateWidget();
+
   SetTooltipBounds(location, width, height);
+
+  ui::NativeTheme* native_theme = widget_->GetNativeTheme();
+  label_.set_background(
+      views::Background::CreateSolidBackground(
+          native_theme->GetSystemColor(
+              ui::NativeTheme::kColorId_TooltipBackground)));
+
+  label_.SetAutoColorReadabilityEnabled(false);
+  label_.SetEnabledColor(native_theme->GetSystemColor(
+      ui::NativeTheme::kColorId_TooltipText));
 }
 
 void TooltipAura::Show() {
-  if (widget_)
+  if (widget_) {
     widget_->Show();
+    widget_->StackAtTop();
+  }
 }
 
 void TooltipAura::Hide() {

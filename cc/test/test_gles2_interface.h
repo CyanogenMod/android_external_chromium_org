@@ -99,7 +99,7 @@ class TestGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
 
   virtual void AsyncTexImage2DCHROMIUM(GLenum target,
                                        GLint level,
-                                       GLint internalformat,
+                                       GLenum internalformat,
                                        GLsizei width,
                                        GLsizei height,
                                        GLint border,
@@ -126,9 +126,10 @@ class TestGLES2Interface : public gpu::gles2::GLES2InterfaceStub {
   virtual void WaitAsyncTexImage2DCHROMIUM(GLenum target) OVERRIDE;
   virtual GLuint CreateImageCHROMIUM(GLsizei width,
                                      GLsizei height,
-                                     GLenum internalformat) OVERRIDE;
+                                     GLenum internalformat,
+                                     GLenum usage) OVERRIDE;
   virtual void DestroyImageCHROMIUM(GLuint image_id) OVERRIDE;
-  virtual void* MapImageCHROMIUM(GLuint image_id, GLenum access) OVERRIDE;
+  virtual void* MapImageCHROMIUM(GLuint image_id) OVERRIDE;
   virtual void GetImageParameterivCHROMIUM(GLuint image_id,
                                            GLenum pname,
                                            GLint* params) OVERRIDE;

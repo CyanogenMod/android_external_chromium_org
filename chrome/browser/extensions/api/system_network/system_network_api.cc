@@ -17,7 +17,7 @@ SystemNetworkGetNetworkInterfacesFunction::
 SystemNetworkGetNetworkInterfacesFunction::
     ~SystemNetworkGetNetworkInterfacesFunction() {}
 
-bool SystemNetworkGetNetworkInterfacesFunction::RunImpl() {
+bool SystemNetworkGetNetworkInterfacesFunction::RunAsync() {
   content::BrowserThread::PostTask(content::BrowserThread::FILE, FROM_HERE,
       base::Bind(&SystemNetworkGetNetworkInterfacesFunction::
           GetListOnFileThread,
@@ -43,14 +43,14 @@ void SystemNetworkGetNetworkInterfacesFunction::GetListOnFileThread() {
 }
 
 void SystemNetworkGetNetworkInterfacesFunction::HandleGetListError() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   error_ = kNetworkListError;
   SendResponse(false);
 }
 
 void SystemNetworkGetNetworkInterfacesFunction::SendResponseOnUIThread(
     const net::NetworkInterfaceList& interface_list) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   std::vector<linked_ptr<api::system_network::NetworkInterface> >
       create_arg;

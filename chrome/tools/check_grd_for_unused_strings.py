@@ -114,6 +114,7 @@ def main():
   # script lives in src/chrome/tools
   chrome_tools_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
   src_dir = os.path.dirname(os.path.dirname(chrome_tools_dir))
+  chrome_dir = os.path.join(src_dir, 'chrome')
 
   # Collect the args into the right buckets
   src_dirs = []
@@ -127,7 +128,6 @@ def main():
   # If no GRD files were given, default them:
   if len(grd_files) == 0:
     ash_base_dir = os.path.join(src_dir, 'ash')
-    chrome_dir = os.path.join(src_dir, 'chrome')
     chrome_app_dir = os.path.join(chrome_dir, 'app')
     chrome_app_res_dir = os.path.join(chrome_app_dir, 'resources')
     device_base_dir = os.path.join(src_dir, 'device')
@@ -151,6 +151,7 @@ def main():
       os.path.join(chrome_dir, 'renderer', 'resources',
                    'renderer_resources.grd'),
       os.path.join(device_base_dir, 'bluetooth', 'bluetooth_strings.grd'),
+      os.path.join(src_dir, 'extensions', 'extensions_strings.grd'),
       os.path.join(src_dir, 'ui', 'resources', 'ui_resources.grd'),
       os.path.join(src_dir, 'ui', 'webui', 'resources', 'webui_resources.grd'),
       os.path.join(ui_base_strings_dir, 'app_locale_settings.grd'),
@@ -166,6 +167,7 @@ def main():
       os.path.join(src_dir, 'components'),
       os.path.join(src_dir, 'content'),
       os.path.join(src_dir, 'device'),
+      os.path.join(src_dir, 'extensions'),
       os.path.join(src_dir, 'ui'),
       os.path.join(src_dir, 'views'),
       # nsNSSCertHelper.cpp has a bunch of ids

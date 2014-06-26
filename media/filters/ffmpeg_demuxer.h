@@ -23,6 +23,7 @@
 #define MEDIA_FILTERS_FFMPEG_DEMUXER_H_
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/callback.h"
@@ -36,6 +37,7 @@
 #include "media/base/pipeline.h"
 #include "media/base/text_track_config.h"
 #include "media/base/video_decoder_config.h"
+#include "media/ffmpeg/ffmpeg_deleters.h"
 #include "media/filters/blocking_url_protocol.h"
 
 // FFmpeg forward declarations.
@@ -49,15 +51,19 @@ class MediaLog;
 class FFmpegDemuxer;
 class FFmpegGlue;
 class FFmpegH264ToAnnexBBitstreamConverter;
-class ScopedPtrAVFreePacket;
 
-typedef scoped_ptr_malloc<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
+typedef scoped_ptr<AVPacket, ScopedPtrAVFreePacket> ScopedAVPacket;
 
 class FFmpegDemuxerStream : public DemuxerStream {
  public:
-  // Keeps a copy of |demuxer| and initializes itself using information
-  // inside |stream|.  Both parameters must outlive |this|.
-  FFmpegDemuxerStream(FFmpegDemuxer* demuxer, AVStream* stream);
+  // Keeps a copy of |demuxer| and initializes itself using information inside
+  // |stream|.  Both parameters must outlive |this|.
+  // |discard_negative_timestamps| tells the DemuxerStream that all packets with
+  // negative timestamps should be marked for post-decode discard.  All decoded
+  // data before time zero will be discarded.
+  FFmpegDemuxerStream(FFmpegDemuxer* demuxer,
+                      AVStream* stream,
+                      bool discard_negative_timestamps);
   virtual ~FFmpegDemuxerStream();
 
   // Enqueues the given AVPacket. It is invalid to queue a |packet| after
@@ -74,13 +80,13 @@ class FFmpegDemuxerStream : public DemuxerStream {
   // Empties the queues and ignores any additional calls to Read().
   void Stop();
 
-  // Returns the duration of this stream.
-  base::TimeDelta duration();
+  base::TimeDelta duration() const { return duration_; }
 
   // DemuxerStream implementation.
   virtual Type type() OVERRIDE;
   virtual void Read(const ReadCB& read_cb) OVERRIDE;
   virtual void EnableBitstreamConverter() OVERRIDE;
+  virtual bool SupportsConfigChanges() OVERRIDE;
   virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
   virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
 
@@ -93,6 +99,9 @@ class FFmpegDemuxerStream : public DemuxerStream {
 
   // Returns true if this stream has capacity for additional data.
   bool HasAvailableCapacity();
+
+  // Returns the total buffer size FFMpegDemuxerStream is holding onto.
+  size_t MemoryUsage() const;
 
   TextKind GetTextKind() const;
 
@@ -125,10 +134,14 @@ class FFmpegDemuxerStream : public DemuxerStream {
   DecoderBufferQueue buffer_queue_;
   ReadCB read_cb_;
 
+#if defined(USE_PROPRIETARY_CODECS)
   scoped_ptr<FFmpegH264ToAnnexBBitstreamConverter> bitstream_converter_;
+#endif
+
   bool bitstream_converter_enabled_;
 
   std::string encryption_key_id_;
+  const bool discard_negative_timestamps_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxerStream);
 };
@@ -147,9 +160,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
                           bool enable_text_tracks) OVERRIDE;
   virtual void Stop(const base::Closure& callback) OVERRIDE;
   virtual void Seek(base::TimeDelta time, const PipelineStatusCB& cb) OVERRIDE;
-  virtual void OnAudioRendererDisabled() OVERRIDE;
   virtual DemuxerStream* GetStream(DemuxerStream::Type type) OVERRIDE;
-  virtual base::TimeDelta GetStartTime() const OVERRIDE;
+  virtual base::Time GetTimelineOffset() const OVERRIDE;
+  virtual Liveness GetLiveness() const OVERRIDE;
 
   // Calls |need_key_cb_| with the initialization data encountered in the file.
   void FireNeedKey(const std::string& init_data_type,
@@ -159,6 +172,10 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // about capacity and what buffered data is available.
   void NotifyCapacityAvailable();
   void NotifyBufferingChanged();
+
+  // The lowest demuxed timestamp.  DemuxerStream's must use this to adjust
+  // packet timestamps such that external clients see a zero-based timeline.
+  base::TimeDelta start_time() const { return start_time_; }
 
  private:
   // To allow tests access to privates.
@@ -182,6 +199,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // go over capacity depending on how the file is muxed.
   bool StreamsHaveAvailableCapacity();
 
+  // Returns true if the maximum allowed memory usage has been reached.
+  bool IsMaxMemoryUsageReached() const;
+
   // Signal all FFmpegDemuxerStreams that the stream has ended.
   void StreamHasEnded();
 
@@ -199,8 +219,6 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   DemuxerHost* host_;
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;
-  base::WeakPtr<FFmpegDemuxer> weak_this_;
 
   // Thread on which all blocking FFmpeg operations are executed.
   base::Thread blocking_thread_;
@@ -215,7 +233,7 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // results of pre-seek av_read_frame() operations.
   bool pending_seek_;
 
-  // |streams_| mirrors the AVStream array in |format_context_|. It contains
+  // |streams_| mirrors the AVStream array in AVFormatContext. It contains
   // FFmpegDemuxerStreams encapsluating AVStream objects at the same index.
   //
   // Since we only support a single audio and video stream, |streams_| will
@@ -236,14 +254,28 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   // Derived bitrate after initialization has completed.
   int bitrate_;
 
-  // The first timestamp of the opened media file. This is used to set the
-  // starting clock value to match the timestamps in the media file. Default
-  // is 0.
+  // The first timestamp of the audio or video stream, whichever is lower.  This
+  // is used to adjust timestamps so that external consumers always see a zero
+  // based timeline.
   base::TimeDelta start_time_;
 
-  // Whether audio has been disabled for this demuxer (in which case this class
-  // drops packets destined for AUDIO demuxer streams on the floor).
-  bool audio_disabled_;
+  // The index and start time of the preferred streams for seeking.  Filled upon
+  // completion of OnFindStreamInfoDone().  Each info entry represents an index
+  // into |streams_| and the start time of that stream.
+  //
+  // Seek() will attempt to use |preferred_stream_for_seeking_| if the seek
+  // point occurs after its associated start time.  Otherwise it will use
+  // |fallback_stream_for_seeking_|.
+  typedef std::pair<int, base::TimeDelta> StreamSeekInfo;
+  StreamSeekInfo preferred_stream_for_seeking_;
+  StreamSeekInfo fallback_stream_for_seeking_;
+
+  // The Time associated with timestamp 0. Set to a null
+  // time if the file doesn't have an association to Time.
+  base::Time timeline_offset_;
+
+  // Liveness of the stream.
+  Liveness liveness_;
 
   // Whether text streams have been enabled for this demuxer.
   bool text_enabled_;
@@ -257,6 +289,9 @@ class MEDIA_EXPORT FFmpegDemuxer : public Demuxer {
   scoped_ptr<FFmpegGlue> glue_;
 
   const NeedKeyCB need_key_cb_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<FFmpegDemuxer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FFmpegDemuxer);
 };

@@ -661,8 +661,8 @@ void InstallerState::GetExistingExeVersions(
         FileVersionInfo::CreateFileVersionInfo(chrome_exe));
     if (file_version_info) {
       base::string16 version_string = file_version_info->file_version();
-      if (!version_string.empty() && IsStringASCII(version_string))
-        existing_versions->insert(WideToASCII(version_string));
+      if (!version_string.empty() && base::IsStringASCII(version_string))
+        existing_versions->insert(base::UTF16ToASCII(version_string));
     }
   }
 }
@@ -689,7 +689,7 @@ void InstallerState::RemoveOldVersionDirectories(
   for (base::FilePath next_version = version_enum.Next(); !next_version.empty();
        next_version = version_enum.Next()) {
     base::FilePath dir_name(next_version.BaseName());
-    version = Version(WideToASCII(dir_name.value()));
+    version = Version(base::UTF16ToASCII(dir_name.value()));
     // Delete the version folder if it is less than the new version and not
     // equal to the old version (if we have an old version).
     if (version.IsValid() &&
@@ -742,8 +742,10 @@ void InstallerState::UpdateChannels() const {
   // Create the app's ClientState key if it doesn't exist.
   ChannelInfo channel_info;
   base::win::RegKey state_key;
-  LONG result = state_key.Create(root_key_, state_key_.c_str(),
-                                 KEY_QUERY_VALUE | KEY_SET_VALUE);
+  LONG result =
+      state_key.Create(root_key_,
+                       state_key_.c_str(),
+                       KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_32KEY);
   if (result == ERROR_SUCCESS) {
     channel_info.Initialize(state_key);
 
@@ -782,8 +784,10 @@ void InstallerState::UpdateChannels() const {
           continue;
         dist = product->distribution();
       }
-      result = state_key.Create(root_key_, dist->GetStateKey().c_str(),
-                                KEY_QUERY_VALUE | KEY_SET_VALUE);
+      result =
+          state_key.Create(root_key_,
+                           dist->GetStateKey().c_str(),
+                           KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_32KEY);
       if (result == ERROR_SUCCESS) {
         other_info.Initialize(state_key);
         if (!other_info.Equals(channel_info))

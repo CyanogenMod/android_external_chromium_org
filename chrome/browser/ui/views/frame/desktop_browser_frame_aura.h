@@ -15,16 +15,8 @@ class BrowserDesktopWindowTreeHost;
 class BrowserFrame;
 class BrowserView;
 
-namespace aura {
-namespace client {
-class UserActionClient;
-}
-}
-
-namespace views {
-namespace corewm {
+namespace wm {
 class VisibilityController;
-}
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -54,6 +46,10 @@ class DesktopBrowserFrameAura : public views::DesktopNativeWidgetAura,
   virtual const views::NativeWidget* AsNativeWidget() const OVERRIDE;
   virtual bool UsesNativeSystemMenu() const OVERRIDE;
   virtual int GetMinimizeButtonOffset() const OVERRIDE;
+  virtual bool ShouldSaveWindowPlacement() const OVERRIDE;
+  virtual void GetWindowPlacement(
+      gfx::Rect* bounds,
+      ui::WindowShowState* show_state) const OVERRIDE;
 
  private:
   // The BrowserView is our ClientView. This is a pointer to it.
@@ -63,8 +59,7 @@ class DesktopBrowserFrameAura : public views::DesktopNativeWidgetAura,
   // Owned by the RootWindow.
   BrowserDesktopWindowTreeHost* browser_desktop_window_tree_host_;
 
-  scoped_ptr<aura::client::UserActionClient> user_action_client_;
-  scoped_ptr<views::corewm::VisibilityController> visibility_controller_;
+  scoped_ptr<wm::VisibilityController> visibility_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBrowserFrameAura);
 };

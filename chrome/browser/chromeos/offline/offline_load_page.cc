@@ -22,8 +22,6 @@
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/localized_error.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
@@ -33,6 +31,8 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -97,7 +97,9 @@ std::string OfflineLoadPage::GetHTMLContents() {
         profile->GetPrefs()->GetString(prefs::kAcceptLanguages);
     LocalizedError::GetStrings(net::ERR_INTERNET_DISCONNECTED,
                                net::kErrorDomain, url_, false, false, locale,
-                               accept_languages, &error_strings);
+                               accept_languages,
+                               scoped_ptr<LocalizedError::ErrorPageParams>(),
+                               &error_strings);
     resource_id = IDR_OFFLINE_NET_LOAD_HTML;
   }
 

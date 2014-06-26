@@ -4,11 +4,15 @@
 
 #include "components/password_manager/core/common/password_manager_switches.h"
 
+namespace password_manager {
+
 namespace switches {
 
-// Disable using a public suffix based domain matching for autofill of
-// passwords.
-const char kDisablePasswordAutofillPublicSuffixDomainMatching[] =
-    "disable-password-autofill-public-suffix-domain-matching";
+// Disables the save-password prompt. Passwords are then saved automatically,
+// without asking the user.
+const char kEnableAutomaticPasswordSaving[] =
+    "enable-automatic-password-saving";
 
 }  // namespace switches
+
+}  // namespace password_manager

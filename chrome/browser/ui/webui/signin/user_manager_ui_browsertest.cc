@@ -10,14 +10,11 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-
-namespace {
-const GURL& url = GURL(chrome::kChromeUIUserManagerURL);
-}  // namespace
 
 class UserManagerUIBrowserTest : public InProcessBrowserTest,
                                  public testing::WithParamInterface<bool> {
@@ -27,17 +24,17 @@ class UserManagerUIBrowserTest : public InProcessBrowserTest,
  protected:
    virtual void SetUp() OVERRIDE {
     InProcessBrowserTest::SetUp();
-    DCHECK(CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kNewProfileManagement));
+    DCHECK(switches::IsNewProfileManagement());
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    command_line->AppendSwitch(switches::kNewProfileManagement);
+    switches::EnableNewProfileManagementForTesting(command_line);
   }
 };
 
 IN_PROC_BROWSER_TEST_F(UserManagerUIBrowserTest, PageLoads) {
-  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(browser(), url, 1);
+  ui_test_utils::NavigateToURLBlockUntilNavigationsComplete(
+      browser(), GURL(chrome::kChromeUIUserManagerURL), 1);
   content::WebContents* web_contents =
       browser()->tab_strip_model()->GetActiveWebContents();
 

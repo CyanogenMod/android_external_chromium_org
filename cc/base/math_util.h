@@ -25,6 +25,7 @@ class Rect;
 class RectF;
 class Transform;
 class Vector2dF;
+class Vector2d;
 }
 
 namespace cc {
@@ -143,6 +144,11 @@ class CC_EXPORT MathUtil {
   static gfx::PointF ProjectPoint(const gfx::Transform& transform,
                                   const gfx::PointF& point,
                                   bool* clipped);
+  // Identical to the above function, but coerces the homogeneous coordinate to
+  // a 3d rather than a 2d point.
+  static gfx::Point3F ProjectPoint3D(const gfx::Transform& transform,
+                                     const gfx::PointF& point,
+                                     bool* clipped);
 
   static gfx::Vector2dF ComputeTransform2dScaleComponents(const gfx::Transform&,
                                                           float fallbackValue);
@@ -172,6 +178,8 @@ class CC_EXPORT MathUtil {
   static scoped_ptr<base::Value> AsValue(const gfx::Rect& r);
   static bool FromValue(const base::Value*, gfx::Rect* out_rect);
   static scoped_ptr<base::Value> AsValue(const gfx::PointF& q);
+  static scoped_ptr<base::Value> AsValue(const gfx::Point3F&);
+  static scoped_ptr<base::Value> AsValue(const gfx::Vector2d& v);
   static scoped_ptr<base::Value> AsValue(const gfx::QuadF& q);
   static scoped_ptr<base::Value> AsValue(const gfx::RectF& rect);
   static scoped_ptr<base::Value> AsValue(const gfx::Transform& transform);

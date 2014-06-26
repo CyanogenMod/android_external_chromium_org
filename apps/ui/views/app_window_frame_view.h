@@ -7,11 +7,14 @@
 
 #include <string>
 
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/window/non_client_view.h"
+
+class SkRegion;
 
 namespace gfx {
 class Canvas;
@@ -37,17 +40,29 @@ class AppWindowFrameView : public views::NonClientFrameView,
  public:
   static const char kViewClassName[];
 
-  explicit AppWindowFrameView(NativeAppWindow* window);
+  // AppWindowFrameView is used to draw frames for app windows when a non
+  // standard frame is needed. This occurs if there is no frame needed, or if
+  // there is a frame color.
+  // If |draw_frame| is true, the view draws its own window title area and
+  // controls, using |frame_color|. If |draw_frame| is not true, no frame is
+  // drawn.
+  // TODO(benwells): Refactor this to split out frameless and colored frame
+  // views. See http://crbug.com/359432.
+  AppWindowFrameView(views::Widget* widget,
+                     NativeAppWindow* window,
+                     bool draw_frame,
+                     const SkColor& active_frame_color,
+                     const SkColor& inactive_frame_color);
   virtual ~AppWindowFrameView();
 
-  // Initializes this for the window |frame|. Sets the number of pixels for
-  // which a click is interpreted as a resize for the inner and outer border of
-  // the window and the lower-right corner resize handle.
-  void Init(views::Widget* frame,
-            int resize_inside_bounds_size,
-            int resize_outside_bounds_size,
-            int resize_outside_scale_for_touch,
-            int resize_area_corner_size);
+  void Init();
+
+  void SetResizeSizes(int resize_inside_bounds_size,
+                      int resize_outside_bounds_size,
+                      int resize_area_corner_size);
+  int resize_inside_bounds_size() const {
+    return resize_inside_bounds_size_;
+  };
 
  private:
   // views::NonClientFrameView implementation.
@@ -62,19 +77,29 @@ class AppWindowFrameView : public views::NonClientFrameView,
   virtual void UpdateWindowTitle() OVERRIDE {}
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual gfx::Size GetMaximumSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetMaximumSize() const OVERRIDE;
 
   // views::ButtonListener implementation.
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
+  // Some button images we use depend on the color of the frame. This
+  // will set these images based on the color of the frame.
+  void SetButtonImagesForFrame();
+
+  // Return the current frame color based on the active state of the window.
+  SkColor CurrentFrameColor();
+
+  views::Widget* widget_;
   NativeAppWindow* window_;
-  views::Widget* frame_;
+  bool draw_frame_;
+  SkColor active_frame_color_;
+  SkColor inactive_frame_color_;
   views::ImageButton* close_button_;
   views::ImageButton* maximize_button_;
   views::ImageButton* restore_button_;

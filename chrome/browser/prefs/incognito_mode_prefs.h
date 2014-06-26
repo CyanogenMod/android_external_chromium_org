@@ -7,9 +7,12 @@
 
 #include "base/basictypes.h"
 
-class CommandLine;
 class PrefService;
 class Profile;
+
+namespace base {
+class CommandLine;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -52,13 +55,24 @@ class IncognitoModePrefs {
   static bool IntToAvailability(int in_value, Availability* out_value);
 
   // Returns true if the browser should start in incognito mode.
-  static bool ShouldLaunchIncognito(const CommandLine& command_line,
+  static bool ShouldLaunchIncognito(const base::CommandLine& command_line,
                                     const PrefService* prefs);
 
   // Returns true if |profile| can open a new Browser. This checks the incognito
   // availability policies and verifies if the |profile| type is allowed to
   // open new windows.
   static bool CanOpenBrowser(Profile* profile);
+
+  // Returns whether parental controls have been enabled on the platform. This
+  // method simply returns a cached value and thus the result may be stale. May
+  // be called on any thread.
+  static bool ArePlatformParentalControlsEnabledCached();
+
+#if defined(OS_WIN)
+  // Initializes the parental control settings. Must be called on UI thread and
+  // before |ArePlatformParentalControlsEnabled|.
+  static void InitializePlatformParentalControls();
+#endif // OS_WIN
 
  private:
   // Returns whether parental controls have been enabled on the platform, which

@@ -9,19 +9,18 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
-#include "third_party/libjingle/source/talk/app/webrtc/videosourceinterface.h"
-
-namespace cricket {
-class VideoFrame;
-}
+#include "media/base/video_frame.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 
 namespace content {
 
-class MediaStreamDependencyFactory;
 class MediaStreamRegistryInterface;
+class MediaStreamVideoSink;
 class PpFrameReceiver;
 
 // Interface used by the effects pepper plugin to get captured frame
@@ -29,15 +28,13 @@ class PpFrameReceiver;
 class CONTENT_EXPORT FrameReaderInterface {
  public:
   // Got a new captured frame.
-  // The ownership of the |frame| is transfered to the caller. So the caller
-  // must delete |frame| when done with it.
-  virtual bool GotFrame(cricket::VideoFrame* frame) = 0;
+  virtual bool GotFrame(const scoped_refptr<media::VideoFrame>& frame) = 0;
 
  protected:
   virtual ~FrameReaderInterface() {}
 };
 
-// VideoSourceHandler is a glue class between the webrtc MediaStream and
+// VideoSourceHandler is a glue class between MediaStreamVideoTrack and
 // the effects pepper plugin host.
 class CONTENT_EXPORT VideoSourceHandler {
  public:
@@ -54,27 +51,30 @@ class CONTENT_EXPORT VideoSourceHandler {
   // Returns true on success and false on failure.
   bool Close(FrameReaderInterface* reader);
 
-  // Gets the VideoRenderer associated with |reader|.
-  // Made it public only for testing purpose.
-  cricket::VideoRenderer* GetReceiver(FrameReaderInterface* reader);
-
  private:
+  FRIEND_TEST_ALL_PREFIXES(VideoSourceHandlerTest, OpenClose);
+
   struct SourceInfo {
-    SourceInfo(scoped_refptr<webrtc::VideoSourceInterface> source,
+    SourceInfo(const blink::WebMediaStreamTrack& blink_track,
                FrameReaderInterface* reader);
     ~SourceInfo();
 
     scoped_ptr<PpFrameReceiver> receiver_;
-    scoped_refptr<webrtc::VideoSourceInterface> source_;
   };
 
   typedef std::map<FrameReaderInterface*, SourceInfo*> SourceInfoMap;
 
-  scoped_refptr<webrtc::VideoSourceInterface> GetFirstVideoSource(
-      const std::string& url);
+  // Deliver VideoFrame to the MediaStreamVideoSink associated with
+  // |reader|. For testing only.
+  void DeliverFrameForTesting(FrameReaderInterface* reader,
+                              const scoped_refptr<media::VideoFrame>& frame);
+
+  blink::WebMediaStreamTrack GetFirstVideoTrack(const std::string& url);
 
   MediaStreamRegistryInterface* registry_;
   SourceInfoMap reader_to_receiver_;
+
+  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoSourceHandler);
 };
@@ -82,4 +82,3 @@ class CONTENT_EXPORT VideoSourceHandler {
 }  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_VIDEO_SOURCE_HANDLER_H_
-

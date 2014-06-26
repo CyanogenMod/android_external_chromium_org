@@ -15,7 +15,10 @@
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/path_service.h"
 #include "base/pickle.h"
 #include "base/posix/eintr_wrapper.h"
@@ -23,12 +26,17 @@
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
+#include "base/strings/string_split.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
+#include "build/build_config.h"
+#include "components/nacl/common/nacl_nonsfi_util.h"
 #include "components/nacl/common/nacl_paths.h"
 #include "components/nacl/common/nacl_switches.h"
 #include "components/nacl/loader/nacl_helper_linux.h"
 #include "content/public/common/content_descriptors.h"
 #include "content/public/common/content_switches.h"
+#include "sandbox/linux/suid/client/setuid_sandbox_client.h"
+#include "sandbox/linux/suid/common/sandbox.h"
 
 namespace {
 
@@ -37,6 +45,19 @@ namespace {
 const char kNaClHelperReservedAtZero[] =
     "--reserved_at_zero=0xXXXXXXXXXXXXXXXX";
 const char kNaClHelperRDebug[] = "--r_debug=0xXXXXXXXXXXXXXXXX";
+
+// This is an environment variable which controls which (if any) other
+// environment variables are passed through to NaCl processes.  e.g.,
+// NACL_ENV_PASSTHROUGH="PATH,CWD" would pass both $PATH and $CWD to the child
+// process.
+const char kNaClEnvPassthrough[] = "NACL_ENV_PASSTHROUGH";
+char kNaClEnvPassthroughDelimiter = ',';
+
+// The following environment variables are always passed through if they exist
+// in the parent process.
+const char kNaClExeStderr[] = "NACL_EXE_STDERR";
+const char kNaClExeStdout[] = "NACL_EXE_STDOUT";
+const char kNaClVerbosity[] = "NACLVERBOSITY";
 
 #if defined(ARCH_CPU_X86)
 bool NonZeroSegmentBaseIsSlow() {
@@ -90,7 +111,7 @@ bool SendIPCRequestAndReadReply(int ipc_channel,
   }
 
   // Then read the remote reply.
-  std::vector<int> received_fds;
+  ScopedVector<base::ScopedFD> received_fds;
   const ssize_t msg_len =
       UnixDomainSocket::RecvMsg(ipc_channel, reply_data_buffer,
                                 reply_data_buffer_size, &received_fds);
@@ -104,13 +125,29 @@ bool SendIPCRequestAndReadReply(int ipc_channel,
 
 }  // namespace.
 
-NaClForkDelegate::NaClForkDelegate()
-    : status_(kNaClHelperUnused),
-      fd_(-1) {}
+namespace nacl {
 
-void NaClForkDelegate::Init(const int sandboxdesc) {
+void AddNaClZygoteForkDelegates(
+    ScopedVector<content::ZygoteForkDelegate>* delegates) {
+  delegates->push_back(new NaClForkDelegate(false /* nonsfi_mode */));
+  delegates->push_back(new NaClForkDelegate(true /* nonsfi_mode */));
+}
+
+NaClForkDelegate::NaClForkDelegate(bool nonsfi_mode)
+    : nonsfi_mode_(nonsfi_mode), status_(kNaClHelperUnused), fd_(-1) {
+}
+
+void NaClForkDelegate::Init(const int sandboxdesc,
+                            const bool enable_layer1_sandbox) {
   VLOG(1) << "NaClForkDelegate::Init()";
-  int fds[2];
+
+  // Only launch the non-SFI helper process if non-SFI mode is enabled.
+  if (nonsfi_mode_ && !IsNonSFIModeEnabled()) {
+    return;
+  }
+
+  scoped_ptr<sandbox::SetuidSandboxClient> setuid_sandbox_client(
+      sandbox::SetuidSandboxClient::Create());
 
   // For communications between the NaCl loader process and
   // the SUID sandbox.
@@ -119,36 +156,41 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
   // Confirm a hard-wired assumption.
   DCHECK_EQ(sandboxdesc, nacl_sandbox_descriptor);
 
-  CHECK(socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds) == 0);
+  int fds[2];
+  PCHECK(0 == socketpair(PF_UNIX, SOCK_SEQPACKET, 0, fds));
   base::FileHandleMappingVector fds_to_map;
   fds_to_map.push_back(std::make_pair(fds[1], kNaClZygoteDescriptor));
   fds_to_map.push_back(std::make_pair(sandboxdesc, nacl_sandbox_descriptor));
 
-  // Using nacl_helper_bootstrap is not necessary on x86-64 because
-  // NaCl's x86-64 sandbox is not zero-address-based.  Starting
-  // nacl_helper through nacl_helper_bootstrap works on x86-64, but it
-  // leaves nacl_helper_bootstrap mapped at a fixed address at the
-  // bottom of the address space, which is undesirable because it
-  // effectively defeats ASLR.
+  bool use_nacl_bootstrap = false;
+  // For non-SFI mode, we do not use fixed address space.
+  if (!nonsfi_mode_) {
+    // Using nacl_helper_bootstrap is not necessary on x86-64 because
+    // NaCl's x86-64 sandbox is not zero-address-based.  Starting
+    // nacl_helper through nacl_helper_bootstrap works on x86-64, but it
+    // leaves nacl_helper_bootstrap mapped at a fixed address at the
+    // bottom of the address space, which is undesirable because it
+    // effectively defeats ASLR.
 #if defined(ARCH_CPU_X86_64)
-  bool kUseNaClBootstrap = false;
+    use_nacl_bootstrap = false;
 #elif defined(ARCH_CPU_X86)
-  // Performance vs. security trade-off: We prefer using a
-  // non-zero-address-based sandbox on x86-32 because it provides some
-  // ASLR and so is more secure.  However, on Atom CPUs, using a
-  // non-zero segment base is very slow, so we use a zero-based
-  // sandbox on those.
-  bool kUseNaClBootstrap = NonZeroSegmentBaseIsSlow();
+    // Performance vs. security trade-off: We prefer using a
+    // non-zero-address-based sandbox on x86-32 because it provides some
+    // ASLR and so is more secure.  However, on Atom CPUs, using a
+    // non-zero segment base is very slow, so we use a zero-based
+    // sandbox on those.
+    use_nacl_bootstrap = NonZeroSegmentBaseIsSlow();
 #else
-  bool kUseNaClBootstrap = true;
+    use_nacl_bootstrap = true;
 #endif
+  }
 
   status_ = kNaClHelperUnused;
   base::FilePath helper_exe;
   base::FilePath helper_bootstrap_exe;
   if (!PathService::Get(nacl::FILE_NACL_HELPER, &helper_exe)) {
     status_ = kNaClHelperMissing;
-  } else if (kUseNaClBootstrap &&
+  } else if (use_nacl_bootstrap &&
              !PathService::Get(nacl::FILE_NACL_HELPER_BOOTSTRAP,
                                &helper_bootstrap_exe)) {
     status_ = kNaClHelperBootstrapMissing;
@@ -158,7 +200,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
     CommandLine::StringVector argv_to_launch;
     {
       CommandLine cmd_line(CommandLine::NO_PROGRAM);
-      if (kUseNaClBootstrap)
+      if (use_nacl_bootstrap)
         cmd_line.SetProgram(helper_bootstrap_exe);
       else
         cmd_line.SetProgram(helper_exe);
@@ -166,6 +208,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
       // Append any switches that need to be forwarded to the NaCl helper.
       static const char* kForwardSwitches[] = {
         switches::kDisableSeccompFilterSandbox,
+        switches::kNaClDangerousNoSandboxNonSfi,
         switches::kNoSandbox,
       };
       const CommandLine& current_cmd_line = *CommandLine::ForCurrentProcess();
@@ -177,7 +220,7 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
       // modified directly.
       argv_to_launch = cmd_line.argv();
     }
-    if (kUseNaClBootstrap) {
+    if (use_nacl_bootstrap) {
       // Arguments to the bootstrap helper which need to be at the start
       // of the command line, right after the helper's path.
       CommandLine::StringVector bootstrap_prepend;
@@ -188,9 +231,22 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
                             bootstrap_prepend.begin(),
                             bootstrap_prepend.end());
     }
+
     base::LaunchOptions options;
+
+    base::ScopedFD dummy_fd;
+    if (enable_layer1_sandbox) {
+      // NaCl needs to keep tight control of the cmd_line, so prepend the
+      // setuid sandbox wrapper manually.
+      base::FilePath sandbox_path =
+          setuid_sandbox_client->GetSandboxBinaryPath();
+      argv_to_launch.insert(argv_to_launch.begin(), sandbox_path.value());
+      setuid_sandbox_client->SetupLaunchOptions(
+          &options, &fds_to_map, &dummy_fd);
+      setuid_sandbox_client->SetupLaunchEnvironment();
+    }
+
     options.fds_to_remap = &fds_to_map;
-    options.clone_flags = CLONE_FS | SIGCHLD;
 
     // The NaCl processes spawned may need to exceed the ambient soft limit
     // on RLIMIT_AS to allocate the untrusted address space and its guard
@@ -202,9 +258,19 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
     max_these_limits.push_back(RLIMIT_AS);
     options.maximize_rlimits = &max_these_limits;
 
+    // To avoid information leaks in Non-SFI mode, clear the environment for
+    // the NaCl Helper process.
+    options.clear_environ = true;
+    AddPassthroughEnvToOptions(&options);
+
     if (!base::LaunchProcess(argv_to_launch, options, NULL))
       status_ = kNaClHelperLaunchFailed;
     // parent and error cases are handled below
+
+    if (enable_layer1_sandbox) {
+      // Sanity check that dummy_fd was kept alive for LaunchProcess.
+      DCHECK(dummy_fd.is_valid());
+    }
   }
   if (IGNORE_EINTR(close(fds[1])) != 0)
     LOG(ERROR) << "close(fds[1]) failed";
@@ -235,7 +301,8 @@ void NaClForkDelegate::Init(const int sandboxdesc) {
 void NaClForkDelegate::InitialUMA(std::string* uma_name,
                                   int* uma_sample,
                                   int* uma_boundary_value) {
-  *uma_name = "NaCl.Client.Helper.InitState";
+  *uma_name = nonsfi_mode_ ? "NaCl.Client.HelperNonSFI.InitState"
+                           : "NaCl.Client.Helper.InitState";
   *uma_sample = status_;
   *uma_boundary_value = kNaClHelperStatusBoundary;
 }
@@ -252,15 +319,22 @@ bool NaClForkDelegate::CanHelp(const std::string& process_type,
                                std::string* uma_name,
                                int* uma_sample,
                                int* uma_boundary_value) {
-  if (process_type != switches::kNaClLoaderProcess)
+  // We can only help with a specific process type depending on nonsfi_mode_.
+  const char* helpable_process_type = nonsfi_mode_
+                                          ? switches::kNaClLoaderNonSfiProcess
+                                          : switches::kNaClLoaderProcess;
+  if (process_type != helpable_process_type)
     return false;
-  *uma_name = "NaCl.Client.Helper.StateOnFork";
+  *uma_name = nonsfi_mode_ ? "NaCl.Client.HelperNonSFI.StateOnFork"
+                           : "NaCl.Client.Helper.StateOnFork";
   *uma_sample = status_;
   *uma_boundary_value = kNaClHelperStatusBoundary;
   return true;
 }
 
-pid_t NaClForkDelegate::Fork(const std::vector<int>& fds) {
+pid_t NaClForkDelegate::Fork(const std::string& process_type,
+                             const std::vector<int>& fds,
+                             const std::string& channel_id) {
   VLOG(1) << "NaClForkDelegate::Fork";
 
   DCHECK(fds.size() == kNumPassedFDs);
@@ -273,6 +347,10 @@ pid_t NaClForkDelegate::Fork(const std::vector<int>& fds) {
   // First, send a remote fork request.
   Pickle write_pickle;
   write_pickle.WriteInt(nacl::kNaClForkRequest);
+  // TODO(hamaji): When we split the helper binary for non-SFI mode
+  // from nacl_helper, stop sending this information.
+  write_pickle.WriteBool(nonsfi_mode_);
+  write_pickle.WriteString(channel_id);
 
   char reply_buf[kNaClMaxIPCMessageLength];
   ssize_t reply_size = 0;
@@ -294,16 +372,6 @@ pid_t NaClForkDelegate::Fork(const std::vector<int>& fds) {
   }
   VLOG(1) << "nacl_child is " << nacl_child;
   return nacl_child;
-}
-
-bool NaClForkDelegate::AckChild(const int fd,
-                                const std::string& channel_switch) {
-  int nwritten = HANDLE_EINTR(write(fd, channel_switch.c_str(),
-                                    channel_switch.length()));
-  if (nwritten != static_cast<int>(channel_switch.length())) {
-    return false;
-  }
-  return true;
 }
 
 bool NaClForkDelegate::GetTerminationStatus(pid_t pid, bool known_dead,
@@ -349,3 +417,26 @@ bool NaClForkDelegate::GetTerminationStatus(pid_t pid, bool known_dead,
   *exit_code = remote_exit_code;
   return true;
 }
+
+// static
+void NaClForkDelegate::AddPassthroughEnvToOptions(
+    base::LaunchOptions* options) {
+  scoped_ptr<base::Environment> env(base::Environment::Create());
+  std::string pass_through_string;
+  std::vector<std::string> pass_through_vars;
+  if (env->GetVar(kNaClEnvPassthrough, &pass_through_string)) {
+    base::SplitString(
+        pass_through_string, kNaClEnvPassthroughDelimiter, &pass_through_vars);
+  }
+  pass_through_vars.push_back(kNaClExeStderr);
+  pass_through_vars.push_back(kNaClExeStdout);
+  pass_through_vars.push_back(kNaClVerbosity);
+  pass_through_vars.push_back(sandbox::kSandboxEnvironmentApiRequest);
+  for (size_t i = 0; i < pass_through_vars.size(); ++i) {
+    std::string temp;
+    if (env->GetVar(pass_through_vars[i].c_str(), &temp))
+      options->environ[pass_through_vars[i]] = temp;
+  }
+}
+
+}  // namespace nacl

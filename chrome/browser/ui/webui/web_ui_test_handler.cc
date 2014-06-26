@@ -13,6 +13,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -31,25 +32,21 @@ void WebUITestHandler::PreloadJavaScript(const base::string16& js_text,
                                          RenderViewHost* preload_host) {
   DCHECK(preload_host);
   preload_host->Send(new ChromeViewMsg_WebUIJavaScript(
-      preload_host->GetRoutingID(), base::string16(), js_text, 0,
-      false));
+      preload_host->GetRoutingID(), js_text));
 }
 
 void WebUITestHandler::RunJavaScript(const base::string16& js_text) {
-  web_ui()->GetWebContents()->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      base::string16(), js_text);
+  web_ui()->GetWebContents()->GetMainFrame()->ExecuteJavaScript(js_text);
 }
 
 bool WebUITestHandler::RunJavaScriptTestWithResult(
     const base::string16& js_text) {
   test_succeeded_ = false;
   run_test_succeeded_ = false;
-  RenderViewHost* rvh = web_ui()->GetWebContents()->GetRenderViewHost();
-  rvh->ExecuteJavascriptInWebFrameCallbackResult(
-      base::string16(),  // frame_xpath
-      js_text,
-      base::Bind(&WebUITestHandler::JavaScriptComplete,
-                 base::Unretained(this)));
+  content::RenderFrameHost* frame = web_ui()->GetWebContents()->GetMainFrame();
+  frame->ExecuteJavaScript(js_text,
+                           base::Bind(&WebUITestHandler::JavaScriptComplete,
+                                      base::Unretained(this)));
   return WaitForResult();
 }
 

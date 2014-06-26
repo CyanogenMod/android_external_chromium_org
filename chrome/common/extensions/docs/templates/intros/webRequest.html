@@ -1,7 +1,7 @@
 <h2 id="manifest">Manifest</h2>
 <p>You must declare the "webRequest" permission in the <a
-  href="manifest.html">extension manifest</a> to use the web request
-API, along with <a href="declare_permissions.html">host permissions</a>
+  href="manifest">extension manifest</a> to use the web request
+API, along with <a href="declare_permissions">host permissions</a>
 for any hosts whose network requests you want to access. If you want to
 use the web request API in a blocking fashion, you need to request
 the "webRequestBlocking" permission in addition.
@@ -58,7 +58,10 @@ event definitions:<br/>
   <dd>Fires each time that an HTTP(S) response header is received. Due
   to redirects and authentication requests this can happen multiple times per
   request. This event is intended to allow extensions to add, modify, and delete
-  response headers, such as incoming Set-Cookie headers.</dd>
+  response headers, such as incoming Set-Cookie headers. The caching directives
+  are processed before this event is triggered, so modifying headers such as
+  Cache-Control has no influence on the browser's cache.
+  It also allows you to redirect the request.</dd>
   <dt><code>onAuthRequired</code> (optionally synchronous)</dt>
   <dd>Fires when a request requires authentication of the user. This event can
   be handled synchronously to provide authentication credentials. Note that
@@ -116,7 +119,7 @@ complete nor stable.
 <p>
 The webRequest API only exposes requests that the extension has
 permission to see, given its
-<a href="declare_permissions.html">host permissions</a>.
+<a href="declare_permissions">host permissions</a>.
 Moreover, only the following schemes are accessible:
 <code>http://</code>,
 <code>https://</code>,
@@ -156,7 +159,7 @@ of HTTP redirection or HTTP authentication.</p>
 <h3 id="subscription">Registering event listeners</h3>
 
 <p>To register an event listener for a web request, you use a variation on the
-<a href="events.html">usual <code>addListener()</code> function</a>.
+<a href="events">usual <code>addListener()</code> function</a>.
 In addition to specifying a callback function,
 you have to specify a filter argument and you may specify an optional extra info
 argument.</p>
@@ -185,26 +188,26 @@ depends on the specific event type as well as the content of
 <p>If the optional <code>opt_extraInfoSpec</code> array contains the string
 <code>'blocking'</code> (only allowed for specific events), the callback
 function is handled synchronously. That means that the request is blocked until
-the callback function returns. In this case, the callback can return a 
-  $ref:webRequest.BlockingResponse that determines the further
+the callback function returns. In this case, the callback can return a
+  $(ref:webRequest.BlockingResponse) that determines the further
 life cycle of the request. Depending on the context, this response allows
 cancelling or redirecting a request (<code>onBeforeRequest</code>), cancelling a
 request or modifying headers (<code>onBeforeSendHeaders</code>,
 <code>onHeadersReceived</code>), or providing authentication credentials
 (<code>onAuthRequired</code>).</p>
 
-<p>The $ref:webRequest.RequestFilter
+<p>The $(ref:webRequest.RequestFilter)
 <code>filter</code> allows limiting the requests for which events are
 triggered in various dimensions:
 <dl>
   <dt>URLs</dt>
-  <dd><a href="match_patterns.html">URL patterns</a> such as
+  <dd><a href="match_patterns">URL patterns</a> such as
   <code>*://www.google.com/foo*bar</code>.</dd>
   <dt>Types</dt>
   <dd>Request types such as <code>main_frame</code> (a document that is loaded
   for a top-level frame), <code>sub_frame</code> (a document that is loaded for
   an embedded frame), and <code>image</code> (an image on a web site).
-  See $ref:webRequest.RequestFilter.</dd>
+  See $(ref:webRequest.RequestFilter).</dd>
   <dt>Tab ID</dt>
   <dd>The identifier for one tab.</dd>
   <dt>Window ID</dt>
@@ -254,6 +257,16 @@ inside the extension (via <code>(new Date()).getTime()</code>, for instance)
 might give unexpected results.
 </p>
 
+<h3 id="error_handling">Error handling</h3>
+<p>
+If you try to register an event with invalid arguments, then a JavaScript error
+will be thrown, and the event handler will not be registered.
+
+If an error is thrown while an event is handled, or if an event handler returns
+an invalid blocking response, an error message is logged to your extension's
+console and the handler is ignored for that request.
+</p>
+
 <h2 id="examples">Examples</h2>
 
 <p>The following example illustrates how to block all requests to
@@ -297,5 +310,5 @@ chrome.webRequest.onBeforeSendHeaders.addListener(
   ["blocking", "requestHeaders"]);
 </pre>
 
-<p> For more example code, see the <a href="samples.html#webrequest">web request
+<p> For more example code, see the <a href="samples#webrequest">web request
 samples</a>.</p>

@@ -43,7 +43,7 @@ class ExtensionEnableFlow;
 class GURL;
 class LauncherItemController;
 class Profile;
-class ShellWindowLauncherController;
+class AppWindowLauncherController;
 class TabContents;
 
 namespace ash {
@@ -78,7 +78,6 @@ class ChromeLauncherControllerUserSwitchObserver {
   virtual ~ChromeLauncherControllerUserSwitchObserver() {}
 
  private:
-
   DISALLOW_COPY_AND_ASSIGN(ChromeLauncherControllerUserSwitchObserver);
 };
 
@@ -87,8 +86,8 @@ class ChromeLauncherControllerUserSwitchObserver {
 // This incarnation groups running tabs/windows in application specific lists.
 // * Browser app windows have BrowserLauncherItemController, owned by the
 //   BrowserView instance.
-// * App shell windows have ShellWindowLauncherItemController, owned by
-//   ShellWindowLauncherController.
+// * App windows have AppWindowLauncherItemController, owned by
+//   AppWindowLauncherController.
 // * Shortcuts have no LauncherItemController.
 class ChromeLauncherController : public ash::ShelfDelegate,
                                  public ash::ShelfModelObserver,
@@ -179,6 +178,14 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // be pinned.
   bool IsPinnable(ash::ShelfID id) const;
 
+  // Installs the specified id. Only valid if the id corresponds to an ephemeral
+  // app.
+  void Install(ash::ShelfID id);
+
+  // Returns true if the specified item can be installed. Only true for
+  // ephemeral apps.
+  bool CanInstall(ash::ShelfID id);
+
   // If there is no shelf item in the shelf for application |app_id|, one
   // gets created. The (existing or created) shelf items get then locked
   // against a users un-pinning removal.
@@ -263,10 +270,6 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // user is not allowed to modify the auto-hide behavior.
   void ToggleShelfAutoHideBehavior(aura::Window* root_window);
 
-  // The tab no longer represents its previously identified application.
-  void RemoveTabFromRunningApp(content::WebContents* tab,
-                               const std::string& app_id);
-
   // Notify the controller that the state of an non platform app's tabs
   // have changed,
   void UpdateAppState(content::WebContents* contents, AppState app_state);
@@ -314,7 +317,6 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   virtual void OnShelfAlignmentChanged(aura::Window* root_window) OVERRIDE;
 
   // ash::DisplayController::Observer overrides:
-  virtual void OnDisplayConfigurationChanging() OVERRIDE;
   virtual void OnDisplayConfigurationChanged() OVERRIDE;
 
   // PrefServiceSyncableObserver overrides:
@@ -387,9 +389,9 @@ class ChromeLauncherController : public ash::ShelfDelegate,
     return browser_status_monitor_.get();
   }
 
-  // Access to the ShellWindowController for tests.
-  ShellWindowLauncherController* shell_window_controller_for_test() {
-    return shell_window_controller_.get();
+  // Access to the AppWindowLauncherController for tests.
+  AppWindowLauncherController* app_window_controller_for_test() {
+    return app_window_controller_.get();
   }
 
  protected:
@@ -415,8 +417,6 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   friend class LauncherPlatformAppBrowserTest;
 
   typedef std::map<ash::ShelfID, LauncherItemController*> IDToItemControllerMap;
-  typedef std::list<content::WebContents*> WebContentsList;
-  typedef std::map<std::string, WebContentsList> AppIDToWebContentsListMap;
   typedef std::map<content::WebContents*, std::string> WebContentsToAppIDMap;
 
   // Remembers / restores list of running applications.
@@ -465,8 +465,15 @@ class ChromeLauncherController : public ash::ShelfDelegate,
   // Sets both of auto-hide behavior and alignment from prefs.
   void SetShelfBehaviorsFromPrefs();
 
-  // Returns the most recently active web contents for an app.
-  content::WebContents* GetLastActiveWebContents(const std::string& app_id);
+#if defined(OS_CHROMEOS)
+  // Sets whether the virtual keyboard is enabled from prefs.
+  void SetVirtualKeyboardBehaviorFromPrefs();
+#endif  // defined(OS_CHROMEOS)
+
+  // Returns the shelf item status for the given |app_id|, which can be either
+  // STATUS_ACTIVE (if the app is active), STATUS_RUNNING (if there is such an
+  // app) or STATUS_CLOSED.
+  ash::ShelfItemStatus GetAppState(const std::string& app_id);
 
   // Creates an app launcher to insert at |index|. Note that |index| may be
   // adjusted by the model to meet ordering constraints.
@@ -549,14 +556,11 @@ class ChromeLauncherController : public ash::ShelfDelegate,
 
   IDToItemControllerMap id_to_item_controller_map_;
 
-  // Maintains activation order of web contents for each app.
-  AppIDToWebContentsListMap app_id_to_web_contents_list_;
-
   // Direct access to app_id for a web contents.
   WebContentsToAppIDMap web_contents_to_app_id_;
 
-  // Used to track shell windows.
-  scoped_ptr<ShellWindowLauncherController> shell_window_controller_;
+  // Used to track app windows.
+  scoped_ptr<AppWindowLauncherController> app_window_controller_;
 
   // Used to get app info for tabs.
   scoped_ptr<AppTabHelper> app_tab_helper_;

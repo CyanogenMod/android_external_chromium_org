@@ -210,18 +210,13 @@ class NET_EXPORT_PRIVATE HttpNetworkTransaction
   // Gets the response headers from the HttpStream.
   HttpResponseHeaders* GetResponseHeaders() const;
 
-  // Called when we reached EOF or got an error.  Returns true if we should
-  // resend the request.  |error| is OK when we reached EOF.
-  bool ShouldResendRequest(int error) const;
+  // Called when the socket is unexpectedly closed.  Returns true if the request
+  // should be resent in case of a socket reuse/close race.
+  bool ShouldResendRequest() const;
 
   // Resets the connection and the request headers for resend.  Called when
   // ShouldResendRequest() is true.
   void ResetConnectionAndRequestForResend();
-
-  // Decides the policy when the connection is closed before the end of headers
-  // has been read. This only applies to reading responses, and not writing
-  // requests.
-  int HandleConnectionClosedBeforeEndOfHeaders();
 
   // Sets up the state machine to restart the transaction with auth.
   void PrepareForAuthRestart(HttpAuth::Target target);

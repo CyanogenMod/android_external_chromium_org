@@ -8,13 +8,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
-#include "mojo/public/system/core.h"
+#include "mojo/public/c/system/types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace mojo {
 namespace system {
 
-class CoreImpl;
+class Core;
 
 namespace test {
 
@@ -34,10 +34,10 @@ class CoreTestBase : public testing::Test {
   // |info| must remain alive until the returned handle is closed.
   MojoHandle CreateMockHandle(MockHandleInfo* info);
 
-  CoreImpl* core() { return core_; }
+  Core* core() { return core_; }
 
  private:
-  CoreImpl* core_;
+  Core* core_;
 
   DISALLOW_COPY_AND_ASSIGN(CoreTestBase);
 };

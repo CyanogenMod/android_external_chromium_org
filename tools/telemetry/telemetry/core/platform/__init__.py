@@ -1,12 +1,13 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import sys
+from telemetry.core.platform import factory
 
-from telemetry.core.platform import linux_platform_backend
-from telemetry.core.platform import mac_platform_backend
-from telemetry.core.platform import win_platform_backend
+
+def GetHostPlatform():
+  return Platform(factory.GetPlatformBackendForCurrentOS())
+
 
 class Platform(object):
   """The platform that the target browser is running on.
@@ -112,6 +113,12 @@ class Platform(object):
     return self._platform_backend.FlushSystemCacheForDirectory(
         directory, ignoring=ignoring)
 
+  def FlushDnsCache(self):
+    """Flushes the OS's DNS cache completely.
+
+    This function may require root or administrator access."""
+    return self._platform_backend.FlushDnsCache()
+
   def LaunchApplication(self, application, parameters=None,
                         elevate_privilege=False):
     """"Launches the given |application| with a list of |parameters| on the OS.
@@ -126,7 +133,7 @@ class Platform(object):
 
   def IsApplicationRunning(self, application):
     """Returns whether an application is currently running."""
-    return self._platform_backend.IsApplicationLaunchning(application)
+    return self._platform_backend.IsApplicationRunning(application)
 
   def CanLaunchApplication(self, application):
     """Returns whether the platform can launch the given application."""
@@ -158,60 +165,32 @@ class Platform(object):
   def StopVideoCapture(self):
     """Stops capturing video.
 
-    Yields:
-      (time_ms, bitmap) tuples representing each video keyframe. Only the first
-      frame in a run of sequential duplicate bitmaps is included.
-        time_ms is milliseconds relative to the first frame.
-        bitmap is a telemetry.core.Bitmap.
-    """
-    for t in self._platform_backend.StopVideoCapture():
-      yield t
-
-  def CanMonitorPowerSync(self):
-    """Returns True iff power can be monitored synchronously via
-    MonitorPowerSync().
-    """
-    return self._platform_backend.CanMonitorPowerSync()
-
-  def MonitorPowerSync(self, duration_ms):
-    """Synchronously monitors power for |duration_ms|.
-
     Returns:
-      A dict of power utilization statistics containing: {
-        # The instantaneous power (voltage * current) reading in milliwatts at
-        # each sample.
-        'power_samples_mw': [mw0, mw1, ..., mwN],
-
-        # The total energy consumption during the sampling period in milliwatt
-        # hours. May be estimated by integrating power samples or may be exact
-        # on supported hardware.
-        'energy_consumption_mwh': mwh,
-
-        # A platform-specific dictionary of additional details about the
-        # utilization of individual hardware components.
-        hw_component_utilization: {
-           ...
-        }
-      }
+      A telemetry.core.video.Video object.
     """
-    return self._platform_backend.MonitorPowerSync(duration_ms)
+    return self._platform_backend.StopVideoCapture()
 
-  def CanMonitorPowerAsync(self):
+  def CanMonitorPower(self):
     """Returns True iff power can be monitored asynchronously via
-    StartMonitoringPowerAsync() and StopMonitoringPowerAsync().
+    StartMonitoringPower() and StopMonitoringPower().
     """
-    return self._platform_backend.CanMonitorPowerAsync()
+    return self._platform_backend.CanMonitorPower()
 
-  def StartMonitoringPowerAsync(self):
-    """Starts monitoring power utilization statistics."""
-    assert self._platform_backend.CanMonitorPowerAsync()
-    self._platform_backend.StartMonitoringPowerAsync()
+  def StartMonitoringPower(self, browser):
+    """Starts monitoring power utilization statistics.
 
-  def StopMonitoringPowerAsync(self):
-    """Stops monitoring power utilization and returns collects stats
+    Args:
+      browser: The browser to monitor.
+    """
+    assert self._platform_backend.CanMonitorPower()
+    self._platform_backend.StartMonitoringPower(browser)
+
+  def StopMonitoringPower(self):
+    """Stops monitoring power utilization and returns stats
 
     Returns:
-      A dict of power utilization statistics containing: {
+      None if power measurement failed for some reason, otherwise a dict of
+      power utilization statistics containing: {
         # An identifier for the data provider. Allows to evaluate the precision
         # of the data. Example values: monsoon, powermetrics, ds2784
         'identifier': identifier,
@@ -227,20 +206,20 @@ class Platform(object):
 
         # A platform-specific dictionary of additional details about the
         # utilization of individual hardware components.
-        hw_component_utilization: {
-           ...
+        component_utilization: {
+
+          # Platform-specific data not attributed to any particular hardware
+          # component.
+          whole_package: {
+
+            # Device-specific onboard temperature sensor.
+            'average_temperature_c': c,
+
+            ...
+          }
+
+          ...
         }
       }
     """
-    return self._platform_backend.StopMonitoringPowerAsync()
-
-
-def CreatePlatformBackendForCurrentOS():
-  if sys.platform.startswith('linux'):
-    return linux_platform_backend.LinuxPlatformBackend()
-  elif sys.platform == 'darwin':
-    return mac_platform_backend.MacPlatformBackend()
-  elif sys.platform == 'win32':
-    return win_platform_backend.WinPlatformBackend()
-  else:
-    raise NotImplementedError()
+    return self._platform_backend.StopMonitoringPower()

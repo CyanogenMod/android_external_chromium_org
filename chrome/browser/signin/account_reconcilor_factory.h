@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_SIGNIN_ACCOUNT_RECONCILOR_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/signin/account_reconcilor.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "components/signin/core/browser/account_reconcilor.h"
 
 class AccountReconcilor;
 class Profile;
@@ -31,7 +31,7 @@ class AccountReconcilorFactory : public BrowserContextKeyedServiceFactory {
   virtual ~AccountReconcilorFactory();
 
   // BrowserContextKeyedServiceFactory:
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual void RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;

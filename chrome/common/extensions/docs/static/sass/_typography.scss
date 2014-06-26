@@ -114,6 +114,10 @@ footer[role="contentinfo"] {
   }
 }
 
+em {
+  padding-right: 2px; /* "kerning" adjustment */
+}
+
 img {
   vertical-align: middle;
 }
@@ -146,6 +150,10 @@ pre {
   color: $monospace-font-color;
   font-family: $sourcecode;
   //font-size: $monospace-font-size;
+}
+
+a > code {
+  color: $link-color;
 }
 
 pre {
@@ -240,10 +248,6 @@ hr {
   padding: 0.1em 0.6em;
   margin: 0 0.1em;
   white-space: nowrap;
-  -webkit-box-shadow: 0 1px 0px rgba(0, 0, 0, 0.2), 0 0 0 2px #ffffff inset;
-  -moz-box-shadow: 0 1px 0px rgba(0, 0, 0, 0.2), 0 0 0 2px #ffffff inset;
   box-shadow: 0 1px 0px rgba(0, 0, 0, 0.2), 0 0 0 2px #ffffff inset;
-  -webkit-border-radius: 3px;
-  -moz-border-radius: 3px;
   border-radius: 3px;
 }

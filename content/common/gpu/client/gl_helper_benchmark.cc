@@ -37,10 +37,6 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include "ui/gfx/gtk_util.h"
-#endif
-
 namespace content {
 
 using blink::WebGLId;
@@ -62,8 +58,9 @@ class GLHelperTest : public testing::Test {
  protected:
   virtual void SetUp() {
     WebGraphicsContext3D::Attributes attributes;
+    bool lose_context_when_out_of_memory = false;
     context_ = webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
-        CreateOffscreenContext(attributes);
+        CreateOffscreenContext(attributes, lose_context_when_out_of_memory);
     context_->makeContextCurrent();
 
     helper_.reset(
@@ -315,9 +312,6 @@ int main(int argc, char** argv) {
   base::TestSuite* suite = new content::ContentTestSuite(argc, argv);
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;
-#endif
-#if defined(TOOLKIT_GTK)
-  gfx::GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
 #endif
   gfx::GLSurface::InitializeOneOff();
 

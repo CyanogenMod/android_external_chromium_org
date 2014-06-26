@@ -124,12 +124,9 @@ all available toolchains::
   make[1]: Leaving directory `pepper_31/examples/api/core'
   make TOOLCHAIN=pnacl
   make[1]: Entering directory `pepper_31/examples/api/core'
-    CXX  pnacl/Debug/core_pnacl.o
-    LINK pnacl/Debug/core.bc
-    FINALIZE pnacl/Debug/core.pexe
-    TRANSLATE pnacl/Debug/core_x86_32.nexe
-    TRANSLATE pnacl/Debug/core_x86_64.nexe
-    TRANSLATE pnacl/Debug/core_arm.nexe
+    CXX  pnacl/Debug/core.o
+    LINK pnacl/Debug/core_unstripped.bc
+    FINALIZE pnacl/Debug/core_unstripped.pexe
     CREATE_NMF pnacl/Debug/core.nmf
   make[1]: Leaving directory `pepper_31/examples/api/core'
   make TOOLCHAIN=linux
@@ -171,7 +168,7 @@ To run the SDK examples, you can use the ``make run`` command::
 
 This will launch a local HTTP server which will serve the data for the
 example. It then launches Chrome with the address of this server, usually
-http://localhost:5103. After you close Chrome, the local HTTP server is
+``http://localhost:5103``. After you close Chrome, the local HTTP server is
 automatically shutdown.
 
 This command will try to find an executable named ``google-chrome`` in your
@@ -220,10 +217,9 @@ Run the SDK examples as packaged apps
 -------------------------------------
 
 Each example can also be launched as a packaged app. For more information about
-using Native Client for packaged apps, see :ref:`Packaged appliction
+using Native Client for packaged apps, see :ref:`Packaged application
 <distributing_packaged>`.  For general information about packaged apps, see the
-`Chrome apps documentation
-<http://developer.chrome.com/apps/about_apps.html>`_.
+`Chrome apps documentation </apps/about_apps>`_.
 
 Some Pepper features, such as TCP/UDP socket access, are only allowed in
 packaged apps. The examples that use these features must be run as packaged
@@ -254,7 +250,7 @@ console, type::
 
   (gdb) target remote :4014
 
-This tells GDB to connect to a TCP port on localhost:4014--the port that
+This tells GDB to connect to a TCP port on ``localhost:4014``--the port that
 Chrome is listening on. GDB will respond::
 
   Remote debugging using :4014

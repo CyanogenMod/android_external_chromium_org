@@ -4,7 +4,7 @@
 
 #include "chrome/browser/chromeos/first_run/first_run_view.h"
 
-#include "chrome/browser/extensions/extension_web_contents_observer.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/ui/webui/chromeos/first_run/first_run_ui.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/render_view_host.h"
@@ -28,14 +28,10 @@ void FirstRunView::Init(content::BrowserContext* context) {
 
   content::WebContents* web_contents = web_view_->web_contents();
   web_contents->SetDelegate(this);
-  extensions::ExtensionWebContentsObserver::CreateForWebContents(web_contents);
+  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
+      web_contents);
 
-  SkBitmap background;
-  background.setConfig(SkBitmap::kA8_Config, 1, 1);
-  background.allocPixels();
-  background.eraseARGB(0, 0, 0, 0);
-  web_contents->GetRenderViewHost()->GetView()->
-    SetBackground(background);
+  web_contents->GetRenderViewHost()->GetView()->SetBackgroundOpaque(false);
 }
 
 FirstRunActor* FirstRunView::GetActor() {

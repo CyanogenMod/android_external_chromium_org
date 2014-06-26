@@ -44,6 +44,7 @@ class MEDIA_EXPORT VideoRenderer {
   //
   // |get_duration_cb| is used to query the media duration.
   virtual void Initialize(DemuxerStream* stream,
+                          bool low_delay,
                           const PipelineStatusCB& init_cb,
                           const StatisticsCB& statistics_cb,
                           const TimeCB& time_cb,
@@ -56,11 +57,8 @@ class MEDIA_EXPORT VideoRenderer {
   // |callback| when playback is underway.
   virtual void Play(const base::Closure& callback) = 0;
 
-  // Temporarily suspend decoding and rendering video, executing |callback| when
-  // playback has been suspended.
-  virtual void Pause(const base::Closure& callback) = 0;
-
-  // Discard any video data, executing |callback| when completed.
+  // Discard any video data and stop reading from |stream|, executing |callback|
+  // when completed.
   virtual void Flush(const base::Closure& callback) = 0;
 
   // Start prerolling video data. If |time| equals kNoTimestamp() then all

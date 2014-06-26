@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_delegate.h"
+
+#include "ui/events/event.h"
+#include "ui/views/controls/menu/menu_config.h"
 
 namespace views {
 
@@ -19,6 +21,11 @@ base::string16 MenuDelegate::GetLabel(int id) const {
 
 const gfx::FontList* MenuDelegate::GetLabelFontList(int id) const {
   return NULL;
+}
+
+bool MenuDelegate::GetShouldUseDisabledEmphasizedForegroundColor(
+    int command_id) const {
+  return false;
 }
 
 bool MenuDelegate::GetBackgroundColor(int command_id,
@@ -38,7 +45,7 @@ base::string16 MenuDelegate::GetTooltipText(int id,
   return base::string16();
 }
 
-bool MenuDelegate::GetAccelerator(int id, ui::Accelerator* accelerator) {
+bool MenuDelegate::GetAccelerator(int id, ui::Accelerator* accelerator) const {
   return false;
 }
 
@@ -126,7 +133,7 @@ int MenuDelegate::GetDragOperations(MenuItemView* sender) {
 
 MenuItemView* MenuDelegate::GetSiblingMenu(MenuItemView* menu,
                                            const gfx::Point& screen_point,
-                                           MenuItemView::AnchorPosition* anchor,
+                                           MenuAnchorPosition* anchor,
                                            bool* has_mnemonics,
                                            MenuButton** button) {
   return NULL;

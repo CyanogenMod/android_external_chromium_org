@@ -5,15 +5,16 @@
 #include "chrome/browser/extensions/api/execute_code_function.h"
 
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/extensions/script_executor.h"
 #include "chrome/common/extensions/api/i18n/default_locale_handler.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/message_bundle.h"
+#include "extensions/browser/component_extension_resource_manager.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/file_reader.h"
 #include "extensions/common/error_utils.h"
-#include "net/base/net_util.h"
+#include "extensions/common/extension_messages.h"
+#include "extensions/common/file_util.h"
+#include "extensions/common/message_bundle.h"
+#include "net/base/filename_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace extensions {
@@ -71,7 +72,7 @@ void ExecuteCodeFunction::GetFileURLAndLocalizeCSS(
       !extension_id.empty() &&
       (data.find(MessageBundle::kMessageBegin) != std::string::npos)) {
     scoped_ptr<SubstitutionMap> localization_messages(
-        extension_file_util::LoadMessageBundleSubstitutionMap(
+        file_util::LoadMessageBundleSubstitutionMap(
             extension_path, extension_id, extension_default_locale));
 
     // We need to do message replacement on the data, so it has to be mutable.
@@ -124,6 +125,11 @@ bool ExecuteCodeFunction::Execute(const std::string& code_string) {
           ScriptExecutor::ALL_FRAMES :
           ScriptExecutor::TOP_FRAME;
 
+  ScriptExecutor::MatchAboutBlank match_about_blank =
+      details_->match_about_blank.get() && *details_->match_about_blank ?
+          ScriptExecutor::MATCH_ABOUT_BLANK :
+          ScriptExecutor::DONT_MATCH_ABOUT_BLANK;
+
   UserScript::RunLocation run_at =
       UserScript::UNDEFINED;
   switch (details_->run_at) {
@@ -145,11 +151,14 @@ bool ExecuteCodeFunction::Execute(const std::string& code_string) {
       script_type,
       code_string,
       frame_scope,
+      match_about_blank,
       run_at,
       ScriptExecutor::ISOLATED_WORLD,
       IsWebView() ? ScriptExecutor::WEB_VIEW_PROCESS
                   : ScriptExecutor::DEFAULT_PROCESS,
+      GetWebViewSrc(),
       file_url_,
+      user_gesture_,
       has_callback() ? ScriptExecutor::JSON_SERIALIZED_RESULT
                      : ScriptExecutor::NO_RESULT,
       base::Bind(&ExecuteCodeFunction::OnExecuteCodeFinished, this));
@@ -160,7 +169,7 @@ bool ExecuteCodeFunction::HasPermission() {
   return true;
 }
 
-bool ExecuteCodeFunction::RunImpl() {
+bool ExecuteCodeFunction::RunAsync() {
   EXTENSION_FUNCTION_VALIDATE(Init());
 
   if (!details_->code.get() && !details_->file.get()) {
@@ -188,7 +197,8 @@ bool ExecuteCodeFunction::RunImpl() {
   }
 
   int resource_id;
-  if (ImageLoader::IsComponentExtensionResource(
+  if (ExtensionsBrowserClient::Get()->GetComponentExtensionResourceManager()->
+      IsComponentExtensionResource(
           resource_.extension_root(), resource_.relative_path(),
           &resource_id)) {
     const ResourceBundle& rb = ResourceBundle::GetSharedInstance();

@@ -14,24 +14,28 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
 #include "base/values.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/web_contents/web_contents_view.h"
+#include "content/common/input/synthetic_web_input_event_builders.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/dom_operation_notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
 #include "grit/webui_resources.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/cookies/cookie_store.h"
 #include "net/test/python_utils.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/gestures/gesture_configuration.h"
 #include "ui/events/keycodes/dom4/keycode_converter.h"
 
 namespace content {
@@ -44,7 +48,7 @@ class DOMOperationObserver : public NotificationObserver,
       : WebContentsObserver(WebContents::FromRenderViewHost(rvh)),
         did_respond_(false) {
     registrar_.Add(this, NOTIFICATION_DOM_OPERATION_RESPONSE,
-                   Source<RenderViewHost>(rvh));
+                   Source<WebContents>(web_contents()));
     message_loop_runner_ = new MessageLoopRunner;
   }
 
@@ -79,25 +83,23 @@ class DOMOperationObserver : public NotificationObserver,
 };
 
 // Specifying a prototype so that we can add the WARN_UNUSED_RESULT attribute.
-bool ExecuteScriptHelper(RenderViewHost* render_view_host,
-                         const std::string& frame_xpath,
-                         const std::string& original_script,
-                         scoped_ptr<base::Value>* result) WARN_UNUSED_RESULT;
+bool ExecuteScriptHelper(
+    RenderFrameHost* render_frame_host,
+    const std::string& original_script,
+    scoped_ptr<base::Value>* result) WARN_UNUSED_RESULT;
 
-// Executes the passed |original_script| in the frame pointed to by
-// |frame_xpath|.  If |result| is not NULL, stores the value that the evaluation
-// of the script in |result|.  Returns true on success.
-bool ExecuteScriptHelper(RenderViewHost* render_view_host,
-                         const std::string& frame_xpath,
+// Executes the passed |original_script| in the frame specified by
+// |render_frame_host|.  If |result| is not NULL, stores the value that the
+// evaluation of the script in |result|.  Returns true on success.
+bool ExecuteScriptHelper(RenderFrameHost* render_frame_host,
                          const std::string& original_script,
                          scoped_ptr<base::Value>* result) {
   // TODO(jcampan): we should make the domAutomationController not require an
   //                automation id.
   std::string script =
       "window.domAutomationController.setAutomationId(0);" + original_script;
-  DOMOperationObserver dom_op_observer(render_view_host);
-  render_view_host->ExecuteJavascriptInWebFrame(base::UTF8ToUTF16(frame_xpath),
-                                                base::UTF8ToUTF16(script));
+  DOMOperationObserver dom_op_observer(render_frame_host->GetRenderViewHost());
+  render_frame_host->ExecuteJavaScript(base::UTF8ToUTF16(script));
   std::string json;
   if (!dom_op_observer.WaitAndGetResponse(&json)) {
     DLOG(ERROR) << "Cannot communicate with DOMOperationObserver.";
@@ -222,8 +224,8 @@ void CrashTab(WebContents* web_contents) {
 void SimulateMouseClick(WebContents* web_contents,
                         int modifiers,
                         blink::WebMouseEvent::Button button) {
-  int x = web_contents->GetView()->GetContainerSize().width() / 2;
-  int y = web_contents->GetView()->GetContainerSize().height() / 2;
+  int x = web_contents->GetContainerBounds().width() / 2;
+  int y = web_contents->GetContainerBounds().height() / 2;
   SimulateMouseClickAt(web_contents, modifiers, button, gfx::Point(x, y));
 }
 
@@ -238,8 +240,7 @@ void SimulateMouseClickAt(WebContents* web_contents,
   mouse_event.y = point.y();
   mouse_event.modifiers = modifiers;
   // Mac needs globalX/globalY for events to plugins.
-  gfx::Rect offset;
-  web_contents->GetView()->GetContainerBounds(&offset);
+  gfx::Rect offset = web_contents->GetContainerBounds();
   mouse_event.globalX = point.x() + offset.x();
   mouse_event.globalY = point.y() + offset.y();
   mouse_event.clickCount = 1;
@@ -256,6 +257,24 @@ void SimulateMouseEvent(WebContents* web_contents,
   mouse_event.x = point.x();
   mouse_event.y = point.y();
   web_contents->GetRenderViewHost()->ForwardMouseEvent(mouse_event);
+}
+
+void SimulateTapAt(WebContents* web_contents, const gfx::Point& point) {
+  const double kTapDurationSeconds =
+      0.5 * (ui::GestureConfiguration::
+                 min_touch_down_duration_in_seconds_for_click() +
+             ui::GestureConfiguration::
+                 max_touch_down_duration_in_seconds_for_click());
+  SyntheticWebTouchEvent touch;
+  // Set the timestamp to the base::TimeDelta representing the current time.
+  touch.SetTimestamp(base::TimeTicks::Now() - base::TimeTicks());
+  touch.PressPoint(point.x(), point.y());
+  RenderWidgetHostImpl* widget_host =
+      RenderWidgetHostImpl::From(web_contents->GetRenderViewHost());
+  widget_host->ForwardTouchEvent(touch);
+  touch.timeStampSeconds += kTapDurationSeconds;
+  touch.ReleasePoint(0);
+  widget_host->ForwardTouchEvent(touch);
 }
 
 void SimulateKeyPress(WebContents* web_contents,
@@ -389,94 +408,98 @@ void SimulateKeyPressWithCode(WebContents* web_contents,
 
 namespace internal {
 
-ToRenderViewHost::ToRenderViewHost(WebContents* web_contents)
-    : render_view_host_(web_contents->GetRenderViewHost()) {
+ToRenderFrameHost::ToRenderFrameHost(WebContents* web_contents)
+    : render_frame_host_(web_contents->GetMainFrame()) {
 }
 
-ToRenderViewHost::ToRenderViewHost(RenderViewHost* render_view_host)
-    : render_view_host_(render_view_host) {
+ToRenderFrameHost::ToRenderFrameHost(RenderViewHost* render_view_host)
+    : render_frame_host_(render_view_host->GetMainFrame()) {
+}
+
+ToRenderFrameHost::ToRenderFrameHost(RenderFrameHost* render_frame_host)
+    : render_frame_host_(render_frame_host) {
 }
 
 }  // namespace internal
 
-bool ExecuteScriptInFrame(const internal::ToRenderViewHost& adapter,
-                          const std::string& frame_xpath,
-                          const std::string& original_script) {
-  std::string script =
-      original_script + ";window.domAutomationController.send(0);";
-  return ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
-                             NULL);
+bool ExecuteScript(const internal::ToRenderFrameHost& adapter,
+                   const std::string& script) {
+  std::string new_script =
+      script + ";window.domAutomationController.send(0);";
+  return ExecuteScriptHelper(adapter.render_frame_host(), new_script, NULL);
 }
 
-bool ExecuteScriptInFrameAndExtractInt(
-    const internal::ToRenderViewHost& adapter,
-    const std::string& frame_xpath,
-    const std::string& script,
-    int* result) {
+bool ExecuteScriptAndExtractInt(const internal::ToRenderFrameHost& adapter,
+                                const std::string& script, int* result) {
   DCHECK(result);
   scoped_ptr<base::Value> value;
-  if (!ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
-                           &value) || !value.get())
+  if (!ExecuteScriptHelper(adapter.render_frame_host(), script, &value) ||
+      !value.get()) {
     return false;
+  }
 
   return value->GetAsInteger(result);
 }
 
-bool ExecuteScriptInFrameAndExtractBool(
-    const internal::ToRenderViewHost& adapter,
-    const std::string& frame_xpath,
-    const std::string& script,
-    bool* result) {
+bool ExecuteScriptAndExtractBool(const internal::ToRenderFrameHost& adapter,
+                                 const std::string& script, bool* result) {
   DCHECK(result);
   scoped_ptr<base::Value> value;
-  if (!ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
-                           &value) || !value.get())
+  if (!ExecuteScriptHelper(adapter.render_frame_host(), script, &value) ||
+      !value.get()) {
     return false;
+  }
 
   return value->GetAsBoolean(result);
 }
 
-bool ExecuteScriptInFrameAndExtractString(
-    const internal::ToRenderViewHost& adapter,
-    const std::string& frame_xpath,
-    const std::string& script,
-    std::string* result) {
+bool ExecuteScriptAndExtractString(const internal::ToRenderFrameHost& adapter,
+                                   const std::string& script,
+                                   std::string* result) {
   DCHECK(result);
   scoped_ptr<base::Value> value;
-  if (!ExecuteScriptHelper(adapter.render_view_host(), frame_xpath, script,
-                           &value) || !value.get())
+  if (!ExecuteScriptHelper(adapter.render_frame_host(), script, &value) ||
+      !value.get()) {
     return false;
+  }
 
   return value->GetAsString(result);
 }
 
-bool ExecuteScript(const internal::ToRenderViewHost& adapter,
-                   const std::string& script) {
-  return ExecuteScriptInFrame(adapter, std::string(), script);
+namespace {
+void AddToSetIfFrameMatchesPredicate(
+    std::set<RenderFrameHost*>* frame_set,
+    const base::Callback<bool(RenderFrameHost*)>& predicate,
+    RenderFrameHost* host) {
+  if (predicate.Run(host))
+    frame_set->insert(host);
+}
 }
 
-bool ExecuteScriptAndExtractInt(const internal::ToRenderViewHost& adapter,
-                                const std::string& script, int* result) {
-  return ExecuteScriptInFrameAndExtractInt(adapter, std::string(), script,
-                                           result);
+RenderFrameHost* FrameMatchingPredicate(
+    WebContents* web_contents,
+    const base::Callback<bool(RenderFrameHost*)>& predicate) {
+  std::set<RenderFrameHost*> frame_set;
+  web_contents->ForEachFrame(
+      base::Bind(&AddToSetIfFrameMatchesPredicate, &frame_set, predicate));
+  DCHECK_EQ(1U, frame_set.size());
+  return *frame_set.begin();
 }
 
-bool ExecuteScriptAndExtractBool(const internal::ToRenderViewHost& adapter,
-                                 const std::string& script, bool* result) {
-  return ExecuteScriptInFrameAndExtractBool(adapter, std::string(), script,
-                                            result);
+bool FrameMatchesName(const std::string& name, RenderFrameHost* frame) {
+  return frame->GetFrameName() == name;
 }
 
-bool ExecuteScriptAndExtractString(const internal::ToRenderViewHost& adapter,
-                                   const std::string& script,
-                                   std::string* result) {
-  return ExecuteScriptInFrameAndExtractString(adapter, std::string(), script,
-                                              result);
+bool FrameIsChildOfMainFrame(RenderFrameHost* frame) {
+  return frame->GetParent() && !frame->GetParent()->GetParent();
 }
 
-bool ExecuteWebUIResourceTest(
-    const internal::ToRenderViewHost& adapter,
-    const std::vector<int>& js_resource_ids) {
+bool FrameHasSourceUrl(const GURL& url, RenderFrameHost* frame) {
+  return frame->GetLastCommittedURL() == url;
+}
+
+bool ExecuteWebUIResourceTest(WebContents* web_contents,
+                              const std::vector<int>& js_resource_ids) {
   // Inject WebUI test runner script first prior to other scripts required to
   // run the test as scripts may depend on it being declared.
   std::vector<int> ids;
@@ -491,11 +514,11 @@ bool ExecuteWebUIResourceTest(
         .AppendToString(&script);
     script.append("\n");
   }
-  if (!content::ExecuteScript(adapter, script))
+  if (!ExecuteScript(web_contents, script))
     return false;
 
-  content::DOMMessageQueue message_queue;
-  if (!content::ExecuteScript(adapter, "runTests()"))
+  DOMMessageQueue message_queue;
+  if (!ExecuteScript(web_contents, "runTests()"))
     return false;
 
   std::string message;
@@ -596,8 +619,7 @@ void WebContentsDestroyedWatcher::Wait() {
   message_loop_runner_->Run();
 }
 
-void WebContentsDestroyedWatcher::WebContentsDestroyed(
-    WebContents* web_contents) {
+void WebContentsDestroyedWatcher::WebContentsDestroyed() {
   message_loop_runner_->Quit();
 }
 
@@ -642,7 +664,7 @@ void RenderProcessHostWatcher::RenderProcessHostDestroyed(
     message_loop_runner_->Quit();
 }
 
-DOMMessageQueue::DOMMessageQueue() : waiting_for_message_(false) {
+DOMMessageQueue::DOMMessageQueue() {
   registrar_.Add(this, NOTIFICATION_DOM_OPERATION_RESPONSE,
                  NotificationService::AllSources());
 }
@@ -653,12 +675,9 @@ void DOMMessageQueue::Observe(int type,
                               const NotificationSource& source,
                               const NotificationDetails& details) {
   Details<DomOperationNotificationDetails> dom_op_details(details);
-  Source<RenderViewHost> sender(source);
   message_queue_.push(dom_op_details->json);
-  if (waiting_for_message_) {
-    waiting_for_message_ = false;
+  if (message_loop_runner_)
     message_loop_runner_->Quit();
-  }
 }
 
 void DOMMessageQueue::ClearQueue() {
@@ -666,8 +685,8 @@ void DOMMessageQueue::ClearQueue() {
 }
 
 bool DOMMessageQueue::WaitForMessage(std::string* message) {
+  DCHECK(message);
   if (message_queue_.empty()) {
-    waiting_for_message_ = true;
     // This will be quit when a new message comes in.
     message_loop_runner_ = new MessageLoopRunner;
     message_loop_runner_->Run();
@@ -675,8 +694,7 @@ bool DOMMessageQueue::WaitForMessage(std::string* message) {
   // The queue should not be empty, unless we were quit because of a timeout.
   if (message_queue_.empty())
     return false;
-  if (message)
-    *message = message_queue_.front();
+  *message = message_queue_.front();
   message_queue_.pop();
   return true;
 }

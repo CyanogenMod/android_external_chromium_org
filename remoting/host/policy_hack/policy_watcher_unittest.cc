@@ -71,6 +71,17 @@ class PolicyWatcherTest : public testing::Test {
         kOverrideNatTraversalToFalse);
     pairing_true_.SetBoolean(PolicyWatcher::kHostAllowClientPairing, true);
     pairing_false_.SetBoolean(PolicyWatcher::kHostAllowClientPairing, false);
+    gnubby_auth_true_.SetBoolean(PolicyWatcher::kHostAllowGnubbyAuthPolicyName,
+                                 true);
+    gnubby_auth_false_.SetBoolean(PolicyWatcher::kHostAllowGnubbyAuthPolicyName,
+                                 false);
+    relay_true_.SetBoolean(PolicyWatcher::kRelayPolicyName, true);
+    relay_false_.SetBoolean(PolicyWatcher::kRelayPolicyName, false);
+    port_range_full_.SetString(PolicyWatcher::kUdpPortRangePolicyName,
+                               kPortRange);
+    port_range_empty_.SetString(PolicyWatcher::kUdpPortRangePolicyName,
+                                std::string());
+
 #if !defined(NDEBUG)
     SetDefaults(nat_false_overridden_others_default_);
     nat_false_overridden_others_default_.SetBoolean(
@@ -95,6 +106,7 @@ class PolicyWatcherTest : public testing::Test {
   }
 
   static const char* kHostDomain;
+  static const char* kPortRange;
   base::MessageLoop message_loop_;
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
   MockPolicyCallback mock_policy_callback_;
@@ -120,10 +132,18 @@ class PolicyWatcherTest : public testing::Test {
   base::DictionaryValue nat_false_overridden_others_default_;
   base::DictionaryValue pairing_true_;
   base::DictionaryValue pairing_false_;
+  base::DictionaryValue gnubby_auth_true_;
+  base::DictionaryValue gnubby_auth_false_;
+  base::DictionaryValue relay_true_;
+  base::DictionaryValue relay_false_;
+  base::DictionaryValue port_range_full_;
+  base::DictionaryValue port_range_empty_;
 
  private:
   void SetDefaults(base::DictionaryValue& dict) {
     dict.SetBoolean(PolicyWatcher::kNatPolicyName, true);
+    dict.SetBoolean(PolicyWatcher::kRelayPolicyName, true);
+    dict.SetString(PolicyWatcher::kUdpPortRangePolicyName, "");
     dict.SetBoolean(PolicyWatcher::kHostRequireTwoFactorPolicyName, false);
     dict.SetString(PolicyWatcher::kHostDomainPolicyName, std::string());
     dict.SetBoolean(PolicyWatcher::kHostMatchUsernamePolicyName, false);
@@ -136,6 +156,7 @@ class PolicyWatcherTest : public testing::Test {
     dict.SetString(PolicyWatcher::kHostTokenValidationCertIssuerPolicyName,
                    std::string());
     dict.SetBoolean(PolicyWatcher::kHostAllowClientPairing, true);
+    dict.SetBoolean(PolicyWatcher::kHostAllowGnubbyAuthPolicyName, true);
 #if !defined(NDEBUG)
     dict.SetString(PolicyWatcher::kHostDebugOverridePoliciesName, "");
 #endif
@@ -143,6 +164,7 @@ class PolicyWatcherTest : public testing::Test {
 };
 
 const char* PolicyWatcherTest::kHostDomain = "google.com";
+const char* PolicyWatcherTest::kPortRange = "12400-12409";
 
 MATCHER_P(IsPolicies, dict, "") {
   return arg->Equals(dict);
@@ -329,6 +351,54 @@ TEST_F(PolicyWatcherTest, PairingFalseThenTrue) {
   policy_watcher_->SetPolicies(&empty_);
   policy_watcher_->SetPolicies(&pairing_false_);
   policy_watcher_->SetPolicies(&pairing_true_);
+  StopWatching();
+}
+
+TEST_F(PolicyWatcherTest, GnubbyAuth) {
+  testing::InSequence sequence;
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&nat_true_others_default_)));
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&gnubby_auth_false_)));
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&gnubby_auth_true_)));
+
+  StartWatching();
+  policy_watcher_->SetPolicies(&empty_);
+  policy_watcher_->SetPolicies(&gnubby_auth_false_);
+  policy_watcher_->SetPolicies(&gnubby_auth_true_);
+  StopWatching();
+}
+
+TEST_F(PolicyWatcherTest, Relay) {
+  testing::InSequence sequence;
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&nat_true_others_default_)));
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&relay_false_)));
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&relay_true_)));
+
+  StartWatching();
+  policy_watcher_->SetPolicies(&empty_);
+  policy_watcher_->SetPolicies(&relay_false_);
+  policy_watcher_->SetPolicies(&relay_true_);
+  StopWatching();
+}
+
+TEST_F(PolicyWatcherTest, UdpPortRange) {
+  testing::InSequence sequence;
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&nat_true_others_default_)));
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&port_range_full_)));
+  EXPECT_CALL(mock_policy_callback_,
+              OnPolicyUpdatePtr(IsPolicies(&port_range_empty_)));
+
+  StartWatching();
+  policy_watcher_->SetPolicies(&empty_);
+  policy_watcher_->SetPolicies(&port_range_full_);
+  policy_watcher_->SetPolicies(&port_range_empty_);
   StopWatching();
 }
 

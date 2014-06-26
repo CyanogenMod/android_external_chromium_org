@@ -17,7 +17,19 @@ FakePictureLayerImpl::FakePictureLayerImpl(
     : PictureLayerImpl(tree_impl, id),
       append_quads_count_(0) {
   pile_ = pile;
-  SetBounds(pile_->size());
+  CHECK(pile->tiling_rect().origin() == gfx::Point());
+  SetBounds(pile_->tiling_rect().size());
+  SetContentBounds(pile_->tiling_rect().size());
+}
+
+FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl,
+                                           int id,
+                                           scoped_refptr<PicturePileImpl> pile,
+                                           const gfx::Size& layer_bounds)
+    : PictureLayerImpl(tree_impl, id), append_quads_count_(0) {
+  pile_ = pile;
+  SetBounds(layer_bounds);
+  SetContentBounds(layer_bounds);
 }
 
 FakePictureLayerImpl::FakePictureLayerImpl(LayerTreeImpl* tree_impl, int id)
@@ -29,9 +41,12 @@ scoped_ptr<LayerImpl> FakePictureLayerImpl::CreateLayerImpl(
       new FakePictureLayerImpl(tree_impl, id())).PassAs<LayerImpl>();
 }
 
-void FakePictureLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                       AppendQuadsData* append_quads_data) {
-  PictureLayerImpl::AppendQuads(quad_sink, append_quads_data);
+void FakePictureLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data) {
+  PictureLayerImpl::AppendQuads(
+      render_pass, occlusion_tracker, append_quads_data);
   ++append_quads_count_;
 }
 
@@ -89,6 +104,19 @@ void FakePictureLayerImpl::SetAllTilesVisible() {
   }
 }
 
+void FakePictureLayerImpl::ResetAllTilesPriorities() {
+  for (size_t tiling_idx = 0; tiling_idx < tilings_->num_tilings();
+       ++tiling_idx) {
+    PictureLayerTiling* tiling = tilings_->tiling_at(tiling_idx);
+    std::vector<Tile*> tiles = tiling->AllTilesForTesting();
+    for (size_t tile_idx = 0; tile_idx < tiles.size(); ++tile_idx) {
+      Tile* tile = tiles[tile_idx];
+      tile->SetPriority(ACTIVE_TREE, TilePriority());
+      tile->SetPriority(PENDING_TREE, TilePriority());
+    }
+  }
+}
+
 void FakePictureLayerImpl::SetAllTilesReady() {
   for (size_t tiling_idx = 0; tiling_idx < tilings_->num_tilings();
        ++tiling_idx) {
@@ -113,11 +141,14 @@ void FakePictureLayerImpl::CreateDefaultTilingsAndTiles() {
   layer_tree_impl()->UpdateDrawProperties();
 
   if (CanHaveTilings()) {
-    DCHECK_EQ(tilings()->num_tilings(), 2u);
+    DCHECK_EQ(tilings()->num_tilings(),
+              layer_tree_impl()->settings().create_low_res_tiling ? 2u : 1u);
     DCHECK_EQ(tilings()->tiling_at(0)->resolution(), HIGH_RESOLUTION);
-    DCHECK_EQ(tilings()->tiling_at(1)->resolution(), LOW_RESOLUTION);
     HighResTiling()->CreateAllTilesForTesting();
-    LowResTiling()->CreateAllTilesForTesting();
+    if (layer_tree_impl()->settings().create_low_res_tiling) {
+      DCHECK_EQ(tilings()->tiling_at(1)->resolution(), LOW_RESOLUTION);
+      LowResTiling()->CreateAllTilesForTesting();
+    }
   } else {
     DCHECK_EQ(tilings()->num_tilings(), 0u);
   }

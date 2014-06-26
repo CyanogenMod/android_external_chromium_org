@@ -7,7 +7,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/network_time/network_time_tracker.h"
+#include "base/version.h"
 #include "chrome/browser/upgrade_detector.h"
 
 template <typename T> struct DefaultSingletonTraits;
@@ -15,6 +15,11 @@ template <typename T> struct DefaultSingletonTraits;
 class UpgradeDetectorImpl : public UpgradeDetector {
  public:
   virtual ~UpgradeDetectorImpl();
+
+  // Returns the currently installed Chrome version, which may be newer than the
+  // one currently running. Not supported on Android, iOS or ChromeOS. Must be
+  // run on a thread where I/O operations are allowed (e.g. FILE thread).
+  static base::Version GetCurrentlyInstalledVersion();
 
   // Returns the singleton instance.
   static UpgradeDetectorImpl* GetInstance();
@@ -66,11 +71,11 @@ class UpgradeDetectorImpl : public UpgradeDetector {
   // True if this build is a dev or canary channel build.
   bool is_unstable_channel_;
 
+  // True if auto update is turned on.
+  bool is_auto_update_enabled_;
+
   // The date the binaries were built.
   base::Time build_date_;
-
-  // Tracker for getting network time.
-  NetworkTimeTracker network_time_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(UpgradeDetectorImpl);
 };

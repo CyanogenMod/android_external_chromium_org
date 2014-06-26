@@ -32,6 +32,9 @@ class BluetoothManifestData : public Extension::ManifestData {
   static bool CheckRequest(const Extension* extension,
                            const BluetoothPermissionRequest& request);
 
+  static bool CheckSocketPermitted(const Extension* extension);
+  static bool CheckLowEnergyPermitted(const Extension* extension);
+
   // Tries to construct the info based on |value|, as it would have appeared in
   // the manifest. Sets |error| and returns an empty scoped_ptr on failure.
   static scoped_ptr<BluetoothManifestData> FromValue(const base::Value& value,
@@ -47,10 +50,10 @@ class BluetoothManifestData : public Extension::ManifestData {
 
 // Used for checking bluetooth permission.
 struct BluetoothPermissionRequest {
-  explicit BluetoothPermissionRequest(const std::string& profile_uuid);
+  explicit BluetoothPermissionRequest(const std::string& uuid);
   ~BluetoothPermissionRequest();
 
-  std::string profile_uuid;
+  std::string uuid;
 };
 
 }  // namespace extensions

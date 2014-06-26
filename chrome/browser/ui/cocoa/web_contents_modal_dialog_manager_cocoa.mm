@@ -5,46 +5,49 @@
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
-#include "components/web_modal/native_web_contents_modal_dialog_manager.h"
+#include "components/web_modal/single_web_contents_dialog_manager.h"
 
 using web_modal::NativeWebContentsModalDialog;
 
 namespace {
 
 class NativeWebContentsModalDialogManagerCocoa
-    : public web_modal::NativeWebContentsModalDialogManager {
+    : public web_modal::SingleWebContentsDialogManager {
  public:
-  NativeWebContentsModalDialogManagerCocoa() {
+  NativeWebContentsModalDialogManagerCocoa(
+      NativeWebContentsModalDialog dialog)
+      : dialog_(dialog) {
   }
 
   virtual ~NativeWebContentsModalDialogManagerCocoa() {
   }
 
-  // NativeWebContentsModalDialogManager overrides
-  virtual void ManageDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
+  // SingleWebContentsDialogManager overrides
+  virtual void Show() OVERRIDE {
+    GetConstrainedWindowMac(dialog())->ShowWebContentsModalDialog();
   }
 
-  virtual void ShowDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
-    GetConstrainedWindowMac(dialog)->ShowWebContentsModalDialog();
+  virtual void Hide() OVERRIDE {
   }
 
-  virtual void HideDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
+  virtual void Close() OVERRIDE {
+    GetConstrainedWindowMac(dialog())->CloseWebContentsModalDialog();
   }
 
-  virtual void CloseDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
-    GetConstrainedWindowMac(dialog)->CloseWebContentsModalDialog();
+  virtual void Focus() OVERRIDE {
+    GetConstrainedWindowMac(dialog())->FocusWebContentsModalDialog();
   }
 
-  virtual void FocusDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
-    GetConstrainedWindowMac(dialog)->FocusWebContentsModalDialog();
-  }
-
-  virtual void PulseDialog(NativeWebContentsModalDialog dialog) OVERRIDE {
-    GetConstrainedWindowMac(dialog)->PulseWebContentsModalDialog();
+  virtual void Pulse() OVERRIDE {
+    GetConstrainedWindowMac(dialog())->PulseWebContentsModalDialog();
   }
 
   virtual void HostChanged(
       web_modal::WebContentsModalDialogHost* new_host) OVERRIDE {
+  }
+
+  virtual NativeWebContentsModalDialog dialog() OVERRIDE {
+    return dialog_;
   }
 
  private:
@@ -53,6 +56,10 @@ class NativeWebContentsModalDialogManagerCocoa
     return static_cast<ConstrainedWindowMac*>(dialog);
   }
 
+  // In mac this is a pointer to a ConstrainedWindowMac.
+  // TODO(gbillock): Replace this casting system with a more typesafe call path.
+  NativeWebContentsModalDialog dialog_;
+
   DISALLOW_COPY_AND_ASSIGN(NativeWebContentsModalDialogManagerCocoa);
 };
 
@@ -60,10 +67,11 @@ class NativeWebContentsModalDialogManagerCocoa
 
 namespace web_modal {
 
-NativeWebContentsModalDialogManager*
-    WebContentsModalDialogManager::CreateNativeManager(
-        NativeWebContentsModalDialogManagerDelegate* native_delegate) {
-  return new NativeWebContentsModalDialogManagerCocoa;
+SingleWebContentsDialogManager*
+    WebContentsModalDialogManager::CreateNativeWebModalManager(
+        NativeWebContentsModalDialog dialog,
+        SingleWebContentsDialogManagerDelegate* native_delegate) {
+  return new NativeWebContentsModalDialogManagerCocoa(dialog);
 }
 
 }  // namespace web_modal

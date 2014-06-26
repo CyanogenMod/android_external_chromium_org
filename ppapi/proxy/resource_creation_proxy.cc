@@ -7,6 +7,7 @@
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_size.h"
 #include "ppapi/proxy/audio_input_resource.h"
+#include "ppapi/proxy/compositor_resource.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/file_chooser_resource.h"
 #include "ppapi/proxy/file_io_resource.h"
@@ -18,6 +19,7 @@
 #include "ppapi/proxy/graphics_2d_resource.h"
 #include "ppapi/proxy/host_resolver_private_resource.h"
 #include "ppapi/proxy/host_resolver_resource.h"
+#include "ppapi/proxy/media_stream_video_track_resource.h"
 #include "ppapi/proxy/net_address_resource.h"
 #include "ppapi/proxy/network_monitor_resource.h"
 #include "ppapi/proxy/output_protection_resource.h"
@@ -46,6 +48,7 @@
 #include "ppapi/proxy/url_request_info_resource.h"
 #include "ppapi/proxy/url_response_info_resource.h"
 #include "ppapi/proxy/video_capture_resource.h"
+#include "ppapi/proxy/video_decoder_resource.h"
 #include "ppapi/proxy/video_destination_resource.h"
 #include "ppapi/proxy/video_source_resource.h"
 #include "ppapi/proxy/websocket_resource.h"
@@ -217,6 +220,10 @@ PP_Resource ResourceCreationProxy::CreateAudioConfig(
       OBJECT_IS_PROXY, instance, sample_rate, sample_frame_count);
 }
 
+PP_Resource ResourceCreationProxy::CreateCompositor(PP_Instance instance) {
+  return (new CompositorResource(GetConnection(), instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateFileChooser(
     PP_Instance instance,
     PP_FileChooserMode_Dev mode,
@@ -290,6 +297,12 @@ PP_Resource ResourceCreationProxy::CreateImageDataSimple(
       format, *size, init_to_zero);
 }
 
+PP_Resource ResourceCreationProxy::CreateMediaStreamVideoTrack(
+    PP_Instance instance) {
+  return (new MediaStreamVideoTrackResource(GetConnection(),
+                                            instance))->GetReference();
+}
+
 PP_Resource ResourceCreationProxy::CreateNetAddressFromIPv4Address(
     PP_Instance instance,
     const PP_NetAddress_IPv4* ipv4_addr) {
@@ -360,6 +373,10 @@ PP_Resource ResourceCreationProxy::CreateUDPSocketPrivate(
     PP_Instance instance) {
   return (new UDPSocketPrivateResource(
       GetConnection(), instance))->GetReference();
+}
+
+PP_Resource ResourceCreationProxy::CreateVideoDecoder(PP_Instance instance) {
+  return (new VideoDecoderResource(GetConnection(), instance))->GetReference();
 }
 
 PP_Resource ResourceCreationProxy::CreateVideoDestination(
@@ -458,7 +475,7 @@ PP_Resource ResourceCreationProxy::CreateVideoCapture(PP_Instance instance) {
       ->GetReference();
 }
 
-PP_Resource ResourceCreationProxy::CreateVideoDecoder(
+PP_Resource ResourceCreationProxy::CreateVideoDecoderDev(
     PP_Instance instance,
     PP_Resource context3d_id,
     PP_VideoDecoder_Profile profile) {

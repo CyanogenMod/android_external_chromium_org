@@ -23,23 +23,19 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "content/common/gpu/client/gl_helper.h"
+#include "content/common/gpu/client/gl_helper_readback_support.h"
 #include "content/common/gpu/client/gl_helper_scaling.h"
 #include "content/public/test/unittest_test_suite.h"
 #include "content/test/content_test_suite.h"
-#include "gpu/config/gpu_util.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkTypes.h"
-#include "ui/gl/gl_surface.h"
+#include "ui/gl/gl_implementation.h"
 #include "webkit/common/gpu/webgraphicscontext3d_in_process_command_buffer_impl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
-#endif
-
-#if defined(TOOLKIT_GTK)
-#include "ui/gfx/gtk_util.h"
 #endif
 
 namespace content {
@@ -59,9 +55,10 @@ class GLHelperTest : public testing::Test {
  protected:
   virtual void SetUp() {
     WebGraphicsContext3D::Attributes attributes;
+    bool lose_context_when_out_of_memory = false;
     context_ =
         WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-            attributes);
+            attributes, lose_context_when_out_of_memory);
     context_->makeContextCurrent();
     context_support_ = context_->GetContextSupport();
     helper_.reset(
@@ -858,9 +855,9 @@ class GLHelperTest : public testing::Test {
       for (int x = 0; x < w; ++x) {
         bool on_grid = (y_on_grid || ((x % grid_pitch) < grid_width));
 
-        if (bmp.getConfig() == SkBitmap::kARGB_8888_Config) {
+        if (bmp.config() == SkBitmap::kARGB_8888_Config) {
           *bmp.getAddr32(x, y) = (on_grid ? grid_color : background_color);
-        } else if (bmp.getConfig() == SkBitmap::kRGB_565_Config) {
+        } else if (bmp.config() == SkBitmap::kRGB_565_Config) {
           *bmp.getAddr16(x, y) = (on_grid ? grid_color : background_color);
         }
       }
@@ -882,9 +879,9 @@ class GLHelperTest : public testing::Test {
         bool x_bit = (((x / rect_w) & 0x1) == 0);
 
         bool use_color2 = (x_bit != y_bit);  // xor
-        if (bmp.getConfig() == SkBitmap::kARGB_8888_Config) {
+        if (bmp.config() == SkBitmap::kARGB_8888_Config) {
           *bmp.getAddr32(x, y) = (use_color2 ? color2 : color1);
-        } else if (bmp.getConfig() == SkBitmap::kRGB_565_Config) {
+        } else if (bmp.config() == SkBitmap::kRGB_565_Config) {
           *bmp.getAddr16(x, y) = (use_color2 ? color2 : color1);
         }
       }
@@ -933,7 +930,7 @@ class GLHelperTest : public testing::Test {
         LOG(ERROR) << "Bitmap geometry check failure";
         return false;
     }
-    if (bmp1.getConfig() != bmp2.getConfig())
+    if (bmp1.config() != bmp2.config())
       return false;
 
     SkAutoLockPixels lock1(bmp1);
@@ -946,7 +943,7 @@ class GLHelperTest : public testing::Test {
       for (int x = 0; x < bmp1.width(); ++x) {
         if (!ColorsClose(bmp1.getColor(x,y),
                          bmp2.getColor(x,y),
-                         bmp1.getConfig())) {
+                         bmp1.config())) {
           LOG(ERROR) << "Bitmap color comparision failure";
           return false;
         }
@@ -1001,12 +998,8 @@ class GLHelperTest : public testing::Test {
   bool TestTextureFormatReadback(const gfx::Size& src_size,
                          SkBitmap::Config bitmap_config,
                          bool async) {
-    DCHECK((bitmap_config == SkBitmap::kRGB_565_Config) ||
-           (bitmap_config == SkBitmap::kARGB_8888_Config));
-    bool rgb565_format = (bitmap_config == SkBitmap::kRGB_565_Config);
-    if (rgb565_format && !helper_->CanUseRgb565Readback()) {
-      LOG(INFO) << "RGB565 Format Not supported on this platform";
-      LOG(INFO) << "Skipping RGB565ReadBackTest";
+    if (!helper_->IsReadbackConfigSupported(bitmap_config)) {
+      LOG(INFO) << "Skipping test format not supported" << bitmap_config;
       return true;
     }
     WebGLId src_texture = context_->createTexture();
@@ -1451,6 +1444,11 @@ class GLHelperTest : public testing::Test {
   std::deque<GLHelperScaling::ScaleOp> x_ops_, y_ops_;
 };
 
+class GLHelperPixelTest : public GLHelperTest {
+ private:
+  gfx::DisableNullDrawGLBindings enable_pixel_output_;
+};
+
 TEST_F(GLHelperTest, ARGBSyncReadbackTest) {
   const int kTestSize = 64;
   bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
@@ -1483,7 +1481,7 @@ TEST_F(GLHelperTest, RGB565ASyncReadbackTest) {
   EXPECT_EQ(result, true);
 }
 
-TEST_F(GLHelperTest, YUVReadbackOptTest) {
+TEST_F(GLHelperPixelTest, YUVReadbackOptTest) {
   // This test uses the cb_command tracing events to detect how many
   // scaling passes are actually performed by the YUV readback pipeline.
   StartTracing(TRACE_DISABLED_BY_DEFAULT("cb_command"));
@@ -1519,7 +1517,7 @@ TEST_F(GLHelperTest, YUVReadbackOptTest) {
   }
 }
 
-TEST_F(GLHelperTest, YUVReadbackTest) {
+TEST_F(GLHelperPixelTest, YUVReadbackTest) {
   int sizes[] = {2, 4, 14};
   for (int flip = 0; flip <= 1; flip++) {
     for (int use_mrt = 0; use_mrt <= 1; use_mrt++) {
@@ -1562,7 +1560,7 @@ TEST_F(GLHelperTest, YUVReadbackTest) {
 
 // Per pixel tests, all sizes are small so that we can print
 // out the generated bitmaps.
-TEST_F(GLHelperTest, ScaleTest) {
+TEST_F(GLHelperPixelTest, ScaleTest) {
   int sizes[] = {3, 6, 16};
   for (int flip = 0; flip <= 1; flip++) {
     for (size_t q = 0; q < arraysize(kQualities); q++) {
@@ -1668,10 +1666,6 @@ int main(int argc, char** argv) {
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;
 #endif
-#if defined(TOOLKIT_GTK)
-  gfx::GtkInitFromCommandLine(*CommandLine::ForCurrentProcess());
-#endif
-  gpu::ApplyGpuDriverBugWorkarounds(CommandLine::ForCurrentProcess());
 
   content::UnitTestTestSuite runner(suite);
   base::MessageLoop message_loop;

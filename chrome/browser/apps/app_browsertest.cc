@@ -15,7 +15,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/apps/app_browsertest_util.h"
-#include "chrome/browser/automation/automation_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api.h"
@@ -23,34 +22,34 @@
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
-#include "chrome/browser/tab_contents/render_view_context_menu.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/api/app_runtime.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
+#include "extensions/common/api/app_runtime.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/fake_power_manager_client.h"
@@ -61,9 +60,9 @@ using apps::AppWindowRegistry;
 using content::WebContents;
 using web_modal::WebContentsModalDialogManager;
 
-namespace extensions {
+namespace app_runtime = extensions::core_api::app_runtime;
 
-namespace app_runtime = api::app_runtime;
+namespace extensions {
 
 namespace {
 
@@ -143,9 +142,9 @@ class ScopedPreviewTestingDelegate : PrintPreviewUI::TestingDelegate {
   }
 
   // PrintPreviewUI::TestingDelegate implementation.
-  virtual void DidRenderPreviewPage(const content::WebContents& preview_dialog)
+  virtual void DidRenderPreviewPage(content::WebContents* preview_dialog)
       OVERRIDE {
-    dialog_size_ = preview_dialog.GetView()->GetContainerSize();
+    dialog_size_ = preview_dialog->GetContainerBounds().size();
     ++rendered_page_count_;
     CHECK(rendered_page_count_ <= total_page_count_);
     if (waiting_runner_ && rendered_page_count_ == total_page_count_) {
@@ -200,7 +199,7 @@ const char kTestFilePath[] = "platform_apps/launch_files/test.txt";
 // LauncherPlatformAppBrowserTest relies on this behaviour, but is only run for
 // ash, so we test that it works here.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, CreateAndCloseAppWindow) {
-  const Extension* extension = LoadAndLaunchPlatformApp("minimal");
+  const Extension* extension = LoadAndLaunchPlatformApp("minimal", "Launched");
   AppWindow* window = CreateAppWindow(extension);
   CloseAppWindow(window);
 }
@@ -218,10 +217,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, DisabledWindowProperties) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, EmptyContextMenu) {
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  LoadAndLaunchPlatformApp("minimal");
-
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("minimal", "Launched");
 
   // The empty app doesn't add any context menu items, so its menu should
   // only include the developer tools.
@@ -240,12 +236,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, EmptyContextMenu) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenu) {
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  LoadAndLaunchPlatformApp("context_menu");
-
-  // Wait for the extension to tell us it's initialized its context menus and
-  // launched a window.
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("context_menu", "Launched");
 
   // The context_menu app has two context menu items. These, along with a
   // separator and the developer tools, is all that should be in the menu.
@@ -294,12 +285,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, InstalledAppWithContextMenu) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuTextField) {
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  LoadAndLaunchPlatformApp("context_menu");
-
-  // Wait for the extension to tell us it's initialized its context menus and
-  // launched a window.
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("context_menu", "Launched");
 
   // The context_menu app has one context menu item. This, along with a
   // separator and the developer tools, is all that should be in the menu.
@@ -322,12 +308,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuTextField) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuSelection) {
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  LoadAndLaunchPlatformApp("context_menu");
-
-  // Wait for the extension to tell us it's initialized its context menus and
-  // launched a window.
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("context_menu", "Launched");
 
   // The context_menu app has one context menu item. This, along with a
   // separator and the developer tools, is all that should be in the menu.
@@ -350,12 +331,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuSelection) {
 }
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, AppWithContextMenuClicked) {
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  LoadAndLaunchPlatformApp("context_menu_click");
-
-  // Wait for the extension to tell us it's initialized its context menus and
-  // launched a window.
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("context_menu_click", "Launched");
 
   // Test that the menu item shows up
   WebContents* web_contents = GetFirstAppWindowWebContents();
@@ -396,7 +372,13 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_DisallowNavigation) {
             observer.tabs()[1]->GetURL().spec());
 }
 
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Iframes) {
+// Failing on some Win and Linux buildbots.  See crbug.com/354425.
+#if (defined(OS_WIN) || defined(OS_LINUX)) && defined(ARCH_CPU_X86)
+#define MAYBE_Iframes DISABLED_Iframes
+#else
+#define MAYBE_Iframes Iframes
+#endif
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Iframes) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/iframes")) << message_;
 }
@@ -435,7 +417,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Isolation) {
   // Make sure the cookie is set.
   int cookie_size;
   std::string cookie_value;
-  automation_util::GetCookies(
+  ui_test_utils::GetCookies(
       set_cookie_url,
       browser()->tab_strip_model()->GetWebContentsAt(0),
       &cookie_size,
@@ -465,9 +447,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_ExtensionWindowingApis) {
   ASSERT_EQ(0U, GetAppWindowCount());
 
   // Launch a platform app that shows a window.
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  LoadAndLaunchPlatformApp("minimal");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("minimal", "Launched");
   ASSERT_EQ(1U, GetAppWindowCount());
   int app_window_id = GetFirstAppWindow()->session_id().id();
 
@@ -482,9 +462,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_ExtensionWindowingApis) {
   // to get a list of all the app windows, so we can test this.
 
   // Launch another platform app that also shows a window.
-  ExtensionTestMessageListener launched_listener2("Launched", false);
-  LoadAndLaunchPlatformApp("context_menu");
-  ASSERT_TRUE(launched_listener2.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("context_menu", "Launched");
 
   // There are two total app windows, but each app can only see its own.
   ASSERT_EQ(2U, GetAppWindowCount());
@@ -540,6 +518,16 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithFileExtension) {
   SetCommandLineArg(kTestFilePath);
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/launch_file_by_extension"))
       << message_;
+}
+
+// Tests that launch data is sent through to a whitelisted extension if the file
+// extension matches.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
+                       LaunchWhiteListedExtensionWithFile) {
+  SetCommandLineArg(kTestFilePath);
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_whitelisted_ext_with_file"))
+          << message_;
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
@@ -647,10 +635,18 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithNoIntent) {
       << message_;
 }
 
+// Tests that launch data is sent through when the file has unknown extension
+// but the MIME type can be sniffed and the sniffed type matches.
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchWithSniffableType) {
+  SetCommandLineArg("platform_apps/launch_files/test.unknownextension");
+  ASSERT_TRUE(RunPlatformAppTest(
+      "platform_apps/launch_file_by_extension_and_type")) << message_;
+}
+
 // Tests that launch data is sent through with the MIME type set to
 // application/octet-stream if the file MIME type cannot be read.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, LaunchNoType) {
-  SetCommandLineArg("platform_apps/launch_files/test.unknownextension");
+  SetCommandLineArg("platform_apps/launch_files/test_binary.unknownextension");
   ASSERT_TRUE(RunPlatformAppTest(
       "platform_apps/launch_application_octet_stream")) << message_;
 }
@@ -703,7 +699,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, OpenLink) {
   content::WindowedNotificationObserver observer(
       chrome::NOTIFICATION_TAB_ADDED,
       content::Source<content::WebContentsDelegate>(browser()));
-  LoadAndLaunchPlatformApp("open_link");
+  LoadAndLaunchPlatformApp("open_link", "Launched");
   observer.Wait();
   ASSERT_EQ(2, browser()->tab_strip_model()->count());
 }
@@ -725,7 +721,8 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_AppWindowRestoreState) {
 
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
                        AppWindowAdjustBoundsToBeVisibleOnScreen) {
-  const Extension* extension = LoadAndLaunchPlatformApp("minimal");
+  const Extension* extension = LoadAndLaunchPlatformApp("minimal", "Launched");
+
   AppWindow* window = CreateAppWindow(extension);
 
   // The screen bounds didn't change, the cached bounds didn't need to adjust.
@@ -812,10 +809,8 @@ class PlatformAppDevToolsBrowserTest : public PlatformAppBrowserTest {
 void PlatformAppDevToolsBrowserTest::RunTestWithDevTools(
     const char* name, int test_flags) {
   using content::DevToolsAgentHost;
-  ExtensionTestMessageListener launched_listener("Launched", false);
-  const Extension* extension = LoadAndLaunchPlatformApp(name);
+  const Extension* extension = LoadAndLaunchPlatformApp(name, "Launched");
   ASSERT_TRUE(extension);
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   AppWindow* window = GetFirstAppWindow();
   ASSERT_TRUE(window);
   ASSERT_EQ(window->window_key().empty(), (test_flags & HAS_ID) == 0);
@@ -889,7 +884,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppDevToolsBrowserTest, MAYBE_ReOpenedWithURL) {
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_ConstrainedWindowRequest) {
   PermissionsRequestFunction::SetIgnoreUserGestureForTests(true);
   const Extension* extension =
-      LoadAndLaunchPlatformApp("optional_permission_request");
+      LoadAndLaunchPlatformApp("optional_permission_request", "Launched");
   ASSERT_TRUE(extension) << "Failed to load extension.";
 
   WebContents* web_contents = GetFirstAppWindowWebContents();
@@ -913,9 +908,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_ConstrainedWindowRequest) {
 // relaunch it if it was running.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReloadRelaunches) {
   ExtensionTestMessageListener launched_listener("Launched", true);
-  const Extension* extension = LoadAndLaunchPlatformApp("reload");
+  const Extension* extension =
+      LoadAndLaunchPlatformApp("reload", &launched_listener);
   ASSERT_TRUE(extension);
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
   ASSERT_TRUE(GetFirstAppWindow());
 
   // Now tell the app to reload itself
@@ -927,13 +922,14 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReloadRelaunches) {
 
 namespace {
 
-// Simple observer to check for NOTIFICATION_EXTENSION_INSTALLED events to
+// Simple observer to check for NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED
+// events to
 // ensure installation does or does not occur in certain scenarios.
 class CheckExtensionInstalledObserver : public content::NotificationObserver {
  public:
   CheckExtensionInstalledObserver() : seen_(false) {
     registrar_.Add(this,
-                   chrome::NOTIFICATION_EXTENSION_INSTALLED,
+                   chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                    content::NotificationService::AllSources());
   }
 
@@ -995,7 +991,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   // should not cause it to be re-installed. Instead, we wait for the OnLaunched
   // in a different observer (which would timeout if not the app was not
   // previously installed properly) and then check this observer to make sure it
-  // never saw the NOTIFICATION_EXTENSION_INSTALLED event.
+  // never saw the NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED event.
   CheckExtensionInstalledObserver should_not_install;
   const Extension* extension = LoadExtensionAsComponent(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII("component"));
@@ -1009,13 +1005,11 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   ASSERT_FALSE(should_not_install.seen());
 
   // Simulate a "downgrade" from version 2 in the test manifest.json to 1.
-  ExtensionPrefs* extension_prefs =
-      extensions::ExtensionSystem::Get(browser()->profile())->
-      extension_service()->extension_prefs();
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(browser()->profile());
 
   // Clear the registered events to ensure they are updated.
-  extensions::ExtensionSystem::Get(browser()->profile())->event_router()->
-      SetRegisteredEvents(extension->id(), std::set<std::string>());
+  extensions::EventRouter::Get(browser()->profile())
+      ->SetRegisteredEvents(extension->id(), std::set<std::string>());
 
   DictionaryPrefUpdate update(extension_prefs->pref_service(),
                               extensions::pref_names::kExtensions);
@@ -1047,16 +1041,10 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ComponentAppBackgroundPage) {
   ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 }
 
-// Flakes on Windows: http://crbug.com/171450
-#if defined(OS_WIN)
-#define MAYBE_Messaging DISABLED_Messaging
-#else
-#define MAYBE_Messaging Messaging
-#endif
-IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
+IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, Messaging) {
   ExtensionApiTest::ResultCatcher result_catcher;
-  LoadAndLaunchPlatformApp("messaging/app2");
-  LoadAndLaunchPlatformApp("messaging/app1");
+  LoadAndLaunchPlatformApp("messaging/app2", "Launched");
+  LoadAndLaunchPlatformApp("messaging/app1", "Launched");
   EXPECT_TRUE(result_catcher.GetNextResult());
 }
 
@@ -1069,9 +1057,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_Messaging) {
 #define MAYBE_WebContentsHasFocus DISABLED_WebContentsHasFocus
 #endif
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
-  ExtensionTestMessageListener launched_listener("Launched", true);
-  LoadAndLaunchPlatformApp("minimal");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("minimal", "Launched");
 
   EXPECT_EQ(1LU, GetAppWindowCount());
   EXPECT_TRUE(GetFirstAppWindow()
@@ -1080,23 +1066,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, MAYBE_WebContentsHasFocus) {
                   ->HasFocus());
 }
 
-// The next three tests will only run automatically with Chrome branded builds
-// because they require the PDF preview plug-in. To run these tests manually for
-// Chromium (non-Chrome branded) builds in a development environment:
-//
-//   1) Remove "MAYBE_" in the first line of each test definition
-//   2) Build Chromium browser_tests
-//   3) Make a copy of the PDF plug-in from a recent version of Chrome (Canary
-//      or a recent development build) to your Chromium build:
-//      - On Linux and Chrome OS, copy /opt/google/chrome/libpdf.so to
-//        <path-to-your-src>/out/Debug
-//      - On OS X, copy PDF.plugin from
-//        <recent-chrome-app-folder>/*/*/*/*/"Internet Plug-Ins" to
-//        <path-to-your-src>/out/Debug/Chromium.app/*/*/*/*/"Internet Plug-Ins"
-//   4) Run browser_tests with the --enable-print-preview flag
-
-#if !defined(GOOGLE_CHROME_BUILD) || \
-    (defined(GOOGLE_CHROME_BUILD) && (defined(OS_WIN) || defined(OS_LINUX)))
+#if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_MACOSX)
 #define MAYBE_WindowDotPrintShouldBringUpPrintPreview \
     DISABLED_WindowDotPrintShouldBringUpPrintPreview
 #else
@@ -1111,17 +1081,9 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
   preview_delegate.WaitUntilPreviewIsReady();
 }
 
-#if !defined(GOOGLE_CHROME_BUILD)
-#define MAYBE_ClosingWindowWhilePrintingShouldNotCrash \
-    DISABLED_ClosingWindowWhilePrintingShouldNotCrash
-#else
-#define MAYBE_ClosingWindowWhilePrintingShouldNotCrash \
-    ClosingWindowWhilePrintingShouldNotCrash
-#endif
-
 // This test verifies that http://crbug.com/297179 is fixed.
 IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
-                       MAYBE_ClosingWindowWhilePrintingShouldNotCrash) {
+                       DISABLED_ClosingWindowWhilePrintingShouldNotCrash) {
   ScopedPreviewTestingDelegate preview_delegate(false);
   ASSERT_TRUE(RunPlatformAppTest("platform_apps/print_api")) << message_;
   preview_delegate.WaitUntilPreviewIsReady();
@@ -1130,7 +1092,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest,
 
 // This test currently only passes on OS X (on other platforms the print preview
 // dialog's size is limited by the size of the window being printed).
-#if !defined(GOOGLE_CHROME_BUILD) || !defined(OS_MACOSX)
+#if !defined(OS_MACOSX)
 #define MAYBE_PrintPreviewShouldNotBeTooSmall \
     DISABLED_PrintPreviewShouldNotBeTooSmall
 #else
@@ -1173,10 +1135,8 @@ class PlatformAppIncognitoBrowserTest : public PlatformAppBrowserTest,
 
   // AppWindowRegistry::Observer implementation.
   virtual void OnAppWindowAdded(AppWindow* app_window) OVERRIDE {
-    opener_app_ids_.insert(app_window->extension()->id());
+    opener_app_ids_.insert(app_window->extension_id());
   }
-  virtual void OnAppWindowIconChanged(AppWindow* app_window) OVERRIDE {}
-  virtual void OnAppWindowRemoved(AppWindow* app_window) OVERRIDE {}
 
  protected:
   // A set of ids of apps we've seen open a app window.
@@ -1193,7 +1153,7 @@ IN_PROC_BROWSER_TEST_F(PlatformAppIncognitoBrowserTest, IncognitoComponentApp) {
 
   // Wait until the file manager has had a chance to register its listener
   // for the launch event.
-  EventRouter* router = ExtensionSystem::Get(incognito_profile)->event_router();
+  EventRouter* router = EventRouter::Get(incognito_profile);
   ASSERT_TRUE(router != NULL);
   while (!router->ExtensionHasEventListener(
       file_manager->id(), app_runtime::OnLaunched::kEventName)) {
@@ -1273,9 +1233,9 @@ IN_PROC_BROWSER_TEST_F(RestartDeviceTest, Restart) {
   ASSERT_EQ(0, num_request_restart_calls());
 
   ExtensionTestMessageListener launched_listener("Launched", true);
-  const Extension* extension = LoadAndLaunchPlatformApp("restart_device");
+  const Extension* extension = LoadAndLaunchPlatformApp("restart_device",
+                                                        &launched_listener);
   ASSERT_TRUE(extension);
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
 
   launched_listener.Reply("restart");
   ExtensionTestMessageListener restart_requested_listener("restartRequested",
@@ -1297,15 +1257,12 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReinstallDataCleanup) {
   std::string extension_id;
 
   {
-    ExtensionTestMessageListener launched_listener("Launched", false);
     const Extension* extension =
-        LoadAndLaunchPlatformApp("reinstall_data_cleanup");
+        LoadAndLaunchPlatformApp("reinstall_data_cleanup", "Launched");
     ASSERT_TRUE(extension);
     extension_id = extension->id();
 
     ExtensionApiTest::ResultCatcher result_catcher;
-    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
-
     EXPECT_TRUE(result_catcher.GetNextResult());
   }
 
@@ -1313,16 +1270,12 @@ IN_PROC_BROWSER_TEST_F(PlatformAppBrowserTest, ReinstallDataCleanup) {
   content::RunAllPendingInMessageLoop();
 
   {
-    ExtensionTestMessageListener launched_listener("Launched", false);
     const Extension* extension =
-        LoadAndLaunchPlatformApp("reinstall_data_cleanup");
+        LoadAndLaunchPlatformApp("reinstall_data_cleanup", "Launched");
     ASSERT_TRUE(extension);
     ASSERT_EQ(extension_id, extension->id());
 
     ExtensionApiTest::ResultCatcher result_catcher;
-
-    ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
-
     EXPECT_TRUE(result_catcher.GetNextResult());
   }
 }

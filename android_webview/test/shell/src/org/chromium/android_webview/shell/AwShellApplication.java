@@ -11,14 +11,18 @@ import android.util.Log;
 import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.base.BaseSwitches;
 import org.chromium.base.CommandLine;
+import org.chromium.base.TraceEvent;
 import org.chromium.content.browser.ResourceExtractor;
 
+/**
+ * The android_webview shell Application subclass.
+ */
 public class AwShellApplication extends Application {
 
     private static final String TAG = "AwShellApplication";
     /** The minimum set of .pak files the test runner needs. */
     private static final String[] MANDATORY_PAKS = {
-        "webviewchromium.pak", "en-US.pak"
+        "webviewchromium.pak", "en-US.pak", "icudtl.dat"
     };
 
     @Override
@@ -38,5 +42,10 @@ public class AwShellApplication extends Application {
         ResourceExtractor.setMandatoryPaksToExtract(MANDATORY_PAKS);
         ResourceExtractor.setExtractImplicitLocaleForTesting(false);
         AwBrowserProcess.loadLibrary();
+
+        if (CommandLine.getInstance().hasSwitch(AwShellSwitches.ENABLE_ATRACE)) {
+            Log.e(TAG, "Enabling Android trace.");
+            TraceEvent.setATraceEnabled(true);
+        }
     }
 }

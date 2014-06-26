@@ -4,8 +4,77 @@
 Release Notes
 #############
 
-Chrome/Pepper 33 (branched on 16 December 2013)
-===============================================
+Chrome/Pepper 37 (20 June 2014)
+===============================
+
+PNaCl
+-----
+
+* 2–10% translation time improvement.
+* Improved vector load/store and shuffle performance.
+
+Pepper
+------
+
+* Media Streams Input support.
+* Compositor API.
+* Hardware Decode API in development preview.
+* Sync API in development preview.
+
+SDK
+---
+
+* Demo of a :ref:`full development environment in the browser <io2014>`.
+
+Chrome/Pepper 36 (09 May 2014)
+==============================
+
+PNaCl
+-----
+* Support `LLVM vectors
+  <http://clang.llvm.org/docs/LanguageExtensions.html#vectors-and-extended-vectors>`_
+  and `GCC vectors
+  <http://gcc.gnu.org/onlinedocs/gcc/Vector-Extensions.html>`_ for SIMD
+  vectors through :ref:`Portable SIMD Vectors
+  <portable_simd_vectors>`. Note that this is still an early release,
+  and performance is expected to become acceptable for version 37 of
+  Chrome. More SIMD instructions will be added in later releases.
+
+Chrome/Pepper 35 (31 Mar 2014)
+==============================
+
+PNaCl
+-----
+* Upgraded LLVM to version 3.4.
+* Translation now uses dynamic load balancing, making translation time faster.
+* Unstable pexes (i.e. non-finalized) with debug information can be loaded by
+  Chrome, simplifying debugging with PNaCl. See :ref:`Debugging PNaCl pexes
+  <debugging_pnacl_pexes>`
+
+
+Chrome/Pepper 34 (20 Feb 2014)
+==============================
+
+Pepper
+------
+* Filesystems can now be passed from JavaScript to NaCl. The resulting
+  ``pp::Var`` will contain a ``pp::Resource`` that can be given to the
+  ``pp::FileSystem`` constructor.
+* New Audio and Video input APIs have been added as dev interfaces. See
+  `pp::MediaStreamAudioTrack
+  </native-client/pepper_dev/cpp/classpp_1_1_media_stream_audio_track>`_ and
+  `pp::MediaStreamVideoTrack
+  </native-client/pepper_dev/cpp/classpp_1_1_media_stream_video_track>`_ for
+  more details.
+
+PNaCl
+-----
+* Parallel translation: at least 1.7x faster, even with older pexes.
+* Intelligent abbreviations in the bitcode: 20% reduction in binary size using
+  the :ref:`pnacl-compress <pnacl_compress>` tool.
+
+Chrome/Pepper 33 (16 Dec 2013)
+==============================
 
 Portable Native Client
 ----------------------
@@ -68,8 +137,7 @@ PNaCl (15 May 2013)
   files produced by earlier versions of the pnacl toolchain (that is,
   executables compiled with the ``pepper_28`` bundle or earlier).
 * To run an application with a PNaCl module, you must launch Chrome 29 with the
-  ``--enable-pnacl`` flag (for `packaged apps
-  <http://developer.chrome.com/apps/about_apps.html>`_), or the
+  ``--enable-pnacl`` flag (for `packaged apps </apps/about_apps>`_), or the
   ``--enable-nacl`` flag (for other apps).
 * When you launch Chrome with the ``--enable-pnacl`` flag, Chrome loads a PNaCl
   translator in the background. Wait about a minute after you launch Chrome and
@@ -228,17 +296,17 @@ PPAPI
 Pepper 25 includes two new APIs:
 
 * The `Console API
-  <https://developers.google.com/native-client/dev/pepperc/struct_p_p_b___console__1__0>`_
-  lets your module log messages to the JavaScript console in the Chrome browser.
+  </native-client/pepper_stable/c/struct_p_p_b___console__1__0>`_ lets your
+  module log messages to the JavaScript console in the Chrome browser.
 * The `MessageLoop
-  <https://developers.google.com/native-client/dev/peppercpp/classpp_1_1_message_loop>`_
-  API lets your module make PPAPI calls on a background thread.  Once you've
-  created a message loop resource, attached it to a thread, and run it, you can
-  post work to the thread, including completion callbacks for asynchronous
-  operations. For a C++ example of how to use the MessageLoop API,
-  see ``pepper_25/include/ppapi/utility/threading/simple_thread.h``. Note that
-  you cannot make asynchronous PPAPI calls on a background thread without
-  creating and using a message loop.
+  </native-client/pepper_stable/cpp/classpp_1_1_message_loop>`_ API lets your
+  module make PPAPI calls on a background thread.  Once you've created a
+  message loop resource, attached it to a thread, and run it, you can post work
+  to the thread, including completion callbacks for asynchronous operations.
+  For a C++ example of how to use the MessageLoop API, see
+  ``pepper_25/include/ppapi/utility/threading/simple_thread.h``. Note that you
+  cannot make asynchronous PPAPI calls on a background thread without creating
+  and using a message loop.
 
 Libraries
 ---------
@@ -354,7 +422,7 @@ PPAPI
 -----
 
 * When creating a 3D rendering context, the `attribute list
-  <https://developers.google.com/native-client/dev/pepperc/group___enums#ga7df48e1c55f6401beea2a1b9c07967e8>`_
+  </native-client/pepper_stable/c/group___enums#ga7df48e1c55f6401beea2a1b9c07967e8>`_
   for the context can specify whether to prefer low power or performance for
   the GPU. Contexts with a low power preference may be created on an integrated
   GPU; contexts with a performance preference may be created on a discrete GPU.
@@ -379,9 +447,8 @@ file format.
 Tools
 -----
 
-* The `nacl-gdb debugger
-  <https://developers.google.com/native-client/pepper23/devguide/devcycle/debugging#gdb>`_
-  now works on all systems (Mac, Windows, and Linux).
+* The :ref:`nacl-gdb debugger <using_gdb>` now works on all systems (Mac,
+  Windows, and Linux).
 
 * The output of the SDK update utility has been simplified. When you run the
   command ``naclsdk list``, the utility displays one line for each available
@@ -438,27 +505,24 @@ Examples
   toolchain on the host system. Modules built with the native toolchain on the
   host system can only run as Pepper plugins.
 * All examples in the SDK now comply with version 2 of the Chrome Web Store
-  `manifest file format
-  <http://developer.chrome.com/extensions/manifest.html>`_. By default,
+  `manifest file format </extensions/manifest>`_. By default,
   applications that use version 2 of the manifest file format apply a strict
-  `content security policy
-  <http://developer.chrome.com/extensions/contentSecurityPolicy.html>`_, which
+  `content security policy </extensions/contentSecurityPolicy>`_, which
   includes a restriction against inline JavaScript. This restriction prohibits
   both inline ``<script>`` blocks and inline event handlers (e.g., ``<button
-  onclick="...">``).  See `Manifest Version
-  <http://developer.chrome.com/extensions/manifestVersion.html>`_ for a list of
-  changes between version 1 and version 2 of the manifest file format, and a
-  support schedule for applications that use version 1.
+  onclick="...">``).  See `Manifest Version </extensions/manifestVersion>`_ for
+  a list of changes between version 1 and version 2 of the manifest file
+  format, and a support schedule for applications that use version 1.
 
 PPAPI
 -----
 
 * `PP_InputEvent_Modifier
-  <https://developers.google.com/native-client/pepper23/pepperc/group___enums#ga21b811ac0484a214a8751aa3e1c959d9>`_
+  </native-client/pepper_stable/c/group___enums#ga21b811ac0484a214a8751aa3e1c959d9>`_
   has two new enum values (_ISLEFT and _ISRIGHT).
 * The memory leak in the `WebSocket
-  <https://developers.google.com/native-client/pepper23/pepperc/struct_p_p_b___web_socket__1__0>`_
-  API has been fixed.
+  </native-client/pepper_stable/c/struct_p_p_b___web_socket__1__0>`_ API has
+  been fixed.
 
 Pepper 22 (22 August 2012)
 ==========================
@@ -550,6 +614,6 @@ PPAPI
 * The ``CompletionCallbackFactory`` class template now takes a thread traits
   class as its second parameter. For details see the `CompletionCallbackFactory
   class template reference
-  <https://developers.google.com/native-client/pepper22/peppercpp/classpp_1_1_completion_callback_factory#details>`_.
+  </native-client/pepper_stable/cpp/classpp_1_1_completion_callback_factory#details>`_.
 
 .. TODO: Port release notes for older releases

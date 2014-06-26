@@ -2,9 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/renderer/extensions/v8_schema_registry.h"
 #include "chrome/test/base/module_system_test.h"
-#include "grit/renderer_resources.h"
+#include "extensions/renderer/v8_schema_registry.h"
+#include "grit/extensions_renderer_resources.h"
 
 namespace extensions {
 
@@ -16,7 +16,7 @@ class JsonSchemaTest : public ModuleSystemTest {
     RegisterModule("json_schema", IDR_JSON_SCHEMA_JS);
     RegisterModule("utils", IDR_UTILS_JS);
 
-    module_system_->RegisterNativeHandler("schema_registry",
+    context_->module_system()->RegisterNativeHandler("schema_registry",
         schema_registry_.AsNativeHandler());
 
     RegisterTestFile("json_schema_test", "json_schema_test.js");
@@ -24,7 +24,7 @@ class JsonSchemaTest : public ModuleSystemTest {
 
  protected:
   void TestFunction(const std::string& test_name) {
-    module_system_->CallModuleMethod("json_schema_test", test_name);
+    context_->module_system()->CallModuleMethod("json_schema_test", test_name);
   }
 
  private:

@@ -6,7 +6,6 @@
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/browser/process_manager.h"
 
@@ -53,10 +52,8 @@ content::WebContents* WindowControlsTest::GetWebContentsForExtensionWindow(
 
 IN_PROC_BROWSER_TEST_F(WindowControlsTest, CloseControlWorks) {
   // Launch app and wait for window to show up
-  ExtensionTestMessageListener window_opened("window-opened", false);
   const extensions::Extension* extension =
-      LoadAndLaunchPlatformApp("window_controls/buttons");
-  ASSERT_TRUE(window_opened.WaitUntilSatisfied());
+      LoadAndLaunchPlatformApp("window_controls/buttons", "window-opened");
 
   // Find WebContents of window
   content::WebContents* web_contents =
@@ -69,7 +66,7 @@ IN_PROC_BROWSER_TEST_F(WindowControlsTest, CloseControlWorks) {
 
   // Send mouse click somewhere inside the [x] button
   const int controlOffset = 25;
-  int x = web_contents->GetView()->GetContainerSize().width() - controlOffset;
+  int x = web_contents->GetContainerBounds().size().width() - controlOffset;
   int y = controlOffset;
   content::SimulateMouseClickAt(web_contents,
                                 0,

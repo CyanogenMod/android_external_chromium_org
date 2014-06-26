@@ -54,37 +54,37 @@ class IconMapper {
 };
 
 const IdrBySize kAudioIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_AUDIO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_AUDIO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_AUDIO
+  IDR_FILETYPE_AUDIO,
+  IDR_FILETYPE_LARGE_AUDIO,
+  IDR_FILETYPE_LARGE_AUDIO
 };
 const IdrBySize kGenericIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_GENERIC,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_GENERIC,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_GENERIC
+  IDR_FILETYPE_GENERIC,
+  IDR_FILETYPE_LARGE_GENERIC,
+  IDR_FILETYPE_LARGE_GENERIC
 };
 const IdrBySize kImageIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE,
-  IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE,
-  IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE
+  IDR_FILETYPE_IMAGE,
+  IDR_FILETYPE_IMAGE,
+  IDR_FILETYPE_IMAGE
 };
 #if defined(USE_PROPRIETARY_CODECS)
 const IdrBySize kPdfIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_PDF,
-  IDR_FILE_MANAGER_IMG_FILETYPE_PDF,
-  IDR_FILE_MANAGER_IMG_FILETYPE_PDF
+  IDR_FILETYPE_PDF,
+  IDR_FILETYPE_PDF,
+  IDR_FILETYPE_PDF
 };
 #endif
 const IdrBySize kVideoIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_VIDEO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_VIDEO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_VIDEO
+  IDR_FILETYPE_VIDEO,
+  IDR_FILETYPE_LARGE_VIDEO,
+  IDR_FILETYPE_LARGE_VIDEO
 };
 
 IconMapper::IconMapper() {
   // The code below should match translation in
-  // chrome/browser/resources/file_manager/js/file_manager.js
-  // chrome/browser/resources/file_manager/css/file_manager.css
+  // ui/file_manager/file_manager/js/file_manager.js
+  // ui/file_manager/file_manager/css/file_manager.css
   // 'audio': /\.(mp3|m4a|oga|ogg|wav)$/i,
   // 'html': /\.(html?)$/i,
   // 'image': /\.(bmp|gif|jpe?g|ico|png|webp)$/i,
@@ -186,8 +186,14 @@ IconGroupID IconLoader::ReadGroupIDFromFilepath(
   return StringToLowerASCII(filepath.Extension());
 }
 
+// static
 bool IconLoader::IsIconMutableFromFilepath(const base::FilePath&) {
   return false;
+}
+
+// static
+content::BrowserThread::ID IconLoader::ReadIconThreadID() {
+  return content::BrowserThread::FILE;
 }
 
 void IconLoader::ReadIcon() {

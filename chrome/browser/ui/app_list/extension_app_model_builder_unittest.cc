@@ -12,15 +12,17 @@
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate_impl.h"
+#include "chrome/browser/ui/app_list/app_list_test_util.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -28,17 +30,13 @@
 
 namespace {
 
-const char kHostedAppId[] = "dceacbkfkmllgmjmbhgkpjegnodmildf";
-const char kPackagedApp1Id[] = "emfkafnhnpcmabnnkckkchdilgeoekbo";
-const char kPackagedApp2Id[] = "jlklkagmeajbjiobondfhiekepofmljl";
-
 // Get a string of all apps in |model| joined with ','.
 std::string GetModelContent(app_list::AppListModel* model) {
   std::string content;
-  for (size_t i = 0; i < model->item_list()->item_count(); ++i) {
+  for (size_t i = 0; i < model->top_level_item_list()->item_count(); ++i) {
     if (i > 0)
       content += ',';
-    content += model->item_list()->item_at(i)->title();
+    content += model->top_level_item_list()->item_at(i)->name();
   }
   return content;
 }
@@ -103,29 +101,13 @@ const size_t kDefaultAppCount = 3u;
 
 }  // namespace
 
-class ExtensionAppModelBuilderTest : public ExtensionServiceTestBase {
+class ExtensionAppModelBuilderTest : public AppListTestBase {
  public:
   ExtensionAppModelBuilderTest() {}
   virtual ~ExtensionAppModelBuilderTest() {}
 
   virtual void SetUp() OVERRIDE {
-    ExtensionServiceTestBase::SetUp();
-
-    // Load "app_list" extensions test profile.
-    // The test profile has 4 extensions:
-    // 1 dummy extension, 2 packaged extension apps and 1 hosted extension app.
-    base::FilePath source_install_dir = data_dir_
-        .AppendASCII("app_list")
-        .AppendASCII("Extensions");
-    base::FilePath pref_path = source_install_dir
-        .DirName()
-        .Append(chrome::kPreferencesFilename);
-    InitializeInstalledExtensionService(pref_path, source_install_dir);
-    service_->Init();
-
-    // There should be 4 extensions in the test profile.
-    const extensions::ExtensionSet* extensions = service_->extensions();
-    ASSERT_EQ(static_cast<size_t>(4),  extensions->size());
+    AppListTestBase::SetUp();
 
     CreateBuilder();
   }
@@ -163,7 +145,7 @@ class ExtensionAppModelBuilderTest : public ExtensionServiceTestBase {
 
 TEST_F(ExtensionAppModelBuilderTest, Build) {
   // The apps list would have 3 extension apps in the profile.
-  EXPECT_EQ(kDefaultAppCount, model_->item_list()->item_count());
+  EXPECT_EQ(kDefaultAppCount, model_->top_level_item_list()->item_count());
   EXPECT_EQ(std::string(kDefaultApps), GetModelContent(model_.get()));
 }
 
@@ -250,7 +232,8 @@ TEST_F(ExtensionAppModelBuilderTest, Reinstall) {
 }
 
 TEST_F(ExtensionAppModelBuilderTest, OrdinalPrefsChange) {
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
 
   syncer::StringOrdinal package_app_page =
       sorting->GetPageOrdinal(kPackagedApp1Id);
@@ -272,21 +255,22 @@ TEST_F(ExtensionAppModelBuilderTest, OrdinalPrefsChange) {
 }
 
 TEST_F(ExtensionAppModelBuilderTest, OnExtensionMoved) {
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
   sorting->SetPageOrdinal(kHostedAppId,
                           sorting->GetPageOrdinal(kPackagedApp1Id));
 
-  service_->OnExtensionMoved(kHostedAppId, kPackagedApp1Id, kPackagedApp2Id);
+  sorting->OnExtensionMoved(kHostedAppId, kPackagedApp1Id, kPackagedApp2Id);
   // Old behavior: This would be "Packaged App 1,Hosted App,Packaged App 2"
   // New behavior: Sorting order doesn't change.
   EXPECT_EQ(std::string(kDefaultApps), GetModelContent(model_.get()));
 
-  service_->OnExtensionMoved(kHostedAppId, kPackagedApp2Id, std::string());
+  sorting->OnExtensionMoved(kHostedAppId, kPackagedApp2Id, std::string());
   // Old behavior: This would be restored to the default order.
   // New behavior: Sorting order still doesn't change.
   EXPECT_EQ(std::string(kDefaultApps), GetModelContent(model_.get()));
 
-  service_->OnExtensionMoved(kHostedAppId, std::string(), kPackagedApp1Id);
+  sorting->OnExtensionMoved(kHostedAppId, std::string(), kPackagedApp1Id);
   // Old behavior: This would be "Hosted App,Packaged App 1,Packaged App 2"
   // New behavior: Sorting order doesn't change.
   EXPECT_EQ(std::string(kDefaultApps), GetModelContent(model_.get()));
@@ -294,11 +278,13 @@ TEST_F(ExtensionAppModelBuilderTest, OnExtensionMoved) {
 
 TEST_F(ExtensionAppModelBuilderTest, InvalidOrdinal) {
   // Creates a no-ordinal case.
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
   sorting->ClearOrdinals(kPackagedApp1Id);
 
   // Creates a corrupted ordinal case.
-  extensions::ExtensionScopedPrefs* scoped_prefs = service_->extension_prefs();
+  extensions::ExtensionScopedPrefs* scoped_prefs =
+      extensions::ExtensionPrefs::Get(profile_.get());
   scoped_prefs->UpdateExtensionPref(
       kHostedAppId,
       "page_ordinal",
@@ -313,7 +299,8 @@ TEST_F(ExtensionAppModelBuilderTest, OrdinalConfilicts) {
   syncer::StringOrdinal conflict_ordinal =
       syncer::StringOrdinal::CreateInitialOrdinal();
 
-  extensions::AppSorting* sorting = service_->extension_prefs()->app_sorting();
+  extensions::AppSorting* sorting =
+      extensions::ExtensionPrefs::Get(profile_.get())->app_sorting();
   sorting->SetPageOrdinal(kHostedAppId, conflict_ordinal);
   sorting->SetAppLaunchOrdinal(kHostedAppId, conflict_ordinal);
 
@@ -354,6 +341,6 @@ TEST_F(ExtensionAppModelBuilderTest, BookmarkApp) {
   EXPECT_TRUE(err.empty());
 
   service_->AddExtension(bookmark_app.get());
-  EXPECT_EQ(kDefaultAppCount + 1, model_->item_list()->item_count());
+  EXPECT_EQ(kDefaultAppCount + 1, model_->top_level_item_list()->item_count());
   EXPECT_NE(std::string::npos, GetModelContent(model_.get()).find(kAppName));
 }

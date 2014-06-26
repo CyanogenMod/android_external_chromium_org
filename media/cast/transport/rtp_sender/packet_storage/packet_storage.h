@@ -5,6 +5,7 @@
 #ifndef MEDIA_CAST_TRANSPORT_RTP_SENDER_PACKET_STORAGE_PACKET_STORAGE_H_
 #define MEDIA_CAST_TRANSPORT_RTP_SENDER_PACKET_STORAGE_PACKET_STORAGE_H_
 
+#include <deque>
 #include <list>
 #include <map>
 #include <vector>
@@ -16,39 +17,40 @@
 #include "base/time/time.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/cast/transport/cast_transport_defines.h"
+#include "media/cast/transport/pacing/paced_sender.h"
 
 namespace media {
 namespace cast {
 namespace transport {
 
-class StoredPacket;
-typedef std::map<uint32, linked_ptr<StoredPacket> > PacketMap;
-typedef std::multimap<base::TimeTicks, uint32> TimeToPacketMap;
+// Stores a list of frames. Each frame consists a list of packets.
+typedef std::deque<SendPacketVector> FrameQueue;
 
 class PacketStorage {
  public:
-  static const unsigned int kMaxStoredPackets = 1000;
-
-  PacketStorage(base::TickClock* clock, int max_time_stored_ms);
+  explicit PacketStorage(size_t stored_frames);
   virtual ~PacketStorage();
 
-  void StorePacket(uint32 frame_id, uint16 packet_id, const Packet* packet);
+  // Returns true if this class is configured correctly.
+  // (stored frames > 0 && stored_frames < kMaxStoredFrames)
+  bool IsValid() const;
 
-  // Copies all missing packets into the packet list.
-  PacketList GetPackets(
-      const MissingFramesAndPacketsMap& missing_frames_and_packets);
+  // Store all of the packets for a frame.
+  void StoreFrame(uint32 frame_id, const SendPacketVector& packets);
 
-  // Copies packet into the packet list.
-  bool GetPacket(uint8 frame_id, uint16 packet_id, PacketList* packets);
+  // Returns a list of packets for a frame indexed by a 8-bits ID.
+  // It is the lowest 8 bits of a frame ID.
+  // Returns NULL if the frame cannot be found.
+  const SendPacketVector* GetFrame8(uint8 frame_id_8bits) const;
+
+  // Get the number of stored frames.
+  size_t GetNumberOfStoredFrames() const;
 
  private:
-  void CleanupOldPackets(base::TimeTicks now);
-
-  base::TickClock* const clock_;  // Not owned by this class.
-  base::TimeDelta max_time_stored_;
-  PacketMap stored_packets_;
-  TimeToPacketMap time_to_packet_map_;
-  std::list<linked_ptr<StoredPacket> > free_packets_;
+  const size_t max_stored_frames_;
+  FrameQueue frames_;
+  uint32 first_frame_id_in_list_;
+  uint32 last_frame_id_in_list_;
 
   DISALLOW_COPY_AND_ASSIGN(PacketStorage);
 };

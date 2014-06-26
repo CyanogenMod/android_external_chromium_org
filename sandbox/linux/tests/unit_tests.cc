@@ -8,9 +8,12 @@
 #include <stdio.h>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
+#include "base/debug/leak_annotations.h"
 #include "base/file_util.h"
+#include "base/posix/eintr_wrapper.h"
 #include "base/third_party/valgrind/valgrind.h"
 #include "build/build_config.h"
 #include "sandbox/linux/tests/unit_tests.h"
@@ -102,24 +105,40 @@ static void SetProcessTimeout(int time_in_seconds) {
 // in the BPF sandbox, as it potentially makes global state changes and as
 // it also tends to raise fatal errors, if the code has been used in an
 // insecure manner.
-void UnitTests::RunTestInProcess(UnitTests::Test test,
-                                 void* arg,
+void UnitTests::RunTestInProcess(SandboxTestRunner* test_runner,
                                  DeathCheck death,
                                  const void* death_aux) {
+  CHECK(test_runner);
   // We need to fork(), so we can't be multi-threaded, as threads could hold
   // locks.
   int num_threads = CountThreads();
-#if defined(THREAD_SANITIZER)
+#if !defined(THREAD_SANITIZER)
+  const int kNumExpectedThreads = 1;
+#else
   // Under TSAN, there is a special helper thread. It should be completely
   // invisible to our testing, so we ignore it. It should be ok to fork()
   // with this thread. It's currently buggy, but it's the best we can do until
   // there is a way to delay the start of the thread
   // (https://code.google.com/p/thread-sanitizer/issues/detail?id=19).
-  num_threads--;
+  const int kNumExpectedThreads = 2;
 #endif
-  ASSERT_EQ(1, num_threads) << "Running sandbox tests with multiple threads "
-                            << "is not supported and will make the tests "
-                            << "flaky.\n";
+
+  // The kernel is at liberty to wake a thread id futex before updating /proc.
+  // If another test running in the same process has stopped a thread, it may
+  // appear as still running in /proc.
+  // We poll /proc, with an exponential back-off. At most, we'll sleep around
+  // 2^iterations nanoseconds in nanosleep().
+  for (unsigned int iteration = 0; iteration < 30; iteration++) {
+    struct timespec ts = {0, 1L << iteration /* nanoseconds */};
+    PCHECK(0 == HANDLE_EINTR(nanosleep(&ts, &ts)));
+    num_threads = CountThreads();
+    if (kNumExpectedThreads == num_threads)
+      break;
+  }
+
+  ASSERT_EQ(kNumExpectedThreads, num_threads)
+      << "Running sandbox tests with multiple threads "
+      << "is not supported and will make the tests flaky.";
   int fds[2];
   ASSERT_EQ(0, pipe(fds));
   // Check that our pipe is not on one of the standard file descriptor.
@@ -146,7 +165,12 @@ void UnitTests::RunTestInProcess(UnitTests::Test test,
     struct rlimit no_core = {0};
     setrlimit(RLIMIT_CORE, &no_core);
 
-    test(arg);
+    test_runner->Run();
+    if (test_runner->ShouldCheckForLeaks()) {
+#if defined(LEAK_SANITIZER)
+      __lsan_do_leak_check();
+#endif
+    }
     _exit(kExpectedValue);
   }
 
@@ -157,7 +181,7 @@ void UnitTests::RunTestInProcess(UnitTests::Test test,
   // Make sure read() will never block as we'll use poll() to
   // block with a timeout instead.
   const int fcntl_ret = fcntl(fds[0], F_SETFL, O_NONBLOCK);
-  ASSERT_EQ(fcntl_ret, 0);
+  ASSERT_EQ(0, fcntl_ret);
   struct pollfd poll_fd = {fds[0], POLLIN | POLLRDHUP, 0};
 
   int poll_ret;
@@ -208,6 +232,17 @@ void UnitTests::DeathSuccess(int status, const std::string& msg, const void*) {
   EXPECT_FALSE(subprocess_exited_but_printed_messages) << details;
 }
 
+void UnitTests::DeathSuccessAllowNoise(int status,
+                                       const std::string& msg,
+                                       const void*) {
+  std::string details(TestFailedMessage(msg));
+
+  bool subprocess_terminated_normally = WIFEXITED(status);
+  ASSERT_TRUE(subprocess_terminated_normally) << details;
+  int subprocess_exit_status = WEXITSTATUS(status);
+  ASSERT_EQ(kExpectedValue, subprocess_exit_status) << details;
+}
+
 void UnitTests::DeathMessage(int status,
                              const std::string& msg,
                              const void* aux) {
@@ -232,7 +267,7 @@ void UnitTests::DeathExitCode(int status,
   bool subprocess_terminated_normally = WIFEXITED(status);
   ASSERT_TRUE(subprocess_terminated_normally) << details;
   int subprocess_exit_status = WEXITSTATUS(status);
-  ASSERT_EQ(subprocess_exit_status, expected_exit_code) << details;
+  ASSERT_EQ(expected_exit_code, subprocess_exit_status) << details;
 }
 
 void UnitTests::DeathBySignal(int status,
@@ -244,7 +279,7 @@ void UnitTests::DeathBySignal(int status,
   bool subprocess_terminated_by_signal = WIFSIGNALED(status);
   ASSERT_TRUE(subprocess_terminated_by_signal) << details;
   int subprocess_signal_number = WTERMSIG(status);
-  ASSERT_EQ(subprocess_signal_number, expected_signo) << details;
+  ASSERT_EQ(expected_signo, subprocess_signal_number) << details;
 }
 
 void UnitTests::AssertionFailure(const char* expr, const char* file, int line) {

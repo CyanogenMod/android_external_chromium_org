@@ -9,9 +9,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "ui/app_list/app_list_switches.h"
@@ -20,11 +18,10 @@ namespace app_list {
 
 // static
 StartPageService* StartPageServiceFactory::GetForProfile(Profile* profile) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          ::switches::kShowAppListStartPage) &&
+  if (!app_list::switches::IsExperimentalAppListEnabled() &&
       !app_list::switches::IsVoiceSearchEnabled()) {
-      return NULL;
-    }
+    return NULL;
+  }
 
   return static_cast<StartPageService*>(
       GetInstance()->GetServiceForBrowserContext(profile, true));
@@ -46,20 +43,10 @@ StartPageServiceFactory::StartPageServiceFactory()
 
 StartPageServiceFactory::~StartPageServiceFactory() {}
 
-BrowserContextKeyedService* StartPageServiceFactory::BuildServiceInstanceFor(
+KeyedService* StartPageServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
   return new StartPageService(profile);
-}
-
-void StartPageServiceFactory::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-#if defined(OS_CHROMEOS)
-  registry->RegisterBooleanPref(
-      prefs::kHotwordAppListEnabled,
-      true,
-      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
-#endif
 }
 
 }  // namespace app_list

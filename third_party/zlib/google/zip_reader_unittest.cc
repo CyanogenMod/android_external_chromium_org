@@ -9,12 +9,13 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/md5.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -25,44 +26,29 @@ namespace {
 
 const static std::string kQuuxExpectedMD5 = "d1ae4ac8a17a0e09317113ab284b57a6";
 
-// Wrap PlatformFiles in a class so that we don't leak them in tests.
-class PlatformFileWrapper {
+class FileWrapper {
  public:
   typedef enum {
     READ_ONLY,
     READ_WRITE
   } AccessMode;
 
-  PlatformFileWrapper(const base::FilePath& file, AccessMode mode)
-      : file_(base::kInvalidPlatformFileValue) {
-    switch (mode) {
-      case READ_ONLY:
-        file_ = base::CreatePlatformFile(file,
-                                         base::PLATFORM_FILE_OPEN |
-                                         base::PLATFORM_FILE_READ,
-                                         NULL, NULL);
-        break;
-      case READ_WRITE:
-        file_ = base::CreatePlatformFile(file,
-                                         base::PLATFORM_FILE_CREATE_ALWAYS |
-                                         base::PLATFORM_FILE_READ |
-                                         base::PLATFORM_FILE_WRITE,
-                                         NULL, NULL);
-        break;
-      default:
-        NOTREACHED();
-    }
-    return;
+  FileWrapper(const base::FilePath& path, AccessMode mode) {
+    int flags = base::File::FLAG_READ;
+    if (mode == READ_ONLY)
+      flags |= base::File::FLAG_OPEN;
+    else
+      flags |= base::File::FLAG_WRITE | base::File::FLAG_CREATE_ALWAYS;
+
+    file_.Initialize(path, flags);
   }
 
-  ~PlatformFileWrapper() {
-    base::ClosePlatformFile(file_);
-  }
+  ~FileWrapper() {}
 
-  base::PlatformFile platform_file() { return file_; }
+  base::PlatformFile platform_file() { return file_.GetPlatformFile(); }
 
  private:
-  base::PlatformFile file_;
+  base::File file_;
 };
 
 // A mock that provides methods that can be used as callbacks in asynchronous
@@ -70,7 +56,7 @@ class PlatformFileWrapper {
 // Assumes that progress callbacks will be executed in-order.
 class MockUnzipListener : public base::SupportsWeakPtr<MockUnzipListener> {
  public:
-  MockUnzipListener() 
+  MockUnzipListener()
       : success_calls_(0),
         failure_calls_(0),
         progress_calls_(0),
@@ -195,8 +181,7 @@ TEST_F(ZipReaderTest, Open_ValidZipFile) {
 
 TEST_F(ZipReaderTest, Open_ValidZipPlatformFile) {
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
 }
 
@@ -233,8 +218,7 @@ TEST_F(ZipReaderTest, Iteration) {
 TEST_F(ZipReaderTest, PlatformFileIteration) {
   std::set<base::FilePath> actual_contents;
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
   while (reader.HasMore()) {
     ASSERT_TRUE(reader.OpenCurrentEntryInZip());
@@ -286,8 +270,7 @@ TEST_F(ZipReaderTest, ExtractCurrentEntryToFilePath_RegularFile) {
 
 TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFilePath_RegularFile) {
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
   base::FilePath target_path(FILE_PATH_LITERAL("foo/bar/quux.txt"));
   ASSERT_TRUE(reader.LocateAndOpenEntry(target_path));
@@ -307,12 +290,11 @@ TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFilePath_RegularFile) {
 #if defined(OS_POSIX)
 TEST_F(ZipReaderTest, PlatformFileExtractCurrentEntryToFd_RegularFile) {
   ZipReader reader;
-  PlatformFileWrapper zip_fd_wrapper(test_zip_file_,
-                                     PlatformFileWrapper::READ_ONLY);
+  FileWrapper zip_fd_wrapper(test_zip_file_, FileWrapper::READ_ONLY);
   ASSERT_TRUE(reader.OpenFromPlatformFile(zip_fd_wrapper.platform_file()));
   base::FilePath target_path(FILE_PATH_LITERAL("foo/bar/quux.txt"));
   base::FilePath out_path = test_dir_.AppendASCII("quux.txt");
-  PlatformFileWrapper out_fd_w(out_path, PlatformFileWrapper::READ_WRITE);
+  FileWrapper out_fd_w(out_path, FileWrapper::READ_WRITE);
   ASSERT_TRUE(reader.LocateAndOpenEntry(target_path));
   ASSERT_TRUE(reader.ExtractCurrentEntryToFd(out_fd_w.platform_file()));
   // Read the output file and compute the MD5.
@@ -551,6 +533,44 @@ TEST_F(ZipReaderTest, ExtractToFileAsync_Directory) {
   EXPECT_GE(0, listener.progress_calls());
 
   ASSERT_TRUE(base::DirectoryExists(target_file));
+}
+
+TEST_F(ZipReaderTest, ExtractCurrentEntryToString) {
+  // test_mismatch_size.zip contains files with names from 0.txt to 7.txt with
+  // sizes from 0 to 7 bytes respectively, being the contents of each file a
+  // substring of "0123456" starting at '0'.
+  base::FilePath test_zip_file =
+      test_data_dir_.AppendASCII("test_mismatch_size.zip");
+
+  ZipReader reader;
+  std::string contents;
+  ASSERT_TRUE(reader.Open(test_zip_file));
+
+  for (size_t i = 0; i < 8; i++) {
+    SCOPED_TRACE(base::StringPrintf("Processing %d.txt", static_cast<int>(i)));
+
+    base::FilePath file_name = base::FilePath::FromUTF8Unsafe(
+        base::StringPrintf("%d.txt", static_cast<int>(i)));
+    ASSERT_TRUE(reader.LocateAndOpenEntry(file_name));
+
+    if (i > 1) {
+      // Off by one byte read limit: must fail.
+      EXPECT_FALSE(reader.ExtractCurrentEntryToString(i - 1, &contents));
+    }
+
+    if (i > 0) {
+      // Exact byte read limit: must pass.
+      EXPECT_TRUE(reader.ExtractCurrentEntryToString(i, &contents));
+      EXPECT_EQ(i, contents.size());
+      EXPECT_EQ(0, memcmp(contents.c_str(), "0123456", i));
+    }
+
+    // More than necessary byte read limit: must pass.
+    EXPECT_TRUE(reader.ExtractCurrentEntryToString(16, &contents));
+    EXPECT_EQ(i, contents.size());
+    EXPECT_EQ(0, memcmp(contents.c_str(), "0123456", i));
+  }
+  reader.Close();
 }
 
 }  // namespace zip

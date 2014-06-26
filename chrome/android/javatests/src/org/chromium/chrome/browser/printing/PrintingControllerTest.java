@@ -17,8 +17,8 @@ import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.TestFileUtil;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.printing.TabPrinter;
-import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
-import org.chromium.chrome.testshell.TestShellTab;
+import org.chromium.chrome.shell.ChromeShellTab;
+import org.chromium.chrome.shell.ChromeShellTestBase;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit;
  * TODO(cimamoglu): Add a test with multiple, stacked onLayout/onWrite calls.
  * TODO(cimamoglu): Add a test which emulates Chromium failing to generate a PDF.
  */
-public class PrintingControllerTest extends ChromiumTestShellTestBase {
+public class PrintingControllerTest extends ChromeShellTestBase {
 
     private static final String TEMP_FILE_NAME = "temp_print";
     private static final String TEMP_FILE_EXTENSION = ".pdf";
@@ -77,7 +77,7 @@ public class PrintingControllerTest extends ChromiumTestShellTestBase {
     public void testNormalPrintingFlow() throws Throwable {
         if (!ApiCompatibilityUtils.isPrintingSupported()) return;
 
-        final TestShellTab currentTab = launchChromiumTestShellWithUrl(URL).getActiveTab();
+        final ChromeShellTab currentTab = launchChromeShellWithUrl(URL).getActiveTab();
         assertTrue(waitForActiveShellToBeDoneLoading());
 
         final PrintingControllerImpl printingController = createControllerOnUiThread();
@@ -142,21 +142,11 @@ public class PrintingControllerTest extends ChromiumTestShellTestBase {
 
     private PrintingControllerImpl createControllerOnUiThread() {
         try {
-            final PrintManagerDelegate mockPrintManagerDelegate = new PrintManagerDelegate() {
-                @Override
-                public void print(String printJobName,
-                        PrintDocumentAdapter documentAdapter,
-                        PrintAttributes attributes) {
-                    // Do nothing, as we will emulate the framework call sequence within the test.
-                }
-            };
-
             final FutureTask<PrintingControllerImpl> task =
                     new FutureTask<PrintingControllerImpl>(new Callable<PrintingControllerImpl>() {
                 @Override
                 public PrintingControllerImpl call() throws Exception {
                     return (PrintingControllerImpl) PrintingControllerImpl.create(
-                            mockPrintManagerDelegate,
                             new PrintDocumentAdapterWrapper(),
                             PRINT_JOB_NAME);
                 }
@@ -172,12 +162,21 @@ public class PrintingControllerTest extends ChromiumTestShellTestBase {
     }
 
     private void startControllerOnUiThread(final PrintingControllerImpl controller,
-            final TestShellTab tab) {
+            final ChromeShellTab tab) {
         try {
+            final PrintManagerDelegate mockPrintManagerDelegate = new PrintManagerDelegate() {
+                @Override
+                public void print(String printJobName,
+                        PrintDocumentAdapter documentAdapter,
+                        PrintAttributes attributes) {
+                    // Do nothing, as we will emulate the framework call sequence within the test.
+                }
+            };
+
             runTestOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    controller.startPrint(new TabPrinter(tab));
+                    controller.startPrint(new TabPrinter(tab), mockPrintManagerDelegate);
                 }
             });
         } catch (Throwable e) {

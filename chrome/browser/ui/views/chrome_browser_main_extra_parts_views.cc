@@ -8,10 +8,7 @@
 #include "chrome/browser/ui/views/chrome_views_delegate.h"
 #include "chrome/common/chrome_switches.h"
 #include "ui/base/ui_base_switches.h"
-
-#if defined(USE_AURA)
-#include "ui/views/corewm/wm_state.h"
-#endif
+#include "ui/wm/core/wm_state.h"
 
 ChromeBrowserMainExtraPartsViews::ChromeBrowserMainExtraPartsViews() {
 }
@@ -25,7 +22,5 @@ void ChromeBrowserMainExtraPartsViews::ToolkitInitialized() {
   if (!views::ViewsDelegate::views_delegate)
     views::ViewsDelegate::views_delegate = new ChromeViewsDelegate;
 
-#if defined(USE_AURA)
-  wm_state_.reset(new views::corewm::WMState);
-#endif
+  wm_state_.reset(new wm::WMState);
 }

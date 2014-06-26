@@ -21,19 +21,36 @@
 
 namespace media {
 namespace cast {
+
+class LoggingImpl;
+
 namespace transport {
+
+// Use std::pair for free comparison operators.
+// { capture_time, ssrc, packet_id }
+// The PacketKey is designed to meet two criteria:
+// 1. When we re-send the same packet again, we can use the packet key
+//    to identify it so that we can de-duplicate packets in the queue.
+// 2. The sort order of the PacketKey determines the order that packets
+//    are sent out. Using the capture_time as the first member basically
+//    means that older packets are sent first.
+typedef std::pair<base::TimeTicks, std::pair<uint32, uint16> > PacketKey;
+typedef std::vector<std::pair<PacketKey, PacketRef> > SendPacketVector;
 
 // We have this pure virtual class to enable mocking.
 class PacedPacketSender {
  public:
-  // Inform the pacer / sender of the total number of packets.
-  virtual bool SendPackets(const PacketList& packets) = 0;
-
-  virtual bool ResendPackets(const PacketList& packets) = 0;
-
-  virtual bool SendRtcpPacket(const Packet& packet) = 0;
+  virtual bool SendPackets(const SendPacketVector& packets) = 0;
+  virtual bool ResendPackets(const SendPacketVector& packets,
+                             base::TimeDelta dedupe_window) = 0;
+  virtual bool SendRtcpPacket(uint32 ssrc, PacketRef packet) = 0;
+  virtual void CancelSendingPacket(const PacketKey& packet_key) = 0;
 
   virtual ~PacedPacketSender() {}
+
+  static PacketKey MakePacketKey(const base::TimeTicks& ticks,
+                                 uint32 ssrc,
+                                 uint16 packet_id);
 };
 
 class PacedSender : public PacedPacketSender,
@@ -44,47 +61,80 @@ class PacedSender : public PacedPacketSender,
   // testing.
   PacedSender(
       base::TickClock* clock,
+      LoggingImpl* logging,
       PacketSender* external_transport,
       const scoped_refptr<base::SingleThreadTaskRunner>& transport_task_runner);
 
   virtual ~PacedSender();
 
+  // These must be called before non-RTCP packets are sent.
+  void RegisterAudioSsrc(uint32 audio_ssrc);
+  void RegisterVideoSsrc(uint32 video_ssrc);
+
   // PacedPacketSender implementation.
-  virtual bool SendPackets(const PacketList& packets) OVERRIDE;
-
-  virtual bool ResendPackets(const PacketList& packets) OVERRIDE;
-
-  virtual bool SendRtcpPacket(const Packet& packet) OVERRIDE;
-
- protected:
-  // Schedule a delayed task on the main cast thread when it's time to send the
-  // next packet burst.
-  void ScheduleNextSend();
-
-  // Process any pending packets in the queue(s).
-  void SendNextPacketBurst();
+  virtual bool SendPackets(const SendPacketVector& packets) OVERRIDE;
+  virtual bool ResendPackets(const SendPacketVector& packets,
+                             base::TimeDelta dedupe_window) OVERRIDE;
+  virtual bool SendRtcpPacket(uint32 ssrc, PacketRef packet) OVERRIDE;
+  virtual void CancelSendingPacket(const PacketKey& packet_key) OVERRIDE;
 
  private:
-  bool SendPacketsToTransport(const PacketList& packets,
-                              PacketList* packets_not_sent);
-
   // Actually sends the packets to the transport.
-  bool TransmitPackets(const PacketList& packets);
   void SendStoredPackets();
-  void UpdateBurstSize(size_t num_of_packets);
+  void LogPacketEvent(const Packet& packet, CastLoggingEvent event);
 
-  // Not owned by this class.
-  base::TickClock* const clock_;
-  PacketSender* transport_;  // Not owned by this class.
-  scoped_refptr<base::TaskRunner> transport_task_runner_;
-  size_t burst_size_;
-  size_t packets_sent_in_burst_;
-  base::TimeTicks time_last_process_;
-  // Note: We can't combine the |packet_list_| and the |resend_packet_list_|
-  // since then we might get reordering of the retransmitted packets.
-  PacketList packet_list_;
-  PacketList resend_packet_list_;
+  enum PacketType {
+    PacketType_RTCP,
+    PacketType_Resend,
+    PacketType_Normal
+  };
+  enum State {
+    // In an unblocked state, we can send more packets.
+    // We have to check the current time against |burst_end_| to see if we are
+    // appending to the current burst or if we can start a new one.
+    State_Unblocked,
+    // In this state, we are waiting for a callback from the udp transport.
+    // This happens when the OS-level buffer is full. Once we receive the
+    // callback, we go to State_Unblocked and see if we can write more packets
+    // to the current burst. (Or the next burst if enough time has passed.)
+    State_TransportBlocked,
+    // Once we've written enough packets for a time slice, we go into this
+    // state and PostDelayTask a call to ourselves to wake up when we can
+    // send more data.
+    State_BurstFull
+  };
 
+  bool empty() const;
+  size_t size() const;
+
+  // Returns the next packet to send. RTCP packets have highest priority,
+  // resend packets have second highest priority and then comes everything
+  // else.
+  PacketRef GetNextPacket(PacketType* packet_type,
+                          PacketKey* packet_key);
+
+  base::TickClock* const clock_;  // Not owned by this class.
+  LoggingImpl* const logging_;    // Not owned by this class.
+  PacketSender* transport_;       // Not owned by this class.
+  scoped_refptr<base::SingleThreadTaskRunner> transport_task_runner_;
+  uint32 audio_ssrc_;
+  uint32 video_ssrc_;
+  std::map<PacketKey, std::pair<PacketType, PacketRef> > packet_list_;
+  std::map<PacketKey, base::TimeTicks> sent_time_;
+  std::map<PacketKey, base::TimeTicks> sent_time_buffer_;
+
+  // Maximum burst size for the next three bursts.
+  size_t max_burst_size_;
+  size_t next_max_burst_size_;
+  size_t next_next_max_burst_size_;
+  // Number of packets already sent in the current burst.
+  size_t current_burst_size_;
+  // This is when the current burst ends.
+  base::TimeTicks burst_end_;
+
+  State state_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<PacedSender> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PacedSender);

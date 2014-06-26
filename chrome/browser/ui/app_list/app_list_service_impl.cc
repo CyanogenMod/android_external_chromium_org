@@ -13,13 +13,9 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
-#include "chrome/browser/apps/shortcut_manager.h"
-#include "chrome/browser/apps/shortcut_manager_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/app_list/keep_alive_service.h"
-#include "chrome/browser/ui/app_list/keep_alive_service_impl.h"
 #include "chrome/browser/ui/app_list/profile_loader.h"
 #include "chrome/browser/ui/app_list/profile_store.h"
 #include "chrome/common/chrome_constants.h"
@@ -73,6 +69,8 @@ void RecordDailyEventFrequency(
     return;  // In a unit test.
 
   PrefService* local_state = g_browser_process->local_state();
+  if (!local_state)
+    return;  // In a unit test.
 
   int count = local_state->GetInteger(count_pref);
   local_state->SetInteger(count_pref, count + 1);
@@ -132,11 +130,13 @@ class ProfileStoreImpl : public ProfileStore {
     return profile_manager_->user_data_dir();
   }
 
-  virtual bool IsProfileManaged(const base::FilePath& profile_path) OVERRIDE {
+  virtual bool IsProfileSupervised(
+      const base::FilePath& profile_path) OVERRIDE {
     ProfileInfoCache& profile_info =
         g_browser_process->profile_manager()->GetProfileInfoCache();
     size_t profile_index = profile_info.GetIndexOfProfileWithPath(profile_path);
-    return profile_info.ProfileIsManagedAtIndex(profile_index);
+    return profile_index != std::string::npos &&
+        profile_info.ProfileIsSupervisedAtIndex(profile_index);
   }
 
  private:
@@ -228,28 +228,23 @@ void AppListServiceImpl::SendAppListStats() {
 }
 
 AppListServiceImpl::AppListServiceImpl()
-    : profile_store_(new ProfileStoreImpl(
-          g_browser_process->profile_manager())),
+    : profile_store_(
+          new ProfileStoreImpl(g_browser_process->profile_manager())),
       weak_factory_(this),
       command_line_(*CommandLine::ForCurrentProcess()),
       local_state_(g_browser_process->local_state()),
-      profile_loader_(new ProfileLoader(
-          profile_store_.get(),
-          scoped_ptr<KeepAliveService>(new KeepAliveServiceImpl))) {
+      profile_loader_(new ProfileLoader(profile_store_.get())) {
   profile_store_->AddProfileObserver(this);
 }
 
-AppListServiceImpl::AppListServiceImpl(
-    const CommandLine& command_line,
-    PrefService* local_state,
-    scoped_ptr<ProfileStore> profile_store,
-    scoped_ptr<KeepAliveService> keep_alive_service)
+AppListServiceImpl::AppListServiceImpl(const CommandLine& command_line,
+                                       PrefService* local_state,
+                                       scoped_ptr<ProfileStore> profile_store)
     : profile_store_(profile_store.Pass()),
       weak_factory_(this),
       command_line_(command_line),
       local_state_(local_state),
-      profile_loader_(new ProfileLoader(
-          profile_store_.get(), keep_alive_service.Pass())) {
+      profile_loader_(new ProfileLoader(profile_store_.get())) {
   profile_store_->AddProfileObserver(this);
 }
 
@@ -282,10 +277,10 @@ base::FilePath AppListServiceImpl::GetProfilePath(
 }
 
 void AppListServiceImpl::SetProfilePath(const base::FilePath& profile_path) {
-  // Ensure we don't set the pref to a managed user's profile path.
-  // TODO(calamity): Filter out managed profiles from the settings app so this
-  // can't get hit, so we can remove it.
-  if (profile_store_->IsProfileManaged(profile_path))
+  // Ensure we don't set the pref to a supervised user's profile path.
+  // TODO(calamity): Filter out supervised profiles from the settings app so
+  // this can't get hit, so we can remove it.
+  if (profile_store_->IsProfileSupervised(profile_path))
     return;
 
   local_state_->SetString(
@@ -328,8 +323,11 @@ void AppListServiceImpl::AutoShowForProfile(Profile* requested_profile) {
 void AppListServiceImpl::EnableAppList(Profile* initial_profile,
                                        AppListEnableSource enable_source) {
   SetProfilePath(initial_profile->GetPath());
-  if (local_state_->GetBoolean(prefs::kAppLauncherHasBeenEnabled))
+  // Always allow the webstore "enable" button to re-run the install flow.
+  if (enable_source != AppListService::ENABLE_VIA_WEBSTORE_LINK &&
+      local_state_->GetBoolean(prefs::kAppLauncherHasBeenEnabled)) {
     return;
+  }
 
   local_state_->SetBoolean(prefs::kAppLauncherHasBeenEnabled, true);
   CreateShortcut();
@@ -348,11 +346,6 @@ void AppListServiceImpl::EnableAppList(Profile* initial_profile,
                    false),
         base::TimeDelta::FromMinutes(kDiscoverabilityTimeoutMinutes));
   }
-
-  AppShortcutManager* shortcut_manager =
-      AppShortcutManagerFactory::GetForProfile(initial_profile);
-  if (shortcut_manager)
-    shortcut_manager->OnceOffCreateShortcuts();
 }
 
 void AppListServiceImpl::InvalidatePendingProfileLoads() {

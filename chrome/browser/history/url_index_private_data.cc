@@ -4,7 +4,6 @@
 
 #include "chrome/browser/history/url_index_private_data.h"
 
-#include <algorithm>
 #include <functional>
 #include <iterator>
 #include <limits>
@@ -14,21 +13,18 @@
 
 #include "base/basictypes.h"
 #include "base/file_util.h"
+#include "base/i18n/break_iterator.h"
 #include "base/i18n/case_conversion.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "chrome/browser/autocomplete/autocomplete_provider.h"
-#include "chrome/browser/autocomplete/url_prefix.h"
-#include "chrome/browser/bookmarks/bookmark_service.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/history/history_db_task.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/in_memory_url_index.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/history/core/browser/history_client.h"
 #include "net/base/net_util.h"
 
 #if defined(USE_SYSTEM_PROTOBUF)
@@ -121,7 +117,7 @@ bool UpdateRecentVisitsFromHistoryDBTask::RunOnDBThread(
     HistoryBackend* backend,
     HistoryDatabase* db) {
   // Make sure the private data is going to get as many recent visits as
-  // ScoredHistoryMatch::GetFrecency() hopes to use.
+  // ScoredHistoryMatch::GetFrequency() hopes to use.
   DCHECK_GE(kMaxVisitsToStoreInCache, ScoredHistoryMatch::kMaxVisitsToScore);
   succeeded_ = db->GetMostRecentVisitsForURL(url_id_,
                                              kMaxVisitsToStoreInCache,
@@ -153,8 +149,9 @@ URLIndexPrivateData::URLIndexPrivateData()
 ScoredHistoryMatches URLIndexPrivateData::HistoryItemsForTerms(
     base::string16 search_string,
     size_t cursor_position,
+    size_t max_matches,
     const std::string& languages,
-    BookmarkService* bookmark_service) {
+    HistoryClient* history_client) {
   // If cursor position is set and useful (not at either end of the
   // string), allow the search string to be broken at cursor position.
   // We do this by pretending there's a space where the cursor is.
@@ -246,17 +243,17 @@ ScoredHistoryMatches URLIndexPrivateData::HistoryItemsForTerms(
     return scored_items;
   }
   scored_items = std::for_each(history_id_set.begin(), history_id_set.end(),
-      AddHistoryMatch(*this, languages, bookmark_service, lower_raw_string,
+      AddHistoryMatch(*this, languages, history_client, lower_raw_string,
                       lower_raw_terms, base::Time::Now())).ScoredMatches();
 
-  // Select and sort only the top kMaxMatches results.
-  if (scored_items.size() > AutocompleteProvider::kMaxMatches) {
+  // Select and sort only the top |max_matches| results.
+  if (scored_items.size() > max_matches) {
     std::partial_sort(scored_items.begin(),
                       scored_items.begin() +
-                          AutocompleteProvider::kMaxMatches,
+                          max_matches,
                       scored_items.end(),
                       ScoredHistoryMatch::MatchScoreGreater);
-      scored_items.resize(AutocompleteProvider::kMaxMatches);
+      scored_items.resize(max_matches);
   } else {
     std::sort(scored_items.begin(), scored_items.end(),
               ScoredHistoryMatch::MatchScoreGreater);
@@ -492,7 +489,7 @@ scoped_refptr<URLIndexPrivateData> URLIndexPrivateData::Duplicate() const {
   //    pre_filter_item_count_
   //    post_filter_item_count_
   //    post_scoring_item_count_
-};
+}
 
 bool URLIndexPrivateData::Empty() const {
   return history_info_map_.empty();
@@ -536,11 +533,8 @@ HistoryIDSet URLIndexPrivateData::HistoryIDSetFromWords(
     if (iter == words.begin()) {
       history_id_set.swap(term_history_set);
     } else {
-      HistoryIDSet new_history_id_set;
-      std::set_intersection(history_id_set.begin(), history_id_set.end(),
-                            term_history_set.begin(), term_history_set.end(),
-                            std::inserter(new_history_id_set,
-                                          new_history_id_set.begin()));
+      HistoryIDSet new_history_id_set = base::STLSetIntersection<HistoryIDSet>(
+          history_id_set, term_history_set);
       history_id_set.swap(new_history_id_set);
     }
   }
@@ -611,11 +605,8 @@ HistoryIDSet URLIndexPrivateData::HistoryIDsForTerm(
       if (prefix_chars.empty()) {
         word_id_set.swap(leftover_set);
       } else {
-        WordIDSet new_word_id_set;
-        std::set_intersection(word_id_set.begin(), word_id_set.end(),
-                              leftover_set.begin(), leftover_set.end(),
-                              std::inserter(new_word_id_set,
-                                            new_word_id_set.begin()));
+        WordIDSet new_word_id_set = base::STLSetIntersection<WordIDSet>(
+            word_id_set, leftover_set);
         word_id_set.swap(new_word_id_set);
       }
     }
@@ -681,11 +672,8 @@ WordIDSet URLIndexPrivateData::WordIDSetForTermChars(
       word_id_set = char_word_id_set;
     } else {
       // Subsequent character results get intersected in.
-      WordIDSet new_word_id_set;
-      std::set_intersection(word_id_set.begin(), word_id_set.end(),
-                            char_word_id_set.begin(), char_word_id_set.end(),
-                            std::inserter(new_word_id_set,
-                                          new_word_id_set.begin()));
+      WordIDSet new_word_id_set = base::STLSetIntersection<WordIDSet>(
+          word_id_set, char_word_id_set);
       word_id_set.swap(new_word_id_set);
     }
   }
@@ -735,7 +723,7 @@ bool URLIndexPrivateData::IndexRow(
     // So we don't do any thread checks.
     VisitVector recent_visits;
     // Make sure the private data is going to get as many recent visits as
-    // ScoredHistoryMatch::GetFrecency() hopes to use.
+    // ScoredHistoryMatch::GetFrequency() hopes to use.
     DCHECK_GE(kMaxVisitsToStoreInCache, ScoredHistoryMatch::kMaxVisitsToScore);
     if (history_db->GetMostRecentVisitsForURL(row_id,
                                               kMaxVisitsToStoreInCache,
@@ -755,16 +743,15 @@ void URLIndexPrivateData::AddRowWordsToIndex(const URLRow& row,
   HistoryID history_id = static_cast<HistoryID>(row.id());
   // Split URL into individual, unique words then add in the title words.
   const GURL& gurl(row.url());
-  const base::string16& url = CleanUpUrlForMatching(gurl, languages);
+  const base::string16& url =
+      bookmark_utils::CleanUpUrlForMatching(gurl, languages, NULL);
   String16Set url_words = String16SetFromString16(url,
       word_starts ? &word_starts->url_word_starts_ : NULL);
-  const base::string16& title = CleanUpTitleForMatching(row.title());
+  const base::string16& title =
+      bookmark_utils::CleanUpTitleForMatching(row.title());
   String16Set title_words = String16SetFromString16(title,
       word_starts ? &word_starts->title_word_starts_ : NULL);
-  String16Set words;
-  std::set_union(url_words.begin(), url_words.end(),
-                 title_words.begin(), title_words.end(),
-                 std::insert_iterator<String16Set>(words, words.begin()));
+  String16Set words = base::STLSetUnion<String16Set>(url_words, title_words);
   for (String16Set::iterator word_iter = words.begin();
        word_iter != words.end(); ++word_iter)
     AddWordToIndex(*word_iter, history_id);
@@ -898,7 +885,7 @@ bool URLIndexPrivateData::SaveToFile(const base::FilePath& file_path) {
   }
 
   int size = data.size();
-  if (file_util::WriteFile(file_path, data.c_str(), size) != size) {
+  if (base::WriteFile(file_path, data.c_str(), size) != size) {
     LOG(WARNING) << "Failed to write " << file_path.value();
     return false;
   }
@@ -1236,9 +1223,11 @@ bool URLIndexPrivateData::RestoreWordStartsMap(
          iter != history_info_map_.end(); ++iter) {
       RowWordStarts word_starts;
       const URLRow& row(iter->second.url_row);
-      const base::string16& url = CleanUpUrlForMatching(row.url(), languages);
+      const base::string16& url = bookmark_utils::CleanUpUrlForMatching(
+          row.url(), languages, NULL);
       String16VectorFromString16(url, false, &word_starts.url_word_starts_);
-      const base::string16& title = CleanUpTitleForMatching(row.title());
+      const base::string16& title =
+          bookmark_utils::CleanUpTitleForMatching(row.title());
       String16VectorFromString16(title, false, &word_starts.title_word_starts_);
       word_starts_map_[iter->first] = word_starts;
     }
@@ -1274,16 +1263,33 @@ URLIndexPrivateData::SearchTermCacheItem::~SearchTermCacheItem() {}
 URLIndexPrivateData::AddHistoryMatch::AddHistoryMatch(
     const URLIndexPrivateData& private_data,
     const std::string& languages,
-    BookmarkService* bookmark_service,
+    HistoryClient* history_client,
     const base::string16& lower_string,
     const String16Vector& lower_terms,
     const base::Time now)
-  : private_data_(private_data),
-    languages_(languages),
-    bookmark_service_(bookmark_service),
-    lower_string_(lower_string),
-    lower_terms_(lower_terms),
-    now_(now) {}
+    : private_data_(private_data),
+      languages_(languages),
+      history_client_(history_client),
+      lower_string_(lower_string),
+      lower_terms_(lower_terms),
+      now_(now) {
+  // Calculate offsets for each term.  For instance, the offset for
+  // ".net" should be 1, indicating that the actual word-part of the term
+  // starts at offset 1.
+  lower_terms_to_word_starts_offsets_.resize(lower_terms_.size(), 0u);
+  for (size_t i = 0; i < lower_terms_.size(); ++i) {
+    base::i18n::BreakIterator iter(lower_terms_[i],
+                                   base::i18n::BreakIterator::BREAK_WORD);
+    // If the iterator doesn't work, assume an offset of 0.
+    if (!iter.Init())
+      continue;
+    // Find the first word start.
+    while (iter.Advance() && !iter.IsWord()) {}
+    if (iter.IsWord())
+      lower_terms_to_word_starts_offsets_[i] = iter.prev();
+    // Else: the iterator didn't find a word break.  Assume an offset of 0.
+  }
+}
 
 URLIndexPrivateData::AddHistoryMatch::~AddHistoryMatch() {}
 
@@ -1298,8 +1304,8 @@ void URLIndexPrivateData::AddHistoryMatch::operator()(
         private_data_.word_starts_map_.find(history_id);
     DCHECK(starts_pos != private_data_.word_starts_map_.end());
     ScoredHistoryMatch match(hist_item, visits, languages_, lower_string_,
-                             lower_terms_, starts_pos->second, now_,
-                             bookmark_service_);
+                             lower_terms_, lower_terms_to_word_starts_offsets_,
+                             starts_pos->second, now_, history_client_);
     if (match.raw_score() > 0)
       scored_matches_.push_back(match);
   }

@@ -5,7 +5,9 @@
 #ifndef MOJO_PUBLIC_TESTS_TEST_SUPPORT_PRIVATE_H_
 #define MOJO_PUBLIC_TESTS_TEST_SUPPORT_PRIVATE_H_
 
-#include "mojo/public/tests/test_support.h"
+#include <stdio.h>
+
+#include "mojo/public/c/test_support/test_support.h"
 
 namespace mojo {
 namespace test {
@@ -23,6 +25,9 @@ class MOJO_TEST_SUPPORT_EXPORT TestSupport {
   virtual void LogPerfResult(const char* test_name,
                              double value,
                              const char* units) = 0;
+  virtual FILE* OpenSourceRootRelativeFile(const char* relative_path) = 0;
+  virtual char** EnumerateSourceRootRelativeDirectory(
+      const char* relative_path) = 0;
 };
 
 }  // namespace test

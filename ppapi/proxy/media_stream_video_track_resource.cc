@@ -5,8 +5,10 @@
 #include "ppapi/proxy/media_stream_video_track_resource.h"
 
 #include "base/logging.h"
+#include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/video_frame_resource.h"
 #include "ppapi/shared_impl/media_stream_buffer.h"
+#include "ppapi/shared_impl/media_stream_video_track_shared.h"
 #include "ppapi/shared_impl/var.h"
 
 namespace ppapi {
@@ -20,6 +22,14 @@ MediaStreamVideoTrackResource::MediaStreamVideoTrackResource(
     : MediaStreamTrackResourceBase(
         connection, instance, pending_renderer_id, id),
       get_frame_output_(NULL) {
+}
+
+MediaStreamVideoTrackResource::MediaStreamVideoTrackResource(
+    Connection connection,
+    PP_Instance instance)
+    : MediaStreamTrackResourceBase(connection, instance),
+      get_frame_output_(NULL) {
+  SendCreate(RENDERER, PpapiHostMsg_MediaStreamVideoTrack_Create());
 }
 
 MediaStreamVideoTrackResource::~MediaStreamVideoTrackResource() {
@@ -39,13 +49,53 @@ PP_Bool MediaStreamVideoTrackResource::HasEnded() {
   return PP_FromBool(has_ended());
 }
 
-
 int32_t MediaStreamVideoTrackResource::Configure(
     const int32_t attrib_list[],
     scoped_refptr<TrackedCallback> callback) {
-  // TODO(penghuang): redesign and implement Configure() to support format,
-  // size, etc.
-  return PP_ERROR_NOTSUPPORTED;
+  if (has_ended())
+    return PP_ERROR_FAILED;
+
+  if (TrackedCallback::IsPending(configure_callback_) ||
+      TrackedCallback::IsPending(get_frame_callback_)) {
+    return PP_ERROR_INPROGRESS;
+  }
+
+  // Do not support configure, if frames are hold by plugin.
+  if (!frames_.empty())
+    return PP_ERROR_INPROGRESS;
+
+  MediaStreamVideoTrackShared::Attributes attributes;
+  int i = 0;
+  for (;attrib_list[i] != PP_MEDIASTREAMVIDEOTRACK_ATTRIB_NONE; i += 2) {
+    switch (attrib_list[i]) {
+    case PP_MEDIASTREAMVIDEOTRACK_ATTRIB_BUFFERED_FRAMES:
+      attributes.buffers = attrib_list[i + 1];
+      break;
+    case PP_MEDIASTREAMVIDEOTRACK_ATTRIB_WIDTH:
+      attributes.width = attrib_list[i + 1];
+      break;
+    case PP_MEDIASTREAMVIDEOTRACK_ATTRIB_HEIGHT:
+      attributes.height = attrib_list[i + 1];
+      break;
+    case PP_MEDIASTREAMVIDEOTRACK_ATTRIB_FORMAT:
+      attributes.format = static_cast<PP_VideoFrame_Format>(attrib_list[i + 1]);
+      break;
+    default:
+      return PP_ERROR_BADARGUMENT;
+    }
+  }
+
+  if (!MediaStreamVideoTrackShared::VerifyAttributes(attributes))
+    return PP_ERROR_BADARGUMENT;
+
+  configure_callback_ = callback;
+  Call<PpapiPluginMsg_MediaStreamVideoTrack_ConfigureReply>(
+      RENDERER,
+      PpapiHostMsg_MediaStreamVideoTrack_Configure(attributes),
+      base::Bind(&MediaStreamVideoTrackResource::OnPluginMsgConfigureReply,
+                 base::Unretained(this)),
+      callback);
+  return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t MediaStreamVideoTrackResource::GetAttrib(
@@ -61,8 +111,10 @@ int32_t MediaStreamVideoTrackResource::GetFrame(
   if (has_ended())
     return PP_ERROR_FAILED;
 
-  if (TrackedCallback::IsPending(get_frame_callback_))
+  if (TrackedCallback::IsPending(configure_callback_) ||
+      TrackedCallback::IsPending(get_frame_callback_)) {
     return PP_ERROR_INPROGRESS;
+  }
 
   *frame = GetVideoFrame();
   if (*frame)
@@ -106,6 +158,17 @@ void MediaStreamVideoTrackResource::Close() {
   MediaStreamTrackResourceBase::CloseInternal();
 }
 
+int32_t MediaStreamVideoTrackResource::GetEmptyFrame(
+    PP_Resource* frame, scoped_refptr<TrackedCallback> callback) {
+  return GetFrame(frame, callback);
+}
+
+int32_t MediaStreamVideoTrackResource::PutFrame(PP_Resource frame) {
+  // TODO(ronghuawu): Consider to rename RecycleFrame to PutFrame and use
+  // one set of GetFrame and PutFrame for both input and output.
+  return RecycleFrame(frame);
+}
+
 void MediaStreamVideoTrackResource::OnNewBufferEnqueued() {
   if (!TrackedCallback::IsPending(get_frame_callback_))
     return;
@@ -135,12 +198,26 @@ PP_Resource MediaStreamVideoTrackResource::GetVideoFrame() {
 }
 
 void MediaStreamVideoTrackResource::ReleaseFrames() {
-  FrameMap::iterator it = frames_.begin();
-  while (it != frames_.end()) {
+  for (FrameMap::iterator it = frames_.begin(); it != frames_.end(); ++it) {
     // Just invalidate and release VideoFrameResorce, but keep PP_Resource.
     // So plugin can still use |RecycleFrame()|.
     it->second->Invalidate();
     it->second = NULL;
+  }
+}
+
+void MediaStreamVideoTrackResource::OnPluginMsgConfigureReply(
+    const ResourceMessageReplyParams& params,
+    const std::string& track_id) {
+  if (id().empty()) {
+    set_id(track_id);
+  } else {
+    DCHECK_EQ(id(), track_id);
+  }
+  if (TrackedCallback::IsPending(configure_callback_)) {
+    scoped_refptr<TrackedCallback> callback;
+    callback.swap(configure_callback_);
+    callback->Run(params.result());
   }
 }
 

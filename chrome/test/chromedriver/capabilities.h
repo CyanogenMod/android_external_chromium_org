@@ -14,14 +14,15 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "chrome/test/chromedriver/chrome/device_metrics.h"
 #include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/net/net_util.h"
 
 namespace base {
+class CommandLine;
 class DictionaryValue;
 }
 
-class CommandLine;
 class Status;
 
 class Switches {
@@ -49,7 +50,7 @@ class Switches {
 
   size_t GetSize() const;
 
-  void AppendToCommandLine(CommandLine* command) const;
+  void AppendToCommandLine(base::CommandLine* command) const;
   std::string ToString() const;
 
  private:
@@ -63,8 +64,8 @@ struct Capabilities {
   Capabilities();
   ~Capabilities();
 
-  // Return true if existing host:port session is to be used.
-  bool IsExistingBrowser() const;
+  // Return true if remote host:port session is to be used.
+  bool IsRemoteBrowser() const;
 
   // Return true if android package is specified.
   bool IsAndroid() const;
@@ -90,6 +91,9 @@ struct Capabilities {
   // bound to ChromeDriver's process. If true, Chrome will not quit if
   // ChromeDriver dies.
   bool detach;
+
+  // Device metrics for use in Device Emulation.
+  scoped_ptr<DeviceMetrics> device_metrics;
 
   // Set of switches which should be removed from default list when launching
   // Chrome.

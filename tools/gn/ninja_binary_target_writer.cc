@@ -17,7 +17,7 @@ namespace {
 // Returns the proper escape options for writing compiler and linker flags.
 EscapeOptions GetFlagOptions() {
   EscapeOptions opts;
-  opts.mode = ESCAPE_NINJA;
+  opts.mode = ESCAPE_NINJA_COMMAND;
 
   // Some flag strings are actually multiple flags that expect to be just
   // added to the command line. We assume that quoting is done by the
@@ -29,7 +29,7 @@ EscapeOptions GetFlagOptions() {
 
 struct DefineWriter {
   DefineWriter() {
-    options.mode = ESCAPE_SHELL;
+    options.mode = ESCAPE_NINJA_COMMAND;
   }
 
   void operator()(const std::string& s, std::ostream& out) const {
@@ -41,33 +41,20 @@ struct DefineWriter {
 };
 
 struct IncludeWriter {
-  IncludeWriter(PathOutput& path_output,
-                const NinjaHelper& h)
+  IncludeWriter(PathOutput& path_output, const NinjaHelper& h)
       : helper(h),
-        path_output_(path_output),
-        old_inhibit_quoting_(path_output.inhibit_quoting()) {
-    // Inhibit quoting since we'll put quotes around the whole thing ourselves.
-    // Since we're writing in NINJA escaping mode, this won't actually do
-    // anything, but I think we may need to change to shell-and-then-ninja
-    // escaping for this in the future.
-    path_output_.set_inhibit_quoting(true);
+        path_output_(path_output) {
   }
   ~IncludeWriter() {
-    path_output_.set_inhibit_quoting(old_inhibit_quoting_);
   }
 
   void operator()(const SourceDir& d, std::ostream& out) const {
-    out << " \"-I";
-    // It's important not to include the trailing slash on directories or on
-    // Windows it will be a backslash and the compiler might think we're
-    // escaping the quote!
+    out << " -I";
     path_output_.WriteDir(out, d, PathOutput::DIR_NO_LAST_SLASH);
-    out << "\"";
   }
 
   const NinjaHelper& helper;
   PathOutput& path_output_;
-  bool old_inhibit_quoting_;  // So we can put the PathOutput back.
 };
 
 Toolchain::ToolType GetToolTypeForTarget(const Target* target) {
@@ -146,15 +133,21 @@ void NinjaBinaryTargetWriter::WriteSources(
   const Target::FileList& sources = target_->sources();
   object_files->reserve(sources.size());
 
-  std::string implicit_deps = GetSourcesImplicitDeps();
+  std::string implicit_deps =
+      WriteInputDepsStampAndGetDep(std::vector<const Target*>());
 
   for (size_t i = 0; i < sources.size(); i++) {
     const SourceFile& input_file = sources[i];
 
-    SourceFileType input_file_type = GetSourceFileType(input_file,
-                                                       settings_->target_os());
+    SourceFileType input_file_type = GetSourceFileType(input_file);
     if (input_file_type == SOURCE_UNKNOWN)
       continue;  // Skip unknown file types.
+    if (input_file_type == SOURCE_O) {
+      // Object files just get passed to the output and not compiled.
+      object_files->push_back(helper_.GetOutputFileForSource(
+          target_, input_file, input_file_type));
+      continue;
+    }
     std::string command =
         helper_.GetRuleForSourceType(settings_, input_file_type);
     if (command.empty())
@@ -180,7 +173,7 @@ void NinjaBinaryTargetWriter::WriteLinkerStuff(
   // that case?
   OutputFile windows_manifest;
   if (settings_->IsWin()) {
-    windows_manifest.value().assign(helper_.GetTargetOutputDir(target_));
+    windows_manifest = helper_.GetTargetOutputDir(target_);
     windows_manifest.value().append(target_->label().name());
     windows_manifest.value().append(".intermediate.manifest");
     out_ << "manifests = ";
@@ -262,8 +255,8 @@ void NinjaBinaryTargetWriter::WriteLinkerFlags(
   if (!all_lib_dirs.empty()) {
     // Since we're passing these on the command line to the linker and not
     // to Ninja, we need to do shell escaping.
-    PathOutput lib_path_output(path_output_.current_dir(), ESCAPE_NINJA_SHELL,
-                               true);
+    PathOutput lib_path_output(path_output_.current_dir(),
+                               ESCAPE_NINJA_COMMAND);
     for (size_t i = 0; i < all_lib_dirs.size(); i++) {
       out_ << " " << tool.lib_dir_prefix;
       lib_path_output.WriteDir(out_, all_lib_dirs[i],
@@ -285,7 +278,7 @@ void NinjaBinaryTargetWriter::WriteLibs(const Toolchain::Tool& tool) {
 
   // Libraries that have been recursively pushed through the dependency tree.
   EscapeOptions lib_escape_opts;
-  lib_escape_opts.mode = ESCAPE_NINJA_SHELL;
+  lib_escape_opts.mode = ESCAPE_NINJA_COMMAND;
   const OrderedSet<std::string> all_libs = target_->all_libs();
   const std::string framework_ending(".framework");
   for (size_t i = 0; i < all_libs.size(); i++) {
@@ -420,17 +413,21 @@ void NinjaBinaryTargetWriter::ClassifyDependency(
        target_->output_type() == Target::SHARED_LIBRARY);
 
   if (dep->output_type() == Target::SOURCE_SET) {
-    if (target_->output_type() == Target::SOURCE_SET) {
-      // When a source set depends on another source set, add it as a data
-      // dependency so if the user says "ninja second_source_set" it will
-      // also compile the first (what you would expect) even though we'll
-      // never do anything with the first one's files.
-      non_linkable_deps->push_back(dep);
-    } else {
-      // Linking in a source set, copy its object files.
+    // Source sets have their object files linked into final targets (shared
+    // libraries and executables). Intermediate static libraries and other
+    // source sets just forward the dependency, otherwise the files in the
+    // source set can easily get linked more than once which will cause
+    // multiple definition errors.
+    //
+    // In the future, we may need a way to specify a "complete" static library
+    // for cases where you want a static library that includes all source sets
+    // (like if you're shipping that to customers to link against).
+    if (target_->output_type() != Target::SOURCE_SET &&
+        target_->output_type() != Target::STATIC_LIBRARY) {
+      // Linking in a source set to an executable or shared library, copy its
+      // object files.
       for (size_t i = 0; i < dep->sources().size(); i++) {
-        SourceFileType input_file_type = GetSourceFileType(
-            dep->sources()[i], dep->settings()->target_os());
+        SourceFileType input_file_type = GetSourceFileType(dep->sources()[i]);
         if (input_file_type != SOURCE_UNKNOWN &&
             input_file_type != SOURCE_H) {
           // Note we need to specify the target as the source_set target

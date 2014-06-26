@@ -5,10 +5,16 @@
 #include "apps/shell/renderer/shell_content_renderer_client.h"
 
 #include "apps/shell/common/shell_extensions_client.h"
-#include "chrome/renderer/extensions/dispatcher.h"
-#include "chrome/renderer/extensions/extension_helper.h"
+#include "apps/shell/renderer/shell_dispatcher_delegate.h"
+#include "apps/shell/renderer/shell_extensions_renderer_client.h"
+#include "apps/shell/renderer/shell_renderer_main_delegate.h"
+#include "content/public/renderer/render_frame.h"
+#include "content/public/renderer/render_frame_observer.h"
+#include "content/public/renderer/render_frame_observer_tracker.h"
 #include "content/public/renderer/render_thread.h"
 #include "extensions/common/extensions_client.h"
+#include "extensions/renderer/dispatcher.h"
+#include "extensions/renderer/extension_helper.h"
 
 using blink::WebFrame;
 using blink::WebString;
@@ -16,32 +22,83 @@ using content::RenderThread;
 
 namespace apps {
 
-ShellContentRendererClient::ShellContentRendererClient() {}
+namespace {
+
+// TODO: promote ExtensionFrameHelper to a common place and share with this.
+class ShellFrameHelper
+    : public content::RenderFrameObserver,
+      public content::RenderFrameObserverTracker<ShellFrameHelper> {
+ public:
+  ShellFrameHelper(content::RenderFrame* render_frame,
+                   extensions::Dispatcher* extension_dispatcher);
+  virtual ~ShellFrameHelper();
+
+  // RenderFrameObserver implementation.
+  virtual void WillReleaseScriptContext(v8::Handle<v8::Context>,
+                                        int world_id) OVERRIDE;
+
+ private:
+  extensions::Dispatcher* extension_dispatcher_;
+
+  DISALLOW_COPY_AND_ASSIGN(ShellFrameHelper);
+};
+
+ShellFrameHelper::ShellFrameHelper(content::RenderFrame* render_frame,
+                                   extensions::Dispatcher* extension_dispatcher)
+    : content::RenderFrameObserver(render_frame),
+      content::RenderFrameObserverTracker<ShellFrameHelper>(render_frame),
+      extension_dispatcher_(extension_dispatcher) {}
+
+ShellFrameHelper::~ShellFrameHelper() {}
+
+void ShellFrameHelper::WillReleaseScriptContext(v8::Handle<v8::Context> context,
+                                                int world_id) {
+  extension_dispatcher_->WillReleaseScriptContext(
+      render_frame()->GetWebFrame(), context, world_id);
+}
+
+}  // namespace
+
+ShellContentRendererClient::ShellContentRendererClient(
+    scoped_ptr<ShellRendererMainDelegate> delegate)
+    : delegate_(delegate.Pass()) {
+}
 
 ShellContentRendererClient::~ShellContentRendererClient() {}
 
 void ShellContentRendererClient::RenderThreadStarted() {
   RenderThread* thread = RenderThread::Get();
 
-  extension_dispatcher_.reset(new extensions::Dispatcher());
+  extensions_client_.reset(new ShellExtensionsClient);
+  extensions::ExtensionsClient::Set(extensions_client_.get());
+
+  extensions_renderer_client_.reset(new ShellExtensionsRendererClient);
+  extensions::ExtensionsRendererClient::Set(extensions_renderer_client_.get());
+
+  extension_dispatcher_delegate_.reset(new ShellDispatcherDelegate());
+
+  // Must be initialized after ExtensionsRendererClient.
+  extension_dispatcher_.reset(
+      new extensions::Dispatcher(extension_dispatcher_delegate_.get()));
   thread->AddObserver(extension_dispatcher_.get());
 
   // TODO(jamescook): Init WebSecurityPolicy for chrome-extension: schemes.
   // See ChromeContentRendererClient for details.
-
-  extensions_client_.reset(new ShellExtensionsClient);
-  extensions::ExtensionsClient::Set(extensions_client_.get());
+  if (delegate_)
+    delegate_->OnThreadStarted(thread);
 }
 
 void ShellContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
-  // TODO(jamescook): Create ExtensionFrameHelper? This might be needed for
-  // Pepper plugins like Flash.
+  // ShellFrameHelper destroyes itself when the RenderFrame is destroyed.
+  new ShellFrameHelper(render_frame, extension_dispatcher_.get());
 }
 
 void ShellContentRendererClient::RenderViewCreated(
     content::RenderView* render_view) {
   new extensions::ExtensionHelper(render_view, extension_dispatcher_.get());
+  if (delegate_)
+    delegate_->OnViewCreated(render_view);
 }
 
 bool ShellContentRendererClient::WillSendRequest(
@@ -59,11 +116,6 @@ void ShellContentRendererClient::DidCreateScriptContext(
     int world_id) {
   extension_dispatcher_->DidCreateScriptContext(
       frame, context, extension_group, world_id);
-}
-
-void ShellContentRendererClient::WillReleaseScriptContext(
-    WebFrame* frame, v8::Handle<v8::Context> context, int world_id) {
-  extension_dispatcher_->WillReleaseScriptContext(frame, context, world_id);
 }
 
 bool ShellContentRendererClient::ShouldEnableSiteIsolationPolicy() const {

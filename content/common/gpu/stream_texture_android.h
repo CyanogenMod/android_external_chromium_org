@@ -22,8 +22,9 @@ class StreamTexture : public gfx::GLImage,
                       public IPC::Listener,
                       public GpuCommandBufferStub::DestructionObserver {
  public:
-  static int32 Create(GpuCommandBufferStub* owner_stub,
-                      uint32 client_texture_id);
+  static bool Create(GpuCommandBufferStub* owner_stub,
+                     uint32 client_texture_id,
+                     int stream_id);
 
  private:
   StreamTexture(GpuCommandBufferStub* owner_stub,
@@ -34,8 +35,12 @@ class StreamTexture : public gfx::GLImage,
   // gfx::GLImage implementation:
   virtual void Destroy() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
+  virtual bool BindTexImage(unsigned target) OVERRIDE;
+  virtual void ReleaseTexImage(unsigned target) OVERRIDE;
   virtual void WillUseTexImage() OVERRIDE;
   virtual void DidUseTexImage() OVERRIDE {}
+  virtual void WillModifyTexImage() OVERRIDE {}
+  virtual void DidModifyTexImage() OVERRIDE {}
 
   // GpuCommandBufferStub::DestructionObserver implementation.
   virtual void OnWillDestroyStub() OVERRIDE;

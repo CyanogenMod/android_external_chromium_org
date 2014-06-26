@@ -9,7 +9,7 @@
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chrome_page_zoom.h"
-#include "chrome/browser/extensions/extension_web_contents_observer.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,7 +17,6 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/prefs/prefs_tab_helper.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
@@ -28,6 +27,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/view_type_utils.h"
+#include "extensions/common/extension_messages.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/gfx/image/image.h"
@@ -64,7 +64,7 @@ void PanelHost::Init(const GURL& url) {
 
   FaviconTabHelper::CreateForWebContents(web_contents_.get());
   PrefsTabHelper::CreateForWebContents(web_contents_.get());
-  extensions::ExtensionWebContentsObserver::CreateForWebContents(
+  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents_.get());
 
   web_contents_->GetController().LoadURL(
@@ -160,8 +160,9 @@ void PanelHost::DeactivateContents(content::WebContents* contents) {
   panel_->Deactivate();
 }
 
-void PanelHost::LoadingStateChanged(content::WebContents* source) {
-  bool is_loading = source->IsLoading();
+void PanelHost::LoadingStateChanged(content::WebContents* source,
+    bool to_different_document) {
+  bool is_loading = source->IsLoading() && to_different_document;
   panel_->LoadingStateChanged(is_loading);
 }
 
@@ -207,7 +208,7 @@ void PanelHost::RenderProcessGone(base::TerminationStatus status) {
   CloseContents(web_contents_.get());
 }
 
-void PanelHost::WebContentsDestroyed(content::WebContents* web_contents) {
+void PanelHost::WebContentsDestroyed() {
   // Web contents should only be destroyed by us.
   CHECK(!web_contents_.get());
 

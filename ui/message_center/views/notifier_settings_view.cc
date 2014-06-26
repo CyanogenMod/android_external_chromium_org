@@ -28,6 +28,7 @@
 #include "ui/views/controls/button/custom_button.h"
 #include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/button/menu_button.h"
+#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
@@ -40,10 +41,6 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
-#endif
 
 namespace message_center {
 namespace settings {
@@ -141,8 +138,8 @@ class EntryView : public views::View {
 
   // views::View:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
@@ -171,14 +168,14 @@ void EntryView::Layout() {
   content->SetBounds(0, y, content_width, content_height);
 }
 
-gfx::Size EntryView::GetPreferredSize() {
+gfx::Size EntryView::GetPreferredSize() const {
   DCHECK_EQ(1, child_count());
   gfx::Size size = child_at(0)->GetPreferredSize();
   size.SetToMax(gfx::Size(settings::kWidth, settings::kEntryHeight));
   return size;
 }
 
-void EntryView::GetAccessibleState(ui::AccessibleViewState* state) {
+void EntryView::GetAccessibleState(ui::AXViewState* state) {
   DCHECK_EQ(1, child_count());
   child_at(0)->GetAccessibleState(state);
 }
@@ -406,7 +403,7 @@ void NotifierSettingsView::NotifierButton::ButtonPressed(
 }
 
 void NotifierSettingsView::NotifierButton::GetAccessibleState(
-    ui::AccessibleViewState* state) {
+    ui::AXViewState* state) {
   static_cast<views::View*>(checkbox_)->GetAccessibleState(state);
 }
 
@@ -487,8 +484,7 @@ NotifierSettingsView::NotifierSettingsView(NotifierSettingsProvider* provider)
   SetFocusable(true);
   set_background(
       views::Background::CreateSolidBackground(kMessageCenterBackgroundColor));
-  if (get_use_acceleration_when_possible())
-    SetPaintToLayer(true);
+  SetPaintToLayer(true);
 
   title_label_ = new views::Label(
       l10n_util::GetStringUTF16(IDS_MESSAGE_CENTER_SETTINGS_BUTTON_LABEL),
@@ -544,6 +540,9 @@ void NotifierSettingsView::NotifierGroupChanged() {
 
   UpdateContentsView(notifiers);
 }
+
+void NotifierSettingsView::NotifierEnabledChanged(const NotifierId& notifier_id,
+                                                  bool enabled) {}
 
 void NotifierSettingsView::UpdateContentsView(
     const std::vector<Notifier*>& notifiers) {
@@ -657,7 +656,7 @@ void NotifierSettingsView::Layout() {
   scroller_->SetBounds(0, title_height, width(), height() - title_height);
 }
 
-gfx::Size NotifierSettingsView::GetMinimumSize() {
+gfx::Size NotifierSettingsView::GetMinimumSize() const {
   gfx::Size size(settings::kWidth, settings::kMinimumHeight);
   int total_height = title_label_->GetPreferredSize().height() +
                      scroller_->contents()->GetPreferredSize().height();
@@ -666,7 +665,7 @@ gfx::Size NotifierSettingsView::GetMinimumSize() {
   return size;
 }
 
-gfx::Size NotifierSettingsView::GetPreferredSize() {
+gfx::Size NotifierSettingsView::GetPreferredSize() const {
   gfx::Size preferred_size;
   gfx::Size title_size = title_label_->GetPreferredSize();
   gfx::Size content_size = scroller_->contents()->GetPreferredSize();
@@ -718,7 +717,7 @@ void NotifierSettingsView::OnMenuButtonClicked(views::View* source,
       notifier_group_menu_runner_->RunMenuAt(GetWidget(),
                                              notifier_group_selector_,
                                              menu_anchor,
-                                             views::MenuItemView::BUBBLE_ABOVE,
+                                             views::MENU_ANCHOR_BUBBLE_ABOVE,
                                              ui::MENU_SOURCE_MOUSE,
                                              views::MenuRunner::CONTEXT_MENU))
     return;

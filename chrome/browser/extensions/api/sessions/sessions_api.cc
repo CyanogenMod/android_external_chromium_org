@@ -15,8 +15,6 @@
 #include "base/time/time.h"
 #include "chrome/browser/extensions/api/sessions/session_id.h"
 #include "chrome/browser/extensions/api/tabs/windows_util.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/window_controller.h"
 #include "chrome/browser/extensions/window_controller_list.h"
@@ -35,6 +33,9 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_function_dispatcher.h"
+#include "extensions/browser/extension_function_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/error_utils.h"
 #include "net/base/net_util.h"
 #include "ui/base/layout.h"
@@ -53,6 +54,8 @@ const char kInvalidSessionIdError[] = "Invalid session id: \"*\".";
 const char kNoBrowserToRestoreSession[] =
     "There are no browser windows to restore the session.";
 const char kSessionSyncError[] = "Synced sessions are not available.";
+const char kRestoreInIncognitoError[] =
+    "Can not restore sessions in incognito mode.";
 
 // Comparator function for use with std::sort that will sort sessions by
 // descending modified_time (i.e., most recent first).
@@ -192,7 +195,7 @@ scoped_ptr<api::sessions::Session>
                                   window.Pass());
 }
 
-bool SessionsGetRecentlyClosedFunction::RunImpl() {
+bool SessionsGetRecentlyClosedFunction::RunSync() {
   scoped_ptr<GetRecentlyClosed::Params> params(
       GetRecentlyClosed::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -205,7 +208,16 @@ bool SessionsGetRecentlyClosedFunction::RunImpl() {
   std::vector<linked_ptr<api::sessions::Session> > result;
   TabRestoreService* tab_restore_service =
       TabRestoreServiceFactory::GetForProfile(GetProfile());
-  DCHECK(tab_restore_service);
+
+  // TabRestoreServiceFactory::GetForProfile() can return NULL (i.e., when in
+  // incognito mode)
+  if (!tab_restore_service) {
+    DCHECK_NE(GetProfile(), GetProfile()->GetOriginalProfile())
+        << "TabRestoreService expected for normal profiles";
+    results_ = GetRecentlyClosed::Results::Create(
+        std::vector<linked_ptr<api::sessions::Session> >());
+    return true;
+  }
 
   // List of entries. They are ordered from most to least recent.
   // We prune the list to contain max 25 entries at any time and removes
@@ -229,7 +241,8 @@ scoped_ptr<tabs::Tab> SessionsGetDevicesFunction::CreateTabModel(
     int selected_index) {
   std::string session_id = SessionId(session_tag, tab.tab_id.id()).ToString();
   return CreateTabModelHelper(GetProfile(),
-                              tab.navigations[tab.current_navigation_index],
+                              tab.navigations[
+                                tab.normalized_navigation_index()],
                               session_id,
                               tab_index,
                               tab.pinned,
@@ -261,9 +274,9 @@ scoped_ptr<windows::Window> SessionsGetDevicesFunction::CreateWindowModel(
 
   scoped_ptr<std::vector<linked_ptr<tabs::Tab> > > tabs(
       new std::vector<linked_ptr<tabs::Tab> >);
-  for (size_t i = 0; i < window.tabs.size(); ++i) {
+  for (size_t i = 0; i < tabs_in_window.size(); ++i) {
     tabs->push_back(make_linked_ptr(
-        CreateTabModel(session_tag, *window.tabs[i], i,
+        CreateTabModel(session_tag, *tabs_in_window[i], i,
                        window.selected_tab_index).release()));
   }
 
@@ -329,13 +342,14 @@ SessionsGetDevicesFunction::CreateSessionModel(
 scoped_ptr<api::sessions::Device> SessionsGetDevicesFunction::CreateDeviceModel(
     const browser_sync::SyncedSession* session) {
   int max_results = api::sessions::MAX_SESSION_RESULTS;
-  // Already validated in RunImpl().
+  // Already validated in RunAsync().
   scoped_ptr<GetDevices::Params> params(GetDevices::Params::Create(*args_));
   if (params->filter && params->filter->max_results)
     max_results = *params->filter->max_results;
 
   scoped_ptr<api::sessions::Device> device_struct(new api::sessions::Device);
   device_struct->info = session->session_name;
+  device_struct->device_name = session->session_name;
 
   for (browser_sync::SyncedSession::SyncedWindowMap::const_iterator it =
        session->windows.begin(); it != session->windows.end() &&
@@ -349,7 +363,7 @@ scoped_ptr<api::sessions::Device> SessionsGetDevicesFunction::CreateDeviceModel(
   return device_struct.Pass();
 }
 
-bool SessionsGetDevicesFunction::RunImpl() {
+bool SessionsGetDevicesFunction::RunSync() {
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(GetProfile());
   if (!(service && service->GetPreferredDataTypes().Has(syncer::SESSIONS))) {
@@ -392,7 +406,7 @@ void SessionsRestoreFunction::SetInvalidIdError(const std::string& invalid_id) {
 
 
 void SessionsRestoreFunction::SetResultRestoredTab(
-    const content::WebContents* contents) {
+    content::WebContents* contents) {
   scoped_ptr<base::DictionaryValue> tab_value(
       ExtensionTabUtil::CreateTabValue(contents, GetExtension()));
   scoped_ptr<tabs::Tab> tab(tabs::Tab::FromValue(*tab_value));
@@ -551,7 +565,7 @@ bool SessionsRestoreFunction::RestoreForeignSession(const SessionId& session_id,
   return SetResultRestoredWindow(ExtensionTabUtil::GetWindowId(browsers[0]));
 }
 
-bool SessionsRestoreFunction::RunImpl() {
+bool SessionsRestoreFunction::RunSync() {
   scoped_ptr<Restore::Params> params(Restore::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
 
@@ -559,6 +573,11 @@ bool SessionsRestoreFunction::RunImpl() {
       GetProfile(), chrome::HOST_DESKTOP_TYPE_NATIVE);
   if (!browser) {
     SetError(kNoBrowserToRestoreSession);
+    return false;
+  }
+
+  if (GetProfile() != GetProfile()->GetOriginalProfile()) {
+    SetError(kRestoreInIncognitoError);
     return false;
   }
 
@@ -576,19 +595,59 @@ bool SessionsRestoreFunction::RunImpl() {
       : RestoreLocalSession(*session_id, browser);
 }
 
-SessionsAPI::SessionsAPI(Profile* profile) {
+SessionsEventRouter::SessionsEventRouter(Profile* profile)
+    : profile_(profile),
+      tab_restore_service_(TabRestoreServiceFactory::GetForProfile(profile)) {
+  // TabRestoreServiceFactory::GetForProfile() can return NULL (i.e., when in
+  // incognito mode)
+  if (tab_restore_service_) {
+    tab_restore_service_->LoadTabsFromLastSession();
+    tab_restore_service_->AddObserver(this);
+  }
+}
+
+SessionsEventRouter::~SessionsEventRouter() {
+  if (tab_restore_service_)
+    tab_restore_service_->RemoveObserver(this);
+}
+
+void SessionsEventRouter::TabRestoreServiceChanged(
+    TabRestoreService* service) {
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  EventRouter::Get(profile_)->BroadcastEvent(make_scoped_ptr(
+      new Event(api::sessions::OnChanged::kEventName, args.Pass())));
+}
+
+void SessionsEventRouter::TabRestoreServiceDestroyed(
+    TabRestoreService* service) {
+  tab_restore_service_ = NULL;
+}
+
+SessionsAPI::SessionsAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter::Get(browser_context_)->RegisterObserver(this,
+      api::sessions::OnChanged::kEventName);
 }
 
 SessionsAPI::~SessionsAPI() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SessionsAPI> >
+void SessionsAPI::Shutdown() {
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
+}
+
+static base::LazyInstance<BrowserContextKeyedAPIFactory<SessionsAPI> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
-// static
-ProfileKeyedAPIFactory<SessionsAPI>*
-    SessionsAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SessionsAPI>*
+SessionsAPI::GetFactoryInstance() {
   return g_factory.Pointer();
+}
+
+void SessionsAPI::OnListenerAdded(const EventListenerInfo& details) {
+  sessions_event_router_.reset(
+      new SessionsEventRouter(Profile::FromBrowserContext(browser_context_)));
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 }  // namespace extensions

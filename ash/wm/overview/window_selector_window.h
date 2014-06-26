@@ -14,19 +14,23 @@ namespace aura {
 class Window;
 }
 
+namespace views {
+class Widget;
+}
+
 namespace ash {
 
 // This implements a window overview item with a single window which can be
 // selected.
 class WindowSelectorWindow : public WindowSelectorItem {
  public:
-  WindowSelectorWindow(aura::Window* window);
+  explicit WindowSelectorWindow(aura::Window* window);
   virtual ~WindowSelectorWindow();
 
   // WindowSelectorItem:
   virtual aura::Window* GetRootWindow() OVERRIDE;
   virtual bool HasSelectableWindow(const aura::Window* window) OVERRIDE;
-  virtual aura::Window* TargetedWindow(const aura::Window* target) OVERRIDE;
+  virtual bool Contains(const aura::Window* target) OVERRIDE;
   virtual void RestoreWindowOnExit(aura::Window* window) OVERRIDE;
   virtual aura::Window* SelectionWindow() OVERRIDE;
   virtual void RemoveWindow(const aura::Window* window) OVERRIDE;
@@ -37,6 +41,7 @@ class WindowSelectorWindow : public WindowSelectorItem {
                              bool animate) OVERRIDE;
 
  private:
+  // The window with a scoped transform represented by this selector item.
   ScopedTransformOverviewWindow transform_window_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSelectorWindow);

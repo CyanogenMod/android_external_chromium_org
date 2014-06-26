@@ -10,17 +10,23 @@ StaticSizedView::StaticSizedView(const gfx::Size& size) : size_(size) {}
 
 StaticSizedView::~StaticSizedView() {}
 
-gfx::Size StaticSizedView::GetPreferredSize() {
+gfx::Size StaticSizedView::GetPreferredSize() const {
   return size_;
 }
 
 ProportionallySizedView::ProportionallySizedView(int factor)
-    : factor_(factor) {}
+    : factor_(factor), preferred_width_(-1) {}
 
 ProportionallySizedView::~ProportionallySizedView() {}
 
-int ProportionallySizedView::GetHeightForWidth(int w) {
+int ProportionallySizedView::GetHeightForWidth(int w) const {
   return w * factor_;
+}
+
+gfx::Size ProportionallySizedView::GetPreferredSize() const {
+  if (preferred_width_ >= 0)
+    return gfx::Size(preferred_width_, GetHeightForWidth(preferred_width_));
+  return View::GetPreferredSize();
 }
 
 }  // namespace views

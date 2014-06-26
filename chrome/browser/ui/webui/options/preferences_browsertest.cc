@@ -12,7 +12,6 @@
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
-#include "base/stl_util.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
@@ -38,13 +37,14 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/net/proxy_config_handler.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
+#include "chrome/browser/chromeos/policy/stub_enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/shill_profile_client.h"
 #include "chromeos/dbus/shill_service_client.h"
-#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/settings/cros_settings_names.h"
@@ -194,11 +194,6 @@ void PreferencesBrowserTest::SetUpInProcessBrowserTestFixture() {
       &policy_provider_);
 };
 
-void PreferencesBrowserTest::TearDownInProcessBrowserTestFixture() {
-  STLDeleteElements(&default_values_);
-  STLDeleteElements(&non_default_values_);
-}
-
 void PreferencesBrowserTest::SetUserPolicies(
     const std::vector<std::string>& names,
     const std::vector<base::Value*>& values,
@@ -219,8 +214,9 @@ void PreferencesBrowserTest::ClearUserPolicies() {
 void PreferencesBrowserTest::SetUserValues(
     const std::vector<std::string>& names,
     const std::vector<base::Value*>& values) {
-  for (size_t i = 0; i < names.size(); ++i)
+  for (size_t i = 0; i < names.size(); ++i) {
     pref_service_->Set(names[i].c_str(), *values[i]);
+  }
 }
 
 void PreferencesBrowserTest::VerifyKeyValue(const base::DictionaryValue& dict,
@@ -283,9 +279,10 @@ void PreferencesBrowserTest::VerifyObservedPrefs(
   const base::DictionaryValue* observed_dict;
   ASSERT_TRUE(observed_value_ptr.get());
   ASSERT_TRUE(observed_value_ptr->GetAsDictionary(&observed_dict));
-  for (size_t i = 0; i < names.size(); ++i)
+  for (size_t i = 0; i < names.size(); ++i) {
     VerifyPref(observed_dict, names[i], values[i], controlledBy, disabled,
                uncommitted);
+  }
 }
 
 void PreferencesBrowserTest::ExpectNoCommit(const std::string& name) {
@@ -330,8 +327,9 @@ void PreferencesBrowserTest::SetupJavaScriptTestEnvironment(
   std::stringstream javascript;
   javascript << "var testEnv = new TestEnv();";
   for (std::vector<std::string>::const_iterator name = pref_names.begin();
-       name != pref_names.end(); ++name)
+       name != pref_names.end(); ++name) {
     javascript << "testEnv.addPref('" << name->c_str() << "');";
+  }
   javascript << "testEnv.setupAndReply();";
   std::string temp_observed_json;
   if (!observed_json)
@@ -466,7 +464,7 @@ void PreferencesBrowserTest::UseDefaultTestPrefs(bool includeListPref) {
     pref_names_.push_back(prefs::kURLsToRestoreOnStartup);
     policy_names_.push_back(policy::key::kRestoreOnStartupURLs);
     base::ListValue* list = new base::ListValue;
-    list->Append(new base::StringValue("http://www.google.com"));
+    list->Append(new base::StringValue("http://www.example.com"));
     list->Append(new base::StringValue("http://example.com"));
     non_default_values_.push_back(list);
   }
@@ -488,29 +486,30 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, FetchPrefs) {
   // Verify notifications when default values are in effect.
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, default_values_, std::string(), false, false);
+      observed_json, pref_names_, default_values_.get(),
+      std::string(), false, false);
 
   // Verify notifications when recommended values are in effect.
-  SetUserPolicies(policy_names_, non_default_values_,
+  SetUserPolicies(policy_names_, non_default_values_.get(),
                   policy::POLICY_LEVEL_RECOMMENDED);
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
-  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_,
+  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_.get(),
                       "recommended", false, false);
 
   // Verify notifications when mandatory values are in effect.
-  SetUserPolicies(policy_names_, non_default_values_,
+  SetUserPolicies(policy_names_, non_default_values_.get(),
                   policy::POLICY_LEVEL_MANDATORY);
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
-  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_,
+  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_.get(),
                       "policy", true, false);
 
   // Verify notifications when user-modified values are in effect.
   ClearUserPolicies();
-  SetUserValues(pref_names_, non_default_values_);
+  SetUserValues(pref_names_, non_default_values_.get());
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(observed_json,
                       pref_names_,
-                      non_default_values_,
+                      non_default_values_.get(),
                       std::string(),
                       false,
                       false);
@@ -523,8 +522,9 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, SetPrefs) {
   UseDefaultTestPrefs(false);
 
   ASSERT_NO_FATAL_FAILURE(SetupJavaScriptTestEnvironment(pref_names_, NULL));
-  for (size_t i = 0; i < pref_names_.size(); ++i)
+  for (size_t i = 0; i < pref_names_.size(); ++i) {
     VerifySetPref(pref_names_[i], types_[i], non_default_values_[i], true);
+  }
 }
 
 // Verifies that clearing a user-modified pref value through the JavaScript
@@ -533,12 +533,13 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, SetPrefs) {
 IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, ClearPrefs) {
   UseDefaultTestPrefs(false);
 
-  SetUserPolicies(policy_names_, default_values_,
+  SetUserPolicies(policy_names_, default_values_.get(),
                   policy::POLICY_LEVEL_RECOMMENDED);
-  SetUserValues(pref_names_, non_default_values_);
+  SetUserValues(pref_names_, non_default_values_.get());
   ASSERT_NO_FATAL_FAILURE(SetupJavaScriptTestEnvironment(pref_names_, NULL));
-  for (size_t i = 0; i < pref_names_.size(); ++i)
+  for (size_t i = 0; i < pref_names_.size(); ++i) {
     VerifyClearPref(pref_names_[i], default_values_[i], true);
+  }
 }
 
 // Verifies that when the user-modified value of a dialog pref is set and the
@@ -569,7 +570,7 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, DialogPrefsSetRollback) {
   }
 
   // Verify behavior when recommended values are in effect.
-  SetUserPolicies(policy_names_, default_values_,
+  SetUserPolicies(policy_names_, default_values_.get(),
                   policy::POLICY_LEVEL_RECOMMENDED);
   ASSERT_NO_FATAL_FAILURE(SetupJavaScriptTestEnvironment(pref_names_, NULL));
   for (size_t i = 0; i < pref_names_.size(); ++i) {
@@ -585,9 +586,9 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, DialogPrefsSetRollback) {
 IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, DialogPrefsClearCommit) {
   UseDefaultTestPrefs(false);
 
-  SetUserPolicies(policy_names_, default_values_,
+  SetUserPolicies(policy_names_, default_values_.get(),
                   policy::POLICY_LEVEL_RECOMMENDED);
-  SetUserValues(pref_names_, non_default_values_);
+  SetUserValues(pref_names_, non_default_values_.get());
   ASSERT_NO_FATAL_FAILURE(SetupJavaScriptTestEnvironment(pref_names_, NULL));
   for (size_t i = 0; i < pref_names_.size(); ++i) {
     VerifyClearPref(pref_names_[i], default_values_[i], false);
@@ -601,9 +602,9 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, DialogPrefsClearCommit) {
 IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, DialogPrefsClearRollback) {
   UseDefaultTestPrefs(false);
 
-  SetUserPolicies(policy_names_, default_values_,
+  SetUserPolicies(policy_names_, default_values_.get(),
                   policy::POLICY_LEVEL_RECOMMENDED);
-  SetUserValues(pref_names_, non_default_values_);
+  SetUserValues(pref_names_, non_default_values_.get());
   ASSERT_NO_FATAL_FAILURE(SetupJavaScriptTestEnvironment(pref_names_, NULL));
   for (size_t i = 0; i < pref_names_.size(); ++i) {
     VerifyClearPref(pref_names_[i], default_values_[i], false);
@@ -621,18 +622,18 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, NotificationsOnBackendChanges) {
 
   // Verify notifications when recommended values come into effect.
   StartObserving();
-  SetUserPolicies(policy_names_, non_default_values_,
+  SetUserPolicies(policy_names_, non_default_values_.get(),
                   policy::POLICY_LEVEL_RECOMMENDED);
   FinishObserving(&observed_json);
-  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_,
+  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_.get(),
                       "recommended", false, false);
 
   // Verify notifications when mandatory values come into effect.
   StartObserving();
-  SetUserPolicies(policy_names_, non_default_values_,
+  SetUserPolicies(policy_names_, non_default_values_.get(),
                   policy::POLICY_LEVEL_MANDATORY);
   FinishObserving(&observed_json);
-  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_,
+  VerifyObservedPrefs(observed_json, pref_names_, non_default_values_.get(),
                       "policy", true, false);
 
   // Verify notifications when default values come into effect.
@@ -640,15 +641,16 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, NotificationsOnBackendChanges) {
   ClearUserPolicies();
   FinishObserving(&observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, default_values_, std::string(), false, false);
+      observed_json, pref_names_, default_values_.get(),
+      std::string(), false, false);
 
   // Verify notifications when user-modified values come into effect.
   StartObserving();
-  SetUserValues(pref_names_, non_default_values_);
+  SetUserValues(pref_names_, non_default_values_.get());
   FinishObserving(&observed_json);
   VerifyObservedPrefs(observed_json,
                       pref_names_,
-                      non_default_values_,
+                      non_default_values_.get(),
                       std::string(),
                       false,
                       false);
@@ -660,26 +662,94 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, NotificationsOnBackendChanges) {
 // notifications in JavaScript for pref values handled by the
 // CoreChromeOSOptionsHandler class.
 IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, ChromeOSDeviceFetchPrefs) {
-  std::vector<base::Value*> decorated_non_default_values;
   std::string observed_json;
 
   // Boolean pref.
   pref_names_.push_back(chromeos::kAccountsPrefAllowGuest);
   default_values_.push_back(new base::FundamentalValue(true));
+
+  // String pref.
+  pref_names_.push_back(chromeos::kReleaseChannel);
+  default_values_.push_back(new base::StringValue(""));
+
+  // List pref.
+  pref_names_.push_back(chromeos::kAccountsPrefUsers);
+  default_values_.push_back(new base::ListValue);
+
+  // Verify notifications when default values are in effect.
+  SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
+  VerifyObservedPrefs(observed_json, pref_names_, default_values_.get(),
+                      "owner", true, false);
+}
+
+// Verifies that initializing the JavaScript Preferences class fires the correct
+// notifications in JavaScript for non-privileged pref values handled by the
+// CoreChromeOSOptionsHandler class.
+IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest,
+                       ChromeOSDeviceFetchNonPrivilegedPrefs) {
+  ScopedVector<base::Value> decorated_non_default_values;
+  std::string observed_json;
+
+  // Non-privileged string pref.
+  pref_names_.push_back(chromeos::kSystemTimezone);
+  default_values_.push_back(new base::StringValue("America/Los_Angeles"));
+  non_default_values_.push_back(new base::StringValue("America/New_York"));
+  decorated_non_default_values.push_back(
+      non_default_values_.back()->DeepCopy());
+
+  // Verify notifications when default values are in effect.
+  SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
+  VerifyObservedPrefs(observed_json, pref_names_, default_values_.get(),
+                      std::string(), false, false);
+
+  chromeos::CrosSettings* cros_settings = chromeos::CrosSettings::Get();
+  cros_settings->Set(pref_names_[0], *non_default_values_[0]);
+
+  // Verify notifications when non-default values are in effect.
+  SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
+  VerifyObservedPrefs(observed_json, pref_names_,
+                      decorated_non_default_values.get(),
+                      std::string(), false, false);
+}
+
+class ManagedPreferencesBrowserTest : public PreferencesBrowserTest {
+ protected:
+  // PreferencesBrowserTest implementation:
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    // Set up fake install attributes.
+    scoped_ptr<policy::StubEnterpriseInstallAttributes> attributes(
+        new policy::StubEnterpriseInstallAttributes());
+    attributes->SetDomain("example.com");
+    attributes->SetRegistrationUser("user@example.com");
+    policy::BrowserPolicyConnectorChromeOS::SetInstallAttributesForTesting(
+        attributes.release());
+
+    PreferencesBrowserTest::SetUpInProcessBrowserTestFixture();
+  }
+};
+
+// Verifies that initializing the JavaScript Preferences class fires the correct
+// notifications in JavaScript for pref values handled by the
+// CoreChromeOSOptionsHandler class for a managed device.
+IN_PROC_BROWSER_TEST_F(ManagedPreferencesBrowserTest,
+                       ChromeOSDeviceFetchPrefs) {
+  ScopedVector<base::Value> decorated_non_default_values;
+  std::string observed_json;
+
+  // Boolean pref.
+  pref_names_.push_back(chromeos::kAccountsPrefAllowGuest);
   non_default_values_.push_back(new base::FundamentalValue(false));
   decorated_non_default_values.push_back(
       non_default_values_.back()->DeepCopy());
 
   // String pref.
   pref_names_.push_back(chromeos::kReleaseChannel);
-  default_values_.push_back(new base::StringValue(""));
   non_default_values_.push_back(new base::StringValue("stable-channel"));
   decorated_non_default_values.push_back(
       non_default_values_.back()->DeepCopy());
 
   // List pref.
   pref_names_.push_back(chromeos::kAccountsPrefUsers);
-  default_values_.push_back(new base::ListValue);
   base::ListValue* list = new base::ListValue;
   list->Append(new base::StringValue("me@google.com"));
   list->Append(new base::StringValue("you@google.com"));
@@ -699,23 +769,40 @@ IN_PROC_BROWSER_TEST_F(PreferencesBrowserTest, ChromeOSDeviceFetchPrefs) {
   list->Append(dict);
   decorated_non_default_values.push_back(list);
 
-  // Verify notifications when default values are in effect.
+  chromeos::CrosSettings* cros_settings = chromeos::CrosSettings::Get();
+  for (size_t i = 0; i < pref_names_.size(); ++i) {
+    cros_settings->Set(pref_names_[i], *non_default_values_[i]);
+  }
+
+  // Verify notifications when mandatory values are in effect.
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
-  VerifyObservedPrefs(observed_json, pref_names_, default_values_,
-                      "owner", true, false);
+  VerifyObservedPrefs(observed_json, pref_names_,
+                      decorated_non_default_values.get(),
+                      "policy", true, false);
+}
+
+// Verifies that initializing the JavaScript Preferences class fires the correct
+// notifications in JavaScript for non-privileged pref values handled by the
+// CoreChromeOSOptionsHandler class for a managed device.
+IN_PROC_BROWSER_TEST_F(ManagedPreferencesBrowserTest,
+                       ChromeOSDeviceFetchNonPrivilegedPrefs) {
+  ScopedVector<base::Value> decorated_non_default_values;
+  std::string observed_json;
+
+  // Non-privileged string pref.
+  pref_names_.push_back(chromeos::kSystemTimezone);
+  non_default_values_.push_back(new base::StringValue("America/New_York"));
+  decorated_non_default_values.push_back(
+      non_default_values_.back()->DeepCopy());
 
   // Verify notifications when mandatory values are in effect.
   chromeos::CrosSettings* cros_settings = chromeos::CrosSettings::Get();
-  for (size_t i = 0; i < pref_names_.size(); ++i)
-    cros_settings->Set(pref_names_[i], *non_default_values_[i]);
-  // FIXME(bartfab): Find a way to simulate enterprise enrollment in browser
-  // tests. Only if Chrome thinks that it is enrolled will the device prefs be
-  // decorated with "controlledBy: policy".
-  SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
-  VerifyObservedPrefs(observed_json, pref_names_, decorated_non_default_values,
-                      "owner", true, false);
+  cros_settings->Set(pref_names_[0], *non_default_values_[0]);
 
-  STLDeleteElements(&decorated_non_default_values);
+  SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
+  VerifyObservedPrefs(observed_json, pref_names_,
+                      decorated_non_default_values.get(),
+                      std::string(), false, false);
 }
 
 namespace {
@@ -736,10 +823,9 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
 
     ProxyConfigDictionary proxy_config(proxy_config_dict.get());
 
-    const chromeos::FavoriteState* network = GetDefaultFavoriteNetwork();
+    const chromeos::NetworkState* network = GetDefaultNetwork();
     ASSERT_TRUE(network);
-    chromeos::proxy_config::SetProxyConfigForFavoriteNetwork(proxy_config,
-                                                             *network);
+    chromeos::proxy_config::SetProxyConfigForNetwork(proxy_config, *network);
 
     std::string url = base::StringPrintf("%s?network=%s",
                                          chrome::kChromeUIProxySettingsURL,
@@ -765,8 +851,7 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
                              "eth0",
                              shill::kTypeEthernet,
                              shill::kStateOnline,
-                             true,   // add to visible
-                             true);  // add to watchlist
+                             true /* add_to_visible */ );
     service_test->SetServiceProperty("stub_ethernet",
                                      shill::kGuidProperty,
                                      base::StringValue("stub_ethernet"));
@@ -803,10 +888,10 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
     content::RunAllPendingInMessageLoop();
   }
 
-  const chromeos::FavoriteState* GetDefaultFavoriteNetwork() {
+  const chromeos::NetworkState* GetDefaultNetwork() {
     chromeos::NetworkStateHandler* handler =
         chromeos::NetworkHandler::Get()->network_state_handler();
-    return handler->DefaultFavoriteNetwork();
+    return handler->DefaultNetwork();
   }
 
   void SetProxyPref(const std::string& name, const base::Value& value) {
@@ -831,11 +916,11 @@ class ProxyPreferencesBrowserTest : public PreferencesBrowserTest {
 
   void VerifyCurrentProxyServer(const std::string& expected_server,
                                 onc::ONCSource expected_source) {
-    const chromeos::FavoriteState* network = GetDefaultFavoriteNetwork();
+    const chromeos::NetworkState* network = GetDefaultNetwork();
     ASSERT_TRUE(network);
     onc::ONCSource actual_source;
     scoped_ptr<ProxyConfigDictionary> proxy_dict =
-        chromeos::proxy_config::GetProxyConfigForFavoriteNetwork(
+        chromeos::proxy_config::GetProxyConfigForNetwork(
             pref_service_,
             g_browser_process->local_state(),
             *network,
@@ -881,7 +966,7 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, ChromeOSInitializeProxy) {
   std::string observed_json;
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, non_default_values_, "", false, false);
+      observed_json, pref_names_, non_default_values_.get(), "", false, false);
 }
 
 IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, ONCPolicy) {
@@ -896,17 +981,18 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, ONCPolicy) {
   std::string observed_json;
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, non_default_values_, "policy", true, false);
+      observed_json, pref_names_, non_default_values_.get(),
+      "policy", true, false);
 
   // Verify that 'use-shared-proxies' is not affected by per-network policy.
   pref_names_.clear();
-  STLDeleteElements(&non_default_values_);
+  non_default_values_.clear();
   pref_names_.push_back(prefs::kUseSharedProxies);
   non_default_values_.push_back(new base::FundamentalValue(false));
 
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, non_default_values_, "", false, false);
+      observed_json, pref_names_, non_default_values_.get(), "", false, false);
 }
 
 IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, DeviceONCPolicy) {
@@ -921,17 +1007,18 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, DeviceONCPolicy) {
   std::string observed_json;
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, non_default_values_, "policy", true, false);
+      observed_json, pref_names_, non_default_values_.get(),
+      "policy", true, false);
 
   // Verify that 'use-shared-proxies' is not affected by per-network policy.
   pref_names_.clear();
-  STLDeleteElements(&non_default_values_);
+  non_default_values_.clear();
   pref_names_.push_back(prefs::kUseSharedProxies);
   non_default_values_.push_back(new base::FundamentalValue(false));
 
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, non_default_values_, "", false, false);
+      observed_json, pref_names_, non_default_values_.get(), "", false, false);
 }
 
 IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, UserProxyPolicy) {
@@ -939,7 +1026,7 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, UserProxyPolicy) {
   default_values_.push_back(
       new base::StringValue(ProxyPrefs::kAutoDetectProxyModeName));
   SetUserPolicies(
-      policy_names_, default_values_, policy::POLICY_LEVEL_MANDATORY);
+      policy_names_, default_values_.get(), policy::POLICY_LEVEL_MANDATORY);
   content::RunAllPendingInMessageLoop();
 
   // Verify that the policy is presented to the UI. This verification must be
@@ -954,7 +1041,8 @@ IN_PROC_BROWSER_TEST_F(ProxyPreferencesBrowserTest, UserProxyPolicy) {
   std::string observed_json;
   SetupJavaScriptTestEnvironment(pref_names_, &observed_json);
   VerifyObservedPrefs(
-      observed_json, pref_names_, non_default_values_, "policy", true, false);
+      observed_json, pref_names_, non_default_values_.get(),
+      "policy", true, false);
 }
 
 // Verifies that modifications to the proxy settings are correctly pushed from

@@ -89,10 +89,12 @@ SoftwareBrowserCompositorOutputSurfaceTest::
     ~SoftwareBrowserCompositorOutputSurfaceTest() {}
 
 void SoftwareBrowserCompositorOutputSurfaceTest::SetUp() {
-  ui::InitializeContextFactoryForTests(false);
-  ui::Compositor::Initialize();
+  bool enable_pixel_output = false;
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
 
-  compositor_.reset(new ui::Compositor(gfx::kNullAcceleratedWidget));
+  compositor_.reset(new ui::Compositor(gfx::kNullAcceleratedWidget,
+                                       context_factory));
   surface_proxy_ =
       new content::BrowserCompositorOutputSurfaceProxy(&surface_map_);
 }
@@ -105,7 +107,6 @@ void SoftwareBrowserCompositorOutputSurfaceTest::TearDown() {
 
   surface_map_.Clear();
   ui::TerminateContextFactoryForTests();
-  ui::Compositor::Terminate();
 }
 
 scoped_ptr<content::BrowserCompositorOutputSurface>

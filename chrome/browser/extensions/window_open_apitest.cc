@@ -7,7 +7,6 @@
 #include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/extension_apitest.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -22,9 +21,12 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/switches.h"
 #include "net/dns/mock_host_resolver.h"
@@ -35,7 +37,7 @@
 #include "apps/app_window_registry.h"
 #endif
 
-#if defined(USE_ASH) && !defined(OS_WIN)
+#if defined(USE_ASH) && defined(OS_CHROMEOS)
 // TODO(stevenjb): Figure out the correct behavior for Ash + Win
 #define USE_ASH_PANELS
 #endif
@@ -260,9 +262,11 @@ IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, MAYBE_WindowOpenPanel) {
   ASSERT_TRUE(RunExtensionTest("window_open/panel")) << message_;
 }
 
-#if defined(USE_ASH_PANELS)
+#if defined(USE_ASH_PANELS) || defined(OS_LINUX)
 // On Ash, this currently fails because we're currently opening new panel
 // windows as popup windows instead.
+// We're also failing on Linux-aura due to the panel is not opened in the
+// right origin.
 #define MAYBE_WindowOpenPanelDetached DISABLED_WindowOpenPanelDetached
 #else
 #define MAYBE_WindowOpenPanelDetached WindowOpenPanelDetached
@@ -271,8 +275,16 @@ IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, MAYBE_WindowOpenPanelDetached) {
   ASSERT_TRUE(RunExtensionTest("window_open/panel_detached")) << message_;
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// TODO(erg): Bring up ash http://crbug.com/300084
+#define MAYBE_CloseNonExtensionPanelsOnUninstall \
+  DISABLED_CloseNonExtensionPanelsOnUninstall
+#else
+#define MAYBE_CloseNonExtensionPanelsOnUninstall \
+  CloseNonExtensionPanelsOnUninstall
+#endif
 IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest,
-                       CloseNonExtensionPanelsOnUninstall) {
+                       MAYBE_CloseNonExtensionPanelsOnUninstall) {
 #if defined(OS_WIN) && defined(USE_ASH)
   // Disable this test in Metro+Ash for now (http://crbug.com/262796).
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
@@ -343,8 +355,8 @@ IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest,
   EXPECT_TRUE(WaitForTabsAndPopups(browser(), 1, num_popups, 0));
 }
 
-// This test isn't applicable on Chrome OS, which automatically reloads
-// crashed pages.
+// This test isn't applicable on Chrome OS, which automatically reloads crashed
+// pages.
 #if !defined(OS_CHROMEOS)
 IN_PROC_BROWSER_TEST_F(WindowOpenPanelTest, ClosePanelsOnExtensionCrash) {
 #if defined(USE_ASH_PANELS)
@@ -441,8 +453,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenExtension) {
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("uitest").AppendASCII("window_open")));
 
-  GURL start_url(std::string("chrome-extension://") +
-      last_loaded_extension_id() + "/test.html");
+  GURL start_url(std::string(extensions::kExtensionScheme) +
+                     url::kStandardSchemeSeparator +
+                     last_loaded_extension_id() + "/test.html");
   ui_test_utils::NavigateToURL(browser(), start_url);
   WebContents* newtab = NULL;
   ASSERT_NO_FATAL_FAILURE(
@@ -461,8 +474,9 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenInvalidExtension) {
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("uitest").AppendASCII("window_open")));
 
-  GURL start_url(std::string("chrome-extension://") +
-      last_loaded_extension_id() + "/test.html");
+  GURL start_url(std::string(extensions::kExtensionScheme) +
+                     url::kStandardSchemeSeparator +
+                     last_loaded_extension_id() + "/test.html");
   ui_test_utils::NavigateToURL(browser(), start_url);
   ASSERT_NO_FATAL_FAILURE(
       OpenWindow(browser()->tab_strip_model()->GetActiveWebContents(),
@@ -484,8 +498,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, WindowOpenNoPrivileges) {
   WebContents* newtab = NULL;
   ASSERT_NO_FATAL_FAILURE(
       OpenWindow(browser()->tab_strip_model()->GetActiveWebContents(),
-      GURL(std::string("chrome-extension://") + last_loaded_extension_id() +
-          "/newtab.html"), false, &newtab));
+                 GURL(std::string(extensions::kExtensionScheme) +
+                     url::kStandardSchemeSeparator +
+                     last_loaded_extension_id() + "/newtab.html"),
+                 false,
+                 &newtab));
 
   // Extension API should succeed.
   bool result = false;

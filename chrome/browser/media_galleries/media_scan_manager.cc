@@ -7,8 +7,8 @@
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/time/time.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences_factory.h"
@@ -16,10 +16,11 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/media_galleries.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+
+using extensions::ExtensionRegistry;
 
 namespace media_galleries = extensions::api::media_galleries;
 
@@ -205,56 +206,8 @@ void AddScanResultsForProfile(
                             gallery.last_attach_time, file_counts.audio_count,
                             file_counts.image_count, file_counts.video_count);
   }
-}
-
-// A single directory may contain many folders with media in them, without
-// containing any media itself. In fact, the primary purpose of that directory
-// may be to contain media directories. This function tries to find those
-// immediate container directories.
-MediaFolderFinder::MediaFolderFinderResults FindContainerScanResults(
-    const MediaFolderFinder::MediaFolderFinderResults& found_folders) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  // Count the number of scan results with the same parent directory.
-  typedef std::map<base::FilePath, int /*count*/> ContainerCandidates;
-  ContainerCandidates candidates;
-  for (MediaFolderFinder::MediaFolderFinderResults::const_iterator it =
-           found_folders.begin(); it != found_folders.end(); ++it) {
-    base::FilePath parent_directory = it->first.DirName();
-    ContainerCandidates::iterator existing = candidates.find(parent_directory);
-    if (existing == candidates.end()) {
-      candidates[parent_directory] = 1;
-    } else {
-      existing->second++;
-    }
-  }
-
-  // If a parent directory has more than one scan result, consider it.
-  MediaFolderFinder::MediaFolderFinderResults result;
-  for (ContainerCandidates::const_iterator it = candidates.begin();
-       it != candidates.end();
-       ++it) {
-    if (it->second <= 1)
-      continue;
-
-    base::FileEnumerator dir_counter(it->first, false /*recursive*/,
-                                     base::FileEnumerator::DIRECTORIES);
-    base::FileEnumerator::FileInfo info;
-    int count = 0;
-    for (base::FilePath name = dir_counter.Next();
-         !name.empty();
-         name = dir_counter.Next()) {
-      if (!base::IsLink(name))
-        count++;
-    }
-    if (it->second * 100 / count >= kContainerDirectoryMinimumPercent)
-      result[it->first] = MediaGalleryScanResult();
-  }
-  return result;
-}
-
-void RemoveSensitiveLocations(
-    MediaFolderFinder::MediaFolderFinderResults* found_folders) {
-  // TODO(vandebo) Use the greylist from filesystem api.
+  UMA_HISTOGRAM_COUNTS_10000("MediaGalleries.ScanGalleriesPopulated",
+                             unique_found_folders.size() + to_update.size());
 }
 
 int CountScanResultsForExtension(MediaGalleriesPreferences* preferences,
@@ -280,32 +233,56 @@ int CountScanResultsForExtension(MediaGalleriesPreferences* preferences,
   return gallery_count;
 }
 
+int CountDirectoryEntries(const base::FilePath& path) {
+  base::FileEnumerator dir_counter(
+      path, false /*recursive*/, base::FileEnumerator::DIRECTORIES);
+  int count = 0;
+  base::FileEnumerator::FileInfo info;
+  for (base::FilePath name = dir_counter.Next(); !name.empty();
+       name = dir_counter.Next()) {
+    if (!base::IsLink(name))
+      ++count;
+  }
+  return count;
+}
+
+struct ContainerCount {
+  int seen_count, entries_count;
+  bool is_qualified;
+
+  ContainerCount() : seen_count(0), entries_count(-1), is_qualified(false) {}
+};
+
+typedef std::map<base::FilePath, ContainerCount> ContainerCandidates;
+
 }  // namespace
 
-MediaScanManager::MediaScanManager() : weak_factory_(this) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+MediaScanManager::MediaScanManager()
+    : scoped_extension_registry_observer_(this),
+      weak_factory_(this) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 }
 
 MediaScanManager::~MediaScanManager() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 }
 
 void MediaScanManager::AddObserver(Profile* profile,
                                    MediaScanManagerObserver* observer) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(!ContainsKey(observers_, profile));
   observers_[profile].observer = observer;
 }
 
 void MediaScanManager::RemoveObserver(Profile* profile) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   bool scan_in_progress = ScanInProgress();
   observers_.erase(profile);
   DCHECK_EQ(scan_in_progress, ScanInProgress());
 }
 
 void MediaScanManager::CancelScansForProfile(Profile* profile) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   observers_[profile].scanning_extensions.clear();
 
   if (!ScanInProgress())
@@ -316,7 +293,7 @@ void MediaScanManager::StartScan(Profile* profile,
                                  const extensions::Extension* extension,
                                  bool user_gesture) {
   DCHECK(extension);
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   ScanObserverMap::iterator scans_for_profile = observers_.find(profile);
   // We expect that an MediaScanManagerObserver has already been registered.
@@ -347,12 +324,8 @@ void MediaScanManager::StartScan(Profile* profile,
   }
 
   // On first scan for the |profile|, register to listen for extension unload.
-  if (scanning_extensions->empty()) {
-    registrar_.Add(
-        this,
-        chrome::NOTIFICATION_EXTENSION_UNLOADED,
-        content::Source<Profile>(profile));
-  }
+  if (scanning_extensions->empty())
+    scoped_extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
 
   scanning_extensions->insert(extension->id());
   scans_for_profile->second.observer->OnScanStarted(extension->id());
@@ -368,12 +341,13 @@ void MediaScanManager::StartScan(Profile* profile,
   } else {
     folder_finder_.reset(testing_folder_finder_factory_.Run(callback));
   }
+  scan_start_time_ = base::Time::Now();
   folder_finder_->StartScan();
 }
 
 void MediaScanManager::CancelScan(Profile* profile,
                                   const extensions::Extension* extension) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   // Erases the logical scan if found, early exit otherwise.
   ScanObserverMap::iterator scans_for_profile = observers_.find(profile);
@@ -385,15 +359,16 @@ void MediaScanManager::CancelScan(Profile* profile,
   scans_for_profile->second.observer->OnScanCancelled(extension->id());
 
   // No more scanning extensions for |profile|, so stop listening for unloads.
-  if (scans_for_profile->second.scanning_extensions.empty()) {
-    registrar_.Remove(
-        this,
-        chrome::NOTIFICATION_EXTENSION_UNLOADED,
-        content::Source<Profile>(profile));
-  }
+  if (scans_for_profile->second.scanning_extensions.empty())
+    scoped_extension_registry_observer_.Remove(ExtensionRegistry::Get(profile));
 
-  if (!ScanInProgress())
+  if (!ScanInProgress()) {
     folder_finder_.reset();
+    DCHECK(!scan_start_time_.is_null());
+    UMA_HISTOGRAM_LONG_TIMES("MediaGalleries.ScanCancelTime",
+                             base::Time::Now() - scan_start_time_);
+    scan_start_time_ = base::Time();
+  }
 }
 
 void MediaScanManager::SetMediaFolderFinderFactory(
@@ -401,26 +376,99 @@ void MediaScanManager::SetMediaFolderFinderFactory(
   testing_folder_finder_factory_ = factory;
 }
 
+// A single directory may contain many folders with media in them, without
+// containing any media itself. In fact, the primary purpose of that directory
+// may be to contain media directories. This function tries to find those
+// container directories.
+MediaFolderFinder::MediaFolderFinderResults
+MediaScanManager::FindContainerScanResults(
+    const MediaFolderFinder::MediaFolderFinderResults& found_folders,
+    const std::vector<base::FilePath>& sensitive_locations) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
+  std::vector<base::FilePath> abs_sensitive_locations;
+  for (size_t i = 0; i < sensitive_locations.size(); ++i) {
+    base::FilePath path = base::MakeAbsoluteFilePath(sensitive_locations[i]);
+    if (!path.empty())
+      abs_sensitive_locations.push_back(path);
+  }
+  // Recursively find parent directories with majority of media directories,
+  // or container directories.
+  // |candidates| keeps track of directories which might have enough
+  // such directories to have us return them.
+  typedef std::map<base::FilePath, ContainerCount> ContainerCandidates;
+  ContainerCandidates candidates;
+  for (MediaFolderFinder::MediaFolderFinderResults::const_iterator it =
+           found_folders.begin();
+       it != found_folders.end();
+       ++it) {
+    base::FilePath child_directory = it->first;
+    base::FilePath parent_directory = child_directory.DirName();
+
+    // Parent of root is root.
+    while (!parent_directory.empty() && child_directory != parent_directory) {
+      // Skip sensitive folders and their ancestors.
+      base::FilePath abs_parent_directory =
+          base::MakeAbsoluteFilePath(parent_directory);
+      if (abs_parent_directory.empty())
+        break;
+      bool is_sensitive = false;
+      for (size_t i = 0; i < abs_sensitive_locations.size(); ++i) {
+        if (abs_parent_directory == abs_sensitive_locations[i] ||
+            abs_parent_directory.IsParent(abs_sensitive_locations[i])) {
+          is_sensitive = true;
+          break;
+        }
+      }
+      if (is_sensitive)
+        break;
+
+      // Don't bother with ones we already have.
+      if (found_folders.find(parent_directory) != found_folders.end())
+        continue;
+
+      ContainerCandidates::iterator parent_it =
+          candidates.find(parent_directory);
+      if (parent_it == candidates.end()) {
+        ContainerCount count;
+        count.seen_count = 1;
+        count.entries_count = CountDirectoryEntries(parent_directory);
+        parent_it =
+            candidates.insert(std::make_pair(parent_directory, count)).first;
+      } else {
+        ++candidates[parent_directory].seen_count;
+      }
+      // If previously sufficient, or not sufficient, bail.
+      if (parent_it->second.is_qualified ||
+          parent_it->second.seen_count * 100 / parent_it->second.entries_count <
+              kContainerDirectoryMinimumPercent) {
+        break;
+      }
+      // Otherwise, mark qualified and check parent.
+      parent_it->second.is_qualified = true;
+      child_directory = parent_directory;
+      parent_directory = child_directory.DirName();
+    }
+  }
+  MediaFolderFinder::MediaFolderFinderResults result;
+  // Copy and return worthy results.
+  for (ContainerCandidates::const_iterator it = candidates.begin();
+       it != candidates.end();
+       ++it) {
+    if (it->second.is_qualified && it->second.seen_count >= 2)
+      result[it->first] = MediaGalleryScanResult();
+  }
+  return result;
+}
+
 MediaScanManager::ScanObservers::ScanObservers() : observer(NULL) {}
 MediaScanManager::ScanObservers::~ScanObservers() {}
 
-void MediaScanManager::Observe(
-    int type, const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      extensions::Extension* extension = const_cast<extensions::Extension*>(
-          content::Details<extensions::UnloadedExtensionInfo>(
-              details)->extension);
-      DCHECK(extension);
-      CancelScan(profile, extension);
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
+void MediaScanManager::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UnloadedExtensionInfo::Reason reason) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  CancelScan(Profile::FromBrowserContext(browser_context), extension);
 }
 
 bool MediaScanManager::ScanInProgress() const {
@@ -436,17 +484,27 @@ bool MediaScanManager::ScanInProgress() const {
 void MediaScanManager::OnScanCompleted(
     bool success,
     const MediaFolderFinder::MediaFolderFinderResults& found_folders) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!folder_finder_ || !success) {
     folder_finder_.reset();
     return;
   }
 
+  UMA_HISTOGRAM_COUNTS_10000("MediaGalleries.ScanDirectoriesFound",
+                             found_folders.size());
+  DCHECK(!scan_start_time_.is_null());
+  UMA_HISTOGRAM_LONG_TIMES("MediaGalleries.ScanFinishedTime",
+                           base::Time::Now() - scan_start_time_);
+  scan_start_time_ = base::Time();
+
   content::BrowserThread::PostTaskAndReplyWithResult(
       content::BrowserThread::FILE, FROM_HERE,
-      base::Bind(FindContainerScanResults, found_folders),
+      base::Bind(FindContainerScanResults,
+                 found_folders,
+                 folder_finder_->graylisted_folders()),
       base::Bind(&MediaScanManager::OnFoundContainerDirectories,
-                 weak_factory_.GetWeakPtr(), found_folders));
+                 weak_factory_.GetWeakPtr(),
+                 found_folders));
 }
 
 void MediaScanManager::OnFoundContainerDirectories(
@@ -455,8 +513,6 @@ void MediaScanManager::OnFoundContainerDirectories(
   MediaFolderFinder::MediaFolderFinderResults folders;
   folders.insert(found_folders.begin(), found_folders.end());
   folders.insert(container_folders.begin(), container_folders.end());
-
-  RemoveSensitiveLocations(&folders);
 
   for (ScanObserverMap::iterator scans_for_profile = observers_.begin();
        scans_for_profile != observers_.end();
@@ -493,6 +549,6 @@ void MediaScanManager::OnFoundContainerDirectories(
     scanning_extensions->clear();
     preferences->SetLastScanCompletionTime(base::Time::Now());
   }
-  registrar_.RemoveAll();
+  scoped_extension_registry_observer_.RemoveAll();
   folder_finder_.reset();
 }

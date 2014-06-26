@@ -25,6 +25,7 @@
 #include "chrome/browser/history/page_usage_data.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/thumbnails/thumbnail_list_source.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -32,11 +33,10 @@
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/ntp/ntp_stats.h"
-#include "chrome/browser/ui/webui/ntp/thumbnail_list_source.h"
 #include "chrome/browser/ui/webui/ntp/thumbnail_source.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_source.h"
@@ -84,11 +84,6 @@ void MostVisitedHandler::RegisterMessages() {
   // Set up our sources for top-sites data.
   content::URLDataSource::Add(profile, new ThumbnailListSource(profile));
 
-#if defined(OS_ANDROID)
-  // Register chrome://touch-icon as a data source for touch icons or favicons.
-  content::URLDataSource::Add(profile,
-                              new FaviconSource(profile, FaviconSource::ANY));
-#endif
   // Register chrome://favicon as a data source for favicons.
   content::URLDataSource::Add(
       profile, new FaviconSource(profile, FaviconSource::FAVICON));
@@ -275,9 +270,6 @@ std::string MostVisitedHandler::GetDictionaryKeyForUrl(const std::string& url) {
 }
 
 void MostVisitedHandler::MaybeRemovePageValues() {
-// The code below uses APIs not available on Android and the experiment should
-// not run there.
-#if !defined(OS_ANDROID)
   if (!history::MostVisitedTilesExperiment::IsDontShowOpenURLsEnabled())
     return;
 
@@ -294,7 +286,6 @@ void MostVisitedHandler::MaybeRemovePageValues() {
   history::MostVisitedTilesExperiment::RemovePageValuesMatchingOpenTabs(
       open_urls,
       pages_value_.get());
-#endif
 }
 
 // static

@@ -26,8 +26,11 @@
 #include "components/autofill/core/browser/phone_number_i18n.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "content/public/browser/web_ui.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/libaddressinput_strings.h"
+#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_ui.h"
+#include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_ui_component.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
@@ -36,23 +39,118 @@ using autofill::ServerFieldType;
 using autofill::AutofillProfile;
 using autofill::CreditCard;
 using autofill::PersonalDataManager;
+using i18n::addressinput::AddressUiComponent;
 
 namespace {
 
 const char kSettingsOrigin[] = "Chrome settings";
 
+static const char kFullNameField[] = "fullName";
+static const char kCompanyNameField[] = "companyName";
+static const char kAddressLineField[] = "addrLines";
+static const char kDependentLocalityField[] = "dependentLocality";
+static const char kCityField[] = "city";
+static const char kStateField[] = "state";
+static const char kPostalCodeField[] = "postalCode";
+static const char kSortingCodeField[] = "sortingCode";
+static const char kCountryField[] = "country";
+
+static const char kComponents[] = "components";
+static const char kLanguageCode[] = "languageCode";
+
+// Fills |components| with the address UI components that should be used to
+// input an address for |country_code| when UI BCP 47 language code is
+// |ui_language_code|. If |components_language_code| is not NULL, then sets it
+// to the BCP 47 language code that should be used to format the address for
+// display.
+void GetAddressComponents(const std::string& country_code,
+                          const std::string& ui_language_code,
+                          base::ListValue* address_components,
+                          std::string* components_language_code) {
+  DCHECK(address_components);
+
+  std::vector<AddressUiComponent> components =
+      i18n::addressinput::BuildComponents(
+          country_code, ui_language_code, components_language_code);
+  if (components.empty()) {
+    static const char kDefaultCountryCode[] = "US";
+    components = i18n::addressinput::BuildComponents(
+        kDefaultCountryCode, ui_language_code, components_language_code);
+  }
+  DCHECK(!components.empty());
+
+  base::ListValue* line = NULL;
+  static const char kField[] = "field";
+  static const char kLength[] = "length";
+  for (size_t i = 0; i < components.size(); ++i) {
+    if (i == 0 ||
+        components[i - 1].length_hint == AddressUiComponent::HINT_LONG ||
+        components[i].length_hint == AddressUiComponent::HINT_LONG) {
+      line = new base::ListValue;
+      address_components->Append(line);
+    }
+
+    scoped_ptr<base::DictionaryValue> component(new base::DictionaryValue);
+    component->SetString(
+        "name", l10n_util::GetStringUTF16(components[i].name_id));
+
+    switch (components[i].field) {
+      case i18n::addressinput::COUNTRY:
+        component->SetString(kField, kCountryField);
+        break;
+      case i18n::addressinput::ADMIN_AREA:
+        component->SetString(kField, kStateField);
+        break;
+      case i18n::addressinput::LOCALITY:
+        component->SetString(kField, kCityField);
+        break;
+      case i18n::addressinput::DEPENDENT_LOCALITY:
+        component->SetString(kField, kDependentLocalityField);
+        break;
+      case i18n::addressinput::SORTING_CODE:
+        component->SetString(kField, kSortingCodeField);
+        break;
+      case i18n::addressinput::POSTAL_CODE:
+        component->SetString(kField, kPostalCodeField);
+        break;
+      case i18n::addressinput::STREET_ADDRESS:
+        component->SetString(kField, kAddressLineField);
+        break;
+      case i18n::addressinput::ORGANIZATION:
+        component->SetString(kField, kCompanyNameField);
+        break;
+      case i18n::addressinput::RECIPIENT:
+        component->SetString(kField, kFullNameField);
+        component->SetString(
+            "placeholder",
+            l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_NAME));
+        break;
+    }
+
+    switch (components[i].length_hint) {
+      case AddressUiComponent::HINT_LONG:
+        component->SetString(kLength, "long");
+        break;
+      case AddressUiComponent::HINT_SHORT:
+        component->SetString(kLength, "short");
+        break;
+    }
+
+    line->Append(component.release());
+  }
+}
+
 // Sets data related to the country <select>.
 void SetCountryData(const PersonalDataManager& manager,
                     base::DictionaryValue* localized_strings) {
-  autofill::CountryComboboxModel model(manager);
+  autofill::CountryComboboxModel model(
+      manager, base::Callback<bool(const std::string&)>());
   const std::vector<AutofillCountry*>& countries = model.countries();
   localized_strings->SetString("defaultCountryCode",
                                countries.front()->country_code());
 
   // An ordered list of options to show in the <select>.
   scoped_ptr<base::ListValue> country_list(new base::ListValue());
-  // A dictionary of postal code and state info, keyed on country code.
-  scoped_ptr<base::DictionaryValue> country_data(new base::DictionaryValue());
   for (size_t i = 0; i < countries.size(); ++i) {
     scoped_ptr<base::DictionaryValue> option_details(
         new base::DictionaryValue());
@@ -61,18 +159,19 @@ void SetCountryData(const PersonalDataManager& manager,
         "value",
         countries[i] ? countries[i]->country_code() : "separator");
     country_list->Append(option_details.release());
-
-    if (!countries[i])
-      continue;
-
-    scoped_ptr<base::DictionaryValue> details(new base::DictionaryValue());
-    details->SetString("postalCodeLabel", countries[i]->postal_code_label());
-    details->SetString("stateLabel", countries[i]->state_label());
-    country_data->Set(countries[i]->country_code(), details.release());
-
   }
   localized_strings->Set("autofillCountrySelectList", country_list.release());
-  localized_strings->Set("autofillCountryData", country_data.release());
+
+  scoped_ptr<base::ListValue> default_country_components(new base::ListValue);
+  std::string default_country_language_code;
+  GetAddressComponents(countries.front()->country_code(),
+                       g_browser_process->GetApplicationLocale(),
+                       default_country_components.get(),
+                       &default_country_language_code);
+  localized_strings->Set("autofillDefaultCountryComponents",
+                         default_country_components.release());
+  localized_strings->SetString("autofillDefaultCountryLanguageCode",
+                               default_country_language_code);
 }
 
 // Get the multi-valued element for |type| and return it in |ListValue| form.
@@ -104,68 +203,6 @@ void SetValueList(const base::ListValue* list,
       values[i] = value;
   }
   profile->SetRawMultiInfo(type, values);
-}
-
-// Get the multi-valued element for |type| and return it in |ListValue| form.
-void GetNameList(const AutofillProfile& profile,
-                 scoped_ptr<base::ListValue>* names) {
-  names->reset(new base::ListValue);
-
-  std::vector<base::string16> first_names;
-  std::vector<base::string16> middle_names;
-  std::vector<base::string16> last_names;
-  profile.GetRawMultiInfo(autofill::NAME_FIRST, &first_names);
-  profile.GetRawMultiInfo(autofill::NAME_MIDDLE, &middle_names);
-  profile.GetRawMultiInfo(autofill::NAME_LAST, &last_names);
-  DCHECK_EQ(first_names.size(), middle_names.size());
-  DCHECK_EQ(first_names.size(), last_names.size());
-
-  // |GetRawMultiInfo()| always returns at least one, potentially empty, item.
-  if (first_names.size() == 1 && first_names.front().empty() &&
-      middle_names.front().empty() && last_names.front().empty()) {
-    return;
-  }
-
-  for (size_t i = 0; i < first_names.size(); ++i) {
-    base::ListValue* name = new base::ListValue;  // owned by |list|
-    name->Set(0, new base::StringValue(first_names[i]));
-    name->Set(1, new base::StringValue(middle_names[i]));
-    name->Set(2, new base::StringValue(last_names[i]));
-    (*names)->Set(i, name);
-  }
-}
-
-// Set the multi-valued element for |type| from input |list| values.
-void SetNameList(const base::ListValue* names, AutofillProfile* profile) {
-  const size_t size = names->GetSize();
-  std::vector<base::string16> first_names(size);
-  std::vector<base::string16> middle_names(size);
-  std::vector<base::string16> last_names(size);
-
-  for (size_t i = 0; i < size; ++i) {
-    const base::ListValue* name;
-    bool success = names->GetList(i, &name);
-    DCHECK(success);
-
-    base::string16 first_name;
-    success = name->GetString(0, &first_name);
-    DCHECK(success);
-    first_names[i] = first_name;
-
-    base::string16 middle_name;
-    success = name->GetString(1, &middle_name);
-    DCHECK(success);
-    middle_names[i] = middle_name;
-
-    base::string16 last_name;
-    success = name->GetString(2, &last_name);
-    DCHECK(success);
-    last_names[i] = last_name;
-  }
-
-  profile->SetRawMultiInfo(autofill::NAME_FIRST, first_names);
-  profile->SetRawMultiInfo(autofill::NAME_MIDDLE, middle_names);
-  profile->SetRawMultiInfo(autofill::NAME_LAST, last_names);
 }
 
 // Pulls the phone number |index|, |phone_number_list|, and |country_code| from
@@ -296,6 +333,12 @@ void AutofillOptionsHandler::RegisterMessages() {
   personal_data_ = autofill::PersonalDataManagerFactory::GetForProfile(
       Profile::FromWebUI(web_ui()));
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  web_ui()->RegisterMessageCallback(
+      "accessAddressBook",
+      base::Bind(&AutofillOptionsHandler::AccessAddressBook,
+                 base::Unretained(this)));
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
   web_ui()->RegisterMessageCallback(
       "removeData",
       base::Bind(&AutofillOptionsHandler::RemoveData,
@@ -303,6 +346,10 @@ void AutofillOptionsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "loadAddressEditor",
       base::Bind(&AutofillOptionsHandler::LoadAddressEditor,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "loadAddressEditorComponents",
+      base::Bind(&AutofillOptionsHandler::LoadAddressEditorComponents,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(
       "loadCreditCardEditor",
@@ -331,32 +378,12 @@ void AutofillOptionsHandler::SetAddressOverlayStrings(
     base::DictionaryValue* localized_strings) {
   localized_strings->SetString("autofillEditAddressTitle",
       l10n_util::GetStringUTF16(IDS_AUTOFILL_EDIT_ADDRESS_CAPTION));
-  localized_strings->SetString("autofillFirstNameLabel",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_FIRST_NAME));
-  localized_strings->SetString("autofillMiddleNameLabel",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_MIDDLE_NAME));
-  localized_strings->SetString("autofillLastNameLabel",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_LAST_NAME));
-  localized_strings->SetString("autofillCompanyNameLabel",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_COMPANY_NAME));
-  localized_strings->SetString("autofillAddrLine1Label",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADDRESS_LINE_1));
-  localized_strings->SetString("autofillAddrLine2Label",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADDRESS_LINE_2));
-  localized_strings->SetString("autofillCityLabel",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_CITY));
   localized_strings->SetString("autofillCountryLabel",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_COUNTRY));
+      l10n_util::GetStringUTF16(IDS_LIBADDRESSINPUT_I18N_COUNTRY_LABEL));
   localized_strings->SetString("autofillPhoneLabel",
       l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_PHONE));
   localized_strings->SetString("autofillEmailLabel",
       l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_EMAIL));
-  localized_strings->SetString("autofillAddFirstNamePlaceholder",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_FIRST_NAME));
-  localized_strings->SetString("autofillAddMiddleNamePlaceholder",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_MIDDLE_NAME));
-  localized_strings->SetString("autofillAddLastNamePlaceholder",
-      l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_LAST_NAME));
   localized_strings->SetString("autofillAddPhonePlaceholder",
       l10n_util::GetStringUTF16(IDS_AUTOFILL_FIELD_LABEL_ADD_PHONE));
   localized_strings->SetString("autofillAddEmailPlaceholder",
@@ -416,6 +443,12 @@ void AutofillOptionsHandler::LoadAutofillData() {
                                    credit_cards);
 }
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+void AutofillOptionsHandler::AccessAddressBook(const base::ListValue* args) {
+  personal_data_->AccessAddressBook();
+}
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+
 void AutofillOptionsHandler::RemoveData(const base::ListValue* args) {
   DCHECK(IsPersonalDataLoaded());
 
@@ -450,25 +483,58 @@ void AutofillOptionsHandler::LoadAddressEditor(const base::ListValue* args) {
   base::DictionaryValue address;
   address.SetString("guid", profile->guid());
   scoped_ptr<base::ListValue> list;
-  GetNameList(*profile, &list);
-  address.Set("fullName", list.release());
-  address.SetString("companyName", profile->GetRawInfo(autofill::COMPANY_NAME));
-  address.SetString("addrLine1",
-                    profile->GetRawInfo(autofill::ADDRESS_HOME_LINE1));
-  address.SetString("addrLine2",
-                    profile->GetRawInfo(autofill::ADDRESS_HOME_LINE2));
-  address.SetString("city", profile->GetRawInfo(autofill::ADDRESS_HOME_CITY));
-  address.SetString("state", profile->GetRawInfo(autofill::ADDRESS_HOME_STATE));
-  address.SetString("postalCode",
+  GetValueList(*profile, autofill::NAME_FULL, &list);
+  address.Set(kFullNameField, list.release());
+  address.SetString(
+      kCompanyNameField, profile->GetRawInfo(autofill::COMPANY_NAME));
+  address.SetString(kAddressLineField,
+                    profile->GetRawInfo(autofill::ADDRESS_HOME_STREET_ADDRESS));
+  address.SetString(
+      kCityField, profile->GetRawInfo(autofill::ADDRESS_HOME_CITY));
+  address.SetString(
+      kStateField, profile->GetRawInfo(autofill::ADDRESS_HOME_STATE));
+  address.SetString(
+      kDependentLocalityField,
+      profile->GetRawInfo(autofill::ADDRESS_HOME_DEPENDENT_LOCALITY));
+  address.SetString(kSortingCodeField,
+                    profile->GetRawInfo(autofill::ADDRESS_HOME_SORTING_CODE));
+  address.SetString(kPostalCodeField,
                     profile->GetRawInfo(autofill::ADDRESS_HOME_ZIP));
-  address.SetString("country",
+  address.SetString(kCountryField,
                     profile->GetRawInfo(autofill::ADDRESS_HOME_COUNTRY));
   GetValueList(*profile, autofill::PHONE_HOME_WHOLE_NUMBER, &list);
   address.Set("phone", list.release());
   GetValueList(*profile, autofill::EMAIL_ADDRESS, &list);
   address.Set("email", list.release());
+  address.SetString(kLanguageCode, profile->language_code());
+
+  scoped_ptr<base::ListValue> components(new base::ListValue);
+  GetAddressComponents(
+      base::UTF16ToUTF8(profile->GetRawInfo(autofill::ADDRESS_HOME_COUNTRY)),
+      profile->language_code(), components.get(), NULL);
+  address.Set(kComponents, components.release());
 
   web_ui()->CallJavascriptFunction("AutofillOptions.editAddress", address);
+}
+
+void AutofillOptionsHandler::LoadAddressEditorComponents(
+    const base::ListValue* args) {
+  std::string country_code;
+  if (!args->GetString(0, &country_code)) {
+    NOTREACHED();
+    return;
+  }
+
+  base::DictionaryValue input;
+  scoped_ptr<base::ListValue> components(new base::ListValue);
+  std::string language_code;
+  GetAddressComponents(country_code, g_browser_process->GetApplicationLocale(),
+                       components.get(), &language_code);
+  input.Set(kComponents, components.release());
+  input.SetString(kLanguageCode, language_code);
+
+  web_ui()->CallJavascriptFunction(
+      "AutofillEditAddressOverlay.loadAddressComponents", input);
 }
 
 void AutofillOptionsHandler::LoadCreditCardEditor(const base::ListValue* args) {
@@ -513,47 +579,52 @@ void AutofillOptionsHandler::SetAddress(const base::ListValue* args) {
   if (!IsPersonalDataLoaded())
     return;
 
+  int arg_counter = 0;
   std::string guid;
-  if (!args->GetString(0, &guid)) {
+  if (!args->GetString(arg_counter++, &guid)) {
     NOTREACHED();
     return;
   }
 
   AutofillProfile profile(guid, kSettingsOrigin);
 
-  std::string country_code;
   base::string16 value;
   const base::ListValue* list_value;
-  if (args->GetList(1, &list_value))
-    SetNameList(list_value, &profile);
+  if (args->GetList(arg_counter++, &list_value))
+    SetValueList(list_value, autofill::NAME_FULL, &profile);
 
-  if (args->GetString(2, &value))
+  if (args->GetString(arg_counter++, &value))
     profile.SetRawInfo(autofill::COMPANY_NAME, value);
 
-  if (args->GetString(3, &value))
-    profile.SetRawInfo(autofill::ADDRESS_HOME_LINE1, value);
+  if (args->GetString(arg_counter++, &value))
+    profile.SetRawInfo(autofill::ADDRESS_HOME_STREET_ADDRESS, value);
 
-  if (args->GetString(4, &value))
-    profile.SetRawInfo(autofill::ADDRESS_HOME_LINE2, value);
+  if (args->GetString(arg_counter++, &value))
+    profile.SetRawInfo(autofill::ADDRESS_HOME_DEPENDENT_LOCALITY, value);
 
-  if (args->GetString(5, &value))
+  if (args->GetString(arg_counter++, &value))
     profile.SetRawInfo(autofill::ADDRESS_HOME_CITY, value);
 
-  if (args->GetString(6, &value))
+  if (args->GetString(arg_counter++, &value))
     profile.SetRawInfo(autofill::ADDRESS_HOME_STATE, value);
 
-  if (args->GetString(7, &value))
+  if (args->GetString(arg_counter++, &value))
     profile.SetRawInfo(autofill::ADDRESS_HOME_ZIP, value);
 
-  if (args->GetString(8, &country_code))
-    profile.SetRawInfo(autofill::ADDRESS_HOME_COUNTRY,
-                       base::ASCIIToUTF16(country_code));
+  if (args->GetString(arg_counter++, &value))
+    profile.SetRawInfo(autofill::ADDRESS_HOME_SORTING_CODE, value);
 
-  if (args->GetList(9, &list_value))
+  if (args->GetString(arg_counter++, &value))
+    profile.SetRawInfo(autofill::ADDRESS_HOME_COUNTRY, value);
+
+  if (args->GetList(arg_counter++, &list_value))
     SetValueList(list_value, autofill::PHONE_HOME_WHOLE_NUMBER, &profile);
 
-  if (args->GetList(10, &list_value))
+  if (args->GetList(arg_counter++, &list_value))
     SetValueList(list_value, autofill::EMAIL_ADDRESS, &profile);
+
+  if (args->GetString(arg_counter++, &value))
+    profile.set_language_code(base::UTF16ToUTF8(value));
 
   if (!base::IsValidGUID(profile.guid())) {
     profile.set_guid(base::GenerateGUID());

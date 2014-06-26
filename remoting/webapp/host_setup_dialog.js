@@ -219,11 +219,8 @@ remoting.HostSetupDialog.prototype.showForStartWithToken_ =
       state != remoting.HostController.State.NOT_INSTALLED &&
       state != remoting.HostController.State.INSTALLING;
 
-  // Skip the installation step when the host is already installed or when using
-  // NPAPI plugin on Windows (because on Windows the plugin takes care of
-  // installation).
-  if (installed || (navigator.platform == 'Win32' &&
-                    this.hostController_.usingNpapiPlugin())) {
+  // Skip the installation step when the host is already installed.
+  if (installed) {
     flow.shift();
   }
 
@@ -284,12 +281,6 @@ remoting.HostSetupDialog.prototype.startNewFlow_ = function(sequence) {
 remoting.HostSetupDialog.prototype.updateState_ = function() {
   remoting.updateLocalHostState();
 
-  /** @param {string} tag */
-  function showProcessingMessage(tag) {
-    var messageDiv = document.getElementById('host-setup-processing-message');
-    l10n.localizeElementFromTag(messageDiv, tag);
-    remoting.setMode(remoting.AppMode.HOST_SETUP_PROCESSING);
-  }
   /** @param {string} tag1
    *  @param {string=} opt_tag2 */
   function showDoneMessage(tag1, opt_tag2) {
@@ -318,13 +309,14 @@ remoting.HostSetupDialog.prototype.updateState_ = function() {
   } else if (state == remoting.HostSetupFlow.State.INSTALL_HOST) {
     this.installHost_();
   } else if (state == remoting.HostSetupFlow.State.STARTING_HOST) {
-    showProcessingMessage(/*i18n-content*/'HOST_SETUP_STARTING');
+    remoting.showSetupProcessingMessage(/*i18n-content*/'HOST_SETUP_STARTING');
     this.startHost_();
   } else if (state == remoting.HostSetupFlow.State.UPDATING_PIN) {
-    showProcessingMessage(/*i18n-content*/'HOST_SETUP_UPDATING_PIN');
+    remoting.showSetupProcessingMessage(
+        /*i18n-content*/'HOST_SETUP_UPDATING_PIN');
     this.updatePin_();
   } else if (state == remoting.HostSetupFlow.State.STOPPING_HOST) {
-    showProcessingMessage(/*i18n-content*/'HOST_SETUP_STOPPING');
+    remoting.showSetupProcessingMessage(/*i18n-content*/'HOST_SETUP_STOPPING');
     this.stopHost_();
   } else if (state == remoting.HostSetupFlow.State.HOST_STARTED) {
     // TODO(jamiewalch): Only display the second string if the computer's power
@@ -355,29 +347,30 @@ remoting.HostSetupDialog.prototype.installHost_ = function() {
   /** @type {remoting.HostSetupFlow} */
   var flow = this.flow_;
 
+  /** @param {remoting.Error} error */
+  var onError = function(error) {
+    flow.switchToErrorState(error);
+    that.updateState_();
+  };
+
   var onDone = function() {
     that.hostController_.getLocalHostState(onHostState);
   };
 
-  /** @param {remoting.Error} error */
-  var onError = function(error) {
-    flow.switchToErrorState(error);
-  }
-
   /** @param {remoting.HostController.State} state */
   var onHostState = function(state) {
-    // Verify if the host has been installed. If not then try to prompt the user
-    // again.
     var installed =
         state != remoting.HostController.State.NOT_INSTALLED &&
         state != remoting.HostController.State.INSTALLING;
+
     if (installed) {
       that.flow_.switchToNextStep();
       that.updateState_();
     } else {
+      // Prompt the user again if the host is not installed.
       hostInstallDialog.tryAgain();
     }
-  }
+  };
 
   /** @type {remoting.HostInstallDialog} */
   var hostInstallDialog = new remoting.HostInstallDialog();

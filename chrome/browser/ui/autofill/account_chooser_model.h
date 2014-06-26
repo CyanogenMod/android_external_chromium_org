@@ -11,7 +11,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
+#include "components/autofill/core/browser/autofill_client.h"
 #include "ui/base/models/simple_menu_model.h"
 
 class AutofillMetrics;
@@ -26,9 +26,6 @@ class AccountChooserModel;
 class AccountChooserModelDelegate {
  public:
   virtual ~AccountChooserModelDelegate();
-
-  // Called right before the account chooser is shown.
-  virtual void AccountChooserWillShow() = 0;
 
   // Called when the active account has changed.
   virtual void AccountChoiceChanged() = 0;
@@ -57,9 +54,6 @@ class AccountChooserModel : public ui::SimpleMenuModel,
                       const AutofillMetrics& metric_logger);
   virtual ~AccountChooserModel();
 
-  // ui::SimpleMenuModel implementation.
-  virtual void MenuWillShow() OVERRIDE;
-
   // ui::SimpleMenuModel::Delegate implementation.
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
@@ -67,7 +61,6 @@ class AccountChooserModel : public ui::SimpleMenuModel,
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
   virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
-  virtual void MenuWillShow(ui::SimpleMenuModel* source) OVERRIDE;
 
   // Sets the selection to the given wallet account.
   void SelectWalletAccount(size_t user_index);
@@ -118,6 +111,9 @@ class AccountChooserModel : public ui::SimpleMenuModel,
  private:
   // Reconstructs the set of menu items.
   void ReconstructMenuItems();
+
+  // Switches to the account option represented by |command_id|.
+  void DoAccountSwitch(int command_id);
 
   AccountChooserModelDelegate* delegate_;
 

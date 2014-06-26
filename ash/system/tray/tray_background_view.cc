@@ -18,16 +18,21 @@
 #include "ash/system/tray/tray_event_filter.h"
 #include "ash/wm/window_animations.h"
 #include "grit/ash_resources.h"
-#include "ui/aura/root_window.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/aura/window.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animation_element.h"
+#include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/transform.h"
 #include "ui/views/background.h"
 #include "ui/views/layout/box_layout.h"
 
@@ -37,20 +42,21 @@ const int kTrayBackgroundAlpha = 100;
 const int kTrayBackgroundHoverAlpha = 150;
 const SkColor kTrayBackgroundPressedColor = SkColorSetRGB(66, 129, 244);
 
-// Adjust the size of TrayContainer with additional padding.
-const int kTrayContainerVerticalPaddingBottomAlignment  = 1;
-const int kTrayContainerHorizontalPaddingBottomAlignment  = 1;
-const int kTrayContainerVerticalPaddingVerticalAlignment  = 1;
-const int kTrayContainerHorizontalPaddingVerticalAlignment = 1;
+const int kAnimationDurationForPopupMs = 200;
 
-const int kAnimationDurationForPopupMS = 200;
+// Duration of opacity animation for visibility changes.
+const int kAnimationDurationForVisibilityMs = 250;
+
+// When becoming visible delay the animation so that StatusAreaWidgetDelegate
+// can animate sibling views out of the position to be occuped by the
+// TrayBackgroundView.
+const int kShowAnimationDelayMs = 100;
 
 }  // namespace
 
 using views::TrayBubbleView;
 
 namespace ash {
-namespace internal {
 
 // static
 const char TrayBackgroundView::kViewClassName[] = "tray/TrayBackgroundView";
@@ -154,7 +160,8 @@ class TrayBackground : public views::Background {
         status_area_widget()->GetNativeWindow())->shelf();
   }
 
-  void PaintForAlternateShelf(gfx::Canvas* canvas, views::View* view) const {
+  // Overridden from views::Background.
+  virtual void Paint(gfx::Canvas* canvas, views::View* view) const OVERRIDE {
     int orientation = kImageHorizontal;
     ShelfWidget* shelf_widget = GetShelfWidget();
     if (shelf_widget &&
@@ -210,23 +217,6 @@ class TrayBackground : public views::Background {
                          middle_bounds.height());
   }
 
-  // Overridden from views::Background.
-  virtual void Paint(gfx::Canvas* canvas, views::View* view) const OVERRIDE {
-    if (ash::switches::UseAlternateShelfLayout()) {
-      PaintForAlternateShelf(canvas, view);
-    } else {
-      SkPaint paint;
-      paint.setAntiAlias(true);
-      paint.setStyle(SkPaint::kFill_Style);
-      paint.setColor(color_);
-      SkPath path;
-      gfx::Rect bounds(view->GetLocalBounds());
-      SkScalar radius = SkIntToScalar(kTrayRoundedBorderRadius);
-      path.addRoundRect(gfx::RectToSkRect(bounds), radius, radius);
-      canvas->DrawPath(path, paint);
-    }
-  }
-
   SkColor color_;
   // Reference to the TrayBackgroundView for which this is a background.
   TrayBackgroundView* tray_background_view_;
@@ -252,7 +242,7 @@ void TrayBackgroundView::TrayContainer::SetAlignment(ShelfAlignment alignment) {
   UpdateLayout();
 }
 
-gfx::Size TrayBackgroundView::TrayContainer::GetPreferredSize() {
+gfx::Size TrayBackgroundView::TrayContainer::GetPreferredSize() const {
   if (size_.IsEmpty())
     return views::View::GetPreferredSize();
   return size_;
@@ -278,36 +268,26 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
   // empty border.
   if (alignment_ == SHELF_ALIGNMENT_BOTTOM ||
       alignment_ == SHELF_ALIGNMENT_TOP) {
-    int vertical_padding = kTrayContainerVerticalPaddingBottomAlignment;
-    int horizontal_padding = kTrayContainerHorizontalPaddingBottomAlignment;
-    if (ash::switches::UseAlternateShelfLayout()) {
-      vertical_padding = kPaddingFromEdgeOfShelf;
-      horizontal_padding = kPaddingFromEdgeOfShelf;
-    }
-    SetBorder(views::Border::CreateEmptyBorder(vertical_padding,
-                                               horizontal_padding,
-                                               vertical_padding,
-                                               horizontal_padding));
+    SetBorder(views::Border::CreateEmptyBorder(
+        kPaddingFromEdgeOfShelf,
+        kPaddingFromEdgeOfShelf,
+        kPaddingFromEdgeOfShelf,
+        kPaddingFromEdgeOfShelf));
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kHorizontal, 0, 0, 0);
-    layout->set_spread_blank_space(true);
+    layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
     views::View::SetLayoutManager(layout);
   } else {
-    int vertical_padding = kTrayContainerVerticalPaddingVerticalAlignment;
-    int horizontal_padding = kTrayContainerHorizontalPaddingVerticalAlignment;
-    if (ash::switches::UseAlternateShelfLayout()) {
-      vertical_padding = kPaddingFromEdgeOfShelf;
-      horizontal_padding = kPaddingFromEdgeOfShelf;
-    }
-    SetBorder(views::Border::CreateEmptyBorder(vertical_padding,
-                                               horizontal_padding,
-                                               vertical_padding,
-                                               horizontal_padding));
+    SetBorder(views::Border::CreateEmptyBorder(
+        kPaddingFromEdgeOfShelf,
+        kPaddingFromEdgeOfShelf,
+        kPaddingFromEdgeOfShelf,
+        kPaddingFromEdgeOfShelf));
 
     views::BoxLayout* layout =
         new views::BoxLayout(views::BoxLayout::kVertical, 0, 0, 0);
-    layout->set_spread_blank_space(true);
+    layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
     views::View::SetLayoutManager(layout);
   }
   PreferredSizeChanged();
@@ -316,15 +296,16 @@ void TrayBackgroundView::TrayContainer::UpdateLayout() {
 ////////////////////////////////////////////////////////////////////////////////
 // TrayBackgroundView
 
-TrayBackgroundView::TrayBackgroundView(
-    internal::StatusAreaWidget* status_area_widget)
+TrayBackgroundView::TrayBackgroundView(StatusAreaWidget* status_area_widget)
     : status_area_widget_(status_area_widget),
       tray_container_(NULL),
       shelf_alignment_(SHELF_ALIGNMENT_BOTTOM),
       background_(NULL),
       hide_background_animator_(this, 0, kTrayBackgroundAlpha),
       hover_background_animator_(
-          this, 0, kTrayBackgroundHoverAlpha - kTrayBackgroundAlpha),
+          this,
+          0,
+          kTrayBackgroundHoverAlpha - kTrayBackgroundAlpha),
       hovered_(false),
       draw_background_as_active_(false),
       widget_observer_(new TrayWidgetObserver(this)) {
@@ -339,6 +320,11 @@ TrayBackgroundView::TrayBackgroundView(
   tray_container_ = new TrayContainer(shelf_alignment_);
   SetContents(tray_container_);
   tray_event_filter_.reset(new TrayEventFilter);
+
+  SetPaintToLayer(true);
+  SetFillsBoundsOpaquely(false);
+  // Start the tray items not visible, because visibility changes are animated.
+  views::View::SetVisible(false);
 }
 
 TrayBackgroundView::~TrayBackgroundView() {
@@ -351,34 +337,74 @@ void TrayBackgroundView::Initialize() {
   SetTrayBorder();
 }
 
+void TrayBackgroundView::SetVisible(bool visible) {
+  if (visible == layer()->GetTargetVisibility())
+    return;
+
+  if (visible) {
+    // The alignment of the shelf can change while the TrayBackgroundView is
+    // hidden. Reset the offscreen transform so that the animation to becoming
+    // visible reflects the current layout.
+    HideTransformation();
+    // SetVisible(false) is defered until the animation for hiding is done.
+    // Otherwise the view is immediately hidden and the animation does not
+    // render.
+    views::View::SetVisible(true);
+    // If SetVisible(true) is called while animating to not visible, then
+    // views::View::SetVisible(true) is a no-op. When the previous animation
+    // ends layer->SetVisible(false) is called. To prevent this
+    // layer->SetVisible(true) immediately interrupts the animation of this
+    // property, and keeps the layer visible.
+    layer()->SetVisible(true);
+  }
+
+  ui::ScopedLayerAnimationSettings animation(layer()->GetAnimator());
+  animation.SetTransitionDuration(base::TimeDelta::FromMilliseconds(
+      kAnimationDurationForVisibilityMs));
+  animation.SetPreemptionStrategy(
+      ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
+
+  if (visible) {
+    animation.SetTweenType(gfx::Tween::EASE_OUT);
+    // Show is delayed so as to allow time for other children of
+    // StatusAreaWidget to begin animating to their new positions.
+    layer()->GetAnimator()->SchedulePauseForProperties(
+        base::TimeDelta::FromMilliseconds(kShowAnimationDelayMs),
+        ui::LayerAnimationElement::OPACITY |
+        ui::LayerAnimationElement::TRANSFORM);
+    layer()->SetOpacity(1.0f);
+    gfx::Transform transform;
+    transform.Translate(0.0f, 0.0f);
+    layer()->SetTransform(transform);
+  } else {
+    // Listen only to the hide animation. As we cannot turn off visibility
+    // until the animation is over.
+    animation.AddObserver(this);
+    animation.SetTweenType(gfx::Tween::EASE_IN);
+    layer()->SetOpacity(0.0f);
+    layer()->SetVisible(false);
+    HideTransformation();
+  }
+}
+
 const char* TrayBackgroundView::GetClassName() const {
   return kViewClassName;
 }
 
 void TrayBackgroundView::OnMouseEntered(const ui::MouseEvent& event) {
   hovered_ = true;
-  if (!background_ || draw_background_as_active_ ||
-      ash::switches::UseAlternateShelfLayout())
-    return;
-  hover_background_animator_.SetPaintsBackground(
-      true, BACKGROUND_CHANGE_ANIMATE);
 }
 
 void TrayBackgroundView::OnMouseExited(const ui::MouseEvent& event) {
   hovered_ = false;
-  if (!background_ || draw_background_as_active_ ||
-      ash::switches::UseAlternateShelfLayout())
-    return;
-  hover_background_animator_.SetPaintsBackground(
-      false, BACKGROUND_CHANGE_ANIMATE);
 }
 
 void TrayBackgroundView::ChildPreferredSizeChanged(views::View* child) {
   PreferredSizeChanged();
 }
 
-void TrayBackgroundView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+void TrayBackgroundView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
   state->name = GetAccessibleNameForTray();
 }
 
@@ -404,7 +430,6 @@ void TrayBackgroundView::UpdateBackground(int alpha) {
   // The animator should never fire when the alternate shelf layout is used.
   if (!background_ || draw_background_as_active_)
     return;
-  DCHECK(!ash::switches::UseAlternateShelfLayout());
   background_->set_alpha(hide_background_animator_.alpha() +
                          hover_background_animator_.alpha());
   SchedulePaint();
@@ -417,12 +442,11 @@ void TrayBackgroundView::SetContents(views::View* contents) {
 
 void TrayBackgroundView::SetPaintsBackground(
     bool value, BackgroundAnimatorChangeType change_type) {
-  DCHECK(!ash::switches::UseAlternateShelfLayout());
   hide_background_animator_.SetPaintsBackground(value, change_type);
 }
 
 void TrayBackgroundView::SetContentsBackground() {
-  background_ = new internal::TrayBackground(this);
+  background_ = new TrayBackground(this);
   tray_container_->set_background(background_);
 }
 
@@ -441,73 +465,69 @@ void TrayBackgroundView::SetTrayBorder() {
   // Tray views are laid out right-to-left or bottom-to-top
   bool on_edge = (this == parent->child_at(0));
   int left_edge, top_edge, right_edge, bottom_edge;
-  if (ash::switches::UseAlternateShelfLayout()) {
-    if (shelf_alignment() == SHELF_ALIGNMENT_BOTTOM) {
-      top_edge = ShelfLayoutManager::kShelfItemInset;
-      left_edge = 0;
-      bottom_edge = ShelfLayoutManager::GetPreferredShelfSize() -
-          ShelfLayoutManager::kShelfItemInset - GetShelfItemHeight();
-      right_edge = on_edge ? kPaddingFromEdgeOfShelf : 0;
-    } else if (shelf_alignment() == SHELF_ALIGNMENT_LEFT) {
-      top_edge = 0;
-      left_edge = ShelfLayoutManager::GetPreferredShelfSize() -
-          ShelfLayoutManager::kShelfItemInset - GetShelfItemHeight();
-      bottom_edge = on_edge ? kPaddingFromEdgeOfShelf : 0;
-      right_edge = ShelfLayoutManager::kShelfItemInset;
-    } else { // SHELF_ALIGNMENT_RIGHT
-      top_edge = 0;
-      left_edge = ShelfLayoutManager::kShelfItemInset;
-      bottom_edge = on_edge ? kPaddingFromEdgeOfShelf : 0;
-      right_edge = ShelfLayoutManager::GetPreferredShelfSize() -
-          ShelfLayoutManager::kShelfItemInset - GetShelfItemHeight();
-    }
-  } else {
-    // Change the border padding for different shelf alignment.
-    if (shelf_alignment() == SHELF_ALIGNMENT_BOTTOM) {
-      top_edge = 0;
-      left_edge = 0;
-      bottom_edge = on_edge ? kPaddingFromBottomOfScreenBottomAlignment :
-          kPaddingFromBottomOfScreenBottomAlignment - 1;
-      right_edge = on_edge ? kPaddingFromRightEdgeOfScreenBottomAlignment : 0;
-    } else if (shelf_alignment() == SHELF_ALIGNMENT_TOP) {
-      top_edge = on_edge ? kPaddingFromBottomOfScreenBottomAlignment :
-          kPaddingFromBottomOfScreenBottomAlignment - 1;
-      left_edge = 0;
-      bottom_edge = 0;
-      right_edge = on_edge ? kPaddingFromRightEdgeOfScreenBottomAlignment : 0;
-    } else if (shelf_alignment() == SHELF_ALIGNMENT_LEFT) {
-      top_edge = 0;
-      left_edge = kPaddingFromOuterEdgeOfLauncherVerticalAlignment;
-      bottom_edge = on_edge ? kPaddingFromBottomOfScreenVerticalAlignment : 0;
-      right_edge = kPaddingFromInnerEdgeOfLauncherVerticalAlignment;
-    } else {
-      top_edge = 0;
-      left_edge = kPaddingFromInnerEdgeOfLauncherVerticalAlignment;
-      bottom_edge = on_edge ? kPaddingFromBottomOfScreenVerticalAlignment : 0;
-      right_edge = kPaddingFromOuterEdgeOfLauncherVerticalAlignment;
-    }
+  if (shelf_alignment() == SHELF_ALIGNMENT_BOTTOM) {
+    top_edge = ShelfLayoutManager::kShelfItemInset;
+    left_edge = 0;
+    bottom_edge = kShelfSize -
+        ShelfLayoutManager::kShelfItemInset - kShelfItemHeight;
+    right_edge = on_edge ? kPaddingFromEdgeOfShelf : 0;
+  } else if (shelf_alignment() == SHELF_ALIGNMENT_LEFT) {
+    top_edge = 0;
+    left_edge = kShelfSize -
+        ShelfLayoutManager::kShelfItemInset - kShelfItemHeight;
+    bottom_edge = on_edge ? kPaddingFromEdgeOfShelf : 0;
+    right_edge = ShelfLayoutManager::kShelfItemInset;
+  } else { // SHELF_ALIGNMENT_RIGHT
+    top_edge = 0;
+    left_edge = ShelfLayoutManager::kShelfItemInset;
+    bottom_edge = on_edge ? kPaddingFromEdgeOfShelf : 0;
+    right_edge = kShelfSize -
+        ShelfLayoutManager::kShelfItemInset - kShelfItemHeight;
   }
   SetBorder(views::Border::CreateEmptyBorder(
       top_edge, left_edge, bottom_edge, right_edge));
 }
 
+void TrayBackgroundView::OnImplicitAnimationsCompleted() {
+  // If there is another animation in the queue, the reverse animation was
+  // triggered before the completion of animating to invisible. Do not turn off
+  // the visibility so that the next animation may render. The value of
+  // layer()->GetTargetVisibility() can be incorrect if the hide animation was
+  // aborted to schedule an animation to become visible. As the new animation
+  // is not yet added to the queue. crbug.com/374236
+  if(layer()->GetAnimator()->is_animating() ||
+     layer()->GetTargetVisibility())
+    return;
+  views::View::SetVisible(false);
+}
+
+void TrayBackgroundView::HideTransformation() {
+  gfx::Transform transform;
+  if (shelf_alignment_ == SHELF_ALIGNMENT_BOTTOM ||
+      shelf_alignment_ == SHELF_ALIGNMENT_TOP)
+    transform.Translate(width(), 0.0f);
+  else
+    transform.Translate(0.0f, height());
+  layer()->SetTransform(transform);
+}
+
 void TrayBackgroundView::InitializeBubbleAnimations(
     views::Widget* bubble_widget) {
-  views::corewm::SetWindowVisibilityAnimationType(
+  wm::SetWindowVisibilityAnimationType(
       bubble_widget->GetNativeWindow(),
-      views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
-  views::corewm::SetWindowVisibilityAnimationTransition(
+      wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE);
+  wm::SetWindowVisibilityAnimationTransition(
       bubble_widget->GetNativeWindow(),
-      views::corewm::ANIMATE_HIDE);
-  views::corewm::SetWindowVisibilityAnimationDuration(
+      wm::ANIMATE_HIDE);
+  wm::SetWindowVisibilityAnimationDuration(
       bubble_widget->GetNativeWindow(),
-      base::TimeDelta::FromMilliseconds(kAnimationDurationForPopupMS));
+      base::TimeDelta::FromMilliseconds(kAnimationDurationForPopupMs));
 }
 
 aura::Window* TrayBackgroundView::GetBubbleWindowContainer() const {
   return ash::Shell::GetContainer(
       tray_container()->GetWidget()->GetNativeWindow()->GetRootWindow(),
-      ash::internal::kShellWindowId_SettingBubbleContainer);
+      ash::kShellWindowId_SettingBubbleContainer);
 }
 
 gfx::Rect TrayBackgroundView::GetBubbleAnchorRect(
@@ -520,46 +540,24 @@ gfx::Rect TrayBackgroundView::GetBubbleAnchorRect(
     if (anchor_type == TrayBubbleView::ANCHOR_TYPE_TRAY) {
       if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_BOTTOM) {
         bool rtl = base::i18n::IsRTL();
-        if (!ash::switches::UseAlternateShelfLayout()) {
-          rect.Inset(
-              rtl ? kPaddingFromRightEdgeOfScreenBottomAlignment : 0,
-              kTrayBubbleAnchorTopInsetBottomAnchor,
-              rtl ? 0 : kPaddingFromRightEdgeOfScreenBottomAlignment,
-              kPaddingFromBottomOfScreenBottomAlignment);
-        } else {
-          rect.Inset(
-              rtl ? kAlternateLayoutBubblePaddingHorizontalSide : 0,
-              kAlternateLayoutBubblePaddingHorizontalBottom,
-              rtl ? 0 : kAlternateLayoutBubblePaddingHorizontalSide,
-              0);
-        }
+        rect.Inset(
+            rtl ? kBubblePaddingHorizontalSide : 0,
+            kBubblePaddingHorizontalBottom,
+            rtl ? 0 : kBubblePaddingHorizontalSide,
+            0);
       } else if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_LEFT) {
-        if (!ash::switches::UseAlternateShelfLayout()) {
-          rect.Inset(0, 0, kPaddingFromInnerEdgeOfLauncherVerticalAlignment + 5,
-                     kPaddingFromBottomOfScreenVerticalAlignment);
-        } else {
-          rect.Inset(0, 0, kAlternateLayoutBubblePaddingVerticalSide + 4,
-                     kAlternateLayoutBubblePaddingVerticalBottom);
-        }
+        rect.Inset(0, 0, kBubblePaddingVerticalSide + 4,
+                   kBubblePaddingVerticalBottom);
       } else {
-        if (!ash::switches::UseAlternateShelfLayout()) {
-          rect.Inset(kPaddingFromInnerEdgeOfLauncherVerticalAlignment + 1,
-                     0, 0, kPaddingFromBottomOfScreenVerticalAlignment);
-        } else {
-          rect.Inset(kAlternateLayoutBubblePaddingVerticalSide, 0, 0,
-                     kAlternateLayoutBubblePaddingVerticalBottom);
-        }
+        rect.Inset(kBubblePaddingVerticalSide, 0, 0,
+                   kBubblePaddingVerticalBottom);
       }
     } else if (anchor_type == TrayBubbleView::ANCHOR_TYPE_BUBBLE) {
       // Invert the offsets to align with the bubble below.
       // Note that with the alternate shelf layout the tips are not shown and
       // the offsets for left and right alignment do not need to be applied.
-      int vertical_alignment = ash::switches::UseAlternateShelfLayout() ?
-          0 :
-          kPaddingFromInnerEdgeOfLauncherVerticalAlignment;
-      int horizontal_alignment = ash::switches::UseAlternateShelfLayout() ?
-          kAlternateLayoutBubblePaddingVerticalBottom :
-          kPaddingFromBottomOfScreenVerticalAlignment;
+      int vertical_alignment = 0;
+      int horizontal_alignment = kBubblePaddingVerticalBottom;
       if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_LEFT)
         rect.Inset(vertical_alignment, 0, 0, horizontal_alignment);
       else if (anchor_alignment == TrayBubbleView::ANCHOR_ALIGNMENT_RIGHT)
@@ -600,7 +598,7 @@ TrayBubbleView::AnchorAlignment TrayBackgroundView::GetAnchorAlignment() const {
 
 void TrayBackgroundView::SetDrawBackgroundAsActive(bool visible) {
   draw_background_as_active_ = visible;
-  if (!background_ || !switches::UseAlternateShelfLayout())
+  if (!background_)
     return;
 
   // Do not change gradually, changing color between grey and blue is weird.
@@ -615,18 +613,7 @@ void TrayBackgroundView::SetDrawBackgroundAsActive(bool visible) {
 
 void TrayBackgroundView::UpdateBubbleViewArrow(
     views::TrayBubbleView* bubble_view) {
-  if (switches::UseAlternateShelfLayout())
-    return;
-
-  aura::Window* root_window =
-      bubble_view->GetWidget()->GetNativeView()->GetRootWindow();
-  ash::internal::ShelfLayoutManager* shelf =
-      ShelfLayoutManager::ForShelf(root_window);
-  bubble_view->SetArrowPaintType(
-      (shelf && shelf->IsVisible()) ?
-      views::BubbleBorder::PAINT_NORMAL :
-      views::BubbleBorder::PAINT_TRANSPARENT);
+  // Nothing to do here.
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -54,8 +54,8 @@ void MergeAllDependentConfigsFrom(const Target* from_target,
 Target::Target(const Settings* settings, const Label& label)
     : Item(settings, label),
       output_type_(UNKNOWN),
-      hard_dep_(false),
-      external_(false) {
+      all_headers_public_(true),
+      hard_dep_(false) {
 }
 
 Target::~Target() {
@@ -74,10 +74,14 @@ const char* Target::GetStringForOutputType(OutputType type) {
       return "Shared library";
     case STATIC_LIBRARY:
       return "Static library";
+    case SOURCE_SET:
+      return "Source set";
     case COPY_FILES:
       return "Copy";
-    case CUSTOM:
-      return "Custom";
+    case ACTION:
+      return "Action";
+    case ACTION_FOREACH:
+      return "ActionForEach";
     default:
       return "";
   }
@@ -98,8 +102,7 @@ void Target::OnResolved() {
   // group's deps. We insert the new deps immediately after the group so that
   // the ordering is preserved. We need to keep the original group so that any
   // flags, etc. that it specifies itself are applied to us.
-  size_t original_deps_size = deps_.size();
-  for (size_t i = 0; i < original_deps_size; i++) {
+  for (size_t i = 0; i < deps_.size(); i++) {
     const Target* dep = deps_[i].ptr;
     if (dep->output_type_ == GROUP) {
       deps_.insert(deps_.begin() + i + 1, dep->deps_.begin(), dep->deps_.end());
@@ -145,6 +148,8 @@ void Target::OnResolved() {
     // pulled from G to A in case G has configs directly on it).
     PullDependentTargetInfo(&unique_configs);
   }
+  PullForwardedDependentConfigs();
+  PullRecursiveHardDeps();
 }
 
 bool Target::IsLinkable() const {
@@ -179,6 +184,12 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
       all_libs_.append(dep->all_libs());
     }
   }
+}
+
+void Target::PullForwardedDependentConfigs() {
+  // Groups implicitly forward all if its dependency's configs.
+  if (output_type() == GROUP)
+    forward_dependent_configs_ = deps_;
 
   // Forward direct dependent configs if requested.
   for (size_t dep = 0; dep < forward_dependent_configs_.size(); dep++) {
@@ -193,5 +204,21 @@ void Target::PullDependentTargetInfo(std::set<const Config*>* unique_configs) {
         direct_dependent_configs_.end(),
         from_target->direct_dependent_configs().begin(),
         from_target->direct_dependent_configs().end());
+  }
+}
+
+void Target::PullRecursiveHardDeps() {
+  for (size_t dep_i = 0; dep_i < deps_.size(); dep_i++) {
+    const Target* dep = deps_[dep_i].ptr;
+    if (dep->hard_dep())
+      recursive_hard_deps_.insert(dep);
+
+    // Android STL doesn't like insert(begin, end) so do it manually.
+    // TODO(brettw) this can be changed to insert(dep->begin(), dep->end()) when
+    // Android uses a better STL.
+    for (std::set<const Target*>::const_iterator cur =
+             dep->recursive_hard_deps().begin();
+         cur != dep->recursive_hard_deps().end(); ++cur)
+      recursive_hard_deps_.insert(*cur);
   }
 }

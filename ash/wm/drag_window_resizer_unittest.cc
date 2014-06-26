@@ -16,24 +16,17 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/compositor/layer_tree_owner.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(OS_CHROMEOS)
-#include "ash/system/tray/system_tray.h"
-#include "ash/system/user/tray_user.h"
-#include "ash/test/test_session_state_delegate.h"
-#include "ash/test/test_shell_delegate.h"
-#endif
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 const int kRootHeight = 600;
@@ -85,7 +78,7 @@ class DragWindowResizerTest : public test::AshTestBase {
     transient_parent_->SetType(ui::wm::WINDOW_TYPE_NORMAL);
     transient_parent_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
     ParentWindowInPrimaryRootWindow(transient_parent_.get());
-    views::corewm::AddTransientChild(transient_parent_.get(), transient_child_);
+    ::wm::AddTransientChild(transient_parent_.get(), transient_child_);
     transient_parent_->set_id(5);
 
     panel_window_.reset(new aura::Window(&delegate6_));
@@ -113,7 +106,7 @@ class DragWindowResizerTest : public test::AshTestBase {
     return location;
   }
 
-  internal::ShelfLayoutManager* shelf_layout_manager() {
+  ShelfLayoutManager* shelf_layout_manager() {
     return Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   }
 
@@ -132,8 +125,8 @@ class DragWindowResizerTest : public test::AshTestBase {
                                   const gfx::Point& point_in_screen) {
     MouseCursorEventFilter* event_filter =
         Shell::GetInstance()->mouse_cursor_filter();
-    bool is_warped = event_filter->WarpMouseCursorIfNecessary(target_root,
-                                                              point_in_screen);
+    bool is_warped = event_filter->WarpMouseCursorIfNecessaryForTest(
+        target_root, point_in_screen);
     event_filter->reset_was_mouse_warped_for_test();
     return is_warped;
   }
@@ -362,7 +355,7 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
     scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
-    internal::DragWindowResizer* drag_resizer = DragWindowResizer::instance_;
+    DragWindowResizer* drag_resizer = DragWindowResizer::instance_;
     ASSERT_TRUE(drag_resizer);
     EXPECT_FALSE(drag_resizer->drag_window_controller_.get());
 
@@ -384,7 +377,7 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
     // Check if |resizer->layer_| is properly set to the drag widget.
     const std::vector<ui::Layer*>& layers = drag_layer->children();
     EXPECT_FALSE(layers.empty());
-    EXPECT_EQ(controller->layer_, layers.back());
+    EXPECT_EQ(controller->layer_owner_->root(), layers.back());
 
     // |window_| should be opaque since the pointer is still on the primary
     // root window. The drag window should be semi-transparent.
@@ -414,7 +407,7 @@ TEST_F(DragWindowResizerTest, DragWindowController) {
     scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
     ASSERT_TRUE(resizer.get());
-    internal::DragWindowResizer* drag_resizer = DragWindowResizer::instance_;
+    DragWindowResizer* drag_resizer = DragWindowResizer::instance_;
     ASSERT_TRUE(drag_resizer);
     EXPECT_FALSE(drag_resizer->drag_window_controller_.get());
 
@@ -501,13 +494,13 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
     // Grab (0, 0) of the window.
     scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
-    EXPECT_EQ(1.0f, cursor_test_api.GetDisplay().device_scale_factor());
+    EXPECT_EQ(1.0f, cursor_test_api.GetCurrentCursor().device_scale_factor());
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, 399, 200), 0);
     WarpMouseCursorIfNecessary(root_windows[0], gfx::Point(399, 200));
-    EXPECT_EQ(2.0f, cursor_test_api.GetDisplay().device_scale_factor());
+    EXPECT_EQ(2.0f, cursor_test_api.GetCurrentCursor().device_scale_factor());
     resizer->CompleteDrag();
-    EXPECT_EQ(2.0f, cursor_test_api.GetDisplay().device_scale_factor());
+    EXPECT_EQ(2.0f, cursor_test_api.GetCurrentCursor().device_scale_factor());
   }
 
   // Move window from the root window with 2.0 device scale factor to the root
@@ -515,8 +508,8 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
   {
     // Make sure the window is on the default container first.
     aura::Window* default_container =
-        GetRootWindowController(root_windows[1])->GetContainer(
-            internal::kShellWindowId_DefaultContainer);
+        GetRootWindowController(root_windows[1])
+            ->GetContainer(kShellWindowId_DefaultContainer);
     default_container->AddChild(window_.get());
     window_->SetBoundsInScreen(
         gfx::Rect(600, 0, 50, 60),
@@ -525,13 +518,13 @@ TEST_F(DragWindowResizerTest, CursorDeviceScaleFactor) {
     // Grab (0, 0) of the window.
     scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
         window_.get(), gfx::Point(), HTCAPTION));
-    EXPECT_EQ(2.0f, cursor_test_api.GetDisplay().device_scale_factor());
+    EXPECT_EQ(2.0f, cursor_test_api.GetCurrentCursor().device_scale_factor());
     ASSERT_TRUE(resizer.get());
     resizer->Drag(CalculateDragPoint(*resizer, -200, 200), 0);
     WarpMouseCursorIfNecessary(root_windows[1], gfx::Point(400, 200));
-    EXPECT_EQ(1.0f, cursor_test_api.GetDisplay().device_scale_factor());
+    EXPECT_EQ(1.0f, cursor_test_api.GetCurrentCursor().device_scale_factor());
     resizer->CompleteDrag();
-    EXPECT_EQ(1.0f, cursor_test_api.GetDisplay().device_scale_factor());
+    EXPECT_EQ(1.0f, cursor_test_api.GetCurrentCursor().device_scale_factor());
   }
 }
 
@@ -639,92 +632,4 @@ TEST_F(DragWindowResizerTest, MoveWindowAcrossDisplays) {
   }
 }
 
-#if defined(OS_CHROMEOS)
-// Checks that moving a window to another desktop will properly set and reset
-// the transparency.
-TEST_F(DragWindowResizerTest, DragToOtherDesktopOpacity) {
-  // Set up a few things we need for multi profile.
-  ash::test::TestSessionStateDelegate* session_delegate =
-      static_cast<ash::test::TestSessionStateDelegate*>(
-          ash::Shell::GetInstance()->session_state_delegate());
-  session_delegate->set_logged_in_users(2);
-  ash::test::TestShellDelegate* shell_delegate =
-      static_cast<ash::test::TestShellDelegate*>(
-          ash::Shell::GetInstance()->delegate());
-  shell_delegate->set_multi_profiles_enabled(true);
-
-  // Create one other user where we can drag our stuff onto.
-  SystemTray* tray = Shell::GetPrimaryRootWindowController()->GetSystemTray();
-  TrayUser* tray_user = new TrayUser(tray, 1);
-  tray->AddTrayUserItemForTest(tray_user);
-
-  // Move the view somewhere where we can hit it.
-  views::View* view = tray->GetTrayItemViewForTest(tray_user);
-  view->SetBounds(80, 0, 20, 20);
-  gfx::Point center = view->GetBoundsInScreen().CenterPoint();
-
-  gfx::Rect initial_bounds = gfx::Rect(0, 0, 50, 60);
-  // Drag the window over the icon and let it drop. Test that the window's
-  // layer gets transparent and reverts back.
-  {
-    aura::Window* window = window_.get();
-    window->SetBoundsInScreen(initial_bounds,
-                              Shell::GetScreen()->GetPrimaryDisplay());
-    // Grab (0, 0) of the window.
-    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
-        window, gfx::Point(), HTCAPTION));
-    ASSERT_TRUE(resizer.get());
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->Drag(center, 0);
-    EXPECT_NE(1.0, window->layer()->opacity());
-    EXPECT_EQ(0, session_delegate->num_transfer_to_desktop_of_user_calls());
-    resizer->CompleteDrag();
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    EXPECT_EQ(1, session_delegate->num_transfer_to_desktop_of_user_calls());
-    EXPECT_EQ(initial_bounds.ToString(), window->bounds().ToString());
-  }
-
-  // Drag the window over the icon and cancel the operation. Test that the
-  // window's layer gets transparent and reverts back.
-  {
-    aura::Window* window = window_.get();
-    window->SetBoundsInScreen(initial_bounds,
-                              Shell::GetScreen()->GetPrimaryDisplay());
-    // Grab (0, 0) of the window.
-    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
-        window, gfx::Point(), HTCAPTION));
-    ASSERT_TRUE(resizer.get());
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->Drag(center, 0);
-    EXPECT_NE(1.0, window->layer()->opacity());
-    resizer->RevertDrag();
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    EXPECT_EQ(1, session_delegate->num_transfer_to_desktop_of_user_calls());
-    EXPECT_EQ(initial_bounds.ToString(), window->bounds().ToString());
-  }
-
-  // Drag the window over the icon and somewhere else and see that it properly
-  // reverts its transparency.
-  {
-    aura::Window* window = window_.get();
-    window->SetBoundsInScreen(initial_bounds,
-                              Shell::GetScreen()->GetPrimaryDisplay());
-    // Grab (0, 0) of the window.
-    scoped_ptr<WindowResizer> resizer(CreateDragWindowResizer(
-        window, gfx::Point(), HTCAPTION));
-    ASSERT_TRUE(resizer.get());
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->Drag(center, 0);
-    EXPECT_NE(1.0, window->layer()->opacity());
-    resizer->Drag(gfx::Point(), 0);
-    EXPECT_EQ(1.0, window->layer()->opacity());
-    resizer->CompleteDrag();
-    EXPECT_EQ(1, session_delegate->num_transfer_to_desktop_of_user_calls());
-    EXPECT_NE(initial_bounds.ToString(), window->bounds().ToString());
-  }
-}
-#endif
-
-
-}  // namespace internal
 }  // namespace ash

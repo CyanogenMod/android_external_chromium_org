@@ -5,7 +5,7 @@
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
 
 #include "base/message_loop/message_loop.h"
-#include "chrome/browser/signin/signin_account_id_helper.h"
+#include "components/signin/core/browser/signin_account_id_helper.h"
 
 FakeProfileOAuth2TokenService::PendingRequest::PendingRequest() {
 }
@@ -14,7 +14,8 @@ FakeProfileOAuth2TokenService::PendingRequest::~PendingRequest() {
 }
 
 FakeProfileOAuth2TokenService::FakeProfileOAuth2TokenService()
-    : auto_post_fetch_response_on_message_loop_(false) {
+    : auto_post_fetch_response_on_message_loop_(false),
+      weak_ptr_factory_(this) {
   SigninAccountIdHelper::SetDisableForTest(true);
 }
 
@@ -23,7 +24,7 @@ FakeProfileOAuth2TokenService::~FakeProfileOAuth2TokenService() {
 }
 
 bool FakeProfileOAuth2TokenService::RefreshTokenIsAvailable(
-    const std::string& account_id) {
+    const std::string& account_id) const {
   return !GetRefreshToken(account_id).empty();
 }
 
@@ -66,6 +67,10 @@ void FakeProfileOAuth2TokenService::IssueRefreshTokenForUser(
   }
 }
 
+void FakeProfileOAuth2TokenService::IssueAllRefreshTokensLoaded() {
+  FireRefreshTokensLoaded();
+}
+
 void FakeProfileOAuth2TokenService::IssueAllTokensForAccount(
     const std::string& account_id,
     const std::string& access_token,
@@ -76,6 +81,17 @@ void FakeProfileOAuth2TokenService::IssueAllTokensForAccount(
                    GoogleServiceAuthError::AuthErrorNone(),
                    access_token,
                    expiration);
+}
+
+void FakeProfileOAuth2TokenService::IssueErrorForAllPendingRequestsForAccount(
+    const std::string& account_id,
+    const GoogleServiceAuthError& error) {
+  CompleteRequests(account_id,
+                   true,
+                   ScopeSet(),
+                   error,
+                   std::string(),
+                   base::Time());
 }
 
 void FakeProfileOAuth2TokenService::IssueTokenForScope(
@@ -136,9 +152,12 @@ void FakeProfileOAuth2TokenService::CompleteRequests(
 }
 
 std::string FakeProfileOAuth2TokenService::GetRefreshToken(
-    const std::string& account_id) {
-  return refresh_tokens_.count(account_id) > 0 ? refresh_tokens_[account_id] :
-      std::string();
+    const std::string& account_id) const {
+  std::map<std::string, std::string>::const_iterator it =
+      refresh_tokens_.find(account_id);
+  if (it != refresh_tokens_.end())
+    return it->second;
+  return std::string();
 }
 
 net::URLRequestContextGetter*
@@ -175,11 +194,20 @@ void FakeProfileOAuth2TokenService::FetchOAuth2Token(
   if (auto_post_fetch_response_on_message_loop_) {
     base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(
         &FakeProfileOAuth2TokenService::IssueAllTokensForAccount,
-        base::Unretained(this),
+        weak_ptr_factory_.GetWeakPtr(),
         account_id,
         "access_token",
         base::Time::Max()));
   }
+}
+
+OAuth2AccessTokenFetcher*
+FakeProfileOAuth2TokenService::CreateAccessTokenFetcher(
+    const std::string& account_id,
+    net::URLRequestContextGetter* getter,
+    OAuth2AccessTokenConsumer* consumer) {
+  NOTREACHED();
+  return NULL;
 }
 
 void FakeProfileOAuth2TokenService::InvalidateOAuth2Token(

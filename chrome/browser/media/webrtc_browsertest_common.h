@@ -7,11 +7,34 @@
 
 #include <string>
 
+#include "base/files/file_path.h"
 #include "base/process/process_handle.h"
 
 namespace content {
 class WebContents;
 }
+
+namespace test {
+
+// Reference file locations.
+
+// Checks if the user has the reference files directory, returns true if so.
+// If the user's checkout don't have these dirs, they need to configure their
+// .gclient as described in chrome/test/data/webrtc/resources/README. The reason
+// for this is that we don't want to burden regular chrome devs with downloading
+// these sizable reference files by default.
+bool HasReferenceFilesInCheckout();
+
+// Verifies both the YUV and Y4M version of the reference file exists.
+bool HasYuvAndY4mFile(const base::FilePath::CharType* reference_file);
+
+// Retrieves the reference files dir, to which file names can be appended.
+base::FilePath GetReferenceFilesDir();
+
+extern const base::FilePath::CharType kReferenceFileName360p[];
+extern const base::FilePath::CharType kReferenceFileName720p[];
+extern const base::FilePath::CharType kYuvFileExtension[];
+extern const base::FilePath::CharType kY4mFileExtension[];
 
 // Executes javascript code which will sleep for |timeout_msec| milliseconds.
 // Returns true on success.
@@ -31,23 +54,6 @@ bool PollingWaitUntil(const std::string& javascript,
                       content::WebContents* tab_contents,
                       int poll_interval_msec);
 
-class PeerConnectionServerRunner {
- public:
-  static const char kDefaultPort[];
-
-  PeerConnectionServerRunner(): server_pid_(0) {}
-  ~PeerConnectionServerRunner() {}
-
-  // Starts the peerconnection server on localhost on |kDefaultPort|.
-  bool Start();
-
-  // Stops the peerconnection server.
-  bool Stop();
-
-  static void KillAllPeerConnectionServersOnCurrentSystem();
-
- private:
-  base::ProcessHandle server_pid_;
-};
+}  // namespace test
 
 #endif  // CHROME_BROWSER_MEDIA_WEBRTC_BROWSERTEST_COMMON_H_

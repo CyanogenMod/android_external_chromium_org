@@ -6,10 +6,7 @@
   'targets': [
     {
       'target_name': 'libc++abi',
-      'type': 'shared_library',
-      'variables': {
-         'prune_self_dependency': 1,
-      },
+      'type': 'static_library',
       'dependencies=': [],
       'sources': [
         'trunk/src/abort_message.cpp',
@@ -32,9 +29,7 @@
       ],
       'include_dirs': [
         'trunk/include',
-        '../libc++/trunk/include',
-        # TODO(earthdok): remove when http://crbug.com/337426 is fixed
-        '../llvm-build/Release+Asserts/lib/clang/3.5/include/'
+        '../libc++/trunk/include'
       ],
       'cflags': [
         '-g', '-O3', '-fPIC',
@@ -56,23 +51,6 @@
         '-Wnewline-eof',
         '-nostdinc++',
       ],
-      'direct_dependent_settings': {
-        'target_conditions': [
-          ['_type!="none"', {
-            'include_dirs': [
-              'trunk/include',
-              # TODO(earthdok): remove when http://crbug.com/337426 is fixed
-              '../llvm-build/Release+Asserts/lib/clang/3.5/include/'
-            ],
-            'cflags_cc': [
-              '-nostdinc++',
-            ],
-            'ldflags': [
-              '-L<(PRODUCT_DIR)/lib/',
-            ],
-          }],
-        ],
-      },
       'cflags_cc!': [
         '-fno-rtti',
       ],
@@ -88,6 +66,8 @@
       ],
       'libraries': [
         '-lrt',
+        '-lgcc_s',
+        '-lpthread',
         '-lc',
       ]
     },

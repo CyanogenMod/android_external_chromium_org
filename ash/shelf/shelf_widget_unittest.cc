@@ -15,11 +15,10 @@
 #include "ash/test/shelf_test_api.h"
 #include "ash/test/shelf_view_test_api.h"
 #include "ash/wm/window_util.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/corewm_switches.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
@@ -31,7 +30,7 @@ ShelfWidget* GetShelfWidget() {
   return Shelf::ForPrimaryDisplay()->shelf_widget();
 }
 
-internal::ShelfLayoutManager* GetShelfLayoutManager() {
+ShelfLayoutManager* GetShelfLayoutManager() {
   return GetShelfWidget()->shelf_layout_manager();
 }
 
@@ -118,7 +117,7 @@ TEST_F(ShelfWidgetTest, LauncherInitiallySized) {
   ShelfWidget* shelf_widget = GetShelfWidget();
   Shelf* shelf = shelf_widget->shelf();
   ASSERT_TRUE(shelf);
-  internal::ShelfLayoutManager* shelf_layout_manager = GetShelfLayoutManager();
+  ShelfLayoutManager* shelf_layout_manager = GetShelfLayoutManager();
   ASSERT_TRUE(shelf_layout_manager);
   ASSERT_TRUE(shelf_widget->status_area_widget());
   int status_width = shelf_widget->status_area_widget()->
@@ -182,7 +181,7 @@ TEST_F(ShelfWidgetTest, ShelfEdgeOverlappingWindowHitTestMouse) {
   ShelfWidget* shelf_widget = GetShelfWidget();
   gfx::Rect shelf_bounds = shelf_widget->GetWindowBoundsInScreen();
   EXPECT_TRUE(!shelf_bounds.IsEmpty());
-  internal::ShelfLayoutManager* shelf_layout_manager =
+  ShelfLayoutManager* shelf_layout_manager =
       shelf_widget->shelf_layout_manager();
   ASSERT_TRUE(shelf_layout_manager);
   EXPECT_EQ(SHELF_VISIBLE, shelf_layout_manager->visibility_state());
@@ -245,7 +244,7 @@ TEST_F(ShelfWidgetTest, HiddenShelfHitTestTouch) {
   ShelfWidget* shelf_widget = GetShelfWidget();
   gfx::Rect shelf_bounds = shelf_widget->GetWindowBoundsInScreen();
   EXPECT_TRUE(!shelf_bounds.IsEmpty());
-  internal::ShelfLayoutManager* shelf_layout_manager =
+  ShelfLayoutManager* shelf_layout_manager =
       shelf_widget->shelf_layout_manager();
   ASSERT_TRUE(shelf_layout_manager);
   EXPECT_EQ(SHELF_VISIBLE, shelf_layout_manager->visibility_state());

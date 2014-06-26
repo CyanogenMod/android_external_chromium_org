@@ -11,6 +11,7 @@
 class Browser;
 class PrefRegistrySimple;
 class Profile;
+class SigninErrorController;
 namespace base { class FilePath; }
 
 namespace profiles {
@@ -25,8 +26,11 @@ base::FilePath GetDefaultProfileDir(const base::FilePath& user_data_dir);
 // Register multi-profile related preferences in Local State.
 void RegisterPrefs(PrefRegistrySimple* registry);
 
-// Returns the display name of the active on-the-record profile (or guest).
-base::string16 GetActiveProfileDisplayName(Browser* browser);
+// Returns the display name of the active on-the-record profile (or guest)
+// used in the avatar button. If there is only one local profile present, it
+// will return IDS_SINGLE_PROFILE_DISPLAY_NAME, unless the profile has a
+// user entered custom name.
+base::string16 GetAvatarNameForProfile(Profile* profile);
 
 // Update the name of |profile| to |new_profile_name|. This updates the
 // profile preferences, which triggers an update in the ProfileInfoCache.
@@ -44,6 +48,15 @@ std::vector<std::string> GetSecondaryAccountsForProfile(
 // The distinction is needed because guest profiles are implemented as
 // incognito profiles.
 bool IsRegularOrGuestSession(Browser* browser);
+
+// If the --google-profile-info flag is turned on, starts an update for a new
+// version of the Gaia profile picture.
+void UpdateGaiaProfilePhotoIfNeeded(Profile* profile);
+
+// Returns the sign-in error controller for the given profile.  Some profiles,
+// like guest profiles, may not have a controller so this function may return
+// NULL.
+SigninErrorController* GetSigninErrorController(Profile* profile);
 
 }  // namespace profiles
 

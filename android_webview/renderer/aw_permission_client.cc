@@ -33,7 +33,6 @@ AwPermissionClient::~AwPermissionClient() {
 }
 
 bool AwPermissionClient::allowDisplayingInsecureContent(
-      blink::WebFrame* frame,
       bool enabled_per_settings,
       const blink::WebSecurityOrigin& origin,
       const blink::WebURL& url) {
@@ -41,7 +40,6 @@ bool AwPermissionClient::allowDisplayingInsecureContent(
 }
 
 bool AwPermissionClient::allowRunningInsecureContent(
-      blink::WebFrame* frame,
       bool enabled_per_settings,
       const blink::WebSecurityOrigin& origin,
       const blink::WebURL& url) {

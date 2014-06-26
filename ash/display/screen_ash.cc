@@ -15,7 +15,7 @@
 #include "base/logging.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 
@@ -23,7 +23,7 @@ namespace ash {
 
 namespace {
 
-internal::DisplayManager* GetDisplayManager() {
+DisplayManager* GetDisplayManager() {
   return Shell::GetInstance()->display_manager();
 }
 
@@ -136,7 +136,7 @@ gfx::Display ScreenAsh::FindDisplayContainingPoint(const gfx::Point& point) {
 
 // static
 gfx::Rect ScreenAsh::GetMaximizedWindowBoundsInParent(aura::Window* window) {
-  if (internal::GetRootWindowController(window->GetRootWindow())->shelf())
+  if (GetRootWindowController(window->GetRootWindow())->shelf())
     return GetDisplayWorkAreaBoundsInParent(window);
   else
     return GetDisplayBoundsInParent(window);
@@ -176,7 +176,7 @@ gfx::Rect ScreenAsh::ConvertRectFromScreen(aura::Window* window,
 
 // static
 const gfx::Display& ScreenAsh::GetSecondaryDisplay() {
-  internal::DisplayManager* display_manager = GetDisplayManager();
+  DisplayManager* display_manager = GetDisplayManager();
   CHECK_EQ(2U, display_manager->GetNumDisplays());
   return display_manager->GetDisplayAt(0).id() ==
       Shell::GetScreen()->GetPrimaryDisplay().id() ?
@@ -188,9 +188,11 @@ const gfx::Display& ScreenAsh::GetDisplayForId(int64 display_id) {
   return GetDisplayManager()->GetDisplayForId(display_id);
 }
 
-void ScreenAsh::NotifyBoundsChanged(const gfx::Display& display) {
-  FOR_EACH_OBSERVER(gfx::DisplayObserver, observers_,
-                    OnDisplayBoundsChanged(display));
+void ScreenAsh::NotifyMetricsChanged(const gfx::Display& display,
+                                     uint32_t metrics) {
+  FOR_EACH_OBSERVER(gfx::DisplayObserver,
+                    observers_,
+                    OnDisplayMetricsChanged(display, metrics));
 }
 
 void ScreenAsh::NotifyDisplayAdded(const gfx::Display& display) {
@@ -232,11 +234,14 @@ gfx::Display ScreenAsh::GetDisplayNearestWindow(gfx::NativeView window) const {
   const aura::Window* root_window = window->GetRootWindow();
   if (!root_window)
     return GetPrimaryDisplay();
-  int64 id = internal::GetRootWindowSettings(root_window)->display_id;
+  const RootWindowSettings* rws = GetRootWindowSettings(root_window);
+  int64 id = rws->display_id;
   // if id is |kInvaildDisplayID|, it's being deleted.
   DCHECK(id != gfx::Display::kInvalidDisplayID);
+  if (id == gfx::Display::kInvalidDisplayID)
+    return GetPrimaryDisplay();
 
-  internal::DisplayManager* display_manager = GetDisplayManager();
+  DisplayManager* display_manager = GetDisplayManager();
   // RootWindow needs Display to determine its device scale factor
   // for non desktop display.
   if (display_manager->non_desktop_display().id() == id)

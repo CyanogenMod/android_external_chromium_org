@@ -17,26 +17,27 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_global_error.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/extensions/api/identity.h"
 #include "chrome/common/extensions/api/identity/oauth2_manifest_handler.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "url/gurl.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service.h"
 #include "chrome/browser/chromeos/settings/device_oauth2_token_service_factory.h"
@@ -56,6 +57,7 @@ const char kInteractionRequired[] = "User interaction required.";
 const char kInvalidRedirect[] = "Did not redirect to the right URL.";
 const char kOffTheRecord[] = "Identity API is disabled in incognito windows.";
 const char kPageLoadFailure[] = "Authorization page could not be loaded.";
+const char kCanceled[] = "canceled";
 
 const int kCachedIssueAdviceTTLSeconds = 1;
 }  // namespace identity_constants
@@ -65,15 +67,217 @@ namespace {
 static const char kChromiumDomainRedirectUrlPattern[] =
     "https://%s.chromiumapp.org/";
 
-std::string GetPrimaryAccountId(Profile* profile) {
+std::string GetPrimaryAccountId(content::BrowserContext* context) {
   SigninManagerBase* signin_manager =
-      SigninManagerFactory::GetForProfile(profile);
+      SigninManagerFactory::GetForProfile(Profile::FromBrowserContext(context));
   return signin_manager->GetAuthenticatedAccountId();
 }
 
 }  // namespace
 
 namespace identity = api::identity;
+
+IdentityTokenCacheValue::IdentityTokenCacheValue()
+    : status_(CACHE_STATUS_NOTFOUND) {}
+
+IdentityTokenCacheValue::IdentityTokenCacheValue(
+    const IssueAdviceInfo& issue_advice)
+    : status_(CACHE_STATUS_ADVICE), issue_advice_(issue_advice) {
+  expiration_time_ =
+      base::Time::Now() + base::TimeDelta::FromSeconds(
+                              identity_constants::kCachedIssueAdviceTTLSeconds);
+}
+
+IdentityTokenCacheValue::IdentityTokenCacheValue(const std::string& token,
+                                                 base::TimeDelta time_to_live)
+    : status_(CACHE_STATUS_TOKEN), token_(token) {
+  // Remove 20 minutes from the ttl so cached tokens will have some time
+  // to live any time they are returned.
+  time_to_live -= base::TimeDelta::FromMinutes(20);
+
+  base::TimeDelta zero_delta;
+  if (time_to_live < zero_delta)
+    time_to_live = zero_delta;
+
+  expiration_time_ = base::Time::Now() + time_to_live;
+}
+
+IdentityTokenCacheValue::~IdentityTokenCacheValue() {}
+
+IdentityTokenCacheValue::CacheValueStatus IdentityTokenCacheValue::status()
+    const {
+  if (is_expired())
+    return IdentityTokenCacheValue::CACHE_STATUS_NOTFOUND;
+  else
+    return status_;
+}
+
+const IssueAdviceInfo& IdentityTokenCacheValue::issue_advice() const {
+  return issue_advice_;
+}
+
+const std::string& IdentityTokenCacheValue::token() const { return token_; }
+
+bool IdentityTokenCacheValue::is_expired() const {
+  return status_ == CACHE_STATUS_NOTFOUND ||
+         expiration_time_ < base::Time::Now();
+}
+
+const base::Time& IdentityTokenCacheValue::expiration_time() const {
+  return expiration_time_;
+}
+
+IdentityAPI::IdentityAPI(content::BrowserContext* context)
+    : browser_context_(context),
+      account_tracker_(Profile::FromBrowserContext(context)) {
+  account_tracker_.AddObserver(this);
+}
+
+IdentityAPI::~IdentityAPI() {}
+
+IdentityMintRequestQueue* IdentityAPI::mint_queue() { return &mint_queue_; }
+
+void IdentityAPI::SetCachedToken(const ExtensionTokenKey& key,
+                                 const IdentityTokenCacheValue& token_data) {
+  CachedTokens::iterator it = token_cache_.find(key);
+  if (it != token_cache_.end() && it->second.status() <= token_data.status())
+    token_cache_.erase(it);
+
+  token_cache_.insert(std::make_pair(key, token_data));
+}
+
+void IdentityAPI::EraseCachedToken(const std::string& extension_id,
+                                   const std::string& token) {
+  CachedTokens::iterator it;
+  for (it = token_cache_.begin(); it != token_cache_.end(); ++it) {
+    if (it->first.extension_id == extension_id &&
+        it->second.status() == IdentityTokenCacheValue::CACHE_STATUS_TOKEN &&
+        it->second.token() == token) {
+      token_cache_.erase(it);
+      break;
+    }
+  }
+}
+
+void IdentityAPI::EraseAllCachedTokens() { token_cache_.clear(); }
+
+const IdentityTokenCacheValue& IdentityAPI::GetCachedToken(
+    const ExtensionTokenKey& key) {
+  return token_cache_[key];
+}
+
+const IdentityAPI::CachedTokens& IdentityAPI::GetAllCachedTokens() {
+  return token_cache_;
+}
+
+std::vector<std::string> IdentityAPI::GetAccounts() const {
+  const std::string primary_account_id = GetPrimaryAccountId(browser_context_);
+  const std::vector<AccountIds> ids = account_tracker_.GetAccounts();
+  std::vector<std::string> gaia_ids;
+
+  if (switches::IsExtensionsMultiAccount()) {
+    for (std::vector<AccountIds>::const_iterator it = ids.begin();
+         it != ids.end();
+         ++it) {
+      gaia_ids.push_back(it->gaia);
+    }
+  } else if (ids.size() >= 1) {
+    gaia_ids.push_back(ids[0].gaia);
+  }
+
+  return gaia_ids;
+}
+
+std::string IdentityAPI::FindAccountKeyByGaiaId(const std::string& gaia_id) {
+  return account_tracker_.FindAccountKeyByGaiaId(gaia_id);
+}
+
+void IdentityAPI::ReportAuthError(const GoogleServiceAuthError& error) {
+  account_tracker_.ReportAuthError(GetPrimaryAccountId(browser_context_),
+                                   error);
+}
+
+GoogleServiceAuthError IdentityAPI::GetAuthStatusForTest() const {
+  return account_tracker_.GetAuthStatus();
+}
+
+void IdentityAPI::Shutdown() {
+  FOR_EACH_OBSERVER(ShutdownObserver, shutdown_observer_list_, OnShutdown());
+  account_tracker_.RemoveObserver(this);
+  account_tracker_.Shutdown();
+}
+
+static base::LazyInstance<BrowserContextKeyedAPIFactory<IdentityAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<IdentityAPI>* IdentityAPI::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
+
+void IdentityAPI::OnAccountAdded(const AccountIds& ids) {}
+
+void IdentityAPI::OnAccountRemoved(const AccountIds& ids) {}
+
+void IdentityAPI::OnAccountSignInChanged(const AccountIds& ids,
+                                         bool is_signed_in) {
+  api::identity::AccountInfo account_info;
+  account_info.id = ids.gaia;
+
+  scoped_ptr<base::ListValue> args =
+      api::identity::OnSignInChanged::Create(account_info, is_signed_in);
+  scoped_ptr<Event> event(new Event(api::identity::OnSignInChanged::kEventName,
+                                    args.Pass(),
+                                    browser_context_));
+
+  EventRouter::Get(browser_context_)->BroadcastEvent(event.Pass());
+}
+
+void IdentityAPI::AddShutdownObserver(ShutdownObserver* observer) {
+  shutdown_observer_list_.AddObserver(observer);
+}
+
+void IdentityAPI::RemoveShutdownObserver(ShutdownObserver* observer) {
+  shutdown_observer_list_.RemoveObserver(observer);
+}
+
+void IdentityAPI::SetAccountStateForTest(AccountIds ids, bool is_signed_in) {
+  account_tracker_.SetAccountStateForTest(ids, is_signed_in);
+}
+
+template <>
+void BrowserContextKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies() {
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
+  DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
+}
+
+IdentityGetAccountsFunction::IdentityGetAccountsFunction() {
+}
+
+IdentityGetAccountsFunction::~IdentityGetAccountsFunction() {
+}
+
+ExtensionFunction::ResponseAction IdentityGetAccountsFunction::Run() {
+  if (GetProfile()->IsOffTheRecord()) {
+    return RespondNow(Error(identity_constants::kOffTheRecord));
+  }
+
+  std::vector<std::string> gaia_ids =
+      IdentityAPI::GetFactoryInstance()->Get(GetProfile())->GetAccounts();
+  DCHECK(gaia_ids.size() < 2 || switches::IsExtensionsMultiAccount());
+
+  base::ListValue* infos = new base::ListValue();
+
+  for (std::vector<std::string>::const_iterator it = gaia_ids.begin();
+       it != gaia_ids.end();
+       ++it) {
+    api::identity::AccountInfo account_info;
+    account_info.id = *it;
+    infos->Append(account_info.ToValue().release());
+  }
+
+  return RespondNow(OneArgument(infos));
+}
 
 IdentityGetAuthTokenFunction::IdentityGetAuthTokenFunction()
     : OAuth2TokenService::Consumer("extensions_identity_api"),
@@ -82,7 +286,7 @@ IdentityGetAuthTokenFunction::IdentityGetAuthTokenFunction()
 
 IdentityGetAuthTokenFunction::~IdentityGetAuthTokenFunction() {}
 
-bool IdentityGetAuthTokenFunction::RunImpl() {
+bool IdentityGetAuthTokenFunction::RunAsync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = identity_constants::kOffTheRecord;
     return false;
@@ -107,18 +311,45 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
     return false;
   }
 
-  if (oauth2_info.scopes.size() == 0) {
+  std::set<std::string> scopes(oauth2_info.scopes.begin(),
+                               oauth2_info.scopes.end());
+
+  std::string account_key = GetPrimaryAccountId(GetProfile());
+
+  if (params->details.get()) {
+    if (params->details->account.get()) {
+      std::string detail_key =
+          extensions::IdentityAPI::GetFactoryInstance()
+              ->Get(GetProfile())
+              ->FindAccountKeyByGaiaId(params->details->account->id);
+
+      if (detail_key != account_key) {
+        if (detail_key.empty() || !switches::IsExtensionsMultiAccount()) {
+          // TODO(courage): should this be a different error?
+          error_ = identity_constants::kUserNotSignedIn;
+          return false;
+        }
+
+        account_key = detail_key;
+      }
+    }
+
+    if (params->details->scopes.get()) {
+      scopes = std::set<std::string>(params->details->scopes->begin(),
+                                     params->details->scopes->end());
+    }
+  }
+
+  if (scopes.size() == 0) {
     error_ = identity_constants::kInvalidScopes;
     return false;
   }
 
-  std::set<std::string> scopes(oauth2_info.scopes.begin(),
-                               oauth2_info.scopes.end());
-  token_key_.reset(new ExtensionTokenKey(
-      GetExtension()->id(), GetPrimaryAccountId(GetProfile()), scopes));
+  token_key_.reset(
+      new ExtensionTokenKey(GetExtension()->id(), account_key, scopes));
 
-  // Balanced in CompleteFunctionWithResult|CompleteFunctionWithError
-  AddRef();
+  // From here on out, results must be returned asynchronously.
+  StartAsyncRun();
 
 #if defined(OS_CHROMEOS)
   policy::BrowserPolicyConnectorChromeOS* connector =
@@ -132,9 +363,8 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
 
   if (!HasLoginToken()) {
     if (!should_prompt_for_signin_) {
-      error_ = identity_constants::kUserNotSignedIn;
-      Release();
-      return false;
+      CompleteFunctionWithError(identity_constants::kUserNotSignedIn);
+      return true;
     }
     // Display a login prompt.
     StartSigninFlow();
@@ -145,25 +375,40 @@ bool IdentityGetAuthTokenFunction::RunImpl() {
   return true;
 }
 
+void IdentityGetAuthTokenFunction::StartAsyncRun() {
+  // Balanced in CompleteAsyncRun
+  AddRef();
+  extensions::IdentityAPI::GetFactoryInstance()
+      ->Get(GetProfile())
+      ->AddShutdownObserver(this);
+}
+
+void IdentityGetAuthTokenFunction::CompleteAsyncRun(bool success) {
+  extensions::IdentityAPI::GetFactoryInstance()
+      ->Get(GetProfile())
+      ->RemoveShutdownObserver(this);
+
+  SendResponse(success);
+  Release();  // Balanced in StartAsyncRun
+}
+
 void IdentityGetAuthTokenFunction::CompleteFunctionWithResult(
     const std::string& access_token) {
+
   SetResult(new base::StringValue(access_token));
-  SendResponse(true);
-  Release();  // Balanced in RunImpl.
+  CompleteAsyncRun(true);
 }
 
 void IdentityGetAuthTokenFunction::CompleteFunctionWithError(
     const std::string& error) {
   error_ = error;
-  SendResponse(false);
-  Release();  // Balanced in RunImpl.
+  CompleteAsyncRun(false);
 }
 
 void IdentityGetAuthTokenFunction::StartSigninFlow() {
   // All cached tokens are invalid because the user is not signed in.
   IdentityAPI* id_api =
-      extensions::IdentityAPI::GetFactoryInstance()->GetForProfile(
-          GetProfile());
+      extensions::IdentityAPI::GetFactoryInstance()->Get(GetProfile());
   id_api->EraseAllCachedTokens();
   // Display a login prompt. If the subsequent mint fails, don't display the
   // login prompt again.
@@ -178,8 +423,7 @@ void IdentityGetAuthTokenFunction::StartMintTokenFlow(
   // Flows are serialized to prevent excessive traffic to GAIA, and
   // to consolidate UI pop-ups.
   IdentityAPI* id_api =
-      extensions::IdentityAPI::GetFactoryInstance()->GetForProfile(
-          GetProfile());
+      extensions::IdentityAPI::GetFactoryInstance()->Get(GetProfile());
 
   if (!should_prompt_for_scopes_) {
     // Caller requested no interaction.
@@ -202,12 +446,8 @@ void IdentityGetAuthTokenFunction::StartMintTokenFlow(
 void IdentityGetAuthTokenFunction::CompleteMintTokenFlow() {
   IdentityMintRequestQueue::MintType type = mint_token_flow_type_;
 
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
-  std::set<std::string> scopes(oauth2_info.scopes.begin(),
-                               oauth2_info.scopes.end());
-
   extensions::IdentityAPI::GetFactoryInstance()
-      ->GetForProfile(GetProfile())
+      ->Get(GetProfile())
       ->mint_queue()
       ->RequestComplete(type, *token_key_, this);
 }
@@ -215,8 +455,7 @@ void IdentityGetAuthTokenFunction::CompleteMintTokenFlow() {
 void IdentityGetAuthTokenFunction::StartMintToken(
     IdentityMintRequestQueue::MintType type) {
   const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
-  IdentityAPI* id_api =
-      IdentityAPI::GetFactoryInstance()->GetForProfile(GetProfile());
+  IdentityAPI* id_api = IdentityAPI::GetFactoryInstance()->Get(GetProfile());
   IdentityTokenCacheValue cache_entry = id_api->GetCachedToken(*token_key_);
   IdentityTokenCacheValue::CacheValueStatus cache_status =
       cache_entry.status();
@@ -278,9 +517,8 @@ void IdentityGetAuthTokenFunction::OnMintTokenSuccess(
     const std::string& access_token, int time_to_live) {
   IdentityTokenCacheValue token(access_token,
                                 base::TimeDelta::FromSeconds(time_to_live));
-  IdentityAPI::GetFactoryInstance()
-      ->GetForProfile(GetProfile())
-      ->SetCachedToken(*token_key_, token);
+  IdentityAPI::GetFactoryInstance()->Get(GetProfile())->SetCachedToken(
+      *token_key_, token);
 
   CompleteMintTokenFlow();
   CompleteFunctionWithResult(access_token);
@@ -292,11 +530,10 @@ void IdentityGetAuthTokenFunction::OnMintTokenFailure(
 
   switch (error.state()) {
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
-    case GoogleServiceAuthError::SERVICE_ERROR:
     case GoogleServiceAuthError::ACCOUNT_DELETED:
     case GoogleServiceAuthError::ACCOUNT_DISABLED:
       extensions::IdentityAPI::GetFactoryInstance()
-          ->GetForProfile(GetProfile())
+          ->Get(GetProfile())
           ->ReportAuthError(error);
       if (should_prompt_for_signin_) {
         // Display a login prompt and try again (once).
@@ -315,10 +552,8 @@ void IdentityGetAuthTokenFunction::OnMintTokenFailure(
 
 void IdentityGetAuthTokenFunction::OnIssueAdviceSuccess(
     const IssueAdviceInfo& issue_advice) {
-  IdentityAPI::GetFactoryInstance()
-      ->GetForProfile(GetProfile())
-      ->SetCachedToken(*token_key_,
-                       IdentityTokenCacheValue(issue_advice));
+  IdentityAPI::GetFactoryInstance()->Get(GetProfile())->SetCachedToken(
+      *token_key_, IdentityTokenCacheValue(issue_advice));
   CompleteMintTokenFlow();
 
   should_prompt_for_signin_ = false;
@@ -382,9 +617,8 @@ void IdentityGetAuthTokenFunction::OnGaiaFlowCompleted(
   if (!expiration.empty() && base::StringToInt(expiration, &time_to_live)) {
     IdentityTokenCacheValue token_value(
         access_token, base::TimeDelta::FromSeconds(time_to_live));
-    IdentityAPI::GetFactoryInstance()
-        ->GetForProfile(GetProfile())
-        ->SetCachedToken(*token_key_, token_value);
+    IdentityAPI::GetFactoryInstance()->Get(GetProfile())->SetCachedToken(
+        *token_key_, token_value);
   }
 
   CompleteMintTokenFlow();
@@ -406,19 +640,21 @@ void IdentityGetAuthTokenFunction::OnGetTokenFailure(
   OnGaiaFlowFailure(GaiaWebAuthFlow::SERVICE_AUTH_ERROR, error, std::string());
 }
 
-#if defined(OS_CHROMEOS)
-void IdentityGetAuthTokenFunction::StartDeviceLoginAccessTokenRequest() {
-  chromeos::DeviceOAuth2TokenServiceFactory::Get(
-      base::Bind(&IdentityGetAuthTokenFunction::DidGetTokenService,
-                 this));
+void IdentityGetAuthTokenFunction::OnShutdown() {
+  gaia_web_auth_flow_.reset();
+  signin_flow_.reset();
+  login_token_request_.reset();
+  extensions::IdentityAPI::GetFactoryInstance()
+      ->Get(GetProfile())
+      ->mint_queue()
+      ->RequestCancel(*token_key_, this);
+  CompleteFunctionWithError(identity_constants::kCanceled);
 }
 
-void IdentityGetAuthTokenFunction::DidGetTokenService(
-    chromeos::DeviceOAuth2TokenService* service) {
-  if (!service) {
-    CompleteFunctionWithError(identity_constants::kUserNotSignedIn);
-    return;
-  }
+#if defined(OS_CHROMEOS)
+void IdentityGetAuthTokenFunction::StartDeviceLoginAccessTokenRequest() {
+  chromeos::DeviceOAuth2TokenService* service =
+      chromeos::DeviceOAuth2TokenServiceFactory::Get();
   // Since robot account refresh tokens are scoped down to [any-api] only,
   // request access token for [any-api] instead of login.
   OAuth2TokenService::ScopeSet scopes;
@@ -433,7 +669,6 @@ void IdentityGetAuthTokenFunction::DidGetTokenService(
 void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
   ProfileOAuth2TokenService* service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
-  const std::string primary_account_id = GetPrimaryAccountId(GetProfile());
 #if defined(OS_CHROMEOS)
   if (chrome::IsRunningInForcedAppMode()) {
     std::string app_client_id;
@@ -441,7 +676,7 @@ void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
     if (chromeos::UserManager::Get()->GetAppModeChromeClientOAuthInfo(
            &app_client_id, &app_client_secret)) {
       login_token_request_ =
-          service->StartRequestForClient(primary_account_id,
+          service->StartRequestForClient(token_key_->account_id,
                                          app_client_id,
                                          app_client_secret,
                                          OAuth2TokenService::ScopeSet(),
@@ -451,7 +686,7 @@ void IdentityGetAuthTokenFunction::StartLoginAccessTokenRequest() {
   }
 #endif
   login_token_request_ = service->StartRequest(
-      primary_account_id, OAuth2TokenService::ScopeSet(), this);
+      token_key_->account_id, OAuth2TokenService::ScopeSet(), this);
 }
 
 void IdentityGetAuthTokenFunction::StartGaiaRequest(
@@ -468,35 +703,33 @@ void IdentityGetAuthTokenFunction::ShowLoginPopup() {
 
 void IdentityGetAuthTokenFunction::ShowOAuthApprovalDialog(
     const IssueAdviceInfo& issue_advice) {
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
   const std::string locale = g_browser_process->local_state()->GetString(
       prefs::kApplicationLocale);
 
   gaia_web_auth_flow_.reset(new GaiaWebAuthFlow(
-      this, GetProfile(), GetExtension()->id(), oauth2_info, locale));
+      this, GetProfile(), token_key_.get(), oauth2_client_id_, locale));
   gaia_web_auth_flow_->Start();
 }
 
 OAuth2MintTokenFlow* IdentityGetAuthTokenFunction::CreateMintTokenFlow(
     const std::string& login_access_token) {
-  const OAuth2Info& oauth2_info = OAuth2Info::GetOAuth2Info(GetExtension());
-
   OAuth2MintTokenFlow* mint_token_flow = new OAuth2MintTokenFlow(
       GetProfile()->GetRequestContext(),
       this,
-      OAuth2MintTokenFlow::Parameters(login_access_token,
-                                      GetExtension()->id(),
-                                      oauth2_client_id_,
-                                      oauth2_info.scopes,
-                                      gaia_mint_token_mode_));
+      OAuth2MintTokenFlow::Parameters(
+          login_access_token,
+          GetExtension()->id(),
+          oauth2_client_id_,
+          std::vector<std::string>(token_key_->scopes.begin(),
+                                   token_key_->scopes.end()),
+          gaia_mint_token_mode_));
   return mint_token_flow;
 }
 
 bool IdentityGetAuthTokenFunction::HasLoginToken() const {
   ProfileOAuth2TokenService* token_service =
       ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile());
-  return token_service->RefreshTokenIsAvailable(
-      GetPrimaryAccountId(GetProfile()));
+  return token_service->RefreshTokenIsAvailable(token_key_->account_id);
 }
 
 std::string IdentityGetAuthTokenFunction::MapOAuth2ErrorToDescription(
@@ -525,6 +758,29 @@ std::string IdentityGetAuthTokenFunction::GetOAuth2ClientId() const {
   return client_id;
 }
 
+IdentityGetProfileUserInfoFunction::IdentityGetProfileUserInfoFunction() {
+}
+
+IdentityGetProfileUserInfoFunction::~IdentityGetProfileUserInfoFunction() {
+}
+
+ExtensionFunction::ResponseAction IdentityGetProfileUserInfoFunction::Run() {
+  if (GetProfile()->IsOffTheRecord()) {
+    return RespondNow(Error(identity_constants::kOffTheRecord));
+  }
+
+  api::identity::ProfileUserInfo profile_user_info;
+  if (GetExtension()->permissions_data()->HasAPIPermission(
+          APIPermission::kIdentityEmail)) {
+    profile_user_info.email =
+        GetProfile()->GetPrefs()->GetString(prefs::kGoogleServicesUsername);
+  }
+  profile_user_info.id =
+      GetProfile()->GetPrefs()->GetString(prefs::kGoogleServicesUserAccountId);
+
+  return RespondNow(OneArgument(profile_user_info.ToValue().release()));
+}
+
 IdentityRemoveCachedAuthTokenFunction::IdentityRemoveCachedAuthTokenFunction() {
 }
 
@@ -532,7 +788,7 @@ IdentityRemoveCachedAuthTokenFunction::
     ~IdentityRemoveCachedAuthTokenFunction() {
 }
 
-bool IdentityRemoveCachedAuthTokenFunction::RunImpl() {
+bool IdentityRemoveCachedAuthTokenFunction::RunSync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = identity_constants::kOffTheRecord;
     return false;
@@ -541,9 +797,8 @@ bool IdentityRemoveCachedAuthTokenFunction::RunImpl() {
   scoped_ptr<identity::RemoveCachedAuthToken::Params> params(
       identity::RemoveCachedAuthToken::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
-  IdentityAPI::GetFactoryInstance()
-      ->GetForProfile(GetProfile())
-      ->EraseCachedToken(GetExtension()->id(), params->details.token);
+  IdentityAPI::GetFactoryInstance()->Get(GetProfile())->EraseCachedToken(
+      GetExtension()->id(), params->details.token);
   return true;
 }
 
@@ -554,7 +809,7 @@ IdentityLaunchWebAuthFlowFunction::~IdentityLaunchWebAuthFlowFunction() {
     auth_flow_.release()->DetachDelegateAndDelete();
 }
 
-bool IdentityLaunchWebAuthFlowFunction::RunImpl() {
+bool IdentityLaunchWebAuthFlowFunction::RunAsync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = identity_constants::kOffTheRecord;
     return false;
@@ -611,7 +866,7 @@ void IdentityLaunchWebAuthFlowFunction::OnAuthFlowFailure(
       break;
   }
   SendResponse(false);
-  Release();  // Balanced in RunImpl.
+  Release();  // Balanced in RunAsync.
 }
 
 void IdentityLaunchWebAuthFlowFunction::OnAuthFlowURLChange(
@@ -619,149 +874,8 @@ void IdentityLaunchWebAuthFlowFunction::OnAuthFlowURLChange(
   if (redirect_url.GetWithEmptyPath() == final_url_prefix_) {
     SetResult(new base::StringValue(redirect_url.spec()));
     SendResponse(true);
-    Release();  // Balanced in RunImpl.
+    Release();  // Balanced in RunAsync.
   }
-}
-
-IdentityTokenCacheValue::IdentityTokenCacheValue()
-    : status_(CACHE_STATUS_NOTFOUND) {
-}
-
-IdentityTokenCacheValue::IdentityTokenCacheValue(
-    const IssueAdviceInfo& issue_advice) : status_(CACHE_STATUS_ADVICE),
-                                           issue_advice_(issue_advice) {
-  expiration_time_ = base::Time::Now() + base::TimeDelta::FromSeconds(
-      identity_constants::kCachedIssueAdviceTTLSeconds);
-}
-
-IdentityTokenCacheValue::IdentityTokenCacheValue(
-    const std::string& token, base::TimeDelta time_to_live)
-    : status_(CACHE_STATUS_TOKEN),
-      token_(token) {
-  // Remove 20 minutes from the ttl so cached tokens will have some time
-  // to live any time they are returned.
-  time_to_live -= base::TimeDelta::FromMinutes(20);
-
-  base::TimeDelta zero_delta;
-  if (time_to_live < zero_delta)
-    time_to_live = zero_delta;
-
-  expiration_time_ = base::Time::Now() + time_to_live;
-}
-
-IdentityTokenCacheValue::~IdentityTokenCacheValue() {
-}
-
-IdentityTokenCacheValue::CacheValueStatus
-    IdentityTokenCacheValue::status() const {
-  if (is_expired())
-    return IdentityTokenCacheValue::CACHE_STATUS_NOTFOUND;
-  else
-    return status_;
-}
-
-const IssueAdviceInfo& IdentityTokenCacheValue::issue_advice() const {
-  return issue_advice_;
-}
-
-const std::string& IdentityTokenCacheValue::token() const {
-  return token_;
-}
-
-bool IdentityTokenCacheValue::is_expired() const {
-  return status_ == CACHE_STATUS_NOTFOUND ||
-      expiration_time_ < base::Time::Now();
-}
-
-const base::Time& IdentityTokenCacheValue::expiration_time() const {
-  return expiration_time_;
-}
-
-IdentityAPI::IdentityAPI(Profile* profile)
-    : profile_(profile),
-      account_tracker_(profile) {
-  account_tracker_.AddObserver(this);
-}
-
-IdentityAPI::~IdentityAPI() {}
-
-IdentityMintRequestQueue* IdentityAPI::mint_queue() {
-    return &mint_queue_;
-}
-
-void IdentityAPI::SetCachedToken(const ExtensionTokenKey& key,
-                                 const IdentityTokenCacheValue& token_data) {
-  CachedTokens::iterator it = token_cache_.find(key);
-  if (it != token_cache_.end() && it->second.status() <= token_data.status())
-    token_cache_.erase(it);
-
-  token_cache_.insert(std::make_pair(key, token_data));
-}
-
-void IdentityAPI::EraseCachedToken(const std::string& extension_id,
-                                   const std::string& token) {
-  CachedTokens::iterator it;
-  for (it = token_cache_.begin(); it != token_cache_.end(); ++it) {
-    if (it->first.extension_id == extension_id &&
-        it->second.status() == IdentityTokenCacheValue::CACHE_STATUS_TOKEN &&
-        it->second.token() == token) {
-      token_cache_.erase(it);
-      break;
-    }
-  }
-}
-
-void IdentityAPI::EraseAllCachedTokens() {
-  token_cache_.clear();
-}
-
-const IdentityTokenCacheValue& IdentityAPI::GetCachedToken(
-    const ExtensionTokenKey& key) {
-  return token_cache_[key];
-}
-
-const IdentityAPI::CachedTokens& IdentityAPI::GetAllCachedTokens() {
-  return token_cache_;
-}
-
-void IdentityAPI::ReportAuthError(const GoogleServiceAuthError& error) {
-  account_tracker_.ReportAuthError(GetPrimaryAccountId(profile_), error);
-}
-
-void IdentityAPI::Shutdown() {
-  account_tracker_.RemoveObserver(this);
-  account_tracker_.Shutdown();
-}
-
-static base::LazyInstance<ProfileKeyedAPIFactory<IdentityAPI> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
-
-// static
-ProfileKeyedAPIFactory<IdentityAPI>* IdentityAPI::GetFactoryInstance() {
-  return g_factory.Pointer();
-}
-
-void IdentityAPI::OnAccountAdded(const AccountIds& ids) {}
-
-void IdentityAPI::OnAccountRemoved(const AccountIds& ids) {}
-
-void IdentityAPI::OnAccountSignInChanged(const AccountIds& ids,
-                                         bool is_signed_in) {
-  api::identity::AccountInfo account_info;
-  account_info.id = ids.gaia;
-
-  scoped_ptr<base::ListValue> args =
-      api::identity::OnSignInChanged::Create(account_info, is_signed_in);
-  scoped_ptr<Event> event(new Event(
-      api::identity::OnSignInChanged::kEventName, args.Pass(), profile_));
-
-  ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(event.Pass());
-}
-
-template <>
-void ProfileKeyedAPIFactory<IdentityAPI>::DeclareFactoryDependencies() {
-  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
-  DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
 }
 
 }  // namespace extensions

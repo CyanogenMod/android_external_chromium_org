@@ -11,7 +11,8 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/tabs/tabs_api.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/ui/apps/chrome_shell_window_delegate.h"
+#include "chrome/browser/extensions/extension_test_message_listener.h"
+#include "chrome/browser/ui/apps/chrome_app_window_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "content/public/browser/notification_service.h"
@@ -23,12 +24,18 @@ using apps::AppWindow;
 using apps::AppWindowRegistry;
 using content::WebContents;
 
+namespace {
+
+const char kAppWindowTestApp[] = "app_window/generic";
+
+}  // namespace
+
 namespace utils = extension_function_test_utils;
 
 namespace extensions {
 
 PlatformAppBrowserTest::PlatformAppBrowserTest() {
-  ChromeShellWindowDelegate::DisableExternalOpenForTesting();
+  ChromeAppWindowDelegate::DisableExternalOpenForTesting();
 }
 
 void PlatformAppBrowserTest::SetUpCommandLine(CommandLine* command_line) {
@@ -55,18 +62,27 @@ AppWindow* PlatformAppBrowserTest::GetFirstAppWindowForBrowser(
 }
 
 const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
-    const char* name) {
-  content::WindowedNotificationObserver app_loaded_observer(
-      content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
-      content::NotificationService::AllSources());
-
+    const char* name,
+    ExtensionTestMessageListener* listener) {
+  DCHECK(listener);
   const Extension* extension = LoadExtension(
       test_data_dir_.AppendASCII("platform_apps").AppendASCII(name));
   EXPECT_TRUE(extension);
 
   LaunchPlatformApp(extension);
 
-  app_loaded_observer.Wait();
+  EXPECT_TRUE(listener->WaitUntilSatisfied()) << "'" << listener->message()
+                                              << "' message was not receieved";
+
+  return extension;
+}
+
+const Extension* PlatformAppBrowserTest::LoadAndLaunchPlatformApp(
+    const char* name,
+    const std::string& message) {
+  ExtensionTestMessageListener launched_listener(message, false);
+  const Extension* extension =
+      LoadAndLaunchPlatformApp(name, &launched_listener);
 
   return extension;
 }
@@ -186,7 +202,7 @@ AppWindow* PlatformAppBrowserTest::CreateAppWindowFromParams(
     const Extension* extension,
     const AppWindow::CreateParams& params) {
   AppWindow* window = new AppWindow(
-      browser()->profile(), new ChromeShellWindowDelegate(), extension);
+      browser()->profile(), new ChromeAppWindowDelegate(), extension);
   window->Init(
       GURL(std::string()), new apps::AppWindowContentsImpl(window), params);
   return window;
@@ -211,6 +227,28 @@ void PlatformAppBrowserTest::CallAdjustBoundsToBeVisibleOnScreenForAppWindow(
                                           current_screen_bounds,
                                           minimum_size,
                                           bounds);
+}
+
+apps::AppWindow* PlatformAppBrowserTest::CreateTestAppWindow(
+    const std::string& window_create_options) {
+  ExtensionTestMessageListener launched_listener("launched", true);
+  ExtensionTestMessageListener loaded_listener("window_loaded", false);
+
+  // Load and launch the test app.
+  const Extension* extension =
+      LoadAndLaunchPlatformApp(kAppWindowTestApp, &launched_listener);
+  EXPECT_TRUE(extension);
+  EXPECT_TRUE(launched_listener.WaitUntilSatisfied());
+
+  // Send the options for window creation.
+  launched_listener.Reply(window_create_options);
+
+  // Wait for the window to be opened and loaded.
+  EXPECT_TRUE(loaded_listener.WaitUntilSatisfied());
+
+  EXPECT_EQ(1U, GetAppWindowCount());
+  AppWindow* app_window = GetFirstAppWindow();
+  return app_window;
 }
 
 void ExperimentalPlatformAppBrowserTest::SetUpCommandLine(

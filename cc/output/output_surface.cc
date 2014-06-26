@@ -44,77 +44,32 @@ const double kGpuLatencyEstimationPercentile = 100.0;
 namespace cc {
 
 OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider)
-    : context_provider_(context_provider),
+    : client_(NULL),
+      context_provider_(context_provider),
       device_scale_factor_(-1),
-      max_frames_pending_(0),
-      pending_swap_buffers_(0),
-      needs_begin_impl_frame_(false),
-      client_ready_for_begin_impl_frame_(true),
-      client_(NULL),
-      check_for_retroactive_begin_impl_frame_pending_(false),
       external_stencil_test_enabled_(false),
       weak_ptr_factory_(this),
-      gpu_latency_history_(kGpuLatencyHistorySize) {}
+      gpu_latency_history_(kGpuLatencyHistorySize) {
+}
 
 OutputSurface::OutputSurface(scoped_ptr<SoftwareOutputDevice> software_device)
-    : software_device_(software_device.Pass()),
+    : client_(NULL),
+      software_device_(software_device.Pass()),
       device_scale_factor_(-1),
-      max_frames_pending_(0),
-      pending_swap_buffers_(0),
-      needs_begin_impl_frame_(false),
-      client_ready_for_begin_impl_frame_(true),
-      client_(NULL),
-      check_for_retroactive_begin_impl_frame_pending_(false),
       external_stencil_test_enabled_(false),
       weak_ptr_factory_(this),
-      gpu_latency_history_(kGpuLatencyHistorySize) {}
+      gpu_latency_history_(kGpuLatencyHistorySize) {
+}
 
 OutputSurface::OutputSurface(scoped_refptr<ContextProvider> context_provider,
                              scoped_ptr<SoftwareOutputDevice> software_device)
-    : context_provider_(context_provider),
+    : client_(NULL),
+      context_provider_(context_provider),
       software_device_(software_device.Pass()),
       device_scale_factor_(-1),
-      max_frames_pending_(0),
-      pending_swap_buffers_(0),
-      needs_begin_impl_frame_(false),
-      client_ready_for_begin_impl_frame_(true),
-      client_(NULL),
-      check_for_retroactive_begin_impl_frame_pending_(false),
       external_stencil_test_enabled_(false),
       weak_ptr_factory_(this),
-      gpu_latency_history_(kGpuLatencyHistorySize) {}
-
-void OutputSurface::InitializeBeginImplFrameEmulation(
-    base::SingleThreadTaskRunner* task_runner,
-    bool throttle_frame_production,
-    base::TimeDelta interval) {
-  if (throttle_frame_production) {
-    scoped_refptr<DelayBasedTimeSource> time_source;
-    if (gfx::FrameTime::TimestampsAreHighRes())
-      time_source = DelayBasedTimeSourceHighRes::Create(interval, task_runner);
-    else
-      time_source = DelayBasedTimeSource::Create(interval, task_runner);
-    frame_rate_controller_.reset(new FrameRateController(time_source));
-  } else {
-    frame_rate_controller_.reset(new FrameRateController(task_runner));
-  }
-
-  frame_rate_controller_->SetClient(this);
-  frame_rate_controller_->SetMaxSwapsPending(max_frames_pending_);
-  frame_rate_controller_->SetDeadlineAdjustment(
-      capabilities_.adjust_deadline_for_parent ?
-          BeginFrameArgs::DefaultDeadlineAdjustment() : base::TimeDelta());
-
-  // The new frame rate controller will consume the swap acks of the old
-  // frame rate controller, so we set that expectation up here.
-  for (int i = 0; i < pending_swap_buffers_; i++)
-    frame_rate_controller_->DidSwapBuffers();
-}
-
-void OutputSurface::SetMaxFramesPending(int max_frames_pending) {
-  if (frame_rate_controller_)
-    frame_rate_controller_->SetMaxSwapsPending(max_frames_pending);
-  max_frames_pending_ = max_frames_pending;
+      gpu_latency_history_(kGpuLatencyHistorySize) {
 }
 
 void OutputSurface::CommitVSyncParameters(base::TimeTicks timebase,
@@ -125,17 +80,7 @@ void OutputSurface::CommitVSyncParameters(base::TimeTicks timebase,
                (timebase - base::TimeTicks()).InSecondsF(),
                "interval",
                interval.InSecondsF());
-  if (frame_rate_controller_)
-    frame_rate_controller_->SetTimebaseAndInterval(timebase, interval);
-}
-
-void OutputSurface::FrameRateControllerTick(bool throttled,
-                                            const BeginFrameArgs& args) {
-  DCHECK(frame_rate_controller_);
-  if (throttled)
-    skipped_begin_impl_frame_args_ = args;
-  else
-    BeginImplFrame(args);
+  client_->CommitVSyncParameters(timebase, interval);
 }
 
 // Forwarded to OutputSurfaceClient
@@ -144,97 +89,12 @@ void OutputSurface::SetNeedsRedrawRect(const gfx::Rect& damage_rect) {
   client_->SetNeedsRedrawRect(damage_rect);
 }
 
-void OutputSurface::SetNeedsBeginImplFrame(bool enable) {
-  TRACE_EVENT1("cc", "OutputSurface::SetNeedsBeginImplFrame", "enable", enable);
-  needs_begin_impl_frame_ = enable;
-  client_ready_for_begin_impl_frame_ = true;
-  if (frame_rate_controller_) {
-    BeginFrameArgs skipped = frame_rate_controller_->SetActive(enable);
-    if (skipped.IsValid())
-      skipped_begin_impl_frame_args_ = skipped;
-  }
-  if (needs_begin_impl_frame_)
-    PostCheckForRetroactiveBeginImplFrame();
-}
-
-void OutputSurface::BeginImplFrame(const BeginFrameArgs& args) {
-  TRACE_EVENT2("cc", "OutputSurface::BeginImplFrame",
-               "client_ready_for_begin_impl_frame_",
-               client_ready_for_begin_impl_frame_,
-               "pending_swap_buffers_", pending_swap_buffers_);
-  if (!needs_begin_impl_frame_ || !client_ready_for_begin_impl_frame_ ||
-      (pending_swap_buffers_ >= max_frames_pending_ &&
-       max_frames_pending_ > 0)) {
-    skipped_begin_impl_frame_args_ = args;
-  } else {
-    client_ready_for_begin_impl_frame_ = false;
-    client_->BeginImplFrame(args);
-    // args might be an alias for skipped_begin_impl_frame_args_.
-    // Do not reset it before calling BeginImplFrame!
-    skipped_begin_impl_frame_args_ = BeginFrameArgs();
-  }
-}
-
-base::TimeTicks OutputSurface::RetroactiveBeginImplFrameDeadline() {
-  // TODO(brianderson): Remove the alternative deadline once we have better
-  // deadline estimations.
-  base::TimeTicks alternative_deadline =
-      skipped_begin_impl_frame_args_.frame_time +
-      BeginFrameArgs::DefaultRetroactiveBeginFramePeriod();
-  return std::max(skipped_begin_impl_frame_args_.deadline,
-                  alternative_deadline);
-}
-
-void OutputSurface::PostCheckForRetroactiveBeginImplFrame() {
-  if (!skipped_begin_impl_frame_args_.IsValid() ||
-      check_for_retroactive_begin_impl_frame_pending_)
-    return;
-
-  base::MessageLoop::current()->PostTask(
-     FROM_HERE,
-     base::Bind(&OutputSurface::CheckForRetroactiveBeginImplFrame,
-                weak_ptr_factory_.GetWeakPtr()));
-  check_for_retroactive_begin_impl_frame_pending_ = true;
-}
-
-void OutputSurface::CheckForRetroactiveBeginImplFrame() {
-  TRACE_EVENT0("cc", "OutputSurface::CheckForRetroactiveBeginImplFrame");
-  check_for_retroactive_begin_impl_frame_pending_ = false;
-  if (gfx::FrameTime::Now() < RetroactiveBeginImplFrameDeadline())
-    BeginImplFrame(skipped_begin_impl_frame_args_);
-}
-
-void OutputSurface::DidSwapBuffers() {
-  pending_swap_buffers_++;
-  TRACE_EVENT1("cc", "OutputSurface::DidSwapBuffers",
-               "pending_swap_buffers_", pending_swap_buffers_);
-  client_->DidSwapBuffers();
-  if (frame_rate_controller_)
-    frame_rate_controller_->DidSwapBuffers();
-  PostCheckForRetroactiveBeginImplFrame();
-}
-
-void OutputSurface::OnSwapBuffersComplete() {
-  pending_swap_buffers_--;
-  TRACE_EVENT1("cc", "OutputSurface::OnSwapBuffersComplete",
-               "pending_swap_buffers_", pending_swap_buffers_);
-  client_->OnSwapBuffersComplete();
-  if (frame_rate_controller_)
-    frame_rate_controller_->DidSwapBuffersComplete();
-  PostCheckForRetroactiveBeginImplFrame();
-}
-
 void OutputSurface::ReclaimResources(const CompositorFrameAck* ack) {
   client_->ReclaimResources(ack);
 }
 
 void OutputSurface::DidLoseOutputSurface() {
   TRACE_EVENT0("cc", "OutputSurface::DidLoseOutputSurface");
-  client_ready_for_begin_impl_frame_ = true;
-  pending_swap_buffers_ = 0;
-  skipped_begin_impl_frame_args_ = BeginFrameArgs();
-  if (frame_rate_controller_)
-    frame_rate_controller_->SetActive(false);
   pending_gpu_latency_query_ids_.clear();
   available_gpu_latency_query_ids_.clear();
   client_->DidLoseOutputSurface();
@@ -253,8 +113,6 @@ void OutputSurface::SetExternalDrawConstraints(const gfx::Transform& transform,
 }
 
 OutputSurface::~OutputSurface() {
-  if (frame_rate_controller_)
-    frame_rate_controller_->SetActive(false);
   ResetContext3d();
 }
 
@@ -282,8 +140,7 @@ bool OutputSurface::BindToClient(OutputSurfaceClient* client) {
 }
 
 bool OutputSurface::InitializeAndSetContext3d(
-    scoped_refptr<ContextProvider> context_provider,
-    scoped_refptr<ContextProvider> offscreen_context_provider) {
+    scoped_refptr<ContextProvider> context_provider) {
   DCHECK(!context_provider_);
   DCHECK(context_provider);
   DCHECK(client_);
@@ -292,8 +149,8 @@ bool OutputSurface::InitializeAndSetContext3d(
   if (context_provider->BindToCurrentThread()) {
     context_provider_ = context_provider;
     SetUpContext3d();
-    if (client_->DeferredInitialize(offscreen_context_provider))
-      success = true;
+    client_->DeferredInitialize();
+    success = true;
   }
 
   if (!success)
@@ -306,7 +163,7 @@ void OutputSurface::ReleaseGL() {
   DCHECK(client_);
   DCHECK(context_provider_);
   client_->ReleaseGL();
-  ResetContext3d();
+  DCHECK(!context_provider_);
 }
 
 void OutputSurface::SetUpContext3d() {
@@ -322,6 +179,12 @@ void OutputSurface::SetUpContext3d() {
   context_provider_->SetMemoryPolicyChangedCallback(
       base::Bind(&OutputSurface::SetMemoryPolicy,
                  base::Unretained(this)));
+}
+
+void OutputSurface::ReleaseContextProvider() {
+  DCHECK(client_);
+  DCHECK(context_provider_);
+  ResetContext3d();
 }
 
 void OutputSurface::ResetContext3d() {
@@ -369,7 +232,7 @@ void OutputSurface::Reshape(const gfx::Size& size, float scale_factor) {
         size.width(), size.height(), scale_factor);
   }
   if (software_device_)
-    software_device_->Resize(size);
+    software_device_->Resize(size, scale_factor);
 }
 
 gfx::Size OutputSurface::SurfaceSize() const {
@@ -384,7 +247,7 @@ void OutputSurface::BindFramebuffer() {
 void OutputSurface::SwapBuffers(CompositorFrame* frame) {
   if (frame->software_frame_data) {
     PostSwapBuffersComplete();
-    DidSwapBuffers();
+    client_->DidSwapBuffers();
     return;
   }
 
@@ -400,7 +263,7 @@ void OutputSurface::SwapBuffers(CompositorFrame* frame) {
         frame->gl_frame_data->sub_buffer_rect);
   }
 
-  DidSwapBuffers();
+  client_->DidSwapBuffers();
 }
 
 base::TimeDelta OutputSurface::GpuLatencyEstimate() {
@@ -411,8 +274,8 @@ base::TimeDelta OutputSurface::GpuLatencyEstimate() {
 }
 
 void OutputSurface::UpdateAndMeasureGpuLatency() {
-  return;  // http://crbug.com/306690  tracks re-enabling latency queries.
-
+  // http://crbug.com/306690  tracks re-enabling latency queries.
+#if 0
   // We only care about GPU latency for surfaces that do not have a parent
   // compositor, since surfaces that do have a parent compositor can use
   // mailboxes or delegated rendering to send frames to their parent without
@@ -473,6 +336,7 @@ void OutputSurface::UpdateAndMeasureGpuLatency() {
                                                 gpu_latency_query_id);
   context_provider_->ContextGL()->EndQueryEXT(GL_LATENCY_QUERY_CHROMIUM);
   pending_gpu_latency_query_ids_.push_back(gpu_latency_query_id);
+#endif
 }
 
 void OutputSurface::PostSwapBuffersComplete() {
@@ -480,6 +344,12 @@ void OutputSurface::PostSwapBuffersComplete() {
       FROM_HERE,
       base::Bind(&OutputSurface::OnSwapBuffersComplete,
                  weak_ptr_factory_.GetWeakPtr()));
+}
+
+// We don't post tasks bound to the client directly since they might run
+// after the OutputSurface has been destroyed.
+void OutputSurface::OnSwapBuffersComplete() {
+  client_->DidSwapBuffersComplete();
 }
 
 void OutputSurface::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {

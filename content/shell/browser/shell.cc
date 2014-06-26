@@ -18,7 +18,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/renderer_preferences.h"
 #include "content/shell/browser/notify_done_forwarder.h"
 #include "content/shell/browser/shell_browser_main_parts.h"
@@ -47,7 +46,7 @@ class Shell::DevToolsWebContentsObserver : public WebContentsObserver {
   }
 
   // WebContentsObserver
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
+  virtual void WebContentsDestroyed() OVERRIDE {
     shell_->OnDevToolsWebContentsDestroyed();
   }
 
@@ -176,7 +175,19 @@ void Shell::LoadURLForFrame(const GURL& url, const std::string& frame_name) {
       PAGE_TRANSITION_TYPED | PAGE_TRANSITION_FROM_ADDRESS_BAR);
   params.frame_name = frame_name;
   web_contents_->GetController().LoadURLWithParams(params);
-  web_contents_->GetView()->Focus();
+  web_contents_->Focus();
+}
+
+void Shell::LoadDataWithBaseURL(const GURL& url, const std::string& data,
+    const GURL& base_url) {
+  const GURL data_url = GURL("data:text/html;charset=utf-8," + data);
+  NavigationController::LoadURLParams params(data_url);
+  params.load_type = NavigationController::LOAD_TYPE_DATA;
+  params.base_url_for_data_url = base_url;
+  params.virtual_url_for_data_url = url;
+  params.override_user_agent = NavigationController::UA_OVERRIDE_FALSE;
+  web_contents_->GetController().LoadURLWithParams(params);
+  web_contents_->Focus();
 }
 
 void Shell::AddNewContents(WebContents* source,
@@ -192,39 +203,41 @@ void Shell::AddNewContents(WebContents* source,
 
 void Shell::GoBackOrForward(int offset) {
   web_contents_->GetController().GoToOffset(offset);
-  web_contents_->GetView()->Focus();
+  web_contents_->Focus();
 }
 
 void Shell::Reload() {
   web_contents_->GetController().Reload(false);
-  web_contents_->GetView()->Focus();
+  web_contents_->Focus();
 }
 
 void Shell::Stop() {
   web_contents_->Stop();
-  web_contents_->GetView()->Focus();
+  web_contents_->Focus();
 }
 
-void Shell::UpdateNavigationControls() {
+void Shell::UpdateNavigationControls(bool to_different_document) {
   int current_index = web_contents_->GetController().GetCurrentEntryIndex();
   int max_index = web_contents_->GetController().GetEntryCount() - 1;
 
   PlatformEnableUIControl(BACK_BUTTON, current_index > 0);
   PlatformEnableUIControl(FORWARD_BUTTON, current_index < max_index);
-  PlatformEnableUIControl(STOP_BUTTON, web_contents_->IsLoading());
+  PlatformEnableUIControl(STOP_BUTTON,
+      to_different_document && web_contents_->IsLoading());
 }
 
 void Shell::ShowDevTools() {
-  InnerShowDevTools("");
+  InnerShowDevTools("", "");
 }
 
 void Shell::ShowDevToolsForElementAt(int x, int y) {
-  InnerShowDevTools("");
+  InnerShowDevTools("", "");
   devtools_frontend_->InspectElementAt(x, y);
 }
 
-void Shell::ShowDevToolsForTest(const std::string& settings) {
-  InnerShowDevTools(settings);
+void Shell::ShowDevToolsForTest(const std::string& settings,
+                                const std::string& frontend_url) {
+  InnerShowDevTools(settings, frontend_url);
 }
 
 void Shell::CloseDevTools() {
@@ -238,7 +251,7 @@ void Shell::CloseDevTools() {
 gfx::NativeView Shell::GetContentView() {
   if (!web_contents_)
     return NULL;
-  return web_contents_->GetView()->GetNativeView();
+  return web_contents_->GetNativeView();
 }
 
 WebContents* Shell::OpenURLFromTab(WebContents* source,
@@ -266,8 +279,9 @@ WebContents* Shell::OpenURLFromTab(WebContents* source,
   return source;
 }
 
-void Shell::LoadingStateChanged(WebContents* source) {
-  UpdateNavigationControls();
+void Shell::LoadingStateChanged(WebContents* source,
+    bool to_different_document) {
+  UpdateNavigationControls(to_different_document);
   PlatformSetIsLoading(source->IsLoading());
 }
 
@@ -363,9 +377,11 @@ void Shell::TitleWasSet(NavigationEntry* entry, bool explicit_set) {
     PlatformSetTitle(entry->GetTitle());
 }
 
-void Shell::InnerShowDevTools(const std::string& settings) {
+void Shell::InnerShowDevTools(const std::string& settings,
+                              const std::string& frontend_url) {
   if (!devtools_frontend_) {
-    devtools_frontend_ = ShellDevToolsFrontend::Show(web_contents(), settings);
+    devtools_frontend_ = ShellDevToolsFrontend::Show(
+        web_contents(), settings, frontend_url);
     devtools_observer_.reset(new DevToolsWebContentsObserver(
         this, devtools_frontend_->frontend_shell()->web_contents()));
   }

@@ -7,10 +7,11 @@
 #include <iterator>
 
 #include "base/basictypes.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/extensions/app_sync_data.h"
-#include "chrome/browser/extensions/extension_error_ui.h"
+#include "chrome/browser/extensions/bookmark_app_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sync_data.h"
 #include "chrome/browser/extensions/extension_sync_service_factory.h"
@@ -18,21 +19,46 @@
 #include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/sync_start_util.h"
-#include "chrome/browser/sync/sync_prefs.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/common/extensions/sync_helper.h"
+#include "chrome/common/web_application_info.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "extensions/browser/app_sorting.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/feature_switch.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/sync_error_factory.h"
+#include "ui/gfx/image/image_family.h"
 
 using extensions::Extension;
 using extensions::ExtensionPrefs;
 using extensions::ExtensionRegistry;
 using extensions::FeatureSwitch;
+
+namespace {
+
+void OnWebApplicationInfoLoaded(
+    WebApplicationInfo synced_info,
+    base::WeakPtr<ExtensionService> extension_service,
+    const WebApplicationInfo& loaded_info) {
+  DCHECK_EQ(synced_info.app_url, loaded_info.app_url);
+
+  if (!extension_service)
+    return;
+
+  // Use the old icons if they exist.
+  synced_info.icons = loaded_info.icons;
+  CreateOrUpdateBookmarkApp(extension_service.get(), synced_info);
+}
+
+}  // namespace
 
 ExtensionSyncService::ExtensionSyncService(Profile* profile,
                                            ExtensionPrefs* extension_prefs,
@@ -42,16 +68,14 @@ ExtensionSyncService::ExtensionSyncService(Profile* profile,
       extension_service_(extension_service),
       app_sync_bundle_(this),
       extension_sync_bundle_(this),
-      pending_app_enables_(
-          make_scoped_ptr(new browser_sync::SyncPrefs(
-              extension_prefs_->pref_service())),
-          &app_sync_bundle_,
-          syncer::APPS),
-      pending_extension_enables_(
-          make_scoped_ptr(new browser_sync::SyncPrefs(
-              extension_prefs_->pref_service())),
-          &extension_sync_bundle_,
-          syncer::EXTENSIONS) {
+      pending_app_enables_(make_scoped_ptr(new sync_driver::SyncPrefs(
+                               extension_prefs_->pref_service())),
+                           &app_sync_bundle_,
+                           syncer::APPS),
+      pending_extension_enables_(make_scoped_ptr(new sync_driver::SyncPrefs(
+                                     extension_prefs_->pref_service())),
+                                 &extension_sync_bundle_,
+                                 syncer::EXTENSIONS) {
   SetSyncStartFlare(sync_start_util::GetFlareForSyncableService(
       profile_->GetPath()));
 
@@ -74,7 +98,7 @@ syncer::SyncChange ExtensionSyncService::PrepareToSyncUninstallExtension(
   // "back from the dead" style bugs, because sync will add-back the extension
   // that was uninstalled here when MergeDataAndStartSyncing is called.
   // See crbug.com/256795.
-  if (extensions::sync_helper::IsSyncableApp(extension)) {
+  if (extensions::util::ShouldSyncApp(extension, profile_)) {
     if (app_sync_bundle_.IsSyncing())
       return app_sync_bundle_.CreateSyncChangeToDelete(extension);
     else if (extensions_ready && !flare_.is_null())
@@ -105,10 +129,10 @@ void ExtensionSyncService::SyncEnableExtension(
     const extensions::Extension& extension) {
 
   // Syncing may not have started yet, so handle pending enables.
-  if (extensions::sync_helper::IsSyncableApp(&extension))
+  if (extensions::util::ShouldSyncApp(&extension, profile_))
     pending_app_enables_.OnExtensionEnabled(extension.id());
 
-  if (extensions::sync_helper::IsSyncableExtension(&extension))
+  if (extensions::util::ShouldSyncExtension(&extension, profile_))
     pending_extension_enables_.OnExtensionEnabled(extension.id());
 
   SyncExtensionChangeIfNeeded(extension);
@@ -118,10 +142,10 @@ void ExtensionSyncService::SyncDisableExtension(
     const extensions::Extension& extension) {
 
   // Syncing may not have started yet, so handle pending enables.
-  if (extensions::sync_helper::IsSyncableApp(&extension))
+  if (extensions::util::ShouldSyncApp(&extension, profile_))
     pending_app_enables_.OnExtensionDisabled(extension.id());
 
-  if (extensions::sync_helper::IsSyncableExtension(&extension))
+  if (extensions::util::ShouldSyncExtension(&extension, profile_))
     pending_extension_enables_.OnExtensionDisabled(extension.id());
 
   SyncExtensionChangeIfNeeded(extension);
@@ -231,7 +255,9 @@ extensions::ExtensionSyncData ExtensionSyncService::GetExtensionSyncData(
   return extensions::ExtensionSyncData(
       extension,
       extension_service_->IsExtensionEnabled(extension.id()),
-      extensions::util::IsIncognitoEnabled(extension.id(), profile_));
+      extensions::util::IsIncognitoEnabled(extension.id(), profile_),
+      extension_prefs_->HasDisableReason(extension.id(),
+                                         Extension::DISABLE_REMOTE_INSTALL));
 }
 
 extensions::AppSyncData ExtensionSyncService::GetAppSyncData(
@@ -240,6 +266,8 @@ extensions::AppSyncData ExtensionSyncService::GetAppSyncData(
       extension,
       extension_service_->IsExtensionEnabled(extension.id()),
       extensions::util::IsIncognitoEnabled(extension.id(), profile_),
+      extension_prefs_->HasDisableReason(extension.id(),
+                                         Extension::DISABLE_REMOTE_INSTALL),
       extension_prefs_->app_sorting()->GetAppLaunchOrdinal(extension.id()),
       extension_prefs_->app_sorting()->GetPageOrdinal(extension.id()),
       extensions::GetLaunchTypePrefValue(extension_prefs_, extension.id()));
@@ -320,6 +348,9 @@ bool ExtensionSyncService::ProcessAppSyncData(
                               app_sync_data.launch_type());
   }
 
+  if (!app_sync_data.bookmark_app_url().empty())
+    ProcessBookmarkAppSyncData(app_sync_data);
+
   if (!ProcessExtensionSyncDataHelper(app_sync_data.extension_sync_data(),
                                       syncer::APPS)) {
     app_sync_bundle_.AddPendingApp(id, app_sync_data);
@@ -328,6 +359,46 @@ bool ExtensionSyncService::ProcessAppSyncData(
   }
 
   return true;
+}
+
+void ExtensionSyncService::ProcessBookmarkAppSyncData(
+    const extensions::AppSyncData& app_sync_data) {
+  // Process bookmark app sync if necessary.
+  GURL bookmark_app_url(app_sync_data.bookmark_app_url());
+  if (!bookmark_app_url.is_valid() ||
+      app_sync_data.extension_sync_data().uninstalled()) {
+    return;
+  }
+
+  const extensions::Extension* extension =
+      extension_service_->GetInstalledExtension(
+          app_sync_data.extension_sync_data().id());
+
+  // Return if there are no bookmark app details that need updating.
+  if (extension && extension->non_localized_name() ==
+                       app_sync_data.extension_sync_data().name() &&
+      extension->description() == app_sync_data.bookmark_app_description()) {
+    return;
+  }
+
+  WebApplicationInfo web_app_info;
+  web_app_info.app_url = bookmark_app_url;
+  web_app_info.title =
+      base::UTF8ToUTF16(app_sync_data.extension_sync_data().name());
+  web_app_info.description =
+      base::UTF8ToUTF16(app_sync_data.bookmark_app_description());
+
+  // If the bookmark app already exists, keep the old icons.
+  if (!extension) {
+    CreateOrUpdateBookmarkApp(extension_service_, web_app_info);
+  } else {
+    app_sync_data.extension_sync_data().name();
+    GetWebApplicationInfoFromApp(profile_,
+                                 extension,
+                                 base::Bind(&OnWebApplicationInfoLoaded,
+                                            web_app_info,
+                                            extension_service_->AsWeakPtr()));
+  }
 }
 
 void ExtensionSyncService::SyncOrderingChange(const std::string& extension_id) {
@@ -387,7 +458,8 @@ bool ExtensionSyncService::ProcessExtensionSyncDataHelper(
 
   // Extension from sync was uninstalled by the user as external extensions.
   // Honor user choice and skip installation/enabling.
-  if (extension_service_->IsExternalExtensionUninstalled(id)) {
+  if (extensions::ExtensionPrefs::Get(profile_)
+          ->IsExternalExtensionUninstalled(id)) {
     LOG(WARNING) << "Extension with id " << id
                  << " from sync was uninstalled as external extension";
     return true;
@@ -398,25 +470,43 @@ bool ExtensionSyncService::ProcessExtensionSyncDataHelper(
   // been installed yet, so we don't know if the disable reason was a
   // permissions increase.  That will be updated once CheckPermissionsIncrease
   // is called for it.
-  if (extension_sync_data.enabled())
+  // However if the extension is marked as a remote install in sync, we know
+  // what the disable reason is, so set it to that directly. Note that when
+  // CheckPermissionsIncrease runs, it might still add permissions increase
+  // as a disable reason for the extension.
+  if (extension_sync_data.enabled()) {
     extension_service_->EnableExtension(id);
-  else if (!IsPendingEnable(id))
-    extension_service_->DisableExtension(
-        id, Extension::DISABLE_UNKNOWN_FROM_SYNC);
+  } else if (!IsPendingEnable(id)) {
+    if (extension_sync_data.remote_install()) {
+      extension_service_->DisableExtension(id,
+                                           Extension::DISABLE_REMOTE_INSTALL);
+    } else {
+      extension_service_->DisableExtension(
+          id, Extension::DISABLE_UNKNOWN_FROM_SYNC);
+    }
+  }
 
   // We need to cache some version information here because setting the
   // incognito flag invalidates the |extension| pointer (it reloads the
   // extension).
   bool extension_installed = (extension != NULL);
-  int result = extension ?
+  int version_compare_result = extension ?
       extension->version()->CompareTo(extension_sync_data.version()) : 0;
+
+  // If the target extension has already been installed ephemerally, it can
+  // be promoted to a regular installed extension and downloading from the Web
+  // Store is not necessary.
+  if (extension && extensions::util::IsEphemeralApp(id, profile_))
+    extension_service_->PromoteEphemeralApp(extension, true);
+
+  // Update the incognito flag.
   extensions::util::SetIsIncognitoEnabled(
       id, profile_, extension_sync_data.incognito_enabled());
   extension = NULL;  // No longer safe to use.
 
   if (extension_installed) {
     // If the extension is already installed, check if it's outdated.
-    if (result < 0) {
+    if (version_compare_result < 0) {
       // Extension is outdated.
       return false;
     }
@@ -434,7 +524,8 @@ bool ExtensionSyncService::ProcessExtensionSyncDataHelper(
             id,
             extension_sync_data.update_url(),
             filter,
-            kInstallSilently)) {
+            kInstallSilently,
+            extension_sync_data.remote_install())) {
       LOG(WARNING) << "Could not add pending extension for " << id;
       // This means that the extension is already pending installation, with a
       // non-INTERNAL location.  Add to pending_sync_data, even though it will
@@ -450,12 +541,12 @@ bool ExtensionSyncService::ProcessExtensionSyncDataHelper(
 
 void ExtensionSyncService::SyncExtensionChangeIfNeeded(
     const Extension& extension) {
-  if (extensions::sync_helper::IsSyncableApp(&extension)) {
+  if (extensions::util::ShouldSyncApp(&extension, profile_)) {
     if (app_sync_bundle_.IsSyncing())
       app_sync_bundle_.SyncChangeIfNeeded(extension);
     else if (extension_service_->is_ready() && !flare_.is_null())
       flare_.Run(syncer::APPS);
-  } else if (extensions::sync_helper::IsSyncableExtension(&extension)) {
+  } else if (extensions::util::ShouldSyncExtension(&extension, profile_)) {
     if (extension_sync_bundle_.IsSyncing())
       extension_sync_bundle_.SyncChangeIfNeeded(extension);
     else if (extension_service_->is_ready() && !flare_.is_null())

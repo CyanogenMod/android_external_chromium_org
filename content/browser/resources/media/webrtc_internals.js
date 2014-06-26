@@ -99,12 +99,16 @@ function initialize() {
   chrome.send('finishedDOMLoad');
 
   // Requests stats from all peer connections every second.
-  window.setInterval(function() {
-    if (Object.keys(peerConnectionDataStore).length > 0)
-      chrome.send('getAllStats');
-  }, 1000);
+  window.setInterval(requestStats, 1000);
 }
 document.addEventListener('DOMContentLoaded', initialize);
+
+
+/** Sends a request to the browser to get peer connection statistics. */
+function requestStats() {
+  if (Object.keys(peerConnectionDataStore).length > 0)
+    chrome.send('getAllStats');
+}
 
 
 /**
@@ -221,6 +225,7 @@ function updateAllPeerConnections(data) {
       addPeerConnectionUpdate(peerConnection, log[j]);
     }
   }
+  requestStats();
 }
 
 
@@ -270,6 +275,16 @@ function removeGetUserMediaForRenderer(data) {
       userMediaRequests.splice(i, 1);
   }
 }
+
+
+/**
+ * Notification that the AEC recording file selection dialog was cancelled,
+ * i.e. AEC has not been enabled.
+ */
+function aecRecordingFileSelectionCancelled() {
+  dumpCreator.disableAecRecording();
+}
+
 
 /**
  * Set

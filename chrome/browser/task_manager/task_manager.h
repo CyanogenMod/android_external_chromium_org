@@ -159,10 +159,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   int GetIdleWakeupsPerSecond(int index) const;
   base::ProcessId GetProcessId(int index) const;
   base::ProcessHandle GetProcess(int index) const;
-  int GetResourceUniqueId(int index) const;
-  // Returns the index of resource that has the given |unique_id|. Returns -1 if
-  // no resouce has the |unique_id|.
-  int GetResourceIndexByUniqueId(const int unique_id) const;
 
   // Catchall method that calls off to the appropriate GetResourceXXX method
   // based on |col_id|. |col_id| is an IDS_ value used to identify the column.
@@ -184,7 +180,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   base::string16 GetResourceWebCoreScriptsCacheSize(int index) const;
   base::string16 GetResourceWebCoreCSSCacheSize(int index) const;
   base::string16 GetResourceVideoMemory(int index) const;
-  base::string16 GetResourceFPS(int index) const;
   base::string16 GetResourceSqliteMemoryUsed(int index) const;
   base::string16 GetResourceIdleWakeupsPerSecond(int index) const;
   base::string16 GetResourceGoatsTeleported(int index) const;
@@ -220,10 +215,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
                       size_t* video_memory,
                       bool* has_duplicates) const;
 
-  // Gets the fps of the given page. Return false if the resource for the given
-  // row isn't a renderer.
-  bool GetFPS(int index, float* result) const;
-
   // Gets the sqlite memory (in byte). Return false if the resource for the
   // given row doesn't report information.
   bool GetSqliteMemoryUsedBytes(int index, size_t* result) const;
@@ -254,10 +245,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   bool IsResourceFirstInGroup(int index) const;
   bool IsResourceLastInGroup(int index) const;
 
-  // Returns true if the resource runs in the background (not visible to the
-  // user, e.g. extension background pages and BackgroundContents).
-  bool IsBackgroundResource(int index) const;
-
   // Returns icon to be used for resource (for example a favicon).
   gfx::ImageSkia GetResourceIcon(int index) const;
 
@@ -287,9 +274,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
   // Returns WebContents of given resource or NULL if not applicable.
   content::WebContents* GetResourceWebContents(int index) const;
 
-  // Returns Extension of given resource or NULL if not applicable.
-  const extensions::Extension* GetResourceExtension(int index) const;
-
   void AddResource(task_manager::Resource* resource);
   void RemoveResource(task_manager::Resource* resource);
 
@@ -317,10 +301,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
         base::ProcessId renderer_id,
         const blink::WebCache::ResourceTypeStats& stats);
 
-  void NotifyFPS(base::ProcessId renderer_id,
-                 int routing_id,
-                 float fps);
-
   void NotifyVideoMemoryUsageStats(
       const content::GPUVideoMemoryUsageStats& video_memory_usage_stats);
 
@@ -336,7 +316,7 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
  private:
   friend class base::RefCountedThreadSafe<TaskManagerModel>;
-  friend class TaskManagerNoShowBrowserTest;
+  friend class TaskManagerBrowserTest;
   FRIEND_TEST_ALL_PREFIXES(ExtensionApiTest, ProcessesVsTaskManager);
   FRIEND_TEST_ALL_PREFIXES(TaskManagerTest, RefreshCalled);
   FRIEND_TEST_ALL_PREFIXES(TaskManagerWindowControllerTest,
@@ -362,9 +342,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     PerResourceValues();
     ~PerResourceValues();
 
-    bool is_nacl_debug_stub_port_valid;
-    int nacl_debug_stub_port;
-
     bool is_title_valid;
     base::string16 title;
 
@@ -382,9 +359,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
     bool is_webcore_stats_valid;
     blink::WebCache::ResourceTypeStats webcore_stats;
-
-    bool is_fps_valid;
-    float fps;
 
     bool is_sqlite_memory_bytes_valid;
     size_t sqlite_memory_bytes;
@@ -424,12 +398,15 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
     bool is_user_handles_valid;
     size_t user_handles;
     size_t user_handles_peak;
+
+    bool is_nacl_debug_stub_port_valid;
+    int nacl_debug_stub_port;
   };
 
   typedef std::vector<task_manager::Resource*> ResourceList;
   typedef std::vector<scoped_refptr<task_manager::ResourceProvider> >
       ResourceProviderList;
-  typedef std::map<base::ProcessHandle, ResourceList*> GroupMap;
+  typedef std::map<base::ProcessHandle, ResourceList> GroupMap;
   typedef std::map<base::ProcessHandle, base::ProcessMetrics*> MetricsMap;
   typedef std::map<task_manager::Resource*, int64> ResourceValueMap;
   typedef std::map<task_manager::Resource*,
@@ -565,9 +542,6 @@ class TaskManagerModel : public base::RefCountedThreadSafe<TaskManagerModel> {
 
   // A salt lick for the goats.
   uint64 goat_salt_;
-
-  // Resource identifier that is unique within single session.
-  int last_unique_id_;
 
   // Buffer for coalescing BytesReadParam so we don't have to post a task on
   // each NotifyBytesRead() call.

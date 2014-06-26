@@ -23,7 +23,8 @@ class BrowserDesktopWindowTreeHostX11
   BrowserDesktopWindowTreeHostX11(
       views::internal::NativeWidgetDelegate* native_widget_delegate,
       views::DesktopNativeWidgetAura* desktop_native_widget_aura,
-      BrowserView* browser_view);
+      BrowserView* browser_view,
+      BrowserFrame* browser_frame);
   virtual ~BrowserDesktopWindowTreeHostX11();
 
  private:
@@ -35,8 +36,7 @@ class BrowserDesktopWindowTreeHostX11
   // Overridden from views::DesktopWindowTreeHostX11:
   virtual void Init(
       aura::Window* content_window,
-      const views::Widget::InitParams& params,
-      aura::RootWindow::CreateParams* rw_create_params) OVERRIDE;
+      const views::Widget::InitParams& params) OVERRIDE;
   virtual void CloseNow() OVERRIDE;
 
   BrowserView* browser_view_;

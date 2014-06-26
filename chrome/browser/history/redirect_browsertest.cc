@@ -15,6 +15,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "chrome/browser/history/history_service.h"
@@ -28,7 +29,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "ui/events/event_constants.h"
 
@@ -46,28 +47,25 @@ class RedirectTest : public InProcessBrowserTest {
     // that it's done: OnRedirectQueryComplete.
     std::vector<GURL> rv;
     history_service->QueryRedirectsFrom(
-        url, &consumer_,
+        url,
         base::Bind(&RedirectTest::OnRedirectQueryComplete,
-                   base::Unretained(this), &rv));
+                   base::Unretained(this),
+                   &rv),
+        &tracker_);
     content::RunMessageLoop();
     return rv;
   }
 
  protected:
-  void OnRedirectQueryComplete(
-      std::vector<GURL>* rv,
-      HistoryService::Handle request_handle,
-      GURL from_url,
-      bool success,
-      history::RedirectList* redirects) {
-    for (size_t i = 0; i < redirects->size(); ++i)
-      rv->push_back(redirects->at(i));
+  void OnRedirectQueryComplete(std::vector<GURL>* rv,
+                               const history::RedirectList* redirects) {
+    rv->insert(rv->end(), redirects->begin(), redirects->end());
     base::MessageLoop::current()->PostTask(FROM_HERE,
                                            base::MessageLoop::QuitClosure());
   }
 
-  // Consumer for asynchronous history queries.
-  CancelableRequestConsumer consumer_;
+  // Tracker for asynchronous history queries.
+  base::CancelableTaskTracker tracker_;
 };
 
 // Tests a single server redirect
@@ -137,9 +135,9 @@ IN_PROC_BROWSER_TEST_F(RedirectTest, ClientEmptyReferer) {
   ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_directory.path(),
                                              &temp_file));
   ASSERT_EQ(static_cast<int>(file_redirect_contents.size()),
-            file_util::WriteFile(temp_file,
-                                 file_redirect_contents.data(),
-                                 file_redirect_contents.size()));
+            base::WriteFile(temp_file,
+                            file_redirect_contents.data(),
+                            file_redirect_contents.size()));
 
   // Navigate to the file through the browser. The client redirect will appear
   // as two page visits in the browser.

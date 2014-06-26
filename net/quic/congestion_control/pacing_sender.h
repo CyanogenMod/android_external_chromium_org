@@ -31,43 +31,35 @@ class NET_EXPORT_PRIVATE PacingSender : public SendAlgorithmInterface {
 
   // SendAlgorithmInterface methods.
   virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
-  virtual void SetMaxPacketSize(QuicByteCount max_packet_size) OVERRIDE;
   virtual void OnIncomingQuicCongestionFeedbackFrame(
       const QuicCongestionFeedbackFrame& feedback,
-      QuicTime feedback_receive_time,
-      const SendAlgorithmInterface::SentPacketsMap& sent_packets) OVERRIDE;
-  virtual void OnPacketAcked(QuicPacketSequenceNumber acked_sequence_number,
-                             QuicByteCount acked_bytes) OVERRIDE;
-  virtual void OnPacketLost(QuicPacketSequenceNumber sequence_number,
-                            QuicTime ack_receive_time) OVERRIDE;
+      QuicTime feedback_receive_time) OVERRIDE;
+  virtual void OnCongestionEvent(bool rtt_updated,
+                                 QuicByteCount bytes_in_flight,
+                                 const CongestionMap& acked_packets,
+                                 const CongestionMap& lost_packets) OVERRIDE;
   virtual bool OnPacketSent(QuicTime sent_time,
+                            QuicByteCount bytes_in_flight,
                             QuicPacketSequenceNumber sequence_number,
                             QuicByteCount bytes,
-                            TransmissionType transmission_type,
                             HasRetransmittableData is_retransmittable) OVERRIDE;
   virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
-  virtual void OnPacketAbandoned(QuicPacketSequenceNumber sequence_number,
-                                 QuicByteCount abandoned_bytes) OVERRIDE;
   virtual QuicTime::Delta TimeUntilSend(
       QuicTime now,
-      TransmissionType transmission_type,
-      HasRetransmittableData has_retransmittable_data,
-      IsHandshake handshake) OVERRIDE;
+      QuicByteCount bytes_in_flight,
+      HasRetransmittableData has_retransmittable_data) const OVERRIDE;
   virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
-  virtual void UpdateRtt(QuicTime::Delta rtt_sample) OVERRIDE;
-  virtual QuicTime::Delta SmoothedRtt() const OVERRIDE;
   virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
   virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
 
  private:
-  QuicTime::Delta GetTransferTime(QuicByteCount bytes);
-
   scoped_ptr<SendAlgorithmInterface> sender_;  // Underlying sender.
   QuicTime::Delta alarm_granularity_;
+  // Send time of the last packet considered delayed.
+  QuicTime last_delayed_packet_sent_time_;
   QuicTime next_packet_send_time_;  // When can the next packet be sent.
-  bool was_last_send_delayed_;  // True when the last send was delayed.
-  QuicByteCount max_segment_size_;
-  bool updated_rtt_;  // True if we have at least one RTT update.
+  mutable bool was_last_send_delayed_;  // True when the last send was delayed.
+  bool has_valid_rtt_;  // True if we have at least one RTT update.
 
   DISALLOW_COPY_AND_ASSIGN(PacingSender);
 };

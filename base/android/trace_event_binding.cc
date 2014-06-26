@@ -9,6 +9,7 @@
 #include <set>
 
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_impl.h"
 #include "base/lazy_instance.h"
 #include "jni/TraceEvent_jni.h"
 
@@ -18,6 +19,8 @@ namespace android {
 namespace {
 
 const char kJavaCategory[] = "Java";
+const char kToplevelCategory[] = "toplevel";
+const char kLooperDispatchMessage[] = "Looper.dispatchMessage";
 
 // Boilerplate for safely converting Java data to TRACE_EVENT data.
 class TraceEventDataConverter {
@@ -52,10 +55,27 @@ class TraceEventDataConverter {
   DISALLOW_COPY_AND_ASSIGN(TraceEventDataConverter);
 };
 
+class TraceEnabledObserver : public debug::TraceLog::EnabledStateObserver {
+  public:
+    virtual void OnTraceLogEnabled() OVERRIDE {
+      JNIEnv* env = base::android::AttachCurrentThread();
+      base::android::Java_TraceEvent_setEnabled(env, true);
+    }
+    virtual void OnTraceLogDisabled() OVERRIDE {
+      JNIEnv* env = base::android::AttachCurrentThread();
+      base::android::Java_TraceEvent_setEnabled(env, false);
+    }
+};
+
+base::LazyInstance<TraceEnabledObserver>::Leaky g_trace_enabled_state_observer_;
+
 }  // namespace
 
-static jboolean TraceEnabled(JNIEnv* env, jclass clazz) {
-  return base::debug::TraceLog::GetInstance()->IsEnabled();
+static void RegisterEnabledObserver(JNIEnv* env, jclass clazz) {
+  bool enabled = debug::TraceLog::GetInstance()->IsEnabled();
+  base::android::Java_TraceEvent_setEnabled(env, enabled);
+  debug::TraceLog::GetInstance()->AddEnabledStateObserver(
+      g_trace_enabled_state_observer_.Pointer());
 }
 
 static void StartATrace(JNIEnv* env, jclass clazz) {
@@ -99,6 +119,14 @@ static void End(JNIEnv* env, jclass clazz,
   } else {
     TRACE_EVENT_COPY_END0(kJavaCategory, converter.name());
   }
+}
+
+static void BeginToplevel(JNIEnv* env, jclass clazz) {
+  TRACE_EVENT_BEGIN0(kToplevelCategory, kLooperDispatchMessage);
+}
+
+static void EndToplevel(JNIEnv* env, jclass clazz) {
+  TRACE_EVENT_END0(kToplevelCategory, kLooperDispatchMessage);
 }
 
 static void StartAsync(JNIEnv* env, jclass clazz,

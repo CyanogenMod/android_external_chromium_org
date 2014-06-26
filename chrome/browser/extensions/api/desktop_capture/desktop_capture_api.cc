@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/api/desktop_capture/desktop_capture_api.h"
 
+#include "ash/shell.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -12,11 +14,13 @@
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/native_desktop_media_list.h"
 #include "chrome/browser/ui/ash/ash_util.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
+#include "net/base/net_util.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 #include "third_party/webrtc/modules/desktop_capture/window_capturer.h"
@@ -33,6 +37,8 @@ const char kNoTabIdError[] = "targetTab doesn't have id field set.";
 const char kNoUrlError[] = "targetTab doesn't have URL field set.";
 const char kInvalidTabIdError[] = "Invalid tab specified.";
 const char kTabUrlChangedError[] = "URL for the specified tab has changed.";
+const char kTabUrlNotSecure[] =
+    "URL scheme for the specified tab is not secure.";
 
 DesktopCaptureChooseDesktopMediaFunction::PickerFactory* g_picker_factory =
     NULL;
@@ -71,7 +77,7 @@ void DesktopCaptureChooseDesktopMediaFunction::Cancel() {
   }
 }
 
-bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
+bool DesktopCaptureChooseDesktopMediaFunction::RunAsync() {
   EXTENSION_FUNCTION_VALIDATE(args_->GetSize() > 0);
 
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &request_id_));
@@ -84,8 +90,10 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
   DesktopCaptureRequestsRegistry::GetInstance()->AddRequest(
       render_view_host()->GetProcess()->GetID(), request_id_, this);
 
-  gfx::NativeWindow parent_window;
-  content::RenderViewHost* render_view;
+  gfx::NativeWindow parent_window = NULL;
+  content::RenderViewHost* render_view = NULL;
+  content::WebContents* web_contents = NULL;
+  base::string16 target_name;
   if (params->target_tab) {
     if (!params->target_tab->url) {
       error_ = kNoUrlError;
@@ -93,12 +101,20 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
     }
     origin_ = GURL(*(params->target_tab->url)).GetOrigin();
 
+    if (!CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kAllowHttpScreenCapture) &&
+        !origin_.SchemeIsSecure()) {
+      error_ = kTabUrlNotSecure;
+      return false;
+    }
+    target_name = base::UTF8ToUTF16(origin_.SchemeIsSecure() ?
+        net::GetHostAndOptionalPort(origin_) : origin_.spec());
+
     if (!params->target_tab->id) {
       error_ = kNoTabIdError;
       return false;
     }
 
-    content::WebContents* web_contents = NULL;
     if (!ExtensionTabUtil::GetTabById(*(params->target_tab->id), GetProfile(),
                                       true, NULL, NULL, &web_contents, NULL)) {
       error_ = kInvalidTabIdError;
@@ -116,13 +132,23 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
     Observe(web_contents);
 
     render_view = web_contents->GetRenderViewHost();
-    parent_window = web_contents->GetView()->GetTopLevelNativeWindow();
+    parent_window = web_contents->GetTopLevelNativeWindow();
   } else {
     origin_ = GetExtension()->url();
+    target_name = base::UTF8ToUTF16(GetExtension()->name());
     render_view = render_view_host();
-    parent_window =
-        GetAssociatedWebContents()->GetView()->GetTopLevelNativeWindow();
+
+    web_contents = GetAssociatedWebContents();
+    if (web_contents) {
+      parent_window = web_contents->GetTopLevelNativeWindow();
+    } else {
+#if defined(USE_ASH)
+      if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
+        parent_window = ash::Shell::GetPrimaryRootWindow();
+#endif
+    }
   }
+
   render_process_id_ = render_view->GetProcess()->GetID();
   render_view_id_ = render_view->GetRoutingID();
 
@@ -193,14 +219,15 @@ bool DesktopCaptureChooseDesktopMediaFunction::RunImpl() {
   DesktopMediaPicker::DoneCallback callback = base::Bind(
       &DesktopCaptureChooseDesktopMediaFunction::OnPickerDialogResults, this);
 
-  picker_->Show(parent_window, parent_window,
+  picker_->Show(web_contents,
+                parent_window, parent_window,
                 base::UTF8ToUTF16(GetExtension()->name()),
+                target_name,
                 media_list.Pass(), callback);
   return true;
 }
 
-void DesktopCaptureChooseDesktopMediaFunction::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void DesktopCaptureChooseDesktopMediaFunction::WebContentsDestroyed() {
   Cancel();
 }
 
@@ -212,7 +239,11 @@ void DesktopCaptureChooseDesktopMediaFunction::OnPickerDialogResults(
         MediaCaptureDevicesDispatcher::GetInstance()->
         GetDesktopStreamsRegistry();
     result = registry->RegisterStream(
-        render_process_id_, render_view_id_, origin_, source);
+        render_process_id_,
+        render_view_id_,
+        origin_,
+        source,
+        GetExtension()->name());
   }
 
   SetResult(new base::StringValue(result));
@@ -240,7 +271,7 @@ DesktopCaptureCancelChooseDesktopMediaFunction::
 DesktopCaptureCancelChooseDesktopMediaFunction::
     ~DesktopCaptureCancelChooseDesktopMediaFunction() {}
 
-bool DesktopCaptureCancelChooseDesktopMediaFunction::RunImpl() {
+bool DesktopCaptureCancelChooseDesktopMediaFunction::RunSync() {
   int request_id;
   EXTENSION_FUNCTION_VALIDATE(args_->GetInteger(0, &request_id));
 

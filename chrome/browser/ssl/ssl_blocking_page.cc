@@ -4,19 +4,24 @@
 
 #include "chrome/browser/ssl/ssl_blocking_page.h"
 
+#include "base/build_time.h"
+#include "base/command_line.h"
 #include "base/i18n/rtl.h"
+#include "base/i18n/time_formatting.h"
+#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
-#include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/navigation_controller.h"
@@ -29,6 +34,7 @@
 #include "content/public/common/ssl_status.h"
 #include "grit/app_locale_settings.h"
 #include "grit/browser_resources.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/hash_value.h"
 #include "net/base/net_errors.h"
@@ -36,6 +42,12 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
+
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+#include "chrome/browser/captive_portal/captive_portal_service.h"
+#include "chrome/browser/captive_portal/captive_portal_service_factory.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -49,15 +61,42 @@ using content::NavigationEntry;
 
 namespace {
 
-// These represent the commands sent by ssl_roadblock.html.
-enum SSLBlockingPageCommands {
-  CMD_DONT_PROCEED,
-  CMD_PROCEED,
-  CMD_MORE,
-  CMD_RELOAD,
-};
+// Constants for the M37 Finch trial.
+const char kInterstitialTrialName[] = "SSLInterstitialVersion";
+const char kCondV1[] = "V1";
+const char kCondV1LayoutV2Text[] = "V1LayoutV2Text";
+const char kCondV2[] = "V2";  // Also the default.
+const char kCondV2Guard[] = "V2WithGuard";
+const char kCondV2Yellow[] = "V2Yellow";
 
-// Events for UMA.
+const char* GetTrialCondition() {
+  CommandLine* cli = CommandLine::ForCurrentProcess();
+  if (cli->HasSwitch(switches::kSSLInterstitialV1))
+    return kCondV1;
+  if (cli->HasSwitch(switches::kSSLInterstitialV2))
+    return kCondV2;
+  if (cli->HasSwitch(switches::kSSLInterstitialV1WithV2Text))
+    return kCondV1LayoutV2Text;
+  if (cli->HasSwitch(switches::kSSLInterstitialV2Guard))
+    return kCondV2Guard;
+  if (cli->HasSwitch(switches::kSSLInterstitialV2Yellow))
+    return kCondV2Yellow;
+
+  std::string name(base::FieldTrialList::FindFullName(kInterstitialTrialName));
+  if (name == kCondV1)
+    return kCondV1;
+  if (name == kCondV2)
+    return kCondV2;
+  if (name == kCondV1LayoutV2Text)
+    return kCondV1LayoutV2Text;
+  if (name == kCondV2Guard)
+    return kCondV2Guard;
+  if (name == kCondV2Yellow)
+    return kCondV2Yellow;
+  return kCondV2;
+}
+
+// Events for UMA. Do not reorder or change!
 enum SSLBlockingPageEvent {
   SHOW_ALL,
   SHOW_OVERRIDABLE,
@@ -76,6 +115,14 @@ enum SSLBlockingPageEvent {
   SHOW_NEW_SITE,
   PROCEED_NEW_SITE,
   PROCEED_MANUAL_NONOVERRIDABLE,
+  CAPTIVE_PORTAL_DETECTION_ENABLED,
+  CAPTIVE_PORTAL_DETECTION_ENABLED_OVERRIDABLE,
+  CAPTIVE_PORTAL_PROBE_COMPLETED,
+  CAPTIVE_PORTAL_PROBE_COMPLETED_OVERRIDABLE,
+  CAPTIVE_PORTAL_NO_RESPONSE,
+  CAPTIVE_PORTAL_NO_RESPONSE_OVERRIDABLE,
+  CAPTIVE_PORTAL_DETECTED,
+  CAPTIVE_PORTAL_DETECTED_OVERRIDABLE,
   UNUSED_BLOCKING_PAGE_EVENT,
 };
 
@@ -90,9 +137,36 @@ void RecordSSLBlockingPageDetailedStats(
     int cert_error,
     bool overridable,
     bool internal,
-    int num_visits) {
+    int num_visits,
+    bool captive_portal_detection_enabled,
+    bool captive_portal_probe_completed,
+    bool captive_portal_no_response,
+    bool captive_portal_detected) {
   UMA_HISTOGRAM_ENUMERATION("interstitial.ssl_error_type",
-     SSLErrorInfo::NetErrorToErrorType(cert_error), SSLErrorInfo::END_OF_ENUM);
+      SSLErrorInfo::NetErrorToErrorType(cert_error), SSLErrorInfo::END_OF_ENUM);
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+  if (captive_portal_detection_enabled)
+    RecordSSLBlockingPageEventStats(
+        overridable ?
+        CAPTIVE_PORTAL_DETECTION_ENABLED_OVERRIDABLE :
+        CAPTIVE_PORTAL_DETECTION_ENABLED);
+  if (captive_portal_probe_completed)
+    RecordSSLBlockingPageEventStats(
+        overridable ?
+        CAPTIVE_PORTAL_PROBE_COMPLETED_OVERRIDABLE :
+        CAPTIVE_PORTAL_PROBE_COMPLETED);
+  // Log only one of portal detected and no response results.
+  if (captive_portal_detected)
+    RecordSSLBlockingPageEventStats(
+        overridable ?
+        CAPTIVE_PORTAL_DETECTED_OVERRIDABLE :
+        CAPTIVE_PORTAL_DETECTED);
+  else if (captive_portal_no_response)
+    RecordSSLBlockingPageEventStats(
+        overridable ?
+        CAPTIVE_PORTAL_NO_RESPONSE_OVERRIDABLE :
+        CAPTIVE_PORTAL_NO_RESPONSE);
+#endif
   if (!overridable) {
     if (proceed) {
       RecordSSLBlockingPageEventStats(PROCEED_MANUAL_NONOVERRIDABLE);
@@ -141,6 +215,45 @@ void RecordSSLBlockingPageDetailedStats(
   }
 }
 
+// Events for UMA. Do not reorder or change!
+enum SSLInterstitialCause {
+  CLOCK_PAST,
+  CLOCK_FUTURE,
+  UNUSED_INTERSTITIAL_CAUSE_ENTRY,
+};
+
+void RecordSSLInterstitialCause(bool overridable, SSLInterstitialCause event) {
+  if (overridable) {
+    UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.cause.overridable",
+                              event,
+                              UNUSED_INTERSTITIAL_CAUSE_ENTRY);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("interstitial.ssl.cause.nonoverridable",
+                              event,
+                              UNUSED_INTERSTITIAL_CAUSE_ENTRY);
+  }
+}
+
+// The cause of most clock errors (CMOS battery causing clock reset) will
+// fall backwards, not forwards. IsErrorProbablyCausedByClock therefore only
+// returns true for clocks set early, and histograms clocks set far into the
+// future to see if there are more future-clocks than expected.
+bool IsErrorProbablyCausedByClock(bool overridable, int cert_info) {
+  if (SSLErrorInfo::NetErrorToErrorType(cert_info) !=
+      SSLErrorInfo::CERT_DATE_INVALID) {
+    return false;
+  }
+  const base::Time current_time = base::Time::NowFromSystemTime();
+  const base::Time build_time = base::GetBuildTime();
+  if (current_time < build_time - base::TimeDelta::FromDays(2)) {
+    RecordSSLInterstitialCause(overridable, CLOCK_PAST);
+    return true;
+  }
+  if (current_time > build_time + base::TimeDelta::FromDays(365))
+    RecordSSLInterstitialCause(overridable, CLOCK_FUTURE);
+  return false;
+}
+
 }  // namespace
 
 // Note that we always create a navigation entry with SSL errors.
@@ -161,7 +274,14 @@ SSLBlockingPage::SSLBlockingPage(
       overridable_(overridable),
       strict_enforcement_(strict_enforcement),
       internal_(false),
-      num_visits_(-1) {
+      num_visits_(-1),
+      captive_portal_detection_enabled_(false),
+      captive_portal_probe_completed_(false),
+      captive_portal_no_response_(false),
+      captive_portal_detected_(false),
+      trial_condition_(GetTrialCondition()) {
+  Profile* profile = Profile::FromBrowserContext(
+      web_contents->GetBrowserContext());
   // For UMA stats.
   if (net::IsHostnameNonUnique(request_url_.HostNoBrackets()))
     internal_ = true;
@@ -171,8 +291,7 @@ SSLBlockingPage::SSLBlockingPage(
     if (internal_)
       RecordSSLBlockingPageEventStats(SHOW_INTERNAL_HOSTNAME);
     HistoryService* history_service = HistoryServiceFactory::GetForProfile(
-        Profile::FromBrowserContext(web_contents->GetBrowserContext()),
-        Profile::EXPLICIT_ACCESS);
+        profile, Profile::EXPLICIT_ACCESS);
     if (history_service) {
       history_service->GetVisibleVisitCountToHost(
           request_url_,
@@ -181,6 +300,16 @@ SSLBlockingPage::SSLBlockingPage(
                     base::Unretained(this)));
     }
   }
+
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+  CaptivePortalService* captive_portal_service =
+      CaptivePortalServiceFactory::GetForProfile(profile);
+  captive_portal_detection_enabled_ = captive_portal_service ->enabled();
+  captive_portal_service ->DetectCaptivePortal();
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_CAPTIVE_PORTAL_CHECK_RESULT,
+                 content::Source<Profile>(profile));
+#endif
 
   interstitial_page_ = InterstitialPage::Create(
       web_contents_, true, request_url, this);
@@ -193,7 +322,11 @@ SSLBlockingPage::~SSLBlockingPage() {
                                        cert_error_,
                                        overridable_ && !strict_enforcement_,
                                        internal_,
-                                       num_visits_);
+                                       num_visits_,
+                                       captive_portal_detection_enabled_,
+                                       captive_portal_probe_completed_,
+                                       captive_portal_no_response_,
+                                       captive_portal_detected_);
     // The page is closed without the user having chosen what to do, default to
     // deny.
     NotifyDenyCertificate();
@@ -201,6 +334,12 @@ SSLBlockingPage::~SSLBlockingPage() {
 }
 
 std::string SSLBlockingPage::GetHTMLContents() {
+  if (trial_condition_ == kCondV1 || trial_condition_ == kCondV1LayoutV2Text)
+    return GetHTMLContentsV1();
+  return GetHTMLContentsV2();
+}
+
+std::string SSLBlockingPage::GetHTMLContentsV1() {
   base::DictionaryValue strings;
   int resource_id;
   if (overridable_ && !strict_enforcement_) {
@@ -210,25 +349,51 @@ std::string SSLBlockingPage::GetHTMLContents() {
             SSLErrorInfo::NetErrorToErrorType(cert_error_),
             ssl_info_.cert.get(),
             request_url_);
-
     resource_id = IDR_SSL_ROAD_BLOCK_HTML;
-    strings.SetString("headLine", error_info.title());
-    strings.SetString("description", error_info.details());
-    strings.SetString("moreInfoTitle",
-        l10n_util::GetStringUTF16(IDS_CERT_ERROR_EXTRA_INFO_TITLE));
-    SetExtraInfo(&strings, error_info.extra_information());
-
-    strings.SetString(
-        "exit", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_EXIT));
-    strings.SetString(
-        "title", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_TITLE));
-    strings.SetString(
-        "proceed", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_PROCEED));
-    strings.SetString(
-        "reasonForNotProceeding", l10n_util::GetStringUTF16(
-            IDS_SSL_OVERRIDABLE_PAGE_SHOULD_NOT_PROCEED));
-    strings.SetString("errorType", "overridable");
     strings.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
+    strings.SetString("errorType", "overridable");
+    if (trial_condition_ == kCondV1LayoutV2Text) {
+      base::string16 url(ASCIIToUTF16(request_url_.host()));
+      strings.SetString(
+          "headLine", l10n_util::GetStringUTF16(IDS_SSL_V2_HEADING));
+      strings.SetString(
+          "description",
+          l10n_util::GetStringFUTF16(IDS_SSL_V2_PRIMARY_PARAGRAPH, url));
+      strings.SetString(
+          "moreInfoTitle",
+          l10n_util::GetStringUTF16(IDS_SSL_V2_OPEN_DETAILS_BUTTON));
+      strings.SetString("moreInfo1", error_info.details());
+      strings.SetString("moreInfo2", base::string16());
+      strings.SetString("moreInfo3", base::string16());
+      strings.SetString("moreInfo4", base::string16());
+      strings.SetString("moreInfo5", base::string16());
+      strings.SetString(
+          "exit",
+          l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_SAFETY_BUTTON));
+      strings.SetString(
+          "title", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
+      strings.SetString(
+          "proceed",
+          l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PROCEED_LINK_TEXT));
+      strings.SetString("reasonForNotProceeding", base::string16());
+    } else {
+      strings.SetString("headLine", error_info.title());
+      strings.SetString("description", error_info.details());
+      strings.SetString("moreInfoTitle",
+          l10n_util::GetStringUTF16(IDS_CERT_ERROR_EXTRA_INFO_TITLE));
+      SetExtraInfo(&strings, error_info.extra_information());
+
+      strings.SetString(
+          "exit", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_EXIT));
+      strings.SetString(
+          "title", l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_TITLE));
+      strings.SetString(
+          "proceed",
+          l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_PAGE_PROCEED));
+      strings.SetString("reasonForNotProceeding",
+          l10n_util::GetStringUTF16(
+              IDS_SSL_OVERRIDABLE_PAGE_SHOULD_NOT_PROCEED));
+    }
   } else {
     // Let's build the blocking error page.
     resource_id = IDR_SSL_BLOCKING_HTML;
@@ -312,7 +477,7 @@ std::string SSLBlockingPage::GetHTMLContents() {
     base::string16 issuer(
         ASCIIToUTF16(ssl_info_.cert->issuer().GetDisplayName()));
     std::string hashes;
-    for (std::vector<net::HashValue>::iterator it =
+    for (std::vector<net::HashValue>::const_iterator it =
             ssl_info_.public_key_hashes.begin();
          it != ssl_info_.public_key_hashes.end();
          ++it) {
@@ -343,35 +508,148 @@ std::string SSLBlockingPage::GetHTMLContents() {
   return webui::GetI18nTemplateHtml(html, &strings);
 }
 
+std::string SSLBlockingPage::GetHTMLContentsV2() {
+  base::DictionaryValue load_time_data;
+  base::string16 url(ASCIIToUTF16(request_url_.host()));
+  if (base::i18n::IsRTL())
+    base::i18n::WrapStringWithLTRFormatting(&url);
+  webui::SetFontAndTextDirection(&load_time_data);
+  load_time_data.SetString("trialCondition", trial_condition_);
+
+  // Shared values for both the overridable and non-overridable versions.
+  load_time_data.SetBoolean("ssl", true);
+  load_time_data.SetBoolean(
+      "overridable", overridable_ && !strict_enforcement_);
+  load_time_data.SetString(
+      "tabTitle", l10n_util::GetStringUTF16(IDS_SSL_V2_TITLE));
+  load_time_data.SetString(
+      "heading", l10n_util::GetStringUTF16(IDS_SSL_V2_HEADING));
+  if (IsErrorProbablyCausedByClock(
+          overridable_ && !strict_enforcement_, cert_error_)) {
+    load_time_data.SetString("primaryParagraph",
+                             l10n_util::GetStringFUTF16(
+                                 IDS_SSL_CLOCK_ERROR,
+                                 url,
+                                 base::TimeFormatShortDate(base::Time::Now())));
+  } else {
+    load_time_data.SetString(
+        "primaryParagraph",
+        l10n_util::GetStringFUTF16(IDS_SSL_V2_PRIMARY_PARAGRAPH, url));
+  }
+  load_time_data.SetString(
+     "openDetails",
+     l10n_util::GetStringUTF16(IDS_SSL_V2_OPEN_DETAILS_BUTTON));
+  load_time_data.SetString(
+     "closeDetails",
+     l10n_util::GetStringUTF16(IDS_SSL_V2_CLOSE_DETAILS_BUTTON));
+
+  if (overridable_ && !strict_enforcement_) {  // Overridable.
+    SSLErrorInfo error_info =
+        SSLErrorInfo::CreateError(
+            SSLErrorInfo::NetErrorToErrorType(cert_error_),
+            ssl_info_.cert.get(),
+            request_url_);
+    load_time_data.SetString(
+        "explanationParagraph", error_info.details());
+    load_time_data.SetString(
+        "primaryButtonText",
+        l10n_util::GetStringUTF16(IDS_SSL_OVERRIDABLE_SAFETY_BUTTON));
+    load_time_data.SetString(
+        "finalParagraph",
+        l10n_util::GetStringFUTF16(IDS_SSL_OVERRIDABLE_PROCEED_PARAGRAPH, url));
+  } else {  // Non-overridable.
+    load_time_data.SetBoolean("overridable", false);
+    load_time_data.SetString(
+        "explanationParagraph",
+        l10n_util::GetStringFUTF16(IDS_SSL_NONOVERRIDABLE_MORE, url));
+    load_time_data.SetString(
+        "primaryButtonText",
+        l10n_util::GetStringUTF16(IDS_SSL_NONOVERRIDABLE_RELOAD_BUTTON));
+    // Customize the help link depending on the specific error type.
+    // Only mark as HSTS if none of the more specific error types apply, and use
+    // INVALID as a fallback if no other string is appropriate.
+    SSLErrorInfo::ErrorType type =
+        SSLErrorInfo::NetErrorToErrorType(cert_error_);
+    load_time_data.SetInteger("errorType", type);
+    int help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
+    switch (type) {
+      case SSLErrorInfo::CERT_REVOKED:
+        help_string = IDS_SSL_NONOVERRIDABLE_REVOKED;
+        break;
+      case SSLErrorInfo::CERT_PINNED_KEY_MISSING:
+        help_string = IDS_SSL_NONOVERRIDABLE_PINNED;
+        break;
+      case SSLErrorInfo::CERT_INVALID:
+        help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
+        break;
+      default:
+        if (strict_enforcement_)
+          help_string = IDS_SSL_NONOVERRIDABLE_HSTS;
+    }
+    load_time_data.SetString(
+        "finalParagraph", l10n_util::GetStringFUTF16(help_string, url));
+    load_time_data.SetString("errorCode", net::ErrorToString(cert_error_));
+  }
+
+  base::StringPiece html(
+     ResourceBundle::GetSharedInstance().GetRawDataResource(
+         IRD_SSL_INTERSTITIAL_V2_HTML));
+  webui::UseVersion2 version;
+  return webui::GetI18nTemplateHtml(html, &load_time_data);
+}
+
 void SSLBlockingPage::OverrideEntry(NavigationEntry* entry) {
   int cert_id = content::CertStore::GetInstance()->StoreCert(
       ssl_info_.cert.get(), web_contents_->GetRenderProcessHost()->GetID());
+  DCHECK(cert_id);
 
   entry->GetSSL().security_style =
       content::SECURITY_STYLE_AUTHENTICATION_BROKEN;
   entry->GetSSL().cert_id = cert_id;
   entry->GetSSL().cert_status = ssl_info_.cert_status;
   entry->GetSSL().security_bits = ssl_info_.security_bits;
-#if !defined(OS_ANDROID)
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents_);
-  if (browser)
-    browser->VisibleSSLStateChanged(web_contents_);
-#endif  // !defined(OS_ANDROID)
 }
 
-// Matches events defined in ssl_error.html and ssl_roadblock.html.
+// This handles the commands sent from the interstitial JavaScript. They are
+// defined in chrome/browser/resources/ssl/ssl_errors_common.js.
+// DO NOT reorder or change this logic without also changing the JavaScript!
 void SSLBlockingPage::CommandReceived(const std::string& command) {
-  int cmd = atoi(command.c_str());
-  if (cmd == CMD_DONT_PROCEED) {
-    interstitial_page_->DontProceed();
-  } else if (cmd == CMD_PROCEED) {
-    interstitial_page_->Proceed();
-  } else if (cmd == CMD_MORE) {
-    RecordSSLBlockingPageEventStats(MORE);
-  } else if (cmd == CMD_RELOAD) {
-    // The interstitial can't refresh itself.
-    content::NavigationController* controller = &web_contents_->GetController();
-    controller->Reload(true);
+  int cmd = 0;
+  bool retval = base::StringToInt(command, &cmd);
+  DCHECK(retval);
+  switch (cmd) {
+    case CMD_DONT_PROCEED: {
+      interstitial_page_->DontProceed();
+      break;
+    }
+    case CMD_PROCEED: {
+      interstitial_page_->Proceed();
+      break;
+    }
+    case CMD_MORE: {
+      RecordSSLBlockingPageEventStats(MORE);
+      break;
+    }
+    case CMD_RELOAD: {
+      // The interstitial can't refresh itself.
+      web_contents_->GetController().Reload(true);
+      break;
+    }
+    case CMD_HELP: {
+      content::NavigationController::LoadURLParams help_page_params(GURL(
+          "https://support.google.com/chrome/answer/4454607"));
+      web_contents_->GetController().LoadURLWithParams(help_page_params);
+      break;
+    }
+    case CMD_CLOCK: {
+      content::NavigationController::LoadURLParams help_page_params(GURL(
+          "https://support.google.com/chrome/?p=ui_system_clock"));
+      web_contents_->GetController().LoadURLWithParams(help_page_params);
+      break;
+    }
+    default: {
+      NOTREACHED();
+    }
   }
 }
 
@@ -387,7 +665,11 @@ void SSLBlockingPage::OnProceed() {
                                      cert_error_,
                                      overridable_ && !strict_enforcement_,
                                      internal_,
-                                     num_visits_);
+                                     num_visits_,
+                                     captive_portal_detection_enabled_,
+                                     captive_portal_probe_completed_,
+                                     captive_portal_no_response_,
+                                     captive_portal_detected_);
   // Accepting the certificate resumes the loading of the page.
   NotifyAllowCertificate();
 }
@@ -397,7 +679,11 @@ void SSLBlockingPage::OnDontProceed() {
                                      cert_error_,
                                      overridable_ && !strict_enforcement_,
                                      internal_,
-                                     num_visits_);
+                                     num_visits_,
+                                     captive_portal_detection_enabled_,
+                                     captive_portal_probe_completed_,
+                                     captive_portal_no_response_,
+                                     captive_portal_detected_);
   NotifyDenyCertificate();
 }
 
@@ -441,4 +727,36 @@ void SSLBlockingPage::OnGotHistoryCount(HistoryService::Handle handle,
                                         int num_visits,
                                         base::Time first_visit) {
   num_visits_ = num_visits;
+}
+
+void SSLBlockingPage::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+#if defined(ENABLE_CAPTIVE_PORTAL_DETECTION)
+  // When detection is disabled, captive portal service always sends
+  // RESULT_INTERNET_CONNECTED. Ignore any probe results in that case.
+  if (!captive_portal_detection_enabled_)
+    return;
+  if (type == chrome::NOTIFICATION_CAPTIVE_PORTAL_CHECK_RESULT) {
+    captive_portal_probe_completed_ = true;
+    CaptivePortalService::Results* results =
+        content::Details<CaptivePortalService::Results>(
+            details).ptr();
+    // If a captive portal was detected at any point when the interstitial was
+    // displayed, assume that the interstitial was caused by a captive portal.
+    // Example scenario:
+    // 1- Interstitial displayed and captive portal detected, setting the flag.
+    // 2- Captive portal detection automatically opens portal login page.
+    // 3- User logs in on the portal login page.
+    // A notification will be received here for RESULT_INTERNET_CONNECTED. Make
+    // sure we don't clear the captive portal flag, since the interstitial was
+    // potentially caused by the captive portal.
+    captive_portal_detected_ = captive_portal_detected_ ||
+        (results->result == captive_portal::RESULT_BEHIND_CAPTIVE_PORTAL);
+    // Also keep track of non-HTTP portals and error cases.
+    captive_portal_no_response_ = captive_portal_no_response_ ||
+        (results->result == captive_portal::RESULT_NO_RESPONSE);
+  }
+#endif
 }

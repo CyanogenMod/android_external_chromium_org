@@ -13,6 +13,7 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/webstore_data_fetcher_delegate.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
+#include "chrome/browser/extensions/webstore_install_result.h"
 #include "chrome/browser/extensions/webstore_installer.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -60,9 +61,20 @@ class WebstoreStandaloneInstaller
  protected:
   virtual ~WebstoreStandaloneInstaller();
 
+  // Called when the install should be aborted. The callback is cleared.
   void AbortInstall();
-  void InvokeCallback(const std::string& error);
-  virtual void CompleteInstall(const std::string& error);
+
+  // Called when the install is complete.
+  virtual void CompleteInstall(webstore_install::Result result,
+                               const std::string& error);
+
+  // Called when the installer should proceed to prompt the user.
+  void ProceedWithInstallPrompt();
+
+  // Lazily creates a dummy extension for display from the parsed manifest. This
+  // is safe to call from OnManifestParsed() onwards. The manifest may be
+  // invalid, thus the caller must check that the return value is not NULL.
+  scoped_refptr<const Extension> GetLocalizedExtensionForDisplay();
 
   // Template Method's hooks to be implemented by subclasses.
 
@@ -91,8 +103,8 @@ class WebstoreStandaloneInstaller
 
   // Should return an installation prompt with desired properties or NULL if
   // no prompt should be shown.
-  virtual scoped_ptr<ExtensionInstallPrompt::Prompt>
-      CreateInstallPrompt() const = 0;
+  virtual scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
+      const = 0;
 
   // Perform all necessary checks to make sure inline install is permitted,
   // e.g. in the extension's properties in the store. The implementation may
@@ -108,11 +120,12 @@ class WebstoreStandaloneInstaller
       const base::DictionaryValue& webstore_data,
       std::string* error) const = 0;
 
-  // Perform all necessary checks after the manifest has been parsed to make
-  // sure that the install should still proceed.
-  virtual bool CheckInstallValid(
-      const base::DictionaryValue& manifest,
-      std::string* error);
+  // Will be called after the extension's manifest has been successfully parsed.
+  // Subclasses can perform asynchronous checks at this point and call
+  // ProceedWithInstallPrompt() to proceed with the install or otherwise call
+  // CompleteInstall() with an error code. The default implementation calls
+  // ProceedWithInstallPrompt().
+  virtual void OnManifestParsed();
 
   // Returns an install UI to be shown. By default, this returns an install UI
   // that is a transient child of the host window for GetWebContents().
@@ -137,6 +150,9 @@ class WebstoreStandaloneInstaller
   Profile* profile() const { return profile_; }
   const std::string& id() const { return id_; }
   const base::DictionaryValue* manifest() const { return manifest_.get(); }
+  const Extension* localized_extension_for_display() const {
+    return localized_extension_for_display_.get();
+  }
 
  private:
   friend class base::RefCountedThreadSafe<WebstoreStandaloneInstaller>;
@@ -186,6 +202,7 @@ class WebstoreStandaloneInstaller
       WebstoreInstaller::FailureReason reason) OVERRIDE;
 
   void ShowInstallUI();
+  void OnWebStoreDataFetcherDone();
 
   // Input configuration.
   std::string id_;
@@ -195,7 +212,7 @@ class WebstoreStandaloneInstaller
 
   // Installation dialog and its underlying prompt.
   scoped_ptr<ExtensionInstallPrompt> install_ui_;
-  scoped_ptr<ExtensionInstallPrompt::Prompt> install_prompt_;
+  scoped_refptr<ExtensionInstallPrompt::Prompt> install_prompt_;
 
   // For fetching webstore JSON data.
   scoped_ptr<WebstoreDataFetcher> webstore_data_fetcher_;

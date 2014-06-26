@@ -13,7 +13,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/ime/input_method_factory.h"
 
 namespace chromeos {
@@ -73,7 +73,8 @@ ui::TextInputClient* TextInputTestHelper::GetTextInputClient() const {
 
 void TextInputTestHelper::OnTextInputTypeChanged(
     const ui::TextInputClient* client) {
-  latest_text_input_type_ = client->GetTextInputType();
+  latest_text_input_type_ =
+      client ? client->GetTextInputType() : ui::TEXT_INPUT_TYPE_NONE;
   if (waiting_type_ == WAIT_ON_TEXT_INPUT_TYPE_CHANGED)
     base::MessageLoop::current()->Quit();
 }
@@ -100,10 +101,13 @@ void TextInputTestHelper::OnBlur() {
 void TextInputTestHelper::OnCaretBoundsChanged(
     const ui::TextInputClient* client) {
   gfx::Range text_range;
-  if (!GetTextInputClient()->GetTextRange(&text_range) ||
-      !GetTextInputClient()->GetTextFromRange(text_range, &surrounding_text_) ||
-      !GetTextInputClient()->GetSelectionRange(&selection_range_))
+  if (GetTextInputClient()) {
+    if (!GetTextInputClient()->GetTextRange(&text_range) ||
+        !GetTextInputClient()->GetTextFromRange(text_range,
+                                                &surrounding_text_) ||
+        !GetTextInputClient()->GetSelectionRange(&selection_range_))
       return;
+  }
   if (waiting_type_ == WAIT_ON_CARET_BOUNDS_CHANGED)
     base::MessageLoop::current()->Quit();
 }

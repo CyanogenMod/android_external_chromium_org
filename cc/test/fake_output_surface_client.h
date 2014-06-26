@@ -10,22 +10,32 @@
 
 namespace cc {
 
+class OutputSurface;
+
 class FakeOutputSurfaceClient : public OutputSurfaceClient {
  public:
   FakeOutputSurfaceClient()
-      : begin_impl_frame_count_(0),
-        deferred_initialize_result_(true),
+      : output_surface_(NULL),
+        begin_frame_count_(0),
         deferred_initialize_called_(false),
         did_lose_output_surface_called_(false),
         memory_policy_(0) {}
 
-  virtual bool DeferredInitialize(
-      scoped_refptr<ContextProvider> offscreen_context_provider) OVERRIDE;
-  virtual void ReleaseGL() OVERRIDE {}
+  explicit FakeOutputSurfaceClient(OutputSurface* output_surface)
+      : output_surface_(output_surface),
+        begin_frame_count_(0),
+        deferred_initialize_called_(false),
+        did_lose_output_surface_called_(false),
+        memory_policy_(0) {}
+
+  virtual void DeferredInitialize() OVERRIDE;
+  virtual void ReleaseGL() OVERRIDE;
+  virtual void CommitVSyncParameters(base::TimeTicks timebase,
+                                     base::TimeDelta interval) OVERRIDE {}
   virtual void SetNeedsRedrawRect(const gfx::Rect& damage_rect) OVERRIDE {}
-  virtual void BeginImplFrame(const BeginFrameArgs& args) OVERRIDE;
+  virtual void BeginFrame(const BeginFrameArgs& args) OVERRIDE;
   virtual void DidSwapBuffers() OVERRIDE {}
-  virtual void OnSwapBuffersComplete() OVERRIDE {}
+  virtual void DidSwapBuffersComplete() OVERRIDE {}
   virtual void ReclaimResources(const CompositorFrameAck* ack) OVERRIDE {}
   virtual void DidLoseOutputSurface() OVERRIDE;
   virtual void SetExternalDrawConstraints(
@@ -36,13 +46,7 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) OVERRIDE;
   virtual void SetTreeActivationCallback(const base::Closure&) OVERRIDE {}
 
-  int begin_impl_frame_count() {
-    return begin_impl_frame_count_;
-  }
-
-  void set_deferred_initialize_result(bool result) {
-    deferred_initialize_result_ = result;
-  }
+  int begin_frame_count() { return begin_frame_count_; }
 
   bool deferred_initialize_called() {
     return deferred_initialize_called_;
@@ -55,8 +59,8 @@ class FakeOutputSurfaceClient : public OutputSurfaceClient {
   const ManagedMemoryPolicy& memory_policy() const { return memory_policy_; }
 
  private:
-  int begin_impl_frame_count_;
-  bool deferred_initialize_result_;
+  OutputSurface* output_surface_;
+  int begin_frame_count_;
   bool deferred_initialize_called_;
   bool did_lose_output_surface_called_;
   ManagedMemoryPolicy memory_policy_;

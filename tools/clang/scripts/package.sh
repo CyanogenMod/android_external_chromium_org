@@ -6,6 +6,8 @@
 # This script will check out llvm and clang, and then package the results up
 # to a tgz file.
 
+gcc_toolchain=
+
 # Parse command line options.
 while [[ $# > 0 ]]; do
   case $1 in
@@ -46,6 +48,7 @@ done
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
 LLVM_BOOTSTRAP_DIR="${THIS_DIR}/../../../third_party/llvm-bootstrap"
+LLVM_BOOTSTRAP_INSTALL_DIR="${LLVM_DIR}/../llvm-bootstrap-install"
 LLVM_BUILD_DIR="${THIS_DIR}/../../../third_party/llvm-build"
 LLVM_BIN_DIR="${LLVM_BUILD_DIR}/Release+Asserts/bin"
 LLVM_LIB_DIR="${LLVM_BUILD_DIR}/Release+Asserts/lib"
@@ -66,6 +69,7 @@ set -exu
 
 # Do a clobber build.
 rm -rf "${LLVM_BOOTSTRAP_DIR}"
+rm -rf "${LLVM_BOOTSTRAP_INSTALL_DIR}"
 rm -rf "${LLVM_BUILD_DIR}"
 extra_flags=
 if [[ -n "${gcc_toolchain}" ]]; then
@@ -94,38 +98,62 @@ cp buildlog.txt $PDIR/
 
 # Copy clang into pdir, symlink clang++ to it.
 cp "${LLVM_BIN_DIR}/clang" $PDIR/bin/
-(cd $PDIR/bin && ln -sf clang clang++ && cd -)
+(cd $PDIR/bin && ln -sf clang clang++)
 cp "${LLVM_BIN_DIR}/llvm-symbolizer" $PDIR/bin/
+if [ "$(uname -s)" = "Darwin" ]; then
+  cp "${LLVM_BIN_DIR}/libc++.1.${SO_EXT}" $PDIR/bin/
+  (cd $PDIR/bin && ln -sf libc++.1.dylib libc++.dylib)
+fi
+
+# Copy libc++ headers.
+if [ "$(uname -s)" = "Darwin" ]; then
+  mkdir $PDIR/include
+  cp -R "${LLVM_BOOTSTRAP_INSTALL_DIR}/include/c++" $PDIR/include
+fi
 
 # Copy plugins. Some of the dylibs are pretty big, so copy only the ones we
 # care about.
 cp "${LLVM_LIB_DIR}/libFindBadConstructs.${SO_EXT}" $PDIR/lib
-cp "${LLVM_LIB_DIR}/libBlinkGCPlugin.${SO_EXT}" $PDIR/lib
+
+BLINKGCPLUGIN_LIBNAME=\
+$(grep LIBRARYNAME "$THIS_DIR"/../blink_gc_plugin/Makefile \
+    | cut -d ' ' -f 3)
+cp "${LLVM_LIB_DIR}/lib${BLINKGCPLUGIN_LIBNAME}.${SO_EXT}" $PDIR/lib
 
 if [[ -n "${gcc_toolchain}" ]]; then
   # Copy the stdlibc++.so.6 we linked Clang against so it can run.
   cp "${LLVM_LIB_DIR}/libstdc++.so.6" $PDIR/lib
 fi
 
-# Copy built-in headers (lib/clang/3.2/include).
+# Copy built-in headers (lib/clang/3.x.y/include).
 # libcompiler-rt puts all kinds of libraries there too, but we want only some.
 if [ "$(uname -s)" = "Darwin" ]; then
-  # Keep only
-  # Release+Asserts/lib/clang/*/lib/darwin/libclang_rt.{asan,profile}_osx*
+  # Keep only the OSX (ASan and profile) and iossim (ASan) runtime libraries:
+  # Release+Asserts/lib/clang/*/lib/darwin/libclang_rt.{asan,profile}_*
   find "${LLVM_LIB_DIR}/clang" -type f -path '*lib/darwin*' \
-       ! -name '*asan_osx*' ! -name '*profile_osx*' | xargs rm
-  # Fix LC_ID_DYLIB for the ASan dynamic library to be relative to
+       ! -name '*asan_osx*' ! -name '*asan_iossim*' ! -name '*profile_osx*' | \
+      xargs rm
+  # Fix LC_ID_DYLIB for the ASan dynamic libraries to be relative to
   # @executable_path.
   # TODO(glider): this is transitional. We'll need to fix the dylib name
-  # either in our build system, or in Clang. See also http://crbug.com/170629.
-  ASAN_DYLIB_NAME=libclang_rt.asan_osx_dynamic.dylib
-  ASAN_DYLIB=$(find "${LLVM_LIB_DIR}/clang" -type f -path "*${ASAN_DYLIB_NAME}")
-  install_name_tool -id @executable_path/${ASAN_DYLIB_NAME} "${ASAN_DYLIB}"
+  # either in our build system, or in Clang. See also http://crbug.com/344836.
+  ASAN_DYLIB_NAMES="libclang_rt.asan_osx_dynamic.dylib
+    libclang_rt.asan_iossim_dynamic.dylib"
+  for ASAN_DYLIB_NAME in $ASAN_DYLIB_NAMES
+  do
+    ASAN_DYLIB=$(find "${LLVM_LIB_DIR}/clang" \
+                      -type f -path "*${ASAN_DYLIB_NAME}")
+    install_name_tool -id @executable_path/${ASAN_DYLIB_NAME} "${ASAN_DYLIB}"
+  done
 else
   # Keep only
-  # Release+Asserts/lib/clang/*/lib/linux/libclang_rt.{[atm]san,profile,ubsan}-*.a
+  # Release+Asserts/lib/clang/*/lib/linux/libclang_rt.{[atm]san,san,ubsan,profile}-*.a
+  # , but not dfsan.
   find "${LLVM_LIB_DIR}/clang" -type f -path '*lib/linux*' \
-       ! -name '*[atm]san*' ! -name '*profile*' ! -name '*ubsan*' | xargs rm
+       ! -name '*[atm]san*' ! -name '*ubsan*' ! -name '*libclang_rt.san*' \
+       ! -name '*profile*' | xargs rm
+  # Strip the debug info from the runtime libraries.
+  find "${LLVM_LIB_DIR}/clang" -type f -path '*lib/linux*' | xargs strip -g
 fi
 
 cp -R "${LLVM_LIB_DIR}/clang" $PDIR/lib

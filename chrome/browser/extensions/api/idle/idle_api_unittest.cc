@@ -17,6 +17,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -119,8 +120,7 @@ ScopedListen::~ScopedListen() {
   idle_manager_->OnListenerRemoved(details);
 }
 
-BrowserContextKeyedService* IdleManagerTestFactory(
-    content::BrowserContext* profile) {
+KeyedService* IdleManagerTestFactory(content::BrowserContext* profile) {
   return new IdleManager(static_cast<Profile*>(profile));
 }
 
@@ -510,12 +510,9 @@ TEST_F(IdleTest, UnloadCleanup) {
   }
 
   // Threshold will reset after unload (and listen count == 0)
-  UnloadedExtensionInfo details(extension(),
-                                UnloadedExtensionInfo::REASON_UNINSTALL);
-  idle_manager_->Observe(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
-      content::Source<Profile>(browser()->profile()),
-      content::Details<UnloadedExtensionInfo>(&details));
+  ExtensionRegistry* registry = ExtensionRegistry::Get(browser()->profile());
+  registry->TriggerOnUnloaded(extension(),
+                              UnloadedExtensionInfo::REASON_UNINSTALL);
 
   {
     ScopedListen listen(idle_manager_, extension()->id());
@@ -531,24 +528,44 @@ TEST_F(IdleTest, UnloadCleanup) {
 
 // Verifies that unloading an extension with no listeners or threshold works.
 TEST_F(IdleTest, UnloadOnly) {
-  UnloadedExtensionInfo details(extension(),
-                                UnloadedExtensionInfo::REASON_UNINSTALL);
-  idle_manager_->Observe(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
-      content::Source<Profile>(browser()->profile()),
-      content::Details<UnloadedExtensionInfo>(&details));
+  ExtensionRegistry* registry = ExtensionRegistry::Get(browser()->profile());
+  registry->TriggerOnUnloaded(extension(),
+                              UnloadedExtensionInfo::REASON_UNINSTALL);
 }
 
 // Verifies that its ok for the unload notification to happen before all the
 // listener removals.
 TEST_F(IdleTest, UnloadWhileListening) {
   ScopedListen listen(idle_manager_, extension()->id());
-  UnloadedExtensionInfo details(extension(),
-                                UnloadedExtensionInfo::REASON_UNINSTALL);
-  idle_manager_->Observe(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
-      content::Source<Profile>(browser()->profile()),
-      content::Details<UnloadedExtensionInfo>(&details));
+  ExtensionRegistry* registry = ExtensionRegistry::Get(browser()->profile());
+  registry->TriggerOnUnloaded(extension(),
+                              UnloadedExtensionInfo::REASON_UNINSTALL);
+}
+
+// Verifies that re-adding a listener after a state change doesn't immediately
+// fire a change event. Regression test for http://crbug.com/366580.
+TEST_F(IdleTest, ReAddListener) {
+  idle_provider_->set_locked(false);
+
+  {
+    // Fire idle event.
+    ScopedListen listen(idle_manager_, "test");
+    idle_provider_->set_idle_time(60);
+    EXPECT_CALL(*event_delegate_, OnStateChanged("test", IDLE_STATE_IDLE));
+    idle_manager_->UpdateIdleState();
+    testing::Mock::VerifyAndClearExpectations(event_delegate_);
+  }
+
+  // Trigger active.
+  idle_provider_->set_idle_time(0);
+  idle_manager_->UpdateIdleState();
+
+  {
+    // Nothing should have fired, the listener wasn't added until afterward.
+    ScopedListen listen(idle_manager_, "test");
+    idle_manager_->UpdateIdleState();
+    testing::Mock::VerifyAndClearExpectations(event_delegate_);
+  }
 }
 
 }  // namespace extensions

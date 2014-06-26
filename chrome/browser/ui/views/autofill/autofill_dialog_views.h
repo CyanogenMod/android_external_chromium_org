@@ -48,13 +48,14 @@ class Widget;
 
 namespace ui {
 class ComboboxModel;
+class EventHandler;
 class KeyEvent;
 }
 
 namespace autofill {
 
 class AutofillDialogSignInDelegate;
-class DecoratedTextfield;
+class ExpandingTextfield;
 class InfoBubble;
 
 // Views toolkit implementation of the Autofill dialog that handles the
@@ -89,8 +90,6 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void GetUserInput(DialogSection section,
                             FieldValueMap* output) OVERRIDE;
   virtual base::string16 GetCvc() OVERRIDE;
-  virtual bool HitTestInput(ServerFieldType type,
-                            const gfx::Point& screen_point) OVERRIDE;
   virtual bool SaveDetailsLocally() OVERRIDE;
   virtual const content::NavigationController* ShowSignIn() OVERRIDE;
   virtual void HideSignIn() OVERRIDE;
@@ -99,12 +98,13 @@ class AutofillDialogViews : public AutofillDialogView,
   virtual void ValidateSection(DialogSection section) OVERRIDE;
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // views::DialogDelegate implementation:
+  virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
@@ -124,6 +124,7 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // views::WidgetObserver implementation:
   virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
   virtual void OnWidgetBoundsChanged(views::Widget* widget,
                                      const gfx::Rect& new_bounds) OVERRIDE;
 
@@ -259,9 +260,10 @@ class AutofillDialogViews : public AutofillDialogView,
     void SetNotifications(const std::vector<DialogNotification>& notifications);
 
     // views::View implementation.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
     virtual const char* GetClassName() const OVERRIDE;
-    virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+    virtual void PaintChildren(gfx::Canvas* canvas,
+                               const views::CullSet& cull_set) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
     void set_arrow_centering_anchor(
@@ -286,7 +288,7 @@ class AutofillDialogViews : public AutofillDialogView,
     DISALLOW_COPY_AND_ASSIGN(NotificationArea);
   };
 
-  typedef std::map<ServerFieldType, DecoratedTextfield*> TextfieldMap;
+  typedef std::map<ServerFieldType, ExpandingTextfield*> TextfieldMap;
   typedef std::map<ServerFieldType, views::Combobox*> ComboboxMap;
 
   // A view that packs a label on the left and some related controls
@@ -339,9 +341,10 @@ class AutofillDialogViews : public AutofillDialogView,
     virtual ~SuggestedButton();
 
     // views::MenuButton implementation.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
     virtual const char* GetClassName() const OVERRIDE;
-    virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+    virtual void PaintChildren(gfx::Canvas* canvas,
+                               const views::CullSet& cull_set) OVERRIDE;
     virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
    private:
@@ -375,8 +378,7 @@ class AutofillDialogViews : public AutofillDialogView,
     DISALLOW_COPY_AND_ASSIGN(DetailsContainerView);
   };
 
-  // A view that contains a suggestion (such as a known address) and a link to
-  // edit the suggestion.
+  // A view that contains a suggestion (such as a known address).
   class SuggestionView : public views::View {
    public:
     explicit SuggestionView(AutofillDialogViews* autofill_dialog);
@@ -385,11 +387,11 @@ class AutofillDialogViews : public AutofillDialogView,
     void SetState(const SuggestionState& state);
 
     // views::View implementation.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
-    virtual int GetHeightForWidth(int width) OVERRIDE;
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
+    virtual int GetHeightForWidth(int width) const OVERRIDE;
     virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
 
-    DecoratedTextfield* decorated_textfield() { return decorated_; }
+    ExpandingTextfield* textfield() { return textfield_; }
 
    private:
     // Returns whether there's room to display |state_.vertically_compact_text|
@@ -398,7 +400,7 @@ class AutofillDialogViews : public AutofillDialogView,
     // |vertically_compact_text| or |horizontally_compact_text| as the case may
     // be.
     bool CanUseVerticallyCompactText(int available_width,
-                                     int* resulting_height);
+                                     int* resulting_height) const;
 
     // Sets the display text of the suggestion.
     void SetLabelText(const base::string16& text);
@@ -419,7 +421,7 @@ class AutofillDialogViews : public AutofillDialogView,
 
     // This caches preferred heights for given widths. The key is a preferred
     // width, the value is a cached result of CanUseVerticallyCompactText.
-    std::map<int, std::pair<bool, int> > calculated_heights_;
+    mutable std::map<int, std::pair<bool, int> > calculated_heights_;
 
     // The label that holds the suggestion description text.
     views::Label* label_;
@@ -428,9 +430,7 @@ class AutofillDialogViews : public AutofillDialogView,
     // The icon that comes just before |label_|.
     views::ImageView* icon_;
     // The input set by ShowTextfield.
-    DecoratedTextfield* decorated_;
-    // An "Edit" link that flips to editable inputs rather than suggestion text.
-    views::Link* edit_link_;
+    ExpandingTextfield* textfield_;
 
     DISALLOW_COPY_AND_ASSIGN(SuggestionView);
   };
@@ -461,7 +461,7 @@ class AutofillDialogViews : public AutofillDialogView,
   typedef std::map<DialogSection, DetailsGroup> DetailGroupMap;
 
   // Returns the preferred size or minimum size (if |get_minimum_size| is true).
-  gfx::Size CalculatePreferredSize(bool get_minimum_size);
+  gfx::Size CalculatePreferredSize(bool get_minimum_size) const;
 
   // Returns the minimum size of the sign in view for this dialog.
   gfx::Size GetMinimumSignInViewSize() const;
@@ -522,7 +522,7 @@ class AutofillDialogViews : public AutofillDialogView,
   void FocusInitialView();
 
   // Sets the visual state for an input to be either valid or invalid. This
-  // should work on Comboboxes or DecoratedTextfields. If |message| is empty,
+  // should work on Comboboxes or ExpandingTextfields. If |message| is empty,
   // the input is valid.
   template<class T>
   void SetValidityForInput(T* input, const base::string16& message);
@@ -559,15 +559,15 @@ class AutofillDialogViews : public AutofillDialogView,
   // Updates the views in the button strip.
   void UpdateButtonStripExtraView();
 
-  // Call this when the size of anything in |contents_| might've changed.
+  // Call this when the size of anything in the contents might have changed.
   void ContentsPreferredSizeChanged();
   void DoContentsPreferredSizeChanged();
 
   // Gets the textfield view that is shown for the given |type| or NULL.
-  DecoratedTextfield* TextfieldForType(ServerFieldType type);
+  ExpandingTextfield* TextfieldForType(ServerFieldType type);
 
   // Returns the associated ServerFieldType for |textfield|.
-  ServerFieldType TypeForTextfield(const views::Textfield* textfield);
+  ServerFieldType TypeForTextfield(const views::View* textfield);
 
   // Gets the combobox view that is shown for the given |type|, or NULL.
   views::Combobox* ComboboxForType(ServerFieldType type);
@@ -586,11 +586,14 @@ class AutofillDialogViews : public AutofillDialogView,
   // state.
   void SetEditabilityForSection(DialogSection section);
 
+  // Handles mouse presses on the non-client view.
+  void NonClientMousePressed();
+
   // The delegate that drives this view. Weak pointer, always non-NULL.
   AutofillDialogViewDelegate* const delegate_;
 
   // The preferred size of the view, cached to avoid needless recomputation.
-  gfx::Size preferred_size_;
+  mutable gfx::Size preferred_size_;
 
   // The current number of unmatched calls to UpdatesStarted.
   int updates_scope_;
@@ -599,8 +602,8 @@ class AutofillDialogViews : public AutofillDialogView,
   // due to an unmatched UpdatesStarted.
   bool needs_update_;
 
-  // The window that displays |contents_|. Weak pointer; may be NULL when the
-  // dialog is closing.
+  // The window that displays the dialog contents. Weak pointer; may be NULL
+  // when the dialog is closing.
   views::Widget* window_;
 
   // A DialogSection-keyed map of the DetailGroup structs.
@@ -672,6 +675,9 @@ class AutofillDialogViews : public AutofillDialogView,
 
   // Delegate for the sign-in dialog's webview.
   scoped_ptr<AutofillDialogSignInDelegate> sign_in_delegate_;
+
+  // Used to tell the delegate when focus moves to hide the Autofill popup.
+  scoped_ptr<ui::EventHandler> event_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(AutofillDialogViews);
 };

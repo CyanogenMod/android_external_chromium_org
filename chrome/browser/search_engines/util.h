@@ -35,8 +35,8 @@ TemplateURL* FindURLByPrepopulateID(
 
 // Modifies |prepopulated_url| so that it contains user-modified fields from
 // |original_turl|. Both URLs must have the same prepopulate_id.
-void MergeIntoPrepopulatedEngineData(TemplateURLData* prepopulated_url,
-                                     const TemplateURL* original_turl);
+void MergeIntoPrepopulatedEngineData(const TemplateURL* original_turl,
+                                     TemplateURLData* prepopulated_url);
 
 // CreateActionsFromCurrentPrepopulateData() (see below) takes in the current
 // prepopulated URLs as well as the user's current URLs, and returns an instance
@@ -63,7 +63,7 @@ struct ActionsFromPrepopulateData {
 
   TemplateURLService::TemplateURLVector removed_engines;
   EditedEngines edited_engines;
-  TemplateURLService::TemplateURLVector added_engines;
+  std::vector<TemplateURLData> added_engines;
 };
 
 // Given the user's current URLs and the current set of prepopulated URLs,
@@ -73,7 +73,7 @@ struct ActionsFromPrepopulateData {
 //
 // NOTE: Takes ownership of, and clears, |prepopulated_urls|.
 ActionsFromPrepopulateData CreateActionsFromCurrentPrepopulateData(
-    ScopedVector<TemplateURL>* prepopulated_urls,
+    ScopedVector<TemplateURLData>* prepopulated_urls,
     const TemplateURLService::TemplateURLVector& existing_urls,
     const TemplateURL* default_search_provider);
 
@@ -81,21 +81,21 @@ ActionsFromPrepopulateData CreateActionsFromCurrentPrepopulateData(
 // prepopulated search providers to result in:
 //  * a set of template_urls (search providers). The caller owns the
 //    TemplateURL* returned in template_urls.
-//  * the default search provider (and if *default_search_provider is not NULL,
-//    it is contained in template_urls).
 //  * whether there is a new resource keyword version (and the value).
 //    |*new_resource_keyword_version| is set to 0 if no new value. Otherwise,
 //    it is the new value.
 // Only pass in a non-NULL value for service if the WebDataService should be
 // updated. If |removed_keyword_guids| is not NULL, any TemplateURLs removed
 // from the keyword table in the WebDataService will have their Sync GUIDs
-// added to it.
+// added to it. |default_search_provider| will be used to prevent removing the
+// current user-selected DSE, regardless of changes in prepopulate data.
 void GetSearchProvidersUsingKeywordResult(
     const WDTypedResult& result,
     WebDataService* service,
     Profile* profile,
     TemplateURLService::TemplateURLVector* template_urls,
-    TemplateURL** default_search_provider,
+    TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data,
     int* new_resource_keyword_version,
     std::set<std::string>* removed_keyword_guids);
 
@@ -110,7 +110,8 @@ void GetSearchProvidersUsingLoadedEngines(
     WebDataService* service,
     Profile* profile,
     TemplateURLService::TemplateURLVector* template_urls,
-    TemplateURL** default_search_provider,
+    TemplateURL* default_search_provider,
+    const SearchTermsData& search_terms_data,
     int* resource_keyword_version,
     std::set<std::string>* removed_keyword_guids);
 
@@ -126,9 +127,10 @@ bool DeDupeEncodings(std::vector<std::string>* encodings);
 // so it's accessible by unittests.
 void RemoveDuplicatePrepopulateIDs(
     WebDataService* service,
-    const ScopedVector<TemplateURL>& prepopulated_urls,
+    const ScopedVector<TemplateURLData>& prepopulated_urls,
     TemplateURL* default_search_provider,
     TemplateURLService::TemplateURLVector* template_urls,
+    const SearchTermsData& search_terms_data,
     std::set<std::string>* removed_keyword_guids);
 
 #endif  // CHROME_BROWSER_SEARCH_ENGINES_UTIL_H_

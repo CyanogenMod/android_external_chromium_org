@@ -8,10 +8,16 @@
 #include <gtk/gtk.h>
 #include <string>
 
-class CommandLine;
+#include "ui/native_theme/native_theme.h"
+
 class SkBitmap;
 
+namespace aura {
+class Window;
+}
+
 namespace base {
+class CommandLine;
 class Environment;
 }
 
@@ -21,7 +27,7 @@ class Accelerator;
 
 namespace libgtk2ui {
 
-void GtkInitFromCommandLine(const CommandLine& command_line);
+void GtkInitFromCommandLine(const base::CommandLine& command_line);
 
 // Returns the name of the ".desktop" file associated with our running process.
 std::string GetDesktopName(base::Environment* env);
@@ -38,6 +44,19 @@ GdkModifierType GetGdkModifierForAccelerator(
 
 // Translates event flags into plaform independent event flags.
 int EventFlagsFromGdkState(guint state);
+
+// Sets |dialog| as transient for |parent|, which will keep it on top and center
+// it above |parent|. Do nothing if |parent| is NULL.
+void SetGtkTransientForAura(GtkWidget* dialog, aura::Window* parent);
+
+// Gets the transient parent aura window for |dialog|.
+aura::Window* GetAuraTransientParent(GtkWidget* dialog);
+
+// Clears the transient parent for |dialog|.
+void ClearAuraTransientParent(GtkWidget* dialog);
+
+// Converts a NativeTheme state to a GtkStateType.
+GtkStateType GetGtkState(ui::NativeTheme::State state);
 
 }  // namespace libgtk2ui
 

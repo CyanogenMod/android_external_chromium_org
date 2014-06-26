@@ -15,9 +15,8 @@
 #include "content/public/common/process_type.h"
 #include "ipc/ipc_sender.h"
 
-class CommandLine;
-
 namespace base {
+class CommandLine;
 class FilePath;
 }
 
@@ -44,14 +43,8 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // Derived classes call this to launch the child process asynchronously.
   // Takes ownership of |cmd_line| and |delegate|.
   virtual void Launch(
-#if defined(OS_WIN)
       SandboxedProcessLauncherDelegate* delegate,
-      bool run_elevated,
-#elif defined(OS_POSIX)
-      bool use_zygote,
-      const base::EnvironmentMap& environ,
-#endif
-      CommandLine* cmd_line) = 0;
+      base::CommandLine* cmd_line) = 0;
 
   virtual const ChildProcessData& GetData() const = 0;
 
@@ -77,9 +70,6 @@ class CONTENT_EXPORT BrowserChildProcessHost : public IPC::Sender {
   // they need to call this method so that the process handle is associated with
   // this object.
   virtual void SetHandle(base::ProcessHandle handle) = 0;
-
-  // Set the nacl debug stub port of the process.
-  virtual void SetNaClDebugStubPort(int port) = 0;
 
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // Returns a PortProvider used to get process metrics for child processes.

@@ -13,7 +13,7 @@
 #include "base/values.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/webview/web_dialog_view.h"
@@ -50,7 +50,7 @@ class PaintMessageHandler
 void PaintMessageHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "didPaint",
-      base::Bind(&PaintMessageHandler::DidPaint, base::Unretained(this)));
+      base::Bind(&PaintMessageHandler::DidPaint, AsWeakPtr()));
 }
 
 void PaintMessageHandler::DidPaint(const base::ListValue* args) {

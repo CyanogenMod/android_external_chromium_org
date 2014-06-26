@@ -9,10 +9,10 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "base/time/time.h"
 
 #if defined(USE_SYSTEM_MINIZIP)
@@ -35,7 +35,7 @@ namespace zip {
 //     reader.AdvanceToNextEntry();
 //   }
 //
-// For simplicty, error checking is omitted in the example code above. The
+// For simplicity, error checking is omitted in the example code above. The
 // production code should check return values from all of these functions.
 //
 // This calls can also be used for random access of contents in a zip file
@@ -64,6 +64,8 @@ class ZipReader {
 
     // Returns the size of the original file (i.e. after uncompressed).
     // Returns 0 if the entry is a directory.
+    // Note: this value should not be trusted, because it is stored as metadata
+    // in the zip archive and can be different from the real uncompressed size.
     int64 original_size() const { return original_size_; }
 
     // Returns the last modified time. If the time stored in the zip file was
@@ -180,6 +182,21 @@ class ZipReader {
   bool ExtractCurrentEntryToFd(int fd);
 #endif
 
+  // Extracts the current entry into memory. If the current entry is a directory
+  // the |output| parameter is set to the empty string. If the current entry is
+  // a file, the |output| parameter is filled with its contents. Returns true on
+  // success. OpenCurrentEntryInZip() must be called beforehand.
+  // Note: the |output| parameter can be filled with a big amount of data, avoid
+  // passing it around by value, but by reference or pointer.
+  // Note: the value returned by EntryInfo::original_size() cannot be
+  // trusted, so the real size of the uncompressed contents can be different.
+  // Use max_read_bytes to limit the ammount of memory used to carry the entry.
+  // If the real size of the uncompressed data is bigger than max_read_bytes
+  // then false is returned. |max_read_bytes| must be non-zero.
+  bool ExtractCurrentEntryToString(
+      size_t max_read_bytes,
+      std::string* output) const;
+
   // Returns the current entry info. Returns NULL if the current entry is
   // not yet opened. OpenCurrentEntryInZip() must be called beforehand.
   EntryInfo* current_entry_info() const {
@@ -199,7 +216,7 @@ class ZipReader {
 
   // Extracts a chunk of the file to the target.  Will post a task for the next
   // chunk and success/failure/progress callbacks as necessary.
-  void ExtractChunk(base::PlatformFile target_file,
+  void ExtractChunk(base::File target_file,
                     const SuccessCallback& success_callback,
                     const FailureCallback& failure_callback,
                     const ProgressCallback& progress_callback,

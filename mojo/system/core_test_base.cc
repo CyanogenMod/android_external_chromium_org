@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "mojo/system/constants.h"
-#include "mojo/system/core_impl.h"
+#include "mojo/system/core.h"
 #include "mojo/system/dispatcher.h"
 #include "mojo/system/memory.h"
 
@@ -30,17 +30,17 @@ class MockDispatcher : public Dispatcher {
     info_->IncrementCtorCallCount();
   }
 
+  // |Dispatcher| private methods:
   virtual Type GetType() const OVERRIDE {
     return kTypeUnknown;
   }
 
  private:
-  friend class base::RefCountedThreadSafe<MockDispatcher>;
   virtual ~MockDispatcher() {
     info_->IncrementDtorCallCount();
   }
 
-  // |Dispatcher| implementation/overrides:
+  // |Dispatcher| protected methods:
   virtual void CloseImplNoLock() OVERRIDE {
     info_->IncrementCloseCallCount();
     lock().AssertAcquired();
@@ -54,7 +54,7 @@ class MockDispatcher : public Dispatcher {
     info_->IncrementWriteMessageCallCount();
     lock().AssertAcquired();
 
-    if (!VerifyUserPointer<void>(bytes, num_bytes))
+    if (!VerifyUserPointerWithSize<1>(bytes, num_bytes))
       return MOJO_RESULT_INVALID_ARGUMENT;
     if (num_bytes > kMaxMessageNumBytes)
       return MOJO_RESULT_RESOURCE_EXHAUSTED;
@@ -68,13 +68,13 @@ class MockDispatcher : public Dispatcher {
   virtual MojoResult ReadMessageImplNoLock(
       void* bytes,
       uint32_t* num_bytes,
-      std::vector<scoped_refptr<Dispatcher> >* /*dispatchers*/,
+      DispatcherVector* /*dispatchers*/,
       uint32_t* /*num_dispatchers*/,
       MojoReadMessageFlags /*flags*/) OVERRIDE {
     info_->IncrementReadMessageCallCount();
     lock().AssertAcquired();
 
-    if (num_bytes && !VerifyUserPointer<void>(bytes, *num_bytes))
+    if (num_bytes && !VerifyUserPointerWithSize<1>(bytes, *num_bytes))
       return MOJO_RESULT_INVALID_ARGUMENT;
 
     return MOJO_RESULT_OK;
@@ -130,8 +130,8 @@ class MockDispatcher : public Dispatcher {
   }
 
   virtual MojoResult AddWaiterImplNoLock(Waiter* /*waiter*/,
-                                         MojoWaitFlags /*flags*/,
-                                         MojoResult /*wake_result*/) OVERRIDE {
+                                         MojoHandleSignals /*signals*/,
+                                         uint32_t /*context*/) OVERRIDE {
     info_->IncrementAddWaiterCallCount();
     lock().AssertAcquired();
     return MOJO_RESULT_FAILED_PRECONDITION;
@@ -168,7 +168,7 @@ CoreTestBase::~CoreTestBase() {
 }
 
 void CoreTestBase::SetUp() {
-  core_ = new CoreImpl();
+  core_ = new Core();
 }
 
 void CoreTestBase::TearDown() {

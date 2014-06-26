@@ -7,7 +7,6 @@
 #include <limits>
 
 namespace ash {
-namespace internal {
 
 DefaultAccessibilityDelegate::DefaultAccessibilityDelegate()
     : spoken_feedback_enabled_(false),
@@ -83,6 +82,10 @@ bool DefaultAccessibilityDelegate::ShouldShowAccessibilityMenu() const {
          virtual_keyboard_enabled_;
 }
 
+bool DefaultAccessibilityDelegate::IsBrailleDisplayConnected() const {
+  return false;
+}
+
 void DefaultAccessibilityDelegate::SilenceSpokenFeedback() const {
 }
 
@@ -111,5 +114,4 @@ base::TimeDelta DefaultAccessibilityDelegate::PlayShutdownSound() const {
   return base::TimeDelta();
 }
 
-}  // namespace internal
 }  // namespace ash

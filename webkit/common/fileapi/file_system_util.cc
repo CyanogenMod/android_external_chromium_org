@@ -11,6 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "url/gurl.h"
 #include "webkit/common/database/database_identifier.h"
@@ -146,6 +147,65 @@ bool VirtualPath::IsRootPath(const base::FilePath& path) {
            components[0] == VirtualPath::kRoot));
 }
 
+bool ParseFileSystemSchemeURL(const GURL& url,
+                              GURL* origin_url,
+                              FileSystemType* type,
+                              base::FilePath* virtual_path) {
+  GURL origin;
+  FileSystemType file_system_type = kFileSystemTypeUnknown;
+
+  if (!url.is_valid() || !url.SchemeIsFileSystem())
+    return false;
+
+  const struct {
+    FileSystemType type;
+    const char* dir;
+  } kValidTypes[] = {
+    { kFileSystemTypePersistent, kPersistentDir },
+    { kFileSystemTypeTemporary, kTemporaryDir },
+    { kFileSystemTypeIsolated, kIsolatedDir },
+    { kFileSystemTypeExternal, kExternalDir },
+    { kFileSystemTypeTest, kTestDir },
+  };
+
+  // A path of the inner_url contains only mount type part (e.g. "/temporary").
+  DCHECK(url.inner_url());
+  std::string inner_path = url.inner_url()->path();
+  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kValidTypes); ++i) {
+    if (inner_path == kValidTypes[i].dir) {
+      file_system_type = kValidTypes[i].type;
+      break;
+    }
+  }
+
+  if (file_system_type == kFileSystemTypeUnknown)
+    return false;
+
+  std::string path = net::UnescapeURLComponent(url.path(),
+      net::UnescapeRule::SPACES | net::UnescapeRule::URL_SPECIAL_CHARS |
+      net::UnescapeRule::CONTROL_CHARS);
+
+  // Ensure the path is relative.
+  while (!path.empty() && path[0] == '/')
+    path.erase(0, 1);
+
+  base::FilePath converted_path = base::FilePath::FromUTF8Unsafe(path);
+
+  // All parent references should have been resolved in the renderer.
+  if (converted_path.ReferencesParent())
+    return false;
+
+  if (origin_url)
+    *origin_url = url.GetOrigin();
+  if (type)
+    *type = file_system_type;
+  if (virtual_path)
+    *virtual_path = converted_path.NormalizePathSeparators().
+        StripTrailingSeparators();
+
+  return true;
+}
+
 GURL GetFileSystemRootURI(const GURL& origin_url, FileSystemType type) {
   // origin_url is based on a security origin, so http://foo.com or file:///
   // instead of the corresponding filesystem URL.
@@ -257,6 +317,10 @@ std::string GetFileSystemTypeString(FileSystemType type) {
       return "PluginPrivate";
     case kFileSystemTypeCloudDevice:
       return "CloudDevice";
+    case kFileSystemTypeProvided:
+      return "Provided";
+    case kFileSystemTypeDeviceMediaAsFileStorage:
+      return "DeviceMediaStorage";
     case kFileSystemInternalTypeEnumStart:
     case kFileSystemInternalTypeEnumEnd:
       NOTREACHED();
@@ -379,7 +443,7 @@ bool ValidateIsolatedFileSystemId(const std::string& filesystem_id) {
   if (filesystem_id.size() != kExpectedFileSystemIdSize)
     return false;
   const std::string kExpectedChars("ABCDEF0123456789");
-  return ContainsOnlyChars(filesystem_id, kExpectedChars);
+  return base::ContainsOnlyChars(filesystem_id, kExpectedChars);
 }
 
 std::string GetIsolatedFileSystemRootURIString(
@@ -390,12 +454,12 @@ std::string GetIsolatedFileSystemRootURIString(
                                           kFileSystemTypeIsolated).spec();
   if (base::FilePath::FromUTF8Unsafe(filesystem_id).ReferencesParent())
     return std::string();
-  root.append(filesystem_id);
+  root.append(net::EscapePath(filesystem_id));
   root.append("/");
   if (!optional_root_name.empty()) {
     if (base::FilePath::FromUTF8Unsafe(optional_root_name).ReferencesParent())
       return std::string();
-    root.append(optional_root_name);
+    root.append(net::EscapePath(optional_root_name));
     root.append("/");
   }
   return root;
@@ -408,7 +472,7 @@ std::string GetExternalFileSystemRootURIString(
                                           kFileSystemTypeExternal).spec();
   if (base::FilePath::FromUTF8Unsafe(mount_name).ReferencesParent())
     return std::string();
-  root.append(mount_name);
+  root.append(net::EscapePath(mount_name));
   root.append("/");
   return root;
 }
@@ -444,14 +508,5 @@ base::File::Error NetErrorToFileError(int error) {
       return base::File::FILE_ERROR_FAILED;
   }
 }
-
-#if defined(OS_CHROMEOS)
-FileSystemInfo GetFileSystemInfoForChromeOS(const GURL& origin_url) {
-  FileSystemType mount_type = fileapi::kFileSystemTypeExternal;
-  return FileSystemInfo(fileapi::GetFileSystemName(origin_url, mount_type),
-                        fileapi::GetFileSystemRootURI(origin_url, mount_type),
-                        mount_type);
-}
-#endif
 
 }  // namespace fileapi

@@ -13,6 +13,8 @@ import android.content.DialogInterface;
 import android.os.Handler;
 import android.util.Log;
 
+import org.chromium.base.ActivityState;
+import org.chromium.base.ApplicationStatus;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ObserverList;
 import org.chromium.base.ThreadUtils;
@@ -204,7 +206,7 @@ public class SigninManager {
             return;
         }
 
-        if (mSignInActivity.isDestroyed()) {
+        if (ApplicationStatus.getStateForActivity(mSignInActivity) == ActivityState.DESTROYED) {
             // The activity is no longer running, cancel sign in.
             cancelSignIn();
             return;
@@ -243,7 +245,8 @@ public class SigninManager {
                         mPolicyConfirmationDialog = null;
                     }
                 });
-        builder.setOnDismissListener(
+        mPolicyConfirmationDialog = builder.create();
+        mPolicyConfirmationDialog.setOnDismissListener(
                 new DialogInterface.OnDismissListener() {
                     @Override
                     public void onDismiss(DialogInterface dialog) {
@@ -254,7 +257,6 @@ public class SigninManager {
                         }
                     }
                 });
-        mPolicyConfirmationDialog = builder.create();
         mPolicyConfirmationDialog.show();
     }
 
@@ -273,7 +275,6 @@ public class SigninManager {
         ChromeSigninController.get(mContext).setSignedInAccountName(mSignInAccount.name);
 
         // Tell the native side that sign-in has completed.
-        // This will trigger NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL.
         nativeOnSignInCompleted(mNativeSigninManagerAndroid, mSignInAccount.name);
 
         // Register for invalidations.
@@ -338,6 +339,10 @@ public class SigninManager {
         nativeLogInSignedInUser(mNativeSigninManagerAndroid);
     }
 
+    public void clearLastSignedInUser() {
+        nativeClearLastSignedInUser(mNativeSigninManagerAndroid);
+    }
+
     private void cancelSignIn() {
         if (mSignInObserver != null)
             mSignInObserver.onSigninCancelled();
@@ -377,6 +382,13 @@ public class SigninManager {
         }
     }
 
+    /**
+     * @return True if the new profile management is enabled.
+     */
+    public static boolean isNewProfileManagementEnabled() {
+        return nativeIsNewProfileManagementEnabled();
+    }
+
     // Native methods.
     private native long nativeInit();
     private native boolean nativeShouldLoadPolicyForUser(String username);
@@ -387,5 +399,7 @@ public class SigninManager {
     private native void nativeSignOut(long nativeSigninManagerAndroid);
     private native String nativeGetManagementDomain(long nativeSigninManagerAndroid);
     private native void nativeWipeProfileData(long nativeSigninManagerAndroid);
+    private native void nativeClearLastSignedInUser(long nativeSigninManagerAndroid);
     private native void nativeLogInSignedInUser(long nativeSigninManagerAndroid);
+    private static native boolean nativeIsNewProfileManagementEnabled();
 }

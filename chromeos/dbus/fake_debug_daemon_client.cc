@@ -21,7 +21,7 @@ FakeDebugDaemonClient::~FakeDebugDaemonClient() {}
 
 void FakeDebugDaemonClient::Init(dbus::Bus* bus) {}
 
-void FakeDebugDaemonClient::GetDebugLogs(base::PlatformFile file,
+void FakeDebugDaemonClient::GetDebugLogs(base::File file,
                                          const GetDebugLogsCallback& callback) {
   callback.Run(false);
 }
@@ -111,6 +111,9 @@ void FakeDebugDaemonClient::TestICMPWithOptions(
     const TestICMPCallback& callback) {
   base::MessageLoop::current()->PostTask(FROM_HERE,
                                          base::Bind(callback, false, ""));
+}
+
+void FakeDebugDaemonClient::UploadCrashes() {
 }
 
 }  // namespace chromeos

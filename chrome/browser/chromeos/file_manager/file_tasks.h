@@ -18,12 +18,12 @@
 // https://developer.chrome.com/extensions/fileBrowserHandler.html
 //
 // 2) Built-in handlers provided from Files.app. Files.app provides lots of
-// file_browser_handlers, such as "play", "watch", "mount-archive".  These
-// built-in handlers are often handled in special manners inside Files.app.
+// file_browser_handlers, such as "play", "mount-archive".  These built-in
+// handlers are often handled in special manners inside Files.app.
 // This information also comes from FileBrowserHandler::GetHandlers().
 //
 // See also:
-// chrome/browser/resources/file_manager/manifest.json
+// ui/file_manager/file_manager/manifest.json
 //
 // 3) Drive app, which is a hosted app (i.e. just web site), that can work
 // with Drive (ex. Pixlr Editor). This information comes from
@@ -99,12 +99,12 @@
 // chrome.fileBrowserPrivate.executeTasks() is used to open a file with a
 // handler (Chrome Extension/App or Drive App).
 //
-// Some built-in handlers such as "play" and "watch" are handled internally
-// in Files.app. "mount-archive" is handled very differently. The task
-// execution business should be simplified: crbug.com/267313
+// Some built-in handlers such as "play" are handled internally in Files.app.
+// "mount-archive" is handled very differently. The task execution business
+// should be simplified: crbug.com/267313
 //
 // See also:
-// chrome/browser/resources/file_manager/js/file_tasks.js
+// ui/file_manager/file_manager/js/file_tasks.js
 //
 
 #ifndef CHROME_BROWSER_CHROMEOS_FILE_MANAGER_FILE_TASKS_H_
@@ -210,8 +210,6 @@ std::string MakeTaskID(const std::string& app_id,
                        const std::string& action_id);
 
 // Returns a task id for the Drive app with |app_id|.
-// TODO(gspencer): For now, the action id is always "open-with", but we
-// could add any actions that the drive app supports.
 std::string MakeDriveAppTaskId(const std::string& app_id);
 
 // Converts |task_descriptor| to a task ID.

@@ -12,16 +12,16 @@
 #include "chrome/browser/chromeos/input_method/input_method_manager_impl.h"
 #include "chrome/browser/chromeos/login/login_manager_test.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_adding_screen.h"
+#include "chrome/browser/chromeos/login/ui/user_adding_screen.h"
 #include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/chromeos/system/fake_input_device_settings.h"
-#include "chrome/browser/feedback/tracing_manager.h"
-#include "chrome/common/chrome_switches.h"
+#include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/ime/fake_xkeyboard.h"
+#include "chromeos/ime/fake_ime_keyboard.h"
+#include "components/feedback/tracing_manager.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event_utils.h"
@@ -39,11 +39,10 @@ class PreferencesTest : public LoginManagerTest {
   PreferencesTest()
       : LoginManagerTest(true),
         input_settings_(NULL),
-        xkeyboard_(NULL) {}
+        keyboard_(NULL) {}
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     LoginManagerTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(::switches::kMultiProfiles);
     command_line->AppendSwitch(switches::kStubCrosSettings);
   }
 
@@ -51,15 +50,15 @@ class PreferencesTest : public LoginManagerTest {
     LoginManagerTest::SetUpOnMainThread();
     input_settings_ = new system::FakeInputDeviceSettings();
     system::InputDeviceSettings::SetSettingsForTesting(input_settings_);
-    xkeyboard_ = new input_method::FakeXKeyboard();
+    keyboard_ = new input_method::FakeImeKeyboard();
     static_cast<input_method::InputMethodManagerImpl*>(
         input_method::InputMethodManager::Get())
-        ->SetXKeyboardForTesting(xkeyboard_);
+        ->SetImeKeyboardForTesting(keyboard_);
     CrosSettings::Get()->SetString(kDeviceOwner, kTestUsers[0]);
   }
 
   // Sets set of preferences in given |prefs|. Value of prefernece depends of
-  // |variant| value. For opposite |variant| values all preferences recieve
+  // |variant| value. For opposite |variant| values all preferences receive
   // different values.
   void SetPrefs(PrefService* prefs, bool variant) {
     prefs->SetBoolean(prefs::kTapToClickEnabled, variant);
@@ -89,8 +88,6 @@ class PreferencesTest : public LoginManagerTest {
     EXPECT_EQ(prefs->GetBoolean(prefs::kEnableTouchpadThreeFingerClick),
               input_settings_->current_touchpad_settings()
                   .GetThreeFingerClick());
-    EXPECT_EQ(prefs->GetBoolean(prefs::kNaturalScroll),
-              ui::IsNaturalScrollEnabled());
     EXPECT_EQ(prefs->GetInteger(prefs::kMouseSensitivity),
               input_settings_->current_mouse_settings().GetSensitivity());
     EXPECT_EQ(prefs->GetInteger(prefs::kTouchpadSensitivity),
@@ -98,8 +95,8 @@ class PreferencesTest : public LoginManagerTest {
     EXPECT_EQ(prefs->GetBoolean(prefs::kTouchHudProjectionEnabled),
               ash::Shell::GetInstance()->is_touch_hud_projection_enabled());
     EXPECT_EQ(prefs->GetBoolean(prefs::kLanguageXkbAutoRepeatEnabled),
-              xkeyboard_->auto_repeat_is_enabled_);
-    input_method::AutoRepeatRate rate = xkeyboard_->last_auto_repeat_rate_;
+              keyboard_->auto_repeat_is_enabled_);
+    input_method::AutoRepeatRate rate = keyboard_->last_auto_repeat_rate_;
     EXPECT_EQ(prefs->GetInteger(prefs::kLanguageXkbAutoRepeatDelay),
               (int)rate.initial_delay_in_ms);
     EXPECT_EQ(prefs->GetInteger(prefs::kLanguageXkbAutoRepeatInterval),
@@ -117,9 +114,18 @@ class PreferencesTest : public LoginManagerTest {
               prefs->GetBoolean(prefs::kPrimaryMouseButtonRight));
   }
 
+  void DisableAnimations() {
+    // Disable animations for user transitions.
+    chrome::MultiUserWindowManagerChromeOS* manager =
+        static_cast<chrome::MultiUserWindowManagerChromeOS*>(
+            chrome::MultiUserWindowManager::GetInstance());
+    manager->SetAnimationSpeedForTest(
+        chrome::MultiUserWindowManagerChromeOS::ANIMATION_SPEED_DISABLED);
+  }
+
  private:
   system::FakeInputDeviceSettings* input_settings_;
-  input_method::FakeXKeyboard* xkeyboard_;
+  input_method::FakeImeKeyboard* keyboard_;
 
   DISALLOW_COPY_AND_ASSIGN(PreferencesTest);
 };
@@ -145,18 +151,15 @@ IN_PROC_BROWSER_TEST_F(PreferencesTest, MultiProfiles) {
   // Add second user and init its prefs with different values.
   UserAddingScreen::Get()->Start();
   content::RunAllPendingInMessageLoop();
+  DisableAnimations();
   AddUser(kTestUsers[1]);
-  EXPECT_TRUE(user1->is_active());
+  content::RunAllPendingInMessageLoop();
   const User* user2 = user_manager->FindUser(kTestUsers[1]);
+  EXPECT_TRUE(user2->is_active());
   PrefService* prefs2 = user_manager->GetProfileByUser(user2)->GetPrefs();
   SetPrefs(prefs2, true);
 
-  // First user is still active, so settings was not changed.
-  EXPECT_TRUE(user1->is_active());
-  CheckSettingsCorrespondToPrefs(prefs1);
-
-  // Switch user and check that settings was changed accordingly.
-  user_manager->SwitchActiveUser(kTestUsers[1]);
+  // Check that settings were changed accordingly.
   EXPECT_TRUE(user2->is_active());
   CheckSettingsCorrespondToPrefs(prefs2);
 

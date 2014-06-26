@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -14,10 +14,11 @@ Octane 2.0 consists of 17 tests, four more than Octane v1.
 import os
 
 from metrics import power
-from metrics import statistics
 from telemetry import test
 from telemetry.page import page_measurement
 from telemetry.page import page_set
+from telemetry.util import statistics
+from telemetry.value import scalar
 
 _GB = 1024 * 1024 * 1024
 
@@ -70,7 +71,8 @@ class _OctaneMeasurement(page_measurement.PageMeasurement):
         # Collect all test scores to compute geometric mean.
         all_scores.append(score)
     total = statistics.GeometricMean(all_scores)
-    results.AddSummary('Score', 'score', total, chart_name='Total')
+    results.AddSummaryValue(
+        scalar.ScalarValue(None, 'Total.Score', 'score', total))
 
 
 class Octane(test.Test):
@@ -78,13 +80,10 @@ class Octane(test.Test):
   test = _OctaneMeasurement
 
   def CreatePageSet(self, options):
-    return page_set.PageSet.FromDict({
-      'archive_data_file': '../page_sets/data/octane.json',
-      'make_javascript_deterministic': False,
-      'pages': [{
-          'url':
-          'http://octane-benchmark.googlecode.com/svn/latest/index.html?auto=1'
-          }
-        ]
-      }, os.path.abspath(__file__))
-
+    ps = page_set.PageSet(
+      archive_data_file='../page_sets/data/octane.json',
+      make_javascript_deterministic=False,
+      file_path=os.path.abspath(__file__))
+    ps.AddPageWithDefaultRunNavigate(
+      'http://octane-benchmark.googlecode.com/svn/latest/index.html?auto=1')
+    return ps

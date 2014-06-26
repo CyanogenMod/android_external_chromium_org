@@ -76,6 +76,7 @@
             'out_newlib64': '<(braille_test_data_dir)/>(nexe_target)_x86_64.nexe',
             'out_newlib32': '<(braille_test_data_dir)/>(nexe_target)_x86_32.nexe',
             'out_newlib_arm': '<(braille_test_data_dir)/>(nexe_target)_arm.nexe',
+            'out_newlib_mips': '<(braille_test_data_dir)/>(nexe_target)_mips32.nexe',
             'build_newlib': 1,
             'extra_args': [
               '--strip-debug',
@@ -90,6 +91,9 @@
               }],
               ['enable_arm==1', {
                 'nexe_files': ['>(out_newlib_arm)'],
+              }],
+              ['enable_mips==1', {
+                'nexe_files': ['>(out_newlib_mips)'],
               }],
             ],
           },
@@ -116,7 +120,7 @@
             '../../native_client/tools.gyp:prep_toolchain',
             '../../native_client_sdk/native_client_sdk_untrusted.gyp:nacl_io_untrusted',
             '../../ppapi/native_client/native_client.gyp:ppapi_lib',
-            '../../ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+            '../../ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
             '../jsoncpp/jsoncpp_nacl.gyp:jsoncpp_nacl',
             'liblouis_nacl',
           ],

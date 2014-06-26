@@ -1,4 +1,5 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.  // Use of this source code is governed by a BSD-style license that can be
+// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/network_profile_bubble.h"
@@ -24,7 +25,7 @@
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace {
@@ -90,7 +91,7 @@ bool NetworkProfileBubble::ShouldCheckNetworkProfile(Profile* profile) {
 // static
 void NetworkProfileBubble::CheckNetworkProfile(
     const base::FilePath& profile_folder) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
   // On Windows notify the users if their profiles are located on a network
   // share as we don't officially support this setup yet.
   // However we don't want to bother users on Cytrix setups as those have no
@@ -127,7 +128,7 @@ void NetworkProfileBubble::CheckNetworkProfile(
       // Try to create some non-empty temp file in the profile dir and use
       // it to check if there is a reparse-point free path to it.
       if (base::CreateTemporaryFileInDir(profile_folder, &temp_file) &&
-          (file_util::WriteFile(temp_file, ".", 1) == 1)) {
+          (base::WriteFile(temp_file, ".", 1) == 1)) {
         base::FilePath normalized_temp_file;
         if (!base::NormalizeFilePath(temp_file, &normalized_temp_file))
           profile_on_network = true;

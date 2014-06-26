@@ -6,7 +6,11 @@
 
 namespace content {
 
-bool NavigatorDelegate::CanOverscrollContent() {
+bool NavigatorDelegate::CanOverscrollContent() const {
+  return false;
+}
+
+bool NavigatorDelegate::ShouldPreserveAbortedURLs() {
   return false;
 }
 

@@ -30,9 +30,12 @@ class OmniboxCurrentPageDelegateImpl : public OmniboxCurrentPageDelegate {
       TemplateURL* template_url,
       const AutocompleteMatch& match,
       WindowOpenDisposition disposition) OVERRIDE;
-  virtual void NotifySearchTabHelper(bool user_input_in_progress,
-                                     bool cancelling) OVERRIDE;
+  virtual void OnInputStateChanged() OVERRIDE;
+  virtual void OnFocusChanged(OmniboxFocusState state,
+                              OmniboxFocusChangeReason reason) OVERRIDE;
   virtual void DoPrerender(const AutocompleteMatch& match) OVERRIDE;
+  virtual void SetSuggestionToPrefetch(
+      const InstantSuggestion& suggestion) OVERRIDE;
 
  private:
   OmniboxEditController* controller_;

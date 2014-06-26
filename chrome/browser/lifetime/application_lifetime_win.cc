@@ -19,11 +19,11 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "chrome/browser/metro_utils/metro_chrome_win.h"
+#include "chrome/browser/metro_viewer/chrome_metro_viewer_process_host_aurawin.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/aura/remote_window_tree_host_win.h"
 #endif
 
 namespace chrome {
@@ -46,9 +46,8 @@ void AttemptRestartWithModeSwitch() {
 #if defined(USE_AURA)
   // This function should be called only from non aura code path.
   // In aura/ash windows world browser process is always non metro.
-  CHECK(false);
-  return;
-#endif
+  NOTREACHED();
+#else
   // The kRestartSwitchMode preference does not exists for Windows 7 and older
   // operating systems so there is no need for OS version check.
   PrefService* prefs = g_browser_process->local_state();
@@ -60,6 +59,7 @@ void AttemptRestartWithModeSwitch() {
                      upgrade_util::kRelaunchModeMetro);
   }
   AttemptRestart();
+#endif
 }
 
 #if defined(USE_AURA)
@@ -88,7 +88,8 @@ void ActivateDesktopHelper(AshExecutionStatus ash_execution_status) {
   // Actually launching the process needs to happen in the metro viewer,
   // otherwise it won't automatically transition to desktop.  So we have
   // to send an IPC to the viewer to do the ShellExecute.
-  aura::HandleActivateDesktop(path, ash_execution_status == ASH_TERMINATE);
+  ChromeMetroViewerProcessHost::HandleActivateDesktop(
+      path, ash_execution_status == ASH_TERMINATE);
 }
 #endif
 

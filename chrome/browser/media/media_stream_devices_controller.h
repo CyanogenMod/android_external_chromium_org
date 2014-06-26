@@ -69,13 +69,15 @@ class MediaStreamDevicesController : public PermissionBubbleRequest {
   bool HasVideo() const;
   const std::string& GetSecurityOriginSpec() const;
   void Accept(bool update_content_setting);
-  void Deny(bool update_content_setting);
+  void Deny(bool update_content_setting,
+            content::MediaStreamRequestResult result);
 
   // PermissionBubbleRequest:
+  virtual int GetIconID() const OVERRIDE;
   virtual base::string16 GetMessageText() const OVERRIDE;
   virtual base::string16 GetMessageTextFragment() const OVERRIDE;
-  virtual base::string16 GetAlternateAcceptButtonText() const OVERRIDE;
-  virtual base::string16 GetAlternateDenyButtonText() const OVERRIDE;
+  virtual bool HasUserGesture() const OVERRIDE;
+  virtual GURL GetRequestingHostname() const OVERRIDE;
   virtual void PermissionGranted() OVERRIDE;
   virtual void PermissionDenied() OVERRIDE;
   virtual void Cancelled() OVERRIDE;

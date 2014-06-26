@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
+#include "gpu/command_buffer/client/gpu_memory_buffer_factory.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
@@ -39,12 +40,12 @@ GLManager::Options::Options()
       share_mailbox_manager(NULL),
       virtual_manager(NULL),
       bind_generates_resource(false),
+      lose_context_when_out_of_memory(false),
       context_lost_allowed(false),
-      image_manager(NULL) {
-}
+      image_manager(NULL) {}
 
 GLManager::GLManager()
-    : context_lost_allowed_(false) {
+    : context_lost_allowed_(false), gpu_memory_buffer_factory_(NULL) {
   SetupBaseContext();
 }
 
@@ -117,11 +118,13 @@ void GLManager::Initialize(const GLManager::Options& options) {
   attrib_helper.Serialize(&attribs);
 
   if (!context_group) {
-    context_group = new gles2::ContextGroup(mailbox_manager_.get(),
-                                            options.image_manager,
-                                            NULL,
-                                            NULL,
-                                            options.bind_generates_resource);
+    context_group =
+        new gles2::ContextGroup(mailbox_manager_.get(),
+                                options.image_manager,
+                                NULL,
+                                new gpu::gles2::ShaderTranslatorCache,
+                                NULL,
+                                options.bind_generates_resource);
   }
 
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group));
@@ -140,15 +143,15 @@ void GLManager::Initialize(const GLManager::Options& options) {
   surface_ = gfx::GLSurface::CreateOffscreenGLSurface(options.size);
   ASSERT_TRUE(surface_.get() != NULL) << "could not create offscreen surface";
 
-  if (real_gl_context) {
+  if (base_context_) {
     context_ = scoped_refptr<gfx::GLContext>(new gpu::GLContextVirtual(
-        share_group_.get(), real_gl_context, decoder_->AsWeakPtr()));
+        share_group_.get(), base_context_->get(), decoder_->AsWeakPtr()));
     ASSERT_TRUE(context_->Initialize(
         surface_.get(), gfx::PreferIntegratedGpu));
   } else {
-    if (base_context_) {
+    if (real_gl_context) {
       context_ = scoped_refptr<gfx::GLContext>(new gpu::GLContextVirtual(
-          share_group_.get(), base_context_->get(), decoder_->AsWeakPtr()));
+          share_group_.get(), real_gl_context, decoder_->AsWeakPtr()));
       ASSERT_TRUE(context_->Initialize(
           surface_.get(), gfx::PreferIntegratedGpu));
     } else {
@@ -169,12 +172,10 @@ void GLManager::Initialize(const GLManager::Options& options) {
       ::gpu::gles2::DisallowedFeatures(),
       attribs)) << "could not initialize decoder";
 
-  gpu_control_.reset(
+  gpu_control_service_.reset(
       new GpuControlService(decoder_->GetContextGroup()->image_manager(),
-                            options.gpu_memory_buffer_factory,
-                            decoder_->GetContextGroup()->mailbox_manager(),
-                            decoder_->GetQueryManager(),
-                            decoder_->GetCapabilities()));
+                            decoder_->GetQueryManager()));
+  gpu_memory_buffer_factory_ = options.gpu_memory_buffer_factory;
 
   command_buffer_->SetPutOffsetChangeCallback(
       base::Bind(&GLManager::PumpCommands, base::Unretained(this)));
@@ -188,16 +189,14 @@ void GLManager::Initialize(const GLManager::Options& options) {
   // Create a transfer buffer.
   transfer_buffer_.reset(new TransferBuffer(gles2_helper_.get()));
 
-  bool free_everything_when_invisible = false;
-
   // Create the object exposing the OpenGL API.
-  gles2_implementation_.reset(new gles2::GLES2Implementation(
-      gles2_helper_.get(),
-      client_share_group,
-      transfer_buffer_.get(),
-      options.bind_generates_resource,
-      free_everything_when_invisible ,
-      gpu_control_.get()));
+  gles2_implementation_.reset(
+      new gles2::GLES2Implementation(gles2_helper_.get(),
+                                     client_share_group,
+                                     transfer_buffer_.get(),
+                                     options.bind_generates_resource,
+                                     options.lose_context_when_out_of_memory,
+                                     this));
 
   ASSERT_TRUE(gles2_implementation_->Initialize(
       kStartTransferBufferSize,
@@ -259,7 +258,7 @@ const gpu::gles2::FeatureInfo::Workarounds& GLManager::workarounds() const {
 void GLManager::PumpCommands() {
   decoder_->MakeCurrent();
   gpu_scheduler_->PutChanged();
-  ::gpu::CommandBuffer::State state = command_buffer_->GetState();
+  ::gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   if (!context_lost_allowed_) {
     ASSERT_EQ(::gpu::error::kNoError, state.error);
   }
@@ -267,6 +266,64 @@ void GLManager::PumpCommands() {
 
 bool GLManager::GetBufferChanged(int32 transfer_buffer_id) {
   return gpu_scheduler_->SetGetBuffer(transfer_buffer_id);
+}
+
+Capabilities GLManager::GetCapabilities() {
+  return decoder_->GetCapabilities();
+}
+
+gfx::GpuMemoryBuffer* GLManager::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    unsigned usage,
+    int32* id) {
+  *id = -1;
+  scoped_ptr<gfx::GpuMemoryBuffer> buffer(
+      gpu_memory_buffer_factory_->CreateGpuMemoryBuffer(
+          width, height, internalformat, usage));
+  if (!buffer.get())
+    return NULL;
+
+  static int32 next_id = 1;
+  *id = next_id++;
+  gpu_control_service_->RegisterGpuMemoryBuffer(
+      *id, buffer->GetHandle(), width, height, internalformat);
+  gfx::GpuMemoryBuffer* raw_buffer = buffer.get();
+  memory_buffers_.add(*id, buffer.Pass());
+  return raw_buffer;
+}
+
+void GLManager::DestroyGpuMemoryBuffer(int32 id) {
+  memory_buffers_.erase(id);
+  gpu_control_service_->UnregisterGpuMemoryBuffer(id);
+}
+
+uint32 GLManager::InsertSyncPoint() {
+  NOTIMPLEMENTED();
+  return 0u;
+}
+
+void GLManager::SignalSyncPoint(uint32 sync_point,
+                             const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::SignalQuery(uint32 query, const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::SetSurfaceVisible(bool visible) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::Echo(const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+uint32 GLManager::CreateStreamTexture(uint32 texture_id) {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 }  // namespace gpu

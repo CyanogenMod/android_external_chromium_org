@@ -15,17 +15,19 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/options/options_util.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/extension_pref_value_map.h"
 #include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
@@ -51,6 +53,24 @@ bool AllowMetricsReportingChange(const base::Value* to_value) {
   }
 
   return enable == OptionsUtil::ResolveMetricsReportingEnabled(enable);
+}
+
+// Whether "controlledBy" property of pref value sent to options web UI needs to
+// be set to "extension" when the preference is controlled by an extension.
+bool CanSetExtensionControlledPrefValue(
+    const PrefService::Preference* preference) {
+#if defined(OS_WIN)
+  // These have more obvious UI than the standard one for extension controlled
+  // values (an extension puzzle piece) on the settings page. To avoiding
+  // showing the extension puzzle piece for these settings, their "controlledBy"
+  // value should never be set to "extension".
+  return preference->name() != prefs::kURLsToRestoreOnStartup &&
+         preference->name() != prefs::kRestoreOnStartup &&
+         preference->name() != prefs::kHomePage &&
+         preference->name() != prefs::kHomePageIsNewTabPage;
+#else
+  return true;
+#endif
 }
 
 }  // namespace
@@ -99,9 +119,9 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
   localized_strings->SetString("controlledSettingExtensionWithName",
       l10n_util::GetStringUTF16(
           IDS_OPTIONS_CONTROLLED_SETTING_EXTENSION_WITH_NAME));
-  localized_strings->SetString("controlledSettingManageExtensions",
+  localized_strings->SetString("controlledSettingManageExtension",
       l10n_util::GetStringUTF16(
-          IDS_OPTIONS_CONTROLLED_SETTING_MANAGE_EXTENSIONS));
+          IDS_OPTIONS_CONTROLLED_SETTING_MANAGE_EXTENSION));
   localized_strings->SetString("controlledSettingDisableExtension",
       l10n_util::GetStringUTF16(IDS_EXTENSIONS_DISABLE));
   localized_strings->SetString("controlledSettingRecommended",
@@ -145,6 +165,8 @@ void CoreOptionsHandler::GetStaticLocalizedValues(
       l10n_util::GetStringUTF16(IDS_CLOSE));
   localized_strings->SetString("done",
       l10n_util::GetStringUTF16(IDS_DONE));
+  localized_strings->SetString("deletableItemDeleteButtonTitle",
+      l10n_util::GetStringUTF16(IDS_OPTIONS_DELETABLE_ITEM_DELETE_BUTTON));
 }
 
 void CoreOptionsHandler::Uninitialize() {
@@ -179,6 +201,9 @@ void CoreOptionsHandler::RegisterMessages() {
 
   web_ui()->RegisterMessageCallback("coreOptionsInitialize",
       base::Bind(&CoreOptionsHandler::HandleInitialize,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("onFinishedLoadingOptions",
+      base::Bind(&CoreOptionsHandler::OnFinishedLoading,
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback("fetchPrefs",
       base::Bind(&CoreOptionsHandler::HandleFetchPrefs,
@@ -218,6 +243,11 @@ void CoreOptionsHandler::RegisterMessages() {
 void CoreOptionsHandler::HandleInitialize(const base::ListValue* args) {
   DCHECK(handlers_host_);
   handlers_host_->InitializeHandlers();
+}
+
+void CoreOptionsHandler::OnFinishedLoading(const base::ListValue* args) {
+  DCHECK(handlers_host_);
+  handlers_host_->OnFinishedLoading();
 }
 
 base::Value* CoreOptionsHandler::FetchPref(const std::string& pref_name) {
@@ -352,8 +382,8 @@ base::Value* CoreOptionsHandler::CreateValueForPref(
   dict->Set("value", pref->GetValue()->DeepCopy());
   if (controlling_pref->IsManaged()) {
     dict->SetString("controlledBy", "policy");
-  } else if (controlling_pref->IsExtensionControlled()) {
-    dict->SetString("controlledBy", "extension");
+  } else if (controlling_pref->IsExtensionControlled() &&
+             CanSetExtensionControlledPrefValue(controlling_pref)) {
     Profile* profile = Profile::FromWebUI(web_ui());
     ExtensionPrefValueMap* extension_pref_value_map =
         ExtensionPrefValueMapFactory::GetForBrowserContext(profile);
@@ -361,12 +391,14 @@ base::Value* CoreOptionsHandler::CreateValueForPref(
         extension_pref_value_map->GetExtensionControllingPref(
             controlling_pref->name());
 
-    ExtensionService* extension_service = extensions::ExtensionSystem::Get(
-        profile)->extension_service();
-    scoped_ptr<base::DictionaryValue> dictionary =
-        extension_service->GetExtensionInfo(extension_id);
-    if (!dictionary->empty())
-      dict->Set("extension", dictionary.release());
+    const extensions::Extension* extension =
+        extensions::ExtensionRegistry::Get(profile)->GetExtensionById(
+            extension_id, extensions::ExtensionRegistry::EVERYTHING);
+    if (extension) {
+      dict->SetString("controlledBy", "extension");
+      dict->Set("extension",
+                extensions::util::GetExtensionInfo(extension).release());
+    }
   } else if (controlling_pref->IsRecommended()) {
     dict->SetString("controlledBy", "recommended");
   }
@@ -436,7 +468,7 @@ void CoreOptionsHandler::HandleFetchPrefs(const base::ListValue* args) {
 
     result_value.Set(pref_name.c_str(), FetchPref(pref_name));
   }
-  web_ui()->CallJavascriptFunction(UTF16ToASCII(callback_function),
+  web_ui()->CallJavascriptFunction(base::UTF16ToASCII(callback_function),
                                    result_value);
 }
 
@@ -545,7 +577,7 @@ void CoreOptionsHandler::HandleSetPref(const base::ListValue* args,
         NOTREACHED();
         return;
       }
-      GURL fixed = URLFixerUpper::FixupURL(original, std::string());
+      GURL fixed = url_fixer::FixupURL(original, std::string());
       temp_value.reset(new base::StringValue(fixed.spec()));
       value = temp_value.get();
       break;

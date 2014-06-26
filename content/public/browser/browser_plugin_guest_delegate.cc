@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,29 +6,13 @@
 
 namespace content {
 
-bool BrowserPluginGuestDelegate::HandleKeyboardEvent(
-    const NativeWebKeyboardEvent& event) {
-  return false;
+WebContents* BrowserPluginGuestDelegate::CreateNewGuestWindow(
+    const WebContents::CreateParams& create_params) {
+  return NULL;
 }
 
-bool BrowserPluginGuestDelegate::IsDragAndDropEnabled() {
-  return false;
-}
-
-bool BrowserPluginGuestDelegate::IsOverridingUserAgent() const {
-  return false;
-}
-
-bool BrowserPluginGuestDelegate::RequestPermission(
-    BrowserPluginPermissionType permission_type,
-    const base::DictionaryValue& request_info,
-    const PermissionResponseCallback& callback,
-    bool allowed_by_default) {
-  return false;
-}
-
-GURL BrowserPluginGuestDelegate::ResolveURL(const std::string& src) {
-  return GURL(src);
+int BrowserPluginGuestDelegate::GetGuestInstanceID() const {
+  return 0;
 }
 
 }  // namespace content

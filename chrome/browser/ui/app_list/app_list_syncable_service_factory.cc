@@ -4,14 +4,21 @@
 
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
 
+#include <set>
+
 #include "base/prefs/pref_service.h"
+#include "chrome/browser/apps/drive/drive_app_provider.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
+#endif
 
 namespace app_list {
 
@@ -27,23 +34,43 @@ AppListSyncableServiceFactory* AppListSyncableServiceFactory::GetInstance() {
   return Singleton<AppListSyncableServiceFactory>::get();
 }
 
+// static
+KeyedService* AppListSyncableServiceFactory::BuildInstanceFor(
+    content::BrowserContext* browser_context) {
+  Profile* profile = static_cast<Profile*>(browser_context);
+#if defined(OS_CHROMEOS)
+  if (chromeos::ProfileHelper::IsSigninProfile(profile))
+    return NULL;
+#endif
+  VLOG(1) << "BuildInstanceFor: " << profile->GetDebugName()
+          << " (" << profile << ")";
+  return new AppListSyncableService(profile,
+                                    extensions::ExtensionSystem::Get(profile));
+}
+
 AppListSyncableServiceFactory::AppListSyncableServiceFactory()
     : BrowserContextKeyedServiceFactory(
         "AppListSyncableService",
         BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(
+  VLOG(1) << "AppListSyncableServiceFactory()";
+  typedef std::set<BrowserContextKeyedServiceFactory*> FactorySet;
+  FactorySet dependent_factories;
+  dependent_factories.insert(
       extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
+  DriveAppProvider::AppendDependsOnFactories(&dependent_factories);
+  for (FactorySet::iterator it = dependent_factories.begin();
+       it != dependent_factories.end();
+       ++it) {
+    DependsOn(*it);
+  }
 }
 
 AppListSyncableServiceFactory::~AppListSyncableServiceFactory() {
 }
 
-BrowserContextKeyedService*
-AppListSyncableServiceFactory::BuildServiceInstanceFor(
+KeyedService* AppListSyncableServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* browser_context) const {
-  Profile* profile = static_cast<Profile*>(browser_context);
-  return new AppListSyncableService(profile,
-                                    extensions::ExtensionSystem::Get(profile));
+  return BuildInstanceFor(static_cast<Profile*>(browser_context));
 }
 
 void AppListSyncableServiceFactory::RegisterProfilePrefs(
@@ -52,12 +79,19 @@ void AppListSyncableServiceFactory::RegisterProfilePrefs(
 
 content::BrowserContext* AppListSyncableServiceFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
-  // In Guest session, off the record profile should not be redirected to the
-  // original one.
-  Profile* profile = static_cast<Profile*>(context);
-  if (profile->IsGuestSession())
-    return chrome::GetBrowserContextOwnInstanceInIncognito(context);
+  // This matches the logic in ExtensionSyncServiceFactory, which uses the
+  // orginal browser context.
   return chrome::GetBrowserContextRedirectedInIncognito(context);
+}
+
+bool AppListSyncableServiceFactory::ServiceIsCreatedWithBrowserContext() const {
+  // Start AppListSyncableService early so that the app list positions are
+  // available before the app list is opened.
+  return true;
+}
+
+bool AppListSyncableServiceFactory::ServiceIsNULLWhileTesting() const {
+  return true;
 }
 
 }  // namespace app_list

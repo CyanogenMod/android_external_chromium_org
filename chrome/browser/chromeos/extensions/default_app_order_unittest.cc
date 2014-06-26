@@ -56,7 +56,7 @@ class DefaultAppOrderTest : public testing::Test {
   void CreateExternalOrderFile(const std::string& content) {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     base::FilePath external_file = temp_dir_.path().Append(kTestFile);
-    file_util::WriteFile(external_file, content.c_str(), content.size());
+    base::WriteFile(external_file, content.c_str(), content.size());
     SetExternalFile(external_file);
   }
 
@@ -79,7 +79,9 @@ TEST_F(DefaultAppOrderTest, BuiltInDefault) {
 
 // Tests external order file overrides built-in default.
 TEST_F(DefaultAppOrderTest, ExternalOrder) {
-  const char kExternalOrder[] = "[\"app1\",\"app2\",\"app3\"]";
+  const char kExternalOrder[] = "[\"app1\",\"app2\",\"app3\","
+      "{ \"oem_apps_folder\": true,\"localized_content\": {"
+      "    \"default\": {\"name\": \"OEM name\"}}}]";
   CreateExternalOrderFile(std::string(kExternalOrder));
 
   scoped_ptr<default_app_order::ExternalLoader> loader(
@@ -91,6 +93,7 @@ TEST_F(DefaultAppOrderTest, ExternalOrder) {
   EXPECT_EQ(std::string("app1"), apps[0]);
   EXPECT_EQ(std::string("app2"), apps[1]);
   EXPECT_EQ(std::string("app3"), apps[2]);
+  EXPECT_EQ(std::string("OEM name"), default_app_order::GetOemAppsFolderName());
 }
 
 // Tests none-existent order file gives built-in default.

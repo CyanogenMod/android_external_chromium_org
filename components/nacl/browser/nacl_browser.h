@@ -9,10 +9,9 @@
 
 #include "base/bind.h"
 #include "base/containers/mru_cache.h"
-#include "base/files/file_util_proxy.h"
+#include "base/files/file.h"
 #include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "base/time/time.h"
 #include "components/nacl/browser/nacl_browser_delegate.h"
 #include "components/nacl/browser/nacl_validation_cache.h"
@@ -20,11 +19,18 @@
 class URLPattern;
 class GURL;
 
+namespace base {
+class FileProxy;
+}
+
 namespace nacl {
+
+static const int kGdbDebugStubPortUnknown = -1;
+static const int kGdbDebugStubPortUnused = 0;
 
 // Open an immutable executable file that can be mmapped.
 // This function should only be called on a thread that can perform file IO.
-base::PlatformFile OpenNaClExecutableImpl(const base::FilePath& file_path);
+base::File OpenNaClExecutableImpl(const base::FilePath& file_path);
 
 // Represents shared state for all NaClProcessHost objects in the browser.
 class NaClBrowser {
@@ -55,17 +61,24 @@ class NaClBrowser {
   const base::FilePath& GetIrtFilePath();
 
   // IRT file handle, only available when IsReady().
-  base::PlatformFile IrtFile() const;
+  const base::File& IrtFile() const;
 
   // Methods for testing GDB debug stub in browser. If test adds debug stub
   // port listener, Chrome will allocate a currently-unused TCP port number for
   // debug stub server instead of a fixed one.
 
   // Notify listener that new debug stub TCP port is allocated.
-  void FireGdbDebugStubPortOpened(int port);
-  bool HasGdbDebugStubPortListener();
+  void SetProcessGdbDebugStubPort(int process_id, int port);
   void SetGdbDebugStubPortListener(base::Callback<void(int)> listener);
   void ClearGdbDebugStubPortListener();
+
+  int GetProcessGdbDebugStubPort(int process_id);
+
+  enum ValidationCacheStatus {
+    CACHE_MISS = 0,
+    CACHE_HIT,
+    CACHE_MAX
+  };
 
   bool ValidationCacheIsEnabled() const {
     return validation_cache_is_enabled_;
@@ -114,6 +127,8 @@ class NaClBrowser {
   static void SetDelegate(NaClBrowserDelegate* delegate);
   static NaClBrowserDelegate* GetDelegate();
 
+  // Each time a NaCl process ends, the browser is notified.
+  void OnProcessEnd(int process_id);
   // Support for NaCl crash throttling.
   // Each time a NaCl module crashes, the browser is notified.
   void OnProcessCrashed();
@@ -137,8 +152,8 @@ class NaClBrowser {
 
   void OpenIrtLibraryFile();
 
-  void OnIrtOpened(base::File::Error error_code,
-                   base::PassPlatformFile file, bool created);
+  void OnIrtOpened(scoped_ptr<base::FileProxy> file_proxy,
+                   base::File::Error error_code);
 
   void InitValidationCacheFilePath();
   void EnsureValidationCacheAvailable();
@@ -157,7 +172,7 @@ class NaClBrowser {
   // Singletons get destroyed at shutdown.
   base::WeakPtrFactory<NaClBrowser> weak_factory_;
 
-  base::PlatformFile irt_platform_file_;
+  base::File irt_file_;
   base::FilePath irt_filepath_;
   NaClResourceState irt_state_;
   NaClValidationCache validation_cache_;
@@ -167,6 +182,10 @@ class NaClBrowser {
   bool validation_cache_is_modified_;
   NaClResourceState validation_cache_state_;
   base::Callback<void(int)> debug_stub_port_listener_;
+
+  // Map from process id to debug stub port if any.
+  typedef std::map<int, int> GdbDebugStubPortMap;
+  GdbDebugStubPortMap gdb_debug_stub_port_map_;
 
   typedef base::HashingMRUCache<std::string, base::FilePath> PathCacheType;
   PathCacheType path_cache_;

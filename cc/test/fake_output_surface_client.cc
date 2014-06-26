@@ -2,18 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "cc/output/output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 
 namespace cc {
 
-bool FakeOutputSurfaceClient::DeferredInitialize(
-    scoped_refptr<ContextProvider> offscreen_context_provider) {
+void FakeOutputSurfaceClient::DeferredInitialize() {
   deferred_initialize_called_ = true;
-  return deferred_initialize_result_;
 }
 
-void FakeOutputSurfaceClient::BeginImplFrame(const BeginFrameArgs& args) {
-  begin_impl_frame_count_++;
+void FakeOutputSurfaceClient::ReleaseGL() {
+  if (output_surface_)
+    output_surface_->ReleaseContextProvider();
+}
+
+void FakeOutputSurfaceClient::BeginFrame(const BeginFrameArgs& args) {
+  begin_frame_count_++;
 }
 
 void FakeOutputSurfaceClient::DidLoseOutputSurface() {

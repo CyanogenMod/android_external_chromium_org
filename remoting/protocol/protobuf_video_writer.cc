@@ -9,8 +9,8 @@
 #include "remoting/base/constants.h"
 #include "remoting/proto/video.pb.h"
 #include "remoting/protocol/channel_factory.h"
+#include "remoting/protocol/message_serialization.h"
 #include "remoting/protocol/session.h"
-#include "remoting/protocol/util.h"
 
 namespace remoting {
 namespace protocol {
@@ -63,11 +63,6 @@ bool ProtobufVideoWriter::is_connected() {
 
 void ProtobufVideoWriter::ProcessVideoPacket(scoped_ptr<VideoPacket> packet,
                                              const base::Closure& done) {
-  // Older clients may expect deprecated flags field. Always set it to 7.
-  //
-  // TODO(sergeyu): Remove this field after M31 is released.
-  packet->set_deprecated_flags(7);
-
   buffered_writer_.Write(SerializeAndFrameMessage(*packet), done);
 }
 

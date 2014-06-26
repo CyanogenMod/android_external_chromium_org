@@ -25,11 +25,9 @@ namespace {
 
 const char kProdWalletServiceUrl[] = "https://wallet.google.com/";
 
-// TODO(ahutter): Remove this once production is ready.
 const char kSandboxWalletServiceUrl[] =
     "https://wallet-web.sandbox.google.com/";
 
-// TODO(ahutter): Remove this once production is ready.
 const char kSandboxWalletSecureServiceUrl[] =
     "https://wallet-web.sandbox.google.com/";
 
@@ -46,14 +44,9 @@ bool IsWalletProductionEnabled() {
   if (command_line->HasSwitch(::switches::kReduceSecurityForTesting))
     return false;
 
-  // TODO(estade): add a build-time flag for Chromium distros to enable this
-  // rather than checking for an official build. http://crbug.com/334088
-#if defined(GOOGLE_CHROME_BUILD)
-  // Default to prod for official builds.
+#if defined(ENABLE_PROD_WALLET_SERVICE)
   return true;
 #else
-  // Unofficial builds don't have the proper API keys for production Wallet
-  // servers.
   return false;
 #endif
 }
@@ -91,7 +84,6 @@ GURL GetBaseSecureUrl() {
 
 GURL GetBaseEncryptedFrontendUrl(size_t user_index) {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  // TODO(ahutter): Stop checking these switches once we switch over to prod.
   GURL base_url = IsWalletProductionEnabled() ||
       command_line.HasSwitch(switches::kWalletServiceUrl) ?
           GetWalletHostUrl() : GetBaseSecureUrl();
@@ -183,11 +175,10 @@ bool IsSignInContinueUrl(const GURL& url, size_t* user_index) {
 
   *user_index = 0;
   std::string query_str = url.query();
-  url_parse::Component query(0, query_str.length());
-  url_parse::Component key, value;
+  url::Component query(0, query_str.length());
+  url::Component key, value;
   const char kUserIndexKey[] = "authuser";
-  while (url_parse::ExtractQueryKeyValue(query_str.c_str(), &query, &key,
-                                         &value)) {
+  while (url::ExtractQueryKeyValue(query_str.c_str(), &query, &key, &value)) {
     if (key.is_nonempty() &&
         query_str.substr(key.begin, key.len) == kUserIndexKey) {
       base::StringToSizeT(query_str.substr(value.begin, value.len), user_index);

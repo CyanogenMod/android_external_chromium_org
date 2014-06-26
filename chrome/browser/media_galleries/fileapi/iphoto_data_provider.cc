@@ -10,7 +10,6 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -48,7 +47,6 @@ void IPhotoDataProvider::OnLibraryParsed(const ReadyCallback& ready_callback,
 
 void IPhotoDataProvider::BuildIndices(const parser::Library& library) {
   typedef base::hash_map<uint64, const base::FilePath*> IdIndex;
-  typedef base::hash_map<uint64, std::string> IdFileNameIndex;
 
   IdIndex photo_id_index;
   IdIndex originals_id_index;

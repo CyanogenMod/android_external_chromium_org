@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/test/ui/ui_test.h"
-
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
@@ -21,7 +19,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 
 // These tests don't apply to the Mac version; see GetCommandLineForRelaunch
 // for details.
@@ -32,7 +30,7 @@ class ChromeMainTest : public InProcessBrowserTest {
   ChromeMainTest() {}
 
   void Relaunch(const CommandLine& new_command_line) {
-    base::LaunchProcess(new_command_line, base::LaunchOptions(), NULL);
+    base::LaunchProcess(new_command_line, base::LaunchOptionsForTest(), NULL);
   }
 };
 

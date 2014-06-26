@@ -31,7 +31,7 @@ BaseIdentityInternalsWebUITest.prototype = {
 
   /**
    * Gets all of the token entries on the page.
-   * return {Element[]} Elements displaying token information.
+   * @return {!NodeList} Elements displaying token information.
    */
   getTokens: function() {
     return document.querySelectorAll('#token-list > div');
@@ -132,7 +132,7 @@ IdentityInternalsSingleTokenWebUITest.prototype = {
 TEST_F('IdentityInternalsSingleTokenWebUITest', 'getAllTokens', function() {
   var tokenListEntries = this.getTokens();
   expectEquals(1, tokenListEntries.length);
-  expectEquals('Store', this.getExtensionName(tokenListEntries[0]));
+  expectEquals('Web Store', this.getExtensionName(tokenListEntries[0]));
   expectEquals('ahfgeienlihckogmohjhadlkjgocpleb',
                this.getExtensionId(tokenListEntries[0]));
   expectEquals('store_token', this.getAccessToken(tokenListEntries[0]));
@@ -234,7 +234,7 @@ function IdentityInternalsWebUITestAsync() {}
 IdentityInternalsWebUITestAsync.prototype = {
   __proto__: IdentityInternalsMultipleTokensWebUITest.prototype,
 
-  /** @inhritDoc */
+  /** @override */
   isAsync: true,
 };
 
@@ -243,7 +243,7 @@ TEST_F('IdentityInternalsWebUITestAsync', 'revokeToken', function() {
   expectEquals(2, tokenListBefore.length);
   var tokenRevokeDone = identity_internals.tokenRevokeDone;
   identity_internals.tokenRevokeDone = this.continueTest(
-      WhenTestDone.ALWAYS, function (accessTokens) {
+      WhenTestDone.ALWAYS, function(accessTokens) {
         tokenRevokeDone.call(identity_internals, accessTokens);
         identity_internals.tokenRevokeDone = tokenRevokeDone;
         var tokenListAfter = this.getTokens();

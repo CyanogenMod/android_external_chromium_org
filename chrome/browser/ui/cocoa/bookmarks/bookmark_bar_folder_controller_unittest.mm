@@ -5,9 +5,7 @@
 #include "base/basictypes.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_constants.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_button_cell.h"
@@ -17,10 +15,14 @@
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/view_resizer_pong.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
 #include "ui/base/cocoa/animation_utils.h"
+
+#include <cmath>
 
 using base::ASCIIToUTF16;
 
@@ -280,9 +282,9 @@ TEST_F(BookmarkBarFolderControllerTest, BasicPosition) {
   NSPoint buttonOriginInScreen =
       [[parentButton window] convertBaseToScreen:buttonOriginInWindow];
   // Within margin
-  EXPECT_LE(abs(pt.x - buttonOriginInScreen.x),
+  EXPECT_LE(std::abs(pt.x - buttonOriginInScreen.x),
             bookmarks::kBookmarkMenuOverlap + 1);
-  EXPECT_LE(abs(pt.y - buttonOriginInScreen.y),
+  EXPECT_LE(std::abs(pt.y - buttonOriginInScreen.y),
             bookmarks::kBookmarkMenuOverlap + 1);
 
   // Make sure we see the window shift left if it spills off the screen

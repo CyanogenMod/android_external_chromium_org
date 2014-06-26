@@ -13,6 +13,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/task/cancelable_task_tracker.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -20,7 +21,7 @@ class BookmarkNode;
 class Profile;
 
 namespace chrome {
-struct FaviconBitmapResult;
+struct FaviconRawBitmapResult;
 }
 
 // Observer for bookmark html output. Used only in tests.
@@ -69,7 +70,8 @@ class BookmarkFaviconFetcher: public content::NotificationObserver {
 
   // Favicon fetch callback. After all favicons are fetched executes
   // html output on the file thread.
-  void OnFaviconDataAvailable(const chrome::FaviconBitmapResult& bitmap_result);
+  void OnFaviconDataAvailable(
+      const favicon_base::FaviconRawBitmapResult& bitmap_result);
 
   // The Profile object used for accessing FaviconService, bookmarks model.
   Profile* profile_;

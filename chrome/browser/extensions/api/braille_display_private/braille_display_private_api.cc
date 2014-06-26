@@ -8,10 +8,9 @@
 #include "chrome/browser/extensions/api/braille_display_private/braille_controller.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "extensions/browser/extension_system.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #endif
 
@@ -39,10 +38,11 @@ class BrailleDisplayPrivateAPI::DefaultEventDelegate
   Profile* profile_;
 };
 
-BrailleDisplayPrivateAPI::BrailleDisplayPrivateAPI(Profile* profile)
-    : profile_(profile), scoped_observer_(this),
-      event_delegate_(new DefaultEventDelegate(this, profile_)) {
-}
+BrailleDisplayPrivateAPI::BrailleDisplayPrivateAPI(
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)),
+      scoped_observer_(this),
+      event_delegate_(new DefaultEventDelegate(this, profile_)) {}
 
 BrailleDisplayPrivateAPI::~BrailleDisplayPrivateAPI() {
 }
@@ -50,16 +50,17 @@ BrailleDisplayPrivateAPI::~BrailleDisplayPrivateAPI() {
 void BrailleDisplayPrivateAPI::Shutdown() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<BrailleDisplayPrivateAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<BrailleDisplayPrivateAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<BrailleDisplayPrivateAPI>*
+BrowserContextKeyedAPIFactory<BrailleDisplayPrivateAPI>*
 BrailleDisplayPrivateAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-void BrailleDisplayPrivateAPI::OnDisplayStateChanged(
+void BrailleDisplayPrivateAPI::OnBrailleDisplayStateChanged(
     const DisplayState& display_state) {
   scoped_ptr<Event> event(new Event(
       OnDisplayStateChanged::kEventName,
@@ -67,8 +68,7 @@ void BrailleDisplayPrivateAPI::OnDisplayStateChanged(
   event_delegate_->BroadcastEvent(event.Pass());
 }
 
-void BrailleDisplayPrivateAPI::OnKeyEvent(
-    const KeyEvent& key_event) {
+void BrailleDisplayPrivateAPI::OnBrailleKeyEvent(const KeyEvent& key_event) {
   // Key events only go to extensions of the active profile.
   if (!IsProfileActive())
     return;
@@ -120,22 +120,22 @@ void BrailleDisplayPrivateAPI::OnListenerRemoved(
 BrailleDisplayPrivateAPI::DefaultEventDelegate::DefaultEventDelegate(
     EventRouter::Observer* observer, Profile* profile)
     : observer_(observer), profile_(profile) {
-  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(profile_);
   event_router->RegisterObserver(observer_, OnDisplayStateChanged::kEventName);
   event_router->RegisterObserver(observer_, OnKeyEvent::kEventName);
 }
 
 BrailleDisplayPrivateAPI::DefaultEventDelegate::~DefaultEventDelegate() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(observer_);
+  EventRouter::Get(profile_)->UnregisterObserver(observer_);
 }
 
 void BrailleDisplayPrivateAPI::DefaultEventDelegate::BroadcastEvent(
     scoped_ptr<Event> event) {
-  ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(event.Pass());
+  EventRouter::Get(profile_)->BroadcastEvent(event.Pass());
 }
 
 bool BrailleDisplayPrivateAPI::DefaultEventDelegate::HasListener() {
-  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(profile_);
   return (event_router->HasEventListener(OnDisplayStateChanged::kEventName) ||
           event_router->HasEventListener(OnKeyEvent::kEventName));
 }

@@ -11,12 +11,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "components/search_engines/template_url.h"
 
 using sync_datatype_helper::test;
 
@@ -39,8 +39,9 @@ GUIDToTURLMap CreateGUIDToTURLMap(TemplateURLService* service) {
 
 std::string GetTURLInfoString(const TemplateURL* turl) {
   DCHECK(turl);
-  return "TemplateURL: shortname: " + UTF16ToASCII(turl->short_name()) +
-      " keyword: " + UTF16ToASCII(turl->keyword()) + " url: " + turl->url();
+  return "TemplateURL: shortname: " + base::UTF16ToASCII(turl->short_name()) +
+      " keyword: " + base::UTF16ToASCII(turl->keyword()) + " url: " +
+      turl->url();
 }
 
 bool TURLsMatch(const TemplateURL* turl1, const TemplateURL* turl2) {
@@ -203,7 +204,7 @@ TemplateURL* CreateTestTemplateURL(Profile* profile,
   data.last_modified = base::Time::FromTimeT(100);
   data.prepopulate_id = 999999;
   data.sync_guid = sync_guid;
-  return new TemplateURL(profile, data);
+  return new TemplateURL(data);
 }
 
 void AddSearchEngine(int profile_index, int seed) {
@@ -255,12 +256,12 @@ void ChangeDefaultSearchProvider(int profile_index, int seed) {
   ASSERT_TRUE(service);
   TemplateURL* turl = service->GetTemplateURLForKeyword(CreateKeyword(seed));
   ASSERT_TRUE(turl);
-  service->SetDefaultSearchProvider(turl);
+  service->SetUserSelectedDefaultSearchProvider(turl);
   if (test()->use_verifier()) {
     TemplateURL* verifier_turl =
         GetVerifierService()->GetTemplateURLForKeyword(CreateKeyword(seed));
     ASSERT_TRUE(verifier_turl);
-    GetVerifierService()->SetDefaultSearchProvider(verifier_turl);
+    GetVerifierService()->SetUserSelectedDefaultSearchProvider(verifier_turl);
   }
 }
 

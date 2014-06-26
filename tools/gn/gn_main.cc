@@ -53,7 +53,11 @@ int main(int argc, char** argv) {
     OutputString(std::string(LAST_CHANGE) + "\n");
     exit(0);
   } else if (args.empty()) {
-    command = commands::kGen;
+    // No command, print error and exit.
+    Err(Location(), "No command specified.",
+        "Most commonly you want \"gn gen <out_dir>\" to make a build dir.\n"
+        "Or try \"gn help\" for more commands.").PrintToStdout();
+    return 1;
   } else {
     command = args[0];
     args.erase(args.begin());
@@ -74,5 +78,4 @@ int main(int argc, char** argv) {
   }
 
   exit(retval);  // Don't free memory, it can be really slow!
-  return retval;
 }

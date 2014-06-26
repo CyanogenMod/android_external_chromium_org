@@ -13,6 +13,8 @@ namespace content {
 class BrowserContext;
 }
 
+namespace password_manager {
+
 class MockPasswordStore : public PasswordStore {
  public:
   MockPasswordStore();
@@ -33,7 +35,9 @@ class MockPasswordStore : public PasswordStore {
   MOCK_METHOD1(RemoveLoginImpl,
                PasswordStoreChangeList(const autofill::PasswordForm&));
   MOCK_METHOD2(RemoveLoginsCreatedBetweenImpl,
-               PasswordStoreChangeList(const base::Time&, const base::Time&));
+               PasswordStoreChangeList(base::Time, base::Time));
+  MOCK_METHOD2(RemoveLoginsSyncedBetweenImpl,
+               PasswordStoreChangeList(base::Time, base::Time));
   MOCK_METHOD3(GetLoginsImpl,
                void(const autofill::PasswordForm& form,
                     PasswordStore::AuthorizationPromptPolicy prompt_policy,
@@ -45,8 +49,12 @@ class MockPasswordStore : public PasswordStore {
   MOCK_METHOD1(FillBlacklistLogins,
       bool(std::vector<autofill::PasswordForm*>*));
 
+  PasswordStoreSync* GetSyncInterface() { return this; }
+
  protected:
   virtual ~MockPasswordStore();
 };
+
+}  // namespace password_manager
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_MOCK_PASSWORD_STORE_H_

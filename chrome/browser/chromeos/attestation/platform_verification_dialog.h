@@ -12,8 +12,6 @@
 #include "ui/views/controls/styled_label_listener.h"
 #include "ui/views/window/dialog_delegate.h"
 
-class Browser;
-
 namespace content {
 class WebContents;
 }
@@ -35,13 +33,14 @@ class PlatformVerificationDialog : public views::DialogDelegateView,
 
  private:
   PlatformVerificationDialog(
-      Browser* browser,
+      content::WebContents* web_contents,
       const base::string16& domain,
       const PlatformVerificationFlow::Delegate::ConsentCallback& callback);
 
   // Overridden from views::DialogDelegate:
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
+  virtual bool Close() OVERRIDE;
   virtual base::string16 GetDialogButtonLabel(
       ui::DialogButton button) const OVERRIDE;
 
@@ -49,13 +48,13 @@ class PlatformVerificationDialog : public views::DialogDelegateView,
   virtual ui::ModalType GetModalType() const OVERRIDE;
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Overridden from views::StyledLabelListener:
   virtual void StyledLabelLinkClicked(const gfx::Range& range,
                                       int event_flags) OVERRIDE;
 
-  Browser* browser_;
+  content::WebContents* web_contents_;
   base::string16 domain_;
   PlatformVerificationFlow::Delegate::ConsentCallback callback_;
 

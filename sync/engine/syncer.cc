@@ -14,7 +14,6 @@
 #include "sync/engine/commit.h"
 #include "sync/engine/commit_processor.h"
 #include "sync/engine/conflict_resolver.h"
-#include "sync/engine/download.h"
 #include "sync/engine/get_updates_delegate.h"
 #include "sync/engine/get_updates_processor.h"
 #include "sync/engine/net/server_connection_manager.h"
@@ -71,7 +70,7 @@ bool Syncer::NormalSyncShare(ModelTypeSet request_types,
             session,
             &get_updates_processor,
             kCreateMobileBookmarksFolder)) {
-      return HandleCycleEnd(session, nudge_tracker.updates_source());
+      return HandleCycleEnd(session, nudge_tracker.GetLegacySource());
     }
   }
 
@@ -82,7 +81,7 @@ bool Syncer::NormalSyncShare(ModelTypeSet request_types,
       BuildAndPostCommits(request_types, session, &commit_processor);
   session->mutable_status_controller()->set_commit_result(commit_result);
 
-  return HandleCycleEnd(session, nudge_tracker.updates_source());
+  return HandleCycleEnd(session, nudge_tracker.GetLegacySource());
 }
 
 bool Syncer::ConfigureSyncShare(
@@ -119,22 +118,6 @@ bool Syncer::PollSyncShare(ModelTypeSet request_types,
   return HandleCycleEnd(session, sync_pb::GetUpdatesCallerInfo::PERIODIC);
 }
 
-bool Syncer::RetrySyncShare(ModelTypeSet request_types,
-                            SyncSession* session) {
-  VLOG(1) << "Retrying types " << ModelTypeSetToString(request_types);
-  HandleCycleBegin(session);
-  RetryGetUpdatesDelegate retry_delegate;
-  GetUpdatesProcessor get_updates_processor(
-      session->context()->model_type_registry()->update_handler_map(),
-      retry_delegate);
-  DownloadAndApplyUpdates(
-      request_types,
-      session,
-      &get_updates_processor,
-      kCreateMobileBookmarksFolder);
-  return HandleCycleEnd(session, sync_pb::GetUpdatesCallerInfo::RETRY);
-}
-
 bool Syncer::DownloadAndApplyUpdates(
     ModelTypeSet request_types,
     SyncSession* session,
@@ -142,20 +125,10 @@ bool Syncer::DownloadAndApplyUpdates(
     bool create_mobile_bookmarks_folder) {
   SyncerError download_result = UNSET;
   do {
-    TRACE_EVENT0("sync", "DownloadUpdates");
-    sync_pb::ClientToServerMessage msg;
-    sync_pb::GetUpdatesMessage* gu_msg = msg.mutable_get_updates();
-
-    download::InitDownloadUpdatesContext(
-        session, create_mobile_bookmarks_folder, &msg);
-    get_updates_processor->PrepareGetUpdates(request_types, gu_msg);
-
-    download_result = download::ExecuteDownloadUpdates(request_types,
-                                                       session,
-                                                       get_updates_processor,
-                                                       &msg);
-    session->mutable_status_controller()->set_last_download_updates_result(
-        download_result);
+    download_result = get_updates_processor->DownloadUpdates(
+        request_types,
+        session,
+        create_mobile_bookmarks_folder);
   } while (download_result == SERVER_MORE_TO_DOWNLOAD);
 
   // Exit without applying if we're shutting down or an error was detected.
@@ -173,7 +146,8 @@ bool Syncer::DownloadAndApplyUpdates(
     // Apply upates to the other types.  May or may not involve cross-thread
     // traffic, depending on the underlying update handlers and the GU type's
     // delegate.
-    get_updates_processor->ApplyUpdates(session->mutable_status_controller());
+    get_updates_processor->ApplyUpdates(request_types,
+                                        session->mutable_status_controller());
 
     session->context()->set_hierarchy_conflict_detected(
         session->status_controller().num_hierarchy_conflicts() > 0);
@@ -195,7 +169,7 @@ SyncerError Syncer::BuildAndPostCommits(ModelTypeSet requested_types,
     scoped_ptr<Commit> commit(
         Commit::Init(
             requested_types,
-            session->context()->enabled_types(),
+            session->context()->GetEnabledTypes(),
             session->context()->max_commit_batch_size(),
             session->context()->account_name(),
             session->context()->directory()->cache_guid(),

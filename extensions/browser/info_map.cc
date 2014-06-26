@@ -5,10 +5,12 @@
 #include "extensions/browser/info_map.h"
 
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/content_verifier.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using content::BrowserThread;
 
@@ -16,9 +18,7 @@ namespace extensions {
 
 namespace {
 
-void CheckOnValidThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-}
+void CheckOnValidThread() { DCHECK_CURRENTLY_ON(BrowserThread::IO); }
 
 }  // namespace
 
@@ -151,7 +151,8 @@ void InfoMap::GetExtensionsWithAPIPermissionForSecurityOrigin(
   if (origin.SchemeIs(kExtensionScheme)) {
     const std::string& id = origin.host();
     const Extension* extension = extensions_.GetByID(id);
-    if (extension && extension->HasAPIPermission(permission) &&
+    if (extension &&
+        extension->permissions_data()->HasAPIPermission(permission) &&
         process_map_.Contains(id, process_id)) {
       extensions->Insert(extension);
     }
@@ -162,7 +163,7 @@ void InfoMap::GetExtensionsWithAPIPermissionForSecurityOrigin(
   for (; i != extensions_.end(); ++i) {
     if ((*i)->web_extent().MatchesSecurityOrigin(origin) &&
         process_map_.Contains((*i)->id(), process_id) &&
-        (*i)->HasAPIPermission(permission)) {
+        (*i)->permissions_data()->HasAPIPermission(permission)) {
       extensions->Insert(*i);
     }
   }
@@ -207,6 +208,10 @@ bool InfoMap::AreNotificationsDisabled(
   if (iter != extra_data_.end())
     return iter->second.notifications_disabled;
   return false;
+}
+
+void InfoMap::SetContentVerifier(ContentVerifier* verifier) {
+  content_verifier_ = verifier;
 }
 
 InfoMap::~InfoMap() {

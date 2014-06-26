@@ -34,11 +34,11 @@ class VIEWS_EXPORT SingleSplitView : public View {
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // SingleSplitView's preferred size is the sum of the preferred widths
   // and the max of the heights.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Overriden to return a resize cursor when over the divider.
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;

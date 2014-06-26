@@ -7,6 +7,10 @@
 
 #include "chromeos/chromeos_export.h"
 
+namespace base {
+class FilePath;
+}
+
 // This file declares path keys for the chromeos module.  These can be used with
 // the PathService to access various special directories and files.
 
@@ -34,11 +38,21 @@ enum {
   DIR_DEVICE_LOCAL_ACCOUNT_EXTERNAL_DATA,  // Directory where external data
                                            // referenced by policies is cached
                                            // for device-local accounts.
+  DIR_DEVICE_LOCAL_ACCOUNT_COMPONENT_POLICY,  // Directory where policy for
+                                              // components is stored for
+                                              // device-local accounts.
+                                              // Currently this is used for
+                                              // policy for extensions.
   PATH_END
 };
 
 // Call once to register the provider for the path keys defined above.
 CHROMEOS_EXPORT void RegisterPathProvider();
+
+// Overrides some of the paths listed above so that those files can be used
+// when not running on ChromeOS. The stubs files will be relative to
+// |stubs_dir|. It is not valid to call this when running on ChromeOS.
+CHROMEOS_EXPORT void RegisterStubPathOverrides(const base::FilePath& stubs_dir);
 
 }  // namespace chromeos
 

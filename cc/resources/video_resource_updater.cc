@@ -58,18 +58,14 @@ VideoFrameExternalResources VideoResourceUpdater::
 
 bool VideoResourceUpdater::VerifyFrame(
     const scoped_refptr<media::VideoFrame>& video_frame) {
-  // If these fail, we'll have to add logic that handles offset bitmap/texture
-  // UVs. For now, just expect (0, 0) offset, since all our decoders so far
-  // don't offset.
-  DCHECK_EQ(video_frame->visible_rect().x(), 0);
-  DCHECK_EQ(video_frame->visible_rect().y(), 0);
-
   switch (video_frame->format()) {
     // Acceptable inputs.
     case media::VideoFrame::YV12:
+    case media::VideoFrame::I420:
     case media::VideoFrame::YV12A:
     case media::VideoFrame::YV16:
     case media::VideoFrame::YV12J:
+    case media::VideoFrame::YV24:
     case media::VideoFrame::NATIVE_TEXTURE:
 #if defined(VIDEO_HOLE)
     case media::VideoFrame::HOLE:
@@ -78,8 +74,7 @@ bool VideoResourceUpdater::VerifyFrame(
 
     // Unacceptable inputs. ¯\(°_o)/¯
     case media::VideoFrame::UNKNOWN:
-    case media::VideoFrame::HISTOGRAM_MAX:
-    case media::VideoFrame::I420:
+    case media::VideoFrame::NV12:
       break;
   }
   return false;
@@ -88,36 +83,16 @@ bool VideoResourceUpdater::VerifyFrame(
 // For frames that we receive in software format, determine the dimensions of
 // each plane in the frame.
 static gfx::Size SoftwarePlaneDimension(
-    media::VideoFrame::Format input_frame_format,
-    const gfx::Size& coded_size,
+    const scoped_refptr<media::VideoFrame>& input_frame,
     ResourceFormat output_resource_format,
-    int plane_index) {
+    size_t plane_index) {
   if (output_resource_format == kYUVResourceFormat) {
-    if (plane_index == media::VideoFrame::kYPlane ||
-        plane_index == media::VideoFrame::kAPlane)
-      return coded_size;
-
-    switch (input_frame_format) {
-      case media::VideoFrame::YV12:
-      case media::VideoFrame::YV12A:
-      case media::VideoFrame::YV12J:
-        return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 0.5f));
-      case media::VideoFrame::YV16:
-        return gfx::ToFlooredSize(gfx::ScaleSize(coded_size, 0.5f, 1.f));
-
-      case media::VideoFrame::UNKNOWN:
-      case media::VideoFrame::I420:
-      case media::VideoFrame::NATIVE_TEXTURE:
-      case media::VideoFrame::HISTOGRAM_MAX:
-#if defined(VIDEO_HOLE)
-      case media::VideoFrame::HOLE:
-#endif  // defined(VIDEO_HOLE)
-        NOTREACHED();
-    }
+    return media::VideoFrame::PlaneSize(
+        input_frame->format(), plane_index, input_frame->coded_size());
   }
 
   DCHECK_EQ(output_resource_format, kRGBResourceFormat);
-  return coded_size;
+  return input_frame->coded_size();
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
@@ -134,20 +109,23 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
 
   // Only YUV software video frames are supported.
   DCHECK(input_frame_format == media::VideoFrame::YV12 ||
+         input_frame_format == media::VideoFrame::I420 ||
          input_frame_format == media::VideoFrame::YV12A ||
          input_frame_format == media::VideoFrame::YV12J ||
-         input_frame_format == media::VideoFrame::YV16);
+         input_frame_format == media::VideoFrame::YV16 ||
+         input_frame_format == media::VideoFrame::YV24);
   if (input_frame_format != media::VideoFrame::YV12 &&
+      input_frame_format != media::VideoFrame::I420 &&
       input_frame_format != media::VideoFrame::YV12A &&
       input_frame_format != media::VideoFrame::YV12J &&
-      input_frame_format != media::VideoFrame::YV16)
+      input_frame_format != media::VideoFrame::YV16 &&
+      input_frame_format != media::VideoFrame::YV24)
     return VideoFrameExternalResources();
 
   bool software_compositor = context_provider_ == NULL;
 
   ResourceFormat output_resource_format = kYUVResourceFormat;
-  size_t output_plane_count =
-      (input_frame_format == media::VideoFrame::YV12A) ? 4 : 3;
+  size_t output_plane_count = media::VideoFrame::NumPlanes(input_frame_format);
 
   // TODO(skaslev): If we're in software compositing mode, we do the YUV -> RGB
   // conversion here. That involves an extra copy of each frame to a bitmap.
@@ -159,17 +137,12 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   }
 
   int max_resource_size = resource_provider_->max_texture_size();
-  gfx::Size coded_frame_size = video_frame->coded_size();
-
   std::vector<PlaneResource> plane_resources;
   bool allocation_success = true;
 
   for (size_t i = 0; i < output_plane_count; ++i) {
     gfx::Size output_plane_resource_size =
-        SoftwarePlaneDimension(input_frame_format,
-                               coded_frame_size,
-                               output_resource_format,
-                               i);
+        SoftwarePlaneDimension(video_frame, output_resource_format, i);
     if (output_plane_resource_size.IsEmpty() ||
         output_plane_resource_size.width() > max_resource_size ||
         output_plane_resource_size.height() > max_resource_size) {
@@ -313,7 +286,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
 static void ReturnTexture(const scoped_refptr<media::VideoFrame>& frame,
                           uint32 sync_point,
                           bool lost_resource) {
-  frame->mailbox_holder()->sync_point = sync_point;
+  frame->AppendReleaseSyncPoint(sync_point);
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
@@ -327,7 +300,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
   if (!context_provider_)
     return VideoFrameExternalResources();
 
-  gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
+  const gpu::MailboxHolder* mailbox_holder = video_frame->mailbox_holder();
   VideoFrameExternalResources external_resources;
   switch (mailbox_holder->texture_target) {
     case GL_TEXTURE_2D:

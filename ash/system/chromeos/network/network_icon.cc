@@ -7,17 +7,18 @@
 #include "ash/shell.h"
 #include "ash/system/chromeos/network/network_icon_animation.h"
 #include "ash/system/chromeos/network/network_icon_animation_observer.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/network_connection_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/image/image_skia_source.h"
@@ -55,20 +56,28 @@ struct Badges {
 // class used for maintaining a map of network state and images.
 class NetworkIconImpl {
  public:
-  explicit NetworkIconImpl(IconType icon_type);
+  NetworkIconImpl(const std::string& path, IconType icon_type);
 
   // Determines whether or not the associated network might be dirty and if so
   // updates and generates the icon. Does nothing if network no longer exists.
   void Update(const chromeos::NetworkState* network);
 
+  // Returns the cached image url for |image_| based on |scale_factor|.
+  const std::string& GetImageUrl(float scale_factor);
+
   const gfx::ImageSkia& image() const { return image_; }
 
  private:
+  typedef std::map<float, std::string> ImageUrlMap;
+
   // Updates |strength_index_| for wireless networks. Returns true if changed.
   bool UpdateWirelessStrengthIndex(const chromeos::NetworkState* network);
 
   // Updates the local state for cellular networks. Returns true if changed.
   bool UpdateCellularState(const chromeos::NetworkState* network);
+
+  // Updates the portal state for wireless networks. Returns true if changed.
+  bool UpdatePortalState(const chromeos::NetworkState* network);
 
   // Updates the VPN badge. Returns true if changed.
   bool UpdateVPNBadge();
@@ -78,6 +87,9 @@ class NetworkIconImpl {
 
   // Gets the appropriate icon and badges and composites the image.
   void GenerateImage(const chromeos::NetworkState* network);
+
+  // Network path, used for debugging.
+  std::string network_path_;
 
   // Defines color theme and VPN badging
   const IconType icon_type_;
@@ -97,8 +109,15 @@ class NetworkIconImpl {
   // Cached roaming state of the network when the icon was last generated.
   std::string roaming_state_;
 
+  // Cached portal state of the network when the icon was last generated.
+  bool behind_captive_portal_;
+
   // Generated icon image.
   gfx::ImageSkia image_;
+
+  // Map of cached image urls by scale factor. Cleared whenever image_ is
+  // generated.
+  ImageUrlMap image_urls_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkIconImpl);
 };
@@ -251,6 +270,28 @@ class NetworkIconImageSource : public gfx::ImageSkiaSource {
 //------------------------------------------------------------------------------
 // Utilities for extracting icon images.
 
+// A struct used for caching image urls.
+struct ImageIdForNetworkType {
+  ImageIdForNetworkType(IconType icon_type,
+                        const std::string& network_type,
+                        float scale_factor) :
+      icon_type(icon_type),
+      network_type(network_type),
+      scale_factor(scale_factor) {}
+  bool operator<(const ImageIdForNetworkType& other) const {
+    if (icon_type != other.icon_type)
+      return icon_type < other.icon_type;
+    if (network_type != other.network_type)
+      return network_type < other.network_type;
+    return scale_factor < other.scale_factor;
+  }
+  IconType icon_type;
+  std::string network_type;
+  float scale_factor;
+};
+
+typedef std::map<ImageIdForNetworkType, std::string> ImageIdUrlMap;
+
 bool IconTypeIsDark(IconType icon_type) {
   return (icon_type != ICON_TYPE_TRAY);
 }
@@ -300,25 +341,25 @@ gfx::ImageSkia GetImageForIndex(ImageType image_type,
       gfx::Rect(0, index * height, width, height));
 }
 
-const gfx::ImageSkia GetConnectedImage(const std::string& type,
-                                       IconType icon_type) {
-  if (type == shill::kTypeVPN) {
+const gfx::ImageSkia GetConnectedImage(IconType icon_type,
+                                       const std::string& network_type) {
+  if (network_type == shill::kTypeVPN) {
     return *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NETWORK_VPN);
   }
-  ImageType image_type = ImageTypeForNetworkType(type);
+  ImageType image_type = ImageTypeForNetworkType(network_type);
   const int connected_index = NumImagesForType(image_type) - 1;
   return GetImageForIndex(image_type, icon_type, connected_index);
 }
 
-const gfx::ImageSkia GetDisconnectedImage(const std::string& type,
-                                          IconType icon_type) {
-  if (type == shill::kTypeVPN) {
+const gfx::ImageSkia GetDisconnectedImage(IconType icon_type,
+                                          const std::string& network_type) {
+  if (network_type == shill::kTypeVPN) {
     // Note: same as connected image, shouldn't normally be seen.
     return *ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
         IDR_AURA_UBER_TRAY_NETWORK_VPN);
   }
-  ImageType image_type = ImageTypeForNetworkType(type);
+  ImageType image_type = ImageTypeForNetworkType(network_type);
   const int disconnected_index = 0;
   return GetImageForIndex(image_type, icon_type, disconnected_index);
 }
@@ -503,8 +544,8 @@ gfx::ImageSkia GetConnectingVpnImage(IconType icon_type) {
   }
 }
 
-gfx::ImageSkia GetConnectingImage(const std::string& network_type,
-                                  IconType icon_type) {
+gfx::ImageSkia GetConnectingImage(IconType icon_type,
+                                  const std::string& network_type) {
   if (network_type == shill::kTypeVPN)
     return GetConnectingVpnImage(icon_type);
 
@@ -517,18 +558,30 @@ gfx::ImageSkia GetConnectingImage(const std::string& network_type,
       new NetworkIconImageSource(*icon, Badges()), icon->size());
 }
 
+std::string GetConnectingImageUrl(IconType icon_type,
+                                  const std::string& network_type,
+                                  float scale_factor) {
+  // Caching the connecting image is complicated and we will never draw more
+  // than a few per frame, so just generate the image url each time.
+  gfx::ImageSkia image = GetConnectingImage(icon_type, network_type);
+  gfx::ImageSkiaRep image_rep = image.GetRepresentation(scale_factor);
+  return webui::GetBitmapDataUrl(image_rep.sk_bitmap());
+}
+
 }  // namespace
 
 //------------------------------------------------------------------------------
 // NetworkIconImpl
 
-NetworkIconImpl::NetworkIconImpl(IconType icon_type)
-    : icon_type_(icon_type),
+NetworkIconImpl::NetworkIconImpl(const std::string& path, IconType icon_type)
+    : network_path_(path),
+      icon_type_(icon_type),
       strength_index_(-1),
       technology_badge_(NULL),
-      vpn_badge_(NULL) {
+      vpn_badge_(NULL),
+      behind_captive_portal_(false) {
   // Default image
-  image_ = GetDisconnectedImage(shill::kTypeWifi, icon_type);
+  image_ = GetDisconnectedImage(icon_type, shill::kTypeWifi);
 }
 
 void NetworkIconImpl::Update(const NetworkState* network) {
@@ -542,8 +595,11 @@ void NetworkIconImpl::Update(const NetworkState* network) {
     dirty = true;
   }
 
-  if (network->Matches(NetworkTypePattern::Wireless()))
+  dirty |= UpdatePortalState(network);
+
+  if (network->Matches(NetworkTypePattern::Wireless())) {
     dirty |= UpdateWirelessStrengthIndex(network);
+  }
 
   if (network->Matches(NetworkTypePattern::Cellular()))
     dirty |= UpdateCellularState(network);
@@ -582,6 +638,20 @@ bool NetworkIconImpl::UpdateCellularState(const NetworkState* network) {
     dirty = true;
   }
   return dirty;
+}
+
+bool NetworkIconImpl::UpdatePortalState(const NetworkState* network) {
+  bool behind_captive_portal = false;
+  if (network) {
+    SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
+    behind_captive_portal =
+        delegate->IsNetworkBehindCaptivePortal(network->path());
+  }
+
+  if (behind_captive_portal == behind_captive_portal_)
+    return false;
+  behind_captive_portal_ = behind_captive_portal;
+  return true;
 }
 
 bool NetworkIconImpl::UpdateVPNBadge() {
@@ -633,6 +703,14 @@ void NetworkIconImpl::GetBadges(const NetworkState* network, Badges* badges) {
     badges->top_left = technology_badge_;
     badges->bottom_left = vpn_badge_;
   }
+
+  if (behind_captive_portal_) {
+    gfx::ImageSkia* badge = rb.GetImageSkiaNamed(
+       IconTypeIsDark(icon_type_) ?
+       IDR_AURA_UBER_TRAY_NETWORK_PORTAL_DARK :
+       IDR_AURA_UBER_TRAY_NETWORK_PORTAL_LIGHT);
+    badges->bottom_right = badge;
+  }
 }
 
 void NetworkIconImpl::GenerateImage(const NetworkState* network) {
@@ -642,24 +720,31 @@ void NetworkIconImpl::GenerateImage(const NetworkState* network) {
   GetBadges(network, &badges);
   image_ = gfx::ImageSkia(
       new NetworkIconImageSource(icon, badges), icon.size());
+  image_urls_.clear();
 }
 
-//------------------------------------------------------------------------------
-// Public interface
+const std::string& NetworkIconImpl::GetImageUrl(float scale_factor) {
+  ImageUrlMap::iterator iter = image_urls_.find(scale_factor);
+  if (iter != image_urls_.end())
+    return iter->second;
 
-gfx::ImageSkia GetImageForNetwork(const NetworkState* network,
-                                  IconType icon_type) {
-  DCHECK(network);
-  // Handle connecting icons.
-  if (network->IsConnectingState())
-    return GetConnectingImage(network->type(), icon_type);
+  VLOG(2) << "Generating bitmap URL for: " << network_path_;
+  gfx::ImageSkiaRep image_rep = image_.GetRepresentation(scale_factor);
+  iter = image_urls_.insert(std::make_pair(
+      scale_factor, webui::GetBitmapDataUrl(image_rep.sk_bitmap()))).first;
+  return iter->second;
+}
 
+namespace {
+
+NetworkIconImpl* FindAndUpdateImageImpl(const NetworkState* network,
+                                        IconType icon_type) {
   // Find or add the icon.
   NetworkIconMap* icon_map = GetIconMap(icon_type);
   NetworkIconImpl* icon;
   NetworkIconMap::iterator iter = icon_map->find(network->path());
   if (iter == icon_map->end()) {
-    icon = new NetworkIconImpl(icon_type);
+    icon = new NetworkIconImpl(network->path(), icon_type);
     icon_map->insert(std::make_pair(network->path(), icon));
   } else {
     icon = iter->second;
@@ -667,22 +752,52 @@ gfx::ImageSkia GetImageForNetwork(const NetworkState* network,
 
   // Update and return the icon's image.
   icon->Update(network);
+  return icon;
+}
+
+}  // namespace
+
+//------------------------------------------------------------------------------
+// Public interface
+
+gfx::ImageSkia GetImageForNetwork(const NetworkState* network,
+                                  IconType icon_type) {
+  DCHECK(network);
+  if (!network->visible())
+    return GetDisconnectedImage(icon_type, network->type());
+
+  if (network->IsConnectingState())
+    return GetConnectingImage(icon_type, network->type());
+
+  NetworkIconImpl* icon = FindAndUpdateImageImpl(network, icon_type);
   return icon->image();
+}
+
+std::string GetImageUrlForNetwork(const NetworkState* network,
+                                  IconType icon_type,
+                                  float scale_factor) {
+  DCHECK(network);
+  // Handle connecting icons.
+  if (network->IsConnectingState())
+    return GetConnectingImageUrl(icon_type, network->type(), scale_factor);
+
+  NetworkIconImpl* icon = FindAndUpdateImageImpl(network, icon_type);
+  return icon->GetImageUrl(scale_factor);
 }
 
 gfx::ImageSkia GetImageForConnectedNetwork(IconType icon_type,
                                            const std::string& network_type) {
-  return GetConnectedImage(network_type, icon_type);
+  return GetConnectedImage(icon_type, network_type);
 }
 
 gfx::ImageSkia GetImageForConnectingNetwork(IconType icon_type,
                                             const std::string& network_type) {
-  return GetConnectingImage(network_type, icon_type);
+  return GetConnectingImage(icon_type, network_type);
 }
 
 gfx::ImageSkia GetImageForDisconnectedNetwork(IconType icon_type,
                                               const std::string& network_type) {
-  return GetDisconnectedImage(network_type, icon_type);
+  return GetDisconnectedImage(icon_type, network_type);
 }
 
 base::string16 GetLabelForNetwork(const chromeos::NetworkState* network,
@@ -831,7 +946,8 @@ void GetDefaultNetworkImageAndLabel(IconType icon_type,
 
 void PurgeNetworkIconCache() {
   NetworkStateHandler::NetworkStateList networks;
-  NetworkHandler::Get()->network_state_handler()->GetNetworkList(&networks);
+  NetworkHandler::Get()->network_state_handler()->GetVisibleNetworkList(
+      &networks);
   std::set<std::string> network_paths;
   for (NetworkStateHandler::NetworkStateList::iterator iter = networks.begin();
        iter != networks.end(); ++iter) {

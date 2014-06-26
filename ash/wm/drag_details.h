@@ -9,8 +9,8 @@
 #include "ash/wm/wm_types.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/client/window_move_client.h"
 #include "ui/gfx/rect.h"
+#include "ui/wm/public/window_move_client.h"
 
 namespace aura {
 class Window;
@@ -29,8 +29,7 @@ struct ASH_EXPORT DragDetails {
               aura::client::WindowMoveSource source);
   ~DragDetails();
 
-  // Initial show type.
-  ash::wm::WindowShowType initial_show_type;
+  ash::wm::WindowStateType initial_state_type;
 
   // Initial bounds of the window in parent coordinates.
   const gfx::Rect initial_bounds_in_parent;

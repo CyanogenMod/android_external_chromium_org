@@ -27,6 +27,7 @@ class Rect;
 }
 
 namespace ui {
+class EventHandler;
 class MenuModel;
 class ThemeProvider;
 }
@@ -78,11 +79,18 @@ class BrowserFrame
   // Returns |true| if we should use the custom frame.
   bool UseCustomFrame() const;
 
+  // Returns true when the window placement should be saved.
+  bool ShouldSaveWindowPlacement() const;
+
+  // Retrieves the window placement (show state and bounds) for restoring.
+  void GetWindowPlacement(gfx::Rect* bounds,
+                          ui::WindowShowState* show_state) const;
+
   // Overridden from views::Widget:
   virtual views::internal::RootView* CreateRootView() OVERRIDE;
   virtual views::NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
   virtual bool GetAccelerator(int command_id,
-                              ui::Accelerator* accelerator) OVERRIDE;
+                              ui::Accelerator* accelerator) const OVERRIDE;
   virtual ui::ThemeProvider* GetThemeProvider() const OVERRIDE;
   virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
   virtual void OnNativeWidgetActivationChanged(bool active) OVERRIDE;
@@ -137,6 +145,8 @@ class BrowserFrame
 
   // Whether the custom Chrome frame preference is set.
   BooleanPrefMember use_custom_frame_pref_;
+
+  scoped_ptr<ui::EventHandler> browser_command_handler_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserFrame);
 };

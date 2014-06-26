@@ -22,11 +22,15 @@
 #include "content/test/net/url_request_prepackaged_interceptor.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "net/url_request/url_fetcher.h"
+#include "sync/protocol/extension_specifics.pb.h"
+#include "sync/protocol/sync.pb.h"
 
 using extensions::Extension;
 using extensions::ExtensionRegistry;
+using extensions::ExtensionPrefs;
 
 class ExtensionDisabledGlobalErrorTest : public ExtensionBrowserTest {
  protected:
@@ -38,22 +42,24 @@ class ExtensionDisabledGlobalErrorTest : public ExtensionBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     EXPECT_TRUE(scoped_temp_dir_.CreateUniqueTempDir());
-    service_ = browser()->profile()->GetExtensionService();
+    service_ = extensions::ExtensionSystem::Get(
+        browser()->profile())->extension_service();
     registry_ = ExtensionRegistry::Get(browser()->profile());
-    base::FilePath pem_path = test_data_dir_.
-        AppendASCII("permissions_increase").AppendASCII("permissions.pem");
+    const base::FilePath test_dir =
+        test_data_dir_.AppendASCII("permissions_increase");
+    const base::FilePath pem_path = test_dir.AppendASCII("permissions.pem");
     path_v1_ = PackExtensionWithOptions(
-        test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v1"),
+        test_dir.AppendASCII("v1"),
         scoped_temp_dir_.path().AppendASCII("permissions1.crx"),
         pem_path,
         base::FilePath());
     path_v2_ = PackExtensionWithOptions(
-        test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v2"),
+        test_dir.AppendASCII("v2"),
         scoped_temp_dir_.path().AppendASCII("permissions2.crx"),
         pem_path,
         base::FilePath());
     path_v3_ = PackExtensionWithOptions(
-        test_data_dir_.AppendASCII("permissions_increase").AppendASCII("v3"),
+        test_dir.AppendASCII("v3"),
         scoped_temp_dir_.path().AppendASCII("permissions3.crx"),
         pem_path,
         base::FilePath());
@@ -154,7 +160,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest,
   const Extension* extension = InstallIncreasingPermissionExtensionV1();
   DisableExtension(extension->id());
   // Clear disable reason to simulate legacy disables.
-  service_->extension_prefs()->ClearDisableReasons(extension->id());
+  ExtensionPrefs::Get(browser()->profile())
+      ->ClearDisableReasons(extension->id());
   // Upgrade to version 2. Infer from version 1 having the same permissions
   // granted by the user that it was disabled by the user.
   extension = UpdateIncreasingPermissionExtension(extension, path_v2_, 0);
@@ -168,7 +175,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest,
                        UnknownReasonHigherPermissions) {
   const Extension* extension = InstallAndUpdateIncreasingPermissionsExtension();
   // Clear disable reason to simulate legacy disables.
-  service_->extension_prefs()->ClearDisableReasons(extension->id());
+  ExtensionPrefs::Get(service_->profile())
+      ->ClearDisableReasons(extension->id());
   // We now have version 2 but only accepted permissions for version 1.
   GlobalError* error = GetExtensionDisabledGlobalError();
   ASSERT_TRUE(error);
@@ -227,6 +235,58 @@ IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest,
   EXPECT_EQ("2", extension->VersionString());
   EXPECT_EQ(1u, registry_->disabled_extensions().size());
   EXPECT_EQ(Extension::DISABLE_PERMISSIONS_INCREASE,
-            service_->extension_prefs()->GetDisableReasons(extension_id));
+            ExtensionPrefs::Get(service_->profile())
+                ->GetDisableReasons(extension_id));
+  EXPECT_TRUE(GetExtensionDisabledGlobalError());
+}
+
+// Test that an error appears if an extension gets installed server side.
+IN_PROC_BROWSER_TEST_F(ExtensionDisabledGlobalErrorTest, RemoteInstall) {
+  static const char* extension_id = "pgdpcfcocojkjfbgpiianjngphoopgmo";
+  ExtensionSyncService* sync_service =
+      ExtensionSyncService::Get(browser()->profile());
+
+  // Note: This interceptor gets requests on the IO thread.
+  content::URLLocalHostRequestPrepackagedInterceptor interceptor;
+  net::URLFetcher::SetEnableInterceptionForTests(true);
+  interceptor.SetResponseIgnoreQuery(
+      GURL("http://localhost/autoupdate/updates.xml"),
+      test_data_dir_.AppendASCII("permissions_increase")
+          .AppendASCII("updates.xml"));
+  interceptor.SetResponseIgnoreQuery(
+      GURL("http://localhost/autoupdate/v2.crx"),
+      scoped_temp_dir_.path().AppendASCII("permissions2.crx"));
+
+  extensions::ExtensionUpdater::CheckParams params;
+  service_->updater()->set_default_check_params(params);
+
+  sync_pb::EntitySpecifics specifics;
+  specifics.mutable_extension()->set_id(extension_id);
+  specifics.mutable_extension()->set_enabled(false);
+  specifics.mutable_extension()->set_remote_install(true);
+  specifics.mutable_extension()->set_update_url(
+      "http://localhost/autoupdate/updates.xml");
+  specifics.mutable_extension()->set_version("2");
+  syncer::SyncData sync_data =
+      syncer::SyncData::CreateRemoteData(1234567,
+                                         specifics,
+                                         base::Time::Now(),
+                                         syncer::AttachmentIdList(),
+                                         syncer::AttachmentServiceProxy());
+  // Sync is installing a new extension, so it pends.
+  EXPECT_FALSE(sync_service->ProcessExtensionSyncData(
+      extensions::ExtensionSyncData(sync_data)));
+
+  WaitForExtensionInstall();
+  content::BrowserThread::GetBlockingPool()->FlushForTesting();
+  base::RunLoop().RunUntilIdle();
+
+  const Extension* extension = service_->GetExtensionById(extension_id, true);
+  ASSERT_TRUE(extension);
+  EXPECT_EQ("2", extension->VersionString());
+  EXPECT_EQ(1u, registry_->disabled_extensions().size());
+  EXPECT_EQ(Extension::DISABLE_REMOTE_INSTALL,
+            ExtensionPrefs::Get(service_->profile())
+                ->GetDisableReasons(extension_id));
   EXPECT_TRUE(GetExtensionDisabledGlobalError());
 }

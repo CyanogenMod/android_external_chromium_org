@@ -12,7 +12,7 @@
 
 class GURL;
 
-namespace appcache {
+namespace content {
 class AppCacheService;
 }
 
@@ -38,7 +38,7 @@ namespace content {
 class BrowserContext;
 class IndexedDBContext;
 class DOMStorageContext;
-class ServiceWorkerContextWrapper;
+class ServiceWorkerContext;
 
 // Defines what persistent state a child process can access.
 //
@@ -52,12 +52,12 @@ class StoragePartition {
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
   virtual net::URLRequestContextGetter* GetMediaURLRequestContext() = 0;
   virtual quota::QuotaManager* GetQuotaManager() = 0;
-  virtual appcache::AppCacheService* GetAppCacheService() = 0;
+  virtual AppCacheService* GetAppCacheService() = 0;
   virtual fileapi::FileSystemContext* GetFileSystemContext() = 0;
   virtual webkit_database::DatabaseTracker* GetDatabaseTracker() = 0;
   virtual DOMStorageContext* GetDOMStorageContext() = 0;
   virtual IndexedDBContext* GetIndexedDBContext() = 0;
-  virtual ServiceWorkerContextWrapper* GetServiceWorkerContext() = 0;
+  virtual ServiceWorkerContext* GetServiceWorkerContext() = 0;
 
   enum RemoveDataMask {
     REMOVE_DATA_MASK_APPCACHE = 1 << 0,

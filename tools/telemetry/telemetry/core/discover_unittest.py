@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import os
@@ -50,3 +50,17 @@ class DiscoverTest(unittest.TestCase):
         'dummy_exception_impl2': 'DummyExceptionImpl2',
     }
     self.assertEqual(actual_classes, expected_classes)
+
+  def testIsPageSetFile(self):
+    top_10_ps_dir = os.path.join(util.GetChromiumSrcDir(),
+                                 'tools/perf/page_sets/top_10.py')
+    top_10_json_data = os.path.join(util.GetChromiumSrcDir(),
+                                    'tools/perf/page_sets/data/top_10.json')
+    test_ps_dir = os.path.join(util.GetTelemetryDir(),
+                               'unittest_data/test_page_set.py')
+    page_set_dir = os.path.join(util.GetTelemetryDir(),
+                               'telemetry/page/page_set.py')
+    self.assertTrue(discover.IsPageSetFile(top_10_ps_dir))
+    self.assertFalse(discover.IsPageSetFile(top_10_json_data))
+    self.assertFalse(discover.IsPageSetFile(test_ps_dir))
+    self.assertFalse(discover.IsPageSetFile(page_set_dir))

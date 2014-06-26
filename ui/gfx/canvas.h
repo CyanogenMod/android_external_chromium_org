@@ -15,11 +15,11 @@
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/shadow_value.h"
+#include "ui/gfx/text_constants.h"
 
 namespace gfx {
 
 class Rect;
-class Font;
 class FontList;
 class Point;
 class Size;
@@ -40,11 +40,6 @@ class Transform;
 // of kSrcOver_Mode.
 class GFX_EXPORT Canvas {
  public:
-  enum TruncateFadeMode {
-    TruncateFadeTail,
-    TruncateFadeHead,
-  };
-
   // Specifies the alignment for text rendered with the DrawStringRect method.
   enum {
     TEXT_ALIGN_LEFT = 1 << 0,
@@ -144,8 +139,6 @@ class GFX_EXPORT Canvas {
   // |text| with |font_list|.
   static int GetStringWidth(const base::string16& text,
                             const FontList& font_list);
-  // Obsolete version.  Use the above version which takes FontList.
-  static int GetStringWidth(const base::string16& text, const Font& font);
 
   // This is same as GetStringWidth except that fractional width is returned.
   // Use this method for the scenario that multiple string widths need to be
@@ -201,13 +194,15 @@ class GFX_EXPORT Canvas {
   // call Restore() more times than Save*().
   void Restore();
 
-  // Adds |rect| to the current clip. Returns true if the resulting clip is
-  // non-empty.
-  bool ClipRect(const Rect& rect);
+  // Adds |rect| to the current clip.
+  void ClipRect(const Rect& rect);
 
-  // Adds |path| to the current clip. Returns true if the resulting clip is
-  // non-empty.
-  bool ClipPath(const SkPath& path);
+  // Adds |path| to the current clip. |do_anti_alias| is true if the clip
+  // should be antialiased.
+  void ClipPath(const SkPath& path, bool do_anti_alias);
+
+  // Returns true if the current clip is empty.
+  bool IsClipEmpty() const;
 
   // Returns the bounds of the current clip (in local coordinates) in the
   // |bounds| parameter, and returns true if it is non empty.
@@ -322,6 +317,22 @@ class GFX_EXPORT Canvas {
                     bool filter,
                     const SkPaint& paint);
 
+  // Same as the DrawImageInt functions above. Difference being this does not
+  // do any scaling, i.e. it assumes that the source/destination/image, etc are
+  // in pixels. It does translate the destination rectangle to ensure that the
+  // image is displayed at the correct pixel coordinates.
+  void DrawImageIntInPixel(const ImageSkia& image,
+                           int src_x,
+                           int src_y,
+                           int src_w,
+                           int src_h,
+                           int dest_x,
+                           int dest_y,
+                           int dest_w,
+                           int dest_h,
+                           bool filter,
+                           const SkPaint& paint);
+
   // Draws an |image| with the top left corner at |x| and |y|, clipped to
   // |path|.
   // Parameters are specified relative to current canvas scale not in pixels.
@@ -403,20 +414,12 @@ class GFX_EXPORT Canvas {
   // Apply transformation on the canvas.
   void Transform(const Transform& transform);
 
-  // Draws the given string with the beginning or the end using a fade gradient.
-  void DrawFadeTruncatingStringRect(
-      const base::string16& text,
-      TruncateFadeMode truncate_mode,
-      const FontList& font_list,
-      SkColor color,
-      const Rect& display_rect);
-  void DrawFadeTruncatingStringRectWithFlags(
-      const base::string16& text,
-      TruncateFadeMode truncate_mode,
-      const FontList& font_list,
-      SkColor color,
-      const Rect& display_rect,
-      int flags);
+  // Draws the given string with a fade gradient at the end.
+  void DrawFadedString(const base::string16& text,
+                       const FontList& font_list,
+                       SkColor color,
+                       const Rect& display_rect,
+                       int flags);
 
   skia::PlatformCanvas* platform_canvas() const { return owned_canvas_.get(); }
   SkCanvas* sk_canvas() const { return canvas_; }
@@ -429,16 +432,22 @@ class GFX_EXPORT Canvas {
   bool IntersectsClipRectInt(int x, int y, int w, int h);
   bool IntersectsClipRect(const Rect& rect);
 
-  // Returns the image rep which best matches the canvas |image_scale_|.
-  // Returns a null image rep if |image| contains no image reps.
-  // Builds mip map for returned image rep if necessary.
-  //
-  // An optional additional user defined scale can be provided.
-  const ImageSkiaRep& GetImageRepToPaint(const ImageSkia& image) const;
-  const ImageSkiaRep& GetImageRepToPaint(
-      const ImageSkia& image,
-      float user_defined_scale_factor_x,
-      float user_defined_scale_factor_y) const;
+  // Helper for the DrawImageInt functions declared above. The |pixel|
+  // parameter if true indicates that the bounds and the image are to
+  // be assumed to be in pixels, i.e. no scaling needs to be performed.
+  void DrawImageIntHelper(const ImageSkia& image,
+                          int src_x,
+                          int src_y,
+                          int src_w,
+                          int src_h,
+                          int dest_x,
+                          int dest_y,
+                          int dest_w,
+                          int dest_h,
+                          bool filter,
+                          const SkPaint& paint,
+                          float image_scale,
+                          bool pixel);
 
   // The device scale factor at which drawing on this canvas occurs.
   // An additional scale can be applied via Canvas::Scale(). However,

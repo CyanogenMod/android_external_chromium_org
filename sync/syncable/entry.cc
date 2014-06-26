@@ -28,14 +28,20 @@ Entry::Entry(BaseTransaction* trans, GetByClientTag, const string& tag)
   kernel_ = trans->directory()->GetEntryByClientTag(tag);
 }
 
-Entry::Entry(BaseTransaction* trans, GetByServerTag, const string& tag)
+Entry::Entry(BaseTransaction* trans, GetTypeRoot, ModelType type)
     : basetrans_(trans) {
+  const std::string& tag = ModelTypeToRootTag(type);
   kernel_ = trans->directory()->GetEntryByServerTag(tag);
 }
 
 Entry::Entry(BaseTransaction* trans, GetByHandle, int64 metahandle)
     : basetrans_(trans) {
   kernel_ = trans->directory()->GetEntryByHandle(metahandle);
+}
+
+Entry::Entry(BaseTransaction* trans, GetByServerTag, const string& tag)
+    : basetrans_(trans) {
+  kernel_ = trans->directory()->GetEntryByServerTag(tag);
 }
 
 Directory* Entry::dir() const {
@@ -156,6 +162,13 @@ std::ostream& operator<<(std::ostream& os, const Entry& entry) {
     os << g_metas_columns[i].name << ": "
        << kernel->ref(static_cast<UniquePositionField>(i)).ToDebugString()
        << ", ";
+  }
+  for ( ; i < ATTACHMENT_METADATA_FIELDS_END; ++i) {
+    std::string escaped_str = base::EscapeBytesAsInvalidJSONString(
+        kernel->ref(static_cast<AttachmentMetadataField>(i))
+            .SerializeAsString(),
+        false);
+    os << g_metas_columns[i].name << ": " << escaped_str << ", ";
   }
   os << "TempFlags: ";
   for ( ; i < BIT_TEMPS_END; ++i) {

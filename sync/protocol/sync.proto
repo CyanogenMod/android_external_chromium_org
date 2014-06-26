@@ -367,6 +367,9 @@ message SyncEntity {
   // Refer to its definition in unique_position.proto for more information about
   // its internal representation.
   optional UniquePosition unique_position = 25;
+
+  // Attachment ids of attachments associated with this SyncEntity.
+  repeated AttachmentIdProto attachment_id = 26;
 };
 
 // This message contains diagnostic information used to correlate
@@ -409,6 +412,9 @@ message CommitMessage {
   // syncing a particular data type regardless of whether a commit for that
   // datatype is currently being sent up.
   optional ClientConfigParams config_params = 4;
+
+  // Set of optional per-client datatype contexts.
+  repeated DataTypeContext client_contexts = 5;
 };
 
 // This message communicates additional per-type information related to
@@ -473,6 +479,32 @@ message GetUpdateTriggers {
   optional bool server_dropped_hints = 6;
 }
 
+message GarbageCollectionDirective {
+  enum Type {
+    UNKNOWN = 0;
+    VERSION_WATERMARK = 1;
+    AGE_WATERMARK = 2;
+    MAX_ITEM_COUNT = 3;
+  }
+
+  optional Type type = 1 [default = UNKNOWN];
+
+  // This field specifies the watermark for the versions which should get
+  // garbage collected.  The client should purge all sync entities with a
+  // version smaller than version_watermark locally.
+  optional int64 version_watermark = 2;
+
+  // This field specifies the watermark in terms of age in days.  The client
+  // should purge all sync entities which are older than this specific value
+  // based on last modified time.
+  optional int32 age_watermark_in_days = 3;
+
+  // This field specifies the max number of items that the client should keep
+  // for a specific datatype.  If the number of items exceeds this limit, the
+  // client should purge the extra sync entities based on the LRU rule.
+  optional int32 max_number_of_items = 4;
+}
+
 message DataTypeProgressMarker {
   // An integer identifying the data type whose progress is tracked by this
   // marker.  The legitimate values of this field correspond to the protobuf
@@ -520,6 +552,12 @@ message DataTypeProgressMarker {
 
   // This field will be included only in GetUpdates with origin GU_TRIGGER.
   optional GetUpdateTriggers get_update_triggers = 5;
+
+  // The garbage collection directive for this data type.  The client should
+  // purge items locally based on this directive.  Since this directive is
+  // designed to be sent from server only, the client should persist it locally
+  // as needed and avoid sending it to the server.
+  optional GarbageCollectionDirective gc_directive = 6;
 }
 
 message GetUpdatesMessage {
@@ -595,6 +633,9 @@ message GetUpdatesMessage {
   // Whether this GU also serves as a retry GU. Any GU that happens after
   // retry timer timeout is a retry GU effectively.
   optional bool is_retry = 10 [default = false];
+
+  // Set of optional per-client datatype contexts.
+  repeated DataTypeContext client_contexts = 11;
 };
 
 message AuthenticateMessage {
@@ -638,9 +679,20 @@ message ClientStatus {
   optional bool hierarchy_conflict_detected = 1;
 }
 
+// A single datatype's sync context. Allows the datatype to pass along
+// datatype specific information with its own server backend.
+message DataTypeContext {
+  // The type this context is associated with.
+  optional int32 data_type_id = 1;
+  // The context for the datatype.
+  optional bytes context = 2;
+  // The version of the context.
+  optional int64 version = 3;
+}
+
 message ClientToServerMessage {
   required string share = 1;
-  optional int32 protocol_version = 2 [default = 31];
+  optional int32 protocol_version = 2 [default = 33];
   enum Contents {
     COMMIT = 1;
     GET_UPDATES = 2;
@@ -801,6 +853,9 @@ message GetUpdatesResponse {
   // the server has updated the set of encryption keys (e.g. due to a key
   // rotation).
   repeated bytes encryption_keys = 6;
+
+  // Set of optional datatype contexts server mutations.
+  repeated DataTypeContext context_mutations = 7;
 };
 
 // The metadata response for GetUpdatesMessage.  This response is sent when
@@ -899,4 +954,3 @@ message ClientToServerResponse {
   // sent with any subsequent ClientToServerMessages.
   optional ChipBag new_bag_of_chips = 14;
 };
-

@@ -14,6 +14,10 @@
 #include "chromeos/dbus/fake_bluetooth_adapter_client.h"
 #include "chromeos/dbus/fake_bluetooth_agent_manager_client.h"
 #include "chromeos/dbus/fake_bluetooth_device_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_characteristic_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_descriptor_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_manager_client.h"
+#include "chromeos/dbus/fake_bluetooth_gatt_service_client.h"
 #include "chromeos/dbus/fake_bluetooth_input_client.h"
 #include "chromeos/dbus/fake_bluetooth_profile_manager_client.h"
 #include "chromeos/dbus/fake_cryptohome_client.h"
@@ -21,6 +25,7 @@
 #include "chromeos/dbus/fake_gsm_sms_client.h"
 #include "chromeos/dbus/fake_image_burner_client.h"
 #include "chromeos/dbus/fake_introspectable_client.h"
+#include "chromeos/dbus/fake_lorgnette_manager_client.h"
 #include "chromeos/dbus/fake_modem_messaging_client.h"
 #include "chromeos/dbus/fake_nfc_adapter_client.h"
 #include "chromeos/dbus/fake_nfc_device_client.h"
@@ -59,6 +64,15 @@ void FakeDBusThreadManager::SetFakeClients() {
       new FakeBluetoothAgentManagerClient));
   SetBluetoothDeviceClient(
       scoped_ptr<BluetoothDeviceClient>(new FakeBluetoothDeviceClient));
+  SetBluetoothGattCharacteristicClient(
+      scoped_ptr<BluetoothGattCharacteristicClient>(
+          new FakeBluetoothGattCharacteristicClient));
+  SetBluetoothGattDescriptorClient(scoped_ptr<BluetoothGattDescriptorClient>(
+      new FakeBluetoothGattDescriptorClient));
+  SetBluetoothGattManagerClient(scoped_ptr<BluetoothGattManagerClient>(
+      new FakeBluetoothGattManagerClient));
+  SetBluetoothGattServiceClient(scoped_ptr<BluetoothGattServiceClient>(
+      new FakeBluetoothGattServiceClient));
   SetBluetoothInputClient(
       scoped_ptr<BluetoothInputClient>(new FakeBluetoothInputClient));
   SetBluetoothProfileManagerClient(scoped_ptr<BluetoothProfileManagerClient>(
@@ -69,6 +83,8 @@ void FakeDBusThreadManager::SetFakeClients() {
   SetCryptohomeClient(scoped_ptr<CryptohomeClient>(new FakeCryptohomeClient));
   SetDebugDaemonClient(
       scoped_ptr<DebugDaemonClient>(new FakeDebugDaemonClient));
+  SetLorgnetteManagerClient(
+      scoped_ptr<LorgnetteManagerClient>(new FakeLorgnetteManagerClient));
 
   SetFakeShillClients();
 
@@ -117,6 +133,13 @@ void FakeDBusThreadManager::SetFakeShillClients() {
       scoped_ptr<ShillProfileClient>(new FakeShillProfileClient));
 }
 
+void FakeDBusThreadManager::SetupDefaultEnvironment() {
+  ShillManagerClient::TestInterface* manager =
+      shill_manager_client_->GetTestInterface();
+  if (manager)
+    manager->SetupDefaultEnvironment();
+}
+
 void FakeDBusThreadManager::SetBluetoothAdapterClient(
     scoped_ptr<BluetoothAdapterClient> client) {
   bluetooth_adapter_client_ = client.Pass();
@@ -130,6 +153,26 @@ void FakeDBusThreadManager::SetBluetoothAgentManagerClient(
 void FakeDBusThreadManager::SetBluetoothDeviceClient(
     scoped_ptr<BluetoothDeviceClient> client) {
   bluetooth_device_client_ = client.Pass();
+}
+
+void FakeDBusThreadManager::SetBluetoothGattCharacteristicClient(
+    scoped_ptr<BluetoothGattCharacteristicClient> client) {
+  bluetooth_gatt_characteristic_client_ = client.Pass();
+}
+
+void FakeDBusThreadManager::SetBluetoothGattDescriptorClient(
+    scoped_ptr<BluetoothGattDescriptorClient> client) {
+  bluetooth_gatt_descriptor_client_ = client.Pass();
+}
+
+void FakeDBusThreadManager::SetBluetoothGattManagerClient(
+    scoped_ptr<BluetoothGattManagerClient> client) {
+  bluetooth_gatt_manager_client_ = client.Pass();
+}
+
+void FakeDBusThreadManager::SetBluetoothGattServiceClient(
+    scoped_ptr<BluetoothGattServiceClient> client) {
+  bluetooth_gatt_service_client_ = client.Pass();
 }
 
 void FakeDBusThreadManager::SetBluetoothInputClient(
@@ -160,6 +203,11 @@ void FakeDBusThreadManager::SetCryptohomeClient(
 void FakeDBusThreadManager::SetDebugDaemonClient(
     scoped_ptr<DebugDaemonClient> client) {
   debug_daemon_client_ = client.Pass();
+}
+
+void FakeDBusThreadManager::SetLorgnetteManagerClient(
+    scoped_ptr<LorgnetteManagerClient> client) {
+  lorgnette_manager_client_ = client.Pass();
 }
 
 void FakeDBusThreadManager::SetShillDeviceClient(
@@ -297,6 +345,26 @@ BluetoothDeviceClient*
   return bluetooth_device_client_.get();
 }
 
+BluetoothGattCharacteristicClient*
+    FakeDBusThreadManager::GetBluetoothGattCharacteristicClient() {
+  return bluetooth_gatt_characteristic_client_.get();
+}
+
+BluetoothGattDescriptorClient*
+    FakeDBusThreadManager::GetBluetoothGattDescriptorClient() {
+  return bluetooth_gatt_descriptor_client_.get();
+}
+
+BluetoothGattManagerClient*
+    FakeDBusThreadManager::GetBluetoothGattManagerClient() {
+  return bluetooth_gatt_manager_client_.get();
+}
+
+BluetoothGattServiceClient*
+    FakeDBusThreadManager::GetBluetoothGattServiceClient() {
+  return bluetooth_gatt_service_client_.get();
+}
+
 BluetoothInputClient*
     FakeDBusThreadManager::GetBluetoothInputClient() {
   return bluetooth_input_client_.get();
@@ -321,6 +389,10 @@ CryptohomeClient* FakeDBusThreadManager::GetCryptohomeClient() {
 
 DebugDaemonClient* FakeDBusThreadManager::GetDebugDaemonClient() {
   return debug_daemon_client_.get();
+}
+
+LorgnetteManagerClient* FakeDBusThreadManager::GetLorgnetteManagerClient() {
+  return lorgnette_manager_client_.get();
 }
 
 ShillDeviceClient*

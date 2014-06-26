@@ -10,30 +10,27 @@
 #include "ash/shell.h"
 #include "ash/shell/panel_window.h"
 #include "ash/shell_window_ids.h"
+#include "ash/system/audio/tray_audio.h"
 #include "ash/system/bluetooth/tray_bluetooth.h"
 #include "ash/system/date/tray_date.h"
 #include "ash/system/drive/tray_drive.h"
 #include "ash/system/ime/tray_ime.h"
-#include "ash/system/monitor/tray_monitor.h"
-#include "ash/system/session_length_limit/tray_session_length_limit.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_bubble_wrapper.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray_accessibility.h"
-#include "ash/system/tray_caps_lock.h"
 #include "ash/system/tray_update.h"
 #include "ash/system/user/login_status.h"
 #include "ash/system/user/tray_user.h"
 #include "ash/system/user/tray_user_separator.h"
 #include "ash/system/web_notification/web_notification_tray.h"
-#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/timer/timer.h"
 #include "grit/ash_strings.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event_constants.h"
@@ -47,7 +44,7 @@
 #include "ui/views/view.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/system/chromeos/audio/tray_audio.h"
+#include "ash/system/chromeos/audio/tray_audio_chromeos.h"
 #include "ash/system/chromeos/brightness/tray_brightness.h"
 #include "ash/system/chromeos/enterprise/tray_enterprise.h"
 #include "ash/system/chromeos/managed/tray_locally_managed_user.h"
@@ -55,12 +52,19 @@
 #include "ash/system/chromeos/network/tray_sms.h"
 #include "ash/system/chromeos/network/tray_vpn.h"
 #include "ash/system/chromeos/power/tray_power.h"
+#include "ash/system/chromeos/rotation/tray_rotation_lock.h"
 #include "ash/system/chromeos/screen_security/screen_capture_tray_item.h"
 #include "ash/system/chromeos/screen_security/screen_share_tray_item.h"
+#include "ash/system/chromeos/session/tray_session_length_limit.h"
 #include "ash/system/chromeos/settings/tray_settings.h"
+#include "ash/system/chromeos/tray_caps_lock.h"
 #include "ash/system/chromeos/tray_display.h"
 #include "ash/system/chromeos/tray_tracing.h"
+#include "ash/system/tray/media_security/multi_profile_media_tray_item.h"
 #include "ui/message_center/message_center.h"
+#elif defined(OS_WIN)
+#include "ash/system/win/audio/tray_audio_win.h"
+#include "media/audio/win/core_audio_util_win.h"
 #endif
 
 using views::TrayBubbleView;
@@ -70,18 +74,14 @@ namespace ash {
 // The minimum width of the system tray menu width.
 const int kMinimumSystemTrayMenuWidth = 300;
 
-namespace internal {
-
 // Class to initialize and manage the SystemTrayBubble and TrayBubbleWrapper
 // instances for a bubble.
 
 class SystemBubbleWrapper {
  public:
   // Takes ownership of |bubble|.
-  explicit SystemBubbleWrapper(internal::SystemTrayBubble* bubble)
-      : bubble_(bubble),
-        is_persistent_(false) {
-  }
+  explicit SystemBubbleWrapper(SystemTrayBubble* bubble)
+      : bubble_(bubble), is_persistent_(false) {}
 
   // Initializes the bubble view and creates |bubble_wrapper_|.
   void InitView(TrayBackgroundView* tray,
@@ -92,13 +92,10 @@ class SystemBubbleWrapper {
     user::LoginStatus login_status =
         Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
     bubble_->InitView(anchor, login_status, init_params);
-    bubble_wrapper_.reset(
-        new internal::TrayBubbleWrapper(tray, bubble_->bubble_view()));
-    if (ash::switches::UseAlternateShelfLayout()) {
-      // The system bubble should not have an arrow.
-      bubble_->bubble_view()->SetArrowPaintType(
-          views::BubbleBorder::PAINT_NONE);
-    }
+    bubble_wrapper_.reset(new TrayBubbleWrapper(tray, bubble_->bubble_view()));
+    // The system bubble should not have an arrow.
+    bubble_->bubble_view()->SetArrowPaintType(
+        views::BubbleBorder::PAINT_NONE);
     is_persistent_ = is_persistent;
 
     // If ChromeVox is enabled, focus the default item if no item is focused.
@@ -117,21 +114,18 @@ class SystemBubbleWrapper {
   bool is_persistent() const { return is_persistent_; }
 
  private:
-  scoped_ptr<internal::SystemTrayBubble> bubble_;
-  scoped_ptr<internal::TrayBubbleWrapper> bubble_wrapper_;
+  scoped_ptr<SystemTrayBubble> bubble_;
+  scoped_ptr<TrayBubbleWrapper> bubble_wrapper_;
   bool is_persistent_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemBubbleWrapper);
 };
 
-}  // namespace internal
 
 // SystemTray
 
-using internal::SystemTrayBubble;
-
-SystemTray::SystemTray(internal::StatusAreaWidget* status_area_widget)
-    : internal::TrayBackgroundView(status_area_widget),
+SystemTray::SystemTray(StatusAreaWidget* status_area_widget)
+    : TrayBackgroundView(status_area_widget),
       items_(),
       default_bubble_height_(0),
       hide_notifications_(false),
@@ -153,72 +147,66 @@ SystemTray::~SystemTray() {
 }
 
 void SystemTray::InitializeTrayItems(SystemTrayDelegate* delegate) {
-  internal::TrayBackgroundView::Initialize();
+  TrayBackgroundView::Initialize();
   CreateItems(delegate);
 }
 
 void SystemTray::CreateItems(SystemTrayDelegate* delegate) {
 #if !defined(OS_WIN)
-  AddTrayItem(new internal::TraySessionLengthLimit(this));
   // Create user items for each possible user.
   ash::Shell* shell = ash::Shell::GetInstance();
   int maximum_user_profiles =
           shell->session_state_delegate()->GetMaximumNumberOfLoggedInUsers();
-  for (int i = 0; i < maximum_user_profiles; i++) {
-    internal::TrayUser* tray_user = new internal::TrayUser(this, i);
-    AddTrayItem(tray_user);
-    user_items_.push_back(tray_user);
-  }
+  for (int i = 0; i < maximum_user_profiles; i++)
+    AddTrayItem(new TrayUser(this, i));
+
   if (maximum_user_profiles > 1) {
     // Add a special double line separator between users and the rest of the
     // menu if more then one user is logged in.
-    AddTrayItem(new internal::TrayUserSeparator(this));
+    AddTrayItem(new TrayUserSeparator(this));
   }
 #endif
 
-  tray_accessibility_ = new internal::TrayAccessibility(this);
-  tray_date_ = new internal::TrayDate(this);
+  tray_accessibility_ = new TrayAccessibility(this);
+  tray_date_ = new TrayDate(this);
 
 #if defined(OS_CHROMEOS)
-  AddTrayItem(new internal::TrayEnterprise(this));
-  AddTrayItem(new internal::TrayLocallyManagedUser(this));
-  AddTrayItem(new internal::TrayIME(this));
+  AddTrayItem(new TraySessionLengthLimit(this));
+  AddTrayItem(new TrayEnterprise(this));
+  AddTrayItem(new TrayLocallyManagedUser(this));
+  AddTrayItem(new TrayIME(this));
   AddTrayItem(tray_accessibility_);
-  AddTrayItem(new internal::TrayTracing(this));
-  AddTrayItem(
-      new internal::TrayPower(this, message_center::MessageCenter::Get()));
-  AddTrayItem(new internal::TrayNetwork(this));
-  AddTrayItem(new internal::TrayVPN(this));
-  AddTrayItem(new internal::TraySms(this));
-  AddTrayItem(new internal::TrayBluetooth(this));
-  AddTrayItem(new internal::TrayDrive(this));
-  AddTrayItem(new internal::TrayDisplay(this));
-  AddTrayItem(new internal::ScreenCaptureTrayItem(this));
-  AddTrayItem(new internal::ScreenShareTrayItem(this));
-  AddTrayItem(new internal::TrayAudio(this));
-  AddTrayItem(new internal::TrayBrightness(this));
-  AddTrayItem(new internal::TrayCapsLock(this));
-  AddTrayItem(new internal::TraySettings(this));
-  AddTrayItem(new internal::TrayUpdate(this));
+  AddTrayItem(new TrayTracing(this));
+  AddTrayItem(new TrayPower(this, message_center::MessageCenter::Get()));
+  AddTrayItem(new TrayNetwork(this));
+  AddTrayItem(new TrayVPN(this));
+  AddTrayItem(new TraySms(this));
+  AddTrayItem(new TrayBluetooth(this));
+  AddTrayItem(new TrayDrive(this));
+  AddTrayItem(new TrayDisplay(this));
+  AddTrayItem(new ScreenCaptureTrayItem(this));
+  AddTrayItem(new ScreenShareTrayItem(this));
+  AddTrayItem(new MultiProfileMediaTrayItem(this));
+  AddTrayItem(new TrayAudioChromeOs(this));
+  AddTrayItem(new TrayBrightness(this));
+  AddTrayItem(new TrayCapsLock(this));
+  AddTrayItem(new TraySettings(this));
+  AddTrayItem(new TrayUpdate(this));
+  AddTrayItem(new TrayRotationLock(this));
   AddTrayItem(tray_date_);
 #elif defined(OS_WIN)
   AddTrayItem(tray_accessibility_);
-  AddTrayItem(new internal::TrayUpdate(this));
+  if (media::CoreAudioUtil::IsSupported())
+    AddTrayItem(new TrayAudioWin(this));
+  AddTrayItem(new TrayUpdate(this));
   AddTrayItem(tray_date_);
 #elif defined(OS_LINUX)
-  AddTrayItem(new internal::TrayIME(this));
+  AddTrayItem(new TrayIME(this));
   AddTrayItem(tray_accessibility_);
-  AddTrayItem(new internal::TrayBluetooth(this));
-  AddTrayItem(new internal::TrayDrive(this));
-  AddTrayItem(new internal::TrayCapsLock(this));
-  AddTrayItem(new internal::TrayUpdate(this));
+  AddTrayItem(new TrayBluetooth(this));
+  AddTrayItem(new TrayDrive(this));
+  AddTrayItem(new TrayUpdate(this));
   AddTrayItem(tray_date_);
-#endif
-
-#if defined(OS_LINUX)
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
-  if (cmd->HasSwitch(ash::switches::kAshEnableMemoryMonitor))
-    AddTrayItem(new internal::TrayMonitor(this));
 #endif
 
   SetVisible(ash::Shell::GetInstance()->system_tray_delegate()->
@@ -247,10 +235,6 @@ const std::vector<SystemTrayItem*>& SystemTray::GetTrayItems() const {
   return items_.get();
 }
 
-const std::vector<internal::TrayUser*>& SystemTray::GetTrayUserItems() const {
-  return user_items_;
-}
-
 void SystemTray::ShowDefaultView(BubbleCreationType creation_type) {
   ShowDefaultViewWithOffset(
       creation_type,
@@ -272,8 +256,14 @@ void SystemTray::ShowDetailedView(SystemTrayItem* item,
                                   bool activate,
                                   BubbleCreationType creation_type) {
   std::vector<SystemTrayItem*> items;
+  // The detailed view with timeout means a UI to show the current system state,
+  // like the audio level or brightness. Such UI should behave as persistent and
+  // keep its own logic for the appearance.
+  bool persistent = (
+      !activate && close_delay > 0 && creation_type == BUBBLE_CREATE_NEW);
   items.push_back(item);
-  ShowItems(items, true, activate, creation_type, GetTrayXOffset(item), false);
+  ShowItems(
+      items, true, activate, creation_type, GetTrayXOffset(item), persistent);
   if (system_bubble_)
     system_bubble_->bubble()->StartAutoCloseTimer(close_delay);
 }
@@ -354,7 +344,7 @@ bool SystemTray::HasNotificationBubble() const {
   return notification_bubble_.get() != NULL;
 }
 
-internal::SystemTrayBubble* SystemTray::GetSystemBubble() {
+SystemTrayBubble* SystemTray::GetSystemBubble() {
   if (!system_bubble_)
     return NULL;
   return system_bubble_->bubble();
@@ -488,8 +478,7 @@ void SystemTray::ShowItems(const std::vector<SystemTrayItem*>& items,
                                            menu_width,
                                            kTrayPopupMaxWidth);
     init_params.can_activate = can_activate;
-    init_params.first_item_has_no_margin =
-        ash::switches::UseAlternateShelfLayout();
+    init_params.first_item_has_no_margin = true;
     if (detailed) {
       // This is the case where a volume control or brightness control bubble
       // is created.
@@ -507,7 +496,7 @@ void SystemTray::ShowItems(const std::vector<SystemTrayItem*>& items,
     if (items.size() == 1 && items[0]->ShouldHideArrow())
       init_params.arrow_paint_type = views::BubbleBorder::PAINT_TRANSPARENT;
     SystemTrayBubble* bubble = new SystemTrayBubble(this, items, bubble_type);
-    system_bubble_.reset(new internal::SystemBubbleWrapper(bubble));
+    system_bubble_.reset(new SystemBubbleWrapper(bubble));
     system_bubble_->InitView(this, tray_container(), &init_params, persistent);
   }
   // Save height of default view for creating detailed views directly.
@@ -560,12 +549,10 @@ void SystemTray::UpdateNotificationBubble() {
                                          GetAnchorAlignment(),
                                          kTrayPopupMinWidth,
                                          kTrayPopupMaxWidth);
-  init_params.first_item_has_no_margin =
-      ash::switches::UseAlternateShelfLayout();
+  init_params.first_item_has_no_margin = true;
   init_params.arrow_color = kBackgroundColor;
   init_params.arrow_offset = GetTrayXOffset(notification_items_[0]);
-  notification_bubble_.reset(
-      new internal::SystemBubbleWrapper(notification_bubble));
+  notification_bubble_.reset(new SystemBubbleWrapper(notification_bubble));
   notification_bubble_->InitView(this, anchor, &init_params, false);
 
   if (notification_bubble->bubble_view()->child_count() == 0) {
@@ -604,7 +591,7 @@ void SystemTray::UpdateWebNotifications() {
 void SystemTray::SetShelfAlignment(ShelfAlignment alignment) {
   if (alignment == shelf_alignment())
     return;
-  internal::TrayBackgroundView::SetShelfAlignment(alignment);
+  TrayBackgroundView::SetShelfAlignment(alignment);
   UpdateAfterShelfAlignmentChange(alignment);
   // Destroy any existing bubble so that it is rebuilt correctly.
   CloseSystemBubbleAndDeactivateSystemTray();
@@ -678,7 +665,7 @@ base::string16 SystemTray::GetAccessibleNameForBubble() {
 gfx::Rect SystemTray::GetAnchorRect(
     views::Widget* anchor_widget,
     TrayBubbleView::AnchorType anchor_type,
-    TrayBubbleView::AnchorAlignment anchor_alignment) {
+    TrayBubbleView::AnchorAlignment anchor_alignment) const {
   return GetBubbleAnchorRect(anchor_widget, anchor_type, anchor_alignment);
 }
 
@@ -692,14 +679,7 @@ views::View* SystemTray::GetTrayItemViewForTest(SystemTrayItem* item) {
   return it == tray_item_map_.end() ? NULL : it->second;
 }
 
-void SystemTray::AddTrayUserItemForTest(internal::TrayUser* tray_user) {
-  AddTrayItem(tray_user);
-  user_items_.push_back(tray_user);
-}
-
-internal::TrayDate* SystemTray::GetTrayDateForTesting() const {
-  return tray_date_;
-}
+TrayDate* SystemTray::GetTrayDateForTesting() const { return tray_date_; }
 
 bool SystemTray::PerformAction(const ui::Event& event) {
   // If we're already showing the default view, hide it; otherwise, show it

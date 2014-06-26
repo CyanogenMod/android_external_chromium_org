@@ -14,6 +14,7 @@
 #include "third_party/skia/include/core/SkRRect.h"
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkShader.h"
+#include "third_party/skia/include/utils/SkNoSaveLayerCanvas.h"
 #include "third_party/skia/src/core/SkRasterClip.h"
 
 namespace skia {
@@ -51,11 +52,6 @@ class GatherPixelRefDevice : public SkBitmapDevice {
       : SkBitmapDevice(bm), pixel_ref_set_(pixel_ref_set) {}
 
   virtual void clear(SkColor color) SK_OVERRIDE {}
-  virtual void writePixels(const SkBitmap& bitmap,
-                           int x,
-                           int y,
-                           SkCanvas::Config8888 config8888) SK_OVERRIDE {}
-
   virtual void drawPaint(const SkDraw& draw, const SkPaint& paint) SK_OVERRIDE {
     SkBitmap bitmap;
     if (GetBitmapFromPaint(paint, &bitmap)) {
@@ -318,10 +314,19 @@ class GatherPixelRefDevice : public SkBitmapDevice {
                           const SkPaint&) SK_OVERRIDE {}
 
  protected:
-  virtual bool onReadPixels(const SkBitmap& bitmap,
+  virtual bool onReadPixels(const SkImageInfo& info,
+                            void* pixels,
+                            size_t rowBytes,
                             int x,
-                            int y,
-                            SkCanvas::Config8888 config8888) SK_OVERRIDE {
+                            int y) SK_OVERRIDE {
+    return false;
+  }
+
+  virtual bool onWritePixels(const SkImageInfo& info,
+                             const void* pixels,
+                             size_t rowBytes,
+                             int x,
+                             int y) SK_OVERRIDE {
     return false;
   }
 
@@ -347,45 +352,6 @@ class GatherPixelRefDevice : public SkBitmapDevice {
   }
 };
 
-class NoSaveLayerCanvas : public SkCanvas {
- public:
-  NoSaveLayerCanvas(SkBaseDevice* device) : INHERITED(device) {}
-
-  // Turn saveLayer() into save() for speed, should not affect correctness.
-  virtual int saveLayer(const SkRect* bounds,
-                        const SkPaint* paint,
-                        SaveFlags flags) SK_OVERRIDE {
-
-    // Like SkPictureRecord, we don't want to create layers, but we do need
-    // to respect the save and (possibly) its rect-clip.
-    int count = this->INHERITED::save(flags);
-    if (bounds) {
-      this->INHERITED::clipRectBounds(bounds, flags, NULL);
-    }
-    return count;
-  }
-
-  // Disable aa for speed.
-  virtual bool clipRect(const SkRect& rect, SkRegion::Op op, bool doAA)
-      SK_OVERRIDE {
-    return this->INHERITED::clipRect(rect, op, false);
-  }
-
-  virtual bool clipPath(const SkPath& path, SkRegion::Op op, bool doAA)
-      SK_OVERRIDE {
-    return this->updateClipConservativelyUsingBounds(
-        path.getBounds(), op, path.isInverseFillType());
-  }
-  virtual bool clipRRect(const SkRRect& rrect, SkRegion::Op op, bool doAA)
-      SK_OVERRIDE {
-    return this->updateClipConservativelyUsingBounds(
-        rrect.getBounds(), op, false);
-  }
-
- private:
-  typedef SkCanvas INHERITED;
-};
-
 }  // namespace
 
 void PixelRefUtils::GatherDiscardablePixelRefs(
@@ -395,16 +361,15 @@ void PixelRefUtils::GatherDiscardablePixelRefs(
   DiscardablePixelRefSet pixel_ref_set(pixel_refs);
 
   SkBitmap empty_bitmap;
-  empty_bitmap.setConfig(
-      SkBitmap::kNo_Config, picture->width(), picture->height());
+  empty_bitmap.setInfo(SkImageInfo::MakeUnknown(picture->width(), picture->height()));
 
   GatherPixelRefDevice device(empty_bitmap, &pixel_ref_set);
-  NoSaveLayerCanvas canvas(&device);
+  SkNoSaveLayerCanvas canvas(&device);
 
   canvas.clipRect(SkRect::MakeWH(picture->width(), picture->height()),
                   SkRegion::kIntersect_Op,
                   false);
-  canvas.drawPicture(*picture);
+  canvas.drawPicture(picture);
 }
 
 }  // namespace skia

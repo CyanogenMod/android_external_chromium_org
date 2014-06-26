@@ -12,9 +12,8 @@
 #include "chrome/browser/extensions/api/cast_channel/cast_message_util.h"
 #include "net/base/address_list.h"
 #include "net/base/capturing_net_log.h"
-#include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/net_log.h"
+#include "net/base/net_util.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/tcp_client_socket.h"
@@ -64,11 +63,6 @@ static void CreateBinaryMessage(const std::string& namespace_,
   message->destination_id = destination_id;
   message->data.reset(base::BinaryValue::CreateWithCopiedBuffer(
       data.c_str(), data.size()));
-}
-
-// Returns the size of the body (in bytes) of the given serialized message.
-static size_t ComputeBodySize(const std::string& msg) {
-  return msg.length() - kMessageHeaderSize;
 }
 
 class MockCastSocketDelegate : public CastSocket::Delegate {
@@ -135,20 +129,23 @@ class TestCastSocket : public CastSocket {
   static scoped_ptr<TestCastSocket> Create(
       MockCastSocketDelegate* delegate) {
     return scoped_ptr<TestCastSocket>(
-        new TestCastSocket(delegate, "cast://192.0.0.1:8009"));
+        new TestCastSocket(delegate, CreateIPEndPoint(),
+                           CHANNEL_AUTH_TYPE_SSL));
   }
 
   static scoped_ptr<TestCastSocket> CreateSecure(
       MockCastSocketDelegate* delegate) {
     return scoped_ptr<TestCastSocket>(
-        new TestCastSocket(delegate, "casts://192.0.0.1:8009"));
+        new TestCastSocket(delegate, CreateIPEndPoint(),
+                           CHANNEL_AUTH_TYPE_SSL_VERIFIED));
   }
 
   explicit TestCastSocket(MockCastSocketDelegate* delegate,
-                          const std::string& url) :
-      CastSocket("abcdefg", GURL(url), delegate,
-                 &capturing_net_log_),
-      ip_(CreateIPEndPoint()),
+                          const net::IPEndPoint& ip_endpoint,
+                          ChannelAuthType channel_auth) :
+        CastSocket("abcdefg", ip_endpoint, channel_auth, delegate,
+                   &capturing_net_log_),
+      ip_(ip_endpoint),
       connect_index_(0),
       extract_cert_result_(true),
       verify_challenge_result_(true) {
@@ -161,6 +158,11 @@ class TestCastSocket : public CastSocket {
     number.push_back(0);
     number.push_back(1);
     return net::IPEndPoint(number, 8009);
+  }
+
+  // Returns the size of the body (in bytes) of the given serialized message.
+  static size_t ComputeBodySize(const std::string& msg) {
+    return msg.length() - CastSocket::MessageHeader::header_size();
   }
 
   virtual ~TestCastSocket() {
@@ -211,8 +213,8 @@ class TestCastSocket : public CastSocket {
   void AddReadResultForMessage(net::IoMode mode, const std::string& msg) {
     size_t body_size = ComputeBodySize(msg);
     const char* data = msg.c_str();
-    AddReadResult(mode, data, kMessageHeaderSize);
-    AddReadResult(mode, data + kMessageHeaderSize, body_size);
+    AddReadResult(mode, data, MessageHeader::header_size());
+    AddReadResult(mode, data + MessageHeader::header_size(), body_size);
   }
   void AddReadResultForMessage(net::IoMode mode,
                                const std::string& msg,
@@ -359,32 +361,6 @@ class CastSocketTest : public testing::Test {
   std::string auth_request_;
   std::string auth_reply_;
 };
-
-// Tests URL parsing and validation.
-TEST_F(CastSocketTest, TestCastURLs) {
-  CreateCastSocket();
-  EXPECT_TRUE(socket_->ParseChannelUrl(GURL("cast://192.0.0.1:8009")));
-  EXPECT_FALSE(socket_->auth_required());
-  EXPECT_EQ(socket_->ip_endpoint_.ToString(), "192.0.0.1:8009");
-
-  EXPECT_TRUE(socket_->ParseChannelUrl(GURL("casts://192.0.0.1:12345")));
-  EXPECT_TRUE(socket_->auth_required());
-  EXPECT_EQ(socket_->ip_endpoint_.ToString(), "192.0.0.1:12345");
-
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("http://192.0.0.1:12345")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast:192.0.0.1:12345")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast:///192.0.0.1:12345")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast://:12345")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast://abcd:8009")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast://192.0.0.1:abcd")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("foo")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast:")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast::")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast://192.0.0.1")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast://:")));
-  EXPECT_FALSE(socket_->ParseChannelUrl(GURL("cast://192.0.0.1:")));
-}
 
 // Tests connecting and closing the socket.
 TEST_F(CastSocketTest, TestConnectAndClose) {
@@ -790,7 +766,7 @@ TEST_F(CastSocketTest, TestWriteErrorLargeMessage) {
   ConnectHelper();
 
   EXPECT_CALL(handler_, OnWriteComplete(net::ERR_FAILED));
-  size_t size = kMaxMessageSize + 1;
+  size_t size = CastSocket::MessageHeader::max_message_size() + 1;
   test_messages_[0].data.reset(
       new base::StringValue(std::string(size, 'a')));
   socket_->SendMessage(test_messages_[0],
@@ -986,7 +962,8 @@ TEST_F(CastSocketTest, TestReadErrorSync) {
 // Test read error - header parse error
 TEST_F(CastSocketTest, TestReadHeaderParseError) {
   CreateCastSocket();
-  uint32 body_size = base::HostToNet32(kMaxMessageSize + 1);
+  uint32 body_size = base::HostToNet32(
+      CastSocket::MessageHeader::max_message_size() + 1);
   // TODO(munjal): Add a method to cast_message_util.h to serialize messages
   char header[sizeof(body_size)];
   memcpy(&header, &body_size, arraysize(header));

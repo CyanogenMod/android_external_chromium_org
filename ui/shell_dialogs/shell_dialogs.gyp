@@ -14,8 +14,8 @@
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../skia/skia.gyp:skia',
-        '../base/strings/ui_strings.gyp:ui_strings',
-        '../ui.gyp:ui',
+        '../base/ui_base.gyp:ui_base',
+        '../strings/ui_strings.gyp:ui_strings',
       ],
       'defines': [
         'SHELL_DIALOGS_IMPLEMENTATION',
@@ -27,10 +27,6 @@
         'base_shell_dialog.h',
         'base_shell_dialog_win.cc',
         'base_shell_dialog_win.h',
-        'gtk/select_file_dialog_impl.cc',
-        'gtk/select_file_dialog_impl.h',
-        'gtk/select_file_dialog_impl_gtk.cc',
-        'gtk/select_file_dialog_impl_kde.cc',
         'linux_shell_dialog.cc',
         'linux_shell_dialog.h',
         'select_file_dialog.cc',
@@ -62,7 +58,7 @@
         ['OS=="android"',
           {
             'dependencies': [
-              '../ui.gyp:ui_base_jni_headers',
+              '../base/ui_base.gyp:ui_base_jni_headers',
             ],
             'include_dirs': [
               '<(SHARED_INTERMEDIATE_DIR)/ui',
@@ -78,6 +74,13 @@
           {
             'dependencies': [
               '../android/ui_android.gyp:ui_java',
+            ],
+          }
+        ],
+        ['OS=="win"',
+          {
+            'dependencies': [
+              '../../win8/win8.gyp:metro_viewer',
             ],
           }
         ],

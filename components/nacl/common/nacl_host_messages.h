@@ -21,9 +21,11 @@
 
 IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchParams)
   IPC_STRUCT_TRAITS_MEMBER(manifest_url)
+  IPC_STRUCT_TRAITS_MEMBER(nexe_file)
   IPC_STRUCT_TRAITS_MEMBER(render_view_id)
   IPC_STRUCT_TRAITS_MEMBER(permission_bits)
   IPC_STRUCT_TRAITS_MEMBER(uses_irt)
+  IPC_STRUCT_TRAITS_MEMBER(uses_nonsfi_mode)
   IPC_STRUCT_TRAITS_MEMBER(enable_dyncode_syscalls)
   IPC_STRUCT_TRAITS_MEMBER(enable_exception_handling)
   IPC_STRUCT_TRAITS_MEMBER(enable_crash_throttling)
@@ -31,7 +33,9 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(nacl::NaClLaunchResult)
   IPC_STRUCT_TRAITS_MEMBER(imc_channel_handle)
-  IPC_STRUCT_TRAITS_MEMBER(ipc_channel_handle)
+  IPC_STRUCT_TRAITS_MEMBER(ppapi_ipc_channel_handle)
+  IPC_STRUCT_TRAITS_MEMBER(trusted_ipc_channel_handle)
+  IPC_STRUCT_TRAITS_MEMBER(manifest_service_ipc_channel_handle)
   IPC_STRUCT_TRAITS_MEMBER(plugin_pid)
   IPC_STRUCT_TRAITS_MEMBER(plugin_child_id)
 IPC_STRUCT_TRAITS_END()
@@ -88,10 +92,10 @@ IPC_MESSAGE_CONTROL2(NaClHostMsg_ReportTranslationFinished,
                      int /* instance */,
                      bool /* success */)
 
-// A renderer sends this to the browser process to report an error.
-IPC_MESSAGE_CONTROL2(NaClHostMsg_NaClErrorStatus,
-                     int /* render_view_id */,
-                     int /* Error ID */)
+// A renderer sends this to the browser process to report when the client
+// architecture is not listed in the manifest.
+IPC_MESSAGE_CONTROL1(NaClHostMsg_MissingArchError,
+                     int /* render_view_id */)
 
 // A renderer sends this to the browser process when it wants to
 // open a NaCl executable file from an installed application directory.
@@ -102,5 +106,14 @@ IPC_SYNC_MESSAGE_CONTROL2_3(NaClHostMsg_OpenNaClExecutable,
                             uint64 /* file_token_lo */,
                             uint64 /* file_token_hi */)
 
+// A renderer sends this to the browser process to determine how many
+// processors are online.
 IPC_SYNC_MESSAGE_CONTROL0_1(NaClHostMsg_NaClGetNumProcessors,
                             int /* Number of processors */)
+
+// A renderer sends this to the browser process to determine if the
+// NaCl application started from the given NMF URL will be debugged.
+// If not (filtered out by commandline flags), it sets should_debug to false.
+IPC_SYNC_MESSAGE_CONTROL1_1(NaClHostMsg_NaClDebugEnabledForURL,
+                            GURL /* alleged URL of NMF file */,
+                            bool /* should debug */)

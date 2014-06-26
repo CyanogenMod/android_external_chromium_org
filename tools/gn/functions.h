@@ -5,10 +5,10 @@
 #ifndef TOOLS_GN_FUNCTIONS_H_
 #define TOOLS_GN_FUNCTIONS_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
-#include "base/containers/hash_tables.h"
 #include "base/strings/string_piece.h"
 
 class Err;
@@ -54,7 +54,26 @@ typedef Value (*NoBlockFunction)(Scope* scope,
                                  const std::vector<Value>& args,
                                  Err* err);
 
+extern const char kAction[];
+extern const char kAction_HelpShort[];
+extern const char kAction_Help[];
+Value RunAction(Scope* scope,
+                const FunctionCallNode* function,
+                const std::vector<Value>& args,
+                BlockNode* block,
+                Err* err);
+
+extern const char kActionForEach[];
+extern const char kActionForEach_HelpShort[];
+extern const char kActionForEach_Help[];
+Value RunActionForEach(Scope* scope,
+                       const FunctionCallNode* function,
+                       const std::vector<Value>& args,
+                       BlockNode* block,
+                       Err* err);
+
 extern const char kAssert[];
+extern const char kAssert_HelpShort[];
 extern const char kAssert_Help[];
 Value RunAssert(Scope* scope,
                 const FunctionCallNode* function,
@@ -62,6 +81,7 @@ Value RunAssert(Scope* scope,
                 Err* err);
 
 extern const char kComponent[];
+extern const char kComponent_HelpShort[];
 extern const char kComponent_Help[];
 Value RunComponent(Scope* scope,
                    const FunctionCallNode* function,
@@ -70,6 +90,7 @@ Value RunComponent(Scope* scope,
                    Err* err);
 
 extern const char kConfig[];
+extern const char kConfig_HelpShort[];
 extern const char kConfig_Help[];
 Value RunConfig(const FunctionCallNode* function,
                 const std::vector<Value>& args,
@@ -77,21 +98,15 @@ Value RunConfig(const FunctionCallNode* function,
                 Err* err);
 
 extern const char kCopy[];
+extern const char kCopy_HelpShort[];
 extern const char kCopy_Help[];
 Value RunCopy(const FunctionCallNode* function,
               const std::vector<Value>& args,
               Scope* block_scope,
               Err* err);
 
-extern const char kCustom[];
-extern const char kCustom_Help[];
-Value RunCustom(Scope* scope,
-                const FunctionCallNode* function,
-                const std::vector<Value>& args,
-                BlockNode* block,
-                Err* err);
-
 extern const char kDeclareArgs[];
+extern const char kDeclareArgs_HelpShort[];
 extern const char kDeclareArgs_Help[];
 Value RunDeclareArgs(Scope* scope,
                      const FunctionCallNode* function,
@@ -100,6 +115,7 @@ Value RunDeclareArgs(Scope* scope,
                      Err* err);
 
 extern const char kDefined[];
+extern const char kDefined_HelpShort[];
 extern const char kDefined_Help[];
 Value RunDefined(Scope* scope,
                  const FunctionCallNode* function,
@@ -107,6 +123,7 @@ Value RunDefined(Scope* scope,
                  Err* err);
 
 extern const char kExecScript[];
+extern const char kExecScript_HelpShort[];
 extern const char kExecScript_Help[];
 Value RunExecScript(Scope* scope,
                     const FunctionCallNode* function,
@@ -114,6 +131,7 @@ Value RunExecScript(Scope* scope,
                     Err* err);
 
 extern const char kExecutable[];
+extern const char kExecutable_HelpShort[];
 extern const char kExecutable_Help[];
 Value RunExecutable(Scope* scope,
                     const FunctionCallNode* function,
@@ -121,14 +139,48 @@ Value RunExecutable(Scope* scope,
                     BlockNode* block,
                     Err* err);
 
+extern const char kForEach[];
+extern const char kForEach_HelpShort[];
+extern const char kForEach_Help[];
+Value RunForEach(Scope* scope,
+                 const FunctionCallNode* function,
+                 const ListNode* args_list,
+                 Err* err);
+
 extern const char kGetEnv[];
+extern const char kGetEnv_HelpShort[];
 extern const char kGetEnv_Help[];
 Value RunGetEnv(Scope* scope,
                 const FunctionCallNode* function,
                 const std::vector<Value>& args,
                 Err* err);
 
+extern const char kGetLabelInfo[];
+extern const char kGetLabelInfo_HelpShort[];
+extern const char kGetLabelInfo_Help[];
+Value RunGetLabelInfo(Scope* scope,
+                      const FunctionCallNode* function,
+                      const std::vector<Value>& args,
+                      Err* err);
+
+extern const char kGetPathInfo[];
+extern const char kGetPathInfo_HelpShort[];
+extern const char kGetPathInfo_Help[];
+Value RunGetPathInfo(Scope* scope,
+                     const FunctionCallNode* function,
+                     const std::vector<Value>& args,
+                     Err* err);
+
+extern const char kGetTargetOutputs[];
+extern const char kGetTargetOutputs_HelpShort[];
+extern const char kGetTargetOutputs_Help[];
+Value RunGetTargetOutputs(Scope* scope,
+                          const FunctionCallNode* function,
+                          const std::vector<Value>& args,
+                          Err* err);
+
 extern const char kGroup[];
+extern const char kGroup_HelpShort[];
 extern const char kGroup_Help[];
 Value RunGroup(Scope* scope,
                const FunctionCallNode* function,
@@ -137,6 +189,7 @@ Value RunGroup(Scope* scope,
                Err* err);
 
 extern const char kImport[];
+extern const char kImport_HelpShort[];
 extern const char kImport_Help[];
 Value RunImport(Scope* scope,
                 const FunctionCallNode* function,
@@ -144,6 +197,7 @@ Value RunImport(Scope* scope,
                 Err* err);
 
 extern const char kPrint[];
+extern const char kPrint_HelpShort[];
 extern const char kPrint_Help[];
 Value RunPrint(Scope* scope,
                const FunctionCallNode* function,
@@ -151,6 +205,7 @@ Value RunPrint(Scope* scope,
                Err* err);
 
 extern const char kProcessFileTemplate[];
+extern const char kProcessFileTemplate_HelpShort[];
 extern const char kProcessFileTemplate_Help[];
 Value RunProcessFileTemplate(Scope* scope,
                              const FunctionCallNode* function,
@@ -158,6 +213,7 @@ Value RunProcessFileTemplate(Scope* scope,
                              Err* err);
 
 extern const char kReadFile[];
+extern const char kReadFile_HelpShort[];
 extern const char kReadFile_Help[];
 Value RunReadFile(Scope* scope,
                   const FunctionCallNode* function,
@@ -165,6 +221,7 @@ Value RunReadFile(Scope* scope,
                   Err* err);
 
 extern const char kRebasePath[];
+extern const char kRebasePath_HelpShort[];
 extern const char kRebasePath_Help[];
 Value RunRebasePath(Scope* scope,
                     const FunctionCallNode* function,
@@ -172,6 +229,7 @@ Value RunRebasePath(Scope* scope,
                     Err* err);
 
 extern const char kSetDefaults[];
+extern const char kSetDefaults_HelpShort[];
 extern const char kSetDefaults_Help[];
 Value RunSetDefaults(Scope* scope,
                      const FunctionCallNode* function,
@@ -180,6 +238,7 @@ Value RunSetDefaults(Scope* scope,
                      Err* err);
 
 extern const char kSetDefaultToolchain[];
+extern const char kSetDefaultToolchain_HelpShort[];
 extern const char kSetDefaultToolchain_Help[];
 Value RunSetDefaultToolchain(Scope* scope,
                              const FunctionCallNode* function,
@@ -187,6 +246,7 @@ Value RunSetDefaultToolchain(Scope* scope,
                              Err* err);
 
 extern const char kSetSourcesAssignmentFilter[];
+extern const char kSetSourcesAssignmentFilter_HelpShort[];
 extern const char kSetSourcesAssignmentFilter_Help[];
 Value RunSetSourcesAssignmentFilter(Scope* scope,
                                     const FunctionCallNode* function,
@@ -194,6 +254,7 @@ Value RunSetSourcesAssignmentFilter(Scope* scope,
                                     Err* err);
 
 extern const char kSharedLibrary[];
+extern const char kSharedLibrary_HelpShort[];
 extern const char kSharedLibrary_Help[];
 Value RunSharedLibrary(Scope* scope,
                        const FunctionCallNode* function,
@@ -202,6 +263,7 @@ Value RunSharedLibrary(Scope* scope,
                        Err* err);
 
 extern const char kSourceSet[];
+extern const char kSourceSet_HelpShort[];
 extern const char kSourceSet_Help[];
 Value RunSourceSet(Scope* scope,
                    const FunctionCallNode* function,
@@ -210,6 +272,7 @@ Value RunSourceSet(Scope* scope,
                    Err* err);
 
 extern const char kStaticLibrary[];
+extern const char kStaticLibrary_HelpShort[];
 extern const char kStaticLibrary_Help[];
 Value RunStaticLibrary(Scope* scope,
                        const FunctionCallNode* function,
@@ -218,6 +281,7 @@ Value RunStaticLibrary(Scope* scope,
                        Err* err);
 
 extern const char kTemplate[];
+extern const char kTemplate_HelpShort[];
 extern const char kTemplate_Help[];
 Value RunTemplate(Scope* scope,
                   const FunctionCallNode* function,
@@ -226,6 +290,7 @@ Value RunTemplate(Scope* scope,
                   Err* err);
 
 extern const char kTest[];
+extern const char kTest_HelpShort[];
 extern const char kTest_Help[];
 Value RunTest(Scope* scope,
               const FunctionCallNode* function,
@@ -234,6 +299,7 @@ Value RunTest(Scope* scope,
               Err* err);
 
 extern const char kTool[];
+extern const char kTool_HelpShort[];
 extern const char kTool_Help[];
 Value RunTool(Scope* scope,
               const FunctionCallNode* function,
@@ -242,6 +308,7 @@ Value RunTool(Scope* scope,
               Err* err);
 
 extern const char kToolchain[];
+extern const char kToolchain_HelpShort[];
 extern const char kToolchain_Help[];
 Value RunToolchain(Scope* scope,
                    const FunctionCallNode* function,
@@ -250,6 +317,7 @@ Value RunToolchain(Scope* scope,
                    Err* err);
 
 extern const char kToolchainArgs[];
+extern const char kToolchainArgs_HelpShort[];
 extern const char kToolchainArgs_Help[];
 Value RunToolchainArgs(Scope* scope,
                        const FunctionCallNode* function,
@@ -258,6 +326,7 @@ Value RunToolchainArgs(Scope* scope,
                        Err* err);
 
 extern const char kWriteFile[];
+extern const char kWriteFile_HelpShort[];
 extern const char kWriteFile_Help[];
 Value RunWriteFile(Scope* scope,
                    const FunctionCallNode* function,
@@ -270,20 +339,35 @@ Value RunWriteFile(Scope* scope,
 // which indicates the type of function it is.
 struct FunctionInfo {
   FunctionInfo();
-  FunctionInfo(SelfEvaluatingArgsFunction seaf, const char* in_help);
-  FunctionInfo(GenericBlockFunction gbf, const char* in_help);
-  FunctionInfo(ExecutedBlockFunction ebf, const char* in_help);
-  FunctionInfo(NoBlockFunction nbf, const char* in_help);
+  FunctionInfo(SelfEvaluatingArgsFunction seaf,
+               const char* in_help_short,
+               const char* in_help,
+               bool in_is_target);
+  FunctionInfo(GenericBlockFunction gbf,
+               const char* in_help_short,
+               const char* in_help,
+               bool in_is_target);
+  FunctionInfo(ExecutedBlockFunction ebf,
+               const char* in_help_short,
+               const char* in_help,
+               bool in_is_target);
+  FunctionInfo(NoBlockFunction nbf,
+               const char* in_help_short,
+               const char* in_help,
+               bool in_is_target);
 
   SelfEvaluatingArgsFunction self_evaluating_args_runner;
   GenericBlockFunction generic_block_runner;
   ExecutedBlockFunction executed_block_runner;
   NoBlockFunction no_block_runner;
 
+  const char* help_short;
   const char* help;
+
+  bool is_target;
 };
 
-typedef base::hash_map<base::StringPiece, FunctionInfo> FunctionInfoMap;
+typedef std::map<base::StringPiece, FunctionInfo> FunctionInfoMap;
 
 // Returns the mapping of all built-in functions.
 const FunctionInfoMap& GetFunctions();

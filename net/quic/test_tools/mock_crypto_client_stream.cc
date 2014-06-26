@@ -3,20 +3,25 @@
 // found in the LICENSE file.
 
 #include "net/quic/test_tools/mock_crypto_client_stream.h"
-#include "net/ssl/ssl_info.h"
+
+#include "net/quic/crypto/quic_decrypter.h"
+#include "net/quic/quic_client_session_base.h"
+#include "net/quic/quic_server_id.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
 
 MockCryptoClientStream::MockCryptoClientStream(
-    const string& server_hostname,
-    QuicSession* session,
+    const QuicServerId& server_id,
+    QuicClientSessionBase* session,
+    ProofVerifyContext* verify_context,
     QuicCryptoClientConfig* crypto_config,
     HandshakeMode handshake_mode,
-    const SSLInfo* ssl_info)
-    : QuicCryptoClientStream(server_hostname, session, crypto_config),
+    const ProofVerifyDetails* proof_verify_details)
+    : QuicCryptoClientStream(server_id, session, verify_context,
+                             crypto_config),
       handshake_mode_(handshake_mode),
-      ssl_info_(ssl_info) {
+      proof_verify_details_(proof_verify_details) {
 }
 
 MockCryptoClientStream::~MockCryptoClientStream() {
@@ -32,6 +37,8 @@ bool MockCryptoClientStream::CryptoConnect() {
     case ZERO_RTT: {
       encryption_established_ = true;
       handshake_confirmed_ = false;
+      session()->connection()->SetDecrypter(QuicDecrypter::Create(kNULL),
+                                            ENCRYPTION_INITIAL);
       session()->OnCryptoHandshakeEvent(
           QuicSession::ENCRYPTION_FIRST_ESTABLISHED);
       break;
@@ -40,7 +47,14 @@ bool MockCryptoClientStream::CryptoConnect() {
     case CONFIRM_HANDSHAKE: {
       encryption_established_ = true;
       handshake_confirmed_ = true;
+      crypto_negotiated_params_.key_exchange = kC255;
+      crypto_negotiated_params_.aead = kAESG;
+      if (proof_verify_details_) {
+        client_session()->OnProofVerifyDetailsAvailable(*proof_verify_details_);
+      }
       SetConfigNegotiated();
+      session()->connection()->SetDecrypter(QuicDecrypter::Create(kNULL),
+                                            ENCRYPTION_FORWARD_SECURE);
       session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
       break;
     }
@@ -51,15 +65,6 @@ bool MockCryptoClientStream::CryptoConnect() {
       break;
     }
   }
-  return true;
-}
-
-bool MockCryptoClientStream::GetSSLInfo(SSLInfo* ssl_info) {
-  ssl_info->Reset();
-  if (!ssl_info_) {
-    return false;
-  }
-  *ssl_info = *ssl_info_;
   return true;
 }
 
@@ -78,7 +83,7 @@ void MockCryptoClientStream::SetConfigNegotiated() {
   QuicTagVector cgst;
   cgst.push_back(kINAR);
   cgst.push_back(kQBIC);
-  session()->config()->set_congestion_control(cgst, kQBIC);
+  session()->config()->set_congestion_feedback(cgst, kQBIC);
   session()->config()->set_idle_connection_state_lifetime(
       QuicTime::Delta::FromSeconds(2 * kDefaultTimeoutSecs),
       QuicTime::Delta::FromSeconds(kDefaultTimeoutSecs));
@@ -89,9 +94,13 @@ void MockCryptoClientStream::SetConfigNegotiated() {
   session()->config()->ToHandshakeMessage(&msg);
   string error_details;
   const QuicErrorCode error =
-      session()->config()->ProcessClientHello(msg, &error_details);
+      session()->config()->ProcessPeerHello(msg, CLIENT, &error_details);
   ASSERT_EQ(QUIC_NO_ERROR, error);
   ASSERT_TRUE(session()->config()->negotiated());
+}
+
+QuicClientSessionBase* MockCryptoClientStream::client_session() {
+  return reinterpret_cast<QuicClientSessionBase*>(session());
 }
 
 }  // namespace net

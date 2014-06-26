@@ -5,6 +5,7 @@
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/webstore_inline_installer.h"
@@ -21,7 +22,7 @@
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/base/host_port_pair.h"
@@ -51,6 +52,7 @@ WebstoreInstallerTest::WebstoreInstallerTest(
 WebstoreInstallerTest::~WebstoreInstallerTest() {}
 
 void WebstoreInstallerTest::SetUpCommandLine(CommandLine* command_line) {
+  ExtensionBrowserTest::SetUpCommandLine(command_line);
   // We start the test server now instead of in
   // SetUpInProcessBrowserTestFixture so that we can get its port number.
   ASSERT_TRUE(test_server()->Start());
@@ -75,6 +77,14 @@ void WebstoreInstallerTest::SetUpInProcessBrowserTestFixture() {
   host_resolver()->AddRule(webstore_domain_, "127.0.0.1");
   host_resolver()->AddRule(verified_domain_, "127.0.0.1");
   host_resolver()->AddRule(unverified_domain_, "127.0.0.1");
+}
+
+void WebstoreInstallerTest::SetUpOnMainThread() {
+  ExtensionBrowserTest::SetUpOnMainThread();
+  ASSERT_TRUE(download_directory_.CreateUniqueTempDir());
+  DownloadPrefs* download_prefs = DownloadPrefs::FromBrowserContext(
+      browser()->profile());
+  download_prefs->SetDownloadPath(download_directory_.path());
 }
 
 GURL WebstoreInstallerTest::GenerateTestServerUrl(
@@ -120,8 +130,18 @@ void WebstoreInstallerTest::RunTestAsync(
     const std::string& test_function_name) {
   std::string script = base::StringPrintf(
       "%s('%s')", test_function_name.c_str(), test_gallery_url_.c_str());
-  browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost()->
-      ExecuteJavascriptInWebFrame(
-          base::UTF8ToUTF16(std::string()),
-          base::UTF8ToUTF16(script));
+  browser()->tab_strip_model()->GetActiveWebContents()->GetMainFrame()->
+      ExecuteJavaScript(base::UTF8ToUTF16(script));
+}
+
+void WebstoreInstallerTest::AutoAcceptInstall() {
+  // TODO(tmdiep): Refactor and remove the use of the command line flag.
+  // See crbug.com/357774.
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kAppsGalleryInstallAutoConfirmForTests, "accept");
+}
+
+void WebstoreInstallerTest::AutoCancelInstall() {
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kAppsGalleryInstallAutoConfirmForTests, "cancel");
 }

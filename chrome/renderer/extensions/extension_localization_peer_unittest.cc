@@ -6,15 +6,14 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/extensions/message_bundle.h"
 #include "chrome/renderer/extensions/extension_localization_peer.h"
+#include "extensions/common/message_bundle.h"
 #include "ipc/ipc_sender.h"
 #include "ipc/ipc_sync_message.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/child/resource_loader_bridge.h"
 
 using testing::_;
 using testing::DoAll;
@@ -50,20 +49,18 @@ class MockIpcMessageSender : public IPC::Sender {
   DISALLOW_COPY_AND_ASSIGN(MockIpcMessageSender);
 };
 
-class MockResourceLoaderBridgePeer
-    : public webkit_glue::ResourceLoaderBridge::Peer {
+class MockResourceLoaderBridgePeer : public content::RequestPeer {
  public:
   MockResourceLoaderBridgePeer() {}
   virtual ~MockResourceLoaderBridgePeer() {}
 
   MOCK_METHOD2(OnUploadProgress, void(uint64 position, uint64 size));
-  MOCK_METHOD4(OnReceivedRedirect, bool(
-      const GURL& new_url,
-      const webkit_glue::ResourceResponseInfo& info,
-      bool* has_new_first_party_for_cookies,
-      GURL* new_first_party_for_cookies));
-  MOCK_METHOD1(OnReceivedResponse, void(
-      const webkit_glue::ResourceResponseInfo& info));
+  MOCK_METHOD3(OnReceivedRedirect,
+               bool(const GURL& new_url,
+                    const GURL& new_first_party_for_cookies,
+                    const content::ResourceResponseInfo& info));
+  MOCK_METHOD1(OnReceivedResponse,
+               void(const content::ResourceResponseInfo& info));
   MOCK_METHOD2(OnDownloadedData, void(int len, int encoded_data_length));
   MOCK_METHOD3(OnReceivedData, void(const char* data,
                                     int data_length,

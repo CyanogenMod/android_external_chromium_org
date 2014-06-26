@@ -36,7 +36,6 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -52,8 +51,8 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "net/base/escape.h"
+#include "net/base/filename_util.h"
 #include "net/base/load_flags.h"
-#include "net/base/net_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
@@ -80,7 +79,6 @@
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
-#include "chromeos/chromeos_switches.h"
 #endif
 
 using base::Time;
@@ -91,6 +89,7 @@ using content::WebContents;
 namespace {
 
 const char kCreditsJsPath[] = "credits.js";
+const char kKeyboardUtilsPath[] = "keyboard_utils.js";
 const char kMemoryJsPath[] = "memory.js";
 const char kMemoryCssPath[] = "about_memory.css";
 const char kStatsJsPath[] = "stats.js";
@@ -242,18 +241,12 @@ class ChromeOSTermsHandler
   virtual ~ChromeOSTermsHandler() {}
 
   void StartOnUIThread() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (path_ == chrome::kOemEulaURLPath) {
       // Load local OEM EULA from the disk.
       BrowserThread::PostTask(
           BrowserThread::FILE, FROM_HERE,
           base::Bind(&ChromeOSTermsHandler::LoadOemEulaFileOnFileThread, this));
-    } else if (CommandLine::ForCurrentProcess()->HasSwitch(
-                   chromeos::switches::kDisableOnlineEULA)) {
-      // Fallback to the local file.
-      BrowserThread::PostTask(
-          BrowserThread::FILE, FROM_HERE,
-          base::Bind(&ChromeOSTermsHandler::LoadEulaFileOnFileThread, this));
     } else {
       // Try to load online version of ChromeOS terms first.
       // ChromeOSOnlineTermsHandler object destroys itself.
@@ -264,7 +257,7 @@ class ChromeOSTermsHandler
   }
 
   void OnOnlineEULAFetched(ChromeOSOnlineTermsHandler* loader) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     loader->GetResponseResult(&contents_);
     if (contents_.empty()) {
       // Load local ChromeOS terms from the file.
@@ -277,7 +270,7 @@ class ChromeOSTermsHandler
   }
 
   void LoadOemEulaFileOnFileThread() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+    DCHECK_CURRENTLY_ON(BrowserThread::FILE);
     const chromeos::StartupCustomizationDocument* customization =
         chromeos::StartupCustomizationDocument::GetInstance();
     if (customization->IsReady()) {
@@ -312,7 +305,7 @@ class ChromeOSTermsHandler
   }
 
   void ResponseOnUIThread() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     // If we fail to load Chrome OS EULA from disk, load it from resources.
     // Do nothing if OEM EULA load failed.
     if (contents_.empty() && path_ != chrome::kOemEulaURLPath)
@@ -536,14 +529,14 @@ class AboutDnsHandler : public base::RefCountedThreadSafe<AboutDnsHandler> {
                   const content::URLDataSource::GotDataCallback& callback)
       : profile_(profile),
         callback_(callback) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
   }
 
   virtual ~AboutDnsHandler() {}
 
   // Calls FinishOnUIThread() on completion.
   void StartOnUIThread() {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     chrome_browser_net::Predictor* predictor = profile_->GetNetworkPredictor();
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
@@ -551,7 +544,7 @@ class AboutDnsHandler : public base::RefCountedThreadSafe<AboutDnsHandler> {
   }
 
   void StartOnIOThread(chrome_browser_net::Predictor* predictor) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
     std::string data;
     AppendHeader(&data, 0, "About DNS");
@@ -565,7 +558,7 @@ class AboutDnsHandler : public base::RefCountedThreadSafe<AboutDnsHandler> {
   }
 
   void FinishOnUIThread(const std::string& data) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     std::string data_copy(data);
     callback_.Run(base::RefCountedString::TakeString(&data_copy));
   }
@@ -826,6 +819,10 @@ std::string AboutSandbox() {
                   std::string(),
                   IDS_ABOUT_SANDBOX_SECCOMP_BPF_SANDBOX,
                   status & content::kSandboxLinuxSeccompBPF);
+  AboutSandboxRow(&data,
+                  std::string(),
+                  IDS_ABOUT_SANDBOX_YAMA_LSM,
+                  status & content::kSandboxLinuxYama);
 
   data.append("</table>");
 
@@ -1005,7 +1002,12 @@ void AboutUIHTMLSource::StartDataRequest(
   if (source_name_ == chrome::kChromeUIChromeURLsHost) {
     response = ChromeURLs();
   } else if (source_name_ == chrome::kChromeUICreditsHost) {
-    int idr = (path == kCreditsJsPath) ? IDR_CREDITS_JS : IDR_CREDITS_HTML;
+    int idr = IDR_CREDITS_HTML;
+    if (path == kCreditsJsPath)
+      idr = IDR_CREDITS_JS;
+    else if (path == kKeyboardUtilsPath)
+      idr = IDR_KEYBOARD_UTILS_JS;
+
     response = ResourceBundle::GetSharedInstance().GetRawDataResource(
         idr).as_string();
 #if defined(OS_CHROMEOS)
@@ -1026,8 +1028,11 @@ void AboutUIHTMLSource::StartDataRequest(
     return;
 #if defined(OS_CHROMEOS)
   } else if (source_name_ == chrome::kChromeUIOSCreditsHost) {
+    int idr = IDR_OS_CREDITS_HTML;
+    if (path == kKeyboardUtilsPath)
+      idr = IDR_KEYBOARD_UTILS_JS;
     response = ResourceBundle::GetSharedInstance().GetRawDataResource(
-        IDR_OS_CREDITS_HTML).as_string();
+        idr).as_string();
 #endif
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   } else if (source_name_ == chrome::kChromeUISandboxHost) {
@@ -1055,9 +1060,10 @@ void AboutUIHTMLSource::FinishDataRequest(
 }
 
 std::string AboutUIHTMLSource::GetMimeType(const std::string& path) const {
-  if (path == kCreditsJsPath ||
-      path == kStatsJsPath   ||
-      path == kStringsJsPath ||
+  if (path == kCreditsJsPath     ||
+      path == kKeyboardUtilsPath ||
+      path == kStatsJsPath       ||
+      path == kStringsJsPath     ||
       path == kMemoryJsPath) {
     return "application/javascript";
   }

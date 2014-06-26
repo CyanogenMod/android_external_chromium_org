@@ -17,40 +17,52 @@ LoggingRaw::LoggingRaw() {}
 LoggingRaw::~LoggingRaw() {}
 
 void LoggingRaw::InsertFrameEvent(const base::TimeTicks& time_of_event,
-                                  CastLoggingEvent event, uint32 rtp_timestamp,
+                                  CastLoggingEvent event,
+                                  EventMediaType event_media_type,
+                                  uint32 rtp_timestamp,
                                   uint32 frame_id) {
-  InsertBaseFrameEvent(time_of_event, event, frame_id, rtp_timestamp,
-                       base::TimeDelta(), 0);
+  InsertBaseFrameEvent(time_of_event, event, event_media_type, frame_id,
+                       rtp_timestamp, base::TimeDelta(), 0, false, 0);
 }
 
-void LoggingRaw::InsertFrameEventWithSize(const base::TimeTicks& time_of_event,
-                                          CastLoggingEvent event,
-                                          uint32 rtp_timestamp, uint32 frame_id,
-                                          int size) {
-  InsertBaseFrameEvent(time_of_event, event, frame_id, rtp_timestamp,
-                       base::TimeDelta(), size);
+void LoggingRaw::InsertEncodedFrameEvent(const base::TimeTicks& time_of_event,
+                                         CastLoggingEvent event,
+                                         EventMediaType event_media_type,
+                                         uint32 rtp_timestamp, uint32 frame_id,
+                                         int size, bool key_frame,
+                                         int target_bitrate) {
+  InsertBaseFrameEvent(time_of_event, event, event_media_type,
+                       frame_id, rtp_timestamp, base::TimeDelta(), size,
+                       key_frame, target_bitrate);
 }
 
 void LoggingRaw::InsertFrameEventWithDelay(const base::TimeTicks& time_of_event,
                                            CastLoggingEvent event,
+                                           EventMediaType event_media_type,
                                            uint32 rtp_timestamp,
                                            uint32 frame_id,
                                            base::TimeDelta delay) {
-  InsertBaseFrameEvent(time_of_event, event, frame_id, rtp_timestamp, delay,
-                       0);
+  InsertBaseFrameEvent(time_of_event, event, event_media_type, frame_id,
+                       rtp_timestamp, delay, 0, false, 0);
 }
 
 void LoggingRaw::InsertBaseFrameEvent(const base::TimeTicks& time_of_event,
-                                      CastLoggingEvent event, uint32 frame_id,
+                                      CastLoggingEvent event,
+                                      EventMediaType event_media_type,
+                                      uint32 frame_id,
                                       uint32 rtp_timestamp,
-                                      base::TimeDelta delay, int size) {
+                                      base::TimeDelta delay, int size,
+                                      bool key_frame, int target_bitrate) {
   FrameEvent frame_event;
   frame_event.rtp_timestamp = rtp_timestamp;
   frame_event.frame_id = frame_id;
   frame_event.size = size;
   frame_event.timestamp = time_of_event;
   frame_event.type = event;
+  frame_event.media_type = event_media_type;
   frame_event.delay_delta = delay;
+  frame_event.key_frame = key_frame;
+  frame_event.target_bitrate = target_bitrate;
   for (std::vector<RawEventSubscriber*>::const_iterator it =
            subscribers_.begin();
        it != subscribers_.end(); ++it) {
@@ -59,7 +71,9 @@ void LoggingRaw::InsertBaseFrameEvent(const base::TimeTicks& time_of_event,
 }
 
 void LoggingRaw::InsertPacketEvent(const base::TimeTicks& time_of_event,
-                                   CastLoggingEvent event, uint32 rtp_timestamp,
+                                   CastLoggingEvent event,
+                                   EventMediaType event_media_type,
+                                   uint32 rtp_timestamp,
                                    uint32 frame_id, uint16 packet_id,
                                    uint16 max_packet_id, size_t size) {
   PacketEvent packet_event;
@@ -70,23 +84,11 @@ void LoggingRaw::InsertPacketEvent(const base::TimeTicks& time_of_event,
   packet_event.size = size;
   packet_event.timestamp = time_of_event;
   packet_event.type = event;
+  packet_event.media_type = event_media_type;
   for (std::vector<RawEventSubscriber*>::const_iterator it =
            subscribers_.begin();
        it != subscribers_.end(); ++it) {
     (*it)->OnReceivePacketEvent(packet_event);
-  }
-}
-
-void LoggingRaw::InsertGenericEvent(const base::TimeTicks& time_of_event,
-                                    CastLoggingEvent event, int value) {
-  GenericEvent generic_event;
-  generic_event.type = event;
-  generic_event.value = value;
-  generic_event.timestamp = time_of_event;
-  for (std::vector<RawEventSubscriber*>::const_iterator it =
-           subscribers_.begin();
-       it != subscribers_.end(); ++it) {
-    (*it)->OnReceiveGenericEvent(generic_event);
   }
 }
 

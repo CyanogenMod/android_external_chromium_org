@@ -7,7 +7,8 @@
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
-#include "cc/test/mock_quad_culler.h"
+#include "cc/test/mock_occlusion_tracker.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -16,22 +17,24 @@ namespace {
 void CheckDrawLayer(HeadsUpDisplayLayerImpl* layer,
                     ResourceProvider* resource_provider,
                     DrawMode draw_mode) {
-  MockQuadCuller quad_culler;
+  MockOcclusionTracker<LayerImpl> occlusion_tracker;
+  scoped_ptr<RenderPass> render_pass = RenderPass::Create();
   AppendQuadsData data;
   bool will_draw = layer->WillDraw(draw_mode, resource_provider);
   if (will_draw)
-    layer->AppendQuads(&quad_culler, &data);
+    layer->AppendQuads(render_pass.get(), occlusion_tracker, &data);
   layer->UpdateHudTexture(draw_mode, resource_provider);
   if (will_draw)
     layer->DidDraw(resource_provider);
 
   size_t expected_quad_list_size = will_draw ? 1 : 0;
-  EXPECT_EQ(expected_quad_list_size, quad_culler.quad_list().size());
+  EXPECT_EQ(expected_quad_list_size, render_pass->quad_list.size());
 }
 
 TEST(HeadsUpDisplayLayerImplTest, ResourcelessSoftwareDrawAfterResourceLoss) {
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   host_impl.CreatePendingTree();
   host_impl.InitializeRenderer(
       FakeOutputSurface::Create3d().PassAs<OutputSurface>());

@@ -10,16 +10,33 @@
 namespace app_list {
 namespace switches {
 
-APP_LIST_EXPORT extern const char kEnableExperimentalAppList[];
-APP_LIST_EXPORT extern const char kEnableFolderUI[];
+// Please keep these flags sorted.
+APP_LIST_EXPORT extern const char kDisableAppInfo[];
+APP_LIST_EXPORT extern const char kDisableSyncAppList[];
 APP_LIST_EXPORT extern const char kDisableVoiceSearch[];
-APP_LIST_EXPORT extern const char kEnableAppInfo[];
+APP_LIST_EXPORT extern const char kEnableCenteredAppList[];
+APP_LIST_EXPORT extern const char kEnableDriveAppsInAppList[];
+APP_LIST_EXPORT extern const char kEnableExperimentalAppList[];
+APP_LIST_EXPORT extern const char kEnableHotwordAlwaysOn[];
+APP_LIST_EXPORT extern const char kEnableSyncAppList[];
+
+bool APP_LIST_EXPORT IsAppListSyncEnabled();
 
 bool APP_LIST_EXPORT IsFolderUIEnabled();
 
 bool APP_LIST_EXPORT IsVoiceSearchEnabled();
 
 bool APP_LIST_EXPORT IsAppInfoEnabled();
+
+bool APP_LIST_EXPORT IsExperimentalAppListEnabled();
+
+// Determines whether either command-line switch was given for enabling the
+// centered app list position. Do not use this when positioning the app list;
+// instead use AppListViewDelegate::ShouldCenterWindow. It checks a superset of
+// the conditions that trigger the position.
+bool APP_LIST_EXPORT IsCenteredAppListEnabled();
+
+bool APP_LIST_EXPORT IsDriveAppsInAppListEnabled();
 
 }  // namespace switches
 }  // namespace app_list

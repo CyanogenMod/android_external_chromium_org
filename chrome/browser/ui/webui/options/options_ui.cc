@@ -43,7 +43,6 @@
 #include "chrome/browser/ui/webui/options/managed_user_import_handler.h"
 #include "chrome/browser/ui/webui/options/managed_user_learn_more_handler.h"
 #include "chrome/browser/ui/webui/options/media_devices_selection_handler.h"
-#include "chrome/browser/ui/webui/options/media_galleries_handler.h"
 #include "chrome/browser/ui/webui/options/password_manager_handler.h"
 #include "chrome/browser/ui/webui/options/reset_profile_settings_handler.h"
 #include "chrome/browser/ui/webui/options/search_engine_manager_handler.h"
@@ -74,8 +73,10 @@
 #include "chrome/browser/ui/webui/options/chromeos/accounts_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/bluetooth_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/change_picture_options_handler.h"
+#include "chrome/browser/ui/webui/options/chromeos/consumer_management_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/core_chromeos_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/cros_language_options_handler.h"
+#include "chrome/browser/ui/webui/options/chromeos/date_time_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/display_options_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/display_overscan_handler.h"
 #include "chrome/browser/ui/webui/options/chromeos/internet_options_handler.h"
@@ -274,7 +275,6 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
   AddOptionsPageUIHandler(localized_strings, new HomePageOverlayHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new MediaDevicesSelectionHandler());
-  AddOptionsPageUIHandler(localized_strings, new MediaGalleriesHandler());
 #if defined(OS_CHROMEOS)
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::CrosLanguageOptionsHandler());
@@ -301,6 +301,10 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::BluetoothOptionsHandler());
   AddOptionsPageUIHandler(localized_strings,
+                          new chromeos::options::ConsumerManagementHandler());
+  AddOptionsPageUIHandler(localized_strings,
+                          new chromeos::options::DateTimeOptionsHandler());
+  AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::DisplayOptionsHandler());
   AddOptionsPageUIHandler(localized_strings,
                           new chromeos::options::DisplayOverscanHandler());
@@ -322,7 +326,8 @@ OptionsUI::OptionsUI(content::WebUI* web_ui)
                           new chromeos::options::StatsOptionsHandler());
 #endif
 #if defined(USE_NSS)
-  AddOptionsPageUIHandler(localized_strings, new CertificateManagerHandler());
+  AddOptionsPageUIHandler(localized_strings,
+                          new CertificateManagerHandler(false));
 #endif
   AddOptionsPageUIHandler(localized_strings, new HandlerOptionsHandler());
 
@@ -359,6 +364,11 @@ OptionsUI::~OptionsUI() {
     handlers_[i]->Uninitialize();
 }
 
+scoped_ptr<OptionsUI::OnFinishedLoadingCallbackList::Subscription>
+OptionsUI::RegisterOnFinishedLoadingCallback(const base::Closure& callback) {
+  return on_finished_loading_callbacks_.Add(callback);
+}
+
 // static
 void OptionsUI::ProcessAutocompleteSuggestions(
     const AutocompleteResult& result,
@@ -370,8 +380,10 @@ void OptionsUI::ProcessAutocompleteSuggestions(
         type != AutocompleteMatchType::HISTORY_TITLE &&
         type != AutocompleteMatchType::HISTORY_BODY &&
         type != AutocompleteMatchType::HISTORY_KEYWORD &&
-        type != AutocompleteMatchType::NAVSUGGEST)
+        type != AutocompleteMatchType::NAVSUGGEST &&
+        type != AutocompleteMatchType::NAVSUGGEST_PERSONALIZED) {
       continue;
+    }
     base::DictionaryValue* entry = new base::DictionaryValue();
     entry->SetString("title", match.description);
     entry->SetString("displayURL", match.contents);
@@ -429,6 +441,10 @@ void OptionsUI::InitializeHandlers() {
 
   web_ui()->CallJavascriptFunction(
       "BrowserOptions.notifyInitializationComplete");
+}
+
+void OptionsUI::OnFinishedLoading() {
+  on_finished_loading_callbacks_.Notify();
 }
 
 void OptionsUI::AddOptionsPageUIHandler(

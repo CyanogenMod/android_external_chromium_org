@@ -12,9 +12,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/common/url_constants.h"
 #include "grit/theme_resources.h"
 
@@ -81,6 +82,8 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       contents_class(match.contents_class),
       description(match.description),
       description_class(match.description_class),
+      answer_contents(match.answer_contents),
+      answer_type(match.answer_type),
       transition(match.transition),
       is_history_what_you_typed_match(match.is_history_what_you_typed_match),
       type(match.type),
@@ -92,7 +95,8 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       search_terms_args(match.search_terms_args.get() ?
           new TemplateURLRef::SearchTermsArgs(*match.search_terms_args) :
           NULL),
-      additional_info(match.additional_info) {
+      additional_info(match.additional_info),
+      duplicate_matches(match.duplicate_matches) {
 }
 
 AutocompleteMatch::~AutocompleteMatch() {
@@ -116,6 +120,8 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   contents_class = match.contents_class;
   description = match.description;
   description_class = match.description_class;
+  answer_contents = match.answer_contents;
+  answer_type = match.answer_type;
   transition = match.transition;
   is_history_what_you_typed_match = match.is_history_what_you_typed_match;
   type = match.type;
@@ -127,6 +133,7 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   search_terms_args.reset(match.search_terms_args.get() ?
       new TemplateURLRef::SearchTermsArgs(*match.search_terms_args) : NULL);
   additional_info = match.additional_info;
+  duplicate_matches = match.duplicate_matches;
   return *this;
 }
 
@@ -148,10 +155,10 @@ int AutocompleteMatch::TypeToIcon(Type type) {
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_EXTENSION_APP,
-    // ContactProvider isn't used by the omnibox, so this icon is never
-    // displayed.
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_HTTP,
+    IDR_OMNIBOX_HTTP,
+    IDR_OMNIBOX_SEARCH,
   };
   COMPILE_ASSERT(arraysize(icons) == AutocompleteMatchType::NUM_TYPES,
                  icons_array_must_match_type_enum);
@@ -174,19 +181,6 @@ bool AutocompleteMatch::MoreRelevant(const AutocompleteMatch& elem1,
   // across multiple updates.
   return (elem1.relevance == elem2.relevance) ?
       (elem1.contents < elem2.contents) : (elem1.relevance > elem2.relevance);
-}
-
-// static
-bool AutocompleteMatch::DestinationSortFunc(const AutocompleteMatch& elem1,
-                                            const AutocompleteMatch& elem2) {
-  // Sort identical destination_urls together.  Place the most relevant matches
-  // first, so that when we call std::unique(), these are the ones that get
-  // preserved.
-  if (DestinationsEqual(elem1, elem2) ||
-      (elem1.stripped_destination_url.is_empty() &&
-       elem2.stripped_destination_url.is_empty()))
-    return MoreRelevant(elem1, elem2);
-  return elem1.stripped_destination_url < elem2.stripped_destination_url;
 }
 
 // static
@@ -328,7 +322,7 @@ base::string16 AutocompleteMatch::SanitizeString(const base::string16& text) {
   // NOTE: This logic is mirrored by |sanitizeString()| in
   // omnibox_custom_bindings.js.
   base::string16 result;
-  TrimWhitespace(text, TRIM_LEADING, &result);
+  base::TrimWhitespace(text, base::TRIM_LEADING, &result);
   base::RemoveChars(result, kInvalidChars, &result);
   return result;
 }
@@ -338,7 +332,17 @@ bool AutocompleteMatch::IsSearchType(Type type) {
   return type == AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED ||
          type == AutocompleteMatchType::SEARCH_HISTORY ||
          type == AutocompleteMatchType::SEARCH_SUGGEST ||
-         type == AutocompleteMatchType::SEARCH_OTHER_ENGINE;
+         type == AutocompleteMatchType::SEARCH_OTHER_ENGINE ||
+         IsSpecializedSearchType(type);
+}
+
+// static
+bool AutocompleteMatch::IsSpecializedSearchType(Type type) {
+  return type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_ANSWER;
 }
 
 void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
@@ -352,13 +356,17 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   // by some obscure query param from each other or from the search/keyword
   // provider matches.
   TemplateURL* template_url = GetTemplateURL(profile, true);
-  if (template_url != NULL && template_url->SupportsReplacement()) {
+  UIThreadSearchTermsData search_terms_data(profile);
+  if (template_url != NULL &&
+      template_url->SupportsReplacement(search_terms_data)) {
     base::string16 search_terms;
     if (template_url->ExtractSearchTermsFromURL(stripped_destination_url,
+                                                search_terms_data,
                                                 &search_terms)) {
       stripped_destination_url =
           GURL(template_url->url_ref().ReplaceSearchTerms(
-              TemplateURLRef::SearchTermsArgs(search_terms)));
+              TemplateURLRef::SearchTermsArgs(search_terms),
+              search_terms_data));
     }
   }
 
@@ -380,10 +388,9 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   }
 
   // Replace https protocol with http protocol.
-  if (stripped_destination_url.SchemeIs(content::kHttpsScheme)) {
-    replacements.SetScheme(
-        content::kHttpScheme,
-        url_parse::Component(0, strlen(content::kHttpScheme)));
+  if (stripped_destination_url.SchemeIs(url::kHttpsScheme)) {
+    replacements.SetScheme(url::kHttpScheme,
+                           url::Component(0, strlen(url::kHttpScheme)));
     needs_replacement = true;
   }
 
@@ -405,7 +412,9 @@ base::string16 AutocompleteMatch::GetSubstitutingExplicitlyInvokedKeyword(
   if (transition != content::PAGE_TRANSITION_KEYWORD)
     return base::string16();
   const TemplateURL* t_url = GetTemplateURL(profile, false);
-  return (t_url && t_url->SupportsReplacement()) ? keyword : base::string16();
+  return (t_url &&
+          t_url->SupportsReplacement(UIThreadSearchTermsData(profile))) ?
+      keyword : base::string16();
 }
 
 TemplateURL* AutocompleteMatch::GetTemplateURL(
@@ -457,6 +466,18 @@ bool AutocompleteMatch::IsVerbatimType() const {
   return type == AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED ||
       type == AutocompleteMatchType::URL_WHAT_YOU_TYPED ||
       is_keyword_verbatim_match;
+}
+
+bool AutocompleteMatch::SupportsDeletion() const {
+  if (deletable)
+    return true;
+
+  for (ACMatches::const_iterator it(duplicate_matches.begin());
+       it != duplicate_matches.end(); ++it) {
+    if (it->deletable)
+      return true;
+  }
+  return false;
 }
 
 #ifndef NDEBUG

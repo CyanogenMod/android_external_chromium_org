@@ -4,14 +4,17 @@
 
 #include "components/password_manager/core/browser/password_syncable_service.h"
 
+#include "base/auto_reset.h"
 #include "base/location.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/password_form.h"
-#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_sync.h"
 #include "net/base/escape.h"
 #include "sync/api/sync_error_factory.h"
+
+namespace password_manager {
 
 namespace {
 
@@ -46,12 +49,14 @@ MergeResult MergeLocalAndSyncPasswords(
       password_form.preferred == password_specifics.preferred() &&
       password_form.date_created.ToInternalValue() ==
           password_specifics.date_created() &&
-      password_form.blacklisted_by_user == password_specifics.blacklisted()) {
+      password_form.blacklisted_by_user == password_specifics.blacklisted() &&
+      password_form.type == password_specifics.type() &&
+      password_form.times_used == password_specifics.times_used()) {
     return IDENTICAL;
   }
 
   // If the passwords differ, take the one that was created more recently.
-  if (base::Time::FromInternalValue(password_specifics.date_created()) <=
+  if (base::Time::FromInternalValue(password_specifics.date_created()) <
           password_form.date_created) {
     *new_password_form = password_form;
     return LOCAL;
@@ -105,8 +110,9 @@ void AppendChanges(const PasswordStoreChangeList& new_changes,
 }  // namespace
 
 PasswordSyncableService::PasswordSyncableService(
-    scoped_refptr<PasswordStore> password_store)
-    : password_store_(password_store) {
+    PasswordStoreSync* password_store)
+    : password_store_(password_store),
+      is_processing_sync_changes_(false) {
 }
 
 PasswordSyncableService::~PasswordSyncableService() {}
@@ -116,7 +122,9 @@ syncer::SyncMergeResult PasswordSyncableService::MergeDataAndStartSyncing(
     const syncer::SyncDataList& initial_sync_data,
     scoped_ptr<syncer::SyncChangeProcessor> sync_processor,
     scoped_ptr<syncer::SyncErrorFactory> sync_error_factory) {
+  DCHECK(CalledOnValidThread());
   DCHECK_EQ(syncer::PASSWORDS, type);
+  base::AutoReset<bool> processing_changes(&is_processing_sync_changes_, true);
   syncer::SyncMergeResult merge_result(type);
   sync_error_factory_ = sync_error_factory.Pass();
   sync_processor_ = sync_processor.Pass();
@@ -181,12 +189,16 @@ syncer::SyncMergeResult PasswordSyncableService::MergeDataAndStartSyncing(
 }
 
 void PasswordSyncableService::StopSyncing(syncer::ModelType type) {
+  DCHECK(CalledOnValidThread());
+  DCHECK_EQ(syncer::PASSWORDS, type);
+
   sync_processor_.reset();
   sync_error_factory_.reset();
 }
 
 syncer::SyncDataList PasswordSyncableService::GetAllSyncData(
     syncer::ModelType type) const {
+  DCHECK(CalledOnValidThread());
   DCHECK_EQ(syncer::PASSWORDS, type);
   ScopedVector<autofill::PasswordForm> password_entries;
   ReadFromPasswordStore(&password_entries, NULL);
@@ -202,56 +214,36 @@ syncer::SyncDataList PasswordSyncableService::GetAllSyncData(
 syncer::SyncError PasswordSyncableService::ProcessSyncChanges(
     const tracked_objects::Location& from_here,
     const syncer::SyncChangeList& change_list) {
+  DCHECK(CalledOnValidThread());
+  base::AutoReset<bool> processing_changes(&is_processing_sync_changes_, true);
   // The |db_entries_map| and associated vectors are filled only in case of
   // update change.
-  PasswordEntryMap db_entries_map;
-  ScopedVector<autofill::PasswordForm> password_db_entries;
   ScopedVector<autofill::PasswordForm> new_sync_entries;
   ScopedVector<autofill::PasswordForm> updated_sync_entries;
   ScopedVector<autofill::PasswordForm> deleted_entries;
-  bool has_read_passwords = false;
+  base::Time time_now = base::Time::Now();
 
   for (syncer::SyncChangeList::const_iterator it = change_list.begin();
        it != change_list.end();
        ++it) {
+    const sync_pb::EntitySpecifics& specifics = it->sync_data().GetSpecifics();
+    scoped_ptr<autofill::PasswordForm> form(new autofill::PasswordForm);
+    PasswordFromSpecifics(specifics.password().client_only_encrypted_data(),
+                          form.get());
     switch (it->change_type()) {
       case syncer::SyncChange::ACTION_ADD: {
-        const sync_pb::EntitySpecifics& specifics =
-            it->sync_data().GetSpecifics();
-        new_sync_entries.push_back(new autofill::PasswordForm);
-        PasswordFromSpecifics(specifics.password().client_only_encrypted_data(),
-                              new_sync_entries.back());
+        form->date_synced = time_now;
+        new_sync_entries.push_back(form.release());
         break;
       }
       case syncer::SyncChange::ACTION_UPDATE: {
-        if (!has_read_passwords) {
-          if (ReadFromPasswordStore(&password_db_entries,
-                                    &db_entries_map)) {
-            has_read_passwords = true;
-          } else {
-            return sync_error_factory_->CreateAndUploadError(
-                FROM_HERE,
-                "Failed to get passwords from store.");
-          }
-        }
-        syncer::SyncChangeList sync_changes;
-
-        CreateOrUpdateEntry(it->sync_data(),
-                            &db_entries_map,
-                            &new_sync_entries,
-                            &updated_sync_entries,
-                            &sync_changes);
-        DCHECK(sync_changes.empty());
+        form->date_synced = time_now;
+        updated_sync_entries.push_back(form.release());
         break;
       }
 
       case syncer::SyncChange::ACTION_DELETE: {
-        const sync_pb::EntitySpecifics& specifics =
-            it->sync_data().GetSpecifics();
-        const sync_pb::PasswordSpecificsData& password_specifics(
-            specifics.password().client_only_encrypted_data());
-        deleted_entries.push_back(new autofill::PasswordForm);
-        PasswordFromSpecifics(password_specifics, deleted_entries.back());
+        deleted_entries.push_back(form.release());
         break;
       }
       case syncer::SyncChange::ACTION_INVALID:
@@ -268,18 +260,38 @@ syncer::SyncError PasswordSyncableService::ProcessSyncChanges(
 
 void PasswordSyncableService::ActOnPasswordStoreChanges(
     const PasswordStoreChangeList& local_changes) {
-  if (!sync_processor_)
+  DCHECK(CalledOnValidThread());
+
+  if (!sync_processor_) {
+    if (!flare_.is_null()) {
+      flare_.Run(syncer::PASSWORDS);
+      flare_.Reset();
+    }
+    return;
+  }
+
+  // ActOnPasswordStoreChanges() can be called from ProcessSyncChanges(). Do
+  // nothing in this case.
+  if (is_processing_sync_changes_)
     return;
   syncer::SyncChangeList sync_changes;
   for (PasswordStoreChangeList::const_iterator it = local_changes.begin();
        it != local_changes.end();
        ++it) {
+    syncer::SyncData data = (it->type() == PasswordStoreChange::REMOVE ?
+        syncer::SyncData::CreateLocalDelete(MakePasswordSyncTag(it->form()),
+                                            syncer::PASSWORDS) :
+        SyncDataFromPassword(it->form()));
     sync_changes.push_back(
-        syncer::SyncChange(FROM_HERE,
-                           GetSyncChangeType(it->type()),
-                           SyncDataFromPassword(it->form())));
+        syncer::SyncChange(FROM_HERE, GetSyncChangeType(it->type()), data));
   }
   sync_processor_->ProcessSyncChanges(FROM_HERE, sync_changes);
+}
+
+void PasswordSyncableService::InjectStartSyncFlare(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  DCHECK(CalledOnValidThread());
+  flare_ = flare;
 }
 
 bool PasswordSyncableService::ReadFromPasswordStore(
@@ -359,10 +371,12 @@ void PasswordSyncableService::CreateOrUpdateEntry(
   // Check whether the data from sync is already in the password store.
   PasswordEntryMap::iterator existing_local_entry_iter =
       umatched_data_from_password_db->find(tag);
+  base::Time time_now = base::Time::Now();
   if (existing_local_entry_iter == umatched_data_from_password_db->end()) {
     // The sync data is not in the password store, so we need to create it in
     // the password store. Add the entry to the new_entries list.
     scoped_ptr<autofill::PasswordForm> new_password(new autofill::PasswordForm);
+    new_password->date_synced = time_now;
     PasswordFromSpecifics(password_specifics, new_password.get());
     new_sync_entries->push_back(new_password.release());
   } else {
@@ -375,6 +389,7 @@ void PasswordSyncableService::CreateOrUpdateEntry(
       case IDENTICAL:
         break;
       case SYNC:
+        new_password->date_synced = time_now;
         updated_sync_entries->push_back(new_password.release());
         break;
       case LOCAL:
@@ -413,6 +428,8 @@ syncer::SyncData SyncDataFromPassword(
   password_specifics->set_date_created(
       password_form.date_created.ToInternalValue());
   password_specifics->set_blacklisted(password_form.blacklisted_by_user);
+  password_specifics->set_type(password_form.type);
+  password_specifics->set_times_used(password_form.times_used);
 
   std::string tag = MakePasswordSyncTag(*password_specifics);
   return syncer::SyncData::CreateLocalData(tag, tag, password_data);
@@ -436,6 +453,9 @@ void PasswordFromSpecifics(const sync_pb::PasswordSpecificsData& password,
   new_password->date_created =
       base::Time::FromInternalValue(password.date_created());
   new_password->blacklisted_by_user = password.blacklisted();
+  new_password->type =
+      static_cast<autofill::PasswordForm::Type>(password.type());
+  new_password->times_used = password.times_used();
 }
 
 std::string MakePasswordSyncTag(
@@ -446,3 +466,5 @@ std::string MakePasswordSyncTag(
                              password.password_element(),
                              password.signon_realm());
 }
+
+}  // namespace password_manager

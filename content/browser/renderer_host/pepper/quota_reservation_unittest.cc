@@ -14,7 +14,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/quota/quota_reservation.h"
 
-using fileapi::FileSystemType;
 using fileapi::QuotaReservationManager;
 
 namespace content {
@@ -22,7 +21,7 @@ namespace content {
 namespace {
 
 const char kOrigin[] = "http://example.com";
-const FileSystemType kType = fileapi::kFileSystemTypeTemporary;
+const fileapi::FileSystemType kType = fileapi::kFileSystemTypeTemporary;
 
 const base::FilePath::StringType file1_name = FILE_PATH_LITERAL("file1");
 const base::FilePath::StringType file2_name = FILE_PATH_LITERAL("file2");
@@ -38,7 +37,7 @@ class FakeBackend : public QuotaReservationManager::QuotaBackend {
 
   virtual void ReserveQuota(
       const GURL& origin,
-      FileSystemType type,
+      fileapi::FileSystemType type,
       int64 delta,
       const QuotaReservationManager::ReserveQuotaCallback& callback) OVERRIDE {
     base::MessageLoopProxy::current()->PostTask(
@@ -47,19 +46,17 @@ class FakeBackend : public QuotaReservationManager::QuotaBackend {
   }
 
   virtual void ReleaseReservedQuota(const GURL& origin,
-                                    FileSystemType type,
-                                    int64 size) OVERRIDE {
-  }
+                                    fileapi::FileSystemType type,
+                                    int64 size) OVERRIDE {}
 
   virtual void CommitQuotaUsage(const GURL& origin,
-                                FileSystemType type,
-                                int64 delta) OVERRIDE {
-  }
+                                fileapi::FileSystemType type,
+                                int64 delta) OVERRIDE {}
 
   virtual void IncrementDirtyCount(const GURL& origin,
-                                   FileSystemType type) OVERRIDE {}
+                                   fileapi::FileSystemType type) OVERRIDE {}
   virtual void DecrementDirtyCount(const GURL& origin,
-                                   FileSystemType type) OVERRIDE {}
+                                   fileapi::FileSystemType type) OVERRIDE {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(FakeBackend);
@@ -97,7 +94,7 @@ class QuotaReservationTest : public testing::Test {
   scoped_refptr<QuotaReservation> CreateQuotaReservation(
       scoped_refptr<fileapi::QuotaReservation> reservation,
       const GURL& origin,
-      FileSystemType type) {
+      fileapi::FileSystemType type) {
     // Sets reservation_ as a side effect.
     return scoped_refptr<QuotaReservation>(
         new QuotaReservation(reservation, origin, type));
@@ -122,29 +119,27 @@ class QuotaReservationTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(QuotaReservationTest);
 };
 
-void GotReservedQuota(
-    int64* reserved_quota_ptr,
-    ppapi::FileGrowthMap* file_growths_ptr,
-    int64 reserved_quota,
-    const ppapi::FileSizeMap& maximum_written_offsets) {
+void GotReservedQuota(int64* reserved_quota_ptr,
+                      ppapi::FileGrowthMap* file_growths_ptr,
+                      int64 reserved_quota,
+                      const ppapi::FileSizeMap& maximum_written_offsets) {
   *reserved_quota_ptr = reserved_quota;
 
   file_growths_ptr->clear();
   for (ppapi::FileSizeMap::const_iterator it = maximum_written_offsets.begin();
-       it != maximum_written_offsets.end(); ++it)
+       it != maximum_written_offsets.end();
+       ++it)
     (*file_growths_ptr)[it->first] = ppapi::FileGrowth(it->second, 0);
 }
 
-void ReserveQuota(
-    scoped_refptr<QuotaReservation> quota_reservation,
-    int64 amount,
-    int64* reserved_quota,
-    ppapi::FileGrowthMap* file_growths) {
-  quota_reservation->ReserveQuota(amount,
-                                  *file_growths,
-                                  base::Bind(&GotReservedQuota,
-                                             reserved_quota,
-                                             file_growths));
+void ReserveQuota(scoped_refptr<QuotaReservation> quota_reservation,
+                  int64 amount,
+                  int64* reserved_quota,
+                  ppapi::FileGrowthMap* file_growths) {
+  quota_reservation->ReserveQuota(
+      amount,
+      *file_growths,
+      base::Bind(&GotReservedQuota, reserved_quota, file_growths));
   base::RunLoop().RunUntilIdle();
 }
 
@@ -153,10 +148,10 @@ void ReserveQuota(
 // 2) Open a file, grow it, close it, and reserve quota with correct sizes.
 TEST_F(QuotaReservationTest, ReserveQuota) {
   GURL origin(kOrigin);
-  FileSystemType type = kType;
+  fileapi::FileSystemType type = kType;
 
   scoped_refptr<fileapi::QuotaReservation> reservation(
-     reservation_manager()->CreateReservation(origin, type));
+      reservation_manager()->CreateReservation(origin, type));
   scoped_refptr<QuotaReservation> test =
       CreateQuotaReservation(reservation, origin, type);
 
@@ -171,8 +166,8 @@ TEST_F(QuotaReservationTest, ReserveQuota) {
   // Open a file, refresh the reservation, extend the file, and close it.
   int64 file_size = 10;
   SetFileSize(file1_name, file_size);
-  int64 open_file_size = test->OpenFile(kFile1ID,
-                                        MakeFileSystemURL(file1_name));
+  int64 open_file_size =
+      test->OpenFile(kFile1ID, MakeFileSystemURL(file1_name));
   EXPECT_EQ(file_size, open_file_size);
 
   file_growths[kFile1ID] = ppapi::FileGrowth(file_size, 0);  // 1 file open.
@@ -194,28 +189,28 @@ TEST_F(QuotaReservationTest, ReserveQuota) {
 // 1) We can open and close multiple files.
 TEST_F(QuotaReservationTest, MultipleFiles) {
   GURL origin(kOrigin);
-  FileSystemType type = kType;
+  fileapi::FileSystemType type = kType;
 
   scoped_refptr<fileapi::QuotaReservation> reservation(
-     reservation_manager()->CreateReservation(origin, type));
+      reservation_manager()->CreateReservation(origin, type));
   scoped_refptr<QuotaReservation> test =
       CreateQuotaReservation(reservation, origin, type);
 
   // Open some files of different sizes.
   int64 file1_size = 10;
   SetFileSize(file1_name, file1_size);
-  int64 open_file1_size = test->OpenFile(kFile1ID,
-                                         MakeFileSystemURL(file1_name));
+  int64 open_file1_size =
+      test->OpenFile(kFile1ID, MakeFileSystemURL(file1_name));
   EXPECT_EQ(file1_size, open_file1_size);
   int64 file2_size = 20;
   SetFileSize(file2_name, file2_size);
-  int64 open_file2_size = test->OpenFile(kFile2ID,
-                                         MakeFileSystemURL(file2_name));
+  int64 open_file2_size =
+      test->OpenFile(kFile2ID, MakeFileSystemURL(file2_name));
   EXPECT_EQ(file2_size, open_file2_size);
   int64 file3_size = 30;
   SetFileSize(file3_name, file3_size);
-  int64 open_file3_size = test->OpenFile(kFile3ID,
-                                         MakeFileSystemURL(file3_name));
+  int64 open_file3_size =
+      test->OpenFile(kFile3ID, MakeFileSystemURL(file3_name));
   EXPECT_EQ(file3_size, open_file3_size);
 
   // Reserve quota.

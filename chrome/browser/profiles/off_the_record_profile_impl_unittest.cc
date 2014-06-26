@@ -16,8 +16,10 @@
 #include "chrome/test/base/testing_io_thread_state.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "chrome/test/base/testing_profile_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/host_zoom_map.h"
+#include "content/public/common/page_zoom.h"
 #include "net/dns/mock_host_resolver.h"
 
 using content::HostZoomMap;
@@ -56,7 +58,7 @@ class TestingProfileWithHostZoomMap : public TestingProfile {
     double level = change.zoom_level;
     DictionaryPrefUpdate update(prefs_.get(), prefs::kPerHostZoomLevels);
     base::DictionaryValue* host_zoom_dictionary = update.Get();
-    if (level == host_zoom_map->GetDefaultZoomLevel()) {
+    if (content::ZoomValuesEqual(level, host_zoom_map->GetDefaultZoomLevel())) {
       host_zoom_dictionary->RemoveWithoutPathExpansion(change.host, NULL);
     } else {
       host_zoom_dictionary->SetWithoutPathExpansion(
@@ -84,21 +86,23 @@ class OffTheRecordProfileImplTest : public BrowserWithTestWindowTest {
   virtual ~OffTheRecordProfileImplTest() {}
 
   virtual void SetUp() OVERRIDE {
-    prefs_.reset(new TestingPrefServiceSimple());
-    chrome::RegisterLocalState(prefs_->registry());
+    profile_manager_.reset(new TestingProfileManager(browser_process()));
+    ASSERT_TRUE(profile_manager_->SetUp());
 
-    browser_process()->SetLocalState(prefs_.get());
     testing_io_thread_state_.reset(new chrome::TestingIOThreadState());
     testing_io_thread_state_->io_thread_state()->globals()->host_resolver.reset(
         new net::MockHostResolver());
+
     BrowserWithTestWindowTest::SetUp();
   }
 
   virtual void TearDown() OVERRIDE {
-    BrowserWithTestWindowTest::TearDown();
-    testing_io_thread_state_.reset();
-    browser_process()->SetLocalState(NULL);
     DestroyBrowserAndProfile();
+    BrowserWithTestWindowTest::TearDown();
+
+    testing_io_thread_state_.reset();
+
+    profile_manager_.reset();
   }
 
  private:
@@ -106,7 +110,7 @@ class OffTheRecordProfileImplTest : public BrowserWithTestWindowTest {
     return TestingBrowserProcess::GetGlobal();
   }
 
-  scoped_ptr<TestingPrefServiceSimple> prefs_;
+  scoped_ptr<TestingProfileManager> profile_manager_;
   scoped_ptr<chrome::TestingIOThreadState> testing_io_thread_state_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImplTest);
@@ -145,6 +149,7 @@ TEST_F(OffTheRecordProfileImplTest, GetHostZoomMap) {
   // Prepare child profile as off the record profile.
   scoped_ptr<OffTheRecordProfileImpl> child_profile(
       new OffTheRecordProfileImpl(parent_profile.get()));
+  child_profile->InitIoData();
   child_profile->InitHostZoomMap();
 
   BrowserContextDependencyManager::GetInstance()->

@@ -19,11 +19,14 @@
 namespace gfx {
 
 // The GL Api being used. This could be g_real_gl or gl_trace_gl
-static GLApi* g_gl;
+static GLApi* g_gl = NULL;
 // A GL Api that calls directly into the driver.
-static RealGLApi* g_real_gl;
+static RealGLApi* g_real_gl = NULL;
+// A GL Api that does nothing but warn about illegal GL calls without a context
+// current.
+static NoContextGLApi* g_no_context_gl = NULL;
 // A GL Api that calls TRACE and then calls another GL api.
-static TraceGLApi* g_trace_gl;
+static TraceGLApi* g_trace_gl = NULL;
 // GL version used when initializing dynamic bindings.
 static GLVersionInfo* g_version_info = NULL;
 
@@ -128,7 +131,7 @@ static void GL_BINDING_CALL CustomTexImage2D(
   GLenum gl_internal_format = GetTexInternalFormat(
       internalformat, format, type);
   GLenum gl_type = GetTexType(type);
-  return g_driver_gl.orig_fn.glTexImage2DFn(
+  g_driver_gl.orig_fn.glTexImage2DFn(
       target, level, gl_internal_format, width, height, border, format, gl_type,
       pixels);
 }
@@ -137,7 +140,7 @@ static void GL_BINDING_CALL CustomTexSubImage2D(
       GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width,
       GLsizei height, GLenum format, GLenum type, const void* pixels) {
   GLenum gl_type = GetTexType(type);
-  return g_driver_gl.orig_fn.glTexSubImage2DFn(
+  g_driver_gl.orig_fn.glTexSubImage2DFn(
       target, level, xoffset, yoffset, width, height, format, gl_type, pixels);
 }
 
@@ -145,14 +148,14 @@ static void GL_BINDING_CALL CustomTexStorage2DEXT(
     GLenum target, GLsizei levels, GLenum internalformat, GLsizei width,
     GLsizei height) {
   GLenum gl_internal_format = GetInternalFormat(internalformat);
-  return g_driver_gl.orig_fn.glTexStorage2DEXTFn(
+  g_driver_gl.orig_fn.glTexStorage2DEXTFn(
       target, levels, gl_internal_format, width, height);
 }
 
 static void GL_BINDING_CALL CustomRenderbufferStorageEXT(
     GLenum target, GLenum internalformat, GLsizei width, GLsizei height) {
   GLenum gl_internal_format = GetInternalFormat(internalformat);
-  return g_driver_gl.orig_fn.glRenderbufferStorageEXTFn(
+  g_driver_gl.orig_fn.glRenderbufferStorageEXTFn(
       target, gl_internal_format, width, height);
 }
 
@@ -164,7 +167,7 @@ static void GL_BINDING_CALL CustomRenderbufferStorageMultisampleEXT(
     GLenum target, GLsizei samples, GLenum internalformat, GLsizei width,
     GLsizei height) {
   GLenum gl_internal_format = GetInternalFormat(internalformat);
-  return g_driver_gl.orig_fn.glRenderbufferStorageMultisampleEXTFn(
+  g_driver_gl.orig_fn.glRenderbufferStorageMultisampleEXTFn(
       target, samples, gl_internal_format, width, height);
 }
 
@@ -202,12 +205,63 @@ void DriverGL::InitializeCustomDynamicBindings(GLContext* context) {
       CustomRenderbufferStorageMultisampleEXT);
 }
 
+static void GL_BINDING_CALL NullDrawClearFn(GLbitfield mask) {
+  if (!g_driver_gl.null_draw_bindings_enabled)
+    g_driver_gl.orig_fn.glClearFn(mask);
+}
+
+static void GL_BINDING_CALL
+NullDrawDrawArraysFn(GLenum mode, GLint first, GLsizei count) {
+  if (!g_driver_gl.null_draw_bindings_enabled)
+    g_driver_gl.orig_fn.glDrawArraysFn(mode, first, count);
+}
+
+static void GL_BINDING_CALL NullDrawDrawElementsFn(GLenum mode,
+                                                   GLsizei count,
+                                                   GLenum type,
+                                                   const void* indices) {
+  if (!g_driver_gl.null_draw_bindings_enabled)
+    g_driver_gl.orig_fn.glDrawElementsFn(mode, count, type, indices);
+}
+
+void DriverGL::InitializeNullDrawBindings() {
+  DCHECK(orig_fn.glClearFn == NULL);
+  orig_fn.glClearFn = fn.glClearFn;
+  fn.glClearFn = NullDrawClearFn;
+
+  DCHECK(orig_fn.glDrawArraysFn == NULL);
+  orig_fn.glDrawArraysFn = fn.glDrawArraysFn;
+  fn.glDrawArraysFn = NullDrawDrawArraysFn;
+
+  DCHECK(orig_fn.glDrawElementsFn == NULL);
+  orig_fn.glDrawElementsFn = fn.glDrawElementsFn;
+  fn.glDrawElementsFn = NullDrawDrawElementsFn;
+
+  null_draw_bindings_enabled = true;
+}
+
+bool DriverGL::HasInitializedNullDrawBindings() {
+  return orig_fn.glClearFn != NULL && orig_fn.glDrawArraysFn != NULL &&
+         orig_fn.glDrawElementsFn != NULL;
+}
+
+bool DriverGL::SetNullDrawBindingsEnabled(bool enabled) {
+  DCHECK(orig_fn.glClearFn != NULL);
+  DCHECK(orig_fn.glDrawArraysFn != NULL);
+  DCHECK(orig_fn.glDrawElementsFn != NULL);
+
+  bool before = null_draw_bindings_enabled;
+  null_draw_bindings_enabled = enabled;
+  return before;
+}
+
 void InitializeStaticGLBindingsGL() {
   g_current_gl_context_tls = new base::ThreadLocalPointer<GLApi>;
   g_driver_gl.InitializeStaticBindings();
   if (!g_real_gl) {
     g_real_gl = new RealGLApi();
     g_trace_gl = new TraceGLApi(g_real_gl);
+    g_no_context_gl = new NoContextGLApi();
   }
   g_real_gl->Initialize(&g_driver_gl);
   g_gl = g_real_gl;
@@ -230,6 +284,14 @@ void SetGLToRealGLApi() {
   SetGLApi(g_gl);
 }
 
+void SetGLApiToNoContext() {
+  SetGLApi(g_no_context_gl);
+}
+
+const GLVersionInfo* GetGLVersionInfo() {
+  return g_version_info;
+}
+
 void InitializeDynamicGLBindingsGL(GLContext* context) {
   g_driver_gl.InitializeCustomDynamicBindings(context);
   DCHECK(context && context->IsCurrent(NULL) && !g_version_info);
@@ -245,6 +307,14 @@ void InitializeNullDrawGLBindingsGL() {
   g_driver_gl.InitializeNullDrawBindings();
 }
 
+bool HasInitializedNullDrawGLBindingsGL() {
+  return g_driver_gl.HasInitializedNullDrawBindings();
+}
+
+bool SetNullDrawGLBindingsEnabledGL(bool enabled) {
+  return g_driver_gl.SetNullDrawBindingsEnabled(enabled);
+}
+
 void ClearGLBindingsGL() {
   if (g_real_gl) {
     delete g_real_gl;
@@ -253,6 +323,10 @@ void ClearGLBindingsGL() {
   if (g_trace_gl) {
     delete g_trace_gl;
     g_trace_gl = NULL;
+  }
+  if (g_no_context_gl) {
+    delete g_no_context_gl;
+    g_no_context_gl = NULL;
   }
   g_gl = NULL;
   g_driver_gl.ClearBindings();
@@ -285,6 +359,11 @@ void GLApiBase::InitializeBase(DriverGL* driver) {
   driver_ = driver;
 }
 
+void GLApiBase::SignalFlush() {
+  DCHECK(GLContext::GetCurrent());
+  GLContext::GetCurrent()->OnFlush();
+}
+
 RealGLApi::RealGLApi() {
 }
 
@@ -295,7 +374,23 @@ void RealGLApi::Initialize(DriverGL* driver) {
   InitializeBase(driver);
 }
 
+void RealGLApi::glFlushFn() {
+  GLApiBase::glFlushFn();
+  GLApiBase::SignalFlush();
+}
+
+void RealGLApi::glFinishFn() {
+  GLApiBase::glFinishFn();
+  GLApiBase::SignalFlush();
+}
+
 TraceGLApi::~TraceGLApi() {
+}
+
+NoContextGLApi::NoContextGLApi() {
+}
+
+NoContextGLApi::~NoContextGLApi() {
 }
 
 VirtualGLApi::VirtualGLApi()
@@ -385,6 +480,16 @@ const GLubyte* VirtualGLApi::glGetStringFn(GLenum name) {
     default:
       return driver_->fn.glGetStringFn(name);
   }
+}
+
+void VirtualGLApi::glFlushFn() {
+  GLApiBase::glFlushFn();
+  GLApiBase::SignalFlush();
+}
+
+void VirtualGLApi::glFinishFn() {
+  GLApiBase::glFinishFn();
+  GLApiBase::SignalFlush();
 }
 
 }  // namespace gfx

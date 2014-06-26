@@ -20,8 +20,8 @@
 #include "content/common/content_export.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/renderer/render_thread.h"
-#include "content/renderer/media/renderer_gpu_video_accelerator_factories.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "net/base/network_change_notifier.h"
+#include "third_party/WebKit/public/platform/WebConnectionType.h"
 #include "ui/gfx/native_widget_types.h"
 
 #if defined(OS_MACOSX)
@@ -31,9 +31,11 @@
 class GrContext;
 class SkBitmap;
 struct ViewMsg_New_Params;
+struct WorkerProcessMsg_CreateWorker_Params;
 
 namespace blink {
 class WebGamepads;
+class WebGamepadListener;
 class WebGraphicsContext3D;
 class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
@@ -50,10 +52,12 @@ class ContextProvider;
 
 namespace IPC {
 class ForwardingMessageFilter;
+class MessageFilter;
 }
 
 namespace media {
 class AudioHardwareConfig;
+class GpuVideoAcceleratorFactories;
 }
 
 namespace v8 {
@@ -70,6 +74,7 @@ class GrContextForWebGraphicsContext3D;
 namespace content {
 
 class AppCacheDispatcher;
+class AecDumpMessageFilter;
 class AudioInputMessageFilter;
 class AudioMessageFilter;
 class AudioRendererMixerManager;
@@ -84,8 +89,9 @@ class IndexedDBDispatcher;
 class InputEventFilter;
 class InputHandlerManager;
 class MediaStreamCenter;
-class MediaStreamDependencyFactory;
+class PeerConnectionDependencyFactory;
 class MidiMessageFilter;
+class NetInfoDispatcher;
 class P2PSocketDispatcher;
 class PeerConnectionTracker;
 class RendererDemuxerAndroid;
@@ -120,6 +126,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // module are registered properly.  Static to allow sharing with tests.
   static void RegisterSchemes();
 
+  // Notify V8 that the date/time configuration of the system might have
+  // changed.
+  static void NotifyTimezoneChange();
+
   // RenderThread implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual base::MessageLoop* GetMessageLoop() OVERRIDE;
@@ -131,8 +141,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
   virtual int GenerateRoutingID() OVERRIDE;
-  virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
-  virtual void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
+  virtual void AddFilter(IPC::MessageFilter* filter) OVERRIDE;
+  virtual void RemoveFilter(IPC::MessageFilter* filter) OVERRIDE;
   virtual void AddObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void SetResourceDispatcherDelegate(
@@ -151,10 +161,12 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
   virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
+  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
 #endif
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // Synchronously establish a channel to the GPU plugin if not previously
   // established or if it has been lost (for example if the GPU plugin crashed).
@@ -181,6 +193,11 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
     layout_test_mode_ = layout_test_mode;
   }
 
+  RendererWebKitPlatformSupportImpl* webkit_platform_support() const {
+    DCHECK(webkit_platform_support_);
+    return webkit_platform_support_.get();
+  }
+
   IPC::ForwardingMessageFilter* compositor_output_surface_filter() const {
     return compositor_output_surface_filter_.get();
   }
@@ -193,6 +210,30 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_refptr<base::MessageLoopProxy> compositor_message_loop_proxy() const {
     return compositor_message_loop_proxy_;
   }
+
+  bool is_gpu_rasterization_enabled() const {
+    return is_gpu_rasterization_enabled_;
+  }
+
+  bool is_gpu_rasterization_forced() const {
+    return is_gpu_rasterization_forced_;
+  }
+
+  bool is_impl_side_painting_enabled() const {
+    return is_impl_side_painting_enabled_;
+  }
+
+  bool is_low_res_tiling_enabled() const { return is_low_res_tiling_enabled_; }
+
+  bool is_lcd_text_enabled() const { return is_lcd_text_enabled_; }
+
+  bool is_distance_field_text_enabled() const {
+    return is_distance_field_text_enabled_;
+  }
+
+  bool is_zero_copy_enabled() const { return is_zero_copy_enabled_; }
+
+  bool is_one_copy_enabled() const { return is_one_copy_enabled_; }
 
   AppCacheDispatcher* appcache_dispatcher() const {
     return appcache_dispatcher_.get();
@@ -230,7 +271,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
       blink::WebMediaStreamCenterClient* client);
 
   // Returns a factory used for creating RTC PeerConnection objects.
-  MediaStreamDependencyFactory* GetMediaStreamDependencyFactory();
+  PeerConnectionDependencyFactory* GetPeerConnectionDependencyFactory();
 
   PeerConnectionTracker* peer_connection_tracker() {
     return peer_connection_tracker_.get();
@@ -243,6 +284,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   VideoCaptureImplManager* video_capture_impl_manager() const {
     return vc_manager_.get();
+  }
+
+  GamepadSharedMemoryReader* gamepad_shared_memory_reader() const {
+    return gamepad_shared_memory_reader_.get();
   }
 
   // Get the GPU channel. Returns NULL if the channel is not established or
@@ -264,9 +309,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // not sent for at least one notification delay.
   void PostponeIdleNotification();
 
-  scoped_refptr<RendererGpuVideoAcceleratorFactories> GetGpuFactories();
+  scoped_refptr<media::GpuVideoAcceleratorFactories> GetGpuFactories();
 
-  scoped_refptr<cc::ContextProvider> OffscreenCompositorContextProvider();
   scoped_refptr<webkit::gpu::ContextProviderWebContext>
       SharedMainThreadContextProvider();
 
@@ -343,12 +387,22 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // Retrieve current gamepad data.
   void SampleGamepads(blink::WebGamepads* data);
 
+  // Set a listener for gamepad connected/disconnected events.
+  // A non-null listener must be set first before calling SampleGamepads.
+  void SetGamepadListener(blink::WebGamepadListener* listener);
+
   // Called by a RenderWidget when it is created or destroyed. This
   // allows the process to know when there are no visible widgets.
   void WidgetCreated();
   void WidgetDestroyed();
   void WidgetHidden();
   void WidgetRestored();
+
+  void AddEmbeddedWorkerRoute(int32 routing_id, IPC::Listener* listener);
+  void RemoveEmbeddedWorkerRoute(int32 routing_id);
+
+  void RegisterPendingRenderFrameConnect(int routing_id,
+                                         mojo::ScopedMessagePipeHandle handle);
 
  private:
   // ChildThread
@@ -358,12 +412,12 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual bool IsMainThread() OVERRIDE;
   virtual base::MessageLoop* GetMainLoop() OVERRIDE;
   virtual scoped_refptr<base::MessageLoopProxy> GetIOLoopProxy() OVERRIDE;
-  virtual base::WaitableEvent* GetShutDownEvent() OVERRIDE;
   virtual scoped_ptr<base::SharedMemory> AllocateSharedMemory(
       size_t size) OVERRIDE;
-  virtual int32 CreateViewCommandBuffer(
+  virtual bool CreateViewCommandBuffer(
       int32 surface_id,
-      const GPUCreateCommandBufferConfig& init_params) OVERRIDE;
+      const GPUCreateCommandBufferConfig& init_params,
+      int32 route_id) OVERRIDE;
   virtual void CreateImage(
       gfx::PluginWindowHandle window,
       int32 image_id,
@@ -372,7 +426,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   virtual scoped_ptr<gfx::GpuMemoryBuffer> AllocateGpuMemoryBuffer(
       size_t width,
       size_t height,
-      unsigned internalformat) OVERRIDE;
+      unsigned internalformat,
+      unsigned usage) OVERRIDE;
 
   void Init();
 
@@ -382,9 +437,10 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   void OnCreateNewView(const ViewMsg_New_Params& params);
   void OnTransferBitmap(const SkBitmap& bitmap, int resource_id);
   void OnPurgePluginListCache(bool reload_pages);
-  void OnNetworkStateChanged(bool online);
+  void OnNetworkTypeChanged(net::NetworkChangeNotifier::ConnectionType type);
   void OnGetAccessibilityTree();
   void OnTempCrashWithData(const GURL& data);
+  void OnUpdateTimezone();
   void OnMemoryPressure(
       base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level);
 #if defined(OS_ANDROID)
@@ -397,6 +453,8 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
                               blink::ScrollerStyle preferred_scroller_style,
                               bool redraw);
 #endif
+  void OnCreateNewSharedWorker(
+      const WorkerProcessMsg_CreateWorker_Params& params);
 
   void IdleHandlerInForegroundTab();
 
@@ -422,7 +480,7 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 #endif
   scoped_refptr<DevToolsAgentFilter> devtools_agent_message_filter_;
 
-  scoped_ptr<MediaStreamDependencyFactory> media_stream_factory_;
+  scoped_ptr<PeerConnectionDependencyFactory> peer_connection_factory_;
 
   // This is used to communicate to the browser process the status
   // of all the peer connections created in the renderer.
@@ -433,6 +491,12 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
 
   // Used on the render thread.
   scoped_ptr<VideoCaptureImplManager> vc_manager_;
+
+  // Used for communicating registering AEC dump consumers with the browser and
+  // receving AEC dump file handles when AEC dump is enabled. An AEC dump is
+  // diagnostic audio data for WebRTC stored locally when enabled by the user in
+  // chrome://webrtc-internals.
+  scoped_refptr<AecDumpMessageFilter> aec_dump_message_filter_;
 
   // The count of RenderWidgets running through this thread.
   int widget_count_;
@@ -462,7 +526,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // Cache of variables that are needed on the compositor thread by
   // GpuChannelHostFactory methods.
   scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
-  base::WaitableEvent* shutdown_event_;
 
   // A lazily initiated thread on which file operations are run.
   scoped_ptr<base::Thread> file_thread_;
@@ -482,7 +545,6 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   scoped_ptr<InputHandlerManager> input_handler_manager_;
   scoped_refptr<IPC::ForwardingMessageFilter> compositor_output_surface_filter_;
 
-  scoped_refptr<ContextProviderCommandBuffer> offscreen_compositor_contexts_;
   scoped_refptr<ContextProviderCommandBuffer> shared_main_thread_contexts_;
 
   ObserverList<RenderProcessObserver> observers_;
@@ -504,6 +566,18 @@ class CONTENT_EXPORT RenderThreadImpl : public RenderThread,
   // multiple threads. Current allocation mechanism for IOSurface
   // backed GpuMemoryBuffers prevent this. crbug.com/325045
   base::ThreadChecker allocate_gpu_memory_buffer_thread_checker_;
+
+  // Compositor settings
+  bool is_gpu_rasterization_enabled_;
+  bool is_gpu_rasterization_forced_;
+  bool is_impl_side_painting_enabled_;
+  bool is_low_res_tiling_enabled_;
+  bool is_lcd_text_enabled_;
+  bool is_distance_field_text_enabled_;
+  bool is_zero_copy_enabled_;
+  bool is_one_copy_enabled_;
+
+  std::map<int, mojo::MessagePipeHandle> pending_render_frame_connects_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderThreadImpl);
 };

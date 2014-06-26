@@ -9,16 +9,16 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/time/time.h"
-#include "chrome/browser/extensions/api/api_resource.h"
-#include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/browser/extensions/api/serial/serial_io_handler.h"
 #include "chrome/common/extensions/api/serial.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/api/api_resource.h"
+#include "extensions/browser/api/api_resource_manager.h"
 #include "net/base/file_stream.h"
 
 using content::BrowserThread;
@@ -38,15 +38,14 @@ class SerialConnection : public ApiResource,
   // This is the callback type expected by Receive. Note that an error result
   // does not necessarily imply an empty |data| string, since a receive may
   // complete partially before being interrupted by an error condition.
-  typedef base::Callback<void(const std::string& data,
-                              api::serial::ReceiveError error)>
+  typedef base::Callback<
+      void(const std::string& data, api::serial::ReceiveError error)>
       ReceiveCompleteCallback;
 
   // This is the callback type expected by Send. Note that an error result
   // does not necessarily imply 0 bytes sent, since a send may complete
   // partially before being interrupted by an error condition.
-  typedef base::Callback<void(int bytes_sent,
-                              api::serial::SendError error)>
+  typedef base::Callback<void(int bytes_sent, api::serial::SendError error)>
       SendCompleteCallback;
 
   SerialConnection(const std::string& port,
@@ -111,8 +110,8 @@ class SerialConnection : public ApiResource,
   // Reads current control signals (DCD, CTS, etc.) into an existing
   // DeviceControlSignals structure. Returns |true| iff the signals were
   // successfully read.
-  virtual bool GetControlSignals(api::serial::DeviceControlSignals*
-                                 control_signals) const;
+  virtual bool GetControlSignals(
+      api::serial::DeviceControlSignals* control_signals) const;
 
   // Sets one or more control signals (DTR and/or RTS). Returns |true| iff
   // the signals were successfully set. Unininitialized flags in the
@@ -139,13 +138,11 @@ class SerialConnection : public ApiResource,
   bool GetPortInfo(api::serial::ConnectionInfo* info) const;
 
   // Possibly fixes up a serial port path name in a platform-specific manner.
-  static std::string MaybeFixUpPortName(const std::string &port_name);
+  static std::string MaybeFixUpPortName(const std::string& port_name);
 
  private:
   friend class ApiResourceManager<SerialConnection>;
-  static const char* service_name() {
-    return "SerialConnectionManager";
-  }
+  static const char* service_name() { return "SerialConnectionManager"; }
 
   // Encapsulates a cancelable, delayed timeout task. Posts a delayed
   // task upon construction and implicitly cancels the task upon
@@ -167,10 +164,10 @@ class SerialConnection : public ApiResource,
   void StartOpen();
 
   // Finalizes an Open operation (continued from StartOpen) on the IO thread.
-  void FinishOpen(base::PlatformFile file);
+  void FinishOpen(base::File file);
 
   // Continues a Close operation on the FILE thread.
-  static void DoClose(base::PlatformFile port);
+  static void DoClose(base::File port);
 
   // Handles a receive timeout.
   void OnReceiveTimeout();
@@ -188,9 +185,9 @@ class SerialConnection : public ApiResource,
   // The pathname of the serial device.
   std::string port_;
 
-  // File handle for the opened serial device. This value is only modified from
-  // the IO thread.
-  base::PlatformFile file_;
+  // File for the opened serial device. This value is only modified from the IO
+  // thread.
+  base::File file_;
 
   // Flag indicating whether or not the connection should persist when
   // its host app is suspended.

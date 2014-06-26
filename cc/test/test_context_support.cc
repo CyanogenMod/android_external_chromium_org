@@ -40,9 +40,6 @@ void TestContextSupport::SetSurfaceVisible(bool visible) {
   }
 }
 
-void TestContextSupport::SendManagedMemoryStats(
-    const gpu::ManagedMemoryStats& stats) {}
-
 void TestContextSupport::CallAllSyncPointCallbacks() {
   for (size_t i = 0; i < sync_point_callbacks_.size(); ++i) {
     base::MessageLoop::current()->PostTask(
@@ -54,6 +51,11 @@ void TestContextSupport::CallAllSyncPointCallbacks() {
 void TestContextSupport::SetSurfaceVisibleCallback(
     const SurfaceVisibleCallback& set_visible_callback) {
   set_visible_callback_ = set_visible_callback;
+}
+
+void TestContextSupport::SetScheduleOverlayPlaneCallback(
+    const ScheduleOverlayPlaneCallback& schedule_overlay_plane_callback) {
+  schedule_overlay_plane_callback_ = schedule_overlay_plane_callback;
 }
 
 void TestContextSupport::Swap() {
@@ -69,6 +71,21 @@ void TestContextSupport::PartialSwapBuffers(const gfx::Rect& sub_buffer) {
   base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&TestContextSupport::OnSwapBuffersComplete,
                             weak_ptr_factory_.GetWeakPtr()));
+}
+
+void TestContextSupport::ScheduleOverlayPlane(
+    int plane_z_order,
+    gfx::OverlayTransform plane_transform,
+    unsigned overlay_texture_id,
+    const gfx::Rect& display_bounds,
+    const gfx::RectF& uv_rect) {
+  if (!schedule_overlay_plane_callback_.is_null()) {
+    schedule_overlay_plane_callback_.Run(plane_z_order,
+                                         plane_transform,
+                                         overlay_texture_id,
+                                         display_bounds,
+                                         uv_rect);
+  }
 }
 
 void TestContextSupport::SetSwapBuffersCompleteCallback(

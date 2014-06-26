@@ -6,22 +6,28 @@
 Pepper C API Reference (Dev)
 ##########################################
 
-This page lists the C API for Pepper 34. Apps that use this API can
-run in Chrome 34 or higher.
+This page lists the C API for Pepper 37. Apps that use this API can
+run in Chrome 37 or higher.
 
 `Interfaces <group___interfaces.html>`_
 =======================================
   * `PPB_Audio <struct_p_p_b___audio__1__1.html>`_
 
+  * `PPB_AudioBuffer <struct_p_p_b___audio_buffer__0__1.html>`_
+
   * `PPB_AudioConfig <struct_p_p_b___audio_config__1__1.html>`_
 
-  * `PPB_AudioFrame <struct_p_p_b___audio_frame__0__1.html>`_
+  * `PPB_Compositor <struct_p_p_b___compositor__0__1.html>`_
+
+  * `PPB_CompositorLayer <struct_p_p_b___compositor_layer__0__1.html>`_
 
   * `PPB_Console <struct_p_p_b___console__1__0.html>`_
 
   * `PPB_Core <struct_p_p_b___core__1__0.html>`_
 
   * `PPB_FileIO <struct_p_p_b___file_i_o__1__1.html>`_
+
+  * `PPB_FileMapping <struct_p_p_b___file_mapping__0__1.html>`_
 
   * `PPB_FileRef <struct_p_p_b___file_ref__1__2.html>`_
 
@@ -45,15 +51,15 @@ run in Chrome 34 or higher.
 
   * `PPB_Instance <struct_p_p_b___instance__1__0.html>`_
 
-  * `PPB_KeyboardInputEvent <struct_p_p_b___keyboard_input_event__1__0.html>`_
+  * `PPB_KeyboardInputEvent <struct_p_p_b___keyboard_input_event__1__2.html>`_
 
   * `PPB_MediaStreamAudioTrack <struct_p_p_b___media_stream_audio_track__0__1.html>`_
 
-  * `PPB_MediaStreamVideoTrack <struct_p_p_b___media_stream_video_track__0__1.html>`_
+  * `PPB_MediaStreamVideoTrack <struct_p_p_b___media_stream_video_track__1__0.html>`_
 
   * `PPB_MessageLoop <struct_p_p_b___message_loop__1__0.html>`_
 
-  * `PPB_Messaging <struct_p_p_b___messaging__1__0.html>`_
+  * `PPB_Messaging <struct_p_p_b___messaging__1__1.html>`_
 
   * `PPB_MouseCursor <struct_p_p_b___mouse_cursor__1__0.html>`_
 
@@ -83,7 +89,7 @@ run in Chrome 34 or higher.
 
   * `PPB_URLResponseInfo <struct_p_p_b___u_r_l_response_info__1__0.html>`_
 
-  * `PPB_Var <struct_p_p_b___var__1__1.html>`_
+  * `PPB_Var <struct_p_p_b___var__1__2.html>`_
 
   * `PPB_VarArray <struct_p_p_b___var_array__1__0.html>`_
 
@@ -91,9 +97,11 @@ run in Chrome 34 or higher.
 
   * `PPB_VarDictionary <struct_p_p_b___var_dictionary__1__0.html>`_
 
+  * `PPB_VideoDecoder <struct_p_p_b___video_decoder__0__1.html>`_
+
   * `PPB_VideoFrame <struct_p_p_b___video_frame__0__1.html>`_
 
-  * `PPB_View <struct_p_p_b___view__1__1.html>`_
+  * `PPB_View <struct_p_p_b___view__1__2.html>`_
 
   * `PPB_WebSocket <struct_p_p_b___web_socket__1__0.html>`_
 
@@ -104,6 +112,8 @@ run in Chrome 34 or higher.
   * `PPP_InputEvent <struct_p_p_p___input_event__0__1.html>`_
 
   * `PPP_Instance <struct_p_p_p___instance__1__1.html>`_
+
+  * `PPP_MessageHandler <struct_p_p_p___message_handler__0__1.html>`_
 
   * `PPP_Messaging <struct_p_p_p___messaging__1__0.html>`_
 
@@ -121,6 +131,10 @@ run in Chrome 34 or higher.
   * `PP_FileInfo <struct_p_p___file_info.html>`_
 
   * `PP_FloatPoint <struct_p_p___float_point.html>`_
+
+  * `PP_FloatRect <struct_p_p___float_rect.html>`_
+
+  * `PP_FloatSize <struct_p_p___float_size.html>`_
 
   * `PP_GamepadSampleData <struct_p_p___gamepad_sample_data.html>`_
 
@@ -152,6 +166,8 @@ run in Chrome 34 or higher.
 
   * `PP_Var <struct_p_p___var.html>`_
 
+  * `PP_VideoPicture <struct_p_p___video_picture.html>`_
+
   * `PP_VarValue <union_p_p___var_value.html>`_
 
 
@@ -172,6 +188,8 @@ Files
   * `pp_array_output.h <pp__array__output_8h.html>`_
 
   * `pp_bool.h <pp__bool_8h.html>`_
+
+  * `pp_codecs.h <pp__codecs_8h.html>`_
 
   * `pp_completion_callback.h <pp__completion__callback_8h.html>`_
 
@@ -209,15 +227,21 @@ Files
 
   * `ppb_audio.h <ppb__audio_8h.html>`_
 
+  * `ppb_audio_buffer.h <ppb__audio__buffer_8h.html>`_
+
   * `ppb_audio_config.h <ppb__audio__config_8h.html>`_
 
-  * `ppb_audio_frame.h <ppb__audio__frame_8h.html>`_
+  * `ppb_compositor.h <ppb__compositor_8h.html>`_
+
+  * `ppb_compositor_layer.h <ppb__compositor__layer_8h.html>`_
 
   * `ppb_console.h <ppb__console_8h.html>`_
 
   * `ppb_core.h <ppb__core_8h.html>`_
 
   * `ppb_file_io.h <ppb__file__io_8h.html>`_
+
+  * `ppb_file_mapping.h <ppb__file__mapping_8h.html>`_
 
   * `ppb_file_ref.h <ppb__file__ref_8h.html>`_
 
@@ -279,6 +303,8 @@ Files
 
   * `ppb_var_dictionary.h <ppb__var__dictionary_8h.html>`_
 
+  * `ppb_video_decoder.h <ppb__video__decoder_8h.html>`_
+
   * `ppb_video_frame.h <ppb__video__frame_8h.html>`_
 
   * `ppb_view.h <ppb__view_8h.html>`_
@@ -292,6 +318,8 @@ Files
   * `ppp_input_event.h <ppp__input__event_8h.html>`_
 
   * `ppp_instance.h <ppp__instance_8h.html>`_
+
+  * `ppp_message_handler.h <ppp__message__handler_8h.html>`_
 
   * `ppp_messaging.h <ppp__messaging_8h.html>`_
 

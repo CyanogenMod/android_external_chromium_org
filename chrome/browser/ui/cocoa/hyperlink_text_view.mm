@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 
 #include "base/mac/scoped_nsobject.h"
+#include "chrome/browser/ui/cocoa/nsview_additions.h"
 
 // The baseline shift for text in the NSTextView.
 const float kTextBaselineShift = -1.0;
@@ -18,6 +19,8 @@ const float kTextBaselineShift = -1.0;
 @end
 
 @implementation HyperlinkTextView
+
+@synthesize drawsBackgroundUsingSuperview = drawsBackgroundUsingSuperview_;
 
 - (id)initWithCoder:(NSCoder*)decoder {
   if ((self = [super initWithCoder:decoder]))
@@ -33,6 +36,13 @@ const float kTextBaselineShift = -1.0;
 
 - (BOOL)acceptsFirstResponder {
   return acceptsFirstResponder_;
+}
+
+- (void)drawViewBackgroundInRect:(NSRect)rect {
+  if (drawsBackgroundUsingSuperview_)
+    [self cr_drawUsingAncestor:[self superview] inRect:rect];
+  else
+    [super drawViewBackgroundInRect:rect];
 }
 
 // Never draw the insertion point (otherwise, it shows up without any user
@@ -78,11 +88,12 @@ const float kTextBaselineShift = -1.0;
 
   // When text is rendered, linkTextAttributes override anything set via
   // addAttributes for text that has NSLinkAttributeName. Set to nil to allow
-  // custom attributes to take precendence.
+  // custom attributes to take precedence.
   [self setLinkTextAttributes:nil];
   [self setDisplaysLinkToolTips:NO];
 
   acceptsFirstResponder_ = YES;
+  drawsBackgroundUsingSuperview_ = NO;
 }
 
 - (void)fixupCursor {

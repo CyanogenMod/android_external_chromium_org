@@ -20,15 +20,12 @@
 #include "chrome/common/chrome_version_info.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "ui/base/hit_test.h"
 
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
 #include "base/environment.h"
 #include "base/nix/xdg_util.h"
 #include "ui/base/x/x11_util.h"
-#endif
-
-#if defined(OS_WIN)
-#include "win8/util/win8_util.h"
 #endif
 
 namespace {
@@ -124,12 +121,6 @@ bool PanelManager::ShouldUsePanels(const std::string& extension_id) {
   }
 #endif  // USE_X11 && !OS_CHROMEOS
 
-#if defined(OS_WIN)
-  // No panels in Metro mode.
-  if (win8::IsSingleWindowMetroMode())
-    return false;
-#endif // OS_WIN
-
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
   if (channel == chrome::VersionInfo::CHANNEL_STABLE ||
       channel == chrome::VersionInfo::CHANNEL_BETA) {
@@ -146,7 +137,12 @@ bool PanelManager::ShouldUsePanels(const std::string& extension_id) {
 
 // static
 bool PanelManager::IsPanelStackingEnabled() {
+  // Stacked panel mode is not supported in linux-aura.
+#if defined(OS_LINUX)
+  return false;
+#else
   return true;
+#endif
 }
 
 // static
@@ -460,11 +456,12 @@ void PanelManager::EndDragging(bool cancelled) {
 }
 
 void PanelManager::StartResizingByMouse(Panel* panel,
-    const gfx::Point& mouse_location,
-    panel::ResizingSides sides) {
+                                        const gfx::Point& mouse_location,
+                                        int component) {
   if (panel->CanResizeByMouse() != panel::NOT_RESIZABLE &&
-      sides != panel::RESIZE_NONE)
-    resize_controller_->StartResizing(panel, mouse_location, sides);
+      component != HTNOWHERE) {
+    resize_controller_->StartResizing(panel, mouse_location, component);
+  }
 }
 
 void PanelManager::ResizeByMouse(const gfx::Point& mouse_location) {

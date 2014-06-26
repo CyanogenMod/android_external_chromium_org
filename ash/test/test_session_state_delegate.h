@@ -5,7 +5,9 @@
 #ifndef ASH_TEST_TEST_SESSION_STATE_DELEGATE_H_
 #define ASH_TEST_TEST_SESSION_STATE_DELEGATE_H_
 
-#include "ash/session_state_delegate.h"
+#include <vector>
+
+#include "ash/session/session_state_delegate.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "ui/gfx/image/image_skia.h"
@@ -13,15 +15,22 @@
 namespace ash {
 namespace test {
 
+class MockUserInfo;
+
 class TestSessionStateDelegate : public SessionStateDelegate {
  public:
   TestSessionStateDelegate();
   virtual ~TestSessionStateDelegate();
 
   void set_logged_in_users(int users) { logged_in_users_ = users; }
-  const std::string& get_activated_user() { return activated_user_; }
+  void AddUser(const std::string user_id);
+  const UserInfo* GetActiveUserInfo() const;
 
   // SessionStateDelegate:
+  virtual content::BrowserContext* GetBrowserContextByIndex(
+      MultiProfileIndex index) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextForWindow(
+      aura::Window* window) OVERRIDE;
   virtual int GetMaximumNumberOfLoggedInUsers() const OVERRIDE;
   virtual int NumberOfLoggedInUsers() const OVERRIDE;
   virtual bool IsActiveUserSessionStarted() const OVERRIDE;
@@ -31,24 +40,18 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   virtual void LockScreen() OVERRIDE;
   virtual void UnlockScreen() OVERRIDE;
   virtual bool IsUserSessionBlocked() const OVERRIDE;
-  virtual const base::string16 GetUserDisplayName(
+  virtual SessionState GetSessionState() const OVERRIDE;
+  virtual const UserInfo* GetUserInfo(
       ash::MultiProfileIndex index) const OVERRIDE;
-  virtual const std::string GetUserEmail(
-      ash::MultiProfileIndex index) const OVERRIDE;
-  virtual const std::string GetUserID(
-      ash::MultiProfileIndex index) const OVERRIDE;
-  virtual const gfx::ImageSkia& GetUserImage(
-      ash::MultiProfileIndex index) const OVERRIDE;
-  virtual void GetLoggedInUsers(UserIdList* users) OVERRIDE;
+  virtual const UserInfo* GetUserInfo(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual bool ShouldShowAvatar(aura::Window* window) const OVERRIDE;
   virtual void SwitchActiveUser(const std::string& user_id) OVERRIDE;
   virtual void CycleActiveUser(CycleUser cycle_user) OVERRIDE;
   virtual void AddSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
   virtual void RemoveSessionStateObserver(
       ash::SessionStateObserver* observer) OVERRIDE;
-  virtual bool TransferWindowToDesktopOfUser(
-      aura::Window* window,
-      ash::MultiProfileIndex index) OVERRIDE;
 
   // TODO(oshima): Use state machine instead of using boolean variables.
 
@@ -76,10 +79,8 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   // running now.
   void SetUserAddingScreenRunning(bool user_adding_screen_running);
 
-  // Returns the number of calls to TransferWindowToDesktopOfUser.
-  int num_transfer_to_desktop_of_user_calls() {
-    return num_transfer_to_desktop_of_user_calls_;
-  }
+  // Setting non NULL image enables avatar icon.
+  void SetUserImage(const gfx::ImageSkia& user_image);
 
  private:
   // Whether a session is in progress and there is an active user.
@@ -106,14 +107,10 @@ class TestSessionStateDelegate : public SessionStateDelegate {
   // The number of users logged in.
   int logged_in_users_;
 
-  // The activated user.
-  std::string activated_user_;
+  // The index for the activated user.
+  int active_user_index_;
 
-  // A test user image.
-  gfx::ImageSkia null_image_;
-
-  // The number of calls which happened to TransferWindowToDesktopOfUser.
-  int num_transfer_to_desktop_of_user_calls_;
+  std::vector<MockUserInfo*> user_list_;
 
   DISALLOW_COPY_AND_ASSIGN(TestSessionStateDelegate);
 };

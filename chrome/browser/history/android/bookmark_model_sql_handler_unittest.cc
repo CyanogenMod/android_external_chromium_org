@@ -6,15 +6,15 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
@@ -138,7 +138,7 @@ TEST_F(BookmarkModelSQLHandlerTest, UpdateHistoryToBookmark) {
   ASSERT_TRUE(handler.Update(row, id_rows));
   RunMessageLoopForUI();
   // Get all bookmarks and verify there is only one.
-  std::vector<BookmarkService::URLAndTitle> bookmarks;
+  std::vector<BookmarkModel::URLAndTitle> bookmarks;
   bookmark_model_->GetBookmarks(&bookmarks);
   ASSERT_EQ(1u, bookmarks.size());
   EXPECT_EQ(url_row.url(), bookmarks[0].url);

@@ -70,6 +70,7 @@ class DownloadRequestLimiter
   // TabDownloadState prompts the user with an infobar as necessary.
   // TabDownloadState deletes itself (by invoking
   // DownloadRequestLimiter::Remove) as necessary.
+  // TODO(gbillock): just make this class implement PermissionBubbleRequest.
   class TabDownloadState : public content::NotificationObserver,
                            public content::WebContentsObserver {
    public:
@@ -101,7 +102,7 @@ class DownloadRequestLimiter
     }
 
     // Promote protected accessor to public.
-    content::WebContents* web_contents() {
+    content::WebContents* web_contents() const {
       return content::WebContentsObserver::web_contents();
     }
 
@@ -111,8 +112,7 @@ class DownloadRequestLimiter
     // Invoked when a user gesture occurs (mouse click, enter or space). This
     // may result in invoking Remove on DownloadRequestLimiter.
     virtual void DidGetUserGesture() OVERRIDE;
-    virtual void WebContentsDestroyed(
-        content::WebContents* web_contents) OVERRIDE;
+    virtual void WebContentsDestroyed() OVERRIDE;
 
     // Asks the user if they really want to allow the download.
     // See description above CanDownloadOnIOThread for details on lifetime of
@@ -133,8 +133,8 @@ class DownloadRequestLimiter
    private:
     // Are we showing a prompt to the user?  Determined by whether
     // we have an outstanding weak pointer--weak pointers are only
-    // given to the info bar delegate.
-    bool is_showing_prompt() const { return factory_.HasWeakPtrs(); }
+    // given to the info bar delegate or permission bubble request.
+    bool is_showing_prompt() const;
 
     // content::NotificationObserver method.
     virtual void Observe(int type,
@@ -189,7 +189,7 @@ class DownloadRequestLimiter
   // WARNING: both this call and the callback are invoked on the io thread.
   void CanDownloadOnIOThread(int render_process_host_id,
                              int render_view_id,
-                             int request_id,
+                             const GURL& url,
                              const std::string& request_method,
                              const Callback& callback);
 
@@ -217,21 +217,19 @@ class DownloadRequestLimiter
   // tab and invokes CanDownloadImpl.
   void CanDownload(int render_process_host_id,
                    int render_view_id,
-                   int request_id,
+                   const GURL& url,
                    const std::string& request_method,
                    const Callback& callback);
 
   // Does the work of updating the download status on the UI thread and
   // potentially prompting the user.
   void CanDownloadImpl(content::WebContents* originating_contents,
-                       int request_id,
                        const std::string& request_method,
                        const Callback& callback);
 
   // Invoked when decision to download has been made.
   void OnCanDownloadDecided(int render_process_host_id,
                             int render_view_id,
-                            int request_id,
                             const std::string& request_method,
                             const Callback& orig_callback,
                             bool allow);

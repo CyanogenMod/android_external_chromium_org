@@ -27,8 +27,7 @@ class UserImageScreenActor {
     virtual void OnScreenReady() = 0;
     // Called when user accepts photo as login user image.
     virtual void OnPhotoTaken(const std::string& raw_data) = 0;
-    // Called to check camera presence.
-    virtual void CheckCameraPresence() = 0;
+
     // Called when some image was selected. |is_user_selection| indicates if
     // it was user selection or image was selected programmatically.
     virtual void OnImageSelected(const std::string& image_url,

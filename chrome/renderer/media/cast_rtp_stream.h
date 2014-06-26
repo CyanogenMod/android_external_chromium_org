@@ -15,6 +15,11 @@
 #include "base/memory/weak_ptr.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 
+namespace base {
+class BinaryValue;
+class DictionaryValue;
+}
+
 class CastAudioSink;
 class CastSession;
 class CastVideoSink;
@@ -33,6 +38,10 @@ struct CastRtpPayloadParams {
   // RTP specific field that identifies the content type.
   int payload_type;
 
+  // Maximum latency in milliseconds. Implemetation tries to keep latency
+  // under this threshold.
+  int max_latency_ms;
+
   // RTP specific field to identify a stream.
   int ssrc;
 
@@ -42,10 +51,10 @@ struct CastRtpPayloadParams {
   // Update frequency of payload sample.
   int clock_rate;
 
-  // Maximum bitrate.
+  // Maximum bitrate in kilobits per second.
   int max_bitrate;
 
-  // Minimum bitrate.
+  // Minimum bitrate in kilobits per second.
   int min_bitrate;
 
   // Number of audio channels.
@@ -116,6 +125,20 @@ class CastRtpStream {
 
   // Stop encoding.
   void Stop();
+
+  // Enables or disables logging for this stream.
+  void ToggleLogging(bool enable);
+
+  // Get serialized raw events for this stream with |extra_data| attached,
+  // and invokes |callback| with the result.
+  void GetRawEvents(
+      const base::Callback<void(scoped_ptr<base::BinaryValue>)>& callback,
+      const std::string& extra_data);
+
+  // Get stats in DictionaryValue format and invokves |callback| with
+  // the result.
+  void GetStats(const base::Callback<void(
+      scoped_ptr<base::DictionaryValue>)>& callback);
 
  private:
   // Return true if this track is an audio track. Return false if this

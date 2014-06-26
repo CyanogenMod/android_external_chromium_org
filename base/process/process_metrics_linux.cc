@@ -36,7 +36,7 @@ static uint64 ReadFileToUint64(const base::FilePath file) {
   std::string file_as_string;
   if (!ReadFileToString(file, &file_as_string))
     return 0;
-  TrimWhitespaceASCII(file_as_string, TRIM_ALL, &file_as_string);
+  base::TrimWhitespaceASCII(file_as_string, base::TRIM_ALL, &file_as_string);
   uint64 file_as_uint64 = 0;
   if (!base::StringToUint64(file_as_string, &file_as_uint64))
     return 0;
@@ -71,7 +71,8 @@ size_t ReadProcStatusAndGetFieldAsSizeT(pid_t pid, const std::string& field) {
           std::string value_str;
           tokenizer.token_piece().CopyToString(&value_str);
           std::string value_str_trimmed;
-          TrimWhitespaceASCII(value_str, TRIM_ALL, &value_str_trimmed);
+          base::TrimWhitespaceASCII(value_str, base::TRIM_ALL,
+                                    &value_str_trimmed);
           std::vector<std::string> split_value_str;
           SplitString(value_str_trimmed, ' ', &split_value_str);
           if (split_value_str.size() != 2 || split_value_str[1] != "kB") {
@@ -181,20 +182,16 @@ bool ProcessMetrics::GetWorkingSetKBytes(WorkingSetKBytes* ws_usage) const {
 }
 
 double ProcessMetrics::GetCPUUsage() {
-  struct timeval now;
-  int retval = gettimeofday(&now, NULL);
-  if (retval)
-    return 0;
-  int64 time = TimeValToMicroseconds(now);
+  TimeTicks time = TimeTicks::Now();
 
-  if (last_cpu_time_ == 0) {
+  if (last_cpu_ == 0) {
     // First call, just set the last values.
     last_cpu_time_ = time;
     last_cpu_ = GetProcessCPU(process_);
     return 0;
   }
 
-  int64 time_delta = time - last_cpu_time_;
+  int64 time_delta = (time - last_cpu_time_).InMicroseconds();
   DCHECK_NE(time_delta, 0);
   if (time_delta == 0)
     return 0;
@@ -262,7 +259,6 @@ bool ProcessMetrics::GetIOCounters(IoCounters* io_counters) const {
 
 ProcessMetrics::ProcessMetrics(ProcessHandle process)
     : process_(process),
-      last_cpu_time_(0),
       last_system_time_(0),
       last_cpu_(0) {
   processor_count_ = base::SysInfo::NumberOfProcessors();

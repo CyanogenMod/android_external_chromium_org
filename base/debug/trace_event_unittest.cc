@@ -21,6 +21,7 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -64,6 +65,7 @@ class TraceEventTestFixture : public testing::Test {
                                          const char* phase,
                                          const char* key,
                                          const char* value);
+  void DropTracedMetadataRecords();
   bool FindMatchingValue(const char* key,
                          const char* value);
   bool FindNonMatchingValue(const char* key,
@@ -248,6 +250,28 @@ DictionaryValue* TraceEventTestFixture::FindMatchingTraceEntry(
       return dict;
   }
   return NULL;
+}
+
+void TraceEventTestFixture::DropTracedMetadataRecords() {
+
+  scoped_ptr<ListValue> old_trace_parsed(trace_parsed_.DeepCopy());
+  size_t old_trace_parsed_size = old_trace_parsed->GetSize();
+  trace_parsed_.Clear();
+
+  for (size_t i = 0; i < old_trace_parsed_size; i++) {
+    Value* value = NULL;
+    old_trace_parsed->Get(i, &value);
+    if (!value || value->GetType() != Value::TYPE_DICTIONARY) {
+      trace_parsed_.Append(value->DeepCopy());
+      continue;
+    }
+    DictionaryValue* dict = static_cast<DictionaryValue*>(value);
+    std::string tmp;
+    if(dict->GetString("ph", &tmp) && tmp == "M")
+      continue;
+
+    trace_parsed_.Append(value->DeepCopy());
+  }
 }
 
 DictionaryValue* TraceEventTestFixture::FindNamePhase(const char* name,
@@ -1101,6 +1125,7 @@ TEST_F(TraceEventTestFixture, Categories) {
   TRACE_EVENT_INSTANT0("cat1", "name", TRACE_EVENT_SCOPE_THREAD);
   TRACE_EVENT_INSTANT0("cat2", "name", TRACE_EVENT_SCOPE_THREAD);
   EndTraceAndFlush();
+  DropTracedMetadataRecords();
   EXPECT_TRUE(trace_parsed_.empty());
 
   // Include existent category -> only events of that category
@@ -1112,6 +1137,7 @@ TEST_F(TraceEventTestFixture, Categories) {
   TRACE_EVENT_INSTANT0("inc", "name", TRACE_EVENT_SCOPE_THREAD);
   TRACE_EVENT_INSTANT0("inc2", "name", TRACE_EVENT_SCOPE_THREAD);
   EndTraceAndFlush();
+  DropTracedMetadataRecords();
   EXPECT_TRUE(FindMatchingValue("cat", "inc"));
   EXPECT_FALSE(FindNonMatchingValue("cat", "inc"));
 
@@ -1412,7 +1438,7 @@ TEST_F(TraceEventTestFixture, DataCapturedManyThreads) {
   Thread* threads[num_threads];
   WaitableEvent* task_complete_events[num_threads];
   for (int i = 0; i < num_threads; i++) {
-    threads[i] = new Thread(StringPrintf("Thread %d", i).c_str());
+    threads[i] = new Thread(StringPrintf("Thread %d", i));
     task_complete_events[i] = new WaitableEvent(false, false);
     threads[i]->Start();
     threads[i]->message_loop()->PostTask(
@@ -1452,7 +1478,7 @@ TEST_F(TraceEventTestFixture, ThreadNames) {
   Thread* threads[num_threads];
   PlatformThreadId thread_ids[num_threads];
   for (int i = 0; i < num_threads; i++)
-    threads[i] = new Thread(StringPrintf("Thread %d", i).c_str());
+    threads[i] = new Thread(StringPrintf("Thread %d", i));
 
   // Enable tracing.
   BeginTrace();
@@ -2011,6 +2037,14 @@ TEST_F(TraceEventTestFixture, PrimitiveArgs) {
   TRACE_EVENT1("foo", "event9", "pointer_badf00d", p);
   TRACE_EVENT1("foo", "event10", "bool_true", true);
   TRACE_EVENT1("foo", "event11", "bool_false", false);
+  TRACE_EVENT1("foo", "event12", "time_null",
+      base::Time());
+  TRACE_EVENT1("foo", "event13", "time_one",
+      base::Time::FromInternalValue(1));
+  TRACE_EVENT1("foo", "event14", "timeticks_null",
+      base::TimeTicks());
+  TRACE_EVENT1("foo", "event15", "timeticks_one",
+      base::TimeTicks::FromInternalValue(1));
   EndTraceAndFlush();
 
   const DictionaryValue* args_dict = NULL;
@@ -2116,6 +2150,34 @@ TEST_F(TraceEventTestFixture, PrimitiveArgs) {
   ASSERT_TRUE(args_dict);
   EXPECT_TRUE(args_dict->GetBoolean("bool_false", &bool_value));
   EXPECT_FALSE(bool_value);
+
+  dict = FindNamePhase("event12", "X");
+  ASSERT_TRUE(dict);
+  dict->GetDictionary("args", &args_dict);
+  ASSERT_TRUE(args_dict);
+  EXPECT_TRUE(args_dict->GetInteger("time_null", &int_value));
+  EXPECT_EQ(0, int_value);
+
+  dict = FindNamePhase("event13", "X");
+  ASSERT_TRUE(dict);
+  dict->GetDictionary("args", &args_dict);
+  ASSERT_TRUE(args_dict);
+  EXPECT_TRUE(args_dict->GetInteger("time_one", &int_value));
+  EXPECT_EQ(1, int_value);
+
+  dict = FindNamePhase("event14", "X");
+  ASSERT_TRUE(dict);
+  dict->GetDictionary("args", &args_dict);
+  ASSERT_TRUE(args_dict);
+  EXPECT_TRUE(args_dict->GetInteger("timeticks_null", &int_value));
+  EXPECT_EQ(0, int_value);
+
+  dict = FindNamePhase("event15", "X");
+  ASSERT_TRUE(dict);
+  dict->GetDictionary("args", &args_dict);
+  ASSERT_TRUE(args_dict);
+  EXPECT_TRUE(args_dict->GetInteger("timeticks_one", &int_value));
+  EXPECT_EQ(1, int_value);
 }
 
 class TraceEventCallbackTest : public TraceEventTestFixture {
@@ -2251,6 +2313,7 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording1) {
   TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
   TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
 
+  DropTracedMetadataRecords();
   VerifyCallbackAndRecordedEvents(2, 2);
 }
 
@@ -2274,6 +2337,7 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording2) {
   TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
   TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
 
+  DropTracedMetadataRecords();
   VerifyCallbackAndRecordedEvents(3, 1);
 }
 
@@ -2297,6 +2361,7 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording3) {
   TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
   TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
 
+  DropTracedMetadataRecords();
   VerifyCallbackAndRecordedEvents(1, 3);
 }
 
@@ -2320,6 +2385,7 @@ TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording4) {
   TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
   TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
 
+  DropTracedMetadataRecords();
   VerifyCallbackAndRecordedEvents(2, 2);
 }
 
@@ -2750,6 +2816,7 @@ TEST_F(TraceEventTestFixture, TimeOffset) {
       TimeTicks::NowFromSystemTraceTime().ToInternalValue());
 
   EndTraceAndFlush();
+  DropTracedMetadataRecords();
 
   double end_time = static_cast<double>(
       (TimeTicks::NowFromSystemTraceTime() - time_offset).ToInternalValue());

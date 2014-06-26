@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBCURSOR_IMPL_H_
-#define CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBCURSOR_IMPL_H_
+#ifndef CONTENT_CHILD_INDEXED_DB_WEBIDBCURSOR_IMPL_H_
+#define CONTENT_CHILD_INDEXED_DB_WEBIDBCURSOR_IMPL_H_
 
 #include <deque>
 #include <vector>
@@ -38,9 +38,11 @@ class CONTENT_EXPORT WebIDBCursorImpl
                                 blink::WebIDBCallbacks* callback);
   virtual void postSuccessHandlerCallback();
 
-  void SetPrefetchData(const std::vector<IndexedDBKey>& keys,
-                       const std::vector<IndexedDBKey>& primary_keys,
-                       const std::vector<blink::WebData>& values);
+  void SetPrefetchData(
+      const std::vector<IndexedDBKey>& keys,
+      const std::vector<IndexedDBKey>& primary_keys,
+      const std::vector<blink::WebData>& values,
+      const std::vector<blink::WebVector<blink::WebBlobInfo> >& blob_info);
 
   void CachedAdvance(unsigned long count, blink::WebIDBCallbacks* callbacks);
   void CachedContinue(blink::WebIDBCallbacks* callbacks);
@@ -64,6 +66,7 @@ class CONTENT_EXPORT WebIDBCursorImpl
   std::deque<IndexedDBKey> prefetch_keys_;
   std::deque<IndexedDBKey> prefetch_primary_keys_;
   std::deque<blink::WebData> prefetch_values_;
+  std::deque<blink::WebVector<blink::WebBlobInfo> > prefetch_blob_info_;
 
   // Number of continue calls that would qualify for a pre-fetch.
   int continue_count_;
@@ -87,4 +90,4 @@ class CONTENT_EXPORT WebIDBCursorImpl
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBCURSOR_IMPL_H_
+#endif  // CONTENT_CHILD_INDEXED_DB_WEBIDBCURSOR_IMPL_H_

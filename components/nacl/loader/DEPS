@@ -4,6 +4,7 @@ include_rules = [
   "+crypto",
   "+sandbox/linux/seccomp-bpf",
   "+sandbox/linux/services",
+  "+sandbox/linux/suid",
   "+sandbox/win/src",
   "+ppapi/c",  # header files only
 
@@ -14,13 +15,15 @@ include_rules = [
   "+native_client/src/trusted/desc",
   "+native_client/src/trusted/service_runtime/include",
   "+native_client/src/trusted/service_runtime/nacl_error_code.h",
-  "+native_client/src/trusted/validator/nacl_file_info.h",
   "+native_client/src/trusted/validator/validation_cache.h",
   "+native_client/src/untrusted/irt/irt.h",
 
   # For message scanning and handle conversion in nacl_ipc_adapter.cc:
   "+ppapi/proxy/nacl_message_scanner.h",
   "+ppapi/proxy/serialized_handle.h",
+
+  # For setting FDs in non-SFI mode.
+  "+ppapi/nacl_irt",
 
   # For sending PpapiHostMsg_ChannelCreated in nacl_ipc_adapter.cc:
   "+ppapi/proxy/ppapi_messages.h"

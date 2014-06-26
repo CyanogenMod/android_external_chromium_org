@@ -7,18 +7,20 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/user_script_listener.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_throttle.h"
+#include "extensions/browser/extension_registry.h"
 #include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
+#include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -101,21 +103,21 @@ scoped_refptr<Extension> LoadExtension(const std::string& filename,
                            Extension::NO_FLAGS, error);
 }
 
-class SimpleTestJobProtocolHandler
-    : public net::URLRequestJobFactory::ProtocolHandler {
+class SimpleTestJobURLRequestInterceptor
+    : public net::URLRequestInterceptor {
  public:
-  SimpleTestJobProtocolHandler() {}
-  virtual ~SimpleTestJobProtocolHandler() {}
+  SimpleTestJobURLRequestInterceptor() {}
+  virtual ~SimpleTestJobURLRequestInterceptor() {}
 
   // net::URLRequestJobFactory::ProtocolHandler
-  virtual net::URLRequestJob* MaybeCreateJob(
+  virtual net::URLRequestJob* MaybeInterceptRequest(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate) const OVERRIDE {
     return new SimpleTestJob(request, network_delegate);
   }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(SimpleTestJobProtocolHandler);
+  DISALLOW_COPY_AND_ASSIGN(SimpleTestJobURLRequestInterceptor);
 };
 
 }  // namespace
@@ -123,14 +125,14 @@ class SimpleTestJobProtocolHandler
 class UserScriptListenerTest : public ExtensionServiceTestBase {
  public:
   UserScriptListenerTest() {
-    net::URLRequestFilter::GetInstance()->AddHostnameProtocolHandler(
+    net::URLRequestFilter::GetInstance()->AddHostnameInterceptor(
         "http", "google.com",
-        scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-            new SimpleTestJobProtocolHandler()));
-    net::URLRequestFilter::GetInstance()->AddHostnameProtocolHandler(
+        scoped_ptr<net::URLRequestInterceptor>(
+            new SimpleTestJobURLRequestInterceptor()));
+    net::URLRequestFilter::GetInstance()->AddHostnameInterceptor(
         "http", "example.com",
-        scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
-            new SimpleTestJobProtocolHandler()));
+        scoped_ptr<net::URLRequestInterceptor>(
+            new SimpleTestJobURLRequestInterceptor()));
   }
 
   virtual ~UserScriptListenerTest() {
@@ -280,7 +282,7 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
   LoadTestExtension();
   base::MessageLoop::current()->RunUntilIdle();
 
-  // Fire up a second profile and have it load and extension with a content
+  // Fire up a second profile and have it load an extension with a content
   // script.
   TestingProfile profile2;
   std::string error;
@@ -288,8 +290,10 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
       "content_script_yahoo.json", &error);
   ASSERT_TRUE(extension.get());
 
+  extensions::ExtensionRegistry::Get(&profile2)->AddEnabled(extension);
+
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LOADED,
+      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::Source<Profile>(&profile2),
       content::Details<Extension>(extension.get()));
 

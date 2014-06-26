@@ -5,6 +5,7 @@
 #ifndef SYNC_ENGINE_GET_UPDATES_DELEGATE_H_
 #define SYNC_ENGINE_GET_UPDATES_DELEGATE_H_
 
+#include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/sessions/model_type_registry.h"
 #include "sync/sessions/nudge_tracker.h"
@@ -29,8 +30,13 @@ class SYNC_EXPORT_PRIVATE GetUpdatesDelegate {
 
   // Applies pending updates to non-control types.
   virtual void ApplyUpdates(
-      sessions::StatusController* session,
+      ModelTypeSet gu_types,
+      sessions::StatusController* status,
       UpdateHandlerMap* update_handler_map) const = 0;
+
+  virtual scoped_ptr<ProtocolEvent> GetNetworkRequestEvent(
+      base::Time timestamp,
+      const sync_pb::ClientToServerMessage& request) const = 0;
 };
 
 // Functionality specific to the normal GetUpdate request.
@@ -45,30 +51,17 @@ class SYNC_EXPORT_PRIVATE NormalGetUpdatesDelegate : public GetUpdatesDelegate {
 
   // Applies pending updates on the appropriate data type threads.
   virtual void ApplyUpdates(
+      ModelTypeSet gu_types,
       sessions::StatusController* status,
       UpdateHandlerMap* update_handler_map) const OVERRIDE;
 
+  virtual scoped_ptr<ProtocolEvent> GetNetworkRequestEvent(
+      base::Time timestamp,
+      const sync_pb::ClientToServerMessage& request) const OVERRIDE;
  private:
   DISALLOW_COPY_AND_ASSIGN(NormalGetUpdatesDelegate);
 
   const sessions::NudgeTracker& nudge_tracker_;
-};
-
-// Functionality specific to the retry GetUpdate request.
-class SYNC_EXPORT_PRIVATE RetryGetUpdatesDelegate : public GetUpdatesDelegate {
- public:
-  RetryGetUpdatesDelegate();
-  virtual ~RetryGetUpdatesDelegate();
-
-  virtual void HelpPopulateGuMessage(
-      sync_pb::GetUpdatesMessage* get_updates) const OVERRIDE;
-
-  virtual void ApplyUpdates(
-      sessions::StatusController* status,
-      UpdateHandlerMap* update_handler_map) const OVERRIDE;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(RetryGetUpdatesDelegate);
 };
 
 // Functionality specific to the configure GetUpdate request.
@@ -88,9 +81,13 @@ class SYNC_EXPORT_PRIVATE ConfigureGetUpdatesDelegate
   // This is safe only if the ChangeProcessor is not listening to changes at
   // this time.
   virtual void ApplyUpdates(
+      ModelTypeSet gu_types,
       sessions::StatusController* status,
       UpdateHandlerMap* update_handler_map) const OVERRIDE;
 
+  virtual scoped_ptr<ProtocolEvent> GetNetworkRequestEvent(
+      base::Time timestamp,
+      const sync_pb::ClientToServerMessage& request) const OVERRIDE;
  private:
   DISALLOW_COPY_AND_ASSIGN(ConfigureGetUpdatesDelegate);
 
@@ -112,9 +109,13 @@ class SYNC_EXPORT_PRIVATE PollGetUpdatesDelegate : public GetUpdatesDelegate {
 
   // Applies updates on the appropriate data type thread.
   virtual void ApplyUpdates(
+      ModelTypeSet gu_types,
       sessions::StatusController* status,
       UpdateHandlerMap* update_handler_map) const OVERRIDE;
 
+  virtual scoped_ptr<ProtocolEvent> GetNetworkRequestEvent(
+      base::Time timestamp,
+      const sync_pb::ClientToServerMessage& request) const OVERRIDE;
  private:
   DISALLOW_COPY_AND_ASSIGN(PollGetUpdatesDelegate);
 };

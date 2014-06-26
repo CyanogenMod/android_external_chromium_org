@@ -10,9 +10,11 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/values.h"
 #include "chrome/browser/sync_file_system/sync_event_observer.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace sync_file_system {
 class SyncFileSystemService;
@@ -21,17 +23,19 @@ class SyncFileSystemService;
 namespace extensions {
 
 // Observes changes in SyncFileSystem and relays events to JS Extension API.
-class ExtensionSyncEventObserver
-    : public sync_file_system::SyncEventObserver,
-      public BrowserContextKeyedService {
+class ExtensionSyncEventObserver : public sync_file_system::SyncEventObserver,
+                                   public BrowserContextKeyedAPI {
  public:
-  explicit ExtensionSyncEventObserver(Profile* profile);
+  static BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver>*
+      GetFactoryInstance();
+
+  explicit ExtensionSyncEventObserver(content::BrowserContext* context);
   virtual ~ExtensionSyncEventObserver();
 
   void InitializeForService(
       sync_file_system::SyncFileSystemService* sync_service);
 
-  // BrowserContextKeyedService override.
+  // KeyedService override.
   virtual void Shutdown() OVERRIDE;
 
   // sync_file_system::SyncEventObserver interface implementation.
@@ -47,11 +51,17 @@ class ExtensionSyncEventObserver
       sync_file_system::SyncDirection direction) OVERRIDE;
 
  private:
+  friend class BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver>;
+
   // Returns an empty string if the extension |app_origin| cannot be found
   // in the installed extension list.
   std::string GetExtensionId(const GURL& app_origin);
 
-  Profile* profile_;
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "ExtensionSyncEventObserver"; }
+  static const bool kServiceIsCreatedWithBrowserContext = false;
+
+  content::BrowserContext* browser_context_;
 
   // Not owned. If not null, then this is registered to SyncFileSystemService.
   sync_file_system::SyncFileSystemService* sync_service_;
@@ -62,6 +72,10 @@ class ExtensionSyncEventObserver
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionSyncEventObserver);
 };
+
+template <>
+void BrowserContextKeyedAPIFactory<
+    ExtensionSyncEventObserver>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

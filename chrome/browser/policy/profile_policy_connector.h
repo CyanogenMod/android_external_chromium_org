@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 namespace chromeos {
 class User;
@@ -22,9 +22,9 @@ class ConfigurationPolicyProvider;
 class PolicyService;
 class SchemaRegistry;
 
-// A BrowserContextKeyedService that creates and manages the per-Profile policy
+// A KeyedService that creates and manages the per-Profile policy
 // components.
-class ProfilePolicyConnector : public BrowserContextKeyedService {
+class ProfilePolicyConnector : public KeyedService {
  public:
   ProfilePolicyConnector();
   virtual ~ProfilePolicyConnector();
@@ -39,7 +39,7 @@ class ProfilePolicyConnector : public BrowserContextKeyedService {
 
   void InitForTesting(scoped_ptr<PolicyService> service);
 
-  // BrowserContextKeyedService:
+  // KeyedService:
   virtual void Shutdown() OVERRIDE;
 
   // This is never NULL.
@@ -52,13 +52,13 @@ class ProfilePolicyConnector : public BrowserContextKeyedService {
   // cloud policy management. Otherwise returns an empty string.
   std::string GetManagementDomain() const;
 
+  // Returns true if the |name| Chrome policy is currently set via the
+  // CloudPolicyManager and isn't being overridden by a higher-level provider.
+  bool IsPolicyFromCloudPolicy(const char* name) const;
+
  private:
 #if defined(ENABLE_CONFIGURATION_POLICY)
 #if defined(OS_CHROMEOS)
-  void InitializeDeviceLocalAccountPolicyProvider(
-      const std::string& username,
-      SchemaRegistry* schema_registry);
-
   // Some of the user policy configuration affects browser global state, and
   // can only come from one Profile. |is_primary_user_| is true if this
   // connector belongs to the first signed-in Profile, and in that case that

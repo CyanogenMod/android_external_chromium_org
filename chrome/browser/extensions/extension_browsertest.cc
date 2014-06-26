@@ -20,7 +20,6 @@
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_creator.h"
 #include "chrome/browser/extensions/extension_error_reporter.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
@@ -41,6 +40,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension_set.h"
@@ -61,7 +62,9 @@ ExtensionBrowserTest::ExtensionBrowserTest()
 #if defined(OS_CHROMEOS)
       set_chromeos_user_(true),
 #endif
-      current_channel_(chrome::VersionInfo::CHANNEL_DEV),
+      // Default channel is STABLE but override with UNKNOWN so that unlaunched
+      // or incomplete APIs can write tests.
+      current_channel_(chrome::VersionInfo::CHANNEL_UNKNOWN),
       override_prompt_for_external_extensions_(
           FeatureSwitch::prompt_for_external_extensions(),
           false),
@@ -123,12 +126,31 @@ void ExtensionBrowserTest::SetUpOnMainThread() {
   observer_.reset(new ExtensionTestNotificationObserver(browser()));
 }
 
+const Extension* ExtensionBrowserTest::LoadExtension(
+    const base::FilePath& path) {
+  return LoadExtensionWithFlags(path, kFlagEnableFileAccess);
+}
+
+const Extension* ExtensionBrowserTest::LoadExtensionIncognito(
+    const base::FilePath& path) {
+  return LoadExtensionWithFlags(path,
+                                kFlagEnableFileAccess | kFlagEnableIncognito);
+}
+
 const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
     const base::FilePath& path, int flags) {
+  return LoadExtensionWithInstallParam(path, flags, std::string());
+}
+
+const extensions::Extension*
+ExtensionBrowserTest::LoadExtensionWithInstallParam(
+    const base::FilePath& path,
+    int flags,
+    const std::string& install_param) {
   ExtensionService* service = extensions::ExtensionSystem::Get(
       profile())->extension_service();
   {
-    observer_->Watch(chrome::NOTIFICATION_EXTENSION_LOADED,
+    observer_->Watch(chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                      content::NotificationService::AllSources());
 
     scoped_refptr<extensions::UnpackedInstaller> installer(
@@ -160,21 +182,31 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
         install_warnings_message += "  " + it->message + "\n";
       }
 
-      EXPECT_TRUE(extension->install_warnings().empty()) <<
-          install_warnings_message;
+      EXPECT_EQ(0u, extension->install_warnings().size())
+          << install_warnings_message;
       return NULL;
     }
   }
 
   const std::string extension_id = extension->id();
 
-  // The call to OnExtensionInstalled ensures the other extension prefs
-  // are set up with the defaults.
-  service->extension_prefs()->OnExtensionInstalled(
-      extension,
-      Extension::ENABLED,
-      false,
-      syncer::StringOrdinal::CreateInitialOrdinal());
+  if (!install_param.empty()) {
+    extensions::ExtensionPrefs::Get(profile())
+        ->SetInstallParam(extension_id, install_param);
+    // Re-enable the extension if needed.
+    if (service->extensions()->Contains(extension_id)) {
+      content::WindowedNotificationObserver load_signal(
+          chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+          content::Source<Profile>(profile()));
+      // Reload the extension so that the
+      // NOTIFICATION_EXTENSION_LOADED_DEPRECATED
+      // observers may access |install_param|.
+      service->ReloadExtension(extension_id);
+      load_signal.Wait();
+      extension = service->GetExtensionById(extension_id, false);
+      CHECK(extension) << extension_id << " not found after reloading.";
+    }
+  }
 
   // Toggling incognito or file access will reload the extension, so wait for
   // the reload and grab the new extension instance. The default state is
@@ -182,10 +214,9 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
   // cases.
   {
     content::WindowedNotificationObserver load_signal(
-        chrome::NOTIFICATION_EXTENSION_LOADED,
+        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::Source<Profile>(profile()));
-    CHECK(!extensions::util::IsIncognitoEnabled(extension_id, profile()) ||
-          extension->force_incognito_enabled());
+    CHECK(!extensions::util::IsIncognitoEnabled(extension_id, profile()));
 
     if (flags & kFlagEnableIncognito) {
       extensions::util::SetIsIncognitoEnabled(extension_id, profile(), true);
@@ -197,7 +228,7 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
 
   {
     content::WindowedNotificationObserver load_signal(
-        chrome::NOTIFICATION_EXTENSION_LOADED,
+        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
         content::Source<Profile>(profile()));
     CHECK(extensions::util::AllowFileAccess(extension_id, profile()));
     if (!(flags & kFlagEnableFileAccess)) {
@@ -212,17 +243,6 @@ const Extension* ExtensionBrowserTest::LoadExtensionWithFlags(
     return NULL;
 
   return extension;
-}
-
-const Extension* ExtensionBrowserTest::LoadExtension(
-    const base::FilePath& path) {
-  return LoadExtensionWithFlags(path, kFlagEnableFileAccess);
-}
-
-const Extension* ExtensionBrowserTest::LoadExtensionIncognito(
-    const base::FilePath& path) {
-  return LoadExtensionWithFlags(path,
-                                kFlagEnableFileAccess | kFlagEnableIncognito);
 }
 
 const Extension* ExtensionBrowserTest::LoadExtensionAsComponentWithManifest(
@@ -356,7 +376,8 @@ const Extension* ExtensionBrowserTest::UpdateExtensionWaitForIdle(
                                   Manifest::INTERNAL,
                                   browser(),
                                   Extension::NO_FLAGS,
-                                  true);
+                                  false,
+                                  false);
 }
 
 const Extension* ExtensionBrowserTest::InstallExtensionFromWebstore(
@@ -369,6 +390,7 @@ const Extension* ExtensionBrowserTest::InstallExtensionFromWebstore(
                                   Manifest::INTERNAL,
                                   browser(),
                                   Extension::FROM_WEBSTORE,
+                                  true,
                                   false);
 }
 
@@ -377,8 +399,15 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     const base::FilePath& path,
     InstallUIType ui_type,
     int expected_change) {
-  return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-      Manifest::INTERNAL, browser(), Extension::NO_FLAGS, false);
+  return InstallOrUpdateExtension(id,
+                                  path,
+                                  ui_type,
+                                  expected_change,
+                                  Manifest::INTERNAL,
+                                  browser(),
+                                  Extension::NO_FLAGS,
+                                  true,
+                                  false);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
@@ -388,8 +417,14 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     int expected_change,
     Browser* browser,
     Extension::InitFromValueFlags creation_flags) {
-  return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-                                  Manifest::INTERNAL, browser, creation_flags,
+  return InstallOrUpdateExtension(id,
+                                  path,
+                                  ui_type,
+                                  expected_change,
+                                  Manifest::INTERNAL,
+                                  browser,
+                                  creation_flags,
+                                  true,
                                   false);
 }
 
@@ -399,8 +434,15 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     InstallUIType ui_type,
     int expected_change,
     Manifest::Location install_source) {
-  return InstallOrUpdateExtension(id, path, ui_type, expected_change,
-      install_source, browser(), Extension::NO_FLAGS, false);
+  return InstallOrUpdateExtension(id,
+                                  path,
+                                  ui_type,
+                                  expected_change,
+                                  install_source,
+                                  browser(),
+                                  Extension::NO_FLAGS,
+                                  true,
+                                  false);
 }
 
 const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
@@ -411,8 +453,10 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     Manifest::Location install_source,
     Browser* browser,
     Extension::InitFromValueFlags creation_flags,
-    bool wait_for_idle) {
-  ExtensionService* service = profile()->GetExtensionService();
+    bool install_immediately,
+    bool is_ephemeral) {
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile())->extension_service();
   service->set_show_extensions_prompts(false);
   size_t num_before = service->extensions()->size();
 
@@ -442,7 +486,8 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
     installer->set_expected_id(id);
     installer->set_creation_flags(creation_flags);
     installer->set_install_source(install_source);
-    installer->set_install_wait_for_idle(wait_for_idle);
+    installer->set_install_immediately(install_immediately);
+    installer->set_is_ephemeral(is_ephemeral);
     if (!installer->is_gallery_install()) {
       installer->set_off_store_install_allow_reason(
           extensions::CrxInstaller::OffStoreInstallAllowedInTest);
@@ -485,8 +530,8 @@ const Extension* ExtensionBrowserTest::InstallOrUpdateExtension(
 }
 
 void ExtensionBrowserTest::ReloadExtension(const std::string extension_id) {
-  observer_->Watch(chrome::NOTIFICATION_EXTENSION_LOADED,
-                content::NotificationService::AllSources());
+  observer_->Watch(chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                   content::NotificationService::AllSources());
 
   ExtensionService* service =
       extensions::ExtensionSystem::Get(profile())->extension_service();
@@ -594,5 +639,12 @@ std::string ExtensionBrowserTest::ExecuteScriptInBackgroundPage(
     const std::string& extension_id,
     const std::string& script) {
   return extensions::browsertest_util::ExecuteScriptInBackgroundPage(
+      profile(), extension_id, script);
+}
+
+bool ExtensionBrowserTest::ExecuteScriptInBackgroundPageNoWait(
+    const std::string& extension_id,
+    const std::string& script) {
+  return extensions::browsertest_util::ExecuteScriptInBackgroundPageNoWait(
       profile(), extension_id, script);
 }

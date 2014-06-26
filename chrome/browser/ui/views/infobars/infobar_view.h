@@ -7,11 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/infobars/infobar.h"
-#include "chrome/browser/infobars/infobar_container.h"
+#include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_container.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/views/controls/button/button.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/focus/external_focus_tracker.h"
 
 namespace ui {
@@ -26,16 +26,15 @@ class LabelButton;
 class Link;
 class LinkListener;
 class MenuButton;
-class MenuButtonListener;
 class MenuRunner;
 }  // namespace views
 
-class InfoBarView : public InfoBar,
+class InfoBarView : public infobars::InfoBar,
                     public views::View,
                     public views::ButtonListener,
                     public views::ExternalFocusTracker {
  public:
-  explicit InfoBarView(scoped_ptr<InfoBarDelegate> delegate);
+  explicit InfoBarView(scoped_ptr<infobars::InfoBarDelegate> delegate);
 
   const SkPath& fill_path() const { return fill_path_; }
   const SkPath& stroke_path() const { return stroke_path_; }
@@ -56,17 +55,10 @@ class InfoBarView : public InfoBar,
   views::Link* CreateLink(const base::string16& text,
                           views::LinkListener* listener) const;
 
-  // Creates a menu button with an infobar-specific appearance.
-  // NOTE: Subclasses must ignore button presses if we're unowned.
-  static views::MenuButton* CreateMenuButton(
-      const base::string16& text,
-      views::MenuButtonListener* menu_button_listener);
-
   // Creates a button with an infobar-specific appearance.
   // NOTE: Subclasses must ignore button presses if we're unowned.
   static views::LabelButton* CreateLabelButton(views::ButtonListener* listener,
-                                               const base::string16& text,
-                                               bool needs_elevation);
+                                               const base::string16& text);
 
   // Given |labels| and the total |available_width| to display them in, sets
   // each label's size so that the longest label shrinks until it reaches the
@@ -88,7 +80,7 @@ class InfoBarView : public InfoBar,
   // Returns the minimum width the content (that is, everything between the icon
   // and the close button) can be shrunk to.  This is used to prevent the close
   // button from overlapping views that cannot be shrunk any further.
-  virtual int ContentMinimumWidth();
+  virtual int ContentMinimumWidth() const;
 
   // These return x coordinates delimiting the usable area for subclasses to lay
   // out their controls.
@@ -101,19 +93,16 @@ class InfoBarView : public InfoBar,
   int OffsetY(views::View* view) const;
 
   // Convenience getter.
-  const InfoBarContainer::Delegate* container_delegate() const;
+  const infobars::InfoBarContainer::Delegate* container_delegate() const;
 
   // Shows a menu at the specified position.
   // NOTE: This must not be called if we're unowned.  (Subclasses should ignore
   // calls to RunMenu() in this case.)
   void RunMenuAt(ui::MenuModel* menu_model,
                  views::MenuButton* button,
-                 views::MenuItemView::AnchorPosition anchor);
+                 views::MenuAnchorPosition anchor);
 
  private:
-  static const int kHorizontalPadding;
-  static const int kCloseButtonSpacing;
-
   // Does the actual work for AssignWidths().  Assumes |labels| is sorted by
   // decreasing preferred width.
   static void AssignWidthsSorted(Labels* labels, int available_width);
@@ -124,9 +113,10 @@ class InfoBarView : public InfoBar,
   virtual void PlatformSpecificOnHeightsRecalculated() OVERRIDE;
 
   // views::View:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
 
   // views::ExternalFocusTracker:
   virtual void OnWillChangeFocus(View* focused_before,

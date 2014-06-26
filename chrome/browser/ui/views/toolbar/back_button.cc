@@ -11,11 +11,9 @@
 BackButton::BackButton(views::ButtonListener* listener,
                        ui::MenuModel* model)
     : ToolbarButton(listener, model),
-      margin_leading_(0) {
-}
+      margin_leading_(0) {}
 
-BackButton::~BackButton() {
-}
+BackButton::~BackButton() {}
 
 gfx::Rect BackButton::GetThemePaintRect() const  {
   gfx::Rect rect(LabelButton::GetThemePaintRect());
@@ -24,18 +22,11 @@ gfx::Rect BackButton::GetThemePaintRect() const  {
 }
 
 void BackButton::SetLeadingMargin(int margin) {
-  // Adjust border insets to follow the margin change,
-  // which will be reflected in where the border is painted
-  // through |GetThemePaintRect|.
-  scoped_ptr<views::LabelButtonBorder> border(
-      new views::LabelButtonBorder(style()));
-  const gfx::Insets insets(border->GetInsets());
-  border->set_insets(gfx::Insets(insets.top(), insets.left() + margin,
-                                 insets.bottom(), insets.right()));
-  UpdateThemedBorder(border.PassAs<views::Border>());
+  margin_leading_ = margin;
 
-  // Similarly fiddle the focus border. Value consistent with LabelButton
-  // and TextButton.
+  UpdateThemedBorder();
+
+  // Similarly fiddle the focus border. Value consistent with LabelButton.
   // TODO(gbillock): Refactor this magic number somewhere global to views,
   // probably a FocusBorder constant.
   const int kFocusRectInset = 3;
@@ -43,6 +34,19 @@ void BackButton::SetLeadingMargin(int margin) {
                       gfx::Insets(kFocusRectInset, kFocusRectInset + margin,
                                   kFocusRectInset, kFocusRectInset)));
 
-  margin_leading_ = margin;
   InvalidateLayout();
+}
+
+scoped_ptr<views::LabelButtonBorder> BackButton::CreateDefaultBorder() const {
+  scoped_ptr<views::LabelButtonBorder> border =
+      ToolbarButton::CreateDefaultBorder();
+
+  // Adjust border insets to follow the margin change,
+  // which will be reflected in where the border is painted
+  // through |GetThemePaintRect|.
+  const gfx::Insets insets(border->GetInsets());
+  border->set_insets(gfx::Insets(insets.top(), insets.left() + margin_leading_,
+                                 insets.bottom(), insets.right()));
+
+  return border.Pass();
 }

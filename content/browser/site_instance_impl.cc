@@ -104,11 +104,8 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
         StoragePartitionImpl* partition =
             static_cast<StoragePartitionImpl*>(
                 BrowserContext::GetStoragePartition(browser_context, this));
-        bool supports_browser_plugin = GetContentClient()->browser()->
-            SupportsBrowserPlugin(browser_context, site_);
         process_ = new RenderProcessHostImpl(browser_context,
                                              partition,
-                                             supports_browser_plugin,
                                              site_.SchemeIs(kGuestScheme));
       }
     }
@@ -185,6 +182,10 @@ bool SiteInstanceImpl::IsRelatedSiteInstance(const SiteInstance* instance) {
                                          instance)->browsing_instance_.get();
 }
 
+size_t SiteInstanceImpl::GetRelatedActiveContentsCount() {
+  return browsing_instance_->active_contents_count();
+}
+
 bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
   // Having no process isn't a problem, since we'll assign it correctly.
   // Note that HasProcess() may return true if process_ is null, in
@@ -204,6 +205,14 @@ bool SiteInstanceImpl::HasWrongProcessForURL(const GURL& url) {
   GURL site_url = GetSiteForURL(browsing_instance_->browser_context(), url);
   return !RenderProcessHostImpl::IsSuitableHost(
       GetProcess(), browsing_instance_->browser_context(), site_url);
+}
+
+void SiteInstanceImpl::IncrementRelatedActiveContentsCount() {
+  browsing_instance_->increment_active_contents_count();
+}
+
+void SiteInstanceImpl::DecrementRelatedActiveContentsCount() {
+  browsing_instance_->decrement_active_contents_count();
 }
 
 void SiteInstanceImpl::set_render_process_host_factory(

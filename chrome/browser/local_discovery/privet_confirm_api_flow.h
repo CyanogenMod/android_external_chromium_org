@@ -7,50 +7,33 @@
 
 #include <string>
 
-#include "chrome/browser/local_discovery/cloud_print_base_api_flow.h"
+#include "base/values.h"
+#include "chrome/browser/local_discovery/gcd_api_flow.h"
 #include "net/url_request/url_request_context_getter.h"
-
 
 namespace local_discovery {
 
-// API call flow for server-side communication with cloudprint for registration.
-class PrivetConfirmApiCallFlow : public CloudPrintBaseApiFlow::Delegate {
+// API call flow for server-side communication with CloudPrint for registration.
+class PrivetConfirmApiCallFlow : public CloudPrintApiFlowRequest {
  public:
-  typedef base::Callback<void(CloudPrintBaseApiFlow::Status /*success*/)>
-      ResponseCallback;
+  typedef base::Callback<void(GCDApiFlow::Status /*success*/)> ResponseCallback;
 
   // Create an OAuth2-based confirmation
-  PrivetConfirmApiCallFlow(net::URLRequestContextGetter* request_context,
-                           OAuth2TokenService* token_service_,
-                           const std::string& account_id,
-                           const GURL& automated_claim_url,
-                           const ResponseCallback& callback);
-
-  // Create a cookie-based confirmation
-  PrivetConfirmApiCallFlow(net::URLRequestContextGetter* request_context,
-                           int  user_index,
-                           const std::string& xsrf_token,
-                           const GURL& automated_claim_url,
+  PrivetConfirmApiCallFlow(const std::string& token,
                            const ResponseCallback& callback);
 
   virtual ~PrivetConfirmApiCallFlow();
 
-  void Start();
+  virtual void OnGCDAPIFlowError(GCDApiFlow::Status status) OVERRIDE;
+  virtual void OnGCDAPIFlowComplete(
+      const base::DictionaryValue& value) OVERRIDE;
+  virtual net::URLFetcher::RequestType GetRequestType() OVERRIDE;
 
-  virtual void OnCloudPrintAPIFlowError(
-      CloudPrintBaseApiFlow* flow,
-      CloudPrintBaseApiFlow::Status status) OVERRIDE;
-  virtual void OnCloudPrintAPIFlowComplete(
-      CloudPrintBaseApiFlow* flow,
-      const base::DictionaryValue* value) OVERRIDE;
-
-  CloudPrintBaseApiFlow* GetBaseApiFlowForTests() {
-    return &flow_;
-  }
+  virtual GURL GetURL() OVERRIDE;
 
  private:
-  CloudPrintBaseApiFlow flow_;
   ResponseCallback callback_;
+  std::string token_;
 };
 
 }  // namespace local_discovery

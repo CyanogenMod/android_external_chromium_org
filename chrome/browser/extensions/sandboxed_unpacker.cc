@@ -11,8 +11,8 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_util_proxy.h"
+#include "base/files/scoped_file.h"
 #include "base/json/json_string_value_serializer.h"
-#include "base/memory/scoped_handle.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/numerics/safe_conversions.h"
@@ -25,8 +25,6 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
 #include "content/public/common/common_param_traits.h"
@@ -34,8 +32,11 @@
 #include "extensions/common/constants.h"
 #include "extensions/common/crx_file.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -132,7 +133,7 @@ bool VerifyJunctionFreeLocation(base::FilePath* temp_dir) {
   // NormalizeFilePath requires a non-empty file, so write some data.
   // If you change the exit points of this function please make sure all
   // exit points delete this temp file!
-  if (file_util::WriteFile(temp_file, ".", 1) != 1)
+  if (base::WriteFile(temp_file, ".", 1) != 1)
     return false;
 
   base::FilePath normalized_temp_file;
@@ -167,7 +168,7 @@ bool FindWritableTempLocation(const base::FilePath& extensions_dir,
     return true;
 #endif
 
-  *temp_dir = extension_file_util::GetInstallTempDir(extensions_dir);
+  *temp_dir = file_util::GetInstallTempDir(extensions_dir);
   if (VerifyJunctionFreeLocation(temp_dir))
     return true;
   // Neither paths is link free chances are good installation will fail.
@@ -419,7 +420,7 @@ void SandboxedUnpacker::OnUnpackExtensionFailed(const base::string16& error) {
 }
 
 bool SandboxedUnpacker::ValidateSignature() {
-  ScopedStdioHandle file(base::OpenFile(crx_path_, "rb"));
+  base::ScopedFILE file(base::OpenFile(crx_path_, "rb"));
 
   if (!file.get()) {
     // Could not open crx file for reading.
@@ -629,7 +630,7 @@ base::DictionaryValue* SandboxedUnpacker::RewriteManifestFile(
   base::FilePath manifest_path =
       extension_root_.Append(kManifestFilename);
   int size = base::checked_cast<int>(manifest_json.size());
-  if (file_util::WriteFile(manifest_path, manifest_json.data(), size) != size) {
+  if (base::WriteFile(manifest_path, manifest_json.data(), size) != size) {
     // Error saving manifest.json.
     ReportFailure(
         ERROR_SAVING_MANIFEST_JSON,
@@ -742,7 +743,7 @@ bool SandboxedUnpacker::RewriteImageFiles(SkBitmap* install_icon) {
     // so we can be sure the directory exists.
     const char* image_data_ptr = reinterpret_cast<const char*>(&image_data[0]);
     int size = base::checked_cast<int>(image_data.size());
-    if (file_util::WriteFile(path, image_data_ptr, size) != size) {
+    if (base::WriteFile(path, image_data_ptr, size) != size) {
       // Error saving theme image.
       ReportFailure(
           ERROR_SAVING_THEME_IMAGE,
@@ -811,7 +812,7 @@ bool SandboxedUnpacker::RewriteCatalogFiles() {
     // Note: we're overwriting existing files that the utility process read,
     // so we can be sure the directory exists.
     int size = base::checked_cast<int>(catalog_json.size());
-    if (file_util::WriteFile(path, catalog_json.c_str(), size) != size) {
+    if (base::WriteFile(path, catalog_json.c_str(), size) != size) {
       // Error saving catalog.
       ReportFailure(
           ERROR_SAVING_CATALOG,

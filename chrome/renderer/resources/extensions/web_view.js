@@ -7,145 +7,71 @@
 // the shadow DOM of the Webview element.
 
 var DocumentNatives = requireNative('document_natives');
-var EventBindings = require('event_bindings');
+var GuestViewInternal =
+    require('binding').Binding.create('guestViewInternal').generate();
 var IdGenerator = requireNative('id_generator');
-var MessagingNatives = requireNative('messaging_natives');
-var WebRequestEvent = require('webRequestInternal').WebRequestEvent;
-var WebRequestSchema =
-    requireNative('schema_registry').GetSchema('webRequest');
-var DeclarativeWebRequestSchema =
-    requireNative('schema_registry').GetSchema('declarativeWebRequest');
-var WebView = require('binding').Binding.create('webview').generate();
+var WebView = require('webview').WebView;
+var WebViewEvents = require('webViewEvents').WebViewEvents;
 
 var WEB_VIEW_ATTRIBUTE_MAXHEIGHT = 'maxheight';
 var WEB_VIEW_ATTRIBUTE_MAXWIDTH = 'maxwidth';
 var WEB_VIEW_ATTRIBUTE_MINHEIGHT = 'minheight';
 var WEB_VIEW_ATTRIBUTE_MINWIDTH = 'minwidth';
+var WEB_VIEW_ATTRIBUTE_PARTITION = 'partition';
+
+var ERROR_MSG_ALREADY_NAVIGATED =
+    'The object has already navigated, so its partition cannot be changed.';
+var ERROR_MSG_INVALID_PARTITION_ATTRIBUTE = 'Invalid partition attribute.';
 
 /** @type {Array.<string>} */
 var WEB_VIEW_ATTRIBUTES = [
     'allowtransparency',
     'autosize',
-    'name',
-    'partition',
     WEB_VIEW_ATTRIBUTE_MINHEIGHT,
     WEB_VIEW_ATTRIBUTE_MINWIDTH,
     WEB_VIEW_ATTRIBUTE_MAXHEIGHT,
     WEB_VIEW_ATTRIBUTE_MAXWIDTH
 ];
 
-var CreateEvent = function(name) {
-  var eventOpts = {supportsListeners: true, supportsFilters: true};
-  return new EventBindings.Event(name, undefined, eventOpts);
+/** @class representing state of storage partition. */
+function Partition() {
+  this.validPartitionId = true;
+  this.persistStorage = false;
+  this.storagePartitionId = '';
 };
 
-// WEB_VIEW_EVENTS is a map of stable <webview> DOM event names to their
-//     associated extension event descriptor objects.
-// An event listener will be attached to the extension event |evt| specified in
-//     the descriptor.
-// |fields| specifies the public-facing fields in the DOM event that are
-//     accessible to <webview> developers.
-// |customHandler| allows a handler function to be called each time an extension
-//     event is caught by its event listener. The DOM event should be dispatched
-//     within this handler function. With no handler function, the DOM event
-//     will be dispatched by default each time the extension event is caught.
-// |cancelable| (default: false) specifies whether the event's default
-//     behavior can be canceled. If the default action associated with the event
-//     is prevented, then its dispatch function will return false in its event
-//     handler. The event must have a custom handler for this to be meaningful.
-var WEB_VIEW_EVENTS = {
-  'close': {
-    evt: CreateEvent('webview.onClose'),
-    fields: []
-  },
-  'consolemessage': {
-    evt: CreateEvent('webview.onConsoleMessage'),
-    fields: ['level', 'message', 'line', 'sourceId']
-  },
-  'contentload': {
-    evt: CreateEvent('webview.onContentLoad'),
-    fields: []
-  },
-  'exit': {
-     evt: CreateEvent('webview.onExit'),
-     fields: ['processId', 'reason']
-  },
-  'loadabort': {
-    cancelable: true,
-    customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handleLoadAbortEvent(event, webViewEvent);
-    },
-    evt: CreateEvent('webview.onLoadAbort'),
-    fields: ['url', 'isTopLevel', 'reason']
-  },
-  'loadcommit': {
-    customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handleLoadCommitEvent(event, webViewEvent);
-    },
-    evt: CreateEvent('webview.onLoadCommit'),
-    fields: ['url', 'isTopLevel']
-  },
-  'loadprogress': {
-    evt: CreateEvent('webview.onLoadProgress'),
-    fields: ['url', 'progress']
-  },
-  'loadredirect': {
-    evt: CreateEvent('webview.onLoadRedirect'),
-    fields: ['isTopLevel', 'oldUrl', 'newUrl']
-  },
-  'loadstart': {
-    evt: CreateEvent('webview.onLoadStart'),
-    fields: ['url', 'isTopLevel']
-  },
-  'loadstop': {
-    evt: CreateEvent('webview.onLoadStop'),
-    fields: []
-  },
-  'newwindow': {
-    cancelable: true,
-    customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handleNewWindowEvent(event, webViewEvent);
-    },
-    evt: CreateEvent('webview.onNewWindow'),
-    fields: [
-      'initialHeight',
-      'initialWidth',
-      'targetUrl',
-      'windowOpenDisposition',
-      'name'
-    ]
-  },
-  'permissionrequest': {
-    cancelable: true,
-    customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handlePermissionEvent(event, webViewEvent);
-    },
-    evt: CreateEvent('webview.onPermissionRequest'),
-    fields: [
-      'identifier',
-      'lastUnlockedBySelf',
-      'name',
-      'permission',
-      'requestMethod',
-      'url',
-      'userGesture'
-    ]
-  },
-  'responsive': {
-    evt: CreateEvent('webview.onResponsive'),
-    fields: ['processId']
-  },
-  'sizechanged': {
-    evt: CreateEvent('webview.onSizeChanged'),
-    customHandler: function(webViewInternal, event, webViewEvent) {
-      webViewInternal.handleSizeChangedEvent(event, webViewEvent);
-    },
-    fields: ['oldHeight', 'oldWidth', 'newHeight', 'newWidth']
-  },
-  'unresponsive': {
-    evt: CreateEvent('webview.onUnresponsive'),
-    fields: ['processId']
+Partition.prototype.toAttribute = function() {
+  if (!this.validPartitionId) {
+    return '';
   }
+  return (this.persistStorage ? 'persist:' : '') + this.storagePartitionId;
+};
+
+Partition.prototype.fromAttribute = function(value, hasNavigated) {
+  var result = {};
+  if (hasNavigated) {
+    result.error = ERROR_MSG_ALREADY_NAVIGATED;
+    return result;
+  }
+  if (!value) {
+    value = '';
+  }
+
+  var LEN = 'persist:'.length;
+  if (value.substr(0, LEN) == 'persist:') {
+    value = value.substr(LEN);
+    if (!value) {
+      this.validPartitionId = false;
+      result.error = ERROR_MSG_INVALID_PARTITION_ATTRIBUTE;
+      return result;
+    }
+    this.persistStorage = true;
+  } else {
+    this.persistStorage = false;
+  }
+
+  this.storagePartitionId = value;
+  return result;
 };
 
 // Implemented when the experimental API is available.
@@ -157,14 +83,28 @@ WebViewInternal.maybeRegisterExperimentalAPIs = function(proto) {}
 function WebViewInternal(webviewNode) {
   privates(webviewNode).internal = this;
   this.webviewNode = webviewNode;
+  this.attached = false;
+
+  this.beforeFirstNavigation = true;
+  this.validPartitionId = true;
+
+  // on* Event handlers.
+  this.on = {};
+
   this.browserPluginNode = this.createBrowserPluginNode();
-  var shadowRoot = this.webviewNode.webkitCreateShadowRoot();
+  var shadowRoot = this.webviewNode.createShadowRoot();
   shadowRoot.appendChild(this.browserPluginNode);
 
   this.setupWebviewNodeAttributes();
   this.setupFocusPropagation();
   this.setupWebviewNodeProperties();
-  this.setupWebviewNodeEvents();
+
+  this.viewInstanceId = IdGenerator.GetNextId();
+
+  this.partition = new Partition();
+  this.parseAttributes();
+
+  new WebViewEvents(this, this.viewInstanceId);
 }
 
 /**
@@ -176,8 +116,7 @@ WebViewInternal.prototype.createBrowserPluginNode = function() {
   var browserPluginNode = new WebViewInternal.BrowserPlugin();
   privates(browserPluginNode).internal = this;
 
-  var ALL_ATTRIBUTES = WEB_VIEW_ATTRIBUTES.concat(['src']);
-  $Array.forEach(ALL_ATTRIBUTES, function(attributeName) {
+  $Array.forEach(WEB_VIEW_ATTRIBUTES, function(attributeName) {
     // Only copy attributes that have been assigned values, rather than copying
     // a series of undefined attributes to BrowserPlugin.
     if (this.webviewNode.hasAttribute(attributeName)) {
@@ -196,9 +135,32 @@ WebViewInternal.prototype.createBrowserPluginNode = function() {
   return browserPluginNode;
 };
 
+WebViewInternal.prototype.getInstanceId = function() {
+  return this.instanceId;
+};
+
 /**
- * @private
+ * Resets some state upon reattaching <webview> element to the DOM.
  */
+WebViewInternal.prototype.resetUponReattachment = function() {
+  this.instanceId = undefined;
+  this.beforeFirstNavigation = true;
+  this.validPartitionId = true;
+  this.partition.validPartitionId = true;
+};
+
+// Sets <webview>.request property.
+WebViewInternal.prototype.setRequestPropertyOnWebViewNode = function(request) {
+  Object.defineProperty(
+      this.webviewNode,
+      'request',
+      {
+        value: request,
+        enumerable: true
+      }
+  );
+};
+
 WebViewInternal.prototype.setupFocusPropagation = function() {
   if (!this.webviewNode.hasAttribute('tabIndex')) {
     // <webview> needs a tabIndex in order to be focusable.
@@ -221,6 +183,20 @@ WebViewInternal.prototype.setupFocusPropagation = function() {
 /**
  * @private
  */
+WebViewInternal.prototype.back = function() {
+  return this.go(-1);
+};
+
+/**
+ * @private
+ */
+WebViewInternal.prototype.forward = function() {
+  return this.go(1);
+};
+
+/**
+ * @private
+ */
 WebViewInternal.prototype.canGoBack = function() {
   return this.entryCount > 1 && this.currentEntryIndex > 0;
 };
@@ -231,6 +207,17 @@ WebViewInternal.prototype.canGoBack = function() {
 WebViewInternal.prototype.canGoForward = function() {
   return this.currentEntryIndex >= 0 &&
       this.currentEntryIndex < (this.entryCount - 1);
+};
+
+/**
+ * @private
+ */
+WebViewInternal.prototype.clearData = function() {
+  if (!this.instanceId) {
+    return;
+  }
+  var args = $Array.concat([this.instanceId], $Array.slice(arguments));
+  $Function.apply(WebView.clearData, null, args);
 };
 
 /**
@@ -296,7 +283,8 @@ WebViewInternal.prototype.validateExecuteCodeCall  = function() {
  */
 WebViewInternal.prototype.executeScript = function(var_args) {
   this.validateExecuteCodeCall();
-  var args = $Array.concat([this.instanceId], $Array.slice(arguments));
+  var args = $Array.concat([this.instanceId, this.src],
+                           $Array.slice(arguments));
   $Function.apply(WebView.executeScript, null, args);
 };
 
@@ -305,7 +293,8 @@ WebViewInternal.prototype.executeScript = function(var_args) {
  */
 WebViewInternal.prototype.insertCSS = function(var_args) {
   this.validateExecuteCodeCall();
-  var args = $Array.concat([this.instanceId], $Array.slice(arguments));
+  var args = $Array.concat([this.instanceId, this.src],
+                           $Array.slice(arguments));
   $Function.apply(WebView.insertCSS, null, args);
 };
 
@@ -357,6 +346,30 @@ WebViewInternal.prototype.setupWebviewNodeProperties = function() {
     enumerable: true
   });
 
+  Object.defineProperty(this.webviewNode, 'name', {
+    get: function() {
+      return self.name;
+    },
+    set: function(value) {
+      self.webviewNode.setAttribute('name', value);
+    },
+    enumerable: true
+  });
+
+  Object.defineProperty(this.webviewNode, 'partition', {
+    get: function() {
+      return self.partition.toAttribute();
+    },
+    set: function(value) {
+      var result = self.partition.fromAttribute(value, self.hasNavigated());
+      if (result.error) {
+        throw result.error;
+      }
+      self.webviewNode.setAttribute('partition', value);
+    },
+    enumerable: true
+  });
+
   // We cannot use {writable: true} property descriptor because we want a
   // dynamic getter value.
   Object.defineProperty(this.webviewNode, 'contentWindow', {
@@ -387,7 +400,7 @@ WebViewInternal.prototype.setupWebViewSrcAttributeMutationObserver =
   // where the webview guest has crashed and navigating to the same address
   // spawns off a new process.
   var self = this;
-  this.srcObserver = new MutationObserver(function(mutations) {
+  this.srcAndPartitionObserver = new MutationObserver(function(mutations) {
     $Array.forEach(mutations, function(mutation) {
       var oldValue = mutation.oldValue;
       var newValue = self.webviewNode.getAttribute(mutation.attributeName);
@@ -401,9 +414,9 @@ WebViewInternal.prototype.setupWebViewSrcAttributeMutationObserver =
   var params = {
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ['src']
+    attributeFilter: ['src', 'partition']
   };
-  this.srcObserver.observe(this.webviewNode, params);
+  this.srcAndPartitionObserver.observe(this.webviewNode, params);
 };
 
 /**
@@ -416,7 +429,22 @@ WebViewInternal.prototype.handleWebviewAttributeMutation =
   // a BrowserPlugin property will update the corresponding BrowserPlugin
   // attribute, if necessary. See BrowserPlugin::UpdateDOMAttribute for more
   // details.
-  if (name == 'src') {
+  if (name == 'name') {
+    // We treat null attribute (attribute removed) and the empty string as
+    // one case.
+    oldValue = oldValue || '';
+    newValue = newValue || '';
+
+    if (oldValue === newValue) {
+      return;
+    }
+    this.name = newValue;
+    if (!this.instanceId) {
+      return;
+    }
+    WebView.setName(this.instanceId, newValue);
+    return;
+  } else if (name == 'src') {
     // We treat null attribute (attribute removed) and the empty string as
     // one case.
     oldValue = oldValue || '';
@@ -435,11 +463,26 @@ WebViewInternal.prototype.handleWebviewAttributeMutation =
     this.src = newValue;
     if (this.ignoreNextSrcAttributeChange) {
       // Don't allow the src mutation observer to see this change.
-      this.srcObserver.takeRecords();
+      this.srcAndPartitionObserver.takeRecords();
       this.ignoreNextSrcAttributeChange = false;
       return;
     }
+    var result = {};
+    this.parseSrcAttribute(result);
+
+    if (result.error) {
+      throw result.error;
+    }
+  } else if (name == 'partition') {
+    // Note that throwing error here won't synchronously propagate.
+    this.partition.fromAttribute(newValue, this.hasNavigated());
   }
+
+  // No <webview> -> <object> mutation propagation for these attributes.
+  if (name == 'src' || name == 'partition') {
+    return;
+  }
+
   if (this.browserPluginNode.hasOwnProperty(name)) {
     this.browserPluginNode[name] = newValue;
   } else {
@@ -473,19 +516,7 @@ WebViewInternal.prototype.handleBrowserPluginAttributeMutation =
   }
 };
 
-/**
- * @private
- */
-WebViewInternal.prototype.getEvents = function() {
-  var experimentalEvents = this.maybeGetExperimentalEvents();
-  for (var eventName in experimentalEvents) {
-    WEB_VIEW_EVENTS[eventName] = experimentalEvents[eventName];
-  }
-  return WEB_VIEW_EVENTS;
-};
-
-WebViewInternal.prototype.handleSizeChangedEvent =
-    function(event, webViewEvent) {
+WebViewInternal.prototype.onSizeChanged = function(newWidth, newHeight) {
   var node = this.webviewNode;
 
   var width = node.offsetWidth;
@@ -530,78 +561,91 @@ WebViewInternal.prototype.handleSizeChangedEvent =
     minHeight = maxHeight;
   }
 
-  if (webViewEvent.newWidth >= minWidth &&
-      webViewEvent.newWidth <= maxWidth &&
-      webViewEvent.newHeight >= minHeight &&
-      webViewEvent.newHeight <= maxHeight) {
-    node.style.width = webViewEvent.newWidth + 'px';
-    node.style.height = webViewEvent.newHeight + 'px';
+  if (newWidth >= minWidth &&
+      newWidth <= maxWidth &&
+      newHeight >= minHeight &&
+      newHeight <= maxHeight) {
+    node.style.width = newWidth + 'px';
+    node.style.height = newHeight + 'px';
   }
-  node.dispatchEvent(webViewEvent);
 };
 
-/**
- * @private
- */
-WebViewInternal.prototype.setupWebviewNodeEvents = function() {
-  var self = this;
-  this.viewInstanceId = IdGenerator.GetNextId();
-  var onInstanceIdAllocated = function(e) {
-    var detail = e.detail ? JSON.parse(e.detail) : {};
-    self.instanceId = detail.windowId;
-    var params = {
-      'api': 'webview',
-      'instanceId': self.viewInstanceId
-    };
-    if (self.userAgentOverride) {
-      params['userAgentOverride'] = self.userAgentOverride;
-    }
-    self.browserPluginNode['-internal-attach'](params);
+WebViewInternal.prototype.hasNavigated = function() {
+  return !this.beforeFirstNavigation;
+};
 
-    var events = self.getEvents();
-    for (var eventName in events) {
-      self.setupEvent(eventName, events[eventName]);
+/** @return {boolean} */
+WebViewInternal.prototype.parseSrcAttribute = function(result) {
+  if (!this.partition.validPartitionId) {
+    result.error = ERROR_MSG_INVALID_PARTITION_ATTRIBUTE;
+    return false;
+  }
+  this.src = this.webviewNode.getAttribute('src');
+
+  if (!this.src) {
+    return true;
+  }
+
+  if (!this.hasGuestInstanceID()) {
+    if (this.beforeFirstNavigation) {
+      this.beforeFirstNavigation = false;
+      this.allocateInstanceId();
     }
+    return true;
+  }
+
+  // Navigate to this.src.
+  WebView.navigate(this.instanceId, this.src);
+  return true;
+};
+
+/** @return {boolean} */
+WebViewInternal.prototype.parseAttributes = function() {
+  var hasNavigated = this.hasNavigated();
+  var attributeValue = this.webviewNode.getAttribute('partition');
+  var result = this.partition.fromAttribute(attributeValue, hasNavigated);
+  return this.parseSrcAttribute(result);
+};
+
+WebViewInternal.prototype.hasGuestInstanceID = function() {
+  return this.instanceId != undefined;
+};
+
+WebViewInternal.prototype.allocateInstanceId = function() {
+  var storagePartitionId =
+      this.webviewNode.getAttribute(WEB_VIEW_ATTRIBUTE_PARTITION) ||
+      this.webviewNode[WEB_VIEW_ATTRIBUTE_PARTITION];
+  var params = {
+    'storagePartitionId': storagePartitionId,
   };
-  this.browserPluginNode.addEventListener('-internal-instanceid-allocated',
-                                          onInstanceIdAllocated);
-  this.setupWebRequestEvents();
+  var self = this;
+  GuestViewInternal.createGuest(
+      'webview',
+      params,
+      function(instanceId) {
+        self.instanceId = instanceId;
+        // TODO(lazyboy): Make sure this.autoNavigate_ stuff correctly updated
+        // |self.src| at this point.
+        self.attachWindowAndSetUpEvents(self.instanceId, self.src);
+      });
+};
 
-  this.on = {};
-  var events = self.getEvents();
-  for (var eventName in events) {
-    this.setupEventProperty(eventName);
+WebViewInternal.prototype.onFrameNameChanged = function(name) {
+  this.name = name || '';
+  if (this.name === '') {
+    this.webviewNode.removeAttribute('name');
+  } else {
+    this.webviewNode.setAttribute('name', this.name);
   }
 };
 
-/**
- * @private
- */
-WebViewInternal.prototype.setupEvent = function(eventName, eventInfo) {
-  var self = this;
-  var webviewNode = this.webviewNode;
-  eventInfo.evt.addListener(function(event) {
-    var details = {bubbles:true};
-    if (eventInfo.cancelable)
-      details.cancelable = true;
-    var webViewEvent = new Event(eventName, details);
-    $Array.forEach(eventInfo.fields, function(field) {
-      if (event[field] !== undefined) {
-        webViewEvent[field] = event[field];
-      }
-    });
-    if (eventInfo.customHandler) {
-      eventInfo.customHandler(self, event, webViewEvent);
-      return;
-    }
-    webviewNode.dispatchEvent(webViewEvent);
-  }, {instanceId: self.instanceId});
+WebViewInternal.prototype.dispatchEvent = function(webViewEvent) {
+  return this.webviewNode.dispatchEvent(webViewEvent);
 };
 
 /**
  * Adds an 'on<event>' property on the webview, which can be used to set/unset
  * an event handler.
- * @private
  */
 WebViewInternal.prototype.setupEventProperty = function(eventName) {
   var propertyName = 'on' + eventName.toLowerCase();
@@ -622,284 +666,28 @@ WebViewInternal.prototype.setupEventProperty = function(eventName) {
   });
 };
 
-/**
- * @private
- */
-WebViewInternal.prototype.getPermissionTypes = function() {
-  var permissions =
-      ['media', 'geolocation', 'pointerLock', 'download', 'loadplugin'];
-  return permissions.concat(this.maybeGetExperimentalPermissions());
-};
-
-/**
- * @private
- */
-WebViewInternal.prototype.handleLoadAbortEvent =
-    function(event, webViewEvent) {
-  var showWarningMessage = function(reason) {
-    var WARNING_MSG_LOAD_ABORTED = '<webview>: ' +
-        'The load has aborted with reason "%1".';
-    window.console.warn(WARNING_MSG_LOAD_ABORTED.replace('%1', reason));
-  };
-  if (this.webviewNode.dispatchEvent(webViewEvent)) {
-    showWarningMessage(event.reason);
-  }
-};
-
-/**
- * @private
- */
-WebViewInternal.prototype.handleLoadCommitEvent =
-    function(event, webViewEvent) {
-  this.currentEntryIndex = event.currentEntryIndex;
-  this.entryCount = event.entryCount;
-  this.processId = event.processId;
+// Updates state upon loadcommit.
+WebViewInternal.prototype.onLoadCommit = function(
+    currentEntryIndex, entryCount, processId, url, isTopLevel) {
+  this.currentEntryIndex = currentEntryIndex;
+  this.entryCount = entryCount;
+  this.processId = processId;
   var oldValue = this.webviewNode.getAttribute('src');
-  var newValue = event.url;
-  if (event.isTopLevel && (oldValue != newValue)) {
+  var newValue = url;
+  if (isTopLevel && (oldValue != newValue)) {
     // Touching the src attribute triggers a navigation. To avoid
     // triggering a page reload on every guest-initiated navigation,
     // we use the flag ignoreNextSrcAttributeChange here.
     this.ignoreNextSrcAttributeChange = true;
     this.webviewNode.setAttribute('src', newValue);
   }
-  this.webviewNode.dispatchEvent(webViewEvent);
-}
-
-/**
- * @private
- */
-WebViewInternal.prototype.handleNewWindowEvent =
-    function(event, webViewEvent) {
-  var ERROR_MSG_NEWWINDOW_ACTION_ALREADY_TAKEN = '<webview>: ' +
-      'An action has already been taken for this "newwindow" event.';
-
-  var ERROR_MSG_NEWWINDOW_UNABLE_TO_ATTACH = '<webview>: ' +
-      'Unable to attach the new window to the provided webview.';
-
-  var ERROR_MSG_WEBVIEW_EXPECTED = '<webview> element expected.';
-
-  var showWarningMessage = function() {
-    var WARNING_MSG_NEWWINDOW_BLOCKED = '<webview>: A new window was blocked.';
-    window.console.warn(WARNING_MSG_NEWWINDOW_BLOCKED);
-  };
-
-  var self = this;
-  var browserPluginNode = this.browserPluginNode;
-  var webviewNode = this.webviewNode;
-
-  var requestId = event.requestId;
-  var actionTaken = false;
-
-  var validateCall = function () {
-    if (actionTaken) {
-      throw new Error(ERROR_MSG_NEWWINDOW_ACTION_ALREADY_TAKEN);
-    }
-    actionTaken = true;
-  };
-
-  var windowObj = {
-    attach: function(webview) {
-      validateCall();
-      if (!webview)
-        throw new Error(ERROR_MSG_WEBVIEW_EXPECTED);
-      // Attach happens asynchronously to give the tagWatcher an opportunity
-      // to pick up the new webview before attach operates on it, if it hasn't
-      // been attached to the DOM already.
-      // Note: Any subsequent errors cannot be exceptions because they happen
-      // asynchronously.
-      setTimeout(function() {
-        var attached =
-            browserPluginNode['-internal-attachWindowTo'](webview,
-                                                          event.windowId);
-        if (!attached) {
-          window.console.error(ERROR_MSG_NEWWINDOW_UNABLE_TO_ATTACH);
-        }
-        // If the object being passed into attach is not a valid <webview>
-        // then we will fail and it will be treated as if the new window
-        // was rejected. The permission API plumbing is used here to clean
-        // up the state created for the new window if attaching fails.
-        WebView.setPermission(
-            self.instanceId, requestId, attached ? 'allow' : 'deny');
-      }, 0);
-    },
-    discard: function() {
-      validateCall();
-      WebView.setPermission(self.instanceId, requestId, 'deny');
-    }
-  };
-  webViewEvent.window = windowObj;
-
-  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
-  if (actionTaken) {
-    return;
-  }
-
-  if (defaultPrevented) {
-    // Make browser plugin track lifetime of |windowObj|.
-    MessagingNatives.BindToGC(windowObj, function() {
-      // Avoid showing a warning message if the decision has already been made.
-      if (actionTaken) {
-        return;
-      }
-      WebView.setPermission(
-          self.instanceId, requestId, 'default', '', function(allowed) {
-        if (allowed) {
-          return;
-        }
-        showWarningMessage();
-      });
-    });
-  } else {
-    actionTaken = true;
-    // The default action is to discard the window.
-    WebView.setPermission(
-        self.instanceId, requestId, 'default', '', function(allowed) {
-      if (allowed) {
-        return;
-      }
-      showWarningMessage();
-    });
-  }
 };
 
-WebViewInternal.prototype.handlePermissionEvent =
-    function(event, webViewEvent) {
-  var ERROR_MSG_PERMISSION_ALREADY_DECIDED = '<webview>: ' +
-      'Permission has already been decided for this "permissionrequest" event.';
-
-  var showWarningMessage = function(permission) {
-    var WARNING_MSG_PERMISSION_DENIED = '<webview>: ' +
-        'The permission request for "%1" has been denied.';
-    window.console.warn(
-        WARNING_MSG_PERMISSION_DENIED.replace('%1', permission));
-  };
-
-  var requestId = event.requestId;
-  var self = this;
-
-  if (this.getPermissionTypes().indexOf(event.permission) < 0) {
-    // The permission type is not allowed. Trigger the default response.
-    WebView.setPermission(
-        self.instanceId, requestId, 'default', '', function(allowed) {
-      if (allowed) {
-        return;
-      }
-      showWarningMessage(event.permission);
-    });
-    return;
-  }
-
-  var browserPluginNode = this.browserPluginNode;
-  var webviewNode = this.webviewNode;
-
-  var decisionMade = false;
-
-  var validateCall = function() {
-    if (decisionMade) {
-      throw new Error(ERROR_MSG_PERMISSION_ALREADY_DECIDED);
-    }
-    decisionMade = true;
-  };
-
-  // Construct the event.request object.
-  var request = {
-    allow: function() {
-      validateCall();
-      WebView.setPermission(self.instanceId, requestId, 'allow');
-    },
-    deny: function() {
-      validateCall();
-      WebView.setPermission(self.instanceId, requestId, 'deny');
-    }
-  };
-  webViewEvent.request = request;
-
-  var defaultPrevented = !webviewNode.dispatchEvent(webViewEvent);
-  if (decisionMade) {
-    return;
-  }
-
-  if (defaultPrevented) {
-    // Make browser plugin track lifetime of |request|.
-    MessagingNatives.BindToGC(request, function() {
-      // Avoid showing a warning message if the decision has already been made.
-      if (decisionMade) {
-        return;
-      }
-      WebView.setPermission(
-          self.instanceId, requestId, 'default', '', function(allowed) {
-        if (allowed) {
-          return;
-        }
-        showWarningMessage(event.permission);
-      });
-    });
-  } else {
-    decisionMade = true;
-    WebView.setPermission(
-        self.instanceId, requestId, 'default', '', function(allowed) {
-      if (allowed) {
-        return;
-      }
-      showWarningMessage(event.permission);
-    });
-  }
+WebViewInternal.prototype.onAttach = function(storagePartitionId) {
+  this.webviewNode.setAttribute('partition', storagePartitionId);
+  this.partition.fromAttribute(storagePartitionId, this.hasNavigated());
 };
 
-/**
- * @private
- */
-WebViewInternal.prototype.setupWebRequestEvents = function() {
-  var self = this;
-  var request = {};
-  var createWebRequestEvent = function(webRequestEvent) {
-    return function() {
-      if (!self[webRequestEvent.name]) {
-        self[webRequestEvent.name] =
-            new WebRequestEvent(
-                'webview.' + webRequestEvent.name,
-                webRequestEvent.parameters,
-                webRequestEvent.extraParameters, webRequestEvent.options,
-                self.viewInstanceId);
-      }
-      return self[webRequestEvent.name];
-    };
-  };
-
-  for (var i = 0; i < DeclarativeWebRequestSchema.events.length; ++i) {
-    var eventSchema = DeclarativeWebRequestSchema.events[i];
-    var webRequestEvent = createWebRequestEvent(eventSchema);
-    this.maybeAttachWebRequestEventToObject(request,
-                                            eventSchema.name,
-                                            webRequestEvent);
-  }
-
-  // Populate the WebRequest events from the API definition.
-  for (var i = 0; i < WebRequestSchema.events.length; ++i) {
-    var webRequestEvent = createWebRequestEvent(WebRequestSchema.events[i]);
-    Object.defineProperty(
-        request,
-        WebRequestSchema.events[i].name,
-        {
-          get: webRequestEvent,
-          enumerable: true
-        }
-    );
-    this.maybeAttachWebRequestEventToObject(this.webviewNode,
-                                            WebRequestSchema.events[i].name,
-                                            webRequestEvent);
-  }
-  Object.defineProperty(
-      this.webviewNode,
-      'request',
-      {
-        value: request,
-        enumerable: true,
-        writable: false
-      }
-  );
-};
 
 /** @private */
 WebViewInternal.prototype.getUserAgent = function() {
@@ -921,6 +709,27 @@ WebViewInternal.prototype.setUserAgentOverride = function(userAgentOverride) {
     return;
   }
   WebView.overrideUserAgent(this.instanceId, userAgentOverride);
+};
+
+/** @private */
+WebViewInternal.prototype.attachWindowAndSetUpEvents = function(
+    instanceId, opt_src, opt_partitionId) {
+  this.instanceId = instanceId;
+  // If we have a partition from the opener, use that instead.
+  var storagePartitionId =
+      opt_partitionId ||
+      this.webviewNode.getAttribute(WEB_VIEW_ATTRIBUTE_PARTITION) ||
+      this.webviewNode[WEB_VIEW_ATTRIBUTE_PARTITION];
+  var params = {
+    'api': 'webview',
+    'instanceId': this.viewInstanceId,
+    'name': this.name,
+    'src': opt_src,
+    'storagePartitionId': storagePartitionId,
+    'userAgentOverride': this.userAgentOverride
+  };
+
+  return this.browserPluginNode['-internal-attach'](this.instanceId, params);
 };
 
 // Registers browser plugin <object> custom element.
@@ -965,6 +774,8 @@ function registerWebViewElement() {
     new WebViewInternal(this);
   };
 
+  proto.customElementDetached = false;
+
   proto.attributeChangedCallback = function(name, oldValue, newValue) {
     var internal = privates(this).internal;
     if (!internal) {
@@ -973,63 +784,48 @@ function registerWebViewElement() {
     internal.handleWebviewAttributeMutation(name, oldValue, newValue);
   };
 
-  proto.back = function() {
-    this.go(-1);
+  proto.detachedCallback = function() {
+    this.customElementDetached = true;
   };
 
-  proto.forward = function() {
-    this.go(1);
+  proto.attachedCallback = function() {
+    if (this.customElementDetached) {
+      var webViewInternal = privates(this).internal;
+      webViewInternal.resetUponReattachment();
+      webViewInternal.allocateInstanceId();
+    }
+    this.customElementDetached = false;
   };
 
-  proto.canGoBack = function() {
-    return privates(this).internal.canGoBack();
-  };
+  var methods = [
+    'back',
+    'forward',
+    'canGoBack',
+    'canGoForward',
+    'clearData',
+    'getProcessId',
+    'go',
+    'reload',
+    'stop',
+    'terminate',
+    'executeScript',
+    'insertCSS',
+    'getUserAgent',
+    'isUserAgentOverridden',
+    'setUserAgentOverride'
+  ];
 
-  proto.canGoForward = function() {
-    return privates(this).internal.canGoForward();
-  };
+  // Forward proto.foo* method calls to WebViewInternal.foo*.
+  for (var i = 0; methods[i]; ++i) {
+    var createHandler = function(m) {
+      return function(var_args) {
+        var internal = privates(this).internal;
+        return $Function.apply(internal[m], internal, arguments);
+      };
+    };
+    proto[methods[i]] = createHandler(methods[i]);
+  }
 
-  proto.getProcessId = function() {
-    return privates(this).internal.getProcessId();
-  };
-
-  proto.go = function(relativeIndex) {
-    privates(this).internal.go(relativeIndex);
-  };
-
-  proto.reload = function() {
-    privates(this).internal.reload();
-  };
-
-  proto.stop = function() {
-    privates(this).internal.stop();
-  };
-
-  proto.terminate = function() {
-    privates(this).internal.terminate();
-  };
-
-  proto.executeScript = function(var_args) {
-    var internal = privates(this).internal;
-    $Function.apply(internal.executeScript, internal, arguments);
-  };
-
-  proto.insertCSS = function(var_args) {
-    var internal = privates(this).internal;
-    $Function.apply(internal.insertCSS, internal, arguments);
-  };
-
-  proto.getUserAgent = function() {
-    return privates(this).internal.getUserAgent();
-  };
-
-  proto.isUserAgentOverridden = function() {
-    return privates(this).internal.isUserAgentOverridden();
-  };
-
-  proto.setUserAgentOverride = function(userAgentOverride) {
-    privates(this).internal.setUserAgentOverride(userAgentOverride);
-  };
   WebViewInternal.maybeRegisterExperimentalAPIs(proto);
 
   window.WebView =
@@ -1063,16 +859,29 @@ WebViewInternal.prototype.maybeGetExperimentalEvents = function() {};
  * Implemented when the experimental API is available.
  * @private
  */
-WebViewInternal.prototype.maybeAttachWebRequestEventToObject = function() {};
+WebViewInternal.prototype.maybeGetExperimentalPermissions = function() {
+  return [];
+};
+
+/**
+ * Calls to show contextmenu right away instead of dispatching a 'contextmenu'
+ * event.
+ * This will be overridden in web_view_experimental.js to implement contextmenu
+ * API.
+ */
+WebViewInternal.prototype.maybeHandleContextMenu = function(e, webViewEvent) {
+  var requestId = e.requestId;
+  // Setting |params| = undefined will show the context menu unmodified, hence
+  // the 'contextmenu' API is disabled for stable channel.
+  var params = undefined;
+  WebView.showContextMenu(this.instanceId, requestId, params);
+};
 
 /**
  * Implemented when the experimental API is available.
  * @private
  */
-WebViewInternal.prototype.maybeGetExperimentalPermissions = function() {
-  return [];
-};
+WebViewInternal.prototype.setupExperimentalContextMenus = function() {};
 
 exports.WebView = WebView;
 exports.WebViewInternal = WebViewInternal;
-exports.CreateEvent = CreateEvent;

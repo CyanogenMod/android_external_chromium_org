@@ -195,23 +195,6 @@ bool StartupHelper::ValidateCrx(const CommandLine& cmd_line,
   return success;
 }
 
-bool StartupHelper::UninstallExtension(const CommandLine& cmd_line,
-                                       Profile* profile) {
-  DCHECK(profile);
-
-  if (!cmd_line.HasSwitch(switches::kUninstallExtension))
-    return false;
-
-  ExtensionService* extension_service = profile->GetExtensionService();
-  if (!extension_service)
-    return false;
-
-  std::string extension_id = cmd_line.GetSwitchValueASCII(
-      switches::kUninstallExtension);
-  return ExtensionService::UninstallExtensionHelper(extension_service,
-                                                    extension_id);
-}
-
 namespace {
 
 class AppInstallHelper {
@@ -293,10 +276,10 @@ bool StartupHelper::InstallFromWebstore(const CommandLine& cmd_line,
   }
 
   AppInstallHelper helper;
-  helper.BeginInstall(
-      profile, id, true, base::MessageLoop::QuitWhenIdleClosure());
+  base::RunLoop run_loop;
+  helper.BeginInstall(profile, id, true, run_loop.QuitClosure());
+  run_loop.Run();
 
-  base::MessageLoop::current()->Run();
   if (!helper.success())
     LOG(ERROR) << "InstallFromWebstore failed with error: " << helper.error();
   return helper.success();

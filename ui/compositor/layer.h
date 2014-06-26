@@ -47,7 +47,7 @@ namespace ui {
 
 class Compositor;
 class LayerAnimator;
-class Texture;
+class LayerOwner;
 
 // Layer manages a texture, transform and a set of child Layers. Any View that
 // has enabled layers ends up creating a Layer to manage the texture.
@@ -70,6 +70,8 @@ class COMPOSITOR_EXPORT Layer
   explicit Layer(LayerType type);
   virtual ~Layer();
 
+  static bool UsingPictureLayer();
+
   // Retrieves the Layer's compositor. The Layer will walk up its parent chain
   // to locate it. Returns NULL if the Layer is not attached to a compositor.
   Compositor* GetCompositor();
@@ -80,6 +82,8 @@ class COMPOSITOR_EXPORT Layer
 
   LayerDelegate* delegate() { return delegate_; }
   void set_delegate(LayerDelegate* delegate) { delegate_ = delegate; }
+
+  LayerOwner* owner() { return owner_; }
 
   // Adds a new Layer to this Layer.
   void Add(Layer* child);
@@ -135,6 +139,10 @@ class COMPOSITOR_EXPORT Layer
   void SetBounds(const gfx::Rect& bounds);
   const gfx::Rect& bounds() const { return bounds_; }
 
+  // The offset from our parent (stored in bounds.origin()) is an integer but we
+  // may need to be at a fractional pixel offset to align properly on screen.
+  void SetSubpixelPositionOffset(const gfx::Vector2dF offset);
+
   // Return the target bounds if animator is running, or the current bounds
   // otherwise.
   gfx::Rect GetTargetBounds() const;
@@ -188,6 +196,9 @@ class COMPOSITOR_EXPORT Layer
   // edge across |inset| pixels.
   void SetBackgroundZoom(float zoom, int inset);
 
+  // Set the shape of this layer.
+  void SetAlphaShape(scoped_ptr<SkRegion> region);
+
   // Invert the layer.
   bool layer_inverted() const { return layer_inverted_; }
   void SetLayerInverted(bool inverted);
@@ -234,32 +245,23 @@ class COMPOSITOR_EXPORT Layer
   bool GetTargetTransformRelativeTo(const Layer* ancestor,
                                     gfx::Transform* transform) const;
 
-  // Converts a ui::Layer's transform to the transform on the corresponding
-  // cc::Layer.
-  static gfx::Transform ConvertTransformToCCTransform(
-      const gfx::Transform& transform,
-      float device_scale_factor);
-
   // See description in View for details
   void SetFillsBoundsOpaquely(bool fills_bounds_opaquely);
   bool fills_bounds_opaquely() const { return fills_bounds_opaquely_; }
 
+  // Set to true if this layer always paints completely within its bounds. If so
+  // we can omit an unnecessary clear, even if the layer is transparent.
+  void SetFillsBoundsCompletely(bool fills_bounds_completely);
+
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
-
-  const ui::Texture* texture() const { return texture_.get(); }
-
-  // Assigns a new external texture.  |texture| can be NULL to disable external
-  // updates.
-  void SetExternalTexture(ui::Texture* texture);
-  ui::Texture* external_texture() { return texture_.get(); }
 
   // Set new TextureMailbox for this layer. Note that |mailbox| may hold a
   // shared memory resource or an actual mailbox for a texture.
   void SetTextureMailbox(const cc::TextureMailbox& mailbox,
                          scoped_ptr<cc::SingleReleaseCallback> release_callback,
-                         float scale_factor);
-  cc::TextureMailbox GetTextureMailbox(float* scale_factor);
+                         gfx::Size texture_size_in_dip);
+  void SetTextureSize(gfx::Size texture_size_in_dip);
 
   // Begins showing delegated frames from the |frame_provider|.
   void SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
@@ -289,35 +291,29 @@ class COMPOSITOR_EXPORT Layer
 
   const SkRegion& damaged_region() const { return damaged_region_; }
 
+  void CompleteAllAnimations();
+
   // Suppresses painting the content by disconnecting |delegate_|.
   void SuppressPaint();
 
   // Notifies the layer that the device scale factor has changed.
   void OnDeviceScaleFactorChanged(float device_scale_factor);
 
-  // Sets whether the layer should scale its content. If true, the canvas will
-  // be scaled in software rendering mode before it is passed to
-  // |LayerDelegate::OnPaintLayer|.
-  // Set to false if the delegate handles scaling.
-  // NOTE: if this is called during |LayerDelegate::OnPaint|, the new value will
-  // not apply to the canvas passed to the pending draw.
-  void set_scale_content(bool scale_content) { scale_content_ = scale_content; }
-
-  // Returns true if the layer scales its content.
-  bool scale_content() const { return scale_content_; }
-
   // Requets a copy of the layer's output as a texture or bitmap.
   void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
 
   // ContentLayerClient
   virtual void PaintContents(
-      SkCanvas* canvas, const gfx::Rect& clip, gfx::RectF* opaque) OVERRIDE;
+      SkCanvas* canvas,
+      const gfx::Rect& clip,
+      gfx::RectF* opaque,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE;
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
+  virtual bool FillsBoundsCompletely() const OVERRIDE;
 
   cc::Layer* cc_layer() { return cc_layer_; }
 
   // TextureLayerClient
-  virtual unsigned PrepareTexture() OVERRIDE;
   virtual bool PrepareTextureMailbox(
       cc::TextureMailbox* mailbox,
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
@@ -346,6 +342,10 @@ class COMPOSITOR_EXPORT Layer
   void SwitchCCLayerForTest();
 
  private:
+  friend class LayerOwner;
+
+  void CollectAnimators(std::vector<scoped_refptr<LayerAnimator> >* animators);
+
   // Stacks |child| above or below |other|.  Helper method for StackAbove() and
   // StackBelow().
   void StackRelativeTo(Layer* child, Layer* other, bool above);
@@ -374,12 +374,12 @@ class COMPOSITOR_EXPORT Layer
   virtual void AddThreadedAnimation(
       scoped_ptr<cc::Animation> animation) OVERRIDE;
   virtual void RemoveThreadedAnimation(int animation_id) OVERRIDE;
+  virtual LayerAnimatorCollection* GetLayerAnimatorCollection() OVERRIDE;
 
   // Creates a corresponding composited layer for |type_|.
   void CreateWebLayer();
 
   // Recomputes and sets to |cc_layer_|.
-  void RecomputeCCTransformFromTransform(const gfx::Transform& transform);
   void RecomputeDrawsContentAndUVRect();
   void RecomputePosition();
 
@@ -398,11 +398,15 @@ class COMPOSITOR_EXPORT Layer
   // be called once we have been added to a tree.
   void SendPendingThreadedAnimations();
 
+  void AddAnimatorsInTreeToCollection(LayerAnimatorCollection* collection);
+  void RemoveAnimatorsInTreeFromCollection(LayerAnimatorCollection* collection);
+
+  // Returns whether the layer has an animating LayerAnimator.
+  bool IsAnimating() const;
+
   const LayerType type_;
 
   Compositor* compositor_;
-
-  scoped_refptr<ui::Texture> texture_;
 
   Layer* parent_;
 
@@ -410,6 +414,7 @@ class COMPOSITOR_EXPORT Layer
   std::vector<Layer*> children_;
 
   gfx::Rect bounds_;
+  gfx::Vector2dF subpixel_position_offset_;
 
   // Visibility of this layer. See SetVisible/IsDrawn for more details.
   bool visible_;
@@ -417,6 +422,7 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface_;
 
   bool fills_bounds_opaquely_;
+  bool fills_bounds_completely_;
 
   // Union of damaged rects, in pixel coordinates, to be used when
   // compositor is ready to paint the content.
@@ -445,9 +451,14 @@ class COMPOSITOR_EXPORT Layer
   // Width of the border in pixels, where the scaling is blended.
   int zoom_inset_;
 
+  // Shape of the window.
+  scoped_ptr<SkRegion> alpha_shape_;
+
   std::string name_;
 
   LayerDelegate* delegate_;
+
+  LayerOwner* owner_;
 
   scoped_refptr<LayerAnimator> animator_;
 
@@ -457,28 +468,25 @@ class COMPOSITOR_EXPORT Layer
 
   // Ownership of the layer is held through one of the strongly typed layer
   // pointers, depending on which sort of layer this is.
-  scoped_refptr<cc::ContentLayer> content_layer_;
+  scoped_refptr<cc::Layer> content_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_refptr<cc::SolidColorLayer> solid_color_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
   cc::Layer* cc_layer_;
 
-  // If true, the layer scales the canvas and the texture with the device scale
-  // factor as apporpriate. When true, the texture size is in DIP.
-  bool scale_content_;
-
   // A cached copy of |Compositor::device_scale_factor()|.
   float device_scale_factor_;
 
-  // A cached copy of the TextureMailbox given texture_layer_.
+  // The mailbox used by texture_layer_.
   cc::TextureMailbox mailbox_;
 
-  // Device scale factor in which mailbox_ was rendered in.
-  float mailbox_scale_factor_;
+  // The callback to release the mailbox. This is only set after
+  // SetTextureMailbox is called, before we give it to the TextureLayer.
+  scoped_ptr<cc::SingleReleaseCallback> mailbox_release_callback_;
 
-  // The size of the delegated frame in DIP, set when SetShowDelegatedContent
-  // was called.
-  gfx::Size delegated_frame_size_in_dip_;
+  // The size of the frame or texture in DIP, set when SetShowDelegatedContent
+  // or SetTextureMailbox was called.
+  gfx::Size frame_size_in_dip_;
 
   DISALLOW_COPY_AND_ASSIGN(Layer);
 };

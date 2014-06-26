@@ -8,7 +8,6 @@
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
 #include "base/values.h"
 #include "remoting/host/setup/test_util.h"
@@ -22,7 +21,6 @@ class NativeMessagingReaderTest : public testing::Test {
   virtual ~NativeMessagingReaderTest();
 
   virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
 
   // Starts the reader and runs the MessageLoop to completion.
   void Run();
@@ -39,8 +37,8 @@ class NativeMessagingReaderTest : public testing::Test {
 
  protected:
   scoped_ptr<NativeMessagingReader> reader_;
-  base::PlatformFile read_handle_;
-  base::PlatformFile write_handle_;
+  base::File read_file_;
+  base::File write_file_;
   scoped_ptr<base::Value> message_;
 
  private:
@@ -56,18 +54,13 @@ NativeMessagingReaderTest::NativeMessagingReaderTest() {
 NativeMessagingReaderTest::~NativeMessagingReaderTest() {}
 
 void NativeMessagingReaderTest::SetUp() {
-  ASSERT_TRUE(MakePipe(&read_handle_, &write_handle_));
-  reader_.reset(new NativeMessagingReader(read_handle_));
-}
-
-void NativeMessagingReaderTest::TearDown() {
-  // |read_handle_| is owned by NativeMessagingReader's FileStream, so don't
-  // try to close it here. Also, |write_handle_| gets closed by Run().
+  ASSERT_TRUE(MakePipe(&read_file_, &write_file_));
+  reader_.reset(new NativeMessagingReader(read_file_.Pass()));
 }
 
 void NativeMessagingReaderTest::Run() {
   // Close the write-end, so the reader doesn't block waiting for more data.
-  base::ClosePlatformFile(write_handle_);
+  write_file_.Close();
 
   // base::Unretained is safe since no further tasks can run after
   // RunLoop::Run() returns.
@@ -88,8 +81,7 @@ void NativeMessagingReaderTest::WriteMessage(std::string message) {
 }
 
 void NativeMessagingReaderTest::WriteData(const char* data, int length) {
-  int written = base::WritePlatformFileAtCurrentPos(write_handle_, data,
-                                                    length);
+  int written = write_file_.WriteAtCurrentPos(data, length);
   ASSERT_EQ(length, written);
 }
 

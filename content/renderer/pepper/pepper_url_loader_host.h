@@ -17,7 +17,7 @@
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 
 namespace blink {
-class WebFrame;
+class WebLocalFrame;
 class WebURLLoader;
 }
 
@@ -25,9 +25,8 @@ namespace content {
 
 class RendererPpapiHostImpl;
 
-class PepperURLLoaderHost
-    : public ppapi::host::ResourceHost,
-      public blink::WebURLLoaderClient {
+class PepperURLLoaderHost : public ppapi::host::ResourceHost,
+                            public blink::WebURLLoaderClient {
  public:
   // If main_document_loader is true, PP_Resource must be 0 since it will be
   // pending until the plugin resource attaches to it.
@@ -97,7 +96,7 @@ class PepperURLLoaderHost
   void Close();
 
   // Returns the frame for the current request.
-  blink::WebFrame* GetFrame();
+  blink::WebLocalFrame* GetFrame();
 
   // Calls SetDefersLoading on the current load. This encapsulates the logic
   // differences between document loads and regular ones.

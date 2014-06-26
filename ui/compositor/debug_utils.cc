@@ -8,7 +8,7 @@
 
 #include <cmath>
 #include <iomanip>
-#include <iostream>
+#include <ostream>
 #include <string>
 
 #include "base/logging.h"
@@ -104,4 +104,4 @@ void PrintLayerHierarchy(const Layer* layer, gfx::Point mouse_location) {
   LOG(ERROR) << out.str();
 }
 
-} // namespace ui
+}  // namespace ui

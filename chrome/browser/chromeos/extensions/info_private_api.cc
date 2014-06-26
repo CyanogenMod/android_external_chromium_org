@@ -8,8 +8,11 @@
 #include "base/prefs/pref_service.h"
 #include "base/sys_info.h"
 #include "base/values.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/startup_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/system/timezone_util.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,9 +20,9 @@
 #include "chromeos/network/device_state.h"
 #include "chromeos/network/network_handler.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "chromeos/system/statistics_provider.h"
+#include "components/metrics/metrics_service.h"
 #include "extensions/common/error_utils.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -32,6 +35,9 @@ namespace {
 // Key which corresponds to the HWID setting.
 const char kPropertyHWID[] = "hwid";
 
+// Key which corresponds to the customization ID setting.
+const char kPropertyCustomizationID[] = "customizationId";
+
 // Key which corresponds to the home provider property.
 const char kPropertyHomeProvider[] = "homeProvider";
 
@@ -41,8 +47,11 @@ const char kPropertyInitialLocale[] = "initialLocale";
 // Key which corresponds to the board property in JS.
 const char kPropertyBoard[] = "board";
 
-// Key which corresponds to the board property in JS.
+// Key which corresponds to the isOwner property in JS.
 const char kPropertyOwner[] = "isOwner";
+
+// Key which corresponds to the clientId property in JS.
+const char kPropertyClientId[] = "clientId";
 
 // Key which corresponds to the timezone property in JS.
 const char kPropertyTimezone[] = "timezone";
@@ -81,13 +90,16 @@ const struct {
   const char* api_name;
   const char* preference_name;
 } kPreferencesMap[] = {
-      {kPropertyLargeCursorEnabled, prefs::kLargeCursorEnabled},
-      {kPropertyStickyKeysEnabled, prefs::kStickyKeysEnabled},
-      {kPropertySpokenFeedbackEnabled, prefs::kSpokenFeedbackEnabled},
-      {kPropertyHighContrastEnabled, prefs::kHighContrastEnabled},
-      {kPropertyScreenMagnifierEnabled, prefs::kScreenMagnifierEnabled},
-      {kPropertyAutoclickEnabled, prefs::kAutoclickEnabled},
-      {kPropertyVirtualKeyboardEnabled, prefs::kVirtualKeyboardEnabled},
+      {kPropertyLargeCursorEnabled, prefs::kAccessibilityLargeCursorEnabled},
+      {kPropertyStickyKeysEnabled, prefs::kAccessibilityStickyKeysEnabled},
+      {kPropertySpokenFeedbackEnabled,
+       prefs::kAccessibilitySpokenFeedbackEnabled},
+      {kPropertyHighContrastEnabled, prefs::kAccessibilityHighContrastEnabled},
+      {kPropertyScreenMagnifierEnabled,
+       prefs::kAccessibilityScreenMagnifierEnabled},
+      {kPropertyAutoclickEnabled, prefs::kAccessibilityAutoclickEnabled},
+      {kPropertyVirtualKeyboardEnabled,
+       prefs::kAccessibilityVirtualKeyboardEnabled},
       {kPropertySendFunctionsKeys, prefs::kLanguageSendFunctionKeys}};
 
 const char* GetBoolPrefNameForApiProperty(const char* api_name) {
@@ -101,6 +113,21 @@ const char* GetBoolPrefNameForApiProperty(const char* api_name) {
   return NULL;
 }
 
+bool IsEnterpriseKiosk() {
+  if (!chrome::IsRunningInForcedAppMode())
+    return false;
+
+  policy::BrowserPolicyConnectorChromeOS* connector =
+      g_browser_process->platform_part()->browser_policy_connector_chromeos();
+  return connector->IsEnterpriseManaged();
+}
+
+std::string GetClientId() {
+  return IsEnterpriseKiosk()
+             ? g_browser_process->metrics_service()->GetClientId()
+             : std::string();
+}
+
 }  // namespace
 
 ChromeosInfoPrivateGetFunction::ChromeosInfoPrivateGetFunction() {
@@ -109,7 +136,7 @@ ChromeosInfoPrivateGetFunction::ChromeosInfoPrivateGetFunction() {
 ChromeosInfoPrivateGetFunction::~ChromeosInfoPrivateGetFunction() {
 }
 
-bool ChromeosInfoPrivateGetFunction::RunImpl() {
+bool ChromeosInfoPrivateGetFunction::RunAsync() {
   base::ListValue* list = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_->GetList(0, &list));
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
@@ -133,6 +160,13 @@ base::Value* ChromeosInfoPrivateGetFunction::GetValue(
         chromeos::system::StatisticsProvider::GetInstance();
     provider->GetMachineStatistic(chromeos::system::kHardwareClassKey, &hwid);
     return new base::StringValue(hwid);
+  } else if (property_name == kPropertyCustomizationID) {
+    std::string customization_id;
+    chromeos::system::StatisticsProvider* provider =
+        chromeos::system::StatisticsProvider::GetInstance();
+    provider->GetMachineStatistic(chromeos::system::kCustomizationIdKey,
+                                  &customization_id);
+    return new base::StringValue(customization_id);
   } else if (property_name == kPropertyHomeProvider) {
     const chromeos::DeviceState* cellular_device =
         NetworkHandler::Get()->network_state_handler()->GetDeviceStateByType(
@@ -149,6 +183,8 @@ base::Value* ChromeosInfoPrivateGetFunction::GetValue(
   } else if (property_name == kPropertyOwner) {
     return base::Value::CreateBooleanValue(
         chromeos::UserManager::Get()->IsCurrentUserOwner());
+  } else if (property_name == kPropertyClientId) {
+    return base::Value::CreateStringValue(GetClientId());
   } else if (property_name == kPropertyTimezone) {
     return chromeos::CrosSettings::Get()->GetPref(
             chromeos::kSystemTimezone)->DeepCopy();
@@ -175,7 +211,7 @@ ChromeosInfoPrivateSetFunction::ChromeosInfoPrivateSetFunction() {
 ChromeosInfoPrivateSetFunction::~ChromeosInfoPrivateSetFunction() {
 }
 
-bool ChromeosInfoPrivateSetFunction::RunImpl() {
+bool ChromeosInfoPrivateSetFunction::RunSync() {
   std::string param_name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &param_name));
   if (param_name == kPropertyTimezone) {

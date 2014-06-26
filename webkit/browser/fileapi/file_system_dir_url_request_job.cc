@@ -9,7 +9,6 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -35,8 +34,10 @@ namespace fileapi {
 FileSystemDirURLRequestJob::FileSystemDirURLRequestJob(
     URLRequest* request,
     NetworkDelegate* network_delegate,
+    const std::string& storage_domain,
     FileSystemContext* file_system_context)
     : URLRequestJob(request, network_delegate),
+      storage_domain_(storage_domain),
       file_system_context_(file_system_context),
       weak_factory_(this) {
 }
@@ -81,6 +82,14 @@ void FileSystemDirURLRequestJob::StartAsync() {
   if (!request_)
     return;
   url_ = file_system_context_->CrackURL(request_->url());
+  if (!url_.is_valid()) {
+    file_system_context_->AttemptAutoMountForURLRequest(
+        request_,
+        storage_domain_,
+        base::Bind(&FileSystemDirURLRequestJob::DidAttemptAutoMount,
+                   weak_factory_.GetWeakPtr()));
+    return;
+  }
   if (!file_system_context_->CanServeURLRequest(url_)) {
     // In incognito mode the API is not usable and there should be no data.
     if (url_.is_valid() && VirtualPath::IsRootPath(url_.virtual_path())) {
@@ -97,6 +106,16 @@ void FileSystemDirURLRequestJob::StartAsync() {
   file_system_context_->operation_runner()->ReadDirectory(
       url_,
       base::Bind(&FileSystemDirURLRequestJob::DidReadDirectory, this));
+}
+
+void FileSystemDirURLRequestJob::DidAttemptAutoMount(base::File::Error result) {
+  if (result >= 0 &&
+      file_system_context_->CrackURL(request_->url()).is_valid()) {
+    StartAsync();
+  } else {
+    NotifyDone(URLRequestStatus(URLRequestStatus::FAILED,
+                                net::ERR_FILE_NOT_FOUND));
+  }
 }
 
 void FileSystemDirURLRequestJob::DidReadDirectory(
@@ -132,11 +151,7 @@ void FileSystemDirURLRequestJob::DidReadDirectory(
         it->last_modified_time));
   }
 
-  if (has_more) {
-    file_system_context_->operation_runner()->ReadDirectory(
-        url_,
-        base::Bind(&FileSystemDirURLRequestJob::DidReadDirectory, this));
-  } else {
+  if (!has_more) {
     set_expected_content_size(data_.size());
     NotifyHeadersComplete();
   }

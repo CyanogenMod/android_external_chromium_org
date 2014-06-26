@@ -44,12 +44,12 @@ MountedDiskMonitor::~MountedDiskMonitor() {
 void MountedDiskMonitor::SuspendImminent() {
   // Flip the resuming flag while suspending, so it is possible to detect
   // resuming as soon as possible after the lid is open. Note, that mount
-  // events may occur before the SystemResumed method is called.
+  // events may occur before the SuspendDone method is called.
   is_resuming_ = true;
   weak_factory_.InvalidateWeakPtrs();
 }
 
-void MountedDiskMonitor::SystemResumed(
+void MountedDiskMonitor::SuspendDone(
     const base::TimeDelta& sleep_duration) {
   // Undo any previous resets. Release the resuming flag after a fixed timeout.
   weak_factory_.InvalidateWeakPtrs();
@@ -63,6 +63,18 @@ void MountedDiskMonitor::SystemResumed(
 bool MountedDiskMonitor::DiskIsRemounting(
     const DiskMountManager::Disk& disk) const {
   return unmounted_while_resuming_.count(disk.fs_uuid()) > 0;
+}
+
+bool MountedDiskMonitor::DeviceIsHardUnplugged(
+    const std::string& device_path) const {
+  return hard_unplugged_.count(device_path) > 0;
+}
+
+void MountedDiskMonitor::ClearHardUnpluggedFlag(
+    const std::string& device_path) {
+  std::set<std::string>::iterator it = hard_unplugged_.find(device_path);
+  if (it != hard_unplugged_.end())
+    hard_unplugged_.erase(it);
 }
 
 void MountedDiskMonitor::OnMountEvent(
@@ -98,6 +110,11 @@ void MountedDiskMonitor::OnMountEvent(
 void MountedDiskMonitor::OnDiskEvent(
     chromeos::disks::DiskMountManager::DiskEvent event,
     const chromeos::disks::DiskMountManager::Disk* disk) {
+  if (event == chromeos::disks::DiskMountManager::DISK_REMOVED) {
+    // If the mount path is not empty, the disk is hard unplugged.
+    if (!is_resuming_ && !disk->mount_path().empty())
+      hard_unplugged_.insert(disk->system_path_prefix());
+  }
 }
 
 void MountedDiskMonitor::OnDeviceEvent(

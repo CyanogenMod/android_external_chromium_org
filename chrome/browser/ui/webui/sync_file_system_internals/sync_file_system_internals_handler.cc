@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/webui/sync_file_system_internals/sync_file_system_internals_handler.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/values.h"
@@ -27,18 +29,22 @@ using sync_file_system::SyncServiceState;
 namespace syncfs_internals {
 
 SyncFileSystemInternalsHandler::SyncFileSystemInternalsHandler(Profile* profile)
-    : profile_(profile) {
+    : profile_(profile),
+      observing_task_log_(false) {
   sync_file_system::SyncFileSystemService* sync_service =
       SyncFileSystemServiceFactory::GetForProfile(profile);
-  DCHECK(sync_service);
-  sync_service->AddSyncEventObserver(this);
+  if (sync_service)
+    sync_service->AddSyncEventObserver(this);
 }
 
 SyncFileSystemInternalsHandler::~SyncFileSystemInternalsHandler() {
   sync_file_system::SyncFileSystemService* sync_service =
       SyncFileSystemServiceFactory::GetForProfile(profile_);
-  if (sync_service != NULL)
-    sync_service->RemoveSyncEventObserver(this);
+  if (!sync_service)
+    return;
+  sync_service->RemoveSyncEventObserver(this);
+  if (observing_task_log_)
+    sync_service->task_logger()->RemoveObserver(this);
 }
 
 void SyncFileSystemInternalsHandler::RegisterMessages() {
@@ -57,6 +63,10 @@ void SyncFileSystemInternalsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "getNotificationSource",
       base::Bind(&SyncFileSystemInternalsHandler::GetNotificationSource,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "observeTaskLog",
+      base::Bind(&SyncFileSystemInternalsHandler::ObserveTaskLog,
                  base::Unretained(this)));
 }
 
@@ -81,11 +91,28 @@ void SyncFileSystemInternalsHandler::OnFileSynced(
     sync_file_system::SyncAction action,
     sync_file_system::SyncDirection direction) {}
 
+void SyncFileSystemInternalsHandler::OnLogRecorded(
+    const sync_file_system::TaskLogger::TaskLog& task_log) {
+  base::DictionaryValue dict;
+  int64 duration = (task_log.end_time - task_log.start_time).InMilliseconds();
+  dict.SetInteger("duration", duration);
+  dict.SetString("task_description", task_log.task_description);
+  dict.SetString("result_description", task_log.result_description);
+
+  scoped_ptr<base::ListValue> details(new base::ListValue);
+  details->AppendStrings(task_log.details);
+  dict.Set("details", details.release());
+  web_ui()->CallJavascriptFunction("TaskLog.onTaskLogRecorded", dict);
+}
+
 void SyncFileSystemInternalsHandler::GetServiceStatus(
     const base::ListValue* args) {
-  SyncServiceState state_enum = SyncFileSystemServiceFactory::GetForProfile(
-      profile_)->GetSyncServiceState();
-  std::string state_string = extensions::api::sync_file_system::ToString(
+  SyncServiceState state_enum = sync_file_system::SYNC_SERVICE_DISABLED;
+  sync_file_system::SyncFileSystemService* sync_service =
+      SyncFileSystemServiceFactory::GetForProfile(profile_);
+  if (sync_service)
+    state_enum = sync_service->GetSyncServiceState();
+  const std::string state_string = extensions::api::sync_file_system::ToString(
       extensions::SyncServiceStateToExtensionEnum(state_enum));
   web_ui()->CallJavascriptFunction("SyncService.onGetServiceStatus",
                                    base::StringValue(state_string));
@@ -94,7 +121,9 @@ void SyncFileSystemInternalsHandler::GetServiceStatus(
 void SyncFileSystemInternalsHandler::GetNotificationSource(
     const base::ListValue* args) {
   drive::DriveNotificationManager* drive_notification_manager =
-      drive::DriveNotificationManagerFactory::GetForBrowserContext(profile_);
+      drive::DriveNotificationManagerFactory::FindForBrowserContext(profile_);
+  if (!drive_notification_manager)
+    return;
   bool xmpp_enabled = drive_notification_manager->push_notification_enabled();
   std::string notification_source = xmpp_enabled ? "XMPP" : "Polling";
   web_ui()->CallJavascriptFunction("SyncService.onGetNotificationSource",
@@ -134,6 +163,26 @@ void SyncFileSystemInternalsHandler::GetLog(
 
 void SyncFileSystemInternalsHandler::ClearLogs(const base::ListValue* args) {
   sync_file_system::util::ClearLog();
+}
+
+void SyncFileSystemInternalsHandler::ObserveTaskLog(
+    const base::ListValue* args) {
+  sync_file_system::SyncFileSystemService* sync_service =
+      SyncFileSystemServiceFactory::GetForProfile(profile_);
+  if (!sync_service)
+    return;
+  if (!observing_task_log_) {
+    observing_task_log_ = true;
+    sync_service->task_logger()->AddObserver(this);
+  }
+
+  DCHECK(sync_service->task_logger());
+  const sync_file_system::TaskLogger::LogList& log =
+      sync_service->task_logger()->GetLog();
+
+  for (sync_file_system::TaskLogger::LogList::const_iterator itr = log.begin();
+       itr != log.end(); ++itr)
+    OnLogRecorded(**itr);
 }
 
 }  // namespace syncfs_internals

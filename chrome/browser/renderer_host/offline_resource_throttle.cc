@@ -13,7 +13,7 @@
 #include "base/strings/string_util.h"
 #include "chrome/browser/chromeos/offline/offline_load_page.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/common/url_constants.h"
+#include "content/public/browser/appcache_service.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_controller.h"
@@ -24,7 +24,7 @@
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
-#include "webkit/browser/appcache/appcache_service.h"
+#include "url/url_constants.h"
 
 using content::BrowserThread;
 using content::RenderViewHost;
@@ -60,7 +60,7 @@ void ShowOfflinePage(
 
 OfflineResourceThrottle::OfflineResourceThrottle(
     net::URLRequest* request,
-    appcache::AppCacheService* appcache_service)
+    content::AppCacheService* appcache_service)
     : request_(request),
       appcache_service_(appcache_service) {
   DCHECK(appcache_service);
@@ -118,9 +118,9 @@ void OfflineResourceThrottle::OnBlockingPageComplete(bool proceed) {
 }
 
 bool OfflineResourceThrottle::IsRemote(const GURL& url) const {
-  return !net::IsLocalhost(url.host()) && (url.SchemeIs(content::kFtpScheme) ||
-                                           url.SchemeIs(content::kHttpScheme) ||
-                                           url.SchemeIs(content::kHttpsScheme));
+  return !net::IsLocalhost(url.host()) && (url.SchemeIs(url::kFtpScheme) ||
+                                           url.SchemeIs(url::kHttpScheme) ||
+                                           url.SchemeIs(url::kHttpsScheme));
 }
 
 bool OfflineResourceThrottle::ShouldShowOfflinePage(const GURL& url) const {

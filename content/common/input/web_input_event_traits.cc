@@ -5,6 +5,7 @@
 #include "content/common/input/web_input_event_traits.h"
 
 #include <bitset>
+#include <limits>
 
 #include "base/logging.h"
 
@@ -14,6 +15,7 @@ using blink::WebKeyboardEvent;
 using blink::WebMouseEvent;
 using blink::WebMouseWheelEvent;
 using blink::WebTouchEvent;
+using std::numeric_limits;
 
 namespace content {
 namespace {
@@ -145,16 +147,41 @@ void Coalesce(const WebTouchEvent& event_to_coalesce, WebTouchEvent* event) {
 
 bool CanCoalesce(const WebGestureEvent& event_to_coalesce,
                  const WebGestureEvent& event) {
-  return event.type == event_to_coalesce.type &&
-         event.type == WebInputEvent::GestureScrollUpdate &&
-         event.modifiers == event_to_coalesce.modifiers;
+  if (event.type != event_to_coalesce.type ||
+      event.sourceDevice != event_to_coalesce.sourceDevice ||
+      event.modifiers != event_to_coalesce.modifiers)
+    return false;
+
+  if (event.type == WebInputEvent::GestureScrollUpdate)
+    return true;
+
+  // GesturePinchUpdate scales can be combined only if they share a focal point,
+  // e.g., with double-tap drag zoom.
+  if (event.type == WebInputEvent::GesturePinchUpdate &&
+      event.x == event_to_coalesce.x &&
+      event.y == event_to_coalesce.y)
+    return true;
+
+  return false;
 }
 
 void Coalesce(const WebGestureEvent& event_to_coalesce,
               WebGestureEvent* event) {
   DCHECK(CanCoalesce(event_to_coalesce, *event));
-  event->data.scrollUpdate.deltaX += event_to_coalesce.data.scrollUpdate.deltaX;
-  event->data.scrollUpdate.deltaY += event_to_coalesce.data.scrollUpdate.deltaY;
+  if (event->type == WebInputEvent::GestureScrollUpdate) {
+    event->data.scrollUpdate.deltaX +=
+        event_to_coalesce.data.scrollUpdate.deltaX;
+    event->data.scrollUpdate.deltaY +=
+        event_to_coalesce.data.scrollUpdate.deltaY;
+  } else if (event->type == WebInputEvent::GesturePinchUpdate) {
+    event->data.pinchUpdate.scale *= event_to_coalesce.data.pinchUpdate.scale;
+    // Ensure the scale remains bounded above 0 and below Infinity so that
+    // we can reliably perform operations like log on the values.
+    if (event->data.pinchUpdate.scale < numeric_limits<float>::min())
+      event->data.pinchUpdate.scale = numeric_limits<float>::min();
+    else if (event->data.pinchUpdate.scale > numeric_limits<float>::max())
+      event->data.pinchUpdate.scale = numeric_limits<float>::max();
+  }
 }
 
 struct WebInputEventSize {
@@ -315,28 +342,30 @@ void WebInputEventTraits::Coalesce(const WebInputEvent& event_to_coalesce,
   Apply(WebInputEventCoalesce(), event->type, event_to_coalesce, event);
 }
 
-bool WebInputEventTraits::IgnoresAckDisposition(
-    blink::WebInputEvent::Type type) {
-  switch (type) {
-    case WebInputEvent::GestureTapDown:
-    case WebInputEvent::GestureShowPress:
-    case WebInputEvent::GestureTapCancel:
-    case WebInputEvent::GestureTap:
-    case WebInputEvent::GesturePinchBegin:
-    case WebInputEvent::GesturePinchEnd:
-    case WebInputEvent::GestureScrollBegin:
-    case WebInputEvent::GestureScrollEnd:
-    case WebInputEvent::TouchCancel:
+bool WebInputEventTraits::IgnoresAckDisposition(const WebInputEvent& event) {
+  switch (event.type) {
     case WebInputEvent::MouseDown:
     case WebInputEvent::MouseUp:
     case WebInputEvent::MouseEnter:
     case WebInputEvent::MouseLeave:
     case WebInputEvent::ContextMenu:
+    case WebInputEvent::GestureScrollBegin:
+    case WebInputEvent::GestureScrollEnd:
+    case WebInputEvent::GestureShowPress:
+    case WebInputEvent::GestureTapUnconfirmed:
+    case WebInputEvent::GestureTapDown:
+    case WebInputEvent::GestureTapCancel:
+    case WebInputEvent::GesturePinchBegin:
+    case WebInputEvent::GesturePinchEnd:
+    case WebInputEvent::TouchCancel:
       return true;
+    case WebInputEvent::TouchStart:
+    case WebInputEvent::TouchMove:
+    case WebInputEvent::TouchEnd:
+      return !static_cast<const WebTouchEvent&>(event).cancelable;
     default:
-      break;
+      return false;
   }
-  return false;
 }
 
 }  // namespace content

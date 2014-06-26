@@ -6,11 +6,13 @@
 #define CHROME_BROWSER_APPS_EPHEMERAL_APP_LAUNCHER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/webstore_standalone_installer.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
-#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/web_contents_observer.h"
 
 class ExtensionEnableFlow;
@@ -22,49 +24,96 @@ class WebContents;
 
 namespace extensions {
 class Extension;
+class ExtensionInstallChecker;
+class ExtensionRegistry;
 }
 
 // EphemeralAppLauncher manages the launching of ephemeral apps. It handles
 // display of a prompt, initiates install of the app (if necessary) and finally
 // launches the app.
-class EphemeralAppLauncher
-    : public extensions::WebstoreStandaloneInstaller,
-      public content::WebContentsObserver,
-      public content::NotificationObserver,
-      public ExtensionEnableFlowDelegate {
+class EphemeralAppLauncher : public extensions::WebstoreStandaloneInstaller,
+                             public content::WebContentsObserver,
+                             public ExtensionEnableFlowDelegate {
  public:
-  typedef WebstoreStandaloneInstaller::Callback Callback;
+  typedef base::Callback<void(extensions::webstore_install::Result result,
+                              const std::string& error)> LaunchCallback;
+
+  // Returns true if launching ephemeral apps is enabled.
+  static bool IsFeatureEnabled();
 
   // Create for the app launcher.
   static scoped_refptr<EphemeralAppLauncher> CreateForLauncher(
       const std::string& webstore_item_id,
       Profile* profile,
       gfx::NativeWindow parent_window,
-      const Callback& callback);
+      const LaunchCallback& callback);
 
-  // Create for a link within a browser tab.
-  static scoped_refptr<EphemeralAppLauncher> CreateForLink(
+  // Create for a web contents.
+  static scoped_refptr<EphemeralAppLauncher> CreateForWebContents(
       const std::string& webstore_item_id,
-      content::WebContents* web_contents);
+      content::WebContents* web_contents,
+      const LaunchCallback& callback);
 
   // Initiate app launch.
   void Start();
 
- private:
-  friend class base::RefCountedThreadSafe<EphemeralAppLauncher>;
-
+ protected:
   EphemeralAppLauncher(const std::string& webstore_item_id,
                        Profile* profile,
                        gfx::NativeWindow parent_window,
-                       const Callback& callback);
+                       const LaunchCallback& callback);
   EphemeralAppLauncher(const std::string& webstore_item_id,
                        content::WebContents* web_contents,
-                       const Callback& callback);
+                       const LaunchCallback& callback);
 
   virtual ~EphemeralAppLauncher();
 
-  void StartObserving();
+  // Creates an install checker. Allows tests to mock the install checker.
+  virtual scoped_ptr<extensions::ExtensionInstallChecker>
+      CreateInstallChecker();
+
+  // WebstoreStandaloneInstaller implementation overridden in tests.
+  virtual scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() OVERRIDE;
+  virtual scoped_ptr<extensions::WebstoreInstaller::Approval> CreateApproval()
+      const OVERRIDE;
+
+ private:
+  friend class base::RefCountedThreadSafe<EphemeralAppLauncher>;
+  friend class EphemeralAppLauncherTest;
+
+  // Returns true if an app that is already installed in extension system can
+  // be launched.
+  bool CanLaunchInstalledApp(const extensions::Extension* extension,
+                             extensions::webstore_install::Result* reason,
+                             std::string* error);
+
+  // Initiates the enable flow for an app before it can be launched.
+  void EnableInstalledApp(const extensions::Extension* extension);
+
+  // After the ephemeral installation or enable flow are complete, attempts to
+  // launch the app and notify the client of the outcome.
+  void MaybeLaunchApp();
+
+  // Launches an app. At this point, it is assumed that the app is enabled and
+  // can be launched.
   void LaunchApp(const extensions::Extension* extension) const;
+
+  // Navigates to the launch URL of a hosted app in a new browser tab.
+  bool LaunchHostedApp(const extensions::Extension* extension) const;
+
+  // Notifies the client of the launch outcome.
+  void InvokeCallback(extensions::webstore_install::Result result,
+                      const std::string& error);
+
+  // Aborts the ephemeral install and notifies the client of the outcome.
+  void AbortLaunch(extensions::webstore_install::Result result,
+                   const std::string& error);
+
+  // Determines whether the app can be installed ephemerally.
+  void CheckEphemeralInstallPermitted();
+
+  // Install checker callback.
+  void OnInstallChecked(int check_failures);
 
   // WebstoreStandaloneInstaller implementation.
   virtual bool CheckRequestorAlive() const OVERRIDE;
@@ -72,44 +121,33 @@ class EphemeralAppLauncher
   virtual bool ShouldShowPostInstallUI() const OVERRIDE;
   virtual bool ShouldShowAppInstalledBubble() const OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual scoped_ptr<ExtensionInstallPrompt::Prompt>
-      CreateInstallPrompt() const OVERRIDE;
+  virtual scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
+      const OVERRIDE;
   virtual bool CheckInlineInstallPermitted(
       const base::DictionaryValue& webstore_data,
       std::string* error) const OVERRIDE;
   virtual bool CheckRequestorPermitted(
       const base::DictionaryValue& webstore_data,
       std::string* error) const OVERRIDE;
-  virtual bool CheckInstallValid(
-      const base::DictionaryValue& manifest,
-      std::string* error) OVERRIDE;
-  virtual scoped_ptr<ExtensionInstallPrompt> CreateInstallUI() OVERRIDE;
-  virtual scoped_ptr<extensions::WebstoreInstaller::Approval>
-      CreateApproval() const OVERRIDE;
-  virtual void CompleteInstall(const std::string& error) OVERRIDE;
+  virtual void OnManifestParsed() OVERRIDE;
+  virtual void CompleteInstall(extensions::webstore_install::Result result,
+                               const std::string& error) OVERRIDE;
 
   // content::WebContentsObserver implementation.
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // ExtensionEnableFlowDelegate implementation.
   virtual void ExtensionEnableFlowFinished() OVERRIDE;
   virtual void ExtensionEnableFlowAborted(bool user_initiated) OVERRIDE;
 
-  content::NotificationRegistrar registrar_;
+  LaunchCallback launch_callback_;
 
   gfx::NativeWindow parent_window_;
   scoped_ptr<content::WebContents> dummy_web_contents_;
 
-  // Created in CheckInstallValid().
-  scoped_refptr<extensions::Extension> extension_;
-
   scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;
+
+  scoped_ptr<extensions::ExtensionInstallChecker> install_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(EphemeralAppLauncher);
 };

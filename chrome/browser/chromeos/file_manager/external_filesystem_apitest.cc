@@ -6,17 +6,28 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/path_service.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/drive/drive_integration_service.h"
+#include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/chromeos/file_manager/drive_test_util.h"
+#include "chrome/browser/chromeos/file_manager/volume_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/test_util.h"
+#include "google_apis/drive/time_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 
 // Tests for access to external file systems (as defined in
@@ -59,35 +70,21 @@ const char kRestrictedMountPointName[] = "restricted";
 // Default file content for the test files.
 const char kTestFileContent[] = "This is some test content.";
 
-// Contains feed for drive file system. The file system hierarchy is the same
-// for local and restricted file systems:
-//   test_dir/ - - subdir/
-//              |
-//               - empty_test_dir/
-//              |
-//               - empty_test_file.foo
-//              |
-//               - test_file.xul
-//              |
-//               - test_file.xul.foo
-//              |
-//               - test_file.tiff
-//              |
-//               - test_file.tiff.foo
-//
-// All files except test_dir/empty_file.foo, which is empty, initially contain
-// kTestFileContent.
-const char kTestRootFeed[] =
-    "gdata/remote_file_system_apitest_root_feed.json";
+// User account email and directory hash for secondary account for multi-profile
+// sensitive test cases.
+const char kSecondProfileAccount[] = "profile2@test.com";
+const char kSecondProfileHash[] = "fileBrowserApiTestProfile2";
 
 // Sets up the initial file system state for native local and restricted native
 // local file systems. The hierarchy is the same as for the drive file system.
-bool InitializeLocalFileSystem(base::ScopedTempDir* tmp_dir,
+// The directory is created at unique_temp_dir/|mount_point_name| path.
+bool InitializeLocalFileSystem(std::string mount_point_name,
+                               base::ScopedTempDir* tmp_dir,
                                base::FilePath* mount_point_dir) {
   if (!tmp_dir->CreateUniqueTempDir())
     return false;
 
-  *mount_point_dir = tmp_dir->path().AppendASCII("mount");
+  *mount_point_dir = tmp_dir->path().AppendASCII(mount_point_name);
   // Create the mount point.
   if (!base::CreateDirectory(*mount_point_dir))
     return false;
@@ -123,6 +120,172 @@ bool InitializeLocalFileSystem(base::ScopedTempDir* tmp_dir,
   test_file = test_dir.AppendASCII("empty_test_file.foo");
   if (!google_apis::test_util::WriteStringToFile(test_file, ""))
     return false;
+
+  return true;
+}
+
+scoped_ptr<google_apis::FileResource> UpdateDriveEntryTime(
+    drive::FakeDriveService* fake_drive_service,
+    const std::string& resource_id,
+    const std::string& last_modified,
+    const std::string& last_viewed_by_me) {
+  base::Time last_modified_time, last_viewed_by_me_time;
+  if (!google_apis::util::GetTimeFromString(last_modified,
+                                            &last_modified_time) ||
+      !google_apis::util::GetTimeFromString(last_viewed_by_me,
+                                            &last_viewed_by_me_time))
+    return scoped_ptr<google_apis::FileResource>();
+
+  google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+  scoped_ptr<google_apis::FileResource> entry;
+  fake_drive_service->UpdateResource(
+      resource_id,
+      std::string(),  // parent_resource_id
+      std::string(),  // title
+      last_modified_time,
+      last_viewed_by_me_time,
+      google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+  base::RunLoop().RunUntilIdle();
+  if (error != google_apis::HTTP_SUCCESS)
+    return scoped_ptr<google_apis::FileResource>();
+
+  return entry.Pass();
+}
+
+scoped_ptr<google_apis::FileResource> AddFileToDriveService(
+    drive::FakeDriveService* fake_drive_service,
+    const std::string& mime_type,
+    const std::string& content,
+    const std::string& parent_resource_id,
+    const std::string& title,
+    const std::string& last_modified,
+    const std::string& last_viewed_by_me) {
+  google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+  scoped_ptr<google_apis::FileResource> entry;
+  fake_drive_service->AddNewFile(
+      mime_type,
+      content,
+      parent_resource_id,
+      title,
+      false,  // shared_with_me
+      google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+  base::RunLoop().RunUntilIdle();
+  if (error != google_apis::HTTP_CREATED)
+    return scoped_ptr<google_apis::FileResource>();
+
+  return UpdateDriveEntryTime(fake_drive_service, entry->file_id(),
+                              last_modified, last_viewed_by_me);
+}
+
+scoped_ptr<google_apis::FileResource> AddDirectoryToDriveService(
+    drive::FakeDriveService* fake_drive_service,
+    const std::string& parent_resource_id,
+    const std::string& title,
+    const std::string& last_modified,
+    const std::string& last_viewed_by_me) {
+  google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+  scoped_ptr<google_apis::FileResource> entry;
+  fake_drive_service->AddNewDirectory(
+      parent_resource_id,
+      title,
+      drive::DriveServiceInterface::AddNewDirectoryOptions(),
+      google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+  base::RunLoop().RunUntilIdle();
+  if (error != google_apis::HTTP_CREATED)
+    return scoped_ptr<google_apis::FileResource>();
+
+  return UpdateDriveEntryTime(fake_drive_service, entry->file_id(),
+                              last_modified, last_viewed_by_me);
+}
+
+// Sets up the drive service state.
+// The hierarchy is the same as for the local file system.
+bool InitializeDriveService(
+    drive::FakeDriveService* fake_drive_service,
+    std::map<std::string, std::string>* out_resource_ids) {
+  scoped_ptr<google_apis::FileResource> entry;
+
+  entry = AddDirectoryToDriveService(fake_drive_service,
+                                     fake_drive_service->GetRootResourceId(),
+                                     "test_dir",
+                                     "2012-01-02T00:00:00.000Z",
+                                     "2012-01-02T00:00:01.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddDirectoryToDriveService(fake_drive_service,
+                                     (*out_resource_ids)["test_dir"],
+                                     "empty_test_dir",
+                                     "2011-11-02T04:00:00.000Z",
+                                     "2011-11-02T04:00:00.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddDirectoryToDriveService(fake_drive_service,
+                                     (*out_resource_ids)["test_dir"],
+                                     "subdir",
+                                     "2011-04-01T18:34:08.234Z",
+                                     "2012-01-02T00:00:01.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddFileToDriveService(fake_drive_service,
+                                "application/vnd.mozilla.xul+xml",
+                                kTestFileContent,
+                                (*out_resource_ids)["test_dir"],
+                                "test_file.xul",
+                                "2011-12-14T00:40:47.330Z",
+                                "2012-01-02T00:00:00.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddFileToDriveService(fake_drive_service,
+                                "test/ro",
+                                kTestFileContent,
+                                (*out_resource_ids)["test_dir"],
+                                "test_file.xul.foo",
+                                "2012-01-01T10:00:30.000Z",
+                                "2012-01-01T00:00:00.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddFileToDriveService(fake_drive_service,
+                                "image/tiff",
+                                kTestFileContent,
+                                (*out_resource_ids)["test_dir"],
+                                "test_file.tiff",
+                                "2011-04-03T11:11:10.000Z",
+                                "2012-01-02T00:00:00.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddFileToDriveService(fake_drive_service,
+                                "test/rw",
+                                kTestFileContent,
+                                (*out_resource_ids)["test_dir"],
+                                "test_file.tiff.foo",
+                                "2011-12-14T00:40:47.330Z",
+                                "2010-01-02T00:00:00.000Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
+
+  entry = AddFileToDriveService(fake_drive_service,
+                                "test/rw",
+                                "",
+                                (*out_resource_ids)["test_dir"],
+                                "empty_test_file.foo",
+                                "2011-12-14T00:40:47.330Z",
+                                "2011-12-14T00:40:47.330Z");
+  if (!entry)
+    return false;
+  (*out_resource_ids)[entry->title()] = entry->file_id();
 
   return true;
 }
@@ -226,8 +389,7 @@ class FileSystemExtensionApiTestBase : public ExtensionApiTest {
   }
 
  protected:
-  // Sets up initial test file system hierarchy. See comment for kTestRootFeed
-  // for the actual hierarchy.
+  // Sets up initial test file system hierarchy.
   virtual void InitTestFileSystem() = 0;
   // Registers mount point used in the test.
   virtual void AddTestMountPoint() = 0;
@@ -241,7 +403,8 @@ class LocalFileSystemExtensionApiTest : public FileSystemExtensionApiTestBase {
 
   // FileSystemExtensionApiTestBase OVERRIDE.
   virtual void InitTestFileSystem() OVERRIDE {
-    ASSERT_TRUE(InitializeLocalFileSystem(&tmp_dir_, &mount_point_dir_))
+    ASSERT_TRUE(InitializeLocalFileSystem(
+        kLocalMountPointName, &tmp_dir_, &mount_point_dir_))
         << "Failed to initialize file system.";
   }
 
@@ -252,6 +415,8 @@ class LocalFileSystemExtensionApiTest : public FileSystemExtensionApiTestBase {
                            fileapi::kFileSystemTypeNativeLocal,
                            fileapi::FileSystemMountOption(),
                            mount_point_dir_));
+    VolumeManager::Get(browser()->profile())->AddVolumeInfoForTesting(
+        mount_point_dir_, VOLUME_TYPE_TESTING, chromeos::DEVICE_TYPE_UNKNOWN);
   }
 
  private:
@@ -268,7 +433,8 @@ class RestrictedFileSystemExtensionApiTest
 
   // FileSystemExtensionApiTestBase OVERRIDE.
   virtual void InitTestFileSystem() OVERRIDE {
-    ASSERT_TRUE(InitializeLocalFileSystem(&tmp_dir_, &mount_point_dir_))
+    ASSERT_TRUE(InitializeLocalFileSystem(
+        kRestrictedMountPointName, &tmp_dir_, &mount_point_dir_))
         << "Failed to initialize file system.";
   }
 
@@ -279,6 +445,8 @@ class RestrictedFileSystemExtensionApiTest
                            fileapi::kFileSystemTypeRestrictedNativeLocal,
                            fileapi::FileSystemMountOption(),
                            mount_point_dir_));
+    VolumeManager::Get(browser()->profile())->AddVolumeInfoForTesting(
+        mount_point_dir_, VOLUME_TYPE_TESTING, chromeos::DEVICE_TYPE_UNKNOWN);
   }
 
  private:
@@ -318,16 +486,184 @@ class DriveFileSystemExtensionApiTest : public FileSystemExtensionApiTestBase {
   drive::DriveIntegrationService* CreateDriveIntegrationService(
       Profile* profile) {
     fake_drive_service_ = new drive::FakeDriveService;
-    fake_drive_service_->LoadResourceListForWapi(kTestRootFeed);
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "gdata/account_metadata.json");
     fake_drive_service_->LoadAppListForDriveApi("drive/applist.json");
+
+    std::map<std::string, std::string> resource_ids;
+    EXPECT_TRUE(InitializeDriveService(fake_drive_service_, &resource_ids));
 
     return new drive::DriveIntegrationService(
         profile, NULL,
         fake_drive_service_, "drive", test_cache_root_.path(), NULL);
   }
 
+  base::ScopedTempDir test_cache_root_;
+  drive::FakeDriveService* fake_drive_service_;
+  DriveIntegrationServiceFactory::FactoryCallback
+      create_drive_integration_service_;
+  scoped_ptr<DriveIntegrationServiceFactory::ScopedFactoryForTest>
+      service_factory_for_test_;
+};
+
+// Tests for Drive file systems in multi-profile setting.
+class MultiProfileDriveFileSystemExtensionApiTest :
+    public FileSystemExtensionApiTestBase {
+ public:
+  MultiProfileDriveFileSystemExtensionApiTest() : second_profile(NULL) {}
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    base::FilePath user_data_directory;
+    PathService::Get(chrome::DIR_USER_DATA, &user_data_directory);
+    chromeos::UserManager::Get()->UserLoggedIn(kSecondProfileAccount,
+                                               kSecondProfileHash,
+                                               false);
+    // Set up the secondary profile.
+    base::FilePath profile_dir =
+        user_data_directory.Append(
+            chromeos::ProfileHelper::GetUserProfileDir(
+                kSecondProfileHash).BaseName());
+    second_profile =
+        g_browser_process->profile_manager()->GetProfile(profile_dir);
+
+    FileSystemExtensionApiTestBase::SetUpOnMainThread();
+  }
+
+  virtual void InitTestFileSystem() OVERRIDE {
+    // This callback will get called during Profile creation.
+    create_drive_integration_service_ = base::Bind(
+        &MultiProfileDriveFileSystemExtensionApiTest::
+            CreateDriveIntegrationService,
+        base::Unretained(this));
+    service_factory_for_test_.reset(
+        new DriveIntegrationServiceFactory::ScopedFactoryForTest(
+            &create_drive_integration_service_));
+  }
+
+  virtual void AddTestMountPoint() OVERRIDE {
+    test_util::WaitUntilDriveMountPointIsAdded(browser()->profile());
+    test_util::WaitUntilDriveMountPointIsAdded(second_profile);
+  }
+
+ protected:
+  // DriveIntegrationService factory function for this test.
+  drive::DriveIntegrationService* CreateDriveIntegrationService(
+      Profile* profile) {
+    base::FilePath cache_dir;
+    base::CreateNewTempDirectory(base::FilePath::StringType(), &cache_dir);
+
+    drive::FakeDriveService* const fake_drive_service =
+        new drive::FakeDriveService;
+    fake_drive_service->LoadAppListForDriveApi("drive/applist.json");
+    EXPECT_TRUE(InitializeDriveService(fake_drive_service, &resource_ids_));
+
+    return new drive::DriveIntegrationService(
+        profile, NULL, fake_drive_service, std::string(), cache_dir, NULL);
+  }
+
+  bool AddTestHostedDocuments() {
+    const char kResourceId[] = "unique-id-for-multiprofile-copy-test";
+    drive::FakeDriveService* const main_service =
+        static_cast<drive::FakeDriveService*>(
+            drive::util::GetDriveServiceByProfile(browser()->profile()));
+    drive::FakeDriveService* const sub_service =
+        static_cast<drive::FakeDriveService*>(
+            drive::util::GetDriveServiceByProfile(second_profile));
+
+    google_apis::GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
+    scoped_ptr<google_apis::FileResource> entry;
+
+    // Place a hosted document under root/test_dir of the sub profile.
+    sub_service->AddNewFileWithResourceId(
+        kResourceId,
+        "application/vnd.google-apps.document", "",
+        resource_ids_["test_dir"], "hosted_doc", true,
+        google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+    drive::test_util::RunBlockingPoolTask();
+    if (error != google_apis::HTTP_CREATED)
+      return false;
+
+    // Place the hosted document with no parent in the main profile, for
+    // simulating the situation that the document is shared to the main profile.
+    error = google_apis::GDATA_OTHER_ERROR;
+    main_service->AddNewFileWithResourceId(
+        kResourceId,
+        "application/vnd.google-apps.document", "", "", "hosted_doc", true,
+        google_apis::test_util::CreateCopyResultCallback(&error, &entry));
+    drive::test_util::RunBlockingPoolTask();
+    return (error == google_apis::HTTP_CREATED);
+  }
+
+  DriveIntegrationServiceFactory::FactoryCallback
+      create_drive_integration_service_;
+  scoped_ptr<DriveIntegrationServiceFactory::ScopedFactoryForTest>
+      service_factory_for_test_;
+  Profile* second_profile;
+  std::map<std::string, std::string> resource_ids_;
+};
+
+class LocalAndDriveFileSystemExtensionApiTest
+    : public FileSystemExtensionApiTestBase {
+ public:
+  LocalAndDriveFileSystemExtensionApiTest() {}
+  virtual ~LocalAndDriveFileSystemExtensionApiTest() {}
+
+  // FileSystemExtensionApiTestBase OVERRIDE.
+  virtual void InitTestFileSystem() OVERRIDE {
+    ASSERT_TRUE(InitializeLocalFileSystem(
+        kLocalMountPointName, &local_tmp_dir_, &local_mount_point_dir_))
+        << "Failed to initialize file system.";
+
+    // Set up cache root to be used by DriveIntegrationService. This has to be
+    // done before the browser is created because the service instance is
+    // initialized by EventRouter.
+    ASSERT_TRUE(test_cache_root_.CreateUniqueTempDir());
+
+    // This callback will get called during Profile creation.
+    create_drive_integration_service_ = base::Bind(
+        &LocalAndDriveFileSystemExtensionApiTest::CreateDriveIntegrationService,
+        base::Unretained(this));
+    service_factory_for_test_.reset(
+        new DriveIntegrationServiceFactory::ScopedFactoryForTest(
+            &create_drive_integration_service_));
+  }
+
+  // FileSystemExtensionApiTestBase OVERRIDE.
+  virtual void AddTestMountPoint() OVERRIDE {
+    EXPECT_TRUE(content::BrowserContext::GetMountPoints(browser()->profile())
+                    ->RegisterFileSystem(kLocalMountPointName,
+                                         fileapi::kFileSystemTypeNativeLocal,
+                                         fileapi::FileSystemMountOption(),
+                                         local_mount_point_dir_));
+    VolumeManager::Get(browser()->profile())
+        ->AddVolumeInfoForTesting(local_mount_point_dir_,
+                                  VOLUME_TYPE_TESTING,
+                                  chromeos::DEVICE_TYPE_UNKNOWN);
+    test_util::WaitUntilDriveMountPointIsAdded(browser()->profile());
+  }
+
+ protected:
+  // DriveIntegrationService factory function for this test.
+  drive::DriveIntegrationService* CreateDriveIntegrationService(
+      Profile* profile) {
+    fake_drive_service_ = new drive::FakeDriveService;
+    fake_drive_service_->LoadAppListForDriveApi("drive/applist.json");
+
+    std::map<std::string, std::string> resource_ids;
+    EXPECT_TRUE(InitializeDriveService(fake_drive_service_, &resource_ids));
+
+    return new drive::DriveIntegrationService(profile,
+                                              NULL,
+                                              fake_drive_service_,
+                                              "drive",
+                                              test_cache_root_.path(),
+                                              NULL);
+  }
+
+ private:
+  // For local volume.
+  base::ScopedTempDir local_tmp_dir_;
+  base::FilePath local_mount_point_dir_;
+
+  // For drive volume.
   base::ScopedTempDir test_cache_root_;
   drive::FakeDriveService* fake_drive_service_;
   DriveIntegrationServiceFactory::FactoryCallback
@@ -432,7 +768,6 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, Search) {
 }
 
 IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, AppFileHandler) {
-  fake_drive_service_->set_default_max_results(1);
   EXPECT_TRUE(RunFileSystemExtensionApiTest(
       "file_browser/handler_test_runner",
       FILE_PATH_LITERAL("manifest.json"),
@@ -440,5 +775,27 @@ IN_PROC_BROWSER_TEST_F(DriveFileSystemExtensionApiTest, AppFileHandler) {
       FLAGS_USE_FILE_HANDLER)) << message_;
 }
 
+IN_PROC_BROWSER_TEST_F(MultiProfileDriveFileSystemExtensionApiTest,
+                       CrossProfileCopy) {
+  ASSERT_TRUE(AddTestHostedDocuments());
+  EXPECT_TRUE(RunFileSystemExtensionApiTest(
+      "file_browser/multi_profile_copy",
+      FILE_PATH_LITERAL("manifest.json"),
+      "",
+      FLAGS_NONE)) << message_;
+}
+
+//
+// LocalAndDriveFileSystemExtensionApiTests.
+//
+IN_PROC_BROWSER_TEST_F(LocalAndDriveFileSystemExtensionApiTest,
+                       AppFileHandlerMulti) {
+  EXPECT_TRUE(
+      RunFileSystemExtensionApiTest("file_browser/app_file_handler_multi",
+                                    FILE_PATH_LITERAL("manifest.json"),
+                                    "",
+                                    FLAGS_NONE))
+      << message_;
+}
 }  // namespace
 }  // namespace file_manager

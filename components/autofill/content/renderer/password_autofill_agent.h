@@ -9,12 +9,10 @@
 #include <vector>
 
 #include "base/memory/linked_ptr.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
-#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 
 namespace blink {
 class WebInputElement;
@@ -40,13 +38,21 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   bool TextFieldHandlingKeyDown(const blink::WebInputElement& element,
                                 const blink::WebKeyboardEvent& event);
 
-  // Fills the password associated with user name |username|. Returns true if
-  // the username and password fields were filled, false otherwise.
-  bool DidAcceptAutofillSuggestion(const blink::WebNode& node,
-                                   const blink::WebString& username);
-  // A no-op.  Password forms are not previewed, so they do not need to be
-  // cleared when the selection changes.  However, this method returns
-  // true when |node| is fillable by password Autofill.
+  // Fills the username and password fields of this form with the given values.
+  // Returns true if the fields were filled, false otherwise.
+  bool FillSuggestion(const blink::WebNode& node,
+                      const blink::WebString& username,
+                      const blink::WebString& password);
+
+  // Previews the username and password fields of this form with the given
+  // values. Returns true if the fields were previewed, false otherwise.
+  bool PreviewSuggestion(const blink::WebNode& node,
+                         const blink::WebString& username,
+                         const blink::WebString& password);
+
+  // Clears the preview for the username and password fields, restoring both to
+  // their previous filled state. Return false if no login information was
+  // found for the form.
   bool DidClearAutofillSelection(const blink::WebNode& node);
   // Shows an Autofill popup with username suggestions for |element|.
   // Returns true if any suggestions were shown, false otherwise.
@@ -54,6 +60,11 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
 
   // Called when new form controls are inserted.
   void OnDynamicFormsSeen(blink::WebFrame* frame);
+
+  // Called when the user first interacts with the page after a load. This is a
+  // signal to make autofilled values of password input elements accessible to
+  // JavaScript.
+  void FirstUserGestureObserved();
 
  protected:
   virtual bool OriginCanAccessPasswordManager(
@@ -81,41 +92,52 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   typedef std::map<blink::WebFrame*,
                    linked_ptr<PasswordForm> > FrameToPasswordFormMap;
 
-  class AutofillWebUserGestureHandler : public blink::WebUserGestureHandler {
+  // This class holds a vector of autofilled password input elements and makes
+  // sure the autofilled password value is not accessible to JavaScript code
+  // until the user interacts with the page.
+  class PasswordValueGatekeeper {
    public:
-    AutofillWebUserGestureHandler(PasswordAutofillAgent* agent);
-    virtual ~AutofillWebUserGestureHandler();
+    PasswordValueGatekeeper();
+    ~PasswordValueGatekeeper();
 
-    void addElement(const blink::WebInputElement& element) {
-      elements_.push_back(element);
-    }
+    // Call this for every autofilled password field, so that the gatekeeper
+    // protects the value accordingly.
+    void RegisterElement(blink::WebInputElement* element);
 
-    void clearElements() {
-      elements_.clear();
-    }
+    // Call this to notify the gatekeeper that the user interacted with the
+    // page.
+    void OnUserGesture();
 
-    virtual void onGesture();
+    // Call this to reset the gatekeeper on a new page navigation.
+    void Reset();
 
    private:
-    PasswordAutofillAgent* agent_;
+    // Make the value of |element| accessible to JavaScript code.
+    void ShowValue(blink::WebInputElement* element);
+
+    bool was_user_gesture_seen_;
     std::vector<blink::WebInputElement> elements_;
+
+    DISALLOW_COPY_AND_ASSIGN(PasswordValueGatekeeper);
   };
 
   // RenderViewObserver:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidStartProvisionalLoad(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidStartProvisionalLoad(blink::WebLocalFrame* frame) OVERRIDE;
   virtual void DidStartLoading() OVERRIDE;
-  virtual void DidFinishDocumentLoad(blink::WebFrame* frame) OVERRIDE;
-  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE;
+  virtual void DidFinishDocumentLoad(blink::WebLocalFrame* frame) OVERRIDE;
+  virtual void DidFinishLoad(blink::WebLocalFrame* frame) OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
   virtual void FrameDetached(blink::WebFrame* frame) OVERRIDE;
   virtual void FrameWillClose(blink::WebFrame* frame) OVERRIDE;
-  virtual void WillSendSubmitEvent(blink::WebFrame* frame,
+  virtual void WillSendSubmitEvent(blink::WebLocalFrame* frame,
                                    const blink::WebFormElement& form) OVERRIDE;
-  virtual void WillSubmitForm(blink::WebFrame* frame,
+  virtual void WillSubmitForm(blink::WebLocalFrame* frame,
                               const blink::WebFormElement& form) OVERRIDE;
 
   // RenderView IPC handlers:
   void OnFillPasswordForm(const PasswordFormFillData& form_data);
+  void OnSetLoggingState(bool active);
 
   // Scans the given frame for password forms and sends them up to the browser.
   // If |only_visible| is true, only forms visible in the layout are sent.
@@ -138,12 +160,11 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
                                   blink::WebInputElement username_element,
                                   blink::WebInputElement password_element);
 
-  bool FillUserNameAndPassword(
-      blink::WebInputElement* username_element,
-      blink::WebInputElement* password_element,
-      const PasswordFormFillData& fill_data,
-      bool exact_username_match,
-      bool set_selection);
+  bool FillUserNameAndPassword(blink::WebInputElement* username_element,
+                               blink::WebInputElement* password_element,
+                               const PasswordFormFillData& fill_data,
+                               bool exact_username_match,
+                               bool set_selection);
 
   // Fills |login_input| and |password| with the most relevant suggestion from
   // |fill_data| and shows a popup with other suggestions.
@@ -161,14 +182,15 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
                      blink::WebInputElement* found_input,
                      PasswordInfo* found_password);
 
+  // Clears the preview for the username and password fields, restoring both to
+  // their previous filled state.
+  void ClearPreview(blink::WebInputElement* username,
+                    blink::WebInputElement* password);
+
   // If |provisionally_saved_forms_| contains a form for |current_frame| or its
   // children, return such frame.
   blink::WebFrame* CurrentOrChildFrameWithSavedForms(
       const blink::WebFrame* current_frame);
-
-  void set_user_gesture_occurred(bool occurred) {
-    user_gesture_occurred_ = occurred;
-  }
 
   // The logins we have filled so far with their associated info.
   LoginToPasswordInfoMap login_to_password_info_;
@@ -183,9 +205,22 @@ class PasswordAutofillAgent : public content::RenderViewObserver {
   // but the submit may still fail (i.e. doesn't pass JavaScript validation).
   FrameToPasswordFormMap provisionally_saved_forms_;
 
-  scoped_ptr<AutofillWebUserGestureHandler> gesture_handler_;
+  PasswordValueGatekeeper gatekeeper_;
 
-  bool user_gesture_occurred_;
+  // True indicates that user debug information should be logged.
+  bool logging_state_active_;
+
+  // True indicates that the username field was autofilled, false otherwise.
+  bool was_username_autofilled_;
+  // True indicates that the password field was autofilled, false otherwise.
+  bool was_password_autofilled_;
+
+  // Records original starting point of username element's selection range
+  // before preview.
+  int username_selection_start_;
+
+  // True indicates that all frames in a page have been rendered.
+  bool did_stop_loading_;
 
   base::WeakPtrFactory<PasswordAutofillAgent> weak_ptr_factory_;
 

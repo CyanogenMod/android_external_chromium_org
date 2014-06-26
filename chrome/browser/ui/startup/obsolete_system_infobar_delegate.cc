@@ -4,9 +4,10 @@
 
 #include "chrome/browser/ui/startup/obsolete_system_infobar_delegate.h"
 
-#include "chrome/browser/infobars/infobar.h"
+#include "base/cpu.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -16,10 +17,6 @@
 #include "chrome/browser/mac/obsolete_system.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
-
 // static
 void ObsoleteSystemInfoBarDelegate::Create(InfoBarService* infobar_service) {
 #if defined(OS_MACOSX)
@@ -27,18 +24,9 @@ void ObsoleteSystemInfoBarDelegate::Create(InfoBarService* infobar_service) {
       !ObsoleteSystemMac::Has32BitOnlyCPU()) {
     return;
   }
-#elif defined(TOOLKIT_GTK)
-  // We've deprecated support for Ubuntu Lucid.  Rather than attempting to
-  // determine whether you're using that, we instead key off the GTK version;
-  // this will also deprecate other distributions (including variants of Ubuntu)
-  // that are of a similar age.
-  // Version key:
-  //   RHEL 6:             GTK 2.18
-  //   Debian 6 (Squeeze): GTK 2.20
-  //   Ubuntu Lucid:       GTK 2.20
-  //   openSUSE 12.2       GTK 2.24
-  //   Ubuntu Precise:     GTK 2.24
-  if (!gtk_check_version(2, 24, 0))
+#elif defined(OS_WIN)
+  // On Windows we no longer support non-SSE2 machines since Chrome 35.
+  if (base::CPU().has_sse2())
     return;
 #else
   // No other platforms currently show this infobar.
@@ -59,6 +47,8 @@ ObsoleteSystemInfoBarDelegate::~ObsoleteSystemInfoBarDelegate() {
 base::string16 ObsoleteSystemInfoBarDelegate::GetMessageText() const {
 #if defined(OS_MACOSX)
   return ObsoleteSystemMac::LocalizedObsoleteSystemString();
+#elif defined(OS_WIN)
+  return l10n_util::GetStringUTF16(IDS_WIN_SSE_OBSOLETE_NOW);
 #else
   return l10n_util::GetStringUTF16(IDS_SYSTEM_OBSOLETE_MESSAGE);
 #endif
@@ -74,14 +64,16 @@ base::string16 ObsoleteSystemInfoBarDelegate::GetLinkText() const {
 
 bool ObsoleteSystemInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
 #if defined(OS_MACOSX)
-      GURL(chrome::kMac32BitDeprecationURL),
+          GURL(chrome::kMac32BitDeprecationURL),
 #else
-      GURL("http://www.google.com/support/chrome/bin/answer.py?answer=95411"),
+          GURL("http://www.google.com/support/chrome/bin/"
+               "answer.py?answer=95411"),
 #endif
-      content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }

@@ -7,12 +7,11 @@
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ui/gfx/text_elider.h"
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 using content::JavaScriptDialogManager;
@@ -87,8 +86,7 @@ JavaScriptAppModalDialog::~JavaScriptAppModalDialog() {
 }
 
 NativeAppModalDialog* JavaScriptAppModalDialog::CreateNativeDialog() {
-  gfx::NativeWindow parent_window =
-      web_contents()->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow parent_window = web_contents()->GetTopLevelNativeWindow();
 
 #if defined(USE_AURA)
   if (!parent_window->GetRootWindow()) {

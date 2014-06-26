@@ -23,9 +23,10 @@ TEST_F(BookmarkTest, DetachedBookmarkBarOnCustomNTP) {
   // Create a empty commited web contents.
   content::WebContents* web_contents = content::WebContents::Create(
       content::WebContents::CreateParams(browser()->profile()));
-  web_contents->GetController().LoadURL(
-        GURL(content::kAboutBlankURL), content::Referrer(),
-        content::PAGE_TRANSITION_LINK, std::string());
+  web_contents->GetController().LoadURL(GURL(url::kAboutBlankURL),
+                                        content::Referrer(),
+                                        content::PAGE_TRANSITION_LINK,
+                                        std::string());
 
   // Give it a NTP virtual URL.
   content::NavigationController* controller = &web_contents->GetController();
@@ -54,7 +55,7 @@ class BookmarkInstantExtendedTest : public BrowserWithTestWindowTest {
   }
 
  private:
-  static BrowserContextKeyedService* CreateTemplateURLService(
+  static KeyedService* CreateTemplateURLService(
       content::BrowserContext* profile) {
     return new TemplateURLService(static_cast<Profile*>(profile));
   }

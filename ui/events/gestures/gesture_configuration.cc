@@ -34,12 +34,24 @@ double GestureConfiguration::scroll_prediction_seconds_ = 0.03;
 double
   GestureConfiguration::min_touch_down_duration_in_seconds_for_click_ = 0.01;
 
+// If this is too small, we currently can get single finger pinch zoom. See
+// crbug.com/357237 for details.
+int GestureConfiguration::min_scaling_span_in_pixels_ = 125;
+
 // The number of points used in the linear regression which determines
 // touch velocity. Velocity is reported for 2 or more touch move events.
 int GestureConfiguration::points_buffered_for_velocity_ = 8;
 double GestureConfiguration::rail_break_proportion_ = 15;
 double GestureConfiguration::rail_start_proportion_ = 2;
 int GestureConfiguration::show_press_delay_in_ms_ = 150;
+
+// TODO(jdduke): Disable and remove entirely when issues with intermittent
+// scroll end detection on the Pixel are resolved, crbug.com/353702.
+#if defined(OS_CHROMEOS)
+int GestureConfiguration::scroll_debounce_interval_in_ms_ = 30;
+#else
+int GestureConfiguration::scroll_debounce_interval_in_ms_ = 0;
+#endif
 
 // Coefficients for a function that computes fling acceleration.
 // These are empirically determined defaults. Do not adjust without

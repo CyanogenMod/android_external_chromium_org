@@ -5,12 +5,54 @@
 {
   'targets': [
     {
+      'target_name': 'libcxx_proxy',
+      'type': 'none',
+      'dependencies=': [
+        'libc++',
+      ],
+      # Do not add dependency on libc++.so to dependents of this target. We
+      # don't want to pass libc++.so on the command line to the linker, as that
+      # would cause it to be linked into C executables which don't need it.
+      # Instead, we supply -stdlib=libc++ and let the clang driver decide.
+      'dependencies_traverse': 0,
+      'variables': {
+        # Don't add this target to the dependencies of targets with type=none.
+        'link_dependency': 1,
+      },
+      'all_dependent_settings': {
+        'target_conditions': [
+          ['_type!="none"', {
+            'include_dirs': [
+              'trunk/include',
+              '../libc++abi/trunk/include',
+            ],
+            'cflags_cc': [
+              '-nostdinc++',
+            ],
+            'ldflags': [
+              '-stdlib=libc++',
+              # Normally the generator takes care of RPATH. Our case is special
+              # because the generator is unaware of the libc++.so dependency.
+              # Note that setting RPATH here is a potential security issue. See:
+              # https://code.google.com/p/gyp/issues/detail?id=315
+              '-Wl,-R,\$$ORIGIN/lib/',
+            ],
+            'library_dirs': [
+              '<(PRODUCT_DIR)/lib/',
+            ],
+          }],
+        ],
+      },
+    },
+    {
       'target_name': 'libc++',
       'type': 'shared_library',
-      'variables': {
-         'prune_self_dependency': 1,
-      },
-      'dependencies=': [],
+      'dependencies=': [
+        # libc++abi is linked statically into libc++.so. This allows us to get
+        # both libc++ and libc++abi by passing '-stdlib=libc++'. If libc++abi
+        # was a separate DSO, we'd have to link against it explicitly.
+        '../libc++abi/libc++abi.gyp:libc++abi',
+      ],
       'sources': [
         'trunk/src/algorithm.cpp',
         'trunk/src/bind.cpp',
@@ -42,8 +84,6 @@
       'include_dirs': [
         'trunk/include',
         '../libc++abi/trunk/include',
-        # TODO(earthdok): remove when http://crbug.com/337426 is fixed
-        '../llvm-build/Release+Asserts/lib/clang/3.5/include/'
       ],
       'cflags': [
         '-g', '-Os', '-fPIC',
@@ -60,24 +100,6 @@
         '-Wstrict-overflow=4',
         '-nostdinc++',
       ],
-      'direct_dependent_settings': {
-        'target_conditions': [
-          ['_type!="none"', {
-            'include_dirs': [
-              'trunk/include',
-              # TODO(earthdok): remove when http://crbug.com/337426 is fixed
-              '../llvm-build/Release+Asserts/lib/clang/3.5/include/'
-            ],
-            'cflags_cc': [
-              '-nostdinc++',
-            ],
-            'ldflags': [
-              '-stdlib=libc++',
-              '-L<(PRODUCT_DIR)/lib/',
-            ],
-          }],
-        ],
-      },
       'cflags_cc!': [
         '-fno-rtti',
       ],
@@ -89,11 +111,16 @@
         '-nodefaultlibs',
       ],
       'ldflags!': [
+        # This somehow causes a warning from clang about an unused compilation
+        # option. Use '-lpthread' instead.
+        # TODO(earthdok): find out what's causing the warning.
         '-pthread',
       ],
       'libraries': [
-        '-lrt',
         '-lc',
+        '-lgcc_s',
+        '-lpthread',
+        '-lrt',
       ],
     },
   ]

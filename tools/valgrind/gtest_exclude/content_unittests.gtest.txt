@@ -1,5 +1,9 @@
 # Flaky, see http://crbug.com/227278
 WebContentsVideoCaptureDeviceTest.WebContentsDestroyed
 CompositingIOSurfaceTransformerTest.*
-# Flaky, see http://crbug.com/167299
-WebRTCAudioDeviceTest.StartPlayout
+
+# False positive, according to crbug.com/386080
+WebLayerImplFixedBoundsTest.CompareToWebLayerImplComplex
+WebLayerImplFixedBoundsTest.CompareToWebLayerImplSimple
+
+

@@ -147,12 +147,14 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
 
   [self updateSuggestionState];
 
-  // TODO(groby): "Save in Chrome" handling. http://crbug.com/306203.
-
   if (![[self view] isHidden])
     [self validateFor:autofill::VALIDATE_EDIT];
 
   // Always request re-layout on state change.
+  [self requestRelayout];
+}
+
+- (void)requestRelayout {
   id delegate = [[view_ window] windowController];
   if ([delegate respondsToSelector:@selector(requestRelayout)])
     [delegate performSelector:@selector(requestRelayout)];
@@ -324,6 +326,7 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
 
 - (void)update {
   [self updateAndClobber:YES];
+  [view_ updateHoverState];
 }
 
 - (void)fillForType:(const autofill::ServerFieldType)type {
@@ -437,12 +440,14 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
                                                              type,
                                                              fieldValue);
     [textfield setValidityMessage:base::SysUTF16ToNSString(message)];
-    [validationDelegate_ updateMessageForField:textfield];
 
     // If the field transitioned from invalid to valid, re-validate the group,
     // since inter-field checks become meaningful with valid fields.
     if (![textfield invalid])
       [self validateFor:autofill::VALIDATE_EDIT];
+
+    // The validity message has potentially changed - notify the error bubble.
+    [validationDelegate_ updateMessageForField:textfield];
   }
 
   // Update the icon if necessary.
@@ -493,7 +498,25 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
 
 - (void)updateAndClobber:(BOOL)shouldClobber {
   if (shouldClobber) {
+    // Remember which one of the inputs was first responder so focus can be
+    // restored after the inputs are rebuilt.
+    NSView* firstResponderView =
+        base::mac::ObjCCast<NSView>([[inputs_ window] firstResponder]);
+    autofill::ServerFieldType type = autofill::UNKNOWN_TYPE;
+    for (NSControl* field in [inputs_ subviews]) {
+      if ([firstResponderView isDescendantOf:field]) {
+        type = [self fieldTypeForControl:field];
+        break;
+      }
+    }
+
     [self makeInputControls];
+
+    if (type != autofill::UNKNOWN_TYPE) {
+      NSView* view = [inputs_ viewWithTag:type];
+      if (view)
+        [[inputs_ window] makeFirstResponder:view];
+    }
   } else {
     const autofill::DetailInputs& updatedInputs =
         delegate_->RequestedFieldsForSection(section_);
@@ -621,8 +644,15 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
       base::scoped_nsobject<AutofillPopUpButton> popup(
           [[AutofillPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO]);
       for (int i = 0; i < inputModel->GetItemCount(); ++i) {
-         [popup addItemWithTitle:
-             base::SysUTF16ToNSString(inputModel->GetItemAt(i))];
+        if (!inputModel->IsItemSeparatorAt(i)) {
+          // Currently, the first item in |inputModel| is duplicated later in
+          // the list. The second item is a separator. Because NSPopUpButton
+          // de-duplicates, the menu's just left with a separator on the top of
+          // the list (with nothing it's separating). For that reason,
+          // separators are ignored on Mac for now. http://crbug.com/347653
+          [popup addItemWithTitle:
+              base::SysUTF16ToNSString(inputModel->GetItemAt(i))];
+        }
       }
       [popup setDefaultValue:base::SysUTF16ToNSString(
           inputModel->GetItemAt(inputModel->GetDefaultIndex()))];
@@ -630,10 +660,19 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
     } else {
       base::scoped_nsobject<AutofillTextField> field(
           [[AutofillTextField alloc] init]);
+      [field setIsMultiline:input.IsMultiline()];
+      [[field cell] setLineBreakMode:NSLineBreakByClipping];
+      [[field cell] setScrollable:YES];
       [[field cell] setPlaceholderString:
           l10n_util::FixUpWindowsStyleLabel(input.placeholder_text)];
       NSString* tooltipText =
           base::SysUTF16ToNSString(delegate_->TooltipForField(input.type));
+      // VoiceOver onlys seems to pick up the help message on [field cell]
+      // (rather than just field).
+      BOOL success = [[field cell]
+          accessibilitySetOverrideValue:tooltipText
+                           forAttribute:NSAccessibilityHelpAttribute];
+      DCHECK(success);
       if ([tooltipText length] > 0) {
         if (!tooltipController_) {
           tooltipController_.reset(
@@ -671,9 +710,7 @@ bool ShouldOverwriteComboboxes(autofill::DialogSection section,
 
   if (inputs_) {
     [[self view] replaceSubview:inputs_ with:view];
-    id delegate = [[view_ window] windowController];
-    if ([delegate respondsToSelector:@selector(requestRelayout)])
-      [delegate performSelector:@selector(requestRelayout)];
+    [self requestRelayout];
   }
 
   inputs_ = view;

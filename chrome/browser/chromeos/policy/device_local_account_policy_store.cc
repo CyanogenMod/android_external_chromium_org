@@ -6,15 +6,14 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chromeos/dbus/power_policy_controller.h"
+#include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/external_data_fetcher.h"
+#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
-#include "policy/policy_constants.h"
 #include "policy/proto/cloud_policy.pb.h"
 #include "policy/proto/device_management_backend.pb.h"
 
@@ -83,37 +82,6 @@ void DeviceLocalAccountPolicyStore::UpdatePolicy(
   }
 
   InstallPolicy(validator->policy_data().Pass(), validator->payload().Pass());
-  // Exit the session when the lid is closed. The default behavior is to
-  // suspend while leaving the session running, which is not desirable for
-  // public sessions.
-  policy_map_.Set(key::kLidCloseAction,
-                  POLICY_LEVEL_MANDATORY,
-                  POLICY_SCOPE_USER,
-                  base::Value::CreateIntegerValue(
-                      chromeos::PowerPolicyController::ACTION_STOP_SESSION),
-                  NULL);
-  // Force the |ShelfAutoHideBehavior| policy to |Never|, ensuring that the ash
-  // shelf does not auto-hide.
-  policy_map_.Set(key::kShelfAutoHideBehavior,
-                  POLICY_LEVEL_MANDATORY,
-                  POLICY_SCOPE_USER,
-                  base::Value::CreateStringValue("Never"),
-                  NULL);
-  // Force the |ShowLogoutButtonInTray| policy to |true|, ensuring that a big,
-  // red logout button is shown in the ash system tray.
-  policy_map_.Set(key::kShowLogoutButtonInTray,
-                  POLICY_LEVEL_MANDATORY,
-                  POLICY_SCOPE_USER,
-                  base::Value::CreateBooleanValue(true),
-                  NULL);
-  // Force the |FullscreenAllowed| policy to |false|, ensuring that the ash
-  // shelf cannot be hidden by entering fullscreen mode.
-  policy_map_.Set(key::kFullscreenAllowed,
-                  POLICY_LEVEL_MANDATORY,
-                  POLICY_SCOPE_USER,
-                  base::Value::CreateBooleanValue(false),
-                  NULL);
-
   status_ = STATUS_OK;
   NotifyStoreLoaded();
 }
@@ -169,9 +137,11 @@ void DeviceLocalAccountPolicyStore::Validate(
     chromeos::DeviceSettingsService::OwnershipStatus ownership_status) {
   DCHECK_NE(chromeos::DeviceSettingsService::OWNERSHIP_UNKNOWN,
             ownership_status);
-  scoped_refptr<chromeos::OwnerKey> key =
-      device_settings_service_->GetOwnerKey();
-  if (!key.get() || !key->public_key()) {
+  const em::PolicyData* device_policy_data =
+      device_settings_service_->policy_data();
+  scoped_refptr<chromeos::PublicKey> key =
+      device_settings_service_->GetPublicKey();
+  if (!key || !key->is_loaded() || !device_policy_data) {
     status_ = CloudPolicyStore::STATUS_BAD_STATE;
     NotifyStoreLoaded();
     return;
@@ -180,7 +150,7 @@ void DeviceLocalAccountPolicyStore::Validate(
   scoped_ptr<UserCloudPolicyValidator> validator(
       UserCloudPolicyValidator::Create(policy_response.Pass(),
                                        background_task_runner()));
-  validator->ValidateUsername(account_id_);
+  validator->ValidateUsername(account_id_, false);
   validator->ValidatePolicyType(dm_protocol::kChromePublicAccountPolicyType);
   // The timestamp is verified when storing a new policy downloaded from the
   // server but not when loading a cached policy from disk.
@@ -190,11 +160,16 @@ void DeviceLocalAccountPolicyStore::Validate(
       valid_timestamp_required
           ? CloudPolicyValidatorBase::TIMESTAMP_REQUIRED
           : CloudPolicyValidatorBase::TIMESTAMP_NOT_REQUIRED,
-      CloudPolicyValidatorBase::DM_TOKEN_REQUIRED);
+      CloudPolicyValidatorBase::DM_TOKEN_NOT_REQUIRED);
+
+  // Validate the DMToken to match what device policy has.
+  validator->ValidateDMToken(device_policy_data->request_token(),
+                             CloudPolicyValidatorBase::DM_TOKEN_REQUIRED);
+
   validator->ValidatePayload();
   policy::BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  validator->ValidateSignature(key->public_key_as_string(),
+  validator->ValidateSignature(key->as_string(),
                                GetPolicyVerificationKey(),
                                connector->GetEnterpriseDomain(),
                                false);

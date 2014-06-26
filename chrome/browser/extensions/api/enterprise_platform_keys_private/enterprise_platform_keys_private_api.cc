@@ -18,7 +18,6 @@
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/extensions/api/enterprise_platform_keys_private.h"
 #include "chrome/common/pref_names.h"
@@ -29,7 +28,8 @@
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/settings/cros_settings_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -289,7 +289,7 @@ EPKPChallengeMachineKey::EPKPChallengeMachineKey(
 EPKPChallengeMachineKey::~EPKPChallengeMachineKey() {
 }
 
-bool EPKPChallengeMachineKey::RunImpl() {
+bool EPKPChallengeMachineKey::RunAsync() {
   scoped_ptr<api_epkp::ChallengeMachineKey::Params>
       params(api_epkp::ChallengeMachineKey::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -416,7 +416,7 @@ void EPKPChallengeUserKey::RegisterProfilePrefs(
                              user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-bool EPKPChallengeUserKey::RunImpl() {
+bool EPKPChallengeUserKey::RunAsync() {
   scoped_ptr<api_epkp::ChallengeUserKey::Params> params(
       api_epkp::ChallengeUserKey::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());

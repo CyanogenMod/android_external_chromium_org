@@ -57,6 +57,7 @@ SerializedNavigationEntry SerializedNavigationEntry::FromNavigationEntry(
   if (entry.GetFavicon().valid)
     navigation.favicon_url_ = entry.GetFavicon().url;
   navigation.http_status_code_ = entry.GetHttpStatusCode();
+  navigation.redirect_chain_ = entry.GetRedirectChain();
 
   return navigation;
 }
@@ -148,10 +149,6 @@ SerializedNavigationEntry SerializedNavigationEntry::FromSyncData(
     navigation.favicon_url_ = GURL(sync_data.favicon_url());
 
   navigation.http_status_code_ = sync_data.http_status_code();
-
-  // We shouldn't sync session data for managed users down at the moment.
-  DCHECK(!sync_data.has_blocked_state());
-  DCHECK_EQ(0, sync_data.content_pack_categories_size());
 
   navigation.Sanitize();
 
@@ -363,6 +360,7 @@ scoped_ptr<NavigationEntry> SerializedNavigationEntry::ToNavigationEntry(
   entry->SetTimestamp(timestamp_);
   entry->SetExtraData(kSearchTermsKey, search_terms_);
   entry->SetHttpStatusCode(http_status_code_);
+  entry->SetRedirectChain(redirect_chain_);
 
   // These fields should have default values.
   DCHECK_EQ(STATE_INVALID, blocked_state_);
@@ -475,6 +473,22 @@ sync_pb::TabNavigation SerializedNavigationEntry::ToSyncData() const {
            content_pack_categories_.begin();
        it != content_pack_categories_.end(); ++it) {
     sync_data.add_content_pack_categories(*it);
+  }
+
+  // Copy all redirect chain entries except the last URL (which should match
+  // the virtual_url).
+  if (redirect_chain_.size() > 1) {  // Single entry chains have no redirection.
+    size_t last_entry = redirect_chain_.size() - 1;
+    for (size_t i = 0; i < last_entry; i++) {
+      sync_pb::NavigationRedirect* navigation_redirect =
+          sync_data.add_navigation_redirect();
+      navigation_redirect->set_url(redirect_chain_[i].spec());
+    }
+    // If the last URL didn't match the virtual_url, record it separately.
+    if (sync_data.virtual_url() != redirect_chain_[last_entry].spec()) {
+      sync_data.set_last_navigation_redirect_url(
+          redirect_chain_[last_entry].spec());
+    }
   }
 
   sync_data.set_is_restored(is_restored_);

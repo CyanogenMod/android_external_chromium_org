@@ -137,10 +137,8 @@
 // method in the parent class.
 // Use like:
 //   virtual void foo() OVERRIDE;
-#if defined(COMPILER_MSVC)
+#if defined(__clang__) || defined(COMPILER_MSVC)
 #define OVERRIDE override
-#elif defined(__clang__)
-#define OVERRIDE 
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
 // GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
@@ -154,11 +152,8 @@
 // Use like:
 //   virtual void foo() FINAL;
 //   class B FINAL : public A {};
-#if defined(__clang__)
+#if defined(__clang__) || defined(COMPILER_MSVC)
 #define FINAL final
-#elif defined(COMPILER_MSVC)
-// TODO(jered): Change this to "final" when chromium no longer uses MSVC 2010.
-#define FINAL sealed
 #elif defined(COMPILER_GCC) && __cplusplus >= 201103 && \
       (__GNUC__ * 10000 + __GNUC_MINOR__ * 100) >= 40700
 // GCC 4.7 supports explicit virtual overrides when C++11 support is enabled.
@@ -196,7 +191,6 @@
 // If available, it would look like:
 //   __attribute__((format(wprintf, format_param, dots_param)))
 
-
 // MemorySanitizer annotations.
 #if defined(MEMORY_SANITIZER) && !defined(OS_NACL)
 #include <sanitizer/msan_interface.h>
@@ -217,15 +211,6 @@
 #define CDECL
 #endif  // defined(OS_WIN)
 #endif  // !defined(CDECL)
-
-// Macro for hinting that an expression is likely to be true.
-#if !defined(LIKELY)
-#if defined(COMPILER_GCC)
-#define LIKELY(x) __builtin_expect(!!(x), 1)
-#else
-#define LIKELY(x) (x)
-#endif  // defined(COMPILER_GCC)
-#endif  // !defined(LIKELY)
 
 // Macro for hinting that an expression is likely to be false.
 #if !defined(UNLIKELY)

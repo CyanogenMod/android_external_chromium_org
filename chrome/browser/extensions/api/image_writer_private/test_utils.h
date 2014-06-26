@@ -9,10 +9,17 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "chrome/browser/extensions/api/image_writer_private/image_writer_utility_client.h"
 #include "chrome/browser/extensions/api/image_writer_private/operation_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/disks/disk_mount_manager.h"
+#include "chromeos/disks/mock_disk_mount_manager.h"
+#endif
 
 namespace extensions {
 namespace image_writer {
@@ -31,6 +38,7 @@ const int kDevicePattern = 0xAAAAAAAA; // 10101010
 class MockOperationManager : public OperationManager {
  public:
   MockOperationManager();
+  explicit MockOperationManager(content::BrowserContext* context);
   virtual ~MockOperationManager();
 
   MOCK_METHOD3(OnProgress, void(const ExtensionId& extension_id,
@@ -46,32 +54,99 @@ class MockOperationManager : public OperationManager {
                              const std::string& error_message));
 };
 
+#if defined(OS_CHROMEOS)
+// A fake for the DiskMountManager that will successfully call the unmount
+// callback.
+class FakeDiskMountManager : public chromeos::disks::MockDiskMountManager {
+ public:
+  FakeDiskMountManager();
+  virtual ~FakeDiskMountManager();
+
+  virtual void UnmountDeviceRecursively(
+      const std::string& device_path,
+      const UnmountDeviceRecursivelyCallbackType& callback) OVERRIDE;
+  /*
+  MOCK_METHOD1(AddObserver, void(chromeos::disks::DiskMountManager::Observer*));
+  MOCK_METHOD1(RemoveObserver,
+  void(chromeos::disks::DiskMountManager::Observer*));
+  MOCK_CONST_METHOD0(disks, const DiskMap&());
+  MOCK_CONST_METHOD1(FindDiskBySourcePath, const Disk*(const std::string&));
+  MOCK_CONST_METHOD0(mount_points, const MountPointMap&());
+  MOCK_METHOD0(RequestMountInfoRefresh, void());
+  MOCK_METHOD4(MountPath, void(const std::string&, const std::string&, const
+  std::string&, chromeos::MountType));
+  MOCK_METHOD3(UnmountPath, void(const std::string&, chromeos::UnmountOptions,
+  const UnmountPathCallback&));
+  MOCK_METHOD1(FormatMountedDevice, void(const std::string&));
+  */
+
+ private:
+  DiskMap disks_;
+};
+#endif
+
+class FakeImageWriterClient : public ImageWriterUtilityClient {
+ public:
+  FakeImageWriterClient();
+
+  virtual void Write(const ProgressCallback& progress_callback,
+                     const SuccessCallback& success_callback,
+                     const ErrorCallback& error_callback,
+                     const base::FilePath& source,
+                     const base::FilePath& target) OVERRIDE;
+
+  virtual void Verify(const ProgressCallback& progress_callback,
+                      const SuccessCallback& success_callback,
+                      const ErrorCallback& error_callback,
+                      const base::FilePath& source,
+                      const base::FilePath& target) OVERRIDE;
+
+  virtual void Cancel(const CancelCallback& cancel_callback) OVERRIDE;
+
+  virtual void Shutdown() OVERRIDE;
+
+  void Progress(int64 progress);
+  void Success();
+  void Error(const std::string& message);
+  void Cancel();
+  static scoped_refptr<FakeImageWriterClient> Create();
+
+ private:
+  virtual ~FakeImageWriterClient();
+
+  ProgressCallback progress_callback_;
+  SuccessCallback success_callback_;
+  ErrorCallback error_callback_;
+  CancelCallback cancel_callback_;
+};
+
 // Base class for unit tests that manages creating image and device files.
 class ImageWriterUnitTestBase : public testing::Test {
- public:
+ protected:
   ImageWriterUnitTestBase();
   virtual ~ImageWriterUnitTestBase();
 
- protected:
   virtual void SetUp() OVERRIDE;
 
   virtual void TearDown() OVERRIDE;
 
-  // Compare the image and device files, returning true if they are the same,
-  // false if different.
-  bool CompareImageAndDevice();
+  // Verifies that the data in image_path was written to the file at
+  // device_path.  This is different from base::ContentsEqual because the device
+  // may be larger than the image.
+  bool ImageWrittenToDevice(const base::FilePath& image_path,
+                            const base::FilePath& device_path);
 
-  base::ScopedTempDir temp_dir_;
-  base::FilePath test_image_path_;
-  base::FilePath test_device_path_;
-
- private:
   // Fills |file| with |length| bytes of |pattern|, overwriting any existing
   // data.
   bool FillFile(const base::FilePath& file,
                 const int pattern,
                 const int length);
 
+  base::ScopedTempDir temp_dir_;
+  base::FilePath test_image_path_;
+  base::FilePath test_device_path_;
+
+ private:
   content::TestBrowserThreadBundle thread_bundle_;
 };
 

@@ -6,10 +6,12 @@
 #define CHROME_BROWSER_EXTENSIONS_API_INPUT_INPUT_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_function.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
@@ -22,7 +24,7 @@ class VirtualKeyboardPrivateInsertTextFunction : public SyncExtensionFunction {
   virtual ~VirtualKeyboardPrivateInsertTextFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class VirtualKeyboardPrivateMoveCursorFunction : public SyncExtensionFunction {
@@ -34,7 +36,7 @@ class VirtualKeyboardPrivateMoveCursorFunction : public SyncExtensionFunction {
   virtual ~VirtualKeyboardPrivateMoveCursorFunction() {}
 
   // ExtensionFunction.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class VirtualKeyboardPrivateSendKeyEventFunction
@@ -48,7 +50,7 @@ class VirtualKeyboardPrivateSendKeyEventFunction
   virtual ~VirtualKeyboardPrivateSendKeyEventFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class VirtualKeyboardPrivateHideKeyboardFunction
@@ -62,7 +64,7 @@ class VirtualKeyboardPrivateHideKeyboardFunction
   virtual ~VirtualKeyboardPrivateHideKeyboardFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class VirtualKeyboardPrivateLockKeyboardFunction
@@ -76,7 +78,7 @@ class VirtualKeyboardPrivateLockKeyboardFunction
   virtual ~VirtualKeyboardPrivateLockKeyboardFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class VirtualKeyboardPrivateKeyboardLoadedFunction
@@ -90,7 +92,7 @@ class VirtualKeyboardPrivateKeyboardLoadedFunction
   virtual ~VirtualKeyboardPrivateKeyboardLoadedFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class VirtualKeyboardPrivateGetKeyboardConfigFunction
@@ -104,21 +106,35 @@ class VirtualKeyboardPrivateGetKeyboardConfigFunction
   virtual ~VirtualKeyboardPrivateGetKeyboardConfigFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class InputAPI : public ProfileKeyedAPI {
+class VirtualKeyboardPrivateOpenSettingsFunction
+    : public SyncExtensionFunction {
  public:
-  explicit InputAPI(Profile* profile);
+  DECLARE_EXTENSION_FUNCTION("virtualKeyboardPrivate.openSettings",
+                             VIRTUALKEYBOARDPRIVATE_OPENSETTINGS);
+
+ protected:
+  virtual ~VirtualKeyboardPrivateOpenSettingsFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
+};
+
+
+class InputAPI : public BrowserContextKeyedAPI {
+ public:
+  explicit InputAPI(content::BrowserContext* context);
   virtual ~InputAPI();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<InputAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<InputAPI>* GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<InputAPI>;
+  friend class BrowserContextKeyedAPIFactory<InputAPI>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "InputAPI";
   }

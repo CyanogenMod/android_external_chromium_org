@@ -4,14 +4,13 @@
 
 #include "ash/wm/event_client_impl.h"
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ui/aura/window.h"
 #include "ui/keyboard/keyboard_util.h"
 
 namespace ash {
-namespace internal {
 
 EventClientImpl::EventClientImpl() {
 }
@@ -56,5 +55,4 @@ ui::EventTarget* EventClientImpl::GetToplevelEventTarget() {
   return Shell::GetInstance();
 }
 
-}  // namespace internal
 }  // namespace ash

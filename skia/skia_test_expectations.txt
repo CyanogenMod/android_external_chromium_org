@@ -48,11 +48,10 @@
 #
 # START OVERRIDES HERE
 
-# Skia r13323 (Implement correct clipping for image filters) altered the 
-# images for the following layout tests:
-crbug.com/341448 svg/W3C-SVG-1.1/filters-gauss-01-b.svg [ ImageOnlyFailure ]
-crbug.com/341448 svg/W3C-SVG-1.1/filters-morph-01-f.svg [ ImageOnlyFailure ]
-crbug.com/341448 svg/batik/text/smallFonts.svg [ ImageOnlyFailure ]
-crbug.com/341448 svg/batik/text/textFeatures.svg [ ImageOnlyFailure ]
+crbug.com/379147 svg/W3C-SVG-1.1/filters-color-01-b.svg [ ImageOnlyFailure ]
+crbug.com/379147 svg/W3C-SVG-1.1/filters-comptran-01-b.svg [ ImageOnlyFailure ]
+crbug.com/379147 svg/batik/filters/feTile.svg [ ImageOnlyFailure ]
+crbug.com/379147 svg/filters/big-sized-filter.svg [ ImageOnlyFailure ]
+crbug.com/379147 svg/filters/feLighting-crash.svg [ ImageOnlyFailure ]
 
 # END OVERRIDES HERE (this line ensures that the file is newline-terminated)

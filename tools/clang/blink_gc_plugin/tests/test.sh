@@ -28,8 +28,12 @@ do_testcase() {
     flags="$(cat "${3}")"
   fi
   local output="$("${CLANG_DIR}"/bin/clang -c -Wno-c++11-extensions \
-      -Xclang -load -Xclang "${CLANG_DIR}"/lib/libBlinkGCPlugin.${LIB} \
+      -Xclang -load -Xclang "${CLANG_DIR}"/lib/lib${LIBNAME}.${LIB} \
       -Xclang -add-plugin -Xclang blink-gc-plugin ${flags} ${1} 2>&1)"
+  local json="${input%cpp}graph.json"
+  if [ -f "$json" ]; then
+    output="$(python ../process-graph.py -c ${json} 2>&1)"
+  fi
   local diffout="$(echo "${output}" | diff - "${2}")"
   if [ "${diffout}" = "" ]; then
     echo "PASS: ${1}"
@@ -60,6 +64,7 @@ else
   # work no matter what the cwd is, explicitly cd to there.
   cd "$(dirname "${0}")"
 
+  export LIBNAME=$(grep LIBRARYNAME ../Makefile | cut -d ' ' -f 3)
   if [ "$(uname -s)" = "Linux" ]; then
     export LIB=so
   elif [ "$(uname -s)" = "Darwin" ]; then

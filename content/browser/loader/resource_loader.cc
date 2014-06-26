@@ -8,6 +8,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/time/time.h"
+#include "content/browser/appcache/appcache_interceptor.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/loader/cross_site_resource_handler.h"
 #include "content/browser/loader/detachable_resource_handler.h"
@@ -29,7 +30,6 @@
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
 #include "net/url_request/url_request_status.h"
-#include "webkit/browser/appcache/appcache_interceptor.h"
 
 using base::TimeDelta;
 using base::TimeTicks;
@@ -54,7 +54,7 @@ void PopulateResourceResponse(net::URLRequest* request,
   response->head.connection_info = response_info.connection_info;
   response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
   response->head.socket_address = request->GetSocketAddress();
-  appcache::AppCacheInterceptor::GetExtraResponseInfo(
+  AppCacheInterceptor::GetExtraResponseInfo(
       request,
       &response->head.appcache_id,
       &response->head.appcache_manifest_url);
@@ -99,8 +99,7 @@ void ResourceLoader::StartRequest() {
 
   // Give the handler a chance to delay the URLRequest from being started.
   bool defer_start = false;
-  if (!handler_->OnWillStart(GetRequestInfo()->GetRequestID(), request_->url(),
-                             &defer_start)) {
+  if (!handler_->OnWillStart(request_->url(), &defer_start)) {
     Cancel();
     return;
   }
@@ -127,8 +126,6 @@ void ResourceLoader::CancelWithError(int error_code) {
 }
 
 void ResourceLoader::ReportUploadProgress() {
-  ResourceRequestInfoImpl* info = GetRequestInfo();
-
   if (waiting_for_upload_progress_ack_)
     return;  // Send one progress event at a time.
 
@@ -152,8 +149,7 @@ void ResourceLoader::ReportUploadProgress() {
 
   if (is_finished || enough_new_progress || too_much_time_passed) {
     if (request_->load_flags() & net::LOAD_ENABLE_UPLOAD_PROGRESS) {
-      handler_->OnUploadProgress(
-          info->GetRequestID(), progress.position(), progress.size());
+      handler_->OnUploadProgress(progress.position(), progress.size());
       waiting_for_upload_progress_ack_ = true;
     }
     last_upload_ticks_ = TimeTicks::Now();
@@ -168,7 +164,12 @@ void ResourceLoader::MarkAsTransferring() {
 }
 
 void ResourceLoader::CompleteTransfer() {
-  DCHECK_EQ(DEFERRED_READ, deferred_stage_);
+  // Although CrossSiteResourceHandler defers at OnResponseStarted
+  // (DEFERRED_READ), it may be seeing a replay of events via
+  // BufferedResourceHandler, and so the request itself is actually deferred at
+  // a later read stage.
+  DCHECK(DEFERRED_READ == deferred_stage_ ||
+         DEFERRED_RESPONSE_COMPLETE == deferred_stage_);
 
   is_transferring_ = false;
   GetRequestInfo()->cross_site_handler()->ResumeResponse();
@@ -222,8 +223,7 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
   PopulateResourceResponse(request_.get(), response.get());
 
-  if (!handler_->OnRequestRedirected(
-          info->GetRequestID(), new_url, response.get(), defer)) {
+  if (!handler_->OnRequestRedirected(new_url, response.get(), defer)) {
     Cancel();
   } else if (*defer) {
     deferred_stage_ = DEFERRED_REDIRECT;  // Follow redirect when resumed.
@@ -294,8 +294,7 @@ void ResourceLoader::OnBeforeNetworkStart(net::URLRequest* unused,
   DCHECK_EQ(request_.get(), unused);
 
   // Give the handler a chance to delay the URLRequest from using the network.
-  if (!handler_->OnBeforeNetworkStart(
-           GetRequestInfo()->GetRequestID(), request_->url(), defer)) {
+  if (!handler_->OnBeforeNetworkStart(request_->url(), defer)) {
     Cancel();
     return;
   } else if (*defer) {
@@ -357,12 +356,21 @@ void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
 
   CompleteRead(bytes_read);
 
-  if (is_deferred())
+  // If the handler cancelled or deferred the request, do not continue
+  // processing the read. If cancelled, the URLRequest has already been
+  // cancelled and will schedule an erroring OnReadCompleted later. If deferred,
+  // do nothing until resumed.
+  //
+  // Note: if bytes_read is 0 (EOF) and the handler defers, resumption will call
+  // ResponseCompleted().
+  if (is_deferred() || !request_->status().is_success())
     return;
 
-  if (request_->status().is_success() && bytes_read > 0) {
+  if (bytes_read > 0) {
     StartReading(true);  // Read the next chunk.
   } else {
+    // URLRequest reported an EOF. Call ResponseCompleted.
+    DCHECK_EQ(0, bytes_read);
     ResponseCompleted();
   }
 }
@@ -417,6 +425,12 @@ void ResourceLoader::Resume() {
           base::Bind(&ResourceLoader::ResumeReading,
                      weak_ptr_factory_.GetWeakPtr()));
       break;
+    case DEFERRED_RESPONSE_COMPLETE:
+      base::MessageLoop::current()->PostTask(
+          FROM_HERE,
+          base::Bind(&ResourceLoader::ResponseCompleted,
+                     weak_ptr_factory_.GetWeakPtr()));
+      break;
     case DEFERRED_FINISH:
       // Delay self-destruction since we don't know how we were reached.
       base::MessageLoop::current()->PostTask(
@@ -433,6 +447,11 @@ void ResourceLoader::Cancel() {
 
 void ResourceLoader::StartRequestInternal() {
   DCHECK(!request_->is_pending());
+
+  if (!request_->status().is_success()) {
+    return;
+  }
+
   request_->Start();
 
   delegate_->DidStartRequest(this);
@@ -529,8 +548,7 @@ void ResourceLoader::CompleteResponseStarted() {
   delegate_->DidReceiveResponse(this);
 
   bool defer = false;
-  if (!handler_->OnResponseStarted(
-          info->GetRequestID(), response.get(), &defer)) {
+  if (!handler_->OnResponseStarted(response.get(), &defer)) {
     Cancel();
   } else if (defer) {
     read_deferral_start_time_ = base::TimeTicks::Now();
@@ -576,7 +594,6 @@ void ResourceLoader::ResumeReading() {
 }
 
 void ResourceLoader::ReadMore(int* bytes_read) {
-  ResourceRequestInfoImpl* info = GetRequestInfo();
   DCHECK(!is_deferred());
 
   // Make sure we track the buffer in at least one place.  This ensures it gets
@@ -584,7 +601,7 @@ void ResourceLoader::ReadMore(int* bytes_read) {
   // doesn't use the buffer.
   scoped_refptr<net::IOBuffer> buf;
   int buf_size;
-  if (!handler_->OnWillRead(info->GetRequestID(), &buf, &buf_size, -1)) {
+  if (!handler_->OnWillRead(&buf, &buf_size, -1)) {
     Cancel();
     return;
   }
@@ -602,14 +619,18 @@ void ResourceLoader::CompleteRead(int bytes_read) {
   DCHECK(bytes_read >= 0);
   DCHECK(request_->status().is_success());
 
-  ResourceRequestInfoImpl* info = GetRequestInfo();
-
   bool defer = false;
-  if (!handler_->OnReadCompleted(info->GetRequestID(), bytes_read, &defer)) {
+  if (!handler_->OnReadCompleted(bytes_read, &defer)) {
     Cancel();
   } else if (defer) {
-    deferred_stage_ = DEFERRED_READ;  // Read next chunk when resumed.
+    deferred_stage_ =
+        bytes_read > 0 ? DEFERRED_READ : DEFERRED_RESPONSE_COMPLETE;
   }
+
+  // Note: the request may still have been cancelled while OnReadCompleted
+  // returns true if OnReadCompleted caused request to get cancelled
+  // out-of-band. (In AwResourceDispatcherHostDelegate::DownloadStarting, for
+  // instance.)
 }
 
 void ResourceLoader::ResponseCompleted() {
@@ -633,8 +654,7 @@ void ResourceLoader::ResponseCompleted() {
   }
 
   bool defer = false;
-  handler_->OnResponseCompleted(info->GetRequestID(), request_->status(),
-                                security_info, &defer);
+  handler_->OnResponseCompleted(request_->status(), security_info, &defer);
   if (defer) {
     // The handler is not ready to die yet.  We will call DidFinishLoading when
     // we resume.

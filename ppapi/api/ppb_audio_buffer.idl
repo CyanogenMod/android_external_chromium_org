@@ -10,7 +10,8 @@
 [generate_thunk]
 
 label Chrome {
-  [channel=dev] M34 = 0.1
+  [channel=dev] M34 = 0.1,
+  M35 = 0.1
 };
 
 /**
@@ -20,7 +21,13 @@ label Chrome {
 enum PP_AudioBuffer_SampleRate {
   PP_AUDIOBUFFER_SAMPLERATE_UNKNOWN = 0,
   PP_AUDIOBUFFER_SAMPLERATE_8000 = 8000,
-  PP_AUDIOBUFFER_SAMPLERATE_44100 = 44100
+  PP_AUDIOBUFFER_SAMPLERATE_16000 = 16000,
+  PP_AUDIOBUFFER_SAMPLERATE_22050 = 22050,
+  PP_AUDIOBUFFER_SAMPLERATE_32000 = 32000,
+  PP_AUDIOBUFFER_SAMPLERATE_44100 = 44100,
+  PP_AUDIOBUFFER_SAMPLERATE_48000 = 48000,
+  PP_AUDIOBUFFER_SAMPLERATE_96000 = 96000,
+  PP_AUDIOBUFFER_SAMPLERATE_192000 = 192000
 };
 
 /**
@@ -32,6 +39,7 @@ enum PP_AudioBuffer_SampleSize {
   PP_AUDIOBUFFER_SAMPLESIZE_16_BITS = 2
 };
 
+[version=0.1]
 interface PPB_AudioBuffer {
   /**
    * Determines if a resource is an AudioBuffer resource.

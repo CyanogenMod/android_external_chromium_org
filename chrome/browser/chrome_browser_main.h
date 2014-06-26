@@ -35,7 +35,7 @@ namespace chrome_browser {
 extern const char kMissingLocaleDataTitle[];
 #endif
 
-#if defined(OS_WIN) || defined(TOOLKIT_GTK)
+#if defined(OS_WIN)
 extern const char kMissingLocaleDataMessage[];
 #endif
 }
@@ -87,7 +87,7 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   const content::MainFunctionParams& parameters() const {
     return parameters_;
   }
-  const CommandLine& parsed_command_line() const {
+  const base::CommandLine& parsed_command_line() const {
     return parsed_command_line_;
   }
 
@@ -107,9 +107,6 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // thread.
   void StartMetricsRecording();
 
-  // Returns true if the user opted in to sending metric reports.
-  bool IsMetricsReportingEnabled();
-
   // Record time from process startup to present time in an UMA histogram.
   void RecordBrowserStartupTime();
 
@@ -126,7 +123,7 @@ class ChromeBrowserMainParts : public content::BrowserMainParts {
   // Members initialized on construction ---------------------------------------
 
   const content::MainFunctionParams parameters_;
-  const CommandLine& parsed_command_line_;
+  const base::CommandLine& parsed_command_line_;
   int result_code_;
 
   // Create StartupTimeBomb object for watching jank during startup.

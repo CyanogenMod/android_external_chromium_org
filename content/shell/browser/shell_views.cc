@@ -6,16 +6,15 @@
 
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/browser/context_factory.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/shell/browser/shell_platform_data_aura.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -25,7 +24,6 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
@@ -34,7 +32,6 @@
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/test/desktop_test_views_delegate.h"
 #include "ui/views/view.h"
-#include "ui/views/widget/desktop_aura/desktop_screen.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -42,6 +39,8 @@
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/wm/test/wm_test_helper.h"
+#else  // !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_screen.h"
 #endif
 
 #if defined(OS_WIN)
@@ -139,7 +138,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     web_view_ = new views::WebView(web_contents->GetBrowserContext());
     web_view_->SetWebContents(web_contents);
     web_view_->SetPreferredSize(size);
-    web_contents->GetView()->Focus();
+    web_contents->Focus();
     contents_view_->AddChildView(web_view_);
     Layout();
 
@@ -151,7 +150,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     // Resizing a widget on chromeos doesn't automatically resize the root, need
     // to explicitly do that.
 #if defined(OS_CHROMEOS)
-    GetWidget()->GetNativeWindow()->GetDispatcher()->host()->SetBounds(bounds);
+    GetWidget()->GetNativeWindow()->GetHost()->SetBounds(bounds);
 #endif
   }
 
@@ -175,7 +174,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
     // Convert from content coordinates to window coordinates.
     // This code copied from chrome_web_contents_view_delegate_views.cc
     aura::Window* web_contents_window =
-        shell_->web_contents()->GetView()->GetNativeView();
+        shell_->web_contents()->GetNativeView();
     aura::Window* root_window = web_contents_window->GetRootWindow();
     aura::client::ScreenPositionClient* screen_position_client =
         aura::client::GetScreenPositionClient(root_window);
@@ -189,11 +188,14 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
         new views::MenuRunner(context_menu_model_.get()));
 
     if (context_menu_runner_->RunMenuAt(web_view_->GetWidget(),
-                NULL, gfx::Rect(screen_point, gfx::Size()),
-                views::MenuItemView::TOPRIGHT, ui::MENU_SOURCE_NONE,
-                views::MenuRunner::CONTEXT_MENU) ==
-            views::MenuRunner::MENU_DELETED)
-        return;
+                                        NULL,
+                                        gfx::Rect(screen_point, gfx::Size()),
+                                        views::MENU_ANCHOR_TOPRIGHT,
+                                        ui::MENU_SOURCE_NONE,
+                                        views::MenuRunner::CONTEXT_MENU) ==
+        views::MenuRunner::MENU_DELETED) {
+      return;
+    }
   }
 
   void OnWebContentsFocused(content::WebContents* web_contents) {
@@ -353,7 +355,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
   virtual View* GetContentsView() OVERRIDE { return this; }
 
   // Overridden from View
-  virtual gfx::Size GetMinimumSize() OVERRIDE {
+  virtual gfx::Size GetMinimumSize() const OVERRIDE {
     // We want to be able to make the window smaller than its initial
     // (preferred) size.
     return gfx::Size();
@@ -410,6 +412,7 @@ class ShellWindowDelegateView : public views::WidgetDelegateView,
 
 #if defined(OS_CHROMEOS)
 wm::WMTestHelper* Shell::wm_test_helper_ = NULL;
+gfx::Screen* Shell::test_screen_ = NULL;
 #endif
 views::ViewsDelegate* Shell::views_delegate_ = NULL;
 
@@ -421,9 +424,10 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 #endif
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Initialize();
-  gfx::Screen::SetScreenInstance(
-      gfx::SCREEN_TYPE_NATIVE, aura::TestScreen::Create());
-  wm_test_helper_ = new wm::WMTestHelper(default_window_size);
+  test_screen_ = aura::TestScreen::Create(gfx::Size());
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen_);
+  wm_test_helper_ = new wm::WMTestHelper(default_window_size,
+                                         GetContextFactory());
 #else
   gfx::Screen::SetScreenInstance(
       gfx::SCREEN_TYPE_NATIVE, views::CreateDesktopScreen());
@@ -434,6 +438,10 @@ void Shell::PlatformInitialize(const gfx::Size& default_window_size) {
 void Shell::PlatformExit() {
 #if defined(OS_CHROMEOS)
   delete wm_test_helper_;
+  wm_test_helper_ = NULL;
+
+  delete test_screen_;
+  test_screen_ = NULL;
 #endif
   delete views_delegate_;
   views_delegate_ = NULL;
@@ -495,7 +503,6 @@ void Shell::PlatformCreateWindow(int width, int height) {
   views::Widget::InitParams params;
   params.bounds = gfx::Rect(0, 0, width, height);
   params.delegate = new ShellWindowDelegateView(this);
-  params.top_level = true;
   params.remove_standard_frame = true;
   window_widget_->Init(params);
 #endif
@@ -505,15 +512,15 @@ void Shell::PlatformCreateWindow(int width, int height) {
   window_ = window_widget_->GetNativeWindow();
   // Call ShowRootWindow on RootWindow created by WMTestHelper without
   // which XWindow owned by RootWindow doesn't get mapped.
-  window_->GetDispatcher()->host()->Show();
+  window_->GetHost()->Show();
   window_widget_->Show();
 }
 
 void Shell::PlatformSetContents() {
   if (headless_) {
     CHECK(platform_);
-    aura::Window* content = web_contents_->GetView()->GetNativeView();
-    aura::Window* parent = platform_->window()->window();
+    aura::Window* content = web_contents_->GetNativeView();
+    aura::Window* parent = platform_->host()->window();
     if (!parent->Contains(content)) {
       parent->AddChild(content);
       content->Show();

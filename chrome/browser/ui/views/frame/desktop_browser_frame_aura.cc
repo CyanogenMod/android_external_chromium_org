@@ -8,19 +8,18 @@
 #include "chrome/browser/ui/views/frame/browser_desktop_window_tree_host.h"
 #include "chrome/browser/ui/views/frame/browser_shutdown.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/frame/desktop_user_action_handler_aura.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/font.h"
-#include "ui/views/corewm/visibility_controller.h"
 #include "ui/views/view.h"
+#include "ui/wm/core/visibility_controller.h"
 
 using aura::Window;
 
@@ -68,15 +67,10 @@ void DesktopBrowserFrameAura::InitNativeWidget(
       browser_desktop_window_tree_host_->AsDesktopWindowTreeHost();
   DesktopNativeWidgetAura::InitNativeWidget(modified_params);
 
-  user_action_client_.reset(
-      new DesktopUserActionHandlerAura(browser_view_->browser()));
-  aura::client::SetUserActionClient(GetNativeView()->GetRootWindow(),
-                                    user_action_client_.get());
-
-  visibility_controller_.reset(new views::corewm::VisibilityController);
+  visibility_controller_.reset(new wm::VisibilityController);
   aura::client::SetVisibilityClient(GetNativeView()->GetRootWindow(),
                                     visibility_controller_.get());
-  views::corewm::SetChildWindowVisibilityChangesAnimated(
+  wm::SetChildWindowVisibilityChangesAnimated(
       GetNativeView()->GetRootWindow());
 }
 
@@ -97,4 +91,21 @@ bool DesktopBrowserFrameAura::UsesNativeSystemMenu() const {
 
 int DesktopBrowserFrameAura::GetMinimizeButtonOffset() const {
   return browser_desktop_window_tree_host_->GetMinimizeButtonOffset();
+}
+
+bool DesktopBrowserFrameAura::ShouldSaveWindowPlacement() const {
+  // The placement can always be stored.
+  return true;
+}
+
+void DesktopBrowserFrameAura::GetWindowPlacement(
+    gfx::Rect* bounds,
+    ui::WindowShowState* show_state) const {
+  *bounds = GetWidget()->GetRestoredBounds();
+  if (IsMaximized())
+    *show_state = ui::SHOW_STATE_MAXIMIZED;
+  else if (IsMinimized())
+    *show_state = ui::SHOW_STATE_MINIMIZED;
+  else
+    *show_state = ui::SHOW_STATE_NORMAL;
 }

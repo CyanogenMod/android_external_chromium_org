@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_ANDROID_H_
 #define CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_ANDROID_H_
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -21,7 +21,9 @@ class TemplateUrlServiceAndroid {
   TemplateUrlServiceAndroid(JNIEnv* env, jobject obj);
 
   void Load(JNIEnv* env, jobject obj);
-  void SetDefaultSearchProvider(JNIEnv* env, jobject obj, jint selected_index);
+  void SetUserSelectedDefaultSearchProvider(JNIEnv* env,
+                                            jobject obj,
+                                            jint selected_index);
   jint GetDefaultSearchProvider(JNIEnv* env, jobject obj);
   jint GetTemplateUrlCount(JNIEnv* env, jobject obj);
   jboolean IsLoaded(JNIEnv* env, jobject obj);
@@ -43,6 +45,10 @@ class TemplateUrlServiceAndroid {
       jobject obj,
       jstring jquery,
       jstring jcurrent_url);
+  base::android::ScopedJavaLocalRef<jstring> GetUrlForContextualSearchQuery(
+      JNIEnv* env,
+      jobject obj,
+      jstring jquery);
 
   static bool Register(JNIEnv* env);
 

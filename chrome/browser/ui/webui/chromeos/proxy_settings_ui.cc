@@ -85,7 +85,7 @@ void ProxySettingsHTMLSource::StartDataRequest(
 namespace chromeos {
 
 ProxySettingsUI::ProxySettingsUI(content::WebUI* web_ui)
-    : WebUIController(web_ui),
+    : ui::WebDialogUI(web_ui),
       initialized_handlers_(false),
       proxy_handler_(new options::ProxyHandler()),
       core_handler_(new options::CoreChromeOSOptionsHandler()) {

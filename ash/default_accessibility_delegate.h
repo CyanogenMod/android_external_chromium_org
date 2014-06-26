@@ -11,7 +11,6 @@
 #include "base/compiler_specific.h"
 
 namespace ash {
-namespace internal {
 
 class ASH_EXPORT DefaultAccessibilityDelegate : public AccessibilityDelegate {
  public:
@@ -32,6 +31,7 @@ class ASH_EXPORT DefaultAccessibilityDelegate : public AccessibilityDelegate {
   virtual void SetVirtualKeyboardEnabled(bool enabled) OVERRIDE;
   virtual bool IsVirtualKeyboardEnabled() const OVERRIDE;
   virtual bool ShouldShowAccessibilityMenu() const OVERRIDE;
+  virtual bool IsBrailleDisplayConnected() const OVERRIDE;
   virtual void SilenceSpokenFeedback() const OVERRIDE;
   virtual void ToggleSpokenFeedback(
       AccessibilityNotificationVisibility notify) OVERRIDE;
@@ -53,7 +53,6 @@ class ASH_EXPORT DefaultAccessibilityDelegate : public AccessibilityDelegate {
   DISALLOW_COPY_AND_ASSIGN(DefaultAccessibilityDelegate);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // DEFAULT_ACCESSIBILITY_DELEGATE_H_

@@ -9,10 +9,12 @@
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/app_mode/app_session_lifetime.h"
-#include "chrome/browser/chromeos/login/captive_portal_window_proxy.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/app_mode/certificate_manager_dialog.h"
+#include "chrome/browser/chromeos/login/ui/captive_portal_window_proxy.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 #include "chrome/browser/chromeos/net/network_portal_detector.h"
+#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
@@ -25,6 +27,7 @@
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/ui_strings.h"
 
 namespace {
 
@@ -37,12 +40,16 @@ namespace chromeos {
 ErrorScreenHandler::ErrorScreenHandler(
     const scoped_refptr<NetworkStateInformer>& network_state_informer)
     : BaseScreenHandler(kJsScreenPath),
+      delegate_(NULL),
       network_state_informer_(network_state_informer),
       show_on_init_(false) {
   DCHECK(network_state_informer_.get());
 }
 
-ErrorScreenHandler::~ErrorScreenHandler() {
+ErrorScreenHandler::~ErrorScreenHandler() {}
+
+void ErrorScreenHandler::SetDelegate(ErrorScreenActorDelegate* delegate) {
+  delegate_ = delegate;
 }
 
 void ErrorScreenHandler::Show(OobeDisplay::Screen parent_screen,
@@ -54,7 +61,10 @@ void ErrorScreenHandler::Show(OobeDisplay::Screen parent_screen,
   parent_screen_ = parent_screen;
   ShowScreen(OobeUI::kScreenErrorMessage, params);
   NetworkErrorShown();
-  NetworkPortalDetector::Get()->EnableLazyDetection();
+  NetworkPortalDetector::Get()->SetStrategy(
+      PortalDetectorStrategy::STRATEGY_ID_ERROR_SCREEN);
+  if (delegate_)
+    delegate_->OnErrorShow();
   LOG(WARNING) << "Offline message is displayed";
 }
 
@@ -64,7 +74,10 @@ void ErrorScreenHandler::Hide() {
   std::string screen_name;
   if (GetScreenName(parent_screen_, &screen_name))
     ShowScreen(screen_name.c_str(), NULL);
-  NetworkPortalDetector::Get()->DisableLazyDetection();
+  NetworkPortalDetector::Get()->SetStrategy(
+      PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN);
+  if (delegate_)
+    delegate_->OnErrorHide();
   LOG(WARNING) << "Offline message is hidden";
 }
 
@@ -93,6 +106,7 @@ void ErrorScreenHandler::HideCaptivePortal() {
 }
 
 void ErrorScreenHandler::SetUIState(ErrorScreen::UIState ui_state) {
+  show_connecting_indicator_ = false;
   ui_state_ = ui_state;
   if (page_is_ready())
     CallJS("setUIState", static_cast<int>(ui_state_));
@@ -116,6 +130,12 @@ void ErrorScreenHandler::AllowOfflineLogin(bool allowed) {
   offline_login_allowed_ = allowed;
   if (page_is_ready())
     CallJS("allowOfflineLogin", allowed);
+}
+
+void ErrorScreenHandler::ShowConnectingIndicator(bool show) {
+  show_connecting_indicator_ = show;
+  if (page_is_ready())
+    CallJS("showConnectingIndicator", show);
 }
 
 void ErrorScreenHandler::NetworkErrorShown() {
@@ -152,17 +172,14 @@ void ErrorScreenHandler::HandleRebootButtonClicked() {
 }
 
 void ErrorScreenHandler::HandleDiagnoseButtonClicked() {
-  UserManager* user_manager = UserManager::Get();
-  User* user = user_manager->GetActiveUser();
-  Profile* profile = user_manager->GetProfileByUser(user);
-
+  Profile* profile = ProfileManager::GetActiveUserProfile();
   ExtensionService* extension_service =
       extensions::ExtensionSystem::Get(profile)->extension_service();
 
   std::string extension_id =
       extension_service->component_loader()->Add(
           IDR_CONNECTIVITY_DIAGNOSTICS_MANIFEST,
-          base::FilePath(extension_misc::kConnectivityDiagnosticsPath));
+          base::FilePath(extension_misc::kConnectivityDiagnosticsKioskPath));
 
   const extensions::Extension* extension = extension_service->
       GetExtensionById(extension_id, true);
@@ -171,9 +188,22 @@ void ErrorScreenHandler::HandleDiagnoseButtonClicked() {
                                   NEW_WINDOW));
   InitAppSession(profile, extension_id);
 
-  user_manager->SessionStarted();
+  UserManager::Get()->SessionStarted();
 
   LoginDisplayHostImpl::default_host()->Finalize();
+}
+
+void ErrorScreenHandler::HandleConfigureCerts() {
+  CertificateManagerDialog* dialog =
+      new CertificateManagerDialog(ProfileManager::GetActiveUserProfile(),
+                                   NULL,
+                                   GetNativeWindow());
+  dialog->Show();
+}
+
+void ErrorScreenHandler::HandleLaunchOobeGuestSession() {
+  if (delegate_)
+    delegate_->OnLaunchOobeGuestSession();
 }
 
 void ErrorScreenHandler::RegisterMessages() {
@@ -187,13 +217,27 @@ void ErrorScreenHandler::RegisterMessages() {
               &ErrorScreenHandler::HandleRebootButtonClicked);
   AddCallback("diagnoseButtonClicked",
               &ErrorScreenHandler::HandleDiagnoseButtonClicked);
+  AddCallback("configureCertsClicked",
+              &ErrorScreenHandler::HandleConfigureCerts);
+  AddCallback("launchOobeGuestSession",
+              &ErrorScreenHandler::HandleLaunchOobeGuestSession);
+  AddCallback("rollbackOkButtonClicked",
+              &ErrorScreenHandler::HandleRebootButtonClicked);
 }
 
 void ErrorScreenHandler::DeclareLocalizedValues(
     LocalizedValuesBuilder* builder) {
   builder->Add("loginErrorTitle", IDS_LOGIN_ERROR_TITLE);
+  builder->Add("rollbackErrorTitle", IDS_RESET_SCREEN_REVERT_ERROR);
   builder->Add("signinOfflineMessageBody", IDS_LOGIN_OFFLINE_MESSAGE);
   builder->Add("kioskOfflineMessageBody", IDS_KIOSK_OFFLINE_MESSAGE);
+  builder->Add("kioskOnlineTitle", IDS_LOGIN_NETWORK_RESTORED_TITLE);
+  builder->Add("kioskOnlineMessageBody", IDS_KIOSK_ONLINE_MESSAGE);
+  builder->Add("autoEnrollmentOfflineMessageBody",
+               IDS_LOGIN_AUTO_ENROLLMENT_OFFLINE_MESSAGE);
+  builder->AddF("rollbackErrorMessageBody",
+               IDS_RESET_SCREEN_REVERT_ERROR_EXPLANATION,
+               IDS_SHORT_PRODUCT_NAME);
   builder->Add("captivePortalTitle", IDS_LOGIN_MAYBE_CAPTIVE_PORTAL_TITLE);
   builder->Add("captivePortalMessage", IDS_LOGIN_MAYBE_CAPTIVE_PORTAL);
   builder->Add("captivePortalProxyMessage",
@@ -208,8 +252,13 @@ void ErrorScreenHandler::DeclareLocalizedValues(
   builder->Add("localStateErrorText1", IDS_LOCAL_STATE_ERROR_TEXT_1);
   builder->Add("localStateErrorPowerwashButton",
                IDS_LOCAL_STATE_ERROR_POWERWASH_BUTTON);
+  builder->Add("connectingIndicatorText", IDS_LOGIN_CONNECTING_INDICATOR_TEXT);
+  builder->Add("guestSigninFixNetwork", IDS_LOGIN_GUEST_SIGNIN_FIX_NETWORK);
   builder->Add("rebootButton", IDS_RELAUNCH_BUTTON);
   builder->Add("diagnoseButton", IDS_DIAGNOSE_BUTTON);
+  builder->Add("configureCertsButton", IDS_MANAGE_CERTIFICATES);
+  builder->Add("continueButton", IDS_NETWORK_SELECTION_CONTINUE_BUTTON);
+  builder->Add("okButton", IDS_APP_OK);
 }
 
 void ErrorScreenHandler::Initialize() {
@@ -222,6 +271,7 @@ void ErrorScreenHandler::Initialize() {
     params.SetString("network", network_);
     params.SetBoolean("guestSigninAllowed", guest_signin_allowed_);
     params.SetBoolean("offlineLoginAllowed", offline_login_allowed_);
+    params.SetBoolean("showConnectingIndicator", show_connecting_indicator_);
     Show(parent_screen_, &params);
     show_on_init_ = false;
   }

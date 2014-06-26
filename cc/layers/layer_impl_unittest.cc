@@ -10,6 +10,7 @@
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/geometry_test_utils.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -82,7 +83,8 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   // The constructor on this will fake that we are on the correct thread.
   // Create a simple LayerImpl tree:
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   EXPECT_TRUE(host_impl.InitializeRenderer(
       FakeOutputSurface::Create3d().PassAs<OutputSurface>()));
   scoped_ptr<LayerImpl> root_clip =
@@ -119,6 +121,7 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXPECT_FALSE(grand_child->LayerPropertyChanged());
 
   gfx::PointF arbitrary_point_f = gfx::PointF(0.125f, 0.25f);
+  gfx::Point3F arbitrary_point_3f = gfx::Point3F(0.125f, 0.25f, 0.f);
   float arbitrary_number = 0.352f;
   gfx::Size arbitrary_size = gfx::Size(111, 222);
   gfx::Point arbitrary_point = gfx::Point(333, 444);
@@ -140,8 +143,8 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_ONLY_LAYER_CHANGED(root->SetBounds(arbitrary_size));
 
   // Changing these properties affects the entire subtree of layers.
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetAnchorPoint(arbitrary_point_f));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetAnchorPointZ(arbitrary_number));
+  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
+      root->SetTransformOrigin(arbitrary_point_3f));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilters(arbitrary_filters));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetFilters(FilterOperations()));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
@@ -152,7 +155,7 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
       root->SetReplicaLayer(LayerImpl::Create(host_impl.active_tree(), 10)));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetPosition(arbitrary_point_f));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetShouldFlattenTransform(false));
-  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->SetIs3dSorted(true));
+  EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->Set3dSortingContextId(1));
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(
       root->SetDoubleSided(false));  // constructor initializes it to "true".
   EXECUTE_AND_VERIFY_SUBTREE_CHANGED(root->ScrollBy(arbitrary_vector2d));
@@ -193,26 +196,20 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
   EXECUTE_AND_VERIFY_NEEDS_PUSH_PROPERTIES_AND_SUBTREE_DID_NOT_CHANGE(
       root->SetScrollChildren(scroll_children));
   EXECUTE_AND_VERIFY_NEEDS_PUSH_PROPERTIES_AND_SUBTREE_DID_NOT_CHANGE(
-      root->RemoveScrollChild(scroll_child));
-  EXECUTE_AND_VERIFY_NEEDS_PUSH_PROPERTIES_AND_SUBTREE_DID_NOT_CHANGE(
       root->SetClipParent(clip_parent.get()));
   EXECUTE_AND_VERIFY_NEEDS_PUSH_PROPERTIES_AND_SUBTREE_DID_NOT_CHANGE(
       root->SetClipChildren(clip_children));
-  EXECUTE_AND_VERIFY_NEEDS_PUSH_PROPERTIES_AND_SUBTREE_DID_NOT_CHANGE(
-      root->RemoveClipChild(clip_child));
 
   // After setting all these properties already, setting to the exact same
   // values again should not cause any change.
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetAnchorPoint(arbitrary_point_f));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
-      root->SetAnchorPointZ(arbitrary_number));
+      root->SetTransformOrigin(arbitrary_point_3f));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->SetMasksToBounds(true));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetPosition(arbitrary_point_f));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetShouldFlattenTransform(false));
-  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->SetIs3dSorted(true));
+  EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(root->Set3dSortingContextId(1));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
       root->SetTransform(arbitrary_transform));
   EXECUTE_AND_VERIFY_SUBTREE_DID_NOT_CHANGE(
@@ -245,7 +242,8 @@ TEST(LayerImplTest, VerifyLayerChangesAreTrackedProperly) {
 
 TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   EXPECT_TRUE(host_impl.InitializeRenderer(
       FakeOutputSurface::Create3d().PassAs<OutputSurface>()));
   host_impl.active_tree()->SetRootLayer(
@@ -297,7 +295,6 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
       layer->SetScrollOffset(arbitrary_vector2d));
 
   // Unrelated functions, always set to new values, always set needs update.
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetAnchorPointZ(arbitrary_number));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetMaskLayer(LayerImpl::Create(host_impl.active_tree(), 4)));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetMasksToBounds(true));
@@ -306,7 +303,7 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
       layer->SetReplicaLayer(LayerImpl::Create(host_impl.active_tree(), 5)));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetPosition(arbitrary_point_f));
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetShouldFlattenTransform(false));
-  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetIs3dSorted(true));
+  VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(layer->Set3dSortingContextId(1));
 
   VERIFY_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetDoubleSided(false));  // constructor initializes it to "true".
@@ -326,14 +323,12 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
 
   // Unrelated functions, set to the same values, no needs update.
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
-      layer->SetAnchorPointZ(arbitrary_number));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetIsRootForIsolatedGroup(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetFilters(arbitrary_filters));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetMasksToBounds(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetContentsOpaque(true));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetPosition(arbitrary_point_f));
-  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->SetIs3dSorted(true));
+  VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(layer->Set3dSortingContextId(1));
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
       layer->SetDoubleSided(false));  // constructor initializes it to "true".
   VERIFY_NO_NEEDS_UPDATE_DRAW_PROPERTIES(
@@ -357,7 +352,8 @@ TEST(LayerImplTest, VerifyNeedsUpdateDrawProperties) {
 
 TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
   FakeImplProxy proxy;
-  FakeLayerTreeHostImpl host_impl(&proxy);
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
   EXPECT_TRUE(host_impl.InitializeRenderer(
       FakeOutputSurface::Create3d().PassAs<OutputSurface>()));
   scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
@@ -386,11 +382,42 @@ TEST(LayerImplTest, SafeOpaqueBackgroundColor) {
   }
 }
 
+TEST(LayerImplTest, TransformInvertibility) {
+  FakeImplProxy proxy;
+  TestSharedBitmapManager shared_bitmap_manager;
+  FakeLayerTreeHostImpl host_impl(&proxy, &shared_bitmap_manager);
+
+  scoped_ptr<LayerImpl> layer = LayerImpl::Create(host_impl.active_tree(), 1);
+  EXPECT_TRUE(layer->transform().IsInvertible());
+  EXPECT_TRUE(layer->transform_is_invertible());
+
+  gfx::Transform transform;
+  transform.Scale3d(
+      SkDoubleToMScalar(1.0), SkDoubleToMScalar(1.0), SkDoubleToMScalar(0.0));
+  layer->SetTransform(transform);
+  EXPECT_FALSE(layer->transform().IsInvertible());
+  EXPECT_FALSE(layer->transform_is_invertible());
+
+  transform.MakeIdentity();
+  transform.ApplyPerspectiveDepth(SkDoubleToMScalar(100.0));
+  transform.RotateAboutZAxis(75.0);
+  transform.RotateAboutXAxis(32.2);
+  transform.RotateAboutZAxis(-75.0);
+  transform.Translate3d(SkDoubleToMScalar(50.5),
+                        SkDoubleToMScalar(42.42),
+                        SkDoubleToMScalar(-100.25));
+
+  layer->SetTransform(transform);
+  EXPECT_TRUE(layer->transform().IsInvertible());
+  EXPECT_TRUE(layer->transform_is_invertible());
+}
+
 class LayerImplScrollTest : public testing::Test {
  public:
-  LayerImplScrollTest() : host_impl_(&proxy_), root_id_(7) {
-    host_impl_.active_tree()
-        ->SetRootLayer(LayerImpl::Create(host_impl_.active_tree(), root_id_));
+  LayerImplScrollTest()
+      : host_impl_(&proxy_, &shared_bitmap_manager_), root_id_(7) {
+    host_impl_.active_tree()->SetRootLayer(
+        LayerImpl::Create(host_impl_.active_tree(), root_id_));
     host_impl_.active_tree()->root_layer()->AddChild(
         LayerImpl::Create(host_impl_.active_tree(), root_id_ + 1));
     layer()->SetScrollClipLayer(root_id_);
@@ -408,6 +435,7 @@ class LayerImplScrollTest : public testing::Test {
 
  private:
   FakeImplProxy proxy_;
+  TestSharedBitmapManager shared_bitmap_manager_;
   FakeLayerTreeHostImpl host_impl_;
   int root_id_;
 };
@@ -456,10 +484,8 @@ TEST_F(LayerImplScrollTest, ScrollByWithNonZeroOffset) {
   EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
 }
 
-class ScrollDelegateIgnore : public LayerScrollOffsetDelegate {
+class ScrollDelegateIgnore : public LayerImpl::ScrollOffsetDelegate {
  public:
-  virtual void SetMaxScrollOffset(
-      const gfx::Vector2dF& max_scroll_offset) OVERRIDE {}
   virtual void SetTotalScrollOffset(const gfx::Vector2dF& new_value) OVERRIDE {}
   virtual gfx::Vector2dF GetTotalScrollOffset() OVERRIDE {
     return fixed_offset_;
@@ -469,12 +495,6 @@ class ScrollDelegateIgnore : public LayerScrollOffsetDelegate {
   void set_fixed_offset(const gfx::Vector2dF& fixed_offset) {
     fixed_offset_ = fixed_offset;
   }
-
-  virtual void SetTotalPageScaleFactorAndLimits(
-      float page_scale_factor,
-      float min_page_scale_factor,
-      float max_page_scale_factor) OVERRIDE {}
-  virtual void SetScrollableSize(const gfx::SizeF& scrollable_size) OVERRIDE {}
 
  private:
   gfx::Vector2dF fixed_offset_;
@@ -513,10 +533,8 @@ TEST_F(LayerImplScrollTest, ScrollByWithIgnoringDelegate) {
   EXPECT_VECTOR_EQ(scroll_offset, layer()->scroll_offset());
 }
 
-class ScrollDelegateAccept : public LayerScrollOffsetDelegate {
+class ScrollDelegateAccept : public LayerImpl::ScrollOffsetDelegate {
  public:
-  virtual void SetMaxScrollOffset(
-      const gfx::Vector2dF& max_scroll_offset) OVERRIDE {}
   virtual void SetTotalScrollOffset(const gfx::Vector2dF& new_value) OVERRIDE {
     current_offset_ = new_value;
   }
@@ -524,11 +542,6 @@ class ScrollDelegateAccept : public LayerScrollOffsetDelegate {
     return current_offset_;
   }
   virtual bool IsExternalFlingActive() const OVERRIDE { return false; }
-  virtual void SetTotalPageScaleFactorAndLimits(
-      float page_scale_factor,
-      float min_page_scale_factor,
-      float max_page_scale_factor) OVERRIDE {}
-  virtual void SetScrollableSize(const gfx::SizeF& scrollable_size) OVERRIDE {}
 
  private:
   gfx::Vector2dF current_offset_;

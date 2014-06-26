@@ -5,10 +5,10 @@
 #include "chrome/browser/infobars/insecure_content_infobar_delegate.h"
 
 #include "base/metrics/histogram.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/render_messages.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -20,14 +20,14 @@
 // static
 void InsecureContentInfoBarDelegate::Create(InfoBarService* infobar_service,
                                             InfoBarType type) {
-  scoped_ptr<InfoBar> new_infobar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(
+  scoped_ptr<infobars::InfoBar> new_infobar(
+      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new InsecureContentInfoBarDelegate(type))));
 
   // Only supsersede an existing insecure content infobar if we are upgrading
   // from DISPLAY to RUN.
   for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
-    InfoBar* old_infobar = infobar_service->infobar_at(i);
+    infobars::InfoBar* old_infobar = infobar_service->infobar_at(i);
     InsecureContentInfoBarDelegate* delegate =
         old_infobar->delegate()->AsInsecureContentInfoBarDelegate();
     if (delegate != NULL) {
@@ -91,13 +91,15 @@ bool InsecureContentInfoBarDelegate::Cancel() {
       (type_ == DISPLAY) ? DISPLAY_USER_OVERRIDE : RUN_USER_OVERRIDE,
       NUM_EVENTS);
 
-  web_contents()->SendToAllFrames((type_ == DISPLAY) ?
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
+  web_contents->SendToAllFrames((type_ == DISPLAY) ?
       static_cast<IPC::Message*>(
           new ChromeViewMsg_SetAllowDisplayingInsecureContent(MSG_ROUTING_NONE,
                                                               true)) :
       new ChromeViewMsg_SetAllowRunningInsecureContent(MSG_ROUTING_NONE, true));
-  web_contents()->GetMainFrame()->Send(new ChromeViewMsg_ReloadFrame(
-      web_contents()->GetMainFrame()->GetRoutingID()));
+  web_contents->GetMainFrame()->Send(new ChromeViewMsg_ReloadFrame(
+      web_contents->GetMainFrame()->GetRoutingID()));
   return true;
 }
 
@@ -107,11 +109,12 @@ base::string16 InsecureContentInfoBarDelegate::GetLinkText() const {
 
 bool InsecureContentInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
-      google_util::AppendGoogleLocaleParam(GURL("https://www.google.com/"
-          "support/chrome/bin/answer.py?answer=1342714")),
-      content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL("https://www.google.com/"
+               "support/chrome/bin/answer.py?answer=1342714"),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }

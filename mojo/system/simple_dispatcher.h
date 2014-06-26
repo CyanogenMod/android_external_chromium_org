@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "mojo/system/dispatcher.h"
+#include "mojo/system/handle_signals_state.h"
 #include "mojo/system/system_impl_export.h"
 #include "mojo/system/waiter_list.h"
 
@@ -17,33 +18,26 @@ namespace system {
 
 // A base class for simple dispatchers. "Simple" means that there's a one-to-one
 // correspondence between handles and dispatchers (see the explanatory comment
-// in core_impl.cc). This class implements the standard waiter-signalling
-// mechanism in that case.
+// in core.cc). This class implements the standard waiter-signalling mechanism
+// in that case.
 class MOJO_SYSTEM_IMPL_EXPORT SimpleDispatcher : public Dispatcher {
  protected:
   SimpleDispatcher();
-
-  friend class base::RefCountedThreadSafe<SimpleDispatcher>;
   virtual ~SimpleDispatcher();
 
   // To be called by subclasses when the state changes (so
-  // |SatisfiedFlagsNoLock()| and |SatisfiableFlagsNoLock()| should be checked
-  // again). Must be called under lock.
-  void StateChangedNoLock();
+  // |GetHandleSignalsStateNoLock()| should be checked again). Must be called
+  // under lock.
+  void HandleSignalsStateChangedNoLock();
 
-  // These should return the wait flags that are satisfied by the object's
-  // current state and those that may eventually be satisfied by this object's
-  // state, respectively. They should be overridden by subclasses to reflect
-  // their notion of state. They are never called after the dispatcher has been
-  // closed. They are called under |lock_|.
-  virtual MojoWaitFlags SatisfiedFlagsNoLock() const = 0;
-  virtual MojoWaitFlags SatisfiableFlagsNoLock() const = 0;
+  // Never called after the dispatcher has been closed; called under |lock_|.
+  virtual HandleSignalsState GetHandleSignalsStateNoLock() const = 0;
 
-  // |Dispatcher| implementation/overrides:
+  // |Dispatcher| protected methods:
   virtual void CancelAllWaitersNoLock() OVERRIDE;
   virtual MojoResult AddWaiterImplNoLock(Waiter* waiter,
-                                         MojoWaitFlags flags,
-                                         MojoResult wake_result) OVERRIDE;
+                                         MojoHandleSignals signals,
+                                         uint32_t context) OVERRIDE;
   virtual void RemoveWaiterImplNoLock(Waiter* waiter) OVERRIDE;
 
  private:

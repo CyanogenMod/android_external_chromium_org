@@ -13,7 +13,6 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/dns/dns_config_service_posix.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -84,7 +83,7 @@ NetworkChangeNotifierChromeos::GetCurrentConnectionType() const {
   return connection_type_;
 }
 
-void NetworkChangeNotifierChromeos::SystemResumed(
+void NetworkChangeNotifierChromeos::SuspendDone(
     const base::TimeDelta& sleep_duration) {
   // Force invalidation of network resources on resume.
   NetworkChangeNotifier::NotifyObserversOfIPAddressChange();
@@ -203,6 +202,8 @@ NetworkChangeNotifierChromeos::ConnectionTypeFromShill(
     return CONNECTION_WIFI;
   else if (type == shill::kTypeWimax)
     return CONNECTION_4G;
+  else if (type == shill::kTypeBluetooth)
+    return CONNECTION_BLUETOOTH;
 
   if (type != shill::kTypeCellular)
     return CONNECTION_UNKNOWN;

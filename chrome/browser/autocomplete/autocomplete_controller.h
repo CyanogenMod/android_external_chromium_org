@@ -74,16 +74,10 @@ class AutocompleteController : public AutocompleteProviderListener {
   // If |clear_result| is true, the controller will also erase the result set.
   void Stop(bool clear_result);
 
-  // Begin asynchronously fetching zero-suggest suggestions for |url| of
-  // classification |page_classification|. |permanent_text| is the omnibox
-  // text for the current page.
-  void StartZeroSuggest(
-      const GURL& url,
-      AutocompleteInput::PageClassification page_classification,
-      const base::string16& permanent_text);
-
-  // Cancels any pending zero-suggest fetch.
-  void StopZeroSuggest();
+  // Begin asynchronous fetch of zero-suggest suggestions. The |input| should
+  // contain current omnibox input, the URL of the page we are on, and
+  // that page's classification.
+  void StartZeroSuggest(const AutocompleteInput& input);
 
   // Asks the relevant provider to delete |match|, and ensures observers are
   // notified of resulting changes immediately.  This should only be called when
@@ -123,7 +117,13 @@ class AutocompleteController : public AutocompleteProviderListener {
   KeywordProvider* keyword_provider() const { return keyword_provider_; }
   SearchProvider* search_provider() const { return search_provider_; }
 
+  // Deprecated. Do not use that method! It's provided temporarily as clank
+  // migrates. If you need to access the aucomplete input you should keep a
+  // local copy of it.
+  // TODO(beaudoin): Remove this method once clank no longer rely on it.
+  // crbug.com/367832
   const AutocompleteInput& input() const { return input_; }
+
   const AutocompleteResult& result() const { return result_; }
   bool done() const { return done_; }
   const ACProviders* providers() const { return &providers_; }
@@ -138,6 +138,8 @@ class AutocompleteController : public AutocompleteProviderListener {
                            RedundantKeywordsIgnoredInResult);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, UpdateAssistedQueryStats);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
+  FRIEND_TEST_ALL_PREFIXES(OmniboxViewTest, DoesNotUpdateAutocompleteOnBlur);
+  FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag);
 
   // Updates |result_| to reflect the current provider state and fires
   // notifications.  If |regenerate_result| then we clear the result
@@ -234,9 +236,6 @@ class AutocompleteController : public AutocompleteProviderListener {
   // Are we in Start()? This is used to avoid updating |result_| and sending
   // notifications until Start() has been invoked on all providers.
   bool in_start_;
-
-  // Has StartZeroSuggest() been called but not Start()?
-  bool in_zero_suggest_;
 
   Profile* profile_;
 

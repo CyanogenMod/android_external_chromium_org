@@ -85,14 +85,14 @@ class SYNC_EXPORT WriteNode : public BaseNode {
       const BaseNode& parent,
       const std::string& client_tag);
 
-  // Each server-created permanent node is tagged with a unique string.
-  // Look up the node with the particular tag.  If it does not exist,
-  // return false.
-  InitByLookupResult InitByTagLookup(const std::string& tag);
+  // Looks up the type's root folder.  This is usually created by the sync
+  // server during initial sync, though we do eventually wish to remove it from
+  // the protocol and have the client "fake it" instead.
+  InitByLookupResult InitTypeRoot(ModelType type);
 
   // These Set() functions correspond to the Get() functions of BaseNode.
   void SetIsFolder(bool folder);
-  void SetTitle(const std::wstring& title);
+  void SetTitle(const std::string& title);
 
   // External ID is a client-only field, so setting it doesn't cause the item to
   // be synced again.
@@ -172,6 +172,10 @@ class SYNC_EXPORT WriteNode : public BaseNode {
   // Should only be called if GetModelType() == PRIORITY_PREFERENCE.
   void SetPriorityPreferenceSpecifics(
       const sync_pb::PriorityPreferenceSpecifics& specifics);
+
+  // Set the attachment metadata.
+  void SetAttachmentMetadata(
+      const sync_pb::AttachmentMetadata& attachment_metadata);
 
   // Implementation of BaseNode's abstract virtual accessors.
   virtual const syncable::Entry* GetEntry() const OVERRIDE;

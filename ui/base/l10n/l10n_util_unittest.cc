@@ -128,7 +128,7 @@ TEST_F(L10nUtilTest, GetAppLocale) {
   for (size_t i = 0; i < arraysize(filenames); ++i) {
     base::FilePath filename = new_locale_dir.AppendASCII(
         filenames[i] + ".pak");
-    file_util::WriteFile(filename, "", 0);
+    base::WriteFile(filename, "", 0);
   }
 
   // Keep a copy of ICU's default locale before we overwrite it.
@@ -374,7 +374,6 @@ TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
   result = l10n_util::GetDisplayNameForLocale("xyz-xyz", "en", false);
   EXPECT_EQ(ASCIIToUTF16("xyz (XYZ)"), result);
 
-#if !defined(TOOLKIT_GTK)
   // Check for directional markers when using RTL languages to ensure that
   // direction neutral characters such as parentheses are properly formatted.
 
@@ -387,7 +386,6 @@ TEST_F(L10nUtilTest, GetDisplayNameForLocale) {
 
   // Clean up.
   base::i18n::SetICUDefaultLocale(original_locale);
-#endif
 
   // ToUpper and ToLower should work with embedded NULLs.
   const size_t length_with_null = 4;

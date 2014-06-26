@@ -32,13 +32,19 @@
 // Set needsDisplay for this view and all descendants.
 - (void)cr_recursivelySetNeedsDisplay:(BOOL)flag;
 
-// Return whether or not CoreAnimation layer squashing exists for this view.
-- (BOOL)cr_supportsLayerSquashing;
+// Set the specified view to have a CoreAnimation layer if CoreAnimation is
+// enabled at the command line.
+- (void)cr_setWantsLayer:(BOOL)wantsLayer;
 
-// Set the specified view to have a CoreAnimation layer (if CoreAnimation is
-// enabled), and squash all child views into this layer (if the API is
-// available and not disabled at the command line).
-- (void)cr_setWantsLayer:(BOOL)wantsLayer withSquashing:(BOOL)squashing;
+// Draw using ancestorView's drawRect function into this view's rect. Do any
+// required translating or flipping to transform between the two coordinate
+// systems.
+- (void)cr_drawUsingAncestor:(NSView*)ancestorView inRect:(NSRect)rect;
+
+// Used by ancestorView in the above draw call, to look up the child view that
+// it is actually drawing to.
+- (NSView*)cr_viewBeingDrawnTo;
+
 @end
 
 #endif  // CHROME_BROWSER_UI_COCOA_NSVIEW_ADDITIONS_H_

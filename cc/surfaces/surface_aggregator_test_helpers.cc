@@ -14,7 +14,6 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/surface_draw_quad.h"
 #include "cc/surfaces/surface.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/test/render_pass_test_common.h"
 #include "cc/test/render_pass_test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -25,7 +24,7 @@ namespace test {
 
 void AddTestSurfaceQuad(TestRenderPass* pass,
                         const gfx::Size& surface_size,
-                        int surface_id) {
+                        SurfaceId surface_id) {
   gfx::Transform content_to_target_transform;
   gfx::Size content_bounds = surface_size;
   gfx::Rect visible_content_rect = gfx::Rect(surface_size);
@@ -34,38 +33,39 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
   float opacity = 1.0;
   SkXfermode::Mode blend_mode = SkXfermode::kSrcOver_Mode;
 
-  scoped_ptr<SharedQuadState> shared_quad_state = SharedQuadState::Create();
+  SharedQuadState* shared_quad_state = pass->CreateAndAppendSharedQuadState();
   shared_quad_state->SetAll(content_to_target_transform,
                             content_bounds,
                             visible_content_rect,
                             clip_rect,
                             is_clipped,
                             opacity,
-                            blend_mode);
-  pass->shared_quad_state_list.push_back(shared_quad_state.Pass());
+                            blend_mode,
+                            0);
 
   scoped_ptr<SurfaceDrawQuad> surface_quad = SurfaceDrawQuad::Create();
   gfx::Rect quad_rect = gfx::Rect(surface_size);
-  surface_quad->SetNew(
-      pass->shared_quad_state_list.back(), gfx::Rect(surface_size), surface_id);
+  surface_quad->SetNew(pass->shared_quad_state_list.back(),
+                       gfx::Rect(surface_size),
+                       gfx::Rect(surface_size),
+                       surface_id);
   pass->quad_list.push_back(surface_quad.PassAs<DrawQuad>());
 }
 void AddTestRenderPassQuad(TestRenderPass* pass,
                            RenderPass::Id render_pass_id) {
-  MockQuadCuller quad_sink(&pass->quad_list, &pass->shared_quad_state_list);
-  AppendQuadsData data(pass->id);
   gfx::Rect output_rect = gfx::Rect(0, 0, 5, 5);
-  SharedQuadState* shared_state =
-      quad_sink.UseSharedQuadState(SharedQuadState::Create());
+  SharedQuadState* shared_state = pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(gfx::Transform(),
                        output_rect.size(),
                        output_rect,
                        output_rect,
                        false,
                        1,
-                       SkXfermode::kSrcOver_Mode);
+                       SkXfermode::kSrcOver_Mode,
+                       0);
   scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
   quad->SetNew(shared_state,
+               output_rect,
                output_rect,
                render_pass_id,
                false,
@@ -74,7 +74,7 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                gfx::RectF(),
                FilterOperations(),
                FilterOperations());
-  quad_sink.Append(quad.PassAs<DrawQuad>(), &data);
+  pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
 }
 
 void AddQuadInPass(TestRenderPass* pass, Quad desc) {

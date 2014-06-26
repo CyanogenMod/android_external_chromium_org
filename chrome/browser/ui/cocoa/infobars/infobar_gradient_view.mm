@@ -5,13 +5,13 @@
 #include "chrome/browser/ui/cocoa/infobars/infobar_gradient_view.h"
 
 #include "base/mac/scoped_nsobject.h"
-#include "chrome/browser/infobars/infobar.h"
 #import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
+#include "components/infobars/core/infobar.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/base/theme_provider.h"
 
@@ -25,15 +25,6 @@
 - (id)initWithFrame:(NSRect)frame {
   if ((self = [super initWithFrame:frame])) {
     hasTip_ = YES;
-
-    // If layer squashing is not supported, then do not give infobars their own
-    // view, so that they will have sub-pixel anti-aliasing, except when a
-    // superview requests a layer (presentation mode only).
-    if ([self cr_supportsLayerSquashing]) {
-      // Give this view its own layer and squash child layers into this layer
-      // so that the text in the tabs have sub-pixel anti-aliasing.
-      [self cr_setWantsLayer:YES withSquashing:YES];
-    }
   }
   return self;
 }
@@ -45,9 +36,9 @@
   return self;
 }
 
-- (void)setInfobarType:(InfoBarDelegate::Type)infobarType {
-  SkColor topColor = InfoBar::GetTopColor(infobarType);
-  SkColor bottomColor = InfoBar::GetBottomColor(infobarType);
+- (void)setInfobarType:(infobars::InfoBarDelegate::Type)infobarType {
+  SkColor topColor = infobars::InfoBar::GetTopColor(infobarType);
+  SkColor bottomColor = infobars::InfoBar::GetBottomColor(infobarType);
   base::scoped_nsobject<NSGradient> gradient([[NSGradient alloc]
       initWithStartingColor:gfx::SkColorToCalibratedNSColor(topColor)
                 endingColor:gfx::SkColorToCalibratedNSColor(bottomColor)]);
@@ -67,7 +58,7 @@
 
 - (void)drawRect:(NSRect)rect {
   NSRect bounds = [self bounds];
-  bounds.size.height = InfoBar::kDefaultBarTargetHeight;
+  bounds.size.height = infobars::InfoBar::kDefaultBarTargetHeight;
 
   CGFloat tipXOffset = arrowX_ - arrowHalfWidth_;
 

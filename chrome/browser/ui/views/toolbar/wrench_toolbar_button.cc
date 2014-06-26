@@ -7,14 +7,11 @@
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
+#include "ui/views/painter.h"
 
 WrenchToolbarButton::WrenchToolbarButton(views::MenuButtonListener* listener)
     : views::MenuButton(NULL, base::string16(), listener, false) {
   wrench_icon_painter_.reset(new WrenchIconPainter(this));
-
-  // Used for sizing only.
-  ui::ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  SetIcon(*rb.GetImageSkiaNamed(IDR_TOOLBAR_BEZEL_HOVER));
 }
 
 WrenchToolbarButton::~WrenchToolbarButton() {
@@ -25,13 +22,12 @@ void WrenchToolbarButton::SetSeverity(WrenchIconPainter::Severity severity,
   wrench_icon_painter_->SetSeverity(severity, animate);
 }
 
-void WrenchToolbarButton::OnPaint(gfx::Canvas* canvas) {
-  // Badge linux aura builds so they're quickly identifiable.
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  wrench_icon_painter_->set_badge(
-      *GetThemeProvider()->GetImageSkiaNamed(IDR_TOOLS_BADGE_AURA));
-#endif
+gfx::Size WrenchToolbarButton::GetPreferredSize() const {
+  return ResourceBundle::GetSharedInstance().
+      GetImageSkiaNamed(IDR_TOOLBAR_BEZEL_HOVER)->size();
+}
 
+void WrenchToolbarButton::OnPaint(gfx::Canvas* canvas) {
   wrench_icon_painter_->Paint(
       canvas, GetThemeProvider(), gfx::Rect(size()), GetCurrentBezelType());
   views::Painter::PaintFocusPainter(this, canvas, focus_painter());

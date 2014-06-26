@@ -182,6 +182,7 @@
             'remoting_breakpad',
             'remoting_host',
             'remoting_host_setup_base',
+            'remoting_it2me_host_static',
             'remoting_lib_idl',
             'remoting_lib_ps',
             'remoting_lib_rc',
@@ -200,10 +201,15 @@
             'host/host_main.h',
             'host/ipc_constants.cc',
             'host/ipc_constants.h',
+            'host/it2me/it2me_native_messaging_host_main.cc',
+            'host/it2me/it2me_native_messaging_host_main.h',
             'host/remoting_me2me_host.cc',
             'host/sas_injector.h',
             'host/sas_injector_win.cc',
+            'host/setup/me2me_native_messaging_host.cc',
+            'host/setup/me2me_native_messaging_host.h',
             'host/setup/me2me_native_messaging_host_main.cc',
+            'host/setup/me2me_native_messaging_host_main.h',
             'host/verify_config_window_win.cc',
             'host/verify_config_window_win.h',
             'host/win/chromoting_module.cc',
@@ -292,7 +298,7 @@
           },
         },  # end of target 'remoting_desktop'
         {
-          'target_name': 'remoting_host_exe',
+          'target_name': 'remoting_me2me_host',
           'product_name': 'remoting_host',
           'type': 'executable',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -316,12 +322,67 @@
             'VCLinkerTool': {
               'EntryPointSymbol': 'HostEntryPoint',
               'IgnoreAllDefaultLibraries': 'true',
-              'ImportLibrary': '$(OutDir)\\lib\\remoting_host_exe.lib',
               'OutputFile': '$(OutDir)\\remoting_host.exe',
               'SubSystem': '2', # /SUBSYSTEM:WINDOWS
             },
           },
-        },  # end of target 'remoting_host_exe'
+        },  # end of target 'remoting_me2me_host'
+        {
+          'target_name': 'remoting_me2me_native_messaging_host',
+          'type': 'executable',
+          'product_name': 'remoting_native_messaging_host',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'defines' : [
+            'BINARY=BINARY_NATIVE_MESSAGING_HOST',
+          ],
+          'dependencies': [
+            'remoting_core',
+            'remoting_windows_resources',
+          ],
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/version.rc',
+            'host/setup/me2me_native_messaging_host_entry_point.cc',
+          ],
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'IgnoreAllDefaultLibraries': 'true',
+              'SubSystem': '1', # /SUBSYSTEM:CONSOLE
+            },
+          },
+        },  # end of target 'remoting_me2me_native_messaging_host'
+        {
+          'target_name': 'remoting_it2me_native_messaging_host',
+          'type': 'executable',
+          'product_name': 'remote_assistance_host',
+          'variables': { 'enable_wexit_time_destructors': 1, },
+          'dependencies': [
+            'remoting_core',
+            'remoting_windows_resources',
+          ],
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/remoting/version.rc',
+            'host/it2me/it2me_native_messaging_host_entry_point.cc',
+          ],
+          'defines' : [
+            'BINARY=BINARY_REMOTE_ASSISTANCE_HOST',
+          ],
+          'msvs_settings': {
+            'VCManifestTool': {
+              'EmbedManifest': 'true',
+              'AdditionalManifestFiles': [
+                'host/win/common-controls.manifest',
+                'host/win/dpi_aware.manifest',
+              ],
+            },
+            'VCLinkerTool': {
+              'IgnoreAllDefaultLibraries': 'true',
+              'SubSystem': '1', # /SUBSYSTEM:CONSOLE
+              'AdditionalDependencies': [
+                'comctl32.lib',
+              ],
+            },
+          },
+        },  # end of target 'remoting_it2me_native_messaging_host'
         {
           'target_name': 'remoting_host_messages',
           'type': 'none',
@@ -392,7 +453,6 @@
               'inputs': [
                 '<(chrome_version_path)',
                 '<(remoting_version_path)',
-                '<(RULE_INPUT_PATH)',
               ],
               'outputs': [
                 '<(SHARED_INTERMEDIATE_DIR)/remoting/<(RULE_INPUT_ROOT)',
@@ -464,8 +524,8 @@
             '<(icu_gyp_path):icudata',
             'remoting_core',
             'remoting_desktop',
-            'remoting_host_exe',
             'remoting_it2me_native_messaging_host',
+            'remoting_me2me_host',
             'remoting_me2me_native_messaging_host',
             'remoting_native_messaging_manifests',
           ],

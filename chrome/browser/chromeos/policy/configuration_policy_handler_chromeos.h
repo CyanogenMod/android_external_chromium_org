@@ -19,6 +19,8 @@ class Value;
 
 namespace policy {
 
+class Schema;
+
 // ConfigurationPolicyHandler for policies referencing external data.
 class ExternalDataPolicyHandler : public TypeCheckingPolicyHandler {
  public:
@@ -103,18 +105,16 @@ class ScreenMagnifierPolicyHandler : public IntRangePolicyHandlerBase {
   DISALLOW_COPY_AND_ASSIGN(ScreenMagnifierPolicyHandler);
 };
 
-// ConfigurationPolicyHandler for login screen power management settings. This
-// does not actually set any prefs, it just checks whether the settings are
-// valid and generates errors if appropriate.
+// Policy handler for login screen power management settings. This does not
+// actually set any prefs, it just checks whether the settings are valid and
+// generates errors if appropriate.
 class LoginScreenPowerManagementPolicyHandler
-    : public TypeCheckingPolicyHandler {
+    : public SchemaValidatingPolicyHandler {
  public:
-  LoginScreenPowerManagementPolicyHandler();
+  explicit LoginScreenPowerManagementPolicyHandler(const Schema& chrome_schema);
   virtual ~LoginScreenPowerManagementPolicyHandler();
 
-  // TypeCheckingPolicyHandler:
-  virtual bool CheckPolicySettings(const PolicyMap& policies,
-                                   PolicyErrorMap* errors) OVERRIDE;
+  // SchemaValidatingPolicyHandler:
   virtual void ApplyPolicySettings(const PolicyMap& policies,
                                    PrefValueMap* prefs) OVERRIDE;
 
@@ -135,6 +135,34 @@ class DeprecatedIdleActionHandler : public IntRangePolicyHandlerBase {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DeprecatedIdleActionHandler);
+};
+
+class PowerManagementIdleSettingsPolicyHandler
+    : public SchemaValidatingPolicyHandler {
+ public:
+  explicit PowerManagementIdleSettingsPolicyHandler(
+      const Schema& chrome_schema);
+  virtual ~PowerManagementIdleSettingsPolicyHandler();
+
+  // SchemaValidatingPolicyHandler:
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PowerManagementIdleSettingsPolicyHandler);
+};
+
+class ScreenLockDelayPolicyHandler : public SchemaValidatingPolicyHandler {
+ public:
+  explicit ScreenLockDelayPolicyHandler(const Schema& chrome_schema);
+  virtual ~ScreenLockDelayPolicyHandler();
+
+  // SchemaValidatingPolicyHandler:
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScreenLockDelayPolicyHandler);
 };
 
 }  // namespace policy

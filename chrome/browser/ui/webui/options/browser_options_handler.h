@@ -14,13 +14,16 @@
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/prefs/pref_member.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/sync/profile_sync_service_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/notification_observer.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -48,12 +51,14 @@ namespace options {
 class BrowserOptionsHandler
     : public OptionsPageUIHandler,
       public ProfileSyncServiceObserver,
+      public SigninManagerBase::Observer,
       public ui::SelectFileDialog::Listener,
       public ShellIntegration::DefaultWebClientObserver,
 #if defined(OS_CHROMEOS)
       public chromeos::system::PointerDeviceObserver::Observer,
 #endif
       public TemplateURLServiceObserver,
+      public extensions::ExtensionRegistryObserver,
       public content::NotificationObserver {
  public:
   BrowserOptionsHandler();
@@ -70,6 +75,11 @@ class BrowserOptionsHandler
   // ProfileSyncServiceObserver implementation.
   virtual void OnStateChanged() OVERRIDE;
 
+  // SigninManagerBase::Observer implementation.
+  virtual void GoogleSigninSucceeded(const std::string& username,
+                                     const std::string& password) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+
   // ShellIntegration::DefaultWebClientObserver implementation.
   virtual void SetDefaultWebClientUIState(
       ShellIntegration::DefaultWebClientUIState state) OVERRIDE;
@@ -77,6 +87,15 @@ class BrowserOptionsHandler
 
   // TemplateURLServiceObserver implementation.
   virtual void OnTemplateURLServiceChanged() OVERRIDE;
+
+  // extensions::ExtensionRegistryObserver:
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
  private:
   // content::NotificationObserver implementation.
@@ -101,6 +120,13 @@ class BrowserOptionsHandler
   // Will be called when the policy::key::kUserAvatarImage policy changes.
   void OnUserImagePolicyChanged(const base::Value* previous_policy,
                                 const base::Value* current_policy);
+
+  // Will be called when the policy::key::kWallpaperImage policy changes.
+  void OnWallpaperPolicyChanged(const base::Value* previous_policy,
+                                const base::Value* current_policy);
+
+  // Will be called when powerwash dialog is shown.
+  void OnPowerwashDialogShow(const base::ListValue* args);
 #endif
 
   void UpdateSyncState();
@@ -139,6 +165,9 @@ class BrowserOptionsHandler
 
   // Returns if profiles list should be shown on settings page.
   bool ShouldShowMultiProfilesUserList();
+
+  // Returns if access to advanced settings should be allowed.
+  bool ShouldAllowAdvancedSettings();
 
   // Gets the current default browser state, and asynchronously reports it to
   // the WebUI page.
@@ -179,6 +208,11 @@ class BrowserOptionsHandler
   // is |false| and preventing the user from changing the avatar image if
   // |managed| is |true|.
   void OnAccountPictureManagedChanged(bool managed);
+
+  // Updates the UI, allowing the user to change the wallpaper if |managed| is
+  // |false| and preventing the user from changing the wallpaper if |managed| is
+  // |true|.
+  void OnWallpaperManagedChanged(bool managed);
 #endif
 
   // Callback for the "selectDownloadLocation" message. This will prompt the
@@ -225,39 +259,14 @@ class BrowserOptionsHandler
   void ShowManageSSLCertificates(const base::ListValue* args);
 #endif
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   void ShowCloudPrintDevicesPage(const base::ListValue* args);
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
-  // Callback for the Cloud Print manage button. This will open a new
-  // tab pointed at the management URL.
-  void ShowCloudPrintManagePage(const base::ListValue* args);
-
   // Register localized values used by Cloud Print
   void RegisterCloudPrintValues(base::DictionaryValue* values);
-
-#if !defined(OS_CHROMEOS)
-  // Callback for the Sign in to Cloud Print button. This will start
-  // the authentication process.
-  void ShowCloudPrintSetupDialog(const base::ListValue* args);
-
-  // Callback for the Disable Cloud Print button. This will sign out
-  // of cloud print.
-  void HandleDisableCloudPrintConnector(const base::ListValue* args);
-
-  // Pings the service to send us it's current notion of the enabled state.
-  void RefreshCloudPrintStatusFromService();
-
-  // Setup the enabled or disabled state of the cloud print connector
-  // management UI.
-  void SetupCloudPrintConnectorSection();
-
-  // Remove cloud print connector section if cloud print connector management
-  //  UI is disabled.
-  void RemoveCloudPrintConnectorSection();
-#endif  // defined(OS_CHROMEOS)
-#endif  // defined(ENABLE_FULL_PRINTING)
+#endif
 
   // Check if hotword is available. If it is, tell the javascript to show
   // the hotword section of the settings page.
@@ -265,6 +274,12 @@ class BrowserOptionsHandler
 
   // Callback for "requestHotwordAvailable" message.
   void HandleRequestHotwordAvailable(const base::ListValue* args);
+
+  // Callback for "launchEasyUnlockSetup" message.
+  void HandleLaunchEasyUnlockSetup(const base::ListValue* args);
+
+  // Callback for "refreshExtensionControlIndicators" message.
+  void HandleRefreshExtensionControlIndicators(const base::ListValue* args);
 
 #if defined(OS_CHROMEOS)
   // Opens the wallpaper manager component extension.
@@ -301,6 +316,12 @@ class BrowserOptionsHandler
   // Setup the UI specific to managing supervised users.
   void SetupManagingSupervisedUsers();
 
+  // Setup the UI for Easy Unlock.
+  void SetupEasyUnlock();
+
+  // Setup the UI for showing which settings are extension controlled.
+  void SetupExtensionControlledIndicators();
+
 #if defined(OS_CHROMEOS)
   // Setup the accessibility features for ChromeOS.
   void SetupAccessibilityFeatures();
@@ -321,12 +342,6 @@ class BrowserOptionsHandler
 
   scoped_refptr<ui::SelectFileDialog> select_folder_dialog_;
 
-#if defined(ENABLE_FULL_PRINTING) && !defined(OS_CHROMEOS)
-  StringPrefMember cloud_print_connector_email_;
-  BooleanPrefMember cloud_print_connector_enabled_;
-  bool cloud_print_connector_ui_enabled_;
-#endif
-
   bool cloud_print_mdns_ui_enabled_;
 
   StringPrefMember auto_open_files_;
@@ -336,6 +351,9 @@ class BrowserOptionsHandler
 #if defined(OS_CHROMEOS)
   scoped_ptr<policy::PolicyChangeRegistrar> policy_registrar_;
 #endif
+
+  ScopedObserver<SigninManagerBase, SigninManagerBase::Observer>
+      signin_observer_;
 
   // Used to get WeakPtr to self for use on the UI thread.
   base::WeakPtrFactory<BrowserOptionsHandler> weak_ptr_factory_;

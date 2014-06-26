@@ -9,7 +9,9 @@
 
 #include "chrome/test/base/in_process_browser_test.h"
 
+namespace infobars {
 class InfoBar;
+}
 
 namespace content {
 class WebContents;
@@ -19,14 +21,21 @@ class WebContents;
 // getUserMedia. We use inheritance here because it makes the test code look
 // as clean as it can be.
 class WebRtcTestBase : public InProcessBrowserTest {
- protected:
+ public:
   // Typical constraints.
   static const char kAudioVideoCallConstraints[];
   static const char kAudioOnlyCallConstraints[];
   static const char kVideoOnlyCallConstraints[];
+  static const char kAudioVideoCallConstraintsQVGA[];
+  static const char kAudioVideoCallConstraints360p[];
+  static const char kAudioVideoCallConstraintsVGA[];
+  static const char kAudioVideoCallConstraints720p[];
+  static const char kAudioVideoCallConstraints1080p[];
 
   static const char kFailedWithPermissionDeniedError[];
+  static const char kFailedWithPermissionDismissedError[];
 
+ protected:
   WebRtcTestBase();
   virtual ~WebRtcTestBase();
 
@@ -48,14 +57,39 @@ class WebRtcTestBase : public InProcessBrowserTest {
   // and returns the new tab.
   content::WebContents* OpenPageAndGetUserMediaInNewTab(const GURL& url) const;
 
+  // Convenience method which opens the page at url, calls
+  // GetUserMediaAndAcceptWithSpecificConstraints and returns the new tab.
+  content::WebContents* OpenPageAndGetUserMediaInNewTabWithConstraints(
+      const GURL& url, const std::string& constraints) const;
+
+  // Convenience method which gets the URL for |test_page| and calls
+  // OpenPageAndGetUserMediaInNewTab().
+  content::WebContents* OpenTestPageAndGetUserMediaInNewTab(
+    const std::string& test_page) const;
+
   // Opens the page at |url| where getUserMedia has been invoked through other
   // means and accepts the user media request.
   content::WebContents* OpenPageAndAcceptUserMedia(const GURL& url) const;
 
-  void ConnectToPeerConnectionServer(const std::string& peer_name,
-                                     content::WebContents* tab_contents) const;
+  // Closes the last local stream acquired by the GetUserMedia* methods.
+  void CloseLastLocalStream(content::WebContents* tab_contents) const;
+
   std::string ExecuteJavascript(const std::string& javascript,
                                 content::WebContents* tab_contents) const;
+
+  // Sets up a peer connection in the tab and adds the current local stream
+  // (which you can prepare by calling one of the GetUserMedia* methods above).
+  void SetupPeerconnectionWithLocalStream(content::WebContents* tab) const;
+
+  // Exchanges offers and answers between the peer connections in the
+  // respective tabs. Before calling this, you must have prepared peer
+  // connections in both tabs and configured them as you like (for instance by
+  // calling SetupPeerconnectionWithLocalStream).
+  void NegotiateCall(content::WebContents* from_tab,
+                     content::WebContents* to_tab) const;
+
+  // Hangs up a negotiated call.
+  void HangUp(content::WebContents* from_tab) const;
 
   // Call this to enable monitoring of javascript errors for this test method.
   // This will only work if the tests are run sequentially by the test runner
@@ -69,11 +103,33 @@ class WebRtcTestBase : public InProcessBrowserTest {
                            const std::string& video_element) const;
   void WaitForVideoToPlay(content::WebContents* tab_contents) const;
 
+  // Returns the stream size as a string on the format <width>x<height>.
+  std::string GetStreamSize(content::WebContents* tab_contents,
+                            const std::string& video_element) const;
+
+  // Methods to check what devices we have on the system.
+  bool HasWebcamAvailableOnSystem(content::WebContents* tab_contents) const;
+
+  // Returns true if we're on WinXP, that lovely operating system of bliss.
+  bool OnWinXp() const;
+
+  // Returns true if we're on win 8.
+  bool OnWin8() const;
+
  private:
   void CloseInfoBarInTab(content::WebContents* tab_contents,
-                         InfoBar* infobar) const;
-  InfoBar* GetUserMediaAndWaitForInfoBar(content::WebContents* tab_contents,
-                                         const std::string& constraints) const;
+                         infobars::InfoBar* infobar) const;
+
+  std::string CreateLocalOffer(content::WebContents* from_tab) const;
+  std::string CreateAnswer(std::string local_offer,
+                           content::WebContents* to_tab) const;
+  void ReceiveAnswer(std::string answer, content::WebContents* from_tab) const;
+  void GatherAndSendIceCandidates(content::WebContents* from_tab,
+                                  content::WebContents* to_tab) const;
+
+  infobars::InfoBar* GetUserMediaAndWaitForInfoBar(
+      content::WebContents* tab_contents,
+      const std::string& constraints) const;
 
   bool detect_errors_in_javascript_;
 

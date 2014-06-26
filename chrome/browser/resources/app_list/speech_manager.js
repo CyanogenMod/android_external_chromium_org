@@ -23,8 +23,32 @@ cr.define('speech', function() {
     HOTWORD_RECOGNIZING: 'HOTWORD_RECOGNIZING',
     RECOGNIZING: 'RECOGNIZING',
     IN_SPEECH: 'IN_SPEECH',
-    STOPPING: 'STOPPING'
+    STOPPING: 'STOPPING',
+    NETWORK_ERROR: 'NETWORK_ERROR'
   };
+
+  /**
+   * The time to show the network error message in seconds.
+   *
+   * @const {number}
+   */
+  var SPEECH_ERROR_TIMEOUT = 3;
+
+  /**
+   * Checks the prefix for the hotword module based on the language. This is
+   * fragile if the file structure has changed.
+   */
+  function getHotwordPrefix() {
+    var prefix = navigator.language.toLowerCase();
+    if (prefix == 'en-gb')
+      return prefix;
+    var hyphen = prefix.indexOf('-');
+    if (hyphen >= 0)
+      prefix = prefix.substr(0, hyphen);
+    if (prefix == 'en')
+      prefix = '';
+    return prefix;
+  }
 
   /**
    * @constructor
@@ -32,9 +56,8 @@ cr.define('speech', function() {
   function SpeechManager() {
     this.audioManager_ = new speech.AudioManager();
     this.audioManager_.addEventListener('audio', this.onAudioLevel_.bind(this));
-    this.shown_ = false;
     this.speechRecognitionManager_ = new speech.SpeechRecognitionManager(this);
-    this.setState_(SpeechState.READY);
+    this.errorTimeoutId_ = null;
   }
 
   /**
@@ -77,25 +100,29 @@ cr.define('speech', function() {
     this.pluginManager_ = pluginManager;
     this.audioManager_.addEventListener(
         'audio', pluginManager.sendAudioData.bind(pluginManager));
-    if (this.shown_) {
-      this.pluginManager_.startRecognizer();
-      this.audioManager_.start();
-      this.setState_(SpeechState.HOTWORD_RECOGNIZING);
-    } else {
-      this.setState_(SpeechState.READY);
-    }
+    this.pluginManager_.startRecognizer();
+    this.audioManager_.start();
+    this.setState_(SpeechState.HOTWORD_RECOGNIZING);
+  };
+
+  /**
+   * Called when an error happens for loading the hotword recognizer.
+   *
+   * @private
+   */
+  SpeechManager.prototype.onHotwordRecognizerLoadError_ = function() {
+    this.setHotwordEnabled(false);
+    this.setState_(SpeechState.READY);
   };
 
   /**
    * Called when the hotword is recognized.
    *
-   * @param {number} confidence The confidence store of the recognition.
    * @private
    */
-  SpeechManager.prototype.onHotwordRecognized_ = function(confidence) {
+  SpeechManager.prototype.onHotwordRecognized_ = function() {
     if (this.state != SpeechState.HOTWORD_RECOGNIZING)
       return;
-    this.setState_(SpeechState.READY);
     this.pluginManager_.stopRecognizer();
     this.speechRecognitionManager_.start();
   };
@@ -123,6 +150,12 @@ cr.define('speech', function() {
    * Called when the speech recognition has ended.
    */
   SpeechManager.prototype.onSpeechRecognitionEnded = function() {
+    // Do not handle the speech recognition ends if it ends due to an error
+    // because an error message should be shown for a while.
+    // See onSpeechRecognitionError.
+    if (this.state == SpeechState.NETWORK_ERROR)
+      return;
+
     // Restarts the hotword recognition.
     if (this.state != SpeechState.STOPPING && this.pluginManager_) {
       this.pluginManager_.startRecognizer();
@@ -151,13 +184,31 @@ cr.define('speech', function() {
   };
 
   /**
+   * Called when the speech manager should recover from the error state.
+   *
+   * @private
+   */
+  SpeechManager.prototype.onSpeechRecognitionErrorTimeout_ = function() {
+    this.errorTimeoutId_ = null;
+    this.setState_(SpeechState.READY);
+    this.onSpeechRecognitionEnded();
+  };
+
+  /**
    * Called when an error happened during the speech recognition.
    *
    * @param {SpeechRecognitionError} e The error object.
    */
   SpeechManager.prototype.onSpeechRecognitionError = function(e) {
-    if (this.state != SpeechState.STOPPING)
-      this.setState_(SpeechState.READY);
+    if (e.error == 'network') {
+      this.setState_(SpeechState.NETWORK_ERROR);
+      this.errorTimeoutId_ = window.setTimeout(
+          this.onSpeechRecognitionErrorTimeout_.bind(this),
+          SPEECH_ERROR_TIMEOUT * 1000);
+    } else {
+      if (this.state != SpeechState.STOPPING)
+        this.setState_(SpeechState.READY);
+    }
   };
 
   /**
@@ -170,48 +221,58 @@ cr.define('speech', function() {
     if (enabled) {
       if (recognizer)
         return;
+      if (!this.naclArch)
+        return;
 
+      var prefix = getHotwordPrefix();
       var pluginManager = new speech.PluginManager(
+          prefix,
           this.onHotwordRecognizerReady_.bind(this),
-          this.onHotwordRecognized_.bind(this));
-      pluginManager.scheduleInitialize(
-          this.audioManager_.getSampleRate(),
-          'chrome://app-list/okgoogle_hotword.config');
+          this.onHotwordRecognized_.bind(this),
+          this.onHotwordRecognizerLoadError_.bind(this));
+      var modelUrl = 'chrome://app-list/_platform_specific/' + this.naclArch +
+          '_' + prefix + '/hotword.data';
+      pluginManager.scheduleInitialize(this.audioManager_.sampleRate, modelUrl);
     } else {
       if (!recognizer)
         return;
       document.body.removeChild(recognizer);
       this.pluginManager_ = null;
-      if (this.state == SpeechState.HOTWORD_RECOGNIZING)
-        this.setState(SpeechState.READY);
+      if (this.state == SpeechState.HOTWORD_RECOGNIZING) {
+        this.audioManager_.stop();
+        this.setState_(SpeechState.READY);
+      }
     }
   };
 
   /**
-   * Called when the app-list bubble is shown.
+   * Sets the NaCl architecture for the hotword module.
+   *
+   * @param {string} arch The architecture.
    */
-  SpeechManager.prototype.onShown = function() {
-    this.shown_ = true;
-    if (!this.pluginManager_)
-      return;
+  SpeechManager.prototype.setNaclArch = function(arch) {
+    this.naclArch = arch;
+  };
 
-    if (this.state == SpeechState.HOTWORD_RECOGNIZING) {
-      console.warn('Already in recognition state...');
-      return;
-    }
+  /**
+   * Called when the app-list bubble is shown.
+   *
+   * @param {boolean} hotwordEnabled Whether the hotword is enabled or not.
+   */
+  SpeechManager.prototype.onShown = function(hotwordEnabled) {
+    this.setHotwordEnabled(hotwordEnabled);
 
-    this.pluginManager_.startRecognizer();
-    this.audioManager_.start();
-    this.setState_(SpeechState.HOTWORD_RECOGNIZING);
+    // No one sets the state if the content is initialized on shown but hotword
+    // is not enabled. Sets the state in such case.
+    if (!this.state && !hotwordEnabled)
+      this.setState_(SpeechState.READY);
   };
 
   /**
    * Called when the app-list bubble is hidden.
    */
   SpeechManager.prototype.onHidden = function() {
-    this.shown_ = false;
-    if (this.pluginManager_)
-      this.pluginManager_.stopRecognizer();
+    this.setHotwordEnabled(false);
 
     // SpeechRecognition is asynchronous.
     this.audioManager_.stop();
@@ -228,7 +289,11 @@ cr.define('speech', function() {
    * Toggles the current state of speech recognition.
    */
   SpeechManager.prototype.toggleSpeechRecognition = function() {
-    if (this.state == SpeechState.RECOGNIZING ||
+    if (this.state == SpeechState.NETWORK_ERROR) {
+      if (this.errorTimeoutId_)
+        window.clearTimeout(this.errorTimeoutId_);
+      this.onSpeechRecognitionErrorTimeout_();
+    } else if (this.state == SpeechState.RECOGNIZING ||
         this.state == SpeechState.IN_SPEECH) {
       this.audioManager_.stop();
       this.speechRecognitionManager_.stop();

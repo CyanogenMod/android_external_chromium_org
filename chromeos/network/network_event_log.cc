@@ -4,6 +4,7 @@
 
 #include "chromeos/network/network_event_log.h"
 
+#include <cmath>
 #include <list>
 
 #include "base/files/file_path.h"
@@ -17,11 +18,51 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/escape.h"
+#include "third_party/icu/source/i18n/unicode/datefmt.h"
+#include "third_party/icu/source/i18n/unicode/dtptngen.h"
+#include "third_party/icu/source/i18n/unicode/smpdtfmt.h"
 
 namespace chromeos {
 namespace network_event_log {
 
 namespace {
+
+std::string IcuFormattedString(const base::Time& time,
+                               const std::string& format) {
+  UErrorCode status = U_ZERO_ERROR;
+  scoped_ptr<icu::DateTimePatternGenerator> generator(
+      icu::DateTimePatternGenerator::createInstance(status));
+  DCHECK(U_SUCCESS(status));
+  icu::UnicodeString generated_pattern =
+      generator->getBestPattern(icu::UnicodeString(format.c_str()), status);
+  DCHECK(U_SUCCESS(status));
+  icu::SimpleDateFormat formatter(generated_pattern, status);
+  DCHECK(U_SUCCESS(status));
+  icu::UnicodeString formatted;
+  formatter.format(static_cast<UDate>(time.ToDoubleT() * 1000), formatted);
+  base::string16 formatted16(formatted.getBuffer(),
+                             static_cast<size_t>(formatted.length()));
+  return base::UTF16ToUTF8(formatted16);
+}
+
+std::string DateAndTimeWithMicroseconds(const base::Time& time) {
+  std::string formatted = IcuFormattedString(time, "yyMMddHHmmss");
+  // icu only supports milliseconds, but sometimes we need microseconds, so
+  // append '.' + usecs to the end of the formatted string.
+  int usecs = static_cast<int>(fmod(time.ToDoubleT() * 1000000, 1000000));
+  return base::StringPrintf("%s.%06d", formatted.c_str(), usecs);
+}
+
+std::string TimeWithSeconds(const base::Time& time) {
+  return IcuFormattedString(time, "HHmmss");
+}
+
+std::string TimeWithMillieconds(const base::Time& time) {
+  std::string formatted = IcuFormattedString(time, "HHmmss");
+  // icu doesn't support milliseconds combined with other formatting.
+  int msecs = static_cast<int>(fmod(time.ToDoubleT() * 1000, 1000));
+  return base::StringPrintf("%s.%03d", formatted.c_str(), msecs);
+}
 
 class NetworkEventLog;
 NetworkEventLog* g_network_event_log = NULL;
@@ -37,6 +78,7 @@ struct LogEntry {
 
   std::string ToString(bool show_time,
                        bool show_file,
+                       bool show_level,
                        bool show_desc,
                        bool format_html) const;
   void ToDictionary(base::DictionaryValue*) const;
@@ -73,11 +115,21 @@ LogEntry::LogEntry(const std::string& file,
 
 std::string LogEntry::ToString(bool show_time,
                                bool show_file,
+                               bool show_level,
                                bool show_desc,
                                bool format_html) const {
   std::string line;
   if (show_time)
-    line += "[" + base::UTF16ToUTF8(base::TimeFormatTimeOfDay(time)) + "] ";
+    line += "[" + TimeWithMillieconds(time) + "] ";
+  if (show_level) {
+    const char* kLevelDesc[] = {
+      "ERROR",
+      "USER",
+      "EVENT",
+      "DEBUG"
+    };
+    line += base::StringPrintf("%s: ", kLevelDesc[log_level]);
+  }
   if (show_file) {
     std::string filestr = format_html ? net::EscapeForHTML(file) : file;
     line += base::StringPrintf("%s:%d ", file.c_str(), file_line);
@@ -89,7 +141,8 @@ std::string LogEntry::ToString(bool show_time,
 }
 
 void LogEntry::ToDictionary(base::DictionaryValue* output) const {
-  output->SetString("timestamp", base::TimeFormatShortDateAndTime(time));
+  output->SetString("timestamp", DateAndTimeWithMicroseconds(time));
+  output->SetString("timestampshort", TimeWithSeconds(time));
   output->SetString("level", kLogLevelName[log_level]);
   output->SetString("file",
                     base::StringPrintf("%s:%d ", file.c_str(), file_line));
@@ -140,9 +193,11 @@ std::string LogEntry::GetHtmlText(bool show_desc) const {
 void LogEntry::SendToVLogOrErrorLog() const {
   const bool show_time = true;
   const bool show_file = true;
+  const bool show_level = false;
   const bool show_desc = true;
   const bool format_html = false;
-  std::string output = ToString(show_time, show_file, show_desc, format_html);
+  std::string output =
+      ToString(show_time, show_file, show_level, show_desc, format_html);
   if (log_level == LOG_LEVEL_ERROR)
     LOG(ERROR) << output;
   else
@@ -159,12 +214,14 @@ bool LogEntry::ContentEquals(const LogEntry& other) const {
 void GetFormat(const std::string& format_string,
                bool* show_time,
                bool* show_file,
+               bool* show_level,
                bool* show_desc,
                bool* format_html,
                bool* format_json) {
   base::StringTokenizer tokens(format_string, ",");
   *show_time = false;
   *show_file = false;
+  *show_level = false;
   *show_desc = false;
   *format_html = false;
   *format_json = false;
@@ -174,6 +231,8 @@ void GetFormat(const std::string& format_string,
       *show_time = true;
     if (tok == "file")
       *show_file = true;
+    if (tok == "level")
+      *show_level = true;
     if (tok == "desc")
       *show_desc = true;
     if (tok == "html")
@@ -245,9 +304,14 @@ std::string NetworkEventLog::GetAsString(StringOrder order,
   if (entries_.empty())
     return "No Log Entries.";
 
-  bool show_time, show_file, show_desc, format_html, format_json;
-  GetFormat(
-      format, &show_time, &show_file, &show_desc, &format_html, &format_json);
+  bool show_time, show_file, show_level, show_desc, format_html, format_json;
+  GetFormat(format,
+            &show_time,
+            &show_file,
+            &show_level,
+            &show_desc,
+            &format_html,
+            &format_json);
 
   std::string result;
   base::ListValue log_entries;
@@ -281,8 +345,8 @@ std::string NetworkEventLog::GetAsString(StringOrder order,
       if (format_json) {
         log_entries.AppendString((*iter).GetAsJSON());
       } else {
-        result +=
-            (*iter).ToString(show_time, show_file, show_desc, format_html);
+        result += (*iter).ToString(
+            show_time, show_file, show_level, show_desc, format_html);
         result += "\n";
       }
     }
@@ -297,8 +361,8 @@ std::string NetworkEventLog::GetAsString(StringOrder order,
       if (format_json) {
         log_entries.AppendString((*riter).GetAsJSON());
       } else {
-        result +=
-            (*riter).ToString(show_time, show_file, show_desc, format_html);
+        result += (*riter).ToString(
+            show_time, show_file, show_level, show_desc, format_html);
         result += "\n";
       }
       if (max_events > 0 && ++nlines >= max_events)

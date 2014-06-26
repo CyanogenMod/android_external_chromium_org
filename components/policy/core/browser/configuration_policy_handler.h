@@ -9,7 +9,10 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "components/policy/core/common/schema.h"
 #include "components/policy/policy_export.h"
@@ -19,6 +22,7 @@ class PrefValueMap;
 namespace policy {
 
 class PolicyErrorMap;
+struct PolicyHandlerParameters;
 class PolicyMap;
 
 // Maps a policy type to a preference path, and to the expected value type.
@@ -46,8 +50,17 @@ class POLICY_EXPORT ConfigurationPolicyHandler {
 
   // Processes the policies handled by this ConfigurationPolicyHandler and sets
   // the appropriate preferences in |prefs|.
+  virtual void ApplyPolicySettingsWithParameters(
+      const PolicyMap& policies,
+      const PolicyHandlerParameters& parameters,
+      PrefValueMap* prefs);
+
+  // This is a convenience version of ApplyPolicySettingsWithParameters()
+  // that leaves out the |parameters|. Anyone extending
+  // ConfigurationPolicyHandler should implement either ApplyPolicySettings or
+  // ApplyPolicySettingsWithParameters.
   virtual void ApplyPolicySettings(const PolicyMap& policies,
-                                   PrefValueMap* prefs) = 0;
+                                   PrefValueMap* prefs);
 
   // Modifies the values of some of the policies in |policies| so that they
   // are more suitable to display to the user. This can be used to remove
@@ -147,20 +160,29 @@ class POLICY_EXPORT SimplePolicyHandler : public TypeCheckingPolicyHandler {
   DISALLOW_COPY_AND_ASSIGN(SimplePolicyHandler);
 };
 
-// A policy handler implementation that maps a string enum list to an int enum
-// list as specified by a mapping table.
-class POLICY_EXPORT StringToIntEnumListPolicyHandler
+// Base class that encapsulates logic for mapping from a string enum list
+// to a separate matching type value.
+class POLICY_EXPORT StringMappingListPolicyHandler
     : public TypeCheckingPolicyHandler {
  public:
-  struct POLICY_EXPORT MappingEntry {
+  // Data structure representing the map between policy strings and
+  // matching pref values.
+  class POLICY_EXPORT MappingEntry {
+   public:
+    MappingEntry(const char* policy_value, scoped_ptr<base::Value> map);
+    ~MappingEntry();
+
     const char* enum_value;
-    int int_value;
+    scoped_ptr<base::Value> mapped_value;
   };
 
-  StringToIntEnumListPolicyHandler(const char* policy_name,
-                                   const char* pref_path,
-                                   const MappingEntry* mapping_begin,
-                                   const MappingEntry* mapping_end);
+  // Callback that generates the map for this instance.
+  typedef base::Callback<void(ScopedVector<MappingEntry>*)> GenerateMapCallback;
+
+  StringMappingListPolicyHandler(const char* policy_name,
+                                 const char* pref_path,
+                                 const GenerateMapCallback& map_generator);
+  virtual ~StringMappingListPolicyHandler();
 
   // ConfigurationPolicyHandler methods:
   virtual bool CheckPolicySettings(const PolicyMap& policies,
@@ -175,14 +197,21 @@ class POLICY_EXPORT StringToIntEnumListPolicyHandler
                base::ListValue* output,
                PolicyErrorMap* errors);
 
+  // Helper method that converts from a policy value string to the associated
+  // pref value.
+  scoped_ptr<base::Value> Map(const std::string& entry_value);
+
   // Name of the pref to write.
   const char* pref_path_;
 
-  // The mapping table.
-  const MappingEntry* mapping_begin_;
-  const MappingEntry* mapping_end_;
+  // The callback invoked to generate the map for this instance.
+  GenerateMapCallback map_getter_;
 
-  DISALLOW_COPY_AND_ASSIGN(StringToIntEnumListPolicyHandler);
+  // Map of string policy values to local pref values. This is generated lazily
+  // so the generation does not have to happen if no policy is present.
+  ScopedVector<MappingEntry> map_;
+
+  DISALLOW_COPY_AND_ASSIGN(StringMappingListPolicyHandler);
 };
 
 // A policy handler implementation that ensures an int policy's value lies in an
@@ -259,6 +288,65 @@ class POLICY_EXPORT SchemaValidatingPolicyHandler
   SchemaOnErrorStrategy strategy_;
 
   DISALLOW_COPY_AND_ASSIGN(SchemaValidatingPolicyHandler);
+};
+
+// Maps policy to pref like SimplePolicyHandler while ensuring that the value
+// set matches the schema. |schema| is the schema used for policies, and
+// |strategy| is the strategy used for schema validation errors. The
+// |recommended_permission| and |mandatory_permission| flags indicate the levels
+// at which the policy can be set. A value set at an unsupported level will be
+// ignored.
+class POLICY_EXPORT SimpleSchemaValidatingPolicyHandler
+    : public SchemaValidatingPolicyHandler {
+ public:
+  enum MandatoryPermission { MANDATORY_ALLOWED, MANDATORY_PROHIBITED };
+  enum RecommendedPermission { RECOMMENDED_ALLOWED, RECOMMENDED_PROHIBITED };
+
+  SimpleSchemaValidatingPolicyHandler(
+      const char* policy_name,
+      const char* pref_path,
+      Schema schema,
+      SchemaOnErrorStrategy strategy,
+      RecommendedPermission recommended_permission,
+      MandatoryPermission mandatory_permission);
+  virtual ~SimpleSchemaValidatingPolicyHandler();
+
+  // ConfigurationPolicyHandler:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  const char* pref_path_;
+  const bool allow_recommended_;
+  const bool allow_mandatory_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleSchemaValidatingPolicyHandler);
+};
+
+// A policy handler to deprecate multiple legacy policies with a new one.
+// This handler will completely ignore any of legacy policy values if the new
+// one is set.
+class POLICY_EXPORT LegacyPoliciesDeprecatingPolicyHandler
+    : public ConfigurationPolicyHandler {
+ public:
+  LegacyPoliciesDeprecatingPolicyHandler(
+      ScopedVector<ConfigurationPolicyHandler> legacy_policy_handlers,
+      scoped_ptr<SchemaValidatingPolicyHandler> new_policy_handler);
+  virtual ~LegacyPoliciesDeprecatingPolicyHandler();
+
+  // ConfigurationPolicyHandler:
+  virtual bool CheckPolicySettings(const PolicyMap& policies,
+                                   PolicyErrorMap* errors) OVERRIDE;
+  virtual void ApplyPolicySettings(const PolicyMap& policies,
+                                   PrefValueMap* prefs) OVERRIDE;
+
+ private:
+  ScopedVector<ConfigurationPolicyHandler> legacy_policy_handlers_;
+  scoped_ptr<SchemaValidatingPolicyHandler> new_policy_handler_;
+
+  DISALLOW_COPY_AND_ASSIGN(LegacyPoliciesDeprecatingPolicyHandler);
 };
 
 }  // namespace policy

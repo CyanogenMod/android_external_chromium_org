@@ -31,23 +31,44 @@ class InstallObserver {
     bool is_ephemeral;
   };
 
-  virtual void OnBeginExtensionInstall(
-      const ExtensionInstallParams& params) = 0;
+  // Called at the beginning of the complete installation process, i.e., this
+  // is called before the extension download begins.
+  virtual void OnBeginExtensionInstall(const ExtensionInstallParams& params) {}
 
+  // Called when the Extension begins the download process. This typically
+  // happens right after OnBeginExtensionInstall(), unless the extension has
+  // already been downloaded.
+  virtual void OnBeginExtensionDownload(const std::string& extension_id) {}
+
+  // Called whenever the extension download is updated.
+  // Note: Some extensions have multiple modules, so the percent included here
+  // is a simple calculation of:
+  // (finished_files * 100 + current_file_progress) / (total files * 100).
   virtual void OnDownloadProgress(const std::string& extension_id,
-                                  int percent_downloaded) = 0;
+                                  int percent_downloaded) {}
 
-  virtual void OnInstallFailure(const std::string& extension_id) = 0;
+  // Called when the necessary downloads have completed, and the crx
+  // installation is due to start.
+  virtual void OnBeginCrxInstall(const std::string& extension_id) {}
 
-  virtual void OnExtensionInstalled(const Extension* extension) = 0;
-  virtual void OnExtensionLoaded(const Extension* extension) = 0;
-  virtual void OnExtensionUnloaded(const Extension* extension) = 0;
-  virtual void OnExtensionUninstalled(const Extension* extension) = 0;
-  virtual void OnAppsReordered() = 0;
-  virtual void OnAppInstalledToAppList(const std::string& extension_id) = 0;
+  // Called when installation of a crx has completed (either successfully or
+  // not).
+  virtual void OnFinishCrxInstall(const std::string& extension_id,
+                                  bool success) {}
+
+  // Called if the extension fails to install.
+  virtual void OnInstallFailure(const std::string& extension_id) {}
+
+  // Called when an extension or an app is installed to the app list. These are
+  // simply forwarded from the chrome::NOTIFICATIONs.
+  virtual void OnDisabledExtensionUpdated(const Extension* extension) {}
+  virtual void OnAppInstalledToAppList(const std::string& extension_id) {}
+
+  // Called when the app list is reordered.
+  virtual void OnAppsReordered() {}
 
   // Notifies observers that the observed object is going away.
-  virtual void OnShutdown() = 0;
+  virtual void OnShutdown() {}
 
  protected:
   virtual ~InstallObserver() {}

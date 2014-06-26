@@ -370,14 +370,15 @@
         return;
 
       if (mediaElement.readyState < mediaElement.HAVE_METADATA ||
-          mediaElement.currentTime <= 0)
+          mediaElement.currentTime <= 0) {
+        listener = window.requestAnimationFrame(checkForCurrentTimeChange);
         return;
-
-      for (var i = 0; i < appenders.length; ++i) {
-        appenders[i].onPlaybackStarted(mediaSource);
       }
 
       var testEndTime = getPerfTimestamp();
+      for (var i = 0; i < appenders.length; ++i) {
+        appenders[i].onPlaybackStarted(mediaSource);
+      }
 
       testDone = true;
       window.clearInterval(listener);
@@ -425,15 +426,14 @@
       doneCallback(stats, timestamps);
     };
 
-    mediaElement.addEventListener('timeupdate', checkForCurrentTimeChange);
+    listener = window.requestAnimationFrame(checkForCurrentTimeChange);
 
-    listener = setInterval(checkForCurrentTimeChange, 15);
     timeout = setTimeout(function() {
       if (testDone)
         return;
 
       testDone = true;
-      window.clearInterval(listener);
+      window.cancelAnimationFrame(listener);
 
       mediaElement.pause();
       doneCallback(null);

@@ -11,7 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/common/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 
 class AutocompleteInput;
 class AutocompleteProviderListener;
@@ -143,14 +143,13 @@ class AutocompleteProvider
   enum Type {
     TYPE_BOOKMARK         = 1 << 0,
     TYPE_BUILTIN          = 1 << 1,
-    TYPE_CONTACT          = 1 << 2,
-    TYPE_EXTENSION_APP    = 1 << 3,
-    TYPE_HISTORY_QUICK    = 1 << 4,
-    TYPE_HISTORY_URL      = 1 << 5,
-    TYPE_KEYWORD          = 1 << 6,
-    TYPE_SEARCH           = 1 << 7,
-    TYPE_SHORTCUTS        = 1 << 8,
-    TYPE_ZERO_SUGGEST     = 1 << 9,
+    TYPE_EXTENSION_APP    = 1 << 2,
+    TYPE_HISTORY_QUICK    = 1 << 3,
+    TYPE_HISTORY_URL      = 1 << 4,
+    TYPE_KEYWORD          = 1 << 5,
+    TYPE_SEARCH           = 1 << 6,
+    TYPE_SHORTCUTS        = 1 << 7,
+    TYPE_ZERO_SUGGEST     = 1 << 8,
   };
 
   AutocompleteProvider(AutocompleteProviderListener* listener,
@@ -193,7 +192,8 @@ class AutocompleteProvider
   // match should not appear again in this or future queries.  This can only be
   // called for matches the provider marks as deletable.  This should only be
   // called when no query is running.
-  // NOTE: Remember to call OnProviderUpdate() if matches_ is updated.
+  // NOTE: Do NOT call OnProviderUpdate() in this method, it is the
+  // responsibility of the caller to do so after calling us.
   virtual void DeleteMatch(const AutocompleteMatch& match);
 
   // Called when an omnibox event log entry is generated.  This gives
@@ -239,6 +239,9 @@ class AutocompleteProvider
 
  protected:
   friend class base::RefCountedThreadSafe<AutocompleteProvider>;
+  FRIEND_TEST_ALL_PREFIXES(BookmarkProviderTest, InlineAutocompletion);
+
+  typedef std::pair<bool, base::string16> FixupReturn;
 
   virtual ~AutocompleteProvider();
 
@@ -256,9 +259,11 @@ class AutocompleteProvider
   // Note that we don't do this in AutocompleteInput's constructor, because if
   // e.g. we convert a Unicode hostname to punycode, other providers will show
   // output that surprises the user ("Search Google for xn--6ca.com").
-  // Returns false if the fixup attempt resulted in an empty string (which
-  // providers generally can't do anything with).
-  static bool FixupUserInput(AutocompleteInput* input);
+  // Returns a bool indicating whether fixup succeeded, as well as the fixed-up
+  // input text.  The returned string will be the same as the input string if
+  // fixup failed; this lets callers who don't care about failure simply use the
+  // string unconditionally.
+  static FixupReturn FixupUserInput(const AutocompleteInput& input);
 
   // Trims "http:" and up to two subsequent slashes from |url|.  Returns the
   // number of characters that were trimmed.

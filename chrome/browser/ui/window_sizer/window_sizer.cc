@@ -146,8 +146,16 @@ class DefaultTargetDisplayProvider : public WindowSizer::TargetDisplayProvider {
       const gfx::Screen* screen,
       const gfx::Rect& bounds) const OVERRIDE {
 #if defined(USE_ASH)
+    bool force_ash = false;
+    // On Windows check if the browser is launched to serve ASH. If yes then
+    // we should get the display for the corresponding root window created for
+    // ASH. This ensures that the display gets the correct workarea, etc.
+#if defined(OS_WIN)
+    force_ash =
+        CommandLine::ForCurrentProcess()->HasSwitch(switches::kViewerConnect);
+#endif
     // Use the target display on ash.
-    if (chrome::ShouldOpenAshOnStartup()) {
+    if (chrome::ShouldOpenAshOnStartup() || force_ash) {
       aura::Window* target = ash::Shell::GetTargetRootWindow();
       return screen->GetDisplayNearestWindow(target);
     }
@@ -223,49 +231,36 @@ void WindowSizer::DetermineWindowBoundsAndShowState(
   // Pre-populate the window state with our default.
   *show_state = GetWindowDefaultShowState();
   *bounds = specified_bounds;
-  if (bounds->IsEmpty()) {
+
 #if defined(USE_ASH)
-    // See if ash should decide the window placement.
-    if (IsTabbedBrowserInAsh()) {
-      GetTabbedBrowserBoundsAsh(bounds, show_state);
-      return;
-    } else if (browser_ && browser_->host_desktop_type() ==
-               chrome::HOST_DESKTOP_TYPE_ASH) {
-      // In ash, saved show state takes precidence.  If you have a
-      // question or an issue, please contact oshima@chromium.org.
-      GetSavedWindowBounds(bounds, show_state);
-    }
+  // See if ash should decide the window placement.
+  if (GetBrowserBoundsAsh(bounds, show_state))
+    return;
 #endif
+
+  if (bounds->IsEmpty()) {
     // See if there's last active window's placement information.
     if (GetLastActiveWindowBounds(bounds, show_state))
       return;
     // See if there's saved placement information.
     if (GetSavedWindowBounds(bounds, show_state))
       return;
+
     // No saved placement, figure out some sensible default size based on
     // the user's screen size.
     GetDefaultWindowBounds(GetTargetDisplay(gfx::Rect()), bounds);
-  } else {
-#if defined(USE_ASH)
-    // In case of a popup with an 'unspecified' location in ash, we are
-    // looking for a good screen location. We are interpreting (0,0) as an
-    // unspecified location.
-    if (IsPopupBrowserInAsh() && bounds->origin().IsOrigin()) {
-      *bounds = ash::Shell::GetInstance()->window_positioner()->
-          GetPopupPosition(*bounds);
-      return;
-    }
-#endif
-    // In case that there was a bound given we need to make sure that it is
-    // visible and fits on the screen.
-    // Find the size of the work area of the monitor that intersects the bounds
-    // of the anchor window. Note: AdjustBoundsToBeVisibleOnMonitorContaining
-    // does not exactly what we want: It makes only sure that "a minimal part"
-    // is visible on the screen.
-    gfx::Rect work_area = screen_->GetDisplayMatching(*bounds).work_area();
-    // Resize so that it fits.
-    bounds->AdjustToFit(work_area);
+    return;
   }
+
+  // In case that there was a bound given we need to make sure that it is
+  // visible and fits on the screen.
+  // Find the size of the work area of the monitor that intersects the bounds
+  // of the anchor window. Note: AdjustBoundsToBeVisibleOnMonitorContaining
+  // does not exactly what we want: It makes only sure that "a minimal part"
+  // is visible on the screen.
+  gfx::Rect work_area = screen_->GetDisplayMatching(*bounds).work_area();
+  // Resize so that it fits.
+  bounds->AdjustToFit(work_area);
 }
 
 bool WindowSizer::GetLastActiveWindowBounds(
@@ -440,17 +435,3 @@ ui::WindowShowState WindowSizer::GetWindowDefaultShowState() const {
   // Otherwise we use the default which can be overridden later on.
   return ui::SHOW_STATE_DEFAULT;
 }
-
-#if defined(USE_ASH)
-bool WindowSizer::IsTabbedBrowserInAsh() const {
-  return browser_ &&
-      browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_type_tabbed();
-}
-
-bool WindowSizer::IsPopupBrowserInAsh() const {
-  return browser_ &&
-      browser_->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-      browser_->is_type_popup();
-}
-#endif

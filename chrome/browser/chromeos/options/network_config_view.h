@@ -67,7 +67,7 @@ class NetworkConfigView : public views::DialogDelegateView,
   virtual ui::ModalType GetModalType() const OVERRIDE;
 
   // views::View overrides.
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // views::ButtonListener overrides.
   virtual void ButtonPressed(
@@ -80,7 +80,7 @@ class NetworkConfigView : public views::DialogDelegateView,
  protected:
   // views::View overrides:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
 
@@ -141,10 +141,16 @@ class ChildNetworkConfigView : public views::View {
   // being active. For example, clicking on "Advanced" button.
   virtual void InitFocus() = 0;
 
+  // Returns 'true' if the dialog is for configuration only (default is false).
+  virtual bool IsConfigureDialog();
+
   // Minimum with of input fields / combo boxes.
   static const int kInputFieldMinWidth;
 
  protected:
+  // Gets the default network share state for the current login state.
+  static void GetShareStateForLoginState(bool* default_value, bool* modifiable);
+
   NetworkConfigView* parent_;
   std::string service_path_;
 
@@ -165,7 +171,7 @@ class ControlledSettingIndicatorView : public views::View {
 
  protected:
   // views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  private:

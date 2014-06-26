@@ -459,7 +459,13 @@ class DelayingDownloadManagerDelegate : public ChromeDownloadManagerDelegate {
   DISALLOW_COPY_AND_ASSIGN(DelayingDownloadManagerDelegate);
 };
 
-IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SaveHTMLOnlyTabDestroy) {
+// Disabled on Windows due to flakiness. http://crbug.com/162323
+#if defined(OS_WIN)
+#define MAYBE_SaveHTMLOnlyTabDestroy DISABLED_SaveHTMLOnlyTabDestroy
+#else
+#define MAYBE_SaveHTMLOnlyTabDestroy SaveHTMLOnlyTabDestroy
+#endif
+IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, MAYBE_SaveHTMLOnlyTabDestroy) {
   GURL url = NavigateToMockURL("a");
   scoped_ptr<DelayingDownloadManagerDelegate> delaying_delegate(
       new DelayingDownloadManagerDelegate(browser()->profile()));
@@ -618,7 +624,7 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, NoSave) {
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   EXPECT_FALSE(chrome::CanSavePage(browser()));
 }
 
@@ -738,8 +744,8 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, CleanFilenameFromPageTitle) {
 
   EXPECT_TRUE(base::PathExists(full_file_name));
 
-  EXPECT_TRUE(file_util::DieFileDie(full_file_name, false));
-  EXPECT_TRUE(file_util::DieFileDie(dir, true));
+  EXPECT_TRUE(base::DieFileDie(full_file_name, false));
+  EXPECT_TRUE(base::DieFileDie(dir, true));
 }
 #endif
 
@@ -806,4 +812,3 @@ IN_PROC_BROWSER_TEST_F(SavePageBrowserTest, SavePageBrowserTest_NonMHTML) {
 }
 
 }  // namespace
-

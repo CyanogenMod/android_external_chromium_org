@@ -7,8 +7,8 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_split.h"
-#include "chrome/browser/chromeos/login/default_user_images.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/common/url_constants.h"
 #include "grit/theme_resources.h"
 #include "net/base/escape.h"
@@ -34,8 +34,8 @@ void ParseRequest(const GURL& url,
                                     (net::UnescapeRule::URL_SPECIAL_CHARS |
                                      net::UnescapeRule::SPACES));
   std::string url_spec = url.possibly_invalid_spec();
-  url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
-  url_parse::Component key, value;
+  url::Component query = url.parsed_for_possibly_invalid_spec().query;
+  url::Component key, value;
   *is_image_animated = false;
   while (ExtractQueryKeyValue(url_spec.c_str(), &query, &key, &value)) {
     if (url_spec.substr(key.begin, key.len) == kKeyAnimated) {

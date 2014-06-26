@@ -68,7 +68,7 @@ ChecksumStatus LoadFile(const base::FilePath& file_path, WordList& words) {
     if (checksum != base::MD5String(contents))
       return INVALID_CHECKSUM;
   }
-  TrimWhitespaceASCII(contents, TRIM_ALL, &contents);
+  base::TrimWhitespaceASCII(contents, base::TRIM_ALL, &contents);
   base::SplitString(contents, '\n', &words);
   return VALID_CHECKSUM;
 }
@@ -76,11 +76,11 @@ ChecksumStatus LoadFile(const base::FilePath& file_path, WordList& words) {
 // Returns true for invalid words and false for valid words.
 bool IsInvalidWord(const std::string& word) {
   std::string tmp;
-  return !IsStringUTF8(word) ||
+  return !base::IsStringUTF8(word) ||
       word.length() >
           chrome::spellcheck_common::MAX_CUSTOM_DICTIONARY_WORD_BYTES ||
       word.empty() ||
-      TRIM_NONE != TrimWhitespaceASCII(word, TRIM_ALL, &tmp);
+      base::TRIM_NONE != base::TrimWhitespaceASCII(word, base::TRIM_ALL, &tmp);
 }
 
 // Loads the custom spellcheck dictionary from |path| into |custom_words|. If

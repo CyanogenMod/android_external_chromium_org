@@ -16,13 +16,17 @@
 #include "ui/aura/env.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/widget/desktop_aura/desktop_screen.h"
 #include "ui/views/widget/native_widget_aura.h"
 
-#if defined(OS_LINUX)
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_ui.h"
+#include "chrome/common/pref_names.h"
+#include "ui/aura/window.h"
+#include "ui/base/ime/input_method_initializer.h"
+#include "ui/native_theme/native_theme_aura.h"
 #include "ui/views/linux_ui/linux_ui.h"
-#else
 #endif
 
 #if defined(USE_ASH)
@@ -33,7 +37,30 @@
 #endif  // defined(OS_WIN)
 #endif  // defined(USE_ASH)
 
+#if !defined(OS_CHROMEOS)
+#include "ui/views/widget/desktop_aura/desktop_screen.h"
+#endif
+
 namespace {
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+ui::NativeTheme* GetNativeThemeForWindow(aura::Window* window) {
+  if (!window)
+    return NULL;
+
+  Profile* profile = NULL;
+  if (window->type() == ui::wm::WINDOW_TYPE_NORMAL ||
+      window->type() == ui::wm::WINDOW_TYPE_POPUP) {
+    profile = reinterpret_cast<Profile*>(
+        window->GetNativeWindowProperty(Profile::kProfileKey));
+  }
+
+  if (profile && !profile->GetPrefs()->GetBoolean(prefs::kUsesSystemTheme))
+    return ui::NativeThemeAura::instance();
+
+  return NULL;
+}
+#endif
 
 #if !defined(OS_CHROMEOS) && defined(USE_ASH)
 // Returns the desktop this process was initially launched in.
@@ -44,7 +71,12 @@ chrome::HostDesktopType GetInitialDesktop() {
       command_line->HasSwitch(switches::kViewerLaunchViaAppId)) {
     return chrome::HOST_DESKTOP_TYPE_ASH;
   }
+#elif defined(OS_LINUX)
+  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kOpenAsh))
+    return chrome::HOST_DESKTOP_TYPE_ASH;
 #endif
+
   return chrome::HOST_DESKTOP_TYPE_NATIVE;
 }
 #endif  // !defined(OS_CHROMEOS) && defined(USE_ASH)
@@ -58,22 +90,31 @@ ChromeBrowserMainExtraPartsAura::~ChromeBrowserMainExtraPartsAura() {
 }
 
 void ChromeBrowserMainExtraPartsAura::PreEarlyInitialization() {
-#if !defined(USE_ASH) && defined(OS_LINUX) && defined(USE_X11)
-  // TODO(erg): Refactor this into a dlopen call when we add a GTK3 port.
-  views::LinuxUI::SetInstance(BuildGtk2UI());
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  if (GetInitialDesktop() != chrome::HOST_DESKTOP_TYPE_ASH) {
+    // TODO(erg): Refactor this into a dlopen call when we add a GTK3 port.
+    views::LinuxUI* gtk2_ui = BuildGtk2UI();
+    gtk2_ui->SetNativeThemeOverride(base::Bind(&GetNativeThemeForWindow));
+    views::LinuxUI::SetInstance(gtk2_ui);
+  } else {
+    // TODO(erg): Eventually, we'll need to somehow support IMEs in ash on
+    // Linux.
+    ui::InitializeInputMethodForTesting();
+  }
 #endif
 }
 
 void ChromeBrowserMainExtraPartsAura::ToolkitInitialized() {
 #if !defined(OS_CHROMEOS)
 #if defined(USE_ASH)
-  aura::Env::CreateInstance();
+  CHECK(aura::Env::GetInstance());
   active_desktop_monitor_.reset(new ActiveDesktopMonitor(GetInitialDesktop()));
 #endif
 #endif
 
-#if !defined(USE_ASH) && defined(OS_LINUX) && defined(USE_X11)
-  views::LinuxUI::instance()->Initialize();
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  if (GetInitialDesktop() != chrome::HOST_DESKTOP_TYPE_ASH)
+    views::LinuxUI::instance()->Initialize();
 #endif
 }
 

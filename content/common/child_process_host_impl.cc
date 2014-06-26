@@ -23,6 +23,7 @@
 #include "content/public/common/content_switches.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_logging.h"
+#include "ipc/message_filter.h"
 
 #if defined(OS_LINUX)
 #include "base/linux_util.h"
@@ -150,7 +151,7 @@ ChildProcessHostImpl::~ChildProcessHostImpl() {
   base::CloseProcessHandle(peer_handle_);
 }
 
-void ChildProcessHostImpl::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void ChildProcessHostImpl::AddFilter(IPC::MessageFilter* filter) {
   filters_.push_back(filter);
 
   if (channel_)
@@ -163,8 +164,7 @@ void ChildProcessHostImpl::ForceShutdown() {
 
 std::string ChildProcessHostImpl::CreateChannel() {
   channel_id_ = IPC::Channel::GenerateVerifiedChannelID(std::string());
-  channel_.reset(new IPC::Channel(
-      channel_id_, IPC::Channel::MODE_SERVER, this));
+  channel_ = IPC::Channel::CreateServer(channel_id_, this);
   if (!channel_->Connect())
     return std::string();
 
@@ -292,6 +292,10 @@ void ChildProcessHostImpl::OnChannelError() {
   delegate_->OnChildDisconnected();
 }
 
+void ChildProcessHostImpl::OnBadMessageReceived(const IPC::Message& message) {
+  delegate_->OnBadMessageReceived(message);
+}
+
 void ChildProcessHostImpl::OnAllocateSharedMemory(
     uint32 buffer_size,
     base::SharedMemoryHandle* handle) {
@@ -307,6 +311,7 @@ void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
     uint32 width,
     uint32 height,
     uint32 internalformat,
+    uint32 usage,
     gfx::GpuMemoryBufferHandle* handle) {
   handle->type = gfx::SHARED_MEMORY_BUFFER;
   AllocateSharedMemory(

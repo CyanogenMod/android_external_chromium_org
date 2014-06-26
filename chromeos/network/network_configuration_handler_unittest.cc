@@ -12,8 +12,8 @@
 #include "chromeos/dbus/mock_shill_manager_client.h"
 #include "chromeos/dbus/mock_shill_profile_client.h"
 #include "chromeos/dbus/mock_shill_service_client.h"
-#include "chromeos/dbus/shill_stub_helper.h"
 #include "chromeos/network/network_configuration_handler.h"
+#include "chromeos/network/network_profile_handler.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
@@ -346,9 +346,12 @@ TEST_F(NetworkConfigurationHandlerTest, ClearPropertiesError) {
 TEST_F(NetworkConfigurationHandlerTest, CreateConfiguration) {
   std::string networkName = "MyNetwork";
   std::string key = "SSID";
+  std::string type = "wifi";
   std::string profile = "profile path";
   base::DictionaryValue value;
   shill_property_util::SetSSID(networkName, &value);
+  value.SetWithoutPathExpansion(shill::kTypeProperty,
+                                base::Value::CreateStringValue(type));
   value.SetWithoutPathExpansion(shill::kProfileProperty,
                                 base::Value::CreateStringValue(profile));
 
@@ -503,7 +506,7 @@ class NetworkConfigurationHandlerStubTest : public testing::Test {
 
 TEST_F(NetworkConfigurationHandlerStubTest, StubSetAndClearProperties) {
   // TODO(stevenjb): Remove dependency on default Stub service.
-  const std::string service_path("wifi1");
+  const std::string service_path("/service/wifi1");
   const std::string test_identity("test_identity");
   const std::string test_passphrase("test_passphrase");
 
@@ -555,7 +558,7 @@ TEST_F(NetworkConfigurationHandlerStubTest, StubSetAndClearProperties) {
 
 TEST_F(NetworkConfigurationHandlerStubTest, StubGetNameFromWifiHex) {
   // TODO(stevenjb): Remove dependency on default Stub service.
-  const std::string service_path("wifi1");
+  const std::string service_path("/service/wifi1");
   std::string wifi_hex = "5468697320697320484558205353494421";
   std::string expected_name = "This is HEX SSID!";
 
@@ -590,7 +593,7 @@ TEST_F(NetworkConfigurationHandlerStubTest, StubGetNameFromWifiHex) {
 }
 
 TEST_F(NetworkConfigurationHandlerStubTest, StubCreateConfiguration) {
-  const std::string service_path("test_wifi");
+  const std::string service_path("/service/test_wifi");
   base::DictionaryValue properties;
   shill_property_util::SetSSID(service_path, &properties);
   properties.SetStringWithoutPathExpansion(shill::kNameProperty, service_path);
@@ -600,7 +603,7 @@ TEST_F(NetworkConfigurationHandlerStubTest, StubCreateConfiguration) {
   properties.SetStringWithoutPathExpansion(
       shill::kStateProperty, shill::kStateIdle);
   properties.SetStringWithoutPathExpansion(
-      shill::kProfileProperty, shill_stub_helper::kSharedProfilePath);
+      shill::kProfileProperty, NetworkProfileHandler::GetSharedProfilePath());
 
   network_configuration_handler_->CreateConfiguration(
       properties,
@@ -620,7 +623,7 @@ TEST_F(NetworkConfigurationHandlerStubTest, StubCreateConfiguration) {
   std::string actual_profile;
   EXPECT_TRUE(GetServiceStringProperty(
       create_service_path_, shill::kProfileProperty, &actual_profile));
-  EXPECT_EQ(shill_stub_helper::kSharedProfilePath, actual_profile);
+  EXPECT_EQ(NetworkProfileHandler::GetSharedProfilePath(), actual_profile);
 }
 
 }  // namespace chromeos

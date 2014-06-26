@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_ASH_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_ASH_H_
 
+#include "ash/shell_observer.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
@@ -24,6 +25,7 @@ class ToggleImageButton;
 
 class BrowserNonClientFrameViewAsh
     : public BrowserNonClientFrameView,
+      public ash::ShellObserver,
       public chrome::TabIconViewModel {
  public:
   static const char kViewClassName[];
@@ -55,9 +57,12 @@ class BrowserNonClientFrameViewAsh
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual void OnThemeChanged() OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+
+  // ash::ShellObserver:
+  virtual void OnMaximizeModeStarted() OVERRIDE;
+  virtual void OnMaximizeModeEnded() OVERRIDE;
 
   // Overridden from chrome::TabIconViewModel:
   virtual bool ShouldTabIconViewAnimate() const OVERRIDE;
@@ -69,6 +74,8 @@ class BrowserNonClientFrameViewAsh
                            NonImmersiveFullscreen);
   FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest,
                            ImmersiveFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest,
+                           ToggleMaximizeModeRelayout);
 
   // Distance between the left edge of the NonClientFrameView and the tab strip.
   int GetTabStripLeftInset() const;
@@ -100,18 +107,9 @@ class BrowserNonClientFrameViewAsh
 
   void PaintToolbarBackground(gfx::Canvas* canvas);
 
-  // Windows without a toolbar need to draw their own line under the header,
-  // above the content area.
+  // Draws the line under the header for windows without a toolbar and not using
+  // the packaged app header style.
   void PaintContentEdge(gfx::Canvas* canvas);
-
-  // Returns the id of the header frame image based on the browser type,
-  // activation state and incognito mode.
-  int GetThemeFrameImageId() const;
-
-  // Returns the id of the header frame overlay image based on the activation
-  // state and incognito mode.
-  // Returns 0 if no overlay image should be used.
-  int GetThemeFrameOverlayImageId() const;
 
   // View which contains the window controls.
   ash::FrameCaptionButtonContainerView* caption_button_container_;

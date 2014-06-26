@@ -5,6 +5,9 @@
 #ifndef MEDIA_CAST_RTCP_RTCP_RECEIVER_H_
 #define MEDIA_CAST_RTCP_RTCP_RECEIVER_H_
 
+#include <queue>
+
+#include "base/containers/hash_tables.h"
 #include "media/cast/rtcp/rtcp.h"
 #include "media/cast/rtcp/rtcp_defines.h"
 #include "media/cast/rtcp/rtcp_utility.h"
@@ -25,9 +28,6 @@ class RtcpReceiverFeedback {
 
   virtual void OnReceivedReceiverLog(
       const RtcpReceiverLogMessage& receiver_log) = 0;
-
-  virtual void OnReceivedSenderLog(
-      const transport::RtcpSenderLogMessage& sender_log) = 0;
 
   virtual ~RtcpReceiverFeedback() {}
 };
@@ -52,6 +52,10 @@ class RtcpReceiver {
   virtual ~RtcpReceiver();
 
   void SetRemoteSSRC(uint32 ssrc);
+
+  // Set the history size to record Cast receiver events. Event history is
+  // used to remove duplicates. The history has no more than |size| events.
+  void SetCastReceiverEventHistorySize(size_t size);
 
   void IncomingRtcpPacket(RtcpParser* rtcp_parser);
 
@@ -99,6 +103,7 @@ class RtcpReceiver {
   void HandleApplicationSpecificCastReceiverLog(RtcpParser* rtcp_parser);
   void HandleApplicationSpecificCastSenderLog(RtcpParser* rtcp_parser);
   void HandleApplicationSpecificCastReceiverEventLog(
+      uint32 frame_rtp_timestamp,
       RtcpParser* rtcp_parser,
       RtcpReceiverEventLogMessages* event_log_messages);
 
@@ -112,6 +117,12 @@ class RtcpReceiver {
   scoped_refptr<CastEnvironment> cast_environment_;
 
   transport::FrameIdWrapHelper ack_frame_id_wrap_helper_;
+
+  // Maintains a history of receiver events.
+  size_t receiver_event_history_size_;
+  typedef std::pair<uint64, uint64> ReceiverEventKey;
+  base::hash_set<ReceiverEventKey> receiver_event_key_set_;
+  std::queue<ReceiverEventKey> receiver_event_key_queue_;
 
   DISALLOW_COPY_AND_ASSIGN(RtcpReceiver);
 };

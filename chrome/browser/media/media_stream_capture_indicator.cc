@@ -12,11 +12,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/status_icons/status_icon.h"
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
@@ -24,6 +24,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -44,18 +45,30 @@ const extensions::Extension* GetExtension(WebContents* web_contents) {
   if (!web_contents)
     return NULL;
 
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  if (!profile)
-    return NULL;
-
-  ExtensionService* extension_service = profile->GetExtensionService();
-  if (!extension_service)
-    return NULL;
-
-  return extension_service->extensions()->GetExtensionOrAppByURL(
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(web_contents->GetBrowserContext());
+  return registry->enabled_extensions().GetExtensionOrAppByURL(
       web_contents->GetURL());
 }
+
+#if !defined(OS_ANDROID)
+
+bool IsWhitelistedExtension(const extensions::Extension* extension) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  static const char* const kExtensionWhitelist[] = {
+    extension_misc::kHotwordExtensionId,
+  };
+
+  for (size_t i = 0; i < arraysize(kExtensionWhitelist); ++i) {
+    if (extension->id() == kExtensionWhitelist[i])
+      return true;
+  }
+
+  return false;
+}
+
+#endif  // !defined(OS_ANDROID)
 
 // Gets the security originator of the tab. It returns a string with no '/'
 // at the end to display in the UI.
@@ -141,8 +154,8 @@ class MediaStreamCaptureIndicator::WebContentsDeviceUsage
 
  private:
   // content::WebContentsObserver overrides.
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE {
-    indicator_->UnregisterWebContents(web_contents);
+  virtual void WebContentsDestroyed() OVERRIDE {
+    indicator_->UnregisterWebContents(web_contents());
     delete this;
   }
 
@@ -179,11 +192,13 @@ class MediaStreamCaptureIndicator::UIDelegate
 
  private:
   // content::MediaStreamUI interface.
-  virtual void OnStarted(const base::Closure& close_callback) OVERRIDE {
+  virtual gfx::NativeViewId OnStarted(const base::Closure& close_callback)
+      OVERRIDE {
     DCHECK(!started_);
     started_ = true;
     if (device_usage_.get())
       device_usage_->AddDevices(devices_);
+    return 0;
   }
 
   base::WeakPtr<WebContentsDeviceUsage> device_usage_;
@@ -208,7 +223,7 @@ void MediaStreamCaptureIndicator::WebContentsDeviceUsage::AddDevices(
     if (it->type == content::MEDIA_TAB_AUDIO_CAPTURE ||
         it->type == content::MEDIA_TAB_VIDEO_CAPTURE) {
       ++mirroring_ref_count_;
-    } else if (content::IsAudioMediaType(it->type)) {
+    } else if (content::IsAudioInputMediaType(it->type)) {
       ++audio_ref_count_;
     } else if (content::IsVideoMediaType(it->type)) {
       ++video_ref_count_;
@@ -230,7 +245,7 @@ void MediaStreamCaptureIndicator::WebContentsDeviceUsage::RemoveDevices(
     if (it->type == content::MEDIA_TAB_AUDIO_CAPTURE ||
         it->type == content::MEDIA_TAB_VIDEO_CAPTURE) {
       --mirroring_ref_count_;
-    } else if (content::IsAudioMediaType(it->type)) {
+    } else if (content::IsAudioInputMediaType(it->type)) {
       --audio_ref_count_;
     } else if (content::IsVideoMediaType(it->type)) {
       --video_ref_count_;
@@ -403,30 +418,34 @@ void MediaStreamCaptureIndicator::UpdateNotificationUserInterface() {
        iter != usage_map_.end(); ++iter) {
     // Check if any audio and video devices have been used.
     const WebContentsDeviceUsage& usage = *iter->second;
+    if (!usage.IsCapturingAudio() && !usage.IsCapturingVideo())
+      continue;
+
     WebContents* const web_contents = iter->first;
 
-    // Audio/video icon is shown only for extensions or on Android.
-    // For regular tabs on desktop, we show an indicator in the tab icon.
-    if ((usage.IsCapturingAudio() || usage.IsCapturingVideo())
+    // The audio/video icon is shown only for non-whitelisted extensions or on
+    // Android. For regular tabs on desktop, we show an indicator in the tab
+    // icon.
 #if !defined(OS_ANDROID)
-        && GetExtension(web_contents)
+    const extensions::Extension* extension = GetExtension(web_contents);
+    if (!extension || IsWhitelistedExtension(extension))
+      continue;
 #endif
-        ) {
-      audio = audio || usage.IsCapturingAudio();
-      video = video || usage.IsCapturingVideo();
 
-      command_targets_.push_back(web_contents);
-      menu->AddItem(command_id, GetTitle(web_contents));
+    audio = audio || usage.IsCapturingAudio();
+    video = video || usage.IsCapturingVideo();
 
-      // If the menu item is not a label, enable it.
-      menu->SetCommandIdEnabled(command_id,
-                                command_id != IDC_MinimumLabelValue);
+    command_targets_.push_back(web_contents);
+    menu->AddItem(command_id, GetTitle(web_contents));
 
-      // If reaching the maximum number, no more item will be added to the menu.
-      if (command_id == IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_LAST)
-        break;
-      ++command_id;
-    }
+    // If the menu item is not a label, enable it.
+    menu->SetCommandIdEnabled(command_id,
+                              command_id != IDC_MinimumLabelValue);
+
+    // If reaching the maximum number, no more item will be added to the menu.
+    if (command_id == IDC_MEDIA_CONTEXT_MEDIA_STREAM_CAPTURE_LIST_LAST)
+      break;
+    ++command_id;
   }
 
   if (command_targets_.empty()) {

@@ -36,8 +36,6 @@ class TestHooks : public AnimationDelegate {
 
   virtual void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
                                           const BeginFrameArgs& args) {}
-  virtual void DidBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
-                                         const BeginFrameArgs& args) {}
   virtual void BeginMainFrameAbortedOnThread(LayerTreeHostImpl* host_impl,
                                              bool did_handle) {}
   virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) {}
@@ -46,10 +44,10 @@ class TestHooks : public AnimationDelegate {
   virtual void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void InitializedRendererOnThread(LayerTreeHostImpl* host_impl,
                                            bool success) {}
-  virtual DrawSwapReadbackResult::DrawResult PrepareToDrawOnThread(
+  virtual DrawResult PrepareToDrawOnThread(
       LayerTreeHostImpl* host_impl,
       LayerTreeHostImpl::FrameData* frame_data,
-      DrawSwapReadbackResult::DrawResult draw_result);
+      DrawResult draw_result);
   virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) {}
   virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) {}
   virtual void SwapBuffersCompleteOnThread(LayerTreeHostImpl* host_impl) {}
@@ -66,7 +64,7 @@ class TestHooks : public AnimationDelegate {
   virtual void WillBeginMainFrame() {}
   virtual void DidBeginMainFrame() {}
   virtual void Layout() {}
-  virtual void DidInitializeOutputSurface(bool succeeded) {}
+  virtual void DidInitializeOutputSurface() {}
   virtual void DidFailToInitializeOutputSurface() {}
   virtual void DidAddAnimation() {}
   virtual void WillCommit() {}
@@ -80,18 +78,23 @@ class TestHooks : public AnimationDelegate {
                                        bool visible) {}
   virtual base::TimeDelta LowFrequencyAnimationInterval() const;
 
+  // Hooks for SchedulerClient.
+  virtual void ScheduledActionWillSendBeginMainFrame() {}
+  virtual void ScheduledActionSendBeginMainFrame() {}
+  virtual void ScheduledActionDrawAndSwapIfPossible() {}
+  virtual void ScheduledActionAnimate() {}
+  virtual void ScheduledActionCommit() {}
+  virtual void ScheduledActionBeginOutputSurfaceCreation() {}
+
   // Implementation of AnimationDelegate:
-  virtual void NotifyAnimationStarted(double wall_clock_time,
-                                      base::TimeTicks monotonic_time,
+  virtual void NotifyAnimationStarted(base::TimeTicks monotonic_time,
                                       Animation::TargetProperty target_property)
       OVERRIDE {}
   virtual void NotifyAnimationFinished(
-      double wall_clock_time,
       base::TimeTicks monotonic_time,
       Animation::TargetProperty target_property) OVERRIDE {}
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) = 0;
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() = 0;
 };
 
 class BeginTask;
@@ -123,8 +126,6 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   void PostAddLongAnimationToMainThread(Layer* layer_to_receive_animation);
   void PostSetNeedsCommitToMainThread();
   void PostSetNeedsUpdateLayersToMainThread();
-  void PostReadbackToMainThread();
-  void PostAcquireLayerTextures();
   void PostSetNeedsRedrawToMainThread();
   void PostSetNeedsRedrawRectToMainThread(const gfx::Rect& damage_rect);
   void PostSetVisibleToMainThread(bool visible);
@@ -146,8 +147,6 @@ class LayerTreeTest : public testing::Test, public TestHooks {
                                     double animation_duration);
   void DispatchSetNeedsCommit();
   void DispatchSetNeedsUpdateLayers();
-  void DispatchReadback();
-  void DispatchAcquireLayerTextures();
   void DispatchSetNeedsRedraw();
   void DispatchSetNeedsRedrawRect(const gfx::Rect& damage_rect);
   void DispatchSetVisible(bool visible);
@@ -191,8 +190,6 @@ class LayerTreeTest : public testing::Test, public TestHooks {
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
   // Override this for unit tests, which should not produce pixel output.
   virtual scoped_ptr<FakeOutputSurface> CreateFakeOutputSurface(bool fallback);
-
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
 
   TestWebGraphicsContext3D* TestContext();
 

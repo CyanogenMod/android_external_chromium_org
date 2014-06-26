@@ -41,6 +41,15 @@ static HomogeneousCoordinate ProjectHomogeneousPoint(
   return result;
 }
 
+static HomogeneousCoordinate ProjectHomogeneousPoint(
+    const gfx::Transform& transform,
+    const gfx::PointF& p,
+    bool* clipped) {
+  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p);
+  *clipped = h.w() <= 0;
+  return h;
+}
+
 static HomogeneousCoordinate MapHomogeneousPoint(
     const gfx::Transform& transform,
     const gfx::Point3F& p) {
@@ -444,26 +453,25 @@ gfx::QuadF MathUtil::ProjectQuad(const gfx::Transform& transform,
 gfx::PointF MathUtil::ProjectPoint(const gfx::Transform& transform,
                                    const gfx::PointF& p,
                                    bool* clipped) {
-  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p);
-
-  if (h.w() > 0) {
-    // The cartesian coordinates will be valid in this case.
-    *clipped = false;
-    return h.CartesianPoint2d();
-  }
-
-  // The cartesian coordinates will be invalid after dividing by w.
-  *clipped = true;
-
+  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p, clipped);
   // Avoid dividing by w if w == 0.
   if (!h.w())
     return gfx::PointF();
 
-  // This return value will be invalid because clipped == true, but (1) users of
+  // This return value will be invalid if clipped == true, but (1) users of
   // this code should be ignoring the return value when clipped == true anyway,
   // and (2) this behavior is more consistent with existing behavior of WebKit
   // transforms if the user really does not ignore the return value.
   return h.CartesianPoint2d();
+}
+
+gfx::Point3F MathUtil::ProjectPoint3D(const gfx::Transform& transform,
+                                      const gfx::PointF& p,
+                                      bool* clipped) {
+  HomogeneousCoordinate h = ProjectHomogeneousPoint(transform, p, clipped);
+  if (!h.w())
+    return gfx::Point3F();
+  return h.CartesianPoint3d();
 }
 
 gfx::RectF MathUtil::ScaleRectProportional(const gfx::RectF& input_outer_rect,
@@ -486,13 +494,17 @@ gfx::RectF MathUtil::ScaleRectProportional(const gfx::RectF& input_outer_rect,
   return output_inner_rect;
 }
 
+static inline bool NearlyZero(double value) {
+  return std::abs(value) < std::numeric_limits<double>::epsilon();
+}
+
 static inline float ScaleOnAxis(double a, double b, double c) {
-  if (!b && !c)
-    return a;
-  if (!a && !c)
-    return b;
-  if (!a && !b)
-    return c;
+  if (NearlyZero(b) && NearlyZero(c))
+    return std::abs(a);
+  if (NearlyZero(a) && NearlyZero(c))
+    return std::abs(b);
+  if (NearlyZero(a) && NearlyZero(b))
+    return std::abs(c);
 
   // Do the sqrt as a double to not lose precision.
   return static_cast<float>(std::sqrt(a * a + b * b + c * c));
@@ -576,6 +588,21 @@ scoped_ptr<base::Value> MathUtil::AsValue(const gfx::PointF& pt) {
   scoped_ptr<base::ListValue> res(new base::ListValue());
   res->AppendDouble(pt.x());
   res->AppendDouble(pt.y());
+  return res.PassAs<base::Value>();
+}
+
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Point3F& pt) {
+  scoped_ptr<base::ListValue> res(new base::ListValue());
+  res->AppendDouble(pt.x());
+  res->AppendDouble(pt.y());
+  res->AppendDouble(pt.z());
+  return res.PassAs<base::Value>();
+}
+
+scoped_ptr<base::Value> MathUtil::AsValue(const gfx::Vector2d& v) {
+  scoped_ptr<base::ListValue> res(new base::ListValue());
+  res->AppendInteger(v.x());
+  res->AppendInteger(v.y());
   return res.PassAs<base::Value>();
 }
 

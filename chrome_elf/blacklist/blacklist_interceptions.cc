@@ -17,6 +17,7 @@
 #include "base/strings/string16.h"
 #include "base/win/pe_image.h"
 #include "chrome_elf/blacklist/blacklist.h"
+#include "chrome_elf/breakpad.h"
 #include "sandbox/win/src/internal_types.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
@@ -34,12 +35,12 @@ FARPROC GetNtDllExportByName(const char* export_name) {
   return ::GetProcAddress(ntdll, export_name);
 }
 
-bool DllMatch(const base::string16& module_name) {
+int DllMatch(const base::string16& module_name) {
   for (int i = 0; blacklist::g_troublesome_dlls[i] != NULL; ++i) {
     if (_wcsicmp(module_name.c_str(), blacklist::g_troublesome_dlls[i]) == 0)
-      return true;
+      return i;
   }
-  return false;
+  return -1;
 }
 
 // TODO(robertshield): Some of the helper functions below overlap somewhat with
@@ -148,7 +149,9 @@ void SafeGetImageInfo(const base::win::PEImage& pe,
           *flags |= sandbox::MODULE_HAS_CODE;
       }
     }
-  } __except(GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ?
+  } __except((GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ||
+              GetExceptionCode() == EXCEPTION_GUARD_PAGE ||
+              GetExceptionCode() == EXCEPTION_IN_PAGE_ERROR) ?
              EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
     out_name->clear();
   }
@@ -166,25 +169,7 @@ bool IsSameAsCurrentProcess(HANDLE process) {
           (::GetProcessId(process) == ::GetCurrentProcessId());
 }
 
-}  // namespace
-
-namespace blacklist {
-
-bool InitializeInterceptImports() {
-  g_nt_query_section_func = reinterpret_cast<NtQuerySectionFunction>(
-          GetNtDllExportByName("NtQuerySection"));
-  g_nt_query_virtual_memory_func =
-      reinterpret_cast<NtQueryVirtualMemoryFunction>(
-          GetNtDllExportByName("NtQueryVirtualMemory"));
-  g_nt_unmap_view_of_section_func =
-      reinterpret_cast<NtUnmapViewOfSectionFunction>(
-          GetNtDllExportByName("NtUnmapViewOfSection"));
-
-  return g_nt_query_section_func && g_nt_query_virtual_memory_func &&
-         g_nt_unmap_view_of_section_func;
-}
-
-SANDBOX_INTERCEPT NTSTATUS WINAPI BlNtMapViewOfSection(
+NTSTATUS BlNtMapViewOfSectionImpl(
     NtMapViewOfSectionFunction orig_MapViewOfSection,
     HANDLE section,
     HANDLE process,
@@ -219,11 +204,60 @@ SANDBOX_INTERCEPT NTSTATUS WINAPI BlNtMapViewOfSection(
       module_name = ExtractLoadedModuleName(file_name);
     }
 
-    if (!module_name.empty() && DllMatch(module_name)) {
-      DCHECK_NT(g_nt_unmap_view_of_section_func);
-      g_nt_unmap_view_of_section_func(process, *base);
-      ret = STATUS_UNSUCCESSFUL;
+    if (!module_name.empty()) {
+      int blocked_index = DllMatch(module_name);
+      if (blocked_index != -1) {
+        DCHECK_NT(g_nt_unmap_view_of_section_func);
+        g_nt_unmap_view_of_section_func(process, *base);
+        ret = STATUS_UNSUCCESSFUL;
+
+        blacklist::BlockedDll(blocked_index);
+      }
     }
+  }
+
+  return ret;
+}
+
+}  // namespace
+
+namespace blacklist {
+
+bool InitializeInterceptImports() {
+  g_nt_query_section_func =
+      reinterpret_cast<NtQuerySectionFunction>(
+          GetNtDllExportByName("NtQuerySection"));
+  g_nt_query_virtual_memory_func =
+      reinterpret_cast<NtQueryVirtualMemoryFunction>(
+          GetNtDllExportByName("NtQueryVirtualMemory"));
+  g_nt_unmap_view_of_section_func =
+      reinterpret_cast<NtUnmapViewOfSectionFunction>(
+          GetNtDllExportByName("NtUnmapViewOfSection"));
+
+  return (g_nt_query_section_func && g_nt_query_virtual_memory_func &&
+          g_nt_unmap_view_of_section_func);
+}
+
+SANDBOX_INTERCEPT NTSTATUS WINAPI BlNtMapViewOfSection(
+    NtMapViewOfSectionFunction orig_MapViewOfSection,
+    HANDLE section,
+    HANDLE process,
+    PVOID *base,
+    ULONG_PTR zero_bits,
+    SIZE_T commit_size,
+    PLARGE_INTEGER offset,
+    PSIZE_T view_size,
+    SECTION_INHERIT inherit,
+    ULONG allocation_type,
+    ULONG protect) {
+  NTSTATUS ret = STATUS_UNSUCCESSFUL;
+
+  __try {
+    ret = BlNtMapViewOfSectionImpl(orig_MapViewOfSection, section, process,
+                                   base, zero_bits, commit_size, offset,
+                                   view_size, inherit, allocation_type,
+                                   protect);
+  } __except(GenerateCrashDump(GetExceptionInformation())) {
   }
 
   return ret;

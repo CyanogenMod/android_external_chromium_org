@@ -165,6 +165,8 @@ enum MetricEnrollment {
   kMetricEnrollmentRobotRefreshTokenStoreFailed,
   // Enrollment failed because the administrator has deprovisioned the device.
   kMetricEnrollmentDeprovisioned,
+  // Enrollment failed because the device doesn't belong to the domain.
+  kMetricEnrollmentDomainMismatch,
 
   kMetricEnrollmentSize  // Must be the last.
 };
@@ -188,6 +190,20 @@ enum MetricPolicyRefresh {
   METRIC_POLICY_REFRESH_INVALIDATED_UNCHANGED,
 
   METRIC_POLICY_REFRESH_SIZE  // Must be the last.
+};
+
+// Types of policy invalidations.
+enum PolicyInvalidationType {
+  // The invalidation contained no payload.
+  POLICY_INVALIDATION_TYPE_NO_PAYLOAD,
+  // A normal invalidation containing a payload.
+  POLICY_INVALIDATION_TYPE_NORMAL,
+  // The invalidation contained no payload and was considered expired.
+  POLICY_INVALIDATION_TYPE_NO_PAYLOAD_EXPIRED,
+  // The invalidation contained a payload and was considered expired.
+  POLICY_INVALIDATION_TYPE_EXPIRED,
+
+  POLICY_INVALIDATION_TYPE_SIZE  // Must be the last.
 };
 
 // Names for the UMA counters. They are shared from here since the events

@@ -13,12 +13,15 @@
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/views/test/test_views_delegate.h"
 #include "ui/wm/public/window_types.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
 #endif
+
+namespace gfx {
+class Rect;
+}
 
 namespace aura {
 class RootWindow;
@@ -31,9 +34,7 @@ class EventGenerator;
 }  // namespace aura
 
 namespace ash {
-namespace internal {
 class DisplayManager;
-}  // namespace internal
 
 namespace test {
 
@@ -43,14 +44,6 @@ class TestSystemTrayDelegate;
 #if defined(OS_WIN)
 class TestMetroViewerProcessHost;
 #endif
-
-class AshTestViewsDelegate : public views::TestViewsDelegate {
- public:
-  // Overriden from TestViewsDelegate.
-  virtual content::WebContents* CreateWebContents(
-      content::BrowserContext* browser_context,
-      content::SiteInstance* site_instance) OVERRIDE;
-};
 
 class AshTestBase : public testing::Test {
  public:
@@ -104,15 +97,15 @@ class AshTestBase : public testing::Test {
     NUMBER_OF_BLOCK_REASONS
   };
 
-  // True if the running environment supports multiple displays,
-  // or false otherwise (e.g. win8 bot).
+  // Proxy to AshTestHelper::SupportsMultipleDisplays().
   static bool SupportsMultipleDisplays();
 
-  // True if the running environment supports host window resize,
-  // or false otherwise (e.g. win8 bot).
+  // Proxy to AshTestHelper::SupportsHostWindowResize().
   static bool SupportsHostWindowResize();
 
   void set_start_session(bool start_session) { start_session_ = start_session; }
+
+  AshTestHelper* ash_test_helper() { return ash_test_helper_.get(); }
 
   void RunAllPendingInMessageLoop();
 
@@ -137,7 +130,7 @@ class AshTestBase : public testing::Test {
   bool teardown_called_;
   // |SetUp()| doesn't activate session if this is set to false.
   bool start_session_;
-  content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<content::TestBrowserThreadBundle> thread_bundle_;
   scoped_ptr<AshTestHelper> ash_test_helper_;
   scoped_ptr<aura::test::EventGenerator> event_generator_;
 #if defined(OS_WIN)

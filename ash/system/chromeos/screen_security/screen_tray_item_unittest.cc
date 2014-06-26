@@ -17,7 +17,6 @@
 #include "ui/views/view.h"
 
 namespace ash {
-namespace internal {
 
 // Test with unicode strings.
 const char kTestScreenCaptureAppName[] =
@@ -182,7 +181,8 @@ void TestNotificationView(ScreenTrayItemTest* test) {
   test->StartSession();
   message_center::MessageCenter* message_center =
       message_center::MessageCenter::Get();
-  EXPECT_TRUE(message_center->HasNotification(tray_item->GetNotificationId()));
+  EXPECT_TRUE(message_center->FindVisibleNotificationById(
+      tray_item->GetNotificationId()));
   test->StopSession();
 }
 
@@ -223,5 +223,4 @@ TEST_F(ScreenShareTest, SystemTrayInteraction) {
   TestSystemTrayInteraction(this);
 }
 
-} // namespace internal
-} // namespace ash
+}  // namespace ash

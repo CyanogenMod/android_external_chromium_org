@@ -10,7 +10,6 @@
 # Assumes tombstone file was created with current symbols.
 
 import datetime
-import logging
 import multiprocessing
 import os
 import subprocess
@@ -18,18 +17,19 @@ import sys
 import optparse
 
 from pylib import android_commands
+from pylib.device import device_utils
 
 
-def _ListTombstones(adb):
+def _ListTombstones(device):
   """List the tombstone files on the device.
 
   Args:
-    adb: An instance of AndroidCommands.
+    device: An instance of DeviceUtils.
 
   Yields:
     Tuples of (tombstone filename, date time of file on device).
   """
-  lines = adb.RunShellCommand('TZ=UTC su -c ls -a -l /data/tombstones')
+  lines = device.RunShellCommand('TZ=UTC su -c ls -a -l /data/tombstones')
   for line in lines:
     if 'tombstone' in line and not 'No such file or directory' in line:
       details = line.split()
@@ -38,39 +38,43 @@ def _ListTombstones(adb):
       yield details[-1], t
 
 
-def _GetDeviceDateTime(adb):
+def _GetDeviceDateTime(device):
   """Determine the date time on the device.
 
   Args:
-    adb: An instance of AndroidCommands.
+    device: An instance of DeviceUtils.
 
   Returns:
     A datetime instance.
   """
-  device_now_string = adb.RunShellCommand('TZ=UTC date')
+  device_now_string = device.RunShellCommand('TZ=UTC date')
   return datetime.datetime.strptime(
       device_now_string[0], '%a %b %d %H:%M:%S %Z %Y')
 
 
-def _GetTombstoneData(adb, tombstone_file):
+def _GetTombstoneData(device, tombstone_file):
   """Retrieve the tombstone data from the device
 
   Args:
+    device: An instance of DeviceUtils.
     tombstone_file: the tombstone to retrieve
 
   Returns:
     A list of lines
   """
-  return adb.GetProtectedFileContents('/data/tombstones/' + tombstone_file)
+  return device.old_interface.GetProtectedFileContents(
+      '/data/tombstones/' + tombstone_file)
 
 
-def _EraseTombstone(adb, tombstone_file):
+def _EraseTombstone(device, tombstone_file):
   """Deletes a tombstone from the device.
 
   Args:
+    device: An instance of DeviceUtils.
     tombstone_file: the tombstone to delete.
   """
-  return adb.RunShellCommandWithSU('rm /data/tombstones/' + tombstone_file)
+  return device.RunShellCommand(
+      'rm /data/tombstones/' + tombstone_file, as_root=True)
 
 
 def _ResolveSymbols(tombstone_data, include_stack):
@@ -126,15 +130,15 @@ def _ResolveTombstones(jobs, tombstones):
   print '\n'.join(data)
 
 
-def _GetTombstonesForDevice(adb, options):
-  """Returns a list of tombstones on a given adb connection.
+def _GetTombstonesForDevice(device, options):
+  """Returns a list of tombstones on a given device.
 
   Args:
-    adb: An instance of Androidcommands.
+    device: An instance of DeviceUtils.
     options: command line arguments from OptParse
   """
   ret = []
-  all_tombstones = list(_ListTombstones(adb))
+  all_tombstones = list(_ListTombstones(device))
   if not all_tombstones:
     print 'No device attached?  Or no tombstones?'
     return ret
@@ -145,19 +149,19 @@ def _GetTombstonesForDevice(adb, options):
   # Only resolve the most recent unless --all-tombstones given.
   tombstones = all_tombstones if options.all_tombstones else [all_tombstones[0]]
 
-  device_now = _GetDeviceDateTime(adb)
+  device_now = _GetDeviceDateTime(device)
   for tombstone_file, tombstone_time in tombstones:
-    ret += [{'serial': adb.Adb().GetSerialNumber(),
+    ret += [{'serial': device.old_interface.Adb().GetSerialNumber(),
              'device_now': device_now,
              'time': tombstone_time,
              'file': tombstone_file,
              'stack': options.stack,
-             'data': _GetTombstoneData(adb, tombstone_file)}]
+             'data': _GetTombstoneData(device, tombstone_file)}]
 
   # Erase all the tombstones if desired.
   if options.wipe_tombstones:
     for tombstone_file, _ in all_tombstones:
-      _EraseTombstone(adb, tombstone_file)
+      _EraseTombstone(device, tombstone_file)
 
   return ret
 
@@ -177,7 +181,7 @@ def main():
                     default=4,
                     help='Number of jobs to use when processing multiple '
                          'crash stacks.')
-  options, args = parser.parse_args()
+  options, _ = parser.parse_args()
 
   if options.device:
     devices = [options.device]
@@ -185,9 +189,9 @@ def main():
     devices = android_commands.GetAttachedDevices()
 
   tombstones = []
-  for device in devices:
-    adb = android_commands.AndroidCommands(device)
-    tombstones += _GetTombstonesForDevice(adb, options)
+  for device_serial in devices:
+    device = device_utils.DeviceUtils(device_serial)
+    tombstones += _GetTombstonesForDevice(device, options)
 
   _ResolveTombstones(options.jobs, tombstones)
 

@@ -9,10 +9,10 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/elapsed_timer.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
-#include "chrome/browser/password_manager/password_form_manager.h"
-#include "content/public/browser/navigation_details.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar_delegate.h"
+#include "components/password_manager/core/browser/password_form_manager.h"
+#include "components/password_manager/core/browser/password_manager_metrics_util.h"
 
 namespace content {
 class WebContents;
@@ -33,7 +33,7 @@ class SavePasswordInfoBarDelegate : public ConfirmInfoBarDelegate {
   // if empty, the usage is not reported, otherwise the suffix is used to choose
   // the right histogram.
   static void Create(content::WebContents* web_contents,
-                     PasswordFormManager* form_to_save,
+                     password_manager::PasswordFormManager* form_to_save,
                      const std::string& uma_histogram_suffix);
 
   virtual ~SavePasswordInfoBarDelegate();
@@ -44,24 +44,16 @@ class SavePasswordInfoBarDelegate : public ConfirmInfoBarDelegate {
       bool use_additional_authentication);
 
  private:
-  enum ResponseType {
-    NO_RESPONSE = 0,
-    REMEMBER_PASSWORD,
-    NEVER_REMEMBER_PASSWORD,
-    INFOBAR_DISMISSED,
-    NUM_RESPONSE_TYPES,
-  };
-
-  SavePasswordInfoBarDelegate(PasswordFormManager* form_to_save,
-                              const std::string& uma_histogram_suffix);
+  SavePasswordInfoBarDelegate(
+      password_manager::PasswordFormManager* form_to_save,
+      const std::string& uma_histogram_suffix);
 
   // Returns a save password infobar that owns |delegate|.
-  static scoped_ptr<InfoBar> CreateInfoBar(
+  static scoped_ptr<infobars::InfoBar> CreateInfoBar(
       scoped_ptr<SavePasswordInfoBarDelegate> delegate);
 
   // InfoBarDelegate
-  virtual bool ShouldExpire(const content::LoadCommittedDetails& details)
-      const OVERRIDE;
+  virtual bool ShouldExpire(const NavigationDetails& details) const OVERRIDE;
 
   // ConfirmInfoBarDelegate
   virtual int GetIconID() const OVERRIDE;
@@ -76,10 +68,10 @@ class SavePasswordInfoBarDelegate : public ConfirmInfoBarDelegate {
 
   // The PasswordFormManager managing the form we're asking the user about,
   // and should update as per her decision.
-  scoped_ptr<PasswordFormManager> form_to_save_;
+  scoped_ptr<password_manager::PasswordFormManager> form_to_save_;
 
   // Used to track the results we get from the info bar.
-  ResponseType infobar_response_;
+  password_manager::metrics_util::ResponseType infobar_response_;
 
   // Measures the "Save password?" prompt lifetime. Used to report an UMA
   // signal.

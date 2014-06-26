@@ -4,7 +4,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import fnmatch
 import optparse
 import os
 import sys
@@ -29,7 +28,7 @@ def DoProguard(options):
   build_utils.CheckOutput(proguard_cmd, print_stdout=True)
 
 
-def main(argv):
+def main():
   parser = optparse.OptionParser()
   parser.add_option('--proguard-path',
                     help='Path to the proguard executable.')
@@ -41,9 +40,6 @@ def main(argv):
   parser.add_option('--classpath', help="Classpath for proguard.")
   parser.add_option('--stamp', help='Path to touch on success.')
 
-  # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-  parser.add_option('--ignore', help='Ignored.')
-
   options, _ = parser.parse_args()
 
   DoProguard(options)
@@ -53,4 +49,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())

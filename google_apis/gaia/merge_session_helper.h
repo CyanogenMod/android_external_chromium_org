@@ -10,6 +10,7 @@
 #include "base/observer_list.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/ubertoken_fetcher.h"
+#include "net/url_request/url_fetcher_delegate.h"
 
 class GaiaAuthFetcher;
 class GoogleServiceAuthError;
@@ -64,6 +65,12 @@ class MergeSessionHelper : public GaiaAuthConsumer,
   // Signout all accounts.
   void LogOutAllAccounts();
 
+  // Call observers when merge session completes.  This public so that callers
+  // that know that a given account is already in the cookie jar can simply
+  // inform the observers.
+  void SignalComplete(const std::string& account_id,
+                      const GoogleServiceAuthError& error);
+
  private:
   // Overridden from UbertokenConsumer.
   virtual void OnUbertokenSuccess(const std::string& token) OVERRIDE;
@@ -83,10 +90,6 @@ class MergeSessionHelper : public GaiaAuthConsumer,
 
   // Virtual for testing purpose.
   virtual void StartLogOutUrlFetch();
-
-  // Call observer when merge session completes.
-  void SignalComplete(const std::string& account_id,
-                      const GoogleServiceAuthError& error);
 
   // Start the next merge session, if needed.
   void HandleNextAccount();

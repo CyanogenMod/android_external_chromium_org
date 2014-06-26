@@ -11,17 +11,13 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/search_engines/search_provider_install_data.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -125,11 +121,13 @@ class SearchProviderInstallDataTest : public testing::Test {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
-  void SimulateDefaultSearchIsManaged(const std::string& url);
-
  protected:
   TemplateURL* AddNewTemplateURL(const std::string& url,
                                  const base::string16& keyword);
+
+  // Sets the Google base URL to |base_url| and runs the IO thread for
+  // |SearchProviderInstallData| to process the update.
+  void SetGoogleBaseURLAndProcessOnIOThread(GURL base_url);
 
   TemplateURLServiceTestUtil util_;
 
@@ -172,27 +170,6 @@ void SearchProviderInstallDataTest::TearDown() {
   testing::Test::TearDown();
 }
 
-void SearchProviderInstallDataTest::SimulateDefaultSearchIsManaged(
-    const std::string& url) {
-  ASSERT_FALSE(url.empty());
-  TestingPrefServiceSyncable* service =
-      util_.profile()->GetTestingPrefService();
-  service->SetManagedPref(prefs::kDefaultSearchProviderEnabled,
-                          base::Value::CreateBooleanValue(true));
-  service->SetManagedPref(prefs::kDefaultSearchProviderSearchURL,
-                          base::Value::CreateStringValue(url));
-  service->SetManagedPref(prefs::kDefaultSearchProviderName,
-                          base::Value::CreateStringValue("managed"));
-  // Clear the IDs that are not specified via policy.
-  service->SetManagedPref(prefs::kDefaultSearchProviderID,
-                          new base::StringValue(std::string()));
-  service->SetManagedPref(prefs::kDefaultSearchProviderPrepopulateID,
-                          new base::StringValue(std::string()));
-  util_.model()->Observe(chrome::NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-                         content::NotificationService::AllSources(),
-                         content::NotificationService::NoDetails());
-}
-
 TemplateURL* SearchProviderInstallDataTest::AddNewTemplateURL(
     const std::string& url,
     const base::string16& keyword) {
@@ -200,9 +177,23 @@ TemplateURL* SearchProviderInstallDataTest::AddNewTemplateURL(
   data.short_name = keyword;
   data.SetKeyword(keyword);
   data.SetURL(url);
-  TemplateURL* t_url = new TemplateURL(util_.profile(), data);
+  TemplateURL* t_url = new TemplateURL(data);
   util_.model()->Add(t_url);
   return t_url;
+}
+
+void SearchProviderInstallDataTest::SetGoogleBaseURLAndProcessOnIOThread(
+    GURL base_url) {
+  util_.SetGoogleBaseURL(base_url);
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&SearchProviderInstallData::OnGoogleURLChange,
+                 base::Unretained(install_data_),
+                 base_url.spec()));
+
+  // Wait for the I/O thread to process the update notification.
+  base::RunLoop().RunUntilIdle();
 }
 
 // Actual tests ---------------------------------------------------------------
@@ -225,7 +216,7 @@ TEST_F(SearchProviderInstallDataTest, GetInstallState) {
   TemplateURL* default_url =
       AddNewTemplateURL("http://" + default_host + "/",
                         base::ASCIIToUTF16("mmm"));
-  util_.model()->SetDefaultSearchProvider(default_url);
+  util_.model()->SetUserSelectedDefaultSearchProvider(default_url);
   test_get_install_state.RunTests(host, default_host);
 }
 
@@ -237,8 +228,17 @@ TEST_F(SearchProviderInstallDataTest, ManagedDefaultSearch) {
 
   // Set a managed preference that establishes a default search provider.
   std::string host2 = "www.managedtest.com";
-  std::string url2 = "http://" + host2 + "/p{searchTerms}";
-  SimulateDefaultSearchIsManaged(url2);
+  util_.SetManagedDefaultSearchPreferences(
+      true,
+      "managed",
+      "managed",
+      "http://" + host2 + "/p{searchTerms}",
+      std::string(),
+      std::string(),
+      std::string(),
+      std::string(),
+      std::string());
+
   EXPECT_TRUE(util_.model()->is_default_search_managed());
 
   // Wait for the changes to be saved.
@@ -256,15 +256,13 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
   // Set up the database.
   util_.ChangeModelToLoadState();
   std::string google_host = "w.com";
-  util_.SetGoogleBaseURL(GURL("http://" + google_host + "/"));
-  // Wait for the I/O thread to process the update notification.
-  base::RunLoop().RunUntilIdle();
+  SetGoogleBaseURLAndProcessOnIOThread(GURL("http://" + google_host + "/"));
 
   AddNewTemplateURL("{google:baseURL}?q={searchTerms}",
                     base::ASCIIToUTF16("t"));
   TemplateURL* default_url =
       AddNewTemplateURL("http://d.com/", base::ASCIIToUTF16("d"));
-  util_.model()->SetDefaultSearchProvider(default_url);
+  util_.model()->SetUserSelectedDefaultSearchProvider(default_url);
 
   // Wait for the changes to be saved.
   base::RunLoop().RunUntilIdle();
@@ -274,9 +272,7 @@ TEST_F(SearchProviderInstallDataTest, GoogleBaseUrlChange) {
 
   // Change the Google base url.
   google_host = "foo.com";
-  util_.SetGoogleBaseURL(GURL("http://" + google_host + "/"));
-  // Wait for the I/O thread to process the update notification.
-  base::RunLoop().RunUntilIdle();
+  SetGoogleBaseURLAndProcessOnIOThread(GURL("http://" + google_host + "/"));
 
   // Verify that the change got picked up.
   test_get_install_state.RunTests(google_host, std::string());

@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,6 +9,13 @@ import threading
 from telemetry.core import util
 from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.platform import profiler
+
+util.AddDirToPythonPath(util.GetChromiumSrcDir(), 'build', 'android')
+try:
+  from pylib import constants  # pylint: disable=F0401
+except Exception:
+  constants = None
+
 
 class JavaHeapProfiler(profiler.Profiler):
   """Android-specific, trigger and fetch java heap dumps."""
@@ -39,7 +46,7 @@ class JavaHeapProfiler(profiler.Profiler):
   def CollectProfile(self):
     self._timer.cancel()
     self._DumpJavaHeap(True)
-    self._browser_backend.adb.Adb().Adb().Pull(
+    self._browser_backend.adb.device().old_interface.Adb().Pull(
         self._DEFAULT_DEVICE_DIR, self._output_path)
     self._browser_backend.adb.RunShellCommand(
         'rm ' + os.path.join(self._DEFAULT_DEVICE_DIR, '*'))
@@ -48,7 +55,9 @@ class JavaHeapProfiler(profiler.Profiler):
       if os.path.splitext(f)[1] == '.aprof':
         input_file = os.path.join(self._output_path, f)
         output_file = input_file.replace('.aprof', '.hprof')
-        subprocess.call(['hprof-conv', input_file, output_file])
+        hprof_conv = os.path.join(constants.ANDROID_SDK_ROOT,
+                                  'tools', 'hprof-conv')
+        subprocess.call([hprof_conv, input_file, output_file])
         output_files.append(output_file)
     return output_files
 
@@ -56,7 +65,7 @@ class JavaHeapProfiler(profiler.Profiler):
     self._DumpJavaHeap(False)
 
   def _DumpJavaHeap(self, wait_for_completion):
-    if not self._browser_backend.adb.Adb().FileExistsOnDevice(
+    if not self._browser_backend.adb.device().old_interface.FileExistsOnDevice(
         self._DEFAULT_DEVICE_DIR):
       self._browser_backend.adb.RunShellCommand(
           'mkdir -p ' + self._DEFAULT_DEVICE_DIR)
@@ -74,5 +83,6 @@ class JavaHeapProfiler(profiler.Profiler):
     self._run_count += 1
 
   def _FileSize(self, file_name):
-    f = self._browser_backend.adb.Adb().ListPathContents(file_name)
+    f = self._browser_backend.adb.device().old_interface.ListPathContents(
+        file_name)
     return f.get(os.path.basename(file_name), (0, ))[0]

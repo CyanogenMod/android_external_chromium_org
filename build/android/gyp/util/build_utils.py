@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import contextlib
 import fnmatch
 import json
 import os
@@ -10,7 +11,23 @@ import shlex
 import shutil
 import subprocess
 import sys
-import traceback
+import tempfile
+import zipfile
+
+CHROMIUM_SRC = os.path.normpath(
+    os.path.join(os.path.dirname(__file__),
+                 os.pardir, os.pardir, os.pardir, os.pardir))
+COLORAMA_ROOT = os.path.join(CHROMIUM_SRC,
+                             'third_party', 'colorama', 'src')
+
+
+@contextlib.contextmanager
+def TempDir():
+  dirname = tempfile.mkdtemp()
+  try:
+    yield dirname
+  finally:
+    shutil.rmtree(dirname)
 
 
 def MakeDirectory(dir_path):
@@ -25,24 +42,27 @@ def DeleteDirectory(dir_path):
     shutil.rmtree(dir_path)
 
 
-def Touch(path):
+def Touch(path, fail_if_missing=False):
+  if fail_if_missing and not os.path.exists(path):
+    raise Exception(path + ' doesn\'t exist.')
+
   MakeDirectory(os.path.dirname(path))
   with open(path, 'a'):
     os.utime(path, None)
 
 
-def FindInDirectory(directory, filter):
+def FindInDirectory(directory, filename_filter):
   files = []
-  for root, dirnames, filenames in os.walk(directory):
-    matched_files = fnmatch.filter(filenames, filter)
+  for root, _dirnames, filenames in os.walk(directory):
+    matched_files = fnmatch.filter(filenames, filename_filter)
     files.extend((os.path.join(root, f) for f in matched_files))
   return files
 
 
-def FindInDirectories(directories, filter):
+def FindInDirectories(directories, filename_filter):
   all_files = []
   for directory in directories:
-    all_files.extend(FindInDirectory(directory, filter))
+    all_files.extend(FindInDirectory(directory, filename_filter))
   return all_files
 
 
@@ -56,10 +76,13 @@ def ParseGypList(gyp_string):
   return shlex.split(gyp_string)
 
 
-def CheckOptions(options, parser, required=[]):
+def CheckOptions(options, parser, required=None):
+  if not required:
+    return
   for option_name in required:
-    if not getattr(options, option_name):
+    if getattr(options, option_name) is None:
       parser.error('--%s is required' % option_name.replace('_', '-'))
+
 
 def WriteJson(obj, path, only_if_changed=False):
   old_dump = None
@@ -67,11 +90,12 @@ def WriteJson(obj, path, only_if_changed=False):
     with open(path, 'r') as oldfile:
       old_dump = oldfile.read()
 
-  new_dump = json.dumps(obj)
+  new_dump = json.dumps(obj, sort_keys=True, indent=2, separators=(',', ': '))
 
   if not only_if_changed or old_dump != new_dump:
     with open(path, 'w') as outfile:
       outfile.write(new_dump)
+
 
 def ReadJson(path):
   with open(path, 'r') as jsonfile:
@@ -83,6 +107,7 @@ class CalledProcessError(Exception):
   exits with a non-zero exit code."""
 
   def __init__(self, cwd, args, output):
+    super(CalledProcessError, self).__init__()
     self.cwd = cwd
     self.args = args
     self.output = output
@@ -98,8 +123,11 @@ class CalledProcessError(Exception):
 # This can be used in most cases like subprocess.check_output(). The output,
 # particularly when the command fails, better highlights the command's failure.
 # If the command fails, raises a build_utils.CalledProcessError.
-def CheckOutput(args, cwd=None, print_stdout=False, print_stderr=True,
-                fail_if_stderr=False):
+def CheckOutput(args, cwd=None,
+                print_stdout=False, print_stderr=True,
+                stdout_filter=None,
+                stderr_filter=None,
+                fail_func=lambda returncode, stderr: returncode != 0):
   if not cwd:
     cwd = os.getcwd()
 
@@ -107,7 +135,13 @@ def CheckOutput(args, cwd=None, print_stdout=False, print_stderr=True,
       stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
   stdout, stderr = child.communicate()
 
-  if child.returncode or (stderr and fail_if_stderr):
+  if stdout_filter is not None:
+    stdout = stdout_filter(stdout)
+
+  if stderr_filter is not None:
+    stderr = stderr_filter(stderr)
+
+  if fail_func(child.returncode, stderr):
     raise CalledProcessError(cwd, args, stdout + stderr)
 
   if print_stdout:
@@ -129,8 +163,8 @@ def IsTimeStale(output, inputs):
     return True
 
   output_time = GetModifiedTime(output)
-  for input in inputs:
-    if GetModifiedTime(input) > output_time:
+  for i in inputs:
+    if GetModifiedTime(i) > output_time:
       return True
   return False
 
@@ -138,6 +172,39 @@ def IsTimeStale(output, inputs):
 def IsDeviceReady():
   device_state = CheckOutput(['adb', 'get-state'])
   return device_state.strip() == 'device'
+
+
+def CheckZipPath(name):
+  if os.path.normpath(name) != name:
+    raise Exception('Non-canonical zip path: %s' % name)
+  if os.path.isabs(name):
+    raise Exception('Absolute zip path: %s' % name)
+
+
+def ExtractAll(zip_path, path=None, no_clobber=True):
+  if path is None:
+    path = os.getcwd()
+  elif not os.path.exists(path):
+    MakeDirectory(path)
+
+  with zipfile.ZipFile(zip_path) as z:
+    for name in z.namelist():
+      CheckZipPath(name)
+      if no_clobber:
+        output_path = os.path.join(path, name)
+        if os.path.exists(output_path):
+          raise Exception(
+              'Path already exists from zip: %s %s %s'
+              % (zip_path, name, output_path))
+
+    z.extractall(path=path)
+
+
+def DoZip(inputs, output, base_dir):
+  with zipfile.ZipFile(output, 'w') as outfile:
+    for f in inputs:
+      CheckZipPath(os.path.relpath(f, base_dir))
+      outfile.write(f, os.path.relpath(f, base_dir))
 
 
 def PrintWarning(message):
@@ -148,3 +215,40 @@ def PrintBigWarning(message):
   print '*****     ' * 8
   PrintWarning(message)
   print '*****     ' * 8
+
+
+def GetPythonDependencies():
+  """Gets the paths of imported non-system python modules.
+
+  A path is assumed to be a "system" import if it is outside of chromium's
+  src/. The paths will be relative to the current directory.
+  """
+  module_paths = (m.__file__ for m in sys.modules.itervalues()
+                  if m is not None and hasattr(m, '__file__'))
+
+  abs_module_paths = map(os.path.abspath, module_paths)
+
+  non_system_module_paths = [
+      p for p in abs_module_paths if p.startswith(CHROMIUM_SRC)]
+  def ConvertPycToPy(s):
+    if s.endswith('.pyc'):
+      return s[:-1]
+    return s
+
+  non_system_module_paths = map(ConvertPycToPy, non_system_module_paths)
+  non_system_module_paths = map(os.path.relpath, non_system_module_paths)
+  return sorted(set(non_system_module_paths))
+
+
+def AddDepfileOption(parser):
+  parser.add_option('--depfile',
+                    help='Path to depfile. This must be specified as the '
+                    'action\'s first output.')
+
+
+def WriteDepfile(path, dependencies):
+  with open(path, 'w') as depfile:
+    depfile.write(path)
+    depfile.write(': ')
+    depfile.write(' '.join(dependencies))
+    depfile.write('\n')

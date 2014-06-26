@@ -8,27 +8,28 @@
 #include <set>
 #include <string>
 
-#include "base/basictypes.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class TemplateURL;
 
 namespace extensions {
+class ExtensionRegistry;
 
-class SettingsOverridesAPI : public ProfileKeyedAPI,
-                             public content::NotificationObserver {
+class SettingsOverridesAPI : public BrowserContextKeyedAPI,
+                             public ExtensionRegistryObserver {
  public:
-  explicit SettingsOverridesAPI(Profile* profile);
+  explicit SettingsOverridesAPI(content::BrowserContext* context);
   virtual ~SettingsOverridesAPI();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<SettingsOverridesAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<SettingsOverridesAPI>*
+      GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<SettingsOverridesAPI>;
+  friend class BrowserContextKeyedAPIFactory<SettingsOverridesAPI>;
 
   typedef std::set<scoped_refptr<const Extension> > PendingExtensions;
 
@@ -38,17 +39,22 @@ class SettingsOverridesAPI : public ProfileKeyedAPI,
                base::Value* value);
   void UnsetPref(const std::string& extension_id,
                  const std::string& pref_key);
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-  // BrowserContextKeyedService implementation.
+
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   void OnTemplateURLsLoaded();
 
   void RegisterSearchProvider(const Extension* extension) const;
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() { return "SettingsOverridesAPI"; }
 
   Profile* profile_;
@@ -58,14 +64,18 @@ class SettingsOverridesAPI : public ProfileKeyedAPI,
   // have search provider registered.
   PendingExtensions pending_extensions_;
 
-  content::NotificationRegistrar registrar_;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
+
   scoped_ptr<TemplateURLService::Subscription> template_url_sub_;
 
   DISALLOW_COPY_AND_ASSIGN(SettingsOverridesAPI);
 };
 
 template <>
-void ProfileKeyedAPIFactory<SettingsOverridesAPI>::DeclareFactoryDependencies();
+void BrowserContextKeyedAPIFactory<
+    SettingsOverridesAPI>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

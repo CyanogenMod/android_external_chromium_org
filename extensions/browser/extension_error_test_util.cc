@@ -26,24 +26,25 @@ scoped_ptr<ExtensionError> CreateNewRuntimeError(
     bool from_incognito) {
   StackTrace stack_trace;
   scoped_ptr<StackFrame> frame =
-      StackFrame::CreateFromText(base::UTF8ToUTF16(kDefaultStackTrace));
+      StackFrame::CreateFromText(base::ASCIIToUTF16(kDefaultStackTrace));
   CHECK(frame.get());
   stack_trace.push_back(*frame);
 
   base::string16 source =
       base::UTF8ToUTF16(std::string(kExtensionScheme) +
-                            content::kStandardSchemeSeparator +
+                            url::kStandardSchemeSeparator +
                             extension_id);
 
-  return scoped_ptr<ExtensionError>(new RuntimeError(
-      extension_id,
-      from_incognito,
-      source,
-      base::UTF8ToUTF16(message),
-      stack_trace,
-      GURL::EmptyGURL(),  // no context url
-      logging::LOG_INFO,
-      0, 0 /* Render [View|Process] ID */ ));
+  return scoped_ptr<ExtensionError>(
+      new RuntimeError(extension_id,
+                       from_incognito,
+                       source,
+                       base::UTF8ToUTF16(message),
+                       stack_trace,
+                       GURL::EmptyGURL(),  // no context url
+                       logging::LOG_INFO,
+                       0,
+                       0 /* Render [View|Process] ID */));
 }
 
 scoped_ptr<ExtensionError> CreateNewRuntimeError(
@@ -56,8 +57,8 @@ scoped_ptr<ExtensionError> CreateNewManifestError(
   return scoped_ptr<ExtensionError>(
       new ManifestError(extension_id,
                         base::UTF8ToUTF16(message),
-                        base::EmptyString16(),
-                        base::EmptyString16()));
+                        base::string16(),
+                        base::string16()));
 }
 
 }  // namespace error_test_util

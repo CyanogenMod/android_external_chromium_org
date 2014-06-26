@@ -25,15 +25,15 @@ class CC_EXPORT PictureLayerTilingSet {
   // Delete any tilings that don't meet |minimum_contents_scale|.  Recreate
   // any tiles that intersect |layer_invalidation|.  Update the size of all
   // tilings to |new_layer_bounds|.
-  void SyncTilings(
-     const PictureLayerTilingSet& other,
-     const gfx::Size& new_layer_bounds,
-     const Region& layer_invalidation,
-     float minimum_contents_scale);
+  // Returns true if we had at least one high res tiling synced.
+  bool SyncTilings(const PictureLayerTilingSet& other,
+                   const gfx::Size& new_layer_bounds,
+                   const Region& layer_invalidation,
+                   float minimum_contents_scale);
+
+  void RemoveTilesInRegion(const Region& region);
 
   gfx::Size layer_bounds() const { return layer_bounds_; }
-
-  void SetCanUseLCDText(bool can_use_lcd_text);
 
   PictureLayerTiling* AddTiling(float contents_scale);
   size_t num_tilings() const { return tilings_.size(); }
@@ -53,11 +53,6 @@ class CC_EXPORT PictureLayerTilingSet {
 
   // Remove all tiles; keep all tilings.
   void RemoveAllTiles();
-
-  void UpdateTilePriorities(WhichTree tree,
-                            const gfx::Rect& visible_content_rect,
-                            float layer_contents_scale,
-                            double current_frame_time_in_seconds);
 
   void DidBecomeActive();
   void DidBecomeRecycled();

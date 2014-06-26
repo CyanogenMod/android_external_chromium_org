@@ -6,6 +6,7 @@
 
 #include "ash/display/display_info.h"
 #include "ash/display/display_manager.h"
+#include "ash/host/ash_remote_window_tree_host_win.h"
 #include "ash/shell.h"
 #include "ash/wm/window_positioner.h"
 #include "base/logging.h"
@@ -32,6 +33,8 @@
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/aura/remote_window_tree_host_win.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/metro_viewer/metro_viewer_messages.h"
 #include "url/gurl.h"
 
 namespace {
@@ -68,7 +71,10 @@ ChromeMetroViewerProcessHost::ChromeMetroViewerProcessHost()
     : MetroViewerProcessHost(
           content::BrowserThread::GetMessageLoopProxyForThread(
               content::BrowserThread::IO)) {
-  g_browser_process->AddRefModule();
+  chrome::IncrementKeepAliveCount();
+}
+
+ChromeMetroViewerProcessHost::~ChromeMetroViewerProcessHost() {
 }
 
 void ChromeMetroViewerProcessHost::OnChannelError() {
@@ -81,7 +87,7 @@ void ChromeMetroViewerProcessHost::OnChannelError() {
   ::SetEnvironmentVariableA(env_vars::kMetroConnected, NULL);
 
   aura::RemoteWindowTreeHostWin::Instance()->Disconnected();
-  g_browser_process->ReleaseModule();
+  chrome::DecrementKeepAliveCount();
 
   // If browser is trying to quit, we shouldn't reenter the process.
   // TODO(shrikant): In general there seem to be issues with how AttemptExit
@@ -114,14 +120,14 @@ void ChromeMetroViewerProcessHost::OnChannelConnected(int32 /*peer_pid*/) {
 }
 
 void ChromeMetroViewerProcessHost::OnSetTargetSurface(
-    gfx::NativeViewId target_surface) {
+    gfx::NativeViewId target_surface,
+    float device_scale) {
   HWND hwnd = reinterpret_cast<HWND>(target_surface);
-  // Make hwnd available as early as possible for proper InputMethod
-  // initialization.
-  aura::RemoteWindowTreeHostWin::Instance()->SetRemoteWindowHandle(hwnd);
 
-  // Now start the Ash shell environment.
-  chrome::OpenAsh();
+  gfx::InitDeviceScaleFactor(device_scale);
+  chrome::OpenAsh(hwnd);
+  DCHECK(aura::RemoteWindowTreeHostWin::Instance());
+  DCHECK_EQ(hwnd, aura::RemoteWindowTreeHostWin::Instance()->remote_window());
   ash::Shell::GetInstance()->CreateShelf();
   ash::Shell::GetInstance()->ShowShelf();
 
@@ -152,9 +158,9 @@ void ChromeMetroViewerProcessHost::OnHandleSearchRequest(
 
 void ChromeMetroViewerProcessHost::OnWindowSizeChanged(uint32 width,
                                                        uint32 height) {
-  std::vector<ash::internal::DisplayInfo> info_list;
-  info_list.push_back(ash::internal::DisplayInfo::CreateFromSpec(
-      base::StringPrintf("%dx%d", width, height)));
+  std::vector<ash::DisplayInfo> info_list;
+  info_list.push_back(ash::DisplayInfo::CreateFromSpec(
+      base::StringPrintf("%dx%d*%f", width, height, gfx::GetDPIScale())));
   ash::Shell::GetInstance()->display_manager()->OnNativeDisplaysChanged(
       info_list);
   aura::RemoteWindowTreeHostWin::Instance()->HandleWindowSizeChanged(width,

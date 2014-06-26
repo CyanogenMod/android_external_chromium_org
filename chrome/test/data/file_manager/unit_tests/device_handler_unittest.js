@@ -14,6 +14,12 @@ var handler;
  */
 var chrome;
 
+/**
+ * Callbacks registered by setTimeout.
+ * @type {Array.<function>}
+ */
+var timeoutCallbacks;
+
 // Set up the test components.
 function setUp() {
   // Set up string assets.
@@ -22,6 +28,7 @@ function setUp() {
     REMOVABLE_DEVICE_SCANNING_MESSAGE: 'Scanning...',
     DEVICE_UNKNOWN_MESSAGE: 'DEVICE_UNKNOWN: $1',
     DEVICE_UNSUPPORTED_MESSAGE: 'DEVICE_UNSUPPORTED: $1',
+    DEVICE_HARD_UNPLUGGED_MESSAGE: 'DEVICE_HARD_UNPLUGGED_MESSAGE',
     MULTIPART_DEVICE_UNSUPPORTED_MESSAGE: 'MULTIPART_DEVICE_UNSUPPORTED: $1',
     EXTERNAL_STORAGE_DISABLED_MESSAGE: 'EXTERNAL_STORAGE_DISABLED',
     FORMATTING_OF_DEVICE_PENDING_TITLE: 'FORMATTING_OF_DEVICE_PENDING_TITLE',
@@ -50,17 +57,42 @@ function setUp() {
       create: function(id, params, callback) {
         assertFalse(!!this.items[id]);
         this.items[id] = params;
+        callback();
       },
-      clear: function(id) { delete this.items[id]; },
-      items: {}
+      clear: function(id, callback) { delete this.items[id]; callback(); },
+      items: {},
+      onButtonClicked: {
+        addListener: function(listener) {
+          this.dispatch = listener;
+        }
+      }
     },
     runtime: {
       getURL: function(path) { return path; }
     }
   };
 
+  // Reset timeout callbacks.
+  timeoutCallbacks = [];
+
   // Make a device handler.
   handler = new DeviceHandler();
+}
+
+/**
+ * Overrided setTimoeut funciton.
+ */
+window.setTimeout = function(func) {
+  timeoutCallbacks.push(func);
+};
+
+/**
+ * Call all pending timeout functions.
+ */
+function callTimeoutCallbacks() {
+  while (timeoutCallbacks.length) {
+    timeoutCallbacks.shift()();
+  }
 }
 
 function registerTypicalDevice() {
@@ -68,6 +100,8 @@ function registerTypicalDevice() {
     type: 'added',
     devicePath: '/device/path'
   });
+  assertFalse('device:/device/path' in chrome.notifications.items);
+  callTimeoutCallbacks();
   assertEquals('Scanning...',
                chrome.notifications.items['device:/device/path'].message);
 }
@@ -375,4 +409,14 @@ function testFormatFailed() {
   assertEquals(1, Object.keys(chrome.notifications.items).length);
   assertEquals('FORMATTING_FINISHED_FAILURE',
                chrome.notifications.items['formatFail:/device/path'].message);
+}
+
+function testDeviceHardUnplugged() {
+  chrome.fileBrowserPrivate.onDeviceChanged.dispatch({
+    type: 'hard_unplugged',
+    devicePath: '/device/path'
+  });
+  assertEquals(1, Object.keys(chrome.notifications.items).length);
+  assertEquals('DEVICE_HARD_UNPLUGGED_MESSAGE',
+               chrome.notifications.items['deviceFail:/device/path'].message);
 }

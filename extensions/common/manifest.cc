@@ -120,7 +120,8 @@ Manifest::Manifest(Location location, scoped_ptr<base::DictionaryValue> value)
     if (value_->Get(keys::kWebURLs, NULL) ||
         value_->Get(keys::kLaunchWebURL, NULL)) {
       type_ = TYPE_HOSTED_APP;
-    } else if (value_->Get(keys::kPlatformAppBackground, NULL)) {
+    } else if (value_->Get(keys::kPlatformAppBackground, NULL) ||
+               value_->Get(keys::kPlatformAppServiceWorker, NULL)) {
       type_ = TYPE_PLATFORM_APP;
     } else {
       type_ = TYPE_LEGACY_PACKAGED_APP;
@@ -145,7 +146,7 @@ bool Manifest::ValidateManifest(
   // TODO(aa): Consider having an error here in the case of strict error
   // checking to let developers know when they screw up.
 
-  FeatureProvider* manifest_feature_provider =
+  const FeatureProvider* manifest_feature_provider =
       FeatureProvider::GetManifestFeatures();
   const std::vector<std::string>& feature_names =
       manifest_feature_provider->GetAllFeatureNames();
@@ -158,8 +159,7 @@ bool Manifest::ValidateManifest(
 
     Feature* feature = manifest_feature_provider->GetFeature(*feature_name);
     Feature::Availability result = feature->IsAvailableToManifest(
-        extension_id_, type_, Feature::ConvertLocation(location_),
-        GetManifestVersion());
+        extension_id_, type_, location_, GetManifestVersion());
     if (!result.is_available())
       warnings->push_back(InstallWarning(result.message(), *feature_name));
   }
@@ -259,8 +259,8 @@ bool Manifest::CanAccessKey(const std::string& key) const {
     return true;
 
   return feature->IsAvailableToManifest(
-      extension_id_, type_, Feature::ConvertLocation(location_),
-      GetManifestVersion()).is_available();
+                      extension_id_, type_, location_, GetManifestVersion())
+      .is_available();
 }
 
 }  // namespace extensions

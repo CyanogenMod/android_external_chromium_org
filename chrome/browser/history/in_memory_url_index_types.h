@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/strings/string16.h"
-#include "chrome/browser/autocomplete/history_provider_util.h"
 #include "chrome/browser/history/history_types.h"
 #include "url/gurl.h"
 
@@ -18,7 +17,7 @@ namespace history {
 
 // The maximum number of characters to consider from an URL and page title
 // while matching user-typed terms.
-const size_t kMaxSignificantChars = 50;
+const size_t kMaxSignificantChars = 200;
 
 // Matches within URL and Title Strings ----------------------------------------
 
@@ -38,21 +37,6 @@ struct TermMatch {
 };
 typedef std::vector<TermMatch> TermMatches;
 
-// Truncates an overly-long URL, unescapes it, and lower-cases it,
-// returning the result.  This unescaping makes it possible to match
-// substrings that were originally escaped for navigation; for
-// example, if the user searched for "a&p", the query would be escaped
-// as "a%26p", so without unescaping, an input string of "a&p" would
-// no longer match this URL.  Note that the resulting unescaped URL
-// may not be directly navigable (which is why we escaped it to begin
-// with).  |languages| is passed to net::FormatUrl().
-base::string16 CleanUpUrlForMatching(const GURL& gurl,
-                                     const std::string& languages);
-
-// Returns the lower-cased title, possibly truncated if the original title
-// is overly-long.
-base::string16 CleanUpTitleForMatching(const base::string16& title);
-
 // Returns a TermMatches which has an entry for each occurrence of the
 // string |term| found in the string |cleaned_string|. Use
 // CleanUpUrlForMatching() or CleanUpUrlTitleMatching() before passing
@@ -69,11 +53,16 @@ TermMatches MatchTermInString(const base::string16& term,
 // returns the cleaned up matches.
 TermMatches SortAndDeoverlapMatches(const TermMatches& matches);
 
-// Extracts and returns the offsets from |matches|.
+// Extracts and returns the offsets from |matches|.  This includes both
+// the offsets corresponding to the beginning of a match and the offsets
+// corresponding to the end of a match (i.e., offset+length for that match).
 std::vector<size_t> OffsetsFromTermMatches(const TermMatches& matches);
 
-// Replaces the offsets in |matches| with those given in |offsets|, deleting
-// any which are npos, and returns the updated list of matches.
+// Replaces the offsets and lengths in |matches| with those given in |offsets|.
+// |offsets| gives beginning and ending offsets for each match; this function
+// translates (beginning, ending) offset into (beginning offset, length of
+// match).  It deletes any matches for which an endpoint is npos and returns
+// the updated list of matches.
 TermMatches ReplaceOffsetsInTermMatches(const TermMatches& matches,
                                         const std::vector<size_t>& offsets);
 

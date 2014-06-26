@@ -5,8 +5,8 @@
 #include "base/time/time.h"
 #include "chrome/browser/extensions/activity_log/activity_action_constants.h"
 #include "chrome/browser/extensions/activity_log/uma_policy.h"
-#include "chrome/common/extensions/dom_action_types.h"
 #include "chrome/test/base/testing_profile.h"
+#include "extensions/common/dom_action_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -89,8 +89,8 @@ TEST_F(UmaPolicyTest, MatchActionToStatusTest) {
 TEST_F(UmaPolicyTest, SiteUrlTest) {
   UmaPolicy* policy = new UmaPolicy(profile_.get());
 
-  const std::string site0 = "http://www.zzz.com";
-  const std::string site1 = "http://www.foo.com";
+  const std::string site0 = "http://www.zzz.com/";
+  const std::string site1 = "http://www.foo.com/";
   const std::string site2 = "http://www.google.com#a";
   const std::string site3 = "http://www.google.com#bb";
 
@@ -109,10 +109,10 @@ TEST_F(UmaPolicyTest, SiteUrlTest) {
   ASSERT_EQ(3, policy->url_status()[site3][UmaPolicy::kNumberOfTabs]);
 
   // Remove some sites.
-  policy->CleanupClosedPage(site0);
-  policy->CleanupClosedPage(site2);
-  policy->CleanupClosedPage(site2);
-  policy->CleanupClosedPage(site3);
+  policy->CleanupClosedPage(site0, NULL);
+  policy->CleanupClosedPage(site2, NULL);
+  policy->CleanupClosedPage(site2, NULL);
+  policy->CleanupClosedPage(site3, NULL);
 
   // Check that the removal worked.
   ASSERT_EQ(2u, policy->url_status().size());

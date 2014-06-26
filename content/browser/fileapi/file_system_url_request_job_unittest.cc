@@ -11,16 +11,17 @@
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/test/async_file_test_helper.h"
+#include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/load_flags.h"
 #include "net/base/mime_util.h"
@@ -53,6 +54,64 @@ void FillBuffer(char* buffer, size_t len) {
   base::RandBytes(buffer, len);
 }
 
+const char kValidExternalMountPoint[] = "mnt_name";
+
+// An auto mounter that will try to mount anything for |storage_domain| =
+// "automount", but will only succeed for the mount point "mnt_name".
+bool TestAutoMountForURLRequest(
+    const net::URLRequest* /*url_request*/,
+    const fileapi::FileSystemURL& filesystem_url,
+    const std::string& storage_domain,
+    const base::Callback<void(base::File::Error result)>& callback) {
+  if (storage_domain != "automount")
+    return false;
+  std::vector<base::FilePath::StringType> components;
+  filesystem_url.path().GetComponents(&components);
+  std::string mount_point = base::FilePath(components[0]).AsUTF8Unsafe();
+
+  if (mount_point == kValidExternalMountPoint) {
+    fileapi::ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+        kValidExternalMountPoint, fileapi::kFileSystemTypeTest,
+        fileapi::FileSystemMountOption(), base::FilePath());
+    callback.Run(base::File::FILE_OK);
+  } else {
+    callback.Run(base::File::FILE_ERROR_NOT_FOUND);
+  }
+  return true;
+}
+
+class FileSystemURLRequestJobFactory : public net::URLRequestJobFactory {
+ public:
+  FileSystemURLRequestJobFactory(const std::string& storage_domain,
+                                 FileSystemContext* context)
+      : storage_domain_(storage_domain), file_system_context_(context) {
+  }
+
+  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+      const std::string& scheme,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE {
+    return new fileapi::FileSystemURLRequestJob(
+        request, network_delegate, storage_domain_, file_system_context_);
+  }
+
+  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+    return true;
+  }
+
+  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+    return true;
+  }
+
+  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+    return false;
+  }
+
+ private:
+  std::string storage_domain_;
+  FileSystemContext* file_system_context_;
+};
+
 }  // namespace
 
 class FileSystemURLRequestJobTest : public testing::Test {
@@ -74,20 +133,30 @@ class FileSystemURLRequestJobTest : public testing::Test {
         base::Bind(&FileSystemURLRequestJobTest::OnOpenFileSystem,
                    weak_factory_.GetWeakPtr()));
     base::RunLoop().RunUntilIdle();
-
-    net::URLRequest::Deprecated::RegisterProtocolFactory(
-        "filesystem", &FileSystemURLRequestJobFactory);
   }
 
   virtual void TearDown() OVERRIDE {
-    net::URLRequest::Deprecated::RegisterProtocolFactory("filesystem", NULL);
-    ClearUnusedJob();
-    if (pending_job_.get()) {
-      pending_job_->Kill();
-      pending_job_ = NULL;
-    }
     // FileReader posts a task to close the file in destructor.
     base::RunLoop().RunUntilIdle();
+  }
+
+  void SetUpAutoMountContext() {
+    base::FilePath mnt_point = temp_dir_.path().AppendASCII("auto_mount_dir");
+    ASSERT_TRUE(base::CreateDirectory(mnt_point));
+
+    ScopedVector<fileapi::FileSystemBackend> additional_providers;
+    additional_providers.push_back(new TestFileSystemBackend(
+        base::MessageLoopProxy::current().get(), mnt_point));
+
+    std::vector<fileapi::URLRequestAutoMountHandler> handlers;
+    handlers.push_back(base::Bind(&TestAutoMountForURLRequest));
+
+    file_system_context_ = CreateFileSystemContextWithAutoMountersForTesting(
+        NULL, additional_providers.Pass(), handlers, temp_dir_.path());
+
+    ASSERT_EQ(static_cast<int>(sizeof(kTestFileData)) - 1,
+              base::WriteFile(mnt_point.AppendASCII("foo"), kTestFileData,
+                              sizeof(kTestFileData) - 1));
   }
 
   void OnOpenFileSystem(const GURL& root_url,
@@ -104,14 +173,15 @@ class FileSystemURLRequestJobTest : public testing::Test {
     // Make delegate_ exit the MessageLoop when the request is done.
     delegate_->set_quit_on_complete(true);
     delegate_->set_quit_on_redirect(true);
+
+    job_factory_.reset(new FileSystemURLRequestJobFactory(
+        url.GetOrigin().host(), file_system_context));
+    empty_context_.set_job_factory(job_factory_.get());
+
     request_ = empty_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, delegate_.get());
+        url, net::DEFAULT_PRIORITY, delegate_.get(), NULL);
     if (headers)
       request_->SetExtraRequestHeaders(*headers);
-    ASSERT_TRUE(!job_);
-    job_ = new FileSystemURLRequestJob(
-        request_.get(), NULL, file_system_context);
-    pending_job_ = job_;
 
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
@@ -161,23 +231,6 @@ class FileSystemURLRequestJobTest : public testing::Test {
     return GURL(kFileSystemURLPrefix + path);
   }
 
-  static net::URLRequestJob* FileSystemURLRequestJobFactory(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate,
-      const std::string& scheme) {
-    DCHECK(job_);
-    net::URLRequestJob* temp = job_;
-    job_ = NULL;
-    return temp;
-  }
-
-  static void ClearUnusedJob() {
-    if (job_) {
-      scoped_refptr<net::URLRequestJob> deleter = job_;
-      job_ = NULL;
-    }
-  }
-
   // Put the message loop at the top, so that it's the last thing deleted.
   base::MessageLoopForIO message_loop_;
 
@@ -186,17 +239,12 @@ class FileSystemURLRequestJobTest : public testing::Test {
   base::WeakPtrFactory<FileSystemURLRequestJobTest> weak_factory_;
 
   net::URLRequestContext empty_context_;
+  scoped_ptr<FileSystemURLRequestJobFactory> job_factory_;
 
   // NOTE: order matters, request must die before delegate
   scoped_ptr<net::TestDelegate> delegate_;
   scoped_ptr<net::URLRequest> request_;
-
-  scoped_refptr<net::URLRequestJob> pending_job_;
-  static net::URLRequestJob* job_;
 };
-
-// static
-net::URLRequestJob* FileSystemURLRequestJobTest::job_ = NULL;
 
 namespace {
 
@@ -259,7 +307,6 @@ TEST_F(FileSystemURLRequestJobTest, FileTestHalfSpecifiedRange) {
   // Don't use EXPECT_EQ, it will print out a lot of garbage if check failed.
   EXPECT_TRUE(partial_buffer_string == delegate_->data_received());
 }
-
 
 TEST_F(FileSystemURLRequestJobTest, FileTestMultipleRangesNotSupported) {
   WriteFile("file1.dat", kTestFileData, arraysize(kTestFileData) - 1);
@@ -367,6 +414,50 @@ TEST_F(FileSystemURLRequestJobTest, Incognito) {
   ASSERT_FALSE(request_->is_pending());
   EXPECT_EQ(kTestFileData, delegate_->data_received());
   EXPECT_EQ(200, request_->GetResponseCode());
+}
+
+TEST_F(FileSystemURLRequestJobTest, AutoMountFileTest) {
+  SetUpAutoMountContext();
+  TestRequest(GURL("filesystem:http://automount/external/mnt_name/foo"));
+
+  ASSERT_FALSE(request_->is_pending());
+  EXPECT_EQ(1, delegate_->response_started_count());
+  EXPECT_FALSE(delegate_->received_data_before_response());
+  EXPECT_EQ(kTestFileData, delegate_->data_received());
+  EXPECT_EQ(200, request_->GetResponseCode());
+  std::string cache_control;
+  request_->GetResponseHeaderByName("cache-control", &cache_control);
+  EXPECT_EQ("no-cache", cache_control);
+
+  ASSERT_TRUE(
+      fileapi::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+          kValidExternalMountPoint));
+}
+
+TEST_F(FileSystemURLRequestJobTest, AutoMountInvalidRoot) {
+  SetUpAutoMountContext();
+  TestRequest(GURL("filesystem:http://automount/external/invalid/foo"));
+
+  ASSERT_FALSE(request_->is_pending());
+  EXPECT_TRUE(delegate_->request_failed());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().error());
+
+  ASSERT_FALSE(
+      fileapi::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+          "invalid"));
+}
+
+TEST_F(FileSystemURLRequestJobTest, AutoMountNoHandler) {
+  SetUpAutoMountContext();
+  TestRequest(GURL("filesystem:http://noauto/external/mnt_name/foo"));
+
+  ASSERT_FALSE(request_->is_pending());
+  EXPECT_TRUE(delegate_->request_failed());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().error());
+
+  ASSERT_FALSE(
+      fileapi::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+          kValidExternalMountPoint));
 }
 
 }  // namespace

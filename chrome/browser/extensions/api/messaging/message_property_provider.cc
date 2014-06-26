@@ -10,8 +10,8 @@
 #include "base/strings/string_piece.h"
 #include "base/values.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/api/runtime.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/common/api/runtime.h"
 #include "net/base/completion_callback.h"
 #include "net/cert/asn1_util.h"
 #include "net/cert/jwk_serializer.h"
@@ -57,7 +57,7 @@ void MessagePropertyProvider::GetDomainBoundCertOnIOThread(
     scoped_refptr<net::URLRequestContextGetter> request_context_getter,
     const std::string& host,
     const DomainBoundCertCallback& reply) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   net::ServerBoundCertService* server_bound_cert_service =
       request_context_getter->GetURLRequestContext()->
           server_bound_cert_service();

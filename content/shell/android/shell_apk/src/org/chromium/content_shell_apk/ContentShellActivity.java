@@ -10,7 +10,6 @@ import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.KeyEvent;
-import android.view.View;
 import android.widget.Toast;
 
 import org.chromium.base.BaseSwitches;
@@ -18,11 +17,8 @@ import org.chromium.base.CommandLine;
 import org.chromium.base.MemoryPressureListener;
 import org.chromium.base.library_loader.LibraryLoader;
 import org.chromium.base.library_loader.ProcessInitException;
-import org.chromium.content.browser.ActivityContentVideoViewClient;
 import org.chromium.content.browser.BrowserStartupController;
-import org.chromium.content.browser.ContentVideoViewClient;
-import org.chromium.content.browser.ContentView;
-import org.chromium.content.browser.ContentViewClient;
+import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.DeviceUtils;
 import org.chromium.content.common.ContentSwitches;
 import org.chromium.content_shell.Shell;
@@ -116,30 +112,6 @@ public class ContentShellActivity extends Activity {
             shellUrl = savedInstanceState.getString(ACTIVE_SHELL_URL_KEY);
         }
         mShellManager.launchShell(shellUrl);
-        getActiveContentView().setContentViewClient(new ContentViewClient() {
-            @Override
-            public ContentVideoViewClient getContentVideoViewClient() {
-                return new ActivityContentVideoViewClient(ContentShellActivity.this) {
-                    @Override
-                    public void onShowCustomView(View view) {
-                        super.onShowCustomView(view);
-                        if (CommandLine.getInstance().hasSwitch(
-                                ContentSwitches.ENABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE)) {
-                            mShellManager.setOverlayVideoMode(true);
-                        }
-                    }
-
-                    @Override
-                    public void onDestroyContentVideoView() {
-                        super.onDestroyContentVideoView();
-                        if (CommandLine.getInstance().hasSwitch(
-                                ContentSwitches.ENABLE_OVERLAY_FULLSCREEN_VIDEO_SUBTITLE)) {
-                          mShellManager.setOverlayVideoMode(false);
-                        }
-                    }
-                };
-            }
-        });
     }
 
     private void initializationFailed() {
@@ -153,9 +125,9 @@ public class ContentShellActivity extends Activity {
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
-        Shell activeShell = getActiveShell();
-        if (activeShell != null) {
-            outState.putString(ACTIVE_SHELL_URL_KEY, activeShell.getContentView().getUrl());
+        ContentViewCore contentViewCore = getActiveContentViewCore();
+        if (contentViewCore != null) {
+            outState.putString(ACTIVE_SHELL_URL_KEY, contentViewCore.getUrl());
         }
 
         mWindowAndroid.saveInstanceState(outState);
@@ -171,12 +143,12 @@ public class ContentShellActivity extends Activity {
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (keyCode != KeyEvent.KEYCODE_BACK) return super.onKeyUp(keyCode, event);
-
-        Shell activeView = getActiveShell();
-        if (activeView != null && activeView.getContentView().canGoBack()) {
-            activeView.getContentView().goBack();
-            return true;
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            ContentViewCore contentViewCore = getActiveContentViewCore();
+            if (contentViewCore != null && contentViewCore.canGoBack()) {
+                contentViewCore.goBack();
+                return true;
+            }
         }
 
         return super.onKeyUp(keyCode, event);
@@ -203,16 +175,16 @@ public class ContentShellActivity extends Activity {
     protected void onStop() {
         super.onStop();
 
-        ContentView view = getActiveContentView();
-        if (view != null) view.onHide();
+        ContentViewCore contentViewCore = getActiveContentViewCore();
+        if (contentViewCore != null) contentViewCore.onHide();
     }
 
     @Override
     protected void onStart() {
         super.onStart();
 
-        ContentView view = getActiveContentView();
-        if (view != null) view.onShow();
+        ContentViewCore contentViewCore = getActiveContentViewCore();
+        if (contentViewCore != null) contentViewCore.onShow();
     }
 
     @Override
@@ -245,11 +217,11 @@ public class ContentShellActivity extends Activity {
     }
 
     /**
-     * @return The {@link ContentView} owned by the currently visible {@link Shell} or null if one
-     *         is not showing.
+     * @return The {@link ContentViewCore} owned by the currently visible {@link Shell} or null if
+     *         one is not showing.
      */
-    public ContentView getActiveContentView() {
+    public ContentViewCore getActiveContentViewCore() {
         Shell shell = getActiveShell();
-        return shell != null ? shell.getContentView() : null;
+        return shell != null ? shell.getContentViewCore() : null;
     }
 }

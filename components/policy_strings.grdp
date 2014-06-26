@@ -49,6 +49,9 @@
   <message name="IDS_POLICY_DM_STATUS_UNKNOWN_ERROR" desc="Message indicating an unknown error from the enterprise server.">
     Unknown error
   </message>
+  <message name="IDS_POLICY_DM_STATUS_SERVICE_DOMAIN_MISMATCH" desc="Message indicating this client cannot be registered with the specified domain.">
+    Domain mismatch
+  </message>
 
   <message name="IDS_POLICY_VALIDATION_OK" desc="Message indicating successful policy validation.">
     Validation successful
@@ -185,17 +188,22 @@
   <message name="IDS_POLICY_VALUE_DEPRECATED" desc="The text displayed in the status column when a specific value for a policy is deprecated.">
     This value is deprecated for this policy.
   </message>
-  <message name="IDS_POLICY_NETWORK_CONFIG_PARSE_FAILED" desc="The text displayed in the status column when the corresponding network configuration policy failed to parse.">
-    Network configuration failed to be parsed.
-  </message>
-  <message name="IDS_POLICY_NETWORK_CONFIG_IMPORT_PARTIAL" desc="The text displayed in the status column when the corresponding network configuration policy is not standard conform and was imported partially.">
-    The network configuration doesn't comply to the ONC standard. Parts of the configuration may not be imported.
-  </message>
-  <message name="IDS_POLICY_NETWORK_CONFIG_IMPORT_FAILED" desc="The text displayed in the status column when the corresponding network configuration policy is invalid.">
-    The network configuration is invalid and couldn't be imported.
-  </message>
-  <message name="IDS_POLICY_JSON_PARSE_ERROR" desc="The text displayed in the status column when a policy that should have been specified in JSON format could not be parsed.">
-    Failed to parse JSON format: <ph name="JSON_PARSE_ERROR">$1<ex>Unexpected token.</ex></ph>
+  <if expr="chromeos">
+    <message name="IDS_POLICY_NETWORK_CONFIG_PARSE_FAILED" desc="The text displayed in the status column when the corresponding network configuration policy failed to parse.">
+      Network configuration failed to be parsed.
+    </message>
+    <message name="IDS_POLICY_NETWORK_CONFIG_IMPORT_PARTIAL" desc="The text displayed in the status column when the corresponding network configuration policy is not standard conform and was imported partially.">
+      The network configuration doesn't comply to the ONC standard. Parts of the configuration may not be imported.
+    </message>
+    <message name="IDS_POLICY_NETWORK_CONFIG_IMPORT_FAILED" desc="The text displayed in the status column when the corresponding network configuration policy is invalid.">
+      The network configuration is invalid and couldn't be imported.
+    </message>
+    <message name="IDS_POLICY_SCOPE_ERROR" desc="Text displayed in the status column when a policy is set in an unsupported scope.">
+      Policy scope is not supported.
+    </message>
+  </if>
+  <message name="IDS_POLICY_LEVEL_ERROR" desc="Text displayed in the status column when a policy is set at an unsupported level.">
+    Policy level is not supported.
   </message>
   <message name="IDS_POLICY_OK" desc="Text displayed in the status column when a valid value is set for a policy.">
     OK
@@ -205,9 +213,6 @@
   </message>
   <message name="IDS_POLICY_UNKNOWN" desc="Text displayed in the status column when a policy name is not recognized.">
     Unknown policy.
-  </message>
-  <message name="IDS_POLICY_INVALID_BOOKMARK" desc="Text displayed in the status column when an entry of the ManagedBookmarks policy is not a valid bookmark.">
-    Ignored invalid bookmark at index <ph name="ENTRY_INDEX">$1<ex>3</ex></ph>
   </message>
 
   <!-- chrome://policy -->
@@ -280,12 +285,12 @@
   <message name="IDS_POLICY_SCOPE_USER" desc="Text displayed in the Applies to column when a policy applies to the current user only.">
     Current user
   </message>
-  <if expr="not is_android and not pp_ifdef('chromeos')">
+  <if expr="not is_android and not chromeos">
     <message name="IDS_POLICY_SCOPE_DEVICE" desc="Text displayed in the Applies to column when a policy applies to everyone on the machine.">
       Machine
     </message>
   </if>
-  <if expr="pp_ifdef('chromeos') or is_android">
+  <if expr="chromeos or is_android">
     <message name="IDS_POLICY_SCOPE_DEVICE" desc="Mobile: Text displayed in the Applies To column when a policy applies to everyone on the device.">
       Device
     </message>
@@ -296,14 +301,7 @@
   <message name="IDS_POLICY_LEVEL_MANDATORY" desc="Text displayed in the Level column when a policy is mandatory.">
     Mandatory
   </message>
-
-  <if expr="is_android">
-    <message name="IDS_POLICY_MANAGED_BOOKMARKS" desc="Mobile: name of the managed bookmarks folder">
-      <ph name="DOMAIN">$1<ex>google.com</ex></ph> bookmarks
-    </message>
-    <message name="IDS_POLICY_MANAGED_BOOKMARKS_DEFAULT_NAME" desc="Mobile: name of the managed bookmarks folder when the management domain can't be determined.">
-      Managed bookmarks
-    </message>
-  </if>
-
+  <message name="IDS_POLICY_INVALID_BOOKMARK" desc="Text displayed in the status column when an entry of the ManagedBookmarks policy is not a valid bookmark.">
+    Ignored invalid bookmark at index <ph name="ENTRY_INDEX">$1<ex>3</ex></ph>
+  </message>
 </grit-part>

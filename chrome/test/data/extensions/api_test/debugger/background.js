@@ -7,7 +7,8 @@ var fail = chrome.test.callbackFail;
 
 var tabId;
 var debuggee;
-var protocolVersion = "1.0";
+var protocolVersion = "1.1";
+var protocolPreviousVersion = "1.0";
 
 var SILENT_FLAG_REQUIRED = "Cannot attach to this target unless " +
     "'silent-debugger-extension-api' flag is enabled.";
@@ -35,7 +36,16 @@ chrome.test.runTests([
     });
   },
 
-  function attach() {
+  function attachPreviousVersion() {
+    chrome.tabs.getSelected(null, function(tab) {
+      debuggee = {tabId: tab.id};
+      chrome.debugger.attach(debuggee, protocolPreviousVersion, function() {
+        chrome.debugger.detach(debuggee, pass());
+      });
+    });
+  },
+
+  function attachLatestVersion() {
     chrome.tabs.getSelected(null, function(tab) {
       tabId = tab.id;
       debuggee = {tabId: tab.id};
@@ -130,7 +140,9 @@ chrome.test.runTests([
   },
 
   function createAndDiscoverTab() {
-    function onUpdated(tabId) {
+    function onUpdated(tabId, changeInfo) {
+      if (changeInfo.status == 'loading')
+        return;
       chrome.tabs.onUpdated.removeListener(onUpdated);
       chrome.debugger.getTargets(function(targets) {
         var page = targets.filter(
@@ -166,5 +178,32 @@ chrome.test.runTests([
       });
     };
     workerPort.start();
+  },
+
+  function sendCommandDuringNavigation() {
+    chrome.tabs.create({url:"inspected.html"}, function(tab) {
+      var debuggee = {tabId: tab.id};
+
+      function checkError() {
+        if (chrome.runtime.lastError) {
+          chrome.test.fail(chrome.runtime.lastError.message);
+        } else {
+          chrome.tabs.remove(tab.id);
+          chrome.test.succeed();
+        }
+      }
+
+      function onNavigateDone() {
+        chrome.debugger.sendCommand(debuggee, "Page.disable", null, checkError);
+      }
+
+      function onAttach() {
+        chrome.debugger.sendCommand(debuggee, "Page.enable");
+        chrome.debugger.sendCommand(
+            debuggee, "Page.navigate", {url:"about:blank"}, onNavigateDone);
+      }
+
+      chrome.debugger.attach(debuggee, protocolVersion, onAttach);
+    });
   }
 ]);

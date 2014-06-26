@@ -8,16 +8,14 @@
 
 #include "base/bind.h"
 #include "base/location.h"
-#include "base/threading/worker_pool.h"
-#include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/windows_version.h"
-#include "chrome/browser/profiles/profile_info_util.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "content/public/browser/browser_thread.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
-#include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/win/hwnd_util.h"
@@ -34,7 +32,6 @@ namespace {
 // Docs for TaskbarList::SetOverlayIcon() say it does nothing if the HWND is not
 // valid.
 void SetOverlayIcon(HWND hwnd, scoped_ptr<SkBitmap> bitmap) {
-  base::win::ScopedCOMInitializer com_initializer;
   base::win::ScopedComPtr<ITaskbarList3> taskbar;
   HRESULT result = taskbar.CreateInstance(CLSID_TaskbarList, NULL,
                                           CLSCTX_INPROC_SERVER);
@@ -43,42 +40,26 @@ void SetOverlayIcon(HWND hwnd, scoped_ptr<SkBitmap> bitmap) {
 
   base::win::ScopedGDIObject<HICON> icon;
   if (bitmap.get()) {
-    const SkBitmap* source_bitmap = NULL;
-    SkBitmap squarer_bitmap;
-    if ((bitmap->width() == profiles::kAvatarIconWidth) &&
-        (bitmap->height() == profiles::kAvatarIconHeight)) {
-      // Shave a couple of columns so the bitmap is more square. So when
-      // resized to a square aspect ratio it looks pretty.
-      int x = 2;
-      bitmap->extractSubset(&squarer_bitmap, SkIRect::MakeXYWH(x, 0,
-          profiles::kAvatarIconWidth - x * 2, profiles::kAvatarIconHeight));
-      source_bitmap = &squarer_bitmap;
-    } else {
-      // The image's size has changed. Resize what we have.
-      source_bitmap = bitmap.get();
-    }
-
-    // Maintain aspect ratio on resize. It is assumed that the image is wider
-    // than it is tall.
-    const size_t kOverlayIconSize = 16;
-    size_t resized_height =
-        source_bitmap->height() * kOverlayIconSize / source_bitmap->width();
+    DCHECK_GE(bitmap.get()->width(), bitmap.get()->height());
+    // Maintain aspect ratio on resize.
+    const int kOverlayIconSize = 16;
+    int resized_height =
+        bitmap.get()->height() * kOverlayIconSize / bitmap.get()->width();
     DCHECK_GE(kOverlayIconSize, resized_height);
     // Since the target size is so small, we use our best resizer.
     SkBitmap sk_icon = skia::ImageOperations::Resize(
-        *source_bitmap,
+        *bitmap.get(),
         skia::ImageOperations::RESIZE_LANCZOS3,
         kOverlayIconSize, resized_height);
 
     // Paint the resized icon onto a 16x16 canvas otherwise Windows will badly
     // hammer it to 16x16.
-    scoped_ptr<SkCanvas> offscreen_canvas(
-        skia::CreateBitmapCanvas(kOverlayIconSize, kOverlayIconSize, false));
-    DCHECK(offscreen_canvas);
-    offscreen_canvas->drawBitmap(sk_icon, 0, kOverlayIconSize - resized_height);
-
-    icon.Set(IconUtil::CreateHICONFromSkBitmap(
-        offscreen_canvas->getDevice()->accessBitmap(false)));
+    SkBitmap offscreen_bitmap;
+    offscreen_bitmap.allocN32Pixels(kOverlayIconSize, kOverlayIconSize);
+    SkCanvas offscreen_canvas(offscreen_bitmap);
+    offscreen_canvas.clear(SK_ColorTRANSPARENT);
+    offscreen_canvas.drawBitmap(sk_icon, 0, kOverlayIconSize - resized_height);
+    icon.Set(IconUtil::CreateHICONFromSkBitmap(offscreen_bitmap));
     if (!icon.Get())
       return;
   }
@@ -103,11 +84,14 @@ void DrawTaskbarDecoration(gfx::NativeWindow window, const gfx::Image* image) {
 
   // Copy the image since we're going to use it on a separate thread and
   // gfx::Image isn't thread safe.
-  scoped_ptr<SkBitmap> bitmap(
-      image ? new SkBitmap(*image->ToSkBitmap()) : NULL);
-  // TaskbarList::SetOverlayIcon() may take a while, so we use slow here.
-  base::WorkerPool::PostTask(
-      FROM_HERE, base::Bind(&SetOverlayIcon, hwnd, Passed(&bitmap)), true);
+  scoped_ptr<SkBitmap> bitmap;
+  if (image) {
+    bitmap.reset(new SkBitmap(
+        profiles::GetAvatarIconAsSquare(*image->ToSkBitmap(), 1)));
+  }
+  content::BrowserThread::GetBlockingPool()->PostWorkerTaskWithShutdownBehavior(
+      FROM_HERE, base::Bind(&SetOverlayIcon, hwnd, Passed(&bitmap)),
+      base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
 }
 
 }  // namespace chrome

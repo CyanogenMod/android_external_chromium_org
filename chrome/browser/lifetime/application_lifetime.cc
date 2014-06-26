@@ -36,11 +36,9 @@
 #include "content/public/browser/notification_service.h"
 
 #if defined(OS_CHROMEOS)
-#include "ash/multi_profile_uma.h"
-#include "ash/session_state_delegate.h"
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #include "chromeos/dbus/update_engine_client.h"
@@ -115,9 +113,8 @@ void CloseAllBrowsers() {
   // If there are no browsers and closing the last browser would quit the
   // application, send the APP_TERMINATING action here. Otherwise, it will be
   // sent by RemoveBrowser() when the last browser has closed.
-  if (browser_shutdown::ShuttingDownWithoutClosingBrowsers() ||
-      (chrome::GetTotalBrowserCount() == 0 &&
-       (browser_shutdown::IsTryingToQuit() || !chrome::WillKeepAlive()))) {
+  if (chrome::GetTotalBrowserCount() == 0 &&
+      (browser_shutdown::IsTryingToQuit() || !chrome::WillKeepAlive())) {
     // Tell everyone that we are shutting down.
     browser_shutdown::SetTryingToQuit(true);
 
@@ -146,19 +143,12 @@ void AttemptUserExit() {
 #if defined(OS_CHROMEOS)
   StartShutdownTracing();
   chromeos::BootTimesLoader::Get()->AddLogoutTimeMarker("LogoutStarted", false);
-  // Write /tmp/uptime-logout-started as well.
-  const char kLogoutStarted[] = "logout-started";
-  chromeos::BootTimesLoader::Get()->RecordCurrentStats(kLogoutStarted);
 
-  // Since we are shutting down now we should record how many users have joined
-  // the session since session start.
-  ash::MultiProfileUMA::RecordUserCount(
-      ash::Shell::GetInstance()->session_state_delegate()->
-          NumberOfLoggedInUsers());
-
-  // Login screen should show up in owner's locale.
   PrefService* state = g_browser_process->local_state();
   if (state) {
+    chromeos::BootTimesLoader::Get()->OnLogoutStarted(state);
+
+    // Login screen should show up in owner's locale.
     std::string owner_locale = state->GetString(prefs::kOwnerLocale);
     if (!owner_locale.empty() &&
         state->GetString(prefs::kApplicationLocale) != owner_locale &&
@@ -205,6 +195,8 @@ void AttemptRestart() {
   pref_service->SetBoolean(prefs::kWasRestarted, true);
 
 #if defined(OS_CHROMEOS)
+  chromeos::BootTimesLoader::Get()->set_restart_requested();
+
   DCHECK(!g_send_stop_request_to_session_manager);
   // Make sure we don't send stop request to the session manager.
   g_send_stop_request_to_session_manager = false;
@@ -300,7 +292,7 @@ void SessionEnding() {
   content::ImmediateShutdownAndExitProcess();
 }
 
-void StartKeepAlive() {
+void IncrementKeepAliveCount() {
   // Increment the browser process refcount as long as we're keeping the
   // application alive.
   if (!WillKeepAlive())
@@ -308,7 +300,7 @@ void StartKeepAlive() {
   ++g_keep_alive_count;
 }
 
-void EndKeepAlive() {
+void DecrementKeepAliveCount() {
   DCHECK_GT(g_keep_alive_count, 0);
   --g_keep_alive_count;
 

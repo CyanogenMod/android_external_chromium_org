@@ -4,7 +4,9 @@
 
 #include "ash/wm/system_modal_container_layout_manager.h"
 
-#include "ash/session_state_delegate.h"
+#include <cmath>
+
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/wm/system_modal_container_event_filter.h"
@@ -13,21 +15,31 @@
 #include "base/bind.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/aura/window_property.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
+#include "ui/keyboard/keyboard_controller.h"
 #include "ui/views/background.h"
-#include "ui/views/corewm/compound_event_filter.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/compound_event_filter.h"
+
+DECLARE_EXPORTED_WINDOW_PROPERTY_TYPE(ASH_EXPORT, bool);
 
 namespace ash {
-namespace internal {
+
+// If this is set to true, the window will get centered.
+DEFINE_WINDOW_PROPERTY_KEY(bool, kCenteredKey, false);
+
+// The center point of the window can diverge this much from the center point
+// of the container to be kept centered upon resizing operations.
+const int kCenterPixelDelta = 32;
 
 ////////////////////////////////////////////////////////////////////////////////
 // SystemModalContainerLayoutManager, public:
@@ -50,14 +62,7 @@ void SystemModalContainerLayoutManager::OnWindowResized() {
     modal_background_->SetBounds(
         Shell::GetScreen()->GetDisplayNearestWindow(container_).bounds());
   }
-  if (!modal_windows_.empty()) {
-    aura::Window::Windows::iterator it = modal_windows_.begin();
-    for (it = modal_windows_.begin(); it != modal_windows_.end(); ++it) {
-      gfx::Rect bounds = (*it)->bounds();
-      bounds.AdjustToFit(container_->bounds());
-      (*it)->SetBounds(bounds);
-    }
-  }
+  PositionDialogsAfterWorkAreaResize();
 }
 
 void SystemModalContainerLayoutManager::OnWindowAddedToLayout(
@@ -66,7 +71,7 @@ void SystemModalContainerLayoutManager::OnWindowAddedToLayout(
          child->type() == ui::wm::WINDOW_TYPE_NORMAL ||
          child->type() == ui::wm::WINDOW_TYPE_POPUP);
   DCHECK(
-      container_->id() != internal::kShellWindowId_LockSystemModalContainer ||
+      container_->id() != kShellWindowId_LockSystemModalContainer ||
       Shell::GetInstance()->session_state_delegate()->IsUserSessionBlocked());
 
   child->AddObserver(this);
@@ -94,6 +99,7 @@ void SystemModalContainerLayoutManager::SetChildBounds(
     aura::Window* child,
     const gfx::Rect& requested_bounds) {
   SetChildBoundsDirect(child, requested_bounds);
+  child->SetProperty(kCenteredKey, DialogIsCentered(requested_bounds));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -120,6 +126,15 @@ void SystemModalContainerLayoutManager::OnWindowDestroying(
     modal_background_ = NULL;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// SystemModalContainerLayoutManager, Keyboard::KeybaordControllerObserver
+// implementation:
+
+void SystemModalContainerLayoutManager::OnKeyboardBoundsChanging(
+    const gfx::Rect& new_bounds) {
+  PositionDialogsAfterWorkAreaResize();
+}
+
 bool SystemModalContainerLayoutManager::CanWindowReceiveEvents(
     aura::Window* window) {
   // We could get when we're at lock screen and there is modal window at
@@ -133,7 +148,7 @@ bool SystemModalContainerLayoutManager::CanWindowReceiveEvents(
   // This container can not handle events if the screen is locked and it is not
   // above the lock screen layer (crbug.com/110920).
   if (Shell::GetInstance()->session_state_delegate()->IsUserSessionBlocked() &&
-      container_->id() < ash::internal::kShellWindowId_LockScreenContainer)
+      container_->id() < ash::kShellWindowId_LockScreenContainer)
     return true;
   return wm::GetActivatableWindow(window) == modal_window();
 }
@@ -161,12 +176,17 @@ void SystemModalContainerLayoutManager::CreateModalBackground() {
         views::Background::CreateSolidBackground(SK_ColorBLACK));
     modal_background_->SetContentsView(contents_view);
     modal_background_->GetNativeView()->layer()->SetOpacity(0.0f);
+    // There isn't always a keyboard controller.
+    if (keyboard::KeyboardController::GetInstance())
+      keyboard::KeyboardController::GetInstance()->AddObserver(this);
   }
 
   ui::ScopedLayerAnimationSettings settings(
       modal_background_->GetNativeView()->layer()->GetAnimator());
-  modal_background_->Show();
+  // Show should not be called with a target opacity of 0. We therefore start
+  // the fade to show animation before Show() is called.
   modal_background_->GetNativeView()->layer()->SetOpacity(0.5f);
+  modal_background_->Show();
   container_->StackChildAtTop(modal_background_->GetNativeView());
 }
 
@@ -174,11 +194,11 @@ void SystemModalContainerLayoutManager::DestroyModalBackground() {
   // modal_background_ can be NULL when a root window is shutting down
   // and OnWindowDestroying is called first.
   if (modal_background_) {
-    ui::ScopedLayerAnimationSettings settings(
-        modal_background_->GetNativeView()->layer()->GetAnimator());
+    if (keyboard::KeyboardController::GetInstance())
+      keyboard::KeyboardController::GetInstance()->RemoveObserver(this);
+    ::wm::ScopedHidingAnimationSettings settings(
+        modal_background_->GetNativeView());
     modal_background_->Close();
-    settings.AddObserver(views::corewm::CreateHidingWindowAnimationObserver(
-        modal_background_->GetNativeView()));
     modal_background_->GetNativeView()->layer()->SetOpacity(0.0f);
     modal_background_ = NULL;
   }
@@ -188,8 +208,8 @@ void SystemModalContainerLayoutManager::DestroyModalBackground() {
 bool SystemModalContainerLayoutManager::IsModalBackground(
     aura::Window* window) {
   int id = window->parent()->id();
-  if (id != internal::kShellWindowId_SystemModalContainer &&
-      id != internal::kShellWindowId_LockSystemModalContainer)
+  if (id != kShellWindowId_SystemModalContainer &&
+      id != kShellWindowId_LockSystemModalContainer)
     return false;
   SystemModalContainerLayoutManager* layout_manager =
       static_cast<SystemModalContainerLayoutManager*>(
@@ -210,6 +230,10 @@ void SystemModalContainerLayoutManager::AddModalWindow(aura::Window* window) {
   modal_windows_.push_back(window);
   Shell::GetInstance()->CreateModalBackground(window);
   window->parent()->StackChildAtTop(window);
+
+  gfx::Rect target_bounds = window->bounds();
+  target_bounds.AdjustToFit(GetUsableDialogArea());
+  window->SetBounds(target_bounds);
 }
 
 void SystemModalContainerLayoutManager::RemoveModalWindow(
@@ -220,5 +244,61 @@ void SystemModalContainerLayoutManager::RemoveModalWindow(
     modal_windows_.erase(it);
 }
 
-}  // namespace internal
+void SystemModalContainerLayoutManager::PositionDialogsAfterWorkAreaResize() {
+  if (!modal_windows_.empty()) {
+    for (aura::Window::Windows::iterator it = modal_windows_.begin();
+         it != modal_windows_.end(); ++it) {
+      (*it)->SetBounds(GetCenteredAndOrFittedBounds(*it));
+    }
+  }
+}
+
+gfx::Rect SystemModalContainerLayoutManager::GetUsableDialogArea() {
+  // Instead of resizing the system modal container, we move only the modal
+  // windows. This way we avoid flashing lines upon resize animation and if the
+  // keyboard will not fill left to right, the background is still covered.
+  gfx::Rect valid_bounds = container_->bounds();
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller) {
+    gfx::Rect bounds = keyboard_controller->current_keyboard_bounds();
+    if (!bounds.IsEmpty()) {
+      valid_bounds.set_height(std::max(
+          0, valid_bounds.height() - bounds.height()));
+    }
+  }
+  return valid_bounds;
+}
+
+gfx::Rect SystemModalContainerLayoutManager::GetCenteredAndOrFittedBounds(
+    const aura::Window* window) {
+  gfx::Rect target_bounds;
+  gfx::Rect usable_area = GetUsableDialogArea();
+  if (window->GetProperty(kCenteredKey)) {
+    // Keep the dialog centered if it was centered before.
+    target_bounds = usable_area;
+    target_bounds.ClampToCenteredSize(window->bounds().size());
+  } else {
+    // Keep the dialog within the usable area.
+    target_bounds = window->bounds();
+    target_bounds.AdjustToFit(usable_area);
+  }
+  if (usable_area != container_->bounds()) {
+    // Don't clamp the dialog for the keyboard. Keep the size as it is but make
+    // sure that the top remains visible.
+    // TODO(skuhne): M37 should add over scroll functionality to address this.
+    target_bounds.set_size(window->bounds().size());
+  }
+  return target_bounds;
+}
+
+bool SystemModalContainerLayoutManager::DialogIsCentered(
+    const gfx::Rect& window_bounds) {
+  gfx::Point window_center = window_bounds.CenterPoint();
+  gfx::Point container_center = GetUsableDialogArea().CenterPoint();
+  return
+      std::abs(window_center.x() - container_center.x()) < kCenterPixelDelta &&
+      std::abs(window_center.y() - container_center.y()) < kCenterPixelDelta;
+}
+
 }  // namespace ash

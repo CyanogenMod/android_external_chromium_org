@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -28,6 +28,14 @@ def _GetFilesNotInCloud(input_api):
 
   It validates all the hashes and skips upload if not necessary.
   """
+  hash_paths = []
+  for affected_file in input_api.AffectedFiles(include_deletes=False):
+    hash_path = affected_file.AbsoluteLocalPath()
+    _, extension = os.path.splitext(hash_path)
+    if extension == '.sha1':
+      hash_paths.append(hash_path)
+  if not hash_paths:
+    return []
 
   cloud_storage = LoadSupport(input_api)
 
@@ -40,14 +48,8 @@ def _GetFilesNotInCloud(input_api):
     pass
 
   files = []
-  for affected_file in input_api.AffectedFiles(include_deletes=False):
-    hash_path = affected_file.AbsoluteLocalPath()
-    _, extension = os.path.splitext(hash_path)
-    if extension != '.sha1':
-      continue
-
-    with open(hash_path, 'rb') as f:
-      file_hash = f.read(1024).rstrip()
+  for hash_path in hash_paths:
+    file_hash = cloud_storage.ReadHash(hash_path)
     if file_hash not in hashes_in_cloud_storage:
       files.append((hash_path, file_hash))
 
@@ -74,7 +76,7 @@ def _SyncFilesToCloud(input_api, output_api):
       results.append(output_api.PresubmitError(
           'Hash file exists, but file not found: %s' % hash_path))
       continue
-    if cloud_storage.GetHash(file_path) != file_hash:
+    if cloud_storage.CalculateHash(file_path) != file_hash:
       results.append(output_api.PresubmitError(
           'Hash file does not match file\'s actual hash: %s' % hash_path))
       continue
@@ -116,9 +118,20 @@ def _VerifyFilesInCloud(input_api, output_api):
   return results
 
 
+def _IsNewJsonPageSet(affected_file):
+  return (affected_file.Action() == 'A' and
+          'page_sets/data/' not in affected_file.AbsoluteLocalPath()
+          and affected_file.AbsoluteLocalPath().endswith('.json'))
+
+
+def _GetNewJsonPageSets(input_api):
+  return input_api.AffectedFiles(file_filter=_IsNewJsonPageSet)
+
 def CheckChangeOnUpload(input_api, output_api):
-  return _SyncFilesToCloud(input_api, output_api)
+  results = _SyncFilesToCloud(input_api, output_api)
+  return results
 
 
 def CheckChangeOnCommit(input_api, output_api):
-  return _VerifyFilesInCloud(input_api, output_api)
+  results = _VerifyFilesInCloud(input_api, output_api)
+  return results

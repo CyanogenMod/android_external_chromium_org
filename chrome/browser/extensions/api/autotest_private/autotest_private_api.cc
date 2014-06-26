@@ -4,16 +4,16 @@
 
 #include "chrome/browser/extensions/api/autotest_private/autotest_private_api.h"
 
+#include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/extensions/api/autotest_private/autotest_private_api_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/autotest_private.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/manifest_handlers/background_info.h"
@@ -22,8 +22,8 @@
 #include "extensions/common/permissions/permissions_data.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
 #endif
@@ -32,17 +32,15 @@ namespace extensions {
 namespace {
 
 base::ListValue* GetHostPermissions(const Extension* ext, bool effective_perm) {
-  extensions::URLPatternSet pattern_set;
-  if (effective_perm) {
-    pattern_set =
-        extensions::PermissionsData::GetEffectiveHostPermissions(ext);
-  } else {
-    pattern_set = ext->GetActivePermissions()->explicit_hosts();
-  }
+  const PermissionsData* permissions_data = ext->permissions_data();
+  const URLPatternSet& pattern_set =
+      effective_perm ? permissions_data->GetEffectiveHostPermissions()
+                     : permissions_data->active_permissions()->explicit_hosts();
 
   base::ListValue* permissions = new base::ListValue;
-  for (extensions::URLPatternSet::const_iterator perm = pattern_set.begin();
-       perm != pattern_set.end(); ++perm) {
+  for (URLPatternSet::const_iterator perm = pattern_set.begin();
+       perm != pattern_set.end();
+       ++perm) {
     permissions->Append(new base::StringValue(perm->GetAsString()));
   }
 
@@ -52,7 +50,7 @@ base::ListValue* GetHostPermissions(const Extension* ext, bool effective_perm) {
 base::ListValue* GetAPIPermissions(const Extension* ext) {
   base::ListValue* permissions = new base::ListValue;
   std::set<std::string> perm_list =
-      ext->GetActivePermissions()->GetAPIsAsStrings();
+      ext->permissions_data()->active_permissions()->GetAPIsAsStrings();
   for (std::set<std::string>::const_iterator perm = perm_list.begin();
        perm != perm_list.end(); ++perm) {
     permissions->Append(new base::StringValue(perm->c_str()));
@@ -60,35 +58,39 @@ base::ListValue* GetAPIPermissions(const Extension* ext) {
   return permissions;
 }
 
+bool IsTestMode(Profile* profile) {
+  return AutotestPrivateAPI::GetFactoryInstance()->Get(profile)->test_mode();
+}
+
 }  // namespace
 
-bool AutotestPrivateLogoutFunction::RunImpl() {
+bool AutotestPrivateLogoutFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateLogoutFunction";
-  if (!AutotestPrivateAPIFactory::GetForProfile(GetProfile())->test_mode())
+  if (!IsTestMode(GetProfile()))
     chrome::AttemptUserExit();
   return true;
 }
 
-bool AutotestPrivateRestartFunction::RunImpl() {
+bool AutotestPrivateRestartFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateRestartFunction";
-  if (!AutotestPrivateAPIFactory::GetForProfile(GetProfile())->test_mode())
+  if (!IsTestMode(GetProfile()))
     chrome::AttemptRestart();
   return true;
 }
 
-bool AutotestPrivateShutdownFunction::RunImpl() {
+bool AutotestPrivateShutdownFunction::RunSync() {
   scoped_ptr<api::autotest_private::Shutdown::Params> params(
       api::autotest_private::Shutdown::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   DVLOG(1) << "AutotestPrivateShutdownFunction " << params->force;
 
-  if (!AutotestPrivateAPIFactory::GetForProfile(GetProfile())->test_mode())
+  if (!IsTestMode(GetProfile()))
     chrome::AttemptExit();
   return true;
 }
 
-bool AutotestPrivateLoginStatusFunction::RunImpl() {
+bool AutotestPrivateLoginStatusFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateLoginStatusFunction";
 
   base::DictionaryValue* result(new base::DictionaryValue);
@@ -134,7 +136,7 @@ bool AutotestPrivateLoginStatusFunction::RunImpl() {
   return true;
 }
 
-bool AutotestPrivateLockScreenFunction::RunImpl() {
+bool AutotestPrivateLockScreenFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateLockScreenFunction";
 #if defined(OS_CHROMEOS)
   chromeos::DBusThreadManager::Get()->GetSessionManagerClient()->
@@ -143,13 +145,12 @@ bool AutotestPrivateLockScreenFunction::RunImpl() {
   return true;
 }
 
-bool AutotestPrivateGetExtensionsInfoFunction::RunImpl() {
+bool AutotestPrivateGetExtensionsInfoFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateGetExtensionsInfoFunction";
 
-  ExtensionService* service = extensions::ExtensionSystem::Get(
-      GetProfile())->extension_service();
-  ExtensionRegistry* registry =
-      extensions::ExtensionRegistry::Get(GetProfile());
+  ExtensionService* service =
+      ExtensionSystem::Get(GetProfile())->extension_service();
+  ExtensionRegistry* registry = ExtensionRegistry::Get(GetProfile());
   const ExtensionSet& extensions = registry->enabled_extensions();
   const ExtensionSet& disabled_extensions = registry->disabled_extensions();
   ExtensionActionManager* extension_action_manager =
@@ -169,10 +170,10 @@ bool AutotestPrivateGetExtensionsInfoFunction::RunImpl() {
     extension_value->SetString("name", extension->name());
     extension_value->SetString("publicKey", extension->public_key());
     extension_value->SetString("description", extension->description());
-    extension_value->SetString("backgroundUrl",
-        extensions::BackgroundInfo::GetBackgroundURL(extension).spec());
+    extension_value->SetString(
+        "backgroundUrl", BackgroundInfo::GetBackgroundURL(extension).spec());
     extension_value->SetString("optionsUrl",
-        extensions::ManifestURL::GetOptionsPage(extension).spec());
+                               ManifestURL::GetOptionsPage(extension).spec());
 
     extension_value->Set("hostPermissions",
                          GetHostPermissions(extension, false));
@@ -208,9 +209,9 @@ static int AccessArray(const volatile int arr[], const volatile int *index) {
   return arr[*index];
 }
 
-bool AutotestPrivateSimulateAsanMemoryBugFunction::RunImpl() {
+bool AutotestPrivateSimulateAsanMemoryBugFunction::RunSync() {
   DVLOG(1) << "AutotestPrivateSimulateAsanMemoryBugFunction";
-  if (!AutotestPrivateAPIFactory::GetForProfile(GetProfile())->test_mode()) {
+  if (!IsTestMode(GetProfile())) {
     // This array is volatile not to let compiler optimize us out.
     volatile int testarray[3] = {0, 0, 0};
 
@@ -221,6 +222,21 @@ bool AutotestPrivateSimulateAsanMemoryBugFunction::RunImpl() {
   return true;
 }
 
+static base::LazyInstance<BrowserContextKeyedAPIFactory<AutotestPrivateAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<AutotestPrivateAPI>*
+AutotestPrivateAPI::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
+
+template <>
+KeyedService*
+BrowserContextKeyedAPIFactory<AutotestPrivateAPI>::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
+  return new AutotestPrivateAPI();
+}
 
 AutotestPrivateAPI::AutotestPrivateAPI() : test_mode_(false) {
 }

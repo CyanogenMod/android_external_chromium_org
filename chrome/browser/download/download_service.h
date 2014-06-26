@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class ChromeDownloadManagerDelegate;
 class DownloadHistory;
@@ -20,8 +20,12 @@ namespace content {
 class DownloadManager;
 }
 
+namespace extensions {
+class ExtensionDownloadsEventRouter;
+}
+
 // Owning class for ChromeDownloadManagerDelegate.
-class DownloadService : public BrowserContextKeyedService {
+class DownloadService : public KeyedService {
  public:
   explicit DownloadService(Profile* profile);
   virtual ~DownloadService();
@@ -31,11 +35,11 @@ class DownloadService : public BrowserContextKeyedService {
 
   // Get the interface to the history system. Returns NULL if profile is
   // incognito or if the DownloadManager hasn't been created yet or if there is
-  // no HistoryService for profile.
-  DownloadHistory* GetDownloadHistory();
+  // no HistoryService for profile. Virtual for testing.
+  virtual DownloadHistory* GetDownloadHistory();
 
-#if !defined(OS_ANDROID)
-  ExtensionDownloadsEventRouter* GetExtensionEventRouter() {
+#if defined(ENABLE_EXTENSIONS)
+  extensions::ExtensionDownloadsEventRouter* GetExtensionEventRouter() {
     return extension_event_router_.get();
   }
 #endif
@@ -47,10 +51,13 @@ class DownloadService : public BrowserContextKeyedService {
   // service.
   int NonMaliciousDownloadCount() const;
 
+  // Cancels all in-progress downloads for this profile.
+  void CancelDownloads();
+
   // Number of non-malicious downloads associated with all profiles.
   static int NonMaliciousDownloadCountAllProfiles();
 
-  // Cancels all in-progress downloads.
+  // Cancels all in-progress downloads for all profiles.
   static void CancelAllDownloads();
 
   // Sets the DownloadManagerDelegate associated with this object and
@@ -81,20 +88,22 @@ class DownloadService : public BrowserContextKeyedService {
   // The UI controller is responsible for observing the download manager and
   // notifying the UI of any new downloads. Its lifetime matches that of the
   // associated download manager.
+  // Note on destruction order: download_ui_ depends on download_history_ and
+  // should be destroyed before the latter.
   scoped_ptr<DownloadUIController> download_ui_;
 
   // On Android, GET downloads are not handled by the DownloadManager.
   // Once we have extensions on android, we probably need the EventRouter
   // in ContentViewDownloadDelegate which knows about both GET and POST
   // downloads.
-#if !defined(OS_ANDROID)
+#if defined(ENABLE_EXTENSIONS)
   // The ExtensionDownloadsEventRouter dispatches download creation, change, and
   // erase events to extensions. Like ChromeDownloadManagerDelegate, it's a
   // chrome-level concept and its lifetime should match DownloadManager. There
   // should be a separate EDER for on-record and off-record managers.
   // There does not appear to be a separate ExtensionSystem for on-record and
   // off-record profiles, so ExtensionSystem cannot own the EDER.
-  scoped_ptr<ExtensionDownloadsEventRouter> extension_event_router_;
+  scoped_ptr<extensions::ExtensionDownloadsEventRouter> extension_event_router_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(DownloadService);

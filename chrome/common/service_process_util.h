@@ -14,7 +14,6 @@
 #include "base/process/process.h"
 #include "ipc/ipc_channel_handle.h"
 
-class CommandLine;
 class MultiProcessLock;
 
 #if defined(OS_MACOSX)
@@ -26,6 +25,7 @@ class NSString;
 #endif
 
 namespace base {
+class CommandLine;
 class MessageLoopProxy;
 }
 
@@ -73,6 +73,9 @@ bool GetServiceProcessData(std::string* version, base::ProcessId* pid);
 // Forces a service process matching the specified version to shut down.
 bool ForceServiceProcessShutdown(const std::string& version,
                                  base::ProcessId process_id);
+
+// Creates command-line to run the service process.
+scoped_ptr<base::CommandLine> CreateServiceProcessCommandLine();
 
 // This is a class that is used by the service process to signal events and
 // share data with external clients. This class lives in this file because the
@@ -129,16 +132,12 @@ class ServiceProcessState {
   // Tear down the platform specific state.
   void TearDownState();
 
-  // Initializes the command-line that can be used to autorun the service
-  // process.
-  void CreateAutoRunCommandLine();
-
   // An opaque object that maintains state. The actual definition of this is
   // platform dependent.
   struct StateData;
   StateData* state_;
   scoped_ptr<base::SharedMemory> shared_mem_service_data_;
-  scoped_ptr<CommandLine> autorun_command_line_;
+  scoped_ptr<base::CommandLine> autorun_command_line_;
 };
 
 #endif  // CHROME_COMMON_SERVICE_PROCESS_UTIL_H_

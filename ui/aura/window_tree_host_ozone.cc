@@ -4,46 +4,48 @@
 
 #include "ui/aura/window_tree_host_ozone.h"
 
-#include "ui/aura/root_window.h"
-#include "ui/events/ozone/event_factory_ozone.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
-#include "ui/ozone/ozone_platform.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/events/platform/platform_event_source.h"
+#include "ui/ozone/public/cursor_factory_ozone.h"
+#include "ui/ozone/public/event_factory_ozone.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
 
 namespace aura {
 
 WindowTreeHostOzone::WindowTreeHostOzone(const gfx::Rect& bounds)
     : widget_(0),
       bounds_(bounds) {
-  ui::OzonePlatform::Initialize();
-
-  // EventFactoryOzone creates converters that obtain input events from the
-  // underlying input system and dispatch them as |ui::Event| instances into
-  // Aura.
-  ui::EventFactoryOzone::GetInstance()->StartProcessingEvents();
-
-  gfx::SurfaceFactoryOzone* surface_factory =
-      gfx::SurfaceFactoryOzone::GetInstance();
+  ui::SurfaceFactoryOzone* surface_factory =
+      ui::SurfaceFactoryOzone::GetInstance();
   widget_ = surface_factory->GetAcceleratedWidget();
 
-  surface_factory->AttemptToResizeAcceleratedWidget(widget_, bounds_);
-
-  base::MessagePumpOzone::Current()->AddDispatcherForRootWindow(this);
+  ui::PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
   CreateCompositor(GetAcceleratedWidget());
 }
 
 WindowTreeHostOzone::~WindowTreeHostOzone() {
-  base::MessagePumpOzone::Current()->RemoveDispatcherForRootWindow(0);
+  ui::PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
   DestroyCompositor();
+  DestroyDispatcher();
 }
 
-uint32_t WindowTreeHostOzone::Dispatch(const base::NativeEvent& ne) {
+bool WindowTreeHostOzone::CanDispatchEvent(const ui::PlatformEvent& ne) {
+  CHECK(ne);
+  ui::Event* event = static_cast<ui::Event*>(ne);
+  if (event->IsMouseEvent() || event->IsScrollEvent())
+    return ui::CursorFactoryOzone::GetInstance()->GetCursorWindow() == widget_;
+
+  return true;
+}
+
+uint32_t WindowTreeHostOzone::DispatchEvent(const ui::PlatformEvent& ne) {
   ui::Event* event = static_cast<ui::Event*>(ne);
   ui::EventDispatchDetails details ALLOW_UNUSED = SendEventToProcessor(event);
-  return POST_DISPATCH_NONE;
+  return ui::POST_DISPATCH_STOP_PROPAGATION;
 }
 
-RootWindow* WindowTreeHostOzone::GetRootWindow() {
-  return delegate_->AsRootWindow();
+ui::EventSource* WindowTreeHostOzone::GetEventSource() {
+  return this;
 }
 
 gfx::AcceleratedWidget WindowTreeHostOzone::GetAcceleratedWidget() {
@@ -54,18 +56,16 @@ void WindowTreeHostOzone::Show() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::Hide() { NOTIMPLEMENTED(); }
 
-void WindowTreeHostOzone::ToggleFullScreen() { NOTIMPLEMENTED(); }
-
 gfx::Rect WindowTreeHostOzone::GetBounds() const { return bounds_; }
 
 void WindowTreeHostOzone::SetBounds(const gfx::Rect& bounds) {
-  NOTIMPLEMENTED();
-}
-
-gfx::Insets WindowTreeHostOzone::GetInsets() const { return gfx::Insets(); }
-
-void WindowTreeHostOzone::SetInsets(const gfx::Insets& insets) {
-  NOTIMPLEMENTED();
+  bool origin_changed = bounds_.origin() != bounds.origin();
+  bool size_changed = bounds_.size() != bounds.size();
+  bounds_ = bounds;
+  if (size_changed)
+    OnHostResized(bounds_.size());
+  if (origin_changed)
+    OnHostMoved(bounds_.origin());
 }
 
 gfx::Point WindowTreeHostOzone::GetLocationOnNativeScreen() const {
@@ -75,18 +75,6 @@ gfx::Point WindowTreeHostOzone::GetLocationOnNativeScreen() const {
 void WindowTreeHostOzone::SetCapture() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::ReleaseCapture() { NOTIMPLEMENTED(); }
-
-bool WindowTreeHostOzone::QueryMouseLocation(gfx::Point* location_return) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool WindowTreeHostOzone::ConfineCursorToRootWindow() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void WindowTreeHostOzone::UnConfineCursor() { NOTIMPLEMENTED(); }
 
 void WindowTreeHostOzone::PostNativeEvent(
     const base::NativeEvent& native_event) {
@@ -98,14 +86,14 @@ void WindowTreeHostOzone::OnDeviceScaleFactorChanged(
   NOTIMPLEMENTED();
 }
 
-void WindowTreeHostOzone::PrepareForShutdown() { NOTIMPLEMENTED(); }
-
 void WindowTreeHostOzone::SetCursorNative(gfx::NativeCursor cursor) {
-  gfx::SurfaceFactoryOzone::GetInstance()->SetCursorImage(*cursor.platform());
+  ui::CursorFactoryOzone::GetInstance()->SetCursor(GetAcceleratedWidget(),
+                                                   cursor.platform());
 }
 
 void WindowTreeHostOzone::MoveCursorToNative(const gfx::Point& location) {
-  gfx::SurfaceFactoryOzone::GetInstance()->MoveCursorTo(location);
+  ui::EventFactoryOzone::GetInstance()->WarpCursorTo(GetAcceleratedWidget(),
+                                                     location);
 }
 
 void WindowTreeHostOzone::OnCursorVisibilityChangedNative(bool show) {
@@ -113,7 +101,7 @@ void WindowTreeHostOzone::OnCursorVisibilityChangedNative(bool show) {
 }
 
 ui::EventProcessor* WindowTreeHostOzone::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 // static

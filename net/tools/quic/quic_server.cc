@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 
 #include "net/base/ip_endpoint.h"
+#include "net/quic/congestion_control/tcp_receiver.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/quic_random.h"
 #include "net/quic/quic_clock.h"
@@ -29,6 +30,7 @@
 
 const int kEpollFlags = EPOLLIN | EPOLLOUT | EPOLLET;
 static const char kSourceAddressTokenSecret[] = "secret";
+const uint32 kServerInitialFlowControlWindow = 100 * net::kMaxPacketSize;
 
 namespace net {
 namespace tools {
@@ -43,9 +45,6 @@ QuicServer::QuicServer()
       supported_versions_(QuicSupportedVersions()) {
   // Use hardcoded crypto parameters for now.
   config_.SetDefaults();
-  config_.set_initial_round_trip_time_us(kMaxInitialRoundTripTimeUs, 0);
-  config_.set_server_initial_congestion_window(kMaxInitialWindow,
-                                               kDefaultInitialWindow);
   Initialize();
 }
 
@@ -76,6 +75,9 @@ void QuicServer::Initialize() {
       crypto_config_.AddDefaultConfig(
           QuicRandom::GetInstance(), &clock,
           QuicCryptoServerConfig::ConfigOptions()));
+
+  // Set flow control options in the config.
+  config_.SetInitialCongestionWindowToSend(kServerInitialFlowControlWindow);
 }
 
 QuicServer::~QuicServer() {
@@ -105,6 +107,19 @@ bool QuicServer::Listen(const IPEndPoint& address) {
     DLOG(WARNING) << "Socket overflow detection not supported";
   } else {
     overflow_supported_ = true;
+  }
+
+  // These send and receive buffer sizes are sized for a single connection,
+  // because the default usage of QuicServer is as a test server with one or
+  // two clients.  Adjust higher for use with many clients.
+  if (!QuicSocketUtils::SetReceiveBufferSize(fd_,
+                                             TcpReceiver::kReceiveWindowTCP)) {
+    return false;
+  }
+
+  if (!QuicSocketUtils::SetSendBufferSize(fd_,
+                                          TcpReceiver::kReceiveWindowTCP)) {
+    return false;
   }
 
   // Enable the socket option that allows the local address to be
@@ -147,11 +162,18 @@ bool QuicServer::Listen(const IPEndPoint& address) {
   }
 
   epoll_server_.RegisterFD(fd_, this, kEpollFlags);
-  dispatcher_.reset(new QuicDispatcher(
-      config_, crypto_config_, supported_versions_, &epoll_server_));
+  dispatcher_.reset(CreateQuicDispatcher());
   dispatcher_->Initialize(fd_);
 
   return true;
+}
+
+QuicDispatcher* QuicServer::CreateQuicDispatcher() {
+  return new QuicDispatcher(
+      config_,
+      crypto_config_,
+      supported_versions_,
+      &epoll_server_);
 }
 
 void QuicServer::WaitForEvents() {
@@ -181,8 +203,8 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
     }
   }
   if (event->in_events & EPOLLOUT) {
-    bool can_write_more = dispatcher_->OnCanWrite();
-    if (can_write_more) {
+    dispatcher_->OnCanWrite();
+    if (dispatcher_->HasPendingWrites()) {
       event->out_ready_mask |= EPOLLOUT;
     }
   }
@@ -194,7 +216,7 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
 bool QuicServer::ReadAndDispatchSinglePacket(int fd,
                                              int port,
                                              QuicDispatcher* dispatcher,
-                                             int* packets_dropped) {
+                                             uint32* packets_dropped) {
   // Allocate some extra space so we can send an error if the client goes over
   // the limit.
   char buf[2 * kMaxPacketSize];

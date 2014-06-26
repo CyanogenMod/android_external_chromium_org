@@ -15,11 +15,15 @@
 const char FileTemplate::kSource[] = "{{source}}";
 const char FileTemplate::kSourceNamePart[] = "{{source_name_part}}";
 const char FileTemplate::kSourceFilePart[] = "{{source_file_part}}";
+const char FileTemplate::kSourceDir[] = "{{source_dir}}";
+const char FileTemplate::kRootRelDir[] = "{{source_root_relative_dir}}";
+const char FileTemplate::kSourceGenDir[] = "{{source_gen_dir}}";
+const char FileTemplate::kSourceOutDir[] = "{{source_out_dir}}";
 
 const char kSourceExpansion_Help[] =
     "How Source Expansion Works\n"
     "\n"
-    "  Source expansion is used for the custom script and copy target types\n"
+    "  Source expansion is used for the action_foreach and copy target types\n"
     "  to map source file names to output file names or arguments.\n"
     "\n"
     "  To perform source expansion in the outputs, GN maps every entry in the\n"
@@ -34,8 +38,8 @@ const char kSourceExpansion_Help[] =
     "  as a static list of literal file names that do not depend on the\n"
     "  sources.\n"
     "\n"
-    "  See \"gn help copy\" and \"gn help custom\" for more on how this is\n"
-    "  applied.\n"
+    "  See \"gn help copy\" and \"gn help action_foreach\" for more on how\n"
+    "  this is applied.\n"
     "\n"
     "Placeholders\n"
     "\n"
@@ -44,22 +48,52 @@ const char kSourceExpansion_Help[] =
     "      directory (which is the current directory when running compilers\n"
     "      and scripts). This will generally be used for specifying inputs\n"
     "      to a script in the \"args\" variable.\n"
+    "        \"//foo/bar/baz.txt\" => \"../../foo/bar/baz.txt\"\n"
     "\n"
     "  {{source_file_part}}\n"
-    "      The file part of the source including the extension. For the\n"
-    "      source \"foo/bar.txt\" the source file part will be \"bar.txt\".\n"
+    "      The file part of the source including the extension.\n"
+    "        \"//foo/bar/baz.txt\" => \"baz.txt\"\n"
     "\n"
     "  {{source_name_part}}\n"
     "      The filename part of the source file with no directory or\n"
     "      extension. This will generally be used for specifying a\n"
     "      transformation from a soruce file to a destination file with the\n"
-    "      same name but different extension. For the source \"foo/bar.txt\"\n"
-    "      the source name part will be \"bar\".\n"
+    "      same name but different extension.\n"
+    "        \"//foo/bar/baz.txt\" => \"baz\"\n"
+    "\n"
+    "  {{source_dir}}\n"
+    "      The directory containing the source file, relative to the build\n"
+    "      directory, with no trailing slash.\n"
+    "        \"//foo/bar/baz.txt\" => \"../../foo/bar\"\n"
+    "\n"
+    "  {{source_root_relative_dir}}\n"
+    "      The path to the source file's directory relative to the source\n"
+    "      root, with no leading \"//\" or trailing slashes. If the path is\n"
+    "      system-absolute, (beginning in a single slash) this will just\n"
+    "      return the path with no trailing slash.\n"
+    "        \"//foo/bar/baz.txt\" => \"foo/bar\"\n"
+    "\n"
+    "  {{source_gen_dir}}\n"
+    "      The generated file directory corresponding to the source file's\n"
+    "      path, relative to the build directory. This will be different than\n"
+    "      the target's generated file directory if the source file is in a\n"
+    "      different directory than the build.gn file. If the input path is\n"
+    "      system absolute, this will return the root generated file\n"
+    "      directory."
+    "        \"//foo/bar/baz.txt\" => \"gen/foo/bar\"\n"
+    "\n"
+    "  {{source_out_dir}}\n"
+    "      The object file directory corresponding to the source file's\n"
+    "      path, relative to the build directory. this us be different than\n"
+    "      the target's out directory if the source file is in a different\n"
+    "      directory than the build.gn file. if the input path is system\n"
+    "      absolute, this will return the root generated file directory.\n"
+    "        \"//foo/bar/baz.txt\" => \"obj/foo/bar\"\n"
     "\n"
     "Examples\n"
     "\n"
     "  Non-varying outputs:\n"
-    "    script(\"hardcoded_outputs\") {\n"
+    "    action(\"hardcoded_outputs\") {\n"
     "      sources = [ \"input1.idl\", \"input2.idl\" ]\n"
     "      outputs = [ \"$target_out_dir/output1.dat\",\n"
     "                  \"$target_out_dir/output2.dat\" ]\n"
@@ -67,7 +101,7 @@ const char kSourceExpansion_Help[] =
     "  The outputs in this case will be the two literal files given.\n"
     "\n"
     "  Varying outputs:\n"
-    "    script(\"varying_outputs\") {\n"
+    "    action_foreach(\"varying_outputs\") {\n"
     "      sources = [ \"input1.idl\", \"input2.idl\" ]\n"
     "      outputs = [ \"$target_out_dir/{{source_name_part}}.h\",\n"
     "                  \"$target_out_dir/{{source_name_part}}.cc\" ]\n"
@@ -78,17 +112,29 @@ const char kSourceExpansion_Help[] =
     "    //out/Debug/obj/mydirectory/input2.h\n"
     "    //out/Debug/obj/mydirectory/input2.cc\n";
 
-FileTemplate::FileTemplate(const Value& t, Err* err)
-    : has_substitutions_(false) {
+FileTemplate::FileTemplate(const Settings* settings, const Value& t, Err* err)
+    : settings_(settings),
+      has_substitutions_(false) {
   std::fill(types_required_, &types_required_[Subrange::NUM_TYPES], false);
   ParseInput(t, err);
 }
 
-FileTemplate::FileTemplate(const std::vector<std::string>& t)
-    : has_substitutions_(false) {
+FileTemplate::FileTemplate(const Settings* settings,
+                           const std::vector<std::string>& t)
+    : settings_(settings),
+      has_substitutions_(false) {
   std::fill(types_required_, &types_required_[Subrange::NUM_TYPES], false);
   for (size_t i = 0; i < t.size(); i++)
     ParseOneTemplateString(t[i]);
+}
+
+FileTemplate::FileTemplate(const Settings* settings,
+                           const std::vector<SourceFile>& t)
+    : settings_(settings),
+      has_substitutions_(false) {
+  std::fill(types_required_, &types_required_[Subrange::NUM_TYPES], false);
+  for (size_t i = 0; i < t.size(); i++)
+    ParseOneTemplateString(t[i].value());
 }
 
 FileTemplate::~FileTemplate() {
@@ -96,11 +142,11 @@ FileTemplate::~FileTemplate() {
 
 // static
 FileTemplate FileTemplate::GetForTargetOutputs(const Target* target) {
-  const Target::FileList& outputs = target->script_values().outputs();
+  const Target::FileList& outputs = target->action_values().outputs();
   std::vector<std::string> output_template_args;
   for (size_t i = 0; i < outputs.size(); i++)
     output_template_args.push_back(outputs[i].value());
-  return FileTemplate(output_template_args);
+  return FileTemplate(target->settings(), output_template_args);
 }
 
 bool FileTemplate::IsTypeUsed(Subrange::Type type) const {
@@ -108,56 +154,37 @@ bool FileTemplate::IsTypeUsed(Subrange::Type type) const {
   return types_required_[type];
 }
 
-void FileTemplate::Apply(const Value& sources,
-                         const ParseNode* origin,
-                         std::vector<Value>* dest,
-                         Err* err) const {
-  if (!sources.VerifyTypeIs(Value::LIST, err))
-    return;
-  dest->reserve(sources.list_value().size() * templates_.container().size());
-
-  // Temporary holding place, allocate outside to re-use- buffer.
-  std::vector<std::string> string_output;
-
-  const std::vector<Value>& sources_list = sources.list_value();
-  for (size_t i = 0; i < sources_list.size(); i++) {
-    if (!sources_list[i].VerifyTypeIs(Value::STRING, err))
-      return;
-
-    ApplyString(sources_list[i].string_value(), &string_output);
-    for (size_t out_i = 0; out_i < string_output.size(); out_i++)
-      dest->push_back(Value(origin, string_output[out_i]));
-  }
-}
-
-void FileTemplate::ApplyString(const std::string& str,
-                               std::vector<std::string>* output) const {
+void FileTemplate::Apply(const SourceFile& source,
+                         std::vector<std::string>* output) const {
   // Compute all substitutions needed so we can just do substitutions below.
   // We skip the LITERAL one since that varies each time.
   std::string subst[Subrange::NUM_TYPES];
   for (int i = 1; i < Subrange::NUM_TYPES; i++) {
-    if (types_required_[i])
-      subst[i] = GetSubstitution(str, static_cast<Subrange::Type>(i));
+    if (types_required_[i]) {
+      subst[i] =
+          GetSubstitution(settings_, source, static_cast<Subrange::Type>(i));
+    }
   }
 
-  output->resize(templates_.container().size());
+  size_t first_output_index = output->size();
+  output->resize(output->size() + templates_.container().size());
   for (size_t template_i = 0;
        template_i < templates_.container().size(); template_i++) {
     const Template& t = templates_[template_i];
-    (*output)[template_i].clear();
+    std::string& cur_output = (*output)[first_output_index + template_i];
     for (size_t subrange_i = 0; subrange_i < t.container().size();
          subrange_i++) {
       if (t[subrange_i].type == Subrange::LITERAL)
-        (*output)[template_i].append(t[subrange_i].literal);
+        cur_output.append(t[subrange_i].literal);
       else
-        (*output)[template_i].append(subst[t[subrange_i].type]);
+        cur_output.append(subst[t[subrange_i].type]);
     }
   }
 }
 
 void FileTemplate::WriteWithNinjaExpansions(std::ostream& out) const {
   EscapeOptions escape_options;
-  escape_options.mode = ESCAPE_NINJA_SHELL;
+  escape_options.mode = ESCAPE_NINJA_COMMAND;
   escape_options.inhibit_quoting = true;
 
   for (size_t template_i = 0;
@@ -175,8 +202,10 @@ void FileTemplate::WriteWithNinjaExpansions(std::ostream& out) const {
     for (size_t subrange_i = 0; subrange_i < t.container().size();
          subrange_i++) {
       if (t[subrange_i].type == Subrange::LITERAL) {
+        bool cur_needs_quoting = false;
         item_str.append(EscapeString(t[subrange_i].literal, escape_options,
-                                     &needs_quoting));
+                                     &cur_needs_quoting));
+        needs_quoting |= cur_needs_quoting;
       } else {
         // Don't escape this since we need to preserve the $.
         item_str.append("${");
@@ -185,8 +214,10 @@ void FileTemplate::WriteWithNinjaExpansions(std::ostream& out) const {
       }
     }
 
-    if (needs_quoting) {
-      // Need to shell quote the whole string.
+    if (needs_quoting || item_str.empty()) {
+      // Need to shell quote the whole string. We also need to quote empty
+      // strings or it would be impossible to pass "" as a command-line
+      // argument.
       out << '"' << item_str << '"';
     } else {
       out << item_str;
@@ -196,13 +227,15 @@ void FileTemplate::WriteWithNinjaExpansions(std::ostream& out) const {
 
 void FileTemplate::WriteNinjaVariablesForSubstitution(
     std::ostream& out,
-    const std::string& source,
+    const Settings* settings,
+    const SourceFile& source,
     const EscapeOptions& escape_options) const {
   for (int i = 1; i < Subrange::NUM_TYPES; i++) {
     if (types_required_[i]) {
       Subrange::Type type = static_cast<Subrange::Type>(i);
       out << "  " << GetNinjaVariableNameForType(type) << " = ";
-      EscapeStringToStream(out, GetSubstitution(source, type), escape_options);
+      EscapeStringToStream(out, GetSubstitution(settings, source, type),
+                           escape_options);
       out << std::endl;
     }
   }
@@ -217,6 +250,15 @@ const char* FileTemplate::GetNinjaVariableNameForType(Subrange::Type type) {
       return "source_name_part";
     case Subrange::FILE_PART:
       return "source_file_part";
+    case Subrange::SOURCE_DIR:
+      return "source_dir";
+    case Subrange::ROOT_RELATIVE_DIR:
+      return "source_root_rel_dir";
+    case Subrange::SOURCE_GEN_DIR:
+      return "source_gen_dir";
+    case Subrange::SOURCE_OUT_DIR:
+      return "source_out_dir";
+
     default:
       NOTREACHED();
   }
@@ -224,15 +266,47 @@ const char* FileTemplate::GetNinjaVariableNameForType(Subrange::Type type) {
 }
 
 // static
-std::string FileTemplate::GetSubstitution(const std::string& source,
+std::string FileTemplate::GetSubstitution(const Settings* settings,
+                                          const SourceFile& source,
                                           Subrange::Type type) {
   switch (type) {
     case Subrange::SOURCE:
-      return source;
+      if (source.is_system_absolute())
+        return source.value();
+      return RebaseSourceAbsolutePath(source.value(),
+                                      settings->build_settings()->build_dir());
+
     case Subrange::NAME_PART:
-      return FindFilenameNoExtension(&source).as_string();
+      return FindFilenameNoExtension(&source.value()).as_string();
+
     case Subrange::FILE_PART:
-      return FindFilename(&source).as_string();
+      return source.GetName();
+
+    case Subrange::SOURCE_DIR:
+      if (source.is_system_absolute())
+        return DirectoryWithNoLastSlash(source.GetDir());
+      return RebaseSourceAbsolutePath(
+          DirectoryWithNoLastSlash(source.GetDir()),
+          settings->build_settings()->build_dir());
+
+    case Subrange::ROOT_RELATIVE_DIR:
+      if (source.is_system_absolute())
+        return DirectoryWithNoLastSlash(source.GetDir());
+      return RebaseSourceAbsolutePath(
+          DirectoryWithNoLastSlash(source.GetDir()), SourceDir("//"));
+
+    case Subrange::SOURCE_GEN_DIR:
+      return RebaseSourceAbsolutePath(
+          DirectoryWithNoLastSlash(
+              GetGenDirForSourceDir(settings, source.GetDir())),
+          settings->build_settings()->build_dir());
+
+    case Subrange::SOURCE_OUT_DIR:
+      return RebaseSourceAbsolutePath(
+          DirectoryWithNoLastSlash(
+              GetOutputDirForSourceDir(settings, source.GetDir())),
+          settings->build_settings()->build_dir());
+
     default:
       NOTREACHED();
   }
@@ -275,30 +349,34 @@ void FileTemplate::ParseOneTemplateString(const std::string& str) {
           Subrange(Subrange::LITERAL, str.substr(cur, next - cur)));
     }
 
+    // Given the name of the string constant and enum for a template parameter,
+    // checks for it and stores it. Writing this as a function requires passing
+    // the entire state of this function as arguments, so this actually ends
+    // up being more clear.
+    #define IF_MATCH_THEN_STORE(const_name, enum_name) \
+        if (str.compare(next, arraysize(const_name) - 1, const_name) == 0) { \
+          t.container().push_back(Subrange(Subrange::enum_name)); \
+          types_required_[Subrange::enum_name] = true; \
+          has_substitutions_ = true; \
+          cur = next + arraysize(const_name) - 1; \
+        }
+
     // Decode the template param.
-    if (str.compare(next, arraysize(kSource) - 1, kSource) == 0) {
-      t.container().push_back(Subrange(Subrange::SOURCE));
-      types_required_[Subrange::SOURCE] = true;
-      has_substitutions_ = true;
-      cur = next + arraysize(kSource) - 1;
-    } else if (str.compare(next, arraysize(kSourceNamePart) - 1,
-                           kSourceNamePart) == 0) {
-      t.container().push_back(Subrange(Subrange::NAME_PART));
-      types_required_[Subrange::NAME_PART] = true;
-      has_substitutions_ = true;
-      cur = next + arraysize(kSourceNamePart) - 1;
-    } else if (str.compare(next, arraysize(kSourceFilePart) - 1,
-                           kSourceFilePart) == 0) {
-      t.container().push_back(Subrange(Subrange::FILE_PART));
-      types_required_[Subrange::FILE_PART] = true;
-      has_substitutions_ = true;
-      cur = next + arraysize(kSourceFilePart) - 1;
-    } else {
+    IF_MATCH_THEN_STORE(kSource, SOURCE)
+    else IF_MATCH_THEN_STORE(kSourceNamePart, NAME_PART)
+    else IF_MATCH_THEN_STORE(kSourceFilePart, FILE_PART)
+    else IF_MATCH_THEN_STORE(kSourceDir, SOURCE_DIR)
+    else IF_MATCH_THEN_STORE(kRootRelDir, ROOT_RELATIVE_DIR)
+    else IF_MATCH_THEN_STORE(kSourceGenDir, SOURCE_GEN_DIR)
+    else IF_MATCH_THEN_STORE(kSourceOutDir, SOURCE_OUT_DIR)
+    else {
       // If it's not a match, treat it like a one-char literal (this will be
       // rare, so it's not worth the bother to add to the previous literal) so
       // we can keep going.
       t.container().push_back(Subrange(Subrange::LITERAL, "{"));
       cur = next + 1;
     }
+
+    #undef IF_MATCH_THEN_STORE
   }
 }

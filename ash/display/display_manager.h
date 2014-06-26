@@ -17,7 +17,7 @@
 #include "ui/gfx/display.h"
 
 #if defined(OS_CHROMEOS)
-#include "chromeos/display/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #endif
 
 namespace gfx {
@@ -30,14 +30,13 @@ class Screen;
 namespace ash {
 class AcceleratorControllerTest;
 class DisplayController;
+class DisplayLayoutStore;
 class ScreenAsh;
 
 namespace test {
 class DisplayManagerTestApi;
 class SystemGestureEventFilterTest;
 }
-namespace internal {
-class DisplayLayoutStore;
 
 // DisplayManager maintains the current display configurations,
 // and notifies observers when configuration changes.
@@ -45,7 +44,7 @@ class DisplayLayoutStore;
 // TODO(oshima): Make this non internal.
 class ASH_EXPORT DisplayManager
 #if defined(OS_CHROMEOS)
-    : public chromeos::OutputConfigurator::SoftwareMirroringController
+    : public ui::DisplayConfigurator::SoftwareMirroringController
 #endif
       {
  public:
@@ -106,7 +105,7 @@ class ASH_EXPORT DisplayManager
 
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }
 
-  // When set to true, the MonitorManager calls OnDisplayBoundsChanged
+  // When set to true, the MonitorManager calls OnDisplayMetricsChanged
   // even if the display's bounds didn't change. Used to swap primary
   // display.
   void set_force_bounds_changed(bool force_bounds_changed) {
@@ -174,7 +173,8 @@ class ASH_EXPORT DisplayManager
                                gfx::Display::Rotation rotation,
                                float ui_scale,
                                const gfx::Insets* overscan_insets,
-                               const gfx::Size& resolution_in_pixels);
+                               const gfx::Size& resolution_in_pixels,
+                               ui::ColorCalibrationProfile color_profile);
 
   // Returns the display's selected mode.
   bool GetSelectedModeForDisplayId(int64 display_id,
@@ -187,6 +187,10 @@ class ASH_EXPORT DisplayManager
   // Returns an empty insets (0, 0, 0, 0) if no insets are specified for
   // the display.
   gfx::Insets GetOverscanInsets(int64 display_id) const;
+
+  // Sets the color calibration of the display to |profile|.
+  void SetColorCalibrationProfile(int64 display_id,
+                                  ui::ColorCalibrationProfile profile);
 
   // Called when display configuration has changed. The new display
   // configurations is passed as a vector of Display object, which
@@ -248,6 +252,7 @@ class ASH_EXPORT DisplayManager
   // SoftwareMirroringController override:
 #if defined(OS_CHROMEOS)
   virtual void SetSoftwareMirroring(bool enabled) OVERRIDE;
+  virtual bool SoftwareMirroringEnabled() const OVERRIDE;
 #endif
   bool software_mirroring_enabled() const {
     return second_display_mode_ == MIRRORING;
@@ -304,6 +309,9 @@ private:
   // a display.
   void InsertAndUpdateDisplayInfo(const DisplayInfo& new_info);
 
+  // Called when the display info is updated through InsertAndUpdateDisplayInfo.
+  void OnDisplayInfoUpdated(const DisplayInfo& display_info);
+
   // Creates a display object from the DisplayInfo for |display_id|.
   gfx::Display CreateDisplayFromDisplayInfoById(int64 display_id);
 
@@ -357,7 +365,6 @@ private:
   DISALLOW_COPY_AND_ASSIGN(DisplayManager);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_DISPLAY_MANAGER_H_

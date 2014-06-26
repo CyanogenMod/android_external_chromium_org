@@ -24,13 +24,12 @@ SharedWorkerMessageFilter::SharedWorkerMessageFilter(
     ResourceContext* resource_context,
     const WorkerStoragePartition& partition,
     MessagePortMessageFilter* message_port_message_filter)
-    : BrowserMessageFilter(
-          kFilteredMessageClasses, arraysize(kFilteredMessageClasses)),
+    : BrowserMessageFilter(kFilteredMessageClasses,
+                           arraysize(kFilteredMessageClasses)),
       render_process_id_(render_process_id),
       resource_context_(resource_context),
       partition_(partition),
       message_port_message_filter_(message_port_message_filter) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 }
 
 SharedWorkerMessageFilter::~SharedWorkerMessageFilter() {
@@ -42,10 +41,9 @@ void SharedWorkerMessageFilter::OnChannelClosing() {
       this);
 }
 
-bool SharedWorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
-                                                  bool* message_was_ok) {
+bool SharedWorkerMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(SharedWorkerMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(SharedWorkerMessageFilter, message)
     // Only sent from renderer for now, until we have nested workers.
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWorker, OnCreateWorker)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ForwardToWorker, OnForwardToWorker)
@@ -63,10 +61,11 @@ bool SharedWorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerConnected,
                         OnWorkerConnected)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
-    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_RequestFileSystemAccessSync,
+                        OnRequestFileSystemAccessSync)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -80,7 +79,12 @@ void SharedWorkerMessageFilter::OnCreateWorker(
   bool url_error = false;
   *route_id = GetNextRoutingID();
   SharedWorkerServiceImpl::GetInstance()->CreateWorker(
-      params, *route_id, this, resource_context_, partition_, &url_error);
+      params,
+      *route_id,
+      this,
+      resource_context_,
+      WorkerStoragePartitionId(partition_),
+      &url_error);
   if (url_error)
     *route_id = MSG_ROUTING_NONE;
 }
@@ -140,9 +144,10 @@ void SharedWorkerMessageFilter::OnAllowDatabase(
                                                         this);
 }
 
-void SharedWorkerMessageFilter::OnAllowFileSystem(int worker_route_id,
-                                                  const GURL& url,
-                                                  bool* result) {
+void SharedWorkerMessageFilter::OnRequestFileSystemAccessSync(
+    int worker_route_id,
+    const GURL& url,
+    bool* result) {
   SharedWorkerServiceImpl::GetInstance()->AllowFileSystem(worker_route_id,
                                                           url,
                                                           result,

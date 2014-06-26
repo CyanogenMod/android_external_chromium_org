@@ -38,6 +38,7 @@ namespace {
 const DWORD kBufferSize = 0;
 const int kTimeOutMilliseconds = 2000;
 const char kChromePipeNamePrefix[] = "\\\\.\\pipe\\chrome_remote_desktop.";
+const int kElevatedHostTimeoutSeconds = 300;
 #endif  // defined(OS_WIN)
 
 // redirect_uri to use when authenticating service accounts (service account
@@ -70,11 +71,13 @@ namespace remoting {
 
 Me2MeNativeMessagingHost::Me2MeNativeMessagingHost(
     bool needs_elevation,
+    intptr_t parent_window_handle,
     scoped_ptr<NativeMessagingChannel> channel,
     scoped_refptr<DaemonController> daemon_controller,
     scoped_refptr<protocol::PairingRegistry> pairing_registry,
     scoped_ptr<OAuthClient> oauth_client)
     : needs_elevation_(needs_elevation),
+      parent_window_handle_(parent_window_handle),
       channel_(channel.Pass()),
       daemon_controller_(daemon_controller),
       pairing_registry_(pairing_registry),
@@ -534,12 +537,12 @@ void Me2MeNativeMessagingHost::EnsureElevatedHostCreated() {
   // Create a security descriptor that gives full access to the caller and
   // denies access by anyone else.
   std::string security_descriptor = base::StringPrintf(
-      "O:%1$sG:%1$sD:(A;;GA;;;%1$s)", WideToASCII(user_sid).c_str());
+      "O:%1$sG:%1$sD:(A;;GA;;;%1$s)", base::UTF16ToASCII(user_sid).c_str());
 
   ScopedSd sd = ConvertSddlToSd(security_descriptor);
   if (!sd) {
-    LOG_GETLASTERROR(ERROR) << "Failed to create a security descriptor for the"
-                            << "Chromoting Me2Me native messaging host.";
+    PLOG(ERROR) << "Failed to create a security descriptor for the"
+                << "Chromoting Me2Me native messaging host.";
     OnError();
     return;
   }
@@ -564,8 +567,7 @@ void Me2MeNativeMessagingHost::EnsureElevatedHostCreated() {
       &security_attributes));
 
   if (!delegate_write_handle.IsValid()) {
-    LOG_GETLASTERROR(ERROR) <<
-        "Failed to create named pipe '" << input_pipe_name << "'";
+    PLOG(ERROR) << "Failed to create named pipe '" << input_pipe_name << "'";
     OnError();
     return;
   }
@@ -585,49 +587,52 @@ void Me2MeNativeMessagingHost::EnsureElevatedHostCreated() {
       &security_attributes));
 
   if (!delegate_read_handle.IsValid()) {
-    LOG_GETLASTERROR(ERROR) <<
-        "Failed to create named pipe '" << output_pipe_name << "'";
+    PLOG(ERROR) << "Failed to create named pipe '" << output_pipe_name << "'";
     OnError();
     return;
   }
 
-  const CommandLine* current_command_line = CommandLine::ForCurrentProcess();
-  const CommandLine::SwitchMap& switches = current_command_line->GetSwitches();
-  CommandLine::StringVector args = current_command_line->GetArgs();
+  const base::CommandLine* current_command_line =
+      base::CommandLine::ForCurrentProcess();
+  const base::CommandLine::SwitchMap& switches =
+      current_command_line->GetSwitches();
+  base::CommandLine::StringVector args = current_command_line->GetArgs();
 
   // Create the child process command line by copying switches from the current
   // command line.
-  CommandLine command_line(CommandLine::NO_PROGRAM);
+  base::CommandLine command_line(base::CommandLine::NO_PROGRAM);
   command_line.AppendSwitch(kElevatingSwitchName);
   command_line.AppendSwitchASCII(kInputSwitchName, input_pipe_name);
   command_line.AppendSwitchASCII(kOutputSwitchName, output_pipe_name);
 
   DCHECK(!current_command_line->HasSwitch(kElevatingSwitchName));
-  for (CommandLine::SwitchMap::const_iterator i = switches.begin();
+  for (base::CommandLine::SwitchMap::const_iterator i = switches.begin();
        i != switches.end(); ++i) {
       command_line.AppendSwitchNative(i->first, i->second);
   }
-  for (CommandLine::StringVector::const_iterator i = args.begin();
+  for (base::CommandLine::StringVector::const_iterator i = args.begin();
        i != args.end(); ++i) {
     command_line.AppendArgNative(*i);
   }
 
   // Get the name of the binary to launch.
   base::FilePath binary = current_command_line->GetProgram();
-  CommandLine::StringType parameters = command_line.GetCommandLineString();
+  base::CommandLine::StringType parameters =
+      command_line.GetCommandLineString();
 
   // Launch the child process requesting elevation.
   SHELLEXECUTEINFO info;
   memset(&info, 0, sizeof(info));
   info.cbSize = sizeof(info);
+  info.hwnd = reinterpret_cast<HWND>(parent_window_handle_);
   info.lpVerb = L"runas";
   info.lpFile = binary.value().c_str();
   info.lpParameters = parameters.c_str();
-  info.nShow = SW_SHOWNORMAL;
+  info.nShow = SW_HIDE;
 
   if (!ShellExecuteEx(&info)) {
     DWORD error = ::GetLastError();
-    LOG_GETLASTERROR(ERROR) << "Unable to launch '" << binary.value() << "'";
+    PLOG(ERROR) << "Unable to launch '" << binary.value() << "'";
     if (error != ERROR_CANCELLED) {
       OnError();
     }
@@ -637,8 +642,7 @@ void Me2MeNativeMessagingHost::EnsureElevatedHostCreated() {
   if (!::ConnectNamedPipe(delegate_write_handle.Get(), NULL)) {
     DWORD error = ::GetLastError();
     if (error != ERROR_PIPE_CONNECTED) {
-      LOG_GETLASTERROR(ERROR) << "Unable to connect '"
-                              << input_pipe_name << "'";
+      PLOG(ERROR) << "Unable to connect '" << input_pipe_name << "'";
       OnError();
       return;
     }
@@ -647,8 +651,7 @@ void Me2MeNativeMessagingHost::EnsureElevatedHostCreated() {
   if (!::ConnectNamedPipe(delegate_read_handle.Get(), NULL)) {
     DWORD error = ::GetLastError();
     if (error != ERROR_PIPE_CONNECTED) {
-      LOG_GETLASTERROR(ERROR) << "Unable to connect '"
-                              << output_pipe_name << "'";
+      PLOG(ERROR) << "Unable to connect '" << output_pipe_name << "'";
       OnError();
       return;
     }
@@ -657,11 +660,16 @@ void Me2MeNativeMessagingHost::EnsureElevatedHostCreated() {
   // Set up the native messaging channel to talk to the elevated host.
   // Note that input for the elevate channel is output forthe elevated host.
   elevated_channel_.reset(new NativeMessagingChannel(
-      delegate_read_handle.Take(), delegate_write_handle.Take()));
+      base::File(delegate_read_handle.Take()),
+      base::File(delegate_write_handle.Take())));
 
   elevated_channel_->Start(
       base::Bind(&Me2MeNativeMessagingHost::ProcessDelegateResponse, weak_ptr_),
       base::Bind(&Me2MeNativeMessagingHost::Stop, weak_ptr_));
+
+  elevated_host_timer_.Start(
+      FROM_HERE, base::TimeDelta::FromSeconds(kElevatedHostTimeoutSeconds),
+      this, &Me2MeNativeMessagingHost::DisconnectElevatedHost);
 }
 
 void Me2MeNativeMessagingHost::ProcessDelegateResponse(
@@ -670,6 +678,13 @@ void Me2MeNativeMessagingHost::ProcessDelegateResponse(
 
   // Simply pass along the response from the elevated host to the client.
   channel_->SendMessage(message.Pass());
+}
+
+void Me2MeNativeMessagingHost::DisconnectElevatedHost() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  // This will send an EOF to the elevated host, triggering its shutdown.
+  elevated_channel_.reset();
 }
 
 #else  // defined(OS_WIN)

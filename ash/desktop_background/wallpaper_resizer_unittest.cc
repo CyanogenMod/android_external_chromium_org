@@ -10,7 +10,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/image/image_skia_rep.h"
 
-using aura::RootWindow;
 using aura::Window;
 
 namespace {
@@ -56,7 +55,6 @@ bool IsColor(const gfx::ImageSkia& image, const uint32_t expect) {
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 class WallpaperResizerTest : public testing::Test,
                              public WallpaperResizerObserver {
@@ -157,5 +155,4 @@ TEST_F(WallpaperResizerTest, ImageId) {
   EXPECT_EQ(WallpaperResizer::GetImageId(image), resizer.original_image_id());
 }
 
-}  // namespace internal
 }  // namespace ash

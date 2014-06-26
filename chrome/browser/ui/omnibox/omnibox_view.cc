@@ -11,11 +11,12 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "components/search_engines/template_url.h"
 #include "grit/generated_resources.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -23,10 +24,12 @@
 // static
 base::string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
   const base::string16 kJsPrefix(
-      base::ASCIIToUTF16(content::kJavaScriptScheme) + base::ASCIIToUTF16(":"));
+      base::ASCIIToUTF16(url::kJavaScriptScheme) + base::ASCIIToUTF16(":"));
   base::string16 out(text);
-  while (StartsWith(out, kJsPrefix, false))
-    TrimWhitespace(out.substr(kJsPrefix.length()), TRIM_LEADING, &out);
+  while (StartsWith(out, kJsPrefix, false)) {
+    base::TrimWhitespace(out.substr(kJsPrefix.length()), base::TRIM_LEADING,
+                         &out);
+  }
   return out;
 }
 
@@ -38,7 +41,7 @@ base::string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
   // trailing whitespace when making this determination.
   for (size_t i = 0; i < text.size(); ++i) {
     if (IsWhitespace(text[i]) && text[i] != '\n' && text[i] != '\r') {
-      const base::string16 collapsed = CollapseWhitespace(text, false);
+      const base::string16 collapsed = base::CollapseWhitespace(text, false);
       // If the user is pasting all-whitespace, paste a single space
       // rather than nothing, since pasting nothing feels broken.
       return collapsed.empty() ?
@@ -47,7 +50,7 @@ base::string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
   }
 
   // Otherwise, all whitespace is newlines; remove it entirely.
-  return StripJavascriptSchemas(CollapseWhitespace(text, true));
+  return StripJavascriptSchemas(base::CollapseWhitespace(text, true));
 }
 
 // static
@@ -84,16 +87,29 @@ base::string16 OmniboxView::GetClipboardText() {
 OmniboxView::~OmniboxView() {
 }
 
+void OmniboxView::HandleOriginChipMouseRelease() {
+  // Only hide if there isn't any current text in the Omnibox (e.g. search
+  // terms).
+  if (controller()->GetToolbarModel()->GetText().empty())
+    controller()->HideOriginChip();
+}
+
+void OmniboxView::OnDidKillFocus() {
+  if (chrome::ShouldDisplayOriginChip() && !model()->user_input_in_progress())
+    controller()->ShowOriginChip();
+}
+
 void OmniboxView::OpenMatch(const AutocompleteMatch& match,
                             WindowOpenDisposition disposition,
                             const GURL& alternate_nav_url,
                             const base::string16& pasted_text,
                             size_t selected_line) {
   // Invalid URLs such as chrome://history can end up here.
-  if (match.destination_url.is_valid() && model_) {
-    model_->OpenMatch(match, disposition, alternate_nav_url, pasted_text,
-                      selected_line);
-  }
+  if (!match.destination_url.is_valid() || !model_)
+    return;
+  model_->OpenMatch(
+      match, disposition, alternate_nav_url, pasted_text, selected_line);
+  OnMatchOpened(match, controller_->GetWebContents());
 }
 
 bool OmniboxView::IsEditingOrEmpty() const {
@@ -142,13 +158,22 @@ void OmniboxView::SetUserText(const base::string16& text,
 
 void OmniboxView::ShowURL() {
   SetFocus();
+  controller_->GetToolbarModel()->set_origin_chip_enabled(false);
   controller_->GetToolbarModel()->set_url_replacement_enabled(false);
   model_->UpdatePermanentText();
   RevertWithoutResettingSearchTermReplacement();
   SelectAll(true);
 }
 
+void OmniboxView::HideURL() {
+  controller_->GetToolbarModel()->set_origin_chip_enabled(true);
+  controller_->GetToolbarModel()->set_url_replacement_enabled(true);
+  model_->UpdatePermanentText();
+  RevertWithoutResettingSearchTermReplacement();
+}
+
 void OmniboxView::RevertAll() {
+  controller_->GetToolbarModel()->set_origin_chip_enabled(true);
   controller_->GetToolbarModel()->set_url_replacement_enabled(true);
   RevertWithoutResettingSearchTermReplacement();
 }
@@ -179,6 +204,10 @@ bool OmniboxView::IsIndicatingQueryRefinement() const {
   // The default implementation always returns false.  Mobile ports can override
   // this method and implement as needed.
   return false;
+}
+
+void OmniboxView::OnMatchOpened(const AutocompleteMatch& match,
+                                content::WebContents* web_contents) {
 }
 
 OmniboxView::OmniboxView(Profile* profile,

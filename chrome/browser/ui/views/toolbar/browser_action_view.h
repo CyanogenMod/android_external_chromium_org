@@ -54,12 +54,6 @@ class BrowserActionView : public views::View {
     // Called when a browser action becomes visible/hidden.
     virtual void OnBrowserActionVisibilityChanged() = 0;
 
-    // Returns relative position of a button inside BrowserActionView.
-    virtual gfx::Point GetViewContentOffset() const = 0;
-
-    virtual bool NeedToShowMultipleIconStates() const;
-    virtual bool NeedToShowTooltip() const;
-
    protected:
     virtual ~Delegate() {}
   };
@@ -76,12 +70,13 @@ class BrowserActionView : public views::View {
 
   // Overridden from views::View:
   virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  protected:
   // Overridden from views::View to paint the badge on top of children.
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
 
  private:
   // The Browser object this view is associated with.
@@ -111,6 +106,16 @@ class BrowserActionButton : public views::MenuButton,
                             public content::NotificationObserver,
                             public ExtensionActionIconFactory::Observer {
  public:
+  // The IconObserver will receive a notification when the button's icon has
+  // been updated.
+  class IconObserver {
+   public:
+    virtual void OnIconUpdated(const gfx::ImageSkia& icon) = 0;
+
+   protected:
+    virtual ~IconObserver() {}
+  };
+
   BrowserActionButton(const extensions::Extension* extension,
                       Browser* browser_,
                       BrowserActionView::Delegate* delegate);
@@ -121,6 +126,10 @@ class BrowserActionButton : public views::MenuButton,
   ExtensionAction* browser_action() const { return browser_action_; }
   const extensions::Extension* extension() { return extension_; }
 
+  void set_icon_observer(IconObserver* icon_observer) {
+    icon_observer_ = icon_observer;
+  }
+
   // Called to update the display to match the browser action's state.
   void UpdateState();
 
@@ -130,7 +139,7 @@ class BrowserActionButton : public views::MenuButton,
 
   // Overridden from views::View:
   virtual bool CanHandleAccelerators() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Overridden from views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
@@ -149,7 +158,7 @@ class BrowserActionButton : public views::MenuButton,
   // Overriden from ExtensionActionIconFactory::Observer.
   virtual void OnIconUpdated() OVERRIDE;
 
-  // MenuButton behavior overrides.  These methods all default to TextButton
+  // MenuButton behavior overrides.  These methods all default to LabelButton
   // behavior unless this button is a popup.  In that case, it uses MenuButton
   // behavior.  MenuButton has the notion of a child popup being shown where the
   // button will stay in the pushed state until the "menu" (a popup in this
@@ -176,6 +185,9 @@ class BrowserActionButton : public views::MenuButton,
 
   // Returns icon factory for the button.
   ExtensionActionIconFactory& icon_factory() { return icon_factory_; }
+
+  // Gets the icon of this button and its badge.
+  gfx::ImageSkia GetIconWithBadge();
 
   // Returns button icon so it can be accessed during tests.
   gfx::ImageSkia GetIconForTest();
@@ -229,6 +241,10 @@ class BrowserActionButton : public views::MenuButton,
 
   // Responsible for running the menu.
   scoped_ptr<views::MenuRunner> menu_runner_;
+
+  // The observer that we need to notify when the icon of the button has been
+  // updated.
+  IconObserver* icon_observer_;
 
   friend class base::DeleteHelper<BrowserActionButton>;
 

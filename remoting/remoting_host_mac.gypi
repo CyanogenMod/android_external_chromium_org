@@ -34,10 +34,16 @@
           'mac_bundle': 1,
           'variables': {
             'bundle_id': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_UNINSTALLER_BUNDLE_ID@")',
+            'host_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_HOST_BUNDLE_NAME@")',
+            'prefpane_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_PREFPANE_BUNDLE_NAME@")',
           },
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
             'remoting_infoplist_strings',
+          ],
+          'defines': [
+            'HOST_BUNDLE_NAME="<(host_bundle_name)"',
+            'PREFPANE_BUNDLE_NAME="<(prefpane_bundle_name)"',
           ],
           'sources': [
             'host/constants_mac.cc',
@@ -82,10 +88,14 @@
             'remoting_native_messaging_manifests',
           ],
           'variables': {
-            'host_name': '<!(python <(version_py_path) -f <(branding_path) -t "@HOST_PLUGIN_FILE_NAME@")',
+            'host_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_HOST_PACKAGE_NAME@")',
             'host_service_name': '<!(python <(version_py_path) -f <(branding_path) -t "@DAEMON_FILE_NAME@")',
             'host_uninstaller_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_UNINSTALLER_NAME@")',
             'bundle_prefix': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_UNINSTALLER_BUNDLE_PREFIX@")',
+            'me2me_host_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_HOST_BUNDLE_NAME@")',
+            'prefpane_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_PREFPANE_BUNDLE_NAME@")',
+            'native_messaging_host_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_NATIVE_MESSAGING_HOST_BUNDLE_NAME@")',
+            'remote_assistance_host_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_REMOTE_ASSISTANCE_HOST_BUNDLE_NAME@")',
           },
           'actions': [
             {
@@ -100,20 +110,17 @@
               'generated_files': [
                 '<(PRODUCT_DIR)/remoting_host_prefpane.prefPane',
                 '<(PRODUCT_DIR)/remoting_me2me_host.app',
-                '<(PRODUCT_DIR)/remoting_native_messaging_host',
-                '<(PRODUCT_DIR)/remoting_it2me_native_messaging_host',
+                '<(PRODUCT_DIR)/native_messaging_host.app',
+                '<(PRODUCT_DIR)/remote_assistance_host.app',
                 '<(PRODUCT_DIR)/remoting_host_uninstaller.app',
                 '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_desktop.json',
                 '<(PRODUCT_DIR)/remoting/com.google.chrome.remote_assistance.json',
               ],
               'generated_files_dst': [
-                'PreferencePanes/org.chromium.chromoting.prefPane',
-
-                # TODO(sergeyu): Rename org.chromium.chromoting.me2me_host. e.g.
-                # to com.google.chrome.remote-desktop .
-                'PrivilegedHelperTools/org.chromium.chromoting.me2me_host.app',
-                'PrivilegedHelperTools/org.chromium.chromoting.me2me_host.app/Contents/MacOS/native_messaging_host',
-                'PrivilegedHelperTools/org.chromium.chromoting.me2me_host.app/Contents/MacOS/remote_assistance_host',
+                'PreferencePanes/<(prefpane_bundle_name)',
+                'PrivilegedHelperTools/<(me2me_host_bundle_name)',
+                'PrivilegedHelperTools/<(me2me_host_bundle_name)/Contents/MacOS/<(native_messaging_host_bundle_name)',
+                'PrivilegedHelperTools/<(me2me_host_bundle_name)/Contents/MacOS/<(remote_assistance_host_bundle_name)',
                 'Applications/<(host_uninstaller_name).app',
                 'Config/com.google.chrome.remote_desktop.json',
                 'Config/com.google.chrome.remote_assistance.json',
@@ -127,6 +134,7 @@
                 'VERSION_MAJOR=<(version_major)',
                 'VERSION_MINOR=<(version_minor)',
                 'HOST_NAME=<(host_name)',
+                'HOST_BUNDLE_NAME=<(me2me_host_bundle_name)',
                 'HOST_SERVICE_NAME=<(host_service_name)',
                 'HOST_UNINSTALLER_NAME=<(host_uninstaller_name)',
                 'HOST_PKG=<(host_name)',
@@ -137,6 +145,9 @@
                 'BUNDLE_ID_HOST_UNINSTALLER=<(bundle_prefix).<(host_uninstaller_name_nospace)',
                 'DMG_VOLUME_NAME=<(host_name) <(version_full)',
                 'DMG_FILE_NAME=<!(echo <(host_name) | sed "s/ //g")-<(version_full)',
+                'NATIVE_MESSAGING_HOST_BUNDLE_NAME=<(native_messaging_host_bundle_name)',
+                'REMOTE_ASSISTANCE_HOST_BUNDLE_NAME=<(remote_assistance_host_bundle_name)',
+                'PREFPANE_BUNDLE_NAME=<(prefpane_bundle_name)',
               ],
               'inputs': [
                 'host/installer/build-installer-archive.py',
@@ -164,11 +175,18 @@
           'type': 'loadable_module',
           'mac_bundle': 1,
           'product_extension': 'prefPane',
-          'defines': [
-            'JSON_USE_EXCEPTION=0',
-          ],
+          'variables': {
+            'bundle_id': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_PREFPANE_BUNDLE_ID@")',
+            'host_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_HOST_BUNDLE_NAME@")',
+            'prefpane_bundle_name': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_PREFPANE_BUNDLE_NAME@")',
+          },
           'dependencies': [
             'remoting_infoplist_strings',
+          ],
+          'defines': [
+            'HOST_BUNDLE_NAME="<(host_bundle_name)"',
+            'PREFPANE_BUNDLE_NAME="<(prefpane_bundle_name)"',
+            'JSON_USE_EXCEPTION=0',
           ],
           'include_dirs': [
             '../third_party/jsoncpp/overrides/include/',
@@ -204,9 +222,6 @@
               '$(SDKROOT)/System/Library/Frameworks/PreferencePanes.framework',
               '$(SDKROOT)/System/Library/Frameworks/Security.framework',
             ],
-          },
-          'variables': {
-            'bundle_id': '<!(python <(version_py_path) -f <(branding_path) -t "@MAC_PREFPANE_BUNDLE_ID@")',
           },
           'xcode_settings': {
             'ARCHS': ['i386', 'x86_64'],

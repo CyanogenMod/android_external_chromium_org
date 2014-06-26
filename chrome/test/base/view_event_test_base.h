@@ -34,10 +34,8 @@ namespace gfx {
 class Size;
 }
 
-namespace views {
-namespace corewm {
+namespace wm {
 class WMState;
-}
 }
 
 // Base class for Views based tests that dispatch events.
@@ -86,6 +84,8 @@ class ViewEventTestBase : public views::WidgetDelegate,
   // loop.
   void Done();
 
+  static void SetUpTestCase();
+
   // Creates a window.
   virtual void SetUp() OVERRIDE;
 
@@ -118,7 +118,7 @@ class ViewEventTestBase : public views::WidgetDelegate,
   // Returns an empty Size. Subclasses that want a preferred size other than
   // that of the View returned by CreateContentsView should override this
   // appropriately.
-  virtual gfx::Size GetPreferredSize();
+  virtual gfx::Size GetPreferredSize() const;
 
   // Creates a task that calls the specified method back. The specified
   // method is called in such a way that if there are any test failures
@@ -156,7 +156,7 @@ class ViewEventTestBase : public views::WidgetDelegate,
 
 #if defined(USE_AURA)
   scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
-  scoped_ptr<views::corewm::WMState> wm_state_;
+  scoped_ptr<wm::WMState> wm_state_;
 #endif
 
   ChromeViewsDelegate views_delegate_;

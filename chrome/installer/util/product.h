@@ -14,7 +14,9 @@
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace installer {
 
@@ -40,7 +42,8 @@ class Product {
 
   void InitializeFromPreferences(const MasterPreferences& prefs);
 
-  void InitializeFromUninstallCommand(const CommandLine& uninstall_command);
+  void InitializeFromUninstallCommand(
+      const base::CommandLine& uninstall_command);
 
   BrowserDistribution* distribution() const {
     return distribution_;
@@ -78,16 +81,6 @@ class Product {
       return options_.erase(option) != 0;
   }
 
-  // Returns the path(s) to the directory that holds the user data (primary
-  // and, if applicable to |dist|, alternate).  This is always inside a user's
-  // local application data folder (e.g., "AppData\Local or "Local
-  // Settings\Application Data" in %USERPROFILE%). Note that these are the
-  // defaults and do not take into account that they can be overriden with a
-  // command line parameter.  |paths| may be empty on return, but is guaranteed
-  // not to contain empty paths otherwise. If more than one path is returned,
-  // they are guaranteed to be siblings.
-  void GetUserDataPaths(std::vector<base::FilePath>* paths) const;
-
   // Launches Chrome without waiting for it to exit.
   bool LaunchChrome(const base::FilePath& application_path) const;
 
@@ -98,7 +91,7 @@ class Product {
   // NOTE: The 'options' CommandLine object should only contain parameters.
   // The program part will be ignored.
   bool LaunchChromeAndWait(const base::FilePath& application_path,
-                           const CommandLine& options,
+                           const base::CommandLine& options,
                            int32* exit_code) const;
 
   // Sets the boolean MSI marker for this installation if set is true or clears
@@ -117,10 +110,10 @@ class Product {
   void AddComDllList(std::vector<base::FilePath>* com_dll_list) const;
 
   // See ProductOperations::AppendProductFlags.
-  void AppendProductFlags(CommandLine* command_line) const;
+  void AppendProductFlags(base::CommandLine* command_line) const;
 
   // See ProductOperations::AppendRenameFlags.
-  void AppendRenameFlags(CommandLine* command_line) const;
+  void AppendRenameFlags(base::CommandLine* command_line) const;
 
   // See Productoperations::SetChannelFlags.
   bool SetChannelFlags(bool set, ChannelInfo* channel_info) const;

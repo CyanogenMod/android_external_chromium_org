@@ -12,26 +12,28 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profiles_state.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/themes/theme_properties.h"
-#include "chrome/browser/ui/views/avatar_label.h"
-#include "chrome/browser/ui/views/avatar_menu_button.h"
 #include "chrome/browser/ui/views/frame/browser_frame.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_layout.h"
 #include "chrome/browser/ui/views/frame/opaque_browser_frame_view_platform_specific.h"
-#include "chrome/browser/ui/views/new_avatar_button.h"
+#include "chrome/browser/ui/views/profiles/avatar_label.h"
+#include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
+#include "chrome/browser/ui/views/profiles/new_avatar_button.h"
 #include "chrome/browser/ui/views/tab_icon_view.h"
 #include "chrome/browser/ui/views/tabs/tab_strip.h"
+#include "chrome/browser/ui/views/theme_image_mapper.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -76,9 +78,11 @@ const int kContentEdgeShadowThickness = 2;
 // The icon never shrinks below 16 px on a side.
 const int kIconMinimumSize = 16;
 
-// The top 3 px of the tabstrip is shadow; in maximized mode we push this off
-// the top of the screen so the tabs appear flush against the screen edge.
-const int kTabstripTopShadowThickness = 3;
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// The number of pixels to move the frame background image upwards when using
+// the GTK+ theme and the titlebar is condensed.
+const int kGTKThemeCondensedFrameTopInset = 15;
+#endif
 
 }  // namespace
 
@@ -98,32 +102,30 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
       frame_background_(new views::FrameBackground()) {
   SetLayoutManager(layout_);
 
-  if (OpaqueBrowserFrameViewLayout::ShouldAddDefaultCaptionButtons()) {
-    minimize_button_ = InitWindowCaptionButton(IDR_MINIMIZE,
-                                               IDR_MINIMIZE_H,
-                                               IDR_MINIMIZE_P,
-                                               IDR_MINIMIZE_BUTTON_MASK,
-                                               IDS_ACCNAME_MINIMIZE,
-                                               VIEW_ID_MINIMIZE_BUTTON);
-    maximize_button_ = InitWindowCaptionButton(IDR_MAXIMIZE,
-                                               IDR_MAXIMIZE_H,
-                                               IDR_MAXIMIZE_P,
-                                               IDR_MAXIMIZE_BUTTON_MASK,
-                                               IDS_ACCNAME_MAXIMIZE,
-                                               VIEW_ID_MAXIMIZE_BUTTON);
-    restore_button_ = InitWindowCaptionButton(IDR_RESTORE,
-                                              IDR_RESTORE_H,
-                                              IDR_RESTORE_P,
-                                              IDR_RESTORE_BUTTON_MASK,
-                                              IDS_ACCNAME_RESTORE,
-                                              VIEW_ID_RESTORE_BUTTON);
-    close_button_ = InitWindowCaptionButton(IDR_CLOSE,
-                                            IDR_CLOSE_H,
-                                            IDR_CLOSE_P,
-                                            IDR_CLOSE_BUTTON_MASK,
-                                            IDS_ACCNAME_CLOSE,
-                                            VIEW_ID_CLOSE_BUTTON);
-  }
+  minimize_button_ = InitWindowCaptionButton(IDR_MINIMIZE,
+                                             IDR_MINIMIZE_H,
+                                             IDR_MINIMIZE_P,
+                                             IDR_MINIMIZE_BUTTON_MASK,
+                                             IDS_ACCNAME_MINIMIZE,
+                                             VIEW_ID_MINIMIZE_BUTTON);
+  maximize_button_ = InitWindowCaptionButton(IDR_MAXIMIZE,
+                                             IDR_MAXIMIZE_H,
+                                             IDR_MAXIMIZE_P,
+                                             IDR_MAXIMIZE_BUTTON_MASK,
+                                             IDS_ACCNAME_MAXIMIZE,
+                                             VIEW_ID_MAXIMIZE_BUTTON);
+  restore_button_ = InitWindowCaptionButton(IDR_RESTORE,
+                                            IDR_RESTORE_H,
+                                            IDR_RESTORE_P,
+                                            IDR_RESTORE_BUTTON_MASK,
+                                            IDS_ACCNAME_RESTORE,
+                                            VIEW_ID_RESTORE_BUTTON);
+  close_button_ = InitWindowCaptionButton(IDR_CLOSE,
+                                          IDR_CLOSE_H,
+                                          IDR_CLOSE_P,
+                                          IDR_CLOSE_BUTTON_MASK,
+                                          IDS_ACCNAME_CLOSE,
+                                          VIEW_ID_CLOSE_BUTTON);
 
   // Initializing the TabIconView is expensive, so only do it if we need to.
   if (browser_view->ShouldShowWindowIcon()) {
@@ -139,15 +141,12 @@ OpaqueBrowserFrameView::OpaqueBrowserFrameView(BrowserFrame* frame,
       gfx::FontList(BrowserFrame::GetTitleFontList()));
   window_title_->SetVisible(browser_view->ShouldShowWindowTitle());
   window_title_->SetEnabledColor(SK_ColorWHITE);
-  // TODO(msw): Use a transparent background color as a workaround to use the
-  // gfx::Canvas::NO_SUBPIXEL_RENDERING flag and avoid some visual artifacts.
-  window_title_->SetBackgroundColor(0x00000000);
+  window_title_->set_subpixel_rendering_enabled(false);
   window_title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   window_title_->set_id(VIEW_ID_WINDOW_TITLE);
   AddChildView(window_title_);
 
-  if (browser_view->IsRegularOrGuestSession() &&
-      switches::IsNewProfileManagement())
+  if (browser_view->IsRegularOrGuestSession() && switches::IsNewAvatarMenu())
     UpdateNewStyleAvatarInfo(this, NewAvatarButton::THEMED_BUTTON);
   else
     UpdateAvatarInfo();
@@ -190,7 +189,7 @@ void OpaqueBrowserFrameView::UpdateThrobber(bool running) {
     window_icon_->Update();
 }
 
-gfx::Size OpaqueBrowserFrameView::GetMinimumSize() {
+gfx::Size OpaqueBrowserFrameView::GetMinimumSize() const {
   return layout_->GetMinimumSize(width());
 }
 
@@ -272,8 +271,6 @@ void OpaqueBrowserFrameView::GetWindowMask(const gfx::Size& size,
 }
 
 void OpaqueBrowserFrameView::ResetWindowControls() {
-  if (!OpaqueBrowserFrameViewLayout::ShouldAddDefaultCaptionButtons())
-    return;
   restore_button_->SetState(views::CustomButton::STATE_NORMAL);
   minimize_button_->SetState(views::CustomButton::STATE_NORMAL);
   maximize_button_->SetState(views::CustomButton::STATE_NORMAL);
@@ -327,31 +324,15 @@ bool OpaqueBrowserFrameView::HitTestRect(const gfx::Rect& rect) const {
     return tabstrip->IsRectInWindowCaption(rect_in_tabstrip_coords);
   }
 
-  // The window switcher button is to the right of the tabstrip but is
-  // part of the client view.
-  views::View* window_switcher_button =
-      browser_view()->window_switcher_button();
-  if (window_switcher_button && window_switcher_button->visible()) {
-    gfx::RectF rect_in_window_switcher_coords_f(rect);
-    View::ConvertRectToTarget(this, window_switcher_button,
-        &rect_in_window_switcher_coords_f);
-    gfx::Rect rect_in_window_switcher_coords = gfx::ToEnclosingRect(
-        rect_in_window_switcher_coords_f);
-
-    if (window_switcher_button->HitTestRect(rect_in_window_switcher_coords))
-      return false;
-  }
-
   // We claim |rect| because it is above the bottom of the tabstrip, but
-  // neither in the tabstrip nor in the window switcher button. In particular,
-  // the avatar label/button is left of the tabstrip and the window controls
-  // are right of the tabstrip.
+  // not in the tabstrip itself. In particular, the avatar label/button is left
+  // of the tabstrip and the window controls are right of the tabstrip.
   return true;
 }
 
 void OpaqueBrowserFrameView::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_TITLEBAR;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TITLE_BAR;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -359,16 +340,19 @@ void OpaqueBrowserFrameView::GetAccessibleState(
 
 void OpaqueBrowserFrameView::ButtonPressed(views::Button* sender,
                                            const ui::Event& event) {
-  if (sender == minimize_button_)
+  if (sender == minimize_button_) {
     frame()->Minimize();
-  else if (sender == maximize_button_)
+  } else if (sender == maximize_button_) {
     frame()->Maximize();
-  else if (sender == restore_button_)
+  } else if (sender == restore_button_) {
     frame()->Restore();
-  else if (sender == close_button_)
+  } else if (sender == close_button_) {
     frame()->Close();
-  else if (sender == new_avatar_button())
-    browser_view()->ShowAvatarBubbleFromAvatarButton();
+  } else if (sender == new_avatar_button()) {
+    browser_view()->ShowAvatarBubbleFromAvatarButton(
+        BrowserWindow::AVATAR_BUBBLE_MODE_DEFAULT,
+        signin::ManageAccountsParams());
+  }
 }
 
 void OpaqueBrowserFrameView::OnMenuButtonClicked(views::View* source,
@@ -378,7 +362,7 @@ void OpaqueBrowserFrameView::OnMenuButtonClicked(views::View* source,
   ignore_result(menu_runner.RunMenuAt(browser_view()->GetWidget(),
                                       window_icon_,
                                       window_icon_->GetBoundsInScreen(),
-                                      views::MenuItemView::TOPLEFT,
+                                      views::MENU_ANCHOR_TOPLEFT,
                                       ui::MENU_SOURCE_MOUSE,
                                       views::MenuRunner::HAS_MNEMONICS));
 #endif
@@ -414,10 +398,11 @@ void OpaqueBrowserFrameView::Observe(
   switch (type) {
     case chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED:
       if (browser_view() ->IsRegularOrGuestSession() &&
-          switches::IsNewProfileManagement())
+          switches::IsNewAvatarMenu()) {
         UpdateNewStyleAvatarInfo(this, NewAvatarButton::THEMED_BUTTON);
-      else
+      } else {
         UpdateAvatarInfo();
+      }
       break;
     default:
       NOTREACHED() << "Got a notification we didn't register for!";
@@ -467,8 +452,6 @@ gfx::Size OpaqueBrowserFrameView::GetBrowserViewMinimumSize() const {
 }
 
 bool OpaqueBrowserFrameView::ShouldShowCaptionButtons() const {
-  if (!OpaqueBrowserFrameViewLayout::ShouldAddDefaultCaptionButtons())
-    return false;
   return ShouldShowWindowTitleBar();
 }
 
@@ -502,15 +485,6 @@ bool OpaqueBrowserFrameView::IsTabStripVisible() const {
 
 int OpaqueBrowserFrameView::GetTabStripHeight() const {
   return browser_view()->GetTabStripHeight();
-}
-
-int OpaqueBrowserFrameView::GetAdditionalReservedSpaceInTabStrip() const {
-  // We don't have the sysmenu buttons in Windows 8 metro mode. However there
-  // are buttons like the window switcher which are drawn in the non client
-  // are in the BrowserView. We need to ensure that the tab strip does not
-  // draw on the window switcher button.
-  views::View* button = browser_view()->window_switcher_button();
-  return button ? button->width() : 0;
 }
 
 gfx::Size OpaqueBrowserFrameView::GetTabstripPreferredSize() const {
@@ -632,19 +606,19 @@ void OpaqueBrowserFrameView::PaintRestoredFrameBorder(gfx::Canvas* canvas) {
 }
 
 void OpaqueBrowserFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
+  ui::ThemeProvider* tp = GetThemeProvider();
   frame_background_->set_frame_color(GetFrameColor());
   frame_background_->set_theme_image(GetFrameImage());
   frame_background_->set_theme_overlay_image(GetFrameOverlayImage());
   frame_background_->set_top_area_height(GetTopAreaHeight());
-
-  // Theme frame must be aligned with the tabstrip as if we were
-  // in restored mode.  Note that the top of the tabstrip is
-  // kTabstripTopShadowThickness px off the top of the screen.
-  int restored_tabstrip_top_inset = 0;
-  if (browser_view()->IsTabStripVisible())
-    restored_tabstrip_top_inset = layout_->GetTabStripInsetsTop(true);
-  frame_background_->set_theme_background_y(
-      -restored_tabstrip_top_inset - kTabstripTopShadowThickness);
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // The window manager typically shows a gradient in the native title bar (when
+  // the system title bar pref is set, or when maximized on Ubuntu). Hide the
+  // gradient in the tab strip (by shifting it up vertically) to avoid a
+  // double-gradient effect.
+  if (tp->UsingSystemTheme())
+    frame_background_->set_maximized_top_inset(kGTKThemeCondensedFrameTopInset);
+#endif
 
   frame_background_->PaintMaximized(canvas, this);
 
@@ -653,8 +627,7 @@ void OpaqueBrowserFrameView::PaintMaximizedFrameBorder(gfx::Canvas* canvas) {
     // There's no toolbar to edge the frame border, so we need to draw a bottom
     // edge.  The graphic we use for this has a built in client edge, so we clip
     // it off the bottom.
-    gfx::ImageSkia* top_center =
-        GetThemeProvider()->GetImageSkiaNamed(IDR_APP_TOP_CENTER);
+    gfx::ImageSkia* top_center = tp->GetImageSkiaNamed(IDR_APP_TOP_CENTER);
     int edge_height = top_center->height() - kClientEdgeThickness;
     canvas->TileImageInt(*top_center, 0,
         frame()->client_view()->y() - edge_height, width(), edge_height);
@@ -783,8 +756,14 @@ void OpaqueBrowserFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
     // client edge filled rects start there or at the bottom of the toolbar,
     // whichever is shorter.
     gfx::Rect toolbar_bounds(browser_view()->GetToolbarBounds());
-    image_top += toolbar_bounds.y() +
-        tp->GetImageSkiaNamed(IDR_CONTENT_TOP_LEFT_CORNER)->height();
+
+    gfx::ImageSkia* content_top_left_corner =
+        tp->GetImageSkiaNamed(IDR_CONTENT_TOP_LEFT_CORNER);
+    // TODO(oshima): Sanity checks for crbug.com/374273. Remove when it's fixed.
+    CHECK(content_top_left_corner);
+    CHECK(!content_top_left_corner->isNull());
+
+    image_top += toolbar_bounds.y() + content_top_left_corner->height();
     client_area_top = std::min(image_top,
         client_area_top + toolbar_bounds.bottom() - kClientEdgeThickness);
   } else if (!browser_view()->IsTabStripVisible()) {
@@ -866,7 +845,7 @@ SkColor OpaqueBrowserFrameView::GetFrameColor() const {
   }
 
   if (browser_view()->IsBrowserTypeNormal() ||
-      platform_observer_->IsUsingNativeTheme()) {
+      platform_observer_->IsUsingSystemTheme()) {
     return GetThemeProvider()->GetColor(color_id);
   }
 
@@ -896,15 +875,18 @@ gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameImage() const {
         IDR_THEME_FRAME_INCOGNITO_INACTIVE : IDR_THEME_FRAME_INACTIVE;
   }
 
-  if (platform_observer_->IsUsingNativeTheme()) {
-    // We want to use theme images provided by the platform theme when enabled,
+  if (platform_observer_->IsUsingSystemTheme()) {
+    // We want to use theme images provided by the system theme when enabled,
     // even if we are an app or popup window.
     return GetThemeProvider()->GetImageSkiaNamed(resource_id);
   }
 
   // Otherwise, never theme app and popup windows.
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  return rb.GetImageSkiaNamed(resource_id);
+  return rb.GetImageSkiaNamed(chrome::MapThemeImage(
+      chrome::GetHostDesktopTypeForNativeWindow(
+          browser_view()->GetNativeWindow()),
+      resource_id));
 }
 
 gfx::ImageSkia* OpaqueBrowserFrameView::GetFrameOverlayImage() const {

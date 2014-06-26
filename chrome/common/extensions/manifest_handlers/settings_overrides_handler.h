@@ -11,6 +11,12 @@
 
 namespace extensions {
 
+enum SettingsApiOverrideType {
+  BUBBLE_TYPE_HOME_PAGE = 0,
+  BUBBLE_TYPE_SEARCH_ENGINE,
+  BUBBLE_TYPE_STARTUP_PAGES,
+};
+
 class ManifestPermission;
 
 // SettingsOverride is associated with "chrome_settings_overrides" manifest key.
@@ -22,19 +28,10 @@ struct SettingsOverrides : public Extension::ManifestData {
 
   static const SettingsOverrides* Get(const Extension* extension);
 
-  static bool RemovesBookmarkButton(
-      const SettingsOverrides& settings_overrides);
-  static bool RemovesBookmarkShortcut(
-      const SettingsOverrides& settings_overrides);
-
-  scoped_ptr<api::manifest_types::ChromeSettingsOverrides::Bookmarks_ui>
-      bookmarks_ui;
   scoped_ptr<api::manifest_types::ChromeSettingsOverrides::Search_provider>
       search_engine;
   scoped_ptr<GURL> homepage;
   std::vector<GURL> startup_pages;
-
-  scoped_ptr<ManifestPermission> manifest_permission;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SettingsOverrides);
@@ -46,17 +43,8 @@ class SettingsOverridesHandler : public ManifestHandler {
   virtual ~SettingsOverridesHandler();
 
   virtual bool Parse(Extension* extension, base::string16* error) OVERRIDE;
-  virtual bool Validate(const Extension* extension,
-                        std::string* error,
-                        std::vector<InstallWarning>* warnings) const OVERRIDE;
-
-  virtual ManifestPermission* CreatePermission() OVERRIDE;
-  virtual ManifestPermission* CreateInitialRequiredPermission(
-      const Extension* extension) OVERRIDE;
 
  private:
-  class ManifestPermissionImpl;
-
   virtual const std::vector<std::string> Keys() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(SettingsOverridesHandler);

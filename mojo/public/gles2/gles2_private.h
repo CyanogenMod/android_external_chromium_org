@@ -7,10 +7,10 @@
 
 #include <stdint.h>
 
-#include "mojo/public/gles2/gles2_export.h"
-#include "mojo/public/gles2/gles2_types.h"
-#include "mojo/public/system/async_waiter.h"
-#include "mojo/public/system/core_cpp.h"
+#include "mojo/public/c/environment/async_waiter.h"
+#include "mojo/public/c/gles2/gles2_export.h"
+#include "mojo/public/c/gles2/gles2_types.h"
+#include "mojo/public/cpp/system/core.h"
 
 namespace mojo {
 class GLES2Interface;
@@ -24,7 +24,7 @@ class MOJO_GLES2_EXPORT GLES2Support {
 
   static void Init(GLES2Support* gles2_support);
 
-  virtual void Initialize(MojoAsyncWaiter* async_waiter) = 0;
+  virtual void Initialize(const MojoAsyncWaiter* async_waiter) = 0;
   virtual void Terminate() = 0;
   virtual MojoGLES2Context CreateContext(
       MessagePipeHandle handle,

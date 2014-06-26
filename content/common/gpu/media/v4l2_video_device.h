@@ -9,17 +9,33 @@
 #ifndef CONTENT_COMMON_GPU_MEDIA_V4L2_VIDEO_DEVICE_H_
 #define CONTENT_COMMON_GPU_MEDIA_V4L2_VIDEO_DEVICE_H_
 
+#include "media/base/video_decoder_config.h"
+#include "media/base/video_frame.h"
+#include "ui/gfx/size.h"
+#include "ui/gl/gl_bindings.h"
+
 namespace content {
 
 class V4L2Device {
  public:
-  V4L2Device();
+  // Utility format conversion functions
+  static media::VideoFrame::Format V4L2PixFmtToVideoFrameFormat(uint32 format);
+  static uint32 VideoFrameFormatToV4L2PixFmt(media::VideoFrame::Format format);
+  static uint32 VideoCodecProfileToV4L2PixFmt(media::VideoCodecProfile profile);
+  // Convert format requirements requested by a V4L2 device to gfx::Size.
+  static gfx::Size CodedSizeFromV4L2Format(struct v4l2_format format);
+
   virtual ~V4L2Device();
 
-  // Tries to create and initialize an appropriate V4L2Device object for the
-  // current platform and returns a scoped_ptr<V4L2Device> on success else
-  // returns NULL.
-  static scoped_ptr<V4L2Device> Create();
+  enum Type {
+    kDecoder,
+    kEncoder,
+    kImageProcessor,
+  };
+
+  // Creates and initializes an appropriate V4L2Device of |type| for the
+  // current platform and returns a scoped_ptr<V4L2Device> on success, or NULL.
+  static scoped_ptr<V4L2Device> Create(Type type);
 
   // Parameters and return value are the same as for the standard ioctl() system
   // call.
@@ -50,7 +66,37 @@ class V4L2Device {
                      int flags,
                      unsigned int offset) = 0;
   virtual void Munmap(void* addr, unsigned int len) = 0;
+
+  // Initializes the V4L2Device to operate as a device of |type|.
+  // Returns true on success.
+  virtual bool Initialize() = 0;
+
+  // Creates an EGLImageKHR since each V4L2Device may use a different method of
+  // acquiring one and associating it to the given texture. The texture_id is
+  // used to bind the texture to the returned EGLImageKHR. buffer_index can be
+  // used to associate the returned EGLImageKHR by the underlying V4L2Device
+  // implementation.
+  virtual EGLImageKHR CreateEGLImage(EGLDisplay egl_display,
+                                     EGLContext egl_context,
+                                     GLuint texture_id,
+                                     gfx::Size frame_buffer_size,
+                                     unsigned int buffer_index,
+                                     size_t planes_count) = 0;
+
+  // Destroys the EGLImageKHR.
+  virtual EGLBoolean DestroyEGLImage(EGLDisplay egl_display,
+                                     EGLImageKHR egl_image) = 0;
+
+  // Returns the supported texture target for the V4L2Device.
+  virtual GLenum GetTextureTarget() = 0;
+
+  // Returns the preferred V4L2 input format or 0 if don't care.
+  virtual uint32 PreferredInputFormat() = 0;
+
+  // Returns the preferred V4L2 output format or 0 if don't care.
+  virtual uint32 PreferredOutputFormat() = 0;
 };
+
 }  //  namespace content
 
 #endif  //  CONTENT_COMMON_GPU_MEDIA_V4L2_VIDEO_DEVICE_H_

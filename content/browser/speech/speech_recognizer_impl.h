@@ -13,9 +13,11 @@
 #include "content/public/common/speech_recognition_error.h"
 #include "content/public/common/speech_recognition_result.h"
 #include "media/audio/audio_input_controller.h"
+#include "media/audio/audio_logging.h"
 #include "net/url_request/url_request_context_getter.h"
 
 namespace media {
+class AudioBus;
 class AudioManager;
 }
 
@@ -129,9 +131,12 @@ class CONTENT_EXPORT SpeechRecognizerImpl
   // AudioInputController::EventHandler methods.
   virtual void OnCreated(media::AudioInputController* controller) OVERRIDE {}
   virtual void OnRecording(media::AudioInputController* controller) OVERRIDE {}
-  virtual void OnError(media::AudioInputController* controller) OVERRIDE;
+  virtual void OnError(media::AudioInputController* controller,
+      media::AudioInputController::ErrorCode error_code) OVERRIDE;
   virtual void OnData(media::AudioInputController* controller,
-                      const uint8* data, uint32 size) OVERRIDE;
+                      const media::AudioBus* data) OVERRIDE;
+  virtual void OnLog(media::AudioInputController* controller,
+                     const std::string& message) OVERRIDE {}
 
   // SpeechRecognitionEngineDelegate methods.
   virtual void OnSpeechRecognitionEngineResults(
@@ -144,6 +149,7 @@ class CONTENT_EXPORT SpeechRecognizerImpl
   scoped_ptr<SpeechRecognitionEngine> recognition_engine_;
   Endpointer endpointer_;
   scoped_refptr<media::AudioInputController> audio_controller_;
+  scoped_ptr<media::AudioLog> audio_log_;
   int num_samples_recorded_;
   float audio_level_;
   bool is_dispatching_event_;

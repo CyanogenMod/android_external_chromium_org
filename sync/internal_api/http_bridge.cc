@@ -10,14 +10,13 @@
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/cookie_monster.h"
-#include "net/dns/host_resolver.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
 #include "net/http/http_response_headers.h"
-#include "net/proxy/proxy_service.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
+#include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_status.h"
 #include "sync/internal_api/public/base/cancelation_signal.h"
 
@@ -124,7 +123,8 @@ HttpBridge::RequestContext::RequestContext(
         network_task_runner,
     const std::string& user_agent)
     : baseline_context_(baseline_context),
-      network_task_runner_(network_task_runner) {
+      network_task_runner_(network_task_runner),
+      job_factory_(new net::URLRequestJobFactoryImpl()) {
   DCHECK(!user_agent.empty());
 
   // Create empty, in-memory cookie store.
@@ -134,6 +134,9 @@ HttpBridge::RequestContext::RequestContext(
   set_host_resolver(baseline_context->host_resolver());
   set_proxy_service(baseline_context->proxy_service());
   set_ssl_config_service(baseline_context->ssl_config_service());
+
+  // Use its own job factory, which only supports http and https.
+  set_job_factory(job_factory_.get());
 
   // We want to share the HTTP session data with the network layer factory,
   // which includes auth_cache for proxies.
@@ -198,31 +201,34 @@ void HttpBridge::SetExtraRequestHeaders(const char * headers) {
 }
 
 void HttpBridge::SetURL(const char* url, int port) {
+#if DCHECK_IS_ON
   DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
-  if (DCHECK_IS_ON()) {
+  {
     base::AutoLock lock(fetch_state_lock_);
     DCHECK(!fetch_state_.request_completed);
   }
   DCHECK(url_for_request_.is_empty())
       << "HttpBridge::SetURL called more than once?!";
+#endif
   GURL temp(url);
   GURL::Replacements replacements;
   std::string port_str = base::IntToString(port);
-  replacements.SetPort(port_str.c_str(),
-                       url_parse::Component(0, port_str.length()));
+  replacements.SetPort(port_str.c_str(), url::Component(0, port_str.length()));
   url_for_request_ = temp.ReplaceComponents(replacements);
 }
 
 void HttpBridge::SetPostPayload(const char* content_type,
                                 int content_length,
                                 const char* content) {
+#if DCHECK_IS_ON
   DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
-  if (DCHECK_IS_ON()) {
+  {
     base::AutoLock lock(fetch_state_lock_);
     DCHECK(!fetch_state_.request_completed);
   }
   DCHECK(content_type_.empty()) << "Bridge payload already set.";
   DCHECK_GE(content_length, 0) << "Content length < 0";
+#endif
   content_type_ = content_type;
   if (!content || (content_length == 0)) {
     DCHECK_EQ(content_length, 0);
@@ -235,13 +241,15 @@ void HttpBridge::SetPostPayload(const char* content_type,
 }
 
 bool HttpBridge::MakeSynchronousPost(int* error_code, int* response_code) {
+#if DCHECK_IS_ON
   DCHECK_EQ(base::MessageLoop::current(), created_on_loop_);
-  if (DCHECK_IS_ON()) {
+  {
     base::AutoLock lock(fetch_state_lock_);
     DCHECK(!fetch_state_.request_completed);
   }
   DCHECK(url_for_request_.is_valid()) << "Invalid URL for request";
   DCHECK(!content_type_.empty()) << "Payload not set";
+#endif
 
   if (!network_task_runner_->PostTask(
           FROM_HERE,

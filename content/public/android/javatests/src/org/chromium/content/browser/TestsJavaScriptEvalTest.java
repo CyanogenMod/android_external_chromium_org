@@ -9,7 +9,6 @@ import android.test.suitebuilder.annotation.LargeTest;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content_shell_apk.ContentShellTestBase;
 
 public class TestsJavaScriptEvalTest extends ContentShellTestBase {
@@ -33,18 +32,15 @@ public class TestsJavaScriptEvalTest extends ContentShellTestBase {
         launchContentShellWithUrl(JSTEST_URL);
         assertTrue("Page failed to load", waitForActiveShellToBeDoneLoading());
 
-        final ContentView view = getActivity().getActiveContentView();
-        final TestCallbackHelperContainer viewClient =
-                new TestCallbackHelperContainer(view);
-
+        final ContentViewCore contentViewCore = getContentViewCore();
         for (int i = 0; i < 30; ++i) {
             for (int j = 0; j < 10; ++j) {
                 // Start evaluation of a JavaScript script -- we don't need a result.
-                view.evaluateJavaScript("foobar();");
+                contentViewCore.evaluateJavaScript("foobar();", null);
             }
             // DOMUtils does need to evaluate a JavaScript and get its result to get DOM bounds.
             assertNotNull("Failed to get bounds",
-                    DOMUtils.getNodeBounds(view, viewClient, "test"));
+                    DOMUtils.getNodeBounds(contentViewCore, "test"));
         }
     }
 }

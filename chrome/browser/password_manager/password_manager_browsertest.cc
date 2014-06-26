@@ -7,22 +7,25 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/password_manager/chrome_password_manager_client.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/password_manager/test_password_store_service.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/passwords/manage_passwords_ui_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/common/chrome_version_info.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_manager.h"
 #include "components/password_manager/core/browser/test_password_store.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
+#include "components/password_manager/core/common/password_manager_switches.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -31,7 +34,9 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/keycodes/keyboard_codes.h"
+#include "ui/gfx/geometry/point.h"
 
 
 // NavigationObserver ---------------------------------------------------------
@@ -40,8 +45,8 @@ namespace {
 
 // Observer that waits for navigation to complete and for the password infobar
 // to be shown.
-class NavigationObserver : public content::NotificationObserver,
-                           public content::WebContentsObserver {
+class NavigationObserver : public content::WebContentsObserver,
+                           public infobars::InfoBarManager::Observer {
  public:
   explicit NavigationObserver(content::WebContents* web_contents)
       : content::WebContentsObserver(web_contents),
@@ -50,44 +55,19 @@ class NavigationObserver : public content::NotificationObserver,
         infobar_removed_(false),
         should_automatically_accept_infobar_(true),
         infobar_service_(InfoBarService::FromWebContents(web_contents)) {
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
-                   content::Source<InfoBarService>(infobar_service_));
-    registrar_.Add(this,
-                   chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED,
-                   content::Source<InfoBarService>(infobar_service_));
+    infobar_service_->AddObserver(this);
   }
 
-  virtual ~NavigationObserver() {}
+  virtual ~NavigationObserver() {
+    if (infobar_service_)
+      infobar_service_->RemoveObserver(this);
+  }
 
   // Normally Wait() will not return until a main frame navigation occurs.
   // If a path is set, Wait() will return after this path has been seen,
   // regardless of the frame that navigated. Useful for multi-frame pages.
   void SetPathToWaitFor(const std::string& path) {
     wait_for_path_ = path;
-  }
-
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    switch (type) {
-      case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED:
-        if (should_automatically_accept_infobar_) {
-          infobar_service_->infobar_at(0)
-              ->delegate()
-              ->AsConfirmInfoBarDelegate()
-              ->Accept();
-        }
-        infobar_shown_ = true;
-        return;
-      case chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_REMOVED:
-        infobar_removed_ = true;
-        return;
-      default:
-        NOTREACHED();
-        return;
-    }
   }
 
   // content::WebContentsObserver:
@@ -116,6 +96,27 @@ class NavigationObserver : public content::NotificationObserver,
   }
 
  private:
+  // infobars::InfoBarManager::Observer:
+  virtual void OnInfoBarAdded(infobars::InfoBar* infobar) OVERRIDE {
+    if (should_automatically_accept_infobar_) {
+      infobar_service_->infobar_at(0)->delegate()->
+          AsConfirmInfoBarDelegate()->Accept();
+    }
+    infobar_shown_ = true;
+  }
+
+  virtual void OnInfoBarRemoved(infobars::InfoBar* infobar,
+                                bool animate) OVERRIDE {
+    infobar_removed_ = true;
+  }
+
+  virtual void OnManagerShuttingDown(
+      infobars::InfoBarManager* manager) OVERRIDE {
+    ASSERT_EQ(infobar_service_, manager);
+    infobar_service_->RemoveObserver(this);
+    infobar_service_ = NULL;
+  }
+
   std::string wait_for_path_;
   scoped_refptr<content::MessageLoopRunner> message_loop_runner_;
   bool infobar_shown_;
@@ -123,7 +124,6 @@ class NavigationObserver : public content::NotificationObserver,
   // If |should_automatically_accept_infobar_| is true, then whenever the test
   // sees an infobar added, it will click its accepting button. Default = true.
   bool should_automatically_accept_infobar_;
-  content::NotificationRegistrar registrar_;
   InfoBarService* infobar_service_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationObserver);
@@ -159,6 +159,10 @@ class PasswordManagerBrowserTest : public InProcessBrowserTest {
     return WebContents()->GetRenderViewHost();
   }
 
+  ManagePasswordsUIController* controller() {
+    return ManagePasswordsUIController::FromWebContents(WebContents());
+  }
+
   // Wrapper around ui_test_utils::NavigateToURL that waits until
   // DidFinishLoad() fires. Normally this function returns after
   // DidStopLoading(), which caused flakiness as the NavigationObserver
@@ -168,15 +172,92 @@ class PasswordManagerBrowserTest : public InProcessBrowserTest {
     if (!embedded_test_server()->Started())
       ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
+    ASSERT_FALSE(CommandLine::ForCurrentProcess()->HasSwitch(
+        password_manager::switches::kEnableAutomaticPasswordSaving));
     NavigationObserver observer(WebContents());
     GURL url = embedded_test_server()->GetURL(path);
     ui_test_utils::NavigateToURL(browser(), url);
     observer.Wait();
   }
 
+  // Waits until the "value" attribute of the HTML element with |element_id| is
+  // equal to |expected_value|. If the current value is not as expected, this
+  // waits until the "change" event is fired for the element. This also
+  // guarantees that once the real value matches the expected, the JavaScript
+  // event loop is spun to allow all other possible events to take place.
+  void WaitForElementValue(const std::string& element_id,
+                           const std::string& expected_value);
+  // Checks that the current "value" attribute of the HTML element with
+  // |element_id| is equal to |expected_value|.
+  void CheckElementValue(const std::string& element_id,
+                         const std::string& expected_value);
+
  private:
   DISALLOW_COPY_AND_ASSIGN(PasswordManagerBrowserTest);
 };
+
+void PasswordManagerBrowserTest::WaitForElementValue(
+    const std::string& element_id,
+    const std::string& expected_value) {
+  enum ReturnCodes {  // Possible results of the JavaScript code.
+    RETURN_CODE_OK,
+    RETURN_CODE_NO_ELEMENT,
+    RETURN_CODE_WRONG_VALUE,
+    RETURN_CODE_INVALID,
+  };
+  const std::string value_check_function = base::StringPrintf(
+      "function valueCheck() {"
+      "  var element = document.getElementById('%s');"
+      "  return element && element.value == '%s';"
+      "}",
+      element_id.c_str(),
+      expected_value.c_str());
+  const std::string script =
+      value_check_function +
+      base::StringPrintf(
+          "if (valueCheck()) {"
+          "  /* Spin the event loop with setTimeout. */"
+          "  setTimeout(window.domAutomationController.send(%d), 0);"
+          "} else {"
+          "  var element = document.getElementById('%s');"
+          "  if (!element)"
+          "    window.domAutomationController.send(%d);"
+          "  element.onchange = function() {"
+          "    if (valueCheck()) {"
+          "      /* Spin the event loop with setTimeout. */"
+          "      setTimeout(window.domAutomationController.send(%d), 0);"
+          "    } else {"
+          "      window.domAutomationController.send(%d);"
+          "    }"
+          "  };"
+          "}",
+          RETURN_CODE_OK,
+          element_id.c_str(),
+          RETURN_CODE_NO_ELEMENT,
+          RETURN_CODE_OK,
+          RETURN_CODE_WRONG_VALUE);
+  int return_value = RETURN_CODE_INVALID;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+      RenderViewHost(), script, &return_value));
+  EXPECT_EQ(RETURN_CODE_OK, return_value)
+      << "element_id = " << element_id
+      << ", expected_value = " << expected_value;
+}
+
+void PasswordManagerBrowserTest::CheckElementValue(
+    const std::string& element_id,
+    const std::string& expected_value) {
+  const std::string value_check_script = base::StringPrintf(
+      "var element = document.getElementById('%s');"
+      "window.domAutomationController.send(element && element.value == '%s');",
+      element_id.c_str(),
+      expected_value.c_str());
+  bool return_value = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      RenderViewHost(), value_check_script, &return_value));
+  EXPECT_TRUE(return_value) << "element_id = " << element_id
+                            << ", expected_value = " << expected_value;
+}
 
 // Actual tests ---------------------------------------------------------------
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -192,7 +273,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('input_submit_button').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -208,7 +293,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('input_submit_button').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -225,7 +314,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('submit_unrelated').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, LoginFailed) {
@@ -241,7 +334,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, LoginFailed) {
       "document.getElementById('submit_failed').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_FALSE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, Redirects) {
@@ -257,14 +354,22 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, Redirects) {
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.disable_should_automatically_accept_infobar();
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 
   // The redirection page now redirects via Javascript. We check that the
   // infobar stays.
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(),
                                      "window.location.href = 'done.html';"));
   observer.Wait();
-  EXPECT_FALSE(observer.infobar_removed());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_removed());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -281,7 +386,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('submit_button').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 // Flaky: crbug.com/301547, observed on win and mac. Probably happens on all
@@ -301,7 +410,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "}, 0)";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForNavigation) {
@@ -312,7 +425,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptForNavigation) {
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(),
                                      "window.location.href = 'done.html';"));
   observer.Wait();
-  EXPECT_FALSE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -335,7 +452,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill));
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), navigate_frame));
   observer.Wait();
-  EXPECT_FALSE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -359,7 +480,50 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), navigate_frame));
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(
+    PasswordManagerBrowserTest,
+    NoPromptForFailedLoginFromMainFrameWithMultiFramesInPage) {
+  NavigateToFile("/password/multi_frames.html");
+
+  // Make sure that we don't prompt to save the password for a failed login
+  // from the main frame with multiple frames in the same page.
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_failed').value = 'temp';"
+      "document.getElementById('password_failed').value = 'random';"
+      "document.getElementById('submit_failed').click();";
+
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  EXPECT_FALSE(observer.infobar_shown());
+}
+
+IN_PROC_BROWSER_TEST_F(
+    PasswordManagerBrowserTest,
+    NoPromptForFailedLoginFromSubFrameWithMultiFramesInPage) {
+  NavigateToFile("/password/multi_frames.html");
+
+  // Make sure that we don't prompt to save the password for a failed login
+  // from a sub-frame with multiple frames in the same page.
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "var first_frame = document.getElementById('first_frame');"
+      "var frame_doc = first_frame.contentDocument;"
+      "frame_doc.getElementById('username_failed').value = 'temp';"
+      "frame_doc.getElementById('password_failed').value = 'random';"
+      "frame_doc.getElementById('submit_failed').click();"
+      "window.parent.location.href = 'multi_frames.html';";
+
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  EXPECT_FALSE(observer.infobar_shown());
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -382,7 +546,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('submit_button').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -398,7 +566,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "send_xhr()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_navigate));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -414,16 +586,22 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('link').click();";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_click_link));
   observer.Wait();
-  EXPECT_FALSE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
 }
 
+// TODO(jam): http://crbug.com/350550
+#if !defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
                        VerifyPasswordGenerationUpload) {
   // Prevent Autofill requests from actually going over the wire.
   net::TestURLFetcherFactory factory;
   // Disable Autofill requesting access to AddressBook data. This causes
   // the test to hang on Mac.
-  autofill::test::DisableSystemServices(browser()->profile());
+  autofill::test::DisableSystemServices(browser()->profile()->GetPrefs());
 
   // Visit a signup form.
   NavigateToFile("/password/signup_form.html");
@@ -438,15 +616,20 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
 
   first_observer.Wait();
-  ASSERT_TRUE(first_observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    ASSERT_TRUE(controller()->PasswordPendingUserDecision());
+    controller()->SavePassword();
+  } else {
+    ASSERT_TRUE(first_observer.infobar_shown());
+  }
 
   // Now navigate to a login form that has similar HTML markup.
   NavigateToFile("/password/password_form.html");
 
   // Simulate a user click to force an autofill of the form's DOM value, not
   // just the suggested value.
-  std::string click = "document.getElementById('testform_no_name').click()";
-  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), click));
+  content::SimulateMouseClick(
+      WebContents(), 0, blink::WebMouseEvent::ButtonLeft);
 
   // The form should be filled with the previously submitted username.
   std::string get_username =
@@ -465,7 +648,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('input_submit_button').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), submit_form));
   second_observer.Wait();
-  EXPECT_FALSE(second_observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(second_observer.infobar_shown());
+  }
 
   // Verify that we sent a ping to Autofill saying that the original form
   // was likely an account creation form since it has more than 2 text input
@@ -479,6 +666,7 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
   EXPECT_EQ(0, snapshot->GetCount(0 /* failure */));
   EXPECT_EQ(1, snapshot->GetCount(1 /* success */));
 }
+#endif
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, PromptForSubmitFromIframe) {
   NavigateToFile("/password/password_submit_from_iframe.html");
@@ -496,7 +684,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, PromptForSubmitFromIframe) {
 
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -512,7 +704,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementById('input_submit_button_no_name').click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -528,7 +724,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "document.getElementsByName('input_submit_button_no_id')[0].click()";
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_TRUE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
@@ -547,7 +747,11 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
       "form.children[2].click()";  // form.children[2] is the submit button.
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
   observer.Wait();
-  EXPECT_FALSE(observer.infobar_shown());
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
 }
 
 IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, DeleteFrameBeforeSubmit) {
@@ -574,4 +778,211 @@ IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, DeleteFrameBeforeSubmit) {
   ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), navigate_frame));
   observer.Wait();
   // The only thing we check here is that there is no use-after-free reported.
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, PasswordValueAccessible) {
+  NavigateToFile("/password/form_and_link.html");
+
+  // Click on a link to open a new tab, then switch back to the first one.
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  std::string click =
+      "document.getElementById('testlink').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), click));
+  EXPECT_EQ(2, browser()->tab_strip_model()->count());
+  browser()->tab_strip_model()->ActivateTabAt(0, false);
+
+  // Fill in the credentials, and make sure they are saved.
+  NavigationObserver form_submit_observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random';"
+      "document.getElementById('input_submit_button').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  form_submit_observer.Wait();
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+    controller()->SavePassword();
+  } else {
+    EXPECT_TRUE(form_submit_observer.infobar_shown());
+  }
+
+  // Reload the original page to have the saved credentials autofilled.
+  NavigationObserver reload_observer(WebContents());
+  NavigateToFile("/password/form_and_link.html");
+  reload_observer.Wait();
+
+  // Wait until the username is filled, to make sure autofill kicked in.
+  WaitForElementValue("username_field", "temp");
+  // Now check that the password is not accessible yet.
+  CheckElementValue("password_field", "");
+  // Let the user interact with the page.
+  content::SimulateMouseClickAt(
+      WebContents(), 0, blink::WebMouseEvent::ButtonLeft, gfx::Point(1, 1));
+  // Wait until that interaction causes the password value to be revealed.
+  WaitForElementValue("password_field", "random");
+  // And check that after the side-effects of the interaction took place, the
+  // username value stays the same.
+  CheckElementValue("username_field", "temp");
+}
+
+// The following test is limited to Aura, because
+// RenderWidgetHostViewGuest::ProcessAckedTouchEvent is, and
+// ProcessAckedTouchEvent is what triggers the translation of touch events to
+// gesture events.
+#if defined(USE_AURA)
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       PasswordValueAccessibleOnSubmit) {
+  NavigateToFile("/password/form_and_link.html");
+
+  // Fill in the credentials, and make sure they are saved.
+  NavigationObserver form_submit_observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random_secret';"
+      "document.getElementById('input_submit_button').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  form_submit_observer.Wait();
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+    controller()->SavePassword();
+  } else {
+    EXPECT_TRUE(form_submit_observer.infobar_shown());
+  }
+
+  // Reload the original page to have the saved credentials autofilled.
+  NavigationObserver reload_observer(WebContents());
+  NavigateToFile("/password/form_and_link.html");
+  reload_observer.Wait();
+
+  NavigationObserver submit_observer(WebContents());
+  // Submit the form via a tap on the submit button. The button is placed at 0,
+  // 100, and has height 300 and width 700.
+  content::SimulateTapAt(WebContents(), gfx::Point(350, 250));
+  submit_observer.Wait();
+  std::string query = WebContents()->GetURL().query();
+  EXPECT_NE(std::string::npos, query.find("random_secret")) << query;
+}
+#endif
+
+// Test fix for crbug.com/338650.
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       DontPromptForPasswordFormWithDefaultValue) {
+  NavigateToFile("/password/password_form_with_default_value.html");
+
+  // Don't prompt if we navigate away even if there is a password value since
+  // it's not coming from the user.
+  NavigationObserver observer(WebContents());
+  NavigateToFile("/password/done.html");
+  observer.Wait();
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       PromptWhenEnableAutomaticPasswordSavingSwitchIsNotSet) {
+  NavigateToFile("/password/password_form.html");
+
+  // Fill a form and submit through a <input type="submit"> button.
+  NavigationObserver observer(WebContents());
+  std::string fill_and_submit =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random';"
+      "document.getElementById('input_submit_button').click()";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
+}
+
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       DontPromptWhenEnableAutomaticPasswordSavingSwitchIsSet) {
+  password_manager::TestPasswordStore* password_store =
+      static_cast<password_manager::TestPasswordStore*>(
+          PasswordStoreFactory::GetForProfile(browser()->profile(),
+                                              Profile::IMPLICIT_ACCESS).get());
+
+  EXPECT_TRUE(password_store->IsEmpty());
+
+  NavigateToFile("/password/password_form.html");
+
+  // Add the enable-automatic-password-saving switch.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      password_manager::switches::kEnableAutomaticPasswordSaving);
+
+  // Fill a form and submit through a <input type="submit"> button.
+  NavigationObserver observer(WebContents());
+  // Make sure that the only passwords saved are the auto-saved ones.
+  observer.disable_should_automatically_accept_infobar();
+  std::string fill_and_submit =
+      "document.getElementById('username_field').value = 'temp';"
+      "document.getElementById('password_field').value = 'random';"
+      "document.getElementById('input_submit_button').click()";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill_and_submit));
+  observer.Wait();
+  if (chrome::VersionInfo::GetChannel() ==
+      chrome::VersionInfo::CHANNEL_UNKNOWN) {
+    if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+      EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+    } else {
+      EXPECT_FALSE(observer.infobar_shown());
+    }
+    EXPECT_FALSE(password_store->IsEmpty());
+  } else {
+    if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+      EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+    } else {
+      EXPECT_TRUE(observer.infobar_shown());
+    }
+    EXPECT_TRUE(password_store->IsEmpty());
+  }
+}
+
+// Test fix for crbug.com/368690.
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest, NoPromptWhenReloading) {
+  NavigateToFile("/password/password_form.html");
+
+  std::string fill =
+      "document.getElementById('username_redirect').value = 'temp';"
+      "document.getElementById('password_redirect').value = 'random';";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), fill));
+
+  NavigationObserver observer(WebContents());
+  GURL url = embedded_test_server()->GetURL("/password/password_form.html");
+  chrome::NavigateParams params(browser(), url,
+                                content::PAGE_TRANSITION_RELOAD);
+  ui_test_utils::NavigateToURL(&params);
+  observer.Wait();
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_FALSE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_FALSE(observer.infobar_shown());
+  }
+}
+
+// Test that if a form gets dynamically added between the form parsing and
+// rendering, and while the main frame still loads, it still is registered, and
+// thus saving passwords from it works.
+IN_PROC_BROWSER_TEST_F(PasswordManagerBrowserTest,
+                       FormsAddedBetweenParsingAndRendering) {
+  NavigateToFile("/password/between_parsing_and_rendering.html");
+
+  NavigationObserver observer(WebContents());
+  std::string submit =
+      "document.getElementById('username').value = 'temp';"
+      "document.getElementById('password').value = 'random';"
+      "document.getElementById('submit-button').click();";
+  ASSERT_TRUE(content::ExecuteScript(RenderViewHost(), submit));
+  observer.Wait();
+
+  if (ChromePasswordManagerClient::IsTheHotNewBubbleUIEnabled()) {
+    EXPECT_TRUE(controller()->PasswordPendingUserDecision());
+  } else {
+    EXPECT_TRUE(observer.infobar_shown());
+  }
 }

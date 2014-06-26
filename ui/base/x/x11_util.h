@@ -29,12 +29,6 @@ typedef unsigned long Cursor;
 typedef struct _XcursorImage XcursorImage;
 typedef union _XEvent XEvent;
 
-#if defined(TOOLKIT_GTK)
-typedef struct _GdkDrawable GdkWindow;
-typedef struct _GtkWidget GtkWidget;
-typedef struct _GtkWindow GtkWindow;
-#endif
-
 namespace gfx {
 class Canvas;
 class Point;
@@ -48,9 +42,6 @@ namespace ui {
 // the UI thread. Thus, they don't support multiple displays.
 
 // These functions cache their results ---------------------------------
-
-// Check if there's an open connection to an X server.
-UI_BASE_EXPORT bool XDisplayExists();
 
 // Returns true if the system supports XINPUT2.
 UI_BASE_EXPORT bool IsXInput2Available();
@@ -70,18 +61,10 @@ UI_BASE_EXPORT SharedMemorySupport QuerySharedMemorySupport(XDisplay* dpy);
 // Return true iff the display supports Xrender
 UI_BASE_EXPORT bool QueryRenderSupport(XDisplay* dpy);
 
-// Return the default screen number for the display
-int GetDefaultScreen(XDisplay* display);
-
 // Returns an X11 Cursor, sharable across the process.
 // |cursor_shape| is an X font cursor shape, see XCreateFontCursor().
 UI_BASE_EXPORT ::Cursor GetXCursor(int cursor_shape);
 
-// Resets the cache used by GetXCursor(). Only useful for tests that may delete
-// the display.
-UI_BASE_EXPORT void ResetXCursorCache();
-
-#if defined(USE_AURA)
 // Creates a custom X cursor from the image. This takes ownership of image. The
 // caller must not free/modify the image. The refcount of the newly created
 // cursor is set to 1.
@@ -103,7 +86,6 @@ UI_BASE_EXPORT XcursorImage* SkBitmapToXcursorImage(const SkBitmap* bitmap,
 // |last_event|.
 UI_BASE_EXPORT int CoalescePendingMotionEvents(const XEvent* xev,
                                                XEvent* last_event);
-#endif
 
 // Hides the host cursor.
 UI_BASE_EXPORT void HideHostCursor();
@@ -111,28 +93,19 @@ UI_BASE_EXPORT void HideHostCursor();
 // Returns an invisible cursor.
 UI_BASE_EXPORT ::Cursor CreateInvisibleCursor();
 
+// Sets whether |window| should use the OS window frame.
+UI_BASE_EXPORT void SetUseOSWindowFrame(XID window, bool use_os_window_frame);
+
 // These functions do not cache their results --------------------------
+
+// Returns true if the shape extension is supported.
+UI_BASE_EXPORT bool IsShapeExtensionAvailable();
 
 // Get the X window id for the default root window
 UI_BASE_EXPORT XID GetX11RootWindow();
 
 // Returns the user's current desktop.
-bool GetCurrentDesktop(int* desktop);
-
-#if defined(TOOLKIT_GTK)
-// Get the X window id for the given GTK widget.
-UI_BASE_EXPORT XID GetX11WindowFromGtkWidget(GtkWidget* widget);
-XID GetX11WindowFromGdkWindow(GdkWindow* window);
-
-// Get the GtkWindow* wrapping a given XID, if any.
-// Returns NULL if there isn't already a GtkWindow* wrapping this XID;
-// see gdk_window_foreign_new() etc. to wrap arbitrary XIDs.
-UI_BASE_EXPORT GtkWindow* GetGtkWindowFromX11Window(XID xid);
-
-// Get a Visual from the given widget. Since we don't include the Xlib
-// headers, this is returned as a void*.
-UI_BASE_EXPORT void* GetVisualFromGtkWidget(GtkWidget* widget);
-#endif  // defined(TOOLKIT_GTK)
+UI_BASE_EXPORT bool GetCurrentDesktop(int* desktop);
 
 enum HideTitlebarWhenMaximized {
   SHOW_TITLEBAR_WHEN_MAXIMIZED = 0,
@@ -199,13 +172,21 @@ UI_BASE_EXPORT bool SetIntArrayProperty(XID window,
                                         const std::string& name,
                                         const std::string& type,
                                         const std::vector<int>& value);
+UI_BASE_EXPORT bool SetAtomProperty(XID window,
+                                    const std::string& name,
+                                    const std::string& type,
+                                    Atom value);
 UI_BASE_EXPORT bool SetAtomArrayProperty(XID window,
                                          const std::string& name,
                                          const std::string& type,
                                          const std::vector<Atom>& value);
+UI_BASE_EXPORT bool SetStringProperty(XID window,
+                                      Atom property,
+                                      Atom type,
+                                      const std::string& value);
 
 // Gets the X atom for default display corresponding to atom_name.
-Atom GetAtom(const char* atom_name);
+UI_BASE_EXPORT Atom GetAtom(const char* atom_name);
 
 // Sets the WM_CLASS attribute for a given X11 window.
 UI_BASE_EXPORT void SetWindowClassHint(XDisplay* display,
@@ -218,11 +199,9 @@ UI_BASE_EXPORT void SetWindowRole(XDisplay* display,
                                   XID window,
                                   const std::string& role);
 
-// Get |window|'s parent window, or None if |window| is the root window.
-UI_BASE_EXPORT XID GetParentWindow(XID window);
-
-// Walk up |window|'s hierarchy until we find a direct child of |root|.
-XID GetHighestAncestorWindow(XID window, XID root);
+// Determine whether we should default to native decorations or the custom
+// frame based on the currently-running window manager.
+UI_BASE_EXPORT bool GetCustomFramePrefDefault();
 
 static const int kAllDesktops = -1;
 // Queries the desktop |window| is on, kAllDesktops if sticky. Returns false if
@@ -257,19 +236,6 @@ UI_BASE_EXPORT void EnumerateTopLevelWindows(
 // order.
 UI_BASE_EXPORT bool GetXWindowStack(XID window, std::vector<XID>* windows);
 
-// Restack a window in relation to one of its siblings.  If |above| is true,
-// |window| will be stacked directly above |sibling|; otherwise it will stacked
-// directly below it.  Both windows must be immediate children of the same
-// window.
-void RestackWindow(XID window, XID sibling, bool above);
-
-// Return a handle to a X ShmSeg. |shared_memory_key| is a SysV
-// IPC key. The shared memory region must contain 32-bit pixels.
-UI_BASE_EXPORT XSharedMemoryId
-    AttachSharedMemory(XDisplay* display, int shared_memory_support);
-UI_BASE_EXPORT void DetachSharedMemory(XDisplay* display,
-                                       XSharedMemoryId shmseg);
-
 // Copies |source_bounds| from |drawable| to |canvas| at offset |dest_offset|.
 // |source_bounds| is in physical pixels, while |dest_offset| is relative to
 // the canvas's scale. Note that this function is slow since it uses
@@ -279,13 +245,6 @@ UI_BASE_EXPORT bool CopyAreaToCanvas(XID drawable,
                                      gfx::Rect source_bounds,
                                      gfx::Point dest_offset,
                                      gfx::Canvas* canvas);
-
-// Return a handle to an XRender picture where |pixmap| is a handle to a
-// pixmap containing Skia ARGB data.
-UI_BASE_EXPORT XID CreatePictureFromSkiaPixmap(XDisplay* display, XID pixmap);
-
-void FreePicture(XDisplay* display, XID picture);
-void FreePixmap(XDisplay* display, XID pixmap);
 
 enum WindowManagerName {
   WM_UNKNOWN,
@@ -305,21 +264,16 @@ enum WindowManagerName {
 // determine it for one reason or another.
 UI_BASE_EXPORT WindowManagerName GuessWindowManager();
 
-// Change desktop for |window| to the desktop of |destination| window.
-UI_BASE_EXPORT bool ChangeWindowDesktop(XID window, XID destination);
-
 // Enable the default X error handlers. These will log the error and abort
 // the process if called. Use SetX11ErrorHandlers() from x11_util_internal.h
 // to set your own error handlers.
 UI_BASE_EXPORT void SetDefaultX11ErrorHandlers();
 
-// Return true if a given window is in full-screen mode.
+// Returns true if a given window is in full-screen mode.
 UI_BASE_EXPORT bool IsX11WindowFullScreen(XID window);
 
-// Returns true if a given size is in list of bogus sizes in mm that X detects
-// that should be ignored.
-UI_BASE_EXPORT bool IsXDisplaySizeBlackListed(unsigned long mm_width,
-                                              unsigned long mm_height);
+// Returns true if the window manager supports the given hint.
+UI_BASE_EXPORT bool WmSupportsHint(Atom atom);
 
 // Manages a piece of X11 allocated memory as a RefCountedMemory segment. This
 // object takes ownership over the passed in memory and will free it with the
@@ -393,6 +347,16 @@ class UI_BASE_EXPORT XScopedCursor {
 
   DISALLOW_COPY_AND_ASSIGN(XScopedCursor);
 };
+
+namespace test {
+// Resets the cache used by GetXCursor(). Only useful for tests that may delete
+// the display.
+UI_BASE_EXPORT void ResetXCursorCache();
+
+// Returns the cached XcursorImage for |cursor|.
+UI_BASE_EXPORT const XcursorImage* GetCachedXcursorImage(::Cursor cursor);
+
+}  // namespace test
 
 }  // namespace ui
 

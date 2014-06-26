@@ -12,7 +12,7 @@
 #include "ui/views/widget/widget_observer.h"
 
 #if defined(OS_CHROMEOS)
-#include "chromeos/display/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
 #endif  // defined(OS_CHROMEOS)
 
 namespace views {
@@ -20,18 +20,16 @@ class Widget;
 }
 
 namespace ash {
-namespace internal {
 
 // An event filter which handles system level gesture events. Objects of this
 // class manage their own lifetime.
-class ASH_EXPORT TouchObserverHUD
-    : public ui::EventHandler,
-      public views::WidgetObserver,
-      public gfx::DisplayObserver,
+class ASH_EXPORT TouchObserverHUD : public ui::EventHandler,
+                                    public views::WidgetObserver,
+                                    public gfx::DisplayObserver,
 #if defined(OS_CHROMEOS)
-      public chromeos::OutputConfigurator::Observer,
+                                    public ui::DisplayConfigurator::Observer,
 #endif  // defined(OS_CHROMEOS)
-      public DisplayController::Observer {
+                                    public DisplayController::Observer {
  public:
   // Called to clear touch points and traces from the screen. Default
   // implementation does nothing. Sub-classes should implement appropriately.
@@ -61,18 +59,19 @@ class ASH_EXPORT TouchObserverHUD
   virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // Overridden from gfx::DisplayObserver.
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
 #if defined(OS_CHROMEOS)
-  // Overriden from chromeos::OutputConfigurator::Observer.
+  // Overriden from ui::DisplayConfigurator::Observer.
   virtual void OnDisplayModeChanged(
-      const std::vector<chromeos::OutputConfigurator::OutputSnapshot>& outputs)
-      OVERRIDE;
+      const ui::DisplayConfigurator::DisplayStateList& outputs) OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   // Overriden form DisplayController::Observer.
+  virtual void OnDisplaysInitialized() OVERRIDE;
   virtual void OnDisplayConfigurationChanging() OVERRIDE;
   virtual void OnDisplayConfigurationChanged() OVERRIDE;
 
@@ -87,7 +86,6 @@ class ASH_EXPORT TouchObserverHUD
   DISALLOW_COPY_AND_ASSIGN(TouchObserverHUD);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_TOUCH_TOUCH_OBSERVER_HUD_H_

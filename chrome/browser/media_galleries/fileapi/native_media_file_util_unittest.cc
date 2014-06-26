@@ -15,6 +15,7 @@
 #include "base/time/time.h"
 #include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chrome/browser/media_galleries/fileapi/native_media_file_util.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -25,7 +26,6 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
 #include "webkit/browser/fileapi/native_file_util.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 #define FPL(x) FILE_PATH_LITERAL(x)
 
@@ -102,7 +102,7 @@ void PopulateDirectoryWithTestCases(const base::FilePath& dir,
     } else {
       ASSERT_TRUE(test_cases[i].content != NULL);
       int len = strlen(test_cases[i].content);
-      ASSERT_EQ(len, file_util::WriteFile(path, test_cases[i].content, len));
+      ASSERT_EQ(len, base::WriteFile(path, test_cases[i].content, len));
     }
   }
 }
@@ -120,7 +120,7 @@ class NativeMediaFileUtilTest : public testing::Test {
     ASSERT_TRUE(base::CreateDirectory(root_path()));
 
     scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
-        new quota::MockSpecialStoragePolicy();
+        new content::MockSpecialStoragePolicy();
 
     ScopedVector<fileapi::FileSystemBackend> additional_providers;
     additional_providers.push_back(new MediaFileSystemBackend(
@@ -133,11 +133,12 @@ class NativeMediaFileUtilTest : public testing::Test {
         storage_policy.get(),
         NULL,
         additional_providers.Pass(),
+        std::vector<fileapi::URLRequestAutoMountHandler>(),
         data_dir_.path(),
         content::CreateAllowFileAccessOptions());
 
     filesystem_id_ = isolated_context()->RegisterFileSystemForPath(
-        fileapi::kFileSystemTypeNativeMedia, root_path(), NULL);
+        fileapi::kFileSystemTypeNativeMedia, std::string(), root_path(), NULL);
 
     isolated_context()->AddReference(filesystem_id_);
   }
@@ -330,7 +331,7 @@ TEST_F(NativeMediaFileUtilTest, CopyDestFiltering) {
     base::FilePath src_path = root_path().AppendASCII("foo.jpg");
     FileSystemURL src_url = CreateURL(FPL("foo.jpg"));
     static const char kDummyData[] = "dummy";
-    ASSERT_TRUE(file_util::WriteFile(src_path, kDummyData, strlen(kDummyData)));
+    ASSERT_TRUE(base::WriteFile(src_path, kDummyData, strlen(kDummyData)));
 
     for (size_t i = 0; i < arraysize(kFilteringTestCases); ++i) {
       if (loop_count == 0 && kFilteringTestCases[i].is_directory) {
@@ -441,7 +442,7 @@ TEST_F(NativeMediaFileUtilTest, MoveDestFiltering) {
       FileSystemURL src_url = CreateURL(FPL("foo.jpg"));
       static const char kDummyData[] = "dummy";
       ASSERT_TRUE(
-          file_util::WriteFile(src_path, kDummyData, strlen(kDummyData)));
+          base::WriteFile(src_path, kDummyData, strlen(kDummyData)));
 
       FileSystemURL root_url = CreateURL(FPL(""));
       FileSystemURL url = CreateURL(kFilteringTestCases[i].path);

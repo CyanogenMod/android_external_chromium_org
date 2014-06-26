@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_ANDROID_TOOLBAR_TOOLBAR_MODEL_ANDROID_H_
 
 #include "base/android/jni_android.h"
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -24,7 +24,7 @@ class ToolbarModelAndroid : public ToolbarModelDelegate {
   virtual ~ToolbarModelAndroid();
 
   void Destroy(JNIEnv* env, jobject obj);
-  base::android::ScopedJavaLocalRef<jstring> GetSearchTerms(
+  base::android::ScopedJavaLocalRef<jstring> GetText(
       JNIEnv* env,
       jobject obj);
   base::android::ScopedJavaLocalRef<jstring> GetQueryExtractionParam(

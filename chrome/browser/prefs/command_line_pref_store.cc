@@ -28,7 +28,8 @@ const CommandLinePrefStore::StringSwitchToPreferenceMapEntry
       { switches::kAuthNegotiateDelegateWhitelist,
           prefs::kAuthNegotiateDelegateWhitelist },
       { switches::kGSSAPILibraryName, prefs::kGSSAPILibraryName },
-      { switches::kSpdyProxyAuthOrigin, prefs::kSpdyProxyAuthOrigin },
+      { data_reduction_proxy::switches::kDataReductionProxy,
+          data_reduction_proxy::prefs::kDataReductionProxy },
       { switches::kDiskCacheDir, prefs::kDiskCacheDir },
       { switches::kSSLVersionMin, prefs::kSSLVersionMin },
       { switches::kSSLVersionMax, prefs::kSSLVersionMax },
@@ -54,19 +55,8 @@ const CommandLinePrefStore::BooleanSwitchToPreferenceMapEntry
         prefs::kWebKitAllowDisplayingInsecureContent, false },
       { switches::kAllowCrossOriginAuthPrompt,
         prefs::kAllowCrossOriginAuthPrompt, true },
-      { switches::kDisableTLSChannelID, prefs::kEnableOriginBoundCerts, false },
-      { switches::kDisableSSLFalseStart, prefs::kDisableSSLRecordSplitting,
-          true },
-      { switches::kEnableUnrestrictedSSL3Fallback,
-          prefs::kEnableUnrestrictedSSL3Fallback, true },
-      { switches::kEnableMemoryInfo, prefs::kEnableMemoryInfo, true },
-#if defined(GOOGLE_CHROME_BUILD)
       { switches::kDisablePrintPreview, prefs::kPrintPreviewDisabled, true },
-#else
-      { switches::kEnablePrintPreview, prefs::kPrintPreviewDisabled, false },
-#endif
 #if defined(OS_CHROMEOS)
-      { chromeos::switches::kDisableDrive, prefs::kDisableDrive, true },
       { chromeos::switches::kEnableTouchpadThreeFingerClick,
           prefs::kEnableTouchpadThreeFingerClick, true },
 #endif
@@ -78,9 +68,6 @@ const CommandLinePrefStore::IntegerSwitchToPreferenceMapEntry
     CommandLinePrefStore::integer_switch_map_[] = {
       { switches::kDiskCacheSize, prefs::kDiskCacheSize },
       { switches::kMediaCacheSize, prefs::kMediaCacheSize },
-#if defined(OS_CHROMEOS)
-      { chromeos::switches::kDeviceRegistered, prefs::kDeviceRegistered },
-#endif
     };
 
 CommandLinePrefStore::CommandLinePrefStore(const CommandLine* command_line)
@@ -181,8 +168,7 @@ void CommandLinePrefStore::ApplySSLSwitches() {
 }
 
 void CommandLinePrefStore::ApplyBackgroundModeSwitches() {
-  if (command_line_->HasSwitch(switches::kDisableBackgroundMode) ||
-      command_line_->HasSwitch(switches::kDisableExtensions)) {
+  if (command_line_->HasSwitch(switches::kDisableExtensions)) {
     base::Value* value = base::Value::CreateBooleanValue(false);
     SetValue(prefs::kBackgroundModeEnabled, value);
   }

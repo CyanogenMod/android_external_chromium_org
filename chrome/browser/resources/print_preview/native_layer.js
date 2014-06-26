@@ -44,7 +44,7 @@ cr.define('print_preview', function() {
     global['autoCancelForTesting'] = this.autoCancelForTesting_.bind(this);
     global['onPrivetPrinterChanged'] = this.onPrivetPrinterChanged_.bind(this);
     global['onPrivetCapabilitiesSet'] =
-      this.onPrivetCapabilitiesSet_.bind(this);
+        this.onPrivetCapabilitiesSet_.bind(this);
     global['onPrivetPrintFailed'] = this.onPrivetPrintFailed_.bind(this);
   };
 
@@ -168,6 +168,23 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * @param {!print_preview.Destination} destination Destination to print to.
+     * @param {!print_preview.ticket_items.Color} color Color ticket item.
+     * @return {number} Native layer color model.
+     * @private
+     */
+    getNativeColorModel_: function(destination, color) {
+      // For non-local printers native color model is ignored anyway.
+      var option = destination.isLocal ? color.getSelectedOption() : null;
+      var nativeColorModel = parseInt(option ? option.vendor_id : null);
+      if (isNaN(nativeColorModel)) {
+        return color.getValue() ?
+            NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY;
+      }
+      return nativeColorModel;
+    },
+
+    /**
      * Requests that a preview be generated. The following events may be
      * dispatched in response:
      *   - PAGE_COUNT_READY
@@ -188,9 +205,9 @@ cr.define('print_preview', function() {
 
       var ticket = {
         'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
+        'mediaSize': printTicketStore.mediaSize.getValue(),
         'landscape': printTicketStore.landscape.getValue(),
-        'color': printTicketStore.color.getValue() ?
-            NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,
+        'color': this.getNativeColorModel_(destination, printTicketStore.color),
         'headerFooterEnabled': printTicketStore.headerFooter.getValue(),
         'marginsType': printTicketStore.marginsType.getValue(),
         'isFirstRequest': requestId == 0,
@@ -260,10 +277,10 @@ cr.define('print_preview', function() {
 
       var ticket = {
         'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
+        'mediaSize': printTicketStore.mediaSize.getValue(),
         'pageCount': printTicketStore.pageRange.getPageNumberSet().size,
         'landscape': printTicketStore.landscape.getValue(),
-        'color': printTicketStore.color.getValue() ?
-            NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY,
+        'color': this.getNativeColorModel_(destination, printTicketStore.color),
         'headerFooterEnabled': printTicketStore.headerFooter.getValue(),
         'marginsType': printTicketStore.marginsType.getValue(),
         'generateDraftData': true, // TODO(rltoscano): What should this be?
@@ -283,7 +300,7 @@ cr.define('print_preview', function() {
         'requestID': -1,
         'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
         'pageWidth': documentInfo.pageSize.width,
-        'pageHeight': documentInfo.pageSize.height,
+        'pageHeight': documentInfo.pageSize.height
       };
 
       if (!destination.isLocal) {
@@ -309,6 +326,7 @@ cr.define('print_preview', function() {
 
       if (destination.isPrivet) {
         ticket['ticket'] = printTicketStore.createPrintTicket(destination);
+        ticket['capabilities'] = JSON.stringify(destination.capabilities);
       }
 
       if (opt_isOpenPdfInPreview) {
@@ -338,7 +356,7 @@ cr.define('print_preview', function() {
     /** Closes the print preview dialog. */
     startCloseDialog: function() {
       chrome.send('closePrintPreviewDialog');
-      chrome.send('DialogClose');
+      chrome.send('dialogClose');
     },
 
     /** Hide the print preview dialog and allow the native layer to close it. */
@@ -347,11 +365,13 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * Opens the Google Cloud Print sign-in dialog. The DESTINATIONS_RELOAD
-     * event will be dispatched in response.
+     * Opens the Google Cloud Print sign-in tab. The DESTINATIONS_RELOAD event
+     *     will be dispatched in response.
+     * @param {boolean} addAccount Whether to open an 'add a new account' or
+     *     default sign in page.
      */
-    startCloudPrintSignIn: function() {
-      chrome.send('signIn');
+    startCloudPrintSignIn: function(addAccount) {
+      chrome.send('signIn', [addAccount]);
     },
 
     /** Navigates the user to the system printer settings interface. */

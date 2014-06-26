@@ -19,9 +19,10 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/password_manager/password_manager.h"
-#include "chrome/common/pref_names.h"
+#include "components/password_manager/core/browser/password_manager.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "grit/chromium_strings.h"
@@ -29,14 +30,17 @@
 #include "ui/base/l10n/l10n_util.h"
 
 #if defined(USE_AURA)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #endif
 
 // static
-void PasswordManager::RegisterLocalPrefs(PrefRegistrySimple* registry) {
-  registry->RegisterInt64Pref(prefs::kOsPasswordLastChanged, 0);
-  registry->RegisterBooleanPref(prefs::kOsPasswordBlank, false);
+void password_manager::PasswordManager::RegisterLocalPrefs(
+    PrefRegistrySimple* registry) {
+  registry->RegisterInt64Pref(password_manager::prefs::kOsPasswordLastChanged,
+                              0);
+  registry->RegisterBooleanPref(password_manager::prefs::kOsPasswordBlank,
+                                false);
 }
 
 namespace password_manager_util {
@@ -80,9 +84,10 @@ static bool CheckBlankPassword(WCHAR* username) {
   if (last_changed == -1)
     return false;
 
-  blank_password = local_state->GetBoolean(prefs::kOsPasswordBlank);
+  blank_password =
+      local_state->GetBoolean(password_manager::prefs::kOsPasswordBlank);
   int64 pref_last_changed =
-      local_state->GetInt64(prefs::kOsPasswordLastChanged);
+      local_state->GetInt64(password_manager::prefs::kOsPasswordLastChanged);
   if (pref_last_changed > 0 && last_changed <= pref_last_changed) {
     need_recheck = false;
   }
@@ -115,8 +120,10 @@ static bool CheckBlankPassword(WCHAR* username) {
   last_changed += base::Time::kMicrosecondsPerSecond;
 
   // Save the blank password status for later.
-  local_state->SetBoolean(prefs::kOsPasswordBlank, blank_password);
-  local_state->SetInt64(prefs::kOsPasswordLastChanged, last_changed);
+  local_state->SetBoolean(password_manager::prefs::kOsPasswordBlank,
+                          blank_password);
+  local_state->SetInt64(password_manager::prefs::kOsPasswordLastChanged,
+                        last_changed);
 
   return blank_password;
 }
@@ -149,16 +156,20 @@ bool AuthenticateUser(gfx::NativeWindow window) {
   WCHAR displayname[CREDUI_MAX_USERNAME_LENGTH+1] = {};
   WCHAR password[CREDUI_MAX_PASSWORD_LENGTH+1] = {};
   DWORD username_length = CREDUI_MAX_USERNAME_LENGTH;
-  std::wstring product_name =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME));
-  std::wstring password_prompt =
-      base::UTF16ToWide(l10n_util::GetStringUTF16(
-                            IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT));
+  base::string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+  base::string16 password_prompt =
+      l10n_util::GetStringUTF16(IDS_PASSWORDS_PAGE_AUTHENTICATION_PROMPT);
   HANDLE handle = INVALID_HANDLE_VALUE;
   int tries = 0;
   bool use_displayname = false;
   bool use_principalname = false;
   DWORD logon_result = 0;
+
+  // Disable password manager reauthentication before Windows 7.
+  // This is because of an interaction between LogonUser() and the sandbox.
+  // http://crbug.com/345916
+  if (base::win::GetVersion() < base::win::VERSION_WIN7)
+    return true;
 
   // On a domain, we obtain the User Principal Name
   // for domain authentication.
@@ -186,7 +197,7 @@ bool AuthenticateUser(gfx::NativeWindow window) {
   cui.cbSize = sizeof(CREDUI_INFO);
   cui.hwndParent = NULL;
 #if defined(USE_AURA)
-  cui.hwndParent = window->GetDispatcher()->host()->GetAcceleratedWidget();
+  cui.hwndParent = window->GetHost()->GetAcceleratedWidget();
 #else
   cui.hwndParent = window;
 #endif

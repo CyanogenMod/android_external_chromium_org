@@ -41,13 +41,10 @@ class MEDIA_EXPORT AVFoundationGlue {
   static NSString* AVCaptureSessionRuntimeErrorNotification();
   static NSString* AVCaptureSessionDidStopRunningNotification();
   static NSString* AVCaptureSessionErrorKey();
-  static NSString* AVCaptureSessionPreset320x240();
-  static NSString* AVCaptureSessionPreset640x480();
-  static NSString* AVCaptureSessionPreset1280x720();
 
   // Originally from AVVideoSettings.h but in global namespace.
   static NSString* AVVideoScalingModeKey();
-  static NSString* AVVideoScalingModeResizeAspect();
+  static NSString* AVVideoScalingModeResizeAspectFill();
 
   static Class AVCaptureSessionClass();
   static Class AVCaptureVideoDataOutputClass();
@@ -63,7 +60,7 @@ MEDIA_EXPORT
 - (BOOL)hasMediaType:(NSString*)mediaType;
 - (NSString*)uniqueID;
 - (NSString*)localizedName;
-- (BOOL)supportsAVCaptureSessionPreset:(NSString*)preset;
+- (BOOL)isSuspended;
 - (NSArray*)formats;
 
 @end
@@ -98,9 +95,6 @@ MEDIA_EXPORT
 @interface CrAVCaptureSession : NSObject
 
 - (void)release;
-- (BOOL)canSetSessionPreset:(NSString*)preset;
-- (void)setSessionPreset:(NSString*)preset;
-- (NSString*)sessionPreset;
 - (void)addInput:(CrAVCaptureInput*)input;
 - (void)removeInput:(CrAVCaptureInput*)input;
 - (void)addOutput:(CrAVCaptureOutput*)output;

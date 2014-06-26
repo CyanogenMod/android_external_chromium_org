@@ -30,6 +30,8 @@ class APP_LIST_EXPORT AppListItemList {
   void RemoveObserver(AppListItemListObserver* observer);
 
   // Finds item matching |id|. NOTE: Requires a linear search.
+  // Generally this should not be used directly, AppListModel::FindItem
+  // should be used instead.
   AppListItem* FindItem(const std::string& id);
 
   // Finds the |index| of the the item matching |id| in |app_list_items_|.
@@ -42,9 +44,9 @@ class APP_LIST_EXPORT AppListItemList {
   void MoveItem(size_t from_index, size_t to_index);
 
   // Sets the position of |item| which is expected to be a member of
-  // |app_list_items_| and sorts the list accordingly.
-  void SetItemPosition(AppListItem* item,
-                       const syncer::StringOrdinal& new_position);
+  // |app_list_items_| and sorts the list accordingly. If |new_position| is
+  // invalid, move the item to the end of the list.
+  void SetItemPosition(AppListItem* item, syncer::StringOrdinal new_position);
 
   AppListItem* item_at(size_t index) {
     DCHECK_LT(index, app_list_items_.size());
@@ -94,6 +96,10 @@ class APP_LIST_EXPORT AppListItemList {
   // |position| (which must be valid) and |id| (if the positions are equal).
   size_t GetItemSortOrderIndex(const syncer::StringOrdinal& position,
                                const std::string& id);
+
+  // Fixes the position of the item at |index| when the position matches the
+  // previous item's position. |index| must be > 0.
+  void FixItemPosition(size_t index);
 
   ScopedVector<AppListItem> app_list_items_;
   ObserverList<AppListItemListObserver> observers_;

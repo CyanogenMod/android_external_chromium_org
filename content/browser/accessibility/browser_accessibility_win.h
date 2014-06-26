@@ -60,23 +60,23 @@ BrowserAccessibilityWin
  public:
   BEGIN_COM_MAP(BrowserAccessibilityWin)
     COM_INTERFACE_ENTRY2(IDispatch, IAccessible2)
-    COM_INTERFACE_ENTRY2(IAccessible, IAccessible2)
-    COM_INTERFACE_ENTRY2(IAccessibleText, IAccessibleHypertext)
+    COM_INTERFACE_ENTRY(IAccessible)
     COM_INTERFACE_ENTRY(IAccessible2)
     COM_INTERFACE_ENTRY(IAccessibleApplication)
+    COM_INTERFACE_ENTRY(IAccessibleEx)
     COM_INTERFACE_ENTRY(IAccessibleHyperlink)
     COM_INTERFACE_ENTRY(IAccessibleHypertext)
     COM_INTERFACE_ENTRY(IAccessibleImage)
     COM_INTERFACE_ENTRY(IAccessibleTable)
     COM_INTERFACE_ENTRY(IAccessibleTable2)
     COM_INTERFACE_ENTRY(IAccessibleTableCell)
+    COM_INTERFACE_ENTRY(IAccessibleText)
     COM_INTERFACE_ENTRY(IAccessibleValue)
+    COM_INTERFACE_ENTRY(IRawElementProviderSimple)
     COM_INTERFACE_ENTRY(IServiceProvider)
     COM_INTERFACE_ENTRY(ISimpleDOMDocument)
     COM_INTERFACE_ENTRY(ISimpleDOMNode)
     COM_INTERFACE_ENTRY(ISimpleDOMText)
-    COM_INTERFACE_ENTRY(IAccessibleEx)
-    COM_INTERFACE_ENTRY(IRawElementProviderSimple)
   END_COM_MAP()
 
   // Represents a non-static text node in IAccessibleHypertext. This character
@@ -100,13 +100,12 @@ BrowserAccessibilityWin
   //
   // BrowserAccessibility methods.
   //
-  CONTENT_EXPORT virtual void PreInitialize() OVERRIDE;
-  CONTENT_EXPORT virtual void PostInitialize() OVERRIDE;
+  CONTENT_EXPORT virtual void OnDataChanged() OVERRIDE;
+  CONTENT_EXPORT virtual void OnUpdateFinished() OVERRIDE;
   CONTENT_EXPORT virtual void NativeAddReference() OVERRIDE;
   CONTENT_EXPORT virtual void NativeReleaseReference() OVERRIDE;
   CONTENT_EXPORT virtual bool IsNative() const OVERRIDE;
-  CONTENT_EXPORT virtual void SetLocation(const gfx::Rect& new_location)
-      OVERRIDE;
+  CONTENT_EXPORT virtual void OnLocationChanged() const OVERRIDE;
 
   //
   // IAccessible methods.
@@ -772,10 +771,6 @@ BrowserAccessibilityWin
     return ia2_attributes_;
   }
 
-  // BrowserAccessibility::role is shadowed by IAccessible2::role, so
-  // we provide an alias for it.
-  int32 blink_role() const { return BrowserAccessibility::role(); }
-
  private:
   // Add one to the reference count and return the same object. Always
   // use this method when returning a BrowserAccessibilityWin object as
@@ -838,9 +833,9 @@ BrowserAccessibilityWin
                     LONG start_offset,
                     ui::TextBoundaryDirection direction);
 
-  // Return a pointer to the object corresponding to the given renderer_id,
+  // Return a pointer to the object corresponding to the given id,
   // does not make a new reference.
-  BrowserAccessibilityWin* GetFromRendererID(int32 renderer_id);
+  BrowserAccessibilityWin* GetFromID(int32 id);
 
   // Windows-specific unique ID (unique within the browser process),
   // used for get_accChild, NotifyWinEvent, and as the unique ID for

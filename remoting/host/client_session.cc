@@ -18,6 +18,7 @@
 #include "remoting/host/audio_capturer.h"
 #include "remoting/host/audio_scheduler.h"
 #include "remoting/host/desktop_environment.h"
+#include "remoting/host/host_extension_session.h"
 #include "remoting/host/input_injector.h"
 #include "remoting/host/screen_controls.h"
 #include "remoting/host/screen_resolution.h"
@@ -98,6 +99,25 @@ ClientSession::~ClientSession() {
   connection_.reset();
 }
 
+void ClientSession::AddExtensionSession(
+    scoped_ptr<HostExtensionSession> extension_session) {
+  DCHECK(CalledOnValidThread());
+
+  extension_sessions_.push_back(extension_session.release());
+}
+
+void ClientSession::AddHostCapabilities(const std::string& capabilities) {
+  DCHECK(CalledOnValidThread());
+
+  if (capabilities.empty())
+    return;
+
+  if (!host_capabilities_.empty())
+    host_capabilities_.append(" ");
+
+  host_capabilities_.append(capabilities);
+}
+
 void ClientSession::NotifyClientResolution(
     const protocol::ClientResolution& resolution) {
   DCHECK(CalledOnValidThread());
@@ -132,6 +152,16 @@ void ClientSession::ControlVideo(const protocol::VideoControl& video_control) {
     VLOG(1) << "Received VideoControl (enable="
             << video_control.enable() << ")";
     video_scheduler_->Pause(!video_control.enable());
+  }
+  if (video_control.has_lossless_encode()) {
+    VLOG(1) << "Received VideoControl (lossless_encode="
+            << video_control.lossless_encode() << ")";
+    video_scheduler_->SetLosslessEncode(video_control.lossless_encode());
+  }
+  if (video_control.has_lossless_color()) {
+    VLOG(1) << "Received VideoControl (lossless_color="
+            << video_control.lossless_color() << ")";
+    video_scheduler_->SetLosslessColor(video_control.lossless_color());
   }
 }
 
@@ -168,6 +198,7 @@ void ClientSession::SetCapabilities(
     *client_capabilities_ = capabilities.capabilities();
 
   VLOG(1) << "Client capabilities: " << *client_capabilities_;
+  event_handler_->OnSessionClientCapabilities(this);
 
   // Calculate the set of capabilities enabled by both client and host and
   // pass it to the desktop environment if it is available.
@@ -197,11 +228,29 @@ void ClientSession::DeliverClientMessage(
         reply.set_data(message.data().substr(0, 16));
       connection_->client_stub()->DeliverHostMessage(reply);
       return;
+    } else if (message.type() == "gnubby-auth") {
+      if (gnubby_auth_handler_) {
+        gnubby_auth_handler_->DeliverClientMessage(message.data());
+      } else {
+        HOST_LOG << "gnubby auth is not enabled";
+      }
+      return;
+    } else {
+      for(HostExtensionSessionList::iterator it = extension_sessions_.begin();
+          it != extension_sessions_.end(); ++it) {
+        // Extension returns |true| to indicate that the message was handled.
+        if ((*it)->OnExtensionMessage(this, message))
+          return;
+      }
     }
   }
-  // No messages are currently supported.
   HOST_LOG << "Unexpected message received: "
             << message.type() << ": " << message.data();
+}
+
+void ClientSession::OnConnectionAuthenticating(
+    protocol::ConnectionToClient* connection) {
+  event_handler_->OnSessionAuthenticating(this);
 }
 
 void ClientSession::OnConnectionAuthenticated(
@@ -242,7 +291,7 @@ void ClientSession::OnConnectionAuthenticated(
     return;
   }
 
-  host_capabilities_ = desktop_environment_->GetCapabilities();
+  AddHostCapabilities(desktop_environment_->GetCapabilities());
 
   // Ignore protocol::Capabilities messages from the client if it does not
   // support any capabilities.
@@ -250,6 +299,8 @@ void ClientSession::OnConnectionAuthenticated(
     VLOG(1) << "The client does not support any capabilities.";
 
     client_capabilities_ = make_scoped_ptr(new std::string());
+    event_handler_->OnSessionClientCapabilities(this);
+
     desktop_environment_->SetCapabilities(*client_capabilities_);
   }
 
@@ -288,6 +339,10 @@ void ClientSession::OnConnectionAuthenticated(
         audio_encoder.Pass(),
         connection_->audio_stub());
   }
+
+  // Create a GnubbyAuthHandler to proxy gnubbyd messages.
+  gnubby_auth_handler_ = desktop_environment_->CreateGnubbyAuthHandler(
+      connection_->client_stub());
 }
 
 void ClientSession::OnConnectionChannelsConnected(
@@ -412,6 +467,11 @@ void ClientSession::SetDisableInputs(bool disable_inputs) {
   disable_clipboard_filter_.set_enabled(!disable_inputs);
 }
 
+void ClientSession::SetGnubbyAuthHandlerForTesting(
+    GnubbyAuthHandler* gnubby_auth_handler) {
+  gnubby_auth_handler_.reset(gnubby_auth_handler);
+}
+
 scoped_ptr<protocol::ClipboardStub> ClientSession::CreateClipboardProxy() {
   DCHECK(CalledOnValidThread());
 
@@ -429,6 +489,8 @@ scoped_ptr<VideoEncoder> ClientSession::CreateVideoEncoder(
 
   if (video_config.codec == protocol::ChannelConfig::CODEC_VP8) {
     return remoting::VideoEncoderVpx::CreateForVP8().PassAs<VideoEncoder>();
+  } else if (video_config.codec == protocol::ChannelConfig::CODEC_VP9) {
+    return remoting::VideoEncoderVpx::CreateForVP9().PassAs<VideoEncoder>();
   }
 
   NOTREACHED();

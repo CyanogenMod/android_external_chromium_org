@@ -27,6 +27,7 @@
 
 using drive::DriveServiceInterface;
 using drive::DriveUploaderInterface;
+using google_apis::FileResource;
 using google_apis::GDataErrorCode;
 using google_apis::ResourceEntry;
 using google_apis::ResourceList;
@@ -71,9 +72,6 @@ class APIUtilTest : public testing::Test {
         temp_dir_.path(),
         scoped_ptr<DriveServiceInterface>(fake_drive_service_),
         scoped_ptr<DriveUploaderInterface>(fake_drive_uploader_));
-
-    fake_drive_service_->LoadResourceListForWapi(
-        "sync_file_system/initialize.json");
   }
 
   virtual void TearDown() OVERRIDE {
@@ -103,7 +101,7 @@ class APIUtilTest : public testing::Test {
   void SetUpFile(const std::string& origin_root_id,
                  const std::string& content_data,
                  const std::string& title,
-                 scoped_ptr<ResourceEntry>* entry) {
+                 scoped_ptr<FileResource>* entry) {
     ASSERT_TRUE(entry);
     std::string file_resource_id;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
@@ -113,14 +111,9 @@ class APIUtilTest : public testing::Test {
                   content_data,
                   &file_resource_id));
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
-              fake_drive_helper_->GetResourceEntry(
+              fake_drive_helper_->GetFileResource(
                   file_resource_id,
                   entry));
-  }
-
-  void LoadAccountMetadata() {
-    fake_drive_service_->LoadAccountMetadataForWapi(
-        "sync_file_system/account_metadata.json");
   }
 
   void VerifyTitleUniqueness(const std::string& parent_resource_id,
@@ -241,7 +234,6 @@ void DidDeleteFile(GDataErrorCode* error_out,
 }
 
 void APIUtilTest::TestGetSyncRoot() {
-  LoadAccountMetadata();
   const std::string sync_root_id = SetUpSyncRootDirectory();
 
   Output output;
@@ -254,8 +246,6 @@ void APIUtilTest::TestGetSyncRoot() {
 }
 
 void APIUtilTest::TestCreateSyncRoot() {
-  LoadAccountMetadata();
-
   Output output;
   api_util()->GetDriveDirectoryForSyncRoot(
       base::Bind(&DidGetResourceID, &output));
@@ -271,7 +261,6 @@ void APIUtilTest::TestCreateSyncRoot() {
 }
 
 void APIUtilTest::TestCreateSyncRoot_Conflict() {
-  LoadAccountMetadata();
   fake_drive_service()->set_make_directory_conflict(true);
 
   Output output;
@@ -345,15 +334,14 @@ void APIUtilTest::TestCreateOriginDirectory_Conflict() {
 }
 
 void APIUtilTest::TestGetLargestChangeStamp() {
-  LoadAccountMetadata();
-
   Output output;
   api_util()->GetLargestChangeStamp(
       base::Bind(&DidGetLargestChangeStamp, &output));
   base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(google_apis::HTTP_SUCCESS, output.error);
-  EXPECT_EQ(654321, output.largest_changestamp);
+  EXPECT_EQ(fake_drive_service()->about_resource().largest_change_id(),
+            output.largest_changestamp);
 }
 
 void APIUtilTest::TestListFiles() {
@@ -363,7 +351,7 @@ void APIUtilTest::TestListFiles() {
 
   int kNumberOfFiles = 5;
   for (int i = 0; i < kNumberOfFiles; ++i) {
-    scoped_ptr<ResourceEntry> file;
+    scoped_ptr<FileResource> file;
     std::string file_content = base::StringPrintf("test content %d", i);
     std::string file_title = base::StringPrintf("test_%d.txt", i);
     SetUpFile(origin_root_id, file_content, file_title, &file);
@@ -395,7 +383,8 @@ void APIUtilTest::TestListFiles() {
 }
 
 void APIUtilTest::TestListChanges() {
-  const int64 kStartChangestamp = 6;
+  const int64 old_changestamp =
+      fake_drive_service()->about_resource().largest_change_id();
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
@@ -404,7 +393,7 @@ void APIUtilTest::TestListChanges() {
   // directory is #3.
   const int kNumberOfFiles = 5;
   for (int i = 0; i < kNumberOfFiles; ++i) {
-    scoped_ptr<ResourceEntry> file;
+    scoped_ptr<FileResource> file;
     std::string file_content = base::StringPrintf("test content %d", i);
     std::string file_title = base::StringPrintf("test_%d.txt", i);
     SetUpFile(origin_root_id, file_content, file_title, &file);
@@ -423,7 +412,7 @@ void APIUtilTest::TestListChanges() {
   error = google_apis::GDATA_OTHER_ERROR;
   document_feed.reset();
   api_util()->ListChanges(
-      kStartChangestamp,
+      old_changestamp + 6,
       base::Bind(&DidGetResourceList, &error, &document_feed));
   base::MessageLoop::current()->RunUntilIdle();
 
@@ -438,17 +427,17 @@ void APIUtilTest::TestDownloadFile() {
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
-  scoped_ptr<ResourceEntry> file;
+  scoped_ptr<FileResource> file;
   SetUpFile(origin_root_id, kFileContent, kFileTitle, &file);
 
   Output output;
   api_util()->DownloadFile(
-      file->resource_id(),
+      file->file_id(),
       "",  // local_file_md5
       base::Bind(&DidDownloadFile, &output));
   base::MessageLoop::current()->RunUntilIdle();
 
-  EXPECT_EQ(file->file_md5(), output.file_md5);
+  EXPECT_EQ(file->md5_checksum(), output.file_md5);
   EXPECT_EQ(google_apis::HTTP_SUCCESS, output.error);
 }
 
@@ -458,19 +447,19 @@ void APIUtilTest::TestDownloadFileInNotModified() {
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
-  scoped_ptr<ResourceEntry> file;
+  scoped_ptr<FileResource> file;
   SetUpFile(origin_root_id, kFileContent, kFileTitle, &file);
 
   // Since local file's hash value is equal to remote file's one, it is expected
   // to cancel download the file and to return NOT_MODIFIED status code.
   Output output;
   api_util()->DownloadFile(
-      file->resource_id(),
-      file->file_md5(),
+      file->file_id(),
+      file->md5_checksum(),
       base::Bind(&DidDownloadFile, &output));
   base::MessageLoop::current()->RunUntilIdle();
 
-  EXPECT_EQ(file->file_md5(), output.file_md5);
+  EXPECT_EQ(file->md5_checksum(), output.file_md5);
   EXPECT_EQ(google_apis::HTTP_NOT_MODIFIED, output.error);
 }
 
@@ -531,24 +520,24 @@ void APIUtilTest::TestUploadExistingFile() {
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
-  scoped_ptr<ResourceEntry> file;
+  scoped_ptr<FileResource> file;
   SetUpFile(origin_root_id, kFileContent, kFileTitle, &file);
 
   Output output;
   api_util()->UploadExistingFile(
-      file->resource_id(),
-      file->file_md5(),
+      file->file_id(),
+      file->md5_checksum(),
       kLocalFilePath,
       base::Bind(&DidUploadFile, &output));
   base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(google_apis::HTTP_SUCCESS, output.error);
-  EXPECT_EQ(file->resource_id(), output.resource_id);
+  EXPECT_EQ(file->file_id(), output.resource_id);
 
   VerifyTitleUniqueness(origin_root_id,
                         file->title(),
-                        file->resource_id(),
-                        file->kind());
+                        file->file_id(),
+                        google_apis::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestUploadExistingFileInConflict() {
@@ -558,7 +547,7 @@ void APIUtilTest::TestUploadExistingFileInConflict() {
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
-  scoped_ptr<ResourceEntry> file;
+  scoped_ptr<FileResource> file;
   SetUpFile(origin_root_id, kFileContent, kFileTitle, &file);
 
   // Since remote file's hash value is different from the expected one, it is
@@ -567,7 +556,7 @@ void APIUtilTest::TestUploadExistingFileInConflict() {
 
   Output output;
   api_util()->UploadExistingFile(
-      file->resource_id(),
+      file->file_id(),
       kExpectedRemoteFileMD5,
       kLocalFilePath,
       base::Bind(&DidUploadFile, &output));
@@ -579,8 +568,8 @@ void APIUtilTest::TestUploadExistingFileInConflict() {
   // Verify that there is no duplicated file on the remote side.
   VerifyTitleUniqueness(origin_root_id,
                         file->title(),
-                        file->resource_id(),
-                        file->kind());
+                        file->file_id(),
+                        google_apis::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestDeleteFile() {
@@ -589,12 +578,12 @@ void APIUtilTest::TestDeleteFile() {
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
-  scoped_ptr<ResourceEntry> file;
+  scoped_ptr<FileResource> file;
   SetUpFile(origin_root_id, kFileContent, kFileTitle, &file);
 
   GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  api_util()->DeleteFile(file->resource_id(),
-                         file->file_md5(),
+  api_util()->DeleteFile(file->file_id(),
+                         file->md5_checksum(),
                          base::Bind(&DidDeleteFile, &error));
   base::MessageLoop::current()->RunUntilIdle();
 
@@ -609,7 +598,7 @@ void APIUtilTest::TestDeleteFileInConflict() {
   const std::string sync_root_id = SetUpSyncRootDirectory();
   const std::string origin_root_id = SetUpOriginRootDirectory(sync_root_id);
 
-  scoped_ptr<ResourceEntry> file;
+  scoped_ptr<FileResource> file;
   SetUpFile(origin_root_id, kFileContent, kFileTitle, &file);
 
   // Since remote file's hash value is different from the expected one, it is
@@ -617,7 +606,7 @@ void APIUtilTest::TestDeleteFileInConflict() {
   const std::string kExpectedRemoteFileMD5 = "123456";
 
   GDataErrorCode error = google_apis::GDATA_OTHER_ERROR;
-  api_util()->DeleteFile(file->resource_id(),
+  api_util()->DeleteFile(file->file_id(),
                          kExpectedRemoteFileMD5,
                          base::Bind(&DidDeleteFile, &error));
   base::MessageLoop::current()->RunUntilIdle();
@@ -627,8 +616,8 @@ void APIUtilTest::TestDeleteFileInConflict() {
   // Verify that the conflict file was not deleted on the remote side.
   VerifyTitleUniqueness(origin_root_id,
                         file->title(),
-                        file->resource_id(),
-                        file->kind());
+                        file->file_id(),
+                        google_apis::ENTRY_KIND_FILE);
 }
 
 void APIUtilTest::TestCreateDirectory() {

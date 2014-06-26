@@ -4,7 +4,6 @@
 
 #include "media/audio/sounds/sounds_manager.h"
 
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
@@ -12,7 +11,6 @@
 #include "base/single_thread_task_runner.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/sounds/audio_stream_handler.h"
-#include "media/base/media_switches.h"
 
 namespace media {
 
@@ -79,43 +77,6 @@ base::TimeDelta SoundsManagerImpl::GetDuration(SoundKey key) {
   return wav_audio.params().GetBufferDuration();
 }
 
-// SoundsManagerStub ---------------------------------------------------
-
-class SoundsManagerStub : public SoundsManager {
- public:
-  SoundsManagerStub();
-  virtual ~SoundsManagerStub();
-
-  // SoundsManager implementation:
-  virtual bool Initialize(SoundKey key,
-                          const base::StringPiece& data) OVERRIDE;
-  virtual bool Play(SoundKey key) OVERRIDE;
-  virtual base::TimeDelta GetDuration(SoundKey key) OVERRIDE;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(SoundsManagerStub);
-};
-
-SoundsManagerStub::SoundsManagerStub() {}
-
-SoundsManagerStub::~SoundsManagerStub() { DCHECK(CalledOnValidThread()); }
-
-bool SoundsManagerStub::Initialize(SoundKey /* key */,
-                                   const base::StringPiece& /* data */) {
-  DCHECK(CalledOnValidThread());
-  return false;
-}
-
-bool SoundsManagerStub::Play(SoundKey /* key */) {
-  DCHECK(CalledOnValidThread());
-  return false;
-}
-
-base::TimeDelta SoundsManagerStub::GetDuration(SoundKey /* key */) {
-  DCHECK(CalledOnValidThread());
-  return base::TimeDelta();
-}
-
 }  // namespace
 
 SoundsManager::SoundsManager() {}
@@ -128,13 +89,7 @@ void SoundsManager::Create() {
       << "SoundsManager::Create() is called twice";
   if (g_initialized_for_testing)
     return;
-
-  const bool enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
-                            ::switches::kDisableSystemSoundsManager);
-  if (enabled)
-    g_instance = new SoundsManagerImpl();
-  else
-    g_instance = new SoundsManagerStub();
+  g_instance = new SoundsManagerImpl();
 }
 
 // static

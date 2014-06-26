@@ -16,14 +16,18 @@ namespace base {
 class FilePath;
 }
 
+namespace storage_monitor {
+
 // Gets the mtp device information given a |storage_name|. On success,
-// fills in |id|, |name| and |location|.
+// fills in |id|, |name|, |location|, |vendor_name|, and |product_name|.
 typedef void (*GetStorageInfoFunc)(
     const std::string& storage_name,
     device::MediaTransferProtocolManager* mtp_manager,
     std::string* id,
     base::string16* name,
-    std::string* location);
+    std::string* location,
+    base::string16* vendor_name,
+    base::string16* product_name);
 
 // Helper class to send MTP storage attachment and detachment events to
 // StorageMonitor.
@@ -84,5 +88,7 @@ class MediaTransferProtocolDeviceObserverLinux
 
   DISALLOW_COPY_AND_ASSIGN(MediaTransferProtocolDeviceObserverLinux);
 };
+
+}  // namespace storage_monitor
 
 #endif  // COMPONENTS_STORAGE_MONITOR_MEDIA_TRANSFER_PROTOCOL_DEVICE_OBSERVER_LINUX_H_

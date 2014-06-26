@@ -4,6 +4,7 @@
 
 #include <set>
 
+#include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
@@ -20,13 +21,15 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "content/public/common/bindings_policy.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "net/base/net_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
@@ -34,6 +37,26 @@
 using base::ASCIIToUTF16;
 
 namespace content {
+
+namespace {
+
+const char kOpenUrlViaClickTargetFunc[] =
+    "(function(url) {\n"
+    "  var lnk = document.createElement(\"a\");\n"
+    "  lnk.href = url;\n"
+    "  lnk.target = \"_blank\";\n"
+    "  document.body.appendChild(lnk);\n"
+    "  lnk.click();\n"
+    "})";
+
+// Adds a link with given url and target=_blank, and clicks on it.
+void OpenUrlViaClickTarget(const internal::ToRenderFrameHost& adapter,
+                           const GURL& url) {
+  EXPECT_TRUE(ExecuteScript(adapter,
+      std::string(kOpenUrlViaClickTargetFunc) + "(\"" + url.spec() + "\");"));
+}
+
+}  // anonymous namespace
 
 class RenderFrameHostManagerTest : public ContentBrowserTest {
  public:
@@ -389,7 +412,8 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 // Test that setting the opener to null in a window affects cross-process
 // navigations, including those to existing entries.  http://crbug.com/156669.
 // Flaky on windows: http://crbug.com/291249
-#if defined(OS_WIN)
+// This test also crashes under ThreadSanitizer, http://crbug.com/356758.
+#if defined(OS_WIN) || defined(THREAD_SANITIZER)
 #define MAYBE_DisownOpener DISABLED_DisownOpener
 #else
 #define MAYBE_DisownOpener DisownOpener
@@ -841,45 +865,33 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
 IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, ClickLinkAfter204Error) {
   StartServer();
 
-  // Load a page with links that open in a new window.
-  // The links will point to foo.com.
-  std::string replacement_path;
-  ASSERT_TRUE(GetFilePathWithHostAndPortReplacement(
-      "files/click-noreferrer-links.html",
-      foo_host_port_,
-      &replacement_path));
-  NavigateToURL(shell(), test_server()->GetURL(replacement_path));
-
   // Get the original SiteInstance for later comparison.
   scoped_refptr<SiteInstance> orig_site_instance(
       shell()->web_contents()->GetSiteInstance());
   EXPECT_TRUE(orig_site_instance.get() != NULL);
 
   // Load a cross-site page that fails with a 204 error.
-  NavigateToURL(shell(),GetCrossSiteURL("nocontent"));
+  NavigateToURL(shell(), GetCrossSiteURL("nocontent"));
 
-  // We should still be looking at the normal page.  The typed URL will
-  // still be visible until the user clears it manually, but the last
-  // committed URL will be the previous page.
+  // We should still be looking at the normal page.  Because we started from a
+  // blank new tab, the typed URL will still be visible until the user clears it
+  // manually.  The last committed URL will be the previous page.
   scoped_refptr<SiteInstance> post_nav_site_instance(
       shell()->web_contents()->GetSiteInstance());
   EXPECT_EQ(orig_site_instance, post_nav_site_instance);
   EXPECT_EQ("/nocontent",
             shell()->web_contents()->GetVisibleURL().path());
-  EXPECT_EQ("/files/click-noreferrer-links.html",
-            shell()->web_contents()->GetController().
-                GetLastCommittedEntry()->GetVirtualURL().path());
+  EXPECT_FALSE(
+      shell()->web_contents()->GetController().GetLastCommittedEntry());
 
   // Renderer-initiated navigations should work.
-  bool success = false;
-  EXPECT_TRUE(ExecuteScriptAndExtractBool(
+  base::string16 expected_title = ASCIIToUTF16("Title Of Awesomeness");
+  TitleWatcher title_watcher(shell()->web_contents(), expected_title);
+  GURL url = test_server()->GetURL("files/title2.html");
+  EXPECT_TRUE(ExecuteScript(
       shell()->web_contents(),
-      "window.domAutomationController.send(clickNoRefLink());",
-      &success));
-  EXPECT_TRUE(success);
-
-  // Wait for the cross-site transition in the current tab to finish.
-  WaitForLoadStop(shell()->web_contents());
+      base::StringPrintf("location.href = '%s'", url.spec().c_str())));
+  ASSERT_EQ(expected_title, title_watcher.WaitAndGetTitle());
 
   // Opens in same tab.
   EXPECT_EQ(1u, Shell::windows().size());
@@ -887,9 +899,9 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, ClickLinkAfter204Error) {
             shell()->web_contents()->GetLastCommittedURL().path());
 
   // Should have the same SiteInstance.
-  scoped_refptr<SiteInstance> noref_site_instance(
+  scoped_refptr<SiteInstance> new_site_instance(
       shell()->web_contents()->GetSiteInstance());
-  EXPECT_EQ(orig_site_instance, noref_site_instance);
+  EXPECT_EQ(orig_site_instance, new_site_instance);
 }
 
 // Test for crbug.com/9682.  We should show the URL for a pending renderer-
@@ -976,12 +988,18 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
   EXPECT_FALSE(contents->GetController().GetVisibleEntry());
 }
 
+// Crashes under ThreadSanitizer, http://crbug.com/356758.
+#if defined(THREAD_SANITIZER)
+#define MAYBE_BackForwardNotStale DISABLED_BackForwardNotStale
+#else
+#define MAYBE_BackForwardNotStale BackForwardNotStale
+#endif
 // Test for http://crbug.com/93427.  Ensure that cross-site navigations
 // do not cause back/forward navigations to be considered stale by the
 // renderer.
-IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, BackForwardNotStale) {
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, MAYBE_BackForwardNotStale) {
   StartServer();
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Visit a page on first site.
   NavigateToURL(shell(), test_server()->GetURL("files/title1.html"));
@@ -1141,12 +1159,19 @@ class RenderViewHostDestructionObserver : public WebContentsObserver {
   std::set<RenderViewHost*> watched_render_view_hosts_;
 };
 
+// Crashes under ThreadSanitizer, http://crbug.com/356758.
+#if defined(THREAD_SANITIZER)
+#define MAYBE_LeakingRenderViewHosts DISABLED_LeakingRenderViewHosts
+#else
+#define MAYBE_LeakingRenderViewHosts LeakingRenderViewHosts
+#endif
 // Test for crbug.com/90867. Make sure we don't leak render view hosts since
 // they may cause crashes or memory corruptions when trying to call dead
 // delegate_. This test also verifies crbug.com/117420 and crbug.com/143255 to
 // ensure that a separate SiteInstance is created when navigating to view-source
 // URLs, regardless of current URL.
-IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, LeakingRenderViewHosts) {
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest,
+                       MAYBE_LeakingRenderViewHosts) {
   StartServer();
 
   // Observe the created render_view_host's to make sure they will not leak.
@@ -1348,6 +1373,93 @@ IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, ClearPendingWebUIOnCommit) {
   NavigateToURL(shell(), webui_url2);
   EXPECT_EQ(webui, web_contents->GetRenderManagerForTesting()->web_ui());
   EXPECT_FALSE(web_contents->GetRenderManagerForTesting()->pending_web_ui());
+}
+
+class RFHMProcessPerTabTest : public RenderFrameHostManagerTest {
+ public:
+  RFHMProcessPerTabTest() {}
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    command_line->AppendSwitch(switches::kProcessPerTab);
+  }
+};
+
+// Test that we still swap processes for BrowsingInstance changes even in
+// --process-per-tab mode.  See http://crbug.com/343017.
+// Disabled on Android: http://crbug.com/345873.
+// Crashes under ThreadSanitizer, http://crbug.com/356758.
+#if defined(OS_ANDROID) || defined(THREAD_SANITIZER)
+#define MAYBE_BackFromWebUI DISABLED_BackFromWebUI
+#else
+#define MAYBE_BackFromWebUI BackFromWebUI
+#endif
+IN_PROC_BROWSER_TEST_F(RFHMProcessPerTabTest, MAYBE_BackFromWebUI) {
+  ASSERT_TRUE(test_server()->Start());
+  GURL original_url(test_server()->GetURL("files/title2.html"));
+  NavigateToURL(shell(), original_url);
+
+  // Visit a WebUI page with bindings.
+  GURL webui_url(GURL(std::string(kChromeUIScheme) + "://" +
+                      std::string(kChromeUIGpuHost)));
+  NavigateToURL(shell(), webui_url);
+  EXPECT_TRUE(ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+                  shell()->web_contents()->GetRenderProcessHost()->GetID()));
+
+  // Go back and ensure we have no WebUI bindings.
+  TestNavigationObserver back_nav_load_observer(shell()->web_contents());
+  shell()->web_contents()->GetController().GoBack();
+  back_nav_load_observer.Wait();
+  EXPECT_EQ(original_url, shell()->web_contents()->GetLastCommittedURL());
+  EXPECT_FALSE(ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+                  shell()->web_contents()->GetRenderProcessHost()->GetID()));
+}
+
+// crbug.com/372360
+// The test loads url1, opens a link pointing to url2 in a new tab, and
+// navigates the new tab to url1.
+// The following is needed for the bug to happen:
+//  - url1 must require webui bindings;
+//  - navigating to url2 in the site instance of url1 should not swap
+//   browsing instances, but should require a new site instance.
+IN_PROC_BROWSER_TEST_F(RenderFrameHostManagerTest, WebUIGetsBindings) {
+  GURL url1(std::string(kChromeUIScheme) + "://" +
+            std::string(kChromeUIGpuHost));
+  GURL url2(std::string(kChromeUIScheme) + "://" +
+            std::string(kChromeUIAccessibilityHost));
+
+  // Visit a WebUI page with bindings.
+  NavigateToURL(shell(), url1);
+  EXPECT_TRUE(ChildProcessSecurityPolicyImpl::GetInstance()->HasWebUIBindings(
+                  shell()->web_contents()->GetRenderProcessHost()->GetID()));
+  SiteInstance* site_instance1 = shell()->web_contents()->GetSiteInstance();
+
+  // Open a new tab. Initially it gets a render view in the original tab's
+  // current site instance.
+  TestNavigationObserver nav_observer(NULL);
+  nav_observer.StartWatchingNewWebContents();
+  ShellAddedObserver shao;
+  OpenUrlViaClickTarget(shell()->web_contents(), url2);
+  nav_observer.Wait();
+  Shell* new_shell = shao.GetShell();
+  WebContentsImpl* new_web_contents = static_cast<WebContentsImpl*>(
+      new_shell->web_contents());
+  SiteInstance* site_instance2 = new_web_contents->GetSiteInstance();
+
+  EXPECT_NE(site_instance2, site_instance1);
+  EXPECT_TRUE(site_instance2->IsRelatedSiteInstance(site_instance1));
+  RenderViewHost* initial_rvh = new_web_contents->
+      GetRenderManagerForTesting()->GetSwappedOutRenderViewHost(site_instance1);
+  ASSERT_TRUE(initial_rvh);
+  // The following condition is what was causing the bug.
+  EXPECT_EQ(0, initial_rvh->GetEnabledBindings());
+
+  // Navigate to url1 and check bindings.
+  NavigateToURL(new_shell, url1);
+  // The navigation should have used the first SiteInstance, otherwise
+  // |initial_rvh| did not have a chance to be used.
+  EXPECT_EQ(new_web_contents->GetSiteInstance(), site_instance1);
+  EXPECT_EQ(BINDINGS_POLICY_WEB_UI,
+      new_web_contents->GetRenderViewHost()->GetEnabledBindings());
 }
 
 }  // namespace content

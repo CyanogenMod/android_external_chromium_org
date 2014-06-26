@@ -5,9 +5,9 @@
 #include "base/command_line.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/test/oobe_screen_waiter.h"
-#include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_display.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
@@ -37,7 +37,7 @@ class OobeTest : public InProcessBrowserTest {
     command_line->AppendSwitch(chromeos::switches::kForceLoginManagerInTests);
     command_line->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
     command_line->AppendSwitchASCII(
-        chromeos::switches::kAuthExtensionPath, "gaia_auth");
+        ::switches::kAuthExtensionPath, "gaia_auth");
     fake_gaia_.Initialize();
   }
 
@@ -79,8 +79,12 @@ class OobeTest : public InProcessBrowserTest {
   DISALLOW_COPY_AND_ASSIGN(OobeTest);
 };
 
-// crbug.com/342478
-IN_PROC_BROWSER_TEST_F(OobeTest, DISABLED_NewUser) {
+#if defined(OS_CHROMEOS)
+#define MAYBE_NewUser DISABLED_NewUser
+#else
+#define MAYBE_NewUser NewUser
+#endif
+IN_PROC_BROWSER_TEST_F(OobeTest, MAYBE_NewUser) {
   chromeos::WizardController::SkipPostLoginScreensForTesting();
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();
@@ -100,7 +104,12 @@ IN_PROC_BROWSER_TEST_F(OobeTest, DISABLED_NewUser) {
     content::NotificationService::AllSources()).Wait();
 }
 
-IN_PROC_BROWSER_TEST_F(OobeTest, Accelerator) {
+#if defined(OS_CHROMEOS)
+#define MAYBE_Accelerator DISABLED_Accelerator
+#else
+#define MAYBE_Accelerator Accelerator
+#endif
+IN_PROC_BROWSER_TEST_F(OobeTest, MAYBE_Accelerator) {
   chromeos::WizardController::SkipPostLoginScreensForTesting();
   chromeos::WizardController* wizard_controller =
       chromeos::WizardController::default_controller();

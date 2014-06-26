@@ -15,10 +15,7 @@ class View;
 }
 
 namespace ash {
-
 class SystemTrayItem;
-
-namespace internal {
 
 // A view with a chevron ('>') on the right edge. Clicking on the view brings up
 // the detailed view of the tray-item that owns it.
@@ -45,7 +42,7 @@ class TrayItemMore : public ActionableView {
 
   // Overridden from views::View.
   virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   SystemTrayItem* owner_;
   // True if |more_| should be shown.
@@ -58,7 +55,6 @@ class TrayItemMore : public ActionableView {
   DISALLOW_COPY_AND_ASSIGN(TrayItemMore);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_ITEM_MORE_H_

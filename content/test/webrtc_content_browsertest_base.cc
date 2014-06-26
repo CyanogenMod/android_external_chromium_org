@@ -9,8 +9,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test_utils.h"
+#include "media/base/media_switches.h"
 
 namespace content {
 
@@ -21,16 +22,16 @@ void WebRtcContentBrowserTest::SetUpCommandLine(CommandLine* command_line) {
       switches::kUseFakeDeviceForMediaStream));
   ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kUseFakeUIForMediaStream));
+
+  // Always include loopback interface in network list, in case the test device
+  // doesn't have other interfaces available.
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kAllowLoopbackInPeerConnection);
 }
 
 void WebRtcContentBrowserTest::SetUp() {
   EnablePixelOutput();
   ContentBrowserTest::SetUp();
-}
-
-bool WebRtcContentBrowserTest::ExecuteJavascript(
-    const std::string& javascript) {
-  return ExecuteScript(shell()->web_contents(), javascript);
 }
 
 // Executes |javascript|. The script is required to use
@@ -44,12 +45,14 @@ std::string WebRtcContentBrowserTest::ExecuteJavascriptAndReturnResult(
   return result;
 }
 
-void WebRtcContentBrowserTest::ExpectTitle(
-    const std::string& expected_title) const {
-  base::string16 expected_title16(base::ASCIIToUTF16(expected_title));
-  TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
-  EXPECT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
-}
+void WebRtcContentBrowserTest::ExecuteJavascriptAndWaitForOk(
+    const std::string& javascript) {
+   std::string result = ExecuteJavascriptAndReturnResult(javascript);
+   if (result != "OK") {
+     printf("From javascript: %s", result.c_str());
+     FAIL();
+   }
+ }
 
 std::string WebRtcContentBrowserTest::GenerateGetUserMediaCall(
     const char* function_name,

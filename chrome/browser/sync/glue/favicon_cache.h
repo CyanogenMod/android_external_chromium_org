@@ -28,7 +28,7 @@
 class Profile;
 
 namespace chrome {
-struct FaviconBitmapResult;
+struct FaviconRawBitmapResult;
 }
 
 namespace browser_sync {
@@ -44,7 +44,7 @@ enum IconSize {
 struct SyncedFaviconInfo;
 
 // Encapsulates the logic for loading and storing synced favicons.
-// TODO(zea): make this a BrowserContextKeyedService.
+// TODO(zea): make this a KeyedService.
 class FaviconCache : public syncer::SyncableService,
                      public content::NotificationObserver {
  public:
@@ -131,7 +131,7 @@ class FaviconCache : public syncer::SyncableService,
   // available. Does nothing if no favicon data was available.
   void OnFaviconDataAvailable(
       const GURL& page_url,
-      const std::vector<chrome::FaviconBitmapResult>& bitmap_result);
+      const std::vector<favicon_base::FaviconRawBitmapResult>& bitmap_result);
 
   // Helper method to update the sync state of the favicon at |icon_url|. If
   // either |image_change_type| or |tracking_change_type| is ACTION_INVALID,
@@ -188,6 +188,10 @@ class FaviconCache : public syncer::SyncableService,
 
   // Locally drops the favicon pointed to by |favicon_iter|.
   void DropSyncedFavicon(FaviconMap::iterator favicon_iter);
+
+  // Only drops the data associated with |type| of |favicon_iter|.
+  void DropPartialFavicon(FaviconMap::iterator favicon_iter,
+                          syncer::ModelType type);
 
   // For testing only.
   size_t NumFaviconsForTest() const;

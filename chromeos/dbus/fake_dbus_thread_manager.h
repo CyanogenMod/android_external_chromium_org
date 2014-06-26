@@ -34,10 +34,21 @@ class CHROMEOS_EXPORT FakeDBusThreadManager : public DBusThreadManager {
   // Creates and sets all fake Shill DBusClients.
   void SetFakeShillClients();
 
+  // Sets up any default environment for fake clients, e.g. for UI testing.
+  void SetupDefaultEnvironment();
+
   void SetBluetoothAdapterClient(scoped_ptr<BluetoothAdapterClient> client);
   void SetBluetoothAgentManagerClient(
       scoped_ptr<BluetoothAgentManagerClient> client);
   void SetBluetoothDeviceClient(scoped_ptr<BluetoothDeviceClient> client);
+  void SetBluetoothGattCharacteristicClient(
+      scoped_ptr<BluetoothGattCharacteristicClient> client);
+  void SetBluetoothGattDescriptorClient(
+      scoped_ptr<BluetoothGattDescriptorClient> client);
+  void SetBluetoothGattManagerClient(
+      scoped_ptr<BluetoothGattManagerClient> client);
+  void SetBluetoothGattServiceClient(
+      scoped_ptr<BluetoothGattServiceClient> client);
   void SetBluetoothInputClient(scoped_ptr<BluetoothInputClient> client);
   void SetBluetoothProfileManagerClient(
       scoped_ptr<BluetoothProfileManagerClient> client);
@@ -45,6 +56,7 @@ class CHROMEOS_EXPORT FakeDBusThreadManager : public DBusThreadManager {
   void SetCrosDisksClient(scoped_ptr<CrosDisksClient> client);
   void SetCryptohomeClient(scoped_ptr<CryptohomeClient> client);
   void SetDebugDaemonClient(scoped_ptr<DebugDaemonClient> client);
+  void SetLorgnetteManagerClient(scoped_ptr<LorgnetteManagerClient> client);
   void SetShillDeviceClient(scoped_ptr<ShillDeviceClient> client);
   void SetShillIPConfigClient(scoped_ptr<ShillIPConfigClient> client);
   void SetShillManagerClient(scoped_ptr<ShillManagerClient> client);
@@ -75,6 +87,12 @@ class CHROMEOS_EXPORT FakeDBusThreadManager : public DBusThreadManager {
   virtual BluetoothAgentManagerClient*
       GetBluetoothAgentManagerClient() OVERRIDE;
   virtual BluetoothDeviceClient* GetBluetoothDeviceClient() OVERRIDE;
+  virtual BluetoothGattCharacteristicClient*
+      GetBluetoothGattCharacteristicClient() OVERRIDE;
+  virtual BluetoothGattDescriptorClient*
+      GetBluetoothGattDescriptorClient() OVERRIDE;
+  virtual BluetoothGattManagerClient* GetBluetoothGattManagerClient() OVERRIDE;
+  virtual BluetoothGattServiceClient* GetBluetoothGattServiceClient() OVERRIDE;
   virtual BluetoothInputClient* GetBluetoothInputClient() OVERRIDE;
   virtual BluetoothProfileManagerClient*
       GetBluetoothProfileManagerClient() OVERRIDE;
@@ -82,6 +100,7 @@ class CHROMEOS_EXPORT FakeDBusThreadManager : public DBusThreadManager {
   virtual CrosDisksClient* GetCrosDisksClient() OVERRIDE;
   virtual CryptohomeClient* GetCryptohomeClient() OVERRIDE;
   virtual DebugDaemonClient* GetDebugDaemonClient() OVERRIDE;
+  virtual LorgnetteManagerClient* GetLorgnetteManagerClient() OVERRIDE;
   virtual ShillDeviceClient* GetShillDeviceClient() OVERRIDE;
   virtual ShillIPConfigClient* GetShillIPConfigClient() OVERRIDE;
   virtual ShillManagerClient* GetShillManagerClient() OVERRIDE;
@@ -112,12 +131,19 @@ class CHROMEOS_EXPORT FakeDBusThreadManager : public DBusThreadManager {
   scoped_ptr<BluetoothAdapterClient> bluetooth_adapter_client_;
   scoped_ptr<BluetoothAgentManagerClient> bluetooth_agent_manager_client_;
   scoped_ptr<BluetoothDeviceClient> bluetooth_device_client_;
+  scoped_ptr<BluetoothGattCharacteristicClient>
+      bluetooth_gatt_characteristic_client_;
+  scoped_ptr<BluetoothGattDescriptorClient>
+      bluetooth_gatt_descriptor_client_;
+  scoped_ptr<BluetoothGattManagerClient> bluetooth_gatt_manager_client_;
+  scoped_ptr<BluetoothGattServiceClient> bluetooth_gatt_service_client_;
   scoped_ptr<BluetoothInputClient> bluetooth_input_client_;
   scoped_ptr<BluetoothProfileManagerClient> bluetooth_profile_manager_client_;
   scoped_ptr<CrasAudioClient> cras_audio_client_;
   scoped_ptr<CrosDisksClient> cros_disks_client_;
   scoped_ptr<CryptohomeClient> cryptohome_client_;
   scoped_ptr<DebugDaemonClient> debug_daemon_client_;
+  scoped_ptr<LorgnetteManagerClient> lorgnette_manager_client_;
   scoped_ptr<ShillDeviceClient> shill_device_client_;
   scoped_ptr<ShillIPConfigClient> shill_ipconfig_client_;
   scoped_ptr<ShillManagerClient> shill_manager_client_;

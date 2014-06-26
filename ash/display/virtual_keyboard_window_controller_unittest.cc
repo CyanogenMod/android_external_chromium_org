@@ -10,8 +10,10 @@
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/command_line.h"
 #include "ui/keyboard/keyboard_switches.h"
+#include "ui/keyboard/keyboard_util.h"
 
 namespace ash {
 namespace test {
@@ -21,6 +23,28 @@ class VirtualKeyboardWindowControllerTest : public AshTestBase {
   VirtualKeyboardWindowControllerTest()
       : virtual_keyboard_window_controller_(NULL) {}
   virtual ~VirtualKeyboardWindowControllerTest() {}
+
+  void set_virtual_keyboard_window_controller(
+      VirtualKeyboardWindowController* controller) {
+    virtual_keyboard_window_controller_ = controller;
+  }
+
+  RootWindowController* root_window_controller() {
+    return virtual_keyboard_window_controller_->
+        root_window_controller_for_test();
+  }
+
+ private:
+  VirtualKeyboardWindowController* virtual_keyboard_window_controller_;
+  DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardWindowControllerTest);
+};
+
+class VirtualKeyboardUsabilityExperimentTest
+    : public VirtualKeyboardWindowControllerTest {
+ public:
+  VirtualKeyboardUsabilityExperimentTest()
+    : VirtualKeyboardWindowControllerTest() {}
+  virtual ~VirtualKeyboardUsabilityExperimentTest() {}
 
   virtual void SetUp() OVERRIDE {
     if (SupportsMultipleDisplays()) {
@@ -32,24 +56,11 @@ class VirtualKeyboardWindowControllerTest : public AshTestBase {
     test::AshTestBase::SetUp();
   }
 
-  void set_virtual_keyboard_window_controller(
-      internal::VirtualKeyboardWindowController* controller) {
-    virtual_keyboard_window_controller_ = controller;
-  }
-
-  internal::RootWindowController* root_window_controller() {
-    return virtual_keyboard_window_controller_->
-        root_window_controller_for_test();
-  }
-
  private:
-  internal::VirtualKeyboardWindowController*
-      virtual_keyboard_window_controller_;
-  DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardWindowControllerTest);
+  DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardUsabilityExperimentTest);
 };
 
-
-TEST_F(VirtualKeyboardWindowControllerTest, VirtualKeyboardWindowTest) {
+TEST_F(VirtualKeyboardUsabilityExperimentTest, VirtualKeyboardWindowTest) {
   if (!SupportsMultipleDisplays())
     return;
   RunAllPendingInMessageLoop();
@@ -57,9 +68,29 @@ TEST_F(VirtualKeyboardWindowControllerTest, VirtualKeyboardWindowTest) {
       Shell::GetInstance()->display_controller()->
           virtual_keyboard_window_controller());
   EXPECT_TRUE(root_window_controller());
-  // Keyboard container is added to virtual keyboard window.
-  EXPECT_TRUE(root_window_controller()->GetContainer(
-      internal::kShellWindowId_VirtualKeyboardContainer));
+  aura::Window* container = root_window_controller()->GetContainer(
+      kShellWindowId_VirtualKeyboardContainer);
+  // Keyboard container is added to virtual keyboard window and its bounds is
+  // the same as root window.
+  EXPECT_TRUE(container);
+  EXPECT_EQ(container->bounds(),
+            root_window_controller()->GetRootWindow()->bounds());
+}
+
+// Tests that the onscreen keyboard becomes enabled when maximize mode is
+// enabled.
+TEST_F(VirtualKeyboardWindowControllerTest, EnabledDuringMaximizeMode) {
+  set_virtual_keyboard_window_controller(
+      Shell::GetInstance()->display_controller()->
+          virtual_keyboard_window_controller());
+
+  ASSERT_FALSE(keyboard::IsKeyboardEnabled());
+  Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(true);
+  EXPECT_TRUE(keyboard::IsKeyboardEnabled());
+  Shell::GetInstance()->maximize_mode_controller()->
+      EnableMaximizeModeWindowManager(false);
+  EXPECT_FALSE(keyboard::IsKeyboardEnabled());
 }
 
 }  // namespace test

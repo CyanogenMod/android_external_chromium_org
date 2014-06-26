@@ -27,10 +27,13 @@ class FakeContentLayerClient : public ContentLayerClient {
   FakeContentLayerClient();
   virtual ~FakeContentLayerClient();
 
-  virtual void PaintContents(SkCanvas* canvas,
-                             const gfx::Rect& rect,
-                             gfx::RectF* opaque_rect) OVERRIDE;
+  virtual void PaintContents(
+      SkCanvas* canvas,
+      const gfx::Rect& rect,
+      gfx::RectF* opaque_rect,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE;
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
+  virtual bool FillsBoundsCompletely() const OVERRIDE;
 
   void set_paint_all_opaque(bool opaque) { paint_all_opaque_ = opaque; }
 
@@ -39,13 +42,19 @@ class FakeContentLayerClient : public ContentLayerClient {
   }
 
   void add_draw_bitmap(const SkBitmap& bitmap,
-                       gfx::Point point,
+                       const gfx::Point& point,
                        const SkPaint& paint) {
     BitmapData data;
     data.bitmap = bitmap;
     data.point = point;
     data.paint = paint;
     draw_bitmaps_.push_back(data);
+  }
+
+  SkCanvas* last_canvas() const { return last_canvas_; }
+
+  ContentLayerClient::GraphicsContextStatus last_context_status() const {
+    return last_context_status_;
   }
 
  private:
@@ -55,6 +64,8 @@ class FakeContentLayerClient : public ContentLayerClient {
   bool paint_all_opaque_;
   RectPaintVector draw_rects_;
   BitmapVector draw_bitmaps_;
+  SkCanvas* last_canvas_;
+  ContentLayerClient::GraphicsContextStatus last_context_status_;
 };
 
 }  // namespace cc

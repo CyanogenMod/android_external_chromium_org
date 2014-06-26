@@ -14,13 +14,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
 #include "chrome/browser/ui/app_list/search/app_search_provider.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/app_list/search/history.h"
 #include "chrome/browser/ui/app_list/search/history_factory.h"
 #include "chrome/browser/ui/app_list/search/omnibox_provider.h"
 #include "chrome/browser/ui/app_list/search/people/people_provider.h"
-#include "chrome/browser/ui/app_list/search/search_provider.h"
 #include "chrome/browser/ui/app_list/search/webstore/webstore_provider.h"
 #include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/common/chrome_switches.h"
@@ -94,8 +94,10 @@ void SearchController::Init() {
 void SearchController::Start() {
   Stop();
 
+  list_controller_->OnSearchStarted();
+
   base::string16 query;
-  TrimWhitespace(search_box_->text(), TRIM_ALL, &query);
+  base::TrimWhitespace(search_box_->text(), base::TRIM_ALL, &query);
 
   dispatching_query_ = true;
   for (Providers::iterator it = providers_.begin();

@@ -8,9 +8,10 @@
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/browser_navigator.h"
-#include "chrome/common/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 
@@ -135,21 +136,18 @@ OmniboxProvider::OmniboxProvider(Profile* profile)
       controller_(new AutocompleteController(
           profile,
           this,
-          AutocompleteClassifier::kDefaultOmniboxProviders)) {
+          AutocompleteClassifier::kDefaultOmniboxProviders &
+              ~AutocompleteProvider::TYPE_ZERO_SUGGEST)) {
+  controller_->search_provider()->set_in_app_list();
 }
 
 OmniboxProvider::~OmniboxProvider() {}
 
 void OmniboxProvider::Start(const base::string16& query) {
-  controller_->Start(AutocompleteInput(query,
-                                       base::string16::npos,
-                                       base::string16(),
-                                       GURL(),
-                                       AutocompleteInput::INVALID_SPEC,
-                                       false,
-                                       false,
-                                       true,
-                                       AutocompleteInput::ALL_MATCHES));
+  controller_->Start(AutocompleteInput(
+      query, base::string16::npos, base::string16(), GURL(),
+      metrics::OmniboxEventProto::INVALID_SPEC, false, false, true, true,
+      profile_));
 }
 
 void OmniboxProvider::Stop() {
@@ -164,8 +162,7 @@ void OmniboxProvider::PopulateFromACResult(const AutocompleteResult& result) {
     if (!it->destination_url.is_valid())
       continue;
 
-    Add(scoped_ptr<ChromeSearchResult>(
-        new OmniboxResult(profile_, *it)).Pass());
+    Add(scoped_ptr<SearchResult>(new OmniboxResult(profile_, *it)));
   }
 }
 

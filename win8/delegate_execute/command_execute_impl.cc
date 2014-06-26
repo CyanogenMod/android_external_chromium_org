@@ -28,6 +28,7 @@
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
+#include "ui/gfx/win/dpi.h"
 #include "win8/delegate_execute/chrome_util.h"
 #include "win8/delegate_execute/delegate_execute_util.h"
 #include "win8/viewer/metro_viewer_constants.h"
@@ -107,16 +108,16 @@ bool LaunchChromeBrowserProcess() {
 
 bool CommandExecuteImpl::path_provider_initialized_ = false;
 
-// CommandExecuteImpl is resposible for activating chrome in Windows 8. The
+// CommandExecuteImpl is responsible for activating chrome in Windows 8. The
 // flow is complicated and this tries to highlight the important events.
 // The current approach is to have a single instance of chrome either
 // running in desktop or metro mode. If there is no current instance then
 // the desktop shortcut launches desktop chrome and the metro tile or search
 // charm launches metro chrome.
 // If chrome is running then focus/activation is given to the existing one
-// regarless of what launch point the user used.
+// regardless of what launch point the user used.
 //
-// The general flow when chrome is the default browser is as follows:
+// The general flow for activation is as follows:
 //
 // 1- User interacts with launch point (icon, tile, search, shellexec, etc)
 // 2- Windows finds the appid for launch item and resolves it to chrome
@@ -133,11 +134,12 @@ bool CommandExecuteImpl::path_provider_initialized_ = false;
 //    the launch scheme (or url) and the activation verb.
 // 5- Windows calls CommandExecuteImpl::Getvalue()
 //    Here we need to return AHE_IMMERSIVE or AHE_DESKTOP. That depends on:
-//    a) if run in high-integrity return AHE_DESKTOP
+//    a) if run in high-integrity return AHE_DESKTOP.
 //    b) else we return what GetLaunchMode() tells us, which is:
-//       i) if the command line --force-xxx is present return that
-//       ii) if the registry 'launch_mode' exists return that
-//       iii) else return AHE_DESKTOP
+//       i) if chrome is not the default browser, return AHE_DESKTOP
+//       ii) if the command line --force-xxx is present return that
+//       iii) if the registry 'launch_mode' exists return that
+//       iv) else return AHE_DESKTOP
 // 6- If we returned AHE_IMMERSIVE in step 5 windows might not call us back
 //    and simply activate chrome in metro by itself, however in some cases
 //    it might proceed at step 7.
@@ -150,7 +152,13 @@ bool CommandExecuteImpl::path_provider_initialized_ = false;
 //    b) else we call one of the IApplicationActivationManager activation
 //       functions depending on the parameters passed in step 4.
 //    c) If the activation returns E_APPLICATION_NOT_REGISTERED, then we fall
-//       back to launching chrome on the desktop via LaunchDestopChrome().
+//       back to launching chrome on the desktop via LaunchDestopChrome().  Note
+//       that this case can lead to strange behavior, because at this point we
+//       have pre-launched the browser with --silent-launch --viewer-connect.
+//       E_APPLICATION_NOT_REGISTERED is always returned if Chrome is not the
+//       default browser (this case will have already been checked for by
+//       GetLaunchMode() and AHE_DESKTOP returned), but we don't know if it can
+//       be returned for other reasons.
 //
 // Note that if a command line --force-xxx is present we write that launch mode
 // in the registry so next time the logic reaches 5c-ii it will use the same
@@ -164,7 +172,7 @@ CommandExecuteImpl::CommandExecuteImpl()
   start_info_.cb = sizeof(start_info_);
 
   // We need to query the user data dir of chrome so we need chrome's
-  // path provider. We can be created multiplie times in a single instance
+  // path provider. We can be created multiple times in a single instance
   // however so make sure we do this only once.
   if (!path_provider_initialized_) {
     chrome::RegisterPathProvider();
@@ -200,6 +208,13 @@ STDMETHODIMP CommandExecuteImpl::SetDirectory(LPCWSTR directory) {
   return S_OK;
 }
 
+void CommandExecuteImpl::SetHighDPIRegistryKey(bool enable) {
+  uint32 key_value = enable ? 1 : 2;
+  base::win::RegKey high_dpi_key(HKEY_CURRENT_USER);
+  high_dpi_key.CreateKey(gfx::win::kRegistryProfilePath, KEY_SET_VALUE);
+  high_dpi_key.WriteValue(gfx::win::kHighDPISupportW, key_value);
+}
+
 STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
   if (!GetLaunchScheme(&display_name_, &launch_scheme_)) {
     AtlTrace("Failed to get scheme, E_FAIL\n");
@@ -209,8 +224,16 @@ STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
   EC_HOST_UI_MODE mode = GetLaunchMode();
   *pahe = (mode == ECHUIM_DESKTOP) ? AHE_DESKTOP : AHE_IMMERSIVE;
 
-  if (*pahe == AHE_IMMERSIVE && verb_ != win8::kMetroViewerConnectVerb)
+  // If we're going to return AHE_IMMERSIVE, then both the browser process and
+  // the metro viewer need to launch and connect before the user can start
+  // browsing.  However we must not launch the metro viewer until we get a
+  // call to CommandExecuteImpl::Execute().  If we wait until then to launch
+  // the browser process as well, it will appear laggy while they connect to
+  // each other, so we pre-launch the browser process now.
+  if (*pahe == AHE_IMMERSIVE && verb_ != win8::kMetroViewerConnectVerb) {
+    SetHighDPIRegistryKey(true);
     LaunchChromeBrowserProcess();
+  }
   return S_OK;
 }
 
@@ -375,6 +398,8 @@ HRESULT CommandExecuteImpl::LaunchDesktopChrome() {
       break;
   }
 
+  SetHighDPIRegistryKey(false);
+
   CommandLine chrome(
       delegate_execute::MakeChromeCommandLine(chrome_exe_, parameters_,
                                               display_name));
@@ -415,6 +440,17 @@ EC_HOST_UI_MODE CommandExecuteImpl::GetLaunchMode() {
     launch_mode_determined = true;
     return launch_mode;
   }
+
+  base::FilePath chrome_exe;
+  if (!FindChromeExe(&chrome_exe) ||
+      ShellUtil::GetChromeDefaultStateFromPath(chrome_exe) !=
+          ShellUtil::IS_DEFAULT) {
+    AtlTrace("Chrome is not default: launching in desktop mode\n");
+    launch_mode = ECHUIM_DESKTOP;
+    launch_mode_determined = true;
+    return launch_mode;
+  }
+
   if (GetAsyncKeyState(VK_SHIFT) && GetAsyncKeyState(VK_F11)) {
     AtlTrace("Hotkey: launching in immersive mode\n");
     launch_mode = ECHUIM_IMMERSIVE;

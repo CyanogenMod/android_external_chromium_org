@@ -18,7 +18,6 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "content/public/browser/web_contents_view.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 
 #if defined(OS_ANDROID)
@@ -117,6 +116,8 @@ void PopupBlockerTabHelper::ShowBlockedPopup(int32 id) {
   BlockedRequest* popup = blocked_popups_.Lookup(id);
   if (!popup)
     return;
+  // We set user_gesture to true here, so the new popup gets correctly focused.
+  popup->params.user_gesture = true;
 #if defined(OS_ANDROID)
   TabModelList::HandlePopupNavigation(&popup->params);
 #else

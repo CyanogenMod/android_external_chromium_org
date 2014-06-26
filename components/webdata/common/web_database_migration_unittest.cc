@@ -12,6 +12,7 @@
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -26,7 +27,7 @@
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_entry.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
-#include "components/signin/core/webdata/token_service_table.h"
+#include "components/signin/core/browser/webdata/token_service_table.h"
 #include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -155,6 +156,13 @@ void CheckNoBackupData(const sql::Connection& connection,
   EXPECT_FALSE(connection.DoesTableExist("keywords_backup"));
 }
 
+std::string RemoveQuotes(const std::string& has_quotes) {
+  std::string no_quotes;
+  // SQLite quotes: http://www.sqlite.org/lang_keywords.html
+  base::RemoveChars(has_quotes, "\"[]`", &no_quotes);
+  return no_quotes;
+}
+
 }  // anonymous namespace
 
 // The WebDatabaseMigrationTest encapsulates testing of database migrations.
@@ -248,7 +256,7 @@ class WebDatabaseMigrationTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(WebDatabaseMigrationTest);
 };
 
-const int WebDatabaseMigrationTest::kCurrentTestedVersionNumber = 54;
+const int WebDatabaseMigrationTest::kCurrentTestedVersionNumber = 57;
 
 void WebDatabaseMigrationTest::LoadDatabase(
     const base::FilePath::StringType& file) {
@@ -258,6 +266,25 @@ void WebDatabaseMigrationTest::LoadDatabase(
   sql::Connection connection;
   ASSERT_TRUE(connection.Open(GetDatabasePath()));
   ASSERT_TRUE(connection.Execute(contents.data()));
+}
+
+// Tests that migrating from the golden files version_XX.sql results in the same
+// schema as migrating from an empty database.
+TEST_F(WebDatabaseMigrationTest, VersionXxSqlFilesAreGolden) {
+  DoMigration();
+  sql::Connection connection;
+  ASSERT_TRUE(connection.Open(GetDatabasePath()));
+  const std::string& expected_schema = RemoveQuotes(connection.GetSchema());
+  static const int kFirstVersion = 53;
+  for (int i = kFirstVersion; i < kCurrentTestedVersionNumber; ++i) {
+    connection.Raze();
+    const base::FilePath& file_name = base::FilePath::FromUTF8Unsafe(
+        "version_" + base::IntToString(i) + ".sql");
+    ASSERT_NO_FATAL_FAILURE(LoadDatabase(file_name.value()))
+        << "Failed to load " << file_name.MaybeAsASCII();
+    DoMigration();
+    EXPECT_EQ(expected_schema, RemoveQuotes(connection.GetSchema()));
+  }
 }
 
 // Tests that the all migrations from an empty database succeed.
@@ -275,7 +302,9 @@ TEST_F(WebDatabaseMigrationTest, MigrateEmptyToCurrent) {
 
     // Check that expected tables are present.
     EXPECT_TRUE(connection.DoesTableExist("autofill"));
-    EXPECT_TRUE(connection.DoesTableExist("autofill_dates"));
+    // The autofill_dates table is obsolete. (It's been merged into the autofill
+    // table.)
+    EXPECT_FALSE(connection.DoesTableExist("autofill_dates"));
     EXPECT_TRUE(connection.DoesTableExist("autofill_profiles"));
     EXPECT_TRUE(connection.DoesTableExist("credit_cards"));
     EXPECT_TRUE(connection.DoesTableExist("keywords"));
@@ -287,6 +316,159 @@ TEST_F(WebDatabaseMigrationTest, MigrateEmptyToCurrent) {
     EXPECT_TRUE(connection.DoesTableExist("web_apps"));
     EXPECT_TRUE(connection.DoesTableExist("web_intents"));
     EXPECT_TRUE(connection.DoesTableExist("web_intents_defaults"));
+  }
+}
+
+// Tests that absent Autofill tables do not create any problems when migrating
+// from a DB written by the earliest publicly released version of Chrome.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion20ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_20.sql")));
+
+  // Verify pre-conditions.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    EXPECT_FALSE(connection.DoesTableExist("autofill"));
+    EXPECT_FALSE(connection.DoesTableExist("autofill_profiles"));
+    EXPECT_FALSE(connection.DoesTableExist("credit_cards"));
+  }
+
+  DoMigration();
+
+  // Verify post-conditions.  These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    // Mostly this test just verifies that no SQL errors occur during migration;
+    // but might as well verify that the tables were created as well.
+    EXPECT_TRUE(connection.DoesTableExist("autofill"));
+    EXPECT_TRUE(connection.DoesTableExist("autofill_profiles"));
+    EXPECT_TRUE(connection.DoesTableExist("credit_cards"));
+  }
+}
+
+// Tests that rows with empty values get removed from the autofill tables.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion21ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_21.sql")));
+
+  // Verify pre-conditions.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    // Both empty and non-empty values are allowed in a version 21 database.
+    sql::Statement s_autofill(connection.GetUniqueStatement(
+        "SELECT name, value, value_lower, pair_id, count FROM autofill"));
+    sql::Statement s_dates(connection.GetUniqueStatement(
+        "SELECT pair_id, date_created FROM autofill_dates"));
+
+    // An entry with a non-empty value.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("John Doe"), s_autofill.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s_autofill.ColumnString16(2));
+    EXPECT_EQ(10, s_autofill.ColumnInt(3));
+    EXPECT_EQ(1, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(10, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299100, s_dates.ColumnInt64(1));
+
+    // An entry with an empty value.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(base::string16(), s_autofill.ColumnString16(1));
+    EXPECT_EQ(base::string16(), s_autofill.ColumnString16(2));
+    EXPECT_EQ(11, s_autofill.ColumnInt(3));
+    EXPECT_EQ(1, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(11, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299200, s_dates.ColumnInt64(1));
+
+    // Another entry with a non-empty value.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s_autofill.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s_autofill.ColumnString16(2));
+    EXPECT_EQ(20, s_autofill.ColumnInt(3));
+    EXPECT_EQ(3, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(20, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299300, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(20, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299301, s_dates.ColumnInt64(1));
+
+    // Another entry with an empty value.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(base::string16(), s_autofill.ColumnString16(1));
+    EXPECT_EQ(base::string16(), s_autofill.ColumnString16(2));
+    EXPECT_EQ(21, s_autofill.ColumnInt(3));
+    EXPECT_EQ(4, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299401, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299400, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299403, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299402, s_dates.ColumnInt64(1));
+
+    // No more entries expected.
+    ASSERT_FALSE(s_autofill.Step());
+    ASSERT_FALSE(s_dates.Step());
+  }
+
+  DoMigration();
+
+  // Verify post-conditions.  These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    // Entries with empty values should have been dropped.  The remaining
+    // entries should have been preserved.
+    sql::Statement s(
+        connection.GetUniqueStatement(
+            "SELECT name, value, value_lower, date_created, date_last_used,"
+            " count "
+            "FROM autofill "
+            "ORDER BY name, value ASC"));
+
+    // "jane@example.com"
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s.ColumnString16(2));
+    EXPECT_EQ(1384299300, s.ColumnInt64(3));
+    EXPECT_EQ(1384299301, s.ColumnInt64(4));
+    EXPECT_EQ(3, s.ColumnInt(5));
+
+    // "John Doe"
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("John Doe"), s.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s.ColumnString16(2));
+    EXPECT_EQ(1384299100, s.ColumnInt64(3));
+    EXPECT_EQ(1384299100, s.ColumnInt64(4));
+    EXPECT_EQ(1, s.ColumnInt(5));
+
+    // No more entries expected.
+    ASSERT_FALSE(s.Step());
   }
 }
 
@@ -2268,5 +2450,286 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion53ToCurrent) {
     EXPECT_EQ(base::string16(), s_phones.ColumnString16(1));
 
     EXPECT_FALSE(s_phones.Step());
+  }
+}
+
+// Tests that migrating from version 54 to version 55 drops the autofill_dates
+// table, and merges the appropriate dates into the autofill table.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion54ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_54.sql")));
+
+  // Verify pre-conditions.  These are expectations for version 54 of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+
+    EXPECT_TRUE(connection.DoesTableExist("autofill_dates"));
+    EXPECT_FALSE(connection.DoesColumnExist("autofill", "date_created"));
+    EXPECT_FALSE(connection.DoesColumnExist("autofill", "date_last_used"));
+
+    // Verify the incoming data.
+    sql::Statement s_autofill(connection.GetUniqueStatement(
+        "SELECT name, value, value_lower, pair_id, count FROM autofill"));
+    sql::Statement s_dates(connection.GetUniqueStatement(
+        "SELECT pair_id, date_created FROM autofill_dates"));
+
+    // An entry with one timestamp.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("John Doe"), s_autofill.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s_autofill.ColumnString16(2));
+    EXPECT_EQ(10, s_autofill.ColumnInt(3));
+    EXPECT_EQ(1, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(10, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299100, s_dates.ColumnInt64(1));
+
+    // Another entry with one timestamp, differing from the previous one in case
+    // only.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s_autofill.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s_autofill.ColumnString16(2));
+    EXPECT_EQ(11, s_autofill.ColumnInt(3));
+    EXPECT_EQ(1, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(11, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299200, s_dates.ColumnInt64(1));
+
+    // An entry with two timestamps (with count > 2; this is realistic).
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s_autofill.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s_autofill.ColumnString16(2));
+    EXPECT_EQ(20, s_autofill.ColumnInt(3));
+    EXPECT_EQ(3, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(20, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299300, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(20, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299301, s_dates.ColumnInt64(1));
+
+    // An entry with more than two timestamps, which are stored out of order.
+    ASSERT_TRUE(s_autofill.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s_autofill.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("jane.doe@example.org"),
+              s_autofill.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("jane.doe@example.org"),
+              s_autofill.ColumnString16(2));
+    EXPECT_EQ(21, s_autofill.ColumnInt(3));
+    EXPECT_EQ(4, s_autofill.ColumnInt(4));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299401, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299400, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299403, s_dates.ColumnInt64(1));
+    ASSERT_TRUE(s_dates.Step());
+    EXPECT_EQ(21, s_dates.ColumnInt(0));
+    EXPECT_EQ(1384299402, s_dates.ColumnInt64(1));
+
+    // No more entries expected.
+    ASSERT_FALSE(s_autofill.Step());
+    ASSERT_FALSE(s_dates.Step());
+  }
+
+  DoMigration();
+
+  // Verify post-conditions.  These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    // The autofill_dates table should have been dropped, and its columns should
+    // have been migrated to the autofill table.
+    EXPECT_FALSE(connection.DoesTableExist("autofill_dates"));
+    EXPECT_TRUE(connection.DoesColumnExist("autofill", "date_created"));
+    EXPECT_TRUE(connection.DoesColumnExist("autofill", "date_last_used"));
+
+    // Data should have been preserved.  Note that it appears out of order
+    // relative to the previous table, as it's been alphabetized.  That's ok.
+    sql::Statement s(
+        connection.GetUniqueStatement(
+            "SELECT name, value, value_lower, date_created, date_last_used,"
+            " count "
+            "FROM autofill "
+            "ORDER BY name, value ASC"));
+
+    // "jane.doe@example.org": Timestamps should be parsed correctly, and only
+    // the first and last should be kept.
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("jane.doe@example.org"), s.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("jane.doe@example.org"), s.ColumnString16(2));
+    EXPECT_EQ(1384299400, s.ColumnInt64(3));
+    EXPECT_EQ(1384299403, s.ColumnInt64(4));
+    EXPECT_EQ(4, s.ColumnInt(5));
+
+    // "jane@example.com": Timestamps should be parsed correctly.
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(ASCIIToUTF16("Email"), s.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("jane@example.com"), s.ColumnString16(2));
+    EXPECT_EQ(1384299300, s.ColumnInt64(3));
+    EXPECT_EQ(1384299301, s.ColumnInt64(4));
+    EXPECT_EQ(3, s.ColumnInt(5));
+
+    // "John Doe": The single timestamp should be assigned as both the creation
+    // and the last use timestamp.
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("John Doe"), s.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s.ColumnString16(2));
+    EXPECT_EQ(1384299100, s.ColumnInt64(3));
+    EXPECT_EQ(1384299100, s.ColumnInt64(4));
+    EXPECT_EQ(1, s.ColumnInt(5));
+
+    // "john doe": Should not be merged with "John Doe" (case-sensitivity).
+    ASSERT_TRUE(s.Step());
+    EXPECT_EQ(ASCIIToUTF16("Name"), s.ColumnString16(0));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("john doe"), s.ColumnString16(2));
+    EXPECT_EQ(1384299200, s.ColumnInt64(3));
+    EXPECT_EQ(1384299200, s.ColumnInt64(4));
+    EXPECT_EQ(1, s.ColumnInt(5));
+
+    // No more entries expected.
+    ASSERT_FALSE(s.Step());
+  }
+}
+
+// Tests that migrating from version 55 to version 56 adds the language_code
+// column to autofill_profiles table.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion55ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_55.sql")));
+
+  // Verify pre-conditions. These are expectations for version 55 of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    EXPECT_FALSE(
+        connection.DoesColumnExist("autofill_profiles", "language_code"));
+  }
+
+  DoMigration();
+
+  // Verify post-conditions. These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    // The language_code column should have been added to autofill_profiles
+    // table.
+    EXPECT_TRUE(
+        connection.DoesColumnExist("autofill_profiles", "language_code"));
+
+    // Data should have been preserved. Language code should have been set to
+    // empty string.
+    sql::Statement s_profiles(
+        connection.GetUniqueStatement(
+            "SELECT guid, company_name, street_address, dependent_locality,"
+            " city, state, zipcode, sorting_code, country_code, date_modified,"
+            " origin, language_code "
+            "FROM autofill_profiles"));
+
+    ASSERT_TRUE(s_profiles.Step());
+    EXPECT_EQ("00000000-0000-0000-0000-000000000001",
+              s_profiles.ColumnString(0));
+    EXPECT_EQ(ASCIIToUTF16("Google Inc"), s_profiles.ColumnString16(1));
+    EXPECT_EQ(ASCIIToUTF16("340 Main St"),
+              s_profiles.ColumnString16(2));
+    EXPECT_EQ(base::string16(), s_profiles.ColumnString16(3));
+    EXPECT_EQ(ASCIIToUTF16("Los Angeles"), s_profiles.ColumnString16(4));
+    EXPECT_EQ(ASCIIToUTF16("CA"), s_profiles.ColumnString16(5));
+    EXPECT_EQ(ASCIIToUTF16("90291"), s_profiles.ColumnString16(6));
+    EXPECT_EQ(base::string16(), s_profiles.ColumnString16(7));
+    EXPECT_EQ(ASCIIToUTF16("US"), s_profiles.ColumnString16(8));
+    EXPECT_EQ(1395948829, s_profiles.ColumnInt(9));
+    EXPECT_EQ(ASCIIToUTF16("Chrome settings"), s_profiles.ColumnString16(10));
+    EXPECT_EQ(std::string(), s_profiles.ColumnString(11));
+
+    // No more entries expected.
+    ASSERT_FALSE(s_profiles.Step());
+  }
+}
+
+// Tests that migrating from version 56 to version 57 adds the full_name
+// column to autofill_profile_names table.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion56ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_56.sql")));
+
+  // Verify pre-conditions. These are expectations for version 56 of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    EXPECT_FALSE(
+        connection.DoesColumnExist("autofill_profile_names", "full_name"));
+
+    // Verify the starting data.
+    sql::Statement s_names(
+        connection.GetUniqueStatement(
+            "SELECT guid, first_name, middle_name, last_name "
+            "FROM autofill_profile_names"));
+    ASSERT_TRUE(s_names.Step());
+    EXPECT_EQ("B41FE6E0-B13E-2A2A-BF0B-29FCE2C3ADBD", s_names.ColumnString(0));
+    EXPECT_EQ(ASCIIToUTF16("Jon"), s_names.ColumnString16(1));
+    EXPECT_EQ(base::string16(), s_names.ColumnString16(2));
+    EXPECT_EQ(ASCIIToUTF16("Smith"), s_names.ColumnString16(3));
+  }
+
+  DoMigration();
+
+  // Verify post-conditions. These are expectations for current version of the
+  // database.
+  {
+    sql::Connection connection;
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    ASSERT_TRUE(sql::MetaTable::DoesTableExist(&connection));
+
+    // Check version.
+    EXPECT_EQ(kCurrentTestedVersionNumber, VersionFromConnection(&connection));
+
+    // The full_name column should have been added to autofill_profile_names
+    // table.
+    EXPECT_TRUE(
+        connection.DoesColumnExist("autofill_profile_names", "full_name"));
+
+    // Data should have been preserved. Full name should have been set to the
+    // empty string.
+    sql::Statement s_names(
+        connection.GetUniqueStatement(
+            "SELECT guid, first_name, middle_name, last_name, full_name "
+            "FROM autofill_profile_names"));
+
+    ASSERT_TRUE(s_names.Step());
+    EXPECT_EQ("B41FE6E0-B13E-2A2A-BF0B-29FCE2C3ADBD", s_names.ColumnString(0));
+    EXPECT_EQ(ASCIIToUTF16("Jon"), s_names.ColumnString16(1));
+    EXPECT_EQ(base::string16(), s_names.ColumnString16(2));
+    EXPECT_EQ(ASCIIToUTF16("Smith"), s_names.ColumnString16(3));
+    EXPECT_EQ(base::string16(), s_names.ColumnString16(4));
+
+    // No more entries expected.
+    ASSERT_FALSE(s_names.Step());
   }
 }

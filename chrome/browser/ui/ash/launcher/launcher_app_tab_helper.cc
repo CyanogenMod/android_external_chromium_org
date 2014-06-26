@@ -12,56 +12,65 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 
 namespace {
 
 const extensions::Extension* GetExtensionForTab(Profile* profile,
                                                 content::WebContents* tab) {
-  ExtensionService* extension_service = profile->GetExtensionService();
+  ExtensionService* extension_service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
   if (!extension_service || !extension_service->extensions_enabled())
     return NULL;
 
+  // Note: It is possible to come here after a tab got removed form the browser
+  // before it gets destroyed, in which case there is no browser.
   Browser* browser = chrome::FindBrowserWithWebContents(tab);
-  DCHECK(browser);
 
-  GURL url = tab->GetURL();
-  if (browser->is_app()) {
-    // Only consider the original URL of an app window when determining its
-    // associated extension.
-    if (tab->GetController().GetEntryCount())
-      url = tab->GetController().GetEntryAtIndex(0)->GetURL();
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
 
-    // Bookmark app windows should match their launch url extension despite
-    // their web extents.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableStreamlinedHostedApps)) {
-      const extensions::ExtensionSet& extensions =
-          extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
-      for (extensions::ExtensionSet::const_iterator it = extensions.begin();
-           it != extensions.end(); ++it) {
-        if (it->get()->from_bookmark() &&
-            extensions::AppLaunchInfo::GetLaunchWebURL(it->get()) == url) {
-          return it->get();
-        }
+  // Use the Browser's app name to determine the extension for app windows and
+  // use the tab's url for app tabs.
+  if (browser && browser->is_app()) {
+    return registry->GetExtensionById(
+        web_app::GetExtensionIdFromApplicationName(browser->app_name()),
+        extensions::ExtensionRegistry::EVERYTHING);
+  }
+
+  const GURL url = tab->GetURL();
+  const extensions::ExtensionSet& extensions = registry->enabled_extensions();
+  const extensions::Extension* extension = extensions.GetAppByURL(url);
+  if (extension)
+    return extension;
+
+  // Bookmark app windows should match their launch url extension despite
+  // their web extents.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableStreamlinedHostedApps)) {
+    for (extensions::ExtensionSet::const_iterator it = extensions.begin();
+         it != extensions.end(); ++it) {
+      if (it->get()->from_bookmark() &&
+          extensions::AppLaunchInfo::GetLaunchWebURL(it->get()) == url) {
+        return it->get();
       }
     }
   }
-
-  return extension_service->GetInstalledApp(url);
+  return NULL;
 }
 
 const extensions::Extension* GetExtensionByID(Profile* profile,
                                               const std::string& id) {
-  ExtensionService* extension_service = profile->GetExtensionService();
-  if (!extension_service || !extension_service->extensions_enabled())
-    return NULL;
-  return extension_service->GetInstalledExtension(id);
+  return extensions::ExtensionRegistry::Get(profile)->GetExtensionById(
+      id, extensions::ExtensionRegistry::EVERYTHING);
 }
 
 }  // namespace

@@ -5,8 +5,6 @@
 #ifndef MEDIA_FILTERS_DECODER_SELECTOR_H_
 #define MEDIA_FILTERS_DECODER_SELECTOR_H_
 
-#include "media/filters/decoder_selector.h"
-
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
@@ -65,8 +63,9 @@ class MEDIA_EXPORT DecoderSelector {
   // Selected Decoder (and DecryptingDemuxerStream) is returned via
   // the |select_decoder_cb|.
   void SelectDecoder(DemuxerStream* stream,
-                     StatisticsCB statistics_cb,
-                     const SelectDecoderCB& select_decoder_cb);
+                     bool low_delay,
+                     const SelectDecoderCB& select_decoder_cb,
+                     const typename Decoder::OutputCB& output_cb);
 
   // Aborts pending Decoder selection and fires |select_decoder_cb| with
   // NULL and NULL immediately if it's pending.
@@ -78,20 +77,20 @@ class MEDIA_EXPORT DecoderSelector {
   void InitializeDecoder();
   void DecoderInitDone(PipelineStatus status);
   void ReturnNullDecoder();
-  void DoInitializeDecoder(const PipelineStatusCB& status_cb);
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   ScopedVector<Decoder> decoders_;
   SetDecryptorReadyCB set_decryptor_ready_cb_;
 
   DemuxerStream* input_stream_;
+  bool low_delay_;
   SelectDecoderCB select_decoder_cb_;
-
-  StatisticsCB statistics_cb_;
+  typename Decoder::OutputCB output_cb_;
 
   scoped_ptr<Decoder> decoder_;
   scoped_ptr<DecryptingDemuxerStream> decrypted_stream_;
 
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<DecoderSelector> weak_ptr_factory_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(DecoderSelector);
@@ -99,10 +98,6 @@ class MEDIA_EXPORT DecoderSelector {
 
 typedef DecoderSelector<DemuxerStream::VIDEO> VideoDecoderSelector;
 typedef DecoderSelector<DemuxerStream::AUDIO> AudioDecoderSelector;
-
-template <>
-void AudioDecoderSelector::DoInitializeDecoder(
-    const PipelineStatusCB& status_cb);
 
 }  // namespace media
 

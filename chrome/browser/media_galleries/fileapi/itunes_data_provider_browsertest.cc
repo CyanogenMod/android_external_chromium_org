@@ -38,6 +38,13 @@ struct LibraryEntry {
   base::FilePath location;
 };
 
+// 'c' with combinding cedilla.
+const char kDeNormalizedName[] = {
+    'c', static_cast<unsigned char>(0xCC), static_cast<unsigned char>(0xA7), 0};
+// 'c' with cedilla.
+const char kNormalizedName[] = {
+    static_cast<unsigned char>(0xC3), static_cast<unsigned char>(0xA7), 0};
+
 }  // namespace
 
 class TestITunesDataProvider : public ITunesDataProvider {
@@ -79,7 +86,7 @@ class ITunesDataProviderTest : public InProcessBrowserTest {
   }
 
   void RunTest() {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     base::RunLoop loop;
     quit_closure_ = loop.QuitClosure();
     MediaFileSystemBackend::MediaTaskRunner()->PostTask(
@@ -193,7 +200,7 @@ class ITunesDataProviderTest : public InProcessBrowserTest {
     }
     xml += "</dict></dict></plist>\n";
     ASSERT_EQ(static_cast<int>(xml.size()),
-              file_util::WriteFile(XmlFile(), xml.c_str(), xml.size()));
+              base::WriteFile(XmlFile(), xml.c_str(), xml.size()));
   }
 
   base::ScopedTempDir library_dir_;
@@ -343,7 +350,7 @@ class ITunesDataProviderInvalidTest : public ITunesDataProviderTest {
                    base::Unretained(data_provider()),
                    base::Bind(&ITunesDataProviderInvalidTest::CheckInvalid,
                               base::Unretained(this))));
-    ASSERT_EQ(1L, file_util::WriteFile(XmlFile(), " ", 1));
+    ASSERT_EQ(1L, base::WriteFile(XmlFile(), " ", 1));
   }
 
   void CheckInvalid(bool is_valid) {
@@ -410,6 +417,7 @@ class ITunesDataProviderEscapeTest : public ITunesDataProviderTest {
     entries.push_back(LibraryEntry("Artist:/name", "Album:name/", track));
     entries.push_back(LibraryEntry("Artist/name", "Album:name", track));
     entries.push_back(LibraryEntry("Artist/name", "Album:name", track));
+    entries.push_back(LibraryEntry(kDeNormalizedName, kNormalizedName, track));
     return entries;
   }
 
@@ -430,6 +438,10 @@ class ITunesDataProviderEscapeTest : public ITunesDataProviderTest {
               data_provider()->GetTrackLocation(
                   "Artist_name", "Album_name",
                   "Track_1 (3).mp3").NormalizePathSeparators().value());
+    EXPECT_EQ(track.value(),
+              data_provider()->GetTrackLocation(
+                  kNormalizedName, kNormalizedName,
+                  "Track_1.mp3").NormalizePathSeparators().value());
 
     TestDone();
   }

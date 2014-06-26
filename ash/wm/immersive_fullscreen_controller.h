@@ -13,9 +13,9 @@
 #include "ui/aura/window_observer.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/animation/animation_delegate.h"
-#include "ui/views/corewm/transient_window_observer.h"
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget_observer.h"
+#include "ui/wm/core/transient_window_observer.h"
 
 namespace aura {
 class Window;
@@ -41,11 +41,13 @@ namespace ash {
 class ASH_EXPORT ImmersiveFullscreenController
     : public gfx::AnimationDelegate,
       public ui::EventHandler,
-      public views::corewm::TransientWindowObserver,
+      public ::wm::TransientWindowObserver,
       public views::FocusChangeListener,
       public views::WidgetObserver,
       public ImmersiveRevealedLock::Delegate {
  public:
+  static const int kMouseRevealBoundsHeight;
+
   // The enum is used for an enumerated histogram. New items should be only
   // added to the end.
   enum WindowType {
@@ -143,7 +145,7 @@ class ASH_EXPORT ImmersiveFullscreenController
   virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
 
-  // views::corewm::TransientWindowObserver overrides:
+  // ::wm::TransientWindowObserver overrides:
   virtual void OnTransientChildAdded(aura::Window* window,
                                      aura::Window* transient) OVERRIDE;
   virtual void OnTransientChildRemoved(aura::Window* window,

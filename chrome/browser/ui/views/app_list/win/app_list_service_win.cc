@@ -9,8 +9,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/lazy_instance.h"
-#include "base/memory/weak_ptr.h"
+#include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -18,7 +17,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "base/win/shortcut.h"
 #include "base/win/windows_version.h"
 #include "chrome/app/chrome_dll_resource.h"
@@ -28,14 +26,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/shell_integration.h"
-#include "chrome/browser/ui/app_list/app_list.h"
-#include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
-#include "chrome/browser/ui/app_list/app_list_factory.h"
-#include "chrome/browser/ui/app_list/app_list_service_impl.h"
-#include "chrome/browser/ui/app_list/app_list_shower.h"
-#include "chrome/browser/ui/app_list/app_list_view_delegate.h"
-#include "chrome/browser/ui/app_list/keep_alive_service_impl.h"
-#include "chrome/browser/ui/apps/app_metro_infobar_delegate_win.h"
+#include "chrome/browser/ui/ash/app_list/app_list_service_ash.h"
 #include "chrome/browser/ui/views/app_list/win/activation_tracker_win.h"
 #include "chrome/browser/ui/views/app_list/win/app_list_controller_delegate_win.h"
 #include "chrome/browser/ui/views/app_list/win/app_list_win.h"
@@ -44,59 +35,25 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/installer/launcher_support/chrome_launcher_support.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_settings.h"
 #include "chrome/installer/util/install_util.h"
-#include "chrome/installer/util/util_constants.h"
 #include "content/public/browser/browser_thread.h"
-#include "grit/chromium_strings.h"
-#include "grit/generated_resources.h"
-#include "grit/google_chrome_strings.h"
-#include "grit/theme_resources.h"
-#include "ui/app_list/app_list_model.h"
-#include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_view.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/win/shell.h"
-#include "ui/gfx/display.h"
-#include "ui/gfx/image/image_skia.h"
-#include "ui/gfx/screen.h"
-#include "ui/views/bubble/bubble_border.h"
-#include "ui/views/widget/widget.h"
-#include "win8/util/win8_util.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/root_window.h"
-#include "ui/aura/window.h"
-#endif
-
-#if defined(USE_ASH)
-#include "chrome/browser/ui/app_list/app_list_service_ash.h"
-#include "chrome/browser/ui/host_desktop.h"
-#endif
-
-#if defined(GOOGLE_CHROME_BUILD)
-#include "chrome/installer/util/install_util.h"
-#endif
 
 // static
 AppListService* AppListService::Get(chrome::HostDesktopType desktop_type) {
-#if defined(USE_ASH)
   if (desktop_type == chrome::HOST_DESKTOP_TYPE_ASH)
-    return chrome::GetAppListServiceAsh();
-#endif
+    return AppListServiceAsh::GetInstance();
 
-  return chrome::GetAppListServiceWin();
+  return AppListServiceWin::GetInstance();
 }
 
 // static
 void AppListService::InitAll(Profile* initial_profile) {
-#if defined(USE_ASH)
-  chrome::GetAppListServiceAsh()->Init(initial_profile);
-#endif
-  chrome::GetAppListServiceWin()->Init(initial_profile);
+  AppListServiceAsh::GetInstance()->Init(initial_profile);
+  AppListServiceWin::GetInstance()->Init(initial_profile);
 }
 
 namespace {
@@ -186,10 +143,9 @@ void SetDidRunForNDayActiveStats() {
     BrowserDistribution* app_launcher_dist =
         BrowserDistribution::GetSpecificDistribution(
             BrowserDistribution::CHROME_APP_HOST);
-    GoogleUpdateSettings::UpdateDidRunStateForDistribution(
-        app_launcher_dist,
-        true /* did_run */,
-        system_install);
+    GoogleUpdateSettings::UpdateDidRunStateForApp(
+        app_launcher_dist->GetAppRegistrationData(),
+        true /* did_run */);
   }
 }
 
@@ -205,8 +161,8 @@ void SetDidRunForNDayActiveStats() {
 void CreateAppListShortcuts(
     const base::FilePath& user_data_dir,
     const base::string16& app_model_id,
-    const ShellIntegration::ShortcutLocations& creation_locations) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+    const web_app::ShortcutLocations& creation_locations) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
 
   // Shortcut paths under which to create shortcuts.
   std::vector<base::FilePath> shortcut_paths =
@@ -285,43 +241,6 @@ void SetWindowAttributes(HWND hwnd) {
   ui::win::SetAppIconForWindow(icon_path, hwnd);
 }
 
-class AppListFactoryWin : public AppListFactory {
- public:
-  explicit AppListFactoryWin(AppListServiceWin* service)
-      : service_(service) {
-  }
-
-  virtual ~AppListFactoryWin() {
-  }
-
-  virtual AppList* CreateAppList(
-      Profile* profile,
-      AppListService* service,
-      const base::Closure& on_should_dismiss) OVERRIDE {
-    // The view delegate will be owned by the app list view. The app list view
-    // manages it's own lifetime.
-    AppListViewDelegate* view_delegate =
-        new AppListViewDelegate(profile,
-                                service->GetControllerDelegate());
-    app_list::AppListView* view = new app_list::AppListView(view_delegate);
-    gfx::Point cursor = gfx::Screen::GetNativeScreen()->GetCursorScreenPoint();
-    view->InitAsBubbleAtFixedLocation(NULL,
-                                      &pagination_model_,
-                                      cursor,
-                                      views::BubbleBorder::FLOAT,
-                                      false /* border_accepts_events */);
-    SetWindowAttributes(view->GetHWND());
-    return new AppListWin(view, on_should_dismiss);
-  }
-
- private:
-  // PaginationModel that is shared across all views.
-  app_list::PaginationModel pagination_model_;
-  AppListServiceWin* service_;
-
-  DISALLOW_COPY_AND_ASSIGN(AppListFactoryWin);
-};
-
 }  // namespace
 
 // static
@@ -331,65 +250,18 @@ AppListServiceWin* AppListServiceWin::GetInstance() {
 }
 
 AppListServiceWin::AppListServiceWin()
-    : enable_app_list_on_next_init_(false),
-      shower_(new AppListShower(
-          scoped_ptr<AppListFactory>(new AppListFactoryWin(this)),
-          scoped_ptr<KeepAliveService>(new KeepAliveServiceImpl),
-          this)),
-      controller_delegate_(new AppListControllerDelegateWin(this)),
-      weak_factory_(this) {
+    : AppListServiceViews(scoped_ptr<AppListControllerDelegate>(
+          new AppListControllerDelegateWin(this))),
+      enable_app_list_on_next_init_(false) {
 }
 
 AppListServiceWin::~AppListServiceWin() {
 }
 
-void AppListServiceWin::set_can_close(bool can_close) {
-  shower_->set_can_close(can_close);
-}
-
-gfx::NativeWindow AppListServiceWin::GetAppListWindow() {
-  return shower_->GetWindow();
-}
-
-Profile* AppListServiceWin::GetCurrentAppListProfile() {
-  return shower_->profile();
-}
-
-AppListControllerDelegate* AppListServiceWin::GetControllerDelegate() {
-  return controller_delegate_.get();
-}
-
 void AppListServiceWin::ShowForProfile(Profile* requested_profile) {
-  DCHECK(requested_profile);
-  if (requested_profile->IsManaged())
-    return;
-
-  ScopedKeepAlive show_app_list_keepalive;
-
+  AppListServiceViews::ShowForProfile(requested_profile);
   content::BrowserThread::PostBlockingPoolTask(
       FROM_HERE, base::Bind(SetDidRunForNDayActiveStats));
-
-  if (win8::IsSingleWindowMetroMode()) {
-    // This request came from Windows 8 in desktop mode, but chrome is currently
-    // running in Metro mode.
-    AppMetroInfoBarDelegateWin::Create(
-        requested_profile, AppMetroInfoBarDelegateWin::SHOW_APP_LIST,
-        std::string());
-    return;
-  }
-
-  InvalidatePendingProfileLoads();
-  SetProfilePath(requested_profile->GetPath());
-  shower_->ShowForProfile(requested_profile);
-  RecordAppListLaunch();
-}
-
-void AppListServiceWin::DismissAppList() {
-  shower_->DismissAppList();
-}
-
-void AppListServiceWin::OnAppListClosing() {
-  shower_->CloseAppList();
 }
 
 void AppListServiceWin::OnLoadProfileForWarmup(Profile* initial_profile) {
@@ -397,13 +269,15 @@ void AppListServiceWin::OnLoadProfileForWarmup(Profile* initial_profile) {
     return;
 
   base::Time before_warmup(base::Time::Now());
-  shower_->WarmupForProfile(initial_profile);
+  shower().WarmupForProfile(initial_profile);
   UMA_HISTOGRAM_TIMES("Apps.AppListWarmupDuration",
                       base::Time::Now() - before_warmup);
 }
 
 void AppListServiceWin::SetAppListNextPaintCallback(void (*callback)()) {
-  app_list::AppListView::SetNextPaintCallback(callback);
+  // This should only be called during startup.
+  DCHECK(!shower().app_list());
+  next_paint_callback_ = base::Bind(callback);
 }
 
 void AppListServiceWin::HandleFirstRun() {
@@ -418,61 +292,16 @@ void AppListServiceWin::HandleFirstRun() {
 }
 
 void AppListServiceWin::Init(Profile* initial_profile) {
-  // In non-Ash metro mode, we can not show the app list for this process, so do
-  // not bother performing Init tasks.
-  if (win8::IsSingleWindowMetroMode())
-    return;
-
   if (enable_app_list_on_next_init_) {
     enable_app_list_on_next_init_ = false;
     EnableAppList(initial_profile, ENABLE_ON_REINSTALL);
     CreateShortcut();
   }
 
-  PrefService* prefs = g_browser_process->local_state();
-  if (prefs->HasPrefPath(prefs::kRestartWithAppList) &&
-      prefs->GetBoolean(prefs::kRestartWithAppList)) {
-    prefs->SetBoolean(prefs::kRestartWithAppList, false);
-    // If we are restarting in Metro mode we will lose focus straight away. We
-    // need to reacquire focus when that happens.
-    shower_->ShowAndReacquireFocus(initial_profile);
-  }
-
-  // Migrate from legacy app launcher if we are on a non-canary and non-chromium
-  // build.
-#if defined(GOOGLE_CHROME_BUILD)
-  if (!InstallUtil::IsChromeSxSProcess() &&
-      !chrome_launcher_support::GetAnyAppHostPath().empty()) {
-    chrome_launcher_support::InstallationState state =
-        chrome_launcher_support::GetAppLauncherInstallationState();
-    if (state == chrome_launcher_support::NOT_INSTALLED) {
-      // If app_host.exe is found but can't be located in the registry,
-      // skip the migration as this is likely a developer build.
-      return;
-    } else if (state == chrome_launcher_support::INSTALLED_AT_SYSTEM_LEVEL) {
-      chrome_launcher_support::UninstallLegacyAppLauncher(
-          chrome_launcher_support::SYSTEM_LEVEL_INSTALLATION);
-    } else if (state == chrome_launcher_support::INSTALLED_AT_USER_LEVEL) {
-      chrome_launcher_support::UninstallLegacyAppLauncher(
-          chrome_launcher_support::USER_LEVEL_INSTALLATION);
-    }
-    EnableAppList(initial_profile, ENABLE_ON_REINSTALL);
-    CreateShortcut();
-  }
-#endif
-
   ScheduleWarmup();
 
   MigrateAppLauncherEnabledPref();
-  PerformStartupChecks(initial_profile);
-}
-
-void AppListServiceWin::CreateForProfile(Profile* profile) {
-  shower_->CreateViewForProfile(profile);
-}
-
-bool AppListServiceWin::IsAppListVisible() const {
-  return shower_->IsAppListVisible();
+  AppListServiceViews::Init(initial_profile);
 }
 
 void AppListServiceWin::CreateShortcut() {
@@ -480,11 +309,11 @@ void AppListServiceWin::CreateShortcut() {
   // Shortcuts should only be created once. If the user unpins the taskbar
   // shortcut, they can restore it by pinning the start menu or desktop
   // shortcut.
-  ShellIntegration::ShortcutLocations shortcut_locations;
+  web_app::ShortcutLocations shortcut_locations;
   shortcut_locations.on_desktop = true;
   shortcut_locations.in_quick_launch_bar = true;
   shortcut_locations.applications_menu_location =
-      ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROME;
+      web_app::APP_MENU_LOCATION_SUBDIR_CHROME;
   base::FilePath user_data_dir(
       g_browser_process->profile_manager()->user_data_dir());
 
@@ -502,7 +331,7 @@ void AppListServiceWin::ScheduleWarmup() {
   base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&AppListServiceWin::LoadProfileForWarmup,
-                 weak_factory_.GetWeakPtr()),
+                 base::Unretained(this)),
       base::TimeDelta::FromSeconds(kInitWindowDelay));
 }
 
@@ -514,7 +343,7 @@ bool AppListServiceWin::IsWarmupNeeded() {
 
   // We only need to initialize the view if there's no view already created and
   // there's no profile loading to be shown.
-  return !shower_->HasView() && !profile_loader().IsAnyProfileLoading();
+  return !shower().HasView() && !profile_loader().IsAnyProfileLoading();
 }
 
 void AppListServiceWin::LoadProfileForWarmup() {
@@ -527,13 +356,27 @@ void AppListServiceWin::LoadProfileForWarmup() {
   profile_loader().LoadProfileInvalidatingOtherLoads(
       profile_path,
       base::Bind(&AppListServiceWin::OnLoadProfileForWarmup,
-                 weak_factory_.GetWeakPtr()));
+                 base::Unretained(this)));
 }
 
-namespace chrome {
-
-AppListService* GetAppListServiceWin() {
-  return AppListServiceWin::GetInstance();
+void AppListServiceWin::OnViewBeingDestroyed() {
+  activation_tracker_.reset();
+  AppListServiceViews::OnViewBeingDestroyed();
 }
 
-}  // namespace chrome
+void AppListServiceWin::OnViewCreated() {
+  if (!next_paint_callback_.is_null()) {
+    shower().app_list()->SetNextPaintCallback(next_paint_callback_);
+    next_paint_callback_.Reset();
+  }
+  SetWindowAttributes(shower().app_list()->GetHWND());
+  activation_tracker_.reset(new ActivationTrackerWin(this));
+}
+
+void AppListServiceWin::OnViewDismissed() {
+  activation_tracker_->OnViewHidden();
+}
+
+void AppListServiceWin::MoveNearCursor(app_list::AppListView* view) {
+  AppListWin::MoveNearCursor(view);
+}

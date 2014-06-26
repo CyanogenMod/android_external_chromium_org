@@ -7,6 +7,8 @@
 #include "ash/accelerators/accelerator_controller.h"
 #include "ash/ash_switches.h"
 #include "ash/shell.h"
+#include "ash/shell_init_params.h"
+#include "ash/test/ash_test_views_delegate.h"
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_screenshot_delegate.h"
@@ -21,13 +23,16 @@
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/message_center/message_center.h"
-#include "ui/views/corewm/capture_controller.h"
-#include "ui/views/corewm/wm_state.h"
+#include "ui/wm/core/capture_controller.h"
 
 #if defined(OS_CHROMEOS)
 #include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "ui/keyboard/keyboard.h"
+#endif
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
 #endif
 
 #if defined(USE_X11)
@@ -52,18 +57,20 @@ AshTestHelper::~AshTestHelper() {
 }
 
 void AshTestHelper::SetUp(bool start_session) {
-  wm_state_.reset(new views::corewm::WMState);
+  views_delegate_.reset(new AshTestViewsDelegate);
 
   // Disable animations during tests.
   zero_duration_mode_.reset(new ui::ScopedAnimationDurationScaleMode(
       ui::ScopedAnimationDurationScaleMode::ZERO_DURATION));
   ui::InitializeInputMethodForTesting();
 
-  bool allow_test_contexts = true;
-  ui::InitializeContextFactoryForTests(allow_test_contexts);
+  bool enable_pixel_output = false;
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
 
   // Creates Shell and hook with Desktop.
-  test_shell_delegate_ = new TestShellDelegate;
+  if (!test_shell_delegate_)
+    test_shell_delegate_ = new TestShellDelegate;
 
   // Creates MessageCenter since g_browser_process is not created in AshTestBase
   // tests.
@@ -79,7 +86,10 @@ void AshTestHelper::SetUp(bool start_session) {
   // created in AshTestBase tests.
   chromeos::CrasAudioHandler::InitializeForTesting();
 #endif
-  ash::Shell::CreateInstance(test_shell_delegate_);
+  ShellInitParams init_params;
+  init_params.delegate = test_shell_delegate_;
+  init_params.context_factory = context_factory;
+  ash::Shell::CreateInstance(init_params);
   aura::test::EnvTestHelper(aura::Env::GetInstance()).SetInputStateLookup(
       scoped_ptr<aura::InputStateLookup>());
 
@@ -93,7 +103,7 @@ void AshTestHelper::SetUp(bool start_session) {
 
   test::DisplayManagerTestApi(shell->display_manager()).
       DisableChangeDisplayUponHostResize();
-  ShellTestApi(shell).DisableOutputConfiguratorAnimation();
+  ShellTestApi(shell).DisableDisplayConfiguratorAnimation();
 
   test_screenshot_delegate_ = new TestScreenshotDelegate();
   shell->accelerator_controller()->SetScreenshotDelegate(
@@ -126,14 +136,14 @@ void AshTestHelper::TearDown() {
   ui::ShutdownInputMethodForTesting();
   zero_duration_mode_.reset();
 
-  CHECK(!views::corewm::ScopedCaptureClient::IsActive());
+  CHECK(!wm::ScopedCaptureClient::IsActive());
 
-  wm_state_.reset();
+  views_delegate_.reset();
 }
 
 void AshTestHelper::RunAllPendingInMessageLoop() {
   DCHECK(base::MessageLoopForUI::current() == message_loop_);
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
   base::RunLoop run_loop;
   run_loop.RunUntilIdle();
 }
@@ -144,6 +154,24 @@ aura::Window* AshTestHelper::CurrentContext() {
     root_window = Shell::GetPrimaryRootWindow();
   DCHECK(root_window);
   return root_window;
+}
+
+// static
+bool AshTestHelper::SupportsMultipleDisplays() {
+#if defined(OS_WIN)
+  return false;
+#else
+  return true;
+#endif
+}
+
+// static
+bool AshTestHelper::SupportsHostWindowResize() {
+#if defined(OS_WIN)
+  return false;
+#else
+  return true;
+#endif
 }
 
 }  // namespace test

@@ -9,7 +9,6 @@
 #include "base/json/json_writer.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/extensions/input_method_api.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_system.h"
@@ -29,11 +28,12 @@ ExtensionInputMethodEventRouter::~ExtensionInputMethodEventRouter() {
 void ExtensionInputMethodEventRouter::InputMethodChanged(
     input_method::InputMethodManager *manager,
     bool show_message) {
-  extensions::EventRouter *router =
-      extensions::ExtensionSystem::Get(context_)->event_router();
+  extensions::EventRouter* router = extensions::EventRouter::Get(context_);
 
-  if (!router->HasEventListener(extensions::event_names::kOnInputMethodChanged))
+  if (!router->HasEventListener(
+          extensions::InputMethodAPI::kOnInputMethodChanged)) {
     return;
+  }
 
   scoped_ptr<base::ListValue> args(new base::ListValue());
   base::StringValue *input_method_name = new base::StringValue(
@@ -43,7 +43,7 @@ void ExtensionInputMethodEventRouter::InputMethodChanged(
 
   // The router will only send the event to extensions that are listening.
   scoped_ptr<extensions::Event> event(new extensions::Event(
-      extensions::event_names::kOnInputMethodChanged, args.Pass()));
+      extensions::InputMethodAPI::kOnInputMethodChanged, args.Pass()));
   event->restrict_to_browser_context = context_;
   router->BroadcastEvent(event.Pass());
 }

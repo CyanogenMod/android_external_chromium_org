@@ -4,6 +4,8 @@
 
 #include "chrome/browser/extensions/api/system_storage/system_storage_api.h"
 
+using storage_monitor::StorageMonitor;
+
 namespace extensions {
 
 using api::system_storage::StorageUnitInfo;
@@ -16,7 +18,7 @@ SystemStorageGetInfoFunction::SystemStorageGetInfoFunction() {
 SystemStorageGetInfoFunction::~SystemStorageGetInfoFunction() {
 }
 
-bool SystemStorageGetInfoFunction::RunImpl() {
+bool SystemStorageGetInfoFunction::RunAsync() {
   StorageInfoProvider::Get()->StartQueryInfo(
       base::Bind(&SystemStorageGetInfoFunction::OnGetStorageInfoCompleted,
                  this));
@@ -37,8 +39,8 @@ void SystemStorageGetInfoFunction::OnGetStorageInfoCompleted(bool success) {
 SystemStorageEjectDeviceFunction::~SystemStorageEjectDeviceFunction() {
 }
 
-bool SystemStorageEjectDeviceFunction::RunImpl() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+bool SystemStorageEjectDeviceFunction::RunAsync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   scoped_ptr<EjectDevice::Params> params(EjectDevice::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -101,8 +103,8 @@ SystemStorageGetAvailableCapacityFunction::
     ~SystemStorageGetAvailableCapacityFunction() {
 }
 
-bool SystemStorageGetAvailableCapacityFunction::RunImpl() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+bool SystemStorageGetAvailableCapacityFunction::RunAsync() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   scoped_ptr<GetAvailableCapacity::Params> params(
       GetAvailableCapacity::Params::Create(*args_));

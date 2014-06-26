@@ -8,9 +8,6 @@
 #include "chrome/browser/notifications/notification_delegate.h"
 #include "ui/message_center/notifier_settings.h"
 
-namespace content {
-class RenderViewHost;
-}
 class Profile;
 
 namespace notifier {
@@ -22,15 +19,17 @@ class WelcomeDelegate : public NotificationDelegate {
  public:
   explicit WelcomeDelegate(const std::string& notification_id,
                            Profile* profile,
-                           const message_center::NotifierId notifier_id);
+                           const message_center::NotifierId notifier_id,
+                           const GURL& on_click_link);
 
   // NotificationDelegate interface.
   virtual void Display() OVERRIDE;
   virtual void Error() OVERRIDE;
   virtual void Close(bool by_user) OVERRIDE;
   virtual void Click() OVERRIDE;
+  virtual bool HasClickedListener() OVERRIDE;
   virtual void ButtonClick(int button_index) OVERRIDE;
-  virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE;
+  virtual content::WebContents* GetWebContents() const OVERRIDE;
   virtual std::string id() const OVERRIDE;
 
  private:
@@ -39,6 +38,7 @@ class WelcomeDelegate : public NotificationDelegate {
   const std::string notification_id_;
   Profile* profile_;  // Weak.
   const message_center::NotifierId notifier_id_;
+  GURL on_click_link_;
 
   DISALLOW_COPY_AND_ASSIGN(WelcomeDelegate);
 };

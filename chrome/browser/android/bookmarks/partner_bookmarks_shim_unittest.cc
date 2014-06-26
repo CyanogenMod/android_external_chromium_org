@@ -7,10 +7,10 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -70,6 +70,7 @@ class PartnerBookmarksShimTest : public testing::Test {
   virtual void TearDown() OVERRIDE {
     PartnerBookmarksShim::ClearInBrowserContextForTesting(profile_.get());
     PartnerBookmarksShim::ClearPartnerModelForTesting();
+    PartnerBookmarksShim::EnablePartnerBookmarksEditing();
     profile_.reset(NULL);
   }
 
@@ -370,4 +371,42 @@ TEST_F(PartnerBookmarksShimTest, SaveLoadProfile) {
     EXPECT_EQ(base::ASCIIToUTF16("a2.com"), shim->GetTitle(partner_bookmark1));
     EXPECT_FALSE(shim->IsReachable(partner_bookmark2));
   }
+}
+
+TEST_F(PartnerBookmarksShimTest, DisableEditing) {
+  PartnerBookmarksShim* shim = partner_bookmarks_shim();
+  shim->AddObserver(&observer_);
+
+  EXPECT_CALL(observer_, PartnerShimLoaded(shim)).Times(0);
+  EXPECT_CALL(observer_, PartnerShimChanged(shim)).Times(0);
+
+  BookmarkNode* root_partner_node = new BookmarkPermanentNode(0);
+  root_partner_node->SetTitle(base::ASCIIToUTF16("Partner bookmarks"));
+
+  BookmarkNode* partner_bookmark1 = new BookmarkNode(3, GURL("http://a"));
+  partner_bookmark1->set_type(BookmarkNode::URL);
+  partner_bookmark1->SetTitle(base::ASCIIToUTF16("a"));
+  root_partner_node->Add(partner_bookmark1, root_partner_node->child_count());
+
+  BookmarkNode* partner_bookmark2 = new BookmarkNode(3, GURL("http://b"));
+  partner_bookmark2->set_type(BookmarkNode::URL);
+  partner_bookmark2->SetTitle(base::ASCIIToUTF16("b"));
+  root_partner_node->Add(partner_bookmark2, root_partner_node->child_count());
+
+  ASSERT_FALSE(shim->IsLoaded());
+  EXPECT_CALL(observer_, PartnerShimLoaded(shim)).Times(1);
+  shim->SetPartnerBookmarksRoot(root_partner_node);
+  ASSERT_TRUE(shim->IsLoaded());
+
+  // Check that edits work by default.
+  EXPECT_CALL(observer_, PartnerShimChanged(shim)).Times(2);
+  shim->RenameBookmark(partner_bookmark1, base::ASCIIToUTF16("a2.com"));
+  shim->RemoveBookmark(partner_bookmark2);
+  EXPECT_EQ(base::ASCIIToUTF16("a2.com"), shim->GetTitle(partner_bookmark1));
+  EXPECT_FALSE(shim->IsReachable(partner_bookmark2));
+
+  // Disable edits and check that edits are not applied anymore.
+  PartnerBookmarksShim::DisablePartnerBookmarksEditing();
+  EXPECT_EQ(base::ASCIIToUTF16("a"), shim->GetTitle(partner_bookmark1));
+  EXPECT_TRUE(shim->IsReachable(partner_bookmark2));
 }

@@ -7,15 +7,14 @@ import posixpath
 import traceback
 
 from app_yaml_helper import AppYamlHelper
-from appengine_wrappers import (
-    GetAppVersion, IsDeadlineExceededError, logservice)
+from appengine_wrappers import IsDeadlineExceededError, logservice
 from branch_utility import BranchUtility
 from compiled_file_system import CompiledFileSystem
 from data_source_registry import CreateDataSources
-from environment import IsDevServer
+from environment import GetAppVersion, IsDevServer
 from extensions_paths import EXAMPLES, PUBLIC_TEMPLATES, STATIC_DOCS
 from file_system_util import CreateURLsFromPaths
-from future import Gettable, Future
+from future import Future
 from gcs_file_system_provider import CloudStorageFileSystemProvider
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
@@ -187,10 +186,11 @@ class CronServlet(Servlet):
                  init_timer.With(resolve_timer).FormatElapsed(),
                  init_timer.FormatElapsed(),
                  resolve_timer.FormatElapsed()))
-        return Future(delegate=Gettable(resolve))
+        return Future(callback=resolve)
 
       targets = (CreateDataSources(server_instance).values() +
-                 [server_instance.content_providers])
+                 [server_instance.content_providers,
+                  server_instance.platform_bundle])
       title = 'initializing %s parallel Cron targets' % len(targets)
       _cronlog.info(title)
       timer = Timer()
@@ -199,33 +199,16 @@ class CronServlet(Servlet):
       finally:
         _cronlog.info('%s took %s' % (title, timer.Stop().FormatElapsed()))
 
-      # Rendering the public templates will also pull in all of the private
-      # templates.
-      results.append(request_files_in_dir(PUBLIC_TEMPLATES,
-                                          strip_ext=('.html', '.md')))
-
-      # Rendering the public templates will have pulled in the .js and
-      # manifest.json files (for listing examples on the API reference pages),
-      # but there are still images, CSS, etc.
-      results.append(request_files_in_dir(STATIC_DOCS, prefix='static'))
-
       # Samples are too expensive to run on the dev server, where there is no
       # parallel fetch.
-      if not IsDevServer():
+      #
+      # XXX(kalman): Currently samples are *always* too expensive to fetch, so
+      # disabling them for now. It won't break anything so long as we're still
+      # not enforcing that everything gets cached for normal instances.
+      if False:  # should be "not IsDevServer()":
         # Fetch each individual sample file.
         results.append(request_files_in_dir(EXAMPLES,
                                             prefix='extensions/examples'))
-
-        # Fetch the zip file of each example (contains all the individual
-        # files).
-        example_zips = []
-        for root, _, files in trunk_fs.Walk(EXAMPLES):
-          example_zips.extend(
-              root + '.zip' for name in files if name == 'manifest.json')
-        results.append(_RequestEachItem(
-            'example zips',
-            example_zips,
-            lambda path: render('extensions/examples/' + path)))
 
       # Resolve the hand-written Cron method futures.
       title = 'resolving %s parallel Cron targets' % len(targets)

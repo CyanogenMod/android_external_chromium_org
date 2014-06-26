@@ -11,12 +11,13 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
-#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_registry.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -36,8 +37,7 @@ base::StringValue* SkColorToCss(SkColor color) {
 base::StringValue* GetDominantColorCssString(
     scoped_refptr<base::RefCountedMemory> png) {
   color_utils::GridSampler sampler;
-  SkColor color =
-      color_utils::CalculateKMeanColorOfPNG(png, 100, 665, &sampler);
+  SkColor color = color_utils::CalculateKMeanColorOfPNG(png);
   return SkColorToCss(color);
 }
 
@@ -111,11 +111,9 @@ void FaviconWebUIHandler::HandleGetFaviconDominantColor(
   }
 
   dom_id_map_[id_] = dom_id;
-  favicon_service->GetRawFaviconForURL(
-      FaviconService::FaviconForURLParams(
-          url,
-          chrome::FAVICON,
-          gfx::kFaviconSize),
+  favicon_service->GetRawFaviconForPageURL(
+      FaviconService::FaviconForPageURLParams(
+          url, favicon_base::FAVICON, gfx::kFaviconSize),
       ui::SCALE_FACTOR_100P,
       base::Bind(&FaviconWebUIHandler::OnFaviconDataAvailable,
                  base::Unretained(this),
@@ -125,7 +123,7 @@ void FaviconWebUIHandler::HandleGetFaviconDominantColor(
 
 void FaviconWebUIHandler::OnFaviconDataAvailable(
     int id,
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   scoped_ptr<base::StringValue> color_value;
 
   if (bitmap_result.is_valid())
@@ -144,13 +142,14 @@ void FaviconWebUIHandler::HandleGetAppIconDominantColor(
   std::string extension_id;
   CHECK(args->GetString(0, &extension_id));
 
-  ExtensionService* extension_service =
-      Profile::FromWebUI(web_ui())->GetExtensionService();
-  const extensions::Extension* extension = extension_service->GetExtensionById(
-      extension_id, false);
+  Profile* profile = Profile::FromWebUI(web_ui());
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(profile);
+  const extensions::Extension* extension =
+      extension_registry->enabled_extensions().GetByID(extension_id);
   if (!extension)
     return;
-  app_icon_color_manager_->LoadIcon(extension_service->profile(), extension);
+  app_icon_color_manager_->LoadIcon(profile, extension);
 }
 
 void FaviconWebUIHandler::NotifyAppIconReady(const std::string& extension_id) {

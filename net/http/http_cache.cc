@@ -275,8 +275,9 @@ class HttpCache::QuicServerInfoFactoryAdaptor : public QuicServerInfoFactory {
       : http_cache_(http_cache) {
   }
 
-  virtual QuicServerInfo* GetForHost(const std::string& hostname) OVERRIDE {
-    return new DiskCacheBasedQuicServerInfo(hostname, http_cache_);
+  virtual QuicServerInfo* GetForServer(
+      const QuicServerId& server_id) OVERRIDE {
+    return new DiskCacheBasedQuicServerInfo(server_id, http_cache_);
   }
 
  private:
@@ -289,20 +290,25 @@ HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
     : net_log_(params.net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
       mode_(NORMAL),
-      quic_server_info_factory_(new QuicServerInfoFactoryAdaptor(this)),
-      network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))) {
+      network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))),
+      weak_factory_(this) {
+  SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
 
 
+// This call doesn't change the shared |session|'s QuicServerInfoFactory because
+// |session| is shared.
 HttpCache::HttpCache(HttpNetworkSession* session,
                      BackendFactory* backend_factory)
     : net_log_(session->net_log()),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
       mode_(NORMAL),
-      quic_server_info_factory_(new QuicServerInfoFactoryAdaptor(this)),
-      network_layer_(new HttpNetworkLayer(session)) {
+      network_layer_(new HttpNetworkLayer(session)),
+      weak_factory_(this) {
 }
 
 HttpCache::HttpCache(HttpTransactionFactory* network_layer,
@@ -311,11 +317,18 @@ HttpCache::HttpCache(HttpTransactionFactory* network_layer,
     : net_log_(net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
       mode_(NORMAL),
-      network_layer_(network_layer) {
+      network_layer_(network_layer),
+      weak_factory_(this) {
+  SetupQuicServerInfoFactory(network_layer_->GetSession());
 }
 
 HttpCache::~HttpCache() {
+  // Transactions should see an invalid cache after this point; otherwise they
+  // could see an inconsistent object (half destroyed).
+  weak_factory_.InvalidateWeakPtrs();
+
   // If we have any active entries remaining, then we need to deactivate them.
   // We may have some pending calls to OnProcessPendingQueue, but since those
   // won't run (due to our destruction), we can simply ignore the corresponding
@@ -447,7 +460,12 @@ int HttpCache::CreateTransaction(RequestPriority priority,
     CreateBackend(NULL, net::CompletionCallback());
   }
 
-  trans->reset(new HttpCache::Transaction(priority, this));
+   HttpCache::Transaction* transaction =
+      new HttpCache::Transaction(priority, this);
+   if (bypass_lock_for_test_)
+    transaction->BypassLockForTest();
+
+  trans->reset(transaction);
   return OK;
 }
 
@@ -494,7 +512,7 @@ int HttpCache::CreateBackend(disk_cache::Backend** backend,
 
   pending_op->writer = item.release();
   pending_op->callback = base::Bind(&HttpCache::OnPendingOpComplete,
-                                    AsWeakPtr(), pending_op);
+                                    GetWeakPtr(), pending_op);
 
   int rv = backend_factory_->CreateBackend(net_log_, &pending_op->backend,
                                            pending_op->callback);
@@ -609,7 +627,7 @@ int HttpCache::AsyncDoomEntry(const std::string& key, Transaction* trans) {
 
   pending_op->writer = item;
   pending_op->callback = base::Bind(&HttpCache::OnPendingOpComplete,
-                                    AsWeakPtr(), pending_op);
+                                    GetWeakPtr(), pending_op);
 
   int rv = disk_cache_->DoomEntry(key, pending_op->callback);
   if (rv != ERR_IO_PENDING) {
@@ -749,7 +767,7 @@ int HttpCache::OpenEntry(const std::string& key, ActiveEntry** entry,
 
   pending_op->writer = item;
   pending_op->callback = base::Bind(&HttpCache::OnPendingOpComplete,
-                                    AsWeakPtr(), pending_op);
+                                    GetWeakPtr(), pending_op);
 
   int rv = disk_cache_->OpenEntry(key, &(pending_op->disk_entry),
                                   pending_op->callback);
@@ -778,7 +796,7 @@ int HttpCache::CreateEntry(const std::string& key, ActiveEntry** entry,
 
   pending_op->writer = item;
   pending_op->callback = base::Bind(&HttpCache::OnPendingOpComplete,
-                                    AsWeakPtr(), pending_op);
+                                    GetWeakPtr(), pending_op);
 
   int rv = disk_cache_->CreateEntry(key, &(pending_op->disk_entry),
                                     pending_op->callback);
@@ -994,6 +1012,16 @@ bool HttpCache::RemovePendingTransactionFromPendingOp(PendingOp* pending_op,
   return false;
 }
 
+void HttpCache::SetupQuicServerInfoFactory(HttpNetworkSession* session) {
+  if (session && session->params().enable_quic_persist_server_info &&
+      !session->quic_stream_factory()->has_quic_server_info_factory()) {
+    DCHECK(!quic_server_info_factory_);
+    quic_server_info_factory_.reset(new QuicServerInfoFactoryAdaptor(this));
+    session->quic_stream_factory()->set_quic_server_info_factory(
+        quic_server_info_factory_.get());
+  }
+}
+
 void HttpCache::ProcessPendingQueue(ActiveEntry* entry) {
   // Multiple readers may finish with an entry at once, so we want to batch up
   // calls to OnProcessPendingQueue.  This flag also tells us that we should
@@ -1004,7 +1032,7 @@ void HttpCache::ProcessPendingQueue(ActiveEntry* entry) {
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&HttpCache::OnProcessPendingQueue, AsWeakPtr(), entry));
+      base::Bind(&HttpCache::OnProcessPendingQueue, GetWeakPtr(), entry));
 }
 
 void HttpCache::OnProcessPendingQueue(ActiveEntry* entry) {
@@ -1161,8 +1189,8 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
 
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
-        base::Bind(
-            &HttpCache::OnBackendCreated, AsWeakPtr(), result, pending_op));
+        base::Bind(&HttpCache::OnBackendCreated, GetWeakPtr(),
+                   result, pending_op));
   } else {
     building_backend_ = false;
     DeletePendingOp(pending_op);

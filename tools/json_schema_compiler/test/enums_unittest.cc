@@ -42,6 +42,11 @@ TEST(JsonSchemaCompilerEnumsTest, EnumsAsTypes) {
   }
   {
     HasEnumeration enumeration;
+    EXPECT_EQ(ENUMERATION_NONE, enumeration.enumeration);
+    EXPECT_EQ(ENUMERATION_NONE, enumeration.optional_enumeration);
+  }
+  {
+    HasEnumeration enumeration;
     base::DictionaryValue value;
     ASSERT_FALSE(HasEnumeration::Populate(value, &enumeration));
 
@@ -51,6 +56,18 @@ TEST(JsonSchemaCompilerEnumsTest, EnumsAsTypes) {
 
     value.Set("optional_enumeration", base::Value::CreateStringValue("two"));
     ASSERT_TRUE(HasEnumeration::Populate(value, &enumeration));
+    EXPECT_TRUE(value.Equals(enumeration.ToValue().get()));
+  }
+  {
+    InlineAndReferenceEnum enumeration;
+    base::DictionaryValue value;
+    ASSERT_FALSE(InlineAndReferenceEnum::Populate(value, &enumeration));
+
+    value.Set("inline_enum", base::Value::CreateStringValue("test2"));
+    ASSERT_FALSE(InlineAndReferenceEnum::Populate(value, &enumeration));
+
+    value.Set("reference_enum", base::Value::CreateStringValue("one"));
+    ASSERT_TRUE(InlineAndReferenceEnum::Populate(value, &enumeration));
     EXPECT_TRUE(value.Equals(enumeration.ToValue().get()));
   }
 }

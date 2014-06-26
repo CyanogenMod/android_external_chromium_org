@@ -7,10 +7,12 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
-#include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/extensions/command.h"
+#include "content/public/browser/browser_context.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_constants.h"
@@ -18,17 +20,21 @@
 namespace extensions {
 
 ExtensionKeybindingRegistry::ExtensionKeybindingRegistry(
-    Profile* profile, ExtensionFilter extension_filter, Delegate* delegate)
-    : profile_(profile),
+    content::BrowserContext* context,
+    ExtensionFilter extension_filter,
+    Delegate* delegate)
+    : browser_context_(context),
       extension_filter_(extension_filter),
-      delegate_(delegate) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+      delegate_(delegate),
+      extension_registry_observer_(this) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(browser_context_));
+
+  Profile* profile = Profile::FromBrowserContext(browser_context_);
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED,
                  content::Source<Profile>(profile->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED,
-                 content::Source<Profile>(profile->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED,
                  content::Source<Profile>(profile->GetOriginalProfile()));
 }
 
@@ -66,7 +72,7 @@ void ExtensionKeybindingRegistry::RemoveExtensionKeybinding(
 
 void ExtensionKeybindingRegistry::Init() {
   ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
+      ExtensionSystem::Get(browser_context_)->extension_service();
   if (!service)
     return;  // ExtensionService can be null during testing.
 
@@ -85,21 +91,13 @@ bool ExtensionKeybindingRegistry::ShouldIgnoreCommand(
 
 bool ExtensionKeybindingRegistry::NotifyEventTargets(
     const ui::Accelerator& accelerator) {
-  EventTargets::iterator targets = event_targets_.find(accelerator);
-  if (targets == event_targets_.end() || targets->second.empty())
-    return false;
-
-  for (TargetList::const_iterator it = targets->second.begin();
-       it != targets->second.end(); it++)
-    CommandExecuted(it->first, it->second);
-
-  return true;
+  return ExecuteCommands(accelerator, std::string());
 }
 
 void ExtensionKeybindingRegistry::CommandExecuted(
     const std::string& extension_id, const std::string& command) {
   ExtensionService* service =
-      ExtensionSystem::Get(profile_)->extension_service();
+      ExtensionSystem::Get(browser_context_)->extension_service();
 
   const Extension* extension = service->extensions()->GetByID(extension_id);
   if (!extension)
@@ -118,10 +116,67 @@ void ExtensionKeybindingRegistry::CommandExecuted(
   args->Append(new base::StringValue(command));
 
   scoped_ptr<Event> event(new Event("commands.onCommand", args.Pass()));
-  event->restrict_to_browser_context = profile_;
+  event->restrict_to_browser_context = browser_context_;
   event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
-  ExtensionSystem::Get(profile_)->event_router()->
-      DispatchEventToExtension(extension_id, event.Pass());
+  EventRouter::Get(browser_context_)
+      ->DispatchEventToExtension(extension_id, event.Pass());
+}
+
+bool ExtensionKeybindingRegistry::IsAcceleratorRegistered(
+    const ui::Accelerator& accelerator) const {
+  return event_targets_.find(accelerator) != event_targets_.end();
+}
+
+void ExtensionKeybindingRegistry::AddEventTarget(
+    const ui::Accelerator& accelerator,
+    const std::string& extension_id,
+    const std::string& command_name) {
+  event_targets_[accelerator].push_back(
+      std::make_pair(extension_id, command_name));
+  // Shortcuts except media keys have only one target in the list. See comment
+  // about |event_targets_|.
+  if (!extensions::Command::IsMediaKey(accelerator))
+    DCHECK_EQ(1u, event_targets_[accelerator].size());
+}
+
+bool ExtensionKeybindingRegistry::GetFirstTarget(
+    const ui::Accelerator& accelerator,
+    std::string* extension_id,
+    std::string* command_name) const {
+  EventTargets::const_iterator targets = event_targets_.find(accelerator);
+  if (targets == event_targets_.end())
+    return false;
+
+  DCHECK(!targets->second.empty());
+  TargetList::const_iterator first_target = targets->second.begin();
+  *extension_id = first_target->first;
+  *command_name = first_target->second;
+  return true;
+}
+
+bool ExtensionKeybindingRegistry::IsEventTargetsEmpty() const {
+  return event_targets_.empty();
+}
+
+void ExtensionKeybindingRegistry::ExecuteCommand(
+    const std::string& extension_id,
+    const ui::Accelerator& accelerator) {
+  ExecuteCommands(accelerator, extension_id);
+}
+
+void ExtensionKeybindingRegistry::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  if (ExtensionMatchesFilter(extension))
+    AddExtensionKeybinding(extension, std::string());
+}
+
+void ExtensionKeybindingRegistry::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  if (ExtensionMatchesFilter(extension))
+    RemoveExtensionKeybinding(extension, std::string());
 }
 
 void ExtensionKeybindingRegistry::Observe(
@@ -129,29 +184,16 @@ void ExtensionKeybindingRegistry::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
-      const extensions::Extension* extension =
-          content::Details<const extensions::Extension>(details).ptr();
-      if (ExtensionMatchesFilter(extension))
-        AddExtensionKeybinding(extension, std::string());
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      const extensions::Extension* extension =
-          content::Details<UnloadedExtensionInfo>(details)->extension;
-      if (ExtensionMatchesFilter(extension))
-        RemoveExtensionKeybinding(extension, std::string());
-      break;
-    }
     case chrome::NOTIFICATION_EXTENSION_COMMAND_ADDED:
     case chrome::NOTIFICATION_EXTENSION_COMMAND_REMOVED: {
       std::pair<const std::string, const std::string>* payload =
           content::Details<std::pair<const std::string, const std::string> >(
               details).ptr();
 
-      const extensions::Extension* extension =
-          ExtensionSystem::Get(profile_)->extension_service()->
-              extensions()->GetByID(payload->first);
+      const Extension* extension = ExtensionSystem::Get(browser_context_)
+                                       ->extension_service()
+                                       ->extensions()
+                                       ->GetByID(payload->first);
       // During install and uninstall the extension won't be found. We'll catch
       // those events above, with the LOADED/UNLOADED, so we ignore this event.
       if (!extension)
@@ -183,6 +225,25 @@ bool ExtensionKeybindingRegistry::ExtensionMatchesFilter(
       NOTREACHED();
   }
   return false;
+}
+
+bool ExtensionKeybindingRegistry::ExecuteCommands(
+    const ui::Accelerator& accelerator,
+    const std::string& extension_id) {
+  EventTargets::iterator targets = event_targets_.find(accelerator);
+  if (targets == event_targets_.end() || targets->second.empty())
+    return false;
+
+  bool executed = false;
+  for (TargetList::const_iterator it = targets->second.begin();
+       it != targets->second.end(); it++) {
+    if (extension_id.empty() || it->first == extension_id) {
+      CommandExecuted(it->first, it->second);
+      executed = true;
+    }
+  }
+
+  return executed;
 }
 
 }  // namespace extensions

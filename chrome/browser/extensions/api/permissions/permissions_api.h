@@ -12,8 +12,6 @@
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "extensions/common/permissions/permission_set.h"
 
-class ExtensionService;
-
 namespace extensions {
 
 // chrome.permissions.contains
@@ -25,7 +23,7 @@ class PermissionsContainsFunction : public ChromeSyncExtensionFunction {
   virtual ~PermissionsContainsFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // chrome.permissions.getAll
@@ -37,7 +35,7 @@ class PermissionsGetAllFunction : public ChromeSyncExtensionFunction {
   virtual ~PermissionsGetAllFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // chrome.permissions.remove
@@ -49,7 +47,7 @@ class PermissionsRemoveFunction : public ChromeSyncExtensionFunction {
   virtual ~PermissionsRemoveFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // chrome.permissions.request
@@ -72,7 +70,7 @@ class PermissionsRequestFunction : public ChromeAsyncExtensionFunction,
   virtual ~PermissionsRequestFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_ptr<ExtensionInstallPrompt> install_ui_;

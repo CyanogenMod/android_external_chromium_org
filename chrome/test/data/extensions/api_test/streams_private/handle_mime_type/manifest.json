@@ -7,8 +7,10 @@
     "scripts": ["background.js"]
   },
   "mime_types": [
+    "application/msexcel",
     "application/msword",
-    "plain/text"
+    "application/rtf",
+    "text/plain"
   ],
   "permissions": [
     "streamsPrivate"

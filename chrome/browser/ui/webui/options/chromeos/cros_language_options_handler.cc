@@ -20,7 +20,7 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/customization_document.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -119,9 +119,11 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
 
   input_method::InputMethodDescriptors ext_ime_descriptors;
   manager->GetInputMethodExtensions(&ext_ime_descriptors);
-  localized_strings->Set("extensionImeList",
-                         ConvertInputMethodDescriptosToIMEList(
-                             ext_ime_descriptors));
+
+  base::ListValue* ext_ime_list = ConvertInputMethodDescriptorsToIMEList(
+      ext_ime_descriptors);
+  AddImeProvider(ext_ime_list);
+  localized_strings->Set("extensionImeList", ext_ime_list);
 
   ComponentExtensionIMEManager* component_extension_manager =
       input_method::InputMethodManager::Get()
@@ -129,7 +131,7 @@ void CrosLanguageOptionsHandler::GetLocalizedValues(
   if (component_extension_manager->IsInitialized()) {
     localized_strings->Set(
         "componentExtensionImeList",
-        ConvertInputMethodDescriptosToIMEList(
+        ConvertInputMethodDescriptorsToIMEList(
             component_extension_manager->GetAllIMEAsInputMethodDescriptor()));
     composition_extension_appended_ = true;
   } else {
@@ -157,6 +159,7 @@ void CrosLanguageOptionsHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
+// static
 base::ListValue* CrosLanguageOptionsHandler::GetInputMethodList(
     const input_method::InputMethodDescriptors& descriptors) {
   input_method::InputMethodManager* manager =
@@ -233,7 +236,56 @@ base::ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
       configured_locales.size());
 
   size_t configured_locales_count = 0;
+
   // Build the list of display names, and build the language map.
+
+  // The list of configured locales might have entries not in
+  // base_language_codes. If there are unsupported language variants,
+  // but they resolve to backup locale within base_language_codes, also
+  // add them to the list.
+  for (std::map<std::string, int>::const_iterator iter = language_index.begin();
+       iter != language_index.end();
+       ++iter) {
+    const std::string& language_id = iter->first;
+    const int language_idx = iter->second;
+
+    const size_t dash_pos = language_id.find_first_of('-');
+
+    // Ignore non-specific codes.
+    if (dash_pos == std::string::npos || dash_pos == 0)
+      continue;
+
+    if (std::find(base_language_codes.begin(),
+                  base_language_codes.end(),
+                  language_id) != base_language_codes.end()) {
+      // Language is supported. No need to replace
+      continue;
+    }
+    std::string resolved_locale;
+    if (!l10n_util::CheckAndResolveLocale(language_id, &resolved_locale))
+      continue;
+
+    if (std::find(base_language_codes.begin(),
+                  base_language_codes.end(),
+                  resolved_locale) == base_language_codes.end()) {
+      // Resolved locale is not supported.
+      continue;
+    }
+
+    const base::string16 display_name =
+        l10n_util::GetDisplayNameForLocale(language_id, app_locale, true);
+    const base::string16 native_display_name =
+        l10n_util::GetDisplayNameForLocale(
+            language_id, language_id, true);
+
+    language_map[display_name] =
+        std::make_pair(language_id, native_display_name);
+
+    configured_locales_display_names[language_idx] = display_name;
+    ++configured_locales_count;
+  }
+
+  // Translate language codes, generated from input methods.
   for (std::set<std::string>::const_iterator iter = language_codes.begin();
        iter != language_codes.end(); ++iter) {
      // Exclude the language which is not in |base_langauge_codes| even it has
@@ -255,8 +307,12 @@ base::ListValue* CrosLanguageOptionsHandler::GetLanguageListInternal(
     const std::map<std::string, int>::const_iterator index_pos =
         language_index.find(*iter);
     if (index_pos != language_index.end()) {
-      configured_locales_display_names[index_pos->second] = display_name;
-      ++configured_locales_count;
+      base::string16& stored_display_name =
+          configured_locales_display_names[index_pos->second];
+      if (stored_display_name.empty()) {
+        stored_display_name = display_name;
+        ++configured_locales_count;
+      }
     } else {
       display_names.push_back(display_name);
     }
@@ -365,7 +421,7 @@ base::ListValue* CrosLanguageOptionsHandler::GetUILanguageList(
 }
 
 base::ListValue*
-    CrosLanguageOptionsHandler::ConvertInputMethodDescriptosToIMEList(
+    CrosLanguageOptionsHandler::ConvertInputMethodDescriptorsToIMEList(
         const input_method::InputMethodDescriptors& descriptors) {
   scoped_ptr<base::ListValue> ime_ids_list(new base::ListValue());
   for (size_t i = 0; i < descriptors.size(); ++i) {
@@ -408,7 +464,8 @@ void CrosLanguageOptionsHandler::RestartCallback(const base::ListValue* args) {
 
 void CrosLanguageOptionsHandler::InputMethodDisableCallback(
     const base::ListValue* args) {
-  const std::string input_method_id = UTF16ToASCII(ExtractStringValue(args));
+  const std::string input_method_id =
+      base::UTF16ToASCII(ExtractStringValue(args));
   const std::string action = base::StringPrintf(
       "LanguageOptions_DisableInputMethod_%s", input_method_id.c_str());
   content::RecordComputedAction(action);
@@ -416,7 +473,8 @@ void CrosLanguageOptionsHandler::InputMethodDisableCallback(
 
 void CrosLanguageOptionsHandler::InputMethodEnableCallback(
     const base::ListValue* args) {
-  const std::string input_method_id = UTF16ToASCII(ExtractStringValue(args));
+  const std::string input_method_id =
+      base::UTF16ToASCII(ExtractStringValue(args));
   const std::string action = base::StringPrintf(
       "LanguageOptions_EnableInputMethod_%s", input_method_id.c_str());
   content::RecordComputedAction(action);
@@ -424,11 +482,8 @@ void CrosLanguageOptionsHandler::InputMethodEnableCallback(
 
 void CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback(
     const base::ListValue* args) {
-  const std::string input_method_id = UTF16ToASCII(ExtractStringValue(args));
-  const std::string action = base::StringPrintf(
-      "InputMethodOptions_Open_%s", input_method_id.c_str());
-  content::RecordComputedAction(action);
-
+  const std::string input_method_id =
+      base::UTF16ToASCII(ExtractStringValue(args));
   const std::string extension_id =
       extension_ime_util::GetExtensionIDFromInputMethodID(input_method_id);
   if (extension_id.empty())
@@ -454,7 +509,7 @@ void CrosLanguageOptionsHandler::InputMethodOptionsOpenCallback(
   web_contents->GetDelegate()->ActivateContents(web_contents);
 }
 
-void CrosLanguageOptionsHandler::OnInitialized() {
+void CrosLanguageOptionsHandler::OnImeComponentExtensionInitialized() {
   if (composition_extension_appended_ || !is_page_initialized_) {
     // If an option page is not ready to call JavaScript, appending component
     // extension IMEs will be done in InitializePage function later.
@@ -467,7 +522,7 @@ void CrosLanguageOptionsHandler::OnInitialized() {
 
   DCHECK(manager->IsInitialized());
   scoped_ptr<base::ListValue> ime_list(
-      ConvertInputMethodDescriptosToIMEList(
+      ConvertInputMethodDescriptorsToIMEList(
           manager->GetAllIMEAsInputMethodDescriptor()));
   web_ui()->CallJavascriptFunction(
       "options.LanguageOptions.onComponentManagerInitialized",
@@ -490,12 +545,31 @@ void CrosLanguageOptionsHandler::InitializePage() {
   }
 
   scoped_ptr<base::ListValue> ime_list(
-      ConvertInputMethodDescriptosToIMEList(
+      ConvertInputMethodDescriptorsToIMEList(
           component_extension_manager->GetAllIMEAsInputMethodDescriptor()));
   web_ui()->CallJavascriptFunction(
       "options.LanguageOptions.onComponentManagerInitialized",
       *ime_list);
   composition_extension_appended_ = true;
+}
+
+void CrosLanguageOptionsHandler::AddImeProvider(base::ListValue* list) {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  ExtensionService* extension_service = profile->GetExtensionService();
+  for (size_t i = 0; i < list->GetSize(); i++) {
+    base::DictionaryValue* entry;
+    list->GetDictionary(i, &entry);
+
+    std::string input_method_id;
+    entry->GetString("id", &input_method_id);
+
+    std::string extension_id =
+        extension_ime_util::GetExtensionIDFromInputMethodID(input_method_id);
+    const extensions::Extension* extension =
+        extension_service->GetExtensionById(extension_id, false);
+    if (extension)
+      entry->SetString("extensionName", extension->name());
+  }
 }
 
 }  // namespace options

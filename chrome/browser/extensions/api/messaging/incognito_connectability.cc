@@ -8,9 +8,9 @@
 #include "base/logging.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -41,17 +41,18 @@ int IncognitoConnectability::ScopedAlertTracker::GetAndResetAlertCount() {
   return result;
 }
 
-IncognitoConnectability::IncognitoConnectability(Profile* profile) {
-  CHECK(profile->IsOffTheRecord());
+IncognitoConnectability::IncognitoConnectability(
+    content::BrowserContext* context) {
+  CHECK(context->IsOffTheRecord());
 }
 
 IncognitoConnectability::~IncognitoConnectability() {
 }
 
 // static
-IncognitoConnectability* IncognitoConnectability::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<IncognitoConnectability>::GetForProfile(
-      profile);
+IncognitoConnectability* IncognitoConnectability::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<IncognitoConnectability>::Get(context);
 }
 
 bool IncognitoConnectability::Query(const Extension* extension,
@@ -77,8 +78,7 @@ bool IncognitoConnectability::Query(const Extension* extension,
           IDS_EXTENSION_PROMPT_APP_CONNECT_FROM_INCOGNITO :
           IDS_EXTENSION_PROMPT_EXTENSION_CONNECT_FROM_INCOGNITO;
       result = chrome::ShowMessageBox(
-          web_contents ? web_contents->GetView()->GetTopLevelNativeWindow()
-                       : NULL,
+          web_contents ? web_contents->GetTopLevelNativeWindow() : NULL,
           base::string16(),  // no title
           l10n_util::GetStringFUTF16(template_id,
                                      base::UTF8ToUTF16(origin.spec()),
@@ -112,11 +112,12 @@ bool IncognitoConnectability::IsInMap(const Extension* extension,
   return it != map.end() && it->second.count(origin) > 0;
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<IncognitoConnectability> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<IncognitoConnectability> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<IncognitoConnectability>*
+BrowserContextKeyedAPIFactory<IncognitoConnectability>*
 IncognitoConnectability::GetFactoryInstance() {
   return g_factory.Pointer();
 }

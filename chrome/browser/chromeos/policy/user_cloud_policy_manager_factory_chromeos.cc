@@ -16,8 +16,8 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_external_data_manager.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
@@ -29,7 +29,7 @@
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/policy/core/common/cloud/cloud_external_data_manager.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "content/public/browser/browser_thread.h"
@@ -209,7 +209,8 @@ scoped_ptr<UserCloudPolicyManagerChromeOS>
     manager->EnableWildcardLoginCheck(username);
   }
 
-  manager->Init(SchemaRegistryServiceFactory::GetForContext(profile));
+  manager->Init(
+      SchemaRegistryServiceFactory::GetForContext(profile)->registry());
   manager->Connect(g_browser_process->local_state(),
                    device_management_service,
                    g_browser_process->system_request_context(),
@@ -239,6 +240,11 @@ void UserCloudPolicyManagerFactoryChromeOS::BrowserContextDestroyed(
 
 void UserCloudPolicyManagerFactoryChromeOS::SetEmptyTestingFactory(
     content::BrowserContext* context) {}
+
+bool UserCloudPolicyManagerFactoryChromeOS::HasTestingFactory(
+    content::BrowserContext* context) {
+  return false;
+}
 
 void UserCloudPolicyManagerFactoryChromeOS::CreateServiceNow(
     content::BrowserContext* context) {}

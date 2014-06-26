@@ -28,14 +28,9 @@ const char kOAuthGetAccessTokenUrlSuffix[] = "OAuthGetAccessToken";
 const char kOAuthWrapBridgeUrlSuffix[] = "OAuthWrapBridge";
 const char kOAuth1LoginUrlSuffix[] = "OAuthLogin";
 const char kOAuthRevokeTokenUrlSuffix[] = "AuthSubRevokeToken";
-const char kListAccountsSuffix[] = "ListAccounts";
+const char kListAccountsSuffix[] = "ListAccounts?json=standard";
 const char kEmbeddedSigninSuffix[] = "EmbeddedSignIn";
 const char kAddAccountSuffix[] = "AddSession";
-
-// OAuth scopes
-const char kOAuth1LoginScope[] = "https://www.google.com/accounts/OAuthLogin";
-const char kOAuthWrapBridgeUserInfoScope[] =
-    "https://www.googleapis.com/auth/userinfo.email";
 
 // API calls from accounts.google.com (LSO)
 const char kGetOAuthTokenUrlSuffix[] = "o/oauth/GetOAuthToken/";
@@ -47,7 +42,7 @@ const char kOAuth2TokenUrlSuffix[] = "o/oauth2/token";
 // API calls from www.googleapis.com
 const char kOAuth2IssueTokenUrlSuffix[] = "oauth2/v2/IssueToken";
 const char kOAuth2TokenInfoUrlSuffix[] = "oauth2/v2/tokeninfo";
-const char kOAuthUserInfoUrlSuffix[] = "oauth2/v1/userinfo";
+const char kPeopleGetUrlSuffix[] = "plus/v1/people/me";
 
 void GetSwitchValueWithDefault(const char* switch_value,
                                const char* default_value,
@@ -123,18 +118,10 @@ GaiaUrls::GaiaUrls() {
       google_apis_origin_url_.Resolve(kOAuth2IssueTokenUrlSuffix);
   oauth2_token_info_url_ =
       google_apis_origin_url_.Resolve(kOAuth2TokenInfoUrlSuffix);
-  oauth_user_info_url_ =
-      google_apis_origin_url_.Resolve(kOAuthUserInfoUrlSuffix);
+  people_get_url_ =
+      google_apis_origin_url_.Resolve(kPeopleGetUrlSuffix);
 
   gaia_login_form_realm_ = gaia_url_;
-
-  // OAuth scopes.
-  GetSwitchValueWithDefault(switches::kOAuthWrapBridgeUserInfoScope,
-                            kOAuthWrapBridgeUserInfoScope,
-                            &oauth_wrap_bridge_user_info_scope_);
-  GetSwitchValueWithDefault(switches::kOAuth1LoginScope,
-                            kOAuth1LoginScope,
-                            &oauth1_login_scope_);
 }
 
 GaiaUrls::~GaiaUrls() {
@@ -192,8 +179,8 @@ const GURL& GaiaUrls::oauth_wrap_bridge_url() const {
   return oauth_wrap_bridge_url_;
 }
 
-const GURL& GaiaUrls::oauth_user_info_url() const {
-  return oauth_user_info_url_;
+const GURL& GaiaUrls::people_get_url() const {
+  return people_get_url_;
 }
 
 const GURL& GaiaUrls::oauth_revoke_token_url() const {
@@ -214,14 +201,6 @@ const GURL& GaiaUrls::embedded_signin_url() const {
 
 const GURL& GaiaUrls::add_account_url() const {
   return add_account_url_;
-}
-
-const std::string& GaiaUrls::oauth1_login_scope() const {
-  return oauth1_login_scope_;
-}
-
-const std::string& GaiaUrls::oauth_wrap_bridge_user_info_scope() const {
-  return oauth_wrap_bridge_user_info_scope_;
 }
 
 const std::string& GaiaUrls::oauth2_chrome_client_id() const {

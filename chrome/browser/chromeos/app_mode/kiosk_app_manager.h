@@ -15,6 +15,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/observer_list.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data_delegate.h"
+#include "chrome/browser/chromeos/extensions/external_cache.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "ui/gfx/image/image_skia.h"
@@ -36,7 +37,8 @@ class KioskAppData;
 class KioskAppManagerObserver;
 
 // KioskAppManager manages cached app data.
-class KioskAppManager : public KioskAppDataDelegate {
+class KioskAppManager : public KioskAppDataDelegate,
+                        public ExternalCache::Delegate {
  public:
   enum ConsumerKioskAutoLaunchStatus {
     // Consumer kiosk mode auto-launch feature can be enabled on this machine.
@@ -54,7 +56,7 @@ class KioskAppManager : public KioskAppDataDelegate {
 
   // Struct to hold app info returned from GetApps() call.
   struct App {
-    explicit App(const KioskAppData& data);
+    App(const KioskAppData& data, bool is_extension_pending);
     App();
     ~App();
 
@@ -78,6 +80,9 @@ class KioskAppManager : public KioskAppDataDelegate {
   // Sub directory under DIR_USER_DATA to store cached icon files.
   static const char kIconCacheDir[];
 
+  // Sub directory under DIR_USER_DATA to store cached crx files.
+  static const char kCrxCacheDir[];
+
   // Gets the KioskAppManager instance, which is lazily created on first call..
   static KioskAppManager* Get();
 
@@ -95,6 +100,9 @@ class KioskAppManager : public KioskAppDataDelegate {
   // |callback| will be invoked with outcome of this operation.
   void EnableConsumerKioskAutoLaunch(
       const EnableKioskAutoLaunchCallback& callback);
+
+  // Returns true if this device is consumer kiosk auto launch enabled.
+  bool IsConsumerKioskDeviceWithAutoLaunch();
 
   // Returns auto launcher app id or an empty string if there is none.
   std::string GetAutoLaunchApp() const;
@@ -116,7 +124,7 @@ class KioskAppManager : public KioskAppDataDelegate {
   void AddApp(const std::string& app_id);
   void RemoveApp(const std::string& app_id);
 
-  // Gets info of all apps.
+  // Gets info of all apps that have no meta data load error.
   void GetApps(Apps* apps) const;
 
   // Gets app data for the given app id. Returns true if |app_id| is known and
@@ -176,6 +184,14 @@ class KioskAppManager : public KioskAppDataDelegate {
   virtual void OnKioskAppDataChanged(const std::string& app_id) OVERRIDE;
   virtual void OnKioskAppDataLoadFailure(const std::string& app_id) OVERRIDE;
 
+  // ExternalCache::Delegate:
+  virtual void OnExtensionListsUpdated(
+      const base::DictionaryValue* prefs) OVERRIDE;
+  virtual void OnExtensionLoadedInCache(const std::string& id) OVERRIDE;
+  virtual void OnExtensionDownloadFailed(
+      const std::string& id,
+      extensions::ExtensionDownloaderDelegate::Error error) OVERRIDE;
+
   // Callback for EnterpriseInstallAttributes::LockDevice() during
   // EnableConsumerModeKiosk() call.
   void OnLockDevice(
@@ -196,6 +212,12 @@ class KioskAppManager : public KioskAppDataDelegate {
   AutoLoginState GetAutoLoginState() const;
   void SetAutoLoginState(AutoLoginState state);
 
+  void GetCrxCacheDir(base::FilePath* cache_dir);
+
+  bool GetCachedCrx(const std::string& app_id,
+                    base::FilePath* file_path,
+                    std::string* version);
+
   // True if machine ownership is already established.
   bool ownership_established_;
   ScopedVector<KioskAppData> apps_;
@@ -206,6 +228,8 @@ class KioskAppManager : public KioskAppDataDelegate {
       local_accounts_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription>
       local_account_auto_login_id_subscription_;
+
+  scoped_ptr<ExternalCache> external_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(KioskAppManager);
 };

@@ -15,9 +15,10 @@
 // AlternateNavInfoBarDelegate -------------------------------------------------
 
 // static
-scoped_ptr<InfoBar> AlternateNavInfoBarDelegate::CreateInfoBar(
+scoped_ptr<infobars::InfoBar> AlternateNavInfoBarDelegate::CreateInfoBar(
     scoped_ptr<AlternateNavInfoBarDelegate> delegate) {
-  return scoped_ptr<InfoBar>(new AlternateNavInfoBarView(delegate.Pass()));
+  return scoped_ptr<infobars::InfoBar>(
+      new AlternateNavInfoBarView(delegate.Pass()));
 }
 
 
@@ -25,11 +26,10 @@ scoped_ptr<InfoBar> AlternateNavInfoBarDelegate::CreateInfoBar(
 
 AlternateNavInfoBarView::AlternateNavInfoBarView(
     scoped_ptr<AlternateNavInfoBarDelegate> delegate)
-    : InfoBarView(delegate.PassAs<InfoBarDelegate>()),
+    : InfoBarView(delegate.PassAs<infobars::InfoBarDelegate>()),
       label_1_(NULL),
       link_(NULL),
-      label_2_(NULL) {
-}
+      label_2_(NULL) {}
 
 AlternateNavInfoBarView::~AlternateNavInfoBarView() {
 }
@@ -95,7 +95,7 @@ void AlternateNavInfoBarView::ViewHierarchyChanged(
   InfoBarView::ViewHierarchyChanged(details);
 }
 
-int AlternateNavInfoBarView::ContentMinimumWidth() {
+int AlternateNavInfoBarView::ContentMinimumWidth() const {
   int label_1_width = label_1_->GetMinimumSize().width();
   return label_1_width ? label_1_width : link_->GetMinimumSize().width();
 }

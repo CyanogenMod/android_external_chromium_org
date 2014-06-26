@@ -5,26 +5,28 @@
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/glue/sync_backend_host_mock.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_test_util.h"
-#include "chrome/browser/sync/sync_prefs.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_manager.h"
 #include "components/sync_driver/data_type_manager_mock.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
+#include "components/sync_driver/pref_names.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
@@ -64,52 +66,55 @@ class ProfileSyncServiceStartupTest : public testing::Test {
       : thread_bundle_(content::TestBrowserThreadBundle::REAL_DB_THREAD |
                        content::TestBrowserThreadBundle::REAL_FILE_THREAD |
                        content::TestBrowserThreadBundle::REAL_IO_THREAD),
+        profile_manager_(TestingBrowserProcess::GetGlobal()),
         sync_(NULL) {}
 
   virtual ~ProfileSyncServiceStartupTest() {
   }
 
   virtual void SetUp() {
-    profile_ = CreateProfile();
-  }
+    CHECK(profile_manager_.SetUp());
 
-  virtual scoped_ptr<TestingProfile> CreateProfile() {
-    TestingProfile::Builder builder;
-    builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
-                              FakeSigninManagerBase::Build);
-    builder.AddTestingFactory(
-        ProfileOAuth2TokenServiceFactory::GetInstance(),
-        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
-    builder.AddTestingFactory(ProfileSyncServiceFactory::GetInstance(),
-                              BuildService);
-    return builder.Build();
+    TestingProfile::TestingFactories testing_facotries;
+    testing_facotries.push_back(
+        std::make_pair(SigninManagerFactory::GetInstance(),
+                       FakeSigninManagerBase::Build));
+    testing_facotries.push_back(
+            std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
+                           BuildAutoIssuingFakeProfileOAuth2TokenService));
+    testing_facotries.push_back(
+            std::make_pair(ProfileSyncServiceFactory::GetInstance(),
+                           BuildService));
+
+    profile_ = profile_manager_.CreateTestingProfile(
+        "sync-startup-test", scoped_ptr<PrefServiceSyncable>(),
+        base::UTF8ToUTF16("sync-startup-test"), 0, std::string(),
+        testing_facotries);
   }
 
   virtual void TearDown() {
     sync_->RemoveObserver(&observer_);
-    profile_.reset();
   }
 
-  static BrowserContextKeyedService* BuildService(
-      content::BrowserContext* browser_context) {
+  static KeyedService* BuildService(content::BrowserContext* browser_context) {
     Profile* profile = static_cast<Profile*>(browser_context);
     return new ProfileSyncService(
         new ProfileSyncComponentsFactoryMock(),
         profile,
-        new ManagedUserSigninManagerWrapper(
-            SigninManagerFactory::GetForProfile(profile)),
+        make_scoped_ptr(new SupervisedUserSigninManagerWrapper(
+            profile, SigninManagerFactory::GetForProfile(profile))),
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
-        ProfileSyncService::MANUAL_START);
+        browser_sync::MANUAL_START);
   }
 
   void CreateSyncService() {
     sync_ = static_cast<ProfileSyncService*>(
-        ProfileSyncServiceFactory::GetForProfile(profile_.get()));
+        ProfileSyncServiceFactory::GetForProfile(profile_));
     sync_->AddObserver(&observer_);
   }
 
   void IssueTestTokens() {
-    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
         ->UpdateCredentials("test_user@gmail.com", "oauth2_login_token");
   }
 
@@ -117,7 +122,22 @@ class ProfileSyncServiceStartupTest : public testing::Test {
     return static_cast<ProfileSyncComponentsFactoryMock*>(sync_->factory());
   }
 
+  FakeSigninManagerForTesting* fake_signin() {
+    return static_cast<FakeSigninManagerForTesting*>(sync_->signin());
+  }
+
  protected:
+  void SimulateTestUserSignin() {
+    profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
+                                    "test_user@gmail.com");
+#if !defined(OS_CHROMEOS)
+    fake_signin()->SignIn("test_user@gmail.com", "");
+#else
+    fake_signin()->SetAuthenticatedUsername("test_user@gmail.com");
+    sync_->GoogleSigninSucceeded("test_user@gmail.com", "");
+#endif
+  }
+
   DataTypeManagerMock* SetUpDataTypeManager() {
     DataTypeManagerMock* data_type_manager = new DataTypeManagerMock();
     EXPECT_CALL(*components_factory_mock(),
@@ -130,13 +150,14 @@ class ProfileSyncServiceStartupTest : public testing::Test {
     browser_sync::SyncBackendHostMock* sync_backend_host =
         new browser_sync::SyncBackendHostMock();
     EXPECT_CALL(*components_factory_mock(),
-                CreateSyncBackendHost(_, _, _)).
+                CreateSyncBackendHost(_, _, _, _, _)).
         WillOnce(Return(sync_backend_host));
     return sync_backend_host;
   }
 
   content::TestBrowserThreadBundle thread_bundle_;
-  scoped_ptr<TestingProfile> profile_;
+  TestingProfileManager profile_manager_;
+  TestingProfile* profile_;
   ProfileSyncService* sync_;
   ProfileSyncServiceObserverMock observer_;
 };
@@ -147,12 +168,11 @@ class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
     ProfileSyncServiceStartupTest::SetUp();
     sync_ = static_cast<ProfileSyncService*>(
         ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), BuildCrosService));
+            profile_, BuildCrosService));
     sync_->AddObserver(&observer_);
   }
 
-  static BrowserContextKeyedService* BuildCrosService(
-      content::BrowserContext* context) {
+  static KeyedService* BuildCrosService(content::BrowserContext* context) {
     Profile* profile = static_cast<Profile*>(context);
     SigninManagerBase* signin =
         SigninManagerFactory::GetForProfile(profile);
@@ -165,15 +185,16 @@ class ProfileSyncServiceStartupCrosTest : public ProfileSyncServiceStartupTest {
     return new ProfileSyncService(
         new ProfileSyncComponentsFactoryMock(),
         profile,
-        new ManagedUserSigninManagerWrapper(signin),
+        make_scoped_ptr(new SupervisedUserSigninManagerWrapper(profile,
+                                                               signin)),
         oauth2_token_service,
-        ProfileSyncService::AUTO_START);
+        browser_sync::AUTO_START);
   }
 };
 
 TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   // We've never completed startup.
-  profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
+  profile_->GetPrefs()->ClearPref(sync_driver::prefs::kSyncHasSetupCompleted);
   CreateSyncService();
   SetUpSyncBackendHost();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
@@ -185,8 +206,11 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   sync_->Initialize();
 
   // Preferences should be back to defaults.
-  EXPECT_EQ(0, profile_->GetPrefs()->GetInt64(prefs::kSyncLastSyncedTime));
-  EXPECT_FALSE(profile_->GetPrefs()->GetBoolean(prefs::kSyncHasSetupCompleted));
+  EXPECT_EQ(
+      0,
+      profile_->GetPrefs()->GetInt64(sync_driver::prefs::kSyncLastSyncedTime));
+  EXPECT_FALSE(profile_->GetPrefs()->GetBoolean(
+      sync_driver::prefs::kSyncHasSetupCompleted));
   Mock::VerifyAndClearExpectations(data_type_manager);
 
   // Then start things up.
@@ -200,15 +224,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
   sync_->SetSetupInProgress(true);
 
   // Simulate successful signin as test_user.
-  profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
-                                  "test_user@gmail.com");
-  sync_->signin()->SetAuthenticatedUsername("test_user@gmail.com");
-  GoogleServiceSigninSuccessDetails details("test_user@gmail.com", "");
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-      content::Source<Profile>(profile_.get()),
-      content::Details<const GoogleServiceSigninSuccessDetails>(&details));
-
+  SimulateTestUserSignin();
   // Create some tokens in the token service.
   IssueTestTokens();
 
@@ -220,7 +236,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartFirstTime) {
 // TODO(pavely): Reenable test once android is switched to oauth2.
 TEST_F(ProfileSyncServiceStartupTest, DISABLED_StartNoCredentials) {
   // We've never completed startup.
-  profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
+  profile_->GetPrefs()->ClearPref(sync_driver::prefs::kSyncHasSetupCompleted);
   CreateSyncService();
 
   // Should not actually start, rather just clean things up and wait
@@ -231,23 +247,20 @@ TEST_F(ProfileSyncServiceStartupTest, DISABLED_StartNoCredentials) {
   sync_->Initialize();
 
   // Preferences should be back to defaults.
-  EXPECT_EQ(0, profile_->GetPrefs()->GetInt64(prefs::kSyncLastSyncedTime));
-  EXPECT_FALSE(profile_->GetPrefs()->GetBoolean(prefs::kSyncHasSetupCompleted));
+  EXPECT_EQ(
+      0,
+      profile_->GetPrefs()->GetInt64(sync_driver::prefs::kSyncLastSyncedTime));
+  EXPECT_FALSE(profile_->GetPrefs()->GetBoolean(
+      sync_driver::prefs::kSyncHasSetupCompleted));
 
   // Then start things up.
   sync_->SetSetupInProgress(true);
 
   // Simulate successful signin as test_user.
-  profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
-                                  "test_user@gmail.com");
-  sync_->signin()->SetAuthenticatedUsername("test_user@gmail.com");
-  GoogleServiceSigninSuccessDetails details("test_user@gmail.com", "");
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-      content::Source<Profile>(profile_.get()),
-      content::Details<const GoogleServiceSigninSuccessDetails>(&details));
+  SimulateTestUserSignin();
+
   ProfileOAuth2TokenService* token_service =
-    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get());
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
   token_service->LoadCredentials("test_user@gmail.com");
 
   sync_->SetSetupInProgress(false);
@@ -287,12 +300,7 @@ TEST_F(ProfileSyncServiceStartupTest, DISABLED_StartInvalidCredentials) {
   sync_->SetSetupInProgress(true);
 
   // Simulate successful signin.
-  GoogleServiceSigninSuccessDetails details("test_user@gmail.com",
-                                            std::string());
-  content::NotificationService::current()->Notify(
-        chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-        content::Source<Profile>(profile_.get()),
-        content::Details<const GoogleServiceSigninSuccessDetails>(&details));
+  SimulateTestUserSignin();
 
   sync_->SetSetupInProgress(false);
 
@@ -304,8 +312,8 @@ TEST_F(ProfileSyncServiceStartupCrosTest, StartCrosNoCredentials) {
   EXPECT_CALL(*components_factory_mock(),
               CreateDataTypeManager(_, _, _, _, _, _)).Times(0);
   EXPECT_CALL(*components_factory_mock(),
-              CreateSyncBackendHost(_, _, _)).Times(0);
-  profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
+              CreateSyncBackendHost(_, _, _, _, _)).Times(0);
+  profile_->GetPrefs()->ClearPref(sync_driver::prefs::kSyncHasSetupCompleted);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
 
   sync_->Initialize();
@@ -320,7 +328,7 @@ TEST_F(ProfileSyncServiceStartupCrosTest, StartCrosNoCredentials) {
 TEST_F(ProfileSyncServiceStartupCrosTest, StartFirstTime) {
   SetUpSyncBackendHost();
   DataTypeManagerMock* data_type_manager = SetUpDataTypeManager();
-  profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
+  profile_->GetPrefs()->ClearPref(sync_driver::prefs::kSyncHasSetupCompleted);
   EXPECT_CALL(*data_type_manager, Configure(_, _));
   EXPECT_CALL(*data_type_manager, state()).
       WillRepeatedly(Return(DataTypeManager::CONFIGURED));
@@ -336,7 +344,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartNormal) {
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user@gmail.com");
-  SigninManagerFactory::GetForProfile(profile_.get())
+  SigninManagerFactory::GetForProfile(profile_)
       ->SetAuthenticatedUsername("test_user@gmail.com");
   CreateSyncService();
   sync_->SetSyncSetupCompleted();
@@ -358,18 +366,19 @@ TEST_F(ProfileSyncServiceStartupTest, StartNormal) {
 // therefore being left unset.
 TEST_F(ProfileSyncServiceStartupTest, StartRecoverDatatypePrefs) {
   // Clear the datatype preference fields (simulating bug 154940).
-  profile_->GetPrefs()->ClearPref(prefs::kSyncKeepEverythingSynced);
+  profile_->GetPrefs()->ClearPref(
+      sync_driver::prefs::kSyncKeepEverythingSynced);
   syncer::ModelTypeSet user_types = syncer::UserTypes();
   for (syncer::ModelTypeSet::Iterator iter = user_types.First();
        iter.Good(); iter.Inc()) {
     profile_->GetPrefs()->ClearPref(
-        browser_sync::SyncPrefs::GetPrefNameForDataType(iter.Get()));
+        sync_driver::SyncPrefs::GetPrefNameForDataType(iter.Get()));
   }
 
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user@gmail.com");
-  SigninManagerFactory::GetForProfile(profile_.get())
+  SigninManagerFactory::GetForProfile(profile_)
       ->SetAuthenticatedUsername("test_user@gmail.com");
   CreateSyncService();
   sync_->SetSyncSetupCompleted();
@@ -385,7 +394,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartRecoverDatatypePrefs) {
   sync_->Initialize();
 
   EXPECT_TRUE(profile_->GetPrefs()->GetBoolean(
-      prefs::kSyncKeepEverythingSynced));
+      sync_driver::prefs::kSyncKeepEverythingSynced));
 }
 
 // Verify that the recovery of datatype preferences doesn't overwrite a valid
@@ -393,12 +402,13 @@ TEST_F(ProfileSyncServiceStartupTest, StartRecoverDatatypePrefs) {
 TEST_F(ProfileSyncServiceStartupTest, StartDontRecoverDatatypePrefs) {
   // Explicitly set Keep Everything Synced to false and have only bookmarks
   // enabled.
-  profile_->GetPrefs()->SetBoolean(prefs::kSyncKeepEverythingSynced, false);
+  profile_->GetPrefs()->SetBoolean(
+      sync_driver::prefs::kSyncKeepEverythingSynced, false);
 
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user@gmail.com");
-  SigninManagerFactory::GetForProfile(profile_.get())
+  SigninManagerFactory::GetForProfile(profile_)
       ->SetAuthenticatedUsername("test_user@gmail.com");
   CreateSyncService();
   sync_->SetSyncSetupCompleted();
@@ -413,7 +423,7 @@ TEST_F(ProfileSyncServiceStartupTest, StartDontRecoverDatatypePrefs) {
   sync_->Initialize();
 
   EXPECT_FALSE(profile_->GetPrefs()->GetBoolean(
-      prefs::kSyncKeepEverythingSynced));
+      sync_driver::prefs::kSyncKeepEverythingSynced));
 }
 
 TEST_F(ProfileSyncServiceStartupTest, ManagedStartup) {
@@ -423,7 +433,7 @@ TEST_F(ProfileSyncServiceStartupTest, ManagedStartup) {
   CreateSyncService();
 
   // Disable sync through policy.
-  profile_->GetPrefs()->SetBoolean(prefs::kSyncManaged, true);
+  profile_->GetPrefs()->SetBoolean(sync_driver::prefs::kSyncManaged, true);
   EXPECT_CALL(*components_factory_mock(),
               CreateDataTypeManager(_, _, _, _, _, _)).Times(0);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
@@ -434,7 +444,7 @@ TEST_F(ProfileSyncServiceStartupTest, ManagedStartup) {
 TEST_F(ProfileSyncServiceStartupTest, SwitchManaged) {
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user@gmail.com");
-  SigninManagerFactory::GetForProfile(profile_.get())
+  SigninManagerFactory::GetForProfile(profile_)
       ->SetAuthenticatedUsername("test_user@gmail.com");
   CreateSyncService();
   sync_->SetSyncSetupCompleted();
@@ -451,7 +461,7 @@ TEST_F(ProfileSyncServiceStartupTest, SwitchManaged) {
       WillOnce(Return(DataTypeManager::CONFIGURED));
   EXPECT_CALL(*data_type_manager, Stop()).Times(1);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
-  profile_->GetPrefs()->SetBoolean(prefs::kSyncManaged, true);
+  profile_->GetPrefs()->SetBoolean(sync_driver::prefs::kSyncManaged, true);
 
   // When switching back to unmanaged, the state should change, but the service
   // should not start up automatically (kSyncSetupCompleted will be false).
@@ -459,13 +469,13 @@ TEST_F(ProfileSyncServiceStartupTest, SwitchManaged) {
   EXPECT_CALL(*components_factory_mock(),
               CreateDataTypeManager(_, _, _, _, _, _)).Times(0);
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
-  profile_->GetPrefs()->ClearPref(prefs::kSyncManaged);
+  profile_->GetPrefs()->ClearPref(sync_driver::prefs::kSyncManaged);
 }
 
 TEST_F(ProfileSyncServiceStartupTest, StartFailure) {
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user@gmail.com");
-  SigninManagerFactory::GetForProfile(profile_.get())
+  SigninManagerFactory::GetForProfile(profile_)
       ->SetAuthenticatedUsername("test_user@gmail.com");
   CreateSyncService();
   sync_->SetSyncSetupCompleted();
@@ -501,19 +511,19 @@ TEST_F(ProfileSyncServiceStartupTest, StartDownloadFailed) {
   // Pre load the tokens
   profile_->GetPrefs()->SetString(prefs::kGoogleServicesUsername,
                                   "test_user@gmail.com");
-  SigninManagerFactory::GetForProfile(profile_.get())
+  SigninManagerFactory::GetForProfile(profile_)
       ->SetAuthenticatedUsername("test_user@gmail.com");
   CreateSyncService();
   SyncBackendHostMock* mock_sbh = SetUpSyncBackendHost();
   mock_sbh->set_fail_initial_download(true);
 
-  profile_->GetPrefs()->ClearPref(prefs::kSyncHasSetupCompleted);
+  profile_->GetPrefs()->ClearPref(sync_driver::prefs::kSyncHasSetupCompleted);
 
   EXPECT_CALL(observer_, OnStateChanged()).Times(AnyNumber());
-  IssueTestTokens();
+  sync_->Initialize();
 
   sync_->SetSetupInProgress(true);
-  sync_->Initialize();
+  IssueTestTokens();
   sync_->SetSetupInProgress(false);
   EXPECT_FALSE(sync_->sync_initialized());
 }

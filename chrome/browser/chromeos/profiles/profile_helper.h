@@ -12,10 +12,14 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "chrome/browser/browsing_data/browsing_data_remover.h"
-#include "chrome/browser/chromeos/login/oauth2_login_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/signin/oauth2_login_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 
 class Profile;
+
+namespace base {
+class FilePath;
+}
 
 namespace chromeos {
 
@@ -46,6 +50,9 @@ class ProfileHelper : public BrowsingDataRemover::Observer,
   // Returns profile path that corresponds to a given |user_id_hash|.
   static base::FilePath GetProfilePathByUserIdHash(
       const std::string& user_id_hash);
+
+  // Returns the path that corresponds to the sign-in profile.
+  static base::FilePath GetSigninProfileDir();
 
   // Returns OffTheRecord profile for use during signing phase.
   static Profile* GetSigninProfile();

@@ -8,29 +8,26 @@
 #include "ash/ash_export.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/rect.h"
+#include "ui/wm/public/drag_drop_client.h"
 
 namespace gfx {
 class LinearAnimation;
 }
 
 namespace ash {
+class DragDropTracker;
+class DragDropTrackerDelegate;
+class DragImageView;
 
 namespace test {
 class DragDropControllerTest;
 }
-
-namespace internal {
-
-class DragDropTracker;
-class DragDropTrackerDelegate;
-class DragImageView;
 
 class ASH_EXPORT DragDropController
     : public aura::client::DragDropClient,
@@ -122,7 +119,7 @@ class ASH_EXPORT DragDropController
   // Closure for quitting nested message loop.
   base::Closure quit_closure_;
 
-  scoped_ptr<ash::internal::DragDropTracker> drag_drop_tracker_;
+  scoped_ptr<ash::DragDropTracker> drag_drop_tracker_;
   scoped_ptr<DragDropTrackerDelegate> drag_drop_window_delegate_;
 
   ui::DragDropTypes::DragEventSource current_drag_event_source_;
@@ -136,7 +133,6 @@ class ASH_EXPORT DragDropController
   DISALLOW_COPY_AND_ASSIGN(DragDropController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DRAG_DROP_DRAG_DROP_CONTROLLER_H_

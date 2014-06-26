@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/cancellation_flag.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/sys_info.h"
@@ -37,6 +38,7 @@ const char kCrosSystemUnknownValue[] = "(error)";
 
 const char kHardwareClassCrosSystemKey[] = "hwid";
 const char kUnknownHardwareClass[] = "unknown";
+const char kSerialNumber[] = "sn";
 
 // File to get machine hardware info from, and key/value delimiters of
 // the file.
@@ -67,9 +69,11 @@ const CommandLine::CharType kOemManifestFilePath[] =
 
 // Key values for GetMachineStatistic()/GetMachineFlag() calls.
 const char kDevSwitchBootMode[] = "devsw_boot";
+const char kCustomizationIdKey[] = "customization_id";
 const char kHardwareClassKey[] = "hardware_class";
 const char kOffersCouponCodeKey[] = "ubind_attribute";
 const char kOffersGroupCodeKey[] = "gbind_attribute";
+const char kRlzBrandCodeKey[] = "rlz_brand_code";
 
 // OEM specific statistics. Must be prefixed with "oem_".
 const char kOemCanExitEnterpriseEnrollmentKey[] = "oem_can_exit_enrollment";
@@ -224,9 +228,9 @@ void StatisticsProviderImpl::LoadMachineStatistics(bool load_oem_manifest) {
   if (cancellation_flag_.IsSet())
     return;
 
+  NameValuePairsParser parser(&machine_info_);
   if (base::SysInfo::IsRunningOnChromeOS()) {
     // Parse all of the key/value pairs from the crossystem tool.
-    NameValuePairsParser parser(&machine_info_);
     if (!parser.ParseNameValuePairsFromTool(arraysize(kCrosSystemTool),
                                             kCrosSystemTool,
                                             kCrosSystemEq,
@@ -234,17 +238,17 @@ void StatisticsProviderImpl::LoadMachineStatistics(bool load_oem_manifest) {
                                             kCrosSystemCommentDelim)) {
       LOG(ERROR) << "Errors parsing output from: " << kCrosSystemTool;
     }
-
-    parser.GetNameValuePairsFromFile(base::FilePath(kMachineHardwareInfoFile),
-                                     kMachineHardwareInfoEq,
-                                     kMachineHardwareInfoDelim);
-    parser.GetNameValuePairsFromFile(base::FilePath(kEchoCouponFile),
-                                     kEchoCouponEq,
-                                     kEchoCouponDelim);
-    parser.GetNameValuePairsFromFile(base::FilePath(kVpdFile),
-                                     kVpdEq,
-                                     kVpdDelim);
   }
+
+  parser.GetNameValuePairsFromFile(base::FilePath(kMachineHardwareInfoFile),
+                                   kMachineHardwareInfoEq,
+                                   kMachineHardwareInfoDelim);
+  parser.GetNameValuePairsFromFile(base::FilePath(kEchoCouponFile),
+                                   kEchoCouponEq,
+                                   kEchoCouponDelim);
+  parser.GetNameValuePairsFromFile(base::FilePath(kVpdFile),
+                                   kVpdEq,
+                                   kVpdDelim);
 
   // Ensure that the hardware class key is present with the expected
   // key name, and if it couldn't be retrieved, that the value is "unknown".
@@ -264,6 +268,17 @@ void StatisticsProviderImpl::LoadMachineStatistics(bool load_oem_manifest) {
       LoadOemManifestFromFile(base::FilePath(kOemManifestFilePath));
     }
     oem_manifest_loaded_ = true;
+  }
+
+  if (!base::SysInfo::IsRunningOnChromeOS() &&
+      machine_info_.find(kSerialNumber) == machine_info_.end()) {
+    // Set stub value for testing. A time value is appended to avoid clashes of
+    // the same serial for the same domain, which would invalidate earlier
+    // enrollments. A fake /tmp/machine-info file should be used instead if
+    // a stable serial is needed, e.g. to test re-enrollment.
+    base::TimeDelta time = base::Time::Now() - base::Time::UnixEpoch();
+    machine_info_[kSerialNumber] =
+        "stub_serial_number_" + base::Int64ToString(time.InSeconds());
   }
 
   // Finished loading the statistics.

@@ -5,6 +5,7 @@
 #include "media/formats/mp2t/mp2t_stream_parser.h"
 
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "media/base/audio_decoder_config.h"
@@ -210,6 +211,7 @@ void Mp2tStreamParser::Flush() {
   // stream parser already involves the end of the current segment.
   segment_started_ = false;
   first_video_frame_in_segment_ = true;
+  discarded_frames_dts_.clear();
 
   // Remove any bytes left in the TS buffer.
   // (i.e. any partial TS packet => less than 188 bytes).
@@ -484,7 +486,8 @@ bool Mp2tStreamParser::FinishInitializationIfNeeded() {
 
   // For Mpeg2 TS, the duration is not known.
   DVLOG(1) << "Mpeg2TS stream parser initialization done";
-  init_cb_.Run(true, kInfiniteDuration());
+  base::ResetAndReturn(&init_cb_)
+      .Run(true, InitParameters(kInfiniteDuration()));
   is_initialized_ = true;
 
   return true;
@@ -537,23 +540,27 @@ void Mp2tStreamParser::OnEmitVideoBuffer(
   stream_parser_buffer->SetDecodeTimestamp(
       stream_parser_buffer->GetDecodeTimestamp() - time_offset_);
 
-  // Ignore the incoming buffer if it is not associated with any config.
-  if (buffer_queue_chain_.empty()) {
-    DVLOG(1) << "Ignoring video buffer with no corresponding video config:"
+  // Discard the incoming buffer:
+  // - if it is not associated with any config,
+  // - or if only non-key frames have been added to a new segment.
+  if (buffer_queue_chain_.empty() ||
+      (first_video_frame_in_segment_ && !stream_parser_buffer->IsKeyframe())) {
+    DVLOG(1) << "Discard video buffer:"
              << " keyframe=" << stream_parser_buffer->IsKeyframe()
              << " dts="
              << stream_parser_buffer->GetDecodeTimestamp().InMilliseconds();
+    if (discarded_frames_dts_.empty() ||
+        discarded_frames_min_pts_ > stream_parser_buffer->timestamp()) {
+      discarded_frames_min_pts_ = stream_parser_buffer->timestamp();
+    }
+    discarded_frames_dts_.push_back(
+        stream_parser_buffer->GetDecodeTimestamp());
     return;
   }
 
-  // A segment cannot start with a non key frame.
-  // Ignore the frame if that's the case.
-  if (first_video_frame_in_segment_ && !stream_parser_buffer->IsKeyframe()) {
-    DVLOG(1) << "Ignoring non-key frame:"
-             << " dts="
-             << stream_parser_buffer->GetDecodeTimestamp().InMilliseconds();
-    return;
-  }
+  // Fill the gap created by frames that have been discarded.
+  if (!discarded_frames_dts_.empty())
+    FillVideoGap(stream_parser_buffer);
 
   first_video_frame_in_segment_ = false;
   buffer_queue_chain_.back().video_queue.push_back(stream_parser_buffer);
@@ -574,6 +581,12 @@ bool Mp2tStreamParser::EmitRemainingBuffers() {
       buffer_queue_chain_.back().audio_config;
   VideoDecoderConfig last_video_config =
       buffer_queue_chain_.back().video_config;
+
+  // Do not have all the configs, need more data.
+  if (selected_audio_pid_ >= 0 && !last_audio_config.IsValidConfig())
+    return true;
+  if (selected_video_pid_ >= 0 && !last_video_config.IsValidConfig())
+    return true;
 
   // Buffer emission.
   while (!buffer_queue_chain_.empty()) {
@@ -617,6 +630,33 @@ bool Mp2tStreamParser::EmitRemainingBuffers() {
   return true;
 }
 
+void Mp2tStreamParser::FillVideoGap(
+    const scoped_refptr<StreamParserBuffer>& stream_parser_buffer) {
+  DCHECK(!buffer_queue_chain_.empty());
+  DCHECK(!discarded_frames_dts_.empty());
+  DCHECK(stream_parser_buffer->IsKeyframe());
+
+  // PTS is interpolated between the min PTS of discarded frames
+  // and the PTS of the first valid buffer.
+  base::TimeDelta pts = discarded_frames_min_pts_;
+  base::TimeDelta pts_delta =
+      (stream_parser_buffer->timestamp() - pts) / discarded_frames_dts_.size();
+
+  while (!discarded_frames_dts_.empty()) {
+    scoped_refptr<StreamParserBuffer> frame =
+        StreamParserBuffer::CopyFrom(
+            stream_parser_buffer->data(),
+            stream_parser_buffer->data_size(),
+            stream_parser_buffer->IsKeyframe(),
+            stream_parser_buffer->type(),
+            stream_parser_buffer->track_id());
+    frame->SetDecodeTimestamp(discarded_frames_dts_.front());
+    frame->set_timestamp(pts);
+    buffer_queue_chain_.back().video_queue.push_back(frame);
+    pts += pts_delta;
+    discarded_frames_dts_.pop_front();
+  }
+}
+
 }  // namespace mp2t
 }  // namespace media
-

@@ -6,31 +6,48 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/metrics/histogram.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_audio_processor_options.h"
 #include "content/renderer/media/rtc_media_constraints.h"
+#include "content/renderer/media/webrtc_audio_device_impl.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_converter.h"
 #include "media/base/audio_fifo.h"
 #include "media/base/channel_layout.h"
 #include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediaconstraintsinterface.h"
+#include "third_party/webrtc/modules/audio_processing/typing_detection.h"
 
 namespace content {
 
 namespace {
 
 using webrtc::AudioProcessing;
-using webrtc::MediaConstraintsInterface;
 
 #if defined(OS_ANDROID)
 const int kAudioProcessingSampleRate = 16000;
 #else
 const int kAudioProcessingSampleRate = 32000;
 #endif
-const int kAudioProcessingNumberOfChannel = 1;
+const int kAudioProcessingNumberOfChannels = 1;
+const AudioProcessing::ChannelLayout kAudioProcessingChannelLayout =
+    AudioProcessing::kMono;
 
 const int kMaxNumberOfBuffersInFifo = 2;
+
+// Used by UMA histograms and entries shouldn't be re-ordered or removed.
+enum AudioTrackProcessingStates {
+  AUDIO_PROCESSING_ENABLED = 0,
+  AUDIO_PROCESSING_DISABLED,
+  AUDIO_PROCESSING_IN_WEBRTC,
+  AUDIO_PROCESSING_MAX
+};
+
+void RecordProcessingState(AudioTrackProcessingStates state) {
+  UMA_HISTOGRAM_ENUMERATION("Media.AudioTrackProcessingStates",
+                            state, AUDIO_PROCESSING_MAX);
+}
 
 }  // namespace
 
@@ -47,13 +64,19 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
     // |MediaStreamAudioProcessor::capture_converter_|.
     thread_checker_.DetachFromThread();
     audio_converter_.AddInput(this);
+
     // Create and initialize audio fifo and audio bus wrapper.
     // The size of the FIFO should be at least twice of the source buffer size
-    // or twice of the sink buffer size.
+    // or twice of the sink buffer size. Also, FIFO needs to have enough space
+    // to store pre-processed data before passing the data to
+    // webrtc::AudioProcessing, which requires 10ms as packet size.
+    int max_frame_size = std::max(source_params_.frames_per_buffer(),
+                                  sink_params_.frames_per_buffer());
     int buffer_size = std::max(
-        kMaxNumberOfBuffersInFifo * source_params_.frames_per_buffer(),
-        kMaxNumberOfBuffersInFifo * sink_params_.frames_per_buffer());
+        kMaxNumberOfBuffersInFifo * max_frame_size,
+        kMaxNumberOfBuffersInFifo * source_params_.sample_rate() / 100);
     fifo_.reset(new media::AudioFifo(source_params_.channels(), buffer_size));
+
     // TODO(xians): Use CreateWrapper to save one memcpy.
     audio_wrapper_ = media::AudioBus::Create(sink_params_.channels(),
                                              sink_params_.frames_per_buffer());
@@ -138,64 +161,76 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
   scoped_ptr<media::AudioFifo> fifo_;
 };
 
+bool MediaStreamAudioProcessor::IsAudioTrackProcessingEnabled() {
+  return !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableAudioTrackProcessing);
+}
+
 MediaStreamAudioProcessor::MediaStreamAudioProcessor(
-    const media::AudioParameters& source_params,
     const blink::WebMediaConstraints& constraints,
-    int effects)
+    int effects,
+    WebRtcPlayoutDataSource* playout_data_source)
     : render_delay_ms_(0),
-      audio_mirroring_(false) {
+      playout_data_source_(playout_data_source),
+      audio_mirroring_(false),
+      typing_detected_(false) {
   capture_thread_checker_.DetachFromThread();
   render_thread_checker_.DetachFromThread();
   InitializeAudioProcessingModule(constraints, effects);
-  InitializeCaptureConverter(source_params);
+  if (IsAudioTrackProcessingEnabled()) {
+    aec_dump_message_filter_ = AecDumpMessageFilter::Get();
+    // In unit tests not creating a message filter, |aec_dump_message_filter_|
+    // will be NULL. We can just ignore that. Other unit tests and browser tests
+    // ensure that we do get the filter when we should.
+    if (aec_dump_message_filter_)
+      aec_dump_message_filter_->AddDelegate(this);
+  }
 }
 
 MediaStreamAudioProcessor::~MediaStreamAudioProcessor() {
   DCHECK(main_thread_checker_.CalledOnValidThread());
+  if (aec_dump_message_filter_) {
+    aec_dump_message_filter_->RemoveDelegate(this);
+    aec_dump_message_filter_ = NULL;
+  }
   StopAudioProcessing();
+}
+
+void MediaStreamAudioProcessor::OnCaptureFormatChanged(
+    const media::AudioParameters& source_params) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  // There is no need to hold a lock here since the caller guarantees that
+  // there is no more PushCaptureData() and ProcessAndConsumeData() callbacks
+  // on the capture thread.
+  InitializeCaptureConverter(source_params);
+
+  // Reset the |capture_thread_checker_| since the capture data will come from
+  // a new capture thread.
+  capture_thread_checker_.DetachFromThread();
 }
 
 void MediaStreamAudioProcessor::PushCaptureData(media::AudioBus* audio_source) {
   DCHECK(capture_thread_checker_.CalledOnValidThread());
-  capture_converter_->Push(audio_source);
-}
+  DCHECK_EQ(audio_source->channels(),
+            capture_converter_->source_parameters().channels());
+  DCHECK_EQ(audio_source->frames(),
+            capture_converter_->source_parameters().frames_per_buffer());
 
-void MediaStreamAudioProcessor::PushRenderData(
-    const int16* render_audio, int sample_rate, int number_of_channels,
-    int number_of_frames, base::TimeDelta render_delay) {
-  DCHECK(render_thread_checker_.CalledOnValidThread());
-
-  // Return immediately if the echo cancellation is off.
-  if (!audio_processing_ ||
-      !audio_processing_->echo_cancellation()->is_enabled()) {
-    return;
+  if (audio_mirroring_ &&
+      capture_converter_->source_parameters().channel_layout() ==
+          media::CHANNEL_LAYOUT_STEREO) {
+    // Swap the first and second channels.
+    audio_source->SwapChannels(0, 1);
   }
 
-  TRACE_EVENT0("audio",
-               "MediaStreamAudioProcessor::FeedRenderDataToAudioProcessing");
-  int64 new_render_delay_ms = render_delay.InMilliseconds();
-  DCHECK_LT(new_render_delay_ms,
-            std::numeric_limits<base::subtle::Atomic32>::max());
-  base::subtle::Release_Store(&render_delay_ms_, new_render_delay_ms);
-
-  InitializeRenderConverterIfNeeded(sample_rate, number_of_channels,
-                                    number_of_frames);
-
-  // TODO(xians): Avoid this extra interleave/deinterleave.
-  render_data_bus_->FromInterleaved(render_audio,
-                                    render_data_bus_->frames(),
-                                    sizeof(render_audio[0]));
-  render_converter_->Push(render_data_bus_.get());
-  while (render_converter_->Convert(&render_frame_))
-    audio_processing_->AnalyzeReverseStream(&render_frame_);
+  capture_converter_->Push(audio_source);
 }
 
 bool MediaStreamAudioProcessor::ProcessAndConsumeData(
     base::TimeDelta capture_delay, int volume, bool key_pressed,
     int* new_volume, int16** out) {
   DCHECK(capture_thread_checker_.CalledOnValidThread());
-  TRACE_EVENT0("audio",
-               "MediaStreamAudioProcessor::ProcessAndConsumeData");
+  TRACE_EVENT0("audio", "MediaStreamAudioProcessor::ProcessAndConsumeData");
 
   if (!capture_converter_->Convert(&capture_frame_))
     return false;
@@ -215,92 +250,161 @@ const media::AudioParameters& MediaStreamAudioProcessor::OutputFormat() const {
   return capture_converter_->sink_parameters();
 }
 
+void MediaStreamAudioProcessor::OnAecDumpFile(
+    const IPC::PlatformFileForTransit& file_handle) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+
+  base::File file = IPC::PlatformFileForTransitToFile(file_handle);
+  DCHECK(file.IsValid());
+
+  if (audio_processing_)
+    StartEchoCancellationDump(audio_processing_.get(), file.Pass());
+  else
+    file.Close();
+}
+
+void MediaStreamAudioProcessor::OnDisableAecDump() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  if (audio_processing_)
+    StopEchoCancellationDump(audio_processing_.get());
+}
+
+void MediaStreamAudioProcessor::OnIpcClosing() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  aec_dump_message_filter_ = NULL;
+}
+
+void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
+                                              int sample_rate,
+                                              int audio_delay_milliseconds) {
+  DCHECK(render_thread_checker_.CalledOnValidThread());
+  DCHECK(audio_processing_->echo_control_mobile()->is_enabled() ^
+         audio_processing_->echo_cancellation()->is_enabled());
+
+  TRACE_EVENT0("audio", "MediaStreamAudioProcessor::OnPlayoutData");
+  DCHECK_LT(audio_delay_milliseconds,
+            std::numeric_limits<base::subtle::Atomic32>::max());
+  base::subtle::Release_Store(&render_delay_ms_, audio_delay_milliseconds);
+
+  InitializeRenderConverterIfNeeded(sample_rate, audio_bus->channels(),
+                                    audio_bus->frames());
+
+  render_converter_->Push(audio_bus);
+  while (render_converter_->Convert(&render_frame_))
+    audio_processing_->AnalyzeReverseStream(&render_frame_);
+}
+
+void MediaStreamAudioProcessor::OnPlayoutDataSourceChanged() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  // There is no need to hold a lock here since the caller guarantees that
+  // there is no more OnPlayoutData() callback on the render thread.
+  render_thread_checker_.DetachFromThread();
+  render_converter_.reset();
+}
+
+void MediaStreamAudioProcessor::GetStats(AudioProcessorStats* stats) {
+  stats->typing_noise_detected =
+      (base::subtle::Acquire_Load(&typing_detected_) != false);
+  GetAecStats(audio_processing_.get(), stats);
+}
+
 void MediaStreamAudioProcessor::InitializeAudioProcessingModule(
     const blink::WebMediaConstraints& constraints, int effects) {
   DCHECK(!audio_processing_);
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableAudioTrackProcessing)) {
+
+  MediaAudioConstraints audio_constraints(constraints, effects);
+
+  // Audio mirroring can be enabled even though audio processing is otherwise
+  // disabled.
+  audio_mirroring_ = audio_constraints.GetProperty(
+      MediaAudioConstraints::kGoogAudioMirroring);
+
+  if (!IsAudioTrackProcessingEnabled()) {
+    RecordProcessingState(AUDIO_PROCESSING_IN_WEBRTC);
     return;
   }
 
-  RTCMediaConstraints native_constraints(constraints);
-  ApplyFixedAudioConstraints(&native_constraints);
-  if (effects & media::AudioParameters::ECHO_CANCELLER) {
-    // If platform echo canceller is enabled, disable the software AEC.
-    native_constraints.AddMandatory(
-        MediaConstraintsInterface::kEchoCancellation,
-        MediaConstraintsInterface::kValueFalse, true);
-  }
-
 #if defined(OS_IOS)
-  // On iOS, VPIO provides built-in AEC and AGC.
-  const bool enable_aec = false;
-  const bool enable_agc = false;
+  // On iOS, VPIO provides built-in AGC and AEC.
+  const bool echo_cancellation = false;
+  const bool goog_agc = false;
 #else
-  const bool enable_aec = GetPropertyFromConstraints(
-      &native_constraints, MediaConstraintsInterface::kEchoCancellation);
-  const bool enable_agc = GetPropertyFromConstraints(
-      &native_constraints, webrtc::MediaConstraintsInterface::kAutoGainControl);
+  const bool echo_cancellation =
+      audio_constraints.GetEchoCancellationProperty();
+  const bool goog_agc = audio_constraints.GetProperty(
+      MediaAudioConstraints::kGoogAutoGainControl);
 #endif
 
 #if defined(OS_IOS) || defined(OS_ANDROID)
-  const bool enable_experimental_aec = false;
-  const bool enable_typing_detection = false;
+  const bool goog_experimental_aec = false;
+  const bool goog_typing_detection = false;
 #else
-  const bool enable_experimental_aec = GetPropertyFromConstraints(
-      &native_constraints,
-      MediaConstraintsInterface::kExperimentalEchoCancellation);
-  const bool enable_typing_detection = GetPropertyFromConstraints(
-      &native_constraints, MediaConstraintsInterface::kTypingNoiseDetection);
+  const bool goog_experimental_aec = audio_constraints.GetProperty(
+      MediaAudioConstraints::kGoogExperimentalEchoCancellation);
+  const bool goog_typing_detection = audio_constraints.GetProperty(
+      MediaAudioConstraints::kGoogTypingNoiseDetection);
 #endif
 
-  const bool enable_ns = GetPropertyFromConstraints(
-      &native_constraints, MediaConstraintsInterface::kNoiseSuppression);
-  const bool enable_high_pass_filter = GetPropertyFromConstraints(
-      &native_constraints, MediaConstraintsInterface::kHighpassFilter);
+  const bool goog_ns = audio_constraints.GetProperty(
+      MediaAudioConstraints::kGoogNoiseSuppression);
+  const bool goog_experimental_ns = audio_constraints.GetProperty(
+      MediaAudioConstraints::kGoogExperimentalNoiseSuppression);
+ const bool goog_high_pass_filter = audio_constraints.GetProperty(
+     MediaAudioConstraints::kGoogHighpassFilter);
 
-  audio_mirroring_ = GetPropertyFromConstraints(
-      &native_constraints, webrtc::MediaConstraintsInterface::kAudioMirroring);
-
-  // Return immediately if no audio processing component is enabled.
-  if (!enable_aec && !enable_experimental_aec && !enable_ns &&
-      !enable_high_pass_filter && !enable_typing_detection && !enable_agc) {
+  // Return immediately if no goog constraint is enabled.
+  if (!echo_cancellation && !goog_experimental_aec && !goog_ns &&
+      !goog_high_pass_filter && !goog_typing_detection &&
+      !goog_agc && !goog_experimental_ns) {
+    RecordProcessingState(AUDIO_PROCESSING_DISABLED);
     return;
   }
 
   // Create and configure the webrtc::AudioProcessing.
-  audio_processing_.reset(webrtc::AudioProcessing::Create(0));
+  audio_processing_.reset(webrtc::AudioProcessing::Create());
+  CHECK_EQ(0, audio_processing_->Initialize(kAudioProcessingSampleRate,
+                                            kAudioProcessingSampleRate,
+                                            kAudioProcessingSampleRate,
+                                            kAudioProcessingChannelLayout,
+                                            kAudioProcessingChannelLayout,
+                                            kAudioProcessingChannelLayout));
 
   // Enable the audio processing components.
-  if (enable_aec) {
+  if (echo_cancellation) {
     EnableEchoCancellation(audio_processing_.get());
-    if (enable_experimental_aec)
+
+    if (goog_experimental_aec)
       EnableExperimentalEchoCancellation(audio_processing_.get());
+
+    if (playout_data_source_)
+      playout_data_source_->AddPlayoutSink(this);
   }
 
-  if (enable_ns)
+  if (goog_ns)
     EnableNoiseSuppression(audio_processing_.get());
 
-  if (enable_high_pass_filter)
+  if (goog_experimental_ns)
+    EnableExperimentalNoiseSuppression(audio_processing_.get());
+
+  if (goog_high_pass_filter)
     EnableHighPassFilter(audio_processing_.get());
 
-  if (enable_typing_detection)
-    EnableTypingDetection(audio_processing_.get());
+  if (goog_typing_detection) {
+    // TODO(xians): Remove this |typing_detector_| after the typing suppression
+    // is enabled by default.
+    typing_detector_.reset(new webrtc::TypingDetection());
+    EnableTypingDetection(audio_processing_.get(), typing_detector_.get());
+  }
 
-  if (enable_agc)
+  if (goog_agc)
     EnableAutomaticGainControl(audio_processing_.get());
 
-  // Configure the audio format the audio processing is running on. This
-  // has to be done after all the needed components are enabled.
-  CHECK_EQ(audio_processing_->set_sample_rate_hz(kAudioProcessingSampleRate),
-           0);
-  CHECK_EQ(audio_processing_->set_num_channels(kAudioProcessingNumberOfChannel,
-                                               kAudioProcessingNumberOfChannel),
-           0);
+  RecordProcessingState(AUDIO_PROCESSING_ENABLED);
 }
 
 void MediaStreamAudioProcessor::InitializeCaptureConverter(
     const media::AudioParameters& source_params) {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
   DCHECK(source_params.IsValid());
 
   // Create and initialize audio converter for the source data.
@@ -311,7 +415,8 @@ void MediaStreamAudioProcessor::InitializeCaptureConverter(
   const int sink_sample_rate = audio_processing_ ?
       kAudioProcessingSampleRate : source_params.sample_rate();
   const media::ChannelLayout sink_channel_layout = audio_processing_ ?
-      media::CHANNEL_LAYOUT_MONO : source_params.channel_layout();
+      media::GuessChannelLayout(kAudioProcessingNumberOfChannels) :
+      source_params.channel_layout();
 
   // WebRtc AudioProcessing requires 10ms as its packet size. We use this
   // native size when processing is enabled. While processing is disabled, and
@@ -367,7 +472,7 @@ int MediaStreamAudioProcessor::ProcessData(webrtc::AudioFrame* audio_frame,
     return 0;
 
   TRACE_EVENT0("audio", "MediaStreamAudioProcessor::ProcessData");
-  DCHECK_EQ(audio_processing_->sample_rate_hz(),
+  DCHECK_EQ(audio_processing_->input_sample_rate_hz(),
             capture_converter_->sink_parameters().sample_rate());
   DCHECK_EQ(audio_processing_->num_input_channels(),
             capture_converter_->sink_parameters().channels());
@@ -386,16 +491,23 @@ int MediaStreamAudioProcessor::ProcessData(webrtc::AudioFrame* audio_frame,
   }
 
   audio_processing_->set_stream_delay_ms(total_delay_ms);
+
+  DCHECK_LE(volume, WebRtcAudioDeviceImpl::kMaxVolumeLevel);
   webrtc::GainControl* agc = audio_processing_->gain_control();
   int err = agc->set_stream_analog_level(volume);
   DCHECK_EQ(err, 0) << "set_stream_analog_level() error: " << err;
+
+  audio_processing_->set_stream_key_pressed(key_pressed);
+
   err = audio_processing_->ProcessStream(audio_frame);
   DCHECK_EQ(err, 0) << "ProcessStream() error: " << err;
 
-  // TODO(xians): Add support for typing detection, audio level calculation.
-
-  if (audio_mirroring_ && audio_frame->num_channels_ == 2) {
-    // TODO(xians): Swap the stereo channels after switching to media::AudioBus.
+  if (typing_detector_ &&
+      audio_frame->vad_activity_ != webrtc::AudioFrame::kVadUnknown) {
+    bool vad_active =
+        (audio_frame->vad_activity_ == webrtc::AudioFrame::kVadActive);
+    bool typing_detected = typing_detector_->Process(key_pressed, vad_active);
+    base::subtle::Release_Store(&typing_detected_, typing_detected);
   }
 
   // Return 0 if the volume has not been changed, otherwise return the new
@@ -407,6 +519,11 @@ int MediaStreamAudioProcessor::ProcessData(webrtc::AudioFrame* audio_frame,
 void MediaStreamAudioProcessor::StopAudioProcessing() {
   if (!audio_processing_.get())
     return;
+
+  StopEchoCancellationDump(audio_processing_.get());
+
+  if (playout_data_source_)
+    playout_data_source_->RemovePlayoutSink(this);
 
   audio_processing_.reset();
 }

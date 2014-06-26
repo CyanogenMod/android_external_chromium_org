@@ -18,8 +18,9 @@ import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.base.ApiCompatibilityUtils;
 import org.chromium.base.CalledByNative;
-import org.chromium.content.browser.DeviceUtils;
+import org.chromium.content_public.browser.WebContents;
 import org.chromium.ui.UiUtils;
+import org.chromium.ui.base.DeviceFormFactor;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -37,6 +38,9 @@ public class InfoBarContainer extends LinearLayout {
     private static final String TAG = "InfoBarContainer";
     private static final long REATTACH_FADE_IN_MS = 250;
 
+    /**
+     * A listener for the InfoBar animation.
+     */
     public interface InfoBarAnimationListener {
         /**
          * Notifies the subscriber when an animation is completed.
@@ -89,14 +93,14 @@ public class InfoBarContainer extends LinearLayout {
     // True when this container has been emptied and its native counterpart has been destroyed.
     private boolean mDestroyed = false;
 
-    // The id of the tab associated with us. Set to TabBase.INVALID_TAB_ID if no tab is associated.
+    // The id of the tab associated with us. Set to Tab.INVALID_TAB_ID if no tab is associated.
     private int mTabId;
 
     // Parent view that contains us.
     private ViewGroup mParentView;
 
     public InfoBarContainer(Activity activity, AutoLoginProcessor autoLoginProcessor,
-            int tabId, ViewGroup parentView, long nativeWebContents) {
+            int tabId, ViewGroup parentView, WebContents webContents) {
         super(activity);
         setOrientation(LinearLayout.VERTICAL);
         mAnimationListener = null;
@@ -111,12 +115,12 @@ public class InfoBarContainer extends LinearLayout {
         mAnimationSizer.setVisibility(INVISIBLE);
 
         // The tablet has the infobars below the location bar. On the phone they are at the bottom.
-        mInfoBarsOnTop = DeviceUtils.isTablet(activity);
+        mInfoBarsOnTop = DeviceFormFactor.isTablet(activity);
         setGravity(determineGravity());
 
         // Chromium's InfoBarContainer may add an InfoBar immediately during this initialization
         // call, so make sure everything in the InfoBarContainer is completely ready beforehand.
-        mNativeInfoBarContainer = nativeInit(nativeWebContents, mAutoLoginDelegate);
+        mNativeInfoBarContainer = nativeInit(webContents, mAutoLoginDelegate);
     }
 
     public void setAnimationListener(InfoBarAnimationListener listener) {
@@ -207,15 +211,6 @@ public class InfoBarContainer extends LinearLayout {
     protected void onDetachedFromWindow() {
         super.onDetachedFromWindow();
         setVisibility(INVISIBLE);
-    }
-
-    public InfoBar findInfoBar(int nativeInfoBar) {
-        for (InfoBar infoBar : mInfoBars) {
-            if (infoBar.ownsNativeInfoBar(nativeInfoBar)) {
-                return infoBar;
-            }
-        }
-        return null;
     }
 
     /**
@@ -514,7 +509,7 @@ public class InfoBarContainer extends LinearLayout {
         return mNativeInfoBarContainer;
     }
 
-    private native long nativeInit(long webContentsPtr, AutoLoginDelegate autoLoginDelegate);
+    private native long nativeInit(WebContents webContents, AutoLoginDelegate autoLoginDelegate);
 
     private native void nativeDestroy(long nativeInfoBarContainerAndroid);
 }

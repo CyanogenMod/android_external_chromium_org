@@ -7,11 +7,11 @@
 #import  <Cocoa/Cocoa.h>
 
 #include "base/command_line.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -201,7 +201,7 @@ void ShellWebContentsViewDelegate::ShowContextMenu(
                       YES,
                       delegate);
 
-  NSView* parent_view = web_contents_->GetView()->GetContentNativeView();
+  NSView* parent_view = web_contents_->GetContentNativeView();
   NSEvent* currentEvent = [NSApp currentEvent];
   NSWindow* window = [parent_view window];
   NSPoint position = [window mouseLocationOutsideOfEventStream];
@@ -224,16 +224,16 @@ void ShellWebContentsViewDelegate::ShowContextMenu(
 void ShellWebContentsViewDelegate::ActionPerformed(int tag) {
   switch (tag) {
     case ShellContextMenuItemCutTag:
-      web_contents_->GetRenderViewHost()->Cut();
+      web_contents_->Cut();
       break;
     case ShellContextMenuItemCopyTag:
-      web_contents_->GetRenderViewHost()->Copy();
+      web_contents_->Copy();
       break;
     case ShellContextMenuItemPasteTag:
-      web_contents_->GetRenderViewHost()->Paste();
+      web_contents_->Paste();
       break;
     case ShellContextMenuItemDeleteTag:
-      web_contents_->GetRenderViewHost()->Delete();
+      web_contents_->Delete();
       break;
     case ShellContextMenuItemOpenLinkTag: {
       ShellBrowserContext* browser_context =
@@ -247,15 +247,15 @@ void ShellWebContentsViewDelegate::ActionPerformed(int tag) {
     }
     case ShellContextMenuItemBackTag:
       web_contents_->GetController().GoToOffset(-1);
-      web_contents_->GetView()->Focus();
+      web_contents_->Focus();
       break;
     case ShellContextMenuItemForwardTag:
       web_contents_->GetController().GoToOffset(1);
-      web_contents_->GetView()->Focus();
+      web_contents_->Focus();
       break;
     case ShellContextMenuItemReloadTag: {
       web_contents_->GetController().Reload(false);
-      web_contents_->GetView()->Focus();
+      web_contents_->Focus();
       break;
     }
     case ShellContextMenuItemInspectTag: {

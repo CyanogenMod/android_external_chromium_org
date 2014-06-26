@@ -122,14 +122,6 @@ int DebugColors::MissingTileBorderWidth(const LayerTreeImpl* tree_impl) {
   return Scale(1, tree_impl);
 }
 
-// Culled tile borders are brown.
-SkColor DebugColors::CulledTileBorderColor() {
-  return SkColorSetARGB(120, 160, 100, 0);
-}
-int DebugColors::CulledTileBorderWidth(const LayerTreeImpl* tree_impl) {
-  return Scale(1, tree_impl);
-}
-
 // Solid color tile borders are grey.
 SkColor DebugColors::SolidColorTileBorderColor() {
   return SkColorSetARGB(128, 128, 128, 128);
@@ -173,23 +165,19 @@ SkColor DebugColors::EvictedTileCheckerboardColor() {
 
 // ======= Debug rect colors =======
 
-// Paint rects in shades of green.
-static const int kPaintRectColors[][3] = {{0, 155, 0}, {0, 195, 0},
-                                          {0, 235, 0}};
-SkColor DebugColors::PaintRectBorderColor(int color_index) {
-  int real_index = color_index % arraysize(kPaintRectColors);
-  return SkColorSetARGB(255,
-                        kPaintRectColors[real_index][0],
-                        kPaintRectColors[real_index][1],
-                        kPaintRectColors[real_index][2]);
+static SkColor FadedGreen(int initial_value, int step) {
+  DCHECK_GE(step, 0);
+  DCHECK_LE(step, DebugColors::kFadeSteps);
+  int value = step * initial_value / DebugColors::kFadeSteps;
+  return SkColorSetARGB(value, 0, 195, 0);
+}
+// Paint rects in green.
+SkColor DebugColors::PaintRectBorderColor(int step) {
+  return FadedGreen(255, step);
 }
 int DebugColors::PaintRectBorderWidth() { return 2; }
-SkColor DebugColors::PaintRectFillColor(int color_index) {
-  int real_index = color_index % arraysize(kPaintRectColors);
-  return SkColorSetARGB(30,
-                        kPaintRectColors[real_index][0],
-                        kPaintRectColors[real_index][1],
-                        kPaintRectColors[real_index][2]);
+SkColor DebugColors::PaintRectFillColor(int step) {
+  return FadedGreen(60, step);
 }
 
 // Property-changed rects in blue.
@@ -264,6 +252,15 @@ SkColor DebugColors::WheelEventHandlerRectFillColor() {
   return SkColorSetARGB(30, 189, 209, 57);
 }
 
+// Scroll-event-handler rects in teal.
+SkColor DebugColors::ScrollEventHandlerRectBorderColor() {
+  return SkColorSetARGB(255, 24, 167, 181);
+}
+int DebugColors::ScrollEventHandlerRectBorderWidth() { return 2; }
+SkColor DebugColors::ScrollEventHandlerRectFillColor() {
+  return SkColorSetARGB(30, 24, 167, 181);
+}
+
 // Non-fast-scrollable rects in orange.
 SkColor DebugColors::NonFastScrollableRectBorderColor() {
   return SkColorSetARGB(255, 238, 163, 59);
@@ -287,6 +284,11 @@ SkColor DebugColors::NonPaintedFillColor() { return SK_ColorCYAN; }
 
 // Missing picture rects in magenta.
 SkColor DebugColors::MissingPictureFillColor() { return SK_ColorMAGENTA; }
+
+// Missing resize invalidations are in salmon pink.
+SkColor DebugColors::MissingResizeInvalidations() {
+  return SkColorSetARGB(255, 255, 155, 170);
+}
 
 // Picture borders in transparent blue.
 SkColor DebugColors::PictureBorderColor() {

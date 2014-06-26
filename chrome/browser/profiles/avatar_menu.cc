@@ -24,7 +24,7 @@
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
@@ -33,8 +33,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #endif
 
 using content::BrowserThread;
@@ -99,7 +99,7 @@ bool AvatarMenu::ShouldShowAvatarMenu() {
     // On ChromeOS the menu will not be shown.
     return false;
 #else
-    return switches::IsNewProfileManagement() ||
+    return switches::IsNewAvatarMenu() ||
            (g_browser_process->profile_manager() &&
             g_browser_process->profile_manager()->GetNumberOfProfiles() > 1);
 #endif
@@ -185,23 +185,23 @@ size_t AvatarMenu::GetActiveProfileIndex() {
   return index;
 }
 
-base::string16 AvatarMenu::GetManagedUserInformation() const {
+base::string16 AvatarMenu::GetSupervisedUserInformation() const {
   // |browser_| can be NULL in unit_tests.
-  if (browser_ && browser_->profile()->IsManaged()) {
+  if (browser_ && browser_->profile()->IsSupervised()) {
 #if defined(ENABLE_MANAGED_USERS)
-    ManagedUserService* service = ManagedUserServiceFactory::GetForProfile(
-        browser_->profile());
+    SupervisedUserService* service =
+        SupervisedUserServiceFactory::GetForProfile(browser_->profile());
     base::string16 custodian =
         base::UTF8ToUTF16(service->GetCustodianEmailAddress());
-    return l10n_util::GetStringFUTF16(IDS_MANAGED_USER_INFO, custodian);
+    return l10n_util::GetStringFUTF16(IDS_SUPERVISED_USER_INFO, custodian);
 #endif
   }
   return base::string16();
 }
 
-const gfx::Image& AvatarMenu::GetManagedUserIcon() const {
+const gfx::Image& AvatarMenu::GetSupervisedUserIcon() const {
   return ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_MANAGED_USER_ICON);
+      IDR_SUPERVISED_USER_ICON);
 }
 
 void AvatarMenu::ActiveBrowserChanged(Browser* browser) {

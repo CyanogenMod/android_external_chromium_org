@@ -5,6 +5,12 @@
 #ifndef UI_APP_LIST_VIEWS_FOLDER_HEADER_VIEW_DELEGATE_H_
 #define UI_APP_LIST_VIEWS_FOLDER_HEADER_VIEW_DELEGATE_H_
 
+#include <string>
+
+namespace ui {
+class Event;
+}
+
 namespace app_list {
 
 class AppListFolderItem;
@@ -18,7 +24,13 @@ class FolderHeaderViewDelegate {
   virtual void NavigateBack(AppListFolderItem* item,
                             const ui::Event& event_flags) = 0;
 
- protected:
+  // Gives back the focus to the search box.
+  virtual void GiveBackFocusToSearchBox() = 0;
+
+  // Tells the model to set the name of |item|.
+  virtual void SetItemName(AppListFolderItem* item,
+                           const std::string& name) = 0;
+
   virtual ~FolderHeaderViewDelegate() {}
 };
 

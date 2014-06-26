@@ -11,8 +11,7 @@
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
-#include "chrome/browser/managed_mode/managed_user_signin_manager_wrapper.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -20,19 +19,22 @@
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #include "chrome/browser/signin/about_signin_internals_factory.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_components_factory_impl.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/startup_controller.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "url/gurl.h"
 
 // static
 ProfileSyncServiceFactory* ProfileSyncServiceFactory::GetInstance() {
@@ -64,7 +66,7 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
       extensions::ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
   DependsOn(GlobalErrorServiceFactory::GetInstance());
   DependsOn(HistoryServiceFactory::GetInstance());
-  DependsOn(invalidation::InvalidationServiceFactory::GetInstance());
+  DependsOn(invalidation::ProfileInvalidationProviderFactory::GetInstance());
   DependsOn(PasswordStoreFactory::GetInstance());
   DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
   DependsOn(SigninManagerFactory::GetInstance());
@@ -74,7 +76,7 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
 #endif
   DependsOn(WebDataServiceFactory::GetInstance());
 
-  // The following have not been converted to BrowserContextKeyedServices yet,
+  // The following have not been converted to KeyedServices yet,
   // and for now they are explicitly destroyed after the
   // BrowserContextDependencyManager is told to DestroyBrowserContextServices,
   // so they will be around when the ProfileSyncService is destroyed.
@@ -85,30 +87,33 @@ ProfileSyncServiceFactory::ProfileSyncServiceFactory()
 ProfileSyncServiceFactory::~ProfileSyncServiceFactory() {
 }
 
-BrowserContextKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
+KeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 
-  ProfileSyncService::StartBehavior behavior =
-      browser_defaults::kSyncAutoStarts ? ProfileSyncService::AUTO_START
-                                        : ProfileSyncService::MANUAL_START;
-
   SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile);
 
-  // Automatically load the GCMProfileService if the enabled state has been
-  // explicitly set.
-  const base::Value* gcm_enabled_value =
-      profile->GetPrefs()->GetUserPrefValue(prefs::kGCMChannelEnabled);
-  bool gcm_enabled = false;
-  if (gcm_enabled_value &&
-      gcm_enabled_value->GetAsBoolean(&gcm_enabled) &&
-      gcm_enabled) {
-    gcm::GCMProfileServiceFactory::GetForProfile(profile);
-  }
+  // Always create the GCMProfileService instance such that we can listen to
+  // the profile notifications and purge the GCM store when the profile is
+  // being signed out.
+  gcm::GCMProfileServiceFactory::GetForProfile(profile);
 
   // TODO(atwilson): Change AboutSigninInternalsFactory to load on startup
   // once http://crbug.com/171406 has been fixed.
   AboutSigninInternalsFactory::GetForProfile(profile);
+
+  const GURL sync_service_url =
+      ProfileSyncService::GetSyncServiceURL(*CommandLine::ForCurrentProcess());
+
+  scoped_ptr<SupervisedUserSigninManagerWrapper> signin_wrapper(
+      new SupervisedUserSigninManagerWrapper(profile, signin));
+  std::string account_id = signin_wrapper->GetAccountIdToUse();
+  OAuth2TokenService::ScopeSet scope_set;
+  scope_set.insert(signin_wrapper->GetSyncScopeToUse());
+  ProfileOAuth2TokenService* token_service =
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile);
+  net::URLRequestContextGetter* url_request_context_getter =
+      profile->GetRequestContext();
 
   // TODO(tim): Currently, AUTO/MANUAL settings refer to the *first* time sync
   // is set up and *not* a browser restart for a manual-start platform (where
@@ -116,12 +121,20 @@ BrowserContextKeyedService* ProfileSyncServiceFactory::BuildServiceInstanceFor(
   // intervention). We can get rid of the browser_default eventually, but
   // need to take care that ProfileSyncService doesn't get tripped up between
   // those two cases. Bug 88109.
+  browser_sync::ProfileSyncServiceStartBehavior behavior =
+      browser_defaults::kSyncAutoStarts ? browser_sync::AUTO_START
+                                        : browser_sync::MANUAL_START;
   ProfileSyncService* pss = new ProfileSyncService(
       new ProfileSyncComponentsFactoryImpl(profile,
-                                           CommandLine::ForCurrentProcess()),
+                                           CommandLine::ForCurrentProcess(),
+                                           sync_service_url,
+                                           account_id,
+                                           scope_set,
+                                           token_service,
+                                           url_request_context_getter),
       profile,
-      new ManagedUserSigninManagerWrapper(signin),
-      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+      signin_wrapper.Pass(),
+      token_service,
       behavior);
 
   pss->factory()->RegisterDataTypes(pss);

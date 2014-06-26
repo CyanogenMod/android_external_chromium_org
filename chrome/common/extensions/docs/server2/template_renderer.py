@@ -36,10 +36,6 @@ class TemplateRenderer(object):
       'apps_samples_url': GITHUB_BASE,
       'base_path': self._server_instance.base_path,
       'extensions_samples_url': EXTENSIONS_SAMPLES,
-      # TODO(kalman): Figure out where "pepperversion" comes from. It's used
-      # internally in pepper and unfortunately the syntax appears to be
-      # {{pepperversion}} for some reason.
-      'pepperversion': '',
       'static': self._server_instance.base_path + 'static',
     })
     if additional_context:
@@ -51,8 +47,6 @@ class TemplateRenderer(object):
     server_instance = self._server_instance
     data_sources = CreateDataSources(server_instance, request=request)
     data_sources.update({
-      'api_list': server_instance.api_list_data_source_factory.Create(),
-      'apis': server_instance.api_data_source_factory.Create(request),
       'samples': server_instance.samples_data_source_factory.Create(request),
     })
     return data_sources

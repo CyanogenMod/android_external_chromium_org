@@ -116,10 +116,10 @@ bool MediaCodecBridge::SupportsSetParameters() {
 // static
 std::vector<MediaCodecBridge::CodecsInfo> MediaCodecBridge::GetCodecsInfo() {
   std::vector<CodecsInfo> codecs_info;
-  JNIEnv* env = AttachCurrentThread();
   if (!IsAvailable())
     return codecs_info;
 
+  JNIEnv* env = AttachCurrentThread();
   std::string mime_type;
   ScopedJavaLocalRef<jobjectArray> j_codec_info_array =
       Java_MediaCodecBridge_getCodecsInfo(env);
@@ -144,6 +144,9 @@ std::vector<MediaCodecBridge::CodecsInfo> MediaCodecBridge::GetCodecsInfo() {
 
 // static
 bool MediaCodecBridge::CanDecode(const std::string& codec, bool is_secure) {
+  if (!IsAvailable())
+    return false;
+
   JNIEnv* env = AttachCurrentThread();
   std::string mime = CodecTypeToAndroidMimeType(codec);
   if (mime.empty())
@@ -161,6 +164,9 @@ bool MediaCodecBridge::CanDecode(const std::string& codec, bool is_secure) {
 // static
 bool MediaCodecBridge::IsKnownUnaccelerated(const std::string& mime_type,
                                             MediaCodecDirection direction) {
+  if (!IsAvailable())
+    return true;
+
   std::string codec_type = AndroidMimeTypeToCodecType(mime_type);
   std::vector<media::MediaCodecBridge::CodecsInfo> codecs_info =
       MediaCodecBridge::GetCodecsInfo();
@@ -170,7 +176,8 @@ bool MediaCodecBridge::IsKnownUnaccelerated(const std::string& mime_type,
       // It would be nice if MediaCodecInfo externalized some notion of
       // HW-acceleration but it doesn't. Android Media guidance is that the
       // prefix below is always used for SW decoders, so that's what we use.
-      return StartsWithASCII(codecs_info[i].name, "OMX.google.", true);
+      if (!StartsWithASCII(codecs_info[i].name, "OMX.google.", true))
+        return false;
     }
   }
   return true;
@@ -587,7 +594,7 @@ bool AudioCodecBridge::ConfigureMediaFormat(jobject j_format,
   return true;
 }
 
-void AudioCodecBridge::PlayOutputBuffer(int index, size_t size) {
+int64 AudioCodecBridge::PlayOutputBuffer(int index, size_t size) {
   DCHECK_LE(0, index);
   int numBytes = base::checked_cast<int>(size);
   JNIEnv* env = AttachCurrentThread();
@@ -597,7 +604,8 @@ void AudioCodecBridge::PlayOutputBuffer(int index, size_t size) {
 
   ScopedJavaLocalRef<jbyteArray> byte_array =
       base::android::ToJavaByteArray(env, buffer, numBytes);
-  Java_MediaCodecBridge_playOutputBuffer(env, media_codec(), byte_array.obj());
+  return Java_MediaCodecBridge_playOutputBuffer(
+      env, media_codec(), byte_array.obj());
 }
 
 void AudioCodecBridge::SetVolume(double volume) {
@@ -605,7 +613,11 @@ void AudioCodecBridge::SetVolume(double volume) {
   Java_MediaCodecBridge_setVolume(env, media_codec(), volume);
 }
 
+// static
 AudioCodecBridge* AudioCodecBridge::Create(const AudioCodec& codec) {
+  if (!MediaCodecBridge::IsAvailable())
+    return NULL;
+
   const std::string mime = AudioCodecToAndroidMimeType(codec);
   return mime.empty() ? NULL : new AudioCodecBridge(mime);
 }
@@ -623,12 +635,15 @@ bool VideoCodecBridge::IsKnownUnaccelerated(const VideoCodec& codec,
       VideoCodecToAndroidMimeType(codec), direction);
 }
 
+// static
 VideoCodecBridge* VideoCodecBridge::CreateDecoder(const VideoCodec& codec,
                                                   bool is_secure,
                                                   const gfx::Size& size,
                                                   jobject surface,
                                                   jobject media_crypto) {
-  JNIEnv* env = AttachCurrentThread();
+  if (!MediaCodecBridge::IsAvailable())
+    return NULL;
+
   const std::string mime = VideoCodecToAndroidMimeType(codec);
   if (mime.empty())
     return NULL;
@@ -638,6 +653,7 @@ VideoCodecBridge* VideoCodecBridge::CreateDecoder(const VideoCodec& codec,
   if (!bridge->media_codec())
     return NULL;
 
+  JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jstring> j_mime = ConvertUTF8ToJavaString(env, mime);
   ScopedJavaLocalRef<jobject> j_format(
       Java_MediaCodecBridge_createVideoDecoderFormat(
@@ -655,13 +671,16 @@ VideoCodecBridge* VideoCodecBridge::CreateDecoder(const VideoCodec& codec,
   return bridge->StartInternal() ? bridge.release() : NULL;
 }
 
+// static
 VideoCodecBridge* VideoCodecBridge::CreateEncoder(const VideoCodec& codec,
                                                   const gfx::Size& size,
                                                   int bit_rate,
                                                   int frame_rate,
                                                   int i_frame_interval,
                                                   int color_format) {
-  JNIEnv* env = AttachCurrentThread();
+  if (!MediaCodecBridge::IsAvailable())
+    return NULL;
+
   const std::string mime = VideoCodecToAndroidMimeType(codec);
   if (mime.empty())
     return NULL;
@@ -671,6 +690,7 @@ VideoCodecBridge* VideoCodecBridge::CreateEncoder(const VideoCodec& codec,
   if (!bridge->media_codec())
     return NULL;
 
+  JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jstring> j_mime = ConvertUTF8ToJavaString(env, mime);
   ScopedJavaLocalRef<jobject> j_format(
       Java_MediaCodecBridge_createVideoEncoderFormat(env,
@@ -697,7 +717,8 @@ VideoCodecBridge* VideoCodecBridge::CreateEncoder(const VideoCodec& codec,
 VideoCodecBridge::VideoCodecBridge(const std::string& mime,
                                    bool is_secure,
                                    MediaCodecDirection direction)
-    : MediaCodecBridge(mime, is_secure, direction) {}
+    : MediaCodecBridge(mime, is_secure, direction),
+      adaptive_playback_supported_for_testing_(-1) {}
 
 void VideoCodecBridge::SetVideoBitrate(int bps) {
   JNIEnv* env = AttachCurrentThread();
@@ -707,6 +728,16 @@ void VideoCodecBridge::SetVideoBitrate(int bps) {
 void VideoCodecBridge::RequestKeyFrameSoon() {
   JNIEnv* env = AttachCurrentThread();
   Java_MediaCodecBridge_requestKeyFrameSoon(env, media_codec());
+}
+
+bool VideoCodecBridge::IsAdaptivePlaybackSupported(int width, int height) {
+  if (adaptive_playback_supported_for_testing_ == 0)
+    return false;
+  else if (adaptive_playback_supported_for_testing_ > 0)
+    return true;
+  JNIEnv* env = AttachCurrentThread();
+  return Java_MediaCodecBridge_isAdaptivePlaybackSupported(
+      env, media_codec(), width, height);
 }
 
 bool MediaCodecBridge::RegisterMediaCodecBridge(JNIEnv* env) {

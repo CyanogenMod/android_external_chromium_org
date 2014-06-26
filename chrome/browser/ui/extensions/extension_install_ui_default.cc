@@ -5,13 +5,10 @@
 #include "chrome/browser/ui/extensions/extension_install_ui_default.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/theme_installed_infobar_delegate.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
@@ -31,8 +28,9 @@
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
@@ -131,11 +129,12 @@ base::string16 ErrorInfoBarDelegate::GetLinkText() const {
 }
 
 bool ErrorInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL("http://support.google.com/chrome_webstore/?p=crx_warning"),
-      content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL("http://support.google.com/chrome_webstore/?p=crx_warning"),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 
@@ -191,7 +190,11 @@ ExtensionInstallPrompt* ExtensionInstallUI::CreateInstallPromptWithProfile(
     Profile* profile) {
   Browser* browser = chrome::FindLastActiveWithProfile(profile,
       chrome::GetActiveDesktop());
-  return CreateInstallPromptWithBrowser(browser);
+  if (browser)
+    return CreateInstallPromptWithBrowser(browser);
+  // No browser window is open yet. Create a free-standing dialog associated
+  // with |profile|.
+  return new ExtensionInstallPrompt(profile, NULL, NULL);
 }
 
 
@@ -199,7 +202,7 @@ ExtensionInstallPrompt* ExtensionInstallUI::CreateInstallPromptWithProfile(
 
 ExtensionInstallUIDefault::ExtensionInstallUIDefault(Profile* profile)
     : ExtensionInstallUI(profile),
-      previous_using_native_theme_(false),
+      previous_using_system_theme_(false),
       use_app_installed_bubble_(false) {
   // |profile| can be NULL during tests.
   if (profile) {
@@ -208,8 +211,8 @@ ExtensionInstallUIDefault::ExtensionInstallUIDefault(Profile* profile)
         ThemeServiceFactory::GetThemeForProfile(profile);
     if (previous_theme)
       previous_theme_id_ = previous_theme->id();
-    previous_using_native_theme_ =
-        ThemeServiceFactory::GetForProfile(profile)->UsingNativeTheme();
+    previous_using_system_theme_ =
+        ThemeServiceFactory::GetForProfile(profile)->UsingSystemTheme();
   }
 }
 
@@ -229,7 +232,7 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
 
   if (extension->is_theme()) {
     ThemeInstalledInfoBarDelegate::Create(
-        extension, profile(), previous_theme_id_, previous_using_native_theme_);
+        extension, profile(), previous_theme_id_, previous_using_system_theme_);
     return;
   }
 
@@ -240,9 +243,7 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
     bool use_bubble = false;
 
 #if defined(TOOLKIT_VIEWS)  || defined(OS_MACOSX)
-    CommandLine* cmdline = CommandLine::ForCurrentProcess();
-    use_bubble = (use_app_installed_bubble_ ||
-                  cmdline->HasSwitch(switches::kAppsNewInstallBubble));
+    use_bubble = use_app_installed_bubble_;
 #endif
 
     if (IsAppLauncherEnabled()) {
@@ -272,7 +273,7 @@ void ExtensionInstallUIDefault::OnInstallSuccess(const Extension* extension,
 
 void ExtensionInstallUIDefault::OnInstallFailure(
     const extensions::CrxInstallerError& error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (disable_failure_ui_for_tests() || skip_post_install_ui())
     return;
 

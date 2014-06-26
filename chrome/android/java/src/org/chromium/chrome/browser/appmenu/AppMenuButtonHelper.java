@@ -103,9 +103,13 @@ public class AppMenuButtonHelper extends SimpleOnGestureListener implements OnTo
 
     @Override
     public boolean onTouch(View view, MotionEvent event) {
+        // isMenuButtonReleased is a workaround for some versions of Android that do not
+        // reset pressed animations correctly on mMenuButton.setPressed(false).
+        boolean isMenuButtonReleased = false;
         if (event.getActionMasked() == MotionEvent.ACTION_CANCEL ||
                 event.getActionMasked() == MotionEvent.ACTION_UP) {
             mMenuButton.setPressed(false);
+            isMenuButtonReleased = true;
         }
 
         // This will take care of showing app menu.
@@ -114,10 +118,10 @@ public class AppMenuButtonHelper extends SimpleOnGestureListener implements OnTo
         // If user starts to drag on this menu button, ACTION_DOWN and all the subsequent touch
         // events are received here. We need to forward this event to the app menu to handle
         // dragging correctly.
-        AppMenu menu = mMenuHandler.getAppMenu();
-        if (menu != null && !isTouchEventConsumed) {
-            isTouchEventConsumed |= menu.handleDragging(event);
+        AppMenuDragHelper dragHelper = mMenuHandler.getAppMenuDragHelper();
+        if (dragHelper != null && !isTouchEventConsumed) {
+            isTouchEventConsumed |= dragHelper.handleDragging(event);
         }
-        return isTouchEventConsumed;
+        return !isMenuButtonReleased && isTouchEventConsumed;
     }
 }

@@ -9,48 +9,6 @@
 cr.define('chrome.sync', function() {
   'use strict';
 
-  function makeSyncFunction(name) {
-    var callbacks = [];
-
-    // Calls the function, assuming the last argument is a callback to be
-    // called with the return value.
-    var fn = function() {
-      var args = Array.prototype.slice.call(arguments);
-      callbacks.push(args.pop());
-      chrome.send(name, args);
-    };
-
-    // Handle a reply, assuming that messages are processed in FIFO order.
-    // Called by SyncInternalsUI::HandleJsReply().
-    fn.handleReply = function() {
-      var args = Array.prototype.slice.call(arguments);
-      // Remove the callback before we call it since the callback may
-      // throw.
-      var callback = callbacks.shift();
-      callback.apply(null, args);
-    };
-
-    return fn;
-  }
-
-  var syncFunctions = [
-    // Notification functions.  See chrome/browser/sync/engine/syncapi.h
-    // for docs.
-    'getNotificationState',
-    'getNotificationInfo',
-
-    // Client server communication logging functions.
-    'getClientServerTraffic',
-
-    // Get an array containing a JSON representations of all known sync nodes.
-    'getAllNodes',
-  ];
-
-  for (var i = 0; i < syncFunctions.length; ++i) {
-    var syncFunction = syncFunctions[i];
-    chrome.sync[syncFunction] = makeSyncFunction(syncFunction);
-  }
-
   /**
    * A simple timer to measure elapsed time.
    * @constructor
@@ -88,6 +46,22 @@ cr.define('chrome.sync', function() {
   };
 
   /**
+   * Registers to receive a stream of events through
+   * chrome.sync.dispatchEvent().
+   */
+  var registerForEvents = function() {
+    chrome.send('registerForEvents');
+  };
+
+  /**
+   * Registers to receive a stream of status counter update events
+   * chrome.sync.dispatchEvent().
+   */
+  var registerForPerTypeCounters = function() {
+    chrome.send('registerForPerTypeCounters');
+  }
+
+  /**
    * Asks the browser to refresh our snapshot of sync state.  Should result
    * in an onAboutInfoUpdated event being emitted.
    */
@@ -103,11 +77,49 @@ cr.define('chrome.sync', function() {
     chrome.send('requestListOfTypes');
   };
 
+  /**
+   * Counter to uniquely identify requests while they're in progress.
+   * Used in the implementation of GetAllNodes.
+   */
+  var requestId = 0;
+
+  /**
+   * A map from counter values to asynchronous request callbacks.
+   * Used in the implementation of GetAllNodes.
+   * @type {{number: !Function}}
+   */
+  var requestCallbacks = {};
+
+  /**
+   * Asks the browser to send us a copy of all existing sync nodes.
+   * Will eventually invoke the given callback with the results.
+   *
+   * @param {function(!Object)} callback The function to call with the response.
+   */
+  var getAllNodes = function(callback) {
+    requestId++;
+    requestCallbacks[requestId] = callback;
+    chrome.send('getAllNodes', [requestId]);
+  };
+
+  /**
+   * Called from C++ with the response to a getAllNodes request.
+   * @param {number} id The requestId passed in with the request.
+   * @param {Object} response The response to the request.
+   */
+  var getAllNodesCallback = function(id, response) {
+    requestCallbacks[id](response);
+    requestCallbacks[id] = undefined;
+  };
+
   return {
     makeTimer: makeTimer,
     dispatchEvent: dispatchEvent,
     events: new cr.EventTarget(),
-
+    getAllNodes: getAllNodes,
+    getAllNodesCallback: getAllNodesCallback,
+    registerForEvents: registerForEvents,
+    registerForPerTypeCounters: registerForPerTypeCounters,
     requestUpdatedAboutInfo: requestUpdatedAboutInfo,
     requestListOfTypes: requestListOfTypes,
   };

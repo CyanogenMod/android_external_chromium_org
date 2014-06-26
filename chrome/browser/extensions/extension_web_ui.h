@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "components/favicon_base/favicon_callback.h"
 #include "content/public/browser/web_ui_controller.h"
 
 class Profile;
@@ -20,7 +20,7 @@ class WebContents;
 }
 
 namespace extensions {
-class BookmarkManagerPrivateEventRouter;
+class BookmarkManagerPrivateDragEventRouter;
 }
 
 namespace user_prefs {
@@ -39,8 +39,8 @@ class ExtensionWebUI : public content::WebUIController {
 
   virtual ~ExtensionWebUI();
 
-  virtual extensions::BookmarkManagerPrivateEventRouter*
-      bookmark_manager_private_event_router();
+  virtual extensions::BookmarkManagerPrivateDragEventRouter*
+      bookmark_manager_private_drag_event_router();
 
   // BrowserURLHandler
   static bool HandleChromeURLOverride(GURL* url,
@@ -67,7 +67,7 @@ class ExtensionWebUI : public content::WebUIController {
   static void GetFaviconForURL(
       Profile* profile,
       const GURL& page_url,
-      const FaviconService::FaviconResultsCallback& callback);
+      const favicon_base::FaviconResultsCallback& callback);
 
  private:
   // Unregister the specified override, and if it's the currently active one,
@@ -79,8 +79,8 @@ class ExtensionWebUI : public content::WebUIController {
 
   // TODO(aa): This seems out of place. Why is it not with the event routers for
   // the other extension APIs?
-  scoped_ptr<extensions::BookmarkManagerPrivateEventRouter>
-      bookmark_manager_private_event_router_;
+  scoped_ptr<extensions::BookmarkManagerPrivateDragEventRouter>
+      bookmark_manager_private_drag_event_router_;
 
   // The URL this WebUI was created for.
   GURL url_;

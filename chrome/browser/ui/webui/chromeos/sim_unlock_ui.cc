@@ -25,7 +25,6 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
-#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/url_data_source.h"
@@ -469,7 +468,7 @@ void SimUnlockHandler::CancelDialog() {
 
 void SimUnlockHandler::EnterCode(const std::string& code,
                                  SimUnlockCode code_type) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   pending_pin_operation_ = true;
 
@@ -703,7 +702,7 @@ void SimUnlockHandler::HandleSimStatusInitialize(const base::ListValue* args) {
 }
 
 void SimUnlockHandler::InitializeSimStatus() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // TODO(armansito): For now, we're initializing the device path to the first
   // available cellular device. We should try to obtain a specific device here,
   // as there can be multiple cellular devices present.
@@ -718,7 +717,7 @@ void SimUnlockHandler::InitializeSimStatus() {
 }
 
 void SimUnlockHandler::ProceedToPukInput() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ProcessSimCardState(GetCellularDevice());
 }
 

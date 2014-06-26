@@ -17,13 +17,13 @@
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
-#include "chrome/browser/chromeos/camera_detector.h"
-#include "chrome/browser/chromeos/login/default_user_images.h"
+#include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
-#include "chrome/browser/chromeos/login/user_image.h"
-#include "chrome/browser/chromeos/login/user_image_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/policy/profile_policy_connector_factory.h"
@@ -52,7 +52,7 @@ namespace {
 // Time histogram suffix for profile image download.
 const char kProfileDownloadReason[] = "OOBE";
 
-// Maximum ammount of time to wait for the user image to sync.
+// Maximum amount of time to wait for the user image to sync.
 // The screen is shown iff sync failed or time limit exceeded.
 const int kSyncTimeoutSeconds = 10;
 
@@ -62,15 +62,13 @@ UserImageScreen::UserImageScreen(ScreenObserver* screen_observer,
                                  UserImageScreenActor* actor)
     : WizardScreen(screen_observer),
       actor_(actor),
-      weak_factory_(this),
       accept_photo_after_decoding_(false),
       selected_image_(User::kInvalidImageIndex),
       profile_picture_enabled_(false),
-      profile_picture_data_url_(content::kAboutBlankURL),
+      profile_picture_data_url_(url::kAboutBlankURL),
       profile_picture_absent_(false),
       is_screen_ready_(false),
-      user_has_selected_image_(false),
-      was_camera_present_(false) {
+      user_has_selected_image_(false) {
   actor_->SetDelegate(this);
   SetProfilePictureEnabled(true);
   notification_registrar_.Add(this,
@@ -79,6 +77,7 @@ UserImageScreen::UserImageScreen(ScreenObserver* screen_observer,
 }
 
 UserImageScreen::~UserImageScreen() {
+  CameraPresenceNotifier::GetInstance()->RemoveObserver(this);
   if (actor_)
     actor_->SetDelegate(NULL);
   if (image_decoder_.get())
@@ -103,21 +102,9 @@ void UserImageScreen::OnPhotoTaken(const std::string& raw_data) {
   image_decoder_->Start(task_runner);
 }
 
-void UserImageScreen::CheckCameraPresence() {
-  CameraDetector::StartPresenceCheck(
-      base::Bind(&UserImageScreen::OnCameraPresenceCheckDone,
-                 weak_factory_.GetWeakPtr()));
-}
-
-void UserImageScreen::OnCameraPresenceCheckDone() {
-  bool is_camera_present = CameraDetector::camera_presence() ==
-                           CameraDetector::kCameraPresent;
-  if (actor_) {
-    if (is_camera_present != was_camera_present_) {
-      actor_->SetCameraPresent(is_camera_present);
-      was_camera_present_ = is_camera_present;
-    }
-  }
+void UserImageScreen::OnCameraPresenceCheckDone(bool is_camera_present) {
+  if (actor_)
+    actor_->SetCameraPresent(is_camera_present);
 }
 
 void UserImageScreen::HideCurtain() {
@@ -320,6 +307,7 @@ void UserImageScreen::Show() {
       sync_timer_->Reset();
     }
   }
+  CameraPresenceNotifier::GetInstance()->AddObserver(this);
   actor_->Show();
   actor_->SetProfilePictureEnabled(profile_picture_enabled_);
 
@@ -333,6 +321,7 @@ void UserImageScreen::Show() {
 }
 
 void UserImageScreen::Hide() {
+  CameraPresenceNotifier::GetInstance()->RemoveObserver(this);
   if (actor_)
     actor_->Hide();
 }

@@ -31,14 +31,22 @@ class ToolbarModel {
 
   virtual ~ToolbarModel();
 
-  // Returns the text for the current page's URL. This will have been formatted
-  // for display to the user:
-  //   - Some characters may be unescaped.
-  //   - The scheme and/or trailing slash may be dropped.
+  // Returns the text to be displayed in the toolbar for the current page.
+  // The text is formatted in various ways:
   //   - If the current page's URL is a search URL for the user's default search
   //     engine, the query will be extracted and returned for display instead
   //     of the URL.
+  //   - If the origin chip is enabled and visible, the text will be empty.
+  //   - Otherwise, the text will contain the URL returned by GetFormattedURL().
   virtual base::string16 GetText() const = 0;
+
+  // Returns a formatted URL for display in the toolbar. The formatting
+  // includes:
+  //   - Some characters may be unescaped.
+  //   - The scheme and/or trailing slash may be dropped.
+  // If |prefix_end| is non-NULL, it is set to the length of the pre-hostname
+  // portion of the resulting URL.
+  virtual base::string16 GetFormattedURL(size_t* prefix_end) const = 0;
 
   // Some search URLs bundle a special "corpus" param that we can extract and
   // display next to users' search terms in cases where we'd show the search
@@ -77,8 +85,8 @@ class ToolbarModel {
   // |level| given, ignoring search term replacement state.
   virtual int GetIconForSecurityLevel(SecurityLevel level) const = 0;
 
-  // Returns the name of the EV cert holder.  Only call this when the security
-  // level is EV_SECURE.
+  // Returns the name of the EV cert holder.  This returns an empty string if
+  // the security level is not EV_SECURE.
   virtual base::string16 GetEVCertName() const = 0;
 
   // Returns whether the URL for the current navigation entry should be
@@ -90,6 +98,10 @@ class ToolbarModel {
   // instead being displayed in the origin chip.  This returns false when we
   // wouldn't have displayed a URL to begin with (e.g. for the NTP).
   virtual bool WouldOmitURLDueToOriginChip() const = 0;
+
+  // Returns true if the origin should be shown based on the current state of
+  // the ToolbarModel.
+  bool ShouldShowOriginChip() const;
 
   // Whether the text in the omnibox is currently being edited.
   void set_input_in_progress(bool input_in_progress) {

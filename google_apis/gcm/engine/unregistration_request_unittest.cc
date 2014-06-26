@@ -9,6 +9,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
 #include "google_apis/gcm/engine/unregistration_request.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,6 +21,7 @@ const uint64 kAndroidId = 42UL;
 const char kLoginHeader[] = "AidLogin";
 const char kAppId[] = "TestAppId";
 const char kDeletedAppId[] = "deleted=TestAppId";
+const char kRegistrationURL[] = "http://foo.bar/register";
 const uint64 kSecurityToken = 77UL;
 
 // Backoff policy for testing registration request.
@@ -57,7 +59,7 @@ class UnregistrationRequestTest : public testing::Test {
   UnregistrationRequestTest();
   virtual ~UnregistrationRequestTest();
 
-  void UnregistrationCallback(bool success);
+  void UnregistrationCallback(UnregistrationRequest::Status status);
 
   void CreateRequest();
   void SetResponseStatusAndString(net::HttpStatusCode status_code,
@@ -66,35 +68,39 @@ class UnregistrationRequestTest : public testing::Test {
 
  protected:
   bool callback_called_;
-  bool unregistration_successful_;
+  UnregistrationRequest::Status status_;
   scoped_ptr<UnregistrationRequest> request_;
   base::MessageLoop message_loop_;
   net::TestURLFetcherFactory url_fetcher_factory_;
   scoped_refptr<net::TestURLRequestContextGetter> url_request_context_getter_;
+  FakeGCMStatsRecorder recorder_;
 };
 
 UnregistrationRequestTest::UnregistrationRequestTest()
     : callback_called_(false),
-      unregistration_successful_(false),
+      status_(UnregistrationRequest::UNREGISTRATION_STATUS_COUNT),
       url_request_context_getter_(new net::TestURLRequestContextGetter(
           message_loop_.message_loop_proxy())) {}
 
 UnregistrationRequestTest::~UnregistrationRequestTest() {}
 
-void UnregistrationRequestTest::UnregistrationCallback(bool success) {
+void UnregistrationRequestTest::UnregistrationCallback(
+    UnregistrationRequest::Status status) {
   callback_called_ = true;
-  unregistration_successful_ = success;
+  status_ = status;
 }
 
 void UnregistrationRequestTest::CreateRequest() {
   request_.reset(new UnregistrationRequest(
+      GURL(kRegistrationURL),
       UnregistrationRequest::RequestInfo(kAndroidId,
                                          kSecurityToken,
                                          kAppId),
       kDefaultBackoffPolicy,
       base::Bind(&UnregistrationRequestTest::UnregistrationCallback,
                  base::Unretained(this)),
-      url_request_context_getter_.get()));
+      url_request_context_getter_.get(),
+      &recorder_));
 }
 
 void UnregistrationRequestTest::SetResponseStatusAndString(
@@ -107,7 +113,7 @@ void UnregistrationRequestTest::SetResponseStatusAndString(
 }
 
 void UnregistrationRequestTest::CompleteFetch() {
-  unregistration_successful_ = false;
+  status_ = UnregistrationRequest::UNREGISTRATION_STATUS_COUNT;
   callback_called_ = false;
   net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher);
@@ -121,6 +127,8 @@ TEST_F(UnregistrationRequestTest, RequestDataPassedToFetcher) {
   // Get data sent by request.
   net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher);
+
+  EXPECT_EQ(GURL(kRegistrationURL), fetcher->GetOriginalURL());
 
   // Verify that authorization header was put together properly.
   net::HttpRequestHeaders headers;
@@ -168,7 +176,7 @@ TEST_F(UnregistrationRequestTest, SuccessfulUnregistration) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_TRUE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::SUCCESS, status_);
 }
 
 TEST_F(UnregistrationRequestTest, ResponseHttpStatusNotOK) {
@@ -179,7 +187,7 @@ TEST_F(UnregistrationRequestTest, ResponseHttpStatusNotOK) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_FALSE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::HTTP_NOT_OK, status_);
 }
 
 TEST_F(UnregistrationRequestTest, ResponseEmpty) {
@@ -190,13 +198,12 @@ TEST_F(UnregistrationRequestTest, ResponseEmpty) {
   CompleteFetch();
 
   EXPECT_FALSE(callback_called_);
-  EXPECT_FALSE(unregistration_successful_);
 
   SetResponseStatusAndString(net::HTTP_OK, kDeletedAppId);
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_TRUE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::SUCCESS, status_);
 }
 
 TEST_F(UnregistrationRequestTest, InvalidParametersError) {
@@ -207,7 +214,7 @@ TEST_F(UnregistrationRequestTest, InvalidParametersError) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_FALSE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::INVALID_PARAMETERS, status_);
 }
 
 TEST_F(UnregistrationRequestTest, UnkwnownError) {
@@ -218,7 +225,7 @@ TEST_F(UnregistrationRequestTest, UnkwnownError) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_FALSE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::UNKNOWN_ERROR, status_);
 }
 
 TEST_F(UnregistrationRequestTest, ServiceUnavailable) {
@@ -234,7 +241,7 @@ TEST_F(UnregistrationRequestTest, ServiceUnavailable) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_TRUE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::SUCCESS, status_);
 }
 
 TEST_F(UnregistrationRequestTest, InternalServerError) {
@@ -250,7 +257,7 @@ TEST_F(UnregistrationRequestTest, InternalServerError) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_TRUE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::SUCCESS, status_);
 }
 
 TEST_F(UnregistrationRequestTest, IncorrectAppId) {
@@ -266,7 +273,7 @@ TEST_F(UnregistrationRequestTest, IncorrectAppId) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_TRUE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::SUCCESS, status_);
 }
 
 TEST_F(UnregistrationRequestTest, ResponseParsingFailed) {
@@ -282,7 +289,7 @@ TEST_F(UnregistrationRequestTest, ResponseParsingFailed) {
   CompleteFetch();
 
   EXPECT_TRUE(callback_called_);
-  EXPECT_TRUE(unregistration_successful_);
+  EXPECT_EQ(UnregistrationRequest::SUCCESS, status_);
 }
 
 }  // namespace gcm

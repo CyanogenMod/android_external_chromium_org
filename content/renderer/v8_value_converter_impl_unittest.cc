@@ -294,7 +294,7 @@ TEST_F(V8ValueConverterImplTest, ObjectExceptions) {
       "    function() { throw new Error('muah!'); });";
 
   v8::Handle<v8::Script> script(
-      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+      v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
   script->Run();
 
   v8::Handle<v8::Object> object(v8::Object::New(isolate_));
@@ -339,7 +339,7 @@ TEST_F(V8ValueConverterImplTest, ArrayExceptions) {
       "})();";
 
   v8::Handle<v8::Script> script(
-      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+      v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
   v8::Handle<v8::Array> array = script->Run().As<v8::Array>();
   ASSERT_FALSE(array.IsEmpty());
 
@@ -410,7 +410,7 @@ TEST_F(V8ValueConverterImplTest, Prototype) {
       "})();";
 
   v8::Handle<v8::Script> script(
-      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+      v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
   v8::Handle<v8::Object> object = script->Run().As<v8::Object>();
   ASSERT_FALSE(object.IsEmpty());
 
@@ -433,7 +433,7 @@ TEST_F(V8ValueConverterImplTest, StripNullFromObjects) {
       "})();";
 
   v8::Handle<v8::Script> script(
-      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+      v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
   v8::Handle<v8::Object> object = script->Run().As<v8::Object>();
   ASSERT_FALSE(object.IsEmpty());
 
@@ -498,7 +498,7 @@ TEST_F(V8ValueConverterImplTest, WeirdProperties) {
       "})();";
 
   v8::Handle<v8::Script> script(
-      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+      v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
   v8::Handle<v8::Object> object = script->Run().As<v8::Object>();
   ASSERT_FALSE(object.IsEmpty());
 
@@ -531,7 +531,7 @@ TEST_F(V8ValueConverterImplTest, ArrayGetters) {
       "})();";
 
   v8::Handle<v8::Script> script(
-      v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+      v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
   v8::Handle<v8::Array> array = script->Run().As<v8::Array>();
   ASSERT_FALSE(array.IsEmpty());
 
@@ -554,7 +554,7 @@ TEST_F(V8ValueConverterImplTest, UndefinedValueBehavior) {
         "return { foo: undefined, bar: null, baz: function(){} };"
         "})();";
     v8::Handle<v8::Script> script(
-        v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+        v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
     object = script->Run().As<v8::Object>();
     ASSERT_FALSE(object.IsEmpty());
   }
@@ -565,9 +565,20 @@ TEST_F(V8ValueConverterImplTest, UndefinedValueBehavior) {
         "return [ undefined, null, function(){} ];"
         "})();";
     v8::Handle<v8::Script> script(
-        v8::Script::New(v8::String::NewFromUtf8(isolate_, source)));
+        v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
     array = script->Run().As<v8::Array>();
     ASSERT_FALSE(array.IsEmpty());
+  }
+
+  v8::Handle<v8::Array> sparse_array;
+  {
+    const char* source = "(function() {"
+        "return new Array(3);"
+        "})();";
+    v8::Handle<v8::Script> script(
+        v8::Script::Compile(v8::String::NewFromUtf8(isolate_, source)));
+    sparse_array = script->Run().As<v8::Array>();
+    ASSERT_FALSE(sparse_array.IsEmpty());
   }
 
   V8ValueConverterImpl converter;
@@ -581,6 +592,12 @@ TEST_F(V8ValueConverterImplTest, UndefinedValueBehavior) {
   scoped_ptr<base::Value> actual_array(converter.FromV8Value(array, context));
   EXPECT_TRUE(base::Value::Equals(
       base::test::ParseJson("[ null, null, null ]").get(), actual_array.get()));
+
+  scoped_ptr<base::Value> actual_sparse_array(
+      converter.FromV8Value(sparse_array, context));
+  EXPECT_TRUE(
+      base::Value::Equals(base::test::ParseJson("[ null, null, null ]").get(),
+                          actual_sparse_array.get()));
 }
 
 TEST_F(V8ValueConverterImplTest, ObjectsWithClashingIdentityHash) {
@@ -692,6 +709,173 @@ TEST_F(V8ValueConverterImplTest, MaxRecursionDepth) {
   // The leaf node shouldn't have any properties.
   base::DictionaryValue empty;
   EXPECT_TRUE(base::Value::Equals(&empty, current)) << *current;
+}
+
+class V8ValueConverterOverridingStrategyForTesting
+    : public V8ValueConverter::Strategy {
+ public:
+  V8ValueConverterOverridingStrategyForTesting()
+      : reference_value_(NewReferenceValue()) {}
+  virtual bool FromV8Object(
+      v8::Handle<v8::Object> value,
+      base::Value** out,
+      v8::Isolate* isolate,
+      const FromV8ValueCallback& callback) const OVERRIDE {
+    *out = NewReferenceValue();
+    return true;
+  }
+  virtual bool FromV8Array(v8::Handle<v8::Array> value,
+                           base::Value** out,
+                           v8::Isolate* isolate,
+                           const FromV8ValueCallback& callback) const OVERRIDE {
+    *out = NewReferenceValue();
+    return true;
+  }
+  virtual bool FromV8ArrayBuffer(v8::Handle<v8::Object> value,
+                                 base::Value** out,
+                                 v8::Isolate* isolate) const OVERRIDE {
+    *out = NewReferenceValue();
+    return true;
+  }
+  virtual bool FromV8Number(v8::Handle<v8::Number> value,
+                            base::Value** out) const OVERRIDE {
+    *out = NewReferenceValue();
+    return true;
+  }
+  virtual bool FromV8Undefined(base::Value** out) const OVERRIDE {
+    *out = NewReferenceValue();
+    return true;
+  }
+  base::Value* reference_value() const { return reference_value_.get(); }
+
+ private:
+  static base::Value* NewReferenceValue() {
+    return new base::StringValue("strategy");
+  }
+  scoped_ptr<base::Value> reference_value_;
+};
+
+TEST_F(V8ValueConverterImplTest, StrategyOverrides) {
+  v8::HandleScope handle_scope(isolate_);
+  v8::Local<v8::Context> context =
+      v8::Local<v8::Context>::New(isolate_, context_);
+  v8::Context::Scope context_scope(context);
+
+  V8ValueConverterImpl converter;
+  V8ValueConverterOverridingStrategyForTesting strategy;
+  converter.SetStrategy(&strategy);
+
+  v8::Handle<v8::Object> object(v8::Object::New(isolate_));
+  scoped_ptr<base::Value> object_value(converter.FromV8Value(object, context));
+  ASSERT_TRUE(object_value);
+  EXPECT_TRUE(
+      base::Value::Equals(strategy.reference_value(), object_value.get()));
+
+  v8::Handle<v8::Array> array(v8::Array::New(isolate_));
+  scoped_ptr<base::Value> array_value(converter.FromV8Value(array, context));
+  ASSERT_TRUE(array_value);
+  EXPECT_TRUE(
+      base::Value::Equals(strategy.reference_value(), array_value.get()));
+
+  v8::Handle<v8::ArrayBuffer> array_buffer(v8::ArrayBuffer::New(isolate_, 0));
+  scoped_ptr<base::Value> array_buffer_value(
+      converter.FromV8Value(array_buffer, context));
+  ASSERT_TRUE(array_buffer_value);
+  EXPECT_TRUE(base::Value::Equals(strategy.reference_value(),
+                                  array_buffer_value.get()));
+
+  v8::Handle<v8::ArrayBufferView> array_buffer_view(
+      v8::Uint8Array::New(array_buffer, 0, 0));
+  scoped_ptr<base::Value> array_buffer_view_value(
+      converter.FromV8Value(array_buffer_view, context));
+  ASSERT_TRUE(array_buffer_view_value);
+  EXPECT_TRUE(base::Value::Equals(strategy.reference_value(),
+                                  array_buffer_view_value.get()));
+
+  v8::Handle<v8::Number> number(v8::Number::New(isolate_, 0.0));
+  scoped_ptr<base::Value> number_value(converter.FromV8Value(number, context));
+  ASSERT_TRUE(number_value);
+  EXPECT_TRUE(
+      base::Value::Equals(strategy.reference_value(), number_value.get()));
+
+  v8::Handle<v8::Primitive> undefined(v8::Undefined(isolate_));
+  scoped_ptr<base::Value> undefined_value(
+      converter.FromV8Value(undefined, context));
+  ASSERT_TRUE(undefined_value);
+  EXPECT_TRUE(
+      base::Value::Equals(strategy.reference_value(), undefined_value.get()));
+}
+
+class V8ValueConverterBypassStrategyForTesting
+    : public V8ValueConverter::Strategy {
+ public:
+  virtual bool FromV8Object(
+      v8::Handle<v8::Object> value,
+      base::Value** out,
+      v8::Isolate* isolate,
+      const FromV8ValueCallback& callback) const OVERRIDE {
+    return false;
+  }
+  virtual bool FromV8Array(v8::Handle<v8::Array> value,
+                           base::Value** out,
+                           v8::Isolate* isolate,
+                           const FromV8ValueCallback& callback) const OVERRIDE {
+    return false;
+  }
+  virtual bool FromV8ArrayBuffer(v8::Handle<v8::Object> value,
+                                 base::Value** out,
+                                 v8::Isolate* isolate) const OVERRIDE {
+    return false;
+  }
+  virtual bool FromV8Number(v8::Handle<v8::Number> value,
+                            base::Value** out) const OVERRIDE {
+    return false;
+  }
+  virtual bool FromV8Undefined(base::Value** out) const OVERRIDE {
+    return false;
+  }
+};
+
+// Verify that having a strategy that fallbacks to default behaviour
+// actually preserves it.
+TEST_F(V8ValueConverterImplTest, StrategyBypass) {
+  v8::HandleScope handle_scope(isolate_);
+  v8::Local<v8::Context> context =
+      v8::Local<v8::Context>::New(isolate_, context_);
+  v8::Context::Scope context_scope(context);
+
+  V8ValueConverterImpl converter;
+  V8ValueConverterBypassStrategyForTesting strategy;
+  converter.SetStrategy(&strategy);
+
+  v8::Handle<v8::Object> object(v8::Object::New(isolate_));
+  scoped_ptr<base::Value> object_value(converter.FromV8Value(object, context));
+  ASSERT_TRUE(object_value);
+  scoped_ptr<base::Value> reference_object_value(base::test::ParseJson("{}"));
+  EXPECT_TRUE(
+      base::Value::Equals(reference_object_value.get(), object_value.get()));
+
+  v8::Handle<v8::Array> array(v8::Array::New(isolate_));
+  scoped_ptr<base::Value> array_value(converter.FromV8Value(array, context));
+  ASSERT_TRUE(array_value);
+  scoped_ptr<base::Value> reference_array_value(base::test::ParseJson("[]"));
+  EXPECT_TRUE(
+      base::Value::Equals(reference_array_value.get(), array_value.get()));
+
+  // Not testing ArrayBuffers as V8ValueConverter uses blink helpers and
+  // this requires having blink to be initialized.
+
+  v8::Handle<v8::Number> number(v8::Number::New(isolate_, 0.0));
+  scoped_ptr<base::Value> number_value(converter.FromV8Value(number, context));
+  ASSERT_TRUE(number_value);
+  scoped_ptr<base::Value> reference_number_value(base::test::ParseJson("0"));
+  EXPECT_TRUE(
+      base::Value::Equals(reference_number_value.get(), number_value.get()));
+
+  v8::Handle<v8::Primitive> undefined(v8::Undefined(isolate_));
+  scoped_ptr<base::Value> undefined_value(
+      converter.FromV8Value(undefined, context));
+  EXPECT_FALSE(undefined_value);
 }
 
 }  // namespace content

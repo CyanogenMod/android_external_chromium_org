@@ -47,27 +47,16 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
   MOCK_METHOD1(SetRemoteChangeProcessor,
                void(RemoteChangeProcessor* processor));
   MOCK_METHOD0(GetLocalChangeProcessor, LocalChangeProcessor*());
-  MOCK_METHOD1(IsConflicting, bool(const fileapi::FileSystemURL& url));
   MOCK_CONST_METHOD0(GetCurrentState,
                      RemoteServiceState());
   MOCK_METHOD1(GetOriginStatusMap,
-               void(RemoteFileSyncService::OriginStatusMap* status_map));
+               void(const StatusMapCallback& callback));
   MOCK_METHOD1(SetSyncEnabled, void(bool enabled));
-  MOCK_METHOD1(SetConflictResolutionPolicy,
-               SyncStatusCode(ConflictResolutionPolicy));
-  MOCK_CONST_METHOD0(GetConflictResolutionPolicy,
-                     ConflictResolutionPolicy());
-  MOCK_METHOD2(GetRemoteVersions,
-               void(const fileapi::FileSystemURL&,
-                    const RemoteVersionsCallback&));
-  MOCK_METHOD3(DownloadRemoteVersion,
-               void(const fileapi::FileSystemURL&,
-                    const std::string&,
-                    const DownloadVersionCallback&));
   MOCK_METHOD0(PromoteDemotedChanges, void());
 
-  virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
-  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
+  virtual void DumpFiles(const GURL& origin,
+                         const ListCallback& callback) OVERRIDE;
+  virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
 
   void SetServiceState(RemoteServiceState state);
 
@@ -92,9 +81,6 @@ class MockRemoteFileSyncService : public RemoteFileSyncService {
       const GURL& origin, UninstallFlag flag,
       const SyncStatusCallback& callback);
   void ProcessRemoteChangeStub(const SyncFileCallback& callback);
-  SyncStatusCode SetConflictResolutionPolicyStub(
-      ConflictResolutionPolicy policy);
-  ConflictResolutionPolicy GetConflictResolutionPolicyStub() const;
   RemoteServiceState GetCurrentStateStub() const;
 
   // For default implementation.

@@ -26,6 +26,7 @@ USHORT DeviceUsages[] = {
 };
 
 const uint32_t kAxisMinimumUsageNumber = 0x30;
+const uint32_t kGameControlsUsagePage = 0x05;
 
 }   // namespace
 
@@ -64,7 +65,7 @@ void RawInputDataFetcher::StartMonitor() {
     window_.reset(new base::win::MessageWindow());
     if (!window_->Create(base::Bind(&RawInputDataFetcher::HandleMessage,
                                     base::Unretained(this)))) {
-      LOG_GETLASTERROR(ERROR) << "Failed to create the raw input window";
+      PLOG(ERROR) << "Failed to create the raw input window";
       window_.reset();
       return;
     }
@@ -74,8 +75,7 @@ void RawInputDataFetcher::StartMonitor() {
   scoped_ptr<RAWINPUTDEVICE[]> devices(GetRawInputDevices(RIDEV_INPUTSINK));
   if (!RegisterRawInputDevices(devices.get(), arraysize(DeviceUsages),
       sizeof(RAWINPUTDEVICE))) {
-    LOG_GETLASTERROR(ERROR)
-        << "RegisterRawInputDevices() failed for RIDEV_INPUTSINK";
+    PLOG(ERROR) << "RegisterRawInputDevices() failed for RIDEV_INPUTSINK";
     window_.reset();
     return;
   }
@@ -98,8 +98,7 @@ void RawInputDataFetcher::StopMonitor() {
 
   if (!RegisterRawInputDevices(devices.get(), arraysize(DeviceUsages),
       sizeof(RAWINPUTDEVICE))) {
-    LOG_GETLASTERROR(INFO)
-        << "RegisterRawInputDevices() failed for RIDEV_REMOVE";
+    PLOG(INFO) << "RegisterRawInputDevices() failed for RIDEV_REMOVE";
   }
 
   events_monitored_ = false;
@@ -126,7 +125,7 @@ std::vector<RawGamepadInfo*> RawInputDataFetcher::EnumerateDevices() {
   UINT count = 0;
   UINT result = GetRawInputDeviceList(NULL, &count, sizeof(RAWINPUTDEVICELIST));
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceList() failed";
+    PLOG(ERROR) << "GetRawInputDeviceList() failed";
     return valid_controllers;
   }
   DCHECK_EQ(0u, result);
@@ -135,7 +134,7 @@ std::vector<RawGamepadInfo*> RawInputDataFetcher::EnumerateDevices() {
   result = GetRawInputDeviceList(device_list.get(), &count,
       sizeof(RAWINPUTDEVICELIST));
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceList() failed";
+    PLOG(ERROR) << "GetRawInputDeviceList() failed";
     return valid_controllers;
   }
   DCHECK_EQ(count, result);
@@ -172,7 +171,7 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   UINT result = GetRawInputDeviceInfo(hDevice, RIDI_DEVICEINFO,
       NULL, &size);
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceInfo() failed";
+    PLOG(ERROR) << "GetRawInputDeviceInfo() failed";
     return NULL;
   }
   DCHECK_EQ(0u, result);
@@ -183,7 +182,7 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   result = GetRawInputDeviceInfo(hDevice, RIDI_DEVICEINFO,
       di_buffer.get(), &size);
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceInfo() failed";
+    PLOG(ERROR) << "GetRawInputDeviceInfo() failed";
     return NULL;
   }
   DCHECK_EQ(size, result);
@@ -205,7 +204,6 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   gamepad_info->report_id = 0;
   gamepad_info->vendor_id = device_info->hid.dwVendorId;
   gamepad_info->product_id = device_info->hid.dwProductId;
-  gamepad_info->button_caps_length = 0;
   gamepad_info->buttons_length = 0;
   ZeroMemory(gamepad_info->buttons, sizeof(gamepad_info->buttons));
   gamepad_info->axes_length = 0;
@@ -215,7 +213,7 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   result = GetRawInputDeviceInfo(hDevice, RIDI_DEVICENAME,
       NULL, &size);
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceInfo() failed";
+    PLOG(ERROR) << "GetRawInputDeviceInfo() failed";
     return NULL;
   }
   DCHECK_EQ(0u, result);
@@ -224,7 +222,7 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   result = GetRawInputDeviceInfo(hDevice, RIDI_DEVICENAME,
       name_buffer.get(), &size);
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceInfo() failed";
+    PLOG(ERROR) << "GetRawInputDeviceInfo() failed";
     return NULL;
   }
   DCHECK_EQ(size, result);
@@ -252,7 +250,7 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   result = GetRawInputDeviceInfo(hDevice, RIDI_PREPARSEDDATA,
       NULL, &size);
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceInfo() failed";
+    PLOG(ERROR) << "GetRawInputDeviceInfo() failed";
     return NULL;
   }
   DCHECK_EQ(0u, result);
@@ -263,7 +261,7 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   result = GetRawInputDeviceInfo(hDevice, RIDI_PREPARSEDDATA,
        gamepad_info->ppd_buffer.get(), &size);
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputDeviceInfo() failed";
+    PLOG(ERROR) << "GetRawInputDeviceInfo() failed";
     return NULL;
   }
   DCHECK_EQ(size, result);
@@ -273,19 +271,18 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   DCHECK_EQ(HIDP_STATUS_SUCCESS, status);
 
   // Query button information.
-  gamepad_info->button_caps_length = caps.NumberInputButtonCaps;
-  USHORT count = gamepad_info->button_caps_length;
+  USHORT count = caps.NumberInputButtonCaps;
   if (count > 0) {
-    gamepad_info->button_caps.reset(new HIDP_BUTTON_CAPS[count]);
-    status = hidp_get_button_caps_(HidP_Input, gamepad_info->button_caps.get(),
-        &count, gamepad_info->preparsed_data);
+    scoped_ptr<HIDP_BUTTON_CAPS[]> button_caps(new HIDP_BUTTON_CAPS[count]);
+    status = hidp_get_button_caps_(
+        HidP_Input, button_caps.get(), &count, gamepad_info->preparsed_data);
     DCHECK_EQ(HIDP_STATUS_SUCCESS, status);
 
     for (uint32_t i = 0; i < count; ++i) {
-      HIDP_BUTTON_CAPS* button_caps = &gamepad_info->button_caps[i];
-      if (button_caps->Range.UsageMin <= WebGamepad::buttonsLengthCap) {
-        uint32_t max_index = std::min(WebGamepad::buttonsLengthCap,
-            static_cast<size_t>(button_caps->Range.UsageMax));
+      if (button_caps[i].Range.UsageMin <= WebGamepad::buttonsLengthCap) {
+        uint32_t max_index =
+            std::min(WebGamepad::buttonsLengthCap,
+                     static_cast<size_t>(button_caps[i].Range.UsageMax));
         gamepad_info->buttons_length = std::max(
             gamepad_info->buttons_length, max_index);
       }
@@ -298,13 +295,44 @@ RawGamepadInfo* RawInputDataFetcher::ParseGamepadInfo(HANDLE hDevice) {
   status = hidp_get_value_caps_(HidP_Input, axes_caps.get(), &count,
       gamepad_info->preparsed_data);
 
+  bool mapped_all_axes = true;
+
   for (UINT i = 0; i < count; i++) {
     uint32_t axis_index = axes_caps[i].Range.UsageMin - kAxisMinimumUsageNumber;
     if (axis_index < WebGamepad::axesLengthCap) {
       gamepad_info->axes[axis_index].caps = axes_caps[i];
       gamepad_info->axes[axis_index].value = 0;
+      gamepad_info->axes[axis_index].active = true;
       gamepad_info->axes_length =
           std::max(gamepad_info->axes_length, axis_index + 1);
+    } else {
+      mapped_all_axes = false;
+    }
+  }
+
+  if (!mapped_all_axes) {
+    // For axes who's usage puts them outside the standard axesLengthCap range.
+    uint32_t next_index = 0;
+    for (UINT i = 0; i < count; i++) {
+      uint32_t usage = axes_caps[i].Range.UsageMin - kAxisMinimumUsageNumber;
+      if (usage >= WebGamepad::axesLengthCap &&
+          axes_caps[i].UsagePage <= kGameControlsUsagePage) {
+
+        for (; next_index < WebGamepad::axesLengthCap; ++next_index) {
+          if (!gamepad_info->axes[next_index].active)
+            break;
+        }
+        if (next_index < WebGamepad::axesLengthCap) {
+          gamepad_info->axes[next_index].caps = axes_caps[i];
+          gamepad_info->axes[next_index].value = 0;
+          gamepad_info->axes[next_index].active = true;
+          gamepad_info->axes_length =
+              std::max(gamepad_info->axes_length, next_index + 1);
+        }
+      }
+
+      if (next_index >= WebGamepad::axesLengthCap)
+        break;
     }
   }
 
@@ -322,27 +350,33 @@ void RawInputDataFetcher::UpdateGamepad(
   if (gamepad_info->buttons_length) {
     // Clear the button state
     ZeroMemory(gamepad_info->buttons, sizeof(gamepad_info->buttons));
-    for (uint32_t i = 0; i < gamepad_info->button_caps_length; ++i) {
-      HIDP_BUTTON_CAPS* button_caps = &gamepad_info->button_caps[i];
-      if (button_caps->Range.UsageMin <= WebGamepad::buttonsLengthCap) {
-        ULONG buttons_length = button_caps->Range.UsageMax -
-            button_caps->Range.UsageMin + 1;
-        scoped_ptr<USAGE[]> usages(new USAGE[buttons_length]);
-        status = hidp_get_usages_(HidP_Input,
-            button_caps->UsagePage, 0, usages.get(), &buttons_length,
-            gamepad_info->preparsed_data,
-            reinterpret_cast<PCHAR>(input->data.hid.bRawData),
-            input->data.hid.dwSizeHid);
+    ULONG buttons_length = 0;
 
-        if (status == HIDP_STATUS_SUCCESS) {
-          // Set each reported button to true.
-          for (uint32_t j = 0; j < buttons_length; j++) {
-            int32_t button_index = usages[j] - 1;
-            if (button_index >= 0 &&
-                button_index < blink::WebGamepad::buttonsLengthCap)
-              gamepad_info->buttons[button_index] = true;
-          }
-        }
+    hidp_get_usages_ex_(HidP_Input,
+                        0,
+                        NULL,
+                        &buttons_length,
+                        gamepad_info->preparsed_data,
+                        reinterpret_cast<PCHAR>(input->data.hid.bRawData),
+                        input->data.hid.dwSizeHid);
+
+    scoped_ptr<USAGE_AND_PAGE[]> usages(new USAGE_AND_PAGE[buttons_length]);
+    status =
+        hidp_get_usages_ex_(HidP_Input,
+                            0,
+                            usages.get(),
+                            &buttons_length,
+                            gamepad_info->preparsed_data,
+                            reinterpret_cast<PCHAR>(input->data.hid.bRawData),
+                            input->data.hid.dwSizeHid);
+
+    if (status == HIDP_STATUS_SUCCESS) {
+      // Set each reported button to true.
+      for (uint32_t j = 0; j < buttons_length; j++) {
+        int32_t button_index = usages[j].Usage - 1;
+        if (button_index >= 0 &&
+            button_index < blink::WebGamepad::buttonsLengthCap)
+          gamepad_info->buttons[button_index] = true;
       }
     }
   }
@@ -385,7 +419,7 @@ LRESULT RawInputDataFetcher::OnInput(HRAWINPUT input_handle) {
   UINT result = GetRawInputData(
       input_handle, RID_INPUT, NULL, &size, sizeof(RAWINPUTHEADER));
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputData() failed";
+    PLOG(ERROR) << "GetRawInputData() failed";
     return 0;
   }
   DCHECK_EQ(0u, result);
@@ -396,7 +430,7 @@ LRESULT RawInputDataFetcher::OnInput(HRAWINPUT input_handle) {
   result = GetRawInputData(
       input_handle, RID_INPUT, buffer.get(), &size, sizeof(RAWINPUTHEADER));
   if (result == static_cast<UINT>(-1)) {
-    LOG_GETLASTERROR(ERROR) << "GetRawInputData() failed";
+    PLOG(ERROR) << "GetRawInputData() failed";
     return 0;
   }
   DCHECK_EQ(size, result);
@@ -429,7 +463,7 @@ bool RawInputDataFetcher::GetHidDllFunctions() {
   hidp_get_caps_ = NULL;
   hidp_get_button_caps_ = NULL;
   hidp_get_value_caps_ = NULL;
-  hidp_get_usages_ = NULL;
+  hidp_get_usages_ex_ = NULL;
   hidp_get_usage_value_ = NULL;
   hidp_get_scaled_usage_value_ = NULL;
   hidd_get_product_string_ = NULL;
@@ -448,9 +482,9 @@ bool RawInputDataFetcher::GetHidDllFunctions() {
       hid_dll_.GetFunctionPointer("HidP_GetValueCaps"));
   if (!hidp_get_value_caps_)
     return false;
-  hidp_get_usages_ = reinterpret_cast<HidPGetUsagesFunc>(
-      hid_dll_.GetFunctionPointer("HidP_GetUsages"));
-  if (!hidp_get_usages_)
+  hidp_get_usages_ex_ = reinterpret_cast<HidPGetUsagesExFunc>(
+      hid_dll_.GetFunctionPointer("HidP_GetUsagesEx"));
+  if (!hidp_get_usages_ex_)
     return false;
   hidp_get_usage_value_ = reinterpret_cast<HidPGetUsageValueFunc>(
       hid_dll_.GetFunctionPointer("HidP_GetUsageValue"));

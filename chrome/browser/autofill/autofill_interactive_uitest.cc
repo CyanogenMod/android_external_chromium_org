@@ -17,13 +17,10 @@
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -31,7 +28,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_manager_test_delegate.h"
 #include "components/autofill/core/browser/autofill_profile.h"
@@ -39,6 +36,10 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "components/autofill/core/browser/validation.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_manager.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -58,12 +59,12 @@ using base::ASCIIToUTF16;
 
 namespace autofill {
 
-static const char* kDataURIPrefix = "data:text/html;charset=utf-8,";
-static const char* kTestFormString =
+static const char kDataURIPrefix[] = "data:text/html;charset=utf-8,";
+static const char kTestFormString[] =
     "<form action=\"http://www.example.com/\" method=\"POST\">"
     "<label for=\"firstname\">First name:</label>"
     " <input type=\"text\" id=\"firstname\""
-    "        onFocus=\"domAutomationController.send(true)\"><br>"
+    "        onfocus=\"domAutomationController.send(true)\"><br>"
     "<label for=\"lastname\">Last name:</label>"
     " <input type=\"text\" id=\"lastname\"><br>"
     "<label for=\"address1\">Address line 1:</label>"
@@ -131,25 +132,24 @@ class AutofillManagerTestDelegateImpl
 
 class WindowedPersonalDataManagerObserver
     : public PersonalDataManagerObserver,
-      public content::NotificationObserver {
+      public infobars::InfoBarManager::Observer {
  public:
   explicit WindowedPersonalDataManagerObserver(Browser* browser)
       : alerted_(false),
         has_run_message_loop_(false),
         browser_(browser),
-        infobar_service_(NULL) {
+        infobar_service_(InfoBarService::FromWebContents(
+            browser_->tab_strip_model()->GetActiveWebContents())) {
     PersonalDataManagerFactory::GetForProfile(browser_->profile())->
         AddObserver(this);
-    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
-                   content::NotificationService::AllSources());
+    infobar_service_->AddObserver(this);
   }
 
   virtual ~WindowedPersonalDataManagerObserver() {
-    if (infobar_service_) {
-      while (infobar_service_->infobar_count() > 0) {
-        infobar_service_->RemoveInfoBar(infobar_service_->infobar_at(0));
-      }
+    while (infobar_service_->infobar_count() > 0) {
+      infobar_service_->RemoveInfoBar(infobar_service_->infobar_at(0));
     }
+    infobar_service_->RemoveObserver(this);
   }
 
   // PersonalDataManagerObserver:
@@ -165,15 +165,6 @@ class WindowedPersonalDataManagerObserver
     OnPersonalDataChanged();
   }
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    infobar_service_ = InfoBarService::FromWebContents(
-        browser_->tab_strip_model()->GetActiveWebContents());
-    infobar_service_->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate()->
-        Accept();
-  }
 
   void Wait() {
     if (!alerted_) {
@@ -185,10 +176,15 @@ class WindowedPersonalDataManagerObserver
   }
 
  private:
+  // infobars::InfoBarManager::Observer:
+  virtual void OnInfoBarAdded(infobars::InfoBar* infobar) OVERRIDE {
+    infobar_service_->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate()->
+        Accept();
+  }
+
   bool alerted_;
   bool has_run_message_loop_;
   Browser* browser_;
-  content::NotificationRegistrar registrar_;
   InfoBarService* infobar_service_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowedPersonalDataManagerObserver);
@@ -206,15 +202,13 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
 
   // InProcessBrowserTest:
   virtual void SetUpOnMainThread() OVERRIDE {
-    TranslateService::SetUseInfobar(true);
-
     // Don't want Keychain coming up on Mac.
-    test::DisableSystemServices(browser()->profile());
+    test::DisableSystemServices(browser()->profile()->GetPrefs());
 
     // Inject the test delegate into the AutofillManager.
     content::WebContents* web_contents = GetWebContents();
-    AutofillDriverImpl* autofill_driver =
-        AutofillDriverImpl::FromWebContents(web_contents);
+    ContentAutofillDriver* autofill_driver =
+        ContentAutofillDriver::FromWebContents(web_contents);
     AutofillManager* autofill_manager = autofill_driver->autofill_manager();
     autofill_manager->SetTestDelegate(&test_delegate_);
   }
@@ -222,9 +216,9 @@ class AutofillInteractiveTest : public InProcessBrowserTest {
   virtual void CleanUpOnMainThread() OVERRIDE {
     // Make sure to close any showing popups prior to tearing down the UI.
     content::WebContents* web_contents = GetWebContents();
-    AutofillManager* autofill_manager =
-        AutofillDriverImpl::FromWebContents(web_contents)->autofill_manager();
-    autofill_manager->delegate()->HideAutofillPopup();
+    AutofillManager* autofill_manager = ContentAutofillDriver::FromWebContents(
+                                            web_contents)->autofill_manager();
+    autofill_manager->client()->HideAutofillPopup();
   }
 
   PersonalDataManager* GetPersonalDataManager() {
@@ -489,11 +483,83 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillSelectViaTab) {
   ExpectFilledTestForm();
 }
 
+// Test that a JavaScript oninput event is fired after auto-filling a form.
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, OnInputAfterAutofill) {
+  CreateTestProfile();
+
+  const char kOnInputScript[] =
+      "<script>"
+      "focused_fired = false;"
+      "unfocused_fired = false;"
+      "changed_select_fired = false;"
+      "unchanged_select_fired = false;"
+      "document.getElementById('firstname').oninput = function() {"
+      "  focused_fired = true;"
+      "};"
+      "document.getElementById('lastname').oninput = function() {"
+      "  unfocused_fired = true;"
+      "};"
+      "document.getElementById('state').oninput = function() {"
+      "  changed_select_fired = true;"
+      "};"
+      "document.getElementById('country').oninput = function() {"
+      "  unchanged_select_fired = true;"
+      "};"
+      "document.getElementById('country').value = 'US';"
+      "</script>";
+
+  // Load the test page.
+  ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(browser(),
+      GURL(std::string(kDataURIPrefix) + kTestFormString + kOnInputScript)));
+
+  // Invoke Autofill.
+  FocusFirstNameField();
+
+  // Start filling the first name field with "M" and wait for the popup to be
+  // shown.
+  SendKeyToPageAndWait(ui::VKEY_M);
+
+  // Press the down arrow to select the suggestion and preview the autofilled
+  // form.
+  SendKeyToPopupAndWait(ui::VKEY_DOWN);
+
+  // Press Enter to accept the autofill suggestions.
+  SendKeyToPopupAndWait(ui::VKEY_RETURN);
+
+  // The form should be filled.
+  ExpectFilledTestForm();
+
+  bool focused_fired = false;
+  bool unfocused_fired = false;
+  bool changed_select_fired = false;
+  bool unchanged_select_fired = false;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      GetRenderViewHost(),
+      "domAutomationController.send(focused_fired);",
+      &focused_fired));
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      GetRenderViewHost(),
+      "domAutomationController.send(unfocused_fired);",
+      &unfocused_fired));
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      GetRenderViewHost(),
+      "domAutomationController.send(changed_select_fired);",
+      &changed_select_fired));
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      GetRenderViewHost(),
+      "domAutomationController.send(unchanged_select_fired);",
+      &unchanged_select_fired));
+  EXPECT_TRUE(focused_fired);
+  EXPECT_TRUE(unfocused_fired);
+  EXPECT_TRUE(changed_select_fired);
+  EXPECT_FALSE(unchanged_select_fired);
+}
+
 // Test that a JavaScript onchange event is fired after auto-filling a form.
 IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, OnChangeAfterAutofill) {
   CreateTestProfile();
 
-  const char* kOnChangeScript =
+  const char kOnChangeScript[] =
       "<script>"
       "focused_fired = false;"
       "unfocused_fired = false;"
@@ -535,9 +601,6 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, OnChangeAfterAutofill) {
   // The form should be filled.
   ExpectFilledTestForm();
 
-  // The change event should have already fired for unfocused fields, both of
-  // <input> and of <select> type. However, it should not yet have fired for the
-  // focused field.
   bool focused_fired = false;
   bool unfocused_fired = false;
   bool changed_select_fired = false;
@@ -558,17 +621,88 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, OnChangeAfterAutofill) {
       GetRenderViewHost(),
       "domAutomationController.send(unchanged_select_fired);",
       &unchanged_select_fired));
-  EXPECT_FALSE(focused_fired);
+  EXPECT_TRUE(focused_fired);
   EXPECT_TRUE(unfocused_fired);
   EXPECT_TRUE(changed_select_fired);
   EXPECT_FALSE(unchanged_select_fired);
+}
 
-  // Unfocus the first name field. Its change event should fire.
-  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, InputFiresBeforeChange) {
+  CreateTestProfile();
+
+  const char kInputFiresBeforeChangeScript[] =
+      "<script>"
+      "inputElementEvents = [];"
+      "function recordInputElementEvent(e) {"
+      "  if (e.target.tagName != 'INPUT') throw 'only <input> tags allowed';"
+      "  inputElementEvents.push(e.type);"
+      "}"
+      "selectElementEvents = [];"
+      "function recordSelectElementEvent(e) {"
+      "  if (e.target.tagName != 'SELECT') throw 'only <select> tags allowed';"
+      "  selectElementEvents.push(e.type);"
+      "}"
+      "document.getElementById('lastname').oninput = recordInputElementEvent;"
+      "document.getElementById('lastname').onchange = recordInputElementEvent;"
+      "document.getElementById('country').oninput = recordSelectElementEvent;"
+      "document.getElementById('country').onchange = recordSelectElementEvent;"
+      "</script>";
+
+  // Load the test page.
+  ASSERT_NO_FATAL_FAILURE(ui_test_utils::NavigateToURL(browser(),
+      GURL(std::string(kDataURIPrefix) + kTestFormString +
+           kInputFiresBeforeChangeScript)));
+
+  // Invoke and accept the Autofill popup and verify the form was filled.
+  FocusFirstNameField();
+  SendKeyToPageAndWait(ui::VKEY_M);
+  SendKeyToPopupAndWait(ui::VKEY_DOWN);
+  SendKeyToPopupAndWait(ui::VKEY_RETURN);
+  ExpectFilledTestForm();
+
+  int num_input_element_events = -1;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
       GetRenderViewHost(),
-      "document.getElementById('firstname').blur();"
-      "domAutomationController.send(focused_fired);", &focused_fired));
-  EXPECT_TRUE(focused_fired);
+      "domAutomationController.send(inputElementEvents.length);",
+      &num_input_element_events));
+  EXPECT_EQ(2, num_input_element_events);
+
+  std::vector<std::string> input_element_events;
+  input_element_events.resize(2);
+
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      GetRenderViewHost(),
+      "domAutomationController.send(inputElementEvents[0]);",
+      &input_element_events[0]));
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      GetRenderViewHost(),
+      "domAutomationController.send(inputElementEvents[1]);",
+      &input_element_events[1]));
+
+  EXPECT_EQ("input", input_element_events[0]);
+  EXPECT_EQ("change", input_element_events[1]);
+
+  int num_select_element_events = -1;
+  ASSERT_TRUE(content::ExecuteScriptAndExtractInt(
+      GetRenderViewHost(),
+      "domAutomationController.send(selectElementEvents.length);",
+      &num_select_element_events));
+  EXPECT_EQ(2, num_select_element_events);
+
+  std::vector<std::string> select_element_events;
+  select_element_events.resize(2);
+
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      GetRenderViewHost(),
+      "domAutomationController.send(selectElementEvents[0]);",
+      &select_element_events[0]));
+  ASSERT_TRUE(content::ExecuteScriptAndExtractString(
+      GetRenderViewHost(),
+      "domAutomationController.send(selectElementEvents[1]);",
+      &select_element_events[1]));
+
+  EXPECT_EQ("input", select_element_events[0]);
+  EXPECT_EQ("change", select_element_events[1]);
 }
 
 // Test that we can autofill forms distinguished only by their |id| attribute.
@@ -607,7 +741,7 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillFormWithRepeatedField) {
            "<form action=\"http://www.example.com/\" method=\"POST\">"
            "<label for=\"firstname\">First name:</label>"
            " <input type=\"text\" id=\"firstname\""
-           "        onFocus=\"domAutomationController.send(true)\"><br>"
+           "        onfocus=\"domAutomationController.send(true)\"><br>"
            "<label for=\"lastname\">Last name:</label>"
            " <input type=\"text\" id=\"lastname\"><br>"
            "<label for=\"address1\">Address line 1:</label>"
@@ -653,7 +787,7 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest,
            "<form action=\"http://www.example.com/\" method=\"POST\">"
            "<label for=\"firstname\">First name:</label>"
            " <input type=\"text\" id=\"firstname\""
-           "        onFocus=\"domAutomationController.send(true)\"><br>"
+           "        onfocus=\"domAutomationController.send(true)\"><br>"
            "<label for=\"middlename\">Middle name:</label>"
            " <input type=\"text\" id=\"middlename\" autocomplete=\"off\" /><br>"
            "<label for=\"lastname\">Last name:</label>"
@@ -733,10 +867,11 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, DynamicFormFill) {
            "    input_element.setAttribute('id', name);"
            "    input_element.setAttribute('name', name);"
            ""
-           "    /* Add the onFocus listener to the 'firstname' field. */"
+           "    /* Add the onfocus listener to the 'firstname' field. */"
            "    if (name === 'firstname') {"
-           "      input_element.setAttribute("
-           "          'onFocus', 'domAutomationController.send(true)');"
+           "      input_element.onfocus = function() {"
+           "        domAutomationController.send(true);"
+           "      };"
            "    }"
            ""
            "    form.appendChild(input_element);"
@@ -791,13 +926,17 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterReload) {
 }
 
 IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
+    return;
+
   CreateTestProfile();
 
   GURL url(std::string(kDataURIPrefix) +
                "<form action=\"http://www.example.com/\" method=\"POST\">"
                "<label for=\"fn\">なまえ</label>"
                " <input type=\"text\" id=\"fn\""
-               "        onFocus=\"domAutomationController.send(true)\""
+               "        onfocus=\"domAutomationController.send(true)\""
                "><br>"
                "<label for=\"ln\">みょうじ</label>"
                " <input type=\"text\" id=\"ln\"><br>"
@@ -837,11 +976,13 @@ IN_PROC_BROWSER_TEST_F(AutofillInteractiveTest, AutofillAfterTranslate) {
 
   // Wait for the translation bar to appear and get it.
   infobar_observer.Wait();
+  InfoBarService* infobar_service =
+      InfoBarService::FromWebContents(GetWebContents());
   TranslateInfoBarDelegate* delegate =
-      InfoBarService::FromWebContents(GetWebContents())->infobar_at(0)->
-          delegate()->AsTranslateInfoBarDelegate();
+      infobar_service->infobar_at(0)->delegate()->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(delegate);
-  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE, delegate->translate_step());
+  EXPECT_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
+            delegate->translate_step());
 
   // Simulate translation button press.
   delegate->Translate();

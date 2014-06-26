@@ -7,7 +7,7 @@
 
 #include <jni.h>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -35,6 +35,7 @@ class AwSettings : public content::WebContentsObserver {
   void UpdateUserAgentLocked(JNIEnv* env, jobject obj);
   void UpdateWebkitPreferencesLocked(JNIEnv* env, jobject obj);
   void UpdateFormDataPreferencesLocked(JNIEnv* env, jobject obj);
+  void UpdateRendererPreferencesLocked(JNIEnv* env, jobject obj);
 
   void PopulateWebPreferences(WebPreferences* web_prefs);
 
@@ -42,16 +43,14 @@ class AwSettings : public content::WebContentsObserver {
   AwRenderViewHostExt* GetAwRenderViewHostExt();
   void UpdateEverything();
 
-  // Fixed WebPreferences for Android WebView.
-  static void PopulateFixedPreferences(WebPreferences* web_prefs);
-
   // WebContentsObserver overrides:
   virtual void RenderViewCreated(
       content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   bool accelerated_2d_canvas_disabled_by_switch_;
+
+  bool renderer_prefs_initialized_;
 
   JavaObjectWeakGlobalRef aw_settings_;
 };

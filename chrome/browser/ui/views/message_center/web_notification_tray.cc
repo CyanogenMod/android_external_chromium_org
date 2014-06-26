@@ -5,14 +5,17 @@
 #include "chrome/browser/ui/views/message_center/web_notification_tray.h"
 
 #include "base/i18n/number_formatting.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/status_icons/status_icon.h"
 #include "chrome/browser/status_icons/status_icon_menu_model.h"
 #include "chrome/browser/status_icons/status_tray.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/chromium_strings.h"
+#include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -121,23 +124,37 @@ Alignment GetAnchorAlignment(const gfx::Rect& work_area, gfx::Point corner) {
 }  // namespace internal
 
 MessageCenterTrayDelegate* CreateMessageCenterTray() {
-  return new WebNotificationTray();
+  return new WebNotificationTray(g_browser_process->local_state());
 }
 
-WebNotificationTray::WebNotificationTray()
+WebNotificationTray::WebNotificationTray(PrefService* local_state)
     : message_center_delegate_(NULL),
       status_icon_(NULL),
       status_icon_menu_(NULL),
-      message_center_visible_(false),
       should_update_tray_content_(true) {
   message_center_tray_.reset(
       new MessageCenterTray(this, g_browser_process->message_center()));
   last_quiet_mode_state_ = message_center()->IsQuietMode();
+  popup_collection_.reset(new message_center::MessagePopupCollection(
+      NULL, message_center(), message_center_tray_.get(), false));
+
+#if defined(OS_WIN)
+  // |local_state| can be NULL in tests.
+  if (local_state) {
+    did_force_tray_visible_.reset(new BooleanPrefMember());
+    did_force_tray_visible_->Init(prefs::kMessageCenterForcedOnTaskbar,
+                                  local_state);
+  }
+#endif
+  title_ = l10n_util::GetStringFUTF16(
+      IDS_MESSAGE_CENTER_FOOTER_WITH_PRODUCT_TITLE,
+      l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
 }
 
 WebNotificationTray::~WebNotificationTray() {
   // Reset this early so that delegated events during destruction don't cause
   // problems.
+  popup_collection_.reset();
   message_center_tray_.reset();
   DestroyStatusIcon();
 }
@@ -147,16 +164,13 @@ message_center::MessageCenter* WebNotificationTray::message_center() {
 }
 
 bool WebNotificationTray::ShowPopups() {
-  popup_collection_.reset(new message_center::MessagePopupCollection(
-      NULL, message_center(), message_center_tray_.get(), false));
+  popup_collection_->DoUpdateIfPossible();
   return true;
 }
 
 void WebNotificationTray::HidePopups() {
   DCHECK(popup_collection_.get());
-
   popup_collection_->MarkAllPopupsShown();
-  popup_collection_.reset();
 }
 
 bool WebNotificationTray::ShowMessageCenter() {
@@ -164,7 +178,8 @@ bool WebNotificationTray::ShowMessageCenter() {
       new MessageCenterWidgetDelegate(this,
                                       message_center_tray_.get(),
                                       false,  // settings initally invisible
-                                      GetPositionInfo());
+                                      GetPositionInfo(),
+                                      title_);
 
   return true;
 }
@@ -186,7 +201,8 @@ bool WebNotificationTray::ShowNotifierSettings() {
       new MessageCenterWidgetDelegate(this,
                                       message_center_tray_.get(),
                                       true,  // settings initally visible
-                                      GetPositionInfo());
+                                      GetPositionInfo(),
+                                      title_);
 
   return true;
 }
@@ -207,6 +223,10 @@ void WebNotificationTray::OnMessageCenterTrayChanged() {
       status_icon_menu_->SetCommandIdChecked(kToggleQuietMode,
                                              quiet_mode_state);
     }
+  } else if (message_center()->NotificationCount() == 0) {
+    // If there's no existing status icon and we still don't have any
+    // notifications to display, nothing needs to be done.
+    return;
   }
 
   // See the comments in ash/system/web_notification/web_notification_tray.cc

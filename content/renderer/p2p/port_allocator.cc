@@ -80,12 +80,7 @@ P2PPortAllocator::P2PPortAllocator(
   if (config_.disable_tcp_transport)
     flags |= cricket::PORTALLOCATOR_DISABLE_TCP;
   set_flags(flags);
-  // TODO(ronghuawu): crbug/138185 add ourselves to the firewall list in browser
-  // process and then remove below line.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableWebRtcTcpServerSocket)) {
-    set_allow_tcp_listen(false);
-  }
+  set_allow_tcp_listen(false);
 }
 
 P2PPortAllocator::~P2PPortAllocator() {
@@ -225,8 +220,8 @@ void P2PPortAllocatorSession::ParseRelayResponse() {
        it != value_pairs.end(); ++it) {
     std::string key;
     std::string value;
-    TrimWhitespaceASCII(it->first, TRIM_ALL, &key);
-    TrimWhitespaceASCII(it->second, TRIM_ALL, &value);
+    base::TrimWhitespaceASCII(it->first, base::TRIM_ALL, &key);
+    base::TrimWhitespaceASCII(it->second, base::TRIM_ALL, &value);
 
     if (key == "username") {
       if (value != username()) {

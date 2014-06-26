@@ -15,7 +15,6 @@
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/common/form_data.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -23,7 +22,10 @@ namespace autofill {
 
 namespace {
 
-void MockCallback(const FormStructure*) {}
+void MockCallback(AutofillClient::RequestAutocompleteResult result,
+                  const base::string16&,
+                  const FormStructure*) {
+}
 
 class TestAutofillDialogController : public AutofillDialogControllerImpl {
  public:
@@ -72,7 +74,7 @@ class AutofillDialogCocoaBrowserTest : public InProcessBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     // Ensure Mac OS X does not pop up a modal dialog for the Address Book.
-    autofill::test::DisableSystemServices(browser()->profile());
+    autofill::test::DisableSystemServices(browser()->profile()->GetPrefs());
 
     // Stick to local autofill mode.
     browser()->profile()->GetPrefs()->SetBoolean(

@@ -9,8 +9,11 @@
 #include <utility>
 
 #include "base/basictypes.h"
-#include "chrome/browser/invalidation/invalidation_service.h"
-#include "sync/notifier/invalidator_registrar.h"
+#include "base/callback_forward.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
+#include "components/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidator_registrar.h"
+#include "google_apis/gaia/fake_identity_provider.h"
 #include "sync/notifier/mock_ack_handler.h"
 
 namespace syncer {
@@ -39,6 +42,9 @@ class FakeInvalidationService : public InvalidationService {
   virtual syncer::InvalidatorState GetInvalidatorState() const OVERRIDE;
   virtual std::string GetInvalidatorClientId() const OVERRIDE;
   virtual InvalidationLogger* GetInvalidationLogger() OVERRIDE;
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> caller) const OVERRIDE;
+  virtual IdentityProvider* GetIdentityProvider() OVERRIDE;
 
   void SetInvalidatorState(syncer::InvalidatorState state);
 
@@ -56,6 +62,8 @@ class FakeInvalidationService : public InvalidationService {
   std::string client_id_;
   syncer::InvalidatorRegistrar invalidator_registrar_;
   syncer::MockAckHandler mock_ack_handler_;
+  FakeProfileOAuth2TokenService token_service_;
+  FakeIdentityProvider identity_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeInvalidationService);
 };

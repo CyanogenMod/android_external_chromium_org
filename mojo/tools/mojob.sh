@@ -18,8 +18,10 @@ Usage: $(basename "$0") [command|option ...]
 command should be one of:
   build - Build.
   test - Run unit tests (does not build).
-  perftest - Run Release and Debug perf tests (does not build).
-  gyp - Run gyp for mojo (does not sync), with clang.
+  perftest - Run perf tests (does not build).
+  pytest - Run Python unit tests.
+  gyp - Run gyp for mojo (does not sync).
+  gypall - Run gyp for all of chromium (does not sync).
   sync - Sync using gclient (does not run gyp).
   show-bash-alias - Outputs an appropriate bash alias for mojob. In bash do:
       \$ eval \`mojo/tools/mojob.sh show-bash-alias\`
@@ -35,6 +37,9 @@ option (which will only apply to following commands) should be one of:
   Component options:
     --shared Build components as shared libraries (default).
     --static Build components as static libraries.
+  Mojo in chromium/content (crbug.com/353602):
+    --use-mojo - Enabled (default).
+    --no-use-mojo - Disabled.
 
 Note: It will abort on the first failure (if any).
 EOF
@@ -47,14 +52,8 @@ do_build() {
 
 do_unittests() {
   echo "Running unit tests in out/$1 ..."
-  "out/$1/mojo_common_unittests" || exit 1
-  "out/$1/mojo_js_unittests" || exit 1
-  "out/$1/mojo_public_bindings_unittests" || exit 1
-  "out/$1/mojo_public_environment_unittests" || exit 1
-  "out/$1/mojo_public_system_unittests" || exit 1
-  "out/$1/mojo_public_utility_unittests" || exit 1
-  "out/$1/mojo_shell_unittests" || exit 1
-  "out/$1/mojo_system_unittests" || exit 1
+  mojo/tools/test_runner.py mojo/tools/data/unittests "out/$1" \
+      mojob_test_successes || exit 1
 }
 
 do_perftests() {
@@ -62,10 +61,25 @@ do_perftests() {
   "out/$1/mojo_public_system_perftests" || exit 1
 }
 
+do_pytests() {
+  python mojo/tools/run_mojo_python_tests.py || exit 1
+}
+
 do_gyp() {
   local gyp_defines="$(make_gyp_defines)"
-  echo "Running gyp with GYP_DEFINES=$gyp_defines ..."
-  GYP_DEFINES="$gyp_defines" build/gyp_chromium mojo/mojo.gyp
+  echo "Running gyp for mojo with GYP_DEFINES=$gyp_defines ..."
+  GYP_DEFINES="$gyp_defines" build/gyp_chromium mojo/mojo.gyp || exit 1
+}
+
+do_gypall() {
+  local gyp_defines="$(make_gyp_defines)"
+  echo "Running gyp for everything with GYP_DEFINES=$gyp_defines ..."
+  GYP_DEFINES="$gyp_defines" build/gyp_chromium || exit 1
+}
+
+do_sync() {
+  # Note: sync only (with hooks, but no gyp-ing).
+  GYP_CHROMIUM_NO_ACTION=1 gclient sync || exit 1
 }
 
 # Valid values: Debug, Release, or Debug_and_Release.
@@ -131,12 +145,17 @@ for arg in "$@"; do
       should_do_Debug && do_perftests Debug
       should_do_Release && do_perftests Release
       ;;
+    pytest)
+      do_pytests
+      ;;
     gyp)
       do_gyp
       ;;
+    gypall)
+      do_gypall
+      ;;
     sync)
-      # Note: sync only (with hooks, but no gyp-ing).
-      GYP_CHROMIUM_NO_ACTION=1 gclient sync
+      do_sync
       ;;
     show-bash-alias)
       # You want to type something like:

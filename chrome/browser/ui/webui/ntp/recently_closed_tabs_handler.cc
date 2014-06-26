@@ -14,13 +14,8 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/webui/web_ui_util.h"
-
-#if defined(OS_ANDROID)
-#include "chrome/browser/sessions/session_restore.h"
-#endif
 
 namespace {
 
@@ -76,23 +71,6 @@ void RecentlyClosedTabsHandler::HandleReopenTab(const base::ListValue* args) {
   double session_to_restore = 0.0;
   CHECK(args->GetDouble(0, &session_to_restore));
 
-#if defined(OS_ANDROID)
-  // Find and remove the corresponding tab entry from TabRestoreService.
-  // We take ownership of the returned tab.
-  scoped_ptr<TabRestoreService::Tab> tab_entry(
-      tab_restore_service_->RemoveTabEntryById(static_cast<int>(
-          session_to_restore)));
-  if (tab_entry.get() == NULL)
-    return;
-
-  // RestoreForeignSessionTab needs a SessionTab.
-  SessionTab session_tab;
-  session_tab.current_navigation_index = tab_entry->current_navigation_index;
-  session_tab.navigations = tab_entry->navigations;
-
-  SessionRestore::RestoreForeignSessionTab(web_ui()->GetWebContents(),
-                                           session_tab, NEW_FOREGROUND_TAB);
-#else
   double index = -1.0;
   CHECK(args->GetDouble(1, &index));
 
@@ -107,7 +85,7 @@ void RecentlyClosedTabsHandler::HandleReopenTab(const base::ListValue* args) {
     return;
   chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(
-          web_ui()->GetWebContents()->GetView()->GetNativeView());
+          web_ui()->GetWebContents()->GetNativeView());
   WindowOpenDisposition disposition = webui::GetDispositionFromClick(args, 2);
   tab_restore_service_->RestoreEntryById(delegate,
                                          static_cast<int>(session_to_restore),
@@ -115,7 +93,6 @@ void RecentlyClosedTabsHandler::HandleReopenTab(const base::ListValue* args) {
                                          disposition);
   // The current tab has been nuked at this point; don't touch any member
   // variables.
-#endif
 }
 
 void RecentlyClosedTabsHandler::HandleClearRecentlyClosed(
@@ -135,28 +112,14 @@ void RecentlyClosedTabsHandler::HandleGetRecentlyClosedTabs(
 void RecentlyClosedTabsHandler::TabRestoreServiceChanged(
     TabRestoreService* service) {
   base::ListValue list_value;
-  TabRestoreService::Entries entries = service->entries();
-  CreateRecentlyClosedValues(entries, &list_value);
-
-  web_ui()->CallJavascriptFunction("ntp.setRecentlyClosedTabs", list_value);
-}
-
-void RecentlyClosedTabsHandler::TabRestoreServiceDestroyed(
-    TabRestoreService* service) {
-  tab_restore_service_ = NULL;
-}
-
-// static
-void RecentlyClosedTabsHandler::CreateRecentlyClosedValues(
-    const TabRestoreService::Entries& entries,
-    base::ListValue* entry_list_value) {
   const int max_count = 10;
   int added_count = 0;
   // We filter the list of recently closed to only show 'interesting' entries,
   // where an interesting entry is either a closed window or a closed tab
   // whose selected navigation is not the new tab ui.
-  for (TabRestoreService::Entries::const_iterator it = entries.begin();
-       it != entries.end() && added_count < max_count; ++it) {
+  for (TabRestoreService::Entries::const_iterator it =
+           service->entries().begin();
+       it != service->entries().end() && added_count < max_count; ++it) {
     TabRestoreService::Entry* entry = *it;
     scoped_ptr<base::DictionaryValue> entry_dict(new base::DictionaryValue());
     if (entry->type == TabRestoreService::TAB) {
@@ -169,9 +132,16 @@ void RecentlyClosedTabsHandler::CreateRecentlyClosedValues(
     }
 
     entry_dict->SetInteger("sessionId", entry->id);
-    entry_list_value->Append(entry_dict.release());
+    list_value.Append(entry_dict.release());
     ++added_count;
   }
+
+  web_ui()->CallJavascriptFunction("ntp.setRecentlyClosedTabs", list_value);
+}
+
+void RecentlyClosedTabsHandler::TabRestoreServiceDestroyed(
+    TabRestoreService* service) {
+  tab_restore_service_ = NULL;
 }
 
 void RecentlyClosedTabsHandler::EnsureTabRestoreService() {

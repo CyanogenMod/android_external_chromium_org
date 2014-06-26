@@ -20,6 +20,7 @@ class CC_EXPORT SolidColorScrollbarLayer : public ScrollbarLayerInterface,
   static scoped_refptr<SolidColorScrollbarLayer> Create(
       ScrollbarOrientation orientation,
       int thumb_thickness,
+      int track_start,
       bool is_left_side_vertical_scrollbar,
       int scroll_layer_id);
 
@@ -29,6 +30,8 @@ class CC_EXPORT SolidColorScrollbarLayer : public ScrollbarLayerInterface,
 
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
   virtual void PushScrollClipPropertiesTo(LayerImpl* layer) OVERRIDE;
+
+  virtual void SetNeedsDisplayRect(const gfx::RectF&) OVERRIDE;
 
   // ScrollbarLayerInterface
   virtual int ScrollLayerId() const OVERRIDE;
@@ -40,6 +43,7 @@ class CC_EXPORT SolidColorScrollbarLayer : public ScrollbarLayerInterface,
  protected:
   SolidColorScrollbarLayer(ScrollbarOrientation orientation,
                            int thumb_thickness,
+                           int track_start,
                            bool is_left_side_vertical_scrollbar,
                            int scroll_layer_id);
   virtual ~SolidColorScrollbarLayer();
@@ -49,6 +53,7 @@ class CC_EXPORT SolidColorScrollbarLayer : public ScrollbarLayerInterface,
   int clip_layer_id_;
   ScrollbarOrientation orientation_;
   int thumb_thickness_;
+  int track_start_;
   bool is_left_side_vertical_scrollbar_;
 
   DISALLOW_COPY_AND_ASSIGN(SolidColorScrollbarLayer);

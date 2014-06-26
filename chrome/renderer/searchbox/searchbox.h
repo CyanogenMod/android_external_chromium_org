@@ -31,8 +31,11 @@ class SearchBox : public content::RenderViewObserver,
   // Sends ChromeViewHostMsg_LogEvent to the browser.
   void LogEvent(NTPLoggingEventType event);
 
-  // Sends ChromeViewHostMsg_LogImpression to the browser.
-  void LogImpression(int position, const base::string16& provider);
+  // Sends ChromeViewHostMsg_LogMostVisitedImpression to the browser.
+  void LogMostVisitedImpression(int position, const base::string16& provider);
+
+  // Sends ChromeViewHostMsg_LogMostVisitedNavigation to the browser.
+  void LogMostVisitedNavigation(int position, const base::string16& provider);
 
   // Sends ChromeViewHostMsg_ChromeIdentityCheck to the browser.
   void CheckIsUserSignedInToChromeAs(const base::string16& identity);
@@ -113,6 +116,7 @@ class SearchBox : public content::RenderViewObserver,
   // Overridden from content::RenderViewObserver:
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
+  void OnSetPageSequenceNumber(int page_seq_no);
   void OnChromeIdentityCheckResult(const base::string16& identity,
                                    bool identity_match);
   void OnDetermineIfPageSupportsInstant();
@@ -138,6 +142,7 @@ class SearchBox : public content::RenderViewObserver,
   // Returns the URL of the Most Visited item specified by the |item_id|.
   GURL GetURLForMostVisitedItem(InstantRestrictedID item_id) const;
 
+  int page_seq_no_;
   bool app_launcher_enabled_;
   bool is_focused_;
   bool is_input_in_progress_;

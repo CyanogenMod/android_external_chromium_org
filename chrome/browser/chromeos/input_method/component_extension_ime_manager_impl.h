@@ -29,7 +29,7 @@ class ComponentExtensionIMEManagerImpl
   virtual bool Load(const std::string& extension_id,
                     const std::string& manifest,
                     const base::FilePath& file_path) OVERRIDE;
-  virtual bool Unload(const std::string& extension_id,
+  virtual void Unload(const std::string& extension_id,
                       const base::FilePath& file_path) OVERRIDE;
 
   // Loads extension list and reads their manifest file. After finished
@@ -67,17 +67,16 @@ class ComponentExtensionIMEManagerImpl
   // Reads each engine component in |dict|. |dict| is given by GetList with
   // kInputComponents key from manifest. This function returns true on success,
   // otherwise retrun false. This function must be called on FILE thread.
-  static bool ReadEngineComponent(const base::DictionaryValue& dict,
-                                  ComponentExtensionEngine* out);
+  static bool ReadEngineComponent(
+      const ComponentExtensionIME& component_extension,
+      const base::DictionaryValue& dict,
+      ComponentExtensionEngine* out);
 
   // True if initialized.
   bool is_initialized_;
 
   // The list of component extension IME.
   std::vector<ComponentExtensionIME> component_extension_list_;
-
-  // The list of already loaded extension ids.
-  std::set<std::string> loaded_extension_id_;
 
   // For checking the function should be called on UI thread.
   base::ThreadChecker thread_checker_;

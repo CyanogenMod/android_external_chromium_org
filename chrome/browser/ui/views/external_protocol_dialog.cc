@@ -12,7 +12,6 @@
 #include "chrome/browser/ui/external_protocol_dialog_delegate.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -38,7 +37,7 @@ void ExternalProtocolHandler::RunExternalProtocolDialog(
       new ExternalProtocolDialogDelegate(url,
                                          render_process_host_id,
                                          routing_id));
-  if (delegate->command().empty()) {
+  if (delegate->program_name().empty()) {
     // ShellExecute won't do anything. Don't bother warning the user.
     return;
   }
@@ -137,6 +136,6 @@ ExternalProtocolDialog::ExternalProtocolDialog(
       render_process_host_id_, routing_id_);
   gfx::NativeWindow parent_window = NULL;
   if (web_contents)
-    parent_window = web_contents->GetView()->GetTopLevelNativeWindow();
+    parent_window = web_contents->GetTopLevelNativeWindow();
   CreateBrowserModalDialogViews(this, parent_window)->Show();
 }

@@ -14,13 +14,15 @@ namespace cc {
 
 class FakeLayerTreeHostImpl : public LayerTreeHostImpl {
  public:
-  explicit FakeLayerTreeHostImpl(Proxy* proxy);
-  FakeLayerTreeHostImpl(const LayerTreeSettings& settings, Proxy* proxy);
+  FakeLayerTreeHostImpl(Proxy* proxy, SharedBitmapManager* manager);
+  FakeLayerTreeHostImpl(const LayerTreeSettings& settings,
+                        Proxy* proxy,
+                        SharedBitmapManager* manager);
   virtual ~FakeLayerTreeHostImpl();
 
   void ForcePrepareToDraw() {
     LayerTreeHostImpl::FrameData frame_data;
-    PrepareToDraw(&frame_data, gfx::Rect());
+    PrepareToDraw(&frame_data);
     DidDrawAllLayers(frame_data);
   }
 

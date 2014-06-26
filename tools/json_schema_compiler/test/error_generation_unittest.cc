@@ -78,7 +78,8 @@ TEST(JsonSchemaCompilerErrorTest, TooManyParameters) {
   {
     scoped_ptr<base::ListValue> params_value = List(
         new FundamentalValue(5));
-    EXPECT_TRUE(TestFunction::Params::Create(*params_value));
+    base::string16 error;
+    EXPECT_TRUE(TestFunction::Params::Create(*params_value, &error));
   }
   {
     scoped_ptr<base::ListValue> params_value = List(
@@ -96,7 +97,8 @@ TEST(JsonSchemaCompilerErrorTest, ParamIsRequired) {
   {
     scoped_ptr<base::ListValue> params_value = List(
         new FundamentalValue(5));
-    EXPECT_TRUE(TestFunction::Params::Create(*params_value));
+    base::string16 error;
+    EXPECT_TRUE(TestFunction::Params::Create(*params_value, &error));
   }
   {
     scoped_ptr<base::ListValue> params_value = List(
@@ -125,9 +127,10 @@ TEST(JsonSchemaCompilerErrorTest, WrongPropertyValueType) {
 
 TEST(JsonSchemaCompilerErrorTest, WrongParameterCreationType) {
   {
+    base::string16 error;
     scoped_ptr<base::ListValue> params_value = List(
         new base::StringValue("Yeah!"));
-    EXPECT_TRUE(TestString::Params::Create(*params_value));
+    EXPECT_TRUE(TestString::Params::Create(*params_value, &error));
   }
   {
     scoped_ptr<base::ListValue> params_value = List(
@@ -147,8 +150,12 @@ TEST(JsonSchemaCompilerErrorTest, WrongTypeValueType) {
   {
     scoped_ptr<base::DictionaryValue> value = Dictionary(
         "otherType", new FundamentalValue(1.1));
+    ObjectType out;
+    base::string16 error;
+    EXPECT_TRUE(ObjectType::Populate(*value, &out, &error));
     EXPECT_TRUE(EqualsUtf16("'otherType': expected dictionary, got number",
-        GetPopulateError<ObjectType>(*value)));
+        error));
+    EXPECT_EQ(NULL, out.other_type.get());
   }
 }
 
@@ -207,8 +214,123 @@ TEST(JsonSchemaCompilerErrorTest, BadEnumValue) {
   {
     scoped_ptr<base::DictionaryValue> value = Dictionary(
         "enumeration", new base::StringValue("bad sauce"));
-    EXPECT_TRUE(EqualsUtf16("'enumeration': expected \"one\" or \"two\" "
+    EXPECT_TRUE(EqualsUtf16("'Enumeration': expected \"one\" or \"two\" "
               "or \"three\", got \"bad sauce\"",
         GetPopulateError<HasEnumeration>(*value)));
+  }
+}
+
+// Warn but don't fail out errors
+
+TEST(JsonSchemaCompilerErrorTest, WarnOnOptionalFailure) {
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "string", new base::StringValue("bling"));
+    EXPECT_TRUE(EqualsUtf16("", GetPopulateError<OptionalTestType>(*value)));
+  }
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "string", new base::FundamentalValue(1));
+
+    OptionalTestType out;
+    base::string16 error;
+    EXPECT_TRUE(OptionalTestType::Populate(*value, &out, &error));
+    EXPECT_TRUE(EqualsUtf16("'string': expected string, got integer",
+        error));
+    EXPECT_EQ(NULL, out.string.get());
+  }
+}
+
+TEST(JsonSchemaCompilerErrorTest, OptionalBinaryTypeFailure) {
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "data", new base::BinaryValue());
+    EXPECT_TRUE(EqualsUtf16("", GetPopulateError<OptionalBinaryData>(*value)));
+  }
+  {
+    // There's a bug with silent failures if the key doesn't exist.
+    scoped_ptr<base::DictionaryValue> value = Dictionary("data",
+        new base::FundamentalValue(1));
+
+    OptionalBinaryData out;
+    base::string16 error;
+    EXPECT_TRUE(OptionalBinaryData::Populate(*value, &out, &error));
+    EXPECT_TRUE(EqualsUtf16("'data': expected binary, got integer",
+        error));
+    EXPECT_EQ(NULL, out.data.get());
+  }
+}
+
+TEST(JsonSchemaCompilerErrorTest, OptionalArrayTypeFailure) {
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "TheArray", new base::ListValue());
+    EXPECT_TRUE(EqualsUtf16("", GetPopulateError<ArrayObject>(*value)));
+  }
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "TheArray", new FundamentalValue(5));
+    ArrayObject out;
+    base::string16 error;
+    EXPECT_TRUE(ArrayObject::Populate(*value, &out, &error));
+    EXPECT_TRUE(EqualsUtf16("'TheArray': expected list, got integer",
+        error));
+    EXPECT_EQ(NULL, out.the_array.get());
+  }
+}
+
+TEST(JsonSchemaCompilerErrorTest, OptionalUnableToPopulateArray) {
+  {
+    scoped_ptr<base::ListValue> params_value = List(
+        new FundamentalValue(5));
+    EXPECT_TRUE(EqualsUtf16("",
+        GetPopulateError<OptionalChoiceType::Integers>(*params_value)));
+  }
+  {
+    scoped_ptr<base::ListValue> params_value = List(
+        new FundamentalValue(5),
+        new FundamentalValue(false));
+    OptionalChoiceType::Integers out;
+    base::string16 error;
+    EXPECT_TRUE(OptionalChoiceType::Integers::Populate(*params_value, &out,
+        &error));
+    EXPECT_TRUE(EqualsUtf16("unable to populate array 'integers'",
+        error));
+    EXPECT_EQ(NULL, out.as_integer.get());
+  }
+}
+
+TEST(JsonSchemaCompilerErrorTest, MultiplePopulationErrors) {
+  {
+
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "TheArray", new FundamentalValue(5));
+    ArrayObject out;
+    base::string16 error;
+    EXPECT_TRUE(ArrayObject::Populate(*value, &out, &error));
+    EXPECT_TRUE(EqualsUtf16("'TheArray': expected list, got integer",
+        error));
+    EXPECT_EQ(NULL, out.the_array.get());
+
+    EXPECT_TRUE(ArrayObject::Populate(*value, &out, &error));
+    EXPECT_TRUE(EqualsUtf16("'TheArray': expected list, got integer; "
+        "'TheArray': expected list, got integer",
+        error));
+    EXPECT_EQ(NULL, out.the_array.get());
+  }
+}
+
+TEST(JsonSchemaCompilerErrorTest, TooManyKeys) {
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+      "string", new base::StringValue("yes"));
+    EXPECT_TRUE(EqualsUtf16("", GetPopulateError<TestType>(*value)));
+  }
+  {
+    scoped_ptr<base::DictionaryValue> value = Dictionary(
+        "string", new base::StringValue("yes"),
+        "ohno", new base::StringValue("many values"));
+    EXPECT_TRUE(EqualsUtf16("found unexpected key 'ohno'",
+        GetPopulateError<TestType>(*value)));
   }
 }

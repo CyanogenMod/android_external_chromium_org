@@ -199,12 +199,6 @@ const CGFloat kFloatingBarVerticalOffset = 22;
   NSNotificationCenter* nc = [NSNotificationCenter defaultCenter];
   NSWindow* window = [browserController_ window];
 
-  // When in presentation mode, the window's background will need to appear
-  // above the window contents. For this to happen, the window will need its
-  // own layer. This comes with a performance penalty when not fullscreen, so
-  // do not enable this by default.
-  [[window contentView] cr_setWantsLayer:YES withSquashing:NO];
-
   // Disable these notifications on Lion as they cause crashes.
   // TODO(rohitrao): Figure out what happens if a fullscreen window changes
   // monitors on Lion.
@@ -239,10 +233,6 @@ const CGFloat kFloatingBarVerticalOffset = 22;
                   object:nil];
   DCHECK(inPresentationMode_);
   inPresentationMode_ = NO;
-
-  // Remove the layer that was created.
-  NSWindow* window = [browserController_ window];
-  [[window contentView] cr_setWantsLayer:NO withSquashing:NO];
 
   [self cleanup];
 }
@@ -345,17 +335,23 @@ const CGFloat kFloatingBarVerticalOffset = 22;
   return [browserController_ floatingBarShownFraction];
 }
 
+- (void)setSystemFullscreenModeTo:(base::mac::FullScreenMode)mode {
+  if (mode == systemFullscreenMode_)
+    return;
+  if (systemFullscreenMode_ == base::mac::kFullScreenModeNormal)
+    base::mac::RequestFullScreen(mode);
+  else if (mode == base::mac::kFullScreenModeNormal)
+    base::mac::ReleaseFullScreen(systemFullscreenMode_);
+  else
+    base::mac::SwitchFullScreenModes(systemFullscreenMode_, mode);
+  systemFullscreenMode_ = mode;
+}
+
 - (void)changeFloatingBarShownFraction:(CGFloat)fraction {
   [browserController_ setFloatingBarShownFraction:fraction];
 
-  base::mac::FullScreenMode desiredMode = [self desiredSystemFullscreenMode];
-  if (desiredMode != systemFullscreenMode_ && [self shouldToggleMenuBar]) {
-    if (systemFullscreenMode_ == base::mac::kFullScreenModeNormal)
-      base::mac::RequestFullScreen(desiredMode);
-    else
-      base::mac::SwitchFullScreenModes(systemFullscreenMode_, desiredMode);
-    systemFullscreenMode_ = desiredMode;
-  }
+  if ([self shouldToggleMenuBar])
+    [self setSystemFullscreenModeTo:[self desiredSystemFullscreenMode]];
 }
 
 // Used to activate the floating bar in presentation mode.
@@ -434,7 +430,7 @@ const CGFloat kFloatingBarVerticalOffset = 22;
 }
 
 - (BOOL)shouldToggleMenuBar {
-  return !chrome::mac::SupportsSystemFullscreen() &&
+  return [browserController_ isInImmersiveFullscreen] &&
          [self isWindowOnPrimaryScreen] &&
          [[browserController_ window] isMainWindow];
 }
@@ -646,20 +642,15 @@ const CGFloat kFloatingBarVerticalOffset = 22;
   if (systemFullscreenMode_ != base::mac::kFullScreenModeNormal)
     return;
 
-  if ([self shouldToggleMenuBar]) {
-    base::mac::FullScreenMode desiredMode = [self desiredSystemFullscreenMode];
-    base::mac::RequestFullScreen(desiredMode);
-    systemFullscreenMode_ = desiredMode;
-  }
+  if ([self shouldToggleMenuBar])
+    [self setSystemFullscreenModeTo:[self desiredSystemFullscreenMode]];
 
   // TODO(rohitrao): Insert the Exit Fullscreen button.  http://crbug.com/35956
 }
 
 - (void)hideActiveWindowUI {
-  if (systemFullscreenMode_ != base::mac::kFullScreenModeNormal) {
-    base::mac::ReleaseFullScreen(systemFullscreenMode_);
-    systemFullscreenMode_ = base::mac::kFullScreenModeNormal;
-  }
+  if ([self shouldToggleMenuBar])
+    [self setSystemFullscreenModeTo:base::mac::kFullScreenModeNormal];
 
   // TODO(rohitrao): Remove the Exit Fullscreen button.  http://crbug.com/35956
 }

@@ -9,6 +9,7 @@
 #include "remoting/base/rsa_key_pair.h"
 #include "remoting/protocol/channel_authenticator.h"
 #include "remoting/protocol/negotiating_host_authenticator.h"
+#include "remoting/protocol/token_validator.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 
 namespace remoting {
@@ -27,6 +28,10 @@ class RejectingAuthenticator : public Authenticator {
 
   virtual State state() const OVERRIDE {
     return state_;
+  }
+
+  virtual bool started() const OVERRIDE {
+    return true;
   }
 
   virtual RejectionReason rejection_reason() const OVERRIDE {
@@ -86,7 +91,7 @@ Me2MeHostAuthenticatorFactory::CreateWithThirdPartyAuth(
     const std::string& host_owner,
     const std::string& local_cert,
     scoped_refptr<RsaKeyPair> key_pair,
-    scoped_ptr<ThirdPartyHostAuthenticator::TokenValidatorFactory>
+    scoped_ptr<TokenValidatorFactory>
         token_validator_factory) {
   scoped_ptr<Me2MeHostAuthenticatorFactory> result(
       new Me2MeHostAuthenticatorFactory());
@@ -136,7 +141,7 @@ scoped_ptr<Authenticator> Me2MeHostAuthenticatorFactory::CreateAuthenticator(
 
   // Verify that the client's jid is an ASCII string, and then check that the
   // client JID has the expected prefix. Comparison is case insensitive.
-  if (!IsStringASCII(remote_jid) ||
+  if (!base::IsStringASCII(remote_jid) ||
       !StartsWithASCII(remote_jid, remote_jid_prefix + '/', false)) {
     LOG(ERROR) << "Rejecting incoming connection from " << remote_jid;
     return scoped_ptr<Authenticator>(new RejectingAuthenticator());

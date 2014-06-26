@@ -93,7 +93,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   bool invalid() const { return invalid_; }
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& e) OVERRIDE;
@@ -101,7 +101,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual void Layout() OVERRIDE;
 
@@ -109,7 +109,8 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   virtual bool IsItemChecked(int id) const OVERRIDE;
   virtual bool IsCommandEnabled(int id) const OVERRIDE;
   virtual void ExecuteCommand(int id) OVERRIDE;
-  virtual bool GetAccelerator(int id, ui::Accelerator* accelerator) OVERRIDE;
+  virtual bool GetAccelerator(int id,
+                              ui::Accelerator* accelerator) const OVERRIDE;
 
   // Overridden from PrefixDelegate:
   virtual int GetRowCount() OVERRIDE;
@@ -125,6 +126,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ComboboxTest, Click);
+  FRIEND_TEST_ALL_PREFIXES(ComboboxTest, ClickButDisabled);
   FRIEND_TEST_ALL_PREFIXES(ComboboxTest, NotifyOnClickWithMouse);
   FRIEND_TEST_ALL_PREFIXES(ComboboxTest, ContentWidth);
 
@@ -157,6 +159,9 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   int GetDisclosureArrowLeftPadding() const;
   int GetDisclosureArrowRightPadding() const;
 
+  // Returns the size of the disclosure arrow.
+  gfx::Size ArrowSize() const;
+
   // Handles the clicking event.
   void HandleClickEvent();
 
@@ -181,9 +186,6 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   // A helper used to select entries by keyboard input.
   scoped_ptr<PrefixSelector> selector_;
 
-  // The disclosure arrow next to the currently selected item from the list.
-  const gfx::ImageSkia* disclosure_arrow_;
-
   // Responsible for showing the context menu.
   scoped_ptr<MenuRunner> dropdown_list_menu_runner_;
 
@@ -199,7 +201,7 @@ class VIEWS_EXPORT Combobox : public MenuDelegate,
   base::Time closed_time_;
 
   // The maximum dimensions of the content in the dropdown
-  gfx::Size content_size_;
+  mutable gfx::Size content_size_;
 
   // The painters or images that are used when |style_| is STYLE_BUTTONS. The
   // first index means the state of unfocused or focused.

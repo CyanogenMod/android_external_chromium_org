@@ -4,7 +4,6 @@
 
 #include "ash/wm/window_positioner.h"
 
-#include "ash/ash_switches.h"
 #include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
@@ -12,14 +11,14 @@
 #include "ash/wm/window_resizer.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "base/command_line.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/window_animations.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 
@@ -40,7 +39,6 @@ namespace {
 // equal to this width, the window will get opened in maximized mode. This value
 // can be reduced to a "tame" number if the feature is disabled.
 const int kForceMaximizeWidthLimit = 1366;
-const int kForceMaximizeWidthLimitDisabled = 640;
 
 // The time in milliseconds which should be used to visually move a window
 // through an automatic "intelligent" window management option.
@@ -50,7 +48,7 @@ const int kWindowAutoMoveDurationMS = 125;
 // WindowPositioner::SetIgnoreActivations().
 static bool disable_auto_positioning = false;
 
-// If set to true, by default the first window in ASH will be maxmized.
+// If set to true, by default the first window in ASH will be maximized.
 static bool maximize_first_window = false;
 
 // Check if any management should be performed (with a given |window|).
@@ -109,13 +107,35 @@ bool MoveRectToOneSide(const gfx::Rect& work_area,
   return false;
 }
 
-// Move a |window| to a new |bound|. Animate if desired by user.
-// Note: The function will do nothing if the bounds did not change.
-void SetBoundsAnimated(aura::Window* window, const gfx::Rect& bounds) {
-  if (bounds == window->GetTargetBounds())
-    return;
+// Move a |window| to new |bounds|. Animate if desired by user.
+// Moves the transient children of the |window| as well by the same |offset| as
+// the parent |window|.
+void SetBoundsAndOffsetTransientChildren(aura::Window* window,
+                                         const gfx::Rect& bounds,
+                                         const gfx::Rect& work_area,
+                                         const gfx::Vector2d& offset) {
+  aura::Window::Windows transient_children =
+      ::wm::GetTransientChildren(window);
+  for (aura::Window::Windows::iterator iter = transient_children.begin();
+      iter != transient_children.end(); ++iter) {
+    aura::Window* transient_child = *iter;
+    gfx::Rect child_bounds = transient_child->bounds();
+    gfx::Rect new_child_bounds = child_bounds + offset;
+    if ((child_bounds.x() <= work_area.x() &&
+         new_child_bounds.x() <= work_area.x()) ||
+        (child_bounds.right() >= work_area.right() &&
+         new_child_bounds.right() >= work_area.right())) {
+      continue;
+    }
+    if (new_child_bounds.right() > work_area.right())
+      new_child_bounds.set_x(work_area.right() - bounds.width());
+    else if (new_child_bounds.x() < work_area.x())
+      new_child_bounds.set_x(work_area.x());
+    SetBoundsAndOffsetTransientChildren(transient_child,
+                                        new_child_bounds, work_area, offset);
+  }
 
-  if (views::corewm::WindowAnimationsDisabled(window)) {
+  if (::wm::WindowAnimationsDisabled(window)) {
     window->SetBounds(bounds);
     return;
   }
@@ -124,6 +144,18 @@ void SetBoundsAnimated(aura::Window* window, const gfx::Rect& bounds) {
   settings.SetTransitionDuration(
       base::TimeDelta::FromMilliseconds(kWindowAutoMoveDurationMS));
   window->SetBounds(bounds);
+}
+
+// Move a |window| to new |bounds|. Animate if desired by user.
+// Note: The function will do nothing if the bounds did not change.
+void SetBoundsAnimated(aura::Window* window,
+                       const gfx::Rect& bounds,
+                       const gfx::Rect& work_area) {
+  gfx::Rect old_bounds = window->GetTargetBounds();
+  if (bounds == old_bounds)
+    return;
+  gfx::Vector2d offset(bounds.origin() - old_bounds.origin());
+  SetBoundsAndOffsetTransientChildren(window, bounds, work_area, offset);
 }
 
 // Move |window| into the center of the screen - or restore it to the previous
@@ -142,7 +174,7 @@ void AutoPlaceSingleWindow(aura::Window* window, bool animated) {
   }
 
   if (animated)
-    SetBoundsAnimated(window, bounds);
+    SetBoundsAnimated(window, bounds, work_area);
   else
     window->SetBounds(bounds);
 }
@@ -179,11 +211,13 @@ aura::Window* GetReferenceWindow(const aura::Window* root_window,
   aura::Window* found = NULL;
   for (int i = index + windows.size(); i >= 0; i--) {
     aura::Window* window = windows[i % windows.size()];
+    while (::wm::GetTransientParent(window))
+      window = ::wm::GetTransientParent(window);
     if (window != exclude && window->type() == ui::wm::WINDOW_TYPE_NORMAL &&
         window->GetRootWindow() == root_window && window->TargetVisibility() &&
         wm::GetWindowState(window)->window_position_managed()) {
       if (found && found != window) {
-        // no need to check !signle_window because the function must have
+        // no need to check !single_window because the function must have
         // been already returned in the "if (!single_window)" below.
         *single_window = false;
         return found;
@@ -201,13 +235,7 @@ aura::Window* GetReferenceWindow(const aura::Window* root_window,
 
 // static
 int WindowPositioner::GetForceMaximizedWidthLimit() {
-  static int maximum_limit = 0;
-  if (!maximum_limit) {
-    maximum_limit = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kAshDisableAutoMaximizing) ?
-        kForceMaximizeWidthLimitDisabled : kForceMaximizeWidthLimit;
-  }
-  return maximum_limit;
+  return kForceMaximizeWidthLimit;
 }
 
 // static
@@ -244,12 +272,30 @@ void WindowPositioner::GetBoundsAndShowStateForNewWindow(
     }
     return;
   }
-  bool maximized = wm::GetWindowState(top_window)->IsMaximized();
+  wm::WindowState* top_window_state = wm::GetWindowState(top_window);
+  bool maximized = top_window_state->IsMaximized();
   // We ignore the saved show state, but look instead for the top level
   // window's show state.
   if (show_state_in == ui::SHOW_STATE_DEFAULT) {
     *show_state_out = maximized ? ui::SHOW_STATE_MAXIMIZED :
         ui::SHOW_STATE_DEFAULT;
+  }
+
+  if (maximized) {
+    bool has_restore_bounds = top_window_state->HasRestoreBounds();
+    if (has_restore_bounds) {
+      // For a maximized window ignore the real bounds of the top level window
+      // and use its restore bounds instead. Offset the bounds to prevent the
+      // windows from overlapping exactly when restored.
+      *bounds_in_out = top_window_state->GetRestoreBoundsInScreen() +
+          gfx::Vector2d(kMinimumWindowOffset, kMinimumWindowOffset);
+    }
+    if (is_saved_bounds || has_restore_bounds) {
+      gfx::Rect work_area = screen->GetDisplayNearestWindow(target).work_area();
+      bounds_in_out->AdjustToFit(work_area);
+      // Use adjusted saved bounds or restore bounds, if there is one.
+      return;
+    }
   }
 
   // Use the size of the other window. The window's bound will be rearranged
@@ -289,7 +335,7 @@ void WindowPositioner::RearrangeVisibleWindowOnShow(
   if (!UseAutoWindowManager(added_window) ||
       added_window_state->bounds_changed_by_user()) {
     if (added_window_state->minimum_visibility()) {
-      // Guarante minimum visibility within the work area.
+      // Guarantee minimum visibility within the work area.
       gfx::Rect work_area = GetWorkAreaForWindowInParent(added_window);
       gfx::Rect bounds = added_window->bounds();
       gfx::Rect new_bounds = bounds;
@@ -337,7 +383,7 @@ void WindowPositioner::RearrangeVisibleWindowOnShow(
 
       // Push away the other window after remembering its current position.
       if (MoveRectToOneSide(work_area, move_other_right, &other_bounds))
-        SetBoundsAnimated(other_shown_window, other_bounds);
+        SetBoundsAnimated(other_shown_window, other_bounds, work_area);
     }
   }
 
@@ -389,7 +435,7 @@ gfx::Rect WindowPositioner::GetPopupPosition(const gfx::Rect& old_pos) {
   popup_position_offset_from_screen_corner_x = grid;
   popup_position_offset_from_screen_corner_y = grid;
   if (!pop_position_offset_increment_x) {
-    // When the popup position increment is , the last popup position
+    // When the popup position increment is 0, the last popup position
     // was not yet initialized.
     last_popup_position_x_ = popup_position_offset_from_screen_corner_x;
     last_popup_position_y_ = popup_position_offset_from_screen_corner_y;
@@ -471,7 +517,7 @@ gfx::Rect WindowPositioner::SmartPopupPosition(
       // When any window is maximized we cannot find any free space.
       if (window_state->IsMaximizedOrFullscreen())
         return gfx::Rect(0, 0, 0, 0);
-      if (window_state->IsNormalShowState())
+      if (window_state->IsNormalOrSnapped())
         regions.push_back(&windows[i]->bounds());
     }
   }

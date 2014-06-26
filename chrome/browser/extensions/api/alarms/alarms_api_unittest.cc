@@ -12,9 +12,9 @@
 #include "chrome/browser/extensions/extension_function_test_utils.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
+#include "extensions/common/extension_messages.h"
 #include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -283,9 +283,10 @@ TEST_F(ExtensionAlarmsTest, CreateDelayBelowMinimum) {
   const IPC::Message* warning = sink.GetUniqueMessageMatching(
       ExtensionMsg_AddMessageToConsole::ID);
   ASSERT_TRUE(warning);
-  content::ConsoleMessageLevel level = content::CONSOLE_MESSAGE_LEVEL_DEBUG;
-  std::string message;
-  ExtensionMsg_AddMessageToConsole::Read(warning, &level, &message);
+  ExtensionMsg_AddMessageToConsole::Param params;
+  ExtensionMsg_AddMessageToConsole::Read(warning, &params);
+  content::ConsoleMessageLevel level = params.a;
+  std::string message = params.b;
   EXPECT_EQ(content::CONSOLE_MESSAGE_LEVEL_WARNING, level);
   EXPECT_THAT(message, testing::HasSubstr("delay is less than minimum of 1"));
 }
@@ -323,9 +324,9 @@ TEST_F(ExtensionAlarmsTest, Get) {
 
   // Get a non-existent one.
   {
-    std::string error = RunFunctionAndReturnError(
-        new AlarmsGetFunction(), "[\"nobody\"]");
-    EXPECT_FALSE(error.empty());
+    scoped_ptr<base::DictionaryValue> result(RunFunctionAndReturnDictionary(
+        new AlarmsGetFunction(), "[\"nobody\"]"));
+    ASSERT_FALSE(result.get());
   }
 }
 
@@ -389,17 +390,31 @@ void ExtensionAlarmsTestClearGetAllAlarms1Callback(
 TEST_F(ExtensionAlarmsTest, Clear) {
   // Clear a non-existent one.
   {
-    std::string error = RunFunctionAndReturnError(
-        new AlarmsClearFunction(), "[\"nobody\"]");
-    EXPECT_FALSE(error.empty());
+    scoped_ptr<base::Value> result(
+        RunFunctionAndReturnValue(new AlarmsClearFunction(), "[\"nobody\"]"));
+    bool copy_bool_result = false;
+    ASSERT_TRUE(result->GetAsBoolean(&copy_bool_result));
+    EXPECT_FALSE(copy_bool_result);
   }
 
   // Create 3 alarms.
   CreateAlarms(3);
 
   // Clear all but the 0.001-minute alarm.
-  RunFunction(new AlarmsClearFunction(), "[\"7\"]");
-  RunFunction(new AlarmsClearFunction(), "[\"0\"]");
+  {
+    scoped_ptr<base::Value> result(
+        RunFunctionAndReturnValue(new AlarmsClearFunction(), "[\"7\"]"));
+    bool copy_bool_result = false;
+    ASSERT_TRUE(result->GetAsBoolean(&copy_bool_result));
+    EXPECT_TRUE(copy_bool_result);
+  }
+  {
+    scoped_ptr<base::Value> result(
+        RunFunctionAndReturnValue(new AlarmsClearFunction(), "[\"0\"]"));
+    bool copy_bool_result = false;
+    ASSERT_TRUE(result->GetAsBoolean(&copy_bool_result));
+    EXPECT_TRUE(copy_bool_result);
+  }
 
   alarm_manager_->GetAllAlarms(extension()->id(), base::Bind(
       ExtensionAlarmsTestClearGetAllAlarms1Callback, this));
@@ -427,7 +442,9 @@ TEST_F(ExtensionAlarmsTest, ClearAll) {
   {
     scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
         new AlarmsClearAllFunction(), "[]"));
-    EXPECT_FALSE(result.get());
+    bool copy_bool_result = false;
+    ASSERT_TRUE(result->GetAsBoolean(&copy_bool_result));
+    EXPECT_TRUE(copy_bool_result);
   }
 
   // Create 3 alarms.

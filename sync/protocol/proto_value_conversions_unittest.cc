@@ -84,6 +84,10 @@ TEST_F(ProtoValueConversionsTest, TabNavigationToValue) {
   TestSpecificsToValue(TabNavigationToValue);
 }
 
+TEST_F(ProtoValueConversionsTest, NavigationRedirectToValue) {
+  TestSpecificsToValue(NavigationRedirectToValue);
+}
+
 TEST_F(ProtoValueConversionsTest, PasswordSpecificsData) {
   sync_pb::PasswordSpecificsData specifics;
   specifics.set_password_value("secret");
@@ -368,8 +372,8 @@ TEST_F(ProtoValueConversionsTest, ClientToServerResponseToValue) {
                                  "get_updates.entries"));
 }
 
-TEST_F(ProtoValueConversionsTest, AttachmentIdToValue) {
-  TestSpecificsToValue(AttachmentIdToValue);
+TEST_F(ProtoValueConversionsTest, AttachmentIdProtoToValue) {
+  TestSpecificsToValue(AttachmentIdProtoToValue);
 }
 
 }  // namespace

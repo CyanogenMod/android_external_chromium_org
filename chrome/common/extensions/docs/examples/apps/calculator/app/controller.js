@@ -4,36 +4,33 @@
  * found in the LICENSE file.
  **/
 
-// Checking for "chrome.app.runtime" availability allows this Chrome app code to
-// be tested in a regular web page (like tests/manual.html). Checking for
-// "chrome" and "chrome.app" availability further allows this code to be tested
-// in non-Chrome browsers, which is useful for example to test touch support
-// with a non-Chrome touch device.
+// Checking for "chrome" availability allows this app code to be tested in
+// non-Chrome browsers, which is useful for example to test touch support with
+// a non-Chrome touch device.
+// Checking for "chrome.shell" allows testing under app_shell, which does not
+// have chrome.app APIs.
+// Checking for "chrome.app.runtime" availability allows testing in a regular
+// web page (like tests/manual.html).
 if (typeof chrome !== 'undefined' && chrome.app && chrome.app.runtime) {
+  // Compatibility for running under app_shell, which does not have app.window.
+  var createWindow =
+      chrome.shell ? chrome.shell.createWindow : chrome.app.window.create;
+
   var showCalculatorWindow = function () {
-    chrome.app.window.create('calculator.html', {
-      defaultWidth: 243, minWidth: 243, maxWidth: 243,
-      defaultHeight: 380, minHeight: 380, maxHeight: 380,
+    createWindow('calculator.html', {
+      innerBounds: {
+        width: 243, minWidth: 243, maxWidth: 243,
+        height: 380, minHeight: 380, maxHeight: 380
+      },
       id: 'calculator'
     }, function(appWindow) {
       appWindow.contentWindow.onload = function() {
         new Controller(new Model(9), new View(appWindow.contentWindow));
       };
-
-      chrome.storage.local.set({windowVisible: true});
-      appWindow.onClosed.addListener(function() {
-        chrome.storage.local.set({windowVisible: false});
-      });
     });
   }
 
   chrome.app.runtime.onLaunched.addListener(showCalculatorWindow);
-  chrome.app.runtime.onRestarted.addListener(function() {
-    chrome.storage.local.get('windowVisible', function(data) {
-      if (data.windowVisible)
-        showCalculatorWindow();
-    });
-  });
 }
 
 function Controller(model, view) {

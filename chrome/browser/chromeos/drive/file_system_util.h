@@ -8,14 +8,11 @@
 #include <string>
 
 #include "base/callback_forward.h"
+#include "base/files/file_path.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "url/gurl.h"
 
 class Profile;
-
-namespace base {
-class FilePath;
-}
 
 namespace fileapi {
 class FileSystemURL;
@@ -61,6 +58,10 @@ const base::FilePath& GetDriveMyDriveRootPath();
 
 // Returns the Drive mount point path, which looks like "/special/drive-<hash>".
 base::FilePath GetDriveMountPointPath(Profile* profile);
+
+// Returns the Drive mount point path, which looks like
+// "/special/drive-<username_hash>", when provided with the |user_id_hash|.
+base::FilePath GetDriveMountPointPathForUserIdHash(std::string user_id_hash);
 
 // Returns the FileSystem for the |profile|. If not available (not mounted
 // or disabled), returns NULL.
@@ -142,12 +143,6 @@ typedef base::Callback<void (FileError, const base::FilePath& path)>
 void PrepareWritableFileAndRun(Profile* profile,
                                const base::FilePath& path,
                                const PrepareWritableFileCallback& callback);
-
-// Checks whether a directory exists at the given Drive path |directory|.
-// Must be called from UI thread. The result will be called back to |callback|.
-void CheckDirectoryExists(Profile* profile,
-                          const base::FilePath& directory,
-                          const FileOperationCallback& callback);
 
 // Ensures the existence of |directory| of '/special/drive/foo'.  This will
 // create |directory| and its ancestors if they don't exist.  |callback| is

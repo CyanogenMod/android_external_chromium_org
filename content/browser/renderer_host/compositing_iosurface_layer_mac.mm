@@ -7,6 +7,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 #include <OpenGL/gl.h>
 
+#include "base/mac/mac_util.h"
 #include "base/mac/sdk_forward_declarations.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
@@ -16,71 +17,124 @@
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gpu_switching_manager.h"
 
+@interface CompositingIOSurfaceLayer(Private)
+- (void)immediatelyForceDisplayAndAck;
+- (void)ackPendingFrame:(bool)success;
+- (void)timerFired;
+@end
+
+namespace content {
+
+// The base::DelayTimer needs a C++ class to operate on, rather than Objective C
+// class. This helper class provides a bridge between the two.
+class CompositingIOSurfaceLayerHelper {
+ public:
+  CompositingIOSurfaceLayerHelper(CompositingIOSurfaceLayer* layer)
+      : layer_(layer) {}
+  void TimerFired() {
+    [layer_ timerFired];
+  }
+ private:
+  CompositingIOSurfaceLayer* layer_;
+};
+
+}  // namespace content
+
 @implementation CompositingIOSurfaceLayer
 
-@synthesize context = context_;
+- (content::CompositingIOSurfaceMac*)iosurface {
+  return iosurface_.get();
+}
 
-- (id)initWithRenderWidgetHostViewMac:(content::RenderWidgetHostViewMac*)r {
+- (content::CompositingIOSurfaceContext*)context {
+  return context_.get();
+}
+
+- (id)initWithIOSurface:(scoped_refptr<content::CompositingIOSurfaceMac>)
+                            iosurface
+        withScaleFactor:(float)scale_factor
+             withClient:(content::CompositingIOSurfaceLayerClient*)client {
   if (self = [super init]) {
-    renderWidgetHostView_ = r;
-    context_ = content::CompositingIOSurfaceContext::Get(
-        content::CompositingIOSurfaceContext::kOffscreenContextWindowNumber);
-    DCHECK(context_);
-    needsDisplay_ = NO;
+    iosurface_ = iosurface;
+    client_ = client;
+    helper_.reset(new content::CompositingIOSurfaceLayerHelper(self));
+    timer_.reset(new base::DelayTimer<content::CompositingIOSurfaceLayerHelper>(
+        FROM_HERE,
+        base::TimeDelta::FromSeconds(1) / 6,
+        helper_.get(),
+        &content::CompositingIOSurfaceLayerHelper::TimerFired));
 
-    ScopedCAActionDisabler disabler;
+    context_ = content::CompositingIOSurfaceContext::Get(
+        content::CompositingIOSurfaceContext::kCALayerContextWindowNumber);
+    DCHECK(context_);
+    needs_display_ = NO;
+    has_pending_frame_ = NO;
+    did_not_draw_counter_ = 0;
+
     [self setBackgroundColor:CGColorGetConstantColor(kCGColorWhite)];
+    [self setAnchorPoint:CGPointMake(0, 0)];
+    // Setting contents gravity is necessary to prevent the layer from being
+    // scaled during dyanmic resizes (especially with devtools open).
     [self setContentsGravity:kCAGravityTopLeft];
-    [self setFrame:NSRectToCGRect(
-        [renderWidgetHostView_->cocoa_view() bounds])];
-    [self setNeedsDisplay];
-    [self updateScaleFactor];
+    if ([self respondsToSelector:(@selector(setContentsScale:))]) {
+      [self setContentsScale:scale_factor];
+    }
   }
   return self;
 }
 
-- (void)updateScaleFactor {
-  if (!renderWidgetHostView_ ||
-      ![self respondsToSelector:(@selector(contentsScale))] ||
-      ![self respondsToSelector:(@selector(setContentsScale:))])
-    return;
-
-  float current_scale_factor = [self contentsScale];
-  float new_scale_factor = current_scale_factor;
-  if (renderWidgetHostView_->compositing_iosurface_) {
-    new_scale_factor =
-        renderWidgetHostView_->compositing_iosurface_->scale_factor();
-  }
-
-  if (new_scale_factor == current_scale_factor)
-    return;
-
-  ScopedCAActionDisabler disabler;
-  [self setContentsScale:new_scale_factor];
-}
-
-- (void)disableCompositing{
-  ScopedCAActionDisabler disabler;
-  [self removeFromSuperlayer];
-  renderWidgetHostView_ = nil;
+- (void)resetClient {
+  // Any acks that were waiting on this layer to draw will not occur, so ack
+  // them now to prevent blocking the renderer.
+  [self ackPendingFrame:true];
+  client_ = NULL;
 }
 
 - (void)gotNewFrame {
-  if (![self isAsynchronous]) {
-    [self setNeedsDisplay];
-    [self setAsynchronous:YES];
+  has_pending_frame_ = YES;
+  timer_->Reset();
+
+  // A trace value of 2 indicates that there is a pending swap ack. See
+  // canDrawInCGLContext for other value meanings.
+  TRACE_COUNTER_ID1("browser", "PendingSwapAck", self, 2);
+
+  if (context_ && context_->is_vsync_disabled()) {
+    // If vsync is disabled, draw immediately and don't bother trying to use
+    // the isAsynchronous property to ensure smooth animation.
+    [self immediatelyForceDisplayAndAck];
   } else {
-    needsDisplay_ = YES;
+    needs_display_ = YES;
+    if (![self isAsynchronous])
+      [self setAsynchronous:YES];
   }
 }
 
-- (void)timerSinceGotNewFrameFired {
-  if (![self isAsynchronous])
+// Private methods:
+
+- (void)immediatelyForceDisplayAndAck {
+  [self setNeedsDisplay];
+  [self displayIfNeeded];
+
+  // Calls to setNeedsDisplay can sometimes be ignored, especially if issued
+  // rapidly (e.g, with vsync off). This is unacceptable because the failure
+  // to ack a single frame will hang the renderer. Ensure that the renderer
+  // not be blocked by lying and claiming that we drew the frame.
+  [self ackPendingFrame:true];
+}
+
+- (void)ackPendingFrame:(bool)success {
+  if (!has_pending_frame_)
     return;
 
-  [self setAsynchronous:NO];
-  if (needsDisplay_)
-    [self setNeedsDisplay];
+  TRACE_COUNTER_ID1("browser", "PendingSwapAck", self, 0);
+  has_pending_frame_ = NO;
+  if (client_)
+    client_->AcceleratedLayerDidDrawFrame(success);
+}
+
+- (void)timerFired {
+  if (has_pending_frame_)
+    [self immediatelyForceDisplayAndAck];
 }
 
 // The remaining methods implement the CAOpenGLLayer interface.
@@ -98,7 +152,7 @@
 }
 
 - (void)setNeedsDisplay {
-  needsDisplay_ = YES;
+  needs_display_ = YES;
   [super setNeedsDisplay];
 }
 
@@ -106,7 +160,28 @@
                 pixelFormat:(CGLPixelFormatObj)pixelFormat
                forLayerTime:(CFTimeInterval)timeInterval
                 displayTime:(const CVTimeStamp*)timeStamp {
-  return needsDisplay_;
+  // Add an instantaneous blip to the PendingSwapAck state to indicate
+  // that CoreAnimation asked if a frame is ready. A blip up to to 3 (usually
+  // from 2, indicating that a swap ack is pending) indicates that we requested
+  // a draw. A blip up to 1 (usually from 0, indicating there is no pending swap
+  // ack) indicates that we did not request a draw. This would be more natural
+  // to do with a tracing pseudo-thread
+  // http://crbug.com/366300
+  TRACE_COUNTER_ID1("browser", "PendingSwapAck", self, needs_display_ ? 3 : 1);
+  TRACE_COUNTER_ID1("browser", "PendingSwapAck", self,
+                    has_pending_frame_ ? 2 : 0);
+
+  // If we return NO 30 times in a row, switch to being synchronous to avoid
+  // burning CPU cycles on this callback.
+  if (needs_display_) {
+    did_not_draw_counter_ = 0;
+  } else {
+    did_not_draw_counter_ += 1;
+    if (did_not_draw_counter_ > 30)
+      [self setAsynchronous:NO];
+  }
+
+  return needs_display_;
 }
 
 - (void)drawInCGLContext:(CGLContextObj)glContext
@@ -115,67 +190,34 @@
              displayTime:(const CVTimeStamp*)timeStamp {
   TRACE_EVENT0("browser", "CompositingIOSurfaceLayer::drawInCGLContext");
 
-  if (!context_ ||
-      (context_ && context_->cgl_context() != glContext) ||
-      !renderWidgetHostView_ ||
-      !renderWidgetHostView_->compositing_iosurface_) {
+  if (!iosurface_->HasIOSurface() || context_->cgl_context() != glContext) {
     glClearColor(1, 1, 1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     return;
   }
 
-  // Cache a copy of renderWidgetHostView_ because it may be reset if
-  // a software frame is received in GetBackingStore.
-  content::RenderWidgetHostViewMac* cached_view = renderWidgetHostView_;
-
-  // If a resize is in progress then GetBackingStore request a frame of the
-  // current window size and block until a frame of the right size comes in.
-  // This makes the window content not lag behind the resize (at the cost of
-  // blocking on the browser's main thread).
-  if (cached_view->render_widget_host_) {
-    // Note that GetBackingStore can potentially spawn a nested run loop, which
-    // may change the current GL context, or, because the GL contexts are
-    // shared, may change the currently-bound FBO. Ensure that, when the run
-    // loop returns, the original GL context remain current, and the original
-    // FBO remain bound.
-    // TODO(ccameron): This is far too fragile a mechanism to rely on. Find
-    // a way to avoid doing this.
-    GLuint previous_framebuffer = 0;
-    glGetIntegerv(GL_FRAMEBUFFER_BINDING,
-                  reinterpret_cast<GLint*>(&previous_framebuffer));
-    {
-      gfx::ScopedCGLSetCurrentContext scoped_set_current_context(NULL);
-      cached_view->about_to_validate_and_paint_ = true;
-      (void)cached_view->render_widget_host_->GetBackingStore(true);
-      cached_view->about_to_validate_and_paint_ = false;
-    }
-    CHECK_EQ(CGLGetCurrentContext(), glContext)
-        << "original GL context failed to re-bind after nested run loop, "
-        << "browser crash is imminent.";
-    glBindFramebuffer(GL_FRAMEBUFFER, previous_framebuffer);
-  }
-
-  // If a transition to software mode has occurred, this layer should be
-  // removed from the heirarchy now, so don't draw anything.
-  if (!renderWidgetHostView_)
-    return;
-
-  gfx::Rect window_rect([self frame]);
+  // The correct viewport to cover the layer will be set up by the caller.
+  // Transform this into a window size for DrawIOSurface, where it will be
+  // transformed back into this viewport.
+  GLint viewport[4];
+  glGetIntegerv(GL_VIEWPORT, viewport);
+  gfx::Rect window_rect(viewport[0], viewport[1], viewport[2], viewport[3]);
   float window_scale_factor = 1.f;
   if ([self respondsToSelector:(@selector(contentsScale))])
     window_scale_factor = [self contentsScale];
+  window_rect = ToNearestRect(
+      gfx::ScaleRect(window_rect, 1.f/window_scale_factor));
 
-  if (!renderWidgetHostView_->compositing_iosurface_->DrawIOSurface(
-        context_,
-        window_rect,
-        window_scale_factor,
-        false)) {
-    renderWidgetHostView_->GotAcceleratedCompositingError();
-    return;
-  }
+  bool draw_succeeded = iosurface_->DrawIOSurface(
+      context_, window_rect, window_scale_factor);
 
-  needsDisplay_ = NO;
-  renderWidgetHostView_->SendPendingLatencyInfoToHost();
+  [self ackPendingFrame:draw_succeeded];
+  needs_display_ = NO;
+
+  [super drawInCGLContext:glContext
+              pixelFormat:pixelFormat
+             forLayerTime:timeInterval
+              displayTime:timeStamp];
 }
 
 @end

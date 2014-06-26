@@ -11,9 +11,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/features/simple_feature.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/features/feature.h"
+#include "extensions/common/features/simple_feature.h"
 #include "extensions/common/install_warning.h"
 #include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -152,12 +152,18 @@ TEST_F(ManifestTest, ExtensionTypes) {
       &manifest, keys::kApp, new base::DictionaryValue());
   AssertType(manifest.get(), Manifest::TYPE_LEGACY_PACKAGED_APP);
 
-  // Platform app.
+  // Platform app with event page.
   MutateManifest(
       &manifest, keys::kPlatformAppBackground, new base::DictionaryValue());
   AssertType(manifest.get(), Manifest::TYPE_PLATFORM_APP);
   MutateManifest(
       &manifest, keys::kPlatformAppBackground, NULL);
+
+  // Platform app with service worker.
+  MutateManifest(
+      &manifest, keys::kPlatformAppServiceWorker, new base::DictionaryValue());
+  AssertType(manifest.get(), Manifest::TYPE_PLATFORM_APP);
+  MutateManifest(&manifest, keys::kPlatformAppServiceWorker, NULL);
 
   // Hosted app.
   MutateManifest(

@@ -23,7 +23,7 @@ class Widget;
 }  // namespace views
 
 namespace ash {
-namespace internal {
+
 // A class which manages the notification of display resolution change and
 // also manages the timeout in case the new resolution is unusable.
 class ASH_EXPORT ResolutionNotificationController
@@ -79,9 +79,10 @@ class ASH_EXPORT ResolutionNotificationController
   void OnTimerTick();
 
   // gfx::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // DisplayController::Observer overrides:
   virtual void OnDisplayConfigurationChanged() OVERRIDE;
@@ -93,7 +94,6 @@ class ASH_EXPORT ResolutionNotificationController
   DISALLOW_COPY_AND_ASSIGN(ResolutionNotificationController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_RESOLUTION_NOTIFICATION_CONTROLLER_H_

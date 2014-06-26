@@ -8,6 +8,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/input_method/input_method_engine_interface.h"
 #include "chromeos/ime/input_method_descriptor.h"
 #include "url/gurl.h"
@@ -17,12 +18,17 @@ class CandidateWindow;
 class KeyEvent;
 }  // namespace ui
 
+namespace ash {
+namespace ime {
+struct InputMethodMenuItem;
+}  // namespace ime
+}  // namespace ash
+
 namespace chromeos {
 
 class CompositionText;
 
 namespace input_method {
-struct InputMethodProperty;
 struct KeyEventHandle;
 }  // namespace input_method
 
@@ -32,20 +38,19 @@ class InputMethodEngine : public InputMethodEngineInterface {
 
   virtual ~InputMethodEngine();
 
-  void Initialize(
-      InputMethodEngineInterface::Observer* observer,
-      const char* engine_name,
-      const char* extension_id,
-      const char* engine_id,
-      const std::vector<std::string>& languages,
-      const std::vector<std::string>& layouts,
-      const GURL& options_page,
-      const GURL& input_view);
+  void Initialize(scoped_ptr<InputMethodEngineInterface::Observer> observer,
+                  const char* engine_name,
+                  const char* extension_id,
+                  const char* engine_id,
+                  const std::vector<std::string>& languages,
+                  const std::vector<std::string>& layouts,
+                  const GURL& options_page,
+                  const GURL& input_view);
 
   // InputMethodEngineInterface overrides.
   virtual const input_method::InputMethodDescriptor& GetDescriptor()
       const OVERRIDE;
-  virtual void StartIme() OVERRIDE;
+  virtual void NotifyImeReady() OVERRIDE;
   virtual bool SetComposition(int context_id,
                               const char* text,
                               int selection_start,
@@ -95,15 +100,19 @@ class InputMethodEngine : public InputMethodEngineInterface {
   virtual void HideInputView() OVERRIDE;
 
  private:
-  // Converts MenuItem to InputMethodProperty.
+  void RecordHistogram(const char* name, int count);
+
+  // Converts MenuItem to InputMethodMenuItem.
   void MenuItemToProperty(const MenuItem& item,
-                          input_method::InputMethodProperty* property);
+                          ash::ime::InputMethodMenuItem* property);
+
+  // Enables or disables overriding input view page to Virtual Keyboard window.
+  void EnableInputView(bool enabled);
 
   // Descriptor of this input method.
   input_method::InputMethodDescriptor descriptor_;
 
-  // True if the current context has focus.
-  bool focused_;
+  ui::TextInputType current_input_type_;
 
   // True if this engine is active.
   bool active_;
@@ -123,8 +132,8 @@ class InputMethodEngine : public InputMethodEngineInterface {
   // This IME ID in InputMethodManager.
   std::string imm_id_;
 
-  // Pointer to the object recieving events for this IME.
-  InputMethodEngineInterface::Observer* observer_;
+  // The observer object recieving events for this IME.
+  scoped_ptr<InputMethodEngineInterface::Observer> observer_;
 
   // The current preedit text, and it's cursor position.
   scoped_ptr<CompositionText> composition_text_;
@@ -151,6 +160,10 @@ class InputMethodEngine : public InputMethodEngineInterface {
   // Used with SendKeyEvents and ProcessKeyEvent to check if the key event
   // sent to ProcessKeyEvent is sent by SendKeyEvents.
   const ui::KeyEvent* sent_key_event_;
+
+  // The start & end time of using this input method. This is for UMA.
+  base::Time start_time_;
+  base::Time end_time_;
 };
 
 }  // namespace chromeos

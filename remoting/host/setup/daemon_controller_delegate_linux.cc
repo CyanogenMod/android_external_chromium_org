@@ -6,6 +6,7 @@
 
 #include <unistd.h>
 
+#include "base/base_paths.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -16,6 +17,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/md5.h"
+#include "base/path_service.h"
 #include "base/process/kill.h"
 #include "base/process/launch.h"
 #include "base/process/process_handle.h"
@@ -24,6 +26,7 @@
 #include "base/strings/string_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/values.h"
+#include "build/build_config.h"
 #include "net/base/net_util.h"
 #include "remoting/host/host_config.h"
 #include "remoting/host/json_host_config.h"
@@ -55,8 +58,9 @@ std::string GetMd5(const std::string& value) {
 
 base::FilePath GetConfigPath() {
   std::string filename = "host#" + GetMd5(net::GetHostName()) + ".json";
-  return base::GetHomeDir().
-      Append(".config/chrome-remote-desktop").Append(filename);
+  base::FilePath homedir;
+  PathService::Get(base::DIR_HOME, &homedir);
+  return homedir.Append(".config/chrome-remote-desktop").Append(filename);
 }
 
 bool GetScriptPath(base::FilePath* result) {
@@ -85,7 +89,7 @@ bool RunHostScriptWithTimeout(
     LOG(ERROR) << "GetScriptPath() failed.";
     return false;
   }
-  CommandLine command_line(script_path);
+  base::CommandLine command_line(script_path);
   for (unsigned int i = 0; i < args.size(); ++i) {
     command_line.AppendArg(args[i]);
   }
@@ -98,6 +102,11 @@ bool RunHostScriptWithTimeout(
   fds_to_remap.push_back(std::pair<int, int>(STDERR_FILENO, STDOUT_FILENO));
   base::LaunchOptions options;
   options.fds_to_remap = &fds_to_remap;
+
+#if !defined(OS_CHROMEOS)
+  options.allow_new_privs = true;
+#endif
+
   if (!base::LaunchProcess(command_line, options, &process_handle)) {
     LOG(ERROR) << "Failed to run command: "
                << command_line.GetCommandLineString();
@@ -132,7 +141,7 @@ DaemonController::State DaemonControllerDelegateLinux::GetState() {
   if (!GetScriptPath(&script_path)) {
     return DaemonController::STATE_NOT_IMPLEMENTED;
   }
-  CommandLine command_line(script_path);
+  base::CommandLine command_line(script_path);
   command_line.AppendArg("--get-status");
 
   std::string status;
@@ -152,7 +161,7 @@ DaemonController::State DaemonControllerDelegateLinux::GetState() {
     return DaemonController::STATE_UNKNOWN;
   }
 
-  TrimWhitespaceASCII(status, TRIM_ALL, &status);
+  base::TrimWhitespaceASCII(status, base::TRIM_ALL, &status);
 
   if (status == "STARTED") {
     return DaemonController::STATE_STARTED;
@@ -182,11 +191,16 @@ scoped_ptr<base::DictionaryValue> DaemonControllerDelegateLinux::GetConfig() {
         result->SetString(kXmppLoginConfigPath, value);
       }
     } else {
-      result.reset(); // Return NULL in case of error.
+      result.reset();  // Return NULL in case of error.
     }
   }
 
   return result.Pass();
+}
+
+void DaemonControllerDelegateLinux::InstallHost(
+    const DaemonController::CompletionCallback& done) {
+  NOTREACHED();
 }
 
 void DaemonControllerDelegateLinux::SetConfigAndStart(
@@ -277,7 +291,7 @@ std::string DaemonControllerDelegateLinux::GetVersion() {
   if (!GetScriptPath(&script_path)) {
     return std::string();
   }
-  CommandLine command_line(script_path);
+  base::CommandLine command_line(script_path);
   command_line.AppendArg("--host-version");
 
   std::string version;
@@ -290,8 +304,8 @@ std::string DaemonControllerDelegateLinux::GetVersion() {
     return std::string();
   }
 
-  TrimWhitespaceASCII(version, TRIM_ALL, &version);
-  if (!ContainsOnlyChars(version, "0123456789.")) {
+  base::TrimWhitespaceASCII(version, base::TRIM_ALL, &version);
+  if (!base::ContainsOnlyChars(version, "0123456789.")) {
     LOG(ERROR) << "Received invalid host version number: " << version;
     return std::string();
   }

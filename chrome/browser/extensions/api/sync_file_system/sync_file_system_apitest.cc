@@ -6,7 +6,6 @@
 #include "base/command_line.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_service.h"
 #include "chrome/browser/sync_file_system/file_status_observer.h"
@@ -38,10 +37,17 @@ namespace {
 class SyncFileSystemApiTest : public ExtensionApiTest {
  public:
   SyncFileSystemApiTest()
-      : mock_remote_service_(NULL), real_default_quota_(0) {}
+      : mock_remote_service_(NULL),
+        real_minimum_preserved_space_(0),
+        real_default_quota_(0) {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
+
+    real_minimum_preserved_space_ =
+        quota::QuotaManager::kMinimumPreserveForSystem;
+    quota::QuotaManager::kMinimumPreserveForSystem = 0;
+
     // TODO(calvinlo): Update test code after default quota is made const
     // (http://crbug.com/155488).
     real_default_quota_ = quota::QuotaManager::kSyncableStorageDefaultHostQuota;
@@ -49,6 +55,8 @@ class SyncFileSystemApiTest : public ExtensionApiTest {
   }
 
   virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+    quota::QuotaManager::kMinimumPreserveForSystem =
+        real_minimum_preserved_space_;
     quota::QuotaManager::kSyncableStorageDefaultHostQuota = real_default_quota_;
     ExtensionApiTest::TearDownInProcessBrowserTestFixture();
   }
@@ -69,6 +77,7 @@ class SyncFileSystemApiTest : public ExtensionApiTest {
 
  private:
   ::testing::NiceMock<MockRemoteFileSyncService>* mock_remote_service_;
+  int64 real_minimum_preserved_space_;
   int64 real_default_quota_;
 };
 
@@ -104,41 +113,14 @@ ACTION_P5(ReturnWithFakeFileAddedStatus,
 
 }  // namespace
 
-// deleteFileSystem is disabled for now. http://crbug.com/159804
-IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, DISABLED_DeleteFileSystem) {
-  ASSERT_TRUE(RunPlatformAppTest("sync_file_system/delete_file_system"))
-      << message_;
-}
-
 IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, GetFileStatus) {
-  EXPECT_CALL(*mock_remote_service(), IsConflicting(_)).WillOnce(Return(true));
   ASSERT_TRUE(RunPlatformAppTest("sync_file_system/get_file_status"))
       << message_;
 }
 
-#if defined(ADDRESS_SANITIZER)
-// SyncFileSystemApiTest.GetFileStatuses fails under AddressSanitizer
-// on Precise. See http://crbug.com/230779.
-#define MAYBE_GetFileStatuses DISABLED_GetFileStatuses
-#else
-#define MAYBE_GetFileStatuses GetFileStatuses
-#endif
-IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, MAYBE_GetFileStatuses) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
-    return;
-#endif
-
+IN_PROC_BROWSER_TEST_F(SyncFileSystemApiTest, GetFileStatuses) {
   // Mocking to return IsConflicting() == true only for the path "Conflicting".
   base::FilePath conflicting = base::FilePath::FromUTF8Unsafe("Conflicting");
-  EXPECT_CALL(*mock_remote_service(),
-              IsConflicting(Property(&FileSystemURL::path, Eq(conflicting))))
-      .WillOnce(Return(true));
-  EXPECT_CALL(*mock_remote_service(),
-              IsConflicting(Property(&FileSystemURL::path, Ne(conflicting))))
-      .WillRepeatedly(Return(false));
-
   ASSERT_TRUE(RunPlatformAppTest("sync_file_system/get_file_statuses"))
       << message_;
 }

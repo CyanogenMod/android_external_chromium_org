@@ -14,10 +14,6 @@
 #include "third_party/icu/source/common/unicode/uscript.h"
 #include "third_party/icu/source/i18n/unicode/coll.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
-
 namespace {
 
 // Extract language, country and variant, but ignore keywords.  For example,
@@ -123,12 +119,7 @@ void SetICUDefaultLocale(const std::string& locale_string) {
 }
 
 bool IsRTL() {
-#if defined(TOOLKIT_GTK)
-  GtkTextDirection gtk_dir = gtk_widget_get_default_direction();
-  return gtk_dir == GTK_TEXT_DIR_RTL;
-#else
   return ICUIsRTL();
-#endif
 }
 
 bool ICUIsRTL() {
@@ -263,15 +254,18 @@ bool AdjustStringForLocaleDirection(string16* text) {
   bool has_rtl_chars = StringContainsStrongRTLChars(*text);
   if (!ui_direction_is_rtl && has_rtl_chars) {
     WrapStringWithRTLFormatting(text);
-    text->insert(0U, 1U, kLeftToRightMark);
+    text->insert(static_cast<size_t>(0), static_cast<size_t>(1),
+                 kLeftToRightMark);
     text->push_back(kLeftToRightMark);
   } else if (ui_direction_is_rtl && has_rtl_chars) {
     WrapStringWithRTLFormatting(text);
-    text->insert(0U, 1U, kRightToLeftMark);
+    text->insert(static_cast<size_t>(0), static_cast<size_t>(1),
+                 kRightToLeftMark);
     text->push_back(kRightToLeftMark);
   } else if (ui_direction_is_rtl) {
     WrapStringWithLTRFormatting(text);
-    text->insert(0U, 1U, kRightToLeftMark);
+    text->insert(static_cast<size_t>(0), static_cast<size_t>(1),
+                 kRightToLeftMark);
     text->push_back(kRightToLeftMark);
   } else {
     return false;
@@ -332,7 +326,8 @@ void WrapStringWithLTRFormatting(string16* text) {
     return;
 
   // Inserting an LRE (Left-To-Right Embedding) mark as the first character.
-  text->insert(0U, 1U, kLeftToRightEmbeddingMark);
+  text->insert(static_cast<size_t>(0), static_cast<size_t>(1),
+               kLeftToRightEmbeddingMark);
 
   // Inserting a PDF (Pop Directional Formatting) mark as the last character.
   text->push_back(kPopDirectionalFormatting);
@@ -343,7 +338,8 @@ void WrapStringWithRTLFormatting(string16* text) {
     return;
 
   // Inserting an RLE (Right-To-Left Embedding) mark as the first character.
-  text->insert(0U, 1U, kRightToLeftEmbeddingMark);
+  text->insert(static_cast<size_t>(0), static_cast<size_t>(1),
+               kRightToLeftEmbeddingMark);
 
   // Inserting a PDF (Pop Directional Formatting) mark as the last character.
   text->push_back(kPopDirectionalFormatting);

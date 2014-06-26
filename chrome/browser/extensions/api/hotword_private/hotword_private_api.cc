@@ -7,11 +7,11 @@
 #include "base/lazy_instance.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/hotword_client.h"
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -19,12 +19,13 @@ namespace OnEnabledChanged =
     api::hotword_private::OnEnabledChanged;
 
 static base::LazyInstance<
-    ProfileKeyedAPIFactory<HotwordPrivateEventService> > g_factory =
-        LAZY_INSTANCE_INITIALIZER;
+    BrowserContextKeyedAPIFactory<HotwordPrivateEventService> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
-HotwordPrivateEventService::HotwordPrivateEventService(Profile* profile)
-    : profile_(profile) {
-  pref_change_registrar_.Init(profile->GetPrefs());
+HotwordPrivateEventService::HotwordPrivateEventService(
+    content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
+  pref_change_registrar_.Init(profile_->GetPrefs());
   pref_change_registrar_.Add(
       prefs::kHotwordSearchEnabled,
       base::Bind(&HotwordPrivateEventService::OnEnabledChanged,
@@ -38,7 +39,7 @@ void HotwordPrivateEventService::Shutdown() {
 }
 
 // static
-ProfileKeyedAPIFactory<HotwordPrivateEventService>*
+BrowserContextKeyedAPIFactory<HotwordPrivateEventService>*
 HotwordPrivateEventService::GetFactoryInstance() {
   return g_factory.Pointer();
 }
@@ -51,21 +52,27 @@ const char* HotwordPrivateEventService::service_name() {
 void HotwordPrivateEventService::OnEnabledChanged(
     const std::string& pref_name) {
   DCHECK_EQ(pref_name, std::string(prefs::kHotwordSearchEnabled));
-  SignalEvent();
+  SignalEvent(OnEnabledChanged::kEventName);
 }
 
-void HotwordPrivateEventService::SignalEvent() {
-  using OnEnabledChanged::kEventName;
+void HotwordPrivateEventService::OnHotwordSessionRequested() {
+  SignalEvent(api::hotword_private::OnHotwordSessionRequested::kEventName);
+}
 
-  EventRouter* router = ExtensionSystem::Get(profile_)->event_router();
-  if (!router || !router->HasEventListener(kEventName))
+void HotwordPrivateEventService::OnHotwordSessionStopped() {
+  SignalEvent(api::hotword_private::OnHotwordSessionStopped::kEventName);
+}
+
+void HotwordPrivateEventService::SignalEvent(const std::string& event_name) {
+  EventRouter* router = EventRouter::Get(profile_);
+  if (!router || !router->HasEventListener(event_name))
     return;
   scoped_ptr<base::ListValue> args(new base::ListValue());
-  scoped_ptr<Event> event(new Event(kEventName, args.Pass()));
+  scoped_ptr<Event> event(new Event(event_name, args.Pass()));
   router->BroadcastEvent(event.Pass());
 }
 
-bool HotwordPrivateSetEnabledFunction::RunImpl() {
+bool HotwordPrivateSetEnabledFunction::RunSync() {
   scoped_ptr<api::hotword_private::SetEnabled::Params> params(
       api::hotword_private::SetEnabled::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -75,7 +82,17 @@ bool HotwordPrivateSetEnabledFunction::RunImpl() {
   return true;
 }
 
-bool HotwordPrivateGetStatusFunction::RunImpl() {
+bool HotwordPrivateSetAudioLoggingEnabledFunction::RunSync() {
+  scoped_ptr<api::hotword_private::SetEnabled::Params> params(
+      api::hotword_private::SetEnabled::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  PrefService* prefs = GetProfile()->GetPrefs();
+  prefs->SetBoolean(prefs::kHotwordAudioLoggingEnabled, params->state);
+  return true;
+}
+
+bool HotwordPrivateGetStatusFunction::RunSync() {
   api::hotword_private::StatusDetails result;
 
   HotwordService* hotword_service =
@@ -86,10 +103,33 @@ bool HotwordPrivateGetStatusFunction::RunImpl() {
     result.available = hotword_service->IsServiceAvailable();
 
   PrefService* prefs = GetProfile()->GetPrefs();
-  result.enabled =
-      prefs->GetBoolean(prefs::kHotwordSearchEnabled);
+  result.enabled_set = prefs->HasPrefPath(prefs::kHotwordSearchEnabled);
+  result.enabled = prefs->GetBoolean(prefs::kHotwordSearchEnabled);
+  result.audio_logging_enabled = false;
+  if (hotword_service)
+    result.audio_logging_enabled = hotword_service->IsOptedIntoAudioLogging();
 
   SetResult(result.ToValue().release());
+  return true;
+}
+
+bool HotwordPrivateSetHotwordSessionStateFunction::RunSync() {
+  scoped_ptr<api::hotword_private::SetHotwordSessionState::Params> params(
+      api::hotword_private::SetHotwordSessionState::Params::Create(*args_));
+  EXTENSION_FUNCTION_VALIDATE(params.get());
+
+  HotwordService* hotword_service =
+      HotwordServiceFactory::GetForProfile(GetProfile());
+  if (hotword_service && hotword_service->client())
+    hotword_service->client()->OnHotwordStateChanged(params->started);
+  return true;
+}
+
+bool HotwordPrivateNotifyHotwordRecognitionFunction::RunSync() {
+  HotwordService* hotword_service =
+      HotwordServiceFactory::GetForProfile(GetProfile());
+  if (hotword_service && hotword_service->client())
+    hotword_service->client()->OnHotwordRecognized();
   return true;
 }
 

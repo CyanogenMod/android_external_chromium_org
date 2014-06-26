@@ -12,7 +12,6 @@
 #include "chrome/browser/extensions/api/management/management_api_constants.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/profiles/profile.h"
@@ -22,6 +21,8 @@
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 
 namespace keys = extension_management_api_constants;
@@ -146,6 +147,34 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
+                       CreateAppShortcutConfirmDialog) {
+  const Extension* app = InstallExtension(
+      test_data_dir_.AppendASCII("api_test/management/packaged_app"), 1);
+  ASSERT_TRUE(app);
+
+  const std::string app_id = app->id();
+
+  scoped_refptr<ManagementCreateAppShortcutFunction> create_shortcut_function(
+      new ManagementCreateAppShortcutFunction());
+  create_shortcut_function->set_user_gesture(true);
+  ManagementCreateAppShortcutFunction::SetAutoConfirmForTest(true);
+  util::RunFunctionAndReturnSingleResult(
+      create_shortcut_function.get(),
+      base::StringPrintf("[\"%s\"]", app_id.c_str()),
+      browser());
+
+  create_shortcut_function = new ManagementCreateAppShortcutFunction();
+  create_shortcut_function->set_user_gesture(true);
+  ManagementCreateAppShortcutFunction::SetAutoConfirmForTest(false);
+  EXPECT_TRUE(MatchPattern(
+      util::RunFunctionAndReturnError(
+          create_shortcut_function.get(),
+          base::StringPrintf("[\"%s\"]", app_id.c_str()),
+          browser()),
+      keys::kCreateShortcutCanceledError));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionManagementApiBrowserTest,
                        GetAllIncludesTerminated) {
   // Load an extension with a background page, so that we know it has a process
   // running.
@@ -206,8 +235,8 @@ class ExtensionManagementApiEscalationTest :
     EXPECT_FALSE(UpdateExtension(kId, path_v2, -1));
     EXPECT_TRUE(service->GetExtensionById(kId, false) == NULL);
     EXPECT_TRUE(service->GetExtensionById(kId, true) != NULL);
-    EXPECT_TRUE(
-        service->extension_prefs()->DidExtensionEscalatePermissions(kId));
+    EXPECT_TRUE(ExtensionPrefs::Get(browser()->profile())
+                    ->DidExtensionEscalatePermissions(kId));
   }
 
   void SetEnabled(bool enabled, bool user_gesture,

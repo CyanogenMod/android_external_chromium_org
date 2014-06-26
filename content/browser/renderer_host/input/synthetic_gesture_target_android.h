@@ -22,18 +22,24 @@ class SyntheticGestureTargetAndroid : public SyntheticGestureTargetBase {
 
   static bool RegisterTouchEventSynthesizer(JNIEnv* env);
 
+  // SyntheticGestureTargetBase:
   virtual void DispatchWebTouchEventToPlatform(
       const blink::WebTouchEvent& web_touch,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
+  virtual void DispatchWebMouseWheelEventToPlatform(
+      const blink::WebMouseWheelEvent& web_wheel,
+      const ui::LatencyInfo& latency_info) OVERRIDE;
+  virtual void DispatchWebMouseEventToPlatform(
+      const blink::WebMouseEvent& web_mouse,
       const ui::LatencyInfo& latency_info) OVERRIDE;
 
   // SyntheticGestureTarget:
   virtual SyntheticGestureParams::GestureSourceType
       GetDefaultSyntheticGestureSourceType() const OVERRIDE;
-  virtual bool SupportsSyntheticGestureSourceType(
-      SyntheticGestureParams::GestureSourceType gesture_source_type) const
-      OVERRIDE;
 
-  virtual int GetTouchSlopInDips() const OVERRIDE;
+  virtual float GetTouchSlopInDips() const OVERRIDE;
+
+  virtual float GetMinScalingSpanInDips() const OVERRIDE;
 
  private:
   // Enum values below need to be kept in sync with TouchEventSynthesizer.java

@@ -34,6 +34,8 @@
 #include "components/policy/core/common/cloud/policy_builder.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/policy_bundle.h"
+#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/schema_registry.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_test_util.h"
@@ -133,35 +135,10 @@ DeviceLocalAccountPolicyServiceTestBase::
 void DeviceLocalAccountPolicyServiceTestBase::SetUp() {
   chromeos::DeviceSettingsTestBase::SetUp();
 
-  // Values implicitly enforced for public accounts.
-  expected_policy_map_.Set(key::kLidCloseAction,
-                           POLICY_LEVEL_MANDATORY,
-                           POLICY_SCOPE_USER,
-                           base::Value::CreateIntegerValue(
-                               chromeos::PowerPolicyController::
-                                   ACTION_STOP_SESSION),
-                           NULL);
-  expected_policy_map_.Set(key::kShelfAutoHideBehavior,
-                           POLICY_LEVEL_MANDATORY,
-                           POLICY_SCOPE_USER,
-                           base::Value::CreateStringValue("Never"),
-                           NULL);
-  expected_policy_map_.Set(key::kShowLogoutButtonInTray,
-                           POLICY_LEVEL_MANDATORY,
-                           POLICY_SCOPE_USER,
-                           base::Value::CreateBooleanValue(true),
-                           NULL);
-  expected_policy_map_.Set(key::kFullscreenAllowed,
-                           POLICY_LEVEL_MANDATORY,
-                           POLICY_SCOPE_USER,
-                           base::Value::CreateBooleanValue(false),
-                           NULL);
-
-  // Explicitly set value.
   expected_policy_map_.Set(key::kDisableSpdy,
                            POLICY_LEVEL_MANDATORY,
                            POLICY_SCOPE_USER,
-                           base::Value::CreateBooleanValue(true),
+                           new base::FundamentalValue(true),
                            NULL);
 
   device_local_account_policy_.payload().mutable_disablespdy()->set_value(
@@ -182,12 +159,11 @@ void DeviceLocalAccountPolicyServiceTestBase::CreatePolicyService() {
       &device_settings_test_helper_,
       &device_settings_service_,
       &cros_settings_,
-      loop_.message_loop_proxy(),
+      base::MessageLoopProxy::current(),
       extension_cache_task_runner_,
-      loop_.message_loop_proxy(),
-      loop_.message_loop_proxy(),
-      new net::TestURLRequestContextGetter(
-          base::MessageLoop::current()->message_loop_proxy())));
+      base::MessageLoopProxy::current(),
+      base::MessageLoopProxy::current(),
+      new net::TestURLRequestContextGetter(base::MessageLoopProxy::current())));
 }
 
 void DeviceLocalAccountPolicyServiceTestBase::
@@ -429,18 +405,37 @@ TEST_F(DeviceLocalAccountPolicyServiceTest, FetchPolicy) {
                        device_policy_.policy_data().device_id(),
                        _))
       .WillOnce(SaveArg<6>(&request));
-  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_));
+  // This will be called twice, because the ComponentCloudPolicyService will
+  // also become ready after flushing all the pending tasks.
+  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_)).Times(2);
   broker->core()->client()->FetchPolicy();
   FlushDeviceSettings();
   Mock::VerifyAndClearExpectations(&service_observer_);
   Mock::VerifyAndClearExpectations(&mock_device_management_service_);
   EXPECT_TRUE(request.has_policy_request());
-  EXPECT_EQ(1, request.policy_request().request_size());
+  ASSERT_EQ(2, request.policy_request().request_size());
+
+  const em::PolicyFetchRequest* public_account =
+      &request.policy_request().request(0);
+  const em::PolicyFetchRequest* extensions =
+      &request.policy_request().request(1);
+  // The order is not guarateed.
+  if (extensions->policy_type() ==
+      dm_protocol::kChromePublicAccountPolicyType) {
+    const em::PolicyFetchRequest* tmp = public_account;
+    public_account = extensions;
+    extensions = tmp;
+  }
+
   EXPECT_EQ(dm_protocol::kChromePublicAccountPolicyType,
-            request.policy_request().request(0).policy_type());
-  EXPECT_FALSE(request.policy_request().request(0).has_machine_id());
-  EXPECT_EQ(kAccount1,
-            request.policy_request().request(0).settings_entity_id());
+            public_account->policy_type());
+  EXPECT_FALSE(public_account->has_machine_id());
+  EXPECT_EQ(kAccount1, public_account->settings_entity_id());
+
+  EXPECT_EQ(dm_protocol::kChromeExtensionPolicyType,
+            extensions->policy_type());
+  EXPECT_FALSE(extensions->has_machine_id());
+  EXPECT_FALSE(extensions->has_settings_entity_id());
 
   ASSERT_TRUE(broker->core()->store());
   EXPECT_EQ(CloudPolicyStore::STATUS_OK,
@@ -473,7 +468,9 @@ TEST_F(DeviceLocalAccountPolicyServiceTest, RefreshPolicy) {
       .WillOnce(mock_device_management_service_.SucceedJob(response));
   EXPECT_CALL(mock_device_management_service_, StartJob(_, _, _, _, _, _, _));
   EXPECT_CALL(*this, OnRefreshDone(true)).Times(1);
-  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_));
+  // This will be called twice, because the ComponentCloudPolicyService will
+  // also become ready after flushing all the pending tasks.
+  EXPECT_CALL(service_observer_, OnPolicyUpdated(account_1_user_id_)).Times(2);
   broker->core()->service()->RefreshPolicy(
       base::Bind(&DeviceLocalAccountPolicyServiceTest::OnRefreshDone,
                  base::Unretained(this)));
@@ -787,16 +784,40 @@ class DeviceLocalAccountPolicyProviderTest
 
 DeviceLocalAccountPolicyProviderTest::DeviceLocalAccountPolicyProviderTest() {
   CreatePolicyService();
-  provider_.reset(new DeviceLocalAccountPolicyProvider(
+  provider_ = DeviceLocalAccountPolicyProvider::Create(
       GenerateDeviceLocalAccountUserId(kAccount1,
                                        DeviceLocalAccount::TYPE_PUBLIC_SESSION),
-      service_.get()));
+      service_.get());
 }
 
 void DeviceLocalAccountPolicyProviderTest::SetUp() {
   DeviceLocalAccountPolicyServiceTestBase::SetUp();
   provider_->Init(&schema_registry_);
   provider_->AddObserver(&provider_observer_);
+
+  // Values implicitly enforced for public accounts.
+  expected_policy_map_.Set(key::kLidCloseAction,
+                           POLICY_LEVEL_MANDATORY,
+                           POLICY_SCOPE_MACHINE,
+                           new base::FundamentalValue(
+                               chromeos::PowerPolicyController::
+                                   ACTION_STOP_SESSION),
+                           NULL);
+  expected_policy_map_.Set(key::kShelfAutoHideBehavior,
+                           POLICY_LEVEL_MANDATORY,
+                           POLICY_SCOPE_MACHINE,
+                           new base::StringValue("Never"),
+                           NULL);
+  expected_policy_map_.Set(key::kShowLogoutButtonInTray,
+                           POLICY_LEVEL_MANDATORY,
+                           POLICY_SCOPE_MACHINE,
+                           new base::FundamentalValue(true),
+                           NULL);
+  expected_policy_map_.Set(key::kFullscreenAllowed,
+                           POLICY_LEVEL_MANDATORY,
+                           POLICY_SCOPE_MACHINE,
+                           new base::FundamentalValue(false),
+                           NULL);
 }
 
 void DeviceLocalAccountPolicyProviderTest::TearDown() {
@@ -861,7 +882,7 @@ TEST_F(DeviceLocalAccountPolicyProviderTest, Policy) {
       .Set(key::kDisableSpdy,
            POLICY_LEVEL_MANDATORY,
            POLICY_SCOPE_USER,
-           base::Value::CreateBooleanValue(false),
+           new base::FundamentalValue(false),
            NULL);
   EXPECT_TRUE(expected_policy_bundle.Equals(provider_->policies()));
 

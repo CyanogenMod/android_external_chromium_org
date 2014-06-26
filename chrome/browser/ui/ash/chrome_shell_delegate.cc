@@ -7,23 +7,21 @@
 #include "apps/app_window.h"
 #include "apps/app_window_registry.h"
 #include "ash/content_support/gpu_support_impl.h"
-#include "ash/host/window_tree_host_factory.h"
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "base/command_line.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_view_delegate.h"
 #include "chrome/browser/ui/ash/app_list/app_list_controller_ash.h"
 #include "chrome/browser/ui/ash/ash_keyboard_controller_proxy.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/browser/ui/ash/launcher/launcher_context_menu.h"
-#include "chrome/browser/ui/ash/user_action_handler.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/common/chrome_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -31,7 +29,7 @@
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/display/display_configuration_observer.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 // static
@@ -49,10 +47,7 @@ ChromeShellDelegate::~ChromeShellDelegate() {
 }
 
 bool ChromeShellDelegate::IsMultiProfilesEnabled() const {
-  // TODO(skuhne): There is a function named profiles::IsMultiProfilesEnabled
-  // which does similar things - but it is not the same. We should investigate
-  // if these two could be folded together.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles))
+  if (!profiles::IsMultipleProfilesEnabled())
     return false;
 #if defined(OS_CHROMEOS)
   // If there is a user manager, we need to see that we can at least have 2
@@ -91,6 +86,13 @@ bool ChromeShellDelegate::IsRunningInForcedAppMode() const {
   return chrome::IsRunningInForcedAppMode();
 }
 
+bool ChromeShellDelegate::IsMultiAccountEnabled() const {
+#if defined(OS_CHROMEOS)
+  return switches::IsNewProfileManagement();
+#endif
+  return false;
+}
+
 void ChromeShellDelegate::Exit() {
   chrome::AttemptUserExit();
 }
@@ -115,18 +117,11 @@ ChromeShellDelegate::CreateAppListViewDelegate() {
 
 ash::ShelfDelegate* ChromeShellDelegate::CreateShelfDelegate(
     ash::ShelfModel* model) {
-  // TODO(oshima): This is currently broken with multiple launchers.
-  // Refactor so that there is just one launcher delegate in the
-  // shell.
   if (!shelf_delegate_) {
     shelf_delegate_ = ChromeLauncherController::CreateInstance(NULL, model);
     shelf_delegate_->Init();
   }
   return shelf_delegate_;
-}
-
-aura::client::UserActionClient* ChromeShellDelegate::CreateUserActionClient() {
-  return new UserActionHandler;
 }
 
 ui::MenuModel* ChromeShellDelegate::CreateContextMenu(
@@ -144,10 +139,6 @@ ui::MenuModel* ChromeShellDelegate::CreateContextMenu(
   return new LauncherContextMenu(shelf_delegate_, root);
 }
 
-ash::WindowTreeHostFactory* ChromeShellDelegate::CreateWindowTreeHostFactory() {
-  return ash::WindowTreeHostFactory::Create();
-}
-
 ash::GPUSupport* ChromeShellDelegate::CreateGPUSupport() {
   // Chrome uses real GPU support.
   return new ash::GPUSupportImpl;
@@ -160,4 +151,20 @@ base::string16 ChromeShellDelegate::GetProductName() const {
 keyboard::KeyboardControllerProxy*
     ChromeShellDelegate::CreateKeyboardControllerProxy() {
   return new AshKeyboardControllerProxy();
+}
+
+void ChromeShellDelegate::VirtualKeyboardActivated(bool activated) {
+  FOR_EACH_OBSERVER(ash::VirtualKeyboardStateObserver,
+                    keyboard_state_observer_list_,
+                    OnVirtualKeyboardStateChanged(activated));
+}
+
+void ChromeShellDelegate::AddVirtualKeyboardStateObserver(
+    ash::VirtualKeyboardStateObserver* observer) {
+  keyboard_state_observer_list_.AddObserver(observer);
+}
+
+void ChromeShellDelegate::RemoveVirtualKeyboardStateObserver(
+    ash::VirtualKeyboardStateObserver* observer) {
+  keyboard_state_observer_list_.RemoveObserver(observer);
 }

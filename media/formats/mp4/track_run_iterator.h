@@ -78,6 +78,7 @@ class MEDIA_EXPORT TrackRunIterator {
   TimeDelta cts() const;
   TimeDelta duration() const;
   bool is_keyframe() const;
+  bool is_random_access_point() const;
 
   // Only call when is_encrypted() is true and AuxInfoNeedsToBeCached() is
   // false. Result is owned by caller.
@@ -86,6 +87,15 @@ class MEDIA_EXPORT TrackRunIterator {
  private:
   void ResetRun();
   const TrackEncryption& track_encryption() const;
+
+  uint32 GetGroupDescriptionIndex(uint32 sample_index) const;
+  const CencSampleEncryptionInfoEntry& GetSampleEncryptionInfoEntry(
+      uint32 group_description_index) const;
+
+  // Sample encryption information.
+  bool IsSampleEncrypted(size_t sample_index) const;
+  uint8 GetIvSize(size_t sample_index) const;
+  const std::vector<uint8>& GetKeyId(size_t sample_index) const;
 
   const Movie* moov_;
   LogCB log_cb_;

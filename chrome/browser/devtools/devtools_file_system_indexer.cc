@@ -13,7 +13,7 @@
 #include "base/files/file_util_proxy.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
+#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -21,12 +21,9 @@ using base::Bind;
 using base::Callback;
 using base::FileEnumerator;
 using base::FilePath;
-using base::FileUtilProxy;
 using base::Time;
 using base::TimeDelta;
 using base::TimeTicks;
-using base::PassPlatformFile;
-using base::PlatformFile;
 using content::BrowserThread;
 using std::map;
 using std::set;
@@ -196,12 +193,8 @@ vector<FilePath> Index::Search(string query) {
       first = false;
       continue;
     }
-    set<FileId> intersection;
-    std::set_intersection(file_ids.begin(),
-                          file_ids.end(),
-                          index_[trigram].begin(),
-                          index_[trigram].end(),
-                          std::inserter(intersection, intersection.begin()));
+    set<FileId> intersection = base::STLSetIntersection<set<FileId> >(
+        file_ids, index_[trigram]);
     file_ids.swap(intersection);
   }
   vector<FilePath> result;
@@ -269,6 +262,8 @@ DevToolsFileSystemIndexer::FileSystemIndexingJob::FileSystemIndexingJob(
       total_work_callback_(total_work_callback),
       worked_callback_(worked_callback),
       done_callback_(done_callback),
+      current_file_(BrowserThread::GetMessageLoopProxyForThread(
+                        BrowserThread::FILE).get()),
       files_indexed_(0),
       stopped_(false) {
   current_trigrams_set_.resize(kTrigramCount);
@@ -337,23 +332,18 @@ void DevToolsFileSystemIndexer::FileSystemIndexingJob::IndexFiles() {
     return;
   }
   FilePath file_path = indexing_it_->first;
-  FileUtilProxy::CreateOrOpen(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get(),
-      file_path,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      Bind(&FileSystemIndexingJob::StartFileIndexing, this));
+  current_file_.CreateOrOpen(
+        file_path,
+        base::File::FLAG_OPEN | base::File::FLAG_READ,
+        Bind(&FileSystemIndexingJob::StartFileIndexing, this));
 }
 
 void DevToolsFileSystemIndexer::FileSystemIndexingJob::StartFileIndexing(
-    base::File::Error error,
-    PassPlatformFile pass_file,
-    bool) {
-  if (error != base::File::FILE_OK) {
-    current_file_ = base::kInvalidPlatformFileValue;
+    base::File::Error error) {
+  if (!current_file_.IsValid()) {
     FinishFileIndexing(false);
     return;
   }
-  current_file_ = pass_file.ReleaseValue();
   current_file_offset_ = 0;
   current_trigrams_.clear();
   std::fill(current_trigrams_set_.begin(), current_trigrams_set_.end(), false);
@@ -365,12 +355,8 @@ void DevToolsFileSystemIndexer::FileSystemIndexingJob::ReadFromFile() {
     CloseFile();
     return;
   }
-  FileUtilProxy::Read(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get(),
-      current_file_,
-      current_file_offset_,
-      kMaxReadLength,
-      Bind(&FileSystemIndexingJob::OnRead, this));
+  current_file_.Read(current_file_offset_, kMaxReadLength,
+                     Bind(&FileSystemIndexingJob::OnRead, this));
 }
 
 void DevToolsFileSystemIndexer::FileSystemIndexingJob::OnRead(
@@ -425,12 +411,8 @@ void DevToolsFileSystemIndexer::FileSystemIndexingJob::FinishFileIndexing(
 }
 
 void DevToolsFileSystemIndexer::FileSystemIndexingJob::CloseFile() {
-  if (current_file_ != base::kInvalidPlatformFileValue) {
-    FileUtilProxy::Close(
-        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE).get(),
-        current_file_,
-        Bind(&FileSystemIndexingJob::CloseCallback, this));
-  }
+  if (current_file_.IsValid())
+    current_file_.Close(Bind(&FileSystemIndexingJob::CloseCallback, this));
 }
 
 void DevToolsFileSystemIndexer::FileSystemIndexingJob::CloseCallback(

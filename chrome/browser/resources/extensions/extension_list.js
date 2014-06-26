@@ -88,7 +88,7 @@ cr.define('options', function() {
       if (extension.managedInstall) {
         node.classList.add('may-not-modify');
         node.classList.add('may-not-remove');
-      } else if (extension.suspiciousInstall) {
+      } else if (extension.suspiciousInstall || extension.corruptInstall) {
         node.classList.add('may-not-modify');
       }
 
@@ -134,7 +134,7 @@ cr.define('options', function() {
 
       // The 'allow in incognito' checkbox.
       var incognito = node.querySelector('.incognito-control input');
-      incognito.disabled = !extension.incognitoCanBeToggled;
+      incognito.disabled = !extension.incognitoCanBeEnabled;
       incognito.checked = extension.enabledIncognito;
       if (!incognito.disabled) {
         incognito.addEventListener('change', function(e) {
@@ -147,6 +147,33 @@ cr.define('options', function() {
       }
       var butterBar = node.querySelector('.butter-bar');
       butterBar.hidden = !butterBarVisibility[extension.id];
+
+      // The 'collect errors' checkbox. This should only be visible if the
+      // error console is enabled - we can detect this by the existence of the
+      // |errorCollectionEnabled| property.
+      if (extension.wantsErrorCollection) {
+        node.querySelector('.error-collection-control').hidden = false;
+        var errorCollection =
+            node.querySelector('.error-collection-control input');
+        errorCollection.checked = extension.errorCollectionEnabled;
+        errorCollection.addEventListener('change', function(e) {
+          chrome.send('extensionSettingsEnableErrorCollection',
+                      [extension.id, String(e.target.checked)]);
+        });
+      }
+
+      // The 'allow on all urls' checkbox. This should only be visible if
+      // active script restrictions are enabled. If they are not enabled, no
+      // extensions should want all urls.
+      if (extension.wantsAllUrls) {
+        var allUrls = node.querySelector('.all-urls-control');
+        allUrls.addEventListener('click', function(e) {
+          chrome.send('extensionSettingsAllowOnAllUrls',
+                      [extension.id, String(e.target.checked)]);
+        });
+        allUrls.querySelector('input').checked = extension.allowAllUrls;
+        allUrls.hidden = false;
+      }
 
       // The 'allow file:// access' checkbox.
       if (extension.wantsFileAccess) {
@@ -209,10 +236,12 @@ cr.define('options', function() {
         // The 'Enabled' checkbox.
         var enable = node.querySelector('.enable-checkbox');
         enable.hidden = false;
-        enable.querySelector('input').disabled = extension.managedInstall ||
-                                                 extension.suspiciousInstall;
+        var managedOrHosedExtension = extension.managedInstall ||
+                                      extension.suspiciousInstall ||
+                                      extension.corruptInstall;
+        enable.querySelector('input').disabled = managedOrHosedExtension;
 
-        if (!extension.managedInstall && !extension.suspiciousInstall) {
+        if (!managedOrHosedExtension) {
           enable.addEventListener('click', function(e) {
             // When e.target is the label instead of the checkbox, it doesn't
             // have the checked property and the state of the checkbox is
@@ -268,9 +297,15 @@ cr.define('options', function() {
       // Then the 'managed, cannot uninstall/disable' message.
       if (extension.managedInstall) {
         node.querySelector('.managed-message').hidden = false;
-      } else if (extension.suspiciousInstall) {
-        // Then the 'This isn't from the webstore, looks suspicious' message.
-        node.querySelector('.suspicious-install-message').hidden = false;
+      } else {
+        if (extension.suspiciousInstall) {
+          // Then the 'This isn't from the webstore, looks suspicious' message.
+          node.querySelector('.suspicious-install-message').hidden = false;
+        }
+        if (extension.corruptInstall) {
+          // Then the 'This is a corrupt extension' message.
+          node.querySelector('.corrupt-install-message').hidden = false;
+        }
       }
 
       // Then active views.

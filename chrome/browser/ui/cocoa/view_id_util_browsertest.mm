@@ -6,10 +6,7 @@
 #include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/download/download_shelf.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,6 +17,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "extensions/common/switches.h"
 
 using content::OpenURLParams;
@@ -43,8 +43,7 @@ class ViewIDTest : public InProcessBrowserTest {
   }
 
   void DoTest() {
-    // Make sure FindBar is created to test
-    // VIEW_ID_FIND_IN_PAGE_TEXT_FIELD and VIEW_ID_FIND_IN_PAGE.
+    // Make sure FindBar is created to test VIEW_ID_FIND_IN_PAGE_TEXT_FIELD.
     chrome::ShowFindBar(browser());
 
     // Make sure docked devtools is created to test VIEW_ID_DEV_TOOLS_DOCKED
@@ -60,15 +59,16 @@ class ViewIDTest : public InProcessBrowserTest {
       if (!bookmark_model->loaded())
         test::WaitForBookmarkModelToLoad(bookmark_model);
 
-      bookmark_utils::AddIfNotBookmarked(
-          bookmark_model, GURL(content::kAboutBlankURL),
-          base::ASCIIToUTF16("about"));
+      bookmark_utils::AddIfNotBookmarked(bookmark_model,
+                                         GURL(url::kAboutBlankURL),
+                                         base::ASCIIToUTF16("about"));
     }
 
     for (int i = VIEW_ID_TOOLBAR; i < VIEW_ID_PREDEFINED_COUNT; ++i) {
       // Mac implementation does not support following ids yet.
       if (i == VIEW_ID_STAR_BUTTON ||
           i == VIEW_ID_CONTENTS_SPLIT ||
+          i == VIEW_ID_BROWSER_ACTION ||
           i == VIEW_ID_FEEDBACK_BUTTON ||
           i == VIEW_ID_SCRIPT_BUBBLE ||
           i == VIEW_ID_MIC_SEARCH_BUTTON ||
@@ -106,17 +106,21 @@ IN_PROC_BROWSER_TEST_F(ViewIDTest, Tab) {
   // Open 9 new tabs.
   for (int i = 1; i <= 9; ++i) {
     CheckViewID(static_cast<ViewID>(VIEW_ID_TAB_0 + i), false);
-    browser()->OpenURL(OpenURLParams(
-        GURL(content::kAboutBlankURL), Referrer(), NEW_BACKGROUND_TAB,
-         content::PAGE_TRANSITION_TYPED, false));
+    browser()->OpenURL(OpenURLParams(GURL(url::kAboutBlankURL),
+                                     Referrer(),
+                                     NEW_BACKGROUND_TAB,
+                                     content::PAGE_TRANSITION_TYPED,
+                                     false));
     CheckViewID(static_cast<ViewID>(VIEW_ID_TAB_0 + i), true);
     // VIEW_ID_TAB_LAST should always be available.
     CheckViewID(VIEW_ID_TAB_LAST, true);
   }
 
   // Open the 11th tab.
-  browser()->OpenURL(OpenURLParams(
-      GURL(content::kAboutBlankURL), Referrer(), NEW_BACKGROUND_TAB,
-      content::PAGE_TRANSITION_TYPED, false));
+  browser()->OpenURL(OpenURLParams(GURL(url::kAboutBlankURL),
+                                   Referrer(),
+                                   NEW_BACKGROUND_TAB,
+                                   content::PAGE_TRANSITION_TYPED,
+                                   false));
   CheckViewID(VIEW_ID_TAB_LAST, true);
 }

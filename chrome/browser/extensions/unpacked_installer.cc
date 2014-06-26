@@ -6,22 +6,26 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
+#include "chrome/browser/extensions/extension_error_reporter.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_install_ui.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/permissions_updater.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/plugins/plugins_handler.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/install_flag.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/id_util.h"
 #include "extensions/common/manifest.h"
 #include "sync/api/string_ordinal.h"
@@ -68,6 +72,17 @@ SimpleExtensionLoadPrompt::~SimpleExtensionLoadPrompt() {
 }
 
 void SimpleExtensionLoadPrompt::ShowPrompt() {
+  std::string confirm = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      switches::kAppsGalleryInstallAutoConfirmForTests);
+  if (confirm == "accept") {
+    InstallUIProceed();
+    return;
+  }
+  if (confirm == "cancel") {
+    InstallUIAbort(false);
+    return;
+  }
+
   install_ui_->ConfirmInstall(
       this,
       extension_.get(),
@@ -99,6 +114,7 @@ UnpackedInstaller::UnpackedInstaller(ExtensionService* extension_service)
     : service_weak_(extension_service->AsWeakPtr()),
       prompt_for_plugins_(true),
       require_modern_manifest_version_(true),
+      be_noisy_on_failure_(true),
       installer_(extension_service->profile()) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -136,8 +152,9 @@ bool UnpackedInstaller::LoadFromCommandLine(const base::FilePath& path_in,
   }
 
   std::string error;
-  installer_.set_extension(extension_file_util::LoadExtension(
-      extension_path_, Manifest::COMMAND_LINE, GetFlags(), &error).get());
+  installer_.set_extension(
+      file_util::LoadExtension(
+          extension_path_, Manifest::COMMAND_LINE, GetFlags(), &error).get());
 
   if (!installer_.extension().get() ||
       !extension_l10n_util::ValidateExtensionLocales(
@@ -195,7 +212,7 @@ int UnpackedInstaller::GetFlags() {
   std::string id = id_util::GenerateIdForPath(extension_path_);
   bool allow_file_access =
       Manifest::ShouldAlwaysAllowFileAccess(Manifest::UNPACKED);
-  ExtensionPrefs* prefs = service_weak_->extension_prefs();
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(service_weak_->profile());
   if (prefs->HasAllowFileAccessSetting(id))
     allow_file_access = prefs->AllowFileAccess(id);
 
@@ -213,7 +230,7 @@ bool UnpackedInstaller::IsLoadingUnpackedAllowed() const {
     return true;
   // If there is a "*" in the extension blacklist, then no extensions should be
   // allowed at all (except explicitly whitelisted extensions).
-  ExtensionPrefs* prefs = service_weak_->extension_prefs();
+  ExtensionPrefs* prefs = ExtensionPrefs::Get(service_weak_->profile());
   return !prefs->ExtensionsBlacklistedByDefault();
 }
 
@@ -223,8 +240,7 @@ void UnpackedInstaller::GetAbsolutePath() {
   extension_path_ = base::MakeAbsoluteFilePath(extension_path_);
 
   std::string error;
-  if (!extension_file_util::CheckForIllegalFilenames(extension_path_,
-                                                     &error)) {
+  if (!file_util::CheckForIllegalFilenames(extension_path_, &error)) {
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -256,8 +272,9 @@ void UnpackedInstaller::LoadWithFileAccess(int flags) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
   std::string error;
-  installer_.set_extension(extension_file_util::LoadExtension(
-      extension_path_, Manifest::UNPACKED, flags, &error).get());
+  installer_.set_extension(
+      file_util::LoadExtension(
+          extension_path_, Manifest::UNPACKED, flags, &error).get());
 
   if (!installer_.extension().get() ||
       !extension_l10n_util::ValidateExtensionLocales(
@@ -279,13 +296,20 @@ void UnpackedInstaller::LoadWithFileAccess(int flags) {
 
 void UnpackedInstaller::ReportExtensionLoadError(const std::string &error) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (!service_weak_.get())
-    return;
-  service_weak_->ReportExtensionLoadError(extension_path_, error, true);
+  if (!on_failure_callback_.is_null())
+    on_failure_callback_.Run(extension_path_, error);
+
+  if (service_weak_.get()) {
+    ExtensionErrorReporter::GetInstance()->ReportLoadError(
+        extension_path_,
+        error,
+        service_weak_->profile(),
+        be_noisy_on_failure_);
+  }
 }
 
 void UnpackedInstaller::ConfirmInstall() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::string16 error = installer_.CheckManagementPolicy();
   if (!error.empty()) {
     ReportExtensionLoadError(base::UTF16ToUTF8(error));
@@ -295,12 +319,9 @@ void UnpackedInstaller::ConfirmInstall() {
   PermissionsUpdater perms_updater(service_weak_->profile());
   perms_updater.GrantActivePermissions(installer_.extension().get());
 
-  service_weak_->OnExtensionInstalled(
-      installer_.extension().get(),
-      syncer::StringOrdinal(),
-      false /* no requirement errors */,
-      NOT_BLACKLISTED,
-      false /* don't wait for idle */);
+  service_weak_->OnExtensionInstalled(installer_.extension().get(),
+                                      syncer::StringOrdinal(),
+                                      kInstallFlagInstallImmediately);
 }
 
 }  // namespace extensions

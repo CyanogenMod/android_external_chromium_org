@@ -24,29 +24,18 @@ class CastEnvironment : public base::RefCountedThreadSafe<CastEnvironment> {
     // The main thread is where the cast system is configured and where timers
     // and network IO is performed.
     MAIN,
-    // The audio encoder thread is where all send side audio processing is done,
-    // primarily encoding but also re-sampling.
-    AUDIO_ENCODER,
-    // The audio decoder thread is where all receive side audio processing is
-    // done, primarily decoding but also error concealment and re-sampling.
-    AUDIO_DECODER,
-    // The video encoder thread is where the video encode processing is done.
-    VIDEO_ENCODER,
-    // The video decoder thread is where the video decode processing is done.
-    VIDEO_DECODER,
-    // The transport thread is where the transport processing is done.
-    TRANSPORT,
+    // The audio thread is where all send side audio processing is done,
+    // primarily encoding / decoding but also re-sampling.
+    AUDIO,
+    // The video encoder thread is where the video processing is done.
+    VIDEO,
   };
 
   CastEnvironment(
       scoped_ptr<base::TickClock> clock,
       scoped_refptr<base::SingleThreadTaskRunner> main_thread_proxy,
-      scoped_refptr<base::SingleThreadTaskRunner> audio_encode_thread_proxy,
-      scoped_refptr<base::SingleThreadTaskRunner> audio_decode_thread_proxy,
-      scoped_refptr<base::SingleThreadTaskRunner> video_encode_thread_proxy,
-      scoped_refptr<base::SingleThreadTaskRunner> video_decode_thread_proxy,
-      scoped_refptr<base::SingleThreadTaskRunner> transport_thread_proxy,
-      const CastLoggingConfig& config);
+      scoped_refptr<base::SingleThreadTaskRunner> audio_thread_proxy,
+      scoped_refptr<base::SingleThreadTaskRunner> video_thread_proxy);
 
   // These are the same methods in message_loop.h, but are guaranteed to either
   // get posted to the MessageLoop if it's still alive, or be deleted otherwise.
@@ -64,37 +53,37 @@ class CastEnvironment : public base::RefCountedThreadSafe<CastEnvironment> {
 
   bool CurrentlyOn(ThreadId identifier);
 
-  base::TickClock* Clock() const;
+  // All of the media::cast implementation must use this TickClock.
+  base::TickClock* Clock() const { return clock_.get(); }
 
-  // Logging is not thread safe. Should always be called from the main thread.
-  LoggingImpl* Logging();
+  // Logging is not thread safe. Its methods should always be called from the
+  // main thread.
+  // TODO(hubbe): Logging should be a thread-safe interface.
+  LoggingImpl* Logging() const { return logging_.get(); }
 
-  scoped_refptr<base::SingleThreadTaskRunner>
-      GetMessageSingleThreadTaskRunnerForThread(ThreadId identifier);
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner(
+      ThreadId identifier) const;
 
-  bool HasAudioEncoderThread() {
-    return audio_encode_thread_proxy_ ? true : false;
+  bool HasAudioThread() {
+    return audio_thread_proxy_ ? true : false;
   }
 
-  bool HasVideoEncoderThread() {
-    return video_encode_thread_proxy_ ? true : false;
+  bool HasVideoThread() {
+    return video_thread_proxy_ ? true : false;
   }
 
  protected:
   virtual ~CastEnvironment();
 
+  // Subclasses may override these.
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> audio_thread_proxy_;
+  scoped_refptr<base::SingleThreadTaskRunner> video_thread_proxy_;
+  scoped_ptr<base::TickClock> clock_;
+  scoped_ptr<LoggingImpl> logging_;
+
  private:
   friend class base::RefCountedThreadSafe<CastEnvironment>;
-
-  scoped_ptr<base::TickClock> clock_;
-  scoped_refptr<base::SingleThreadTaskRunner> main_thread_proxy_;
-  scoped_refptr<base::SingleThreadTaskRunner> audio_encode_thread_proxy_;
-  scoped_refptr<base::SingleThreadTaskRunner> audio_decode_thread_proxy_;
-  scoped_refptr<base::SingleThreadTaskRunner> video_encode_thread_proxy_;
-  scoped_refptr<base::SingleThreadTaskRunner> video_decode_thread_proxy_;
-  scoped_refptr<base::SingleThreadTaskRunner> transport_thread_proxy_;
-
-  scoped_ptr<LoggingImpl> logging_;
 
   DISALLOW_COPY_AND_ASSIGN(CastEnvironment);
 };

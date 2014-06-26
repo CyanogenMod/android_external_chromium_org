@@ -13,14 +13,13 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/common/url_constants.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+#include "components/search_engines/template_url.h"
 #include "libxml/parser.h"
 #include "libxml/xmlwriter.h"
 #include "ui/gfx/favicon_size.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace {
 
@@ -94,8 +93,8 @@ bool IsHTTPRef(const std::string& url) {
   if (url.empty())
     return true;
   GURL gurl(url);
-  return gurl.is_valid() && (gurl.SchemeIs(content::kHttpScheme) ||
-                             gurl.SchemeIs(content::kHttpsScheme));
+  return gurl.is_valid() && (gurl.SchemeIs(url::kHttpScheme) ||
+                             gurl.SchemeIs(url::kHttpsScheme));
 }
 
 }  // namespace
@@ -246,21 +245,21 @@ void TemplateURLParsingContext::EndElementImpl(void* ctx, const xmlChar* name) {
       break;
     case TemplateURLParsingContext::IMAGE: {
       GURL image_url(base::UTF16ToUTF8(context->string_));
-      if (image_url.SchemeIs(content::kDataScheme)) {
+      if (image_url.SchemeIs(url::kDataScheme)) {
         // TODO (jcampan): bug 1169256: when dealing with data URL, we need to
         // decode the data URL in the renderer. For now, we'll just point to the
         // favicon from the URL.
         context->derive_image_from_url_ = true;
       } else if (context->image_is_valid_for_favicon_ && image_url.is_valid() &&
-                 (image_url.SchemeIs(content::kHttpScheme) ||
-                  image_url.SchemeIs(content::kHttpsScheme))) {
+                 (image_url.SchemeIs(url::kHttpScheme) ||
+                  image_url.SchemeIs(url::kHttpsScheme))) {
         context->data_.favicon_url = image_url;
       }
       context->image_is_valid_for_favicon_ = false;
       break;
     }
     case TemplateURLParsingContext::INPUT_ENCODING: {
-      std::string input_encoding = UTF16ToASCII(context->string_);
+      std::string input_encoding = base::UTF16ToASCII(context->string_);
       if (IsValidEncodingString(input_encoding))
         context->data_.input_encodings.push_back(input_encoding);
       break;
@@ -299,18 +298,17 @@ TemplateURL* TemplateURLParsingContext::GetTemplateURL(
   if (derive_image_from_url_ && data_.favicon_url.is_empty())
     data_.favicon_url = TemplateURL::GenerateFaviconURL(search_url);
 
-  data_.SetKeyword(TemplateURLService::GenerateKeyword(search_url));
+  data_.SetKeyword(TemplateURL::GenerateKeyword(search_url));
   data_.show_in_default_list = show_in_default_list;
 
   // Bail if the search URL is empty or if either TemplateURLRef is invalid.
-  scoped_ptr<TemplateURL> template_url(new TemplateURL(profile, data_));
+  scoped_ptr<TemplateURL> template_url(new TemplateURL(data_));
   scoped_ptr<SearchTermsData> search_terms_data(profile ?
       new UIThreadSearchTermsData(profile) : new SearchTermsData());
   if (template_url->url().empty() ||
-      !template_url->url_ref().IsValidUsingTermsData(*search_terms_data) ||
+      !template_url->url_ref().IsValid(*search_terms_data) ||
       (!template_url->suggestions_url().empty() &&
-       !template_url->suggestions_url_ref().
-           IsValidUsingTermsData(*search_terms_data))) {
+       !template_url->suggestions_url_ref().IsValid(*search_terms_data))) {
     return NULL;
   }
 
@@ -423,10 +421,10 @@ void TemplateURLParsingContext::ProcessURLParams() {
   std::string new_query;
   bool modified = false;
   if (parameter_filter_) {
-    url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
-    url_parse::Component key, value;
+    url::Component query = url.parsed_for_possibly_invalid_spec().query;
+    url::Component key, value;
     const char* url_spec = url.spec().c_str();
-    while (url_parse::ExtractQueryKeyValue(url_spec, &query, &key, &value)) {
+    while (url::ExtractQueryKeyValue(url_spec, &query, &key, &value)) {
       std::string key_str(url_spec, key.begin, key.len);
       std::string value_str(url_spec, value.begin, value.len);
       if (parameter_filter_->KeepParameter(key_str, value_str)) {

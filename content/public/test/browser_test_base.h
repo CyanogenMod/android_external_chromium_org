@@ -11,9 +11,8 @@
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-class CommandLine;
-
 namespace base {
+class CommandLine;
 class FilePath;
 }
 
@@ -53,7 +52,7 @@ class BrowserTestBase : public testing::Test {
   virtual void TearDownOnMainThread() {}
 
   // Override this to add command line flags specific to your test.
-  virtual void SetUpCommandLine(CommandLine* command_line) {}
+  virtual void SetUpCommandLine(base::CommandLine* command_line) {}
 
   // Returns the host resolver being used for the tests. Subclasses might want
   // to configure it inside tests.
@@ -81,6 +80,9 @@ class BrowserTestBase : public testing::Test {
   // This prepares for the test by creating a new browser, runs the test
   // (RunTestOnMainThread), quits the browsers and returns.
   virtual void RunTestOnMainThreadLoop() = 0;
+
+  // Sets expected browser exit code, in case it's different than 0 (success).
+  void set_expected_exit_code(int code) { expected_exit_code_ = code; }
 
   // Returns the testing server. Guaranteed to be non-NULL.
   // TODO(phajdan.jr): Remove test_server accessor (http://crbug.com/96594).
@@ -139,6 +141,9 @@ class BrowserTestBase : public testing::Test {
 
   // Host resolver used during tests.
   scoped_refptr<net::RuleBasedHostResolverProc> rule_based_resolver_;
+
+  // Expected exit code (default is 0).
+  int expected_exit_code_;
 
   // When true, the compositor will produce pixel output that can be read back
   // for pixel tests.

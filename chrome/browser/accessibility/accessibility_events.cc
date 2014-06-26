@@ -16,9 +16,9 @@
 namespace keys = extension_accessibility_api_constants;
 
 void SendControlAccessibilityNotification(
-  ui::AccessibilityTypes::Event event,
+  ui::AXEvent event,
   AccessibilityControlInfo* info) {
-  Profile *profile = info->profile();
+  Profile* profile = info->profile();
   if (profile->ShouldSendAccessibilityEvents()) {
     ExtensionAccessibilityEventRouter::GetInstance()->HandleControlEvent(
         event,
@@ -27,9 +27,9 @@ void SendControlAccessibilityNotification(
 }
 
 void SendMenuAccessibilityNotification(
-  ui::AccessibilityTypes::Event event,
+  ui::AXEvent event,
   AccessibilityMenuInfo* info) {
-  Profile *profile = info->profile();
+  Profile* profile = info->profile();
   if (profile->ShouldSendAccessibilityEvents()) {
     ExtensionAccessibilityEventRouter::GetInstance()->HandleMenuEvent(
         event,
@@ -38,9 +38,9 @@ void SendMenuAccessibilityNotification(
 }
 
 void SendWindowAccessibilityNotification(
-  ui::AccessibilityTypes::Event event,
+  ui::AXEvent event,
   AccessibilityWindowInfo* info) {
-  Profile *profile = info->profile();
+  Profile* profile = info->profile();
   if (profile->ShouldSendAccessibilityEvents()) {
     ExtensionAccessibilityEventRouter::GetInstance()->HandleWindowEvent(
         event,

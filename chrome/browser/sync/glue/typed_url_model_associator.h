@@ -37,8 +37,6 @@ class WriteTransaction;
 
 namespace browser_sync {
 
-extern const char kTypedUrlTag[];
-
 // Contains all model association related logic:
 // * Algorithm to associate typed_url model and sync model.
 // * Persisting model associations and loading them back.
@@ -46,8 +44,6 @@ extern const char kTypedUrlTag[];
 // merge and sync.
 class TypedUrlModelAssociator : public AssociatorInterface {
  public:
-  typedef std::vector<std::pair<history::URLID, history::URLRow> >
-      TypedUrlUpdateVector;
   typedef std::vector<std::pair<GURL, std::vector<history::VisitInfo> > >
       TypedUrlVisitVector;
 
@@ -81,7 +77,7 @@ class TypedUrlModelAssociator : public AssociatorInterface {
   bool DeleteAllNodes(syncer::WriteTransaction* trans);
 
   void WriteToHistoryBackend(const history::URLRows* new_urls,
-                             const TypedUrlUpdateVector* updated_urls,
+                             const history::URLRows* updated_urls,
                              const TypedUrlVisitVector* new_visits,
                              const history::VisitVector* deleted_visits);
 
@@ -95,7 +91,7 @@ class TypedUrlModelAssociator : public AssociatorInterface {
   void UpdateFromSyncDB(const sync_pb::TypedUrlSpecifics& typed_url,
                         TypedUrlVisitVector* visits_to_add,
                         history::VisitVector* visits_to_remove,
-                        TypedUrlUpdateVector* updated_urls,
+                        history::URLRows* updated_urls,
                         history::URLRows* new_urls);
 
   // Given a TypedUrlSpecifics object, removes all visits that are older than

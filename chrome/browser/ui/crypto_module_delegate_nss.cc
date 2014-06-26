@@ -24,7 +24,8 @@ ChromeNSSCryptoModuleDelegate::~ChromeNSSCryptoModuleDelegate() {}
 bool ChromeNSSCryptoModuleDelegate::InitializeSlot(
     content::ResourceContext* context,
     const base::Closure& initialization_complete_callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(!slot_);
   base::Callback<void(crypto::ScopedPK11Slot)> get_slot_callback;
   if (!initialization_complete_callback.is_null())
     get_slot_callback = base::Bind(&ChromeNSSCryptoModuleDelegate::DidGetSlot,
@@ -66,7 +67,7 @@ std::string ChromeNSSCryptoModuleDelegate::RequestPassword(
 
 void ChromeNSSCryptoModuleDelegate::ShowDialog(const std::string& slot_name,
                                                bool retry) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   ShowCryptoModulePasswordDialog(
       slot_name,
       retry,
@@ -89,6 +90,7 @@ void ChromeNSSCryptoModuleDelegate::GotPassword(const std::string& password) {
 
 void ChromeNSSCryptoModuleDelegate::DidGetSlot(const base::Closure& callback,
                                                crypto::ScopedPK11Slot slot) {
+  DCHECK(!slot_);
   slot_ = slot.Pass();
   callback.Run();
 }

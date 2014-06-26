@@ -5,6 +5,7 @@
 #ifndef ASH_SYSTEM_CHROMEOS_POWER_POWER_STATUS_VIEW_H_
 #define ASH_SYSTEM_CHROMEOS_POWER_POWER_STATUS_VIEW_H_
 
+#include "ash/ash_export.h"
 #include "ash/system/chromeos/power/power_status.h"
 #include "ui/views/view.h"
 
@@ -14,9 +15,9 @@ class Label;
 }
 
 namespace ash {
-namespace internal {
 
-class PowerStatusView : public views::View, public PowerStatus::Observer {
+class ASH_EXPORT PowerStatusView : public views::View,
+                                   public PowerStatus::Observer {
  public:
   enum ViewType {
     VIEW_DEFAULT,
@@ -27,14 +28,17 @@ class PowerStatusView : public views::View, public PowerStatus::Observer {
   virtual ~PowerStatusView();
 
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
   // Overridden from PowerStatus::Observer.
   virtual void OnPowerStatusChanged() OVERRIDE;
 
  private:
+  friend class PowerStatusDefaultViewTest;
+  friend class PowerStatusNotificationViewTest;
+
   void LayoutDefaultView();
   void LayoutNotificationView();
   void UpdateTextForDefaultView();
@@ -63,7 +67,6 @@ class PowerStatusView : public views::View, public PowerStatus::Observer {
   DISALLOW_COPY_AND_ASSIGN(PowerStatusView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_CHROMEOS_POWER_POWER_STATUS_VIEW_H_

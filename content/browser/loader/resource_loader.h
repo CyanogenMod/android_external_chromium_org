@@ -98,6 +98,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   void StartReading(bool is_continuation);
   void ResumeReading();
   void ReadMore(int* bytes_read);
+  // Passes a read result to the handler.
   void CompleteRead(int bytes_read);
   void ResponseCompleted();
   void CallDidFinishLoading();
@@ -122,6 +123,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
     DEFERRED_NETWORK_START,
     DEFERRED_REDIRECT,
     DEFERRED_READ,
+    DEFERRED_RESPONSE_COMPLETE,
     DEFERRED_FINISH
   };
   DeferredStage deferred_stage_;

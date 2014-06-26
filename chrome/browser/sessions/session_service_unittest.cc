@@ -13,8 +13,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/defaults.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/sessions/session_backend.h"
 #include "chrome/browser/sessions/session_service.h"
 #include "chrome/browser/sessions/session_service_test_helper.h"
@@ -22,7 +24,9 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
 #include "components/sessions/serialized_navigation_entry_test_helper.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_observer.h"
@@ -43,14 +47,16 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
  protected:
   virtual void SetUp() {
     BrowserWithTestWindowTest::SetUp();
+
+    profile_manager_.reset(
+        new TestingProfileManager(TestingBrowserProcess::GetGlobal()));
+    ASSERT_TRUE(profile_manager_->SetUp());
+
     std::string b = base::Int64ToString(base::Time::Now().ToInternalValue());
+    TestingProfile* profile = profile_manager_->CreateTestingProfile(b);
+    SessionService* session_service = new SessionService(profile);
+    path_ = profile->GetPath();
 
-    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    path_ = temp_dir_.path().Append(FILE_PATH_LITERAL("SessionTestDirs"));
-    ASSERT_TRUE(base::CreateDirectory(path_));
-    path_ = path_.AppendASCII(b);
-
-    SessionService* session_service = new SessionService(path_);
     helper_.SetService(session_service);
 
     service()->SetWindowType(
@@ -171,6 +177,7 @@ class SessionServiceTest : public BrowserWithTestWindowTest,
   base::FilePath path_;
 
   SessionServiceTestHelper helper_;
+  scoped_ptr<TestingProfileManager> profile_manager_;
 };
 
 TEST_F(SessionServiceTest, Basic) {
@@ -404,6 +411,38 @@ TEST_F(SessionServiceTest, ClosingWindowDoesntCloseTabs) {
   helper_.AssertNavigationEquals(nav2, tab->navigations[0]);
 }
 
+TEST_F(SessionServiceTest, LockingWindowRemembersAll) {
+  SessionID window2_id;
+  SessionID tab1_id;
+  SessionID tab2_id;
+  SerializedNavigationEntry nav1;
+  SerializedNavigationEntry nav2;
+
+  CreateAndWriteSessionWithTwoWindows(
+      window2_id, tab1_id, tab2_id, &nav1, &nav2);
+
+  ASSERT_TRUE(service()->profile() != NULL);
+  ASSERT_TRUE(g_browser_process->profile_manager() != NULL);
+  ProfileInfoCache& profile_info =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  size_t profile_index = profile_info.GetIndexOfProfileWithPath(
+      service()->profile()->GetPath());
+  ASSERT_NE(std::string::npos, profile_index);
+  profile_info.SetProfileSigninRequiredAtIndex(profile_index, true);
+
+  service()->WindowClosing(window_id);
+  service()->WindowClosed(window_id);
+  service()->WindowClosing(window2_id);
+  service()->WindowClosed(window2_id);
+
+  ScopedVector<SessionWindow> windows;
+  ReadWindows(&(windows.get()), NULL);
+
+  ASSERT_EQ(2U, windows.size());
+  ASSERT_EQ(1U, windows[0]->tabs.size());
+  ASSERT_EQ(1U, windows[1]->tabs.size());
+}
+
 TEST_F(SessionServiceTest, WindowCloseCommittedAfterNavigate) {
   SessionID window2_id;
   SessionID tab_id;
@@ -448,9 +487,6 @@ TEST_F(SessionServiceTest, WindowCloseCommittedAfterNavigate) {
 
 // Makes sure we don't track popups.
 TEST_F(SessionServiceTest, IgnorePopups) {
-  if (browser_defaults::kRestorePopups)
-    return;  // This test is only applicable if popups aren't restored.
-
   SessionID window2_id;
   SessionID tab_id;
   SessionID tab2_id;
@@ -486,59 +522,6 @@ TEST_F(SessionServiceTest, IgnorePopups) {
   SessionTab* tab = windows[0]->tabs[0];
   helper_.AssertTabEquals(window_id, tab_id, 0, 0, 1, *tab);
   helper_.AssertNavigationEquals(nav1, tab->navigations[0]);
-}
-
-// Makes sure we track popups.
-TEST_F(SessionServiceTest, RestorePopup) {
-  if (!browser_defaults::kRestorePopups)
-    return;  // This test is only applicable if popups are restored.
-
-  SessionID window2_id;
-  SessionID tab_id;
-  SessionID tab2_id;
-  ASSERT_NE(window2_id.id(), window_id.id());
-
-  service()->SetWindowType(
-      window2_id, Browser::TYPE_POPUP, SessionService::TYPE_NORMAL);
-  service()->SetWindowBounds(window2_id,
-                             window_bounds,
-                             ui::SHOW_STATE_NORMAL);
-
-  SerializedNavigationEntry nav1 =
-      SerializedNavigationEntryTestHelper::CreateNavigation(
-          "http://google.com", "abc");
-  SerializedNavigationEntry nav2 =
-      SerializedNavigationEntryTestHelper::CreateNavigation(
-          "http://google2.com", "abcd");
-
-  helper_.PrepareTabInWindow(window_id, tab_id, 0, true);
-  UpdateNavigation(window_id, tab_id, nav1, true);
-
-  helper_.PrepareTabInWindow(window2_id, tab2_id, 0, false);
-  UpdateNavigation(window2_id, tab2_id, nav2, true);
-
-  ScopedVector<SessionWindow> windows;
-  ReadWindows(&(windows.get()), NULL);
-
-  ASSERT_EQ(2U, windows.size());
-  int tabbed_index = windows[0]->type == Browser::TYPE_TABBED ?
-      0 : 1;
-  int popup_index = tabbed_index == 0 ? 1 : 0;
-  ASSERT_EQ(0, windows[tabbed_index]->selected_tab_index);
-  ASSERT_EQ(window_id.id(), windows[tabbed_index]->window_id.id());
-  ASSERT_EQ(1U, windows[tabbed_index]->tabs.size());
-
-  SessionTab* tab = windows[tabbed_index]->tabs[0];
-  helper_.AssertTabEquals(window_id, tab_id, 0, 0, 1, *tab);
-  helper_.AssertNavigationEquals(nav1, tab->navigations[0]);
-
-  ASSERT_EQ(0, windows[popup_index]->selected_tab_index);
-  ASSERT_EQ(window2_id.id(), windows[popup_index]->window_id.id());
-  ASSERT_EQ(1U, windows[popup_index]->tabs.size());
-
-  tab = windows[popup_index]->tabs[0];
-  helper_.AssertTabEquals(window2_id, tab2_id, 0, 0, 1, *tab);
-  helper_.AssertNavigationEquals(nav2, tab->navigations[0]);
 }
 
 #if defined (OS_CHROMEOS)

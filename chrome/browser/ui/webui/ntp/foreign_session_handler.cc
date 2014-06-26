@@ -26,12 +26,11 @@
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -114,7 +113,7 @@ void ForeignSessionHandler::OpenForeignSessionWindows(
       iter_begin + 1;
   chrome::HostDesktopType host_desktop_type =
       chrome::GetHostDesktopTypeForNativeView(
-          web_ui->GetWebContents()->GetView()->GetNativeView());
+          web_ui->GetWebContents()->GetNativeView());
   SessionRestore::RestoreForeignSessionWindows(
       Profile::FromWebUI(web_ui), host_desktop_type, iter_begin, iter_end);
 }
@@ -221,8 +220,9 @@ base::string16 ForeignSessionHandler::FormatSessionTime(
     const base::Time& time) {
   // Return a time like "1 hour ago", "2 days ago", etc.
   base::Time now = base::Time::Now();
-  // TimeElapsed does not support negative TimeDelta values, so then we use 0.
-  return ui::TimeFormat::TimeElapsed(
+  // TimeFormat does not support negative TimeDelta values, so then we use 0.
+  return ui::TimeFormat::Simple(
+      ui::TimeFormat::FORMAT_ELAPSED, ui::TimeFormat::LENGTH_SHORT,
       now < time ? base::TimeDelta() : now - time);
 }
 
@@ -408,7 +408,8 @@ bool ForeignSessionHandler::SessionWindowToValue(
   dictionary->SetString("userVisibleTimestamp",
       last_synced < base::TimeDelta::FromMinutes(1) ?
           l10n_util::GetStringUTF16(IDS_SYNC_TIME_JUST_NOW) :
-          ui::TimeFormat::TimeElapsed(last_synced));
+          ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
+                                 ui::TimeFormat::LENGTH_SHORT, last_synced));
   dictionary->SetInteger("sessionId", window.window_id.id());
   dictionary->Set("tabs", tab_values.release());
   return true;

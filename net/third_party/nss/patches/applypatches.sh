@@ -37,8 +37,6 @@ patch -p4 < $patches_dir/chacha20poly1305.patch
 
 patch -p4 < $patches_dir/cachelocks.patch
 
-patch -p4 < $patches_dir/paddingextensionall.patch
-
 patch -p4 < $patches_dir/signedcertificatetimestamps.patch
 
 patch -p4 < $patches_dir/cipherorder.patch
@@ -47,6 +45,8 @@ patch -p4 < $patches_dir/fallbackscsv.patch
 
 patch -p4 < $patches_dir/sessioncache.patch
 
-patch -p4 < $patches_dir/sslnoncestatics.patch
-
 patch -p4 < $patches_dir/nssrwlock.patch
+
+patch -p4 < $patches_dir/paddingextvalue.patch
+
+patch -p4 < $patches_dir/reorderextensions.patch

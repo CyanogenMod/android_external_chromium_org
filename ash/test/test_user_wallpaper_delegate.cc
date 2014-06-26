@@ -15,10 +15,10 @@ TestUserWallpaperDelegate::TestUserWallpaperDelegate()
 
 TestUserWallpaperDelegate::~TestUserWallpaperDelegate() {}
 
-void TestUserWallpaperDelegate::UpdateWallpaper() {
-  DefaultUserWallpaperDelegate::UpdateWallpaper();
+void TestUserWallpaperDelegate::UpdateWallpaper(bool clear_cache) {
+  DefaultUserWallpaperDelegate::UpdateWallpaper(clear_cache);
   if (!custom_wallpaper_.isNull()) {
-    Shell::GetInstance()->desktop_background_controller()->SetCustomWallpaper(
+    Shell::GetInstance()->desktop_background_controller()->SetWallpaperImage(
         custom_wallpaper_, WALLPAPER_LAYOUT_STRETCH);
   }
   update_wallpaper_count_++;

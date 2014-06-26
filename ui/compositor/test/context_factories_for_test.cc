@@ -8,50 +8,36 @@
 #include "base/sys_info.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_switches.h"
-#include "ui/compositor/test/default_context_factory.h"
-#include "ui/compositor/test/test_context_factory.h"
+#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/gl/gl_implementation.h"
+
+namespace {
+
+static ui::ContextFactory* g_implicit_factory = NULL;
+static gfx::DisableNullDrawGLBindings* g_disable_null_draw = NULL;
+
+}  // namespace
 
 namespace ui {
 
-static ContextFactory* g_implicit_factory = NULL;
-
 // static
-void InitializeContextFactoryForTests(bool allow_test_contexts) {
+ui::ContextFactory* InitializeContextFactoryForTests(bool enable_pixel_output) {
   DCHECK(!g_implicit_factory) <<
       "ContextFactory for tests already initialized.";
-
-  bool use_test_contexts = true;
-
-  // Always use test contexts unless the disable command line flag is used.
   CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kDisableTestCompositor))
-    use_test_contexts = false;
-
-#if defined(OS_CHROMEOS)
-  // If the test is running on the chromeos envrionment (such as
-  // device or vm bots), always use real contexts.
-  if (base::SysInfo::IsRunningOnChromeOS())
-    use_test_contexts = false;
-#endif
-
-  if (!allow_test_contexts)
-    use_test_contexts = false;
-
-  if (use_test_contexts) {
-    g_implicit_factory = new ui::TestContextFactory;
-  } else {
-    DCHECK_NE(gfx::kGLImplementationNone, gfx::GetGLImplementation());
-    DVLOG(1) << "Using DefaultContextFactory";
-    g_implicit_factory = new ui::DefaultContextFactory();
-  }
-  ContextFactory::SetInstance(g_implicit_factory);
+  if (command_line->HasSwitch(switches::kEnablePixelOutputInTests))
+    enable_pixel_output = true;
+  if (enable_pixel_output)
+    g_disable_null_draw = new gfx::DisableNullDrawGLBindings;
+  g_implicit_factory = new InProcessContextFactory();
+  return g_implicit_factory;
 }
 
 void TerminateContextFactoryForTests() {
-  ContextFactory::SetInstance(NULL);
   delete g_implicit_factory;
   g_implicit_factory = NULL;
+  delete g_disable_null_draw;
+  g_disable_null_draw = NULL;
 }
 
 }  // namespace ui

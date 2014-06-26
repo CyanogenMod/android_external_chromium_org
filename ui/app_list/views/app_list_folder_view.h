@@ -5,17 +5,16 @@
 #ifndef UI_APP_LIST_VIEWS_APP_LIST_FOLDER_VIEW_H_
 #define UI_APP_LIST_VIEWS_APP_LIST_FOLDER_VIEW_H_
 
+#include <string>
+
 #include "ui/app_list/app_list_item_list_observer.h"
 #include "ui/app_list/views/apps_grid_view.h"
+#include "ui/app_list/views/apps_grid_view_folder_delegate.h"
 #include "ui/app_list/views/folder_header_view.h"
 #include "ui/app_list/views/folder_header_view_delegate.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/view.h"
-
-namespace content {
-class WebContents;
-}
 
 namespace views {
 class ViewModel;
@@ -30,17 +29,16 @@ class AppListItemView;
 class AppListMainView;
 class AppListModel;
 class FolderHeaderView;
-class PaginationModel;
 
 class AppListFolderView : public views::View,
                           public FolderHeaderViewDelegate,
-                          public AppListItemListObserver,
-                          public ui::ImplicitAnimationObserver {
+                          public AppListModelObserver,
+                          public ui::ImplicitAnimationObserver,
+                          public AppsGridViewFolderDelegate {
  public:
   AppListFolderView(AppsContainerView* container_view,
                     AppListModel* model,
-                    AppListMainView* app_list_main_view,
-                    content::WebContents* start_page_contents);
+                    AppListMainView* app_list_main_view);
   virtual ~AppListFolderView();
 
   void SetAppListFolderItem(AppListFolderItem* folder);
@@ -54,45 +52,23 @@ class AppListFolderView : public views::View,
   // AppListFolderView.
   gfx::Rect GetItemIconBoundsAt(int index);
 
-  // Updates the folder view background to show or hide folder container ink
-  // bubble.
-  void UpdateFolderViewBackground(bool show_bubble);
-
   void UpdateFolderNameVisibility(bool visible);
-
-  // Returns true if |point| falls outside of the folder container ink bubble.
-  bool IsPointOutsideOfFolderBoundray(const gfx::Point& point);
-
-  // Called when a folder item is dragged out of the folder to be re-parented.
-  // |original_drag_view| is the |drag_view_| inside the folder's grid view.
-  // |drag_point_in_folder_grid| is the last drag point in coordinate of the
-  // AppsGridView inside the folder.
-  void ReparentItem(AppListItemView* original_drag_view,
-      const gfx::Point& drag_point_in_folder_grid);
-
-  // Dispatches drag event from the hidden grid view to the root level grid view
-  // for re-parenting a folder item.
-  void DispatchDragEventForReparent(AppsGridView::Pointer pointer,
-      const ui::LocatedEvent& event);
-
-  // Dispatches EndDrag event from the hidden grid view to the root level grid
-  // view for reparenting a folder item.
-  // |events_forwarded_to_drag_drop_host|: True if the dragged item is dropped
-  // to the drag_drop_host, eg. dropped on shelf.
-  void DispatchEndDragEventForReparent(bool events_forwarded_to_drag_drop_host);
 
   // Hides the view immediately without animation.
   void HideViewImmediately();
 
-  // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  // Closes the folder page and goes back the top level page.
+  void CloseFolderPage();
+
+  // views::View
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
 
-  // Overridden from AppListItemListObserver:
-  virtual void OnListItemRemoved(size_t index, AppListItem* item) OVERRIDE;
+  // AppListModelObserver
+  virtual void OnAppListItemWillBeDeleted(AppListItem* item) OVERRIDE;
 
-  // ui::ImplicitAnimationObserver overrides:
+  // ui::ImplicitAnimationObserver
   virtual void OnImplicitAnimationsCompleted() OVERRIDE;
 
   AppsGridView* items_grid_view() { return items_grid_view_; }
@@ -107,11 +83,33 @@ class AppListFolderView : public views::View,
       AppListItemView* original_drag_view,
       const gfx::Point& drag_point_in_root_grid);
 
+  // Overridden from views::View:
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+
   // Overridden from FolderHeaderViewDelegate:
   virtual void NavigateBack(AppListFolderItem* item,
                             const ui::Event& event_flags) OVERRIDE;
+  virtual void GiveBackFocusToSearchBox() OVERRIDE;
+  virtual void SetItemName(AppListFolderItem* item,
+                           const std::string& name) OVERRIDE;
+
+  // Overridden from AppsGridViewFolderDelegate:
+  virtual void UpdateFolderViewBackground(bool show_bubble) OVERRIDE;
+  virtual void ReparentItem(AppListItemView* original_drag_view,
+                            const gfx::Point& drag_point_in_folder_grid)
+      OVERRIDE;
+  virtual void DispatchDragEventForReparent(
+      AppsGridView::Pointer pointer,
+      const gfx::Point& drag_point_in_folder_grid) OVERRIDE;
+  virtual void DispatchEndDragEventForReparent(
+      bool events_forwarded_to_drag_drop_host,
+      bool cancel_drag) OVERRIDE;
+  virtual bool IsPointOutsideOfFolderBoundary(const gfx::Point& point) OVERRIDE;
+  virtual bool IsOEMFolder() const OVERRIDE;
+  virtual void SetRootLevelDragViewVisible(bool visible) OVERRIDE;
 
   AppsContainerView* container_view_;  // Not owned.
+  AppListMainView* app_list_main_view_;   // Not Owned.
   FolderHeaderView* folder_header_view_;  // Owned by views hierarchy.
   AppsGridView* items_grid_view_;  // Owned by the views hierarchy.
 
@@ -120,9 +118,9 @@ class AppListFolderView : public views::View,
   AppListModel* model_;  // Not owned.
   AppListFolderItem* folder_item_;  // Not owned.
 
-  scoped_ptr<PaginationModel> pagination_model_;
-
   bool hide_for_reparent_;
+
+  base::string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListFolderView);
 };

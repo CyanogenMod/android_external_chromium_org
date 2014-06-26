@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_I18N_I18N_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_I18N_I18N_API_H_
 
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 
 class Profile;
 
@@ -14,7 +14,7 @@ namespace extensions {
 
 class I18nGetAcceptLanguagesFunction : public ChromeSyncExtensionFunction {
   virtual ~I18nGetAcceptLanguagesFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("i18n.getAcceptLanguages", I18N_GETACCEPTLANGUAGES)
 };
 

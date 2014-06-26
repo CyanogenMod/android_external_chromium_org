@@ -15,6 +15,7 @@
 #include "chrome/browser/chromeos/drive/test_util.h"
 #include "chrome/browser/drive/event_logger.h"
 #include "chrome/browser/drive/fake_drive_service.h"
+#include "chrome/browser/drive/test_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/test_util.h"
 
@@ -66,10 +67,7 @@ void OperationTestBase::SetUp() {
   logger_.reset(new EventLogger);
 
   fake_drive_service_.reset(new FakeDriveService);
-  fake_drive_service_->LoadResourceListForWapi(
-      "gdata/root_feed.json");
-  fake_drive_service_->LoadAccountMetadataForWapi(
-      "gdata/account_metadata.json");
+  ASSERT_TRUE(test_util::SetUpTestEntries(fake_drive_service_.get()));
 
   scheduler_.reset(new JobScheduler(
       pref_service_.get(),
@@ -89,19 +87,6 @@ void OperationTestBase::SetUp() {
   test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
 
-  metadata_.reset(new internal::ResourceMetadata(metadata_storage_.get(),
-                                                 blocking_task_runner_));
-
-  FileError error = FILE_ERROR_FAILED;
-  base::PostTaskAndReplyWithResult(
-      blocking_task_runner_.get(),
-      FROM_HERE,
-      base::Bind(&internal::ResourceMetadata::Initialize,
-                 base::Unretained(metadata_.get())),
-      google_apis::test_util::CreateCopyResultCallback(&error));
-  test_util::RunBlockingPoolTask();
-  ASSERT_EQ(FILE_ERROR_OK, error);
-
   fake_free_disk_space_getter_.reset(new FakeFreeDiskSpaceGetter);
   cache_.reset(new internal::FileCache(metadata_storage_.get(),
                                        temp_dir_.path(),
@@ -117,6 +102,20 @@ void OperationTestBase::SetUp() {
   test_util::RunBlockingPoolTask();
   ASSERT_TRUE(success);
 
+  metadata_.reset(new internal::ResourceMetadata(metadata_storage_.get(),
+                                                 cache_.get(),
+                                                 blocking_task_runner_));
+
+  FileError error = FILE_ERROR_FAILED;
+  base::PostTaskAndReplyWithResult(
+      blocking_task_runner_.get(),
+      FROM_HERE,
+      base::Bind(&internal::ResourceMetadata::Initialize,
+                 base::Unretained(metadata_.get())),
+      google_apis::test_util::CreateCopyResultCallback(&error));
+  test_util::RunBlockingPoolTask();
+  ASSERT_EQ(FILE_ERROR_OK, error);
+
   // Makes sure the FakeDriveService's content is loaded to the metadata_.
   about_resource_loader_.reset(new internal::AboutResourceLoader(
       scheduler_.get()));
@@ -126,10 +125,9 @@ void OperationTestBase::SetUp() {
       blocking_task_runner_.get(),
       metadata_.get(),
       scheduler_.get(),
-      fake_drive_service_.get(),
       about_resource_loader_.get(),
       loader_controller_.get()));
-  change_list_loader_->LoadForTesting(
+  change_list_loader_->LoadIfNeeded(
       google_apis::test_util::CreateCopyResultCallback(&error));
   test_util::RunBlockingPoolTask();
   ASSERT_EQ(FILE_ERROR_OK, error);

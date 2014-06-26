@@ -20,6 +20,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/url_util.h"
 #include "net/cookies/parsed_cookie.h"
@@ -49,6 +50,7 @@ const char kAuthHeaderOAuth[] = "OAuth ";
 
 const char kListAccountsResponseFormat[] =
     "[\"gaia.l.a.r\",[[\"gaia.l.a\",1,\"\",\"%s\",\"\",1,1,0]]]";
+const char kPeopleGetResponseFormat[] = "{\"id\":\"name\"}";
 
 typedef std::map<std::string, std::string> CookieMap;
 
@@ -175,6 +177,10 @@ void FakeGaia::Initialize() {
   // Handles /ListAccounts GAIA call.
   REGISTER_RESPONSE_HANDLER(
       gaia_urls->list_accounts_url(), HandleListAccounts);
+
+  // Handles /plus/v1/people/me
+  REGISTER_RESPONSE_HANDLER(
+      gaia_urls->people_get_url(), HandlePeopleGet);
 }
 
 scoped_ptr<HttpResponse> FakeGaia::HandleRequest(const HttpRequest& request) {
@@ -263,7 +269,7 @@ void FakeGaia::HandleProgramaticAuth(
   GaiaUrls* gaia_urls = GaiaUrls::GetInstance();
   std::string scope;
   if (!GetQueryParameter(request.content, "scope", &scope) ||
-      gaia_urls->oauth1_login_scope() != scope) {
+      GaiaConstants::kOAuth1LoginScope != scope) {
     return;
   }
 
@@ -434,7 +440,7 @@ void FakeGaia::HandleAuthToken(const HttpRequest& request,
       return;
     }
 
-    if (GaiaUrls::GetInstance()->oauth1_login_scope() != scope) {
+    if (GaiaConstants::kOAuth1LoginScope != scope) {
       http_response->set_code(net::HTTP_BAD_REQUEST);
       LOG(ERROR) << "Invalid scope for /o/oauth2/token - " << scope;
       return;
@@ -526,5 +532,12 @@ void FakeGaia::HandleListAccounts(const HttpRequest& request,
                                  BasicHttpResponse* http_response) {
   http_response->set_content(base::StringPrintf(
       kListAccountsResponseFormat, merge_session_params_.email.c_str()));
+  http_response->set_code(net::HTTP_OK);
+}
+
+
+void FakeGaia::HandlePeopleGet(const HttpRequest& request,
+                                 BasicHttpResponse* http_response) {
+  http_response->set_content(kPeopleGetResponseFormat);
   http_response->set_code(net::HTTP_OK);
 }

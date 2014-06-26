@@ -10,21 +10,25 @@
 #include "content/common/content_export.h"
 #include "content/common/content_param_traits.h"
 #include "content/common/edit_command.h"
+#include "content/common/input/did_overscroll_params.h"
 #include "content/common/input/input_event.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "content/common/input/input_param_traits.h"
 #include "content/common/input/synthetic_gesture_packet.h"
 #include "content/common/input/synthetic_gesture_params.h"
 #include "content/common/input/synthetic_pinch_gesture_params.h"
 #include "content/common/input/synthetic_smooth_scroll_gesture_params.h"
 #include "content/common/input/synthetic_tap_gesture_params.h"
-#include "content/port/common/input_event_ack_state.h"
-#include "content/public/common/common_param_traits.h"
 #include "content/common/input/touch_action.h"
+#include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
-#include "ui/events/latency_info.h"
+#include "ui/events/ipc/latency_info_param_traits.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 #include "ui/gfx/point.h"
+#include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/vector2d_f.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -43,8 +47,19 @@ IPC_ENUM_TRAITS_MAX_VALUE(
 IPC_ENUM_TRAITS_MAX_VALUE(
     content::SyntheticGestureParams::GestureType,
     content::SyntheticGestureParams::SYNTHETIC_GESTURE_TYPE_MAX)
-IPC_ENUM_TRAITS_MAX_VALUE(content::TouchAction,
-    content::TOUCH_ACTION_MAX)
+IPC_ENUM_TRAITS_VALIDATE(content::TouchAction, (
+    value >= 0 &&
+    value <= content::TOUCH_ACTION_MAX &&
+    (!(value & content::TOUCH_ACTION_NONE) ||
+        (value == content::TOUCH_ACTION_NONE)) &&
+    (!(value & content::TOUCH_ACTION_PINCH_ZOOM) ||
+        (value == content::TOUCH_ACTION_MANIPULATION))))
+
+IPC_STRUCT_TRAITS_BEGIN(content::DidOverscrollParams)
+  IPC_STRUCT_TRAITS_MEMBER(accumulated_overscroll)
+  IPC_STRUCT_TRAITS_MEMBER(latest_overscroll_delta)
+  IPC_STRUCT_TRAITS_MEMBER(current_fling_velocity)
+IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::EditCommand)
   IPC_STRUCT_TRAITS_MEMBER(name)
@@ -63,16 +78,15 @@ IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyntheticSmoothScrollGestureParams)
   IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
-  IPC_STRUCT_TRAITS_MEMBER(distance)
   IPC_STRUCT_TRAITS_MEMBER(anchor)
+  IPC_STRUCT_TRAITS_MEMBER(distances)
   IPC_STRUCT_TRAITS_MEMBER(prevent_fling)
   IPC_STRUCT_TRAITS_MEMBER(speed_in_pixels_s)
 IPC_STRUCT_TRAITS_END()
 
 IPC_STRUCT_TRAITS_BEGIN(content::SyntheticPinchGestureParams)
   IPC_STRUCT_TRAITS_PARENT(content::SyntheticGestureParams)
-  IPC_STRUCT_TRAITS_MEMBER(zoom_in)
-  IPC_STRUCT_TRAITS_MEMBER(total_num_pixels_covered)
+  IPC_STRUCT_TRAITS_MEMBER(scale_factor)
   IPC_STRUCT_TRAITS_MEMBER(anchor)
   IPC_STRUCT_TRAITS_MEMBER(relative_pointer_speed_in_pixels_s)
 IPC_STRUCT_TRAITS_END()
@@ -83,6 +97,14 @@ IPC_STRUCT_TRAITS_BEGIN(content::SyntheticTapGestureParams)
   IPC_STRUCT_TRAITS_MEMBER(duration_ms)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_BEGIN(InputHostMsg_HandleInputEvent_ACK_Params)
+  IPC_STRUCT_MEMBER(blink::WebInputEvent::Type, type)
+  IPC_STRUCT_MEMBER(content::InputEventAckState, state)
+  IPC_STRUCT_MEMBER(ui::LatencyInfo, latency)
+  // TODO(jdduke): Use Optional<T> type to avoid heap alloc, crbug.com/375002.
+  IPC_STRUCT_MEMBER(scoped_ptr<content::DidOverscrollParams>, overscroll)
+IPC_STRUCT_END()
+
 // Sends an input event to the render widget.
 IPC_MESSAGE_ROUTED3(InputMsg_HandleInputEvent,
                     IPC::WebInputEventPointer /* event */,
@@ -92,6 +114,20 @@ IPC_MESSAGE_ROUTED3(InputMsg_HandleInputEvent,
 // Sends the cursor visibility state to the render widget.
 IPC_MESSAGE_ROUTED1(InputMsg_CursorVisibilityChange,
                     bool /* is_visible */)
+
+// This message sends a string being composed with an input method.
+IPC_MESSAGE_ROUTED4(
+    InputMsg_ImeSetComposition,
+    base::string16, /* text */
+    std::vector<blink::WebCompositionUnderline>, /* underlines */
+    int, /* selectiont_start */
+    int /* selection_end */)
+
+// This message confirms an ongoing composition.
+IPC_MESSAGE_ROUTED3(InputMsg_ImeConfirmComposition,
+                    base::string16 /* text */,
+                    gfx::Range /* replacement_range */,
+                    bool /* keep_selection */)
 
 // This message notifies the renderer that the next key event is bound to one
 // or more pre-defined edit commands. If the next key event is not handled
@@ -117,11 +153,6 @@ IPC_MESSAGE_ROUTED0(InputMsg_MouseCaptureLost)
 // TODO(darin): figure out how this meshes with RestoreFocus
 IPC_MESSAGE_ROUTED1(InputMsg_SetFocus,
                     bool /* enable */)
-
-// Tells the renderer to focus the first (last if reverse is true) focusable
-// node.
-IPC_MESSAGE_ROUTED1(InputMsg_SetInitialFocus,
-                    bool /* reverse */)
 
 // Tells the renderer to scroll the currently focused node into rect only if
 // the currently focused node is a Text node (textfield, text area or content
@@ -171,16 +202,14 @@ IPC_MESSAGE_ROUTED3(InputMsg_ActivateNearestFindResult,
                     float /* y */)
 #endif
 
-IPC_MESSAGE_ROUTED0(InputMsg_SyntheticGestureCompleted);
+IPC_MESSAGE_ROUTED0(InputMsg_SyntheticGestureCompleted)
 
 // -----------------------------------------------------------------------------
 // Messages sent from the renderer to the browser.
 
 // Acknowledges receipt of a InputMsg_HandleInputEvent message.
-IPC_MESSAGE_ROUTED3(InputHostMsg_HandleInputEvent_ACK,
-                    blink::WebInputEvent::Type,
-                    content::InputEventAckState /* ack_result */,
-                    ui::LatencyInfo /* latency_info */)
+IPC_MESSAGE_ROUTED1(InputHostMsg_HandleInputEvent_ACK,
+                    InputHostMsg_HandleInputEvent_ACK_Params)
 
 IPC_MESSAGE_ROUTED1(InputHostMsg_QueueSyntheticGesture,
                     content::SyntheticGesturePacket)
@@ -188,6 +217,23 @@ IPC_MESSAGE_ROUTED1(InputHostMsg_QueueSyntheticGesture,
 // Notifies the allowed touch actions for a new touch point.
 IPC_MESSAGE_ROUTED1(InputHostMsg_SetTouchAction,
                     content::TouchAction /* touch_action */)
+
+// Sent by the compositor when input scroll events are dropped due to bounds
+// restrictions on the root scroll offset.
+IPC_MESSAGE_ROUTED1(InputHostMsg_DidOverscroll,
+                    content::DidOverscrollParams /* params */)
+
+// Required for cancelling an ongoing input method composition.
+IPC_MESSAGE_ROUTED0(InputHostMsg_ImeCancelComposition)
+
+#if defined(OS_MACOSX) || defined(USE_AURA)
+// On Mac and Aura IME can request composition character bounds
+// synchronously (see crbug.com/120597). This IPC message sends the character
+// bounds after every composition change to always have correct bound info.
+IPC_MESSAGE_ROUTED2(InputHostMsg_ImeCompositionRangeChanged,
+                    gfx::Range /* composition range */,
+                    std::vector<gfx::Rect> /* character bounds */)
+#endif
 
 // Adding a new message? Stick to the sort order above: first platform
 // independent InputMsg, then ifdefs for platform specific InputMsg, then

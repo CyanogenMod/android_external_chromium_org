@@ -11,19 +11,18 @@
 #include "ash/wm/dock/dock_types.h"
 #include "ash/wm/dock/docked_window_layout_manager_observer.h"
 #include "ash/wm/window_state_observer.h"
-#include "ash/wm/workspace/snap_types.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
-#include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/gfx/rect.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
+#include "ui/wm/public/activation_change_observer.h"
 
 namespace aura {
 class Window;
@@ -38,12 +37,10 @@ class Widget;
 }
 
 namespace ash {
-class Shelf;
-
-namespace internal {
 class DockedBackgroundWidget;
 class DockedWindowLayoutManagerObserver;
 class DockedWindowResizerTest;
+class Shelf;
 class ShelfLayoutManager;
 class WorkspaceController;
 
@@ -121,7 +118,7 @@ class ASH_EXPORT DockedWindowLayoutManager
 
   // Returns true when a window can be docked. Windows cannot be docked at the
   // edge used by the shelf or the edge opposite from existing dock.
-  bool CanDockWindow(aura::Window* window, SnapType edge);
+  bool CanDockWindow(aura::Window* window, DockedAlignment desired_alignment);
 
   aura::Window* dock_container() const { return dock_container_; }
 
@@ -159,8 +156,9 @@ class ASH_EXPORT DockedWindowLayoutManager
       BackgroundAnimatorChangeType change_type) OVERRIDE;
 
   // wm::WindowStateObserver:
-  virtual void OnPreWindowShowTypeChange(wm::WindowState* window_state,
-                                          wm::WindowShowType old_type) OVERRIDE;
+  virtual void OnPreWindowStateTypeChange(
+      wm::WindowState* window_state,
+      wm::WindowStateType old_type) OVERRIDE;
 
   // aura::WindowObserver:
   virtual void OnWindowBoundsChanged(aura::Window* window,
@@ -309,7 +307,6 @@ class ASH_EXPORT DockedWindowLayoutManager
   DISALLOW_COPY_AND_ASSIGN(DockedWindowLayoutManager);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_DOCK_DOCKED_WINDOW_LAYOUT_MANAGER_H_

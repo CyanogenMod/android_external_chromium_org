@@ -65,20 +65,9 @@ class CONTENT_EXPORT ImageTransportFactory {
   static ImageTransportFactory* GetInstance();
 
   // Gets the image transport factory as a context factory for the compositor.
-  virtual ui::ContextFactory* AsContextFactory() = 0;
+  virtual ui::ContextFactory* GetContextFactory() = 0;
 
   virtual gfx::GLSurfaceHandle GetSharedSurfaceHandle() = 0;
-
-  // Creates a transport texture for a given scale factor.
-  virtual scoped_refptr<ui::Texture> CreateTransportClient(
-      float device_scale_factor) = 0;
-
-  // Variant of CreateTransportClient() that deletes the texture on the GPU when
-  // the returned value is deleted.
-  virtual scoped_refptr<ui::Texture> CreateOwnedTexture(
-      const gfx::Size& size,
-      float device_scale_factor,
-      unsigned int texture_id) = 0;
 
   // Gets a GLHelper instance, associated with the shared context. This
   // GLHelper will get destroyed whenever the shared context is lost
@@ -87,6 +76,10 @@ class CONTENT_EXPORT ImageTransportFactory {
 
   virtual void AddObserver(ImageTransportFactoryObserver* observer) = 0;
   virtual void RemoveObserver(ImageTransportFactoryObserver* observer) = 0;
+
+#if defined(OS_MACOSX)
+  virtual void OnSurfaceDisplayed(int surface_id) = 0;
+#endif
 };
 
 }  // namespace content

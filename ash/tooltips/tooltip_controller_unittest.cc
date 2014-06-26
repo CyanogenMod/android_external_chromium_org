@@ -5,11 +5,10 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/aura/client/tooltip_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/point.h"
@@ -17,6 +16,7 @@
 #include "ui/views/corewm/tooltip_controller_test_helper.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/public/tooltip_client.h"
 
 using views::corewm::TooltipController;
 using views::corewm::test::TooltipTestView;
@@ -39,7 +39,6 @@ views::Widget* CreateNewWidgetWithBoundsOn(int display,
   params.accept_events = true;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.context = Shell::GetAllRootWindows().at(display);
-  params.child = true;
   params.bounds = bounds;
   widget->Init(params);
   widget->Show();

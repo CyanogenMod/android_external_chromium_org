@@ -9,7 +9,7 @@ namespace browser_sync {
 ProxyDataTypeController::ProxyDataTypeController(
     scoped_refptr<base::MessageLoopProxy> ui_thread,
     syncer::ModelType type)
-    : DataTypeController(ui_thread, base::Closure()),
+    : DataTypeController(ui_thread, base::Closure(), DisableTypeCallback()),
       state_(NOT_RUNNING),
       type_(type) {
   DCHECK(syncer::ProxyTypes().Has(type_));
@@ -46,6 +46,10 @@ syncer::ModelType ProxyDataTypeController::type() const {
 syncer::ModelSafeGroup ProxyDataTypeController::model_safe_group() const {
   DCHECK(syncer::ProxyTypes().Has(type_));
   return syncer::GROUP_PASSIVE;
+}
+
+ChangeProcessor* ProxyDataTypeController::GetChangeProcessor() const {
+  return NULL;
 }
 
 std::string ProxyDataTypeController::name() const {

@@ -13,8 +13,6 @@
 #include "ui/views/painter.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 const int kBarImagesActive[] = {
@@ -86,7 +84,7 @@ void TrayBarButtonWithTitle::UpdateButton(bool control_on) {
   image_->Update(control_on);
 }
 
-gfx::Size TrayBarButtonWithTitle::GetPreferredSize() {
+gfx::Size TrayBarButtonWithTitle::GetPreferredSize() const {
   return gfx::Size(width_, kTrayPopupItemHeight);
 }
 
@@ -109,5 +107,4 @@ void TrayBarButtonWithTitle::Layout() {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

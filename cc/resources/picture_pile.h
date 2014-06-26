@@ -18,15 +18,19 @@ class CC_EXPORT PicturePile : public PicturePileBase {
   PicturePile();
 
   // Re-record parts of the picture that are invalid.
-  // Invalidations are in layer space.
+  // Invalidations are in layer space, and will be expanded to cover everything
+  // that was either recorded/changed or that has no recording, leaving out only
+  // pieces that we had a recording for and it was not changed.
   // Return true iff the pile was modified.
-  bool Update(
+  bool UpdateAndExpandInvalidation(
       ContentLayerClient* painter,
+      Region* invalidation,
       SkColor background_color,
       bool contents_opaque,
-      const Region& invalidation,
+      bool contents_fill_bounds_completely,
       const gfx::Rect& visible_layer_rect,
       int frame_number,
+      Picture::RecordingMode recording_mode,
       RenderingStatsInstrumentation* stats_instrumentation);
 
   void set_slow_down_raster_scale_factor(int factor) {
@@ -37,11 +41,20 @@ class CC_EXPORT PicturePile : public PicturePileBase {
     show_debug_picture_borders_ = show;
   }
 
+  bool is_suitable_for_gpu_rasterization() const {
+    return is_suitable_for_gpu_rasterization_;
+  }
+  void SetUnsuitableForGpuRasterizationForTesting() {
+    is_suitable_for_gpu_rasterization_ = false;
+  }
+
  protected:
   virtual ~PicturePile();
 
  private:
   friend class PicturePileImpl;
+
+  bool is_suitable_for_gpu_rasterization_;
 
   DISALLOW_COPY_AND_ASSIGN(PicturePile);
 };

@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl', 'linux'],
+  'TOOLS': ['bionic', 'newlib', 'glibc', 'pnacl', 'linux'],
   'SEL_LDR': True,
 
   'TARGETS': [
@@ -29,6 +29,8 @@
         'fake_ppapi/fake_var_array_buffer_interface.h',
         'fake_ppapi/fake_var_array_interface.cc',
         'fake_ppapi/fake_var_array_interface.h',
+        'fake_ppapi/fake_var_dictionary_interface.cc',
+        'fake_ppapi/fake_var_dictionary_interface.h',
         'fake_ppapi/fake_var_interface.cc',
         'fake_ppapi/fake_var_interface.h',
         'fake_ppapi/fake_var_manager.cc',
@@ -39,6 +41,7 @@
         'host_resolver_test.cc',
         'html5_fs_test.cc',
         'http_fs_test.cc',
+        'js_fs_test.cc',
         'jspipe_test.cc',
         'kernel_object_test.cc',
         'kernel_proxy_test.cc',
@@ -47,11 +50,11 @@
         'mem_fs_node_test.cc',
         'mock_fs.cc',
         'mock_fs.h',
-        'mock_kernel_proxy.cc',
         'mock_kernel_proxy.h',
         'mock_node.cc',
         'mock_node.h',
         'mock_util.h',
+        'syscalls_test.cc',
         'path_test.cc',
         'pepper_interface_mock.cc',
         'pepper_interface_mock.h',

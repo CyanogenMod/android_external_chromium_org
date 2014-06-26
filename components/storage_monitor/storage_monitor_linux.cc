@@ -26,8 +26,12 @@
 #include "components/storage_monitor/storage_info.h"
 #include "components/storage_monitor/udev_util_linux.h"
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
+#include "device/udev_linux/udev.h"
 
 using content::BrowserThread;
+
+namespace storage_monitor {
+
 typedef MtabWatcherLinux::MountPointDeviceMap MountPointDeviceMap;
 
 namespace {
@@ -121,7 +125,7 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
 
   ScopedGetDeviceInfoResultRecorder results_recorder;
 
-  ScopedUdevObject udev_obj(udev_new());
+  device::ScopedUdevPtr udev_obj(udev_new());
   if (!udev_obj.get())
     return storage_info.Pass();
 
@@ -137,7 +141,7 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
   else
     return storage_info.Pass();  // Not a supported type.
 
-  ScopedUdevDeviceObject device(
+  device::ScopedUdevDevicePtr device(
       udev_device_new_from_devnum(udev_obj.get(), device_type,
                                   device_stat.st_rdev));
   if (!device.get())
@@ -180,7 +184,6 @@ scoped_ptr<StorageInfo> GetDeviceInfo(const base::FilePath& device_path,
 
   storage_info.reset(new StorageInfo(
       StorageInfo::MakeDeviceId(type, unique_id),
-      base::string16(),
       mount_point.value(),
       volume_label,
       vendor_name,
@@ -500,3 +503,5 @@ StorageMonitor* StorageMonitor::CreateInternal() {
   const base::FilePath kDefaultMtabPath("/etc/mtab");
   return new StorageMonitorLinux(kDefaultMtabPath);
 }
+
+}  // namespace storage_monitor

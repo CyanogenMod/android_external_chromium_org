@@ -15,18 +15,17 @@
 #include "base/logging.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/browser/web_applications/web_app_mac.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "ui/base/cocoa/focus_window_set.h"
 
@@ -73,7 +72,7 @@ bool FocusWindows(const AppWindowList& windows) {
   // Allow workspace switching. For the browser process, we can reasonably rely
   // on OS X to switch spaces for us and honor relevant user settings. But shims
   // don't have windows, so we have to do it ourselves.
-  ui::FocusWindowSet(native_windows, true);
+  ui::FocusWindowSet(native_windows);
   return true;
 }
 

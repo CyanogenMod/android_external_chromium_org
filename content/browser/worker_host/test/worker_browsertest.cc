@@ -16,12 +16,12 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_resource_dispatcher_host_delegate.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "net/base/test_data_directory.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "url/gurl.h"
@@ -141,13 +141,16 @@ IN_PROC_BROWSER_TEST_F(WorkerTest, SharedWorkerHttpAuth) {
   NavigateAndWaitForAuth(url);
 }
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+#if defined(OS_LINUX)
 // This test is flaky inside the Linux SUID sandbox.
 // http://crbug.com/130116
 IN_PROC_BROWSER_TEST_F(WorkerTest, DISABLED_LimitPerPage) {
 #else
 IN_PROC_BROWSER_TEST_F(WorkerTest, LimitPerPage) {
 #endif
+  // There is no limitation of SharedWorker if EmbeddedSharedWorker is enabled.
+  if (WorkerService::EmbeddedSharedWorkerEnabled())
+    return;
   int max_workers_per_tab = WorkerServiceImpl::kMaxWorkersPerFrameWhenSeparate;
   std::string query = base::StringPrintf("?count=%d", max_workers_per_tab + 1);
 
@@ -157,7 +160,7 @@ IN_PROC_BROWSER_TEST_F(WorkerTest, LimitPerPage) {
 }
 
 
-#if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
+#if defined(OS_LINUX) || defined(OS_MACOSX)
 // This test is flaky inside the Linux SUID sandbox: http://crbug.com/130116
 // Also flaky on Mac: http://crbug.com/295193
 IN_PROC_BROWSER_TEST_F(WorkerTest, DISABLED_LimitTotal) {
@@ -165,6 +168,9 @@ IN_PROC_BROWSER_TEST_F(WorkerTest, DISABLED_LimitTotal) {
 // http://crbug.com/36800
 IN_PROC_BROWSER_TEST_F(WorkerTest, LimitTotal) {
 #endif
+  // There is no limitation of SharedWorker if EmbeddedSharedWorker is enabled.
+  if (WorkerService::EmbeddedSharedWorkerEnabled())
+    return;
   if (base::SysInfo::AmountOfPhysicalMemoryMB() < 8192) {
     VLOG(0) << "WorkerTest.LimitTotal not running because it needs 8 GB RAM.";
     return;

@@ -5,6 +5,7 @@
 #ifndef EXTENSIONS_COMMON_CONSTANTS_H_
 #define EXTENSIONS_COMMON_CONSTANTS_H_
 
+#include "base/basictypes.h"
 #include "base/files/file_path.h"
 
 namespace extensions {
@@ -26,6 +27,16 @@ extern const base::FilePath::CharType kMessagesFilename[];
 
 // The base directory for subdirectories with platform-specific code.
 extern const base::FilePath::CharType kPlatformSpecificFolder[];
+
+// A directory reserved for metadata, generated either by the webstore
+// or chrome.
+extern const base::FilePath::CharType kMetadataFolder[];
+
+// Name of the verified contents file within the metadata folder.
+extern const base::FilePath::CharType kVerifiedContentsFilename[];
+
+// Name of the computed hashes file within the metadata folder.
+extern const base::FilePath::CharType kComputedHashesFilename[];
 
 // The name of the directory inside the profile where extensions are
 // installed to.
@@ -86,6 +97,48 @@ extern const char kStateStoreName[];
 // rules are stored.
 extern const char kRulesStoreName[];
 
+// The URL query parameter key corresponding to multi-login user index.
+extern const char kAuthUserQueryKey[];
+
 }  // namespace extensions
+
+namespace extension_misc {
+
+// Matches chrome.windows.WINDOW_ID_NONE.
+const int kUnknownWindowId = -1;
+
+// Matches chrome.windows.WINDOW_ID_CURRENT.
+const int kCurrentWindowId = -2;
+
+// Note: this structure is an ASN.1 which encodes the algorithm used
+// with its parameters. This is defined in PKCS #1 v2.1 (RFC 3447).
+// It is encoding: { OID sha1WithRSAEncryption      PARAMETERS NULL }
+const uint8 kSignatureAlgorithm[15] = {0x30, 0x0d, 0x06, 0x09, 0x2a,
+                                       0x86, 0x48, 0x86, 0xf7, 0x0d,
+                                       0x01, 0x01, 0x05, 0x05, 0x00};
+
+// NOTE: If you change this list, you should also change kExtensionIconSizes
+// in cc file.
+enum ExtensionIcons {
+  EXTENSION_ICON_GIGANTOR = 512,
+  EXTENSION_ICON_EXTRA_LARGE = 256,
+  EXTENSION_ICON_LARGE = 128,
+  EXTENSION_ICON_MEDIUM = 48,
+  EXTENSION_ICON_SMALL = 32,
+  EXTENSION_ICON_SMALLISH = 24,
+  EXTENSION_ICON_ACTION = 19,
+  EXTENSION_ICON_BITTY = 16,
+  EXTENSION_ICON_INVALID = 0,
+};
+
+// List of sizes for extension icons that can be defined in the manifest.
+extern const int kExtensionIconSizes[];
+extern const size_t kNumExtensionIconSizes;
+
+// List of sizes for extension icons that can be defined in the manifest.
+extern const int kExtensionActionIconSizes[];
+extern const size_t kNumExtensionActionIconSizes;
+
+}  // namespace extension_misc
 
 #endif  // EXTENSIONS_COMMON_CONSTANTS_H_

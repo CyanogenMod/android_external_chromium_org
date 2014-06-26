@@ -66,6 +66,11 @@ scoped_ptr<base::DictionaryValue> DaemonControllerDelegateMac::GetConfig() {
   return config.Pass();
 }
 
+void DaemonControllerDelegateMac::InstallHost(
+    const DaemonController::CompletionCallback& done) {
+  NOTREACHED();
+}
+
 void DaemonControllerDelegateMac::SetConfigAndStart(
     scoped_ptr<base::DictionaryValue> config,
     bool consent,
@@ -230,7 +235,7 @@ bool DaemonControllerDelegateMac::DoShowPreferencePane(
     }
     config_path = config_path.Append(kHostConfigFileName);
 
-    int written = file_util::WriteFile(config_path, config_data.data(),
+    int written = base::WriteFile(config_path, config_data.data(),
                                        config_data.size());
     if (written != static_cast<int>(config_data.size())) {
       LOG(ERROR) << "Failed to save configuration data to: "

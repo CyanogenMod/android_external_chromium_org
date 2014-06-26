@@ -8,14 +8,11 @@
 
 #include <algorithm>
 
-#include "base/i18n/file_util_icu.h"
-#include "base/i18n/time_formatting.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/time/time.h"
 #include "base/values.h"
-#include "base/win/metro.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/printing_info_win.h"
 #include "printing/backend/win_helper.h"
@@ -25,15 +22,12 @@
 #include "printing/printing_utils.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "win8/util/win8_util.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/remote_window_tree_host_win.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
-
-using base::Time;
 
 namespace {
 
@@ -41,7 +35,7 @@ HWND GetRootWindow(gfx::NativeView view) {
   HWND window = NULL;
 #if defined(USE_AURA)
   if (view)
-    window = view->GetDispatcher()->host()->GetAcceleratedWidget();
+    window = view->GetHost()->GetAcceleratedWidget();
 #else
   if (view && IsWindow(view)) {
     window = GetAncestor(view, GA_ROOTOWNER);
@@ -165,11 +159,7 @@ PrintingContext* PrintingContext::Create(const std::string& app_locale) {
 }
 
 PrintingContextWin::PrintingContextWin(const std::string& app_locale)
-    : PrintingContext(app_locale),
-      context_(NULL),
-      dialog_box_(NULL),
-      print_dialog_func_(&PrintDlgEx) {
-}
+    : PrintingContext(app_locale), context_(NULL), dialog_box_(NULL) {}
 
 PrintingContextWin::~PrintingContextWin() {
   ReleaseContext();
@@ -179,24 +169,6 @@ void PrintingContextWin::AskUserForSettings(
     gfx::NativeView view, int max_pages, bool has_selection,
     const PrintSettingsCallback& callback) {
   DCHECK(!in_print_job_);
-  if (win8::IsSingleWindowMetroMode()) {
-    // The system dialog can not be opened while running in Metro.
-    // But we can programatically launch the Metro print device charm though.
-    HMODULE metro_module = base::win::GetMetroModule();
-    if (metro_module != NULL) {
-      typedef void (*MetroShowPrintUI)();
-      MetroShowPrintUI metro_show_print_ui =
-          reinterpret_cast<MetroShowPrintUI>(
-              ::GetProcAddress(metro_module, "MetroShowPrintUI"));
-      if (metro_show_print_ui) {
-        // TODO(mad): Remove this once we can send user metrics from the metro
-        // driver. crbug.com/142330
-        UMA_HISTOGRAM_ENUMERATION("Metro.Print", 1, 2);
-        metro_show_print_ui();
-      }
-    }
-    return callback.Run(CANCEL);
-  }
   dialog_box_dismissed_ = false;
 
   HWND window = GetRootWindow(view);
@@ -237,16 +209,7 @@ void PrintingContextWin::AskUserForSettings(
     dialog_options.Flags |= PD_NOPAGENUMS;
   }
 
-  // Note that this cannot use ui::BaseShellDialog as the print dialog is
-  // system modal: opening it from a background thread can cause Windows to
-  // get the wrong Z-order which will make the print dialog appear behind the
-  // browser frame (but still being modal) so neither the browser frame nor
-  // the print dialog will get any input. See http://crbug.com/342697
-  // http://crbug.com/180997 for details.
-  base::MessageLoop::ScopedNestableTaskAllower allow(
-      base::MessageLoop::current());
-  HRESULT hr = (*print_dialog_func_)(&dialog_options);
-  if (hr != S_OK) {
+  if (ShowPrintDialog(&dialog_options) != S_OK) {
     ResetSettings();
     callback.Run(FAILED);
   }
@@ -269,7 +232,7 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
   (void)::EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,
                        NULL, 2, NULL, 0, &bytes_needed, &count_returned);
   if (bytes_needed) {
-    DCHECK(bytes_needed >= count_returned * sizeof(PRINTER_INFO_2));
+    DCHECK_GE(bytes_needed, count_returned * sizeof(PRINTER_INFO_2));
     scoped_ptr<BYTE[]> printer_info_buffer(new BYTE[bytes_needed]);
     BOOL ret = ::EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,
                               NULL, 2, printer_info_buffer.get(),
@@ -277,17 +240,22 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
                               &count_returned);
     if (ret && count_returned) {  // have printers
       // Open the first successfully found printer.
-      for (DWORD count = 0; count < count_returned; ++count) {
-        PRINTER_INFO_2* info_2 = reinterpret_cast<PRINTER_INFO_2*>(
-            printer_info_buffer.get() + count * sizeof(PRINTER_INFO_2));
-        std::wstring printer_name = info_2->pPrinterName;
-        if (info_2->pDevMode == NULL || printer_name.length() == 0)
+      const PRINTER_INFO_2* info_2 =
+          reinterpret_cast<PRINTER_INFO_2*>(printer_info_buffer.get());
+      const PRINTER_INFO_2* info_2_end = info_2 + count_returned;
+      for (; info_2 < info_2_end; ++info_2) {
+        ScopedPrinterHandle printer;
+        if (!printer.OpenPrinter(info_2->pPrinterName))
           continue;
-        if (!AllocateContext(printer_name, info_2->pDevMode, &context_))
-          break;
-        if (InitializeSettings(*info_2->pDevMode, printer_name,
-                               NULL, 0, false)) {
-          break;
+        scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
+            CreateDevMode(printer, NULL);
+        if (!dev_mode || !AllocateContext(info_2->pPrinterName, dev_mode.get(),
+                                          &context_)) {
+          continue;
+        }
+        if (InitializeSettings(*dev_mode.get(), info_2->pPrinterName, NULL, 0,
+                               false)) {
+          return OK;
         }
         ReleaseContext();
       }
@@ -336,15 +304,13 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   DCHECK(!external_preview) << "Not implemented";
 
   ScopedPrinterHandle printer;
-  LPWSTR device_name_wide =
-      const_cast<wchar_t*>(settings_.device_name().c_str());
-  if (!printer.OpenPrinter(device_name_wide))
+  if (!printer.OpenPrinter(settings_.device_name().c_str()))
     return OnError();
 
   // Make printer changes local to Chrome.
   // See MSDN documentation regarding DocumentProperties.
-  scoped_ptr<DEVMODE[]> scoped_dev_mode =
-      CreateDevModeWithColor(printer, device_name_wide,
+  scoped_ptr<DEVMODE, base::FreeDeleter> scoped_dev_mode =
+      CreateDevModeWithColor(printer, settings_.device_name(),
                              settings_.color() != GRAY);
   if (!scoped_dev_mode)
     return OnError();
@@ -352,7 +318,7 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
   {
     DEVMODE* dev_mode = scoped_dev_mode.get();
     dev_mode->dmCopies = std::max(settings_.copies(), 1);
-    if (dev_mode->dmCopies > 1) { // do not change unless multiple copies
+    if (dev_mode->dmCopies > 1) {  // do not change unless multiple copies
       dev_mode->dmFields |= DM_COPIES;
       dev_mode->dmCollate = settings_.collate() ? DMCOLLATE_TRUE :
                                                   DMCOLLATE_FALSE;
@@ -378,6 +344,22 @@ PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
     dev_mode->dmFields |= DM_ORIENTATION;
     dev_mode->dmOrientation = settings_.landscape() ? DMORIENT_LANDSCAPE :
                                                       DMORIENT_PORTRAIT;
+
+    const PrintSettings::RequestedMedia& requested_media =
+        settings_.requested_media();
+    static const int kFromUm = 100;  // Windows uses 0.1mm.
+    int width = requested_media.size_microns.width() / kFromUm;
+    int height = requested_media.size_microns.height() / kFromUm;
+    unsigned id = 0;
+    if (base::StringToUint(requested_media.vendor_id, &id) && id) {
+      dev_mode->dmFields |= DM_PAPERSIZE;
+      dev_mode->dmPaperSize = static_cast<short>(id);
+    } else if (width > 0 && height > 0) {
+      dev_mode->dmFields |= DM_PAPERWIDTH;
+      dev_mode->dmPaperWidth = width;
+      dev_mode->dmFields |= DM_PAPERLENGTH;
+      dev_mode->dmPaperLength = height;
+    }
   }
 
   // Update data using DocumentProperties.
@@ -435,26 +417,14 @@ PrintingContext::Result PrintingContextWin::NewDocument(
 
   DCHECK(SimplifyDocumentTitle(document_name) == document_name);
   DOCINFO di = { sizeof(DOCINFO) };
-  const std::wstring& document_name_wide = base::UTF16ToWide(document_name);
-  di.lpszDocName = document_name_wide.c_str();
+  di.lpszDocName = document_name.c_str();
 
   // Is there a debug dump directory specified? If so, force to print to a file.
-  base::FilePath debug_dump_path = PrintedDocument::debug_dump_path();
-  if (!debug_dump_path.empty()) {
-    // Create a filename.
-    std::wstring filename;
-    Time now(Time::Now());
-    filename = base::TimeFormatShortDateNumeric(now);
-    filename += L"_";
-    filename += base::TimeFormatTimeOfDay(now);
-    filename += L"_";
-    filename += base::UTF16ToWide(document_name);
-    filename += L"_";
-    filename += L"buffer.prn";
-    file_util::ReplaceIllegalCharactersInPath(&filename, '_');
-    debug_dump_path.Append(filename);
-    di.lpszOutput = debug_dump_path.value().c_str();
-  }
+  base::string16 debug_dump_path =
+      PrintedDocument::CreateDebugDumpPath(document_name,
+                                           FILE_PATH_LITERAL(".prn")).value();
+  if (!debug_dump_path.empty())
+    di.lpszOutput = debug_dump_path.c_str();
 
   // No message loop running in unit tests.
   DCHECK(!base::MessageLoop::current() ||
@@ -588,15 +558,15 @@ bool PrintingContextWin::GetPrinterSettings(HANDLE printer,
                                             const std::wstring& device_name) {
   DCHECK(!in_print_job_);
 
-  UserDefaultDevMode user_settings;
+  scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
+      CreateDevMode(printer, NULL);
 
-  if (!user_settings.Init(printer) ||
-      !AllocateContext(device_name, user_settings.get(), &context_)) {
+  if (!dev_mode || !AllocateContext(device_name, dev_mode.get(), &context_)) {
     ResetSettings();
     return false;
   }
 
-  return InitializeSettings(*user_settings.get(), device_name, NULL, 0, false);
+  return InitializeSettings(*dev_mode.get(), device_name, NULL, 0, false);
 }
 
 // static
@@ -683,6 +653,19 @@ PrintingContext::Result PrintingContextWin::ParseDialogResultEx(
     default:
       return FAILED;
   }
+}
+
+HRESULT PrintingContextWin::ShowPrintDialog(PRINTDLGEX* options) {
+  // Note that this cannot use ui::BaseShellDialog as the print dialog is
+  // system modal: opening it from a background thread can cause Windows to
+  // get the wrong Z-order which will make the print dialog appear behind the
+  // browser frame (but still being modal) so neither the browser frame nor
+  // the print dialog will get any input. See http://crbug.com/342697
+  // http://crbug.com/180997 for details.
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
+
+  return PrintDlgEx(options);
 }
 
 PrintingContext::Result PrintingContextWin::ParseDialogResult(

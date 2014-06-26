@@ -81,10 +81,10 @@ SRC_NAMES=(
     "${SRC_APP_NAME} Helper.app"
     "crash_inspector"
     "crash_report_sender.app"
+    "exif.so"
     "ffmpegsumo.so"
     "libplugin_carbon_interpose.dylib"
     "ppGoogleNaClPluginChrome.plugin"
-    "remoting_host_plugin.plugin"
 )
 
 # PDF.plugin is optional. Only include it if present.

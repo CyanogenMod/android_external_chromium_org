@@ -357,12 +357,16 @@ int MapNSSError(PRErrorCode err) {
       return ERR_SSL_INAPPROPRIATE_FALLBACK;
 
     default: {
+      const char* err_name = PR_ErrorToName(err);
+      if (err_name == NULL)
+        err_name = "";
       if (IS_SSL_ERROR(err)) {
-        LOG(WARNING) << "Unknown SSL error " << err
+        LOG(WARNING) << "Unknown SSL error " << err << " (" << err_name << ")"
                      << " mapped to net::ERR_SSL_PROTOCOL_ERROR";
         return ERR_SSL_PROTOCOL_ERROR;
       }
-      LOG(WARNING) << "Unknown error " << err << " mapped to net::ERR_FAILED";
+      LOG(WARNING) << "Unknown error " << err << " (" << err_name << ")"
+                   << " mapped to net::ERR_FAILED";
       return ERR_FAILED;
     }
   }

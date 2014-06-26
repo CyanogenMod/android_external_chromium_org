@@ -7,22 +7,23 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/avatar_menu.h"
 #include "chrome/browser/profiles/profile_window.h"
+#include "chrome/browser/signin/signin_header_helper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 
 namespace extensions {
 
-bool PrincipalsPrivateExtensionFunction::RunImpl() {
+bool PrincipalsPrivateExtensionFunction::RunSync() {
   if (!switches::IsNewProfileManagement()) {
     SetError(
         "Need to enable new-profile-management to use principalsPrivate API.");
     return false;
   }
-  return RunImplSafe();
+  return RunSyncSafe();
 }
 
-bool PrincipalsPrivateSignOutFunction::RunImplSafe() {
+bool PrincipalsPrivateSignOutFunction::RunSyncSafe() {
   Browser* browser = GetCurrentBrowser();
   if (browser) {
     profiles::LockProfile(browser->profile());
@@ -30,10 +31,13 @@ bool PrincipalsPrivateSignOutFunction::RunImplSafe() {
   return true;
 }
 
-bool PrincipalsPrivateShowAvatarBubbleFunction::RunImplSafe() {
+bool PrincipalsPrivateShowAvatarBubbleFunction::RunSyncSafe() {
   Browser* browser = GetCurrentBrowser();
-  if (browser)
-    browser->window()->ShowAvatarBubbleFromAvatarButton();
+  if (browser) {
+    browser->window()->ShowAvatarBubbleFromAvatarButton(
+        BrowserWindow::AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
+        signin::ManageAccountsParams());
+  }
   return true;
 }
 

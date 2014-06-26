@@ -5,25 +5,42 @@
 #include "mojo/services/native_viewport/native_viewport.h"
 
 #include <X11/Xlib.h>
+#include <X11/Xutil.h>
 
 #include "base/message_loop/message_loop.h"
-#include "base/message_loop/message_pump_x11.h"
+#include "ui/events/event.h"
+#include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/events/platform/platform_event_source.h"
+#include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/x/x11_types.h"
 
 namespace mojo {
 namespace services {
 
+bool override_redirect = false;
+
+namespace test {
+
+void EnableTestNativeViewport() {
+  // Without the override_redirect BlockUntilWindowMapped() may never finish
+  // (we don't necessarily get the mapped notify). This often happens with
+  // tests.
+  // TODO: decide if we really want the override redirect here.
+  override_redirect = true;
+}
+
+}  // namespace test
+
 class NativeViewportX11 : public NativeViewport,
-                          public base::MessagePumpDispatcher {
+                          public ui::PlatformEventDispatcher {
  public:
   NativeViewportX11(NativeViewportDelegate* delegate)
       : delegate_(delegate) {
   }
 
   virtual ~NativeViewportX11() {
-    base::MessagePumpX11::Current()->RemoveDispatcherForRootWindow(this);
-    base::MessagePumpX11::Current()->RemoveDispatcherForWindow(window_);
+    event_source_->RemovePlatformEventDispatcher(this);
 
     XDestroyWindow(gfx::GetXDisplay(), window_);
   }
@@ -35,7 +52,7 @@ class NativeViewportX11 : public NativeViewport,
 
     XSetWindowAttributes swa;
     memset(&swa, 0, sizeof(swa));
-    swa.override_redirect = False;
+    swa.override_redirect = override_redirect ? True : False;
 
     bounds_ = bounds;
     window_ = XCreateWindow(
@@ -53,8 +70,21 @@ class NativeViewportX11 : public NativeViewport,
     atom_wm_delete_window_ = XInternAtom(display, "WM_DELETE_WINDOW", 1);
     XSetWMProtocols(display, window_, &atom_wm_delete_window_, 1);
 
-    base::MessagePumpX11::Current()->AddDispatcherForWindow(this, window_);
-    base::MessagePumpX11::Current()->AddDispatcherForRootWindow(this);
+    event_source_ = ui::PlatformEventSource::CreateDefault();
+    event_source_->AddPlatformEventDispatcher(this);
+
+    long event_mask = ButtonPressMask | ButtonReleaseMask | FocusChangeMask |
+        KeyPressMask | KeyReleaseMask | EnterWindowMask | LeaveWindowMask |
+        ExposureMask | VisibilityChangeMask | StructureNotifyMask |
+        PropertyChangeMask | PointerMotionMask;
+    XSelectInput(display, window_, event_mask);
+
+    // We need a WM_CLIENT_MACHINE and WM_LOCALE_NAME value so we integrate with
+    // the desktop environment.
+    XSetWMProperties(display, window_, NULL, NULL, NULL, 0, NULL, NULL, NULL);
+
+    // TODO(aa): Setup xinput2 events.
+    // See desktop_aura/desktop_window_tree_host_x11.cc.
 
     delegate_->OnAcceleratedWidgetAvailable(window_);
   }
@@ -62,6 +92,8 @@ class NativeViewportX11 : public NativeViewport,
   virtual void Show() OVERRIDE {
     XDisplay* display = gfx::GetXDisplay();
     XMapWindow(display, window_);
+    static_cast<ui::X11EventSource*>(
+        event_source_.get())->BlockUntilWindowMapped(window_);
     XFlush(display);
   }
 
@@ -90,21 +122,41 @@ class NativeViewportX11 : public NativeViewport,
     NOTIMPLEMENTED();
   }
 
-  // Overridden from base::MessagePumpDispatcher:
-  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE {
+  // ui::PlatformEventDispatcher:
+  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
+    // TODO(aa): This is going to have to be thought through more carefully.
+    // Which events are appropriate to pass to clients?
     switch (event->type) {
-      case ClientMessage: {
-        if (event->xclient.message_type == atom_wm_protocols_) {
-          Atom protocol = static_cast<Atom>(event->xclient.data.l[0]);
-          if (protocol == atom_wm_delete_window_)
-            delegate_->OnDestroyed();
-        }
-        break;
-      }
+      case KeyPress:
+      case KeyRelease:
+      case ButtonPress:
+      case ButtonRelease:
+      case MotionNotify:
+        return true;
+      case ClientMessage:
+        return event->xclient.message_type == atom_wm_protocols_;
+      default:
+        return false;
     }
-    return POST_DISPATCH_NONE;
   }
 
+  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
+    if (event->type == ClientMessage) {
+      Atom protocol = static_cast<Atom>(event->xclient.data.l[0]);
+      if (protocol == atom_wm_delete_window_)
+        delegate_->OnDestroyed();
+    } else if (event->type == KeyPress || event->type == KeyRelease) {
+      ui::KeyEvent key_event(event, false);
+      delegate_->OnEvent(&key_event);
+    } else if (event->type == ButtonPress || event->type == ButtonRelease ||
+               event->type == MotionNotify) {
+      ui::MouseEvent mouse_event(event);
+      delegate_->OnEvent(&mouse_event);
+    }
+    return ui::POST_DISPATCH_NONE;
+  }
+
+  scoped_ptr<ui::PlatformEventSource> event_source_;
   NativeViewportDelegate* delegate_;
   gfx::Rect bounds_;
   XID window_;

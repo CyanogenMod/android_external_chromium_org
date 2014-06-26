@@ -14,11 +14,15 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/storage/settings_observer.h"
-#include "chrome/browser/extensions/api/storage/value_store_cache.h"
 #include "components/policy/core/common/policy_service.h"
+#include "extensions/browser/api/storage/settings_observer.h"
+#include "extensions/browser/api/storage/value_store_cache.h"
 
 class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace policy {
 class PolicyMap;
@@ -39,7 +43,7 @@ class ManagedValueStoreCache : public ValueStoreCache,
   // |factory| is used to create databases for the PolicyValueStores.
   // |observers| is the list of SettingsObservers to notify when a ValueStore
   // changes.
-  ManagedValueStoreCache(Profile* profile,
+  ManagedValueStoreCache(content::BrowserContext* context,
                          const scoped_refptr<SettingsStorageFactory>& factory,
                          const scoped_refptr<SettingsObserverList>& observers);
   virtual ~ManagedValueStoreCache();

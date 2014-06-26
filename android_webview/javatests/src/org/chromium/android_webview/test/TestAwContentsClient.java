@@ -14,11 +14,16 @@ import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPage
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageStartedHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnReceivedErrorHelper;
 
-class TestAwContentsClient extends NullContentsClient {
+/**
+ * AwContentsClient subclass used for testing.
+ */
+public class TestAwContentsClient extends NullContentsClient {
     private String mUpdatedTitle;
     private final OnPageStartedHelper mOnPageStartedHelper;
     private final OnPageFinishedHelper mOnPageFinishedHelper;
     private final OnReceivedErrorHelper mOnReceivedErrorHelper;
+    private final OnDownloadStartHelper mOnDownloadStartHelper;
+    private final OnReceivedLoginRequestHelper mOnReceivedLoginRequestHelper;
     private final OnEvaluateJavaScriptResultHelper mOnEvaluateJavaScriptResultHelper;
     private final AddMessageToConsoleHelper mAddMessageToConsoleHelper;
     private final OnScaleChangedHelper mOnScaleChangedHelper;
@@ -30,6 +35,8 @@ class TestAwContentsClient extends NullContentsClient {
         mOnPageStartedHelper = new OnPageStartedHelper();
         mOnPageFinishedHelper = new OnPageFinishedHelper();
         mOnReceivedErrorHelper = new OnReceivedErrorHelper();
+        mOnDownloadStartHelper = new OnDownloadStartHelper();
+        mOnReceivedLoginRequestHelper = new OnReceivedLoginRequestHelper();
         mOnEvaluateJavaScriptResultHelper = new OnEvaluateJavaScriptResultHelper();
         mAddMessageToConsoleHelper = new AddMessageToConsoleHelper();
         mOnScaleChangedHelper = new OnScaleChangedHelper();
@@ -49,6 +56,14 @@ class TestAwContentsClient extends NullContentsClient {
         return mOnReceivedErrorHelper;
     }
 
+    public OnDownloadStartHelper getOnDownloadStartHelper() {
+        return mOnDownloadStartHelper;
+    }
+
+    public OnReceivedLoginRequestHelper getOnReceivedLoginRequestHelper() {
+        return mOnReceivedLoginRequestHelper;
+    }
+
     public OnEvaluateJavaScriptResultHelper getOnEvaluateJavaScriptResultHelper() {
         return mOnEvaluateJavaScriptResultHelper;
     }
@@ -61,6 +76,9 @@ class TestAwContentsClient extends NullContentsClient {
         return mAddMessageToConsoleHelper;
     }
 
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
     public static class OnScaleChangedHelper extends CallbackHelper {
         private float mPreviousScale;
         private float mCurrentScale;
@@ -69,6 +87,15 @@ class TestAwContentsClient extends NullContentsClient {
             mCurrentScale = newScale;
             super.notifyCalled();
         }
+
+        public float getOldScale() {
+            return mPreviousScale;
+        }
+
+        public float getNewScale() {
+            return mCurrentScale;
+        }
+
         public float getLastScaleRatio() {
             assert getCallCount() > 0;
             return mCurrentScale / mPreviousScale;
@@ -107,6 +134,98 @@ class TestAwContentsClient extends NullContentsClient {
         mOnReceivedErrorHelper.notifyCalled(errorCode, description, failingUrl);
     }
 
+    /**
+     * CallbackHelper for OnDownloadStart.
+     */
+    public static class OnDownloadStartHelper extends CallbackHelper {
+        private String mUrl;
+        private String mUserAgent;
+        private String mContentDisposition;
+        private String mMimeType;
+        long mContentLength;
+
+        public String getUrl() {
+            assert getCallCount() > 0;
+            return mUrl;
+        }
+
+        public String getUserAgent() {
+            assert getCallCount() > 0;
+            return mUserAgent;
+        }
+
+        public String getContentDisposition() {
+            assert getCallCount() > 0;
+            return mContentDisposition;
+        }
+
+        public String getMimeType() {
+            assert getCallCount() > 0;
+            return mMimeType;
+        }
+
+        public long getContentLength() {
+            assert getCallCount() > 0;
+            return mContentLength;
+        }
+
+        public void notifyCalled(String url, String userAgent, String contentDisposition,
+                String mimeType, long contentLength) {
+            mUrl = url;
+            mUserAgent = userAgent;
+            mContentDisposition = contentDisposition;
+            mMimeType = mimeType;
+            mContentLength = contentLength;
+            notifyCalled();
+        }
+    }
+
+    @Override
+    public void onDownloadStart(String url,
+            String userAgent,
+            String contentDisposition,
+            String mimeType,
+            long contentLength) {
+        getOnDownloadStartHelper().notifyCalled(url, userAgent, contentDisposition, mimeType,
+                contentLength);
+    }
+
+    /**
+     * CallbackHelper for OnReceivedLoginRequest.
+     */
+    public static class OnReceivedLoginRequestHelper extends CallbackHelper {
+        private String mRealm;
+        private String mAccount;
+        private String mArgs;
+
+        public String getRealm() {
+            assert getCallCount() > 0;
+            return mRealm;
+        }
+
+        public String getAccount() {
+            assert getCallCount() > 0;
+            return mAccount;
+        }
+
+        public String getArgs() {
+            assert getCallCount() > 0;
+            return mArgs;
+        }
+
+        public void notifyCalled(String realm, String account, String args) {
+            mRealm = realm;
+            mAccount = account;
+            mArgs = args;
+            notifyCalled();
+        }
+    }
+
+    @Override
+    public void onReceivedLoginRequest(String realm, String account, String args) {
+        getOnReceivedLoginRequestHelper().notifyCalled(realm, account, args);
+    }
+
     @Override
     public boolean onConsoleMessage(ConsoleMessage consoleMessage) {
         mAddMessageToConsoleHelper.notifyCalled(consoleMessage.messageLevel().ordinal(),
@@ -114,6 +233,9 @@ class TestAwContentsClient extends NullContentsClient {
         return false;
     }
 
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
     public static class AddMessageToConsoleHelper extends CallbackHelper {
         private int mLevel;
         private String mMessage;
@@ -154,6 +276,9 @@ class TestAwContentsClient extends NullContentsClient {
         mOnScaleChangedHelper.notifyCalled(oldScale, newScale);
     }
 
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
     public static class PictureListenerHelper extends CallbackHelper {
         // Generally null, depending on |invalidationOnly| in enableOnNewPicture()
         private Picture mPicture;
@@ -174,6 +299,9 @@ class TestAwContentsClient extends NullContentsClient {
         mPictureListenerHelper.notifyCalled(picture);
     }
 
+    /**
+     * Callback helper for onScaleChangedScaled.
+     */
     public static class ShouldOverrideUrlLoadingHelper extends CallbackHelper {
         private String mShouldOverrideUrlLoadingUrl;
         private String mPreviousShouldOverrideUrlLoadingUrl;

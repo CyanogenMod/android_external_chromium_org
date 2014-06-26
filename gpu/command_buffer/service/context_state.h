@@ -22,6 +22,7 @@ namespace gles2 {
 
 class Buffer;
 class ErrorState;
+class ErrorStateClient;
 class FeatureInfo;
 class Framebuffer;
 class Program;
@@ -93,20 +94,30 @@ struct Vec4 {
 };
 
 struct GPU_EXPORT ContextState {
-  ContextState(FeatureInfo* feature_info, Logger* logger);
+  ContextState(FeatureInfo* feature_info,
+               ErrorStateClient* error_state_client,
+               Logger* logger);
   ~ContextState();
 
   void Initialize();
 
+  void SetIgnoreCachedStateForTest(bool ignore) {
+    ignore_cached_state = ignore;
+  }
+
   void RestoreState(const ContextState* prev_state) const;
-  void InitCapabilities() const;
-  void InitState() const;
+  void InitCapabilities(const ContextState* prev_state) const;
+  void InitState(const ContextState* prev_state) const;
 
   void RestoreActiveTexture() const;
   void RestoreAllTextureUnitBindings(const ContextState* prev_state) const;
-  void RestoreAttribute(GLuint index) const;
+  void RestoreActiveTextureUnitBinding(unsigned int target) const;
+  void RestoreVertexAttribValues() const;
+  void RestoreVertexAttribArrays(
+      const scoped_refptr<VertexAttribManager> attrib_manager) const;
+  void RestoreVertexAttribs() const;
   void RestoreBufferBindings() const;
-  void RestoreGlobalState() const;
+  void RestoreGlobalState(const ContextState* prev_state) const;
   void RestoreProgramBindings() const;
   void RestoreRenderbufferBindings() const;
   void RestoreTextureUnitBindings(
@@ -118,6 +129,44 @@ struct GPU_EXPORT ContextState {
   bool GetStateAsGLfloat(
       GLenum pname, GLfloat* params, GLsizei* num_written) const;
   bool GetEnabled(GLenum cap) const;
+
+  inline void SetDeviceColorMask(GLboolean red,
+                                 GLboolean green,
+                                 GLboolean blue,
+                                 GLboolean alpha) {
+    if (cached_color_mask_red == red && cached_color_mask_green == green &&
+        cached_color_mask_blue == blue && cached_color_mask_alpha == alpha &&
+        !ignore_cached_state)
+      return;
+    cached_color_mask_red = red;
+    cached_color_mask_green = green;
+    cached_color_mask_blue = blue;
+    cached_color_mask_alpha = alpha;
+    glColorMask(red, green, blue, alpha);
+  }
+
+  inline void SetDeviceDepthMask(GLboolean mask) {
+    if (cached_depth_mask == mask && !ignore_cached_state)
+      return;
+    cached_depth_mask = mask;
+    glDepthMask(mask);
+  }
+
+  inline void SetDeviceStencilMaskSeparate(GLenum op, GLuint mask) {
+    if (op == GL_FRONT) {
+      if (cached_stencil_front_writemask == mask && !ignore_cached_state)
+        return;
+      cached_stencil_front_writemask = mask;
+    } else if (op == GL_BACK) {
+      if (cached_stencil_back_writemask == mask && !ignore_cached_state)
+        return;
+      cached_stencil_back_writemask = mask;
+    } else {
+      NOTREACHED();
+      return;
+    }
+    glStencilMaskSeparate(op, mask);
+  }
 
   ErrorState* GetErrorState();
 
@@ -142,6 +191,7 @@ struct GPU_EXPORT ContextState {
 
   // Class that manages vertex attribs.
   scoped_refptr<VertexAttribManager> vertex_attrib_manager;
+  scoped_refptr<VertexAttribManager> default_vertex_attrib_manager;
 
   // The program in use by glUseProgram
   scoped_refptr<Program> current_program;
@@ -154,6 +204,7 @@ struct GPU_EXPORT ContextState {
   QueryMap current_queries;
 
   bool pack_reverse_row_order;
+  bool ignore_cached_state;
 
   mutable bool fbo_binding_for_scissor_workaround_dirty_;
   FeatureInfo* feature_info_;

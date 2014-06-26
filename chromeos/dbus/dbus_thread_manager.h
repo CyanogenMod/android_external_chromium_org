@@ -29,6 +29,10 @@ class DBusThreadManagerObserver;
 class BluetoothAdapterClient;
 class BluetoothAgentManagerClient;
 class BluetoothDeviceClient;
+class BluetoothGattCharacteristicClient;
+class BluetoothGattDescriptorClient;
+class BluetoothGattManagerClient;
+class BluetoothGattServiceClient;
 class BluetoothInputClient;
 class BluetoothProfileManagerClient;
 class CrasAudioClient;
@@ -39,6 +43,7 @@ class DebugDaemonClient;
 class GsmSMSClient;
 class ImageBurnerClient;
 class IntrospectableClient;
+class LorgnetteManagerClient;
 class ModemMessagingClient;
 class NfcAdapterClient;
 class NfcDeviceClient;
@@ -94,10 +99,12 @@ class CHROMEOS_EXPORT DBusThreadManager {
   // Similar to Initialize(), but injects an alternative
   // DBusThreadManager using SetInstanceForTest first.  The injected
   // object will be owned by the internal pointer and deleted by
-  // Shutdown().
+  // Shutdown(). Does not create any Fake client implementations.
   static void InitializeForTesting(DBusThreadManager* dbus_thread_manager);
 
-  // Initialize with stub implementations for tests based on stubs.
+  // Initialize with stub implementations for tests, creating a complete set
+  // of fake/stub client implementations. Also initializes a default set of
+  // fake Shill devices and services, customizable with switches::kShillStub.
   static void InitializeWithStub();
 
   // Returns true if DBusThreadManager has been initialized. Call this to
@@ -122,6 +129,11 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual BluetoothAdapterClient* GetBluetoothAdapterClient() = 0;
   virtual BluetoothAgentManagerClient* GetBluetoothAgentManagerClient() = 0;
   virtual BluetoothDeviceClient* GetBluetoothDeviceClient() = 0;
+  virtual BluetoothGattCharacteristicClient*
+      GetBluetoothGattCharacteristicClient() = 0;
+  virtual BluetoothGattDescriptorClient* GetBluetoothGattDescriptorClient() = 0;
+  virtual BluetoothGattManagerClient* GetBluetoothGattManagerClient() = 0;
+  virtual BluetoothGattServiceClient* GetBluetoothGattServiceClient() = 0;
   virtual BluetoothInputClient* GetBluetoothInputClient() = 0;
   virtual BluetoothProfileManagerClient* GetBluetoothProfileManagerClient() = 0;
   virtual CrasAudioClient* GetCrasAudioClient() = 0;
@@ -131,6 +143,7 @@ class CHROMEOS_EXPORT DBusThreadManager {
   virtual GsmSMSClient* GetGsmSMSClient() = 0;
   virtual ImageBurnerClient* GetImageBurnerClient() = 0;
   virtual IntrospectableClient* GetIntrospectableClient() = 0;
+  virtual LorgnetteManagerClient* GetLorgnetteManagerClient() = 0;
   virtual ModemMessagingClient* GetModemMessagingClient() = 0;
   virtual NfcAdapterClient* GetNfcAdapterClient() = 0;
   virtual NfcDeviceClient* GetNfcDeviceClient() = 0;

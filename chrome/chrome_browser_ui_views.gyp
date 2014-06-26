@@ -8,15 +8,16 @@
   },
   'targets': [
     {
+      # GN version: //chrome/browser/ui/views
       'target_name': 'browser_ui_views',
       'type': '<(component)',
       'dependencies': [
         '../base/base.gyp:base',
         '../skia/skia.gyp:skia',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/events/events.gyp:events',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/ui.gyp:ui',
         '../url/url.gyp:url_lib',
       ],
       'conditions': [

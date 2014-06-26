@@ -38,10 +38,16 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // Get or set the text shown on the button.
   const base::string16& GetText() const;
-  void SetText(const base::string16& text);
+  virtual void SetText(const base::string16& text);
 
   // Set the text color shown for the specified button state.
   void SetTextColor(ButtonState for_state, SkColor color);
+
+  // Set drop shadows underneath the text.
+  void SetTextShadows(const gfx::ShadowValues& shadows);
+
+  // Sets whether subpixel rendering is used on the label.
+  void SetTextSubpixelRenderingEnabled(bool enabled);
 
   // Get or set the text's multi-line property to break on '\n', etc.
   bool GetTextMultiLine() const;
@@ -52,16 +58,18 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   void SetFontList(const gfx::FontList& font_list);
 
   // Set the elide behavior of this button.
-  void SetElideBehavior(Label::ElideBehavior elide_behavior);
+  void SetElideBehavior(gfx::ElideBehavior elide_behavior);
 
   // Get or set the horizontal alignment used for the button; reversed in RTL.
   // The optional image will lead the text, unless the button is right-aligned.
   gfx::HorizontalAlignment GetHorizontalAlignment() const;
   void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
 
+  // Set the directionality mode used for the button text.
+  void SetDirectionalityMode(gfx::DirectionalityMode mode);
+
   // Call set_min_size(gfx::Size()) to clear the monotonically increasing size.
   void set_min_size(const gfx::Size& min_size) { min_size_ = min_size; }
-  void set_min_width(const int min_width) { min_size_.set_width(min_width); }
   void set_max_size(const gfx::Size& max_size) { max_size_ = max_size; }
 
   // Get or set the option to handle the return key; false by default.
@@ -73,9 +81,11 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   void SetStyle(ButtonStyle style);
 
   void SetFocusPainter(scoped_ptr<Painter> focus_painter);
+  Painter* focus_painter() { return focus_painter_.get(); }
 
   // View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void SetBorder(scoped_ptr<Border> border) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
 
@@ -83,10 +93,15 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   ImageView* image() const { return image_; }
   Label* label() const { return label_; }
 
+  // Returns the available area for the label and image. Subclasses can change
+  // these bounds if they need room to do manual painting.
+  virtual gfx::Rect GetChildAreaBounds();
+
   // View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // Fill |params| with information about the button.
   virtual void GetExtraParams(ui::NativeTheme::ExtraParams* params) const;
@@ -94,13 +109,16 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   // Resets colors from the NativeTheme, explicitly set colors are unchanged.
   virtual void ResetColorsFromNativeTheme();
 
+  // Creates the default border for this button. This can be overridden by
+  // subclasses or by LinuxUI.
+  virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const;
+
   // Updates the image view to contain the appropriate button state image.
   void UpdateImage();
 
-  // Updates our border with a specific Border instance which has different
-  // insets, etc. This may wrap the border in an object which will draw a
-  // native style border.
-  void UpdateThemedBorder(scoped_ptr<Border> border);
+  // Updates the border as per the NativeTheme, unless a different border was
+  // set with SetBorder.
+  void UpdateThemedBorder();
 
   // NativeThemeDelegate:
   virtual gfx::Rect GetThemePaintRect() const OVERRIDE;
@@ -117,7 +135,6 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // View:
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // NativeThemeDelegate:
   virtual ui::NativeTheme::Part GetThemePart() const OVERRIDE;
@@ -145,7 +162,7 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
   bool explicitly_set_colors_[STATE_COUNT];
 
   // |min_size_| increases monotonically with the preferred size.
-  gfx::Size min_size_;
+  mutable gfx::Size min_size_;
   // |max_size_| may be set to clamp the preferred size.
   gfx::Size max_size_;
 
@@ -156,6 +173,9 @@ class VIEWS_EXPORT LabelButton : public CustomButton,
 
   // The button's overall style.
   ButtonStyle style_;
+
+  // True if current border was set by UpdateThemedBorder. Defaults to true.
+  bool border_is_themed_border_;
 
   scoped_ptr<Painter> focus_painter_;
 

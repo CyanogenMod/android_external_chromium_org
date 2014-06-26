@@ -10,7 +10,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/process/launch.h"
 #include "chrome/browser/first_run/upgrade_util_linux.h"
 
@@ -23,7 +22,10 @@ double saved_last_modified_time_of_exe = 0;
 namespace upgrade_util {
 
 bool RelaunchChromeBrowser(const CommandLine& command_line) {
-  return base::LaunchProcess(command_line, base::LaunchOptions(), NULL);
+  base::LaunchOptions options;
+  // Don't set NO_NEW_PRIVS on the relaunched browser process.
+  options.allow_new_privs = true;
+  return base::LaunchProcess(command_line, options, NULL);
 }
 
 bool IsUpdatePendingRestart() {

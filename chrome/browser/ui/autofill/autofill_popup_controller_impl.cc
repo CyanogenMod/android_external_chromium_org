@@ -12,9 +12,9 @@
 #include "chrome/browser/ui/autofill/autofill_popup_view.h"
 #include "chrome/browser/ui/autofill/popup_constants.h"
 #include "components/autofill/core/browser/autofill_popup_delegate.h"
+#include "components/autofill/core/browser/popup_item_ids.h"
 #include "content/public/browser/native_web_keyboard_event.h"
-#include "grit/webkit_resources.h"
-#include "third_party/WebKit/public/web/WebAutofillClient.h"
+#include "grit/component_scaled_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/gfx/rect_conversions.h"
@@ -24,7 +24,6 @@
 #include "ui/gfx/vector2d.h"
 
 using base::WeakPtr;
-using blink::WebAutofillClient;
 
 namespace autofill {
 namespace {
@@ -60,6 +59,9 @@ const DataResource kDataResources[] = {
   { "jcbCC", IDR_AUTOFILL_CC_JCB },
   { "masterCardCC", IDR_AUTOFILL_CC_MASTERCARD },
   { "visaCC", IDR_AUTOFILL_CC_VISA },
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  { "macContactsIcon", IDR_AUTOFILL_MAC_CONTACTS_ICON },
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 };
 
 }  // namespace
@@ -103,7 +105,6 @@ AutofillPopupControllerImpl::AutofillPopupControllerImpl(
       view_(NULL),
       delegate_(delegate),
       text_direction_(text_direction),
-      hide_on_outside_click_(false),
       weak_ptr_factory_(this) {
   ClearState();
   controller_common_->SetKeyPressCallback(
@@ -149,18 +150,14 @@ void AutofillPopupControllerImpl::Show(
 
     int available_width = popup_width - RowWidthWithoutText(i);
 
-    // Each field recieves space in proportion to its length.
+    // Each field receives space in proportion to its length.
     int name_size = available_width * name_width / total_text_length;
-    names_[i] = gfx::ElideText(names_[i],
-                               GetNameFontListForRow(i),
-                               name_size,
-                               gfx::ELIDE_AT_END);
+    names_[i] = gfx::ElideText(names_[i], GetNameFontListForRow(i),
+                               name_size, gfx::ELIDE_TAIL);
 
     int subtext_size = available_width * subtext_width / total_text_length;
-    subtexts_[i] = gfx::ElideText(subtexts_[i],
-                                  subtext_font_list(),
-                                  subtext_size,
-                                  gfx::ELIDE_AT_END);
+    subtexts_[i] = gfx::ElideText(subtexts_[i], subtext_font_list(),
+                                  subtext_size, gfx::ELIDE_TAIL);
   }
 #endif
 
@@ -179,8 +176,8 @@ void AutofillPopupControllerImpl::Show(
     UpdateBoundsAndRedrawPopup();
   }
 
-  delegate_->OnPopupShown();
   controller_common_->RegisterKeyPressCallback();
+  delegate_->OnPopupShown();
 }
 
 void AutofillPopupControllerImpl::UpdateDataListValues(
@@ -189,7 +186,7 @@ void AutofillPopupControllerImpl::UpdateDataListValues(
   // Remove all the old data list values, which should always be at the top of
   // the list if they are present.
   while (!identifiers_.empty() &&
-         identifiers_[0] == WebAutofillClient::MenuItemIDDataListEntry) {
+         identifiers_[0] == POPUP_ITEM_ID_DATALIST_ENTRY) {
     names_.erase(names_.begin());
     subtexts_.erase(subtexts_.begin());
     icons_.erase(icons_.begin());
@@ -199,8 +196,7 @@ void AutofillPopupControllerImpl::UpdateDataListValues(
   // If there are no new data list values, exit (clearing the separator if there
   // is one).
   if (values.empty()) {
-    if (!identifiers_.empty() &&
-        identifiers_[0] == WebAutofillClient::MenuItemIDSeparator) {
+    if (!identifiers_.empty() && identifiers_[0] == POPUP_ITEM_ID_SEPARATOR) {
       names_.erase(names_.begin());
       subtexts_.erase(subtexts_.begin());
       icons_.erase(icons_.begin());
@@ -217,13 +213,11 @@ void AutofillPopupControllerImpl::UpdateDataListValues(
   }
 
   // Add a separator if there are any other values.
-  if (!identifiers_.empty() &&
-      identifiers_[0] != WebAutofillClient::MenuItemIDSeparator) {
+  if (!identifiers_.empty() && identifiers_[0] != POPUP_ITEM_ID_SEPARATOR) {
     names_.insert(names_.begin(), base::string16());
     subtexts_.insert(subtexts_.begin(), base::string16());
     icons_.insert(icons_.begin(), base::string16());
-    identifiers_.insert(identifiers_.begin(),
-                        WebAutofillClient::MenuItemIDSeparator);
+    identifiers_.insert(identifiers_.begin(), POPUP_ITEM_ID_SEPARATOR);
   }
 
 
@@ -232,16 +226,15 @@ void AutofillPopupControllerImpl::UpdateDataListValues(
 
   // Add the values that are the same for all data list elements.
   icons_.insert(icons_.begin(), values.size(), base::string16());
-  identifiers_.insert(identifiers_.begin(),
-                      values.size(),
-                      WebAutofillClient::MenuItemIDDataListEntry);
+  identifiers_.insert(
+      identifiers_.begin(), values.size(), POPUP_ITEM_ID_DATALIST_ENTRY);
 
   UpdateBoundsAndRedrawPopup();
 }
 
 void AutofillPopupControllerImpl::Hide() {
   controller_common_->RemoveKeyPressCallback();
-  if (delegate_.get())
+  if (delegate_)
     delegate_->OnPopupHidden();
 
   if (view_)
@@ -307,23 +300,22 @@ void AutofillPopupControllerImpl::SetSelectionAtPoint(const gfx::Point& point) {
   SetSelectedLine(LineFromY(point.y()));
 }
 
-void AutofillPopupControllerImpl::AcceptSelectionAtPoint(
-    const gfx::Point& point) {
-  SetSelectionAtPoint(point);
-  AcceptSelectedLine();
+bool AutofillPopupControllerImpl::AcceptSelectedLine() {
+  if (selected_line_ == kNoSelection)
+    return false;
+
+  DCHECK_GE(selected_line_, 0);
+  DCHECK_LT(selected_line_, static_cast<int>(names_.size()));
+
+  if (!CanAccept(identifiers_[selected_line_]))
+    return false;
+
+  AcceptSuggestion(selected_line_);
+  return true;
 }
 
 void AutofillPopupControllerImpl::SelectionCleared() {
   SetSelectedLine(kNoSelection);
-}
-
-bool AutofillPopupControllerImpl::ShouldRepostEvent(
-    const ui::MouseEvent& event) {
-  return delegate_->ShouldRepostEvent(event);
-}
-
-bool AutofillPopupControllerImpl::ShouldHideOnOutsideClick() const {
-  return hide_on_outside_click_;
 }
 
 void AutofillPopupControllerImpl::AcceptSuggestion(size_t index) {
@@ -344,13 +336,12 @@ bool AutofillPopupControllerImpl::CanDelete(size_t index) const {
   // TODO(isherman): Native AddressBook suggestions on Mac and Android should
   // not be considered to be deleteable.
   int id = identifiers_[index];
-  return id > 0 ||
-      id == WebAutofillClient::MenuItemIDAutocompleteEntry ||
-      id == WebAutofillClient::MenuItemIDPasswordEntry;
+  return id > 0 || id == POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY ||
+         id == POPUP_ITEM_ID_PASSWORD_ENTRY;
 }
 
 bool AutofillPopupControllerImpl::IsWarning(size_t index) const {
-  return identifiers_[index] == WebAutofillClient::MenuItemIDWarningMessage;
+  return identifiers_[index] == POPUP_ITEM_ID_WARNING_MESSAGE;
 }
 
 gfx::Rect AutofillPopupControllerImpl::GetRowBounds(size_t index) {
@@ -411,7 +402,7 @@ const std::vector<int>& AutofillPopupControllerImpl::identifiers() const {
 #if !defined(OS_ANDROID)
 const gfx::FontList& AutofillPopupControllerImpl::GetNameFontListForRow(
     size_t index) const {
-  if (identifiers_[index] == WebAutofillClient::MenuItemIDWarningMessage)
+  if (identifiers_[index] == POPUP_ITEM_ID_WARNING_MESSAGE)
     return warning_font_list_;
 
   return name_font_list_;
@@ -424,11 +415,6 @@ const gfx::FontList& AutofillPopupControllerImpl::subtext_font_list() const {
 
 int AutofillPopupControllerImpl::selected_line() const {
   return selected_line_;
-}
-
-void AutofillPopupControllerImpl::set_hide_on_outside_click(
-    bool hide_on_outside_click) {
-  hide_on_outside_click_ = hide_on_outside_click;
 }
 
 void AutofillPopupControllerImpl::SetSelectedLine(int selected_line) {
@@ -444,10 +430,12 @@ void AutofillPopupControllerImpl::SetSelectedLine(int selected_line) {
 
   selected_line_ = selected_line;
 
-  if (selected_line_ != kNoSelection)
-    delegate_->DidSelectSuggestion(identifiers_[selected_line_]);
-  else
+  if (selected_line_ != kNoSelection) {
+    delegate_->DidSelectSuggestion(names_[selected_line_],
+                                   identifiers_[selected_line_]);
+  } else {
     delegate_->ClearPreviewedForm();
+  }
 }
 
 void AutofillPopupControllerImpl::SelectNextLine() {
@@ -478,20 +466,6 @@ void AutofillPopupControllerImpl::SelectPreviousLine() {
     new_selected_line = names_.size() - 1;
 
   SetSelectedLine(new_selected_line);
-}
-
-bool AutofillPopupControllerImpl::AcceptSelectedLine() {
-  if (selected_line_ == kNoSelection)
-    return false;
-
-  DCHECK_GE(selected_line_, 0);
-  DCHECK_LT(selected_line_, static_cast<int>(names_.size()));
-
-  if (!CanAccept(identifiers_[selected_line_]))
-    return false;
-
-  AcceptSuggestion(selected_line_);
-  return true;
 }
 
 bool AutofillPopupControllerImpl::RemoveSelectedLine() {
@@ -541,24 +515,22 @@ int AutofillPopupControllerImpl::LineFromY(int y) {
 }
 
 int AutofillPopupControllerImpl::GetRowHeightFromId(int identifier) const {
-  if (identifier == WebAutofillClient::MenuItemIDSeparator)
+  if (identifier == POPUP_ITEM_ID_SEPARATOR)
     return kSeparatorHeight;
 
   return kRowHeight;
 }
 
 bool AutofillPopupControllerImpl::CanAccept(int id) {
-  return id != WebAutofillClient::MenuItemIDSeparator &&
-      id != WebAutofillClient::MenuItemIDWarningMessage;
+  return id != POPUP_ITEM_ID_SEPARATOR && id != POPUP_ITEM_ID_WARNING_MESSAGE;
 }
 
 bool AutofillPopupControllerImpl::HasSuggestions() {
   return identifiers_.size() != 0 &&
-      (identifiers_[0] > 0 ||
-       identifiers_[0] ==
-           WebAutofillClient::MenuItemIDAutocompleteEntry ||
-       identifiers_[0] == WebAutofillClient::MenuItemIDPasswordEntry ||
-       identifiers_[0] == WebAutofillClient::MenuItemIDDataListEntry);
+         (identifiers_[0] > 0 ||
+          identifiers_[0] == POPUP_ITEM_ID_AUTOCOMPLETE_ENTRY ||
+          identifiers_[0] == POPUP_ITEM_ID_PASSWORD_ENTRY ||
+          identifiers_[0] == POPUP_ITEM_ID_DATALIST_ENTRY);
 }
 
 void AutofillPopupControllerImpl::SetValues(

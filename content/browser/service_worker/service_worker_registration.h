@@ -16,6 +16,7 @@
 
 namespace content {
 
+class ServiceWorkerRegistrationInfo;
 class ServiceWorkerVersion;
 
 // This class manages all persistence of service workers:
@@ -30,31 +31,27 @@ class ServiceWorkerVersion;
 //
 // This class also manages the state of the upgrade process, which
 // includes managing which ServiceWorkerVersion is "active" vs "in
-// waiting" (or "pending")
+// waiting".
 class CONTENT_EXPORT ServiceWorkerRegistration
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerRegistration>) {
  public:
   ServiceWorkerRegistration(const GURL& pattern,
                             const GURL& script_url,
-                            int64 registration_id);
-
-  void Shutdown();
-  bool is_shutdown() const { return is_shutdown_; }
+                            int64 registration_id,
+                            base::WeakPtr<ServiceWorkerContextCore> context);
 
   int64 id() const { return registration_id_; }
   const GURL& script_url() const { return script_url_; }
   const GURL& pattern() const { return pattern_; }
-
-  int64 next_version_id() { return next_version_id_++; }
 
   ServiceWorkerVersion* active_version() const {
     DCHECK(!is_shutdown_);
     return active_version_.get();
   }
 
-  ServiceWorkerVersion* pending_version() const {
+  ServiceWorkerVersion* waiting_version() const {
     DCHECK(!is_shutdown_);
-    return pending_version_.get();
+    return waiting_version_.get();
   }
 
   void set_active_version(ServiceWorkerVersion* version) {
@@ -62,14 +59,20 @@ class CONTENT_EXPORT ServiceWorkerRegistration
     active_version_ = version;
   }
 
-  void set_pending_version(ServiceWorkerVersion* version) {
+  void set_waiting_version(ServiceWorkerVersion* version) {
     DCHECK(!is_shutdown_);
-    pending_version_ = version;
+    waiting_version_ = version;
   }
+
+  ServiceWorkerRegistrationInfo GetInfo();
+
+  // Returns the active version, if it is not null; otherwise, returns the
+  // waiting version.
+  ServiceWorkerVersion* GetNewestVersion();
 
   // The final synchronous switchover after all events have been
   // fired, and the old "active version" is being shut down.
-  void ActivatePendingVersion();
+  void ActivateWaitingVersion();
 
  private:
   ~ServiceWorkerRegistration();
@@ -78,12 +81,12 @@ class CONTENT_EXPORT ServiceWorkerRegistration
   const GURL pattern_;
   const GURL script_url_;
   const int64 registration_id_;
-  int64 next_version_id_;
 
   scoped_refptr<ServiceWorkerVersion> active_version_;
-  scoped_refptr<ServiceWorkerVersion> pending_version_;
+  scoped_refptr<ServiceWorkerVersion> waiting_version_;
 
   bool is_shutdown_;
+  base::WeakPtr<ServiceWorkerContextCore> context_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerRegistration);
 };

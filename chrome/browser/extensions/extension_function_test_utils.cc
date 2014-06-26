@@ -10,11 +10,11 @@
 #include "base/json/json_reader.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/id_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -27,7 +27,7 @@ namespace keys = extensions::tabs_constants;
 namespace {
 
 class TestFunctionDispatcherDelegate
-    : public ExtensionFunctionDispatcher::Delegate {
+    : public extensions::ExtensionFunctionDispatcher::Delegate {
  public:
   explicit TestFunctionDispatcherDelegate(Browser* browser) :
       browser_(browser) {}
@@ -251,15 +251,15 @@ bool RunFunction(UIThreadExtensionFunction* function,
   function->SetArgs(parsed_args.get());
 
   TestFunctionDispatcherDelegate dispatcher_delegate(browser);
-  ExtensionFunctionDispatcher dispatcher(
-      browser->profile(), &dispatcher_delegate);
+  extensions::ExtensionFunctionDispatcher dispatcher(browser->profile(),
+                                                     &dispatcher_delegate);
   function->set_dispatcher(dispatcher.AsWeakPtr());
 
-  function->set_context(browser->profile());
+  function->set_browser_context(browser->profile());
   function->set_include_incognito(flags & INCLUDE_INCOGNITO);
-  function->Run();
+  function->Run()->Execute();
 
-  // If the RunImpl of |function| didn't already call SendResponse, run the
+  // If the RunAsync of |function| didn't already call SendResponse, run the
   // message loop until they do.
   if (!response_delegate.HasResponse()) {
     response_delegate.set_should_post_quit(true);

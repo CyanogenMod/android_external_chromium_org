@@ -10,13 +10,13 @@
 #include "base/strings/stringprintf.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/test/aura_test_utils.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 const int kRootHeight = 600;
@@ -54,9 +54,10 @@ class MagnificationControllerTest: public test::AshTestBase {
   }
 
   std::string GetHostMouseLocation() {
-    gfx::Point point;
-    GetRootWindow()->GetDispatcher()->host()->QueryMouseLocation(&point);
-    return point.ToString();
+    const gfx::Point& location =
+        aura::test::QueryLatestMousePositionRequestInHost(
+            GetRootWindow()->GetHost());
+    return location.ToString();
   }
 
   ash::MagnificationController* GetMagnificationController() const {
@@ -439,5 +440,4 @@ TEST_F(MagnificationControllerTest, PanWindowToLeft) {
   EXPECT_EQ("100,300", GetHostMouseLocation());
 }
 
-}  // namespace internal
 }  // namespace ash

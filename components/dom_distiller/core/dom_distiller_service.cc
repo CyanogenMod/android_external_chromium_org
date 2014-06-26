@@ -6,6 +6,7 @@
 
 #include "base/guid.h"
 #include "base/message_loop/message_loop.h"
+#include "components/dom_distiller/core/distilled_content_store.h"
 #include "components/dom_distiller/core/dom_distiller_store.h"
 #include "components/dom_distiller/core/proto/distilled_article.pb.h"
 #include "components/dom_distiller/core/task_tracker.h"
@@ -37,17 +38,35 @@ void RunArticleAvailableCallback(
 
 DomDistillerService::DomDistillerService(
     scoped_ptr<DomDistillerStoreInterface> store,
-    scoped_ptr<DistillerFactory> distiller_factory)
-    : store_(store.Pass()), distiller_factory_(distiller_factory.Pass()) {}
+    scoped_ptr<DistillerFactory> distiller_factory,
+    scoped_ptr<DistillerPageFactory> distiller_page_factory)
+    : store_(store.Pass()),
+      content_store_(new InMemoryContentStore(kDefaultMaxNumCachedEntries)),
+      distiller_factory_(distiller_factory.Pass()),
+      distiller_page_factory_(distiller_page_factory.Pass()) {
+}
 
-DomDistillerService::~DomDistillerService() {}
+DomDistillerService::~DomDistillerService() {
+}
 
 syncer::SyncableService* DomDistillerService::GetSyncableService() const {
   return store_->GetSyncableService();
 }
 
+scoped_ptr<DistillerPage> DomDistillerService::CreateDefaultDistillerPage() {
+  return distiller_page_factory_->CreateDistillerPage().Pass();
+}
+
+scoped_ptr<DistillerPage>
+DomDistillerService::CreateDefaultDistillerPageWithHandle(
+    scoped_ptr<SourcePageHandle> handle) {
+  return distiller_page_factory_->CreateDistillerPageWithHandle(handle.Pass())
+      .Pass();
+}
+
 const std::string DomDistillerService::AddToList(
     const GURL& url,
+    scoped_ptr<DistillerPage> distiller_page,
     const ArticleAvailableCallback& article_cb) {
   ArticleEntry entry;
   const bool is_already_added = store_->GetEntryByUrl(url, &entry);
@@ -78,7 +97,9 @@ const std::string DomDistillerService::AddToList(
   if (!is_already_added) {
     task_tracker->AddSaveCallback(base::Bind(
         &DomDistillerService::AddDistilledPageToList, base::Unretained(this)));
-    task_tracker->StartDistiller(distiller_factory_.get());
+    task_tracker->StartDistiller(distiller_factory_.get(),
+                                 distiller_page.Pass());
+    task_tracker->StartBlobFetcher();
   }
 
   return task_tracker->GetEntryId();
@@ -109,6 +130,7 @@ scoped_ptr<ArticleEntry> DomDistillerService::RemoveEntry(
 
 scoped_ptr<ViewerHandle> DomDistillerService::ViewEntry(
     ViewRequestDelegate* delegate,
+    scoped_ptr<DistillerPage> distiller_page,
     const std::string& entry_id) {
   ArticleEntry entry;
   if (!store_->GetEntryById(entry_id, &entry)) {
@@ -117,13 +139,15 @@ scoped_ptr<ViewerHandle> DomDistillerService::ViewEntry(
 
   TaskTracker* task_tracker = GetOrCreateTaskTrackerForEntry(entry);
   scoped_ptr<ViewerHandle> viewer_handle = task_tracker->AddViewer(delegate);
-  task_tracker->StartDistiller(distiller_factory_.get());
+  task_tracker->StartDistiller(distiller_factory_.get(), distiller_page.Pass());
+  task_tracker->StartBlobFetcher();
 
   return viewer_handle.Pass();
 }
 
 scoped_ptr<ViewerHandle> DomDistillerService::ViewUrl(
     ViewRequestDelegate* delegate,
+    scoped_ptr<DistillerPage> distiller_page,
     const GURL& url) {
   if (!url.is_valid()) {
     return scoped_ptr<ViewerHandle>();
@@ -131,7 +155,8 @@ scoped_ptr<ViewerHandle> DomDistillerService::ViewUrl(
 
   TaskTracker* task_tracker = GetOrCreateTaskTrackerForUrl(url);
   scoped_ptr<ViewerHandle> viewer_handle = task_tracker->AddViewer(delegate);
-  task_tracker->StartDistiller(distiller_factory_.get());
+  task_tracker->StartDistiller(distiller_factory_.get(), distiller_page.Pass());
+  task_tracker->StartBlobFetcher();
 
   return viewer_handle.Pass();
 }
@@ -177,7 +202,8 @@ TaskTracker* DomDistillerService::GetOrCreateTaskTrackerForEntry(
 TaskTracker* DomDistillerService::CreateTaskTracker(const ArticleEntry& entry) {
   TaskTracker::CancelCallback cancel_callback =
       base::Bind(&DomDistillerService::CancelTask, base::Unretained(this));
-  TaskTracker* tracker = new TaskTracker(entry, cancel_callback);
+  TaskTracker* tracker =
+      new TaskTracker(entry, cancel_callback, content_store_.get());
   tasks_.push_back(tracker);
   return tracker;
 }

@@ -9,17 +9,18 @@
 
 namespace extensions {
 
-bool PowerRequestKeepAwakeFunction::RunImpl() {
+bool PowerRequestKeepAwakeFunction::RunSync() {
   scoped_ptr<api::power::RequestKeepAwake::Params> params(
       api::power::RequestKeepAwake::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params);
   EXTENSION_FUNCTION_VALIDATE(params->level != api::power::LEVEL_NONE);
-  PowerApiManager::GetInstance()->AddRequest(extension_id(), params->level);
+  PowerApiManager::Get(browser_context())->AddRequest(
+      extension_id(), params->level);
   return true;
 }
 
-bool PowerReleaseKeepAwakeFunction::RunImpl() {
-  PowerApiManager::GetInstance()->RemoveRequest(extension_id());
+bool PowerReleaseKeepAwakeFunction::RunSync() {
+  PowerApiManager::Get(browser_context())->RemoveRequest(extension_id());
   return true;
 }
 

@@ -21,12 +21,8 @@ class Window;
 }
 
 namespace ash {
-
-namespace internal {
-class WindowSelectorTest;
-}
-
 class WindowSelector;
+class WindowSelectorTest;
 
 // Manages a window selector which displays an overview of all windows and
 // allows selecting a window to activate it.
@@ -45,20 +41,14 @@ class ASH_EXPORT WindowSelectorController
   // or touch rather than keypresses.
   void ToggleOverview();
 
-  // Cycles between windows in the given |direction|. It is assumed that the
-  // alt key is held down and a key filter is installed to watch for alt being
-  // released.
-  void HandleCycleWindow(WindowSelector::Direction direction);
-
   // Returns true if window selection mode is active.
   bool IsSelecting();
 
   // WindowSelectorDelegate:
-  virtual void OnWindowSelected(aura::Window* window) OVERRIDE;
-  virtual void OnSelectionCanceled() OVERRIDE;
+  virtual void OnSelectionEnded() OVERRIDE;
 
  private:
-  friend class internal::WindowSelectorTest;
+  friend class WindowSelectorTest;
 
   // Dispatched when window selection begins.
   void OnSelectionStarted();

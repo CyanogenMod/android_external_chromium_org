@@ -4,7 +4,11 @@
 
 #include "content/renderer/media/media_stream_source.h"
 
+#include "base/callback_helpers.h"
+
 namespace content {
+
+const char MediaStreamSource::kSourceId[] = "sourceId";
 
 MediaStreamSource::MediaStreamSource() {
 }
@@ -14,10 +18,9 @@ MediaStreamSource::~MediaStreamSource() {}
 void MediaStreamSource::StopSource() {
   DoStopSource();
   if (!stop_callback_.is_null())
-    stop_callback_.Run(owner());
+    base::ResetAndReturn(&stop_callback_).Run(owner());
 
   owner().setReadyState(blink::WebMediaStreamSource::ReadyStateEnded);
-  owner().setExtraData(NULL);
 }
 
 }  // namespace content

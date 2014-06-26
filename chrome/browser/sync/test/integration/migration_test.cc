@@ -7,10 +7,11 @@
 #include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/backend_migrator.h"
+#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/preferences_helper.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
-#include "chrome/browser/sync/test/integration/status_change_checker.h"
+#include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -67,11 +68,11 @@ MigrationList MakeList(syncer::ModelType type1,
 
 // Helper class that checks if the sync backend has successfully completed
 // migration for a set of data types.
-class MigrationChecker : public StatusChangeChecker,
+class MigrationChecker : public SingleClientStatusChangeChecker,
                          public browser_sync::MigrationObserver {
  public:
   explicit MigrationChecker(ProfileSyncServiceHarness* harness)
-      : StatusChangeChecker("MigrationChecker"),
+      : SingleClientStatusChangeChecker(harness->service()),
         harness_(harness) {
     DCHECK(harness_);
     browser_sync::BackendMigrator* migrator =
@@ -96,6 +97,10 @@ class MigrationChecker : public StatusChangeChecker,
              << syncer::ModelTypeSetToString(expected_types_);
     return all_expected_types_migrated &&
            !HasPendingBackendMigration();
+  }
+
+  virtual std::string GetDebugMessage() const OVERRIDE {
+    return "Waiting to migrate (" + ModelTypeSetToString(expected_types_) + ")";
   }
 
   bool HasPendingBackendMigration() const {
@@ -131,9 +136,9 @@ class MigrationChecker : public StatusChangeChecker,
                << syncer::ModelTypeSetToString(migrated_types_);
     }
 
-    // Nudge ProfileSyncServiceHarness to inspect the exit condition provided by
-    // AwaitMigration.
-    harness_->OnStateChanged();
+    // Manually trigger a check of the exit condition.
+    if (!expected_types_.Empty())
+      OnStateChanged();
   }
 
  private:
@@ -177,14 +182,14 @@ class MigrationTest : public SyncTest  {
   syncer::ModelTypeSet GetPreferredDataTypes() {
     // ProfileSyncService must already have been created before we can call
     // GetPreferredDataTypes().
-    DCHECK(GetClient(0)->service());
+    DCHECK(GetSyncService((0)));
     syncer::ModelTypeSet preferred_data_types =
-        GetClient(0)->service()->GetPreferredDataTypes();
+        GetSyncService((0))->GetPreferredDataTypes();
     preferred_data_types.RemoveAll(syncer::ProxyTypes());
     // Make sure all clients have the same preferred data types.
     for (int i = 1; i < num_clients(); ++i) {
       const syncer::ModelTypeSet other_preferred_data_types =
-          GetClient(i)->service()->GetPreferredDataTypes();
+          GetSyncService((i))->GetPreferredDataTypes();
       EXPECT_TRUE(preferred_data_types.Equals(other_preferred_data_types));
     }
     return preferred_data_types;
@@ -233,8 +238,8 @@ class MigrationTest : public SyncTest  {
     for (int i = 0; i < num_clients(); ++i) {
       MigrationChecker* checker = migration_checkers_[i];
       checker->set_expected_types(migrate_types);
-      if (!checker->IsExitConditionSatisfied())
-        ASSERT_TRUE(GetClient(i)->AwaitStatusChange(checker, "AwaitMigration"));
+      checker->Wait();
+      ASSERT_FALSE(checker->TimedOut());
     }
   }
 
@@ -511,7 +516,7 @@ class MigrationReconfigureTest : public MigrationTwoClientTest {
  public:
   MigrationReconfigureTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* cl) OVERRIDE {
+  virtual void SetUpCommandLine(base::CommandLine* cl) OVERRIDE {
     AddTestSwitches(cl);
     // Do not add optional datatypes.
   }

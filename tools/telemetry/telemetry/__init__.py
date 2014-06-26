@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,15 +9,13 @@ import logging
 import os
 import sys
 
-
-# Ensure Python >= 2.7
+# Ensure Python >= 2.7.
 if sys.version_info < (2, 7):
-  logging.critical('Need Python 2.7 or greater.')
-  sys.exit(1)
+  print >> sys.stderr, 'Need Python 2.7 or greater.'
+  sys.exit(-1)
 
-
-from telemetry import exception_formatter
-exception_formatter.InstallUnhandledExceptionFormatter()
+from telemetry.util import global_hooks
+global_hooks.InstallHooks()
 
 from telemetry.core.browser import Browser
 from telemetry.core.browser_options import BrowserFinderOptions
@@ -40,32 +38,3 @@ for x in dir():
   if (inspect.isclass(getattr(m, x)) or
       inspect.isfunction(getattr(m, x))):
     __all__.append(x)
-
-
-def RemoveAllStalePycFiles(base_dir):
-  for dirname, _, filenames in os.walk(base_dir):
-    if '.svn' in dirname or '.git' in dirname:
-      continue
-    for filename in filenames:
-      root, ext = os.path.splitext(filename)
-      if ext != '.pyc':
-        continue
-
-      pyc_path = os.path.join(dirname, filename)
-      py_path = os.path.join(dirname, root + '.py')
-
-      try:
-        if not os.path.exists(py_path):
-          os.remove(pyc_path)
-      except OSError:
-        # Wrap OS calls in try/except in case another process touched this file.
-        pass
-
-    try:
-      os.removedirs(dirname)
-    except OSError:
-      # Wrap OS calls in try/except in case another process touched this dir.
-      pass
-
-
-RemoveAllStalePycFiles(os.path.dirname(__file__))

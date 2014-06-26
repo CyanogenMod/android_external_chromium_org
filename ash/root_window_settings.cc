@@ -4,14 +4,13 @@
 
 #include "ash/root_window_settings.h"
 
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_property.h"
 #include "ui/gfx/display.h"
 
-DECLARE_WINDOW_PROPERTY_TYPE(ash::internal::RootWindowSettings*);
+DECLARE_WINDOW_PROPERTY_TYPE(ash::RootWindowSettings*);
 
 namespace ash {
-namespace internal {
 
 DEFINE_OWNED_WINDOW_PROPERTY_KEY(RootWindowSettings,
                                  kRootWindowSettingsKey, NULL);
@@ -35,5 +34,4 @@ const RootWindowSettings* GetRootWindowSettings(const aura::Window* root) {
   return root->GetProperty(kRootWindowSettingsKey);
 }
 
-}  // namespace internal
 }  // namespace ash

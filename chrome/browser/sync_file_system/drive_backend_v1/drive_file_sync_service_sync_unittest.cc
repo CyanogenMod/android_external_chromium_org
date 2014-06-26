@@ -14,6 +14,7 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
+#include "chrome/browser/drive/test_util.h"
 #include "chrome/browser/sync_file_system/drive_backend/fake_drive_service_helper.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/api_util.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
@@ -24,7 +25,9 @@
 #include "chrome/browser/sync_file_system/local/sync_file_system_backend.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -41,6 +44,10 @@ using google_apis::ResourceEntry;
 
 namespace sync_file_system {
 
+namespace {
+const char kTestProfileName[] = "test-profile";
+}
+
 using drive_backend::APIUtil;
 using drive_backend::APIUtilInterface;
 using drive_backend::FakeDriveServiceHelper;
@@ -48,7 +55,8 @@ using drive_backend::FakeDriveServiceHelper;
 class DriveFileSyncServiceSyncTest : public testing::Test {
  public:
   DriveFileSyncServiceSyncTest()
-      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
+        profile_manager_(TestingBrowserProcess::GetGlobal()) {}
 
   virtual ~DriveFileSyncServiceSyncTest() {
   }
@@ -57,16 +65,17 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
     // TODO(tzik): Set up TestExtensionSystem to support simulated relaunch.
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
+    ASSERT_TRUE(profile_manager_.SetUp());
+    TestingProfile* profile =
+        profile_manager_.CreateTestingProfile(kTestProfileName);
+
     RegisterSyncableFileSystem();
     local_sync_service_ = LocalFileSyncService::CreateForTesting(
-        &profile_, in_memory_env_.get());
+        profile, in_memory_env_.get());
 
     fake_drive_service_ = new drive::FakeDriveService();
     fake_drive_service_->Initialize("test_user@gmail.com");
-    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
-        "sync_file_system/account_metadata.json"));
-    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
-        "gdata/root_feed.json"));
+    ASSERT_TRUE(drive::test_util::SetUpTestEntries(fake_drive_service_));
 
     drive_uploader_ = new drive::DriveUploader(
         fake_drive_service_, base::MessageLoopProxy::current().get());
@@ -91,7 +100,7 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
         scoped_ptr<drive::DriveUploaderInterface>(drive_uploader_)));
 
     remote_sync_service_ = DriveFileSyncService::CreateForTesting(
-        &profile_,
+        profile,
         fake_drive_helper_->base_dir_path(),
         api_util.PassAs<APIUtilInterface>(),
         metadata_store.Pass());
@@ -360,10 +369,11 @@ class DriveFileSyncServiceSyncTest : public testing::Test {
   void TestLocalFileDeletion();
   void TestRemoteFileDeletion();
 
+  ScopedDisableSyncFSV2 scoped_disable_v2_;
   content::TestBrowserThreadBundle thread_bundle_;
 
   scoped_ptr<leveldb::Env> in_memory_env_;
-  TestingProfile profile_;
+  TestingProfileManager profile_manager_;
 
   drive::FakeDriveService* fake_drive_service_;
   drive::DriveUploader* drive_uploader_;

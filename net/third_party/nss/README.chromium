@@ -75,9 +75,6 @@ Patches:
     patches/cachelocks.patch
     https://bugzilla.mozilla.org/show_bug.cgi?id=764646
 
-  * Always add an extension to a ClientHello to make it 512 bytes.
-    patches/paddingextensionall.patch
-
   * Support the Certificate Transparency (RFC 6962) TLS extension
     signed_certificate_timestamp (client only).
     patches/signedcertificatetimestamps.patch
@@ -94,15 +91,23 @@ Patches:
     asynchronous certificate verification.
     patches/sessioncache.patch
 
-  * Remove static storage qualifier from variables in sslnonce.c. Due to
-    a clang codegen bug on Mac, this caused an infinite loop.
-    https://code.google.com/p/chromium/issues/detail?id=326011
-    patches/sslnoncestatics.patch
-
   * Use NSSRWLock instead of PRRWLock in sslSessionID. This avoids the bugs
     in the lock rank checking code in PRRWLock.
     patches/nssrwlock.patch
     https://bugzilla.mozilla.org/show_bug.cgi?id=957812
+
+  * Use the IANA-assigned value for the TLS padding extension.
+    patches/paddingextvalue.patch
+    https://bugzilla.mozilla.org/show_bug.cgi?id=994883
+
+  * Move the signature_algorithms extension to the end of the extension list.
+    This works around a bug in WebSphere Application Server 7.0 which is
+    intolerant to the final extension having zero length.
+    patches/reorderextensions.patch
+
+  * Ignore out-of-order DTLS ChangeCipherSpec.
+    patches/ignorechangecipherspec.patch
+    https://bugzilla.mozilla.org/show_bug.cgi?id=1009227
 
 Apply the patches to NSS by running the patches/applypatches.sh script.  Read
 the comments at the top of patches/applypatches.sh for instructions.

@@ -16,6 +16,7 @@
 #include "remoting/host/client_session_control.h"
 #include "remoting/host/desktop_session.h"
 #include "remoting/host/desktop_session_proxy.h"
+#include "remoting/host/gnubby_auth_handler.h"
 #include "remoting/host/input_injector.h"
 #include "remoting/host/screen_controls.h"
 #include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
@@ -67,6 +68,11 @@ std::string IpcDesktopEnvironment::GetCapabilities() const {
 
 void IpcDesktopEnvironment::SetCapabilities(const std::string& capabilities) {
   return desktop_session_proxy_->SetCapabilities(capabilities);
+}
+
+scoped_ptr<GnubbyAuthHandler> IpcDesktopEnvironment::CreateGnubbyAuthHandler(
+    protocol::ClientStub* client_stub) {
+  return scoped_ptr<GnubbyAuthHandler>();
 }
 
 IpcDesktopEnvironmentFactory::IpcDesktopEnvironmentFactory(
@@ -187,8 +193,7 @@ void IpcDesktopEnvironmentFactory::OnDesktopSessionAgentAttached(
 
 #if defined(OS_POSIX)
     DCHECK(desktop_pipe.auto_close);
-
-    base::ClosePlatformFile(desktop_pipe.fd);
+    base::File pipe_closer(IPC::PlatformFileForTransitToFile(desktop_pipe));
 #endif  // defined(OS_POSIX)
   }
 }

@@ -14,10 +14,15 @@
 #include "base/memory/scoped_vector.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/websockets/websocket_event_interface.h"
 #include "net/websockets/websocket_handshake_request_info.h"
 #include "net/websockets/websocket_handshake_response_info.h"
 
 class GURL;
+
+namespace url {
+class Origin;
+}  // namespace url
 
 namespace net {
 
@@ -70,6 +75,15 @@ class NET_EXPORT_PRIVATE WebSocketStream {
     // Called when the WebSocket Opening Handshake ends.
     virtual void OnFinishOpeningHandshake(
         scoped_ptr<WebSocketHandshakeResponseInfo> response) = 0;
+
+    // Called when there is an SSL certificate error. Should call
+    // ssl_error_callbacks->ContinueSSLRequest() or
+    // ssl_error_callbacks->CancelSSLRequest().
+    virtual void OnSSLCertificateError(
+        scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks>
+            ssl_error_callbacks,
+        const SSLInfo& ssl_info,
+        bool fatal) = 0;
   };
 
   // Create and connect a WebSocketStream of an appropriate type. The actual
@@ -87,7 +101,7 @@ class NET_EXPORT_PRIVATE WebSocketStream {
   static scoped_ptr<WebSocketStreamRequest> CreateAndConnectStream(
       const GURL& socket_url,
       const std::vector<std::string>& requested_subprotocols,
-      const GURL& origin,
+      const url::Origin& origin,
       URLRequestContext* url_request_context,
       const BoundNetLog& net_log,
       scoped_ptr<ConnectDelegate> connect_delegate);
@@ -134,6 +148,10 @@ class NET_EXPORT_PRIVATE WebSocketStream {
   // calling callback.Run() (and any calling methods in the same object) must
   // return immediately without any further method calls or access to member
   // variables. Implementors should write test(s) for this case.
+  //
+  // Extensions which use reserved header bits should clear them when they are
+  // set correctly. If the reserved header bits are set incorrectly, it is okay
+  // to leave it to the caller to report the error.
   virtual int ReadFrames(ScopedVector<WebSocketFrame>* frames,
                          const CompletionCallback& callback) = 0;
 

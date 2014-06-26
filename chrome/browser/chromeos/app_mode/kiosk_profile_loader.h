@@ -11,14 +11,12 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_launch_error.h"
-#include "chrome/browser/chromeos/login/login_performer.h"
+#include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
 
 class Profile;
 
 namespace chromeos {
-
-class KioskAppManager;
 
 // KioskProfileLoader loads a special profile for a given app. It first
 // attempts to login for the app's generated user id. If the login is
@@ -36,7 +34,7 @@ class KioskProfileLoader : public LoginPerformer::Delegate,
   };
 
   KioskProfileLoader(const std::string& app_user_id,
-                     bool force_ephemeral,
+                     bool use_guest_mount,
                      Delegate* delegate);
 
   virtual ~KioskProfileLoader();
@@ -62,7 +60,7 @@ class KioskProfileLoader : public LoginPerformer::Delegate,
   virtual void OnProfilePrepared(Profile* profile) OVERRIDE;
 
   std::string user_id_;
-  bool force_ephemeral_;
+  bool use_guest_mount_;
   Delegate* delegate_;
   scoped_ptr<CryptohomedChecker> cryptohomed_checker_;
   scoped_ptr<LoginPerformer> login_performer_;

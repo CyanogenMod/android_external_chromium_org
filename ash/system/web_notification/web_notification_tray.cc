@@ -23,13 +23,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ash_strings.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray_delegate.h"
-#include "ui/message_center/message_center_util.h"
 #include "ui/message_center/views/message_bubble_base.h"
 #include "ui/message_center/views/message_center_bubble.h"
 #include "ui/message_center/views/message_popup_collection.h"
@@ -63,10 +62,10 @@ const int kEnableQuietModeDay = 2;
 
 }
 
-namespace internal {
 namespace {
 
-const SkColor kWebNotificationColorNoUnread = SkColorSetA(SK_ColorWHITE, 128);
+const SkColor kWebNotificationColorNoUnread =
+    SkColorSetARGB(128, 255, 255, 255);
 const SkColor kWebNotificationColorWithUnread = SK_ColorWHITE;
 
 }
@@ -124,11 +123,10 @@ void WorkAreaObserver::SetSystemTrayHeight(int height) {
   // should be reduced by the height of shelf's shown height.
   if (shelf_ && shelf_->visibility_state() == SHELF_AUTO_HIDE &&
       shelf_->auto_hide_state() == SHELF_AUTO_HIDE_SHOWN) {
-    system_tray_height_ -= ShelfLayoutManager::GetPreferredShelfSize() -
-        ShelfLayoutManager::kAutoHideSize;
+    system_tray_height_ -= kShelfSize - ShelfLayoutManager::kAutoHideSize;
   }
 
-  if (system_tray_height_ > 0 && ash::switches::UseAlternateShelfLayout())
+  if (system_tray_height_ > 0)
     system_tray_height_ += message_center::kMarginBetweenItems;
 
   if (!shelf_)
@@ -160,9 +158,10 @@ void WorkAreaObserver::StopObserving() {
 void WorkAreaObserver::OnDisplayWorkAreaInsetsChanged() {
   UpdateShelf();
 
-  collection_->OnDisplayBoundsChanged(
+  collection_->OnDisplayMetricsChanged(
       Shell::GetScreen()->GetDisplayNearestWindow(
-          shelf_->shelf_widget()->GetNativeView()));
+          shelf_->shelf_widget()->GetNativeView()),
+      gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
 }
 
 void WorkAreaObserver::OnAutoHideStateChanged(ShelfAutoHideState new_state) {
@@ -174,8 +173,7 @@ void WorkAreaObserver::OnAutoHideStateChanged(ShelfAutoHideState new_state) {
       new_state == SHELF_AUTO_HIDE_SHOWN) {
     // Since the work_area is already reduced by kAutoHideSize, the inset width
     // should be just the difference.
-    width = ShelfLayoutManager::GetPreferredShelfSize() -
-        ShelfLayoutManager::kAutoHideSize;
+    width = kShelfSize - ShelfLayoutManager::kAutoHideSize;
   }
   work_area.Inset(shelf_->SelectValueForShelfAlignment(
       gfx::Insets(0, 0, width, 0),
@@ -220,8 +218,7 @@ class WebNotificationBubbleWrapper {
     }
     views::TrayBubbleView* bubble_view = views::TrayBubbleView::Create(
         tray->GetBubbleWindowContainer(), anchor, tray, &init_params);
-    if (ash::switches::UseAlternateShelfLayout())
-      bubble_view->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
+    bubble_view->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
     bubble_wrapper_.reset(new TrayBubbleWrapper(tray, bubble_view));
     bubble->InitializeContents(bubble_view);
   }
@@ -233,7 +230,7 @@ class WebNotificationBubbleWrapper {
 
  private:
   scoped_ptr<message_center::MessageBubbleBase> bubble_;
-  scoped_ptr<internal::TrayBubbleWrapper> bubble_wrapper_;
+  scoped_ptr<TrayBubbleWrapper> bubble_wrapper_;
 
   DISALLOW_COPY_AND_ASSIGN(WebNotificationBubbleWrapper);
 };
@@ -272,12 +269,11 @@ class WebNotificationButton : public views::CustomButton {
 
  protected:
   // Overridden from views::ImageButton:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
-    const int notification_item_size = GetShelfItemHeight();
-    return gfx::Size(notification_item_size, notification_item_size);
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return gfx::Size(kShelfItemHeight, kShelfItemHeight);
   }
 
-  virtual int GetHeightForWidth(int width) OVERRIDE {
+  virtual int GetHeightForWidth(int width) const OVERRIDE {
     return GetPreferredSize().height();
   }
 
@@ -297,26 +293,32 @@ class WebNotificationButton : public views::CustomButton {
   DISALLOW_COPY_AND_ASSIGN(WebNotificationButton);
 };
 
-}  // namespace internal
-
-WebNotificationTray::WebNotificationTray(
-    internal::StatusAreaWidget* status_area_widget)
+WebNotificationTray::WebNotificationTray(StatusAreaWidget* status_area_widget)
     : TrayBackgroundView(status_area_widget),
       button_(NULL),
       show_message_center_on_unlock_(false),
       should_update_tray_content_(false),
       should_block_shelf_auto_hide_(false) {
-  button_ = new internal::WebNotificationButton(this);
+  button_ = new WebNotificationButton(this);
   button_->set_triggerable_event_flags(
       ui::EF_LEFT_MOUSE_BUTTON | ui::EF_RIGHT_MOUSE_BUTTON);
   tray_container()->AddChildView(button_);
   SetContentsBackground();
   tray_container()->SetBorder(views::Border::NullBorder());
-  SetVisible(false);
   message_center_tray_.reset(new message_center::MessageCenterTray(
       this,
       message_center::MessageCenter::Get()));
-  work_area_observer_.reset(new internal::WorkAreaObserver());
+  popup_collection_.reset(new message_center::MessagePopupCollection(
+      ash::Shell::GetContainer(
+          status_area_widget->GetNativeView()->GetRootWindow(),
+          kShellWindowId_StatusContainer),
+      message_center(),
+      message_center_tray_.get(),
+      true));
+  work_area_observer_.reset(new WorkAreaObserver());
+  work_area_observer_->StartObserving(
+      popup_collection_.get(),
+      status_area_widget->GetNativeView()->GetRootWindow());
   OnMessageCenterTrayChanged();
 }
 
@@ -338,7 +340,7 @@ bool WebNotificationTray::ShowMessageCenterInternal(bool show_settings) {
       new message_center::MessageCenterBubble(
           message_center(),
           message_center_tray_.get(),
-          ash::switches::UseAlternateShelfLayout());
+          true);
 
   int max_height = 0;
   aura::Window* status_area_window = status_area_widget()->GetNativeView();
@@ -366,11 +368,11 @@ bool WebNotificationTray::ShowMessageCenterInternal(bool show_settings) {
   }
 
   message_center_bubble->SetMaxHeight(std::max(0,
-                                               max_height - GetTraySpacing()));
+                                               max_height - kTraySpacing));
   if (show_settings)
     message_center_bubble->SetSettingsVisible();
   message_center_bubble_.reset(
-      new internal::WebNotificationBubbleWrapper(this, message_center_bubble));
+      new WebNotificationBubbleWrapper(this, message_center_bubble));
 
   status_area_widget()->SetHideSystemNotifications(true);
   GetShelfLayoutManager()->UpdateAutoHideState();
@@ -403,24 +405,13 @@ bool WebNotificationTray::ShowPopups() {
   if (message_center_bubble())
     return false;
 
-  popup_collection_.reset(new message_center::MessagePopupCollection(
-      ash::Shell::GetContainer(
-          GetWidget()->GetNativeView()->GetRootWindow(),
-          internal::kShellWindowId_StatusContainer),
-      message_center(),
-      message_center_tray_.get(),
-      ash::switches::UseAlternateShelfLayout()));
-  work_area_observer_->StartObserving(
-      popup_collection_.get(), GetWidget()->GetNativeView()->GetRootWindow());
+  popup_collection_->DoUpdateIfPossible();
   return true;
 }
 
 void WebNotificationTray::HidePopups() {
   DCHECK(popup_collection_.get());
-
   popup_collection_->MarkAllPopupsShown();
-  popup_collection_.reset();
-  work_area_observer_->StopObserving();
 }
 
 // Private methods.
@@ -457,7 +448,7 @@ void WebNotificationTray::UpdateAfterLoginStatusChange(
 void WebNotificationTray::SetShelfAlignment(ShelfAlignment alignment) {
   if (alignment == shelf_alignment())
     return;
-  internal::TrayBackgroundView::SetShelfAlignment(alignment);
+  TrayBackgroundView::SetShelfAlignment(alignment);
   tray_container()->SetBorder(views::Border::NullBorder());
   // Destroy any existing bubble so that it will be rebuilt correctly.
   message_center_tray_->HideMessageCenterBubble();
@@ -510,7 +501,7 @@ base::string16 WebNotificationTray::GetAccessibleNameForBubble() {
 gfx::Rect WebNotificationTray::GetAnchorRect(
     views::Widget* anchor_widget,
     views::TrayBubbleView::AnchorType anchor_type,
-    views::TrayBubbleView::AnchorAlignment anchor_alignment) {
+    views::TrayBubbleView::AnchorAlignment anchor_alignment) const {
   return GetBubbleAnchorRect(anchor_widget, anchor_type, anchor_alignment);
 }
 

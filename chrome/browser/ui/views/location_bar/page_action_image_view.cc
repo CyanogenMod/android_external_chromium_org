@@ -10,7 +10,6 @@
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
 #include "chrome/browser/extensions/tab_helper.h"
@@ -21,12 +20,12 @@
 #include "chrome/browser/ui/views/frame/browser_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/webui/extensions/extension_info_ui.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/events/event.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 using content::WebContents;
@@ -42,8 +41,9 @@ PageActionImageView::PageActionImageView(LocationBarView* owner,
       current_tab_id_(-1),
       preview_enabled_(false),
       popup_(NULL) {
-  const Extension* extension = owner_->profile()->GetExtensionService()->
-      GetExtensionById(page_action->extension_id(), false);
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      owner_->profile())->enabled_extensions().GetByID(
+          page_action->extension_id());
   DCHECK(extension);
 
   icon_factory_.reset(
@@ -94,7 +94,7 @@ void PageActionImageView::ExecuteAction(
   LocationBarController* controller =
       extensions_tab_helper->location_bar_controller();
 
-  switch (controller->OnClicked(page_action_->extension_id(), 1)) {
+  switch (controller->OnClicked(page_action_)) {
     case LocationBarController::ACTION_NONE:
       break;
 
@@ -112,8 +112,8 @@ void PageActionImageView::ExecuteAction(
   }
 }
 
-void PageActionImageView::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+void PageActionImageView::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
   state->name = base::UTF8ToUTF16(tooltip_);
 }
 
@@ -150,8 +150,9 @@ void PageActionImageView::ShowContextMenuForView(
     View* source,
     const gfx::Point& point,
     ui::MenuSourceType source_type) {
-  const Extension* extension = owner_->profile()->GetExtensionService()->
-      GetExtensionById(page_action()->extension_id(), false);
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      owner_->profile())->enabled_extensions().GetByID(
+          page_action()->extension_id());
   if (!extension->ShowConfigureContextMenus())
     return;
 
@@ -160,11 +161,16 @@ void PageActionImageView::ShowContextMenuForView(
   menu_runner_.reset(new views::MenuRunner(context_menu_model.get()));
   gfx::Point screen_loc;
   views::View::ConvertPointToScreen(this, &screen_loc);
-  if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(screen_loc, size()),
-          views::MenuItemView::TOPLEFT, source_type,
+  if (menu_runner_->RunMenuAt(
+          GetWidget(),
+          NULL,
+          gfx::Rect(screen_loc, size()),
+          views::MENU_ANCHOR_TOPLEFT,
+          source_type,
           views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-      views::MenuRunner::MENU_DELETED)
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 bool PageActionImageView::AcceleratorPressed(
@@ -223,8 +229,9 @@ void PageActionImageView::OnIconUpdated() {
     UpdateVisibility(web_contents, current_url_);
 }
 
-void PageActionImageView::PaintChildren(gfx::Canvas* canvas) {
-  View::PaintChildren(canvas);
+void PageActionImageView::PaintChildren(gfx::Canvas* canvas,
+                                        const views::CullSet& cull_set) {
+  View::PaintChildren(canvas, cull_set);
   if (current_tab_id_ >= 0)
     page_action_->PaintBadge(canvas, GetLocalBounds(), current_tab_id_);
 }

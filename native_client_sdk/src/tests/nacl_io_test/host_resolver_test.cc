@@ -21,7 +21,8 @@ class HostResolverTest : public ::testing::Test {
   HostResolverTest() {}
 
   void SetUp() {
-    ki_init(NULL);
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init(NULL));
   }
 
   void TearDown() {
@@ -34,18 +35,18 @@ class HostResolverTest : public ::testing::Test {
 
 class FakeHostResolverTest : public ::testing::Test {
  public:
-  FakeHostResolverTest() : pepper_(NULL), fake_resolver_(NULL) {}
+  FakeHostResolverTest() : fake_resolver_(NULL) {}
 
   void SetUp() {
-    pepper_ = new FakePepperInterface();
     fake_resolver_ = static_cast<FakeHostResolverInterface*>(
-        pepper_->GetHostResolverInterface());
+        pepper_.GetHostResolverInterface());
 
     // Seed the fake resolver with some data
     fake_resolver_->fake_hostname = FAKE_HOSTNAME;
     AddFakeAddress(AF_INET);
 
-    ki_init_interface(NULL, pepper_);
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init_interface(NULL, &pepper_));
   }
 
   void AddFakeAddress(int family) {
@@ -70,11 +71,10 @@ class FakeHostResolverTest : public ::testing::Test {
 
   void TearDown() {
     ki_uninit();
-    pepper_ = NULL;
   }
 
  protected:
-  FakePepperInterface* pepper_;
+  FakePepperInterface pepper_;
   FakeHostResolverInterface* fake_resolver_;
 };
 
@@ -89,7 +89,7 @@ TEST_F(HostResolverTest, Getaddrinfo_Numeric) {
   struct sockaddr_in* in;
   struct addrinfo hints;
 
-  // Numberic only
+  // Numeric only
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -104,6 +104,34 @@ TEST_F(HostResolverTest, Getaddrinfo_Numeric) {
   ASSERT_EQ(expected_addr, in->sin_addr.s_addr);
   ASSERT_EQ(NULL_INFO, ai->ai_next);
 
+  ki_freeaddrinfo(ai);
+}
+
+TEST_F(HostResolverTest, Getaddrinfo_NumericService) {
+  struct addrinfo* ai = NULL;
+  struct sockaddr_in* in;
+  struct addrinfo hints;
+
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+
+  ASSERT_EQ(0, ki_getaddrinfo("1.2.3.4", "0", &hints, &ai));
+  ASSERT_NE(NULL_INFO, ai);
+  ASSERT_NE(NULL_ADDR, ai->ai_addr);
+  in = (struct sockaddr_in*)ai->ai_addr;
+  uint16_t expected_port = htons(0);
+  ASSERT_EQ(expected_port, in->sin_port);
+  ASSERT_EQ(NULL_INFO, ai->ai_next);
+  ki_freeaddrinfo(ai);
+
+  ASSERT_EQ(0, ki_getaddrinfo("1.2.3.4", "65000", &hints, &ai));
+  ASSERT_NE(NULL_INFO, ai);
+  ASSERT_NE(NULL_ADDR, ai->ai_addr);
+  in = (struct sockaddr_in*)ai->ai_addr;
+  expected_port = htons(65000);
+  ASSERT_EQ(expected_port, in->sin_port);
+  ASSERT_EQ(NULL_INFO, ai->ai_next);
   ki_freeaddrinfo(ai);
 }
 
@@ -160,6 +188,7 @@ TEST_F(HostResolverTest, Getaddrinfo_Passive_Any) {
   // ai_family in the hints, so we should get muplitple
   // results back for the different families.
   struct addrinfo* ai = NULL;
+  struct addrinfo* ai_orig = NULL;
   struct sockaddr_in* in;
   struct sockaddr_in6* in6;
   struct addrinfo hints;
@@ -172,6 +201,7 @@ TEST_F(HostResolverTest, Getaddrinfo_Passive_Any) {
   hints.ai_flags = AI_PASSIVE;
   hints.ai_socktype = SOCK_DGRAM;
   ASSERT_EQ(0, ki_getaddrinfo(NULL, "22", &hints, &ai));
+  ai_orig = ai;
   ASSERT_NE(NULL_INFO, ai);
   int count = 0;
   bool got_v4 = false;
@@ -206,6 +236,8 @@ TEST_F(HostResolverTest, Getaddrinfo_Passive_Any) {
   ASSERT_EQ(2, count);
   ASSERT_TRUE(got_v4);
   ASSERT_TRUE(got_v6);
+
+  ki_freeaddrinfo(ai_orig);
 }
 
 TEST_F(FakeHostResolverTest, Getaddrinfo_Lookup) {
@@ -321,8 +353,12 @@ TEST_F(FakeHostResolverTest, Gethostbyname) {
   in_addr_t** addr_list = reinterpret_cast<in_addr_t**>(host->h_addr_list);
   ASSERT_NE(reinterpret_cast<in_addr_t**>(NULL), addr_list);
   ASSERT_EQ(NULL, addr_list[1]);
-  in_addr_t exptected_addr = htonl(FAKE_IP);
-  ASSERT_EQ(exptected_addr, *addr_list[0]);
+  in_addr_t expected_addr = htonl(FAKE_IP);
+  ASSERT_EQ(expected_addr, *addr_list[0]);
+  // Check that h_addr also matches as in some libc's it may be a separate
+  // member.
+  in_addr_t* first_addr = reinterpret_cast<in_addr_t*>(host->h_addr);
+  ASSERT_EQ(expected_addr, *first_addr);
 }
 
 TEST_F(FakeHostResolverTest, Gethostbyname_Failure) {
@@ -346,6 +382,10 @@ TEST_F(HostResolverTest, Gethostbyname_Numeric) {
   ASSERT_NE(reinterpret_cast<in_addr_t**>(NULL), addr_list);
   ASSERT_EQ(NULL, addr_list[1]);
   ASSERT_EQ(inet_addr("8.8.8.8"), *addr_list[0]);
+  // Check that h_addr also matches as in some libc's it may be a separate
+  // member.
+  in_addr_t* first_addr = reinterpret_cast<in_addr_t*>(host->h_addr);
+  ASSERT_EQ(inet_addr("8.8.8.8"), *first_addr);
 }
 
 // These utility functions are only used for newlib (glibc provides its own

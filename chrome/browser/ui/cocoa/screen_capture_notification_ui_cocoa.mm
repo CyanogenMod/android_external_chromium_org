@@ -16,6 +16,7 @@
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #import "ui/base/cocoa/controls/blue_label_button.h"
+#import "ui/base/cocoa/controls/hyperlink_button_cell.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -28,9 +29,10 @@
 const CGFloat kMinimumWidth = 460;
 const CGFloat kMaximumWidth = 1000;
 const CGFloat kHorizontalMargin = 10;
-const CGFloat kPadding = 5;
-const CGFloat kPaddingLeft = 10;
+const CGFloat kPaddingVertical = 5;
+const CGFloat kPaddingHorizontal = 10;
 const CGFloat kWindowCornerRadius = 2;
+const CGFloat kWindowAlphaValue = 0.85;
 
 @interface ScreenCaptureNotificationController()
 - (void)hide;
@@ -52,7 +54,7 @@ ScreenCaptureNotificationUICocoa::ScreenCaptureNotificationUICocoa(
 
 ScreenCaptureNotificationUICocoa::~ScreenCaptureNotificationUICocoa() {}
 
-void ScreenCaptureNotificationUICocoa::OnStarted(
+gfx::NativeViewId ScreenCaptureNotificationUICocoa::OnStarted(
     const base::Closure& stop_callback) {
   DCHECK(!stop_callback.is_null());
   DCHECK(!windowController_);
@@ -61,6 +63,7 @@ void ScreenCaptureNotificationUICocoa::OnStarted(
       initWithCallback:stop_callback
                   text:text_]);
   [windowController_ showWindow:nil];
+  return [[windowController_ window] windowNumber];
 }
 
 scoped_ptr<ScreenCaptureNotificationUI> ScreenCaptureNotificationUI::Create(
@@ -78,6 +81,7 @@ scoped_ptr<ScreenCaptureNotificationUI> ScreenCaptureNotificationUI::Create(
                                     backing:NSBackingStoreBuffered
                                       defer:NO]);
   [window setReleasedWhenClosed:NO];
+  [window setAlphaValue:kWindowAlphaValue];
   [window setBackgroundColor:[NSColor clearColor]];
   [window setOpaque:NO];
   [window setHasShadow:YES];
@@ -104,12 +108,22 @@ scoped_ptr<ScreenCaptureNotificationUI> ScreenCaptureNotificationUI::Create(
   return self;
 }
 
+- (void)dealloc {
+  [stopButton_ setTarget:nil];
+  [minimizeButton_ setTarget:nil];
+  [super dealloc];
+}
+
 - (void)stopSharing:(id)sender {
   if (!stop_callback_.is_null()) {
     base::Closure callback = stop_callback_;
     stop_callback_.Reset();
     callback.Run();  // Deletes |self|.
   }
+}
+
+- (void)minimize:(id)sender {
+  [[self window] miniaturize:sender];
 }
 
 - (void)hide {
@@ -132,25 +146,40 @@ scoped_ptr<ScreenCaptureNotificationUI> ScreenCaptureNotificationUI::Create(
   [stopButton_ sizeToFit];
   [content addSubview:stopButton_];
 
-  CGFloat buttonWidth = NSWidth([stopButton_ frame]);
-  CGFloat totalHeight = kPadding + NSHeight([stopButton_ frame]) + kPadding;
+  base::scoped_nsobject<HyperlinkButtonCell> cell(
+      [[HyperlinkButtonCell alloc]
+       initTextCell:l10n_util::GetNSString(
+                        IDS_PASSWORDS_PAGE_VIEW_HIDE_BUTTON)]);
+  [cell setShouldUnderline:NO];
+
+  minimizeButton_.reset([[NSButton alloc] initWithFrame:NSZeroRect]);
+  [minimizeButton_ setCell:cell.get()];
+  [minimizeButton_ sizeToFit];
+  [minimizeButton_ setTarget:self];
+  [minimizeButton_ setAction:@selector(minimize:)];
+  [content addSubview:minimizeButton_];
+
+  CGFloat buttonsWidth = NSWidth([stopButton_ frame]) + kHorizontalMargin +
+      NSWidth([minimizeButton_ frame]);
+  CGFloat totalHeight =
+      kPaddingVertical + NSHeight([stopButton_ frame]) + kPaddingVertical;
 
   // Create grip icon.
   base::scoped_nsobject<WindowGripView> gripView([[WindowGripView alloc] init]);
   [content addSubview:gripView];
   CGFloat gripWidth = NSWidth([gripView frame]);
   CGFloat gripHeight = NSHeight([gripView frame]);
-  [gripView
-      setFrameOrigin:NSMakePoint(kPaddingLeft, (totalHeight - gripHeight) / 2)];
+  [gripView setFrameOrigin:NSMakePoint(kPaddingHorizontal,
+                                       (totalHeight - gripHeight) / 2)];
 
   // Create text label.
   int maximumWidth =
       std::min(kMaximumWidth, NSWidth([[NSScreen mainScreen] visibleFrame]));
-  int maxLabelWidth = maximumWidth - kPaddingLeft - kPadding -
-                      kHorizontalMargin * 2 - gripWidth - buttonWidth;
+  int maxLabelWidth = maximumWidth - kPaddingHorizontal * 2 -
+                      kHorizontalMargin * 2 - gripWidth - buttonsWidth;
   gfx::FontList font_list;
   base::string16 elidedText =
-      ElideText(text, font_list, maxLabelWidth, gfx::ELIDE_IN_MIDDLE);
+      ElideText(text, font_list, maxLabelWidth, gfx::ELIDE_MIDDLE);
   NSString* statusText = base::SysUTF16ToNSString(elidedText);
   base::scoped_nsobject<NSTextField> statusTextField(
       [[NSTextField alloc] initWithFrame:ui::kWindowSizeDeterminedLater]);
@@ -162,28 +191,35 @@ scoped_ptr<ScreenCaptureNotificationUI> ScreenCaptureNotificationUI::Create(
   [statusTextField setFont:font_list.GetPrimaryFont().GetNativeFont()];
   [statusTextField sizeToFit];
   [statusTextField setFrameOrigin:NSMakePoint(
-                       kPaddingLeft + kHorizontalMargin + gripWidth,
+                       kPaddingHorizontal + kHorizontalMargin + gripWidth,
                        (totalHeight - NSHeight([statusTextField frame])) / 2)];
   [content addSubview:statusTextField];
 
   // Resize content view to fit controls.
-  CGFloat minimumLableWidth = kMinimumWidth - kPaddingLeft - kPadding -
-                              kHorizontalMargin * 2 - gripWidth - buttonWidth;
+  CGFloat minimumLableWidth = kMinimumWidth - kPaddingHorizontal * 2 -
+                              kHorizontalMargin * 2 - gripWidth - buttonsWidth;
   CGFloat lableWidth =
       std::max(NSWidth([statusTextField frame]), minimumLableWidth);
-  CGFloat totalWidth = kPaddingLeft + kPadding + kHorizontalMargin * 2 +
-                       gripWidth + lableWidth + buttonWidth;
+  CGFloat totalWidth = kPaddingHorizontal * 2 + kHorizontalMargin * 2 +
+                       gripWidth + lableWidth + buttonsWidth;
   [content setFrame:NSMakeRect(0, 0, totalWidth, totalHeight)];
 
-  // Move the button to the right place.
-  NSPoint buttonOrigin =
-      NSMakePoint(totalWidth - kPadding - buttonWidth, kPadding);
+  // Move the buttons to the right place.
+  NSPoint buttonOrigin = NSMakePoint(
+      totalWidth - kPaddingHorizontal - buttonsWidth, kPaddingVertical);
   [stopButton_ setFrameOrigin:buttonOrigin];
+
+  [minimizeButton_ setFrameOrigin:NSMakePoint(
+      totalWidth - kPaddingHorizontal - NSWidth([minimizeButton_ frame]),
+      (totalHeight - NSHeight([minimizeButton_ frame])) / 2)];
 
   if (base::i18n::IsRTL()) {
     [stopButton_
         setFrameOrigin:NSMakePoint(totalWidth - NSMaxX([stopButton_ frame]),
                                    NSMinY([stopButton_ frame]))];
+    [minimizeButton_
+        setFrameOrigin:NSMakePoint(totalWidth - NSMaxX([minimizeButton_ frame]),
+                                   NSMinY([minimizeButton_ frame]))];
     [statusTextField
         setFrameOrigin:NSMakePoint(totalWidth - NSMaxX([statusTextField frame]),
                                    NSMinY([statusTextField frame]))];

@@ -14,7 +14,9 @@
 #include "ui/gfx/image/image_family.h"
 #include "url/gurl.h"
 
+namespace base {
 class CommandLine;
+}
 
 class ShellIntegration {
  public:
@@ -59,9 +61,11 @@ class ShellIntegration {
   // client application for specific protocols.
   static DefaultWebClientSetPermission CanSetAsDefaultProtocolClient();
 
-  // Returns the path of the application to be launched given the protocol
-  // of the requested url. Returns an empty string on failure.
-  static base::string16 GetApplicationForProtocol(const GURL& url);
+  // Returns a string representing the application to be launched given the
+  // protocol of the requested url. This string may be a name or a path, but
+  // neither is guaranteed and it should only be used as a display string.
+  // Returns an empty string on failure.
+  static base::string16 GetApplicationNameForProtocol(const GURL& url);
 
   // On Linux, it may not be possible to determine or set the default browser
   // on some desktop environments or configurations. So, we use this enum and
@@ -88,62 +92,6 @@ class ShellIntegration {
   static DefaultWebClientState
       IsDefaultProtocolClient(const std::string& protocol);
 
-  struct ShortcutInfo {
-    ShortcutInfo();
-    ~ShortcutInfo();
-
-    GURL url;
-    // If |extension_id| is non-empty, this is short cut is to an extension-app
-    // and the launch url will be detected at start-up. In this case, |url|
-    // is still used to generate the app id (windows app id, not chrome app id).
-    std::string extension_id;
-    bool is_platform_app;
-    base::string16 title;
-    base::string16 description;
-    base::FilePath extension_path;
-    gfx::ImageFamily favicon;
-    base::FilePath profile_path;
-    std::string profile_name;
-  };
-
-  // This specifies a folder in the system applications menu (e.g the Start Menu
-  // on Windows).
-  //
-  // These represent the applications menu root, the "Google Chrome" folder and
-  // the "Chrome Apps" folder respectively.
-  //
-  // NB: On Linux, these locations may not be used by the window manager (e.g
-  // Unity and Gnome Shell).
-  enum ApplicationsMenuLocation {
-    APP_MENU_LOCATION_NONE,
-    APP_MENU_LOCATION_ROOT,
-    APP_MENU_LOCATION_SUBDIR_CHROME,
-    APP_MENU_LOCATION_SUBDIR_CHROMEAPPS,
-  };
-
-  // Info about which locations to create app shortcuts in.
-  struct ShortcutLocations {
-    ShortcutLocations();
-
-    bool on_desktop;
-
-    ApplicationsMenuLocation applications_menu_location;
-
-    // For Windows, this refers to quick launch bar prior to Win7. In Win7,
-    // this means "pin to taskbar". For Mac/Linux, this could be used for
-    // Mac dock or the gnome/kde application launcher. However, those are not
-    // implemented yet.
-    bool in_quick_launch_bar;
-
-#if defined(OS_POSIX)
-    // For Linux, this refers to a shortcut which the system knows about (for
-    // the purpose of identifying windows and giving them the correct
-    // title/icon), but which does not show up in menus or search results.
-    // Ignored if applications_menu_location is not APP_MENU_LOCATION_NONE.
-    bool hidden;
-#endif
-  };
-
   // Data that needs to be passed between the app launcher stub and Chrome.
   struct AppModeInfo {
   };
@@ -158,10 +106,17 @@ class ShellIntegration {
   // login profile, for ChromeOS).
   // If |extension_app_id| is non-empty, the arguments use kAppId=<id>.
   // Otherwise, kApp=<url> is used.
-  static CommandLine CommandLineArgsForLauncher(
+  static base::CommandLine CommandLineArgsForLauncher(
       const GURL& url,
       const std::string& extension_app_id,
       const base::FilePath& profile_path);
+
+  // Append command line arguments for launching a new chrome.exe process
+  // based on the current process.
+  // The new command line reuses the current process's user data directory and
+  // profile.
+  static void AppendProfileArgs(const base::FilePath& profile_path,
+                                base::CommandLine* command_line);
 
 #if defined(OS_WIN)
   // Generates an application user model ID (AppUserModelId) for a given app

@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/time/time.h"
 #include "content/browser/browser_main_loop.h"
+#include "content/browser/media/media_internals.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/google_one_shot_remote_engine.h"
 #include "content/public/browser/speech_recognition_event_listener.h"
@@ -37,10 +38,10 @@ class SpeechRecognizerImpl::OnDataConverter
                   const AudioParameters& output_params);
   virtual ~OnDataConverter();
 
-  // Converts input |data| buffer into an AudioChunk where the input format
+  // Converts input audio |data| bus into an AudioChunk where the input format
   // is given by |input_parameters_| and the output format by
   // |output_parameters_|.
-  scoped_refptr<AudioChunk> Convert(const uint8* data, size_t size);
+  scoped_refptr<AudioChunk> Convert(const AudioBus* data);
 
  private:
   // media::AudioConverter::InputCallback implementation.
@@ -132,11 +133,10 @@ SpeechRecognizerImpl::OnDataConverter::~OnDataConverter() {
 }
 
 scoped_refptr<AudioChunk> SpeechRecognizerImpl::OnDataConverter::Convert(
-    const uint8* data, size_t size) {
-  CHECK_EQ(size, static_cast<size_t>(input_parameters_.GetBytesPerBuffer()));
+    const AudioBus* data) {
+  CHECK_EQ(data->frames(), input_parameters_.frames_per_buffer());
 
-  input_bus_->FromInterleaved(
-      data, input_bus_->frames(), input_parameters_.bits_per_sample() / 8);
+  data->CopyTo(input_bus_.get());
 
   waiting_for_input_ = true;
   audio_converter_.Convert(output_bus_.get());
@@ -179,6 +179,8 @@ SpeechRecognizerImpl::SpeechRecognizerImpl(
     : SpeechRecognizer(listener, session_id),
       recognition_engine_(engine),
       endpointer_(kAudioSampleRate),
+      audio_log_(MediaInternals::GetInstance()->CreateAudioLog(
+          media::AudioLogFactory::AUDIO_INPUT_CONTROLLER)),
       is_dispatching_event_(false),
       provisional_results_(provisional_results),
       state_(STATE_IDLE) {
@@ -254,15 +256,18 @@ SpeechRecognizerImpl::recognition_engine() const {
 }
 
 SpeechRecognizerImpl::~SpeechRecognizerImpl() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   endpointer_.EndSession();
   if (audio_controller_.get()) {
     audio_controller_->Close(
         base::Bind(&KeepAudioControllerRefcountedForDtor, audio_controller_));
+    audio_log_->OnClosed(0);
   }
 }
 
 // Invoked in the audio thread.
-void SpeechRecognizerImpl::OnError(AudioInputController* controller) {
+void SpeechRecognizerImpl::OnError(AudioInputController* controller,
+    media::AudioInputController::ErrorCode error_code) {
   FSMEventArgs event_args(EVENT_AUDIO_ERROR);
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SpeechRecognizerImpl::DispatchEvent,
@@ -270,13 +275,10 @@ void SpeechRecognizerImpl::OnError(AudioInputController* controller) {
 }
 
 void SpeechRecognizerImpl::OnData(AudioInputController* controller,
-                                  const uint8* data, uint32 size) {
-  if (size == 0)  // This could happen when audio capture stops and is normal.
-    return;
-
+                                  const AudioBus* data) {
   // Convert audio from native format to fixed format used by WebSpeech.
   FSMEventArgs event_args(EVENT_AUDIO_DATA);
-  event_args.audio_data = audio_converter_->Convert(data, size);
+  event_args.audio_data = audio_converter_->Convert(data);
 
   BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                           base::Bind(&SpeechRecognizerImpl::DispatchEvent,
@@ -572,12 +574,15 @@ SpeechRecognizerImpl::StartRecording(const FSMEventArgs&) {
     return Abort(SpeechRecognitionError(SPEECH_RECOGNITION_ERROR_AUDIO));
   }
 
+  audio_log_->OnCreated(0, input_parameters, device_id_);
+
   // The endpointer needs to estimate the environment/background noise before
   // starting to treat the audio as user input. We wait in the state
   // ESTIMATING_ENVIRONMENT until such interval has elapsed before switching
   // to user input mode.
   endpointer_.SetEnvironmentEstimationMode();
   audio_controller_->Record();
+  audio_log_->OnStarted(0);
   return STATE_STARTING;
 }
 
@@ -774,6 +779,7 @@ void SpeechRecognizerImpl::CloseAudioControllerAsynchronously() {
   audio_controller_->Close(base::Bind(&SpeechRecognizerImpl::OnAudioClosed,
                                       this, audio_controller_));
   audio_controller_ = NULL;  // The controller is still refcounted by Bind.
+  audio_log_->OnClosed(0);
 }
 
 int SpeechRecognizerImpl::GetElapsedTimeMs() const {

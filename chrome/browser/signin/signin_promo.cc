@@ -11,21 +11,20 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/webui/options/core_options_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
 #include "chrome/common/net/url_util.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -38,15 +37,12 @@
 #include "net/base/network_change_notifier.h"
 #include "net/base/url_util.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 using content::WebContents;
+using net::GetValueForKeyInQuery;
 
 namespace {
-
-const char kSignInPromoQueryKeyAutoClose[] = "auto_close";
-const char kSignInPromoQueryKeyContinue[] = "continue";
-const char kSignInPromoQueryKeySource[] = "source";
-const char kSignInPromoQueryKeyConstrained[] = "constrained";
 
 // Gaia cannot support about:blank as a continue URL, so using a hosted blank
 // page instead.
@@ -62,12 +58,12 @@ bool g_force_web_based_signin_flow = false;
 // Checks we want to show the sign in promo for the given brand.
 bool AllowPromoAtStartupForCurrentBrand() {
   std::string brand;
-  google_util::GetBrand(&brand);
+  google_brand::GetBrand(&brand);
 
   if (brand.empty())
     return true;
 
-  if (google_util::IsInternetCafeBrandCode(brand))
+  if (google_brand::IsInternetCafeBrandCode(brand))
     return false;
 
   // Enable for both organic and distribution.
@@ -99,8 +95,8 @@ bool ShouldShowPromo(Profile* profile) {
   if (net::NetworkChangeNotifier::IsOffline())
     return false;
 
-  // Don't show for managed profiles.
-  if (profile->IsManaged())
+  // Don't show for supervised profiles.
+  if (profile->IsSupervised())
     return false;
 
   // Display the signin promo if the user is not signed in.
@@ -178,6 +174,13 @@ GURL GetPromoURL(Source source, bool auto_close) {
 }
 
 GURL GetPromoURL(Source source, bool auto_close, bool is_constrained) {
+  return GetPromoURLWithContinueURL(source, auto_close, is_constrained, GURL());
+}
+
+GURL GetPromoURLWithContinueURL(Source source,
+                                bool auto_close,
+                                bool is_constrained,
+                                GURL continue_url) {
   DCHECK_NE(SOURCE_UNKNOWN, source);
 
   if (!switches::IsEnableWebBasedSignin()) {
@@ -187,6 +190,15 @@ GURL GetPromoURL(Source source, bool auto_close, bool is_constrained) {
       base::StringAppendF(&url, "&%s=1", kSignInPromoQueryKeyAutoClose);
     if (is_constrained)
       base::StringAppendF(&url, "&%s=1", kSignInPromoQueryKeyConstrained);
+    if (!continue_url.is_empty()) {
+      DCHECK(continue_url.is_valid());
+      std::string escaped_continue_url =
+          net::EscapeQueryParamValue(continue_url.spec(), false);
+      base::StringAppendF(&url,
+                          "&%s=%s",
+                          kSignInPromoQueryKeyContinue,
+                          escaped_continue_url.c_str());
+    }
     return GURL(url);
   }
 
@@ -206,14 +218,19 @@ GURL GetPromoURL(Source source, bool auto_close, bool is_constrained) {
   // See OneClickSigninHelper for details.
   std::string query_string = "?service=chromiumsync&sarp=1";
 
-  std::string continue_url = GetLandingURL(kSignInPromoQueryKeySource,
-                                           static_cast<int>(source)).spec();
-  if (auto_close)
-    base::StringAppendF(&continue_url, "&%s=1", kSignInPromoQueryKeyAutoClose);
+  DCHECK(continue_url.is_empty());
+  std::string continue_url_str = GetLandingURL(kSignInPromoQueryKeySource,
+                                               static_cast<int>(source)).spec();
+  if (auto_close) {
+    base::StringAppendF(
+        &continue_url_str, "&%s=1", kSignInPromoQueryKeyAutoClose);
+  }
 
-  base::StringAppendF(&query_string, "&%s=%s", kSignInPromoQueryKeyContinue,
-                      net::EscapeQueryParamValue(
-                          continue_url, false).c_str());
+  base::StringAppendF(
+      &query_string,
+      "&%s=%s",
+      kSignInPromoQueryKeyContinue,
+      net::EscapeQueryParamValue(continue_url_str, false).c_str());
 
   return GaiaUrls::GetInstance()->service_login_url().Resolve(query_string);
 }
@@ -226,13 +243,12 @@ GURL GetReauthURL(Profile* profile, const std::string& account_id) {
         account_id);
   }
 
-  const std::string primary_account_id =
-    SigninManagerFactory::GetForProfile(profile)->
-        GetAuthenticatedAccountId();
-  signin::Source source = account_id == primary_account_id ?
-      signin::SOURCE_SETTINGS : signin::SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT;
+  signin::Source source = switches::IsNewProfileManagement() ?
+      signin::SOURCE_REAUTH : signin::SOURCE_SETTINGS;
 
-  GURL url = signin::GetPromoURL(source, true);
+  GURL url = signin::GetPromoURL(
+      source, true /* auto_close */,
+      switches::IsNewProfileManagement() /* is_constrained */);
   url = net::AppendQueryParameter(url, "email", account_id);
   url = net::AppendQueryParameter(url, "validateEmail", "1");
   return net::AppendQueryParameter(url, "readOnlyEmail", "1");
@@ -240,15 +256,18 @@ GURL GetReauthURL(Profile* profile, const std::string& account_id) {
 
 GURL GetNextPageURLForPromoURL(const GURL& url) {
   std::string value;
-  if (net::GetValueForKeyInQuery(url, kSignInPromoQueryKeyContinue, &value))
-    return GURL(value);
+  if (GetValueForKeyInQuery(url, kSignInPromoQueryKeyContinue, &value)) {
+    GURL continue_url = GURL(value);
+    if (continue_url.is_valid())
+      return continue_url;
+  }
 
   return GURL();
 }
 
 Source GetSourceForPromoURL(const GURL& url) {
   std::string value;
-  if (net::GetValueForKeyInQuery(url, kSignInPromoQueryKeySource, &value)) {
+  if (GetValueForKeyInQuery(url, kSignInPromoQueryKeySource, &value)) {
     int source = 0;
     if (base::StringToInt(value, &source) && source >= SOURCE_START_PAGE &&
         source < SOURCE_UNKNOWN) {
@@ -260,7 +279,18 @@ Source GetSourceForPromoURL(const GURL& url) {
 
 bool IsAutoCloseEnabledInURL(const GURL& url) {
   std::string value;
-  if (net::GetValueForKeyInQuery(url, kSignInPromoQueryKeyAutoClose, &value)) {
+  if (GetValueForKeyInQuery(url, kSignInPromoQueryKeyAutoClose, &value)) {
+    int enabled = 0;
+    if (base::StringToInt(value, &enabled) && enabled == 1)
+      return true;
+  }
+  return false;
+}
+
+bool ShouldShowAccountManagement(const GURL& url) {
+  std::string value;
+  if (GetValueForKeyInQuery(
+          url, kSignInPromoQueryKeyShowAccountManagement, &value)) {
     int enabled = 0;
     if (base::StringToInt(value, &enabled) && enabled == 1)
       return true;

@@ -15,9 +15,9 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "ui/aura/client/dispatcher_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/link.h"
@@ -25,6 +25,7 @@
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
+#include "ui/wm/public/dispatcher_client.h"
 
 #if defined(GOOGLE_CHROME_BUILD)
 #include "base/prefs/pref_service.h"
@@ -65,7 +66,9 @@ bool FirstRunDialog::Show(Profile* profile) {
     aura::Window* anchor = dialog->GetWidget()->GetNativeWindow();
     aura::client::DispatcherClient* client =
         aura::client::GetDispatcherClient(anchor->GetRootWindow());
-    client->RunWithDispatcher(dialog, anchor);
+    aura::client::DispatcherRunLoop run_loop(client, NULL);
+    dialog->quit_runloop_ = run_loop.QuitClosure();
+    run_loop.Run();
     dialog_shown = true;
   }
 #endif  // defined(GOOGLE_CHROME_BUILD)
@@ -76,8 +79,7 @@ bool FirstRunDialog::Show(Profile* profile) {
 FirstRunDialog::FirstRunDialog(Profile* profile)
     : profile_(profile),
       make_default_(NULL),
-      report_crashes_(NULL),
-      should_show_dialog_(true) {
+      report_crashes_(NULL) {
   GridLayout* layout = GridLayout::CreatePanel(this);
   SetLayoutManager(layout);
 
@@ -102,6 +104,11 @@ FirstRunDialog::FirstRunDialog(Profile* profile)
 FirstRunDialog::~FirstRunDialog() {
 }
 
+void FirstRunDialog::Done() {
+  CHECK(!quit_runloop_.is_null());
+  quit_runloop_.Run();
+}
+
 views::View* FirstRunDialog::CreateExtraView() {
   views::Link* link = new views::Link(l10n_util::GetStringUTF16(
       IDS_LEARN_MORE));
@@ -110,12 +117,11 @@ views::View* FirstRunDialog::CreateExtraView() {
 }
 
 void FirstRunDialog::OnClosed() {
-  should_show_dialog_ = false;
   first_run::SetShouldShowWelcomePage();
+  Done();
 }
 
 bool FirstRunDialog::Accept() {
-  should_show_dialog_ = false;
   GetWidget()->Hide();
 
   if (report_crashes_ && report_crashes_->checked()) {
@@ -128,6 +134,7 @@ bool FirstRunDialog::Accept() {
   if (make_default_ && make_default_->checked())
     ShellIntegration::SetAsDefaultBrowser();
 
+  Done();
   return true;
 }
 
@@ -137,11 +144,4 @@ int FirstRunDialog::GetDialogButtons() const {
 
 void FirstRunDialog::LinkClicked(views::Link* source, int event_flags) {
   platform_util::OpenExternal(profile_, GURL(chrome::kLearnMoreReportingURL));
-}
-
-uint32_t FirstRunDialog::Dispatch(const base::NativeEvent& event) {
-  uint32_t action = POST_DISPATCH_PERFORM_DEFAULT;
-  if (!should_show_dialog_)
-    action |= POST_DISPATCH_QUIT_LOOP;
-  return action;
 }

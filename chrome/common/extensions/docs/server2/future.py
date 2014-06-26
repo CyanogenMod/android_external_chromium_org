@@ -7,44 +7,44 @@ import sys
 _no_value = object()
 
 
-def Collect(futures):
+def Collect(futures, except_pass=None):
   '''Creates a Future which returns a list of results from each Future in
-  |futures|.
+  |futures|. |except_pass| should be one or more exceptions to ignore when
+  calling Get on the futures.
   '''
-  return Future(delegate=Gettable(lambda: [f.Get() for f in futures]))
-
-
-class Gettable(object):
-  '''Allows a Future to accept a callable as a delegate. Wraps |f| in a .Get
-  interface required by Future.
-  '''
-  def __init__(self, f, *args):
-    self._g = lambda: f(*args)
-  def Get(self):
-    return self._g()
+  def resolve():
+    resolved = []
+    for f in futures:
+      try:
+        resolved.append(f.Get())
+      # "except None" will simply not catch any errors
+      except except_pass:
+        pass
+    return resolved
+  return Future(callback=resolve)
 
 
 class Future(object):
-  '''Stores a value, error, or delegate to be used later.
+  '''Stores a value, error, or callback to be used later.
   '''
-  def __init__(self, value=_no_value, delegate=None, exc_info=None):
+  def __init__(self, value=_no_value, callback=None, exc_info=None):
     self._value = value
-    self._delegate = delegate
+    self._callback = callback
     self._exc_info = exc_info
     if (self._value is _no_value and
-        self._delegate is None and
+        self._callback is None and
         self._exc_info is None):
-      raise ValueError('Must have either a value, error, or delegate.')
+      raise ValueError('Must have either a value, error, or callback.')
 
   def Get(self):
-    '''Gets the stored value, error, or delegate contents.
+    '''Gets the stored value, error, or callback contents.
     '''
     if self._value is not _no_value:
       return self._value
     if self._exc_info is not None:
       self._Raise()
     try:
-      self._value = self._delegate.Get()
+      self._value = self._callback()
       return self._value
     except:
       self._exc_info = sys.exc_info()

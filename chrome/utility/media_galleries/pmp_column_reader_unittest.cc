@@ -6,8 +6,8 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/platform_file.h"
 #include "chrome/common/media_galleries/pmp_constants.h"
 #include "chrome/common/media_galleries/pmp_test_util.h"
 #include "chrome/utility/media_galleries/pmp_column_reader.h"
@@ -30,21 +30,15 @@ bool InitColumnReaderFromBytes(
     return false;
 
   // Explicit conversion from signed to unsigned.
-  size_t bytes_written = file_util::WriteFile(temp_path, &data[0], data.size());
+  size_t bytes_written = base::WriteFile(temp_path, &data[0], data.size());
   if (bytes_written != data.size())
     return false;
 
-  int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
-  base::PlatformFile platform_file =
-      base::CreatePlatformFile(temp_path, flags, NULL, NULL);
-  if (platform_file == base::kInvalidPlatformFileValue)
+  base::File file(temp_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  if (!file.IsValid())
     return false;
 
-  bool read_success = reader->ReadFile(platform_file, expected_type);
-
-  base::ClosePlatformFile(platform_file);
-
-  return read_success;
+  return reader->ReadFile(&file, expected_type);
 }
 
 // Overridden version of Read method to make test code templatable.

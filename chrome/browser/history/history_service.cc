@@ -12,8 +12,6 @@
 // HistoryService <----------------> HistoryBackend
 //                                   -> HistoryDatabase
 //                                      -> SQLite connection to History
-//                                   -> ArchivedDatabase
-//                                      -> SQLite connection to Archived History
 //                                   -> ThumbnailDatabase
 //                                      -> SQLite connection to Thumbnails
 //                                         (and favicons)
@@ -33,8 +31,6 @@
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "chrome/browser/autocomplete/history_url_provider.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/download_row.h"
@@ -50,13 +46,14 @@
 #include "chrome/browser/history/web_history_service.h"
 #include "chrome/browser/history/web_history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/profile_error_dialog.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/thumbnail_score.h"
 #include "chrome/common/url_constants.h"
+#include "components/history/core/browser/history_client.h"
+#include "components/history/core/browser/keyword_search_term.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "components/visitedlink/browser/visitedlink_master.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_item.h"
@@ -68,26 +65,27 @@
 
 using base::Time;
 using history::HistoryBackend;
+using history::KeywordID;
 
 namespace {
 
 static const char* kHistoryThreadName = "Chrome_HistoryThread";
 
-template<typename PODType> void DerefPODType(
-    const base::Callback<void(PODType)>& callback, PODType* pod_value) {
-  callback.Run(*pod_value);
-}
-
 void RunWithFaviconResults(
-    const FaviconService::FaviconResultsCallback& callback,
-    std::vector<chrome::FaviconBitmapResult>* bitmap_results) {
+    const favicon_base::FaviconResultsCallback& callback,
+    std::vector<favicon_base::FaviconRawBitmapResult>* bitmap_results) {
   callback.Run(*bitmap_results);
 }
 
 void RunWithFaviconResult(
-    const FaviconService::FaviconRawCallback& callback,
-    chrome::FaviconBitmapResult* bitmap_result) {
+    const favicon_base::FaviconRawBitmapCallback& callback,
+    favicon_base::FaviconRawBitmapResult* bitmap_result) {
   callback.Run(*bitmap_result);
+}
+
+void RunWithQueryURLResult(const HistoryService::QueryURLCallback& callback,
+                           const history::QueryURLResult* result) {
+  callback.Run(result->success, result->row, result->visits);
 }
 
 // Extract history::URLRows into GURLs for VisitedLinkMaster.
@@ -115,11 +113,11 @@ class URLIteratorFromURLRows
 };
 
 // Callback from WebHistoryService::ExpireWebHistory().
-void ExpireWebHistoryComplete(
-    history::WebHistoryService::Request* request,
-    bool success) {
-  // Ignore the result and delete the request.
-  delete request;
+void ExpireWebHistoryComplete(bool success) {
+  // Ignore the result.
+  //
+  // TODO(davidben): ExpireLocalAndRemoteHistoryBetween callback should not fire
+  // until this completes.
 }
 
 }  // namespace
@@ -139,31 +137,29 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
         profile_(profile) {
   }
 
-  virtual void NotifyProfileError(int backend_id,
-                                  sql::InitStatus init_status) OVERRIDE {
+  virtual void NotifyProfileError(sql::InitStatus init_status) OVERRIDE {
     // Send to the history service on the main thread.
     service_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&HistoryService::NotifyProfileError, history_service_,
-                   backend_id, init_status));
+                   init_status));
   }
 
-  virtual void SetInMemoryBackend(int backend_id,
-      history::InMemoryHistoryBackend* backend) OVERRIDE {
+  virtual void SetInMemoryBackend(
+      scoped_ptr<history::InMemoryHistoryBackend> backend) OVERRIDE {
     // Send the backend to the history service on the main thread.
-    scoped_ptr<history::InMemoryHistoryBackend> in_memory_backend(backend);
     service_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&HistoryService::SetInMemoryBackend, history_service_,
-                   backend_id, base::Passed(&in_memory_backend)));
+                   base::Passed(&backend)));
   }
 
   virtual void BroadcastNotifications(
       int type,
-      history::HistoryDetails* details) OVERRIDE {
+      scoped_ptr<history::HistoryDetails> details) OVERRIDE {
     // Send the notification on the history thread.
     if (content::NotificationService::current()) {
-      content::Details<history::HistoryDetails> det(details);
+      content::Details<history::HistoryDetails> det(details.get());
       content::NotificationService::current()->Notify(
           type, content::Source<Profile>(profile_), det);
     }
@@ -171,14 +167,13 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
     service_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&HistoryService::BroadcastNotificationsHelper,
-                   history_service_, type, base::Owned(details)));
+                   history_service_, type, base::Passed(&details)));
   }
 
-  virtual void DBLoaded(int backend_id) OVERRIDE {
+  virtual void DBLoaded() OVERRIDE {
     service_task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&HistoryService::OnDBLoaded, history_service_,
-                   backend_id));
+        base::Bind(&HistoryService::OnDBLoaded, history_service_));
   }
 
   virtual void NotifyVisitDBObserversOnAddVisit(
@@ -201,22 +196,20 @@ class HistoryService::BackendDelegate : public HistoryBackend::Delegate {
 HistoryService::HistoryService()
     : weak_ptr_factory_(this),
       thread_(new base::Thread(kHistoryThreadName)),
+      history_client_(NULL),
       profile_(NULL),
       backend_loaded_(false),
-      current_backend_id_(-1),
-      bookmark_service_(NULL),
       no_db_(false) {
 }
 
-HistoryService::HistoryService(Profile* profile)
+HistoryService::HistoryService(history::HistoryClient* client, Profile* profile)
     : weak_ptr_factory_(this),
       thread_(new base::Thread(kHistoryThreadName)),
+      history_client_(client),
       profile_(profile),
       visitedlink_master_(new visitedlink::VisitedLinkMaster(
           profile, this, true)),
       backend_loaded_(false),
-      current_backend_id_(-1),
-      bookmark_service_(NULL),
       no_db_(false) {
   DCHECK(profile_);
   registrar_.Add(this, chrome::NOTIFICATION_HISTORY_URLS_DELETED,
@@ -233,57 +226,7 @@ HistoryService::~HistoryService() {
 
 bool HistoryService::BackendLoaded() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  // NOTE: We start the backend loading even though it completes asynchronously
-  // and thus won't affect the return value of this function.  This is because
-  // callers of this assume that if the backend isn't yet loaded it will be
-  // soon, so they will either listen for notifications or just retry this call
-  // later.  If we've purged the backend, we haven't necessarily restarted it
-  // loading by now, so we need to trigger the load in order to maintain that
-  // expectation.
-  LoadBackendIfNecessary();
   return backend_loaded_;
-}
-
-void HistoryService::UnloadBackend() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (!history_backend_.get())
-    return;  // Already unloaded.
-
-  // Get rid of the in-memory backend.
-  in_memory_backend_.reset();
-
-  // Give the InMemoryURLIndex a chance to shutdown.
-  if (in_memory_url_index_)
-    in_memory_url_index_->ShutDown();
-
-  // The backend's destructor must run on the history thread since it is not
-  // threadsafe. So this thread must not be the last thread holding a reference
-  // to the backend, or a crash could happen.
-  //
-  // We have a reference to the history backend. There is also an extra
-  // reference held by our delegate installed in the backend, which
-  // HistoryBackend::Closing will release. This means if we scheduled a call
-  // to HistoryBackend::Closing and *then* released our backend reference, there
-  // will be a race between us and the backend's Closing function to see who is
-  // the last holder of a reference. If the backend thread's Closing manages to
-  // run before we release our backend refptr, the last reference will be held
-  // by this thread and the destructor will be called from here.
-  //
-  // Therefore, we create a closure to run the Closing operation first. This
-  // holds a reference to the backend. Then we release our reference, then we
-  // schedule the task to run. After the task runs, it will delete its reference
-  // from the history thread, ensuring everything works properly.
-  //
-  // TODO(ajwong): Cleanup HistoryBackend lifetime issues.
-  //     See http://crbug.com/99767.
-  history_backend_->AddRef();
-  base::Closure closing_task =
-      base::Bind(&HistoryBackend::Closing, history_backend_.get());
-  ScheduleTask(PRIORITY_NORMAL, closing_task);
-  closing_task.Reset();
-  HistoryBackend* raw_ptr = history_backend_.get();
-  history_backend_ = NULL;
-  thread_->message_loop()->ReleaseSoon(FROM_HERE, raw_ptr);
 }
 
 void HistoryService::Cleanup() {
@@ -296,7 +239,44 @@ void HistoryService::Cleanup() {
   weak_ptr_factory_.InvalidateWeakPtrs();
 
   // Unload the backend.
-  UnloadBackend();
+  if (history_backend_) {
+    // Get rid of the in-memory backend.
+    in_memory_backend_.reset();
+
+    // Give the InMemoryURLIndex a chance to shutdown.
+    // NOTE: In tests, there may be no index.
+    if (in_memory_url_index_)
+      in_memory_url_index_->ShutDown();
+
+    // The backend's destructor must run on the history thread since it is not
+    // threadsafe. So this thread must not be the last thread holding a
+    // reference to the backend, or a crash could happen.
+    //
+    // We have a reference to the history backend. There is also an extra
+    // reference held by our delegate installed in the backend, which
+    // HistoryBackend::Closing will release. This means if we scheduled a call
+    // to HistoryBackend::Closing and *then* released our backend reference,
+    // there will be a race between us and the backend's Closing function to see
+    // who is the last holder of a reference. If the backend thread's Closing
+    // manages to run before we release our backend refptr, the last reference
+    // will be held by this thread and the destructor will be called from here.
+    //
+    // Therefore, we create a closure to run the Closing operation first. This
+    // holds a reference to the backend. Then we release our reference, then we
+    // schedule the task to run. After the task runs, it will delete its
+    // reference from the history thread, ensuring everything works properly.
+    //
+    // TODO(ajwong): Cleanup HistoryBackend lifetime issues.
+    //     See http://crbug.com/99767.
+    history_backend_->AddRef();
+    base::Closure closing_task =
+        base::Bind(&HistoryBackend::Closing, history_backend_.get());
+    ScheduleTask(PRIORITY_NORMAL, closing_task);
+    closing_task.Reset();
+    HistoryBackend* raw_ptr = history_backend_.get();
+    history_backend_ = NULL;
+    thread_->message_loop()->ReleaseSoon(FROM_HERE, raw_ptr);
+  }
 
   // Delete the thread, which joins with the background thread. We defensively
   // NULL the pointer before deleting it in case somebody tries to use it
@@ -306,21 +286,16 @@ void HistoryService::Cleanup() {
   delete thread;
 }
 
-void HistoryService::NotifyRenderProcessHostDestruction(const void* host) {
+void HistoryService::ClearCachedDataForContextID(
+    history::ContextID context_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_NORMAL,
-                    &HistoryBackend::NotifyRenderProcessHostDestruction, host);
+                    &HistoryBackend::ClearCachedDataForContextID, context_id);
 }
 
 history::URLDatabase* HistoryService::InMemoryDatabase() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  // NOTE: See comments in BackendLoaded() as to why we call
-  // LoadBackendIfNecessary() here even though it won't affect the return value
-  // for this call.
-  LoadBackendIfNecessary();
-  if (in_memory_backend_)
-    return in_memory_backend_->db();
-  return NULL;
+  return in_memory_backend_ ? in_memory_backend_->db() : NULL;
 }
 
 bool HistoryService::GetTypedCountForURL(const GURL& url, int* typed_count) {
@@ -358,24 +333,11 @@ history::TypedUrlSyncableService* HistoryService::GetTypedUrlSyncableService()
 
 void HistoryService::Shutdown() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  // It's possible that bookmarks haven't loaded and history is waiting for
-  // bookmarks to complete loading. In such a situation history can't shutdown
-  // (meaning if we invoked history_service_->Cleanup now, we would
-  // deadlock). To break the deadlock we tell BookmarkModel it's about to be
-  // deleted so that it can release the signal history is waiting on, allowing
-  // history to shutdown (history_service_->Cleanup to complete). In such a
-  // scenario history sees an incorrect view of bookmarks, but it's better
-  // than a deadlock.
-  BookmarkModel* bookmark_model = static_cast<BookmarkModel*>(
-      BookmarkModelFactory::GetForProfileIfExists(profile_));
-  if (bookmark_model)
-    bookmark_model->Shutdown();
-
   Cleanup();
 }
 
 void HistoryService::SetKeywordSearchTermsForURL(const GURL& url,
-                                                 TemplateURLID keyword_id,
+                                                 KeywordID keyword_id,
                                                  const base::string16& term) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_UI,
@@ -383,8 +345,7 @@ void HistoryService::SetKeywordSearchTermsForURL(const GURL& url,
                     url, keyword_id, term);
 }
 
-void HistoryService::DeleteAllSearchTermsForKeyword(
-    TemplateURLID keyword_id) {
+void HistoryService::DeleteAllSearchTermsForKeyword(KeywordID keyword_id) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_UI,
                     &HistoryBackend::DeleteAllSearchTermsForKeyword,
@@ -392,7 +353,7 @@ void HistoryService::DeleteAllSearchTermsForKeyword(
 }
 
 HistoryService::Handle HistoryService::GetMostRecentKeywordSearchTerms(
-    TemplateURLID keyword_id,
+    KeywordID keyword_id,
     const base::string16& prefix,
     int max_count,
     CancelableRequestConsumerBase* consumer,
@@ -410,7 +371,7 @@ void HistoryService::DeleteKeywordSearchTermForURL(const GURL& url) {
                     url);
 }
 
-void HistoryService::DeleteMatchingURLsForKeyword(TemplateURLID keyword_id,
+void HistoryService::DeleteMatchingURLsForKeyword(KeywordID keyword_id,
                                                   const base::string16& term) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_UI, &HistoryBackend::DeleteMatchingURLsForKeyword,
@@ -456,7 +417,7 @@ void HistoryService::SetOnBackendDestroyTask(const base::Closure& task) {
 
 void HistoryService::AddPage(const GURL& url,
                              Time time,
-                             const void* id_scope,
+                             history::ContextID context_id,
                              int32 page_id,
                              const GURL& referrer,
                              const history::RedirectList& redirects,
@@ -465,7 +426,7 @@ void HistoryService::AddPage(const GURL& url,
                              bool did_replace_entry) {
   DCHECK(thread_checker_.CalledOnValidThread());
   AddPage(
-      history::HistoryAddPageArgs(url, time, id_scope, page_id, referrer,
+      history::HistoryAddPageArgs(url, time, context_id, page_id, referrer,
                                   redirects, transition, visit_source,
                                   did_replace_entry));
 }
@@ -527,13 +488,13 @@ void HistoryService::SetPageTitle(const GURL& url,
   ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::SetPageTitle, url, title);
 }
 
-void HistoryService::UpdateWithPageEndTime(const void* host,
+void HistoryService::UpdateWithPageEndTime(history::ContextID context_id,
                                            int32 page_id,
                                            const GURL& url,
                                            Time end_ts) {
   DCHECK(thread_checker_.CalledOnValidThread());
   ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::UpdateWithPageEndTime,
-                    host, page_id, url, end_ts);
+                    context_id, page_id, url, end_ts);
 }
 
 void HistoryService::AddPageWithDetails(const GURL& url,
@@ -587,15 +548,13 @@ void HistoryService::AddPagesWithDetails(const history::URLRows& info,
 base::CancelableTaskTracker::TaskId HistoryService::GetFavicons(
     const std::vector<GURL>& icon_urls,
     int icon_types,
-    int desired_size_in_dip,
-    const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    const FaviconService::FaviconResultsCallback& callback,
+    const std::vector<int>& desired_sizes,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
 
-  std::vector<chrome::FaviconBitmapResult>* results =
-      new std::vector<chrome::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy().get(),
       FROM_HERE,
@@ -603,8 +562,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetFavicons(
                  history_backend_.get(),
                  icon_urls,
                  icon_types,
-                 desired_size_in_dip,
-                 desired_scale_factors,
+                 desired_sizes,
                  results),
       base::Bind(&RunWithFaviconResults, callback, base::Owned(results)));
 }
@@ -612,15 +570,13 @@ base::CancelableTaskTracker::TaskId HistoryService::GetFavicons(
 base::CancelableTaskTracker::TaskId HistoryService::GetFaviconsForURL(
     const GURL& page_url,
     int icon_types,
-    int desired_size_in_dip,
-    const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    const FaviconService::FaviconResultsCallback& callback,
+    const std::vector<int>& desired_sizes,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
 
-  std::vector<chrome::FaviconBitmapResult>* results =
-      new std::vector<chrome::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy().get(),
       FROM_HERE,
@@ -628,8 +584,7 @@ base::CancelableTaskTracker::TaskId HistoryService::GetFaviconsForURL(
                  history_backend_.get(),
                  page_url,
                  icon_types,
-                 desired_size_in_dip,
-                 desired_scale_factors,
+                 desired_sizes,
                  results),
       base::Bind(&RunWithFaviconResults, callback, base::Owned(results)));
 }
@@ -638,12 +593,12 @@ base::CancelableTaskTracker::TaskId HistoryService::GetLargestFaviconForURL(
     const GURL& page_url,
     const std::vector<int>& icon_types,
     int minimum_size_in_pixels,
-    const FaviconService::FaviconRawCallback& callback,
+    const favicon_base::FaviconRawBitmapCallback& callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
 
-  chrome::FaviconBitmapResult* result = new chrome::FaviconBitmapResult();
+  favicon_base::FaviconRawBitmapResult* result =
+      new favicon_base::FaviconRawBitmapResult();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy().get(),
       FROM_HERE,
@@ -657,24 +612,21 @@ base::CancelableTaskTracker::TaskId HistoryService::GetLargestFaviconForURL(
 }
 
 base::CancelableTaskTracker::TaskId HistoryService::GetFaviconForID(
-    chrome::FaviconID favicon_id,
-    int desired_size_in_dip,
-    ui::ScaleFactor desired_scale_factor,
-    const FaviconService::FaviconResultsCallback& callback,
+    favicon_base::FaviconID favicon_id,
+    int desired_size,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
 
-  std::vector<chrome::FaviconBitmapResult>* results =
-      new std::vector<chrome::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy().get(),
       FROM_HERE,
       base::Bind(&HistoryBackend::GetFaviconForID,
                  history_backend_.get(),
                  favicon_id,
-                 desired_size_in_dip,
-                 desired_scale_factor,
+                 desired_size,
                  results),
       base::Bind(&RunWithFaviconResults, callback, base::Owned(results)));
 }
@@ -684,15 +636,13 @@ HistoryService::UpdateFaviconMappingsAndFetch(
     const GURL& page_url,
     const std::vector<GURL>& icon_urls,
     int icon_types,
-    int desired_size_in_dip,
-    const std::vector<ui::ScaleFactor>& desired_scale_factors,
-    const FaviconService::FaviconResultsCallback& callback,
+    const std::vector<int>& desired_sizes,
+    const favicon_base::FaviconResultsCallback& callback,
     base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
 
-  std::vector<chrome::FaviconBitmapResult>* results =
-      new std::vector<chrome::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
   return tracker->PostTaskAndReply(
       thread_->message_loop_proxy().get(),
       FROM_HERE,
@@ -701,8 +651,7 @@ HistoryService::UpdateFaviconMappingsAndFetch(
                  page_url,
                  icon_urls,
                  icon_types,
-                 desired_size_in_dip,
-                 desired_scale_factors,
+                 desired_sizes,
                  results),
       base::Bind(&RunWithFaviconResults, callback, base::Owned(results)));
 }
@@ -710,7 +659,7 @@ HistoryService::UpdateFaviconMappingsAndFetch(
 void HistoryService::MergeFavicon(
     const GURL& page_url,
     const GURL& icon_url,
-    chrome::IconType icon_type,
+    favicon_base::IconType icon_type,
     scoped_refptr<base::RefCountedMemory> bitmap_data,
     const gfx::Size& pixel_size) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -723,8 +672,9 @@ void HistoryService::MergeFavicon(
 
 void HistoryService::SetFavicons(
     const GURL& page_url,
-    chrome::IconType icon_type,
-    const std::vector<chrome::FaviconBitmapData>& favicon_bitmap_data) {
+    favicon_base::IconType icon_type,
+    const std::vector<favicon_base::FaviconRawBitmapData>&
+        favicon_bitmap_data) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!CanAddURL(page_url))
     return;
@@ -753,14 +703,23 @@ void HistoryService::SetImportedFavicons(
                     &HistoryBackend::SetImportedFavicons, favicon_usage);
 }
 
-HistoryService::Handle HistoryService::QueryURL(
+base::CancelableTaskTracker::TaskId HistoryService::QueryURL(
     const GURL& url,
     bool want_visits,
-    CancelableRequestConsumerBase* consumer,
-    const QueryURLCallback& callback) {
+    const QueryURLCallback& callback,
+    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return Schedule(PRIORITY_UI, &HistoryBackend::QueryURL, consumer,
-                  new history::QueryURLRequest(callback), url, want_visits);
+  history::QueryURLResult* query_url_result = new history::QueryURLResult();
+  return tracker->PostTaskAndReply(
+      thread_->message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&HistoryBackend::QueryURL,
+                 history_backend_.get(),
+                 url,
+                 want_visits,
+                 base::Unretained(query_url_result)),
+      base::Bind(
+          &RunWithQueryURLResult, callback, base::Owned(query_url_result)));
 }
 
 // Downloads -------------------------------------------------------------------
@@ -772,29 +731,21 @@ void HistoryService::CreateDownload(
     const HistoryService::DownloadCreateCallback& callback) {
   DCHECK(thread_) << "History service being called after cleanup";
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
-  bool* success = new bool(false);
-  thread_->message_loop_proxy()->PostTaskAndReply(
-      FROM_HERE,
-      base::Bind(&HistoryBackend::CreateDownload,
-                 history_backend_.get(),
-                 create_info,
-                 success),
-      base::Bind(&DerefPODType<bool>, callback, base::Owned(success)));
+  PostTaskAndReplyWithResult(
+      thread_->message_loop_proxy(), FROM_HERE,
+      base::Bind(&HistoryBackend::CreateDownload, history_backend_.get(),
+                 create_info),
+      callback);
 }
 
 void HistoryService::GetNextDownloadId(
     const content::DownloadIdCallback& callback) {
   DCHECK(thread_) << "History service being called after cleanup";
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
-  uint32* next_id = new uint32(content::DownloadItem::kInvalidId);
-  thread_->message_loop_proxy()->PostTaskAndReply(
-      FROM_HERE,
-      base::Bind(&HistoryBackend::GetNextDownloadId,
-                 history_backend_.get(),
-                 next_id),
-      base::Bind(&DerefPODType<uint32>, callback, base::Owned(next_id)));
+  PostTaskAndReplyWithResult(
+      thread_->message_loop_proxy(), FROM_HERE,
+      base::Bind(&HistoryBackend::GetNextDownloadId, history_backend_.get()),
+      callback);
 }
 
 // Handle queries for a list of all downloads in the history database's
@@ -803,7 +754,6 @@ void HistoryService::QueryDownloads(
     const DownloadQueryCallback& callback) {
   DCHECK(thread_) << "History service being called after cleanup";
   DCHECK(thread_checker_.CalledOnValidThread());
-  LoadBackendIfNecessary();
   std::vector<history::DownloadRow>* rows =
     new std::vector<history::DownloadRow>();
   scoped_ptr<std::vector<history::DownloadRow> > scoped_rows(rows);
@@ -830,33 +780,53 @@ void HistoryService::RemoveDownloads(const std::set<uint32>& ids) {
                     &HistoryBackend::RemoveDownloads, ids);
 }
 
-HistoryService::Handle HistoryService::QueryHistory(
+base::CancelableTaskTracker::TaskId HistoryService::QueryHistory(
     const base::string16& text_query,
     const history::QueryOptions& options,
-    CancelableRequestConsumerBase* consumer,
-    const QueryHistoryCallback& callback) {
+    const QueryHistoryCallback& callback,
+    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return Schedule(PRIORITY_UI, &HistoryBackend::QueryHistory, consumer,
-                  new history::QueryHistoryRequest(callback),
-                  text_query, options);
+  history::QueryResults* query_results = new history::QueryResults();
+  return tracker->PostTaskAndReply(
+      thread_->message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&HistoryBackend::QueryHistory,
+                 history_backend_.get(),
+                 text_query,
+                 options,
+                 base::Unretained(query_results)),
+      base::Bind(callback, base::Owned(query_results)));
 }
 
-HistoryService::Handle HistoryService::QueryRedirectsFrom(
+base::CancelableTaskTracker::TaskId HistoryService::QueryRedirectsFrom(
     const GURL& from_url,
-    CancelableRequestConsumerBase* consumer,
-    const QueryRedirectsCallback& callback) {
+    const QueryRedirectsCallback& callback,
+    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return Schedule(PRIORITY_UI, &HistoryBackend::QueryRedirectsFrom, consumer,
-      new history::QueryRedirectsRequest(callback), from_url);
+  history::RedirectList* result = new history::RedirectList();
+  return tracker->PostTaskAndReply(
+      thread_->message_loop_proxy().get(),
+      FROM_HERE,
+      base::Bind(&HistoryBackend::QueryRedirectsFrom,
+                 history_backend_.get(),
+                 from_url,
+                 base::Unretained(result)),
+      base::Bind(callback, base::Owned(result)));
 }
 
-HistoryService::Handle HistoryService::QueryRedirectsTo(
+base::CancelableTaskTracker::TaskId HistoryService::QueryRedirectsTo(
     const GURL& to_url,
-    CancelableRequestConsumerBase* consumer,
-    const QueryRedirectsCallback& callback) {
+    const QueryRedirectsCallback& callback,
+    base::CancelableTaskTracker* tracker) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return Schedule(PRIORITY_NORMAL, &HistoryBackend::QueryRedirectsTo, consumer,
-      new history::QueryRedirectsRequest(callback), to_url);
+  history::RedirectList* result = new history::RedirectList();
+  return tracker->PostTaskAndReply(thread_->message_loop_proxy().get(),
+                                   FROM_HERE,
+                                   base::Bind(&HistoryBackend::QueryRedirectsTo,
+                                              history_backend_.get(),
+                                              to_url,
+                                              base::Unretained(result)),
+                                   base::Bind(callback, base::Owned(result)));
 }
 
 HistoryService::Handle HistoryService::GetVisibleVisitCountToHost(
@@ -937,7 +907,7 @@ void HistoryService::Observe(int type,
 
     case chrome::NOTIFICATION_TEMPLATE_URL_REMOVED:
       DeleteAllSearchTermsForKeyword(
-          *(content::Details<TemplateURLID>(details).ptr()));
+          *(content::Details<KeywordID>(details).ptr()));
       break;
 
     default:
@@ -951,9 +921,7 @@ void HistoryService::RebuildTable(
   ScheduleAndForget(PRIORITY_NORMAL, &HistoryBackend::IterateURLs, enumerator);
 }
 
-bool HistoryService::Init(const base::FilePath& history_dir,
-                          BookmarkService* bookmark_service,
-                          bool no_db) {
+bool HistoryService::Init(const base::FilePath& history_dir, bool no_db) {
   DCHECK(thread_checker_.CalledOnValidThread());
   if (!thread_->Start()) {
     Cleanup();
@@ -961,19 +929,33 @@ bool HistoryService::Init(const base::FilePath& history_dir,
   }
 
   history_dir_ = history_dir;
-  bookmark_service_ = bookmark_service;
   no_db_ = no_db;
 
   if (profile_) {
     std::string languages =
         profile_->GetPrefs()->GetString(prefs::kAcceptLanguages);
-    in_memory_url_index_.reset(
-        new history::InMemoryURLIndex(profile_, history_dir_, languages));
+    in_memory_url_index_.reset(new history::InMemoryURLIndex(
+        profile_, history_dir_, languages, history_client_));
     in_memory_url_index_->Init();
   }
 
   // Create the history backend.
-  LoadBackendIfNecessary();
+  scoped_refptr<HistoryBackend> backend(
+      new HistoryBackend(history_dir_,
+                         new BackendDelegate(
+                             weak_ptr_factory_.GetWeakPtr(),
+                             base::ThreadTaskRunnerHandle::Get(),
+                             profile_),
+                         history_client_));
+  history_backend_.swap(backend);
+
+  // There may not be a profile when unit testing.
+  std::string languages;
+  if (profile_) {
+    PrefService* prefs = profile_->GetPrefs();
+    languages = prefs->GetString(prefs::kAcceptLanguages);
+  }
+  ScheduleAndForget(PRIORITY_UI, &HistoryBackend::Init, languages, no_db_);
 
   if (visitedlink_master_) {
     bool result = visitedlink_master_->Init();
@@ -1007,7 +989,7 @@ bool HistoryService::CanAddURL(const GURL& url) {
   // TODO: We should allow kChromeUIScheme URLs if they have been explicitly
   // typed.  Right now, however, these are marked as typed even when triggered
   // by a shortcut or menu action.
-  if (url.SchemeIs(content::kJavaScriptScheme) ||
+  if (url.SchemeIs(url::kJavaScriptScheme) ||
       url.SchemeIs(content::kChromeDevToolsScheme) ||
       url.SchemeIs(content::kChromeUIScheme) ||
       url.SchemeIs(content::kViewSourceScheme) ||
@@ -1018,7 +1000,7 @@ bool HistoryService::CanAddURL(const GURL& url) {
 
   // Allow all about: and chrome: URLs except about:blank, since the user may
   // like to see "chrome://memory/", etc. in their history and autocomplete.
-  if (url == GURL(content::kAboutBlankURL))
+  if (url == GURL(url::kAboutBlankURL))
     return false;
 
   return true;
@@ -1070,13 +1052,8 @@ syncer::SyncError HistoryService::ProcessLocalDeleteDirective(
 }
 
 void HistoryService::SetInMemoryBackend(
-    int backend_id, scoped_ptr<history::InMemoryHistoryBackend> mem_backend) {
+    scoped_ptr<history::InMemoryHistoryBackend> mem_backend) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!history_backend_.get() || current_backend_id_ != backend_id) {
-    DVLOG(1) << "Message from obsolete backend";
-    // mem_backend is deleted.
-    return;
-  }
   DCHECK(!in_memory_backend_) << "Setting mem DB twice";
   in_memory_backend_.reset(mem_backend.release());
 
@@ -1084,17 +1061,10 @@ void HistoryService::SetInMemoryBackend(
   in_memory_backend_->AttachToHistoryService(profile_);
 }
 
-void HistoryService::NotifyProfileError(int backend_id,
-                                        sql::InitStatus init_status) {
+void HistoryService::NotifyProfileError(sql::InitStatus init_status) {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!history_backend_.get() || current_backend_id_ != backend_id) {
-    DVLOG(1) << "Message from obsolete backend";
-    return;
-  }
-  ShowProfileErrorDialog(
-      PROFILE_ERROR_HISTORY,
-      (init_status == sql::INIT_FAILURE) ?
-      IDS_COULDNT_OPEN_PROFILE_ERROR : IDS_PROFILE_TOO_NEW_ERROR);
+  if (history_client_)
+    history_client_->NotifyProfileError(init_status);
 }
 
 void HistoryService::DeleteURL(const GURL& url) {
@@ -1163,21 +1133,19 @@ void HistoryService::ExpireLocalAndRemoteHistoryBetween(
 
     // Attempt online deletion from the history server, but ignore the result.
     // Deletion directives ensure that the results will eventually be deleted.
-    // Pass ownership of the request to the callback.
-    scoped_ptr<history::WebHistoryService::Request> request =
-        web_history->ExpireHistoryBetween(
-            restrict_urls, begin_time, end_time,
-            base::Bind(&ExpireWebHistoryComplete));
-
-    // The request will be freed when the callback is called.
-    CHECK(request.release());
+    //
+    // TODO(davidben): |callback| should not run until this operation completes
+    // too.
+    web_history->ExpireHistoryBetween(
+        restrict_urls, begin_time, end_time,
+        base::Bind(&ExpireWebHistoryComplete));
   }
   ExpireHistoryBetween(restrict_urls, begin_time, end_time, callback, tracker);
 }
 
 void HistoryService::BroadcastNotificationsHelper(
     int type,
-    history::HistoryDetails* details) {
+    scoped_ptr<history::HistoryDetails> details) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // TODO(evanm): this is currently necessitated by generate_profile, which
   // runs without a browser process. generate_profile should really create
@@ -1195,42 +1163,13 @@ void HistoryService::BroadcastNotificationsHelper(
   // The details object just contains the pointer to the object that the
   // backend has allocated for us. The receiver of the notification will cast
   // this to the proper type.
-  content::Details<history::HistoryDetails> det(details);
+  content::Details<history::HistoryDetails> det(details.get());
 
   content::NotificationService::current()->Notify(type, source, det);
 }
 
-void HistoryService::LoadBackendIfNecessary() {
+void HistoryService::OnDBLoaded() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  if (!thread_ || history_backend_.get())
-    return;  // Failed to init, or already started loading.
-
-  ++current_backend_id_;
-  scoped_refptr<HistoryBackend> backend(
-      new HistoryBackend(history_dir_,
-                         current_backend_id_,
-                         new BackendDelegate(
-                             weak_ptr_factory_.GetWeakPtr(),
-                             base::ThreadTaskRunnerHandle::Get(),
-                             profile_),
-                         bookmark_service_));
-  history_backend_.swap(backend);
-
-  // There may not be a profile when unit testing.
-  std::string languages;
-  if (profile_) {
-    PrefService* prefs = profile_->GetPrefs();
-    languages = prefs->GetString(prefs::kAcceptLanguages);
-  }
-  ScheduleAndForget(PRIORITY_UI, &HistoryBackend::Init, languages, no_db_);
-}
-
-void HistoryService::OnDBLoaded(int backend_id) {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  if (!history_backend_.get() || current_backend_id_ != backend_id) {
-    DVLOG(1) << "Message from obsolete backend";
-    return;
-  }
   backend_loaded_ = true;
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_HISTORY_LOADED,

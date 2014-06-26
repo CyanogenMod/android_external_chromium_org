@@ -16,25 +16,42 @@ from page_sets import PRESUBMIT
 
 
 class AffectedFileStub(object):
-  def __init__(self, absolute_local_path):
+  def __init__(self, absolute_local_path, action):
     self._absolute_local_path = absolute_local_path
+    self.action = action
 
   def AbsoluteLocalPath(self):
     return self._absolute_local_path
 
+  def Action(self):
+    return self.action
 
 class InputAPIStub(object):
-  def __init__(self, paths, deleted_paths=None):
+  def __init__(self, paths, deleted_paths=None, added_paths=None):
     self._paths = paths
-    if deleted_paths:
-      self._deleted_paths = deleted_paths
-    else:
-      self._deleted_paths = []
+    self._deleted_paths = deleted_paths if deleted_paths else []
+    self._added_paths = added_paths if added_paths else []
 
-  def AffectedFiles(self, include_deletes=True):
-    affected_files = [AffectedFileStub(path) for path in self._paths]
+  def AffectedFiles(self, include_deletes=True, file_filter=None):
+    if not file_filter:
+      file_filter = lambda x: True
+
+    affected_files = []
+    for path in self._paths:
+      affected_file_stub = AffectedFileStub(path, 'M')
+      if file_filter(affected_file_stub):
+        affected_files.append(affected_file_stub)
+
+    for path in self._added_paths:
+      affected_file_stub = AffectedFileStub(path, 'A')
+      if file_filter(affected_file_stub):
+        affected_files.append(affected_file_stub)
+
     if include_deletes:
-      affected_files += [AffectedFileStub(path) for path in self._deleted_paths]
+      for path in self._deleted_paths:
+        affected_file_stub = AffectedFileStub(path, 'D')
+        if file_filter(affected_file_stub):
+          affected_files.append(affected_file_stub)
     return affected_files
 
   def AbsoluteLocalPaths(self):
@@ -59,7 +76,7 @@ class PresubmitTest(unittest.TestCase):
     success_file_hash = 'da39a3ee5e6b4b0d3255bfef95601890afd80709'
 
     self._stubs = system_stub.Override(
-        PRESUBMIT, ['cloud_storage', 'open', 'os', 'raw_input'])
+        PRESUBMIT, ['cloud_storage', 'os', 'raw_input'])
     self._stubs.raw_input.input = 'public'
     # Files in Cloud Storage.
     self._stubs.cloud_storage.remote_paths = [
@@ -75,7 +92,7 @@ class PresubmitTest(unittest.TestCase):
     self._stubs.os.path.files = (
         self._stubs.cloud_storage.local_file_hashes.keys())
     # Local hash files and their contents.
-    self._stubs.open.files = {
+    self._stubs.cloud_storage.local_hash_files = {
         '/path/to/invalid_hash.wpr.sha1': 'invalid_hash',
         '/path/to/missing.wpr.sha1': 'missing'.zfill(40),
         '/path/to/success.wpr.sha1': success_file_hash,
@@ -99,8 +116,8 @@ class PresubmitTest(unittest.TestCase):
         msg='Expected %d notifications, but got %d. Results: %s' %
         (expected_notifications, actual_notifications, results))
 
-  def _CheckUpload(self, paths, deleted_paths=None):
-    input_api = InputAPIStub(paths, deleted_paths)
+  def _CheckUpload(self, paths, deleted_paths=None, added_paths=None):
+    input_api = InputAPIStub(paths, deleted_paths, added_paths)
     return PRESUBMIT.CheckChangeOnUpload(input_api, OutputAPIStub())
 
   def testIgnoreDeleted(self):

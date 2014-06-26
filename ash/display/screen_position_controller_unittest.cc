@@ -10,8 +10,8 @@
 #include "ash/test/ash_test_base.h"
 #include "ash/test/shell_test_api.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/layout.h"
 #include "ui/gfx/screen.h"
 
@@ -41,7 +41,7 @@ void SetSecondaryDisplayLayout(DisplayLayout::Position position) {
       SetLayoutForCurrentDisplays(layout);
 }
 
-internal::ScreenPositionController* GetScreenPositionController() {
+ScreenPositionController* GetScreenPositionController() {
   ShellTestApi test_api(Shell::GetInstance());
   return test_api.screen_position_controller();
 }
@@ -89,14 +89,14 @@ TEST_F(ScreenPositionControllerTest, MAYBE_ConvertHostPointToScreen) {
 
   aura::Window::Windows root_windows =
       Shell::GetInstance()->GetAllRootWindows();
-  EXPECT_EQ("100,100", root_windows[0]->GetDispatcher()->host()->
-      GetBounds().origin().ToString());
-  EXPECT_EQ("200x200", root_windows[0]->GetDispatcher()->host()->
-      GetBounds().size().ToString());
-  EXPECT_EQ("100,500", root_windows[1]->GetDispatcher()->host()->
-      GetBounds().origin().ToString());
-  EXPECT_EQ("200x200", root_windows[1]->GetDispatcher()->host()->
-      GetBounds().size().ToString());
+  EXPECT_EQ("100,100",
+            root_windows[0]->GetHost()->GetBounds().origin().ToString());
+  EXPECT_EQ("200x200",
+            root_windows[0]->GetHost()->GetBounds().size().ToString());
+  EXPECT_EQ("100,500",
+            root_windows[1]->GetHost()->GetBounds().origin().ToString());
+  EXPECT_EQ("200x200",
+            root_windows[1]->GetHost()->GetBounds().size().ToString());
 
   const gfx::Point window_pos(100, 100);
   window_->SetBoundsInScreen(
@@ -178,16 +178,16 @@ TEST_F(ScreenPositionControllerTest, MAYBE_ConvertHostPointToScreenHiDPI) {
   aura::Window::Windows root_windows =
       Shell::GetInstance()->GetAllRootWindows();
   EXPECT_EQ("100,100",
-            root_windows[0]->GetDispatcher()->host()->
+            root_windows[0]->GetHost()->
                 GetBounds().origin().ToString());
   EXPECT_EQ("200x200",
-            root_windows[0]->GetDispatcher()->host()->
+            root_windows[0]->GetHost()->
                 GetBounds().size().ToString());
   EXPECT_EQ("100,500",
-            root_windows[1]->GetDispatcher()->host()->
+            root_windows[1]->GetHost()->
                 GetBounds().origin().ToString());
   EXPECT_EQ("200x200",
-            root_windows[1]->GetDispatcher()->host()->
+            root_windows[1]->GetHost()->
                 GetBounds().size().ToString());
 
   // Put |window_| to the primary 2x display.

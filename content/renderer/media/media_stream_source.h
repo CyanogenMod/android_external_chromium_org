@@ -27,13 +27,12 @@ class CONTENT_EXPORT MediaStreamSource
   typedef base::Callback<void(MediaStreamSource* source,
                               bool success)> ConstraintsCallback;
 
+  // Source constraints key for
+  // http://dev.w3.org/2011/webrtc/editor/getusermedia.html.
+  static const char kSourceId[];
+
   MediaStreamSource();
   virtual ~MediaStreamSource();
-
-  virtual void AddTrack(const blink::WebMediaStreamTrack& track,
-                        const blink::WebMediaConstraints& constraints,
-                        const ConstraintsCallback& callback) = 0;
-  virtual void RemoveTrack(const blink::WebMediaStreamTrack& track) = 0;
 
   // Returns device information about a source that has been created by a
   // JavaScript call to GetUserMedia, e.g., a camera or microphone.

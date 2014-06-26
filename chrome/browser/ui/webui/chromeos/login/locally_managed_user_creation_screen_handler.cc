@@ -4,21 +4,25 @@
 
 #include "chrome/browser/ui/webui/chromeos/login/locally_managed_user_creation_screen_handler.h"
 
+#include "ash/audio/sounds.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/managed/locally_managed_user_creation_flow.h"
-#include "chrome/browser/chromeos/login/supervised_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/screens/user_selection_screen.h"
+#include "chrome/browser/chromeos/login/users/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
-#include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/url_constants.h"
+#include "chromeos/audio/chromeos_sounds.h"
 #include "google_apis/gaia/gaia_auth_util.h"
+#include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
 #include "net/base/data_url.h"
 #include "net/base/escape.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 
 const char kJsScreenPath[] = "login.LocallyManagedUserCreationScreen";
 
@@ -28,12 +32,19 @@ LocallyManagedUserCreationScreenHandler::
 LocallyManagedUserCreationScreenHandler()
     : BaseScreenHandler(kJsScreenPath),
       delegate_(NULL) {
+  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
+  media::SoundsManager* manager = media::SoundsManager::Get();
+  manager->Initialize(SOUND_OBJECT_DELETE,
+                      bundle.GetRawDataResource(IDR_SOUND_OBJECT_DELETE_WAV));
+  manager->Initialize(SOUND_CAMERA_SNAP,
+                      bundle.GetRawDataResource(IDR_SOUND_CAMERA_SNAP_WAV));
 }
 
 LocallyManagedUserCreationScreenHandler::
     ~LocallyManagedUserCreationScreenHandler() {
-  if (delegate_)
+  if (delegate_) {
     delegate_->OnActorDestroyed(this);
+  }
 }
 
 void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
@@ -78,8 +89,12 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
 
   builder->Add("createManagedUserNameTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_TITLE);
+  builder->Add("createManagedUserNameAccessibleTitle",
+               IDS_CREATE_LOCALLY_MANAGED_USER_SETUP_ACCESSIBLE_TITLE);
   builder->Add("createManagedUserNameExplanation",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_EXPLANATION);
+  builder->Add("createManagedUserNameHint",
+               IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_HINT);
   builder->Add("createManagedUserPasswordTitle",
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TITLE);
   builder->Add("createManagedUserPasswordExplanation",
@@ -109,13 +124,13 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3);
 
   builder->Add("importExistingSupervisedUserTitle",
-               IDS_IMPORT_EXISTING_MANAGED_USER_TITLE);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_TITLE);
   builder->Add("importExistingSupervisedUserText",
-               IDS_IMPORT_EXISTING_MANAGED_USER_TEXT);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_TEXT);
   builder->Add("managedUserCreationFlowImportButtonTitle",
-               IDS_IMPORT_EXISTING_MANAGED_USER_OK);
+               IDS_IMPORT_EXISTING_SUPERVISED_USER_OK);
   builder->Add("importSupervisedUserLink",
-               IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK);
+               IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK);
   builder->Add("createSupervisedUserLink",
                IDS_CREATE_NEW_USER_LINK);
   builder->Add("importBubbleText", IDS_SUPERVISED_USER_IMPORT_BUBBLE_TEXT);
@@ -130,6 +145,14 @@ void LocallyManagedUserCreationScreenHandler::DeclareLocalizedValues(
   builder->Add("takePhoto", IDS_OPTIONS_CHANGE_PICTURE_TAKE_PHOTO);
   builder->Add("discardPhoto", IDS_OPTIONS_CHANGE_PICTURE_DISCARD_PHOTO);
   builder->Add("flipPhoto", IDS_OPTIONS_CHANGE_PICTURE_FLIP_PHOTO);
+  builder->Add("photoFlippedAccessibleText",
+               IDS_OPTIONS_PHOTO_FLIP_ACCESSIBLE_TEXT);
+  builder->Add("photoFlippedBackAccessibleText",
+               IDS_OPTIONS_PHOTO_FLIPBACK_ACCESSIBLE_TEXT);
+  builder->Add("photoCaptureAccessibleText",
+               IDS_OPTIONS_PHOTO_CAPTURE_ACCESSIBLE_TEXT);
+  builder->Add("photoDiscardAccessibleText",
+               IDS_OPTIONS_PHOTO_DISCARD_ACCESSIBLE_TEXT);
 }
 
 void LocallyManagedUserCreationScreenHandler::Initialize() {}
@@ -172,11 +195,12 @@ void LocallyManagedUserCreationScreenHandler::RegisterMessages() {
 
   AddCallback("supervisedUserPhotoTaken",
               &LocallyManagedUserCreationScreenHandler::HandlePhotoTaken);
+  AddCallback("supervisedUserTakePhoto",
+              &LocallyManagedUserCreationScreenHandler::HandleTakePhoto);
+  AddCallback("supervisedUserDiscardPhoto",
+              &LocallyManagedUserCreationScreenHandler::HandleDiscardPhoto);
   AddCallback("supervisedUserSelectImage",
               &LocallyManagedUserCreationScreenHandler::HandleSelectImage);
-  AddCallback("supervisedUserCheckCameraPresence",
-              &LocallyManagedUserCreationScreenHandler::
-                  HandleCheckCameraPresence);
   AddCallback("currentSupervisedUserPage",
               &LocallyManagedUserCreationScreenHandler::
                   HandleCurrentSupervisedUserPage);
@@ -196,10 +220,12 @@ void LocallyManagedUserCreationScreenHandler::Show() {
       continue;
     bool is_owner = ((*it)->email() == owner);
     base::DictionaryValue* user_dict = new base::DictionaryValue();
-    SigninScreenHandler::FillUserDictionary(*it,
-                                            is_owner,
-                                            false /* is_signin_to_add */,
-                                            user_dict);
+    UserSelectionScreen::FillUserDictionary(
+        *it,
+        is_owner,
+        false /* is_signin_to_add */,
+        ScreenlockBridge::LockHandler::OFFLINE_PASSWORD,
+        user_dict);
     users_list->Append(user_dict);
   }
   data->Set("managers", users_list.release());
@@ -207,10 +233,10 @@ void LocallyManagedUserCreationScreenHandler::Show() {
 
   if (!delegate_)
     return;
-  delegate_->CheckCameraPresence();
 }
 
-void LocallyManagedUserCreationScreenHandler::Hide() {}
+void LocallyManagedUserCreationScreenHandler::Hide() {
+}
 
 void LocallyManagedUserCreationScreenHandler::ShowIntroPage() {
   CallJS("showIntroPage");
@@ -275,7 +301,7 @@ void LocallyManagedUserCreationScreenHandler::HandleCheckLocallyManagedUserName(
     const base::string16& name) {
   std::string user_id;
   if (NULL != UserManager::Get()->GetSupervisedUserManager()->
-          FindByDisplayName(CollapseWhitespace(name, true))) {
+          FindByDisplayName(base::CollapseWhitespace(name, true))) {
     CallJS("managedUserNameError", name,
            l10n_util::GetStringUTF16(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS));
@@ -284,7 +310,7 @@ void LocallyManagedUserCreationScreenHandler::HandleCheckLocallyManagedUserName(
            l10n_util::GetStringUTF16(
                IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ILLEGAL_USERNAME));
   } else if (delegate_ && delegate_->FindUserByDisplayName(
-                 CollapseWhitespace(name, true), &user_id)) {
+                 base::CollapseWhitespace(name, true), &user_id)) {
     CallJS("managedUserSuggestImport", name, user_id);
   } else {
     CallJS("managedUserNameOk", name);
@@ -297,7 +323,7 @@ void LocallyManagedUserCreationScreenHandler::HandleCreateManagedUser(
   if (!delegate_)
     return;
   const base::string16 new_user_name =
-      CollapseWhitespace(new_raw_user_name, true);
+      base::CollapseWhitespace(new_raw_user_name, true);
   if (NULL != UserManager::Get()->GetSupervisedUserManager()->
           FindByDisplayName(new_user_name)) {
     CallJS("managedUserNameError", new_user_name,
@@ -390,10 +416,12 @@ void LocallyManagedUserCreationScreenHandler::HandlePhotoTaken
     delegate_->OnPhotoTaken(raw_data);
 }
 
-void LocallyManagedUserCreationScreenHandler::HandleCheckCameraPresence() {
-  if (!delegate_)
-    return;
-  delegate_->CheckCameraPresence();
+void LocallyManagedUserCreationScreenHandler::HandleTakePhoto() {
+  ash::PlaySystemSoundIfSpokenFeedback(SOUND_CAMERA_SNAP);
+}
+
+void LocallyManagedUserCreationScreenHandler::HandleDiscardPhoto() {
+  ash::PlaySystemSoundIfSpokenFeedback(SOUND_OBJECT_DELETE);
 }
 
 void LocallyManagedUserCreationScreenHandler::HandleSelectImage(

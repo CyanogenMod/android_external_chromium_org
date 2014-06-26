@@ -18,12 +18,6 @@
 #include "chrome/common/url_constants.h"
 #include "url/url_util.h"
 
-HistoryProvider::HistoryProvider(AutocompleteProviderListener* listener,
-                                 Profile* profile,
-                                 AutocompleteProvider::Type type)
-    : AutocompleteProvider(listener, profile, type) {
-}
-
 void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   DCHECK(done_);
   DCHECK(profile_);
@@ -32,11 +26,28 @@ void HistoryProvider::DeleteMatch(const AutocompleteMatch& match) {
   HistoryService* const history_service =
       HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
 
-  // Delete the match from the history DB.
+  // Delete the underlying URL along with all its visits from the history DB.
+  // The resulting HISTORY_URLS_DELETED notification will also cause all caches
+  // and indices to drop any data they might have stored pertaining to the URL.
   DCHECK(history_service);
   DCHECK(match.destination_url.is_valid());
   history_service->DeleteURL(match.destination_url);
+
   DeleteMatchFromMatches(match);
+}
+
+// static
+bool HistoryProvider::PreventInlineAutocomplete(
+    const AutocompleteInput& input) {
+  return input.prevent_inline_autocomplete() ||
+      (!input.text().empty() &&
+       IsWhitespace(input.text()[input.text().length() - 1]));
+}
+
+HistoryProvider::HistoryProvider(AutocompleteProviderListener* listener,
+                                 Profile* profile,
+                                 AutocompleteProvider::Type type)
+    : AutocompleteProvider(listener, profile, type) {
 }
 
 HistoryProvider::~HistoryProvider() {}
@@ -59,15 +70,6 @@ void HistoryProvider::DeleteMatchFromMatches(const AutocompleteMatch& match) {
     }
   }
   DCHECK(found) << "Asked to delete a URL that isn't in our set of matches";
-  listener_->OnProviderUpdate(true);
-}
-
-// static
-bool HistoryProvider::PreventInlineAutocomplete(
-    const AutocompleteInput& input) {
-  return input.prevent_inline_autocomplete() ||
-      (!input.text().empty() &&
-       IsWhitespace(input.text()[input.text().length() - 1]));
 }
 
 // static

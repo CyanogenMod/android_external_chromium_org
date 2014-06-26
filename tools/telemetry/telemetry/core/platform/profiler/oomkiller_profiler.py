@@ -4,10 +4,11 @@
 
 import os
 
-from telemetry.core import util
 from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.platform import profiler
+from telemetry.util import support_binaries
 
+from pylib.device import intent
 
 class UnableToFindApplicationException(Exception):
   """Exception when unable to find a launched application"""
@@ -29,9 +30,8 @@ class OOMKillerProfiler(profiler.Profiler):
         browser_backend, platform_backend, output_path, state)
     if not 'mem_consumer_launched' in state:
       state['mem_consumer_launched'] = True
-      mem_consumer_path = util.FindSupportBinary(
-          os.path.join('apks', 'MemConsumer.apk'),
-          executable=False)
+      mem_consumer_path = support_binaries.FindPath(
+          os.path.join('apks', 'MemConsumer.apk'), 'android')
       assert mem_consumer_path, ('Could not find memconsumer app. Please build '
                                  'memconsumer target.')
       self._browser_backend.adb.Install(mem_consumer_path)
@@ -40,9 +40,10 @@ class OOMKillerProfiler(profiler.Profiler):
           'org.chromium.memconsumer/.MemConsumer',
           '--ei memory 20')
       # Bring the browser to the foreground after launching the mem consumer
-      self._browser_backend.adb.StartActivity(browser_backend.package,
-                                              browser_backend.activity,
-                                              True)
+      self._browser_backend.adb.device().StartActivity(
+          intent.Intent(package=browser_backend.package,
+                        activity=browser_backend.activity),
+          blocking=True)
 
   @classmethod
   def name(cls):

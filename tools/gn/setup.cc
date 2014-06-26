@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <sstream>
 
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -18,6 +19,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "tools/gn/filesystem_utils.h"
+#include "tools/gn/header_checker.h"
 #include "tools/gn/input_file.h"
 #include "tools/gn/parse_tree.h"
 #include "tools/gn/parser.h"
@@ -44,11 +46,22 @@ extern const char kDotfile_Help[] =
     "  same as a buildfile, but with very limited build setup-specific\n"
     "  meaning.\n"
     "\n"
+    "  If you specify --root, by default GN will look for the file .gn in\n"
+    "  that directory. If you want to specify a different file, you can\n"
+    "  additionally pass --dotfile:\n"
+    "\n"
+    "    gn gen out/Debug --root=/home/build --dotfile=/home/my_gn_file.gn\n"
+    "\n"
     "Variables\n"
     "\n"
     "  buildconfig [required]\n"
-    "      Label of the build config file. This file will be used to setup\n"
+    "      Label of the build config file. This file will be used to set up\n"
     "      the build file execution environment for each toolchain.\n"
+    "\n"
+    "  root [optional]\n"
+    "      Label of the root build target. The GN build will start by loading\n"
+    "      the build file containing this target name. This defaults to\n"
+    "      \"//:\" which will cause the file //BUILD.gn to be loaded.\n"
     "\n"
     "  secondary_source [optional]\n"
     "      Label of an alternate directory tree to find input files. When\n"
@@ -66,6 +79,8 @@ extern const char kDotfile_Help[] =
     "\n"
     "  buildconfig = \"//build/config/BUILDCONFIG.gn\"\n"
     "\n"
+    "  root = \"//:root\"\n"
+    "\n"
     "  secondary_source = \"//build/config/temporary_buildfiles/\"\n";
 
 namespace {
@@ -79,15 +94,13 @@ const char kSwitchArgs[] = "args";
 // Set root dir.
 const char kSwitchRoot[] = "root";
 
+// Set dotfile name.
+const char kSwitchDotfile[] = "dotfile";
+
 // Enable timing.
 const char kTimeSwitch[] = "time";
 
 const char kTracelogSwitch[] = "tracelog";
-
-// Set build output directory.
-const char kSwitchBuildOutput[] = "output";
-
-const char kSecondarySource[] = "secondary";
 
 const base::FilePath::CharType kGnFile[] = FILE_PATH_LITERAL(".gn");
 
@@ -121,12 +134,16 @@ void DecrementWorkCount() {
 
 // CommonSetup -----------------------------------------------------------------
 
+const char CommonSetup::kBuildArgFileName[] = "args.gn";
+
 CommonSetup::CommonSetup()
     : build_settings_(),
       loader_(new LoaderImpl(&build_settings_)),
       builder_(new Builder(loader_.get())),
+      root_build_file_("//BUILD.gn"),
       check_for_bad_items_(true),
-      check_for_unused_overrides_(true) {
+      check_for_unused_overrides_(true),
+      check_public_headers_(false) {
   loader_->set_complete_callback(base::Bind(&DecrementWorkCount));
 }
 
@@ -134,8 +151,10 @@ CommonSetup::CommonSetup(const CommonSetup& other)
     : build_settings_(other.build_settings_),
       loader_(new LoaderImpl(&build_settings_)),
       builder_(new Builder(loader_.get())),
+      root_build_file_(other.root_build_file_),
       check_for_bad_items_(other.check_for_bad_items_),
-      check_for_unused_overrides_(other.check_for_unused_overrides_) {
+      check_for_unused_overrides_(other.check_for_unused_overrides_),
+      check_public_headers_(other.check_public_headers_) {
   loader_->set_complete_callback(base::Bind(&DecrementWorkCount));
 }
 
@@ -144,7 +163,7 @@ CommonSetup::~CommonSetup() {
 
 void CommonSetup::RunPreMessageLoop() {
   // Load the root build file.
-  loader_->Load(SourceFile("//BUILD.gn"), Label());
+  loader_->Load(root_build_file_, LocationRange(), Label());
 
   // Will be decremented with the loader is drained.
   g_scheduler->IncrementWorkCount();
@@ -168,6 +187,22 @@ bool CommonSetup::RunPostMessageLoop() {
     }
   }
 
+  if (check_public_headers_) {
+    std::vector<const Target*> targets = builder_->GetAllResolvedTargets();
+    scoped_refptr<HeaderChecker> header_checker(
+        new HeaderChecker(&build_settings_, targets));
+
+    std::vector<Err> header_errors;
+    header_checker->Run(&header_errors);
+    for (size_t i = 0; i < header_errors.size(); i++) {
+      if (i > 0)
+        OutputString("___________________\n", DECORATION_YELLOW);
+      header_errors[i].PrintToStdout();
+    }
+    if (!header_errors.empty())
+      return false;
+  }
+
   // Write out tracing and timing if requested.
   const CommandLine* cmdline = CommandLine::ForCurrentProcess();
   if (cmdline->HasSwitch(kTimeSwitch))
@@ -183,7 +218,8 @@ bool CommonSetup::RunPostMessageLoop() {
 Setup::Setup()
     : CommonSetup(),
       empty_settings_(&empty_build_settings_, std::string()),
-      dotfile_scope_(&empty_settings_) {
+      dotfile_scope_(&empty_settings_),
+      fill_arguments_(true) {
   empty_settings_.set_toolchain_label(Label());
   build_settings_.set_item_defined_callback(
       base::Bind(&ItemDefinedCallback, scheduler_.main_loop(), builder_));
@@ -196,7 +232,7 @@ Setup::Setup()
 Setup::~Setup() {
 }
 
-bool Setup::DoSetup() {
+bool Setup::DoSetup(const std::string& build_dir) {
   CommandLine* cmdline = CommandLine::ForCurrentProcess();
 
   scheduler_.set_verbose_logging(cmdline->HasSwitch(kSwitchVerbose));
@@ -204,32 +240,21 @@ bool Setup::DoSetup() {
       cmdline->HasSwitch(kTracelogSwitch))
     EnableTracing();
 
-  if (!FillArguments(*cmdline))
-    return false;
+  ScopedTrace setup_trace(TraceItem::TRACE_SETUP, "DoSetup");
+
   if (!FillSourceDir(*cmdline))
     return false;
   if (!RunConfigFile())
     return false;
   if (!FillOtherConfig(*cmdline))
     return false;
-  FillPythonPath();
-
-  base::FilePath build_path = cmdline->GetSwitchValuePath(kSwitchBuildOutput);
-  if (!build_path.empty()) {
-    // We accept either repo paths "//out/Debug" or raw source-root-relative
-    // paths "out/Debug".
-    std::string build_path_8 = FilePathToUTF8(build_path);
-    if (build_path_8.compare(0, 2, "//") != 0)
-      build_path_8.insert(0, "//");
-#if defined(OS_WIN)
-    // Canonicalize to forward slashes on Windows.
-    std::replace(build_path_8.begin(), build_path_8.end(), '\\', '/');
-#endif
-    build_settings_.SetBuildDir(SourceDir(build_path_8));
-  } else {
-    // Default output dir.
-    build_settings_.SetBuildDir(SourceDir("//out/Default/"));
+  if (!FillBuildDir(build_dir))  // Must be after FillSourceDir to resolve.
+    return false;
+  if (fill_arguments_) {
+    if (!FillArguments(*cmdline))
+      return false;
   }
+  FillPythonPath();
 
   return true;
 }
@@ -245,14 +270,60 @@ Scheduler* Setup::GetScheduler() {
   return &scheduler_;
 }
 
-bool Setup::FillArguments(const CommandLine& cmdline) {
-  std::string args = cmdline.GetSwitchValueASCII(kSwitchArgs);
-  if (args.empty())
-    return true;  // Nothing to set.
+SourceFile Setup::GetBuildArgFile() const {
+  return SourceFile(build_settings_.build_dir().value() + kBuildArgFileName);
+}
 
+bool Setup::FillArguments(const CommandLine& cmdline) {
+  // Use the args on the command line if specified, and save them. Do this even
+  // if the list is empty (this means clear any defaults).
+  if (cmdline.HasSwitch(kSwitchArgs)) {
+    if (!FillArgsFromCommandLine(cmdline.GetSwitchValueASCII(kSwitchArgs)))
+      return false;
+    SaveArgsToFile();
+    return true;
+  }
+
+  // No command line args given, use the arguments from the build dir (if any).
+  return FillArgsFromFile();
+}
+
+bool Setup::FillArgsFromCommandLine(const std::string& args) {
   args_input_file_.reset(new InputFile(SourceFile()));
   args_input_file_->SetContents(args);
-  args_input_file_->set_friendly_name("the command-line \"--args\" settings");
+  args_input_file_->set_friendly_name("the command-line \"--args\"");
+  return FillArgsFromArgsInputFile();
+}
+
+bool Setup::FillArgsFromFile() {
+  ScopedTrace setup_trace(TraceItem::TRACE_SETUP, "Load args file");
+
+  SourceFile build_arg_source_file = GetBuildArgFile();
+  base::FilePath build_arg_file =
+      build_settings_.GetFullPath(build_arg_source_file);
+
+  std::string contents;
+  if (!base::ReadFileToString(build_arg_file, &contents))
+    return true;  // File doesn't exist, continue with default args.
+
+  // Add a dependency on the build arguments file. If this changes, we want
+  // to re-generate the build.
+  g_scheduler->AddGenDependency(build_arg_file);
+
+  if (contents.empty())
+    return true;  // Empty file, do nothing.
+
+  args_input_file_.reset(new InputFile(build_arg_source_file));
+  args_input_file_->SetContents(contents);
+  args_input_file_->set_friendly_name(
+      "build arg file (use \"gn args <out_dir>\" to edit)");
+
+  setup_trace.Done();  // Only want to count the load as part of the trace.
+  return FillArgsFromArgsInputFile();
+}
+
+bool Setup::FillArgsFromArgsInputFile() {
+  ScopedTrace setup_trace(TraceItem::TRACE_SETUP, "Parse args");
 
   Err err;
   args_tokens_ = Tokenizer::Tokenize(args_input_file_.get(), &err);
@@ -281,6 +352,46 @@ bool Setup::FillArguments(const CommandLine& cmdline) {
   return true;
 }
 
+bool Setup::SaveArgsToFile() {
+  ScopedTrace setup_trace(TraceItem::TRACE_SETUP, "Save args file");
+
+  Scope::KeyValueMap args = build_settings_.build_args().GetAllOverrides();
+
+  std::ostringstream stream;
+  for (Scope::KeyValueMap::const_iterator i = args.begin();
+       i != args.end(); ++i) {
+    stream << i->first.as_string() << " = " << i->second.ToString(true);
+    stream << std::endl;
+  }
+
+  // For the first run, the build output dir might not be created yet, so do
+  // that so we can write a file into it. Ignore errors, we'll catch the error
+  // when we try to write a file to it below.
+  base::FilePath build_arg_file =
+      build_settings_.GetFullPath(GetBuildArgFile());
+  base::CreateDirectory(build_arg_file.DirName());
+
+  std::string contents = stream.str();
+#if defined(OS_WIN)
+  // Use Windows lineendings for this file since it will often open in
+  // Notepad which can't handle Unix ones.
+  ReplaceSubstringsAfterOffset(&contents, 0, "\n", "\r\n");
+#endif
+  if (base::WriteFile(build_arg_file, contents.c_str(),
+      static_cast<int>(contents.size())) == -1) {
+    Err(Location(), "Args file could not be written.",
+      "The file is \"" + FilePathToUTF8(build_arg_file) +
+        "\"").PrintToStdout();
+    return false;
+  }
+
+  // Add a dependency on the build arguments file. If this changes, we want
+  // to re-generate the build.
+  g_scheduler->AddGenDependency(build_arg_file);
+
+  return true;
+}
+
 bool Setup::FillSourceDir(const CommandLine& cmdline) {
   // Find the .gn file.
   base::FilePath root_path;
@@ -289,10 +400,33 @@ bool Setup::FillSourceDir(const CommandLine& cmdline) {
   base::FilePath relative_root_path = cmdline.GetSwitchValuePath(kSwitchRoot);
   if (!relative_root_path.empty()) {
     root_path = base::MakeAbsoluteFilePath(relative_root_path);
-    dotfile_name_ = root_path.Append(kGnFile);
+    if (root_path.empty()) {
+      Err(Location(), "Root source path not found.",
+          "The path \"" + FilePathToUTF8(relative_root_path) +
+          "\" doesn't exist.").PrintToStdout();
+      return false;
+    }
+
+    // When --root is specified, an alternate --dotfile can also be set.
+    // --dotfile should be a real file path and not a "//foo" source-relative
+    // path.
+    base::FilePath dot_file_path = cmdline.GetSwitchValuePath(kSwitchDotfile);
+    if (dot_file_path.empty()) {
+      dotfile_name_ = root_path.Append(kGnFile);
+    } else {
+      dotfile_name_ = base::MakeAbsoluteFilePath(dot_file_path);
+      if (dotfile_name_.empty()) {
+        Err(Location(), "Could not load dotfile.",
+            "The file \"" + FilePathToUTF8(dot_file_path) +
+            "\" cound't be loaded.").PrintToStdout();
+        return false;
+      }
+    }
   } else {
+    // In the default case, look for a dotfile and that also tells us where the
+    // source root is.
     base::FilePath cur_dir;
-    file_util::GetCurrentDirectory(&cur_dir);
+    base::GetCurrentDirectory(&cur_dir);
     dotfile_name_ = FindDotFile(cur_dir);
     if (dotfile_name_.empty()) {
       Err(Location(), "Can't find source root.",
@@ -311,14 +445,33 @@ bool Setup::FillSourceDir(const CommandLine& cmdline) {
   return true;
 }
 
+bool Setup::FillBuildDir(const std::string& build_dir) {
+  SourceDir resolved =
+      SourceDirForCurrentDirectory(build_settings_.root_path()).
+          ResolveRelativeDir(build_dir);
+  if (resolved.is_null()) {
+    Err(Location(), "Couldn't resolve build directory.",
+        "The build directory supplied (\"" + build_dir + "\") was not valid.").
+        PrintToStdout();
+    return false;
+  }
+
+  if (scheduler_.verbose_logging())
+    scheduler_.Log("Using build dir", resolved.value());
+  build_settings_.SetBuildDir(resolved);
+  return true;
+}
+
 void Setup::FillPythonPath() {
+  // Trace this since it tends to be a bit slow on Windows.
+  ScopedTrace setup_trace(TraceItem::TRACE_SETUP, "Fill Python Path");
 #if defined(OS_WIN)
   // Find Python on the path so we can use the absolute path in the build.
   const base::char16 kGetPython[] =
       L"cmd.exe /c python -c \"import sys; print sys.executable\"";
   std::string python_path;
   if (base::GetAppOutput(kGetPython, &python_path)) {
-    TrimWhitespaceASCII(python_path, TRIM_ALL, &python_path);
+    base::TrimWhitespaceASCII(python_path, base::TRIM_ALL, &python_path);
     if (scheduler_.verbose_logging())
       scheduler_.Log("Found python", python_path);
   } else {
@@ -326,8 +479,8 @@ void Setup::FillPythonPath() {
         "just \"python.exe\"");
     python_path = "python.exe";
   }
-  build_settings_.set_python_path(
-      base::FilePath(base::UTF8ToUTF16(python_path)));
+  build_settings_.set_python_path(base::FilePath(base::UTF8ToUTF16(python_path))
+                                      .NormalizePathSeparatorsTo('/'));
 #else
   build_settings_.set_python_path(base::FilePath("python"));
 #endif
@@ -370,24 +523,35 @@ bool Setup::RunConfigFile() {
 bool Setup::FillOtherConfig(const CommandLine& cmdline) {
   Err err;
 
-  // Secondary source path.
-  SourceDir secondary_source;
-  if (cmdline.HasSwitch(kSecondarySource)) {
-    // Prefer the command line over the config file.
-    secondary_source =
-        SourceDir(cmdline.GetSwitchValueASCII(kSecondarySource));
-  } else {
-    // Read from the config file if present.
-    const Value* secondary_value =
-        dotfile_scope_.GetValue("secondary_source", true);
-    if (secondary_value) {
-      if (!secondary_value->VerifyTypeIs(Value::STRING, &err)) {
-        err.PrintToStdout();
-        return false;
-      }
-      build_settings_.SetSecondarySourcePath(
-          SourceDir(secondary_value->string_value()));
+  // Secondary source path, read from the config file if present.
+  // Read from the config file if present.
+  const Value* secondary_value =
+      dotfile_scope_.GetValue("secondary_source", true);
+  if (secondary_value) {
+    if (!secondary_value->VerifyTypeIs(Value::STRING, &err)) {
+      err.PrintToStdout();
+      return false;
     }
+    build_settings_.SetSecondarySourcePath(
+        SourceDir(secondary_value->string_value()));
+  }
+
+  // Root build file.
+  const Value* root_value = dotfile_scope_.GetValue("root", true);
+  if (root_value) {
+    if (!root_value->VerifyTypeIs(Value::STRING, &err)) {
+      err.PrintToStdout();
+      return false;
+    }
+
+    Label root_target_label =
+        Label::Resolve(SourceDir("//"), Label(), *root_value, &err);
+    if (err.has_error()) {
+      err.PrintToStdout();
+      return false;
+    }
+
+    root_build_file_ = Loader::BuildFileForLabel(root_target_label);
   }
 
   // Build config file.

@@ -42,6 +42,7 @@ class LayerTreeSettings;
 class MemoryHistory;
 class OutputSurface;
 class PaintTimeCounter;
+class PictureLayerImpl;
 class Proxy;
 class ResourceProvider;
 class TileManager;
@@ -59,6 +60,7 @@ class CC_EXPORT LayerTreeImpl {
   virtual ~LayerTreeImpl();
 
   void Shutdown();
+  void ReleaseResources();
 
   // Methods called by the layer tree that pass-through or access LTHI.
   // ---------------------------------------------------------------------------
@@ -72,6 +74,7 @@ class CC_EXPORT LayerTreeImpl {
   PaintTimeCounter* paint_time_counter() const;
   MemoryHistory* memory_history() const;
   bool device_viewport_valid_for_tile_management() const;
+  gfx::Size device_viewport_size() const;
   bool IsActiveTree() const;
   bool IsPendingTree() const;
   bool IsRecycleTree() const;
@@ -80,12 +83,14 @@ class CC_EXPORT LayerTreeImpl {
   int MaxTextureSize() const;
   bool PinchGestureActive() const;
   base::TimeTicks CurrentFrameTimeTicks() const;
-  base::Time CurrentFrameTime() const;
-  base::TimeTicks CurrentPhysicalTimeTicks() const;
+  base::TimeDelta begin_impl_frame_interval() const;
   void SetNeedsCommit();
   gfx::Size DrawViewportSize() const;
-  void StartScrollbarAnimation();
+  scoped_ptr<ScrollbarAnimationController> CreateScrollbarAnimationController(
+      LayerImpl* scrolling_layer);
   void DidAnimateScrollOffset();
+  bool use_gpu_rasterization() const;
+  bool create_low_res_tiling() const;
 
   // Tree specific methods exposed to layer-impl tree.
   // ---------------------------------------------------------------------------
@@ -123,11 +128,11 @@ class CC_EXPORT LayerTreeImpl {
   gfx::Vector2dF TotalMaxScrollOffset() const;
   gfx::Vector2dF TotalScrollDelta() const;
 
-  LayerImpl* RootContainerLayer() const;
+  LayerImpl* InnerViewportContainerLayer() const;
   LayerImpl* CurrentlyScrollingLayer() const;
   void SetCurrentlyScrollingLayer(LayerImpl* layer);
   void ClearCurrentlyScrollingLayer();
-  float VerticalAdjust(const LayerImpl* layer) const;
+  float VerticalAdjust(const int clip_layer_id) const;
 
   void SetViewportLayersFromIds(int page_scale_layer_id,
                                 int inner_viewport_scroll_layer_id,
@@ -150,6 +155,9 @@ class CC_EXPORT LayerTreeImpl {
   void SetPageScaleFactorAndLimits(float page_scale_factor,
       float min_page_scale_factor, float max_page_scale_factor);
   void SetPageScaleDelta(float delta);
+  void SetPageScaleValues(float page_scale_factor,
+      float min_page_scale_factor, float max_page_scale_factor,
+      float page_scale_delta);
   float total_page_scale_factor() const {
     return page_scale_factor_ * page_scale_delta_;
   }
@@ -163,8 +171,8 @@ class CC_EXPORT LayerTreeImpl {
   float sent_page_scale_delta() const { return sent_page_scale_delta_; }
 
   // Updates draw properties and render surface layer list, as well as tile
-  // priorities.
-  void UpdateDrawProperties();
+  // priorities. Returns false if it was unable to update.
+  bool UpdateDrawProperties();
 
   void set_needs_update_draw_properties() {
     needs_update_draw_properties_ = true;
@@ -243,10 +251,24 @@ class CC_EXPORT LayerTreeImpl {
   void RemoveLayerWithCopyOutputRequest(LayerImpl* layer);
   const std::vector<LayerImpl*>& LayersWithCopyOutputRequest() const;
 
+  int current_render_surface_list_id() const {
+    return render_surface_layer_list_id_;
+  }
+
+  LayerImpl* FindFirstScrollingLayerThatIsHitByPoint(
+      const gfx::PointF& screen_space_point);
+
+  LayerImpl* FindLayerThatIsHitByPoint(const gfx::PointF& screen_space_point);
+
+  LayerImpl* FindLayerThatIsHitByPointInTouchHandlerRegion(
+      const gfx::PointF& screen_space_point);
+
+  void RegisterPictureLayerImpl(PictureLayerImpl* layer);
+  void UnregisterPictureLayerImpl(PictureLayerImpl* layer);
+
  protected:
   explicit LayerTreeImpl(LayerTreeHostImpl* layer_tree_host_impl);
-
-  void UpdateRootScrollLayerSizeDelta();
+  void ReleaseResourcesRecursive(LayerImpl* current);
 
   LayerTreeHostImpl* layer_tree_host_impl_;
   int source_frame_number_;
@@ -279,8 +301,7 @@ class CC_EXPORT LayerTreeImpl {
   // Persisted state for non-impl-side-painting.
   int scrolling_layer_id_from_previous_tree_;
 
-  // List of visible or hit-testable layers for the most recently prepared
-  // frame. Used for rendering and input event hit testing.
+  // List of visible layers for the most recently prepared frame.
   LayerImplList render_surface_layer_list_;
 
   bool contents_textures_purged_;
@@ -297,6 +318,8 @@ class CC_EXPORT LayerTreeImpl {
   ScopedPtrVector<SwapPromise> swap_promise_list_;
 
   UIResourceRequestQueue ui_resource_request_queue_;
+
+  int render_surface_layer_list_id_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(LayerTreeImpl);

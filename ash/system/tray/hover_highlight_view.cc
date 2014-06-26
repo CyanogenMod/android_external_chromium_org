@@ -8,7 +8,7 @@
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/view_click_listener.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
@@ -25,7 +25,6 @@ const int kCheckLabelPadding = 4;
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 HoverHighlightView::HoverHighlightView(ViewClickListener* listener)
     : listener_(listener),
@@ -65,20 +64,21 @@ void HoverHighlightView::AddIconAndLabel(const gfx::ImageSkia& image,
 }
 
 views::Label* HoverHighlightView::AddLabel(const base::string16& text,
+                                           gfx::HorizontalAlignment alignment,
                                            gfx::Font::FontStyle style) {
   SetLayoutManager(new views::FillLayout());
   text_label_ = new views::Label(text);
-  int margin = kTrayPopupPaddingHorizontal +
-      kTrayPopupDetailsLabelExtraLeftMargin;
-  int left_margin = 0;
-  int right_margin = 0;
-  if (base::i18n::IsRTL())
-    right_margin = margin;
-  else
-    left_margin = margin;
+  int left_margin = kTrayPopupPaddingHorizontal;
+  int right_margin = kTrayPopupPaddingHorizontal;
+  if (alignment != gfx::ALIGN_CENTER) {
+    if (base::i18n::IsRTL())
+      right_margin += kTrayPopupDetailsLabelExtraLeftMargin;
+    else
+      left_margin += kTrayPopupDetailsLabelExtraLeftMargin;
+  }
   text_label_->SetBorder(
       views::Border::CreateEmptyBorder(5, left_margin, 5, right_margin));
-  text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  text_label_->SetHorizontalAlignment(alignment);
   text_label_->SetFontList(text_label_->font_list().DeriveWithStyle(style));
   // Do not set alpha value in disable color. It will have issue with elide
   // blending filter in disabled state for rendering label text color.
@@ -120,7 +120,7 @@ views::Label* HoverHighlightView::AddCheckableLabel(const base::string16& text,
     SetAccessibleName(text);
     return text_label_;
   }
-  return AddLabel(text, style);
+  return AddLabel(text, gfx::ALIGN_LEFT, style);
 }
 
 void HoverHighlightView::SetExpandable(bool expandable) {
@@ -137,23 +137,24 @@ bool HoverHighlightView::PerformAction(const ui::Event& event) {
   return true;
 }
 
-void HoverHighlightView::GetAccessibleState(ui::AccessibleViewState* state) {
+void HoverHighlightView::GetAccessibleState(ui::AXViewState* state) {
   ActionableView::GetAccessibleState(state);
 
   if (checkable_) {
-    state->role = ui::AccessibilityTypes::ROLE_CHECKBUTTON;
-    state->state = checked_ ? ui::AccessibilityTypes::STATE_CHECKED : 0;
+    state->role = ui::AX_ROLE_CHECK_BOX;
+    if (checked_)
+      state->AddStateFlag(ui::AX_STATE_CHECKED);
   }
 }
 
-gfx::Size HoverHighlightView::GetPreferredSize() {
+gfx::Size HoverHighlightView::GetPreferredSize() const {
   gfx::Size size = ActionableView::GetPreferredSize();
   if (!expandable_ || size.height() < kTrayPopupItemHeight)
     size.set_height(kTrayPopupItemHeight);
   return size;
 }
 
-int HoverHighlightView::GetHeightForWidth(int width) {
+int HoverHighlightView::GetHeightForWidth(int width) const {
   return GetPreferredSize().height();
 }
 
@@ -185,5 +186,4 @@ void HoverHighlightView::OnFocus() {
   ActionableView::OnFocus();
 }
 
-}  // namespace internal
 }  // namespace ash

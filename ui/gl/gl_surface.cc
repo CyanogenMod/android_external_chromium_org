@@ -16,6 +16,10 @@
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
 
+#if defined(USE_X11)
+#include <X11/Xlib.h>
+#endif
+
 namespace gfx {
 
 namespace {
@@ -38,7 +42,9 @@ bool GLSurface::InitializeOneOff() {
   // The default implementation is always the first one in list.
   GLImplementation impl = allowed_impls[0];
   bool fallback_to_osmesa = false;
-  if (cmd->HasSwitch(switches::kUseGL)) {
+  if (cmd->HasSwitch(switches::kOverrideUseGLWithOSMesaForTests)) {
+    impl = kGLImplementationOSMesaGL;
+  } else if (cmd->HasSwitch(switches::kUseGL)) {
     std::string requested_implementation_name =
         cmd->GetSwitchValueASCII(switches::kUseGL);
     if (requested_implementation_name == "any") {
@@ -92,6 +98,12 @@ bool GLSurface::InitializeOneOffImplementation(GLImplementation impl,
 
 // static
 void GLSurface::InitializeOneOffForTests() {
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
+
+#if defined(USE_X11)
+  XInitThreads();
+#endif
+
   bool use_osmesa = true;
 
   // We usually use OSMesa as this works on all bots. The command line can
@@ -117,9 +129,7 @@ void GLSurface::InitializeOneOffForTests() {
 
   bool fallback_to_osmesa = false;
   bool gpu_service_logging = false;
-  bool disable_gl_drawing = false;
-  // TODO(danakj): Unit tests do not produce pixel output by default.
-  // bool disable_gl_drawing = true;
+  bool disable_gl_drawing = true;
 
   CHECK(InitializeOneOffImplementation(
       impl, fallback_to_osmesa, gpu_service_logging, disable_gl_drawing));
@@ -169,18 +179,8 @@ bool GLSurface::DeferDraws() {
   return false;
 }
 
-std::string GLSurface::GetExtensions() {
-  return std::string();
-}
-
-bool GLSurface::HasExtension(const char* name) {
-  std::string extensions = GetExtensions();
-  extensions += " ";
-
-  std::string delimited_name(name);
-  delimited_name += " ";
-
-  return extensions.find(delimited_name) != std::string::npos;
+bool GLSurface::SupportsPostSubBuffer() {
+  return false;
 }
 
 unsigned int GLSurface::GetBackingFrameBufferObject() {
@@ -286,8 +286,8 @@ bool GLSurfaceAdapter::PostSubBuffer(int x, int y, int width, int height) {
   return surface_->PostSubBuffer(x, y, width, height);
 }
 
-std::string GLSurfaceAdapter::GetExtensions() {
-  return surface_->GetExtensions();
+bool GLSurfaceAdapter::SupportsPostSubBuffer() {
+  return surface_->SupportsPostSubBuffer();
 }
 
 gfx::Size GLSurfaceAdapter::GetSize() {

@@ -106,21 +106,6 @@ class SpellCheckObserver : public content::WebContentsObserver {
   return [historySwiper_ handleEvent:event];
 }
 
-// Notification that a wheel event was unhandled.
-- (void)gotUnhandledWheelEvent {
-  [historySwiper_ gotUnhandledWheelEvent];
-}
-
-// Notification of scroll offset pinning.
-- (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right {
-  [historySwiper_ scrollOffsetPinnedToLeft:left toRight:right];
-}
-
-// Notification of whether the view has a horizontal scrollbar.
-- (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar {
-  [historySwiper_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
-}
-
 // NSWindow events.
 
 - (void)beginGestureWithEvent:(NSEvent*)event {
@@ -148,6 +133,14 @@ class SpellCheckObserver : public content::WebContentsObserver {
 
 - (void)touchesEndedWithEvent:(NSEvent*)event {
   [historySwiper_ touchesEndedWithEvent:event];
+}
+
+- (BOOL)canRubberbandLeft:(NSView*)view {
+  return [historySwiper_ canRubberbandLeft:view];
+}
+
+- (BOOL)canRubberbandRight:(NSView*)view {
+  return [historySwiper_ canRubberbandRight:view];
 }
 
 // HistorySwiperDelegate methods
@@ -199,6 +192,11 @@ class SpellCheckObserver : public content::WebContentsObserver {
   return NO;
 }
 
+- (void)rendererHandledWheelEvent:(const blink::WebMouseWheelEvent&)event
+                         consumed:(BOOL)consumed {
+  [historySwiper_ rendererHandledWheelEvent:event consumed:consumed];
+}
+
 // Spellchecking methods
 // The next five methods are implemented here since this class is the first
 // responder for anything in the browser.
@@ -210,7 +208,10 @@ class SpellCheckObserver : public content::WebContentsObserver {
   // that we want to replace the selected word in the text with.
   NSString* newWord = [[sender selectedCell] stringValue];
   if (newWord != nil) {
-    renderWidgetHost_->Replace(base::SysNSStringToUTF16(newWord));
+    content::WebContents* webContents =
+        content::WebContents::FromRenderViewHost(
+            RenderViewHost::From(renderWidgetHost_));
+    webContents->Replace(base::SysNSStringToUTF16(newWord));
   }
 }
 

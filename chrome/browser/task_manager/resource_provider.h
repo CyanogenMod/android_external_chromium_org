@@ -67,20 +67,12 @@ class Resource {
   virtual bool ReportsCacheStats() const;
   virtual blink::WebCache::ResourceTypeStats GetWebCoreCacheStats() const;
 
-  virtual bool ReportsFPS() const;
-  virtual float GetFPS() const;
-
   virtual bool ReportsSqliteMemoryUsed() const;
   virtual size_t SqliteMemoryUsedBytes() const;
-
-  // Return extension associated with the resource, or NULL if not applicable.
-  virtual const extensions::Extension* GetExtension() const;
 
   virtual bool ReportsV8MemoryStats() const;
   virtual size_t GetV8MemoryAllocated() const;
   virtual size_t GetV8MemoryUsed() const;
-
-  virtual int GetNaClDebugStubPort() const;
 
   // Returns true if this resource can be inspected using developer tools.
   virtual bool CanInspect() const;
@@ -110,13 +102,8 @@ class Resource {
 
   virtual void NotifyResourceTypeStats(
       const blink::WebCache::ResourceTypeStats& stats) {}
-  virtual void NotifyFPS(float fps) {}
   virtual void NotifyV8HeapStats(size_t v8_memory_allocated,
                                  size_t v8_memory_used) {}
-
-  // Returns true if this resource is not visible to the user because it lives
-  // in the background (e.g. extension background page, background contents).
-  virtual bool IsBackground() const;
 
   static const char* GetResourceTypeAsString(const Type type) {
     switch (type) {
@@ -125,17 +112,10 @@ class Resource {
     }
   }
 
-  // Returns resource identifier that is unique within single task manager
-  // session (between StartUpdating and StopUpdating).
-  int get_unique_id() { return unique_id_; }
-
  protected:
-  Resource() : unique_id_(0) {}
+  Resource() {}
 
  private:
-  friend class ::TaskManagerModel;
-  int unique_id_;
-
   DISALLOW_COPY_AND_ASSIGN(Resource);
 };
 

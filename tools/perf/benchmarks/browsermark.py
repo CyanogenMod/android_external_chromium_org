@@ -24,8 +24,7 @@ from telemetry import test
 from telemetry.page import page_measurement
 from telemetry.page import page_set
 
-
-class BrowsermarkMeasurement(page_measurement.PageMeasurement):
+class _BrowsermarkMeasurement(page_measurement.PageMeasurement):
 
   def MeasurePage(self, _, tab, results):
     # Select nearest server(North America=1) and start test.
@@ -47,14 +46,11 @@ class BrowsermarkMeasurement(page_measurement.PageMeasurement):
 
 class Browsermark(test.Test):
   """Browsermark suite tests CSS, DOM, resize, page load, WebGL and JS."""
-  test = BrowsermarkMeasurement
+  test = _BrowsermarkMeasurement
   def CreatePageSet(self, options):
-    return page_set.PageSet.FromDict({
-        'archive_data_file': '../page_sets/data/browsermark.json',
-        'make_javascript_deterministic': False,
-        'pages': [
-          { 'url':
-              'http://browsermark.rightware.com/tests/'}
-           ]
-        }, os.path.abspath(__file__))
-
+    ps = page_set.PageSet(
+      file_path=os.path.abspath(__file__),
+      archive_data_file='../page_sets/data/browsermark.json',
+      make_javascript_deterministic=False)
+    ps.AddPageWithDefaultRunNavigate('http://browsermark.rightware.com/tests/')
+    return ps

@@ -6,10 +6,10 @@
 
 #include "apps/app_window.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/common/extension.h"
 
 namespace apps {
@@ -77,25 +77,22 @@ void AppLifetimeMonitor::Observe(int type,
   }
 }
 
-void AppLifetimeMonitor::OnAppWindowAdded(AppWindow* app_window) {
+void AppLifetimeMonitor::OnAppWindowRemoved(AppWindow* app_window) {
+  if (!HasVisibleAppWindows(app_window))
+    NotifyAppDeactivated(app_window->extension_id());
+}
+
+void AppLifetimeMonitor::OnAppWindowHidden(AppWindow* app_window) {
+  if (!HasVisibleAppWindows(app_window))
+    NotifyAppDeactivated(app_window->extension_id());
+}
+
+void AppLifetimeMonitor::OnAppWindowShown(AppWindow* app_window) {
   if (app_window->window_type() != AppWindow::WINDOW_TYPE_DEFAULT)
     return;
 
-  AppWindowRegistry::AppWindowList windows =
-      AppWindowRegistry::Get(app_window->browser_context())
-          ->GetAppWindowsForApp(app_window->extension_id());
-  if (windows.size() == 1)
+  if (HasVisibleAppWindows(app_window))
     NotifyAppActivated(app_window->extension_id());
-}
-
-void AppLifetimeMonitor::OnAppWindowIconChanged(AppWindow* app_window) {}
-
-void AppLifetimeMonitor::OnAppWindowRemoved(AppWindow* app_window) {
-  AppWindowRegistry::AppWindowList windows =
-      AppWindowRegistry::Get(app_window->browser_context())
-          ->GetAppWindowsForApp(app_window->extension_id());
-  if (windows.empty())
-    NotifyAppDeactivated(app_window->extension_id());
 }
 
 void AppLifetimeMonitor::Shutdown() {
@@ -104,6 +101,20 @@ void AppLifetimeMonitor::Shutdown() {
                                                        false /* create */);
   if (app_window_registry)
     app_window_registry->RemoveObserver(this);
+}
+
+bool AppLifetimeMonitor::HasVisibleAppWindows(AppWindow* app_window) const {
+  AppWindowRegistry::AppWindowList windows =
+      AppWindowRegistry::Get(app_window->browser_context())
+          ->GetAppWindowsForApp(app_window->extension_id());
+
+  for (AppWindowRegistry::AppWindowList::const_iterator i = windows.begin();
+       i != windows.end();
+       ++i) {
+    if (!(*i)->is_hidden())
+      return true;
+  }
+  return false;
 }
 
 void AppLifetimeMonitor::NotifyAppStart(const std::string& app_id) {

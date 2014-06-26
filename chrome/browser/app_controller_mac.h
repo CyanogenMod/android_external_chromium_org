@@ -25,6 +25,8 @@ class GURL;
 class HistoryMenuBridge;
 class Profile;
 @class ProfileMenuController;
+class QuitWithAppsController;
+
 namespace ui {
 class WorkAreaWatcherObserver;
 }
@@ -87,6 +89,9 @@ class WorkAreaWatcherObserver;
 
   scoped_ptr<PrefChangeRegistrar> profilePrefRegistrar_;
   PrefChangeRegistrar localPrefRegistrar_;
+
+  // Displays a notification when quitting while apps are running.
+  scoped_refptr<QuitWithAppsController> quitWithAppsController_;
 }
 
 @property(readonly, nonatomic) BOOL startupComplete;
@@ -118,14 +123,14 @@ class WorkAreaWatcherObserver;
 // Toggles the "Confirm to Quit" preference.
 - (IBAction)toggleConfirmToQuit:(id)sender;
 
+// Toggles the "Hide Notifications Icon" preference.
+- (IBAction)toggleDisplayMessageCenter:(id)sender;
+
 // Delegate method to return the dock menu.
 - (NSMenu*)applicationDockMenu:(NSApplication*)sender;
 
 // Get the URLs that Launch Services expects the browser to open at startup.
 - (const std::vector<GURL>&)startupUrls;
-
-// Clear the list of startup URLs.
-- (void)clearStartupUrls;
 
 - (BookmarkMenuBridge*)bookmarkMenuBridge;
 

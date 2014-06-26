@@ -5,18 +5,20 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
-#include "chrome/browser/sync/test/integration/status_change_checker.h"
+#include "chrome/browser/sync/test/integration/single_client_status_change_checker.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_request_status.h"
 
 using bookmarks_helper::AddURL;
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 
 const char kShortLivedOAuth2Token[] =
     "{"
@@ -45,25 +47,27 @@ const char kEmptyOAuth2Token[] = "";
 
 const char kMalformedOAuth2Token[] = "{ \"foo\": ";
 
-class TestForAuthError : public StatusChangeChecker {
+class TestForAuthError : public SingleClientStatusChangeChecker {
  public:
   explicit TestForAuthError(ProfileSyncService* service);
   virtual ~TestForAuthError();
   virtual bool IsExitConditionSatisfied() OVERRIDE;
-
- private:
-  ProfileSyncService* service_;
+  virtual std::string GetDebugMessage() const OVERRIDE;
 };
 
 TestForAuthError::TestForAuthError(ProfileSyncService* service)
-  : StatusChangeChecker("Testing for auth error"), service_(service) {}
+  : SingleClientStatusChangeChecker(service) {}
 
 TestForAuthError::~TestForAuthError() {}
 
 bool TestForAuthError::IsExitConditionSatisfied() {
-  return !service_->HasUnsyncedItems() ||
-      (service_->GetSyncTokenStatus().last_get_token_error.state() !=
+  return !service()->HasUnsyncedItems() ||
+      (service()->GetSyncTokenStatus().last_get_token_error.state() !=
        GoogleServiceAuthError::NONE);
+}
+
+std::string TestForAuthError::GetDebugMessage() const {
+  return "Waiting for auth error";
 }
 
 class SyncAuthTest : public SyncTest {
@@ -76,29 +80,21 @@ class SyncAuthTest : public SyncTest {
   // error, false if the bookmark is committed successfully.
   bool AttemptToTriggerAuthError() {
     int bookmark_index = GetNextBookmarkIndex();
-    std::wstring title = base::StringPrintf(L"Bookmark %d", bookmark_index);
+    std::string title = base::StringPrintf("Bookmark %d", bookmark_index);
     GURL url = GURL(base::StringPrintf("http://www.foo%d.com", bookmark_index));
     EXPECT_TRUE(AddURL(0, title, url) != NULL);
 
     // Run until the bookmark is committed or an auth error is encountered.
-    TestForAuthError checker_(GetClient(0)->service());
-    GetClient(0)->AwaitStatusChange(&checker_, "Attempt to trigger auth error");
+    TestForAuthError checker_(GetSyncService((0)));
+    checker_.Wait();
 
     GoogleServiceAuthError oauth_error =
-        GetClient(0)->service()->GetSyncTokenStatus().last_get_token_error;
+        GetSyncService((0))->GetSyncTokenStatus().last_get_token_error;
 
     return oauth_error.state() != GoogleServiceAuthError::NONE;
   }
 
-  // Sets the authenticated state of the python sync server to |auth_state| and
-  // sets the canned response that will be returned to the OAuth2TokenService
-  // when it tries to fetch an access token.
-  void SetAuthStateAndTokenResponse(PythonServerAuthState auth_state,
-                                    const std::string& response_data,
-                                    net::HttpStatusCode response_code,
-                                    net::URLRequestStatus::Status status) {
-    TriggerAuthState(auth_state);
-
+  void DisableTokenFetchRetries() {
     // If ProfileSyncService observes a transient error like SERVICE_UNAVAILABLE
     // or CONNECTION_FAILED, this means the OAuth2TokenService has given up
     // trying to reach Gaia. In practice, OA2TS retries a fixed number of times,
@@ -108,9 +104,8 @@ class SyncAuthTest : public SyncTest {
     // left off (in terms of retries).
     ProfileOAuth2TokenServiceFactory::GetForProfile(GetProfile(0))->
         set_max_authorization_token_fetch_retries_for_testing(0);
-
-    SetOAuth2TokenResponse(response_data, response_code, status);
   }
+
 
  private:
   int GetNextBookmarkIndex() {
@@ -125,10 +120,11 @@ class SyncAuthTest : public SyncTest {
 // Verify that sync works with a valid OAuth2 token.
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, Sanity) {
   ASSERT_TRUE(SetupSync());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_TRUE,
-                               kValidOAuth2Token,
-                               net::HTTP_OK,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetAuthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kValidOAuth2Token,
+                         net::HTTP_OK,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_FALSE(AttemptToTriggerAuthError());
 }
 
@@ -138,13 +134,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, Sanity) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnInternalServerError500) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kValidOAuth2Token,
-                               net::HTTP_INTERNAL_SERVER_ERROR,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kValidOAuth2Token,
+                         net::HTTP_INTERNAL_SERVER_ERROR,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_TRUE(
-      GetClient(0)->service()->IsRetryingAccessTokenFetchForTest());
+      GetSyncService((0))->IsRetryingAccessTokenFetchForTest());
 }
 
 // Verify that ProfileSyncService continues trying to fetch access tokens
@@ -153,13 +150,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnInternalServerError500) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnHttpForbidden403) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kEmptyOAuth2Token,
-                               net::HTTP_FORBIDDEN,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kEmptyOAuth2Token,
+                         net::HTTP_FORBIDDEN,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_TRUE(
-      GetClient(0)->service()->IsRetryingAccessTokenFetchForTest());
+      GetSyncService((0))->IsRetryingAccessTokenFetchForTest());
 }
 
 // Verify that ProfileSyncService continues trying to fetch access tokens
@@ -167,13 +165,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnHttpForbidden403) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnRequestFailed) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kEmptyOAuth2Token,
-                               net::HTTP_INTERNAL_SERVER_ERROR,
-                               net::URLRequestStatus::FAILED);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kEmptyOAuth2Token,
+                         net::HTTP_INTERNAL_SERVER_ERROR,
+                         net::URLRequestStatus::FAILED);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_TRUE(
-      GetClient(0)->service()->IsRetryingAccessTokenFetchForTest());
+      GetSyncService((0))->IsRetryingAccessTokenFetchForTest());
 }
 
 // Verify that ProfileSyncService continues trying to fetch access tokens
@@ -181,13 +180,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnRequestFailed) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnMalformedToken) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kMalformedOAuth2Token,
-                               net::HTTP_OK,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kMalformedOAuth2Token,
+                         net::HTTP_OK,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_TRUE(
-      GetClient(0)->service()->IsRetryingAccessTokenFetchForTest());
+      GetSyncService((0))->IsRetryingAccessTokenFetchForTest());
 }
 
 // Verify that ProfileSyncService ends up with an INVALID_GAIA_CREDENTIALS auth
@@ -196,13 +196,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryOnMalformedToken) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, InvalidGrant) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kInvalidGrantOAuth2Token,
-                               net::HTTP_BAD_REQUEST,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kInvalidGrantOAuth2Token,
+                         net::HTTP_BAD_REQUEST,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
-            GetClient(0)->service()->GetAuthError().state());
+            GetSyncService((0))->GetAuthError().state());
 }
 
 // Verify that ProfileSyncService ends up with an SERVICE_ERROR auth error when
@@ -211,13 +212,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, InvalidGrant) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, InvalidClient) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kInvalidClientOAuth2Token,
-                               net::HTTP_BAD_REQUEST,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kInvalidClientOAuth2Token,
+                         net::HTTP_BAD_REQUEST,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_EQ(GoogleServiceAuthError::SERVICE_ERROR,
-            GetClient(0)->service()->GetAuthError().state());
+            GetSyncService((0))->GetAuthError().state());
 }
 
 // Verify that ProfileSyncService ends up with a REQUEST_CANCELED auth error
@@ -225,13 +227,14 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, InvalidClient) {
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, RequestCanceled) {
   ASSERT_TRUE(SetupSync());
   ASSERT_FALSE(AttemptToTriggerAuthError());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kEmptyOAuth2Token,
-                               net::HTTP_INTERNAL_SERVER_ERROR,
-                               net::URLRequestStatus::CANCELED);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kEmptyOAuth2Token,
+                         net::HTTP_INTERNAL_SERVER_ERROR,
+                         net::URLRequestStatus::CANCELED);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_EQ(GoogleServiceAuthError::REQUEST_CANCELED,
-            GetClient(0)->service()->GetAuthError().state());
+            GetSyncService((0))->GetAuthError().state());
 }
 
 // Verify that ProfileSyncService fails initial sync setup during backend
@@ -240,14 +243,15 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, RequestCanceled) {
 // HTTP_BAD_REQUEST (400) response code.
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, FailInitialSetupWithPersistentError) {
   ASSERT_TRUE(SetupClients());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kInvalidGrantOAuth2Token,
-                               net::HTTP_BAD_REQUEST,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kInvalidGrantOAuth2Token,
+                         net::HTTP_BAD_REQUEST,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_FALSE(GetClient(0)->SetupSync());
-  ASSERT_FALSE(GetClient(0)->service()->sync_initialized());
+  ASSERT_FALSE(GetSyncService((0))->sync_initialized());
   ASSERT_EQ(GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
-            GetClient(0)->service()->GetAuthError().state());
+            GetSyncService((0))->GetAuthError().state());
 }
 
 // Verify that ProfileSyncService fails initial sync setup during backend
@@ -256,48 +260,50 @@ IN_PROC_BROWSER_TEST_F(SyncAuthTest, FailInitialSetupWithPersistentError) {
 // code.
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, RetryInitialSetupWithTransientError) {
   ASSERT_TRUE(SetupClients());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kEmptyOAuth2Token,
-                               net::HTTP_INTERNAL_SERVER_ERROR,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kEmptyOAuth2Token,
+                         net::HTTP_INTERNAL_SERVER_ERROR,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_FALSE(GetClient(0)->SetupSync());
-  ASSERT_FALSE(GetClient(0)->service()->sync_initialized());
+  ASSERT_FALSE(GetSyncService((0))->sync_initialized());
   ASSERT_TRUE(
-      GetClient(0)->service()->IsRetryingAccessTokenFetchForTest());
+      GetSyncService((0))->IsRetryingAccessTokenFetchForTest());
 }
 
 // Verify that ProfileSyncService fetches a new token when an old token expires.
 IN_PROC_BROWSER_TEST_F(SyncAuthTest, TokenExpiry) {
   // Initial sync succeeds with a short lived OAuth2 Token.
   ASSERT_TRUE(SetupClients());
-  SetAuthStateAndTokenResponse(AUTHENTICATED_TRUE,
-                               kShortLivedOAuth2Token,
-                               net::HTTP_OK,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetAuthenticated();
+  DisableTokenFetchRetries();
+  SetOAuth2TokenResponse(kShortLivedOAuth2Token,
+                         net::HTTP_OK,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(GetClient(0)->SetupSync());
-  std::string old_token = GetClient(0)->service()->GetAccessTokenForTest();
+  std::string old_token = GetSyncService((0))->GetAccessTokenForTest();
 
   // Wait until the token has expired.
   base::PlatformThread::Sleep(base::TimeDelta::FromSeconds(5));
 
   // Trigger an auth error on the server so PSS requests OA2TS for a new token
   // during the next sync cycle.
-  SetAuthStateAndTokenResponse(AUTHENTICATED_FALSE,
-                               kEmptyOAuth2Token,
-                               net::HTTP_INTERNAL_SERVER_ERROR,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetUnauthenticated();
+  SetOAuth2TokenResponse(kEmptyOAuth2Token,
+                         net::HTTP_INTERNAL_SERVER_ERROR,
+                         net::URLRequestStatus::SUCCESS);
   ASSERT_TRUE(AttemptToTriggerAuthError());
   ASSERT_TRUE(
-      GetClient(0)->service()->IsRetryingAccessTokenFetchForTest());
+      GetSyncService((0))->IsRetryingAccessTokenFetchForTest());
 
   // Trigger an auth success state and set up a new valid OAuth2 token.
-  SetAuthStateAndTokenResponse(AUTHENTICATED_TRUE,
-                               kValidOAuth2Token,
-                               net::HTTP_OK,
-                               net::URLRequestStatus::SUCCESS);
+  GetFakeServer()->SetAuthenticated();
+  SetOAuth2TokenResponse(kValidOAuth2Token,
+                         net::HTTP_OK,
+                         net::URLRequestStatus::SUCCESS);
 
   // Verify that the next sync cycle is successful, and uses the new auth token.
-  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
-  std::string new_token = GetClient(0)->service()->GetAccessTokenForTest();
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
+  std::string new_token = GetSyncService((0))->GetAccessTokenForTest();
   ASSERT_NE(old_token, new_token);
 }

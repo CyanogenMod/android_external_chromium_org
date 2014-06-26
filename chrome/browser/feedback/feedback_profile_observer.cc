@@ -6,10 +6,10 @@
 
 #include "base/callback.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/feedback/feedback_report.h"
-#include "chrome/browser/feedback/feedback_uploader.h"
-#include "chrome/browser/feedback/feedback_uploader_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "components/feedback/feedback_report.h"
+#include "components/feedback/feedback_uploader.h"
+#include "components/feedback/feedback_uploader_factory.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
@@ -43,8 +43,16 @@ void FeedbackProfileObserver::Observe(
   DCHECK_EQ(chrome::NOTIFICATION_PROFILE_CREATED, type);
 
   Profile* profile = content::Source<Profile>(source).ptr();
-  if (!profile->IsOffTheRecord())
+  if (profile && !profile->IsOffTheRecord())
     QueueUnsentReports(profile);
+}
+
+void FeedbackProfileObserver::QueueSingleReport(
+    feedback::FeedbackUploader* uploader,
+    const std::string& data) {
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE, base::Bind(&FeedbackUploader::QueueReport,
+                                               uploader->AsWeakPtr(), data));
 }
 
 void FeedbackProfileObserver::QueueUnsentReports(
@@ -53,8 +61,9 @@ void FeedbackProfileObserver::QueueUnsentReports(
       feedback::FeedbackUploaderFactory::GetForBrowserContext(context);
   BrowserThread::PostBlockingPoolTask(FROM_HERE,
       base::Bind(
-          &FeedbackReport::LoadReportsAndQueue, context, base::Bind(
-              &FeedbackUploader::QueueReport, uploader->AsWeakPtr())));
+          &FeedbackReport::LoadReportsAndQueue,
+          uploader->GetFeedbackReportsPath(),
+          base::Bind(&FeedbackProfileObserver::QueueSingleReport, uploader)));
 }
 
 }  // namespace feedback

@@ -28,7 +28,7 @@ class FakeOutputSurface : public OutputSurface {
   }
 
   static scoped_ptr<FakeOutputSurface> Create3d(
-      scoped_refptr<TestContextProvider> context_provider) {
+      scoped_refptr<ContextProvider> context_provider) {
     return make_scoped_ptr(new FakeOutputSurface(context_provider, false));
   }
 
@@ -66,11 +66,11 @@ class FakeOutputSurface : public OutputSurface {
         new FakeOutputSurface(software_device.Pass(), true));
   }
 
-  // TODO(boliu): Use a general factory that takes Capabilities arg.
   static scoped_ptr<FakeOutputSurface> CreateDeferredGL(
-      scoped_ptr<SoftwareOutputDevice> software_device) {
+      scoped_ptr<SoftwareOutputDevice> software_device,
+      bool delegated_rendering) {
     scoped_ptr<FakeOutputSurface> result(
-        new FakeOutputSurface(software_device.Pass(), false));
+        new FakeOutputSurface(software_device.Pass(), delegated_rendering));
     result->capabilities_.deferred_gl_initialization = true;
     return result.Pass();
   }
@@ -94,10 +94,8 @@ class FakeOutputSurface : public OutputSurface {
 
   virtual void SwapBuffers(CompositorFrame* frame) OVERRIDE;
 
-  virtual void SetNeedsBeginImplFrame(bool enable) OVERRIDE;
-  bool needs_begin_impl_frame() const {
-    return needs_begin_impl_frame_;
-  }
+  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
+  bool needs_begin_frame() const { return needs_begin_frame_; }
 
   void set_forced_draw_to_software_device(bool forced) {
     forced_draw_to_software_device_ = forced;
@@ -140,12 +138,12 @@ class FakeOutputSurface : public OutputSurface {
       scoped_ptr<SoftwareOutputDevice> software_device,
       bool delegated_rendering);
 
-  void OnBeginImplFrame();
+  void OnBeginFrame();
 
   OutputSurfaceClient* client_;
   CompositorFrame last_sent_frame_;
   size_t num_sent_frames_;
-  bool needs_begin_impl_frame_;
+  bool needs_begin_frame_;
   bool forced_draw_to_software_device_;
   bool has_external_stencil_test_;
   TransferableResourceArray resources_held_by_parent_;

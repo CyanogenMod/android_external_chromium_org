@@ -8,7 +8,7 @@
 #include "base/memory/ref_counted.h"
 
 namespace content {
-class GeolocationPermissionContext;
+class ExternalVideoSurfaceContainer;
 class WebContents;
 class WebContentsViewDelegate;
 }  // namespace content
@@ -26,11 +26,13 @@ class JniDependencyFactory {
 
   virtual scoped_refptr<AwQuotaManagerBridge> CreateAwQuotaManagerBridge(
       AwBrowserContext* browser_context) = 0;
-  virtual content::GeolocationPermissionContext* CreateGeolocationPermission(
-      AwBrowserContext* browser_context) = 0;
   virtual content::WebContentsViewDelegate* CreateViewDelegate(
       content::WebContents* web_contents) = 0;
   virtual AwWebPreferencesPopulater* CreateWebPreferencesPopulater() = 0;
+#if defined(VIDEO_HOLE)
+  virtual content::ExternalVideoSurfaceContainer*
+      CreateExternalVideoSurfaceContainer(content::WebContents* contents) = 0;
+#endif
 };
 
 }  // namespace android_webview

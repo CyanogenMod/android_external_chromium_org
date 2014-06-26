@@ -40,6 +40,7 @@ if util.IsLinux():
   from pylib import constants
   from pylib import forwarder
   from pylib import valgrind_tools
+  from pylib.device import device_utils
 
 
 _NEGATIVE_FILTER = [
@@ -51,7 +52,10 @@ _NEGATIVE_FILTER = [
 ]
 
 _VERSION_SPECIFIC_FILTER = {}
-_VERSION_SPECIFIC_FILTER['HEAD'] = []
+_VERSION_SPECIFIC_FILTER['HEAD'] = [
+    # https://code.google.com/p/chromedriver/issues/detail?id=815
+    'ChromeDriverTest.testShouldHandleNewWindowLoadingProperly',
+]
 
 _OS_SPECIFIC_FILTER = {}
 _OS_SPECIFIC_FILTER['win'] = [
@@ -99,6 +103,7 @@ _ANDROID_NEGATIVE_FILTER['chrome'] = (
         # Android doesn't support switches and extensions.
         'ChromeSwitchesCapabilityTest.*',
         'ChromeExtensionsCapabilityTest.*',
+        'MobileEmulationCapabilityTest.*',
         # https://crbug.com/274650
         'ChromeDriverTest.testCloseWindow',
         # https://code.google.com/p/chromedriver/issues/detail?id=270
@@ -108,7 +113,7 @@ _ANDROID_NEGATIVE_FILTER['chrome'] = (
         'ChromeDriverTest.testWindowSize',
         'ChromeDriverTest.testWindowMaximize',
         'ChromeLogPathCapabilityTest.testChromeLogPath',
-        'ExistingBrowserTest.*',
+        'RemoteBrowserTest.*',
         # Don't enable perf testing on Android yet.
         'PerfTest.testSessionStartTime',
         'PerfTest.testSessionStopTime',
@@ -121,16 +126,16 @@ _ANDROID_NEGATIVE_FILTER['chrome_stable'] = (
     _ANDROID_NEGATIVE_FILTER['chrome'])
 _ANDROID_NEGATIVE_FILTER['chrome_beta'] = (
     _ANDROID_NEGATIVE_FILTER['chrome'])
-_ANDROID_NEGATIVE_FILTER['chromium_test_shell'] = (
+_ANDROID_NEGATIVE_FILTER['chrome_shell'] = (
     _ANDROID_NEGATIVE_FILTER['chrome'] + [
-        # ChromiumTestShell doesn't support multiple tabs.
+        # ChromeShell doesn't support multiple tabs.
         'ChromeDriverTest.testGetWindowHandles',
         'ChromeDriverTest.testSwitchToWindow',
         'ChromeDriverTest.testShouldHandleNewWindowLoadingProperly',
     ]
 )
 _ANDROID_NEGATIVE_FILTER['chromedriver_webview_shell'] = (
-    _ANDROID_NEGATIVE_FILTER['chromium_test_shell'])
+    _ANDROID_NEGATIVE_FILTER['chrome_shell'])
 
 
 class ChromeDriverBaseTest(unittest.TestCase):
@@ -179,18 +184,18 @@ class ChromeDriverTest(ChromeDriverBaseTest):
         chrome_paths.GetTestData())
     ChromeDriverTest._sync_server = webserver.SyncWebServer()
     if _ANDROID_PACKAGE_KEY:
-      ChromeDriverTest._adb = android_commands.AndroidCommands(
+      ChromeDriverTest._device = device_utils.DeviceUtils(
           android_commands.GetAttachedDevices()[0])
       http_host_port = ChromeDriverTest._http_server._server.server_port
       sync_host_port = ChromeDriverTest._sync_server._server.server_port
       forwarder.Forwarder.Map(
           [(http_host_port, http_host_port), (sync_host_port, sync_host_port)],
-          ChromeDriverTest._adb)
+          ChromeDriverTest._device)
 
   @staticmethod
   def GlobalTearDown():
     if _ANDROID_PACKAGE_KEY:
-      forwarder.Forwarder.UnmapAllDevicePorts(ChromeDriverTest._adb)
+      forwarder.Forwarder.UnmapAllDevicePorts(ChromeDriverTest._device)
     ChromeDriverTest._http_server.Shutdown()
 
   @staticmethod
@@ -321,6 +326,18 @@ class ChromeDriverTest(ChromeDriverBaseTest):
     self.assertTrue(self._driver.ExecuteScript('return window.top == window'))
     self._driver.SwitchToFrame(self._driver.FindElement('tag name', 'iframe'))
     self.assertTrue(self._driver.ExecuteScript('return window.top != window'))
+
+  def testSwitchToParentFrame(self):
+    self._driver.Load(self.GetHttpUrlForFile('/chromedriver/nested.html'))
+    self.assertTrue('One' in self._driver.GetPageSource())
+    self._driver.SwitchToFrameByIndex(0)
+    self.assertTrue('Two' in self._driver.GetPageSource())
+    self._driver.SwitchToFrameByIndex(0)
+    self.assertTrue('Three' in self._driver.GetPageSource())
+    self._driver.SwitchToParentFrame()
+    self.assertTrue('Two' in self._driver.GetPageSource())
+    self._driver.SwitchToParentFrame()
+    self.assertTrue('One' in self._driver.GetPageSource())
 
   def testExecuteInRemovedFrame(self):
     self._driver.ExecuteScript(
@@ -695,6 +712,9 @@ class ChromeDriverTest(ChromeDriverBaseTest):
   def testDoesntHangOnDebugger(self):
     self._driver.ExecuteScript('debugger;')
 
+  def testMobileEmulationDisabledByDefault(self):
+    self.assertFalse(self._driver.capabilities['mobileEmulationEnabled'])
+
 
 class ChromeDriverAndroidTest(ChromeDriverBaseTest):
   """End to end tests for Android-specific tests."""
@@ -755,11 +775,16 @@ class ChromeExtensionsCapabilityTest(ChromeDriverBaseTest):
     return base64.b64encode(open(ext_path, 'rb').read())
 
   def testExtensionsInstall(self):
-    """Checks that chromedriver can take the extensions."""
+    """Checks that chromedriver can take the extensions in crx format."""
     crx_1 = os.path.join(_TEST_DATA_DIR, 'ext_test_1.crx')
     crx_2 = os.path.join(_TEST_DATA_DIR, 'ext_test_2.crx')
     self.CreateDriver(chrome_extensions=[self._PackExtension(crx_1),
                                          self._PackExtension(crx_2)])
+
+  def testExtensionsInstallZip(self):
+    """Checks that chromedriver can take the extensions in zip format."""
+    zip_1 = os.path.join(_TEST_DATA_DIR, 'ext_test_1.zip')
+    self.CreateDriver(chrome_extensions=[self._PackExtension(zip_1)])
 
   def testWaitsForExtensionToLoad(self):
     did_load_event = threading.Event()
@@ -796,6 +821,56 @@ class ChromeLogPathCapabilityTest(ChromeDriverBaseTest):
     self.assertTrue(self.LOG_MESSAGE in open(tmp_log_path.name).read())
 
 
+class MobileEmulationCapabilityTest(ChromeDriverBaseTest):
+  """Tests that ChromeDriver processes chromeOptions.mobileEmulation.
+
+  Makes sure the device metrics are overridden in DevTools and user agent is
+  overridden in Chrome.
+  """
+
+  @staticmethod
+  def GlobalSetUp():
+    def respondWithUserAgentString(request):
+      return request.GetHeader('User-Agent')
+
+    MobileEmulationCapabilityTest._http_server = webserver.WebServer(
+        chrome_paths.GetTestData())
+    MobileEmulationCapabilityTest._http_server.SetCallbackForPath(
+        '/userAgent', respondWithUserAgentString)
+
+  @staticmethod
+  def GlobalTearDown():
+    MobileEmulationCapabilityTest._http_server.Shutdown()
+
+  def testDeviceMetrics(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {
+            'deviceMetrics': {'width': 360, 'height': 640, 'pixelRatio': 3}})
+    self.assertTrue(driver.capabilities['mobileEmulationEnabled'])
+    self.assertEqual(360, driver.ExecuteScript('return window.innerWidth'))
+    self.assertEqual(640, driver.ExecuteScript('return window.innerHeight'))
+
+  def testUserAgent(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'userAgent': 'Agent Smith'})
+    driver.Load(self._http_server.GetUrl() + '/userAgent')
+    body_tag = driver.FindElement('tag name', 'body')
+    self.assertEqual("Agent Smith", body_tag.GetText())
+
+  def testDeviceName(self):
+    driver = self.CreateDriver(
+        mobile_emulation = {'deviceName': 'Google Nexus 5'})
+    driver.Load(self._http_server.GetUrl() + '/userAgent')
+    self.assertEqual(360, driver.ExecuteScript('return window.innerWidth'))
+    self.assertEqual(640, driver.ExecuteScript('return window.innerHeight'))
+    body_tag = driver.FindElement('tag name', 'body')
+    self.assertEqual(
+        'Mozilla/5.0 (Linux; Android 4.2.1; en-us; Nexus 5 Build/JOP40D) AppleW'
+        'ebKit/535.19 (KHTML, like Gecko) Chrome/18.0.1025.166 Mobile Safari/53'
+        '5.19',
+        body_tag.GetText())
+
+
 class ChromeDriverLogTest(unittest.TestCase):
   """Tests that chromedriver produces the expected log file."""
 
@@ -827,13 +902,13 @@ class SessionHandlingTest(ChromeDriverBaseTest):
     driver.Quit()
 
 
-class ExistingBrowserTest(ChromeDriverBaseTest):
-  """Tests for ChromeDriver existing browser capability."""
+class RemoteBrowserTest(ChromeDriverBaseTest):
+  """Tests for ChromeDriver remote browser capability."""
   def setUp(self):
     self.assertTrue(_CHROME_BINARY is not None,
                     'must supply a chrome binary arg')
 
-  def testConnectToExistingBrowser(self):
+  def testConnectToRemoteBrowser(self):
     port = self.FindFreePort()
     temp_dir = util.MakeTempDir()
     process = subprocess.Popen([_CHROME_BINARY,
@@ -989,6 +1064,8 @@ if __name__ == '__main__':
       sys.modules[__name__])
   tests = unittest_util.FilterTestSuite(all_tests_suite, options.filter)
   ChromeDriverTest.GlobalSetUp()
+  MobileEmulationCapabilityTest.GlobalSetUp()
   result = unittest.TextTestRunner(stream=sys.stdout, verbosity=2).run(tests)
   ChromeDriverTest.GlobalTearDown()
+  MobileEmulationCapabilityTest.GlobalTearDown()
   sys.exit(len(result.failures) + len(result.errors))

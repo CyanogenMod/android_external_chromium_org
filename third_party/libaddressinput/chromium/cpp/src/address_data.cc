@@ -24,9 +24,41 @@
 
 #include "region_data_constants.h"
 #include "rule.h"
+#include "util/string_util.h"
 
 namespace i18n {
 namespace addressinput {
+
+namespace {
+
+const std::string* GetMemberForField(const AddressData& address,
+                                     AddressField field) {
+  switch (field) {
+    case COUNTRY:
+      return &address.country_code;
+    case ADMIN_AREA:
+      return &address.administrative_area;
+    case LOCALITY:
+      return &address.locality;
+    case DEPENDENT_LOCALITY:
+      return &address.dependent_locality;
+    case SORTING_CODE:
+      return &address.sorting_code;
+    case POSTAL_CODE:
+      return &address.postal_code;
+    case ORGANIZATION:
+      return &address.organization;
+    case RECIPIENT:
+      return &address.recipient;
+    case STREET_ADDRESS:
+      break;
+  }
+
+  assert(false);
+  return NULL;
+}
+
+}  // namespace
 
 void AddressData::FormatForDisplay(std::vector<std::string>* lines) const {
   assert(lines != NULL);
@@ -36,7 +68,16 @@ void AddressData::FormatForDisplay(std::vector<std::string>* lines) const {
   rule.CopyFrom(Rule::GetDefault());
   rule.ParseSerializedRule(RegionDataConstants::GetRegionData(country_code));
 
-  const std::vector<std::vector<FormatElement> >& format = rule.GetFormat();
+  // If latinized rules are available and the |language_code| of this address is
+  // not the primary language code for the region, then use the latinized
+  // formatting rules.
+  const std::vector<std::vector<FormatElement> >& format =
+      rule.GetLatinFormat().empty() ||
+      language_code.empty() ||
+      NormalizeLanguageCode(language_code) ==
+          NormalizeLanguageCode(rule.GetLanguage())
+              ? rule.GetFormat() : rule.GetLatinFormat();
+
   for (size_t i = 0; i < format.size(); ++i) {
     std::string line;
     for (size_t j = 0; j < format[i].size(); ++j) {
@@ -66,50 +107,42 @@ void AddressData::FormatForDisplay(std::vector<std::string>* lines) const {
 }
 
 const std::string& AddressData::GetFieldValue(AddressField field) const {
-  switch (field) {
-    case COUNTRY:
-      return country_code;
-    case ADMIN_AREA:
-      return administrative_area;
-    case LOCALITY:
-      return locality;
-    case DEPENDENT_LOCALITY:
-      return dependent_locality;
-    case SORTING_CODE:
-      return sorting_code;
-    case POSTAL_CODE:
-      return postal_code;
-    case ORGANIZATION:
-      return organization;
-    case RECIPIENT:
-      return recipient;
-    default:
-      assert(false);
-      return recipient;
+  const std::string* field_value = GetMemberForField(*this, field);
+  return field_value != NULL ? *field_value : country_code;
+}
+
+void AddressData::SetFieldValue(AddressField field, const std::string& value) {
+  std::string* field_value =
+      const_cast<std::string*>(GetMemberForField(*this, field));
+  if (field_value != NULL) {
+    *field_value = value;
   }
 }
 
-const std::string& AddressData::GuessLanguageCode() const {
+bool AddressData::HasAllRequiredFields() const {
+  if (country_code.empty())
+    return false;
+
   Rule rule;
   rule.CopyFrom(Rule::GetDefault());
   if (!rule.ParseSerializedRule(
-          RegionDataConstants::GetRegionData(country_code))) {
-    return language_code;
+           RegionDataConstants::GetRegionData(country_code))) {
+    return false;
   }
 
-  std::vector<std::string>::const_iterator lang_it =
-      std::find(rule.GetLanguages().begin(),
-                rule.GetLanguages().end(),
-                language_code);
-  if (lang_it != rule.GetLanguages().end()) {
-    return *lang_it;
+  std::vector< ::i18n::addressinput::AddressField> required_fields =
+      rule.GetRequired();
+  for (size_t i = 0; i < required_fields.size(); ++i) {
+    if (required_fields[i] == STREET_ADDRESS) {
+      if (address_lines.empty() || address_lines[0].empty()) {
+        return false;
+      }
+    } else if (GetFieldValue(required_fields[i]).empty()) {
+      return false;
+    }
   }
 
-  if (!rule.GetLanguage().empty()) {
-    return rule.GetLanguage();
-  }
-
-  return language_code;
+  return true;
 }
 
 }  // namespace addressinput

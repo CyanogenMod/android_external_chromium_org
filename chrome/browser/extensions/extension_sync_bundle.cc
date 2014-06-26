@@ -6,6 +6,8 @@
 
 #include "base/location.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
+#include "chrome/browser/extensions/extension_util.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -59,12 +61,13 @@ void ExtensionSyncBundle::ProcessDeletion(
 
 syncer::SyncChange ExtensionSyncBundle::CreateSyncChange(
     const syncer::SyncData& sync_data) {
-  if (HasExtensionId(sync_data.GetTag())) {
+  const syncer::SyncDataLocal sync_data_local(sync_data);
+  if (HasExtensionId(sync_data_local.GetTag())) {
     return syncer::SyncChange(FROM_HERE,
                               syncer::SyncChange::ACTION_UPDATE,
                               sync_data);
   } else {
-    AddExtension(sync_data.GetTag());
+    AddExtension(sync_data_local.GetTag());
     return syncer::SyncChange(FROM_HERE,
                               syncer::SyncChange::ACTION_ADD,
                               sync_data);
@@ -141,13 +144,15 @@ std::vector<ExtensionSyncData> ExtensionSyncBundle::GetPendingData() const {
 void ExtensionSyncBundle::GetExtensionSyncDataListHelper(
     const ExtensionSet& extensions,
     std::vector<ExtensionSyncData>* sync_data_list) const {
+  Profile* profile = extension_sync_service_->profile();
+
   for (ExtensionSet::const_iterator it = extensions.begin();
        it != extensions.end(); ++it) {
     const Extension& extension = *it->get();
     // If we have pending extension data for this extension, then this
     // version is out of date.  We'll sync back the version we got from
     // sync.
-    if (IsSyncing() && sync_helper::IsSyncableExtension(&extension) &&
+    if (IsSyncing() && util::ShouldSyncExtension(&extension, profile) &&
         !HasPendingExtensionId(extension.id())) {
       sync_data_list->push_back(
           extension_sync_service_->GetExtensionSyncData(extension));

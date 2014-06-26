@@ -12,13 +12,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
+#include "base/scoped_observer.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/rect.h"
 
@@ -26,6 +26,7 @@ class Profile;
 
 namespace extensions {
 class ExtensionPrefs;
+class ExtensionRegistry;
 }
 
 namespace apps {
@@ -33,8 +34,8 @@ namespace apps {
 // A cache for persisted geometry of app windows, both to not have to wait
 // for IO when creating a new window, and to not cause IO on every window
 // geometry change.
-class AppWindowGeometryCache : public BrowserContextKeyedService,
-                               public content::NotificationObserver {
+class AppWindowGeometryCache : public KeyedService,
+                               public extensions::ExtensionRegistryObserver {
  public:
   class Factory : public BrowserContextKeyedServiceFactory {
    public:
@@ -51,7 +52,7 @@ class AppWindowGeometryCache : public BrowserContextKeyedService,
     virtual ~Factory();
 
     // BrowserContextKeyedServiceFactory
-    virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+    virtual KeyedService* BuildServiceInstanceFor(
         content::BrowserContext* context) const OVERRIDE;
     virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
     virtual content::BrowserContext* GetBrowserContextToUse(
@@ -65,7 +66,7 @@ class AppWindowGeometryCache : public BrowserContextKeyedService,
                                         const gfx::Rect& bounds) = 0;
 
    protected:
-    virtual ~Observer() {};
+    virtual ~Observer() {}
   };
 
   AppWindowGeometryCache(Profile* profile, extensions::ExtensionPrefs* prefs);
@@ -91,7 +92,7 @@ class AppWindowGeometryCache : public BrowserContextKeyedService,
                    gfx::Rect* screen_bounds,
                    ui::WindowShowState* state);
 
-  // BrowserContextKeyedService
+  // KeyedService
   virtual void Shutdown() OVERRIDE;
 
   void AddObserver(Observer* observer);
@@ -122,31 +123,38 @@ class AppWindowGeometryCache : public BrowserContextKeyedService,
   // Data stored for each extension.
   typedef std::map<std::string, WindowData> ExtensionData;
 
-  // content::NotificationObserver
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
   void LoadGeometryFromStorage(const std::string& extension_id);
-  void OnExtensionUnloaded(const std::string& extension_id);
   void SyncToStorage();
 
   // Preferences storage.
   extensions::ExtensionPrefs* prefs_;
 
-  // Cached data
+  // Cached data.
   std::map<std::string, ExtensionData> cache_;
 
-  // Data that still needs saving
+  // Data that still needs saving.
   std::set<std::string> unsynced_extensions_;
 
-  // The timer used to save the data
+  // The timer used to save the data.
   base::OneShotTimer<AppWindowGeometryCache> sync_timer_;
 
   // The timeout value we'll use for |sync_timer_|.
   base::TimeDelta sync_delay_;
 
-  content::NotificationRegistrar registrar_;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
+
   ObserverList<Observer> observers_;
 };
 

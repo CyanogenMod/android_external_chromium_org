@@ -14,6 +14,18 @@ const char kAppShimSocketSymlinkName[] = "App Shim Socket";
 const char kAppListModeId[] = "app_list";
 
 const char kLaunchedByChromeProcessId[] = "launched-by-chrome-process-id";
+const char kLaunchedForTest[] = "launched-for-test";
+const char kLaunchedAfterRebuild[] = "launched-after-rebuild";
+
+const char kAppShimError[] = "app-shim-error";
+
+NSString* const kCFBundleDocumentTypesKey = @"CFBundleDocumentTypes";
+NSString* const kCFBundleTypeExtensionsKey = @"CFBundleTypeExtensions";
+NSString* const kCFBundleTypeIconFileKey = @"CFBundleTypeIconFile";
+NSString* const kCFBundleTypeNameKey = @"CFBundleTypeName";
+NSString* const kCFBundleTypeMIMETypesKey = @"CFBundleTypeMIMETypes";
+NSString* const kCFBundleTypeRoleKey = @"CFBundleTypeRole";
+NSString* const kBundleTypeRoleViewer = @"Viewer";
 
 NSString* const kCFBundleDisplayNameKey = @"CFBundleDisplayName";
 NSString* const kLSHasLocalizedDisplayNameKey = @"LSHasLocalizedDisplayName";

@@ -234,12 +234,13 @@ class TestWebGraphicsContext3D {
 
   virtual GLuint createImageCHROMIUM(GLsizei width,
                                      GLsizei height,
-                                     GLenum internalformat);
+                                     GLenum internalformat,
+                                     GLenum usage);
   virtual void destroyImageCHROMIUM(GLuint image_id);
   virtual void getImageParameterivCHROMIUM(GLuint image_id,
                                            GLenum pname,
                                            GLint* params);
-  virtual void* mapImageCHROMIUM(GLuint image_id, GLenum access);
+  virtual void* mapImageCHROMIUM(GLuint image_id);
   virtual void unmapImageCHROMIUM(GLuint image_id);
   virtual void texImageIOSurface2DCHROMIUM(GLenum target,
                                            GLsizei width,
@@ -301,6 +302,9 @@ class TestWebGraphicsContext3D {
   void set_support_texture_storage(bool support) {
     test_capabilities_.gpu.texture_storage = support;
   }
+  void set_support_sync_query(bool support) {
+    test_capabilities_.gpu.sync_query = support;
+  }
 
   // When this context is lost, all contexts in its share group are also lost.
   void add_share_group_context(TestWebGraphicsContext3D* context3d) {
@@ -319,10 +323,9 @@ class TestWebGraphicsContext3D {
   virtual GLuint NextImageId();
   virtual void RetireImageId(GLuint id);
 
-  size_t GetTransferBufferMemoryUsedBytes() const;
   void SetMaxTransferBufferUsageBytes(size_t max_transfer_buffer_usage_bytes);
-  size_t GetPeakTransferBufferMemoryUsedBytes() const {
-    return peak_transfer_buffer_memory_used_bytes_;
+  size_t max_used_transfer_buffer_usage_bytes() const {
+    return max_used_transfer_buffer_usage_bytes_;
   }
 
   void set_test_support(TestContextSupport* test_support) {
@@ -414,6 +417,8 @@ class TestWebGraphicsContext3D {
   bool context_lost_;
   int times_map_image_chromium_succeeds_;
   int times_map_buffer_chromium_succeeds_;
+  int current_used_transfer_buffer_usage_bytes_;
+  int max_used_transfer_buffer_usage_bytes_;
   base::Closure context_lost_callback_;
   base::hash_set<unsigned> used_textures_;
   unsigned next_program_id_;
@@ -434,8 +439,6 @@ class TestWebGraphicsContext3D {
 
   unsigned bound_buffer_;
   TextureTargets texture_targets_;
-
-  size_t peak_transfer_buffer_memory_used_bytes_;
 
   scoped_refptr<Namespace> namespace_;
   static Namespace* shared_namespace_;

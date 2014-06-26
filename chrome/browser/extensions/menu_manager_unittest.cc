@@ -13,7 +13,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/menu_manager.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
@@ -26,6 +25,7 @@
 #include "content/public/common/context_menu_params.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -49,7 +49,9 @@ class MenuManagerTest : public testing::Test {
   MenuManagerTest()
       : ui_thread_(BrowserThread::UI, &message_loop_),
         file_thread_(BrowserThread::FILE, &message_loop_),
-        manager_(&profile_, ExtensionSystem::Get(&profile_)->state_store()),
+        profile_(new TestingProfile()),
+        manager_(profile_.get(),
+                 ExtensionSystem::Get(profile_.get())->state_store()),
         prefs_(message_loop_.message_loop_proxy().get()),
         next_id_(1) {}
 
@@ -62,7 +64,8 @@ class MenuManagerTest : public testing::Test {
   MenuItem* CreateTestItem(Extension* extension, bool incognito = false) {
     MenuItem::Type type = MenuItem::NORMAL;
     MenuItem::ContextList contexts(MenuItem::ALL);
-    MenuItem::Id id(incognito, extension->id());
+    const MenuItem::ExtensionKey key(extension->id());
+    MenuItem::Id id(incognito, key);
     id.uid = next_id_++;
     return new MenuItem(id, "test", false, true, type, contexts);
   }
@@ -72,14 +75,15 @@ class MenuManagerTest : public testing::Test {
                                  const std::string& string_id) {
     MenuItem::Type type = MenuItem::NORMAL;
     MenuItem::ContextList contexts(MenuItem::ALL);
-    MenuItem::Id id(false, extension->id());
+    const MenuItem::ExtensionKey key(extension->id());
+    MenuItem::Id id(false, key);
     id.string_uid = string_id;
     return new MenuItem(id, "test", false, true, type, contexts);
   }
 
   // Creates and returns a test Extension. The caller does *not* own the return
   // value.
-  Extension* AddExtension(std::string name) {
+  Extension* AddExtension(const std::string& name) {
     scoped_refptr<Extension> extension = prefs_.AddExtension(name);
     extensions_.push_back(extension);
     return extension.get();
@@ -89,7 +93,7 @@ class MenuManagerTest : public testing::Test {
   base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
-  TestingProfile profile_;
+  scoped_ptr<TestingProfile> profile_;
 
   MenuManager manager_;
   ExtensionList extensions_;
@@ -109,7 +113,7 @@ TEST_F(MenuManagerTest, AddGetRemoveItems) {
   ASSERT_TRUE(item1 != NULL);
   ASSERT_TRUE(manager_.AddContextItem(extension, item1));
   ASSERT_EQ(item1, manager_.GetItemById(item1->id()));
-  const MenuItem::List* items = manager_.MenuItems(item1->extension_id());
+  const MenuItem::List* items = manager_.MenuItems(item1->id().extension_key);
   ASSERT_EQ(1u, items->size());
   ASSERT_EQ(item1, items->at(0));
 
@@ -117,7 +121,7 @@ TEST_F(MenuManagerTest, AddGetRemoveItems) {
   MenuItem* item2 = CreateTestItemWithID(extension, "id2");
   ASSERT_TRUE(manager_.AddContextItem(extension, item2));
   ASSERT_EQ(item2, manager_.GetItemById(item2->id()));
-  items = manager_.MenuItems(item2->extension_id());
+  items = manager_.MenuItems(item2->id().extension_key);
   ASSERT_EQ(2u, items->size());
   ASSERT_EQ(item1, items->at(0));
   ASSERT_EQ(item2, items->at(1));
@@ -125,16 +129,17 @@ TEST_F(MenuManagerTest, AddGetRemoveItems) {
   // Try adding item 3, then removing it.
   MenuItem* item3 = CreateTestItem(extension);
   MenuItem::Id id3 = item3->id();
-  std::string extension_id = item3->extension_id();
+  const MenuItem::ExtensionKey extension_key3(item3->id().extension_key);
   ASSERT_TRUE(manager_.AddContextItem(extension, item3));
   ASSERT_EQ(item3, manager_.GetItemById(id3));
-  ASSERT_EQ(3u, manager_.MenuItems(extension_id)->size());
+  ASSERT_EQ(3u, manager_.MenuItems(extension_key3)->size());
   ASSERT_TRUE(manager_.RemoveContextMenuItem(id3));
   ASSERT_EQ(NULL, manager_.GetItemById(id3));
-  ASSERT_EQ(2u, manager_.MenuItems(extension_id)->size());
+  ASSERT_EQ(2u, manager_.MenuItems(extension_key3)->size());
 
   // Make sure removing a non-existent item returns false.
-  MenuItem::Id id(false, extension->id());
+  const MenuItem::ExtensionKey key(extension->id());
+  MenuItem::Id id(false, key);
   id.uid = id3.uid + 50;
   ASSERT_FALSE(manager_.RemoveContextMenuItem(id));
 
@@ -181,8 +186,8 @@ TEST_F(MenuManagerTest, ChildFunctions) {
   ASSERT_EQ(0, item1->child_count());
   ASSERT_EQ(item2_child, manager_.GetItemById(id2_child));
 
-  ASSERT_EQ(1u, manager_.MenuItems(item1->extension_id())->size());
-  ASSERT_EQ(item1, manager_.MenuItems(item1->extension_id())->at(0));
+  ASSERT_EQ(1u, manager_.MenuItems(item1->id().extension_key)->size());
+  ASSERT_EQ(item1, manager_.MenuItems(item1->id().extension_key)->at(0));
 
   // Add item2_grandchild as a child of item2_child, then remove it.
   MenuItem::Id id2_grandchild = item2_grandchild->id();
@@ -193,13 +198,13 @@ TEST_F(MenuManagerTest, ChildFunctions) {
 
   // We should only get 1 thing back when asking for item2's extension id, since
   // it has a child item.
-  ASSERT_EQ(1u, manager_.MenuItems(item2->extension_id())->size());
-  ASSERT_EQ(item2, manager_.MenuItems(item2->extension_id())->at(0));
+  ASSERT_EQ(1u, manager_.MenuItems(item2->id().extension_key)->size());
+  ASSERT_EQ(item2, manager_.MenuItems(item2->id().extension_key)->at(0));
 
   // Remove child2_item.
   ASSERT_TRUE(manager_.RemoveContextMenuItem(id2_child));
-  ASSERT_EQ(1u, manager_.MenuItems(item2->extension_id())->size());
-  ASSERT_EQ(item2, manager_.MenuItems(item2->extension_id())->at(0));
+  ASSERT_EQ(1u, manager_.MenuItems(item2->id().extension_key)->size());
+  ASSERT_EQ(item2, manager_.MenuItems(item2->id().extension_key)->at(0));
   ASSERT_EQ(0, item2->child_count());
 }
 
@@ -284,6 +289,7 @@ TEST_F(MenuManagerTest, DeleteParent) {
   MenuItem::Id item4_id = item4->id();
   MenuItem::Id item5_id = item5->id();
   MenuItem::Id item6_id = item6->id();
+  const MenuItem::ExtensionKey key(extension->id());
 
   // Add the items in the hierarchy
   // item1 -> item2 -> item3 -> item4 -> item5 -> item6.
@@ -299,7 +305,7 @@ TEST_F(MenuManagerTest, DeleteParent) {
   ASSERT_EQ(item4, manager_.GetItemById(item4_id));
   ASSERT_EQ(item5, manager_.GetItemById(item5_id));
   ASSERT_EQ(item6, manager_.GetItemById(item6_id));
-  ASSERT_EQ(1u, manager_.MenuItems(extension->id())->size());
+  ASSERT_EQ(1u, manager_.MenuItems(key)->size());
   ASSERT_EQ(6u, manager_.items_by_id_.size());
 
   // Remove item6 (a leaf node).
@@ -310,7 +316,7 @@ TEST_F(MenuManagerTest, DeleteParent) {
   ASSERT_EQ(item4, manager_.GetItemById(item4_id));
   ASSERT_EQ(item5, manager_.GetItemById(item5_id));
   ASSERT_EQ(NULL, manager_.GetItemById(item6_id));
-  ASSERT_EQ(1u, manager_.MenuItems(extension->id())->size());
+  ASSERT_EQ(1u, manager_.MenuItems(key)->size());
   ASSERT_EQ(5u, manager_.items_by_id_.size());
 
   // Remove item4 and make sure item5 is gone as well.
@@ -320,12 +326,12 @@ TEST_F(MenuManagerTest, DeleteParent) {
   ASSERT_EQ(item3, manager_.GetItemById(item3_id));
   ASSERT_EQ(NULL, manager_.GetItemById(item4_id));
   ASSERT_EQ(NULL, manager_.GetItemById(item5_id));
-  ASSERT_EQ(1u, manager_.MenuItems(extension->id())->size());
+  ASSERT_EQ(1u, manager_.MenuItems(key)->size());
   ASSERT_EQ(3u, manager_.items_by_id_.size());
 
   // Now remove item1 and make sure item2 and item3 are gone as well.
   ASSERT_TRUE(manager_.RemoveContextMenuItem(item1_id));
-  ASSERT_EQ(NULL, manager_.MenuItems(extension->id()));
+  ASSERT_EQ(NULL, manager_.MenuItems(key));
   ASSERT_EQ(0u, manager_.items_by_id_.size());
   ASSERT_EQ(NULL, manager_.GetItemById(item1_id));
   ASSERT_EQ(NULL, manager_.GetItemById(item2_id));
@@ -343,7 +349,7 @@ TEST_F(MenuManagerTest, ChangeParent) {
   ASSERT_TRUE(manager_.AddContextItem(extension1, item1));
   ASSERT_TRUE(manager_.AddContextItem(extension1, item2));
 
-  const MenuItem::List* items = manager_.MenuItems(item1->extension_id());
+  const MenuItem::List* items = manager_.MenuItems(item1->id().extension_key);
   ASSERT_EQ(2u, items->size());
   ASSERT_EQ(item1, items->at(0));
   ASSERT_EQ(item2, items->at(1));
@@ -370,7 +376,7 @@ TEST_F(MenuManagerTest, ChangeParent) {
 
   // Since item2 was a top-level item but is no longer, we should only have 1
   // top-level item.
-  items = manager_.MenuItems(item1->extension_id());
+  items = manager_.MenuItems(item1->id().extension_key);
   ASSERT_EQ(1u, items->size());
   ASSERT_EQ(item1, items->at(0));
 
@@ -386,13 +392,13 @@ TEST_F(MenuManagerTest, ChangeParent) {
   ASSERT_EQ(2, item1->child_count());
   ASSERT_EQ(item2, item1->children()[0]);
   ASSERT_EQ(item3, item1->children()[1]);
-  items = manager_.MenuItems(item1->extension_id());
+  items = manager_.MenuItems(item1->id().extension_key);
   ASSERT_EQ(1u, items->size());
   ASSERT_EQ(item1, items->at(0));
 
   // Move item2 to be a top-level item.
   ASSERT_TRUE(manager_.ChangeParent(item2->id(), NULL));
-  items = manager_.MenuItems(item1->extension_id());
+  items = manager_.MenuItems(item1->id().extension_key);
   ASSERT_EQ(2u, items->size());
   ASSERT_EQ(item1, items->at(0));
   ASSERT_EQ(item2, items->at(1));
@@ -425,7 +431,8 @@ TEST_F(MenuManagerTest, ExtensionUnloadRemovesMenuItems) {
   MenuItem::Id id1 = item1->id();
   ASSERT_EQ(extension1->id(), item1->extension_id());
   ASSERT_TRUE(manager_.AddContextItem(extension1, item1));
-  ASSERT_EQ(1u, manager_.MenuItems(extension1->id())->size());
+  ASSERT_EQ(
+      1u, manager_.MenuItems(MenuItem::ExtensionKey(extension1->id()))->size());
 
   // Create a menu item with a different extension id and add it to the manager.
   Extension* extension2 = AddExtension("2222");
@@ -435,14 +442,13 @@ TEST_F(MenuManagerTest, ExtensionUnloadRemovesMenuItems) {
 
   // Notify that the extension was unloaded, and make sure the right item is
   // gone.
-  UnloadedExtensionInfo details(
-      extension1, UnloadedExtensionInfo::REASON_DISABLE);
-  notifier->Notify(chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                   content::Source<Profile>(&profile_),
-                   content::Details<UnloadedExtensionInfo>(
-                      &details));
-  ASSERT_EQ(NULL, manager_.MenuItems(extension1->id()));
-  ASSERT_EQ(1u, manager_.MenuItems(extension2->id())->size());
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_.get());
+  registry->TriggerOnUnloaded(extension1,
+                              UnloadedExtensionInfo::REASON_DISABLE);
+
+  ASSERT_EQ(NULL, manager_.MenuItems(MenuItem::ExtensionKey(extension1->id())));
+  ASSERT_EQ(
+      1u, manager_.MenuItems(MenuItem::ExtensionKey(extension2->id()))->size());
   ASSERT_TRUE(manager_.GetItemById(id1) == NULL);
   ASSERT_TRUE(manager_.GetItemById(item2->id()) != NULL);
 }
@@ -492,15 +498,14 @@ class MockExtensionSystem : public TestExtensionSystem {
   DISALLOW_COPY_AND_ASSIGN(MockExtensionSystem);
 };
 
-BrowserContextKeyedService* BuildMockExtensionSystem(
-    content::BrowserContext* profile) {
+KeyedService* BuildMockExtensionSystem(content::BrowserContext* profile) {
   return new MockExtensionSystem(static_cast<Profile*>(profile));
 }
 
 // Tests the RemoveAll functionality.
 TEST_F(MenuManagerTest, RemoveAll) {
   // Try removing all items for an extension id that doesn't have any items.
-  manager_.RemoveAllContextItems("CCCC");
+  manager_.RemoveAllContextItems(MenuItem::ExtensionKey("CCCC"));
 
   // Add 2 top-level and one child item for extension 1.
   Extension* extension1 = AddExtension("1111");
@@ -516,17 +521,19 @@ TEST_F(MenuManagerTest, RemoveAll) {
   MenuItem* item4 = CreateTestItem(extension2);
   ASSERT_TRUE(manager_.AddContextItem(extension2, item4));
 
-  EXPECT_EQ(2u, manager_.MenuItems(extension1->id())->size());
-  EXPECT_EQ(1u, manager_.MenuItems(extension2->id())->size());
+  const MenuItem::ExtensionKey key1(extension1->id());
+  const MenuItem::ExtensionKey key2(extension2->id());
+  EXPECT_EQ(2u, manager_.MenuItems(key1)->size());
+  EXPECT_EQ(1u, manager_.MenuItems(key2)->size());
 
   // Remove extension2's item.
-  manager_.RemoveAllContextItems(extension2->id());
-  EXPECT_EQ(2u, manager_.MenuItems(extension1->id())->size());
-  EXPECT_EQ(NULL, manager_.MenuItems(extension2->id()));
+  manager_.RemoveAllContextItems(key2);
+  EXPECT_EQ(2u, manager_.MenuItems(key1)->size());
+  EXPECT_EQ(NULL, manager_.MenuItems(key2));
 
   // Remove extension1's items.
-  manager_.RemoveAllContextItems(extension1->id());
-  EXPECT_EQ(NULL, manager_.MenuItems(extension1->id()));
+  manager_.RemoveAllContextItems(key1);
+  EXPECT_EQ(NULL, manager_.MenuItems(key1));
 }
 
 // Tests that removing all items one-by-one doesn't leave an entry around.
@@ -579,15 +586,14 @@ TEST_F(MenuManagerTest, ExecuteCommand) {
   {
     InSequence s;
     EXPECT_CALL(*mock_event_router,
-                DispatchEventToExtensionMock(
-                    item->extension_id(),
-                    extensions::event_names::kOnContextMenus,
-                    _,
-                    &profile,
-                    GURL(),
-                    EventRouter::USER_GESTURE_ENABLED))
-      .Times(1)
-      .WillOnce(SaveArg<2>(&list));
+                DispatchEventToExtensionMock(item->extension_id(),
+                                             MenuManager::kOnContextMenus,
+                                             _,
+                                             &profile,
+                                             GURL(),
+                                             EventRouter::USER_GESTURE_ENABLED))
+        .Times(1)
+        .WillOnce(SaveArg<2>(&list));
     EXPECT_CALL(*mock_event_router,
               DispatchEventToExtensionMock(
                   item->extension_id(),
@@ -748,13 +754,15 @@ TEST_F(MenuManagerTest, RemoveAllIncognito) {
   MenuItem* item7 = CreateTestItem(extension2);
   ASSERT_TRUE(manager_.AddContextItem(extension2, item7));
 
-  EXPECT_EQ(4u, manager_.MenuItems(extension1->id())->size());
-  EXPECT_EQ(1u, manager_.MenuItems(extension2->id())->size());
+  const MenuItem::ExtensionKey key1(extension1->id());
+  const MenuItem::ExtensionKey key2(extension2->id());
+  EXPECT_EQ(4u, manager_.MenuItems(key1)->size());
+  EXPECT_EQ(1u, manager_.MenuItems(key2)->size());
 
   // Remove all context menu items with incognito true.
   manager_.RemoveAllIncognitoContextItems();
-  EXPECT_EQ(2u, manager_.MenuItems(extension1->id())->size());
-  EXPECT_EQ(1u, manager_.MenuItems(extension2->id())->size());
+  EXPECT_EQ(2u, manager_.MenuItems(key1)->size());
+  EXPECT_EQ(1u, manager_.MenuItems(key2)->size());
 }
 
 }  // namespace extensions

@@ -22,10 +22,13 @@
 #include "chrome/browser/mac/security_wrappers.h"
 #include "components/password_manager/core/browser/login_database.h"
 #include "components/password_manager/core/browser/password_store_change.h"
+#include "content/public/browser/browser_thread.h"
 #include "crypto/apple_keychain.h"
 
 using autofill::PasswordForm;
 using crypto::AppleKeychain;
+using password_manager::PasswordStoreChange;
+using password_manager::PasswordStoreChangeList;
 
 // Utility class to handle the details of constructing and running a keychain
 // search from a set of attributes.
@@ -828,8 +831,8 @@ PasswordStoreMac::PasswordStoreMac(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
     scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
     AppleKeychain* keychain,
-    LoginDatabase* login_db)
-    : PasswordStore(main_thread_runner, db_thread_runner),
+    password_manager::LoginDatabase* login_db)
+    : password_manager::PasswordStore(main_thread_runner, db_thread_runner),
       keychain_(keychain),
       login_metadata_db_(login_db) {
   DCHECK(keychain_.get());
@@ -838,14 +841,22 @@ PasswordStoreMac::PasswordStoreMac(
 
 PasswordStoreMac::~PasswordStoreMac() {}
 
-bool PasswordStoreMac::Init() {
+bool PasswordStoreMac::Init(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
   thread_.reset(new base::Thread("Chrome_PasswordStore_Thread"));
 
   if (!thread_->Start()) {
     thread_.reset(NULL);
     return false;
   }
-  return PasswordStore::Init();
+  return password_manager::PasswordStore::Init(flare);
+}
+
+void PasswordStoreMac::Shutdown() {
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  password_manager::PasswordStore::Shutdown();
+  thread_->Stop();
 }
 
 // Mac stores passwords in the system keychain, which can block for an
@@ -863,24 +874,21 @@ void PasswordStoreMac::ReportMetricsImpl() {
 
 PasswordStoreChangeList PasswordStoreMac::AddLoginImpl(
     const PasswordForm& form) {
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
   PasswordStoreChangeList changes;
   if (AddToKeychainIfNecessary(form)) {
-    if (login_metadata_db_->AddLogin(form)) {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
-    }
+    changes = login_metadata_db_->AddLogin(form);
   }
   return changes;
 }
 
 PasswordStoreChangeList PasswordStoreMac::UpdateLoginImpl(
     const PasswordForm& form) {
-  PasswordStoreChangeList changes;
-  int update_count = 0;
-  if (!login_metadata_db_->UpdateLogin(form, &update_count))
-    return changes;
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
+  PasswordStoreChangeList changes = login_metadata_db_->UpdateLogin(form);
 
   MacKeychainPasswordFormAdapter keychain_adapter(keychain_.get());
-  if (update_count == 0 &&
+  if (changes.empty() &&
       !keychain_adapter.HasPasswordsMergeableWithForm(form)) {
     // If the password isn't in either the DB or the keychain, then it must have
     // been deleted after autofill happened, and should not be re-added.
@@ -889,22 +897,15 @@ PasswordStoreChangeList PasswordStoreMac::UpdateLoginImpl(
 
   // The keychain add will update if there is a collision and add if there
   // isn't, which is the behavior we want, so there's no separate update call.
-  if (AddToKeychainIfNecessary(form)) {
-    if (update_count == 0) {
-      if (login_metadata_db_->AddLogin(form)) {
-        changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD,
-                                              form));
-      }
-    } else {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE,
-                                            form));
-    }
+  if (AddToKeychainIfNecessary(form) && changes.empty()) {
+    changes = login_metadata_db_->AddLogin(form);
   }
   return changes;
 }
 
 PasswordStoreChangeList PasswordStoreMac::RemoveLoginImpl(
     const PasswordForm& form) {
+  DCHECK(thread_->message_loop() == base::MessageLoop::current());
   PasswordStoreChangeList changes;
   if (login_metadata_db_->RemoveLogin(form)) {
     // See if we own a Keychain item associated with this item. We can do an
@@ -932,7 +933,8 @@ PasswordStoreChangeList PasswordStoreMac::RemoveLoginImpl(
 }
 
 PasswordStoreChangeList PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& delete_begin, const base::Time& delete_end) {
+    base::Time delete_begin,
+    base::Time delete_end) {
   PasswordStoreChangeList changes;
   std::vector<PasswordForm*> forms;
   if (login_metadata_db_->GetLoginsCreatedBetween(delete_begin, delete_end,
@@ -959,6 +961,40 @@ PasswordStoreChangeList PasswordStoreMac::RemoveLoginsCreatedBetweenImpl(
                                               **it));
       }
       LogStatsForBulkDeletion(changes.size());
+    }
+  }
+  return changes;
+}
+
+PasswordStoreChangeList PasswordStoreMac::RemoveLoginsSyncedBetweenImpl(
+    base::Time delete_begin,
+    base::Time delete_end) {
+  PasswordStoreChangeList changes;
+  std::vector<PasswordForm*> forms;
+  if (login_metadata_db_->GetLoginsSyncedBetween(
+          delete_begin, delete_end, &forms)) {
+    if (login_metadata_db_->RemoveLoginsSyncedBetween(delete_begin,
+                                                      delete_end)) {
+      // We can't delete from the Keychain by date because we may be sharing
+      // items with database entries that weren't in the delete range. Instead,
+      // we find all the Keychain items we own but aren't using any more and
+      // delete those.
+      std::vector<PasswordForm*> orphan_keychain_forms =
+          GetUnusedKeychainForms();
+      // This is inefficient, since we have to re-look-up each keychain item
+      // one at a time to delete it even though the search step already had a
+      // list of Keychain item references. If this turns out to be noticeably
+      // slow we'll need to rearchitect to allow the search and deletion steps
+      // to share.
+      RemoveKeychainForms(orphan_keychain_forms);
+      STLDeleteElements(&orphan_keychain_forms);
+
+      for (std::vector<PasswordForm*>::const_iterator it = forms.begin();
+           it != forms.end();
+           ++it) {
+        changes.push_back(
+            PasswordStoreChange(PasswordStoreChange::REMOVE, **it));
+      }
     }
   }
   return changes;

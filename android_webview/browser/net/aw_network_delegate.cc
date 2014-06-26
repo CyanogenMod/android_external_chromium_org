@@ -6,13 +6,14 @@
 
 #include "android_webview/browser/aw_cookie_access_policy.h"
 #include "base/android/build_info.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_protocol.h"
 #include "net/base/net_errors.h"
 #include "net/base/completion_callback.h"
 #include "net/url_request/url_request.h"
 
 namespace android_webview {
 
-AwNetworkDelegate::AwNetworkDelegate() {
+AwNetworkDelegate::AwNetworkDelegate() : data_reduction_proxy_params_(NULL) {
 }
 
 AwNetworkDelegate::~AwNetworkDelegate() {
@@ -45,7 +46,15 @@ int AwNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
+
+  data_reduction_proxy::MaybeBypassProxyAndPrepareToRetry(
+      data_reduction_proxy_params_,
+      request,
+      original_response_headers,
+      override_response_headers);
+
   return net::OK;
 }
 

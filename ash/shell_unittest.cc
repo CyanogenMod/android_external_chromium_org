@@ -12,7 +12,7 @@
 #include "ash/display/mouse_cursor_event_filter.h"
 #include "ash/drag_drop/drag_drop_controller.h"
 #include "ash/root_window_controller.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
@@ -25,12 +25,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
-#include "ui/aura/test/test_event_handler.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/events/test/events_test_utils.h"
+#include "ui/events/test/test_event_handler.h"
 #include "ui/gfx/size.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/controls/menu/menu_runner.h"
@@ -45,48 +45,48 @@ namespace ash {
 namespace {
 
 aura::Window* GetDefaultContainer() {
-  return Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      internal::kShellWindowId_DefaultContainer);
+  return Shell::GetContainer(Shell::GetPrimaryRootWindow(),
+                             kShellWindowId_DefaultContainer);
 }
 
 aura::Window* GetAlwaysOnTopContainer() {
-  return Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      internal::kShellWindowId_AlwaysOnTopContainer);
+  return Shell::GetContainer(Shell::GetPrimaryRootWindow(),
+                             kShellWindowId_AlwaysOnTopContainer);
 }
 
 // Expect ALL the containers!
 void ExpectAllContainers() {
   aura::Window* root_window = Shell::GetPrimaryRootWindow();
+  EXPECT_TRUE(Shell::GetContainer(root_window,
+                                  kShellWindowId_DesktopBackgroundContainer));
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_DefaultContainer));
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_AlwaysOnTopContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window, kShellWindowId_PanelContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window, kShellWindowId_ShelfContainer));
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_SystemModalContainer));
   EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_DesktopBackgroundContainer));
+      root_window, kShellWindowId_LockScreenBackgroundContainer));
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_LockScreenContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window,
+                                  kShellWindowId_LockSystemModalContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window, kShellWindowId_StatusContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window, kShellWindowId_MenuContainer));
+  EXPECT_TRUE(Shell::GetContainer(root_window,
+                                  kShellWindowId_DragImageAndTooltipContainer));
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_SettingBubbleContainer));
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_OverlayContainer));
   EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_DefaultContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_AlwaysOnTopContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_PanelContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_ShelfContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_SystemModalContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_LockScreenBackgroundContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_LockScreenContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_LockSystemModalContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_StatusContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_MenuContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_DragImageAndTooltipContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_SettingBubbleContainer));
-  EXPECT_TRUE(Shell::GetContainer(
-      root_window, internal::kShellWindowId_OverlayContainer));
+      root_window, kShellWindowId_VirtualKeyboardParentContainer));
+#if defined(OS_CHROMEOS)
+  EXPECT_TRUE(
+      Shell::GetContainer(root_window, kShellWindowId_MouseCursorContainer));
+#endif
 }
 
 class ModalWindow : public views::WidgetDelegateView {
@@ -180,10 +180,9 @@ class ShellTest : public test::AshTestBase {
         Shell::GetInstance()->session_state_delegate();
     delegate->LockScreen();
     views::Widget* lock_widget = CreateTestWindow(widget_params);
-    ash::Shell::GetContainer(
-        Shell::GetPrimaryRootWindow(),
-        ash::internal::kShellWindowId_LockScreenContainer)->
-        AddChild(lock_widget->GetNativeView());
+    ash::Shell::GetContainer(Shell::GetPrimaryRootWindow(),
+                             ash::kShellWindowId_LockScreenContainer)
+        ->AddChild(lock_widget->GetNativeView());
     lock_widget->Show();
     EXPECT_TRUE(delegate->IsScreenLocked());
     EXPECT_TRUE(lock_widget->GetNativeView()->HasFocus());
@@ -268,8 +267,7 @@ TEST_F(ShellTest, CreateModalWindow) {
 
   // It should be in modal container.
   aura::Window* modal_container = Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      internal::kShellWindowId_SystemModalContainer);
+      Shell::GetPrimaryRootWindow(), kShellWindowId_SystemModalContainer);
   EXPECT_EQ(modal_container, modal_widget->GetNativeWindow()->parent());
 
   modal_widget->Close();
@@ -302,17 +300,15 @@ TEST_F(ShellTest, CreateLockScreenModalWindow) {
   Shell::GetInstance()->session_state_delegate()->LockScreen();
   // Create a LockScreen window.
   views::Widget* lock_widget = CreateTestWindow(widget_params);
-  ash::Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      ash::internal::kShellWindowId_LockScreenContainer)->
-      AddChild(lock_widget->GetNativeView());
+  ash::Shell::GetContainer(Shell::GetPrimaryRootWindow(),
+                           ash::kShellWindowId_LockScreenContainer)
+      ->AddChild(lock_widget->GetNativeView());
   lock_widget->Show();
   EXPECT_TRUE(lock_widget->GetNativeView()->HasFocus());
 
   // It should be in LockScreen container.
   aura::Window* lock_screen = Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      ash::internal::kShellWindowId_LockScreenContainer);
+      Shell::GetPrimaryRootWindow(), ash::kShellWindowId_LockScreenContainer);
   EXPECT_EQ(lock_screen, lock_widget->GetNativeWindow()->parent());
 
   // Create a modal window with a lock window as parent.
@@ -322,9 +318,9 @@ TEST_F(ShellTest, CreateLockScreenModalWindow) {
   EXPECT_TRUE(lock_modal_widget->GetNativeView()->HasFocus());
 
   // It should be in LockScreen modal container.
-  aura::Window* lock_modal_container = Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      ash::internal::kShellWindowId_LockSystemModalContainer);
+  aura::Window* lock_modal_container =
+      Shell::GetContainer(Shell::GetPrimaryRootWindow(),
+                          ash::kShellWindowId_LockSystemModalContainer);
   EXPECT_EQ(lock_modal_container,
             lock_modal_widget->GetNativeWindow()->parent());
 
@@ -338,8 +334,7 @@ TEST_F(ShellTest, CreateLockScreenModalWindow) {
 
   // It should be in non-LockScreen modal container.
   aura::Window* modal_container = Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      ash::internal::kShellWindowId_SystemModalContainer);
+      Shell::GetPrimaryRootWindow(), ash::kShellWindowId_SystemModalContainer);
   EXPECT_EQ(modal_container, modal_widget->GetNativeWindow()->parent());
 
   // Modal dialog without parent, caused crash see crbug.com/226141
@@ -385,9 +380,12 @@ TEST_F(ShellTest, LockScreenClosesActiveMenu) {
                  base::Unretained(this)));
 
   EXPECT_EQ(views::MenuRunner::NORMAL_EXIT,
-      menu_runner->RunMenuAt(widget, NULL, gfx::Rect(),
-        views::MenuItemView::TOPLEFT, ui::MENU_SOURCE_MOUSE,
-        views::MenuRunner::CONTEXT_MENU));
+            menu_runner->RunMenuAt(widget,
+                                   NULL,
+                                   gfx::Rect(),
+                                   views::MENU_ANCHOR_TOPLEFT,
+                                   ui::MENU_SOURCE_MOUSE,
+                                   views::MenuRunner::CONTEXT_MENU));
 }
 
 TEST_F(ShellTest, ManagedWindowModeBasics) {
@@ -398,14 +396,13 @@ TEST_F(ShellTest, ManagedWindowModeBasics) {
   EXPECT_TRUE(shelf_widget->IsVisible());
   // Shelf is at bottom-left of screen.
   EXPECT_EQ(0, shelf_widget->GetWindowBoundsInScreen().x());
-  EXPECT_EQ(Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->
-      GetBounds().height(),
-      shelf_widget->GetWindowBoundsInScreen().bottom());
+  EXPECT_EQ(Shell::GetPrimaryRootWindow()->GetHost()->GetBounds().height(),
+            shelf_widget->GetWindowBoundsInScreen().bottom());
   // We have a desktop background but not a bare layer.
   // TODO (antrim): enable once we find out why it fails component build.
-  //  internal::DesktopBackgroundWidgetController* background =
+  //  DesktopBackgroundWidgetController* background =
   //      Shell::GetPrimaryRootWindow()->
-  //          GetProperty(internal::kWindowDesktopComponent);
+  //          GetProperty(kWindowDesktopComponent);
   //  EXPECT_TRUE(background);
   //  EXPECT_TRUE(background->widget());
   //  EXPECT_FALSE(background->layer());
@@ -491,19 +488,27 @@ TEST_F(ShellTest, ToggleAutoHide) {
             shell->GetShelfAutoHideBehavior(root_window));
 }
 
+// Tests that the cursor-filter is ahead of the drag-drop controller in the
+// pre-target list.
 TEST_F(ShellTest, TestPreTargetHandlerOrder) {
   Shell* shell = Shell::GetInstance();
   ui::EventTargetTestApi test_api(shell);
   test::ShellTestApi shell_test_api(shell);
 
   const ui::EventHandlerList& handlers = test_api.pre_target_handlers();
-  EXPECT_EQ(handlers[0], shell->mouse_cursor_filter());
-  EXPECT_EQ(handlers[1], shell_test_api.drag_drop_controller());
+  ui::EventHandlerList::const_iterator cursor_filter =
+      std::find(handlers.begin(), handlers.end(), shell->mouse_cursor_filter());
+  ui::EventHandlerList::const_iterator drag_drop =
+      std::find(handlers.begin(), handlers.end(),
+                shell_test_api.drag_drop_controller());
+  EXPECT_NE(handlers.end(), cursor_filter);
+  EXPECT_NE(handlers.end(), drag_drop);
+  EXPECT_GT(drag_drop, cursor_filter);
 }
 
 // Verifies an EventHandler added to Env gets notified from EventGenerator.
 TEST_F(ShellTest, EnvPreTargetHandler) {
-  aura::test::TestEventHandler event_handler;
+  ui::test::TestEventHandler event_handler;
   aura::Env::GetInstance()->AddPreTargetHandler(&event_handler);
   aura::test::EventGenerator generator(Shell::GetPrimaryRootWindow());
   generator.MoveMouseBy(1, 1);

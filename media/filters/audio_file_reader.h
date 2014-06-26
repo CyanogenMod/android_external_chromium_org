@@ -8,15 +8,17 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
+#include "media/filters/ffmpeg_glue.h"
 
 struct AVCodecContext;
+struct AVPacket;
+struct AVStream;
 
 namespace base { class TimeDelta; }
 
 namespace media {
 
 class AudioBus;
-class FFmpegGlue;
 class FFmpegURLProtocol;
 
 class MEDIA_EXPORT AudioFileReader {
@@ -28,7 +30,7 @@ class MEDIA_EXPORT AudioFileReader {
   virtual ~AudioFileReader();
 
   // Open() reads the audio data format so that the sample_rate(),
-  // channels(), duration(), and number_of_frames() methods can be called.
+  // channels(), GetDuration(), and GetNumberOfFrames() methods can be called.
   // It returns |true| on success.
   bool Open();
   void Close();
@@ -46,20 +48,46 @@ class MEDIA_EXPORT AudioFileReader {
   int channels() const { return channels_; }
   int sample_rate() const { return sample_rate_; }
 
-  // Please note that duration() and number_of_frames() attempt to be accurate,
-  // but are only estimates.  For some encoded formats, the actual duration
-  // of the file can only be determined once all the file data has been read.
-  // The Read() method returns the actual number of sample-frames it has read.
-  base::TimeDelta duration() const;
-  int64 number_of_frames() const;
+  // Please note that GetDuration() and GetNumberOfFrames() attempt to be
+  // accurate, but are only estimates.  For some encoded formats, the actual
+  // duration of the file can only be determined once all the file data has been
+  // read. The Read() method returns the actual number of sample-frames it has
+  // read.
+  base::TimeDelta GetDuration() const;
+  int GetNumberOfFrames() const;
+
+  // The methods below are helper methods which allow AudioFileReader to double
+  // as a test utility for demuxing audio files.
+  // --------------------------------------------------------------------------
+
+  // Similar to Open() but does not initialize the decoder.
+  bool OpenDemuxerForTesting();
+
+  // Returns true if a packet could be demuxed from the first audio stream in
+  // the file, |output_packet| will contain the demuxed packet then.
+  bool ReadPacketForTesting(AVPacket* output_packet);
+
+  // Seeks to the given point and returns true if successful.  |seek_time| will
+  // be converted to the stream's time base automatically.
+  bool SeekForTesting(base::TimeDelta seek_time);
+
+  const AVStream* GetAVStreamForTesting() const;
+  const AVCodecContext* codec_context_for_testing() const {
+    return codec_context_;
+  }
 
  private:
+  bool OpenDemuxer();
+  bool OpenDecoder();
+  bool ReadPacket(AVPacket* output_packet);
+
   scoped_ptr<FFmpegGlue> glue_;
   AVCodecContext* codec_context_;
   int stream_index_;
   FFmpegURLProtocol* protocol_;
   int channels_;
   int sample_rate_;
+  int64_t end_padding_;
 
   // AVSampleFormat initially requested; not Chrome's SampleFormat.
   int av_sample_format_;

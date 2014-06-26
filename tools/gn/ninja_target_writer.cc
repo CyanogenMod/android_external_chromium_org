@@ -10,10 +10,10 @@
 #include "base/file_util.h"
 #include "tools/gn/err.h"
 #include "tools/gn/file_template.h"
+#include "tools/gn/ninja_action_target_writer.h"
 #include "tools/gn/ninja_binary_target_writer.h"
 #include "tools/gn/ninja_copy_target_writer.h"
 #include "tools/gn/ninja_group_target_writer.h"
-#include "tools/gn/ninja_script_target_writer.h"
 #include "tools/gn/scheduler.h"
 #include "tools/gn/string_utils.h"
 #include "tools/gn/target.h"
@@ -26,8 +26,7 @@ NinjaTargetWriter::NinjaTargetWriter(const Target* target,
       target_(target),
       toolchain_(toolchain),
       out_(out),
-      path_output_(settings_->build_settings()->build_dir(),
-                   ESCAPE_NINJA, true),
+      path_output_(settings_->build_settings()->build_dir(), ESCAPE_NINJA),
       helper_(settings_->build_settings()) {
 }
 
@@ -61,8 +60,9 @@ void NinjaTargetWriter::RunAndWriteFile(const Target* target,
   if (target->output_type() == Target::COPY_FILES) {
     NinjaCopyTargetWriter writer(target, toolchain, file);
     writer.Run();
-  } else if (target->output_type() == Target::CUSTOM) {
-    NinjaScriptTargetWriter writer(target, toolchain, file);
+  } else if (target->output_type() == Target::ACTION ||
+             target->output_type() == Target::ACTION_FOREACH) {
+    NinjaActionTargetWriter writer(target, toolchain, file);
     writer.Run();
   } else if (target->output_type() == Target::GROUP) {
     NinjaGroupTargetWriter writer(target, toolchain, file);
@@ -78,39 +78,86 @@ void NinjaTargetWriter::RunAndWriteFile(const Target* target,
   }
 
   std::string contents = file.str();
-  file_util::WriteFile(ninja_file, contents.c_str(),
-                       static_cast<int>(contents.size()));
+  base::WriteFile(ninja_file, contents.c_str(),
+                  static_cast<int>(contents.size()));
 }
 
-std::string NinjaTargetWriter::GetSourcesImplicitDeps() const {
-  std::ostringstream ret;
-  ret << " |";
+std::string NinjaTargetWriter::WriteInputDepsStampAndGetDep(
+    const std::vector<const Target*>& extra_hard_deps) const {
+  // For an action (where we run a script only once) the sources are the same
+  // as the source prereqs.
+  bool list_sources_as_input_deps = target_->output_type() == Target::ACTION;
 
-  // Input files are order-only deps.
-  const Target::FileList& prereqs = target_->source_prereqs();
-  bool has_files = !prereqs.empty();
-  for (size_t i = 0; i < prereqs.size(); i++) {
-    ret << " ";
-    path_output_.WriteFile(ret, prereqs[i]);
+  // Actions get implicit dependencies on the script itself.
+  bool add_script_source_as_dep = target_->output_type() == Target::ACTION ||
+    target_->output_type() == Target::ACTION_FOREACH;
+
+  if (!add_script_source_as_dep &&
+      extra_hard_deps.empty() &&
+      target_->inputs().empty() &&
+      target_->recursive_hard_deps().empty() &&
+      (!list_sources_as_input_deps || target_->sources().empty()))
+    return std::string();  // No input/hard deps.
+
+  // One potential optimization is if there are few input dependencies (or
+  // potentially few sources that depend on these) it's better to just write
+  // all hard deps on each sources line than have this intermediate stamp. We
+  // do the stamp file because duplicating all the order-only deps for each
+  // source file can really explode the ninja file but this won't be the most
+  // optimal thing in all cases.
+
+  OutputFile input_stamp_file = helper_.GetTargetOutputDir(target_);
+  input_stamp_file.value().append(target_->label().name());
+  input_stamp_file.value().append(".inputdeps.stamp");
+
+  std::ostringstream stamp_file_stream;
+  path_output_.WriteFile(stamp_file_stream, input_stamp_file);
+  std::string stamp_file_string = stamp_file_stream.str();
+
+  out_ << "build " << stamp_file_string << ": " +
+      helper_.GetRulePrefix(settings_) + "stamp";
+
+  // Script file (if applicable).
+  if (add_script_source_as_dep) {
+    out_ << " ";
+    path_output_.WriteFile(out_, target_->action_values().script());
   }
 
-  // Add on any direct deps marked as "hard".
-  const LabelTargetVector& deps = target_->deps();
-  for (size_t i = 0; i < deps.size(); i++) {
-    if (deps[i].ptr->hard_dep()) {
-      has_files = true;
-      ret << " ";
-      path_output_.WriteFile(ret, helper_.GetTargetOutputFile(deps[i].ptr));
+  // Input files are order-only deps.
+  const Target::FileList& prereqs = target_->inputs();
+  for (size_t i = 0; i < prereqs.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_, prereqs[i]);
+  }
+  if (list_sources_as_input_deps) {
+    const Target::FileList& sources = target_->sources();
+    for (size_t i = 0; i < sources.size(); i++) {
+      out_ << " ";
+      path_output_.WriteFile(out_, sources[i]);
     }
   }
 
-  if (has_files)
-    return ret.str();
-  return std::string();  // No files added.
+  // Add on any hard deps that are direct or indirect dependencies.
+  const std::set<const Target*>& hard_deps = target_->recursive_hard_deps();
+  for (std::set<const Target*>::const_iterator i = hard_deps.begin();
+       i != hard_deps.end(); ++i) {
+    out_ << " ";
+    path_output_.WriteFile(out_, helper_.GetTargetOutputFile(*i));
+  }
+
+  // Extra hard deps passed in.
+  for (size_t i = 0; i < extra_hard_deps.size(); i++) {
+    out_ << " ";
+    path_output_.WriteFile(out_,
+        helper_.GetTargetOutputFile(extra_hard_deps[i]));
+  }
+
+  out_ << "\n";
+  return " | " + stamp_file_string;
 }
 
 FileTemplate NinjaTargetWriter::GetOutputTemplate() const {
-  const Target::FileList& outputs = target_->script_values().outputs();
+  const Target::FileList& outputs = target_->action_values().outputs();
   std::vector<std::string> output_template_args;
   for (size_t i = 0; i < outputs.size(); i++) {
     // All outputs should be in the output dir.
@@ -118,5 +165,5 @@ FileTemplate NinjaTargetWriter::GetOutputTemplate() const {
         RemovePrefix(outputs[i].value(),
                      settings_->build_settings()->build_dir().value()));
   }
-  return FileTemplate(output_template_args);
+  return FileTemplate(target_->settings(), output_template_args);
 }

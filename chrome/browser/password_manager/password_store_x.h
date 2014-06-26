@@ -11,11 +11,14 @@
 #include "base/time/time.h"
 #include "components/password_manager/core/browser/password_store_default.h"
 
-class LoginDatabase;
 class PrefService;
 
 namespace user_prefs {
 class PrefRegistrySyncable;
+}
+
+namespace password_manager {
+class LoginDatabase;
 }
 
 // PasswordStoreX is used on Linux and other non-Windows, non-Mac OS X
@@ -25,7 +28,7 @@ class PrefRegistrySyncable;
 // migrating password data to a native backend from the login database.
 //
 // There are currently native backends for GNOME Keyring and KWallet.
-class PasswordStoreX : public PasswordStoreDefault {
+class PasswordStoreX : public password_manager::PasswordStoreDefault {
  public:
   // NativeBackends more or less implement the PaswordStore interface, but
   // with return values rather than implicit consumer notification.
@@ -37,16 +40,27 @@ class PasswordStoreX : public PasswordStoreDefault {
 
     virtual bool Init() = 0;
 
-    virtual bool AddLogin(const autofill::PasswordForm& form) = 0;
-    virtual bool UpdateLogin(const autofill::PasswordForm& form) = 0;
+    virtual password_manager::PasswordStoreChangeList AddLogin(
+        const autofill::PasswordForm& form) = 0;
+    virtual bool UpdateLogin(
+        const autofill::PasswordForm& form,
+        password_manager::PasswordStoreChangeList* changes) = 0;
     virtual bool RemoveLogin(const autofill::PasswordForm& form) = 0;
-    virtual bool RemoveLoginsCreatedBetween(const base::Time& delete_begin,
-                                            const base::Time& delete_end) = 0;
+
+    // Removes all logins created/synced from |delete_begin| onwards (inclusive)
+    // and before |delete_end|. You may use a null Time value to do an unbounded
+    // delete in either direction.
+    virtual bool RemoveLoginsCreatedBetween(
+        base::Time delete_begin,
+        base::Time delete_end,
+        password_manager::PasswordStoreChangeList* changes) = 0;
+    virtual bool RemoveLoginsSyncedBetween(
+        base::Time delete_begin,
+        base::Time delete_end,
+        password_manager::PasswordStoreChangeList* changes) = 0;
+
     virtual bool GetLogins(const autofill::PasswordForm& form,
                            PasswordFormList* forms) = 0;
-    virtual bool GetLoginsCreatedBetween(const base::Time& get_begin,
-                                         const base::Time& get_end,
-                                         PasswordFormList* forms) = 0;
     virtual bool GetAutofillableLogins(PasswordFormList* forms) = 0;
     virtual bool GetBlacklistLogins(PasswordFormList* forms) = 0;
   };
@@ -55,21 +69,8 @@ class PasswordStoreX : public PasswordStoreDefault {
   // case this PasswordStoreX will act the same as PasswordStoreDefault.
   PasswordStoreX(scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
                  scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
-                 LoginDatabase* login_db,
+                 password_manager::LoginDatabase* login_db,
                  NativeBackend* backend);
-
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-  // Registers the pref setting used for the methods below.
-  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
-
-  // Returns true if passwords have been tagged with the local profile id.
-  static bool PasswordsUseLocalProfileId(PrefService* prefs);
-
-  // Sets the persistent bit indicating that passwords have been tagged with the
-  // local profile id. This cannot be unset; passwords get migrated only once.
-  // The caller promises that |prefs| will not be deleted any time soon.
-  static void SetPasswordsUseLocalProfileId(PrefService* prefs);
-#endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
 
  private:
   friend class PasswordStoreXTest;
@@ -77,14 +78,18 @@ class PasswordStoreX : public PasswordStoreDefault {
   virtual ~PasswordStoreX();
 
   // Implements PasswordStore interface.
-  virtual PasswordStoreChangeList AddLoginImpl(
+  virtual password_manager::PasswordStoreChangeList AddLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual PasswordStoreChangeList UpdateLoginImpl(
+  virtual password_manager::PasswordStoreChangeList UpdateLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual PasswordStoreChangeList RemoveLoginImpl(
+  virtual password_manager::PasswordStoreChangeList RemoveLoginImpl(
       const autofill::PasswordForm& form) OVERRIDE;
-  virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
-      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList
+      RemoveLoginsCreatedBetweenImpl(base::Time delete_begin,
+                                     base::Time delete_end) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList
+      RemoveLoginsSyncedBetweenImpl(base::Time delete_begin,
+                                    base::Time delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
       const autofill::PasswordForm& form,
       AuthorizationPromptPolicy prompt_policy,

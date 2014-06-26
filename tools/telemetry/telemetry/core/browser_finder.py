@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,15 +7,19 @@
 import logging
 import operator
 
-from telemetry.core.backends.webdriver import webdriver_desktop_browser_finder
+from telemetry import decorators
 from telemetry.core.backends.chrome import android_browser_finder
 from telemetry.core.backends.chrome import cros_browser_finder
 from telemetry.core.backends.chrome import desktop_browser_finder
+from telemetry.core.backends.chrome import ios_browser_finder
+from telemetry.core.backends.webdriver import webdriver_desktop_browser_finder
+
 
 BROWSER_FINDERS = [
   desktop_browser_finder,
   android_browser_finder,
   cros_browser_finder,
+  ios_browser_finder,
   webdriver_desktop_browser_finder,
   ]
 
@@ -31,6 +35,7 @@ class BrowserFinderException(Exception):
   pass
 
 
+@decorators.Cache
 def FindBrowser(options):
   """Finds the best PossibleBrowser object given a BrowserOptions object.
 
@@ -78,13 +83,13 @@ def FindBrowser(options):
 
       logging.warning('--browser omitted. Using most recent local build: %s' %
                       default_browser.browser_type)
-      # TODO: We should do this even when --browser is specified.
       default_browser.UpdateExecutableIfNeeded()
       return default_browser
 
     if len(browsers) == 1:
       logging.warning('--browser omitted. Using only available browser: %s' %
                       browsers[0].browser_type)
+      browsers[0].UpdateExecutableIfNeeded()
       return browsers[0]
 
     raise BrowserTypeRequiredException(
@@ -99,6 +104,7 @@ def FindBrowser(options):
       return x_idx - y_idx
     browsers.sort(CompareBrowsersOnTypePriority)
     if len(browsers) >= 1:
+      browsers[0].UpdateExecutableIfNeeded()
       return browsers[0]
     else:
       return None
@@ -117,10 +123,12 @@ def FindBrowser(options):
 
   if chosen_browser:
     logging.info('Chose browser: %s' % (repr(chosen_browser)))
+    chosen_browser.UpdateExecutableIfNeeded()
 
   return chosen_browser
 
 
+@decorators.Cache
 def GetAllAvailableBrowserTypes(options):
   """Returns a list of available browser types.
 
@@ -141,4 +149,3 @@ def GetAllAvailableBrowserTypes(options):
   type_list = list(type_list)
   type_list.sort()
   return type_list
-

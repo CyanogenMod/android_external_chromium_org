@@ -22,25 +22,50 @@ namespace {
 // Suppress output on success.
 const char kSwitchQuiet[] = "q";
 
-void BackgroundDoWrite(const Target* target, const Toolchain* toolchain) {
-  NinjaTargetWriter::RunAndWriteFile(target, toolchain);
+const char kSwitchCheck[] = "check";
+
+void BackgroundDoWrite(const Target* target,
+                       const Toolchain* toolchain,
+                       const std::vector<const Item*>& deps_for_visibility) {
+  // Validate visibility.
+  Err err;
+  for (size_t i = 0; i < deps_for_visibility.size(); i++) {
+    if (!Visibility::CheckItemVisibility(target, deps_for_visibility[i],
+                                         &err)) {
+      g_scheduler->FailWithError(err);
+      break;  // Don't return early since we need DecrementWorkCount below.
+    }
+  }
+
+  if (!err.has_error())
+    NinjaTargetWriter::RunAndWriteFile(target, toolchain);
   g_scheduler->DecrementWorkCount();
 }
 
 // Called on the main thread.
 void ItemResolvedCallback(base::subtle::Atomic32* write_counter,
                           scoped_refptr<Builder> builder,
-                          const Item* item) {
+                          const BuilderRecord* record) {
   base::subtle::NoBarrier_AtomicIncrement(write_counter, 1);
 
+  const Item* item = record->item();
   const Target* target = item->AsTarget();
   if (target) {
     const Toolchain* toolchain =
         builder->GetToolchain(target->settings()->toolchain_label());
     DCHECK(toolchain);
+
+    // Collect all dependencies.
+    std::vector<const Item*> deps;
+    for (BuilderRecord::BuilderRecordSet::const_iterator iter =
+             record->all_deps().begin();
+         iter != record->all_deps().end();
+         ++iter)
+      deps.push_back((*iter)->item());
+
     g_scheduler->IncrementWorkCount();
     g_scheduler->ScheduleWork(
-        base::Bind(&BackgroundDoWrite, target, toolchain));
+        base::Bind(&BackgroundDoWrite, target, toolchain, deps));
   }
 }
 
@@ -50,19 +75,37 @@ const char kGen[] = "gen";
 const char kGen_HelpShort[] =
     "gen: Generate ninja files.";
 const char kGen_Help[] =
-    "gn gen\n"
-    "  Generates ninja files from the current tree.\n"
+    "gn gen: Generate ninja files.\n"
+    "\n"
+    "  gn gen <output_directory>\n"
+    "\n"
+    "  Generates ninja files from the current tree and puts them in the given\n"
+    "  output directory.\n"
+    "\n"
+    "  The output directory can be a source-repo-absolute path name such as:\n"
+    "      //out/foo\n"
+    "  Or it can be a directory relative to the current directory such as:\n"
+    "      out/foo\n"
     "\n"
     "  See \"gn help\" for the common command-line switches.\n";
 
-// Note: partially duplicated in command_gyp.cc.
 int RunGen(const std::vector<std::string>& args) {
   base::ElapsedTimer timer;
 
-  // Deliberately leaked to avoid expensive process teardown.
-  Setup* setup = new Setup;
-  if (!setup->DoSetup())
+  if (args.size() != 1) {
+    Err(Location(), "Need exactly one build directory to generate.",
+        "I expected something more like \"gn gen out/foo\"\n"
+        "You can also see \"gn help gen\".").PrintToStdout();
     return 1;
+  }
+
+  // Deliberately leaked to avoid expensive process teardown.
+  Setup* setup = new Setup();
+  if (!setup->DoSetup(args[0]))
+    return 1;
+
+  if (CommandLine::ForCurrentProcess()->HasSwitch(kSwitchCheck))
+    setup->set_check_public_headers(true);
 
   // Cause the load to also generate the ninja files for each target. We wrap
   // the writing to maintain a counter.

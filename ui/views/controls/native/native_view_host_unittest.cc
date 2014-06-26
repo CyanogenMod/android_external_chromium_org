@@ -4,18 +4,11 @@
 
 #include "ui/views/controls/native/native_view_host.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include <windows.h>
-#endif
-
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/aura/window.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
-#endif
 
 namespace views {
 
@@ -93,15 +86,9 @@ class NativeViewHierarchyChangedTestView : public View {
   DISALLOW_COPY_AND_ASSIGN(NativeViewHierarchyChangedTestView);
 };
 
-#if defined(USE_AURA)
 aura::Window* GetNativeParent(aura::Window* window) {
   return window->parent();
 }
-#elif defined(OS_WIN)
-HWND GetNativeParent(HWND window) {
-  return GetParent(window);
-}
-#endif
 
 class ViewHierarchyChangedTestHost : public NativeViewHost {
  public:
@@ -147,8 +134,13 @@ TEST_F(NativeViewHostTest, NativeViewHierarchyChanged) {
                                               toplevel()->GetRootView(),
                                               test_view,
                                               host));
-
+#if defined(USE_AURA)
+  // One notification is generated from inserting the native view into the
+  // clipping window.
+  EXPECT_EQ(1, test_view->notification_count());
+#else
   EXPECT_EQ(0, test_view->notification_count());
+#endif
   test_view->ResetCount();
 
   // Detaching should send a NativeViewHierarchyChanged() notification and
@@ -163,8 +155,15 @@ TEST_F(NativeViewHostTest, NativeViewHierarchyChanged) {
   // reset the parent.
   host->Attach(child->GetNativeView());
   EXPECT_EQ(1, test_view->notification_count());
+#if defined(USE_AURA)
+  // There is a clipping window inserted above the native view that needs to be
+  // accounted for when looking at the relationship between the native views.
+  EXPECT_EQ(toplevel()->GetNativeView(),
+            GetNativeParent(GetNativeParent(child->GetNativeView())));
+#else
   EXPECT_EQ(toplevel()->GetNativeView(),
             GetNativeParent(child->GetNativeView()));
+#endif
 }
 
 // Verifies ViewHierarchyChanged handles NativeViewHost remove, add and move

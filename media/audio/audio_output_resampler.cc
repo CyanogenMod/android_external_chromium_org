@@ -31,9 +31,6 @@ class OnMoreDataConverter
   // AudioSourceCallback interface.
   virtual int OnMoreData(AudioBus* dest,
                          AudioBuffersState buffers_state) OVERRIDE;
-  virtual int OnMoreIOData(AudioBus* source,
-                           AudioBus* dest,
-                           AudioBuffersState buffers_state) OVERRIDE;
   virtual void OnError(AudioOutputStream* stream) OVERRIDE;
 
   // Sets |source_callback_|.  If this is not a new object, then Stop() must be
@@ -72,20 +69,24 @@ class OnMoreDataConverter
 
 // Record UMA statistics for hardware output configuration.
 static void RecordStats(const AudioParameters& output_params) {
+  // Note the 'PRESUBMIT_IGNORE_UMA_MAX's below, these silence the PRESUBMIT.py
+  // check for uma enum max usage, since we're abusing UMA_HISTOGRAM_ENUMERATION
+  // to report a discrete value.
   UMA_HISTOGRAM_ENUMERATION(
-      "Media.HardwareAudioBitsPerChannel", output_params.bits_per_sample(),
-      limits::kMaxBitsPerSample);
+      "Media.HardwareAudioBitsPerChannel",
+      output_params.bits_per_sample(),
+      limits::kMaxBitsPerSample);  // PRESUBMIT_IGNORE_UMA_MAX
   UMA_HISTOGRAM_ENUMERATION(
       "Media.HardwareAudioChannelLayout", output_params.channel_layout(),
-      CHANNEL_LAYOUT_MAX);
+      CHANNEL_LAYOUT_MAX + 1);
   UMA_HISTOGRAM_ENUMERATION(
       "Media.HardwareAudioChannelCount", output_params.channels(),
-      limits::kMaxChannels);
+      limits::kMaxChannels);  // PRESUBMIT_IGNORE_UMA_MAX
 
-  AudioSampleRate asr = media::AsAudioSampleRate(output_params.sample_rate());
-  if (asr != kUnexpectedAudioSampleRate) {
+  AudioSampleRate asr;
+  if (ToAudioSampleRate(output_params.sample_rate(), &asr)) {
     UMA_HISTOGRAM_ENUMERATION(
-        "Media.HardwareAudioSamplesPerSecond", asr, kUnexpectedAudioSampleRate);
+        "Media.HardwareAudioSamplesPerSecond", asr, kAudioSampleRateMax + 1);
   } else {
     UMA_HISTOGRAM_COUNTS(
         "Media.HardwareAudioSamplesPerSecondUnexpected",
@@ -96,21 +97,25 @@ static void RecordStats(const AudioParameters& output_params) {
 // Record UMA statistics for hardware output configuration after fallback.
 static void RecordFallbackStats(const AudioParameters& output_params) {
   UMA_HISTOGRAM_BOOLEAN("Media.FallbackToHighLatencyAudioPath", true);
+  // Note the 'PRESUBMIT_IGNORE_UMA_MAX's below, these silence the PRESUBMIT.py
+  // check for uma enum max usage, since we're abusing UMA_HISTOGRAM_ENUMERATION
+  // to report a discrete value.
   UMA_HISTOGRAM_ENUMERATION(
       "Media.FallbackHardwareAudioBitsPerChannel",
-      output_params.bits_per_sample(), limits::kMaxBitsPerSample);
+      output_params.bits_per_sample(),
+      limits::kMaxBitsPerSample);  // PRESUBMIT_IGNORE_UMA_MAX
   UMA_HISTOGRAM_ENUMERATION(
       "Media.FallbackHardwareAudioChannelLayout",
-      output_params.channel_layout(), CHANNEL_LAYOUT_MAX);
+      output_params.channel_layout(), CHANNEL_LAYOUT_MAX + 1);
   UMA_HISTOGRAM_ENUMERATION(
-      "Media.FallbackHardwareAudioChannelCount",
-      output_params.channels(), limits::kMaxChannels);
+      "Media.FallbackHardwareAudioChannelCount", output_params.channels(),
+      limits::kMaxChannels);  // PRESUBMIT_IGNORE_UMA_MAX
 
-  AudioSampleRate asr = media::AsAudioSampleRate(output_params.sample_rate());
-  if (asr != kUnexpectedAudioSampleRate) {
+  AudioSampleRate asr;
+  if (ToAudioSampleRate(output_params.sample_rate(), &asr)) {
     UMA_HISTOGRAM_ENUMERATION(
         "Media.FallbackHardwareAudioSamplesPerSecond",
-        asr, kUnexpectedAudioSampleRate);
+        asr, kAudioSampleRateMax + 1);
   } else {
     UMA_HISTOGRAM_COUNTS(
         "Media.FallbackHardwareAudioSamplesPerSecondUnexpected",
@@ -290,37 +295,6 @@ void AudioOutputResampler::Shutdown() {
   DCHECK(callbacks_.empty());
 }
 
-void AudioOutputResampler::CloseStreamsForWedgeFix() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  // Stop and close all active streams.  Once all streams across all dispatchers
-  // have been closed the AudioManager will call RestartStreamsForWedgeFix().
-  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
-       ++it) {
-    if (it->second->started())
-      dispatcher_->StopStream(it->first);
-    dispatcher_->CloseStream(it->first);
-  }
-
-  // Close all idle streams as well.
-  dispatcher_->CloseStreamsForWedgeFix();
-}
-
-void AudioOutputResampler::RestartStreamsForWedgeFix() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  // By opening all streams first and then starting them one by one we ensure
-  // the dispatcher only opens streams for those which will actually be used.
-  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
-       ++it) {
-    dispatcher_->OpenStream();
-  }
-  for (CallbackMap::iterator it = callbacks_.begin(); it != callbacks_.end();
-       ++it) {
-    if (it->second->started())
-      dispatcher_->StartStream(it->second, it->first);
-  }
-}
-
 OnMoreDataConverter::OnMoreDataConverter(const AudioParameters& input_params,
                                          const AudioParameters& output_params)
     : io_ratio_(static_cast<double>(input_params.GetBytesPerSecond()) /
@@ -354,16 +328,6 @@ void OnMoreDataConverter::Stop() {
 
 int OnMoreDataConverter::OnMoreData(AudioBus* dest,
                                     AudioBuffersState buffers_state) {
-  return OnMoreIOData(NULL, dest, buffers_state);
-}
-
-int OnMoreDataConverter::OnMoreIOData(AudioBus* source,
-                                      AudioBus* dest,
-                                      AudioBuffersState buffers_state) {
-  // Note: The input portion of OnMoreIOData() is not supported when a converter
-  // has been injected.  Downstream clients prefer silence to potentially split
-  // apart input data.
-
   current_buffers_state_ = buffers_state;
   audio_converter_.Convert(dest);
 
@@ -383,8 +347,7 @@ double OnMoreDataConverter::ProvideInput(AudioBus* dest,
                    buffer_delay.InSecondsF() * input_bytes_per_second_);
 
   // Retrieve data from the original callback.
-  const int frames = source_callback_->OnMoreIOData(
-      NULL, dest, new_buffers_state);
+  const int frames = source_callback_->OnMoreData(dest, new_buffers_state);
 
   // Zero any unfilled frames if anything was filled, otherwise we'll just
   // return a volume of zero and let AudioConverter drop the output.

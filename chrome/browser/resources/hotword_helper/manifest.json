@@ -13,10 +13,25 @@
 
   "permissions": [
     "*://*.google.com/*",
+    "*://*.google.ru/*",
+    "*://*.google.co.uk/*",
+    "*://*.google.fr/*",
+    "*://*.google.de/*",
     "chrome://newtab/",
     "hotwordPrivate",
     "tabs"
   ],
+
+  "externally_connectable": {
+    "matches": [
+      "*://*.google.com/*",
+      "*://*.google.ru/*",
+      "*://*.google.co.uk/*",
+      "*://*.google.fr/*",
+      "*://*.google.de/*",
+      "chrome://newtab/"
+    ]
+  },
 
   "minimum_chrome_version": "32"
 }

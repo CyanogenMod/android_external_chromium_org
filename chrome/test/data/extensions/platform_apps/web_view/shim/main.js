@@ -41,6 +41,10 @@ window.runTest = function(testName) {
   embedder.test.testList[testName]();
 };
 
+var LOG = function(msg) {
+  window.console.log(msg);
+};
+
 // Creates a <webview> tag in document.body and returns the reference to it.
 // It also sets a dummy src. The dummy src is significant because this makes
 // sure that the <object> shim is created (asynchronously at this point) for the
@@ -305,7 +309,7 @@ function testAPIMethodExistence() {
 // This test verifies that the loadstop event fires when loading a webview
 // accessible resource from a partition that is privileged.
 function testChromeExtensionURL() {
-  var localResource = chrome.runtime.getURL('guest.html');
+  var localResource = chrome.runtime.getURL('guest_with_inline_script.html');
   var webview = document.createElement('webview');
   // foobar is a privileged partition according to the manifest file.
   webview.partition = 'foobar';
@@ -332,7 +336,26 @@ function testChromeExtensionRelativePath() {
   webview.addEventListener('loadstop', function(e) {
     embedder.test.succeed();
   });
-  webview.setAttribute('src', 'guest.html');
+  webview.setAttribute('src', 'guest_with_inline_script.html');
+  document.body.appendChild(webview);
+}
+
+// Makes sure inline scripts works inside guest that was loaded from
+// accessible_resources.
+function testInlineScriptFromAccessibleResources() {
+  var webview = document.createElement('webview');
+  // foobar is a privileged partition according to the manifest file.
+  webview.partition = 'foobar';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.fail();
+  });
+  webview.addEventListener('consolemessage', function(e) {
+    window.console.log('consolemessage: ' + e.message);
+    if (e.message == 'guest_with_inline_script.html: Inline script ran') {
+      embedder.test.succeed();
+    }
+  });
+  webview.setAttribute('src', 'guest_with_inline_script.html');
   document.body.appendChild(webview);
 }
 
@@ -386,6 +409,11 @@ function testWebRequestAPIExistence() {
           'function',
           typeof webview.request[apiPropertiesToCheck[i]].removeRules);
     }
+
+    // Try to overwrite webview.request, shall not succeed.
+    webview.request = '123';
+    embedder.test.assertTrue(typeof webview.request !== 'string');
+
     embedder.test.succeed();
   });
   webview.setAttribute('src', 'data:text/html,webview check api');
@@ -479,7 +507,9 @@ function testDestroyOnEventListener() {
     if (url != e.url)
       return;
     ++loadCommitCount;
-    if (loadCommitCount == 1) {
+    if (loadCommitCount == 2) {
+      // Pass in a timeout so that we can catch if any additional loadcommit
+      // occurs.
       setTimeout(function() {
         embedder.test.succeed();
       }, 0);
@@ -490,10 +520,12 @@ function testDestroyOnEventListener() {
 
   // The test starts from here, by setting the src to |url|.
   webview.addEventListener('loadcommit', function(e) {
+    window.console.log('loadcommit1');
     webview.parentNode.removeChild(webview);
     loadCommitCommon(e);
   });
   webview.addEventListener('loadcommit', function(e) {
+    window.console.log('loadcommit2');
     loadCommitCommon(e);
   });
   webview.setAttribute('src', url);
@@ -551,17 +583,43 @@ function testCannotMutateEventName() {
 // been set raises an exception.
 function testPartitionRaisesException() {
   var webview = document.createElement('webview');
-  webview.setAttribute('partition', arguments.callee.name);
-  webview.setAttribute('src', 'data:text/html,trigger navigation');
-  document.body.appendChild(webview);
-  setTimeout(function() {
+  var partitionAttribute = arguments.callee.name;
+  webview.setAttribute('partition', partitionAttribute);
+
+  var loadstopHandler = function(e) {
     try {
       webview.partition = 'illegal';
       embedder.test.fail();
     } catch (e) {
+      embedder.test.assertEq(partitionAttribute, webview.partition);
       embedder.test.succeed();
     }
-  }, 0);
+  };
+  webview.addEventListener('loadstop', loadstopHandler);
+
+  document.body.appendChild(webview);
+  webview.setAttribute('src', 'data:text/html,trigger navigation');
+}
+
+// This test verifies that removing partition attribute after navigation does
+// not work, i.e. the partition remains the same.
+function testPartitionRemovalAfterNavigationFails() {
+  var webview = document.createElement('webview');
+  document.body.appendChild(webview);
+
+  var partition = 'testme';
+  webview.setAttribute('partition', partition);
+
+  var loadstopHandler = function(e) {
+    window.console.log('webview.loadstop');
+    // Removing after navigation should not change the partition.
+    webview.removeAttribute('partition');
+    embedder.test.assertEq('testme', webview.partition);
+    embedder.test.succeed();
+  };
+  webview.addEventListener('loadstop', loadstopHandler);
+
+  webview.setAttribute('src', 'data:text/html,<html><body>guest</body></html>');
 }
 
 function testExecuteScriptFail() {
@@ -593,6 +651,38 @@ function testExecuteScript() {
       });
   });
   webview.setAttribute('src', 'data:text/html,trigger navigation');
+  document.body.appendChild(webview);
+}
+
+// This test verifies that the call of executeScript will fail and return null
+// if the webview has been navigated to another source.
+function testExecuteScriptIsAbortedWhenWebViewSourceIsChanged() {
+  var webview = document.createElement('webview');
+  var initial = true;
+  var navigationOccur = false;
+  var newSrc = 'data:text/html,trigger navigation';
+  webview.addEventListener('loadstart', function() {
+    if (initial) {
+      webview.setAttribute('src', newSrc);
+      navigationOccur = true;
+    }
+    initial = false;
+  });
+  webview.addEventListener('loadstop', function() {
+    webview.executeScript(
+      {code:'document.body.style.backgroundColor = "red";'},
+      function(results) {
+        if (navigationOccur) {
+          // Expect a null results because the executeScript failed;
+          // return "red", otherwise.
+          embedder.test.assertEq(null, results);
+          embedder.test.succeed();
+        }
+        navigationOccur = false;
+      }
+    );
+  });
+  webview.setAttribute('src', "about:blank");
   document.body.appendChild(webview);
 }
 
@@ -741,25 +831,6 @@ function testRemoveSrcAttribute() {
   });
   webview.setAttribute('src', dataUrl);
   document.body.appendChild(webview);
-}
-
-// This test verifies that it is not possible to instantiate a browser plugin
-// directly within an app.
-function testBrowserPluginNotAllowed() {
-  var container = document.getElementById('object-container');
-  if (!container) {
-    embedder.test.fail('Container for object not found.');
-    return;
-  }
-  container.innerHTML = '<object type="application/browser-plugin"' +
-      ' id="object-plugin"' +
-      ' src="data:text/html,<body>You should not see this</body>">' +
-      '</object>';
-  var objectElement = document.getElementById('object-plugin');
-  // Check that bindings are not registered.
-  embedder.test.assertTrue(
-      objectElement['-internal-attach'] === undefined);
-  embedder.test.succeed();
 }
 
 function testPluginLoadPermission() {
@@ -924,8 +995,32 @@ function testDeclarativeWebRequestAPI() {
     webview.request.onRequest.removeRules();
     webview.reload();
   });
-  webview.addEventListener('loadcommit', function(e) {
+  webview.addEventListener('loadstop', function(e) {
     embedder.test.assertEq(2, step);
+    embedder.test.succeed();
+  });
+  webview.src = embedder.emptyGuestURL;
+  document.body.appendChild(webview);
+}
+
+function testDeclarativeWebRequestAPISendMessage() {
+  var webview = new WebView();
+  window.console.log(embedder.emptyGuestURL);
+  var rule = {
+    conditions: [
+      new chrome.webViewRequest.RequestMatcher(
+        {
+          url: { urlContains: 'guest' }
+        }
+      )
+    ],
+    actions: [
+      new chrome.webViewRequest.SendMessageToExtension({ message: 'bleep' })
+    ]
+  };
+  webview.request.onRequest.addRules([rule]);
+  webview.request.onMessage.addListener(function(e) {
+    embedder.test.assertEq('bleep', e.message);
     embedder.test.succeed();
   });
   webview.src = embedder.emptyGuestURL;
@@ -980,6 +1075,48 @@ function testGetProcessId() {
     embedder.test.succeed();
   };
   webview.addEventListener('loadstop', firstLoad);
+  document.body.appendChild(webview);
+}
+
+function testHiddenBeforeNavigation() {
+  var webview = document.createElement('webview');
+  webview.style.visibility = 'hidden';
+
+  var postMessageHandler = function(e) {
+    var data = JSON.parse(e.data);
+    window.removeEventListener('message', postMessageHandler);
+    if (data[0] == 'visibilityState-response') {
+      embedder.test.assertEq('hidden', data[1]);
+      embedder.test.succeed();
+    } else {
+      LOG('Unexpected message: ' + data);
+      embedder.test.fail();
+    }
+  };
+
+  webview.addEventListener('loadstop', function(e) {
+    LOG('webview.loadstop');
+    window.addEventListener('message', postMessageHandler);
+    webview.addEventListener('consolemessage', function(e) {
+      LOG('g: ' + e.message);
+    });
+
+    webview.executeScript(
+      {file: 'inject_hidden_test.js'},
+      function(results) {
+        if (!results || !results.length) {
+          LOG('Failed to inject script: inject_hidden_test.js');
+          embedder.test.fail();
+          return;
+        }
+
+        LOG('script injection success');
+        webview.contentWindow.postMessage(
+            JSON.stringify(['visibilityState-request']), '*');
+      });
+  });
+
+  webview.setAttribute('src', 'data:text/html,<html><body></body></html>');
   document.body.appendChild(webview);
 }
 
@@ -1074,6 +1211,41 @@ function testLoadAbortIllegalJavaScriptURL() {
   document.body.appendChild(webview);
 }
 
+// Verifies that navigating to invalid URL (e.g. 'http:') doesn't cause a crash.
+function testLoadAbortInvalidNavigation() {
+  var webview = document.createElement('webview');
+  var validSchemeWithEmptyURL = 'http:';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.assertEq('ERR_ABORTED', e.reason);
+    embedder.test.assertEq('', e.url);
+    embedder.test.succeed();
+  });
+  webview.addEventListener('exit', function(e) {
+    // We should not crash.
+    embedder.test.fail();
+  });
+  webview.setAttribute('src', validSchemeWithEmptyURL);
+  document.body.appendChild(webview);
+}
+
+// Verifies that navigation to a URL that is valid but not web-safe or
+// pseudo-scheme fires loadabort and doesn't cause a crash.
+function testLoadAbortNonWebSafeScheme() {
+  var webview = document.createElement('webview');
+  var chromeGuestURL = 'chrome-guest://abc123';
+  webview.addEventListener('loadabort', function(e) {
+    embedder.test.assertEq('ERR_ABORTED', e.reason);
+    embedder.test.assertEq('chrome-guest://abc123/', e.url);
+    embedder.test.succeed();
+  });
+  webview.addEventListener('exit', function(e) {
+    // We should not crash.
+    embedder.test.fail();
+  });
+  webview.setAttribute('src', chromeGuestURL);
+  document.body.appendChild(webview);
+};
+
 // This test verifies that the reload method on webview functions as expected.
 function testReload() {
   var triggerNavUrl = 'data:text/html,trigger navigation';
@@ -1152,6 +1324,54 @@ function testNavigationToExternalProtocol() {
     }, function(results) {});
   });
   webview.setAttribute('src', 'data:text/html,navigate to external protocol');
+  document.body.appendChild(webview);
+}
+
+// This test ensures if the guest isn't there and we resize the guest (from JS),
+// it remembers the size correctly.
+function testNavigateAfterResize() {
+  var webview = new WebView();
+
+  var postMessageHandler = function(e) {
+    var data = JSON.parse(e.data);
+    LOG('postMessageHandler: ' + data);
+    webview.removeEventListener('message', postMessageHandler);
+    if (data[0] == 'dimension-response') {
+      var actualWidth = data[1];
+      var actualHeight = data[2];
+      LOG('actualWidth: ' + actualWidth + ', actualHeight: ' + actualHeight);
+      embedder.test.assertEq(100, actualWidth);
+      embedder.test.assertEq(125, actualHeight);
+      embedder.test.succeed();
+    }
+  };
+  window.addEventListener('message', postMessageHandler);
+
+  webview.addEventListener('consolemessage', function(e) {
+    LOG('guest log: ' + e.message);
+  });
+
+  webview.addEventListener('loadstop', function(e) {
+    webview.executeScript(
+      {file: 'navigate_after_resize.js'},
+      function(results) {
+        if (!results || !results.length) {
+          LOG('Failed to inject navigate_after_resize.js');
+          embedder.test.fail();
+          return;
+        }
+        LOG('Inject success: navigate_after_resize.js');
+        var msg = ['dimension-request'];
+        webview.contentWindow.postMessage(JSON.stringify(msg), '*');
+      });
+  });
+
+  // First set size.
+  webview.style.width = '100px';
+  webview.style.height = '125px';
+
+  // Then navigate.
+  webview.src = 'about:blank';
   document.body.appendChild(webview);
 }
 
@@ -1335,6 +1555,124 @@ function testZoomAPI() {
       );
     });
   });
+  document.body.appendChild(webview);
+};
+
+function testFindAPI() {
+  var webview = new WebView();
+  webview.src = 'data:text/html,Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br><br>' +
+      '<a href="about:blank">Click here!</a>';
+
+  var loadstopListener2 = function(e) {
+    embedder.test.assertEq(webview.src, "about:blank");
+    embedder.test.succeed();
+  }
+
+  var loadstopListener1 = function(e) {
+    // Test find results.
+    webview.find("dog", {}, function(results) {
+      callbackTest = true;
+      embedder.test.assertEq(results.numberOfMatches, 100);
+      embedder.test.assertTrue(results.selectionRect.width > 0);
+      embedder.test.assertTrue(results.selectionRect.height > 0);
+
+      // Test finding next active matches.
+      webview.find("dog");
+      webview.find("dog");
+      webview.find("dog");
+      webview.find("dog");
+      webview.find("dog", {}, function(results) {
+        embedder.test.assertEq(results.activeMatchOrdinal, 6);
+        webview.find("dog", {backward: true});
+        webview.find("dog", {backward: true}, function(results) {
+          // Test the |backward| find option.
+          embedder.test.assertEq(results.activeMatchOrdinal, 4);
+
+          // Test the |matchCase| find option.
+          webview.find("Dog", {matchCase: true}, function(results) {
+            embedder.test.assertEq(results.numberOfMatches, 40);
+
+            // Test canceling find requests.
+            webview.find("dog");
+            webview.stopFinding();
+            webview.find("dog");
+            webview.find("cat");
+
+            // Test find results when looking for something that isn't there.
+            webview.find("fish", {}, function(results) {
+              embedder.test.assertEq(results.numberOfMatches, 0);
+              embedder.test.assertEq(results.activeMatchOrdinal, 0);
+              embedder.test.assertEq(results.selectionRect.left, 0);
+              embedder.test.assertEq(results.selectionRect.top, 0);
+              embedder.test.assertEq(results.selectionRect.width, 0);
+              embedder.test.assertEq(results.selectionRect.height, 0);
+
+              // Test following a link with stopFinding().
+              webview.removeEventListener('loadstop', loadstopListener1);
+              webview.addEventListener('loadstop', loadstopListener2);
+              webview.find("click here!", {}, function() {
+                webview.stopFinding("activate");
+              });
+            });
+          });
+        });
+      });
+    });
+  };
+
+  webview.addEventListener('loadstop', loadstopListener1);
+  document.body.appendChild(webview);
+};
+
+function testFindAPI_findupdate() {
+  var webview = new WebView();
+  webview.src = 'data:text/html,Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br>' +
+      'Dog dog dog Dog dog dogcatDog dogDogdog.<br><br>' +
+      '<a href="about:blank">Click here!</a>';
+  var canceledTest = false;
+  webview.addEventListener('loadstop', function(e) {
+    // Test the |findupdate| event.
+    webview.addEventListener('findupdate', function(e) {
+      if (e.activeMatchOrdinal > 0) {
+        // embedder.test.assertTrue(e.numberOfMatches >= e.activeMatchOrdinal)
+        // This currently fails because of http://crbug.com/342445 .
+        embedder.test.assertTrue(e.selectionRect.width > 0);
+        embedder.test.assertTrue(e.selectionRect.height > 0);
+      }
+
+      if (e.finalUpdate) {
+        if (e.canceled) {
+          canceledTest = true;
+        } else {
+          embedder.test.assertEq(e.searchText, "dog");
+          embedder.test.assertEq(e.numberOfMatches, 100);
+          embedder.test.assertEq(e.activeMatchOrdinal, 1);
+          embedder.test.assertTrue(canceledTest);
+          embedder.test.succeed();
+        }
+      }
+    });
+    wv.find("dog");
+    wv.find("cat");
+    wv.find("dog");
+  });
 
   document.body.appendChild(webview);
 };
@@ -1347,6 +1685,8 @@ embedder.test.testList = {
   'testAPIMethodExistence': testAPIMethodExistence,
   'testChromeExtensionURL': testChromeExtensionURL,
   'testChromeExtensionRelativePath': testChromeExtensionRelativePath,
+  'testInlineScriptFromAccessibleResources':
+      testInlineScriptFromAccessibleResources,
   'testInvalidChromeExtensionURL': testInvalidChromeExtensionURL,
   'testWebRequestAPIExistence': testWebRequestAPIExistence,
   'testEventName': testEventName,
@@ -1355,8 +1695,12 @@ embedder.test.testList = {
   'testDestroyOnEventListener': testDestroyOnEventListener,
   'testCannotMutateEventName': testCannotMutateEventName,
   'testPartitionRaisesException': testPartitionRaisesException,
+  'testPartitionRemovalAfterNavigationFails':
+      testPartitionRemovalAfterNavigationFails,
   'testExecuteScriptFail': testExecuteScriptFail,
   'testExecuteScript': testExecuteScript,
+  'testExecuteScriptIsAbortedWhenWebViewSourceIsChanged':
+      testExecuteScriptIsAbortedWhenWebViewSourceIsChanged,
   'testTerminateAfterExit': testTerminateAfterExit,
   'testAssignSrcAfterCrash': testAssignSrcAfterCrash,
   'testNavOnConsecutiveSrcAttributeChanges':
@@ -1364,7 +1708,6 @@ embedder.test.testList = {
   'testNavOnSrcAttributeChange': testNavOnSrcAttributeChange,
   'testReassignSrcAttribute': testReassignSrcAttribute,
   'testRemoveSrcAttribute': testRemoveSrcAttribute,
-  'testBrowserPluginNotAllowed': testBrowserPluginNotAllowed,
   'testPluginLoadPermission': testPluginLoadPermission,
   'testNewWindow': testNewWindow,
   'testNewWindowTwoListeners': testNewWindowTwoListeners,
@@ -1372,11 +1715,14 @@ embedder.test.testList = {
   'testNewWindowNoReferrerLink': testNewWindowNoReferrerLink,
   'testContentLoadEvent': testContentLoadEvent,
   'testDeclarativeWebRequestAPI': testDeclarativeWebRequestAPI,
+  'testDeclarativeWebRequestAPISendMessage':
+      testDeclarativeWebRequestAPISendMessage,
   'testWebRequestAPI': testWebRequestAPI,
   'testWebRequestAPIGoogleProperty': testWebRequestAPIGoogleProperty,
   'testWebRequestListenerSurvivesReparenting':
       testWebRequestListenerSurvivesReparenting,
   'testGetProcessId': testGetProcessId,
+  'testHiddenBeforeNavigation': testHiddenBeforeNavigation,
   'testLoadStartLoadRedirect': testLoadStartLoadRedirect,
   'testLoadAbortChromeExtensionURLWrongPartition':
       testLoadAbortChromeExtensionURLWrongPartition,
@@ -1384,6 +1730,9 @@ embedder.test.testList = {
   'testLoadAbortIllegalChromeURL': testLoadAbortIllegalChromeURL,
   'testLoadAbortIllegalFileURL': testLoadAbortIllegalFileURL,
   'testLoadAbortIllegalJavaScriptURL': testLoadAbortIllegalJavaScriptURL,
+  'testLoadAbortInvalidNavigation': testLoadAbortInvalidNavigation,
+  'testLoadAbortNonWebSafeScheme': testLoadAbortNonWebSafeScheme,
+  'testNavigateAfterResize': testNavigateAfterResize,
   'testNavigationToExternalProtocol': testNavigationToExternalProtocol,
   'testReload': testReload,
   'testRemoveWebviewOnExit': testRemoveWebviewOnExit,
@@ -1391,7 +1740,9 @@ embedder.test.testList = {
   'testResizeWebviewResizesContent': testResizeWebviewResizesContent,
   'testPostMessageCommChannel': testPostMessageCommChannel,
   'testScreenshotCapture' : testScreenshotCapture,
-  'testZoomAPI' : testZoomAPI
+  'testZoomAPI' : testZoomAPI,
+  'testFindAPI': testFindAPI,
+  'testFindAPI_findupdate': testFindAPI
 };
 
 onload = function() {

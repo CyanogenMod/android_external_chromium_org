@@ -8,12 +8,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/client/window_tree_client.h"
+#include "ui/aura/window_tree_host.h"
 
 namespace aura {
-class RootWindow;
 class Window;
+class WindowTreeHost;
 namespace client {
-class DefaultActivationClient;
 class DefaultCaptureClient;
 class FocusClient;
 }
@@ -24,24 +24,25 @@ class Rect;
 class Size;
 }
 
-namespace views {
-namespace corewm {
-class CompoundEventFilter;
-class InputMethodEventFilter;
-}
+namespace ui {
+class ContextFactory;
 }
 
 namespace wm {
+
+class CompoundEventFilter;
+class InputMethodEventFilter;
 
 // Creates a minimal environment for running the shell. We can't pull in all of
 // ash here, but we can create attach several of the same things we'd find in
 // the ash parts of the code.
 class WMTestHelper : public aura::client::WindowTreeClient {
  public:
-  explicit WMTestHelper(const gfx::Size& default_window_size);
+  WMTestHelper(const gfx::Size& default_window_size,
+               ui::ContextFactory* context_factory);
   virtual ~WMTestHelper();
 
-  aura::RootWindow* root_window() { return root_window_.get(); }
+  aura::WindowTreeHost* host() { return host_.get(); }
 
   // Overridden from client::WindowTreeClient:
   virtual aura::Window* GetDefaultParent(aura::Window* context,
@@ -49,14 +50,11 @@ class WMTestHelper : public aura::client::WindowTreeClient {
                                          const gfx::Rect& bounds) OVERRIDE;
 
  private:
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<aura::WindowTreeHost> host_;
 
-  // Owned by RootWindow
-  views::corewm::CompoundEventFilter* root_window_event_filter_;
-
+  scoped_ptr<wm::CompoundEventFilter> root_window_event_filter_;
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
-  scoped_ptr<views::corewm::InputMethodEventFilter> input_method_filter_;
-  scoped_ptr<aura::client::DefaultActivationClient> activation_client_;
+  scoped_ptr<wm::InputMethodEventFilter> input_method_filter_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
 
   DISALLOW_COPY_AND_ASSIGN(WMTestHelper);

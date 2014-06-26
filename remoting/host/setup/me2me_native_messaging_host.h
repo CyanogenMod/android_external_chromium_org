@@ -9,6 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "base/timer/timer.h"
 #include "remoting/host/native_messaging/native_messaging_channel.h"
 #include "remoting/host/setup/daemon_controller.h"
 #include "remoting/host/setup/oauth_client.h"
@@ -39,6 +40,7 @@ class Me2MeNativeMessagingHost {
 
   Me2MeNativeMessagingHost(
       bool needs_elevation,
+      intptr_t parent_window_handle,
       scoped_ptr<NativeMessagingChannel> channel,
       scoped_refptr<DaemonController> daemon_controller,
       scoped_refptr<protocol::PairingRegistry> pairing_registry,
@@ -138,11 +140,21 @@ class Me2MeNativeMessagingHost {
   // |elevated_channel_|.
   void ProcessDelegateResponse(scoped_ptr<base::DictionaryValue> message);
 
+  // Disconnect and shut down the elevated host.
+  void DisconnectElevatedHost();
+
   // Native messaging channel used to communicate with the elevated host.
   scoped_ptr<NativeMessagingChannel> elevated_channel_;
+
+  // Timer to control the lifetime of the elevated host.
+  base::OneShotTimer<Me2MeNativeMessagingHost> elevated_host_timer_;
 #endif  // defined(OS_WIN)
 
   bool needs_elevation_;
+
+  // Handle of the parent window.
+  intptr_t parent_window_handle_;
+
   base::Closure quit_closure_;
 
   // Native messaging channel used to communicate with the native message

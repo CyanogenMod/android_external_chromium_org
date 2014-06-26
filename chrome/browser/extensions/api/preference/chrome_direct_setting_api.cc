@@ -42,9 +42,7 @@ class PreferenceWhitelist {
       std::string event_name = base::StringPrintf(
           kOnPrefChangeFormat,
           (*iter).c_str());
-      ExtensionSystem::Get(profile)->event_router()->RegisterObserver(
-          observer,
-          event_name);
+      EventRouter::Get(profile)->RegisterObserver(observer, event_name);
     }
   }
 
@@ -72,28 +70,29 @@ class PreferenceWhitelist {
 base::LazyInstance<PreferenceWhitelist> preference_whitelist =
     LAZY_INSTANCE_INITIALIZER;
 
-static base::LazyInstance<ProfileKeyedAPIFactory<ChromeDirectSettingAPI> >
-    g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<ChromeDirectSettingAPI> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
-ChromeDirectSettingAPI::ChromeDirectSettingAPI(Profile* profile)
-    : profile_(profile) {
-  preference_whitelist.Get().RegisterEventListeners(profile, this);
+ChromeDirectSettingAPI::ChromeDirectSettingAPI(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)) {
+  preference_whitelist.Get().RegisterEventListeners(profile_, this);
 }
 
 ChromeDirectSettingAPI::~ChromeDirectSettingAPI() {}
 
-// BrowserContextKeyedService implementation.
+// KeyedService implementation.
 void ChromeDirectSettingAPI::Shutdown() {}
 
-// ProfileKeyedAPI implementation.
-ProfileKeyedAPIFactory<ChromeDirectSettingAPI>*
-    ChromeDirectSettingAPI::GetFactoryInstance() {
+// BrowserContextKeyedAPI implementation.
+BrowserContextKeyedAPIFactory<ChromeDirectSettingAPI>*
+ChromeDirectSettingAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // EventRouter::Observer implementation.
 void ChromeDirectSettingAPI::OnListenerAdded(const EventListenerInfo& details) {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  EventRouter::Get(profile_)->UnregisterObserver(this);
   registrar_.Init(profile_->GetPrefs());
   preference_whitelist.Get().RegisterPropertyListeners(
       profile_,
@@ -108,12 +107,12 @@ bool ChromeDirectSettingAPI::IsPreferenceOnWhitelist(
   return preference_whitelist.Get().IsPreferenceOnWhitelist(pref_key);
 }
 
-ChromeDirectSettingAPI* ChromeDirectSettingAPI::Get(Profile* profile) {
-  return
-      ProfileKeyedAPIFactory<ChromeDirectSettingAPI>::GetForProfile(profile);
+ChromeDirectSettingAPI* ChromeDirectSettingAPI::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<ChromeDirectSettingAPI>::Get(context);
 }
 
-// ProfileKeyedAPI implementation.
+// BrowserContextKeyedAPI implementation.
 const char* ChromeDirectSettingAPI::service_name() {
   return "ChromeDirectSettingAPI";
 }
@@ -122,7 +121,7 @@ void ChromeDirectSettingAPI::OnPrefChanged(
     PrefService* pref_service, const std::string& pref_key) {
   std::string event_name = base::StringPrintf(kOnPrefChangeFormat,
                                               pref_key.c_str());
-  EventRouter* router = ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* router = EventRouter::Get(profile_);
   if (router && router->HasEventListener(event_name)) {
     const PrefService::Preference* preference =
         profile_->GetPrefs()->FindPreference(pref_key.c_str());

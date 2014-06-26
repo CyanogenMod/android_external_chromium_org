@@ -5,6 +5,7 @@
 #include "chrome/browser/component_updater/update_checker.h"
 
 #include "base/compiler_specific.h"
+#include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/component_updater/component_updater_utils.h"
 #include "chrome/browser/component_updater/crx_update_item.h"
@@ -54,14 +55,13 @@ std::string BuildUpdateCheckRequest(const std::vector<CrxUpdateItem*>& items,
     }
     base::StringAppendF(&app, "</app>");
     app_elements.append(app);
+    VLOG(1) << "Appending to update request: " << app;
   }
 
   return BuildProtocolRequest(app_elements, additional_attributes);
 }
 
-class UpdateCheckerImpl
-    : public UpdateChecker,
-      public net::URLFetcherDelegate {
+class UpdateCheckerImpl : public UpdateChecker, public net::URLFetcherDelegate {
  public:
   UpdateCheckerImpl(const GURL& url,
                     net::URLRequestContextGetter* url_request_context_getter,
@@ -115,13 +115,13 @@ bool UpdateCheckerImpl::CheckForUpdates(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   if (url_fetcher_)
-    return false;     // Another fetch is in progress.
+    return false;  // Another fetch is in progress.
 
   url_fetcher_.reset(SendProtocolRequest(
-    url_,
-    BuildUpdateCheckRequest(items_to_check, additional_attributes),
-    this,
-    url_request_context_getter_));
+      url_,
+      BuildUpdateCheckRequest(items_to_check, additional_attributes),
+      this,
+      url_request_context_getter_));
 
   return true;
 }
@@ -140,10 +140,12 @@ void UpdateCheckerImpl::OnURLFetchComplete(const net::URLFetcher* source) {
     if (!update_response.Parse(xml)) {
       error = -1;
       error_message = update_response.errors();
+      VLOG(1) << "Update request failed: " << error_message;
     }
   } else {
     error = GetFetchError(*source);
     error_message.assign("network error");
+    VLOG(1) << "Update request failed: network error";
   }
 
   url_fetcher_.reset();
@@ -151,4 +153,3 @@ void UpdateCheckerImpl::OnURLFetchComplete(const net::URLFetcher* source) {
 }
 
 }  // namespace component_updater
-

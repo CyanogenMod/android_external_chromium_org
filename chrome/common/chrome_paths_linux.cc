@@ -4,11 +4,13 @@
 
 #include "chrome/common/chrome_paths_internal.h"
 
+#include "base/base_paths.h"
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/nix/xdg_util.h"
 #include "base/path_service.h"
+#include "chrome/common/chrome_paths.h"
 
 namespace chrome {
 
@@ -34,7 +36,8 @@ bool GetUserMediaDirectory(const std::string& xdg_name,
 #else
   *result = GetXDGUserDirectory(xdg_name.c_str(), fallback_name.c_str());
 
-  base::FilePath home = base::GetHomeDir();
+  base::FilePath home;
+  PathService::Get(base::DIR_HOME, &home);
   if (*result != home) {
     base::FilePath desktop;
     if (!PathService::Get(base::DIR_USER_DESKTOP, &desktop))
@@ -59,8 +62,8 @@ bool GetUserMediaDirectory(const std::string& xdg_name,
 bool GetDefaultUserDataDirectory(base::FilePath* result) {
   scoped_ptr<base::Environment> env(base::Environment::Create());
   base::FilePath config_dir(GetXDGDirectory(env.get(),
-                                      kXdgConfigHomeEnvVar,
-                                      kDotConfigDir));
+                                            kXdgConfigHomeEnvVar,
+                                            kDotConfigDir));
 #if defined(GOOGLE_CHROME_BUILD)
   *result = config_dir.Append("google-chrome");
 #else
@@ -88,8 +91,8 @@ void GetUserCacheDirectory(const base::FilePath& profile_dir,
   if (!PathService::Get(base::DIR_CACHE, &cache_dir))
     return;
   base::FilePath config_dir(GetXDGDirectory(env.get(),
-                                      kXdgConfigHomeEnvVar,
-                                      kDotConfigDir));
+                                            kXdgConfigHomeEnvVar,
+                                            kDotConfigDir));
 
   if (!config_dir.AppendRelativePath(profile_dir, &cache_dir))
     return;
@@ -103,13 +106,14 @@ bool GetUserDocumentsDirectory(base::FilePath* result) {
 }
 
 bool GetUserDownloadsDirectorySafe(base::FilePath* result) {
-  base::FilePath home = base::GetHomeDir();
+  base::FilePath home;
+  PathService::Get(base::DIR_HOME, &home);
   *result = home.Append(kDownloadsDir);
   return true;
 }
 
 bool GetUserDownloadsDirectory(base::FilePath* result) {
-  *result = base::nix::GetXDGUserDirectory("DOWNLOAD", kDownloadsDir);
+  *result = GetXDGUserDirectory("DOWNLOAD", kDownloadsDir);
   return true;
 }
 

@@ -7,7 +7,8 @@
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ui/aura/window.h"
-#include "ui/views/corewm/input_method_event_filter.h"
+#include "ui/base/ime/mock_input_method.h"
+#include "ui/wm/core/input_method_event_filter.h"
 
 using namespace content;
 
@@ -44,6 +45,12 @@ void KeyboardControllerProxyStub::RequestAudioInput(
     WebContents* web_contents,
     const MediaStreamRequest& request,
     const MediaResponseCallback& callback) {
+}
+
+void KeyboardControllerProxyStub::LoadSystemKeyboard() {
+}
+
+void KeyboardControllerProxyStub::ReloadKeyboardIfNeeded() {
 }
 
 }  // namespace ash

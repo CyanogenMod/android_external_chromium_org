@@ -24,8 +24,6 @@ enum FirstRunState {
   FIRST_RUN_UNKNOWN,  // The state is not tested or set yet.
   FIRST_RUN_TRUE,
   FIRST_RUN_FALSE,
-  FIRST_RUN_CANCEL,  // This shouldn't be considered first run but the sentinel
-                     // should be created anyways.
 };
 
 // This variable should only be accessed through IsChromeFirstRun().
@@ -36,17 +34,19 @@ void SetupMasterPrefsFromInstallPrefs(
     const installer::MasterPreferences& install_prefs,
     MasterPrefs* out_prefs);
 
-// Creates the sentinel file that signals that chrome has been configured.
+// Get the file path of the first run sentinel; returns false on failure.
+bool GetFirstRunSentinelFilePath(base::FilePath* path);
+
+// Create the first run sentinel file; returns false on failure.
 bool CreateSentinel();
 
 // -- Platform-specific functions --
 
 void DoPostImportPlatformSpecificTasks(Profile* profile);
 
-// Gives the full path to the sentinel file. The file might not exist.
-// This function has a common implementation on OS_POSIX and a windows specific
-// implementation.
-bool GetFirstRunSentinelFilePath(base::FilePath* path);
+// Returns true if the sentinel file exists (or the path cannot be obtained).
+// Migrates Windows legacy sentinel files to the corrent location, if needed.
+bool IsFirstRunSentinelPresent();
 
 // This function has a common implementationin for all non-linux platforms, and
 // a linux specific implementation.

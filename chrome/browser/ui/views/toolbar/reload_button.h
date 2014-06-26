@@ -13,7 +13,6 @@
 #include "ui/views/controls/button/button.h"
 
 class CommandUpdater;
-class LocationBarView;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -35,8 +34,7 @@ class ReloadButton : public ToolbarButton,
   // The button's class name.
   static const char kViewClassName[];
 
-  ReloadButton(LocationBarView* location_bar,
-               CommandUpdater* command_updater);
+  explicit ReloadButton(CommandUpdater* command_updater);
   virtual ~ReloadButton();
 
   // Ask for a specified button state.  If |force| is true this will be applied
@@ -53,7 +51,7 @@ class ReloadButton : public ToolbarButton,
   virtual bool GetTooltipText(const gfx::Point& p,
                               base::string16* tooltip) const OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool ShouldShowMenu() OVERRIDE;
   virtual void ShowDropDownMenu(ui::MenuSourceType source_type) OVERRIDE;
 
@@ -84,8 +82,7 @@ class ReloadButton : public ToolbarButton,
   base::OneShotTimer<ReloadButton> double_click_timer_;
   base::OneShotTimer<ReloadButton> stop_to_reload_timer_;
 
-  // These may be NULL when testing.
-  LocationBarView* location_bar_;
+  // This may be NULL when testing.
   CommandUpdater* command_updater_;
 
   // The mode we should be in assuming no timers are running.

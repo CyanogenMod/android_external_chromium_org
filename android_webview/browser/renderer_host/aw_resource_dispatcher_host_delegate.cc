@@ -20,11 +20,11 @@
 #include "content/public/browser/resource_dispatcher_host_login_delegate.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/resource_throttle.h"
-#include "content/public/common/url_constants.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
+#include "url/url_constants.h"
 
 using android_webview::AwContentsIoThreadClient;
 using content::BrowserThread;
@@ -170,7 +170,7 @@ bool IoThreadClientThrottle::ShouldBlockRequest() {
   }
 
   if (io_client->ShouldBlockNetworkLoads()) {
-    if (request_->url().SchemeIs(content::kFtpScheme)) {
+    if (request_->url().SchemeIs(url::kFtpScheme)) {
       return true;
     }
     SetCacheControlFlag(request_, net::LOAD_ONLY_FROM_CACHE);
@@ -209,7 +209,7 @@ AwResourceDispatcherHostDelegate::~AwResourceDispatcherHostDelegate() {
 void AwResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     content::ResourceContext* resource_context,
-    appcache::AppCacheService* appcache_service,
+    content::AppCacheService* appcache_service,
     ResourceType::Type resource_type,
     int child_id,
     int route_id,
@@ -298,9 +298,11 @@ content::ResourceDispatcherHostLoginDelegate*
   return new AwLoginDelegate(auth_info, request);
 }
 
-bool AwResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
-                                                              int child_id,
-                                                              int route_id) {
+bool AwResourceDispatcherHostDelegate::HandleExternalProtocol(
+    const GURL& url,
+    int child_id,
+    int route_id,
+    bool initiated_by_user_gesture) {
   // The AwURLRequestJobFactory implementation should ensure this method never
   // gets called.
   NOTREACHED();

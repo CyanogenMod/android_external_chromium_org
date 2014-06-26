@@ -20,6 +20,8 @@ class MenuRunner;
 class Widget;
 }
 
+class MediaGalleryCheckboxView;
+
 // The media galleries configuration view for Views. It will immediately show
 // upon construction.
 class MediaGalleriesDialogViews : public MediaGalleriesDialog,
@@ -63,40 +65,39 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, UpdateAdds);
   FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ForgetDeletes);
 
-  typedef std::map<MediaGalleryPrefId, views::Checkbox*> CheckboxMap;
-  typedef std::map<views::Checkbox*, MediaGalleryPrefInfo> NewCheckboxMap;
+  typedef std::map<MediaGalleryPrefId, MediaGalleryCheckboxView*> CheckboxMap;
 
-  void ButtonPressedAction(views::Button* sender);
+  // MediaGalleriesDialog implementation:
+  virtual void AcceptDialogForTesting() OVERRIDE;
 
   void InitChildViews();
 
   // Adds a checkbox or updates an existing checkbox. Returns true if a new one
   // was added.
-  bool AddOrUpdateGallery(const MediaGalleryPrefInfo& gallery,
-                          bool permitted,
-                          views::View* container,
-                          int trailing_vertical_space);
+  bool AddOrUpdateGallery(
+      const MediaGalleriesDialogController::Entry& gallery,
+      views::View* container,
+      int trailing_vertical_space);
 
   void ShowContextMenu(const gfx::Point& point,
                        ui::MenuSourceType source_type,
                        MediaGalleryPrefId id);
 
+  // Whether |controller_| has a valid WebContents or not.
+  // In unit tests, it may not.
+  bool ControllerHasWebContents() const;
+
   MediaGalleriesDialogController* controller_;
 
-  // The containing window (a weak pointer).
-  views::Widget* window_;
-
-  // The contents of the dialog. Owned by |window_|'s RootView except for tests.
+  // The contents of the dialog. Owned by the view hierarchy, except in tests.
   views::View* contents_;
 
-  // A map from media gallery ID to views::Checkbox view.
+  // A map from gallery ID to views::Checkbox view.
   CheckboxMap checkbox_map_;
 
-  NewCheckboxMap new_checkbox_map_;
-
-  // Pointer to the button to add a new gallery. Owned by parent in
-  // the dialog views tree.
-  views::LabelButton* add_gallery_button_;
+  // Pointer to the controller specific auxiliary button, NULL otherwise.
+  // Owned by parent in the dialog views tree.
+  views::LabelButton* auxiliary_button_;
 
   // This tracks whether the confirm button can be clicked. It starts as false
   // if no checkboxes are ticked. After there is any interaction, or some

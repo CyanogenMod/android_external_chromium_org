@@ -68,7 +68,7 @@ def main(argv):
       build_gn_with_ninja_manually(tempdir)
 
       print 'Building gn using itself to %s...' % build_rel
-      build_gn_with_gn(os.path.join(tempdir, 'gn'), build_root, options.debug)
+      build_gn_with_gn(os.path.join(tempdir, 'gn'), build_rel, options.debug)
 
       if options.output:
         # Preserve the executable permission bit.
@@ -129,6 +129,7 @@ def write_ninja(path):
       'base/files/file_enumerator.cc',
       'base/files/file_path.cc',
       'base/files/file_path_constants.cc',
+      'base/files/scoped_file.cc',
       'base/json/json_parser.cc',
       'base/json/json_reader.cc',
       'base/json/json_string_value_serializer.cc',
@@ -240,7 +241,6 @@ def write_ninja(path):
         'base/files/file_enumerator_posix.cc',
         'base/files/file_posix.cc',
         'base/message_loop/message_pump_glib.cc',
-        'base/message_loop/message_pump_gtk.cc',
         'base/message_loop/message_pump_libevent.cc',
         'base/nix/xdg_util.cc',
         'base/posix/file_descriptor_shuffle.cc',
@@ -316,7 +316,7 @@ def write_ninja(path):
 
 
 def build_gn_with_gn(temp_gn, build_dir, debug):
-  cmd = [temp_gn, '--output=%s' % build_dir]
+  cmd = [temp_gn, 'gen', build_dir]
   if not debug:
     cmd.append('--args=is_debug=false')
   check_call(cmd)

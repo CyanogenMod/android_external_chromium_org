@@ -7,7 +7,7 @@
 #include "ash/ash_switches.h"
 #include "ash/focus_cycler.h"
 #include "ash/root_window_controller.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf_constants.h"
 #include "ash/shelf/shelf_delegate.h"
 #include "ash/shelf/shelf_layout_manager.h"
@@ -22,9 +22,8 @@
 #include "ash/wm/window_properties.h"
 #include "ash/wm/workspace_controller.h"
 #include "grit/ash_resources.h"
-#include "ui/aura/client/activation_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -37,7 +36,8 @@
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/wm/public/easy_resize_window_targeter.h"
+#include "ui/wm/core/easy_resize_window_targeter.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace {
 // Size of black border at bottom (or side) of shelf.
@@ -52,7 +52,7 @@ const int kTimeToUnDimMs = 200;  // Fast in activating.
 // Class used to slightly dim shelf items when maximized and visible.
 class DimmerView : public views::View,
                    public views::WidgetDelegate,
-                   ash::internal::BackgroundAnimatorDelegate {
+                   ash::BackgroundAnimatorDelegate {
  public:
   // If |disable_dimming_animations_for_test| is set, all alpha animations will
   // be performed instantly.
@@ -74,7 +74,7 @@ class DimmerView : public views::View,
     return View::GetWidget();
   }
 
-  // ash::internal::BackgroundAnimatorDelegate overrides:
+  // ash::BackgroundAnimatorDelegate overrides:
   virtual void UpdateBackground(int alpha) OVERRIDE {
     alpha_ = alpha;
     SchedulePaint();
@@ -126,7 +126,7 @@ class DimmerView : public views::View,
   bool disable_dimming_animations_for_test_;
 
   // The animator for the background transitions.
-  ash::internal::BackgroundAnimator background_animator_;
+  ash::BackgroundAnimator background_animator_;
 
   // Notification of entering / exiting of the shelf area by mouse.
   scoped_ptr<DimmerEventFilter> event_filter_;
@@ -175,9 +175,9 @@ void DimmerView::ForceUndimming(bool force) {
 
 void DimmerView::OnPaintBackground(gfx::Canvas* canvas) {
   SkPaint paint;
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   gfx::ImageSkia shelf_background =
-      *rb.GetImageNamed(IDR_AURA_LAUNCHER_DIMMING).ToImageSkia();
+      *rb.GetImageNamed(IDR_ASH_SHELF_DIMMING).ToImageSkia();
 
   if (shelf_->GetAlignment() != ash::SHELF_ALIGNMENT_BOTTOM) {
     shelf_background = gfx::ImageSkiaOperations::CreateRotatedImage(
@@ -234,7 +234,7 @@ void DimmerView::DimmerEventFilter::OnTouchEvent(ui::TouchEvent* event) {
   touch_inside_ = touch_inside;
 }
 
-using ash::internal::ShelfLayoutManager;
+using ash::ShelfLayoutManager;
 
 // ShelfWindowTargeter makes it easier to resize windows with the mouse when the
 // window-edge slightly overlaps with the shelf edge. The targeter also makes it
@@ -313,18 +313,16 @@ namespace ash {
 // sizes it to the width of the shelf minus the size of the status area.
 class ShelfWidget::DelegateView : public views::WidgetDelegate,
                                   public views::AccessiblePaneView,
-                                  public internal::BackgroundAnimatorDelegate,
+                                  public BackgroundAnimatorDelegate,
                                   public aura::WindowObserver {
  public:
   explicit DelegateView(ShelfWidget* shelf);
   virtual ~DelegateView();
 
-  void set_focus_cycler(internal::FocusCycler* focus_cycler) {
+  void set_focus_cycler(FocusCycler* focus_cycler) {
     focus_cycler_ = focus_cycler;
   }
-  internal::FocusCycler* focus_cycler() {
-    return focus_cycler_;
-  }
+  FocusCycler* focus_cycler() { return focus_cycler_; }
 
   ui::Layer* opaque_background() { return &opaque_background_; }
 
@@ -383,7 +381,7 @@ class ShelfWidget::DelegateView : public views::WidgetDelegate,
  private:
   ShelfWidget* shelf_;
   scoped_ptr<views::Widget> dimmer_;
-  internal::FocusCycler* focus_cycler_;
+  FocusCycler* focus_cycler_;
   int alpha_;
   ui::Layer opaque_background_;
 
@@ -423,7 +421,7 @@ void ShelfWidget::DelegateView::SetDimmed(bool value) {
     views::Widget::InitParams params(
         views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-    params.can_activate = false;
+    params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
     params.accept_events = false;
     params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
     params.parent = shelf_->GetNativeView();
@@ -456,9 +454,9 @@ void ShelfWidget::DelegateView::SetParentLayer(ui::Layer* layer) {
 }
 
 void ShelfWidget::DelegateView::OnPaintBackground(gfx::Canvas* canvas) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   gfx::ImageSkia shelf_background =
-      *rb.GetImageSkiaNamed(IDR_AURA_LAUNCHER_BACKGROUND);
+      *rb.GetImageSkiaNamed(IDR_ASH_SHELF_BACKGROUND);
   if (SHELF_ALIGNMENT_BOTTOM != shelf_->GetAlignment())
     shelf_background = gfx::ImageSkiaOperations::CreateRotatedImage(
         shelf_background,
@@ -491,8 +489,7 @@ void ShelfWidget::DelegateView::OnPaintBackground(gfx::Canvas* canvas) {
     // The part of the shelf background that is in the corner below the docked
     // windows close to the work area is an arched gradient that blends
     // vertically oriented docked background and horizontal shelf.
-    gfx::ImageSkia shelf_corner =
-        *rb.GetImageSkiaNamed(IDR_AURA_LAUNCHER_CORNER);
+    gfx::ImageSkia shelf_corner = *rb.GetImageSkiaNamed(IDR_ASH_SHELF_CORNER);
     if (dock_bounds.x() == 0) {
       shelf_corner = gfx::ImageSkiaOperations::CreateRotatedImage(
           shelf_corner, SkBitmapOperations::ROTATION_90_CW);
@@ -601,7 +598,7 @@ void ShelfWidget::DelegateView::UpdateBackground(int alpha) {
 
 ShelfWidget::ShelfWidget(aura::Window* shelf_container,
                          aura::Window* status_container,
-                         internal::WorkspaceController* workspace_controller)
+                         WorkspaceController* workspace_controller)
     : delegate_view_(new DelegateView(this)),
       background_animator_(delegate_view_, 0, kShelfBackgroundAlpha),
       activating_as_fallback_(false),
@@ -619,7 +616,7 @@ ShelfWidget::ShelfWidget(aura::Window* shelf_container,
   SetContentsView(delegate_view_);
   delegate_view_->SetParentLayer(GetLayer());
 
-  status_area_widget_ = new internal::StatusAreaWidget(status_container);
+  status_area_widget_ = new StatusAreaWidget(status_container);
   status_area_widget_->CreateTrayViews();
   if (Shell::GetInstance()->session_state_delegate()->
           IsActiveUserSessionStarted()) {
@@ -627,14 +624,13 @@ ShelfWidget::ShelfWidget(aura::Window* shelf_container,
   }
   Shell::GetInstance()->focus_cycler()->AddWidget(status_area_widget_);
 
-  shelf_layout_manager_ = new internal::ShelfLayoutManager(this);
+  shelf_layout_manager_ = new ShelfLayoutManager(this);
   shelf_layout_manager_->AddObserver(this);
   shelf_container->SetLayoutManager(shelf_layout_manager_);
   shelf_layout_manager_->set_workspace_controller(workspace_controller);
   workspace_controller->SetShelf(shelf_layout_manager_);
 
-  status_container->SetLayoutManager(
-      new internal::StatusAreaLayoutManager(this));
+  status_container->SetLayoutManager(new StatusAreaLayoutManager(this));
 
   shelf_container->SetEventTargeter(scoped_ptr<ui::EventTargeter>(new
       ShelfWindowTargeter(shelf_container, shelf_layout_manager_)));
@@ -683,8 +679,6 @@ ShelfBackgroundType ShelfWidget::GetBackgroundType() const {
 
 // static
 bool ShelfWidget::ShelfAlignmentAllowed() {
-  if (!ash::switches::ShowShelfAlignmentMenu())
-    return false;
   user::LoginStatus login_status =
       Shell::GetInstance()->system_tray_delegate()->GetUserLoginStatus();
 
@@ -723,7 +717,7 @@ void ShelfWidget::SetDimsShelf(bool dimming) {
   // status area background, app list button and overflow button.
   if (shelf_)
     shelf_->SchedulePaint();
-  status_area_widget_->GetContentsView()->SchedulePaint();
+  status_area_widget_->SchedulePaint();
 }
 
 bool ShelfWidget::GetDimsShelf() const {
@@ -745,8 +739,7 @@ void ShelfWidget::CreateShelf() {
   SetFocusCycler(shell->focus_cycler());
 
   // Inform the root window controller.
-  internal::RootWindowController::ForWindow(window_container_)
-      ->OnShelfCreated();
+  RootWindowController::ForWindow(window_container_)->OnShelfCreated();
 
   shelf_->SetVisible(
       shell->session_state_delegate()->IsActiveUserSessionStarted());
@@ -763,13 +756,13 @@ void ShelfWidget::SetShelfVisibility(bool visible) {
     shelf_->SetVisible(visible);
 }
 
-void ShelfWidget::SetFocusCycler(internal::FocusCycler* focus_cycler) {
+void ShelfWidget::SetFocusCycler(FocusCycler* focus_cycler) {
   delegate_view_->set_focus_cycler(focus_cycler);
   if (focus_cycler)
     focus_cycler->AddWidget(this);
 }
 
-internal::FocusCycler* ShelfWidget::GetFocusCycler() {
+FocusCycler* ShelfWidget::GetFocusCycler() {
   return delegate_view_->focus_cycler();
 }
 

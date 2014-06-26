@@ -27,7 +27,7 @@
 #include "skia/ext/platform_canvas.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -45,93 +45,74 @@ struct ResourceImageInfo {
   int res_id;
 };
 
-static const ResourceImageInfo kResourceImageMap[] = {
-  { PP_RESOURCEIMAGE_PDF_BUTTON_FTP, IDR_PDF_BUTTON_FTP },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_FTP_HOVER, IDR_PDF_BUTTON_FTP_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_FTP_PRESSED, IDR_PDF_BUTTON_FTP_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_FTW, IDR_PDF_BUTTON_FTW },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_FTW_HOVER, IDR_PDF_BUTTON_FTW_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_FTW_PRESSED, IDR_PDF_BUTTON_FTW_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END, IDR_PDF_BUTTON_ZOOMIN_END },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_HOVER,
-      IDR_PDF_BUTTON_ZOOMIN_END_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED,
-      IDR_PDF_BUTTON_ZOOMIN_END_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN, IDR_PDF_BUTTON_ZOOMIN },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_HOVER, IDR_PDF_BUTTON_ZOOMIN_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_PRESSED, IDR_PDF_BUTTON_ZOOMIN_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMOUT, IDR_PDF_BUTTON_ZOOMOUT },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMOUT_HOVER, IDR_PDF_BUTTON_ZOOMOUT_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMOUT_PRESSED,
-      IDR_PDF_BUTTON_ZOOMOUT_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_SAVE, IDR_PDF_BUTTON_SAVE },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_SAVE_HOVER, IDR_PDF_BUTTON_SAVE_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_SAVE_PRESSED, IDR_PDF_BUTTON_SAVE_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT, IDR_PDF_BUTTON_PRINT },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_HOVER, IDR_PDF_BUTTON_PRINT_HOVER },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_PRESSED, IDR_PDF_BUTTON_PRINT_PRESSED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_DISABLED, IDR_PDF_BUTTON_PRINT_DISABLED },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_0, IDR_PDF_THUMBNAIL_0 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_1, IDR_PDF_THUMBNAIL_1 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_2, IDR_PDF_THUMBNAIL_2 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_3, IDR_PDF_THUMBNAIL_3 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_4, IDR_PDF_THUMBNAIL_4 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_5, IDR_PDF_THUMBNAIL_5 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_6, IDR_PDF_THUMBNAIL_6 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_7, IDR_PDF_THUMBNAIL_7 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_8, IDR_PDF_THUMBNAIL_8 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_9, IDR_PDF_THUMBNAIL_9 },
-  { PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_NUM_BACKGROUND,
-      IDR_PDF_THUMBNAIL_NUM_BACKGROUND },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_0, IDR_PDF_PROGRESS_BAR_0 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_1, IDR_PDF_PROGRESS_BAR_1 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_2, IDR_PDF_PROGRESS_BAR_2 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_3, IDR_PDF_PROGRESS_BAR_3 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_4, IDR_PDF_PROGRESS_BAR_4 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_5, IDR_PDF_PROGRESS_BAR_5 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_6, IDR_PDF_PROGRESS_BAR_6 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_7, IDR_PDF_PROGRESS_BAR_7 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_8, IDR_PDF_PROGRESS_BAR_8 },
-  { PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_BACKGROUND,
-      IDR_PDF_PROGRESS_BAR_BACKGROUND },
-  { PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND,
-      IDR_PDF_PAGE_INDICATOR_BACKGROUND },
-  { PP_RESOURCEIMAGE_PDF_PAGE_DROPSHADOW, IDR_PDF_PAGE_DROPSHADOW },
-  { PP_RESOURCEIMAGE_PDF_PAN_SCROLL_ICON, IDR_PAN_SCROLL_ICON },
-};
-
-// Valid strings for user metrics actions.
-static const char* kValidUserMetricsActions[] = {
-  "PDF.PrintPage",
-  "PDF.ZoomFromBrowser",
-  "PDF.FitToPageButton",
-  "PDF.FitToWidthButton",
-  "PDF.ZoomOutButton",
-  "PDF.ZoomInButton",
-  "PDF.SaveButton",
-  "PDF.PrintButton",
-  "PDF.LoadSuccess",
-  "PDF.LoadFailure",
-  "PDF.PreviewDocumentLoadFailure",
-};
+const ResourceImageInfo kResourceImageMap[] = {
+    {PP_RESOURCEIMAGE_PDF_BUTTON_FTP, IDR_PDF_BUTTON_FTP},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_FTP_HOVER, IDR_PDF_BUTTON_FTP_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_FTP_PRESSED, IDR_PDF_BUTTON_FTP_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_FTW, IDR_PDF_BUTTON_FTW},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_FTW_HOVER, IDR_PDF_BUTTON_FTW_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_FTW_PRESSED, IDR_PDF_BUTTON_FTW_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END, IDR_PDF_BUTTON_ZOOMIN_END},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_HOVER,
+     IDR_PDF_BUTTON_ZOOMIN_END_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED,
+     IDR_PDF_BUTTON_ZOOMIN_END_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN, IDR_PDF_BUTTON_ZOOMIN},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_HOVER, IDR_PDF_BUTTON_ZOOMIN_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_PRESSED, IDR_PDF_BUTTON_ZOOMIN_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMOUT, IDR_PDF_BUTTON_ZOOMOUT},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMOUT_HOVER, IDR_PDF_BUTTON_ZOOMOUT_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMOUT_PRESSED,
+     IDR_PDF_BUTTON_ZOOMOUT_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_SAVE, IDR_PDF_BUTTON_SAVE},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_SAVE_HOVER, IDR_PDF_BUTTON_SAVE_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_SAVE_PRESSED, IDR_PDF_BUTTON_SAVE_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_PRINT, IDR_PDF_BUTTON_PRINT},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_HOVER, IDR_PDF_BUTTON_PRINT_HOVER},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_PRESSED, IDR_PDF_BUTTON_PRINT_PRESSED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_DISABLED, IDR_PDF_BUTTON_PRINT_DISABLED},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_0, IDR_PDF_THUMBNAIL_0},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_1, IDR_PDF_THUMBNAIL_1},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_2, IDR_PDF_THUMBNAIL_2},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_3, IDR_PDF_THUMBNAIL_3},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_4, IDR_PDF_THUMBNAIL_4},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_5, IDR_PDF_THUMBNAIL_5},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_6, IDR_PDF_THUMBNAIL_6},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_7, IDR_PDF_THUMBNAIL_7},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_8, IDR_PDF_THUMBNAIL_8},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_9, IDR_PDF_THUMBNAIL_9},
+    {PP_RESOURCEIMAGE_PDF_BUTTON_THUMBNAIL_NUM_BACKGROUND,
+     IDR_PDF_THUMBNAIL_NUM_BACKGROUND},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_0, IDR_PDF_PROGRESS_BAR_0},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_1, IDR_PDF_PROGRESS_BAR_1},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_2, IDR_PDF_PROGRESS_BAR_2},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_3, IDR_PDF_PROGRESS_BAR_3},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_4, IDR_PDF_PROGRESS_BAR_4},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_5, IDR_PDF_PROGRESS_BAR_5},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_6, IDR_PDF_PROGRESS_BAR_6},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_7, IDR_PDF_PROGRESS_BAR_7},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_8, IDR_PDF_PROGRESS_BAR_8},
+    {PP_RESOURCEIMAGE_PDF_PROGRESS_BAR_BACKGROUND,
+     IDR_PDF_PROGRESS_BAR_BACKGROUND},
+    {PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND,
+     IDR_PDF_PAGE_INDICATOR_BACKGROUND},
+    {PP_RESOURCEIMAGE_PDF_PAGE_DROPSHADOW, IDR_PDF_PAGE_DROPSHADOW},
+    {PP_RESOURCEIMAGE_PDF_PAN_SCROLL_ICON, IDR_PAN_SCROLL_ICON}, };
 
 }  // namespace
 
-PepperPDFHost::PepperPDFHost(
-    content::RendererPpapiHost* host,
-    PP_Instance instance,
-    PP_Resource resource)
+PepperPDFHost::PepperPDFHost(content::RendererPpapiHost* host,
+                             PP_Instance instance,
+                             PP_Resource resource)
     : ppapi::host::ResourceHost(host->GetPpapiHost(), instance, resource),
-      host_(host) {
-}
+      host_(host) {}
 
-PepperPDFHost::~PepperPDFHost() {
-}
+PepperPDFHost::~PepperPDFHost() {}
 
 int32_t PepperPDFHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
-  IPC_BEGIN_MESSAGE_MAP(PepperPDFHost, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(PepperPDFHost, msg)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_PDF_GetLocalizedString,
                                       OnHostMsgGetLocalizedString)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_PDF_DidStartLoading,
@@ -142,8 +123,7 @@ int32_t PepperPDFHost::OnResourceMessageReceived(
                                       OnHostMsgUserMetricsRecordAction)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_PDF_HasUnsupportedFeature,
                                         OnHostMsgHasUnsupportedFeature)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_PDF_Print,
-                                        OnHostMsgPrint)
+    PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_PDF_Print, OnHostMsgPrint)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL_0(PpapiHostMsg_PDF_SaveAs,
                                         OnHostMsgSaveAs)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_PDF_GetResourceImage,
@@ -152,7 +132,7 @@ int32_t PepperPDFHost::OnResourceMessageReceived(
                                       OnHostMsgSetSelectedText)
     PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_PDF_SetLinkUnderCursor,
                                       OnHostMsgSetLinkUnderCursor)
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
@@ -198,7 +178,8 @@ int32_t PepperPDFHost::OnHostMsgDidStopLoading(
 }
 
 int32_t PepperPDFHost::OnHostMsgSetContentRestriction(
-    ppapi::host::HostMessageContext* context, int restrictions) {
+    ppapi::host::HostMessageContext* context,
+    int restrictions) {
   content::PepperPluginInstance* instance =
       host_->GetPluginInstance(pp_instance());
   if (!instance)
@@ -212,17 +193,8 @@ int32_t PepperPDFHost::OnHostMsgSetContentRestriction(
 int32_t PepperPDFHost::OnHostMsgUserMetricsRecordAction(
     ppapi::host::HostMessageContext* context,
     const std::string& action) {
-  bool valid = false;
-  for (size_t i = 0; i < arraysize(kValidUserMetricsActions); ++i) {
-    if (action == kValidUserMetricsActions[i]) {
-      valid = true;
-      break;
-    }
-  }
-  if (!valid) {
-    NOTREACHED();
+  if (action.empty())
     return PP_ERROR_FAILED;
-  }
   content::RenderThread::Get()->RecordComputedAction(action);
   return PP_OK;
 }
@@ -233,10 +205,6 @@ int32_t PepperPDFHost::OnHostMsgHasUnsupportedFeature(
       host_->GetPluginInstance(pp_instance());
   if (!instance)
     return PP_ERROR_FAILED;
-
-  // Only want to show an info bar if the pdf is the whole tab.
-  if (!instance->IsFullPagePlugin())
-    return PP_OK;
 
   blink::WebView* view =
       instance->GetContainer()->element().document().frame()->view();
@@ -276,7 +244,8 @@ int32_t PepperPDFHost::OnHostMsgSaveAs(
     return PP_ERROR_FAILED;
   GURL url = instance->GetPluginURL();
   content::RenderView* render_view = instance->GetRenderView();
-  blink::WebFrame* frame = render_view->GetWebView()->mainFrame();
+  blink::WebLocalFrame* frame =
+      render_view->GetWebView()->mainFrame()->toWebLocalFrame();
   content::Referrer referrer(frame->document().url(),
                              frame->document().referrerPolicy());
   render_view->Send(new ChromeViewHostMsg_PDFSaveURLAs(
@@ -317,15 +286,15 @@ int32_t PepperPDFHost::OnHostMsgGetResourceImage(
   PP_ImageDataDesc image_data_desc;
   IPC::PlatformFileForTransit image_handle;
   uint32_t byte_count = 0;
-  bool success = CreateImageData(
-      pp_instance(),
-      ppapi::PPB_ImageData_Shared::GetNativeImageDataFormat(),
-      pp_size,
-      image_skia_rep.sk_bitmap(),
-      &host_resource,
-      &image_data_desc,
-      &image_handle,
-      &byte_count);
+  bool success =
+      CreateImageData(pp_instance(),
+                      ppapi::PPB_ImageData_Shared::GetNativeImageDataFormat(),
+                      pp_size,
+                      image_skia_rep.sk_bitmap(),
+                      &host_resource,
+                      &image_data_desc,
+                      &image_handle,
+                      &byte_count);
   ppapi::ScopedPPResource image_data_resource(
       ppapi::ScopedPPResource::PassRef(), host_resource.host_resource());
   if (!success)
@@ -336,9 +305,9 @@ int32_t PepperPDFHost::OnHostMsgGetResourceImage(
   ppapi::proxy::SerializedHandle serialized_handle;
   serialized_handle.set_shmem(image_handle, byte_count);
   reply_context.params.AppendHandle(serialized_handle);
-  SendReply(reply_context,
-            PpapiPluginMsg_PDF_GetResourceImageReply(host_resource,
-                                                     image_data_desc));
+  SendReply(
+      reply_context,
+      PpapiPluginMsg_PDF_GetResourceImageReply(host_resource, image_data_desc));
 
   // Keep a reference to the resource only if the function succeeds.
   image_data_resource.Release();
@@ -384,9 +353,12 @@ bool PepperPDFHost::CreateImageData(
   PP_Resource resource = ppapi::proxy::PPB_ImageData_Proxy::CreateImageData(
       instance,
       ppapi::PPB_ImageData_Shared::SIMPLE,
-      format, size,
+      format,
+      size,
       false /* init_to_zero */,
-      out_image_data_desc, out_image_handle, out_byte_count);
+      out_image_data_desc,
+      out_image_handle,
+      out_byte_count);
   if (!resource)
     return false;
 
@@ -411,9 +383,8 @@ bool PepperPDFHost::CreateImageData(
   }
 
   const SkBitmap* bitmap = &skia::GetTopDevice(*canvas)->accessBitmap(false);
-  pixels_to_write.copyPixelsTo(bitmap->getPixels(),
-                               bitmap->getSize(),
-                               bitmap->rowBytes());
+  pixels_to_write.copyPixelsTo(
+      bitmap->getPixels(), bitmap->getSize(), bitmap->rowBytes());
 
   if (needs_unmapping)
     image_data->Unmap();

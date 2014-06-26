@@ -7,8 +7,8 @@
 
 #include <map>
 
-#include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_platform_file.h"
+#include "ipc/message_filter.h"
 #include "ppapi/c/private/pp_file_handle.h"
 #include "ppapi/shared_impl/tracked_callback.h"
 
@@ -22,7 +22,7 @@ struct PnaclCacheInfo;
 
 // "Resource" might not be the best name for the various things that pnacl
 // needs from the browser since "Resource" is a Pepper thing...
-class PnaclTranslationResourceHost : public IPC::ChannelProxy::MessageFilter {
+class PnaclTranslationResourceHost : public IPC::MessageFilter {
  public:
   explicit PnaclTranslationResourceHost(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
@@ -54,9 +54,9 @@ class PnaclTranslationResourceHost : public IPC::ChannelProxy::MessageFilter {
   // Maps the instance with an outstanding cache request to the info
   // about that request.
   typedef std::map<PP_Instance, CacheRequestInfo> CacheRequestInfoMap;
-  // IPC::ChannelProxy::MessageFilter implementation.
+  // IPC::MessageFilter implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -76,7 +76,7 @@ class PnaclTranslationResourceHost : public IPC::ChannelProxy::MessageFilter {
   scoped_refptr<base::MessageLoopProxy> io_message_loop_;
 
   // Should be accessed on the io thread.
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
   CacheRequestInfoMap pending_cache_requests_;
   DISALLOW_COPY_AND_ASSIGN(PnaclTranslationResourceHost);
 };

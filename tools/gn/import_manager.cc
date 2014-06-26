@@ -25,8 +25,13 @@ Scope* UncachedImport(const Settings* settings,
   CHECK(block);
 
   scoped_ptr<Scope> scope(new Scope(settings->base_config()));
-  ScopePerFileProvider per_file_provider(scope.get());
   scope->set_source_dir(file.GetDir());
+
+  // Don't allow ScopePerFileProvider to provide target-related variables.
+  // These will be relative to the imported file, which is probably not what
+  // people mean when they use these.
+  ScopePerFileProvider per_file_provider(scope.get(), false);
+
   scope->SetProcessingImport();
   block->ExecuteBlockInScope(scope.get(), err);
   if (err->has_error())
@@ -81,6 +86,9 @@ bool ImportManager::DoImport(const SourceFile& file,
     }
   }
 
-  return imported_scope->NonRecursiveMergeTo(scope, node_for_err,
+  Scope::MergeOptions options;
+  options.skip_private_vars = true;
+  options.mark_used = true;  // Don't require all imported values be used.
+  return imported_scope->NonRecursiveMergeTo(scope, options, node_for_err,
                                              "import", err);
 }

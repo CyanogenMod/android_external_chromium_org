@@ -104,10 +104,13 @@ class MEDIA_EXPORT AudioBus {
   // is provided, no adjustment is done.
   void Scale(float volume);
 
- private:
-  friend struct base::DefaultDeleter<AudioBus>;
-  ~AudioBus();
+  // Swaps channels identified by |a| and |b|.  The caller needs to make sure
+  // the channels are valid.
+  void SwapChannels(int a, int b);
 
+  virtual ~AudioBus();
+
+ private:
   AudioBus(int channels, int frames);
   AudioBus(int channels, int frames, float* data);
   AudioBus(int frames, const std::vector<float*>& channel_data);

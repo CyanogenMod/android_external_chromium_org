@@ -12,13 +12,12 @@
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 OverflowBubble::OverflowBubble()
     : bubble_(NULL),
@@ -100,5 +99,4 @@ void OverflowBubble::OnWidgetDestroying(views::Widget* widget) {
       widget->GetNativeView())->shelf_widget()->shelf()->SchedulePaint();
 }
 
-}  // namespace internal
 }  // namespace ash

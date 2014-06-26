@@ -20,7 +20,7 @@ std::string ContentRendererClient::GetDefaultEncoding() {
 
 bool ContentRendererClient::OverrideCreatePlugin(
     RenderFrame* render_frame,
-    blink::WebFrame* frame,
+    blink::WebLocalFrame* frame,
     const blink::WebPluginParams& params,
     blink::WebPlugin** plugin) {
   return false;
@@ -151,11 +151,6 @@ const void* ContentRendererClient::CreatePPAPIInterface(
 
 bool ContentRendererClient::IsExternalPepperPlugin(
     const std::string& module_name) {
-  return false;
-}
-
-bool ContentRendererClient::AllowBrowserPlugin(
-    blink::WebPluginContainer* container) {
   return false;
 }
 

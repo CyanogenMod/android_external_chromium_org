@@ -13,17 +13,17 @@
 #include "ash/wm/window_util.h"
 #include "ash/wm/workspace/workspace_event_handler.h"
 #include "ash/wm/workspace/workspace_layout_manager.h"
-#include "ui/aura/client/activation_client.h"
+#include "ash/wm/workspace/workspace_layout_manager_delegate.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/views/corewm/visibility_controller.h"
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/visibility_controller.h"
+#include "ui/wm/core/window_animations.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 // Amount of time to pause before animating anything. Only used during initial
@@ -44,7 +44,7 @@ WorkspaceController::WorkspaceController(aura::Window* viewport)
       event_handler_(new WorkspaceEventHandler),
       layout_manager_(new WorkspaceLayoutManager(viewport)) {
   SetWindowVisibilityAnimationTransition(
-      viewport_, views::corewm::ANIMATE_NONE);
+      viewport_, ::wm::ANIMATE_NONE);
 
   viewport_->SetLayoutManager(layout_manager_);
   viewport_->AddPreTargetHandler(event_handler_.get());
@@ -69,10 +69,8 @@ WorkspaceWindowState WorkspaceController::GetWindowState() const {
 
   // These are the container ids of containers which may contain windows that
   // may overlap the launcher shelf and affect its transparency.
-  const int kWindowContainerIds[] = {
-      internal::kShellWindowId_DefaultContainer,
-      internal::kShellWindowId_DockedContainer,
-  };
+  const int kWindowContainerIds[] = {kShellWindowId_DefaultContainer,
+                                     kShellWindowId_DockedContainer, };
   const gfx::Rect shelf_bounds(shelf_->GetIdealBounds());
   bool window_overlaps_launcher = false;
   for (size_t idx = 0; idx < arraysize(kWindowContainerIds); idx++) {
@@ -135,5 +133,9 @@ void WorkspaceController::DoInitialAnimation() {
   }
 }
 
-}  // namespace internal
+void WorkspaceController::SetMaximizeBackdropDelegate(
+    scoped_ptr<WorkspaceLayoutManagerDelegate> delegate) {
+  layout_manager_->SetMaximizeBackdropDelegate(delegate.Pass());
+}
+
 }  // namespace ash

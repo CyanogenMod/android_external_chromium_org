@@ -24,7 +24,7 @@ class WallpaperPrivateGetStringsFunction : public SyncExtensionFunction {
   virtual ~WallpaperPrivateGetStringsFunction() {}
 
   // SyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class WallpaperPrivateSetWallpaperIfExistsFunction
@@ -39,10 +39,10 @@ class WallpaperPrivateSetWallpaperIfExistsFunction
   virtual ~WallpaperPrivateSetWallpaperIfExistsFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
+  virtual void OnWallpaperDecoded(const gfx::ImageSkia& image) OVERRIDE;
 
   // File doesn't exist. Sets javascript callback parameter to false.
   void OnFileNotExists(const std::string& error);
@@ -74,16 +74,16 @@ class WallpaperPrivateSetWallpaperFunction : public WallpaperFunctionBase {
   virtual ~WallpaperPrivateSetWallpaperFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
+  virtual void OnWallpaperDecoded(const gfx::ImageSkia& image) OVERRIDE;
 
   // Saves the image data to a file.
   void SaveToFile();
 
   // Sets wallpaper to the decoded image.
-  void SetDecodedWallpaper(scoped_ptr<gfx::ImageSkia> wallpaper);
+  void SetDecodedWallpaper(scoped_ptr<gfx::ImageSkia> image);
 
   scoped_ptr<extensions::api::wallpaper_private::SetWallpaper::Params> params;
 
@@ -111,7 +111,7 @@ class WallpaperPrivateResetWallpaperFunction
   virtual ~WallpaperPrivateResetWallpaperFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class WallpaperPrivateSetCustomWallpaperFunction
@@ -126,7 +126,7 @@ class WallpaperPrivateSetCustomWallpaperFunction
   virtual ~WallpaperPrivateSetCustomWallpaperFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
@@ -165,7 +165,7 @@ class WallpaperPrivateSetCustomWallpaperLayoutFunction
   virtual ~WallpaperPrivateSetCustomWallpaperLayoutFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class WallpaperPrivateMinimizeInactiveWindowsFunction
@@ -180,7 +180,7 @@ class WallpaperPrivateMinimizeInactiveWindowsFunction
   virtual ~WallpaperPrivateMinimizeInactiveWindowsFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class WallpaperPrivateRestoreMinimizedWindowsFunction
@@ -195,7 +195,7 @@ class WallpaperPrivateRestoreMinimizedWindowsFunction
   virtual ~WallpaperPrivateRestoreMinimizedWindowsFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class WallpaperPrivateGetThumbnailFunction : public AsyncExtensionFunction {
@@ -209,7 +209,7 @@ class WallpaperPrivateGetThumbnailFunction : public AsyncExtensionFunction {
   virtual ~WallpaperPrivateGetThumbnailFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Failed to get thumbnail for |file_name|.
@@ -242,7 +242,7 @@ class WallpaperPrivateSaveThumbnailFunction : public AsyncExtensionFunction {
   virtual ~WallpaperPrivateSaveThumbnailFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Failed to save thumbnail for |file_name|.
@@ -270,7 +270,7 @@ class WallpaperPrivateGetOfflineWallpaperListFunction
   virtual ~WallpaperPrivateGetOfflineWallpaperListFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Enumerates the list of files in online wallpaper directory.

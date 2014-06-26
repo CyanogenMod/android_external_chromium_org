@@ -48,7 +48,7 @@
     <div id="attach-file-note" i18n-content="attach-file-note"></div>
     <!-- Screenshot -->
     <div id="screenshot-container" class="checkbox-field-container">
-      <input id="screenshot-checkbox" type="checkbox" aria-labelledby="screenshot-label" checked>
+      <input id="screenshot-checkbox" type="checkbox" aria-labelledby="screenshot-label">
       <label id="screenshot-label" i18n-content="screenshot"></label>
       <img id="screenshot-image" alt="screenshot">
     </div>
@@ -58,7 +58,7 @@
       <label id="sys-info-label" i18n-values=".innerHTML:sys-info"></label>
       </span>
     </div>
-<if expr="pp_ifdef('chromeos')">
+<if expr="chromeos">
     <!-- Performance Feedback -->
     <div id="performance-info-area" hidden>
       <input id="performance-info-checkbox" type="checkbox">

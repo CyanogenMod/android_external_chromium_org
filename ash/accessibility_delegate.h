@@ -18,10 +18,11 @@ enum AccessibilityNotificationVisibility {
 
 enum AccessibilityAlert {
   A11Y_ALERT_NONE,
-  A11Y_ALERT_WINDOW_NEEDED
+  A11Y_ALERT_WINDOW_NEEDED,
+  A11Y_ALERT_WINDOW_OVERVIEW_MODE_ENTERED
 };
 
-// A deletate class to control accessibility features.
+// A delegate class to control and query accessibility features.
 class ASH_EXPORT AccessibilityDelegate {
  public:
   virtual ~AccessibilityDelegate() {}
@@ -45,7 +46,7 @@ class ASH_EXPORT AccessibilityDelegate {
   // Invoked to change the type of the screen magnifier.
   virtual void SetMagnifierType(MagnifierType type) = 0;
 
-  // Returns true if the screen magnifier is enabled or not.
+  // Returns true if the screen magnifier is enabled.
   virtual bool IsMagnifierEnabled() const = 0;
 
   // Returns the current screen magnifier mode.
@@ -54,7 +55,7 @@ class ASH_EXPORT AccessibilityDelegate {
   // Invoked to enable Large Cursor.
   virtual void SetLargeCursorEnabled(bool enabled) = 0;
 
-  // Returns ture if Large Cursor is enabled or not.
+  // Returns ture if Large Cursor is enabled.
   virtual bool IsLargeCursorEnabled() const = 0;
 
   // Invoked to enable autoclick.
@@ -71,6 +72,9 @@ class ASH_EXPORT AccessibilityDelegate {
 
   // Returns true when the accessibility menu should be shown.
   virtual bool ShouldShowAccessibilityMenu() const = 0;
+
+  // Returns true if a braille display is connected to the system.
+  virtual bool IsBrailleDisplayConnected() const = 0;
 
   // Cancel all current and queued speech immediately.
   virtual void SilenceSpokenFeedback() const = 0;
@@ -94,4 +98,4 @@ class ASH_EXPORT AccessibilityDelegate {
 
 }  // namespace ash
 
-#endif  // ASH_ACCESSIBILITYDELEGATE_H_
+#endif  // ASH_ACCESSIBILITY_DELEGATE_H_

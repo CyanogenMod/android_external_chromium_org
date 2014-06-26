@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -20,11 +21,11 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/user_agent.h"
 #include "content/shell/browser/shell.h"
 #include "grit/shell_resources.h"
 #include "net/socket/tcp_listen_socket.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 #if defined(OS_ANDROID)
 #include "content/public/browser/android/devtools_auth.h"
@@ -77,11 +78,12 @@ class Target : public content::DevToolsTarget {
   explicit Target(WebContents* web_contents);
 
   virtual std::string GetId() const OVERRIDE { return id_; }
+  virtual std::string GetParentId() const OVERRIDE { return std::string(); }
   virtual std::string GetType() const OVERRIDE { return kTargetTypePage; }
   virtual std::string GetTitle() const OVERRIDE { return title_; }
   virtual std::string GetDescription() const OVERRIDE { return std::string(); }
-  virtual GURL GetUrl() const OVERRIDE { return url_; }
-  virtual GURL GetFaviconUrl() const OVERRIDE { return favicon_url_; }
+  virtual GURL GetURL() const OVERRIDE { return url_; }
+  virtual GURL GetFaviconURL() const OVERRIDE { return favicon_url_; }
   virtual base::TimeTicks GetLastActivityTime() const OVERRIDE {
     return last_activity_time_;
   }
@@ -143,11 +145,11 @@ ShellDevToolsDelegate::ShellDevToolsDelegate(BrowserContext* browser_context)
     : browser_context_(browser_context) {
   std::string frontend_url;
 #if defined(OS_ANDROID)
-  frontend_url = base::StringPrintf(kFrontEndURL,
-                                    webkit_glue::GetWebKitRevision().c_str());
+  frontend_url = base::StringPrintf(kFrontEndURL, GetWebKitRevision().c_str());
 #endif
   devtools_http_handler_ =
-      DevToolsHttpHandler::Start(CreateSocketFactory(), frontend_url, this);
+      DevToolsHttpHandler::Start(CreateSocketFactory(), frontend_url, this,
+                                 base::FilePath());
 }
 
 ShellDevToolsDelegate::~ShellDevToolsDelegate() {

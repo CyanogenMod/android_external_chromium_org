@@ -6,10 +6,12 @@
 
 #include <algorithm>
 
+#include "base/atomic_sequence_num.h"
 #include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/metrics/histogram.h"
 #include "base/single_thread_task_runner.h"
+#include "base/time/time.h"
 #include "cc/animation/animation.h"
 #include "cc/animation/animation_events.h"
 #include "cc/animation/keyframed_animation_curve.h"
@@ -27,7 +29,7 @@
 
 namespace cc {
 
-static int s_next_layer_id = 1;
+base::StaticAtomicSequenceNumber g_next_layer_id;
 
 scoped_refptr<Layer> Layer::Create() {
   return make_scoped_refptr(new Layer());
@@ -37,13 +39,16 @@ Layer::Layer()
     : needs_push_properties_(false),
       num_dependents_need_push_properties_(false),
       stacking_order_changed_(false),
-      layer_id_(s_next_layer_id++),
+      // Layer IDs start from 1.
+      layer_id_(g_next_layer_id.GetNext() + 1),
       ignore_set_needs_commit_(false),
+      sorting_context_id_(0),
       parent_(NULL),
       layer_tree_host_(NULL),
       scroll_clip_layer_id_(INVALID_ID),
       should_scroll_on_main_thread_(false),
       have_wheel_event_handlers_(false),
+      have_scroll_event_handlers_(false),
       user_scrollable_horizontal_(true),
       user_scrollable_vertical_(true),
       is_root_for_isolated_group_(false),
@@ -57,22 +62,15 @@ Layer::Layer()
       use_parent_backface_visibility_(false),
       draw_checkerboard_for_missing_tiles_(false),
       force_render_surface_(false),
-      is_3d_sorted_(false),
-      anchor_point_(0.5f, 0.5f),
+      transform_is_invertible_(true),
       background_color_(0),
       opacity_(1.f),
       blend_mode_(SkXfermode::kSrcOver_Mode),
-      anchor_point_z_(0.f),
       scroll_parent_(NULL),
       clip_parent_(NULL),
       replica_layer_(NULL),
       raster_scale_(0.f),
       client_(NULL) {
-  if (layer_id_ < 0) {
-    s_next_layer_id = 1;
-    layer_id_ = s_next_layer_id++;
-  }
-
   layer_animation_controller_ = LayerAnimationController::Create(layer_id_);
   layer_animation_controller_->AddValueObserver(this);
   layer_animation_controller_->set_value_provider(this);
@@ -132,7 +130,6 @@ void Layer::SetLayerTreeHost(LayerTreeHost* host) {
 
   if (host && layer_animation_controller_->has_any_animation())
     host->SetNeedsCommit();
-  SetNeedsFilterContextIfNeeded();
 }
 
 void Layer::SetNeedsUpdate() {
@@ -164,15 +161,6 @@ void Layer::SetNextCommitWaitsForActivation() {
     return;
 
   layer_tree_host_->SetNextCommitWaitsForActivation();
-}
-
-void Layer::SetNeedsFilterContextIfNeeded() {
-  if (!layer_tree_host_)
-    return;
-
-  if (!filters_.IsEmpty() || !background_filters_.IsEmpty() ||
-      !uses_default_blend_mode())
-    layer_tree_host_->set_needs_filter_context();
 }
 
 void Layer::SetNeedsPushProperties() {
@@ -379,22 +367,6 @@ void Layer::RequestCopyOfOutput(
   SetNeedsCommit();
 }
 
-void Layer::SetAnchorPoint(const gfx::PointF& anchor_point) {
-  DCHECK(IsPropertyChangeAllowed());
-  if (anchor_point_ == anchor_point)
-    return;
-  anchor_point_ = anchor_point;
-  SetNeedsCommit();
-}
-
-void Layer::SetAnchorPointZ(float anchor_point_z) {
-  DCHECK(IsPropertyChangeAllowed());
-  if (anchor_point_z_ == anchor_point_z)
-    return;
-  anchor_point_z_ = anchor_point_z;
-  SetNeedsCommit();
-}
-
 void Layer::SetBackgroundColor(SkColor background_color) {
   DCHECK(IsPropertyChangeAllowed());
   if (background_color_ == background_color)
@@ -422,14 +394,14 @@ SkColor Layer::SafeOpaqueBackgroundColor() const {
   return color;
 }
 
-void Layer::CalculateContentsScale(
-    float ideal_contents_scale,
-    float device_scale_factor,
-    float page_scale_factor,
-    bool animating_transform_to_screen,
-    float* contents_scale_x,
-    float* contents_scale_y,
-    gfx::Size* content_bounds) {
+void Layer::CalculateContentsScale(float ideal_contents_scale,
+                                   float device_scale_factor,
+                                   float page_scale_factor,
+                                   float maximum_animation_contents_scale,
+                                   bool animating_transform_to_screen,
+                                   float* contents_scale_x,
+                                   float* contents_scale_y,
+                                   gfx::Size* content_bounds) {
   DCHECK(layer_tree_host_);
 
   *contents_scale_x = 1;
@@ -486,7 +458,6 @@ void Layer::SetFilters(const FilterOperations& filters) {
     return;
   filters_ = filters;
   SetNeedsCommit();
-  SetNeedsFilterContextIfNeeded();
 }
 
 bool Layer::FilterIsAnimating() const {
@@ -499,7 +470,6 @@ void Layer::SetBackgroundFilters(const FilterOperations& filters) {
     return;
   background_filters_ = filters;
   SetNeedsCommit();
-  SetNeedsFilterContextIfNeeded();
 }
 
 void Layer::SetOpacity(float opacity) {
@@ -565,7 +535,6 @@ void Layer::SetBlendMode(SkXfermode::Mode blend_mode) {
 
   blend_mode_ = blend_mode;
   SetNeedsCommit();
-  SetNeedsFilterContextIfNeeded();
 }
 
 void Layer::SetIsRootForIsolatedGroup(bool root) {
@@ -605,6 +574,15 @@ void Layer::SetTransform(const gfx::Transform& transform) {
   if (transform_ == transform)
     return;
   transform_ = transform;
+  transform_is_invertible_ = transform.IsInvertible();
+  SetNeedsCommit();
+}
+
+void Layer::SetTransformOrigin(const gfx::Point3F& transform_origin) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (transform_origin_ == transform_origin)
+    return;
+  transform_origin_ = transform_origin;
   SetNeedsCommit();
 }
 
@@ -675,11 +653,6 @@ void Layer::RemoveClipChild(Layer* child) {
 void Layer::SetScrollOffset(gfx::Vector2d scroll_offset) {
   DCHECK(IsPropertyChangeAllowed());
 
-  if (layer_tree_host()) {
-    scroll_offset = layer_tree_host()->DistributeScrollOffsetToViewports(
-        scroll_offset, this);
-  }
-
   if (scroll_offset_ == scroll_offset)
     return;
   scroll_offset_ = scroll_offset;
@@ -699,40 +672,6 @@ void Layer::SetScrollOffsetFromImplSide(const gfx::Vector2d& scroll_offset) {
     did_scroll_callback_.Run();
   // The callback could potentially change the layer structure:
   // "this" may have been destroyed during the process.
-}
-
-// TODO(wjmaclean) We should template this and put it into LayerTreeHostCommon
-// so that both Layer and LayerImpl are using the same code. In order
-// to template it we should avoid calling layer_tree_host() by giving
-// Layer/LayerImpl local accessors for page_scale_layer() and
-// page_scale_factor().
-gfx::Vector2d Layer::MaxScrollOffset() const {
-  if (scroll_clip_layer_id_ == INVALID_ID)
-    return gfx::Vector2d();
-
-  gfx::Size scaled_scroll_bounds(bounds());
-  Layer const* current_layer = this;
-  Layer const* page_scale_layer = layer_tree_host()->page_scale_layer();
-  float scale_factor = 1.f;
-  do {
-    if (current_layer == page_scale_layer) {
-      scale_factor = layer_tree_host()->page_scale_factor();
-      scaled_scroll_bounds.SetSize(
-          scale_factor * scaled_scroll_bounds.width(),
-          scale_factor * scaled_scroll_bounds.height());
-    }
-    current_layer = current_layer->parent();
-  } while (current_layer && current_layer->id() != scroll_clip_layer_id_);
-  DCHECK(current_layer);
-  DCHECK(current_layer->id() == scroll_clip_layer_id_);
-
-  gfx::Vector2dF max_offset(
-      scaled_scroll_bounds.width() - current_layer->bounds().width(),
-      scaled_scroll_bounds.height() - current_layer->bounds().height());
-  // We need the final scroll offset to be in CSS coords.
-  max_offset.Scale(1.f / scale_factor);
-  max_offset.SetToMax(gfx::Vector2dF());
-  return gfx::ToFlooredVector2d(max_offset);
 }
 
 void Layer::SetScrollClipLayerId(int clip_layer_id) {
@@ -766,6 +705,14 @@ void Layer::SetHaveWheelEventHandlers(bool have_wheel_event_handlers) {
   if (have_wheel_event_handlers_ == have_wheel_event_handlers)
     return;
   have_wheel_event_handlers_ = have_wheel_event_handlers;
+  SetNeedsCommit();
+}
+
+void Layer::SetHaveScrollEventHandlers(bool have_scroll_event_handlers) {
+  DCHECK(IsPropertyChangeAllowed());
+  if (have_scroll_event_handlers_ == have_scroll_event_handlers)
+    return;
+  have_scroll_event_handlers_ = have_scroll_event_handlers;
   SetNeedsCommit();
 }
 
@@ -809,11 +756,11 @@ void Layer::SetDoubleSided(bool double_sided) {
   SetNeedsCommit();
 }
 
-void Layer::SetIs3dSorted(bool sorted) {
+void Layer::Set3dSortingContextId(int id) {
   DCHECK(IsPropertyChangeAllowed());
-  if (is_3d_sorted_ == sorted)
+  if (id == sorting_context_id_)
     return;
-  is_3d_sorted_ = sorted;
+  sorting_context_id_ = id;
   SetNeedsCommit();
 }
 
@@ -907,8 +854,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   bool use_paint_properties = paint_properties_.source_frame_number ==
                               layer_tree_host_->source_frame_number();
 
-  layer->SetAnchorPoint(anchor_point_);
-  layer->SetAnchorPointZ(anchor_point_z_);
+  layer->SetTransformOrigin(transform_origin_);
   layer->SetBackgroundColor(background_color_);
   layer->SetBounds(use_paint_properties ? paint_properties_.bounds
                                         : bounds_);
@@ -934,6 +880,7 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetMasksToBounds(masks_to_bounds_);
   layer->SetShouldScrollOnMainThread(should_scroll_on_main_thread_);
   layer->SetHaveWheelEventHandlers(have_wheel_event_handlers_);
+  layer->SetHaveScrollEventHandlers(have_scroll_event_handlers_);
   layer->SetNonFastScrollableRegion(non_fast_scrollable_region_);
   layer->SetTouchEventHandlerRegion(touch_event_handler_region_);
   layer->SetContentsOpaque(contents_opaque_);
@@ -945,36 +892,46 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
   layer->SetPosition(position_);
   layer->SetIsContainerForFixedPositionLayers(
       IsContainerForFixedPositionLayers());
-  layer->SetFixedContainerSizeDelta(gfx::Vector2dF());
   layer->SetPositionConstraint(position_constraint_);
   layer->SetShouldFlattenTransform(should_flatten_transform_);
-  layer->SetIs3dSorted(is_3d_sorted_);
   layer->SetUseParentBackfaceVisibility(use_parent_backface_visibility_);
   if (!layer->TransformIsAnimatingOnImplOnly() && !TransformIsAnimating())
-    layer->SetTransform(transform_);
+    layer->SetTransformAndInvertibility(transform_, transform_is_invertible_);
   DCHECK(!(TransformIsAnimating() && layer->TransformIsAnimatingOnImplOnly()));
+  layer->Set3dSortingContextId(sorting_context_id_);
 
   layer->SetScrollClipLayer(scroll_clip_layer_id_);
   layer->set_user_scrollable_horizontal(user_scrollable_horizontal_);
   layer->set_user_scrollable_vertical(user_scrollable_vertical_);
 
   LayerImpl* scroll_parent = NULL;
-  if (scroll_parent_)
+  if (scroll_parent_) {
     scroll_parent = layer->layer_tree_impl()->LayerById(scroll_parent_->id());
+    DCHECK(scroll_parent);
+  }
 
   layer->SetScrollParent(scroll_parent);
   if (scroll_children_) {
     std::set<LayerImpl*>* scroll_children = new std::set<LayerImpl*>;
     for (std::set<Layer*>::iterator it = scroll_children_->begin();
-        it != scroll_children_->end(); ++it)
-      scroll_children->insert(layer->layer_tree_impl()->LayerById((*it)->id()));
+         it != scroll_children_->end();
+         ++it) {
+      DCHECK_EQ((*it)->scroll_parent(), this);
+      LayerImpl* scroll_child =
+          layer->layer_tree_impl()->LayerById((*it)->id());
+      DCHECK(scroll_child);
+      scroll_children->insert(scroll_child);
+    }
     layer->SetScrollChildren(scroll_children);
+  } else {
+    layer->SetScrollChildren(NULL);
   }
 
   LayerImpl* clip_parent = NULL;
   if (clip_parent_) {
     clip_parent =
         layer->layer_tree_impl()->LayerById(clip_parent_->id());
+    DCHECK(clip_parent);
   }
 
   layer->SetClipParent(clip_parent);
@@ -982,11 +939,14 @@ void Layer::PushPropertiesTo(LayerImpl* layer) {
     std::set<LayerImpl*>* clip_children = new std::set<LayerImpl*>;
     for (std::set<Layer*>::iterator it = clip_children_->begin();
         it != clip_children_->end(); ++it) {
+      DCHECK_EQ((*it)->clip_parent(), this);
       LayerImpl* clip_child = layer->layer_tree_impl()->LayerById((*it)->id());
       DCHECK(clip_child);
       clip_children->insert(clip_child);
     }
     layer->SetClipChildren(clip_children);
+  } else {
+    layer->SetClipChildren(NULL);
   }
 
   // Adjust the scroll delta to be just the scrolls that have happened since
@@ -1059,7 +1019,7 @@ void Layer::SavePaintProperties() {
 }
 
 bool Layer::Update(ResourceUpdateQueue* queue,
-                   const OcclusionTracker* occlusion) {
+                   const OcclusionTracker<Layer>* occlusion) {
   DCHECK(layer_tree_host_);
   DCHECK_EQ(layer_tree_host_->source_frame_number(),
             paint_properties_.source_frame_number) <<
@@ -1069,6 +1029,10 @@ bool Layer::Update(ResourceUpdateQueue* queue,
 
 bool Layer::NeedMoreUpdates() {
   return false;
+}
+
+bool Layer::IsSuitableForGpuRasterization() const {
+  return true;
 }
 
 scoped_refptr<base::debug::ConvertableToTraceFormat> Layer::TakeDebugInfo() {
@@ -1088,6 +1052,11 @@ void Layer::ClearRenderSurface() {
   draw_properties_.render_surface.reset();
 }
 
+void Layer::ClearRenderSurfaceLayerList() {
+  if (draw_properties_.render_surface)
+    draw_properties_.render_surface->layer_list().clear();
+}
+
 gfx::Vector2dF Layer::ScrollOffsetForAnimation() const {
   return TotalScrollOffset();
 }
@@ -1105,7 +1074,10 @@ void Layer::OnOpacityAnimated(float opacity) {
 }
 
 void Layer::OnTransformAnimated(const gfx::Transform& transform) {
+  if (transform_ == transform)
+    return;
   transform_ = transform;
+  transform_is_invertible_ = transform.IsInvertible();
 }
 
 void Layer::OnScrollOffsetAnimated(const gfx::Vector2dF& scroll_offset) {
@@ -1135,7 +1107,8 @@ bool Layer::AddAnimation(scoped_ptr <Animation> animation) {
 }
 
 void Layer::PauseAnimation(int animation_id, double time_offset) {
-  layer_animation_controller_->PauseAnimation(animation_id, time_offset);
+  layer_animation_controller_->PauseAnimation(
+      animation_id, base::TimeDelta::FromSecondsD(time_offset));
   SetNeedsCommit();
 }
 

@@ -6,10 +6,9 @@
 
 #include <string.h>
 
-#include "base/containers/hash_tables.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "mojo/system/channel.h"
+#include "mojo/system/local_message_pipe_endpoint.h"
 #include "mojo/system/message_pipe_dispatcher.h"
 
 namespace mojo {
@@ -18,63 +17,73 @@ namespace system {
 ProxyMessagePipeEndpoint::ProxyMessagePipeEndpoint()
     : local_id_(MessageInTransit::kInvalidEndpointId),
       remote_id_(MessageInTransit::kInvalidEndpointId),
-      is_open_(true),
       is_peer_open_(true) {
+}
+
+ProxyMessagePipeEndpoint::ProxyMessagePipeEndpoint(
+    LocalMessagePipeEndpoint* local_message_pipe_endpoint,
+    bool is_peer_open)
+    : local_id_(MessageInTransit::kInvalidEndpointId),
+      remote_id_(MessageInTransit::kInvalidEndpointId),
+      is_peer_open_(is_peer_open),
+      paused_message_queue_(MessageInTransitQueue::PassContents(),
+                            local_message_pipe_endpoint->message_queue()) {
+  local_message_pipe_endpoint->Close();
 }
 
 ProxyMessagePipeEndpoint::~ProxyMessagePipeEndpoint() {
   DCHECK(!is_running());
   DCHECK(!is_attached());
   AssertConsistentState();
-  DCHECK(paused_message_queue_.empty());
+  DCHECK(paused_message_queue_.IsEmpty());
 }
 
-void ProxyMessagePipeEndpoint::Close() {
-  DCHECK(is_open_);
-  is_open_ = false;
-
-  DCHECK(is_attached());
-  channel_->DetachMessagePipeEndpoint(local_id_);
-  channel_ = NULL;
-  local_id_ = MessageInTransit::kInvalidEndpointId;
-  remote_id_ = MessageInTransit::kInvalidEndpointId;
-
-  for (std::deque<MessageInTransit*>::iterator it =
-           paused_message_queue_.begin();
-       it != paused_message_queue_.end();
-       ++it) {
-    (*it)->Destroy();
-  }
-  paused_message_queue_.clear();
+MessagePipeEndpoint::Type ProxyMessagePipeEndpoint::GetType() const {
+  return kTypeProxy;
 }
 
-void ProxyMessagePipeEndpoint::OnPeerClose() {
-  DCHECK(is_open_);
+bool ProxyMessagePipeEndpoint::OnPeerClose() {
   DCHECK(is_peer_open_);
 
   is_peer_open_ = false;
-  MessageInTransit* message =
-      MessageInTransit::Create(MessageInTransit::kTypeMessagePipe,
-                               MessageInTransit::kSubtypeMessagePipePeerClosed,
-                               NULL, 0, 0);
-  EnqueueMessageInternal(message);
+
+  // If our outgoing message queue isn't empty, we shouldn't be destroyed yet.
+  if (!paused_message_queue_.IsEmpty())
+    return true;
+
+  if (is_attached()) {
+    if (!is_running()) {
+      // If we're not running yet, we can't be destroyed yet, because we're
+      // still waiting for the "run" message from the other side.
+      return true;
+    }
+
+    Detach();
+  }
+
+  return false;
 }
 
-MojoResult ProxyMessagePipeEndpoint::EnqueueMessage(
-    MessageInTransit* message,
-    std::vector<DispatcherTransport>* transports) {
-  DCHECK(!transports || !transports->empty());
+// Note: We may have to enqueue messages even when our (local) peer isn't open
+// -- it may have been written to and closed immediately, before we were ready.
+// This case is handled in |Run()| (which will call us).
+void ProxyMessagePipeEndpoint::EnqueueMessage(
+    scoped_ptr<MessageInTransit> message) {
+  if (is_running()) {
+    message->SerializeAndCloseDispatchers(channel_.get());
 
-  if (transports)
-    AttachAndCloseDispatchers(message, transports);
-
-  EnqueueMessageInternal(message);
-  return MOJO_RESULT_OK;
+    message->set_source_id(local_id_);
+    message->set_destination_id(remote_id_);
+    if (!channel_->WriteMessage(message.Pass()))
+      LOG(WARNING) << "Failed to write message to channel";
+  } else {
+    paused_message_queue_.AddMessage(message.Pass());
+  }
 }
 
 void ProxyMessagePipeEndpoint::Attach(scoped_refptr<Channel> channel,
                                       MessageInTransit::EndpointId local_id) {
-  DCHECK(channel.get());
+  DCHECK(channel);
   DCHECK_NE(local_id, MessageInTransit::kInvalidEndpointId);
 
   DCHECK(!is_attached());
@@ -85,7 +94,7 @@ void ProxyMessagePipeEndpoint::Attach(scoped_refptr<Channel> channel,
   AssertConsistentState();
 }
 
-void ProxyMessagePipeEndpoint::Run(MessageInTransit::EndpointId remote_id) {
+bool ProxyMessagePipeEndpoint::Run(MessageInTransit::EndpointId remote_id) {
   // Assertions about arguments:
   DCHECK_NE(remote_id, MessageInTransit::kInvalidEndpointId);
 
@@ -97,44 +106,31 @@ void ProxyMessagePipeEndpoint::Run(MessageInTransit::EndpointId remote_id) {
   remote_id_ = remote_id;
   AssertConsistentState();
 
-  for (std::deque<MessageInTransit*>::iterator it =
-           paused_message_queue_.begin(); it != paused_message_queue_.end();
-       ++it)
-    EnqueueMessageInternal(*it);
-  paused_message_queue_.clear();
+  while (!paused_message_queue_.IsEmpty())
+    EnqueueMessage(paused_message_queue_.GetMessage());
+
+  if (is_peer_open_)
+    return true;  // Stay alive.
+
+  // We were just waiting to die.
+  Detach();
+  return false;
 }
 
-void ProxyMessagePipeEndpoint::AttachAndCloseDispatchers(
-    MessageInTransit* message,
-    std::vector<DispatcherTransport>* transports) {
-  DCHECK(transports);
-  DCHECK(!transports->empty());
-
-  // TODO(vtl)
-  LOG(ERROR) << "Sending handles over remote message pipes not yet supported "
-                "(closing sent handles)";
-  for (size_t i = 0; i < transports->size(); i++)
-    (*transports)[i].Close();
+void ProxyMessagePipeEndpoint::OnRemove() {
+  Detach();
 }
 
-// Note: We may have to enqueue messages even when our (local) peer isn't open
-// -- it may have been written to and closed immediately, before we were ready.
-// This case is handled in |Run()| (which will call us).
-void ProxyMessagePipeEndpoint::EnqueueMessageInternal(
-    MessageInTransit* message) {
-  DCHECK(is_open_);
+void ProxyMessagePipeEndpoint::Detach() {
+  DCHECK(is_attached());
 
-  if (is_running()) {
-    message->set_source_id(local_id_);
-    message->set_destination_id(remote_id_);
-    // If it fails at this point, the message gets dropped. (This is no
-    // different from any other in-transit errors.)
-    // Note: |WriteMessage()| will destroy the message even on failure.
-    if (!channel_->WriteMessage(message))
-      LOG(WARNING) << "Failed to write message to channel";
-  } else {
-    paused_message_queue_.push_back(message);
-  }
+  AssertConsistentState();
+  channel_->DetachMessagePipeEndpoint(local_id_, remote_id_);
+  channel_ = NULL;
+  local_id_ = MessageInTransit::kInvalidEndpointId;
+  remote_id_ = MessageInTransit::kInvalidEndpointId;
+  paused_message_queue_.Clear();
+  AssertConsistentState();
 }
 
 #ifndef NDEBUG

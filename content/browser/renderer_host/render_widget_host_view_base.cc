@@ -11,8 +11,7 @@
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/content_switches_internal.h"
-#include "content/port/browser/render_widget_host_view_frame_subscriber.h"
-#include "third_party/WebKit/public/platform/WebScreenInfo.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -34,26 +33,7 @@
 #include "ui/gfx/win/hwnd_util.h"
 #endif
 
-#if defined(TOOLKIT_GTK)
-#include <gdk/gdkx.h>
-#include <gtk/gtk.h>
-
-#include "content/browser/renderer_host/gtk_window_utils.h"
-#endif
-
 namespace content {
-
-// static
-RenderWidgetHostViewPort* RenderWidgetHostViewPort::FromRWHV(
-    RenderWidgetHostView* rwhv) {
-  return static_cast<RenderWidgetHostViewPort*>(rwhv);
-}
-
-// static
-RenderWidgetHostViewPort* RenderWidgetHostViewPort::CreateViewForWidget(
-    RenderWidgetHost* widget) {
-  return FromRWHV(RenderWidgetHostView::CreateViewForWidget(widget));
-}
 
 #if defined(OS_WIN)
 
@@ -386,11 +366,13 @@ const int kFlushInputRateInUs = 16666;
 
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
     : popup_type_(blink::WebPopupTypeNone),
+      background_opaque_(true),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
       selection_range_(gfx::Range::InvalidRange()),
       current_device_scale_factor_(0),
+      current_display_rotation_(gfx::Display::ROTATE_0),
       pinch_zoom_enabled_(content::IsPinchToZoomEnabled()),
       renderer_frame_number_(0) {
 }
@@ -403,19 +385,19 @@ bool RenderWidgetHostViewBase::OnMessageReceived(const IPC::Message& msg){
   return false;
 }
 
-void RenderWidgetHostViewBase::SetBackground(const SkBitmap& background) {
-  background_ = background;
+void RenderWidgetHostViewBase::SetBackgroundOpaque(bool opaque) {
+  background_opaque_ = opaque;
 }
 
-const SkBitmap& RenderWidgetHostViewBase::GetBackground() {
-  return background_;
+bool RenderWidgetHostViewBase::GetBackgroundOpaque() {
+  return background_opaque_;
 }
 
 gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
   gfx::NativeView view = GetNativeView();
   gfx::Display display =
       gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
-  return gfx::ToCeiledSize(gfx::ScaleSize(GetViewBounds().size(),
+  return gfx::ToCeiledSize(gfx::ScaleSize(GetRequestedRendererSize(),
                                           display.device_scale_factor()));
 }
 
@@ -430,6 +412,15 @@ void RenderWidgetHostViewBase::SelectionChanged(const base::string16& text,
   selection_text_offset_ = offset;
   selection_range_.set_start(range.start());
   selection_range_.set_end(range.end());
+}
+
+gfx::Size RenderWidgetHostViewBase::GetRequestedRendererSize() const {
+  return GetViewBounds().size();
+}
+
+ui::TextInputClient* RenderWidgetHostViewBase::GetTextInputClient() {
+  NOTREACHED();
+  return NULL;
 }
 
 bool RenderWidgetHostViewBase::IsShowingContextMenu() const {
@@ -453,11 +444,6 @@ bool RenderWidgetHostViewBase::IsMouseLocked() {
   return mouse_locked_;
 }
 
-void RenderWidgetHostViewBase::UnhandledWheelEvent(
-    const blink::WebMouseWheelEvent& event) {
-  // Most implementations don't need to do anything here.
-}
-
 InputEventAckState RenderWidgetHostViewBase::FilterInputEvent(
     const blink::WebInputEvent& input_event) {
   // By default, input events are simply forwarded to the renderer.
@@ -477,6 +463,11 @@ void RenderWidgetHostViewBase::OnSetNeedsFlushInput() {
       base::TimeDelta::FromMicroseconds(kFlushInputRateInUs),
       this,
       &RenderWidgetHostViewBase::FlushInput);
+}
+
+void RenderWidgetHostViewBase::WheelEventAck(
+    const blink::WebMouseWheelEvent& event,
+    InputEventAckState ack_result) {
 }
 
 void RenderWidgetHostViewBase::GestureEventAck(
@@ -505,6 +496,17 @@ void RenderWidgetHostViewBase::SetBrowserAccessibilityManager(
   browser_accessibility_manager_.reset(manager);
 }
 
+void RenderWidgetHostViewBase::OnAccessibilitySetFocus(int acc_obj_id) {
+}
+
+void RenderWidgetHostViewBase::AccessibilityShowMenu(int acc_obj_id) {
+}
+
+gfx::Point RenderWidgetHostViewBase::AccessibilityOriginInScreen(
+    const gfx::Rect& bounds) {
+  return bounds.origin();
+}
+
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
   RenderWidgetHostImpl* impl = NULL;
   if (GetRenderWidgetHost())
@@ -521,16 +523,15 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   gfx::Display display =
       gfx::Screen::GetScreenFor(view)->GetDisplayNearestWindow(view);
   if (current_display_area_ == display.work_area() &&
-      current_device_scale_factor_ == display.device_scale_factor()) {
+      current_device_scale_factor_ == display.device_scale_factor() &&
+      current_display_rotation_ == display.rotation()) {
     return false;
   }
+
   current_display_area_ = display.work_area();
   current_device_scale_factor_ = display.device_scale_factor();
+  current_display_rotation_ = display.rotation();
   return true;
-}
-
-void RenderWidgetHostViewBase::ProcessAckedTouchEvent(
-    const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
 }
 
 scoped_ptr<SyntheticGestureTarget>
@@ -539,9 +540,6 @@ RenderWidgetHostViewBase::CreateSyntheticGestureTarget() {
       RenderWidgetHostImpl::From(GetRenderWidgetHost());
   return scoped_ptr<SyntheticGestureTarget>(
       new SyntheticGestureTargetBase(host));
-}
-
-void RenderWidgetHostViewBase::FocusedNodeChanged(bool is_editable_node) {
 }
 
 // Platform implementation should override this method to allow frame
@@ -580,11 +578,6 @@ void RenderWidgetHostViewBase::EndFrameSubscription() {
   render_process_host->EndFrameSubscription(impl->GetRoutingID());
 }
 
-void RenderWidgetHostViewBase::OnOverscrolled(
-    gfx::Vector2dF accumulated_overscroll,
-    gfx::Vector2dF current_fling_velocity) {
-}
-
 uint32 RenderWidgetHostViewBase::RendererFrameNumber() {
   return renderer_frame_number_;
 }
@@ -600,6 +593,51 @@ void RenderWidgetHostViewBase::FlushInput() {
   if (!impl)
     return;
   impl->FlushInput();
+}
+
+SkBitmap::Config RenderWidgetHostViewBase::PreferredReadbackFormat() {
+  return SkBitmap::kARGB_8888_Config;
+}
+
+gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {
+  return GetViewBounds().size();
+}
+
+void RenderWidgetHostViewBase::SetInsets(const gfx::Insets& insets) {
+  NOTIMPLEMENTED();
+}
+
+// static
+blink::WebScreenOrientationType
+RenderWidgetHostViewBase::GetOrientationTypeFromDisplay(
+    const gfx::Display& display) {
+  int angle = display.RotationAsDegree();
+  const gfx::Rect& bounds = display.bounds();
+
+  // Whether the device's natural orientation is portrait.
+  bool naturalPortrait = false;
+  if (angle == 0 || angle == 180) // The device is in its natural orientation.
+    naturalPortrait = bounds.height() > bounds.width();
+  else
+    naturalPortrait = bounds.height() < bounds.width();
+
+  switch (angle) {
+  case 0:
+    return naturalPortrait ? blink::WebScreenOrientationPortraitPrimary
+                           : blink::WebScreenOrientationLandscapePrimary;
+  case 90:
+    return naturalPortrait ? blink::WebScreenOrientationLandscapePrimary
+                           : blink::WebScreenOrientationPortraitSecondary;
+  case 180:
+    return naturalPortrait ? blink::WebScreenOrientationPortraitSecondary
+                           : blink::WebScreenOrientationLandscapeSecondary;
+  case 270:
+    return naturalPortrait ? blink::WebScreenOrientationLandscapeSecondary
+                           : blink::WebScreenOrientationPortraitPrimary;
+  default:
+    NOTREACHED();
+    return blink::WebScreenOrientationPortraitPrimary;
+  }
 }
 
 }  // namespace content

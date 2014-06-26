@@ -7,18 +7,17 @@
 
 #include <set>
 #include <string>
-#include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/scoped_observer.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/extensions/api/omnibox.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "ui/base/window_open_disposition.h"
 
 class Profile;
@@ -30,6 +29,7 @@ class ListValue;
 }
 
 namespace content {
+class BrowserContext;
 class WebContents;
 }
 
@@ -38,6 +38,7 @@ class Image;
 }
 
 namespace extensions {
+class ExtensionRegistry;
 
 // Event router class for events related to the omnibox API.
 class ExtensionOmniboxEventRouter {
@@ -79,27 +80,22 @@ class OmniboxSendSuggestionsFunction : public ChromeSyncExtensionFunction {
   virtual ~OmniboxSendSuggestionsFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
-class OmniboxAPI : public ProfileKeyedAPI,
-                   public content::NotificationObserver {
+class OmniboxAPI : public BrowserContextKeyedAPI,
+                   public ExtensionRegistryObserver {
  public:
-  explicit OmniboxAPI(Profile* profile);
+  explicit OmniboxAPI(content::BrowserContext* context);
   virtual ~OmniboxAPI();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<OmniboxAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<OmniboxAPI>* GetFactoryInstance();
 
   // Convenience method to get the OmniboxAPI for a profile.
-  static OmniboxAPI* Get(Profile* profile);
+  static OmniboxAPI* Get(content::BrowserContext* context);
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   // Returns the icon to display in the omnibox for the given extension.
@@ -110,13 +106,21 @@ class OmniboxAPI : public ProfileKeyedAPI,
   gfx::Image GetOmniboxPopupIcon(const std::string& extension_id);
 
  private:
-  friend class ProfileKeyedAPIFactory<OmniboxAPI>;
+  friend class BrowserContextKeyedAPIFactory<OmniboxAPI>;
 
   typedef std::set<const Extension*> PendingExtensions;
 
   void OnTemplateURLsLoaded();
 
-  // ProfileKeyedAPI implementation.
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "OmniboxAPI";
   }
@@ -130,7 +134,9 @@ class OmniboxAPI : public ProfileKeyedAPI,
   // have keywords registered.
   PendingExtensions pending_extensions_;
 
-  content::NotificationRegistrar registrar_;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // Keeps track of favicon-sized omnibox icons for extensions.
   ExtensionIconManager omnibox_icon_manager_;
@@ -142,7 +148,7 @@ class OmniboxAPI : public ProfileKeyedAPI,
 };
 
 template <>
-void ProfileKeyedAPIFactory<OmniboxAPI>::DeclareFactoryDependencies();
+void BrowserContextKeyedAPIFactory<OmniboxAPI>::DeclareFactoryDependencies();
 
 class OmniboxSetDefaultSuggestionFunction : public ChromeSyncExtensionFunction {
  public:
@@ -153,7 +159,7 @@ class OmniboxSetDefaultSuggestionFunction : public ChromeSyncExtensionFunction {
   virtual ~OmniboxSetDefaultSuggestionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // If the extension has set a custom default suggestion via

@@ -5,10 +5,17 @@
 {
   'variables': {
     'conditions': [
-      ['OS=="android"', {
+      ['((OS=="android" or chromeos==1) and target_arch=="arm") or (OS=="ios" and target_arch=="armv7")', {
         'use_opus_fixed_point%': 1,
+        'use_opus_arm_optimization%': 1,
       }, {
         'use_opus_fixed_point%': 0,
+        'use_opus_arm_optimization%': 0,
+      }],
+      ['(OS=="android" or chromeos==1) and target_arch=="arm"', {
+        'use_opus_rtcd%': 1,
+      }, {
+        'use_opus_rtcd%': 0,
       }],
     ],
   },
@@ -48,6 +55,18 @@
             4334,  # Disable 32-bit shift warning in src/opus_encoder.c .
           ],
         }],
+        [ 'os_posix==1 and OS!="android"', {
+          # Suppress a warning given by opus_decoder.c that tells us
+          # optimizations are turned off.
+          'cflags': [
+            '-Wno-#pragma-messages',
+          ],
+          'xcode_settings': {
+            'WARNING_CFLAGS': [
+              '-Wno-#pragma-messages',
+            ],
+          },
+        }],
         ['use_opus_fixed_point==0', {
           'include_dirs': [
             'src/silk/float',
@@ -64,6 +83,31 @@
           ],
           'sources/': [
             ['exclude', '/float/[^/]*_FLP.(h|c)$'],
+          ],
+          'conditions': [
+            ['use_opus_arm_optimization==1', {
+              'defines': [
+                'OPUS_ARM_ASM',
+                'OPUS_ARM_INLINE_ASM',
+                'OPUS_ARM_INLINE_EDSP',
+              ],
+              'includes': [
+                'opus_srcs_arm.gypi',
+              ],
+              'conditions': [
+                ['use_opus_rtcd==1', {
+                  'defines': [
+                    'OPUS_ARM_MAY_HAVE_EDSP',
+                    'OPUS_ARM_MAY_HAVE_MEDIA',
+                    'OPUS_ARM_MAY_HAVE_NEON',
+                    'OPUS_HAVE_RTCD',
+                  ],
+                  'includes': [
+                    'opus_srcs_rtcd.gypi',
+                  ],
+                }],
+              ],
+            }],
           ],
         }],
       ],

@@ -13,7 +13,6 @@
 #include "ipc/ipc_test_sink.h"
 
 class StoragePartition;
-class TransportDIB;
 
 namespace content {
 
@@ -48,15 +47,13 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void WidgetRestored() OVERRIDE;
   virtual void WidgetHidden() OVERRIDE;
   virtual int VisibleWidgetCount() const OVERRIDE;
-  virtual bool IsGuest() const OVERRIDE;
+  virtual bool IsIsolatedGuest() const OVERRIDE;
   virtual StoragePartition* GetStoragePartition() const OVERRIDE;
   virtual void AddWord(const base::string16& word);
   virtual bool FastShutdownIfPossible() OVERRIDE;
   virtual bool FastShutdownStarted() const OVERRIDE;
   virtual void DumpHandles() OVERRIDE;
   virtual base::ProcessHandle GetHandle() const OVERRIDE;
-  virtual TransportDIB* MapTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
-  virtual TransportDIB* GetTransportDIB(TransportDIB::Id dib_id) OVERRIDE;
   virtual int GetID() const OVERRIDE;
   virtual bool HasConnection() const OVERRIDE;
   virtual void SetIgnoreInputEvents(bool ignore_input_events) OVERRIDE;
@@ -80,9 +77,15 @@ class MockRenderProcessHost : public RenderProcessHost {
   virtual void DisableAecDump() OVERRIDE;
   virtual void SetWebRtcLogMessageCallback(
       base::Callback<void(const std::string&)> callback) OVERRIDE;
+  virtual WebRtcStopRtpDumpCallback StartRtpDump(
+      bool incoming,
+      bool outgoing,
+      const WebRtcRtpPacketCallback& packet_callback) OVERRIDE;
 #endif
   virtual void ResumeDeferredNavigation(const GlobalRequestID& request_id)
       OVERRIDE;
+  virtual void NotifyTimezoneChange() OVERRIDE;
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   // IPC::Sender via RenderProcessHost.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
@@ -99,14 +102,13 @@ class MockRenderProcessHost : public RenderProcessHost {
 
   int GetActiveViewCount();
 
-  void SetIsGuest(bool is_guest) {
-    is_guest_ = is_guest;
+  void set_is_isolated_guest(bool is_isolated_guest) {
+    is_isolated_guest_ = is_isolated_guest;
   }
 
  private:
   // Stores IPC messages that would have been sent to the renderer.
   IPC::TestSink sink_;
-  TransportDIB* transport_dib_;
   int bad_msg_count_;
   const MockRenderProcessHostFactory* factory_;
   int id_;
@@ -118,7 +120,7 @@ class MockRenderProcessHost : public RenderProcessHost {
   IDMap<IPC::Listener> listeners_;
   bool fast_shutdown_started_;
   bool deletion_callback_called_;
-  bool is_guest_;
+  bool is_isolated_guest_;
 
   DISALLOW_COPY_AND_ASSIGN(MockRenderProcessHost);
 };

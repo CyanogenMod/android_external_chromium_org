@@ -13,13 +13,14 @@
 #include "media/cast/transport/cast_transport_sender.h"
 
 CastTransportSenderIPC::CastTransportSenderIPC(
-    const media::cast::transport::CastTransportConfig& config,
-    const media::cast::transport::CastTransportStatusCallback& status_cb)
-    : status_callback_(status_cb) {
+    const net::IPEndPoint& remote_end_point,
+    const media::cast::transport::CastTransportStatusCallback& status_cb,
+    const media::cast::transport::BulkRawEventsCallback& raw_events_cb)
+    : status_callback_(status_cb), raw_events_callback_(raw_events_cb) {
   if (CastIPCDispatcher::Get()) {
     channel_id_ = CastIPCDispatcher::Get()->AddSender(this);
   }
-  Send(new CastHostMsg_New(channel_id_, config));
+  Send(new CastHostMsg_New(channel_id_, remote_end_point));
 }
 
 CastTransportSenderIPC::~CastTransportSenderIPC() {
@@ -34,59 +35,58 @@ void CastTransportSenderIPC::SetPacketReceiver(
   packet_callback_ = packet_callback;
 }
 
+void CastTransportSenderIPC::InitializeAudio(
+    const media::cast::transport::CastTransportAudioConfig& config) {
+  Send(new CastHostMsg_InitializeAudio(channel_id_, config));
+}
+
+void CastTransportSenderIPC::InitializeVideo(
+    const media::cast::transport::CastTransportVideoConfig& config) {
+  Send(new CastHostMsg_InitializeVideo(channel_id_, config));
+}
+
 void CastTransportSenderIPC::InsertCodedAudioFrame(
-    const media::cast::transport::EncodedAudioFrame* audio_frame,
-    const base::TimeTicks& recorded_time) {
-  Send(new CastHostMsg_InsertCodedAudioFrame(channel_id_,
-                                             *audio_frame,
-                                             recorded_time));
+    const media::cast::transport::EncodedFrame& audio_frame) {
+  Send(new CastHostMsg_InsertCodedAudioFrame(channel_id_, audio_frame));
 }
 
 void CastTransportSenderIPC::InsertCodedVideoFrame(
-    const media::cast::transport::EncodedVideoFrame* video_frame,
-    const base::TimeTicks& capture_time) {
-  Send(new CastHostMsg_InsertCodedVideoFrame(channel_id_,
-                                             *video_frame,
-                                             capture_time));
+    const media::cast::transport::EncodedFrame& video_frame) {
+  Send(new CastHostMsg_InsertCodedVideoFrame(channel_id_, video_frame));
 }
 
 void CastTransportSenderIPC::SendRtcpFromRtpSender(
     uint32 packet_type_flags,
-    const media::cast::transport::RtcpSenderInfo& sender_info,
+    uint32 ntp_seconds,
+    uint32 ntp_fraction,
+    uint32 rtp_timestamp,
     const media::cast::transport::RtcpDlrrReportBlock& dlrr,
-    const media::cast::transport::RtcpSenderLogMessage& sender_log,
     uint32 sending_ssrc,
     const std::string& c_name) {
   struct media::cast::transport::SendRtcpFromRtpSenderData data;
   data.packet_type_flags = packet_type_flags;
   data.sending_ssrc = sending_ssrc;
   data.c_name = c_name;
+  data.ntp_seconds = ntp_seconds;
+  data.ntp_fraction = ntp_fraction;
+  data.rtp_timestamp = rtp_timestamp;
   Send(new CastHostMsg_SendRtcpFromRtpSender(
       channel_id_,
       data,
-      sender_info,
-      dlrr,
-      sender_log));
+      dlrr));
 }
 
 void CastTransportSenderIPC::ResendPackets(
     bool is_audio,
-    const media::cast::MissingFramesAndPacketsMap& missing_packets) {
+    const media::cast::MissingFramesAndPacketsMap& missing_packets,
+    bool cancel_rtx_if_not_in_list,
+    base::TimeDelta dedupe_window) {
   Send(new CastHostMsg_ResendPackets(channel_id_,
                                      is_audio,
-                                     missing_packets));
+                                     missing_packets,
+                                     cancel_rtx_if_not_in_list,
+                                     dedupe_window));
 }
-
-void CastTransportSenderIPC::SubscribeAudioRtpStatsCallback(
-    const media::cast::transport::CastTransportRtpStatistics& callback) {
-  audio_rtp_callback_ = callback;
-}
-
-void CastTransportSenderIPC::SubscribeVideoRtpStatsCallback(
-    const media::cast::transport::CastTransportRtpStatistics& callback) {
-  video_rtp_callback_ = callback;
-}
-
 
 void CastTransportSenderIPC::OnReceivedPacket(
     const media::cast::Packet& packet) {
@@ -96,8 +96,7 @@ void CastTransportSenderIPC::OnReceivedPacket(
         new media::cast::transport::Packet(packet));
     packet_callback_.Run(packet_copy.Pass());
   } else {
-    LOG(ERROR) << "CastIPCDispatcher::OnReceivedPacket "
-               << "no packet callback yet.";
+    DVLOG(1) << "CastIPCDispatcher::OnReceivedPacket no packet callback yet.";
   }
 }
 
@@ -106,14 +105,9 @@ void CastTransportSenderIPC::OnNotifyStatusChange(
   status_callback_.Run(status);
 }
 
-void CastTransportSenderIPC::OnRtpStatistics(
-    bool audio,
-    const media::cast::transport::RtcpSenderInfo& sender_info,
-    base::TimeTicks time_sent,
-    uint32 rtp_timestamp) {
-  const media::cast::transport::CastTransportRtpStatistics& callback =
-      audio ? audio_rtp_callback_ : video_rtp_callback_;
-  callback.Run(sender_info, time_sent, rtp_timestamp);
+void CastTransportSenderIPC::OnRawEvents(
+    const std::vector<media::cast::PacketEvent>& packet_events) {
+  raw_events_callback_.Run(packet_events);
 }
 
 void CastTransportSenderIPC::Send(IPC::Message* message) {

@@ -10,19 +10,23 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/sequenced_task_runner.h"
+#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/policy/policy_oauth2_token_fetcher.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #include "chrome/browser/chromeos/policy/wildcard_login_checker.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/common/chrome_content_client.h"
 #include "components/policy/core/common/cloud/cloud_external_data_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_refresh_scheduler.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/cloud/system_policy_request_context.h"
+#include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_pref_names.h"
-#include "content/public/common/content_client.h"
+#include "components/policy/core/common/policy_types.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "policy/policy_constants.h"
 #include "url/gurl.h"
 
 namespace em = enterprise_management;
@@ -49,8 +53,9 @@ const char kUMAInitialFetchOAuth2Error[] =
 const char kUMAInitialFetchOAuth2NetworkError[] =
     "Enterprise.UserPolicyChromeOS.InitialFetch.OAuth2NetworkError";
 
-void OnWildcardCheckCompleted(const std::string& username, bool result) {
-  if (!result) {
+void OnWildcardCheckCompleted(const std::string& username,
+                              WildcardLoginChecker::Result result) {
+  if (result == WildcardLoginChecker::RESULT_BLOCKED) {
     LOG(ERROR) << "Online wildcard login check failed, terminating session.";
 
     // TODO(mnissler): This only removes the user pod from the login screen, but
@@ -114,9 +119,7 @@ void UserCloudPolicyManagerChromeOS::Connect(
     // TODO(atwilson): Change this to use a UserPolicyRequestContext once
     // Connect() is called after profile initialization. http://crbug.com/323591
     request_context = new SystemPolicyRequestContext(
-        system_request_context,
-        content::GetUserAgent(GURL(
-            device_management_service->GetServerUrl())));
+        system_request_context, GetUserAgent());
   }
   scoped_ptr<CloudPolicyClient> cloud_policy_client(
       new CloudPolicyClient(std::string(), std::string(),
@@ -273,6 +276,20 @@ void UserCloudPolicyManagerChromeOS::OnComponentCloudPolicyUpdated() {
   StartRefreshSchedulerIfReady();
 }
 
+void UserCloudPolicyManagerChromeOS::GetChromePolicy(PolicyMap* policy_map) {
+  CloudPolicyManager::GetChromePolicy(policy_map);
+
+  // Default multi-profile behavior for managed accounts to primary-only.
+  if (store()->has_policy() &&
+      !policy_map->Get(key::kChromeOsMultiProfileUserBehavior)) {
+    policy_map->Set(key::kChromeOsMultiProfileUserBehavior,
+                    POLICY_LEVEL_MANDATORY,
+                    POLICY_SCOPE_USER,
+                    new base::StringValue("primary-only"),
+                    NULL);
+  }
+}
+
 void UserCloudPolicyManagerChromeOS::FetchPolicyOAuthTokenUsingSigninProfile() {
   scoped_refptr<net::URLRequestContextGetter> signin_context;
   Profile* signin_profile = chromeos::ProfileHelper::GetSigninProfile();
@@ -306,8 +323,8 @@ void UserCloudPolicyManagerChromeOS::OnOAuth2PolicyTokenFetched(
   if (error.state() == GoogleServiceAuthError::NONE) {
     // Start client registration. Either OnRegistrationStateChanged() or
     // OnClientError() will be called back.
-    client()->Register(em::DeviceRegisterRequest::USER,
-                       policy_token, std::string(), false, std::string());
+    client()->Register(em::DeviceRegisterRequest::USER, policy_token,
+                       std::string(), false, std::string(), std::string());
   } else {
     // Failed to get a token, stop waiting and use an empty policy.
     CancelWaitForPolicyFetch();

@@ -31,6 +31,7 @@
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/omnibox/omnibox_popup_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
@@ -136,6 +137,15 @@ void AutocompleteActionPredictor::ClearTransitionalMatches() {
   transitional_matches_.clear();
 }
 
+void AutocompleteActionPredictor::CancelPrerender() {
+  // If the prerender has already been abandoned, leave it to its own timeout;
+  // this normally gets called immediately after OnOmniboxOpenedUrl.
+  if (prerender_handle_ && !prerender_handle_->IsAbandoned()) {
+    prerender_handle_->OnCancel();
+    prerender_handle_.reset();
+  }
+}
+
 void AutocompleteActionPredictor::StartPrerendering(
     const GURL& url,
     const content::SessionStorageNamespaceMap& session_storage_namespace_map,
@@ -209,6 +219,10 @@ bool AutocompleteActionPredictor::IsPreconnectable(
   return AutocompleteMatch::IsSearchType(match.type);
 }
 
+bool AutocompleteActionPredictor::IsPrerenderAbandonedForTesting() {
+  return prerender_handle_ && prerender_handle_->IsAbandoned();
+}
+
 void AutocompleteActionPredictor::Observe(
     int type,
     const content::NotificationSource& source,
@@ -234,9 +248,6 @@ void AutocompleteActionPredictor::Observe(
       break;
     }
 
-    // This notification does not catch all instances of the user navigating
-    // from the Omnibox, but it does catch the cases where the dropdown is open
-    // and those are the events we're most interested in.
     case chrome::NOTIFICATION_OMNIBOX_OPENED_URL: {
       DCHECK(initialized_);
 
@@ -325,13 +336,30 @@ void AutocompleteActionPredictor::OnOmniboxOpenedUrl(const OmniboxLog& log) {
   if (log.text.length() < kMinimumUserTextLength)
     return;
 
-  const AutocompleteMatch& match = log.result.match_at(log.selected_index);
+  // Do not attempt to learn from omnibox interactions where the omnibox
+  // dropdown is closed.  In these cases the user text (|log.text|) that we
+  // learn from is either empty or effectively identical to the destination
+  // string.  In either case, it can't teach us much.  Also do not attempt
+  // to learn from paste-and-go actions even if the popup is open because
+  // the paste-and-go destination has no relation to whatever text the user
+  // may have typed.
+  if (!log.is_popup_open || log.is_paste_and_go)
+    return;
+
+  // Abandon the current prerender. If it is to be used, it will be used very
+  // soon, so use the lower timeout.
+  if (prerender_handle_) {
+    prerender_handle_->OnNavigateAway();
+    // Don't release |prerender_handle_| so it is canceled if it survives to the
+    // next StartPrerendering call.
+  }
 
   UMA_HISTOGRAM_BOOLEAN(
       base::StringPrintf("Prerender.OmniboxNavigationsCouldPrerender%s",
                          prerender::PrerenderManager::GetModeString()).c_str(),
       prerender::IsOmniboxEnabled(profile_));
 
+  const AutocompleteMatch& match = log.result.match_at(log.selected_index);
   const GURL& opened_url = match.destination_url;
   const base::string16 lower_user_text(base::i18n::ToLower(log.text));
 

@@ -1,14 +1,9 @@
 include_rules = [
-  # TODO(jamescook): Remove these. http://crbug.com/305404
-  # Chrome pieces for app_shell bring-up.
-  "+chrome/browser/extensions/extension_protocols.h",
-  "+chrome/browser/extensions/extension_resource_protocols.h",
-  "+chrome/common/chrome_paths.h",
-  "+chrome/common/extensions/features/base_feature_provider.h",
-  "+chrome/common/extensions/extension_file_util.h",
-
   "+chromeos",
+  "+components/omaha_query_params",
+  "+components/pref_registry",
   "+components/user_prefs",
+  "+third_party/cros_system_api",
 
   # Override apps/DEPS to be more selective about content includes.
   "-content",
@@ -22,4 +17,7 @@ include_rules = [
   "+content/shell/browser/shell_net_log.h",
 
   "+sync/api",
+
+  # Disallow views to keep the binary size down.
+  "-ui/views",
 ]

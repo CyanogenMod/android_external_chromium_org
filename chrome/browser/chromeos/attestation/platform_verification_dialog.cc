@@ -5,7 +5,9 @@
 #include "chrome/browser/chromeos/attestation/platform_verification_dialog.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/singleton_tabs.h"
 #include "chrome/common/url_constants.h"
@@ -13,6 +15,9 @@
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/page_transition_types.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -35,21 +40,25 @@ const int kDialogMaxWidthInPixel = 400;
 void PlatformVerificationDialog::ShowDialog(
     content::WebContents* web_contents,
     const PlatformVerificationFlow::Delegate::ConsentCallback& callback) {
-  std::string origin = web_contents->GetLastCommittedURL().GetOrigin().spec();
+  GURL url = web_contents->GetLastCommittedURL();
+  // In the case of an extension or hosted app, the origin of the request is
+  // best described by the extension / app name.
+  const extensions::Extension* extension =
+      extensions::ExtensionRegistry::Get(web_contents->GetBrowserContext())->
+          enabled_extensions().GetExtensionOrAppByURL(url);
+  std::string origin = extension ? extension->name() : url.GetOrigin().spec();
 
   PlatformVerificationDialog* dialog = new PlatformVerificationDialog(
-      chrome::FindBrowserWithWebContents(web_contents),
+      web_contents,
       base::UTF8ToUTF16(origin),
       callback);
 
-  // Sets up the dialog widget and shows it.
-  web_modal::WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+  web_modal::WebContentsModalDialogManager* manager =
       web_modal::WebContentsModalDialogManager::FromWebContents(web_contents);
-  web_modal::WebContentsModalDialogManagerDelegate* modal_delegate =
-      web_contents_modal_dialog_manager->delegate();
-  views::Widget* widget = views::Widget::CreateWindowAsFramelessChild(
-      dialog, modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
-  web_contents_modal_dialog_manager->ShowDialog(widget->GetNativeView());
+  const gfx::NativeWindow parent =
+      manager->delegate()->GetWebContentsModalDialogHost()->GetHostView();
+  views::Widget* widget = CreateDialogWidget(dialog, NULL, parent);
+  manager->ShowModalDialog(widget->GetNativeView());
   widget->Show();
 }
 
@@ -57,10 +66,10 @@ PlatformVerificationDialog::~PlatformVerificationDialog() {
 }
 
 PlatformVerificationDialog::PlatformVerificationDialog(
-    Browser* browser,
+    content::WebContents* web_contents,
     const base::string16& domain,
     const PlatformVerificationFlow::Delegate::ConsentCallback& callback)
-    : browser_(browser),
+    : web_contents_(web_contents),
       domain_(domain),
       callback_(callback) {
   SetLayoutManager(new views::FillLayout());
@@ -87,6 +96,13 @@ bool PlatformVerificationDialog::Accept() {
   return true;
 }
 
+bool PlatformVerificationDialog::Close() {
+  // This method is called when the tab is closed and in that case the decision
+  // hasn't been made yet.
+  callback_.Run(PlatformVerificationFlow::CONSENT_RESPONSE_NONE);
+  return true;
+}
+
 base::string16 PlatformVerificationDialog::GetDialogButtonLabel(
     ui::DialogButton button) const {
   switch (button) {
@@ -105,15 +121,28 @@ ui::ModalType PlatformVerificationDialog::GetModalType() const {
   return ui::MODAL_TYPE_CHILD;
 }
 
-gfx::Size PlatformVerificationDialog::GetPreferredSize() {
+gfx::Size PlatformVerificationDialog::GetPreferredSize() const {
   return gfx::Size(kDialogMaxWidthInPixel,
                    GetHeightForWidth(kDialogMaxWidthInPixel));
 }
 
 void PlatformVerificationDialog::StyledLabelLinkClicked(const gfx::Range& range,
                                                         int event_flags) {
-  chrome::ShowSingletonTab(browser_, GURL(
-      chrome::kEnhancedPlaybackNotificationLearnMoreURL));
+  Browser* browser = chrome::FindBrowserWithWebContents(web_contents_);
+  const GURL learn_more_url(chrome::kEnhancedPlaybackNotificationLearnMoreURL);
+
+  // |web_contents_| might not be in a browser in case of v2 apps. In that case,
+  // open a new tab in the usual way.
+  if (!browser) {
+    Profile* profile = Profile::FromBrowserContext(
+        web_contents_->GetBrowserContext());
+    chrome::NavigateParams params(
+        profile, learn_more_url, content::PAGE_TRANSITION_LINK);
+    params.disposition = SINGLETON_TAB;
+    chrome::Navigate(&params);
+  } else {
+    chrome::ShowSingletonTab(browser, learn_more_url);
+  }
 }
 
 }  // namespace attestation

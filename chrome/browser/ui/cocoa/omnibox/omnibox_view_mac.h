@@ -32,6 +32,11 @@ class OmniboxViewMac : public OmniboxView,
   virtual void SaveStateToTab(content::WebContents* tab) OVERRIDE;
   virtual void OnTabChanged(const content::WebContents* web_contents) OVERRIDE;
   virtual void Update() OVERRIDE;
+  virtual void OpenMatch(const AutocompleteMatch& match,
+                         WindowOpenDisposition disposition,
+                         const GURL& alternate_nav_url,
+                         const base::string16& pasted_text,
+                         size_t selected_line) OVERRIDE;
   virtual base::string16 GetText() const OVERRIDE;
   virtual void SetWindowTextAndCaretPos(const base::string16& text,
                                         size_t caret_pos,
@@ -96,7 +101,9 @@ class OmniboxViewMac : public OmniboxView,
 
   // Helper to get the font to use in the field, exposed for the
   // popup.
-  static NSFont* GetFieldFont();
+  // The style parameter specifies the new style for the font, and is a
+  // bitmask of the values: BOLD, ITALIC and UNDERLINE (see ui/gfx/font.h).
+  static NSFont* GetFieldFont(int style);
 
   // If |resource_id| has a PDF image which can be used, return it.
   // Otherwise return the PNG image from the resource bundle.
@@ -182,6 +189,14 @@ class OmniboxViewMac : public OmniboxView,
   bool delete_at_end_pressed_;
 
   base::string16 suggest_text_;
+
+  // State used to coalesce changes to text and selection to avoid drawing
+  // transient state.
+  bool in_coalesced_update_block_;
+  bool do_coalesced_text_update_;
+  base::string16 coalesced_text_update_;
+  bool do_coalesced_range_update_;
+  NSRange coalesced_range_update_;
 
   DISALLOW_COPY_AND_ASSIGN(OmniboxViewMac);
 };

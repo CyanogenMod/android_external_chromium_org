@@ -5,6 +5,7 @@
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/test/base/testing_profile.h"
@@ -15,7 +16,7 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #endif
 
 using content::RenderViewHostTester;
@@ -35,24 +36,18 @@ RenderViewHostTester* ChromeRenderViewHostTestHarness::rvh_tester() {
   return RenderViewHostTester::For(rvh());
 }
 
-static BrowserContextKeyedService* BuildSigninManagerFake(
-    content::BrowserContext* context) {
+static KeyedService* BuildSigninManagerFake(content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
 #if defined (OS_CHROMEOS)
-  SigninManagerBase* signin = new SigninManagerBase();
-  signin->Initialize(profile, NULL);
+  SigninManagerBase* signin = new SigninManagerBase(
+      ChromeSigninClientFactory::GetInstance()->GetForProfile(profile));
+  signin->Initialize(NULL);
   return signin;
 #else
   FakeSigninManager* manager = new FakeSigninManager(profile);
-  manager->Initialize(profile, g_browser_process->local_state());
+  manager->Initialize(g_browser_process->local_state());
   return manager;
 #endif
-}
-
-void ChromeRenderViewHostTestHarness::SetUp() {
-  RenderViewHostTestHarness::SetUp();
-  SigninManagerFactory::GetInstance()->SetTestingFactory(
-          profile(), BuildSigninManagerFake);
 }
 
 void ChromeRenderViewHostTestHarness::TearDown() {
@@ -67,5 +62,8 @@ void ChromeRenderViewHostTestHarness::TearDown() {
 
 content::BrowserContext*
 ChromeRenderViewHostTestHarness::CreateBrowserContext() {
-  return new TestingProfile();
+  TestingProfile::Builder builder;
+  builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
+                            BuildSigninManagerFake);
+  return builder.Build().release();
 }

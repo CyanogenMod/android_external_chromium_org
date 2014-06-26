@@ -13,8 +13,8 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "google_apis/drive/gdata_errorcode.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 #include "url/gurl.h"
 
 namespace google_apis {
@@ -23,17 +23,20 @@ class AppList;
 
 namespace drive {
 
+class DriveAppRegistryObserver;
 class DriveServiceInterface;
 
 // Data structure that defines Drive app. See
 // https://chrome.google.com/webstore/category/collection/drive_apps for
 // Drive apps available on the webstore.
 struct DriveAppInfo {
+  typedef std::vector<std::pair<int, GURL> > IconList;
+
   DriveAppInfo();
   DriveAppInfo(const std::string& app_id,
                const std::string& product_id,
-               const google_apis::InstalledApp::IconList& app_icons,
-               const google_apis::InstalledApp::IconList& document_icons,
+               const IconList& app_icons,
+               const IconList& document_icons,
                const std::string& app_name,
                const GURL& create_url,
                bool is_removable);
@@ -48,10 +51,10 @@ struct DriveAppInfo {
   std::string product_id;
   // Drive application icon URLs for this app, paired with their size (length of
   // a side in pixels).
-  google_apis::InstalledApp::IconList app_icons;
+  IconList app_icons;
   // Drive document icon URLs for this app, paired with their size (length of
   // a side in pixels).
-  google_apis::InstalledApp::IconList document_icons;
+  IconList document_icons;
   // App name.
   std::string app_name;
   // URL for opening a new file in the app. Empty if the app does not support
@@ -97,6 +100,9 @@ class DriveAppRegistry {
   // Updates this registry from the |app_list|.
   void UpdateFromAppList(const google_apis::AppList& app_list);
 
+  void AddObserver(DriveAppRegistryObserver* observer);
+  void RemoveObserver(DriveAppRegistryObserver* observer);
+
  private:
   // Part of Update(). Runs upon the completion of fetching the Drive apps
   // data from the server.
@@ -121,9 +127,12 @@ class DriveAppRegistry {
 
   bool is_updating_;
 
+  ObserverList<DriveAppRegistryObserver> observers_;
+
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate the weak pointers before any other members are destroyed.
   base::WeakPtrFactory<DriveAppRegistry> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(DriveAppRegistry);
 };
 
@@ -137,7 +146,7 @@ const int kPreferredIconSize = 16;
 // smaller than the preferred size, we'll return the largest one available.
 // Icons do not have to be sorted by the icon size. If there are no icons in
 // the list, returns an empty URL.
-GURL FindPreferredIcon(const google_apis::InstalledApp::IconList& icons,
+GURL FindPreferredIcon(const DriveAppInfo::IconList& icons,
                        int preferred_size);
 
 }  // namespace util

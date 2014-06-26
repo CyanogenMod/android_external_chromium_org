@@ -7,7 +7,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest.h"
-#include "grit/generated_resources.h"
+#include "grit/extensions_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace {
@@ -15,8 +15,13 @@ namespace {
 bool ManagementPolicyImpl(const extensions::Extension* extension,
                           base::string16* error,
                           bool modifiable_value) {
+  // Note that COMPONENT and EXTERNAL_COMPONENT are treated differently
+  // below. EXTERNAL_COMPONENT extensions can be modified including
+  // enabled, disabled, uninstalled while COMPONENT extensions cannot.
+  // However, those options are only available for EXTERNAL_COMPONENT
+  // extensions when the proper command line flag is passed.
   bool modifiable =
-      !extensions::Manifest::IsComponentLocation(extension->location()) &&
+      extension->location() != extensions::Manifest::COMPONENT &&
       !extensions::Manifest::IsPolicyLocation(extension->location());
   // Some callers equate "no restriction" to true, others to false.
   if (modifiable)
@@ -88,12 +93,15 @@ bool UserMayLoad(const base::ListValue* blacklist,
     case Manifest::TYPE_HOSTED_APP:
     case Manifest::TYPE_LEGACY_PACKAGED_APP:
     case Manifest::TYPE_PLATFORM_APP:
-    case Manifest::TYPE_SHARED_MODULE:
+    case Manifest::TYPE_SHARED_MODULE: {
       base::FundamentalValue type_value(extension->GetType());
       if (allowed_types &&
           allowed_types->Find(type_value) == allowed_types->end())
         return ReturnLoadError(extension, error);
       break;
+    }
+    case Manifest::NUM_LOAD_TYPES:
+      NOTREACHED();
   }
 
   // Check the whitelist/forcelist first.

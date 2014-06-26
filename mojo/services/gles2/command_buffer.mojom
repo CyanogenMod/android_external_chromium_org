@@ -14,44 +14,36 @@ struct CommandBufferState {
   uint32 generation;
 };
 
-// TODO(piman): we need to support proper SHM handles, or refactor command
-// buffers to sit on top of mojo primitives (e.g. DataPipe, etc.).
-struct ShmHandle {
-  uint64 handle_hack;
-};
-
 interface CommandBufferSyncClient {
-  void DidInitialize(bool success);
-  void DidMakeProgress(CommandBufferState state);
+  DidInitialize(bool success);
+  DidMakeProgress(CommandBufferState state);
 };
 
-[Peer=CommandBufferClient]
+[Client=CommandBufferClient]
 interface CommandBuffer {
-  void Initialize(CommandBufferSyncClient sync_client,
-                  ShmHandle shared_state);
-  void SetGetBuffer(int32 buffer);
-  void Flush(int32 put_offset);
-  void MakeProgress(int32 last_get_offset);
-  void RegisterTransferBuffer(int32 id, ShmHandle transfer_buffer, uint32 size);
-  void DestroyTransferBuffer(int32 id);
-  void Echo();
+  Initialize(CommandBufferSyncClient sync_client,
+             handle<shared_buffer> shared_state);
+  SetGetBuffer(int32 buffer);
+  Flush(int32 put_offset);
+  MakeProgress(int32 last_get_offset);
+  RegisterTransferBuffer(
+      int32 id, handle<shared_buffer> transfer_buffer, uint32 size);
+  DestroyTransferBuffer(int32 id);
+  Echo() => ();
 
   // TODO(piman): move to somewhere else (native_viewport?).
-  void RequestAnimationFrames();
-  void CancelAnimationFrames();
+  RequestAnimationFrames();
+  CancelAnimationFrames();
 
   // TODO(piman): sync points
 };
 
-[Peer=CommandBuffer]
 interface CommandBufferClient {
-  void DidDestroy();
-  void EchoAck();
-  void LostContext(int32 lost_reason);  // TODO(piman): enum
+  DidDestroy();
+  LostContext(int32 lost_reason);  // TODO(piman): enum
 
   // TODO(piman): move to somewhere else (native_viewport?).
-  void DrawAnimationFrame();
+  DrawAnimationFrame();
 };
 
 }
-

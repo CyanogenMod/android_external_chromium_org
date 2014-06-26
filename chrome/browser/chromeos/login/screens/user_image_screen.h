@@ -7,11 +7,11 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
+#include "chrome/browser/chromeos/camera_presence_notifier.h"
 #include "chrome/browser/chromeos/login/screens/user_image_screen_actor.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_image_sync_observer.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image_sync_observer.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/image_decoder.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -31,7 +31,8 @@ class UserImageScreen: public WizardScreen,
                        public UserImageScreenActor::Delegate,
                        public ImageDecoder::Delegate,
                        public content::NotificationObserver,
-                       public UserImageSyncObserver::Observer {
+                       public UserImageSyncObserver::Observer,
+                       public CameraPresenceNotifier::Observer {
  public:
   UserImageScreen(ScreenObserver* screen_observer,
                   UserImageScreenActor* actor);
@@ -51,7 +52,6 @@ class UserImageScreen: public WizardScreen,
   // UserImageScreenActor::Delegate implementation:
   virtual void OnScreenReady() OVERRIDE;
   virtual void OnPhotoTaken(const std::string& raw_data) OVERRIDE;
-  virtual void CheckCameraPresence() OVERRIDE;
   virtual void OnImageSelected(const std::string& image_url,
                                const std::string& image_type,
                                bool is_user_selection) OVERRIDE;
@@ -71,6 +71,9 @@ class UserImageScreen: public WizardScreen,
   virtual void OnImageDecoded(const ImageDecoder* decoder,
                               const SkBitmap& decoded_image) OVERRIDE;
   virtual void OnDecodeImageFailed(const ImageDecoder* decoder) OVERRIDE;
+
+  // CameraPresenceNotifier::Observer implementation:
+  virtual void OnCameraPresenceCheckDone(bool is_camera_present) OVERRIDE;
 
   // UserImageSyncObserver::Observer implementation:
   virtual void OnInitialSync(bool local_image_updated) OVERRIDE;
@@ -98,9 +101,6 @@ class UserImageScreen: public WizardScreen,
   // Returns UserImageSyncObserver for the current user.
   UserImageSyncObserver* GetSyncObserver();
 
-  // Called when the camera presence check has been completed.
-  void OnCameraPresenceCheckDone();
-
   // Called when it's decided not to skip the screen.
   void HideCurtain();
 
@@ -112,8 +112,6 @@ class UserImageScreen: public WizardScreen,
   scoped_ptr<policy::PolicyChangeRegistrar> policy_registrar_;
 
   UserImageScreenActor* actor_;
-
-  base::WeakPtrFactory<UserImageScreen> weak_factory_;
 
   // Last ImageDecoder instance used to decode an image blob received by
   // HandlePhotoTaken.
@@ -148,9 +146,6 @@ class UserImageScreen: public WizardScreen,
 
   // True if user has explicitly selected some image.
   bool user_has_selected_image_;
-
-  // True if camera was available last time.
-  bool was_camera_present_;
 
   DISALLOW_COPY_AND_ASSIGN(UserImageScreen);
 };

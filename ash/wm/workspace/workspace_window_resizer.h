@@ -9,7 +9,6 @@
 
 #include "ash/wm/window_resizer.h"
 #include "ash/wm/workspace/magnetism_matcher.h"
-#include "ash/wm/workspace/snap_types.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
@@ -17,16 +16,14 @@
 #include "ui/aura/window_tracker.h"
 
 namespace ash {
+class DockedWindowLayoutManager;
+class PhantomWindowController;
+class TwoStepEdgeCycler;
+class WindowSize;
+
 namespace wm {
 class WindowState;
 }
-
-namespace internal {
-
-class DockedWindowLayoutManager;
-class PhantomWindowController;
-class SnapSizer;
-class WindowSize;
 
 // WindowResizer implementation for workspaces. This enforces that windows are
 // not allowed to vertically move or resize outside of the work area. As windows
@@ -70,6 +67,13 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
 
  private:
   friend class WorkspaceWindowResizerTest;
+
+  // The edge to which the window should be snapped at the end of the drag.
+  enum SnapType {
+    SNAP_LEFT,
+    SNAP_RIGHT,
+    SNAP_NONE
+  };
 
   // Lays out the attached windows. |bounds| is the bounds of the main window.
   void LayoutAttachedWindows(gfx::Rect* bounds);
@@ -146,13 +150,14 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // top of the z-order, and the rest directly underneath it.
   void RestackWindows();
 
-  // Returns the SnapType for the specified point. SNAP_NONE is used if no
-  // snapping should be used.
+  // Returns the edge to which the window should be snapped to if the user does
+  // no more dragging. SNAP_NONE is returned if the window should not be
+  // snapped.
   SnapType GetSnapType(const gfx::Point& location) const;
 
-  // Returns true if |bounds_in_parent| are valid bounds for snapped show type
+  // Returns true if |bounds_in_parent| are valid bounds for snapped state type
   // |snapped_type|.
-  bool AreBoundsValidSnappedBounds(wm::WindowShowType snapped_type,
+  bool AreBoundsValidSnappedBounds(wm::WindowStateType snapped_type,
                                    const gfx::Rect& bounds_in_parent) const;
 
   // Docks or undocks the dragged window.
@@ -184,10 +189,11 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // is a grid and the caption is being dragged.
   scoped_ptr<PhantomWindowController> snap_phantom_window_controller_;
 
-  // Used to determine the target position of a snap.
-  scoped_ptr<SnapSizer> snap_sizer_;
+  // Used to determine whether the window should be snapped or docked when
+  // the user drags a window to the edge of the screen.
+  scoped_ptr<TwoStepEdgeCycler> edge_cycler_;
 
-  // Last SnapType.
+  // The edge to which the window should be snapped to at the end of the drag.
   SnapType snap_type_;
 
   // Number of mouse moves since the last bounds change. Only used for phantom
@@ -221,7 +227,6 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   DISALLOW_COPY_AND_ASSIGN(WorkspaceWindowResizer);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_WORKSPACE_WINDOW_RESIZER_H_

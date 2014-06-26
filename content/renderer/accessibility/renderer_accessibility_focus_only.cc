@@ -7,14 +7,13 @@
 #include "content/renderer/render_view_impl.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/accessibility/ax_node_data.h"
 
 using blink::WebDocument;
 using blink::WebElement;
-using blink::WebFrame;
 using blink::WebNode;
 using blink::WebView;
 
@@ -40,12 +39,17 @@ void RendererAccessibilityFocusOnly::HandleWebAccessibilityEvent(
   // Do nothing.
 }
 
+RendererAccessibilityType RendererAccessibilityFocusOnly::GetType() {
+  return RendererAccessibilityTypeFocusOnly;
+}
+
 void RendererAccessibilityFocusOnly::FocusedNodeChanged(const WebNode& node) {
   // Send the new accessible tree and post a native focus event.
   HandleFocusedNodeChanged(node, true);
 }
 
-void RendererAccessibilityFocusOnly::DidFinishLoad(blink::WebFrame* frame) {
+void RendererAccessibilityFocusOnly::DidFinishLoad(
+    blink::WebLocalFrame* frame) {
   WebView* view = render_view()->GetWebView();
   if (view->focusedFrame() != frame)
     return;
@@ -55,7 +59,7 @@ void RendererAccessibilityFocusOnly::DidFinishLoad(blink::WebFrame* frame) {
   // focus event. This is important so that if focus is initially in an
   // editable text field, Windows will know to pop up the keyboard if the
   // user touches it and focus doesn't change.
-  HandleFocusedNodeChanged(document.focusedNode(), false);
+  HandleFocusedNodeChanged(document.focusedElement(), false);
 }
 
 void RendererAccessibilityFocusOnly::HandleFocusedNodeChanged(
@@ -69,7 +73,7 @@ void RendererAccessibilityFocusOnly::HandleFocusedNodeChanged(
   bool node_is_editable_text;
   // Check HasIMETextFocus first, because it will correctly handle
   // focus in a text box inside a ppapi plug-in. Otherwise fall back on
-  // checking the focused node in WebKit.
+  // checking the focused node in Blink.
   if (render_view_->HasIMETextFocus()) {
     node_has_focus = true;
     node_is_editable_text = true;
@@ -93,9 +97,9 @@ void RendererAccessibilityFocusOnly::HandleFocusedNodeChanged(
   // has focus, otherwise the focused node.
   event.id = node_has_focus ? next_id_ : 1;
 
-  event.nodes.resize(2);
-  ui::AXNodeData& root = event.nodes[0];
-  ui::AXNodeData& child = event.nodes[1];
+  event.update.nodes.resize(2);
+  ui::AXNodeData& root = event.update.nodes[0];
+  ui::AXNodeData& child = event.update.nodes[1];
 
   // Always include the root of the tree, the document. It always has id 1.
   root.id = 1;

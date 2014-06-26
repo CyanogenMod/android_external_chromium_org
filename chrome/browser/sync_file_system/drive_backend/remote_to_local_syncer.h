@@ -11,11 +11,11 @@
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task.h"
 #include "chrome/browser/sync_file_system/remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_action.h"
 #include "chrome/browser/sync_file_system/sync_callbacks.h"
 #include "chrome/browser/sync_file_system/sync_file_metadata.h"
-#include "chrome/browser/sync_file_system/sync_task.h"
 #include "google_apis/drive/gdata_errorcode.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 
@@ -24,9 +24,9 @@ class DriveServiceInterface;
 }
 
 namespace google_apis {
+class FileList;
 class FileResource;
 class ResourceEntry;
-class ResourceList;
 }
 
 namespace webkit_blob {
@@ -39,14 +39,14 @@ namespace drive_backend {
 class MetadataDatabase;
 class SyncEngineContext;
 
-class RemoteToLocalSyncer : public SyncTask {
+class RemoteToLocalSyncer : public ExclusiveTask {
  public:
   // Conflicting trackers will have low priority for RemoteToLocalSyncer so that
   // it should be resolved by LocatToRemoteSyncer.
   explicit RemoteToLocalSyncer(SyncEngineContext* sync_context);
   virtual ~RemoteToLocalSyncer();
 
-  virtual void Run(const SyncStatusCallback& callback) OVERRIDE;
+  virtual void RunExclusive(const SyncStatusCallback& callback) OVERRIDE;
 
   const fileapi::FileSystemURL& url() const { return url_; }
   SyncAction sync_action() const { return sync_action_; }
@@ -108,7 +108,7 @@ class RemoteToLocalSyncer : public SyncTask {
   void HandleMissingRemoteMetadata(const SyncStatusCallback& callback);
   void DidGetRemoteMetadata(const SyncStatusCallback& callback,
                             google_apis::GDataErrorCode error,
-                            scoped_ptr<google_apis::ResourceEntry> entry);
+                            scoped_ptr<google_apis::FileResource> entry);
   void DidUpdateDatabaseForRemoteMetadata(const SyncStatusCallback& callback,
                                           SyncStatusCode status);
 
@@ -159,7 +159,7 @@ class RemoteToLocalSyncer : public SyncTask {
       const SyncStatusCallback& callback,
       scoped_ptr<FileIDList> children,
       google_apis::GDataErrorCode error,
-      scoped_ptr<google_apis::ResourceList> resource_list);
+      scoped_ptr<google_apis::FileList> file_list);
 
   void SyncCompleted(const SyncStatusCallback& callback, SyncStatusCode status);
   void FinalizeSync(const SyncStatusCallback& callback, SyncStatusCode status);

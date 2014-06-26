@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 
+#include "apps/ui/web_contents_sizer.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
@@ -15,6 +16,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/fullscreen/fullscreen_within_tab_helper.h"
 #include "chrome/browser/ui/status_bubble.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
@@ -25,7 +27,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/common/extension.h"
 
 #if defined(OS_MACOSX)
@@ -63,12 +64,20 @@ bool FullscreenController::IsFullscreenForBrowser() const {
   return window_->IsFullscreen() && !IsFullscreenCausedByTab();
 }
 
-void FullscreenController::ToggleFullscreenMode() {
+void FullscreenController::ToggleBrowserFullscreenMode() {
   extension_caused_fullscreen_ = GURL();
   ToggleFullscreenModeInternal(BROWSER);
 }
 
-bool FullscreenController::IsFullscreenForTabOrPending() const {
+void FullscreenController::ToggleBrowserFullscreenModeWithExtension(
+    const GURL& extension_url) {
+  // |extension_caused_fullscreen_| will be reset if this causes fullscreen to
+  // exit.
+  extension_caused_fullscreen_ = extension_url;
+  ToggleFullscreenModeInternal(BROWSER);
+}
+
+bool FullscreenController::IsWindowFullscreenForTabOrPending() const {
   return fullscreened_tab_ != NULL;
 }
 
@@ -101,7 +110,7 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* web_contents,
       web_contents != browser_->tab_strip_model()->GetActiveWebContents()) {
     return;
   }
-  if (IsFullscreenForTabOrPending() == enter_fullscreen)
+  if (IsWindowFullscreenForTabOrPending() == enter_fullscreen)
     return;
 
 #if defined(OS_WIN)
@@ -176,14 +185,6 @@ void FullscreenController::ToggleFullscreenModeForTab(WebContents* web_contents,
   }
 }
 
-void FullscreenController::ToggleFullscreenModeWithExtension(
-    const GURL& extension_url) {
-  // |extension_caused_fullscreen_| will be reset if this causes fullscreen to
-  // exit.
-  extension_caused_fullscreen_ = extension_url;
-  ToggleFullscreenModeInternal(BROWSER);
-}
-
 bool FullscreenController::IsInMetroSnapMode() {
 #if defined(OS_WIN)
   return window_->IsInMetroSnapMode();
@@ -207,7 +208,7 @@ void FullscreenController::SetMetroSnapMode(bool enable) {
 #endif  // defined(OS_WIN)
 
 #if defined(OS_MACOSX)
-void FullscreenController::ToggleFullscreenWithChrome() {
+void FullscreenController::ToggleBrowserFullscreenWithChrome() {
   // This method cannot be called if simplified fullscreen is enabled.
   const CommandLine* command_line = CommandLine::ForCurrentProcess();
   DCHECK(!command_line->HasSwitch(switches::kEnableSimplifiedFullscreen));
@@ -293,17 +294,25 @@ void FullscreenController::OnTabDetachedFromView(WebContents* old_contents) {
   // When the user later selects the tab to show |old_contents| again, UI code
   // elsewhere (e.g., views::WebView) will resize the view to fit within the
   // browser window once again.
+
+  // If the view has been detached from the browser window (e.g., to drag a tab
+  // off into a new browser window), return immediately to avoid an unnecessary
+  // resize.
+  if (!old_contents->GetDelegate())
+    return;
+
+  // Do nothing if tab capture ended after toggling fullscreen, or a preferred
+  // size was never specified by the capturer.
   if (old_contents->GetCapturerCount() == 0 ||
       old_contents->GetPreferredSize().IsEmpty()) {
-    // Do nothing if tab capture ended after toggling fullscreen, or a preferred
-    // size was never specified by the capturer.
     return;
   }
+
   content::RenderWidgetHostView* const current_fs_view =
       old_contents->GetFullscreenRenderWidgetHostView();
   if (current_fs_view)
     current_fs_view->SetSize(old_contents->GetPreferredSize());
-  old_contents->GetView()->SizeContents(old_contents->GetPreferredSize());
+  apps::ResizeWebContents(old_contents, old_contents->GetPreferredSize());
 }
 
 void FullscreenController::OnTabClosing(WebContents* web_contents) {
@@ -351,7 +360,7 @@ bool FullscreenController::HandleUserPressedEscape() {
     if (rvh)
       rvh->ExitFullscreen();
     return true;
-  } else if (IsFullscreenForTabOrPending() ||
+  } else if (IsWindowFullscreenForTabOrPending() ||
              IsMouseLocked() || IsMouseLockRequested()) {
     ExitTabFullscreenOrMouseLockIfNecessary();
     return true;
@@ -361,7 +370,7 @@ bool FullscreenController::HandleUserPressedEscape() {
 }
 
 void FullscreenController::ExitTabOrBrowserFullscreenToPreviousState() {
-  if (IsFullscreenForTabOrPending())
+  if (IsWindowFullscreenForTabOrPending())
     ExitTabFullscreenOrMouseLockIfNecessary();
   else if (IsFullscreenForBrowser())
     ExitFullscreenModeInternal();
@@ -428,11 +437,11 @@ void FullscreenController::OnDenyFullscreenPermission() {
     // UpdateFullscreenExitBubbleContent() must be called, but to avoid
     // duplicate calls we do so only if not adjusting the fullscreen state
     // below, which also calls UpdateFullscreenExitBubbleContent().
-    if (!IsFullscreenForTabOrPending())
+    if (!IsWindowFullscreenForTabOrPending())
       UpdateFullscreenExitBubbleContent();
   }
 
-  if (IsFullscreenForTabOrPending())
+  if (IsWindowFullscreenForTabOrPending())
     ExitTabFullscreenOrMouseLockIfNecessary();
 }
 
@@ -446,28 +455,18 @@ void FullscreenController::LostMouseLock() {
 void FullscreenController::Observe(int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
-  switch (type) {
-    case content::NOTIFICATION_NAV_ENTRY_COMMITTED:
-      if (content::Details<content::LoadCommittedDetails>(details)->
-              is_navigation_to_different_page()) {
-        ExitTabFullscreenOrMouseLockIfNecessary();
-      }
-      break;
-
-    default:
-      NOTREACHED() << "Got a notification we didn't register for.";
-  }
+  DCHECK_EQ(content::NOTIFICATION_NAV_ENTRY_COMMITTED, type);
+  if (content::Details<content::LoadCommittedDetails>(details)->
+      is_navigation_to_different_page())
+    ExitTabFullscreenOrMouseLockIfNecessary();
 }
 
 GURL FullscreenController::GetFullscreenExitBubbleURL() const {
   if (fullscreened_tab_)
     return fullscreened_tab_->GetURL();
-  else if (mouse_lock_tab_)
+  if (mouse_lock_tab_)
     return mouse_lock_tab_->GetURL();
-  else if (!extension_caused_fullscreen_.is_empty())
-    return extension_caused_fullscreen_;
-  else
-    return GURL();
+  return extension_caused_fullscreen_;
 }
 
 FullscreenExitBubbleType FullscreenController::GetFullscreenExitBubbleType()
@@ -479,45 +478,34 @@ FullscreenExitBubbleType FullscreenController::GetFullscreenExitBubbleType()
   app_mode = chrome::IsRunningInAppMode();
 #endif
 
-  if (mouse_lock_state_ == MOUSELOCK_ACCEPTED_SILENTLY) {
+  if (mouse_lock_state_ == MOUSELOCK_ACCEPTED_SILENTLY)
+    return FEB_TYPE_NONE;
+
+  if (!fullscreened_tab_) {
+    if (IsMouseLocked())
+      return FEB_TYPE_MOUSELOCK_EXIT_INSTRUCTION;
+    if (IsMouseLockRequested())
+      return FEB_TYPE_MOUSELOCK_BUTTONS;
+    if (!extension_caused_fullscreen_.is_empty())
+      return FEB_TYPE_BROWSER_EXTENSION_FULLSCREEN_EXIT_INSTRUCTION;
+    if (toggled_into_fullscreen_ && !app_mode)
+      return FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION;
     return FEB_TYPE_NONE;
   }
 
-  if (fullscreened_tab_) {
-    if (tab_fullscreen_accepted_) {
-      if (IsPrivilegedFullscreenForTab()) {
-        return FEB_TYPE_NONE;
-      } else if (IsMouseLocked()) {
-        return FEB_TYPE_FULLSCREEN_MOUSELOCK_EXIT_INSTRUCTION;
-      } else if (IsMouseLockRequested()) {
-        return FEB_TYPE_MOUSELOCK_BUTTONS;
-      } else {
-        return FEB_TYPE_FULLSCREEN_EXIT_INSTRUCTION;
-      }
-    } else {  // Full screen not yet accepted.
-      if (IsMouseLockRequested()) {
-        return FEB_TYPE_FULLSCREEN_MOUSELOCK_BUTTONS;
-      } else {
-        return FEB_TYPE_FULLSCREEN_BUTTONS;
-      }
-    }
-  } else {  // Not tab full screen.
-    if (IsMouseLocked()) {
-      return FEB_TYPE_MOUSELOCK_EXIT_INSTRUCTION;
-    } else if (IsMouseLockRequested()) {
+  if (tab_fullscreen_accepted_) {
+    if (IsPrivilegedFullscreenForTab())
+      return FEB_TYPE_NONE;
+    if (IsMouseLocked())
+      return FEB_TYPE_FULLSCREEN_MOUSELOCK_EXIT_INSTRUCTION;
+    if (IsMouseLockRequested())
       return FEB_TYPE_MOUSELOCK_BUTTONS;
-    } else {
-      if (!extension_caused_fullscreen_.is_empty()) {
-        return FEB_TYPE_BROWSER_EXTENSION_FULLSCREEN_EXIT_INSTRUCTION;
-      } else if (toggled_into_fullscreen_ && !app_mode) {
-        return FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION;
-      } else {
-        return FEB_TYPE_NONE;
-      }
-    }
+    return FEB_TYPE_FULLSCREEN_EXIT_INSTRUCTION;
   }
-  NOTREACHED();
-  return FEB_TYPE_NONE;
+
+  if (IsMouseLockRequested())
+    return FEB_TYPE_FULLSCREEN_MOUSELOCK_BUTTONS;
+  return FEB_TYPE_FULLSCREEN_BUTTONS;
 }
 
 void FullscreenController::UpdateNotificationRegistrations() {
@@ -593,7 +581,7 @@ void FullscreenController::ToggleFullscreenModeInternal(
 #if defined(OS_MACOSX)
   // When a Mac user requests a toggle they may be toggling between
   // FullscreenWithoutChrome and FullscreenWithChrome.
-  if (!IsFullscreenForTabOrPending()) {
+  if (!IsWindowFullscreenForTabOrPending()) {
     if (option == BROWSER_WITH_CHROME)
       enter_fullscreen |= window_->IsFullscreenWithoutChrome();
     else
@@ -684,7 +672,7 @@ void FullscreenController::SetMouseLockTab(WebContents* tab) {
 }
 
 void FullscreenController::ExitTabFullscreenOrMouseLockIfNecessary() {
-  if (IsFullscreenForTabOrPending())
+  if (IsWindowFullscreenForTabOrPending())
     ToggleFullscreenModeForTab(fullscreened_tab_, false);
   else
     NotifyTabOfExitIfNecessary();
@@ -745,14 +733,14 @@ bool FullscreenController::MaybeToggleFullscreenForCapturedTab(
 
   if (enter_fullscreen) {
     if (web_contents->GetCapturerCount() > 0) {
-      captured_tabs_.insert(web_contents);
+      FullscreenWithinTabHelper::CreateForWebContents(web_contents);
+      FullscreenWithinTabHelper::FromWebContents(web_contents)->
+          SetIsFullscreenForCapturedTab(true);
       return true;
     }
   } else {
-    const std::set<const WebContents*>::iterator it =
-        captured_tabs_.find(web_contents);
-    if (it != captured_tabs_.end()) {
-      captured_tabs_.erase(it);
+    if (IsFullscreenForCapturedTab(web_contents)) {
+      FullscreenWithinTabHelper::RemoveForWebContents(web_contents);
       return true;
     }
   }
@@ -762,7 +750,11 @@ bool FullscreenController::MaybeToggleFullscreenForCapturedTab(
 
 bool FullscreenController::IsFullscreenForCapturedTab(
     const WebContents* web_contents) const {
-  if (captured_tabs_.find(web_contents) != captured_tabs_.end()) {
+  // Note: On Mac, some of the OnTabXXX() methods get called with a NULL value
+  // for web_contents. Check for that here.
+  const FullscreenWithinTabHelper* const helper = web_contents ?
+      FullscreenWithinTabHelper::FromWebContents(web_contents) : NULL;
+  if (helper && helper->is_fullscreen_for_captured_tab()) {
     DCHECK(IsFullscreenWithinTabPossible());
     DCHECK_NE(fullscreened_tab_, web_contents);
     return true;

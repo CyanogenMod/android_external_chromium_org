@@ -10,7 +10,7 @@ MediaStreamAudioSource::MediaStreamAudioSource(
     int render_view_id,
     const StreamDeviceInfo& device_info,
     const SourceStoppedCallback& stop_callback,
-    MediaStreamDependencyFactory* factory)
+    PeerConnectionDependencyFactory* factory)
     : render_view_id_(render_view_id),
       factory_(factory) {
   SetDeviceInfo(device_info);
@@ -34,18 +34,23 @@ void MediaStreamAudioSource::AddTrack(
     const blink::WebMediaConstraints& constraints,
     const ConstraintsCallback& callback) {
   // TODO(xians): Properly implement for audio sources.
-  bool result = true;
-  if (factory_ && !local_audio_source_) {
-    result = factory_->InitializeMediaStreamAudioSource(render_view_id_,
-                                                        constraints,
-                                                        this);
+  if (!local_audio_source_) {
+    if (!factory_->InitializeMediaStreamAudioSource(render_view_id_,
+                                                    constraints,
+                                                    this)) {
+      // The source failed to start.
+      // MediaStreamImpl rely on the |stop_callback| to be triggered when the
+      // last track is removed from the source. But in this case, the source is
+      // is not even started. So we need to fail both adding the track and
+      // trigger |stop_callback|.
+      callback.Run(this, false);
+      StopSource();
+      return;
+    }
   }
-  callback.Run(this, result);
-}
 
-void MediaStreamAudioSource::RemoveTrack(
-    const blink::WebMediaStreamTrack& track) {
-  NOTIMPLEMENTED();
+  factory_->CreateLocalAudioTrack(track);
+  callback.Run(this, true);
 }
 
 }  // namespace content

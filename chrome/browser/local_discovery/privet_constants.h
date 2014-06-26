@@ -40,13 +40,15 @@ extern const char kPrivetActionCancel[];
 
 extern const char kPrivetDefaultDeviceType[];
 extern const char kPrivetSubtypeTemplate[];
-extern const char kPrivetSubtypePrinter[];
+
+extern const char kPrivetTypePrinter[];
 
 const double kPrivetMaximumTimeScaling = 1.2;
 
 extern const char kPrivetTxtKeyName[];
 extern const char kPrivetTxtKeyDescription[];
 extern const char kPrivetTxtKeyURL[];
+extern const char kPrivetTxtKeyVersion[];
 extern const char kPrivetTxtKeyType[];
 extern const char kPrivetTxtKeyID[];
 extern const char kPrivetTxtKeyConnectionState[];

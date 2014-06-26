@@ -18,7 +18,9 @@
 #include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/renderer/browser_plugin/browser_plugin.h"
 #include "content/renderer/browser_plugin/browser_plugin_manager.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/render_frame_impl.h"
+#include "content/renderer/render_frame_proxy.h"
 #include "content/renderer/render_thread_impl.h"
 #include "skia/ext/image_operations.h"
 #include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
@@ -27,7 +29,6 @@
 #include "third_party/khronos/GLES2/gl2.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 namespace content {
 
@@ -48,16 +49,17 @@ ChildFrameCompositingHelper::CreateCompositingHelperForBrowserPlugin(
 ChildFrameCompositingHelper*
 ChildFrameCompositingHelper::CreateCompositingHelperForRenderFrame(
     blink::WebFrame* frame,
-    RenderFrameImpl* render_frame,
+    RenderFrameProxy* render_frame_proxy,
     int host_routing_id) {
   return new ChildFrameCompositingHelper(
-      base::WeakPtr<BrowserPlugin>(), frame, render_frame, host_routing_id);
+      base::WeakPtr<BrowserPlugin>(), frame, render_frame_proxy,
+      host_routing_id);
 }
 
 ChildFrameCompositingHelper::ChildFrameCompositingHelper(
     const base::WeakPtr<BrowserPlugin>& browser_plugin,
     blink::WebFrame* frame,
-    RenderFrameImpl* render_frame,
+    RenderFrameProxy* render_frame_proxy,
     int host_routing_id)
     : host_routing_id_(host_routing_id),
       last_route_id_(0),
@@ -68,7 +70,7 @@ ChildFrameCompositingHelper::ChildFrameCompositingHelper(
       software_ack_pending_(false),
       opaque_(true),
       browser_plugin_(browser_plugin),
-      render_frame_(render_frame),
+      render_frame_proxy_(render_frame_proxy),
       frame_(frame) {}
 
 ChildFrameCompositingHelper::~ChildFrameCompositingHelper() {}
@@ -102,8 +104,8 @@ void ChildFrameCompositingHelper::SendCompositorFrameSwappedACKToBrowser(
     GetBrowserPluginManager()->Send(
         new BrowserPluginHostMsg_CompositorFrameSwappedACK(
             host_routing_id_, GetInstanceID(), params));
-  } else if (render_frame_) {
-    render_frame_->Send(
+  } else if (render_frame_proxy_) {
+    render_frame_proxy_->Send(
         new FrameHostMsg_CompositorFrameSwappedACK(host_routing_id_, params));
   }
 }
@@ -114,9 +116,9 @@ void ChildFrameCompositingHelper::SendBuffersSwappedACKToBrowser(
   // BrowserPlugin is modified to use a RenderFrame.
   if (GetBrowserPluginManager()) {
     GetBrowserPluginManager()->Send(new BrowserPluginHostMsg_BuffersSwappedACK(
-        host_routing_id_, GetInstanceID(), params));
-  } else if (render_frame_) {
-    render_frame_->Send(
+        host_routing_id_, params));
+  } else if (render_frame_proxy_) {
+    render_frame_proxy_->Send(
         new FrameHostMsg_BuffersSwappedACK(host_routing_id_, params));
   }
 }
@@ -129,8 +131,8 @@ void ChildFrameCompositingHelper::SendReclaimCompositorResourcesToBrowser(
     GetBrowserPluginManager()->Send(
         new BrowserPluginHostMsg_ReclaimCompositorResources(
             host_routing_id_, GetInstanceID(), params));
-  } else if (render_frame_) {
-    render_frame_->Send(
+  } else if (render_frame_proxy_) {
+    render_frame_proxy_->Send(
         new FrameHostMsg_ReclaimCompositorResources(host_routing_id_, params));
   }
 }
@@ -186,7 +188,7 @@ void ChildFrameCompositingHelper::EnableCompositing(bool enable) {
     background_layer_->SetMasksToBounds(true);
     background_layer_->SetBackgroundColor(
         SkColorSetARGBInline(255, 255, 255, 255));
-    web_layer_.reset(new webkit::WebLayerImpl(background_layer_));
+    web_layer_.reset(new WebLayerImpl(background_layer_));
   }
 
   if (GetContainer()) {
@@ -394,7 +396,8 @@ void ChildFrameCompositingHelper::OnCompositorFrameSwapped(
     scoped_ptr<cc::CompositorFrame> frame,
     int route_id,
     uint32 output_surface_id,
-    int host_id) {
+    int host_id,
+    base::SharedMemoryHandle handle) {
 
   if (frame->gl_frame_data) {
     SwapBuffersInfo swap_info;
@@ -422,7 +425,7 @@ void ChildFrameCompositingHelper::OnCompositorFrameSwapped(
     swap_info.software_frame_id = frame_data->id;
 
     scoped_ptr<base::SharedMemory> shared_memory(
-        new base::SharedMemory(frame_data->handle, true));
+        new base::SharedMemory(handle, true));
     const size_t size_in_bytes = 4 * frame_data->size.GetArea();
     if (!shared_memory->Map(size_in_bytes)) {
       LOG(ERROR) << "Failed to map shared memory of size " << size_in_bytes;

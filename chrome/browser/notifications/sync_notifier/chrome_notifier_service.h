@@ -10,16 +10,22 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_vector.h"
+#include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
-#include "base/threading/non_thread_safe.h"
+#include "base/threading/thread_checker.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/sync_notifier/synced_notification.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "sync/api/syncable_service.h"
 #include "ui/message_center/notifier_settings.h"
 
 class NotificationUIManager;
 class Profile;
+class SyncedNotificationsShim;
+
+namespace extensions {
+struct Event;
+}
 
 namespace user_prefs {
 class PrefRegistrySyncable;
@@ -31,11 +37,11 @@ struct Notifier;
 
 namespace notifier {
 class SyncedNotificationAppInfo;
+class SyncedNotificationAppInfoService;
 
 // The name of our first synced notification service.
-// TODO(petewil): remove this hardcoding once we have the synced notification
-// signalling sync data type set up to provide this.
-// crbug.com/248337
+// TODO(petewil): Remove this once we figure out how to do UMA for each sending
+// service name without knowing the name in advance.
 extern const char kFirstSyncedNotificationServiceId[];
 extern const char kServiceEnabledOnce[];
 extern const char kSyncedNotificationFirstRun[];
@@ -55,13 +61,17 @@ enum ChromeNotifierServiceActionType {
 // delivered notifications for chrome. These are obtained from the sync service
 // and kept up to date.
 class ChromeNotifierService : public syncer::SyncableService,
-                              public BrowserContextKeyedService {
+                              public KeyedService {
  public:
   ChromeNotifierService(Profile* profile, NotificationUIManager* manager);
   virtual ~ChromeNotifierService();
 
-  // Methods from BrowserContextKeyedService.
+  // Methods from KeyedService.
   virtual void Shutdown() OVERRIDE;
+
+  // Returns the SyncableService for syncer::SYNCED_NOTIFICATIONS and
+  // syncer::SYNCED_NOTIFICATION_APP_INFO
+  SyncedNotificationsShim* GetSyncedNotificationsShim();
 
   // syncer::SyncableService implementation.
   virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
@@ -81,7 +91,7 @@ class ChromeNotifierService : public syncer::SyncableService,
       const SyncedNotification& notification);
 
   // Convert from SyncData representation to internal representation.
-  static scoped_ptr<SyncedNotification> CreateNotificationFromSyncData(
+  scoped_ptr<SyncedNotification> CreateNotificationFromSyncData(
       const syncer::SyncData& sync_data);
 
   // Get a pointer to a notification.  ChromeNotifierService owns this pointer.
@@ -102,13 +112,24 @@ class ChromeNotifierService : public syncer::SyncableService,
       const std::string& notifier_id,
       bool enabled);
 
+  // When app ids are added or removed, unblock or remove associated messages.
+  void OnAddedAppIds(std::vector<std::string> added_app_ids);
+  void OnRemovedAppIds(std::vector<std::string> removed_app_ids);
+
   // Register the preferences we use to save state.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   Profile* profile() const { return profile_; }
 
+  // Find and retun the sending service Id for this notification.
+  std::string GetSendingServiceId(
+      const SyncedNotification* synced_notification);
+
   // Functions for test.
   void AddForTest(scoped_ptr<notifier::SyncedNotification> notification);
+
+  void SetSyncedNotificationAppInfoServiceForTest(
+      SyncedNotificationAppInfoService* synced_notification_app_info_service);
 
   // If we allow the tests to do bitmap fetching, they will attempt to fetch
   // a URL from the web, which will fail.  We can already test the majority
@@ -126,6 +147,9 @@ class ChromeNotifierService : public syncer::SyncableService,
       NotificationUIManager* notification_ui_manager);
 
  private:
+  // Helper method for firing JS events triggered by sync.
+  void FireSyncJSEvent(scoped_ptr<extensions::Event> event);
+
   // Add a notification to our list.  This takes ownership of the pointer.
   void Add(scoped_ptr<notifier::SyncedNotification> notification);
 
@@ -166,8 +190,11 @@ class ChromeNotifierService : public syncer::SyncableService,
   void BuildServiceListValueInplace(
       std::set<std::string> services, base::ListValue* list_value);
 
-  SyncedNotificationAppInfo* FindAppInfo(const std::string& app_id) const;
+  // Finds an app info by using the AppId
+  notifier::SyncedNotificationAppInfo* FindAppInfoByAppId(
+      const std::string& app_id) const;
 
+  // Builds a welcome notification for the listed sending service.
   const Notification CreateWelcomeNotificationForService(
       SyncedNotificationAppInfo* app_info);
 
@@ -186,11 +213,21 @@ class ChromeNotifierService : public syncer::SyncableService,
   std::set<std::string> initialized_sending_services_;
   bool synced_notification_first_run_;
   static bool avoid_bitmap_fetching_for_test_;
+  base::ThreadChecker thread_checker_;
+  // Unowned pointer to the App Info service.  The lifetime is managed by the
+  // profile service, this service depends on the App Info service, so it should
+  // always be in scope whenever our service is active.
+  SyncedNotificationAppInfoService* synced_notification_app_info_service_;
 
-  ScopedVector<SyncedNotificationAppInfo> app_info_data_;
   // TODO(petewil): Consider whether a map would better suit our data.
   // If there are many entries, lookup time may trump locality of reference.
   ScopedVector<SyncedNotification> notification_data_;
+
+  // Shim connecting the JS private api to sync. // TODO(zea): delete all other
+  // code.
+  scoped_ptr<SyncedNotificationsShim> synced_notifications_shim_;
+
+  base::WeakPtrFactory<ChromeNotifierService> weak_ptr_factory_;
 
   friend class ChromeNotifierServiceTest;
   FRIEND_TEST_ALL_PREFIXES(ChromeNotifierServiceTest, ServiceEnabledTest);
@@ -201,6 +238,8 @@ class ChromeNotifierService : public syncer::SyncableService,
   FRIEND_TEST_ALL_PREFIXES(ChromeNotifierServiceTest,
                            GetEnabledSendingServicesFromPreferencesTest);
   FRIEND_TEST_ALL_PREFIXES(ChromeNotifierServiceTest, CheckFindAppInfo);
+  FRIEND_TEST_ALL_PREFIXES(ChromeNotifierServiceTest, SetAddedAppIdsTest);
+  FRIEND_TEST_ALL_PREFIXES(ChromeNotifierServiceTest, SetRemovedAppIdsTest);
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNotifierService);
 };

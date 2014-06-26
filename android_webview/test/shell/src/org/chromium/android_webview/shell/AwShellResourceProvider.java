@@ -21,9 +21,11 @@ public class AwShellResourceProvider {
 
         AwResource.setResources(context.getResources());
 
-        AwResource.setErrorPageResources(R.raw.blank_html, R.raw.blank_html);
+        AwResource.setErrorPageResources(R.raw.error, R.raw.blank_html);
 
         AwResource.setDefaultTextEncoding(R.string.default_encoding);
+
+        AwResource.setConfigKeySystemUuidMapping(R.array.config_key_system_uuid_mapping);
 
         sInitialized = true;
     }

@@ -8,6 +8,7 @@
 #include <list>
 #include <string>
 
+struct BrowserInfo;
 class ChromeDesktopImpl;
 class Status;
 class WebView;
@@ -18,9 +19,7 @@ class Chrome {
 
   virtual ChromeDesktopImpl* GetAsDesktop() = 0;
 
-  virtual std::string GetVersion() = 0;
-
-  virtual int GetBuildNo() = 0;
+  virtual const BrowserInfo* GetBrowserInfo() = 0;
 
   virtual bool HasCrashedWebView() = 0;
 
@@ -40,6 +39,9 @@ class Chrome {
 
   // Get the operation system where Chrome is running.
   virtual std::string GetOperatingSystemName() = 0;
+
+  // Return whether the mobileEmulation capability has been enabled.
+  virtual bool IsMobileEmulationEnabled() const = 0;
 
   // Quits Chrome.
   virtual Status Quit() = 0;

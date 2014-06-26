@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -48,11 +47,6 @@ class CloudPolicyValidatorTest : public testing::Test {
     policy_.SetDefaultNewSigningKey();
   }
 
-  virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnablePolicyKeyVerification);
-  }
-
   void Validate(testing::Action<void(UserCloudPolicyValidator*)> check_action) {
     policy_.Build();
     ValidatePolicy(check_action, policy_.GetCopy());
@@ -92,7 +86,7 @@ class CloudPolicyValidatorTest : public testing::Test {
         policy_response.Pass(), base::MessageLoopProxy::current());
     validator->ValidateTimestamp(timestamp_, timestamp_,
                                  timestamp_option_);
-    validator->ValidateUsername(PolicyBuilder::kFakeUsername);
+    validator->ValidateUsername(PolicyBuilder::kFakeUsername, true);
     if (!owning_domain_.empty())
       validator->ValidateDomain(owning_domain_);
     validator->ValidateDMToken(existing_dm_token_, ignore_missing_dm_token_);

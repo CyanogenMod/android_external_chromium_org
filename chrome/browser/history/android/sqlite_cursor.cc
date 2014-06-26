@@ -9,6 +9,7 @@
 #include "base/android/jni_string.h"
 #include "base/bind.h"
 #include "base/logging.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/history/android/android_history_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "jni/SQLiteCursor_jni.h"
@@ -172,7 +173,7 @@ void SQLiteCursor::DestroyOnUIThread() {
   delete this;
 }
 
-bool SQLiteCursor::GetFavicon(chrome::FaviconID id,
+bool SQLiteCursor::GetFavicon(favicon_base::FaviconID id,
                               std::vector<unsigned char>* image_data) {
   if (id) {
     BrowserThread::PostTask(
@@ -201,17 +202,16 @@ bool SQLiteCursor::GetFavicon(chrome::FaviconID id,
 }
 
 void SQLiteCursor::GetFaviconForIDInUIThread(
-    chrome::FaviconID id,
-    const FaviconService::FaviconRawCallback& callback) {
+    favicon_base::FaviconID id,
+    const favicon_base::FaviconRawBitmapCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!tracker_.get())
     tracker_.reset(new base::CancelableTaskTracker());
   favicon_service_->GetLargestRawFaviconForID(id, callback, tracker_.get());
 }
 
-
 void SQLiteCursor::OnFaviconData(
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   favicon_bitmap_result_ = bitmap_result;
   event_.Signal();
   if (test_observer_)

@@ -5,43 +5,47 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SPELLCHECK_SPELLCHECK_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SPELLCHECK_SPELLCHECK_API_H_
 
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-
-class Profile;
+#include "base/scoped_observer.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 namespace extensions {
+class ExtensionRegistry;
 
-class SpellcheckAPI : public ProfileKeyedAPI,
-                      public content::NotificationObserver {
+class SpellcheckAPI : public BrowserContextKeyedAPI,
+                      public ExtensionRegistryObserver {
  public:
-  explicit SpellcheckAPI(Profile* profile);
+  explicit SpellcheckAPI(content::BrowserContext* context);
   virtual ~SpellcheckAPI();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<SpellcheckAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<SpellcheckAPI>* GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<SpellcheckAPI>;
+  friend class BrowserContextKeyedAPIFactory<SpellcheckAPI>;
 
-  // content::NotificationDelegate implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "SpellcheckAPI";
   }
 
-  content::NotificationRegistrar registrar_;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(SpellcheckAPI);
 };
 
 template <>
-void ProfileKeyedAPIFactory<SpellcheckAPI>::DeclareFactoryDependencies();
+void BrowserContextKeyedAPIFactory<SpellcheckAPI>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

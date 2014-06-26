@@ -26,13 +26,19 @@ class PrepareCommand(cr.Command):
         running gyp.
         """)
 
-  def Run(self, context):
-    self.Prepare(context)
+  def Run(self):
+    self.Prepare()
 
   @classmethod
-  def Prepare(cls, context):
+  def UpdateContext(cls):
     for preparation in PrepareOut.Plugins():
-      preparation.Prepare(context)
+      preparation.UpdateContext()
+
+  @classmethod
+  def Prepare(cls):
+    cls.UpdateContext()
+    for preparation in PrepareOut.Plugins():
+      preparation.Prepare()
 
 
 class PrepareOut(cr.Plugin, cr.Plugin.Type):
@@ -41,8 +47,13 @@ class PrepareOut(cr.Plugin, cr.Plugin.Type):
   See PrepareCommand for details.
   """
 
-  def Prepare(self, context):
+  def UpdateContext(self):
+    """Update the context if needed.
+
+    This is also used by commands that want the environment setup correctly, but
+    are not going to call Prepare directly (such as sync)."""
+
+  def Prepare(self):
     """All PrepareOut plugins must override this method to do their work."""
-    _ = context
     raise NotImplementedError('Must be overridden.')
 

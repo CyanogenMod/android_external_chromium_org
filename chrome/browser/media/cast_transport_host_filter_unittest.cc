@@ -7,6 +7,7 @@
 #include "base/time/default_tick_clock.h"
 #include "chrome/browser/media/cast_transport_host_filter.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "media/cast/logging/logging_defines.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -16,23 +17,7 @@ class CastTransportHostFilterTest : public testing::Test {
   CastTransportHostFilterTest()
       : browser_thread_bundle_(
             content::TestBrowserThreadBundle::IO_MAINLOOP) {
-  }
- protected:
-  virtual void SetUp() OVERRIDE {
     filter_ = new cast::CastTransportHostFilter();
-  }
-
-  void FakeSend(const IPC::Message& message) {
-    bool message_was_ok;
-    EXPECT_TRUE(filter_->OnMessageReceived(message, &message_was_ok));
-    EXPECT_TRUE(message_was_ok);
-  }
-
-  net::IPEndPoint GetLocalEndPoint() {
-    return net::IPEndPoint(net::IPAddressNumber(4, 0), 0);
-  }
-
-  net::IPEndPoint GetRemoteEndPoint() {
     // 127.0.0.1:7 is the local echo service port, which
     // is probably not going to respond, but that's ok.
     // TODO(hubbe): Open up an UDP port and make sure
@@ -40,20 +25,23 @@ class CastTransportHostFilterTest : public testing::Test {
     net::IPAddressNumber receiver_address(4, 0);
     receiver_address[0] = 127;
     receiver_address[3] = 1;
-    return net::IPEndPoint(receiver_address, 7);
+    receive_endpoint_ = net::IPEndPoint(receiver_address, 7);
+  }
+
+ protected:
+  void FakeSend(const IPC::Message& message) {
+    EXPECT_TRUE(filter_->OnMessageReceived(message));
   }
 
   content::TestBrowserThreadBundle browser_thread_bundle_;
   scoped_refptr<content::BrowserMessageFilter> filter_;
   net::IPAddressNumber receiver_address_;
+  net::IPEndPoint receive_endpoint_;
 };
 
 TEST_F(CastTransportHostFilterTest, NewDelete) {
-  media::cast::transport::CastTransportConfig config;
-  config.local_endpoint = GetLocalEndPoint();
-  config.receiver_endpoint = GetRemoteEndPoint();
   const int kChannelId = 17;
-  CastHostMsg_New new_msg(kChannelId, config);
+  CastHostMsg_New new_msg(kChannelId, receive_endpoint_);
   CastHostMsg_Delete delete_msg(kChannelId);
 
   // New, then delete, as expected.
@@ -75,12 +63,8 @@ TEST_F(CastTransportHostFilterTest, NewDelete) {
 }
 
 TEST_F(CastTransportHostFilterTest, NewMany) {
-  media::cast::transport::CastTransportConfig config;
-  config.local_endpoint = GetLocalEndPoint();
-  config.receiver_endpoint = GetRemoteEndPoint();
-
   for (int i = 0; i < 100; i++) {
-    CastHostMsg_New new_msg(i, config);
+    CastHostMsg_New new_msg(i, receive_endpoint_);
     FakeSend(new_msg);
   }
 
@@ -94,64 +78,61 @@ TEST_F(CastTransportHostFilterTest, NewMany) {
 
 TEST_F(CastTransportHostFilterTest, SimpleMessages) {
   // Create a cast transport sender.
-  media::cast::transport::CastTransportConfig config;
-  config.local_endpoint = GetLocalEndPoint();
-  config.receiver_endpoint = GetRemoteEndPoint();
   const int32 kChannelId = 42;
-  CastHostMsg_New new_msg(kChannelId, config);
+  CastHostMsg_New new_msg(kChannelId, receive_endpoint_);
   FakeSend(new_msg);
 
-  media::cast::transport::EncodedAudioFrame audio_frame;
-  audio_frame.codec = media::cast::transport::kPcm16;
+  media::cast::transport::CastTransportAudioConfig audio_config;
+  audio_config.rtp.max_outstanding_frames = 10;
+  CastHostMsg_InitializeAudio init_audio_msg(kChannelId, audio_config);
+  FakeSend(init_audio_msg);
+
+  media::cast::transport::CastTransportVideoConfig video_config;
+  video_config.rtp.max_outstanding_frames = 10;
+  CastHostMsg_InitializeVideo init_video_msg(kChannelId, video_config);
+  FakeSend(init_video_msg);
+
+  media::cast::transport::EncodedFrame audio_frame;
+  audio_frame.dependency = media::cast::transport::EncodedFrame::KEY;
   audio_frame.frame_id = 1;
+  audio_frame.referenced_frame_id = 1;
   audio_frame.rtp_timestamp = 47;
   const int kSamples = 47;
   const int kBytesPerSample = 2;
   const int kChannels = 2;
   audio_frame.data = std::string(kSamples * kBytesPerSample * kChannels, 'q');
   CastHostMsg_InsertCodedAudioFrame insert_coded_audio_frame(
-      kChannelId, audio_frame, base::TimeTicks::Now());
-  FakeSend(new_msg);
+      kChannelId, audio_frame);
+  FakeSend(insert_coded_audio_frame);
 
-  media::cast::transport::EncodedVideoFrame video_frame;
-  video_frame.codec = media::cast::transport::kVp8;
-  video_frame.key_frame = true;
+  media::cast::transport::EncodedFrame video_frame;
+  video_frame.dependency = media::cast::transport::EncodedFrame::KEY;
   video_frame.frame_id = 1;
-  video_frame.last_referenced_frame_id = 0;
+  video_frame.referenced_frame_id = 1;
   // Let's make sure we try a few kb so multiple packets
   // are generated.
   const int kVideoDataSize = 4711;
   video_frame.data = std::string(kVideoDataSize, 'p');
   CastHostMsg_InsertCodedVideoFrame insert_coded_video_frame(
-      kChannelId, video_frame, base::TimeTicks::Now());
-  FakeSend(new_msg);
+      kChannelId, video_frame);
+  FakeSend(insert_coded_video_frame);
 
   media::cast::transport::SendRtcpFromRtpSenderData rtcp_data;
   rtcp_data.packet_type_flags = 0;
   rtcp_data.sending_ssrc = 0;
   rtcp_data.c_name = "FNRD";
-  media::cast::transport::RtcpSenderInfo sender_info;
-  sender_info.ntp_seconds = 1;
-  sender_info.ntp_fraction = 2;
-  sender_info.rtp_timestamp = 3;
-  sender_info.send_packet_count = 4;
-  sender_info.send_octet_count = 5;
   media::cast::transport::RtcpDlrrReportBlock dlrr;
   dlrr.last_rr = 7;
   dlrr.delay_since_last_rr = 8;
-  media::cast::transport::RtcpSenderLogMessage sender_log(1);
-  sender_log[0].frame_status =
-      media::cast::transport::kRtcpSenderFrameStatusSentToNetwork;
-  sender_log[0].rtp_timestamp = 9;
   CastHostMsg_SendRtcpFromRtpSender rtcp_msg(
-      kChannelId, rtcp_data, sender_info, dlrr, sender_log);
+      kChannelId, rtcp_data, dlrr);
   FakeSend(rtcp_msg);
 
   media::cast::MissingFramesAndPacketsMap missing_packets;
   missing_packets[1].insert(4);
-  missing_packets[3].insert(7);
+  missing_packets[1].insert(7);
   CastHostMsg_ResendPackets resend_msg(
-      kChannelId, false, missing_packets);
+      kChannelId, false, missing_packets, true, base::TimeDelta());
   FakeSend(resend_msg);
 
   CastHostMsg_Delete delete_msg(kChannelId);

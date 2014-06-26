@@ -28,18 +28,15 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
 
   // CreateVideo{Decode,Encode}Accelerator returns scoped_ptr, which the mocking
   // framework does not want.  Trampoline them.
-  MOCK_METHOD2(DoCreateVideoDecodeAccelerator,
-               VideoDecodeAccelerator*(VideoCodecProfile,
-                                       VideoDecodeAccelerator::Client*));
-  MOCK_METHOD1(DoCreateVideoEncodeAccelerator,
-               VideoEncodeAccelerator*(VideoEncodeAccelerator::Client*));
+  MOCK_METHOD0(DoCreateVideoDecodeAccelerator, VideoDecodeAccelerator*());
+  MOCK_METHOD0(DoCreateVideoEncodeAccelerator, VideoEncodeAccelerator*());
 
   MOCK_METHOD5(CreateTextures,
-               uint32(int32 count,
-                      const gfx::Size& size,
-                      std::vector<uint32>* texture_ids,
-                      std::vector<gpu::Mailbox>* texture_mailboxes,
-                      uint32 texture_target));
+               bool(int32 count,
+                    const gfx::Size& size,
+                    std::vector<uint32>* texture_ids,
+                    std::vector<gpu::Mailbox>* texture_mailboxes,
+                    uint32 texture_target));
   MOCK_METHOD1(DeleteTexture, void(uint32 texture_id));
   MOCK_METHOD1(WaitSyncPoint, void(uint32 sync_point));
   MOCK_METHOD3(ReadPixels,
@@ -49,12 +46,11 @@ class MockGpuVideoAcceleratorFactories : public GpuVideoAcceleratorFactories {
   MOCK_METHOD1(CreateSharedMemory, base::SharedMemory*(size_t size));
   MOCK_METHOD0(GetTaskRunner, scoped_refptr<base::SingleThreadTaskRunner>());
 
-  virtual scoped_ptr<VideoDecodeAccelerator> CreateVideoDecodeAccelerator(
-      VideoCodecProfile profile,
-      VideoDecodeAccelerator::Client* client) OVERRIDE;
+  virtual scoped_ptr<VideoDecodeAccelerator> CreateVideoDecodeAccelerator()
+      OVERRIDE;
 
-  virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator(
-      VideoEncodeAccelerator::Client* client) OVERRIDE;
+  virtual scoped_ptr<VideoEncodeAccelerator> CreateVideoEncodeAccelerator()
+      OVERRIDE;
 
  private:
   virtual ~MockGpuVideoAcceleratorFactories();

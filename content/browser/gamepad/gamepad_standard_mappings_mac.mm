@@ -4,34 +4,9 @@
 
 #include "content/browser/gamepad/gamepad_standard_mappings.h"
 
-#include "content/common/gamepad_hardware_buffer.h"
-
 namespace content {
 
 namespace {
-
-float AxisToButton(float input) {
-  return (input + 1.f) / 2.f;
-}
-
-void DpadFromAxis(blink::WebGamepad* mapped, float dir) {
-  // Dpad is mapped as a direction on one axis, where -1 is up and it
-  // increases clockwise to 1, which is up + left. It's set to a large (> 1.f)
-  // number when nothing is depressed, except on start up, sometimes it's 0.0
-  // for no data, rather than the large number.
-  if (dir == 0.0f) {
-    mapped->buttons[kButtonDpadUp] = 0.f;
-    mapped->buttons[kButtonDpadDown] = 0.f;
-    mapped->buttons[kButtonDpadLeft] = 0.f;
-    mapped->buttons[kButtonDpadRight] = 0.f;
-  } else {
-    mapped->buttons[kButtonDpadUp] = (dir >= -1.f && dir < -0.7f) ||
-                                     (dir >= .95f && dir <= 1.f);
-    mapped->buttons[kButtonDpadRight] = dir >= -.75f && dir < -.1f;
-    mapped->buttons[kButtonDpadDown] = dir >= -.2f && dir < .45f;
-    mapped->buttons[kButtonDpadLeft] = dir >= .4f && dir <= 1.f;
-  }
-}
 
 void MapperXbox360Gamepad(
     const blink::WebGamepad& input,
@@ -64,16 +39,27 @@ void MapperPlaystationSixAxis(
   mapped->buttons[kButtonQuaternary] = input.buttons[12];
   mapped->buttons[kButtonLeftShoulder] = input.buttons[10];
   mapped->buttons[kButtonRightShoulder] = input.buttons[11];
-  mapped->buttons[kButtonLeftTrigger] = input.buttons[8];
-  mapped->buttons[kButtonRightTrigger] = input.buttons[9];
+
+  mapped->buttons[kButtonLeftTrigger] = ButtonFromButtonAndAxis(
+      input.buttons[8], input.axes[14]);
+  mapped->buttons[kButtonRightTrigger] = ButtonFromButtonAndAxis(
+      input.buttons[9], input.axes[15]);
+
   mapped->buttons[kButtonBackSelect] = input.buttons[0];
   mapped->buttons[kButtonStart] = input.buttons[3];
   mapped->buttons[kButtonLeftThumbstick] = input.buttons[1];
   mapped->buttons[kButtonRightThumbstick] = input.buttons[2];
-  mapped->buttons[kButtonDpadUp] = input.buttons[4];
-  mapped->buttons[kButtonDpadDown] = input.buttons[6];
-  mapped->buttons[kButtonDpadLeft] = input.buttons[7];
-  mapped->buttons[kButtonDpadRight] = input.buttons[5];
+
+  // The SixAxis Dpad is pressure sensative
+  mapped->buttons[kButtonDpadUp] = ButtonFromButtonAndAxis(
+      input.buttons[4], input.axes[10]);
+  mapped->buttons[kButtonDpadDown] = ButtonFromButtonAndAxis(
+      input.buttons[6], input.axes[12]);
+  mapped->buttons[kButtonDpadLeft] = ButtonFromButtonAndAxis(
+      input.buttons[7], input.axes[13]);
+  mapped->buttons[kButtonDpadRight] = ButtonFromButtonAndAxis(
+      input.buttons[5], input.axes[11]);
+
   mapped->buttons[kButtonMeta] = input.buttons[16];
   mapped->axes[kAxisRightStickY] = input.axes[5];
 
@@ -239,6 +225,30 @@ void MapperOnLiveWireless(
   mapped->axesLength = kNumAxes;
 }
 
+void MapperADT1(
+    const blink::WebGamepad& input,
+    blink::WebGamepad* mapped) {
+  *mapped = input;
+  mapped->buttons[kButtonPrimary] = input.buttons[0];
+  mapped->buttons[kButtonSecondary] = input.buttons[1];
+  mapped->buttons[kButtonTertiary] = input.buttons[3];
+  mapped->buttons[kButtonQuaternary] = input.buttons[4];
+  mapped->buttons[kButtonLeftShoulder] = input.buttons[6];
+  mapped->buttons[kButtonRightShoulder] = input.buttons[7];
+  mapped->buttons[kButtonLeftTrigger] = AxisToButton(input.axes[3]);
+  mapped->buttons[kButtonRightTrigger] = AxisToButton(input.axes[4]);
+  mapped->buttons[kButtonBackSelect] = NullButton();
+  mapped->buttons[kButtonStart] = NullButton();
+  mapped->buttons[kButtonLeftThumbstick] = input.buttons[13];
+  mapped->buttons[kButtonRightThumbstick] = input.buttons[14];
+  mapped->buttons[kButtonMeta] = input.buttons[12];
+  mapped->axes[kAxisRightStickY] = input.axes[5];
+  DpadFromAxis(mapped, input.axes[9]);
+
+  mapped->buttonsLength = kNumButtons;
+  mapped->axesLength = kNumAxes;
+}
+
 struct MappingData {
   const char* const vendor_id;
   const char* const product_id;
@@ -259,6 +269,7 @@ struct MappingData {
   { "2222", "4010", MapperMacallyIShock },      // Macally iShock
   { "2378", "1008", MapperOnLiveWireless },     // OnLive Controller (Bluetooth)
   { "2378", "100a", MapperOnLiveWireless },     // OnLive Controller (Wired)
+  { "18d1", "2c40", MapperADT1 },               // ADT-1 Controller
 };
 
 }  // namespace

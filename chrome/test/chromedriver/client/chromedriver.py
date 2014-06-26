@@ -65,7 +65,7 @@ class ChromeDriver(object):
                android_use_running_app=None, chrome_switches=None,
                chrome_extensions=None, chrome_log_path=None,
                debugger_address=None, browser_log_level=None,
-               experimental_options=None):
+               mobile_emulation=None, experimental_options=None):
     self._executor = command_executor.CommandExecutor(server_url)
 
     options = {}
@@ -88,6 +88,10 @@ class ChromeDriver(object):
     if chrome_switches:
       assert type(chrome_switches) is list
       options['args'] = chrome_switches
+
+    if mobile_emulation:
+      assert type(mobile_emulation) is dict
+      options['mobileEmulation'] = mobile_emulation
 
     if chrome_extensions:
       assert type(chrome_extensions) is list
@@ -175,6 +179,9 @@ class ChromeDriver(object):
   def Load(self, url):
     self.ExecuteCommand(Command.GET, {'url': url})
 
+  def LaunchApp(self, app_id):
+    self.ExecuteCommand(Command.LAUNCH_APP, {'id': app_id})
+
   def ExecuteScript(self, script, *args):
     converted_args = list(args)
     return self.ExecuteCommand(
@@ -194,6 +201,9 @@ class ChromeDriver(object):
 
   def SwitchToMainFrame(self):
     self.SwitchToFrame(None)
+
+  def SwitchToParentFrame(self):
+    self.ExecuteCommand(Command.SWITCH_TO_PARENT_FRAME)
 
   def GetTitle(self):
     return self.ExecuteCommand(Command.GET_TITLE)

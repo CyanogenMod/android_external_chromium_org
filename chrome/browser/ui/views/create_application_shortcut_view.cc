@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/create_application_shortcut_view.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -12,17 +13,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/browser/favicon/favicon_util.h"
-#include "chrome/browser/history/select_favicon_frames.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
+#include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
+#include "components/favicon_base/select_favicon_frames.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
@@ -240,7 +240,7 @@ void ShowCreateChromeAppShortcutsDialog(
     gfx::NativeWindow parent_window,
     Profile* profile,
     const extensions::Extension* app,
-    const base::Closure& close_callback) {
+    const base::Callback<void(bool)>& close_callback) {
   CreateBrowserModalDialogViews(
       new CreateChromeApplicationShortcutView(profile, app, close_callback),
       parent_window)->Show();
@@ -258,10 +258,12 @@ CreateApplicationShortcutView::CreateApplicationShortcutView(Profile* profile)
 
 CreateApplicationShortcutView::~CreateApplicationShortcutView() {}
 
-void CreateApplicationShortcutView::InitControls() {
-  // Create controls
-  app_info_ = new AppInfoView(shortcut_info_.title, shortcut_info_.description,
-                              shortcut_info_.favicon);
+void CreateApplicationShortcutView::InitControls(DialogLayout dialog_layout) {
+  if (dialog_layout == DIALOG_LAYOUT_URL_SHORTCUT) {
+    app_info_ = new AppInfoView(shortcut_info_.title,
+                                shortcut_info_.description,
+                                shortcut_info_.favicon);
+  }
   create_shortcuts_label_ = new views::Label(
       l10n_util::GetStringUTF16(IDS_CREATE_SHORTCUTS_LABEL));
   create_shortcuts_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -308,10 +310,12 @@ void CreateApplicationShortcutView::InitControls() {
   column_set->AddColumn(views::GridLayout::FILL, views::GridLayout::FILL,
                         100.0f, views::GridLayout::USE_PREF, 0, 0);
 
-  layout->StartRow(0, kHeaderColumnSetId);
-  layout->AddView(app_info_);
+  if (app_info_) {
+    layout->StartRow(0, kHeaderColumnSetId);
+    layout->AddView(app_info_);
+    layout->AddPaddingRow(0, views::kPanelSubVerticalSpacing);
+  }
 
-  layout->AddPaddingRow(0, views::kPanelSubVerticalSpacing);
   layout->StartRow(0, kHeaderColumnSetId);
   layout->AddView(create_shortcuts_label_);
 
@@ -332,7 +336,7 @@ void CreateApplicationShortcutView::InitControls() {
   }
 }
 
-gfx::Size CreateApplicationShortcutView::GetPreferredSize() {
+gfx::Size CreateApplicationShortcutView::GetPreferredSize() const {
   // TODO(evanm): should this use IDS_CREATE_SHORTCUTS_DIALOG_WIDTH_CHARS?
   static const int kDialogWidth = 360;
   int height = GetLayoutManager()->GetPreferredHeightForWidth(this,
@@ -371,13 +375,13 @@ bool CreateApplicationShortcutView::Accept() {
   if (!IsDialogButtonEnabled(ui::DIALOG_BUTTON_OK))
     return false;
 
-  ShellIntegration::ShortcutLocations creation_locations;
+  web_app::ShortcutLocations creation_locations;
   creation_locations.on_desktop = desktop_check_box_->checked();
   if (menu_check_box_ != NULL && menu_check_box_->checked()) {
     creation_locations.applications_menu_location =
         create_in_chrome_apps_subdir_ ?
-            ShellIntegration::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS :
-            ShellIntegration::APP_MENU_LOCATION_ROOT;
+            web_app::APP_MENU_LOCATION_SUBDIR_CHROMEAPPS :
+            web_app::APP_MENU_LOCATION_ROOT;
   }
 
 #if defined(OS_WIN)
@@ -389,8 +393,10 @@ bool CreateApplicationShortcutView::Accept() {
   creation_locations.in_quick_launch_bar = false;
 #endif
 
-  web_app::CreateShortcuts(shortcut_info_, creation_locations,
-                           web_app::SHORTCUT_CREATION_BY_USER);
+  web_app::CreateShortcutsForShortcutInfo(
+      web_app::SHORTCUT_CREATION_BY_USER,
+      creation_locations,
+      shortcut_info_);
   return true;
 }
 
@@ -438,7 +444,7 @@ CreateUrlApplicationShortcutView::CreateUrlApplicationShortcutView(
   // Create URL app shortcuts in the top-level menu.
   create_in_chrome_apps_subdir_ = false;
 
-  InitControls();
+  InitControls(DIALOG_LAYOUT_URL_SHORTCUT);
 }
 
 CreateUrlApplicationShortcutView::~CreateUrlApplicationShortcutView() {
@@ -489,25 +495,13 @@ void CreateUrlApplicationShortcutView::DidDownloadFavicon(
     return;
   pending_download_id_ = -1;
 
-  SkBitmap image;
-
-  if (!bitmaps.empty()) {
-    std::vector<ui::ScaleFactor> scale_factors;
-    ui::ScaleFactor scale_factor = ui::GetScaleFactorForNativeView(
-        web_contents_->GetRenderViewHost()->GetView()->GetNativeView());
-    scale_factors.push_back(scale_factor);
-    std::vector<size_t> closest_indices;
-    SelectFaviconFrameIndices(original_bitmap_sizes,
-                              scale_factors,
-                              requested_size,
-                              &closest_indices,
-                              NULL);
-    size_t closest_index = closest_indices[0];
-    image = bitmaps[closest_index];
-  }
-
-  if (!image.isNull()) {
-    shortcut_info_.favicon.Add(gfx::ImageSkia::CreateFrom1xBitmap(image));
+  gfx::ImageSkia image_skia = CreateFaviconImageSkia(
+      bitmaps,
+      original_bitmap_sizes,
+      requested_size,
+      NULL);
+  if (!image_skia.isNull()) {
+    shortcut_info_.favicon.Add(image_skia);
     static_cast<AppInfoView*>(app_info_)->UpdateIcon(shortcut_info_.favicon);
   } else {
     FetchIcon();
@@ -517,23 +511,20 @@ void CreateUrlApplicationShortcutView::DidDownloadFavicon(
 CreateChromeApplicationShortcutView::CreateChromeApplicationShortcutView(
     Profile* profile,
     const extensions::Extension* app,
-    const base::Closure& close_callback)
+    const base::Callback<void(bool)>& close_callback)
         : CreateApplicationShortcutView(profile),
-          app_(app),
           close_callback_(close_callback),
           weak_ptr_factory_(this) {
-  // Required by InitControls().
-  shortcut_info_.title = base::UTF8ToUTF16(app->name());
-  shortcut_info_.description = base::UTF8ToUTF16(app->description());
-
   // Place Chrome app shortcuts in the "Chrome Apps" submenu.
   create_in_chrome_apps_subdir_ = true;
 
-  InitControls();
+  InitControls(DIALOG_LAYOUT_APP_SHORTCUT);
 
-  // Get shortcut information and icon now; they are needed for our UI.
+  // Get shortcut information and icon; they are needed for creating the
+  // shortcut.
   web_app::UpdateShortcutInfoAndIconForApp(
-      *app, profile,
+      app,
+      profile,
       base::Bind(&CreateChromeApplicationShortcutView::OnShortcutInfoLoaded,
                  weak_ptr_factory_.GetWeakPtr()));
 }
@@ -542,21 +533,18 @@ CreateChromeApplicationShortcutView::~CreateChromeApplicationShortcutView() {}
 
 bool CreateChromeApplicationShortcutView::Accept() {
   if (!close_callback_.is_null())
-    close_callback_.Run();
+    close_callback_.Run(true);
   return CreateApplicationShortcutView::Accept();
 }
 
 bool CreateChromeApplicationShortcutView::Cancel() {
   if (!close_callback_.is_null())
-    close_callback_.Run();
+    close_callback_.Run(false);
   return CreateApplicationShortcutView::Cancel();
 }
 
 // Called when the app's ShortcutInfo (with icon) is loaded.
 void CreateChromeApplicationShortcutView::OnShortcutInfoLoaded(
-    const ShellIntegration::ShortcutInfo& shortcut_info) {
+    const web_app::ShortcutInfo& shortcut_info) {
   shortcut_info_ = shortcut_info;
-
-  CHECK(app_info_);
-  static_cast<AppInfoView*>(app_info_)->UpdateIcon(shortcut_info_.favicon);
 }

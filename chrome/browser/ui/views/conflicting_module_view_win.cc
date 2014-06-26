@@ -16,7 +16,7 @@
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/button/label_button.h"
@@ -56,7 +56,6 @@ ConflictingModuleView::ConflictingModuleView(
       not_now_button_(NULL),
       help_center_url_(help_center_url) {
   set_close_on_deactivate(false);
-  set_move_with_anchor(true);
   set_close_on_esc(true);
 
   // Compensate for built-in vertical padding in the anchor view's image.
@@ -111,7 +110,7 @@ ConflictingModuleView::~ConflictingModuleView() {
 }
 
 void ConflictingModuleView::ShowBubble() {
-  StartFade(true);
+  GetWidget()->Show();
 
   IntegerPrefMember bubble_shown;
   bubble_shown.Init(
@@ -194,7 +193,6 @@ void ConflictingModuleView::Init() {
 void ConflictingModuleView::ButtonPressed(views::Button* sender,
                                           const ui::Event& event) {
   if (sender == learn_more_button_) {
-    EnumerateModulesModel::RecordLearnMoreStat(false);
     browser_->OpenURL(
         content::OpenURLParams(help_center_url_,
                                content::Referrer(),
@@ -211,14 +209,14 @@ void ConflictingModuleView::ButtonPressed(views::Button* sender,
 }
 
 void ConflictingModuleView::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_ALERT;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_ALERT;
 }
 
 void ConflictingModuleView::ViewHierarchyChanged(
   const ViewHierarchyChangedDetails& details) {
   if (details.is_add && details.child == this)
-    NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
 }
 
 void ConflictingModuleView::Observe(

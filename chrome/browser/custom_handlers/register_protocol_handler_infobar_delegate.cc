@@ -6,9 +6,9 @@
 
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -22,12 +22,12 @@ void RegisterProtocolHandlerInfoBarDelegate::Create(
   content::RecordAction(
       base::UserMetricsAction("RegisterProtocolHandler.InfoBar_Shown"));
 
-  scoped_ptr<InfoBar> infobar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(
+  scoped_ptr<infobars::InfoBar> infobar(
+      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new RegisterProtocolHandlerInfoBarDelegate(registry, handler))));
 
   for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
-    InfoBar* existing_infobar = infobar_service->infobar_at(i);
+    infobars::InfoBar* existing_infobar = infobar_service->infobar_at(i);
     RegisterProtocolHandlerInfoBarDelegate* existing_delegate =
         existing_infobar->delegate()->
             AsRegisterProtocolHandlerInfoBarDelegate();
@@ -53,13 +53,13 @@ RegisterProtocolHandlerInfoBarDelegate::
     ~RegisterProtocolHandlerInfoBarDelegate() {
 }
 
-InfoBarDelegate::InfoBarAutomationType
-    RegisterProtocolHandlerInfoBarDelegate::GetInfoBarAutomationType() const {
+infobars::InfoBarDelegate::InfoBarAutomationType
+RegisterProtocolHandlerInfoBarDelegate::GetInfoBarAutomationType() const {
   return RPH_INFOBAR;
 }
 
-InfoBarDelegate::Type
-    RegisterProtocolHandlerInfoBarDelegate::GetInfoBarType() const {
+infobars::InfoBarDelegate::Type
+RegisterProtocolHandlerInfoBarDelegate::GetInfoBarType() const {
   return PAGE_ACTION_TYPE;
 }
 
@@ -72,25 +72,26 @@ RegisterProtocolHandlerInfoBarDelegate*
 base::string16 RegisterProtocolHandlerInfoBarDelegate::GetMessageText() const {
   ProtocolHandler old_handler = registry_->GetHandlerFor(handler_.protocol());
   return old_handler.IsEmpty() ?
-      l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
-          handler_.title(), base::UTF8ToUTF16(handler_.url().host()),
+      l10n_util::GetStringFUTF16(
+          IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
+          base::UTF8ToUTF16(handler_.url().host()),
           GetProtocolName(handler_)) :
-      l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
-          handler_.title(), base::UTF8ToUTF16(handler_.url().host()),
-          GetProtocolName(handler_), old_handler.title());
+      l10n_util::GetStringFUTF16(
+          IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
+          base::UTF8ToUTF16(handler_.url().host()),
+          GetProtocolName(handler_),
+          base::UTF8ToUTF16(old_handler.url().host()));
 }
 
 base::string16 RegisterProtocolHandlerInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return (button == BUTTON_OK) ?
-      l10n_util::GetStringFUTF16(IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT,
-                                 handler_.title()) :
+      l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT) :
       l10n_util::GetStringUTF16(IDS_REGISTER_PROTOCOL_HANDLER_DENY);
 }
 
-bool RegisterProtocolHandlerInfoBarDelegate::NeedElevation(
-    InfoBarButton button) const {
-  return button == BUTTON_OK;
+bool RegisterProtocolHandlerInfoBarDelegate::OKButtonTriggersUACPrompt() const {
+  return true;
 }
 
 bool RegisterProtocolHandlerInfoBarDelegate::Accept() {
@@ -115,10 +116,12 @@ bool RegisterProtocolHandlerInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   content::RecordAction(
       base::UserMetricsAction("RegisterProtocolHandler.InfoBar_LearnMore"));
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL(chrome::kLearnMoreRegisterProtocolHandlerURL), content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL(chrome::kLearnMoreRegisterProtocolHandlerURL),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 

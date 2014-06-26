@@ -25,13 +25,19 @@ void DumpDatabaseHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void DumpDatabaseHandler::GetDatabaseDump(const base::ListValue* args) {
-  scoped_ptr<base::ListValue> list =
-      SyncFileSystemServiceFactory::GetForProfile(profile_)->DumpDatabase();
-  if (!list)
-    list.reset(new base::ListValue);
-  web_ui()->CallJavascriptFunction("DumpDatabase.onGetDatabaseDump",
-                                   *list.get());
+void DumpDatabaseHandler::GetDatabaseDump(const base::ListValue*) {
+  scoped_ptr<base::ListValue> list;
+  sync_file_system::SyncFileSystemService* sync_service =
+      SyncFileSystemServiceFactory::GetForProfile(profile_);
+  if (sync_service) {
+    sync_service->DumpDatabase(
+        base::Bind(&DumpDatabaseHandler::DidGetDatabaseDump,
+                   base::Unretained(this)));
+  }
+}
+
+void DumpDatabaseHandler::DidGetDatabaseDump(const base::ListValue& list) {
+  web_ui()->CallJavascriptFunction("DumpDatabase.onGetDatabaseDump", list);
 }
 
 }  // namespace syncfs_internals

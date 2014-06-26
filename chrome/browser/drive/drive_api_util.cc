@@ -6,17 +6,14 @@
 
 #include <string>
 
-#include "base/command_line.h"
-#include "base/files/scoped_platform_file_closer.h"
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/md5.h"
-#include "base/platform_file.h"
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/drive/drive_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
@@ -27,17 +24,6 @@
 namespace drive {
 namespace util {
 namespace {
-
-// Google Apps MIME types:
-const char kGoogleDocumentMimeType[] = "application/vnd.google-apps.document";
-const char kGoogleDrawingMimeType[] = "application/vnd.google-apps.drawing";
-const char kGooglePresentationMimeType[] =
-    "application/vnd.google-apps.presentation";
-const char kGoogleSpreadsheetMimeType[] =
-    "application/vnd.google-apps.spreadsheet";
-const char kGoogleTableMimeType[] = "application/vnd.google-apps.table";
-const char kGoogleFormMimeType[] = "application/vnd.google-apps.form";
-const char kDriveFolderMimeType[] = "application/vnd.google-apps.folder";
 
 std::string GetMimeTypeFromEntryKind(google_apis::DriveEntryKind kind) {
   switch (kind) {
@@ -58,111 +44,11 @@ std::string GetMimeTypeFromEntryKind(google_apis::DriveEntryKind kind) {
   }
 }
 
-ScopedVector<std::string> CopyScopedVectorString(
-    const ScopedVector<std::string>& source) {
-  ScopedVector<std::string> result;
-  result.reserve(source.size());
-  for (size_t i = 0; i < source.size(); ++i)
-    result.push_back(new std::string(*source[i]));
-
-  return result.Pass();
-}
-
-// Converts AppIcon (of GData WAPI) to DriveAppIcon.
-scoped_ptr<google_apis::DriveAppIcon>
-ConvertAppIconToDriveAppIcon(const google_apis::AppIcon& app_icon) {
-  scoped_ptr<google_apis::DriveAppIcon> resource(
-      new google_apis::DriveAppIcon);
-  switch (app_icon.category()) {
-    case google_apis::AppIcon::ICON_UNKNOWN:
-      resource->set_category(google_apis::DriveAppIcon::UNKNOWN);
-      break;
-    case google_apis::AppIcon::ICON_DOCUMENT:
-      resource->set_category(google_apis::DriveAppIcon::DOCUMENT);
-      break;
-    case google_apis::AppIcon::ICON_APPLICATION:
-      resource->set_category(google_apis::DriveAppIcon::APPLICATION);
-      break;
-    case google_apis::AppIcon::ICON_SHARED_DOCUMENT:
-      resource->set_category(google_apis::DriveAppIcon::SHARED_DOCUMENT);
-      break;
-    default:
-      NOTREACHED();
-  }
-
-  resource->set_icon_side_length(app_icon.icon_side_length());
-  resource->set_icon_url(app_icon.GetIconURL());
-  return resource.Pass();
-}
-
-// Converts InstalledApp to AppResource.
-scoped_ptr<google_apis::AppResource>
-ConvertInstalledAppToAppResource(
-    const google_apis::InstalledApp& installed_app) {
-  scoped_ptr<google_apis::AppResource> resource(new google_apis::AppResource);
-  resource->set_application_id(installed_app.app_id());
-  resource->set_name(installed_app.app_name());
-  resource->set_object_type(installed_app.object_type());
-  resource->set_supports_create(installed_app.supports_create());
-
-  {
-    ScopedVector<std::string> primary_mimetypes(
-        CopyScopedVectorString(installed_app.primary_mimetypes()));
-    resource->set_primary_mimetypes(primary_mimetypes.Pass());
-  }
-  {
-    ScopedVector<std::string> secondary_mimetypes(
-        CopyScopedVectorString(installed_app.secondary_mimetypes()));
-    resource->set_secondary_mimetypes(secondary_mimetypes.Pass());
-  }
-  {
-    ScopedVector<std::string> primary_file_extensions(
-        CopyScopedVectorString(installed_app.primary_extensions()));
-    resource->set_primary_file_extensions(primary_file_extensions.Pass());
-  }
-  {
-    ScopedVector<std::string> secondary_file_extensions(
-        CopyScopedVectorString(installed_app.secondary_extensions()));
-    resource->set_secondary_file_extensions(secondary_file_extensions.Pass());
-  }
-
-  {
-    const ScopedVector<google_apis::AppIcon>& app_icons =
-        installed_app.app_icons();
-    ScopedVector<google_apis::DriveAppIcon> icons;
-    icons.reserve(app_icons.size());
-    for (size_t i = 0; i < app_icons.size(); ++i) {
-      icons.push_back(ConvertAppIconToDriveAppIcon(*app_icons[i]).release());
-    }
-    resource->set_icons(icons.Pass());
-  }
-
-  // supports_import, installed and authorized are not supported in
-  // InstalledApp.
-
-  return resource.Pass();
-}
-
 // Returns the argument string.
 std::string Identity(const std::string& resource_id) { return resource_id; }
 
 }  // namespace
 
-
-bool IsDriveV2ApiEnabled() {
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-
-  // Enable Drive API v2 by default.
-  if (!command_line->HasSwitch(switches::kEnableDriveV2Api))
-    return true;
-
-  std::string value =
-      command_line->GetSwitchValueASCII(switches::kEnableDriveV2Api);
-  StringToLowerASCII(&value);
-  // The value must be "" or "true" for true, or "false" for false.
-  DCHECK(value.empty() || value == "true" || value == "false");
-  return value != "false";
-}
 
 std::string EscapeQueryStringValue(const std::string& str) {
   std::string result;
@@ -180,8 +66,7 @@ std::string TranslateQuery(const std::string& original_query) {
   // In order to handle non-ascii white spaces correctly, convert to UTF16.
   base::string16 query = base::UTF8ToUTF16(original_query);
   const base::string16 kDelimiter(
-      base::kWhitespaceUTF16 +
-      base::string16(1, static_cast<base::char16>('"')));
+      base::kWhitespaceUTF16 + base::ASCIIToUTF16("\""));
 
   std::string result;
   for (size_t index = query.find_first_not_of(base::kWhitespaceUTF16);
@@ -288,40 +173,6 @@ void ParseShareUrlAndRun(const google_apis::GetShareUrlCallback& callback,
   callback.Run(error, share_link ? share_link->href() : GURL());
 }
 
-scoped_ptr<google_apis::AboutResource>
-ConvertAccountMetadataToAboutResource(
-    const google_apis::AccountMetadata& account_metadata,
-    const std::string& root_resource_id) {
-  scoped_ptr<google_apis::AboutResource> resource(
-      new google_apis::AboutResource);
-  resource->set_largest_change_id(account_metadata.largest_changestamp());
-  resource->set_quota_bytes_total(account_metadata.quota_bytes_total());
-  resource->set_quota_bytes_used(account_metadata.quota_bytes_used());
-  resource->set_root_folder_id(root_resource_id);
-  return resource.Pass();
-}
-
-scoped_ptr<google_apis::AppList>
-ConvertAccountMetadataToAppList(
-    const google_apis::AccountMetadata& account_metadata) {
-  scoped_ptr<google_apis::AppList> resource(new google_apis::AppList);
-
-  const ScopedVector<google_apis::InstalledApp>& installed_apps =
-      account_metadata.installed_apps();
-  ScopedVector<google_apis::AppResource> app_resources;
-  app_resources.reserve(installed_apps.size());
-  for (size_t i = 0; i < installed_apps.size(); ++i) {
-    app_resources.push_back(
-        ConvertInstalledAppToAppResource(*installed_apps[i]).release());
-  }
-  resource->set_items(app_resources.Pass());
-
-  // etag is not supported in AccountMetadata.
-
-  return resource.Pass();
-}
-
-
 scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
     const google_apis::ResourceEntry& entry) {
   scoped_ptr<google_apis::FileResource> file(new google_apis::FileResource);
@@ -340,7 +191,6 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
   file->set_shared(std::find(entry.labels().begin(), entry.labels().end(),
                              "shared") != entry.labels().end());
 
-  file->set_download_url(entry.download_url());
   if (entry.is_folder()) {
     file->set_mime_type(kDriveFolderMimeType);
   } else {
@@ -362,40 +212,28 @@ scoped_ptr<google_apis::FileResource> ConvertResourceEntryToFileResource(
   image_media_metadata->set_height(entry.image_height());
   image_media_metadata->set_rotation(entry.image_rotation());
 
-  ScopedVector<google_apis::ParentReference> parents;
+  std::vector<google_apis::ParentReference>* parents = file->mutable_parents();
   for (size_t i = 0; i < entry.links().size(); ++i) {
     using google_apis::Link;
     const Link& link = *entry.links()[i];
     switch (link.type()) {
       case Link::LINK_PARENT: {
-        scoped_ptr<google_apis::ParentReference> parent(
-            new google_apis::ParentReference);
-        parent->set_parent_link(link.href());
+        google_apis::ParentReference parent;
+        parent.set_parent_link(link.href());
 
         std::string file_id =
             drive::util::ExtractResourceIdFromUrl(link.href());
-        parent->set_file_id(file_id);
-        parent->set_is_root(file_id == kWapiRootDirectoryResourceId);
-        parents.push_back(parent.release());
+        parent.set_file_id(file_id);
+        parents->push_back(parent);
         break;
       }
-      case Link::LINK_EDIT:
-        file->set_self_link(link.href());
-        break;
-      case Link::LINK_THUMBNAIL:
-        file->set_thumbnail_link(link.href());
-        break;
       case Link::LINK_ALTERNATE:
         file->set_alternate_link(link.href());
-        break;
-      case Link::LINK_EMBED:
-        file->set_embed_link(link.href());
         break;
       default:
         break;
     }
   }
-  file->set_parents(parents.Pass());
 
   file->set_modified_date(entry.updated_time());
   file->set_last_viewed_by_me_date(entry.last_viewed_time());
@@ -448,7 +286,6 @@ ConvertFileResourceToResourceEntry(
   // This should be the url to download the file_resource.
   {
     google_apis::Content content;
-    content.set_url(file_resource.download_url());
     content.set_mime_type(file_resource.mime_type());
     entry->set_content(content);
   }
@@ -478,31 +315,13 @@ ConvertFileResourceToResourceEntry(
   for (size_t i = 0; i < file_resource.parents().size(); ++i) {
     google_apis::Link* link = new google_apis::Link;
     link->set_type(google_apis::Link::LINK_PARENT);
-    link->set_href(file_resource.parents()[i]->parent_link());
-    links.push_back(link);
-  }
-  if (!file_resource.self_link().is_empty()) {
-    google_apis::Link* link = new google_apis::Link;
-    link->set_type(google_apis::Link::LINK_EDIT);
-    link->set_href(file_resource.self_link());
-    links.push_back(link);
-  }
-  if (!file_resource.thumbnail_link().is_empty()) {
-    google_apis::Link* link = new google_apis::Link;
-    link->set_type(google_apis::Link::LINK_THUMBNAIL);
-    link->set_href(file_resource.thumbnail_link());
+    link->set_href(file_resource.parents()[i].parent_link());
     links.push_back(link);
   }
   if (!file_resource.alternate_link().is_empty()) {
     google_apis::Link* link = new google_apis::Link;
     link->set_type(google_apis::Link::LINK_ALTERNATE);
     link->set_href(file_resource.alternate_link());
-    links.push_back(link);
-  }
-  if (!file_resource.embed_link().is_empty()) {
-    google_apis::Link* link = new google_apis::Link;
-    link->set_type(google_apis::Link::LINK_EMBED);
-    link->set_href(file_resource.embed_link());
     links.push_back(link);
   }
   entry->set_links(links.Pass());
@@ -528,6 +347,7 @@ ConvertChangeResourceToResourceEntry(
   // If |is_deleted()| returns true, the file is removed from Drive.
   entry->set_removed(change_resource.is_deleted());
   entry->set_changestamp(change_resource.change_id());
+  entry->set_modification_date(change_resource.modification_date());
 
   return entry.Pass();
 }
@@ -583,12 +403,9 @@ ConvertChangeListToResourceList(const google_apis::ChangeList& change_list) {
 std::string GetMd5Digest(const base::FilePath& file_path) {
   const int kBufferSize = 512 * 1024;  // 512kB.
 
-  base::PlatformFile file = base::CreatePlatformFile(
-      file_path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      NULL, NULL);
-  if (file == base::kInvalidPlatformFileValue)
+  base::File file(file_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  if (!file.IsValid())
     return std::string();
-  base::ScopedPlatformFileCloser file_closer(&file);
 
   base::MD5Context context;
   base::MD5Init(&context);
@@ -596,11 +413,7 @@ std::string GetMd5Digest(const base::FilePath& file_path) {
   int64 offset = 0;
   scoped_ptr<char[]> buffer(new char[kBufferSize]);
   while (true) {
-    // Avoid using ReadPlatformFileCurPosNoBestEffort for now.
-    // http://crbug.com/145873
-    int result = base::ReadPlatformFileNoBestEffort(
-        file, offset, buffer.get(), kBufferSize);
-
+    int result = file.Read(offset, buffer.get(), kBufferSize);
     if (result < 0) {
       // Found an error.
       return std::string();

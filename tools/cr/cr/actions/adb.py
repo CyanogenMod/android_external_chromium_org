@@ -24,7 +24,8 @@ class Adb(object):
   def GetPids(cls, target):
     """Gets the set of running PIDs that match the specified target."""
     pids = []
-    output = cr.Host.Capture(target, '{CR_ADB}', 'shell', 'ps')
+    with target:
+      output = cr.Host.Capture('{CR_ADB}', 'shell', 'ps')
     pattern = re.compile(r'\S+\s+(\d+)\s+.*{CR_PROCESS}')
     for line in output.split('\n'):
       match = re.match(pattern, line)
@@ -35,13 +36,13 @@ class Adb(object):
   @classmethod
   def Run(cls, target, arguments):
     """Invoke a target binary on the device."""
-    cr.Host.Execute(
-        target,
-        '{CR_ADB}', 'shell', 'am', 'start',
-        '-a', '{CR_ACTION}',
-        '-n', '{CR_INTENT}',
-        '{CR_RUN_ARGUMENTS}',
-        *arguments
+    with target:
+      cr.Host.Execute(
+          '{CR_ADB}', 'shell', 'am', 'start',
+          '-a', '{CR_ACTION}',
+          '-n', '{CR_INTENT}',
+          '{CR_RUN_ARGUMENTS}',
+          *arguments
     )
 
   @classmethod
@@ -53,50 +54,50 @@ class Adb(object):
       return
     pids = cls.GetPids(target)
     if pids:
-      cr.Host.Execute(target, '{CR_ADB}', 'shell', 'kill', *pids)
+      with target:
+        cr.Host.Execute('{CR_ADB}', 'shell', 'kill', *pids)
     elif target.verbose:
       print target.Substitute('{CR_TARGET_NAME} not running')
     cls._kills[target_name] = True
 
   @classmethod
   def Uninstall(cls, target, arguments):
-    cr.Host.Execute(
-        target,
-        '{CR_ADB}', 'uninstall',
-        '{CR_PACKAGE}',
-        *arguments
+    with target:
+      cr.Host.Execute(
+          '{CR_ADB}', 'uninstall',
+          '{CR_PACKAGE}',
+          *arguments
     )
 
   @classmethod
   def Install(cls, target, arguments):
-    cr.Host.Execute(
-        target,
-        '{CR_ADB}', 'install',
-        '{CR_BINARY}',
-        *arguments
+    with target:
+      cr.Host.Execute(
+          '{CR_ADB}', 'install',
+          '{CR_BINARY}',
+          *arguments
     )
 
   @classmethod
   def Reinstall(cls, target, arguments):
-    cr.Host.Execute(
-        target,
-        '{CR_ADB}', 'install',
-        '-r',
-        '-d',
-        '{CR_BINARY}',
-        *arguments
+    with target:
+      cr.Host.Execute(
+          '{CR_ADB}', 'install',
+          '-r',
+          '{CR_BINARY}',
+          *arguments
     )
 
   @classmethod
   def AttachGdb(cls, target, arguments):
-    cr.Host.Execute(
-        target,
-        '{CR_ADB_GDB}',
-        '--adb={CR_ADB}',
-        '--symbol-dir=${CR_BUILD_DIR}/lib',
-        '--program-name={CR_TARGET_NAME}',
-        '--package-name={CR_PACKAGE}',
-        *arguments
+    with target:
+      cr.Host.Execute(
+          '{CR_ADB_GDB}',
+          '--adb={CR_ADB}',
+          '--symbol-dir=${CR_BUILD_DIR}/lib',
+          '--program-name={CR_TARGET_NAME}',
+          '--package-name={CR_PACKAGE}',
+          *arguments
     )
 
 
@@ -107,16 +108,16 @@ class AdbRunner(cr.Runner):
   def enabled(self):
     return cr.AndroidPlatform.GetInstance().is_active
 
-  def Kill(self, context, targets, arguments):
+  def Kill(self, targets, arguments):
     for target in targets:
       Adb.Kill(target, arguments)
 
-  def Run(self, context, target, arguments):
+  def Run(self, target, arguments):
     Adb.Run(target, arguments)
 
-  def Test(self, context, target, arguments):
-    cr.Host.Execute(
-        target,
+  def Test(self, target, arguments):
+    with target:
+      cr.Host.Execute(
         '{CR_TEST_RUNNER}', '{CR_TEST_TYPE}',
         '-s', '{CR_TARGET_NAME}',
         '--{CR_TEST_MODE}',
@@ -131,14 +132,14 @@ class AdbInstaller(cr.Installer):
   def enabled(self):
     return cr.AndroidPlatform.GetInstance().is_active
 
-  def Uninstall(self, context, targets, arguments):
+  def Uninstall(self, targets, arguments):
     for target in targets:
       Adb.Uninstall(target, arguments)
 
-  def Install(self, context, targets, arguments):
+  def Install(self, targets, arguments):
     for target in targets:
       Adb.Install(target, arguments)
 
-  def Reinstall(self, context, targets, arguments):
+  def Reinstall(self, targets, arguments):
     for target in targets:
       Adb.Reinstall(target, arguments)

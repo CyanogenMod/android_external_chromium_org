@@ -4,15 +4,17 @@
 
 package org.chromium.chrome.browser.contextmenu;
 
-import org.chromium.chrome.browser.TabBase;
-import org.chromium.content.browser.ContentView;
+import org.chromium.chrome.browser.Tab;
+import org.chromium.content.browser.ContentViewCore;
+import org.chromium.content_public.Referrer;
 
 /**
  * A delegate responsible for taking actions based on context menu selections.
  */
 public interface ChromeContextMenuItemDelegate {
     /**
-     * @return Whether or not this context menu is being shown for an incognito {@link ContentView}.
+     * @return Whether or not this context menu is being shown for an incognito
+     *     {@link ContentViewCore}.
      */
     boolean isIncognito();
 
@@ -36,10 +38,10 @@ public interface ChromeContextMenuItemDelegate {
 
     /**
      * Called when the {@code url} should be opened in a new tab with the same incognito state as
-     * the current {@link TabBase}.
+     * the current {@link Tab}.
      * @param url The URL to open.
      */
-    void onOpenInNewTab(String url);
+    void onOpenInNewTab(String url, Referrer referrer);
 
     /**
      * Called when the {@code url} should be opened in a new incognito tab.
@@ -51,13 +53,13 @@ public interface ChromeContextMenuItemDelegate {
      * Called when the {@code url} is of an image and should be opened in the same tab.
      * @param url The image URL to open.
      */
-    void onOpenImageUrl(String url);
+    void onOpenImageUrl(String url, Referrer referrer);
 
     /**
      * Called when the {@code url} is of an image and should be opened in a new tab.
      * @param url The image URL to open.
      */
-    void onOpenImageInNewTab(String url);
+    void onOpenImageInNewTab(String url, Referrer referrer);
 
     /**
      * Called when the {@code text} should be saved to the clipboard.

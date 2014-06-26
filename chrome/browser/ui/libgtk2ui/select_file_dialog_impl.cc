@@ -35,7 +35,7 @@ base::FilePath* SelectFileDialogImpl::last_opened_path_ = NULL;
 ui::SelectFileDialog* SelectFileDialogImpl::Create(
     ui::SelectFileDialog::Listener* listener,
     ui::SelectFilePolicy* policy) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (use_kde_ == UNKNOWN) {
     // Start out assumimg we are not going to use KDE.
     use_kde_ = NO_KDE;
@@ -81,10 +81,6 @@ SelectFileDialogImpl::~SelectFileDialogImpl() { }
 
 void SelectFileDialogImpl::ListenerDestroyed() {
   listener_ = NULL;
-}
-
-bool SelectFileDialogImpl::IsRunning(gfx::NativeWindow parent_window) const {
-  return parents_.find(parent_window) != parents_.end();
 }
 
 bool SelectFileDialogImpl::CallDirectoryExistsOnUIThread(

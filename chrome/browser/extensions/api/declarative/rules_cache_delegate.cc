@@ -8,12 +8,15 @@
 #include "chrome/browser/extensions/api/declarative/rules_registry.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/info_map.h"
+#include "extensions/browser/state_store.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace {
 
@@ -60,7 +63,7 @@ std::string RulesCacheDelegate::GetRulesStoredKey(const std::string& event_name,
 // 2. does not create scoped_refptr holding the registry. (A short-lived
 // scoped_refptr might delete the rules registry before it is constructed.)
 void RulesCacheDelegate::Init(RulesRegistry* registry) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   // WARNING: The first use of |registry_| will bind it to the calling thread
   // so don't use this here.
@@ -75,7 +78,7 @@ void RulesCacheDelegate::Init(RulesRegistry* registry) {
   rules_registry_thread_ = registry->owner_thread();
 
   ExtensionSystem& system = *ExtensionSystem::Get(profile_);
-  extensions::StateStore* store = system.rules_store();
+  StateStore* store = system.rules_store();
   if (store)
     store->RegisterKey(storage_key_);
 
@@ -93,7 +96,7 @@ void RulesCacheDelegate::Init(RulesRegistry* registry) {
 
 void RulesCacheDelegate::WriteToStorage(const std::string& extension_id,
                                      scoped_ptr<base::Value> value) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!profile_)
     return;
 
@@ -111,7 +114,7 @@ void RulesCacheDelegate::WriteToStorage(const std::string& extension_id,
 }
 
 void RulesCacheDelegate::CheckIfReady() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (notified_registry_ || !waiting_for_extensions_.empty())
     return;
 
@@ -136,8 +139,10 @@ void RulesCacheDelegate::ReadRulesForInstalledExtensions() {
          i != extensions->end();
          ++i) {
       bool needs_apis_storing_rules =
-          (*i)->HasAPIPermission(APIPermission::kDeclarativeContent) ||
-          (*i)->HasAPIPermission(APIPermission::kDeclarativeWebRequest);
+          (*i)->permissions_data()->HasAPIPermission(
+              APIPermission::kDeclarativeContent) ||
+          (*i)->permissions_data()->HasAPIPermission(
+              APIPermission::kDeclarativeWebRequest);
       bool respects_off_the_record =
           !(profile_->IsOffTheRecord()) ||
           util::IsIncognitoEnabled((*i)->id(), profile_);
@@ -148,7 +153,7 @@ void RulesCacheDelegate::ReadRulesForInstalledExtensions() {
 }
 
 void RulesCacheDelegate::ReadFromStorage(const std::string& extension_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!profile_)
     return;
 
@@ -162,7 +167,7 @@ void RulesCacheDelegate::ReadFromStorage(const std::string& extension_id) {
     return;
   }
 
-  extensions::StateStore* store = ExtensionSystem::Get(profile_)->rules_store();
+  StateStore* store = ExtensionSystem::Get(profile_)->rules_store();
   if (!store)
     return;
   waiting_for_extensions_.insert(extension_id);
@@ -177,7 +182,7 @@ void RulesCacheDelegate::ReadFromStorage(const std::string& extension_id) {
 void RulesCacheDelegate::ReadFromStorageCallback(
     const std::string& extension_id,
     scoped_ptr<base::Value> value) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   content::BrowserThread::PostTask(
       rules_registry_thread_,
       FROM_HERE,
@@ -213,10 +218,9 @@ void RulesCacheDelegate::SetDeclarativeRulesStored(
     const std::string& extension_id,
     bool rules_stored) {
   CHECK(profile_);
-  ExtensionSystem& system = *ExtensionSystem::Get(profile_);
-  ExtensionService* extension_service = system.extension_service();
-  DCHECK(extension_service);
-  DCHECK(extension_service->GetInstalledExtension(extension_id));
+  DCHECK(ExtensionRegistry::Get(profile_)
+             ->GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING));
+
   ExtensionScopedPrefs* extension_prefs = ExtensionPrefs::Get(profile_);
   extension_prefs->UpdateExtensionPref(
       extension_id,

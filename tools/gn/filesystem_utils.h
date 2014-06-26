@@ -26,10 +26,10 @@ enum SourceFileType {
   SOURCE_MM,
   SOURCE_S,
   SOURCE_RC,
+  SOURCE_O,  // Object files can be inputs, too. Also counts .obj.
 };
 
-SourceFileType GetSourceFileType(const SourceFile& file,
-                                 Settings::TargetOS os);
+SourceFileType GetSourceFileType(const SourceFile& file);
 
 // Returns the extension, not including the dot, for the given file type on the
 // given system.
@@ -76,6 +76,13 @@ base::StringPiece FindFilenameNoExtension(const std::string* path);
 // preserved.
 void RemoveFilename(std::string* path);
 
+// Returns if the given character is a slash. This allows both slashes and
+// backslashes for consistency between Posix and Windows (as opposed to
+// FilePath::IsSeparator which is based on the current platform).
+inline bool IsSlash(const char ch) {
+  return ch == '/' || ch == '\\';
+}
+
 // Returns true if the given path ends with a slash.
 bool EndsWithSlash(const std::string& s);
 
@@ -85,6 +92,10 @@ bool EndsWithSlash(const std::string& s);
 // directory name of the given path, including the last slash. Note that the
 // input pointer must outlive the output.
 base::StringPiece FindDir(const std::string* path);
+
+// Returns the substring identifying the last component of the dir, or the
+// empty substring if none. For example "//foo/bar/" -> "bar".
+base::StringPiece FindLastDirComponent(const SourceDir& dir);
 
 // Verifies that the given string references a file inside of the given
 // directory. This is pretty stupid and doesn't handle "." and "..", etc.,
@@ -131,7 +142,6 @@ void NormalizePath(std::string* path);
 // Converts slashes to backslashes for Windows. Keeps the string unchanged
 // for other systems.
 void ConvertPathToSystem(std::string* path);
-std::string PathToSystem(const std::string& path);
 
 // Takes a source-absolute path (must begin with "//") and makes it relative
 // to the given directory, which also must be source-absolute.
@@ -145,11 +155,32 @@ std::string RebaseSourceAbsolutePath(const std::string& input,
 // a "." so this remains valid.
 std::string DirectoryWithNoLastSlash(const SourceDir& dir);
 
+// Returns the "best" SourceDir representing the given path. If it's inside the
+// given source_root, a source-relative directory will be returned (e.g.
+// "//foo/bar.cc". If it's outside of the source root, a system-absolute
+// directory will be returned.
+SourceDir SourceDirForPath(const base::FilePath& source_root,
+                           const base::FilePath& path);
+
+// Like SourceDirForPath but returns the SourceDir representing the current
+// directory.
+SourceDir SourceDirForCurrentDirectory(const base::FilePath& source_root);
+
+// Given the label of a toolchain and whether that toolchain is the default
+// toolchain, returns the name of the subdirectory for that toolchain's
+// output. This will be the empty string to indicate that the toolchain outputs
+// go in the root build directory. Otherwise, the result will end in a slash.
+std::string GetOutputSubdirName(const Label& toolchain_label, bool is_default);
+
 // -----------------------------------------------------------------------------
 
 // These functions return the various flavors of output and gen directories.
 SourceDir GetToolchainOutputDir(const Settings* settings);
+SourceDir GetToolchainOutputDir(const BuildSettings* build_settings,
+                                const Label& label, bool is_default);
 SourceDir GetToolchainGenDir(const Settings* settings);
+SourceDir GetToolchainGenDir(const BuildSettings* build_settings,
+                             const Label& toolchain_label, bool is_default);
 SourceDir GetOutputDirForSourceDir(const Settings* settings,
                                    const SourceDir& source_dir);
 SourceDir GetGenDirForSourceDir(const Settings* settings,

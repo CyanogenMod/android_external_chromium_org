@@ -12,14 +12,12 @@
 #include "base/stl_util.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
+#include "base/sys_info.h"
 
 namespace chromeos {  // NOLINT
 namespace system {
 
 namespace {
-
-const char kQuoteChars[] = "\"";
-const char kTrimChars[] = "\" ";
 
 bool GetToolOutput(int argc, const char* argv[], std::string& output) {
   DCHECK_GE(argc, 1);
@@ -71,7 +69,7 @@ bool NameValuePairsParser::ParseNameValuePairsWithComments(
   bool all_valid = true;
   // Set up the pair tokenizer.
   base::StringTokenizer pair_toks(in_string, delim);
-  pair_toks.set_quote_chars(kQuoteChars);
+  pair_toks.set_quote_chars("\"");
   // Process token pairs.
   while (pair_toks.GetNext()) {
     std::string pair(pair_toks.token());
@@ -89,6 +87,7 @@ bool NameValuePairsParser::ParseNameValuePairsWithComments(
           value_size = comment_pos - eq_pos - 1;
       }
 
+      static const char kTrimChars[] = "\" ";
       std::string key;
       std::string value;
       base::TrimString(pair.substr(0, eq_pos), kTrimChars, &key);
@@ -113,7 +112,7 @@ bool NameValuePairsParser::GetSingleValueFromTool(int argc,
   if (!GetToolOutput(argc, argv, output_string))
     return false;
 
-  TrimWhitespaceASCII(output_string, TRIM_ALL, &output_string);
+  base::TrimWhitespaceASCII(output_string, base::TRIM_ALL, &output_string);
   AddNameValuePair(key, output_string);
   return true;
 }
@@ -126,7 +125,8 @@ bool NameValuePairsParser::GetNameValuePairsFromFile(
   if (base::ReadFileToString(file_path, &contents)) {
     return ParseNameValuePairs(contents, eq, delim);
   } else {
-    LOG(WARNING) << "Unable to read statistics file: " << file_path.value();
+    if (base::SysInfo::IsRunningOnChromeOS())
+      LOG(WARNING) << "Unable to read statistics file: " << file_path.value();
     return false;
   }
 }

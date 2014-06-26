@@ -71,6 +71,13 @@ class CHROMEOS_EXPORT ShillPropertyHandler
         const std::string& key,
         const base::Value& value) = 0;
 
+    // Called when a watched network or device IPConfig property changes.
+    virtual void UpdateIPConfigProperties(
+        ManagedState::ManagedType type,
+        const std::string& path,
+        const std::string& ip_config_path,
+        const base::DictionaryValue& properties) = 0;
+
     // Called when the list of devices with portal check enabled changes.
     virtual void CheckPortalListChanged(
          const std::string& check_portal_list) = 0;
@@ -82,6 +89,10 @@ class CHROMEOS_EXPORT ShillPropertyHandler
     // new entries in the list have been received and
     // UpdateManagedStateProperties has been called for each new entry.
     virtual void ManagedStateListChanged(ManagedState::ManagedType type) = 0;
+
+    // Called when the default network service changes.
+    virtual void DefaultNetworkServiceChanged(
+        const std::string& service_path) = 0;
 
    protected:
     virtual ~Listener() {}
@@ -145,13 +156,7 @@ class CHROMEOS_EXPORT ShillPropertyHandler
   void ManagerPropertyChanged(const std::string& key,
                               const base::Value& value);
 
-  // Requests properties for new entries in the list for |type| as follows:
-  // * Any new Device objects for MANAGED_TYPE_DEVICE
-  // * Any new Service objects for MANAGED_TYPE_NETWORK
-  // * Additional new Service objects for MANAGED_TYPE_FAVORITE that were not
-  //   requested for MANAGED_TYPE_NETWORK (i.e. only request objects once).
-  // For this to avoid duplicate requests, this must be called with
-  // MANAGED_TYPE_NETWORK before MANAGED_TYPE_FAVORITE.
+  // Requests properties for new entries in the list for |type|.
   void UpdateProperties(ManagedState::ManagedType type,
                         const base::ListValue& entries);
 
@@ -183,23 +188,30 @@ class CHROMEOS_EXPORT ShillPropertyHandler
                                const std::string& path,
                                const std::string& key,
                                const base::Value& value);
-  void NetworkServicePropertyChangedCallback(const std::string& path,
-                                             const std::string& key,
-                                             const base::Value& value);
 
-  // Callback for getting the IPConfig property of a Network. Handled here
-  // instead of in NetworkState so that all asynchronous requests are done
+  // Request a single IPConfig object corresponding to |ip_config_path_value|
+  // from Shill.IPConfigClient and trigger a call to UpdateIPConfigProperties
+  // for the network or device corresponding to |type| and |path|.
+  void RequestIPConfig(ManagedState::ManagedType type,
+                       const std::string& path,
+                       const base::Value& ip_config_path_value);
+
+  // Request the IPConfig objects corresponding to entries in
+  // |ip_config_list_value| from Shill.IPConfigClient and trigger a call to
+  // UpdateIPConfigProperties with each object for the network or device
+  // corresponding to |type| and |path|.
+  void RequestIPConfigsList(ManagedState::ManagedType type,
+                            const std::string& path,
+                            const base::Value& ip_config_list_value);
+
+  // Callback for getting the IPConfig property of a network or device. Handled
+  // here instead of in NetworkState so that all asynchronous requests are done
   // in a single place (also simplifies NetworkState considerably).
-  void GetIPConfigCallback(const std::string& service_path,
+  void GetIPConfigCallback(ManagedState::ManagedType type,
+                           const std::string& path,
+                           const std::string& ip_config_path,
                            DBusMethodCallStatus call_status,
                            const base::DictionaryValue& properties);
-  void UpdateIPConfigProperty(const std::string& service_path,
-                              const base::DictionaryValue& properties,
-                              const char* property);
-
-  void NetworkDevicePropertyChangedCallback(const std::string& path,
-                                            const std::string& key,
-                                            const base::Value& value);
 
   // Pointer to containing class (owns this)
   Listener* listener_;

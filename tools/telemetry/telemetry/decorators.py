@@ -88,22 +88,30 @@ def Enabled(*args):
 
 
 # pylint: disable=W0212
-def IsEnabled(test, browser_type, platform):
-  """Returns True iff |test| is enabled given the |browser_type| and |platform|.
+def IsEnabled(test, possible_browser):
+  """Returns True iff |test| is enabled given the |possible_browser|.
 
   Use to respect the @Enabled / @Disabled decorators.
 
   Args:
     test: A function or class that may contain _disabled_strings and/or
           _enabled_strings attributes.
-    browser_type: A string representing the --browser string.
-    platform: A platform.Platform instance for the target of |browser_type|.
+    possible_browser: A PossibleBrowser to check whether |test| may run against.
   """
   platform_attributes = [a.lower() for a in [
-      browser_type,
-      platform.GetOSName(),
-      platform.GetOSVersionName(),
+      possible_browser.browser_type,
+      possible_browser.platform.GetOSName(),
+      possible_browser.platform.GetOSVersionName(),
       ]]
+  if possible_browser.supports_tab_control:
+    platform_attributes.append('has tabs')
+
+  if hasattr(test, '__name__'):
+    name = test.__name__
+  elif hasattr(test, '__class__'):
+    name = test.__class__.__name__
+  else:
+    name = str(test)
 
   if hasattr(test, '_disabled_strings'):
     disabled_strings = test._disabled_strings
@@ -113,7 +121,7 @@ def IsEnabled(test, browser_type, platform):
       if disabled_string in platform_attributes:
         print (
             'Skipping %s because it is disabled for %s. '
-            'You are running %s.' % (test.__name__,
+            'You are running %s.' % (name,
                                      ' and '.join(disabled_strings),
                                      ' '.join(platform_attributes)))
         return False
@@ -124,12 +132,12 @@ def IsEnabled(test, browser_type, platform):
       return True  # No arguments to @Enabled means always enable.
     for enabled_string in enabled_strings:
       if enabled_string in platform_attributes:
-        print (
-            'Skipping %s because it is only enabled for %s. '
-            'You are running %s.' % (test.__name__,
-                                     ' or '.join(enabled_strings),
-                                     ' '.join(platform_attributes)))
         return True
+    print (
+        'Skipping %s because it is only enabled for %s. '
+        'You are running %s.' % (name,
+                                 ' or '.join(enabled_strings),
+                                 ' '.join(platform_attributes)))
     return False
 
   return True

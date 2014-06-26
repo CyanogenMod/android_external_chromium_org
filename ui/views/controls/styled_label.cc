@@ -97,7 +97,7 @@ StyledLabel::StyledLabel(const base::string16& text,
     : listener_(listener),
       displayed_on_background_color_set_(false),
       auto_color_readability_enabled_(true) {
-  TrimWhitespace(text, TRIM_TRAILING, &text_);
+  base::TrimWhitespace(text, base::TRIM_TRAILING, &text_);
 }
 
 StyledLabel::~StyledLabel() {}
@@ -157,9 +157,15 @@ gfx::Insets StyledLabel::GetInsets() const {
   return insets;
 }
 
-int StyledLabel::GetHeightForWidth(int w) {
-  if (w != calculated_size_.width())
-    calculated_size_ = CalculateAndDoLayout(w, true);
+int StyledLabel::GetHeightForWidth(int w) const {
+  if (w != calculated_size_.width()) {
+    // TODO(erg): Munge the const-ness of the style label. CalculateAndDoLayout
+    // doesn't actually make any changes to member variables when |dry_run| is
+    // set to true. In general, the mutating and non-mutating parts shouldn't
+    // be in the same codepath.
+    calculated_size_ =
+        const_cast<StyledLabel*>(this)->CalculateAndDoLayout(w, true);
+  }
   return calculated_size_.height();
 }
 
@@ -202,8 +208,10 @@ gfx::Size StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
   while (!remaining_string.empty()) {
     // Don't put whitespace at beginning of a line with an exception for the
     // first line (so the text's leading whitespace is respected).
-    if (x == 0 && line > 0)
-      TrimWhitespace(remaining_string, TRIM_LEADING, &remaining_string);
+    if (x == 0 && line > 0) {
+      base::TrimWhitespace(remaining_string, base::TRIM_LEADING,
+                           &remaining_string);
+    }
 
     gfx::Range range(gfx::Range::InvalidRange());
     if (current_range != style_ranges_.end())
@@ -237,7 +245,8 @@ gfx::Size StyledLabel::CalculateAndDoLayout(int width, bool dry_run) {
       // anything; abort.
       if (x == 0) {
         if (line == 0) {
-          TrimWhitespace(remaining_string, TRIM_LEADING, &remaining_string);
+          base::TrimWhitespace(remaining_string, base::TRIM_LEADING,
+                               &remaining_string);
           continue;
         }
         break;

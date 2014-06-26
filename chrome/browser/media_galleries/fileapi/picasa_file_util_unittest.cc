@@ -14,7 +14,6 @@
 #include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
@@ -22,9 +21,11 @@
 #include "chrome/browser/media_galleries/fileapi/media_path_filter.h"
 #include "chrome/browser/media_galleries/fileapi/picasa_data_provider.h"
 #include "chrome/browser/media_galleries/fileapi/picasa_file_util.h"
+#include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "chrome/common/media_galleries/picasa_types.h"
 #include "chrome/common/media_galleries/pmp_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -34,7 +35,6 @@
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_operation_runner.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 
 using fileapi::FileSystemOperationContext;
@@ -49,7 +49,7 @@ base::Time::Exploded test_date_exploded = { 2013, 4, 0, 16, 0, 0, 0, 0 };
 
 bool WriteJPEGHeader(const base::FilePath& path) {
   const char kJpegHeader[] = "\xFF\xD8\xFF";  // Per HTML5 specification.
-  return file_util::WriteFile(path, kJpegHeader, arraysize(kJpegHeader)) != -1;
+  return base::WriteFile(path, kJpegHeader, arraysize(kJpegHeader)) != -1;
 }
 
 class TestFolder {
@@ -84,7 +84,7 @@ class TestFolder {
     for (unsigned int i = 0; i < non_image_files_; ++i) {
       base::FilePath path = folder_dir_.path().AppendASCII(
           base::StringPrintf("hello%05d.txt", i));
-      if (file_util::WriteFile(path, NULL, 0) == -1)
+      if (base::WriteFile(path, NULL, 0) == -1)
         return false;
     }
 
@@ -228,9 +228,10 @@ class PicasaFileUtilTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(profile_dir_.CreateUniqueTempDir());
+    ImportedMediaGalleryRegistry::GetInstance()->Initialize();
 
     scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
-        new quota::MockSpecialStoragePolicy();
+        new content::MockSpecialStoragePolicy();
 
     SynchronouslyRunOnMediaTaskRunner(base::Bind(
         &PicasaFileUtilTest::SetUpOnMediaTaskRunner, base::Unretained(this)));
@@ -250,6 +251,7 @@ class PicasaFileUtilTest : public testing::Test {
         storage_policy.get(),
         NULL,
         additional_providers.Pass(),
+        std::vector<fileapi::URLRequestAutoMountHandler>(),
         profile_dir_.path(),
         content::CreateAllowFileAccessOptions());
   }
@@ -355,10 +357,14 @@ class PicasaFileUtilTest : public testing::Test {
     EXPECT_EQ(0u, contents.size());
   }
 
-  FileSystemURL CreateURL(const std::string& virtual_path) const {
+  FileSystemURL CreateURL(const std::string& path) const {
+    base::FilePath virtual_path =
+        ImportedMediaGalleryRegistry::GetInstance()->ImportedRoot();
+    virtual_path = virtual_path.AppendASCII("picasa");
+    virtual_path = virtual_path.AppendASCII(path);
     return file_system_context_->CreateCrackedFileSystemURL(
         GURL("http://www.example.com"), fileapi::kFileSystemTypePicasa,
-        base::FilePath::FromUTF8Unsafe(virtual_path));
+        virtual_path);
   }
 
   fileapi::FileSystemOperationRunner* operation_runner() const {
@@ -503,9 +509,7 @@ TEST_F(PicasaFileUtilTest, ManyFolders) {
   ScopedVector<TestFolder> test_folders;
   base::Time test_date = base::Time::FromLocalExploded(test_date_exploded);
 
-  // TODO(tommycli): Turn number of test folders back up to 50 (or more) once
-  // https://codereview.chromium.org/15479003/ lands.
-  for (unsigned int i = 0; i < 25; ++i) {
+  for (unsigned int i = 0; i < 50; ++i) {
     base::Time date = test_date - base::TimeDelta::FromDays(i);
 
     test_folders.push_back(

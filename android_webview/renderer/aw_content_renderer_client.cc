@@ -9,7 +9,9 @@
 #include "android_webview/common/url_constants.h"
 #include "android_webview/renderer/aw_key_systems.h"
 #include "android_webview/renderer/aw_permission_client.h"
+#include "android_webview/renderer/aw_render_frame_ext.h"
 #include "android_webview/renderer/aw_render_view_ext.h"
+#include "android_webview/renderer/print_render_frame_observer.h"
 #include "android_webview/renderer/print_web_view_helper.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
@@ -22,6 +24,7 @@
 #include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
+#include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
@@ -94,9 +97,9 @@ bool AwContentRendererClient::HandleNavigation(
   // For HTTP schemes, only top-level navigations can be overridden. Similarly,
   // WebView Classic lets app override only top level about:blank navigations.
   // So we filter out non-top about:blank navigations here.
-  if (frame->parent() && (gurl.SchemeIs(content::kHttpScheme) ||
-                          gurl.SchemeIs(content::kHttpsScheme) ||
-                          gurl.SchemeIs(chrome::kAboutScheme)))
+  if (frame->parent() &&
+      (gurl.SchemeIs(url::kHttpScheme) || gurl.SchemeIs(url::kHttpsScheme) ||
+       gurl.SchemeIs(url::kAboutScheme)))
     return false;
 
   // use NavigationInterception throttle to handle the call as that can
@@ -117,6 +120,8 @@ bool AwContentRendererClient::HandleNavigation(
 void AwContentRendererClient::RenderFrameCreated(
     content::RenderFrame* render_frame) {
   new AwPermissionClient(render_frame);
+  new PrintRenderFrameObserver(render_frame);
+  new AwRenderFrameExt(render_frame);
 
   // TODO(jam): when the frame tree moves into content and parent() works at
   // RenderFrame construction, simplify this by just checking parent().
@@ -170,7 +175,7 @@ void AwContentRendererClient::GetNavigationErrorStrings(
     }
 
     ReplaceSubstringsAfterOffset(&contents, 0, "%s",
-                                 error_url.possibly_invalid_spec());
+        net::EscapeForHTML(error_url.possibly_invalid_spec()));
     *error_html = contents;
   }
   if (error_description) {

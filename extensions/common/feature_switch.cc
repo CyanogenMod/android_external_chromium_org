@@ -18,16 +18,20 @@ class CommonSwitches {
  public:
   CommonSwitches()
       : easy_off_store_install(
-            switches::kEasyOffStoreExtensionInstall,
+            NULL,
             FeatureSwitch::DEFAULT_DISABLED),
         force_dev_mode_highlighting(
             switches::kForceDevModeHighlighting,
             FeatureSwitch::DEFAULT_DISABLED),
         global_commands(
             switches::kGlobalCommands,
+#if defined(OS_CHROMEOS)
             FeatureSwitch::DEFAULT_DISABLED),
+#else
+            FeatureSwitch::DEFAULT_ENABLED),
+#endif
         prompt_for_external_extensions(
-            switches::kPromptForExternalExtensions,
+            NULL,
 #if defined(OS_WIN)
             FeatureSwitch::DEFAULT_ENABLED),
 #else
@@ -38,14 +42,24 @@ class CommonSwitches {
             FeatureSwitch::DEFAULT_DISABLED),
         enable_override_bookmarks_ui(
             switches::kEnableOverrideBookmarksUI,
-            FeatureSwitch::DEFAULT_DISABLED) {}
+            FeatureSwitch::DEFAULT_DISABLED),
+        scripts_require_action(switches::kScriptsRequireAction,
+                               FeatureSwitch::DEFAULT_DISABLED) {}
 
+  // Enables extensions to be easily installed from sites other than the web
+  // store.
   FeatureSwitch easy_off_store_install;
+
   FeatureSwitch force_dev_mode_highlighting;
   FeatureSwitch global_commands;
+
+  // Should we prompt the user before allowing external extensions to install?
+  // Default is yes.
   FeatureSwitch prompt_for_external_extensions;
+
   FeatureSwitch error_console;
   FeatureSwitch enable_override_bookmarks_ui;
+  FeatureSwitch scripts_require_action;
 };
 
 base::LazyInstance<CommonSwitches> g_common_switches =
@@ -70,6 +84,10 @@ FeatureSwitch* FeatureSwitch::error_console() {
 }
 FeatureSwitch* FeatureSwitch::enable_override_bookmarks_ui() {
   return &g_common_switches.Get().enable_override_bookmarks_ui;
+}
+
+FeatureSwitch* FeatureSwitch::scripts_require_action() {
+  return &g_common_switches.Get().scripts_require_action;
 }
 
 FeatureSwitch::ScopedOverride::ScopedOverride(FeatureSwitch* feature,
@@ -108,9 +126,12 @@ bool FeatureSwitch::IsEnabled() const {
   if (override_value_ != OVERRIDE_NONE)
     return override_value_ == OVERRIDE_ENABLED;
 
+  if (!switch_name_)
+    return default_value_;
+
   std::string temp = command_line_->GetSwitchValueASCII(switch_name_);
   std::string switch_value;
-  TrimWhitespaceASCII(temp, TRIM_ALL, &switch_value);
+  base::TrimWhitespaceASCII(temp, base::TRIM_ALL, &switch_value);
 
   if (switch_value == "1")
     return true;
@@ -128,10 +149,12 @@ bool FeatureSwitch::IsEnabled() const {
 }
 
 std::string FeatureSwitch::GetLegacyEnableFlag() const {
+  DCHECK(switch_name_);
   return std::string("enable-") + switch_name_;
 }
 
 std::string FeatureSwitch::GetLegacyDisableFlag() const {
+  DCHECK(switch_name_);
   return std::string("disable-") + switch_name_;
 }
 

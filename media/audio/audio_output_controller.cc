@@ -21,15 +21,7 @@ namespace media {
 // Time constant for AudioPowerMonitor.  See AudioPowerMonitor ctor comments for
 // semantics.  This value was arbitrarily chosen, but seems to work well.
 static const int kPowerMeasurementTimeConstantMillis = 10;
-
-// Desired frequency of calls to EventHandler::OnPowerMeasured() for reporting
-// power levels in the audio signal.
-static const int kPowerMeasurementsPerSecond = 4;
 #endif
-
-// Polling-related constants.
-const int AudioOutputController::kPollNumAttempts = 3;
-const int AudioOutputController::kPollPauseInMilliseconds = 3;
 
 AudioOutputController::AudioOutputController(
     AudioManager* audio_manager,
@@ -45,7 +37,6 @@ AudioOutputController::AudioOutputController(
       diverting_to_stream_(NULL),
       volume_(1.0),
       state_(kEmpty),
-      num_allowed_io_(0),
       sync_reader_(sync_reader),
       message_loop_(audio_manager->GetTaskRunner()),
 #if defined(AUDIO_POWER_MONITORING)
@@ -181,18 +172,6 @@ void AudioOutputController::DoPlay() {
 
   state_ = kPlaying;
 
-#if defined(AUDIO_POWER_MONITORING)
-  power_monitor_.Reset();
-  power_poll_callback_.Reset(
-      base::Bind(&AudioOutputController::ReportPowerMeasurementPeriodically,
-                 this));
-  // Run the callback to send an initial notification that we're starting in
-  // silence, and to schedule periodic callbacks.
-  power_poll_callback_.callback().Run();
-#endif
-
-  on_more_io_data_called_ = 0;
-  AllowEntryToOnMoreIOData();
   stream_->Start(this);
 
   // For UMA tracking purposes, start the wedge detection timer.  This allows us
@@ -214,28 +193,17 @@ void AudioOutputController::DoPlay() {
   handler_->OnPlaying();
 }
 
-#if defined(AUDIO_POWER_MONITORING)
-void AudioOutputController::ReportPowerMeasurementPeriodically() {
-  DCHECK(message_loop_->BelongsToCurrentThread());
-  const std::pair<float, bool>& reading =
-      power_monitor_.ReadCurrentPowerAndClip();
-  handler_->OnPowerMeasured(reading.first, reading.second);
-  message_loop_->PostDelayedTask(
-      FROM_HERE, power_poll_callback_.callback(),
-      TimeDelta::FromSeconds(1) / kPowerMeasurementsPerSecond);
-}
-#endif
-
 void AudioOutputController::StopStream() {
   DCHECK(message_loop_->BelongsToCurrentThread());
 
   if (state_ == kPlaying) {
     wedge_timer_.reset();
     stream_->Stop();
-    DisallowEntryToOnMoreIOData();
 
 #if defined(AUDIO_POWER_MONITORING)
-    power_poll_callback_.Cancel();
+    // A stopped stream is silent, and power_montior_.Scan() is no longer being
+    // called; so we must reset the power monitor.
+    power_monitor_.Reset();
 #endif
 
     state_ = kPaused;
@@ -256,11 +224,6 @@ void AudioOutputController::DoPause() {
   // audio has been shutdown.  TODO(dalecurtis): This stinks.  PPAPI should have
   // a better way to know when it should exit PPB_Audio_Shared::Run().
   sync_reader_->UpdatePendingBytes(-1);
-
-#if defined(AUDIO_POWER_MONITORING)
-  // Paused means silence follows.
-  handler_->OnPowerMeasured(AudioPowerMonitor::zero_power(), false);
-#endif
 
   handler_->OnPaused();
 }
@@ -328,14 +291,7 @@ void AudioOutputController::DoReportError() {
 
 int AudioOutputController::OnMoreData(AudioBus* dest,
                                       AudioBuffersState buffers_state) {
-  return OnMoreIOData(NULL, dest, buffers_state);
-}
-
-int AudioOutputController::OnMoreIOData(AudioBus* source,
-                                        AudioBus* dest,
-                                        AudioBuffersState buffers_state) {
-  DisallowEntryToOnMoreIOData();
-  TRACE_EVENT0("audio", "AudioOutputController::OnMoreIOData");
+  TRACE_EVENT0("audio", "AudioOutputController::OnMoreData");
 
   // Indicate that we haven't wedged (at least not indefinitely, WedgeCheck()
   // may have already fired if OnMoreIOData() took an abnormal amount of time).
@@ -344,7 +300,7 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
   if (base::AtomicRefCountIsZero(&on_more_io_data_called_))
     base::AtomicRefCountInc(&on_more_io_data_called_);
 
-  sync_reader_->Read(source, dest);
+  sync_reader_->Read(dest);
 
   const int frames = dest->frames();
   sync_reader_->UpdatePendingBytes(
@@ -354,7 +310,6 @@ int AudioOutputController::OnMoreIOData(AudioBus* source,
   power_monitor_.Scan(*dest, frames);
 #endif
 
-  AllowEntryToOnMoreIOData();
   return frames;
 }
 
@@ -456,14 +411,13 @@ void AudioOutputController::DoStopDiverting() {
   DCHECK(!diverting_to_stream_);
 }
 
-void AudioOutputController::AllowEntryToOnMoreIOData() {
-  DCHECK(base::AtomicRefCountIsZero(&num_allowed_io_));
-  base::AtomicRefCountInc(&num_allowed_io_);
-}
-
-void AudioOutputController::DisallowEntryToOnMoreIOData() {
-  const bool is_zero = !base::AtomicRefCountDec(&num_allowed_io_);
-  DCHECK(is_zero);
+std::pair<float, bool> AudioOutputController::ReadCurrentPowerAndClip() {
+#if defined(AUDIO_POWER_MONITORING)
+  return power_monitor_.ReadCurrentPowerAndClip();
+#else
+  NOTREACHED();
+  return std::make_pair(AudioPowerMonitor::zero_power(), false);
+#endif
 }
 
 void AudioOutputController::WedgeCheck() {
@@ -471,15 +425,8 @@ void AudioOutputController::WedgeCheck() {
 
   // If we should be playing and we haven't, that's a wedge.
   if (state_ == kPlaying) {
-    const bool playback_success =
-        base::AtomicRefCountIsOne(&on_more_io_data_called_);
-
-    UMA_HISTOGRAM_BOOLEAN(
-        "Media.AudioOutputControllerPlaybackStartupSuccess", playback_success);
-
-    // Let the AudioManager try and fix it.
-    if (!playback_success)
-      audio_manager_->FixWedgedAudio();
+    UMA_HISTOGRAM_BOOLEAN("Media.AudioOutputControllerPlaybackStartupSuccess",
+                          base::AtomicRefCountIsOne(&on_more_io_data_called_));
   }
 }
 

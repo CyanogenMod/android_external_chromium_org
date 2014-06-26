@@ -12,9 +12,9 @@
 #include <string>
 
 #include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/invalidator_state.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/notifier/invalidation_util.h"
-#include "sync/notifier/invalidator_state.h"
 
 namespace syncer {
 class InvalidationHandler;
@@ -78,6 +78,10 @@ class SYNC_EXPORT Invalidator {
   // once.
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) = 0;
+
+  // Requests internal detailed status to be posted back to the callback.
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) const = 0;
 };
 }  // namespace syncer
 

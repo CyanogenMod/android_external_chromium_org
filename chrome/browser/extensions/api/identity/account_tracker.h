@@ -7,12 +7,11 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/observer_list.h"
-#include "chrome/browser/signin/signin_global_error.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
+#include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
@@ -37,9 +36,10 @@ class AccountIdFetcher;
 // 1. Events are only fired after the gaia ID has been fetched.
 // 2. Add/Remove and SignIn/SignOut pairs are always generated in order.
 // 3. SignIn follows Add, and there will be a SignOut between SignIn & Remove.
+// 4. If there is no primary account, there are no other accounts.
 class AccountTracker : public OAuth2TokenService::Observer,
-                       public content::NotificationObserver,
-                       public SigninGlobalError::AuthStatusProvider {
+                       public SigninErrorController::AuthStatusProvider,
+                       public SigninManagerBase::Observer {
  public:
   explicit AccountTracker(Profile* profile);
   virtual ~AccountTracker();
@@ -60,14 +60,15 @@ class AccountTracker : public OAuth2TokenService::Observer,
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
+  // Returns the list of accounts that are signed in, and for which gaia IDs
+  // have been fetched. The primary account for the profile will be first
+  // in the vector. Additional accounts will be in order of their gaia IDs.
+  std::vector<AccountIds> GetAccounts() const;
+  std::string FindAccountKeyByGaiaId(const std::string& gaia_id);
+
   // OAuth2TokenService::Observer implementation.
   virtual void OnRefreshTokenAvailable(const std::string& account_key) OVERRIDE;
   virtual void OnRefreshTokenRevoked(const std::string& account_key) OVERRIDE;
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   void OnUserInfoFetchSuccess(AccountIdFetcher* fetcher,
                               const std::string& gaia_id);
@@ -75,13 +76,24 @@ class AccountTracker : public OAuth2TokenService::Observer,
 
   // AuthStatusProvider implementation.
   virtual std::string GetAccountId() const OVERRIDE;
+  virtual std::string GetUsername() const OVERRIDE;
   virtual GoogleServiceAuthError GetAuthStatus() const OVERRIDE;
+
+  // SigninManagerBase::Observer implementation.
+  virtual void GoogleSigninSucceeded(const std::string& username,
+                                     const std::string& password) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+
+  // Sets the state of an account. Does not fire notifications.
+  void SetAccountStateForTest(AccountIds ids, bool is_signed_in);
 
  private:
   struct AccountState {
     AccountIds ids;
     bool is_signed_in;
   };
+
+  const std::string signin_manager_account_id() const;
 
   void NotifyAccountAdded(const AccountState& account);
   void NotifyAccountRemoved(const AccountState& account);
@@ -92,6 +104,7 @@ class AccountTracker : public OAuth2TokenService::Observer,
 
   void StartTrackingAccount(const std::string& account_key);
   void StopTrackingAccount(const std::string& account_key);
+  void StopTrackingAllAccounts();
   void StartFetchingUserInfo(const std::string& account_key);
   void DeleteFetcher(AccountIdFetcher* fetcher);
 
@@ -100,7 +113,6 @@ class AccountTracker : public OAuth2TokenService::Observer,
   std::map<std::string, AccountState> accounts_;
   std::map<std::string, GoogleServiceAuthError> account_errors_;
   ObserverList<Observer> observer_list_;
-  content::NotificationRegistrar registrar_;
 };
 
 class AccountIdFetcher : public OAuth2TokenService::Consumer,

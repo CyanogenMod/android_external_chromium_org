@@ -6,6 +6,8 @@
 
 #include <algorithm>
 
+#include "url/gurl.h"
+
 namespace history {
 
 namespace {
@@ -76,7 +78,7 @@ GURL ToggleHTTPAndHTTPS(const GURL& url) {
     new_scheme = "http";
   else
     return GURL::EmptyGURL();
-  url_parse::Component comp;
+  url::Component comp;
   comp.len = new_scheme.length();
   GURL::Replacements replacement;
   replacement.SetScheme(new_scheme.c_str(), comp);

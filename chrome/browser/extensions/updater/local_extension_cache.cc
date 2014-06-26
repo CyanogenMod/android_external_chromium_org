@@ -9,6 +9,7 @@
 #include "base/files/file_enumerator.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
+#include "base/sys_info.h"
 #include "base/version.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/extension.h"
@@ -144,8 +145,8 @@ bool LocalExtensionCache::RemoveExtension(const std::string& id) {
 
   backend_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&LocalExtensionCache::BackendRemoveCacheEntry,
-                 it->second.file_path));
+      base::Bind(
+          &LocalExtensionCache::BackendRemoveCacheEntry, cache_dir_, id));
 
   cached_extensions_.erase(it);
   return true;
@@ -190,13 +191,24 @@ void LocalExtensionCache::BackendCheckCacheStatus(
     base::WeakPtr<LocalExtensionCache> local_cache,
     const base::FilePath& cache_dir,
     const base::Closure& callback) {
+  const bool exists =
+      base::PathExists(cache_dir.AppendASCII(kCacheReadyFlagFileName));
+
+  static bool first_check = true;
+  if (first_check && !exists && !base::SysInfo::IsRunningOnChromeOS()) {
+    LOG(WARNING) << "Extensions will not be installed from update URLs until "
+                 << cache_dir.AppendASCII(kCacheReadyFlagFileName).value()
+                 << " exists.";
+  }
+  first_check = false;
+
   content::BrowserThread::PostTask(
       content::BrowserThread::UI,
       FROM_HERE,
       base::Bind(&LocalExtensionCache::OnCacheStatusChecked,
-          local_cache,
-          base::PathExists(cache_dir.AppendASCII(kCacheReadyFlagFileName)),
-          callback));
+                 local_cache,
+                 exists,
+                 callback));
 }
 
 void LocalExtensionCache::OnCacheStatusChecked(bool ready,
@@ -414,8 +426,10 @@ void LocalExtensionCache::OnCacheEntryInstalled(
       callback.Run(info.file_path, true);
       return;
     }
+    it->second = info;
+  } else {
+    it = cached_extensions_.insert(std::make_pair(id, info)).first;
   }
-  it = cached_extensions_.insert(std::make_pair(id, info)).first;
   // Time from file system can have lower precision so use precise "now".
   it->second.last_used = base::Time::Now();
 
@@ -424,9 +438,18 @@ void LocalExtensionCache::OnCacheEntryInstalled(
 
 // static
 void LocalExtensionCache::BackendRemoveCacheEntry(
-    const base::FilePath& file_path) {
-  base::DeleteFile(file_path, true /* recursive */);
-  VLOG(1) << "Removed cached file " << file_path.value();
+    const base::FilePath& cache_dir,
+    const std::string& id) {
+  std::string file_pattern = id + "-*" + kCRXFileExtension;
+  base::FileEnumerator enumerator(cache_dir,
+                                  false /* not recursive */,
+                                  base::FileEnumerator::FILES,
+                                  file_pattern);
+  for (base::FilePath path = enumerator.Next(); !path.empty();
+       path = enumerator.Next()) {
+    base::DeleteFile(path, false);
+    VLOG(1) << "Removed cached file " << path.value();
+  }
 }
 
 // static

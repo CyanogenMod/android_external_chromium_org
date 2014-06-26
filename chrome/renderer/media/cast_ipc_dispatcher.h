@@ -8,14 +8,16 @@
 #include "base/callback.h"
 #include "base/id_map.h"
 #include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 #include "media/cast/cast_sender.h"
+#include "media/cast/logging/logging_defines.h"
 #include "media/cast/transport/cast_transport_sender.h"
 
 class CastTransportSenderIPC;
 
 // This dispatcher listens to incoming IPC messages and sends
 // the call to the correct CastTransportSenderIPC instance.
-class CastIPCDispatcher : public IPC::ChannelProxy::MessageFilter {
+class CastIPCDispatcher : public IPC::MessageFilter {
  public:
   explicit CastIPCDispatcher(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
@@ -25,9 +27,9 @@ class CastIPCDispatcher : public IPC::ChannelProxy::MessageFilter {
   int32 AddSender(CastTransportSenderIPC* sender);
   void RemoveSender(int32 channel_id);
 
-  // IPC::ChannelProxy::MessageFilter implementation
+  // IPC::MessageFilter implementation
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -45,11 +47,13 @@ class CastIPCDispatcher : public IPC::ChannelProxy::MessageFilter {
       const media::cast::transport::RtcpSenderInfo& sender_info,
       base::TimeTicks time_sent,
       uint32 rtp_timestamp);
+  void OnRawEvents(int32 channel_id,
+                   const std::vector<media::cast::PacketEvent>& packet_events);
 
   static CastIPCDispatcher* global_instance_;
 
-  // IPC channel for Send(); must only be accesed on |io_message_loop_|.
-  IPC::Channel* channel_;
+  // For IPC Send(); must only be accesed on |io_message_loop_|.
+  IPC::Sender* sender_;
 
   // Message loop on which IPC calls are driven.
   const scoped_refptr<base::MessageLoopProxy> io_message_loop_;

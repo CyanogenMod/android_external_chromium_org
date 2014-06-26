@@ -12,22 +12,46 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/cast/cast_defines.h"
+#include "media/cast/logging/logging_defines.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "media/video/video_encode_accelerator.h"
 
-namespace {
-// We allocate more input buffers than what is asked for by
-// RequireBitstreamBuffers() due to potential threading timing.
-static const int kInputBufferExtraCount = 1;
-static const int kOutputBufferCount = 3;
+namespace media {
+namespace cast {
+class LocalVideoEncodeAcceleratorClient;
+}  // namespace cast
+}  // namespace media
 
-void LogFrameEncodedEvent(media::cast::CastEnvironment* const cast_environment,
-                          const base::TimeTicks& capture_time) {
+namespace {
+static const size_t kOutputBufferCount = 3;
+
+void LogFrameEncodedEvent(
+    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
+    base::TimeTicks event_time,
+    media::cast::RtpTimestamp rtp_timestamp,
+    uint32 frame_id) {
   cast_environment->Logging()->InsertFrameEvent(
-      cast_environment->Clock()->NowTicks(),
-      media::cast::kVideoFrameEncoded,
-      media::cast::GetVideoRtpTimestamp(capture_time),
-      media::cast::kFrameIdUnknown);
+      event_time, media::cast::FRAME_ENCODED, media::cast::VIDEO_EVENT,
+      rtp_timestamp, frame_id);
+}
+
+// Proxy this call to ExternalVideoEncoder on the cast main thread.
+void ProxyCreateVideoEncodeAccelerator(
+    const scoped_refptr<media::cast::CastEnvironment>& cast_environment,
+    const base::WeakPtr<media::cast::ExternalVideoEncoder>& weak_ptr,
+    const media::cast::CreateVideoEncodeMemoryCallback&
+        create_video_encode_mem_cb,
+    scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner,
+    scoped_ptr<media::VideoEncodeAccelerator> vea) {
+  cast_environment->PostTask(
+      media::cast::CastEnvironment::MAIN,
+      FROM_HERE,
+      base::Bind(
+          &media::cast::ExternalVideoEncoder::OnCreateVideoEncodeAccelerator,
+          weak_ptr,
+          create_video_encode_mem_cb,
+          encoder_task_runner,
+          base::Passed(&vea)));
 }
 }  // namespace
 
@@ -54,27 +78,24 @@ class LocalVideoEncodeAcceleratorClient
  public:
   LocalVideoEncodeAcceleratorClient(
       scoped_refptr<CastEnvironment> cast_environment,
-      scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories,
+      scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner,
+      scoped_ptr<media::VideoEncodeAccelerator> vea,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
       const base::WeakPtr<ExternalVideoEncoder>& weak_owner)
       : cast_environment_(cast_environment),
-        gpu_factories_(gpu_factories),
-        encoder_task_runner_(gpu_factories->GetTaskRunner()),
+        encoder_task_runner_(encoder_task_runner),
+        video_encode_accelerator_(vea.Pass()),
+        create_video_encode_memory_cb_(create_video_encode_mem_cb),
         weak_owner_(weak_owner),
-        last_encoded_frame_id_(kStartFrameId) {
+        last_encoded_frame_id_(kStartFrameId),
+        key_frame_encountered_(false) {
     DCHECK(encoder_task_runner_);
   }
 
   // Initialize the real HW encoder.
   void Initialize(const VideoSenderConfig& video_config) {
-    DCHECK(gpu_factories_);
     DCHECK(encoder_task_runner_);
-
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
-
-    video_encode_accelerator_ =
-        gpu_factories_->CreateVideoEncodeAccelerator(this).Pass();
-    if (!video_encode_accelerator_)
-      return;
 
     VideoCodecProfile output_profile = media::VIDEO_CODEC_PROFILE_UNKNOWN;
     switch (video_config.codec) {
@@ -84,17 +105,28 @@ class LocalVideoEncodeAcceleratorClient
       case transport::kH264:
         output_profile = media::H264PROFILE_MAIN;
         break;
+      case transport::kFakeSoftwareVideo:
+        NOTREACHED() << "Fake software video encoder cannot be external";
+        break;
+      case transport::kUnknownVideoCodec:
+        NOTREACHED() << "Video codec not specified";
+        break;
     }
     codec_ = video_config.codec;
     max_frame_rate_ = video_config.max_frame_rate;
 
-    // Asynchronous initialization call; NotifyInitializeDone or NotifyError
-    // will be called once the HW is initialized.
-    video_encode_accelerator_->Initialize(
-        media::VideoFrame::I420,
-        gfx::Size(video_config.width, video_config.height),
-        output_profile,
-        video_config.start_bitrate);
+    if (!video_encode_accelerator_->Initialize(
+            media::VideoFrame::I420,
+            gfx::Size(video_config.width, video_config.height),
+            output_profile,
+            video_config.start_bitrate,
+            this)) {
+      NotifyError(VideoEncodeAccelerator::kInvalidArgumentError);
+      return;
+    }
+
+    // Wait until shared memory is allocated to indicate that encoder is
+    // initialized.
   }
 
   // Free the HW.
@@ -102,9 +134,7 @@ class LocalVideoEncodeAcceleratorClient
     DCHECK(encoder_task_runner_);
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
 
-    if (video_encode_accelerator_) {
-      video_encode_accelerator_.release()->Destroy();
-    }
+    video_encode_accelerator_.reset();
   }
 
   void SetBitRate(uint32 bit_rate) {
@@ -123,76 +153,20 @@ class LocalVideoEncodeAcceleratorClient
     DCHECK(encoder_task_runner_);
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
 
-    if (input_buffers_free_.empty()) {
-      NOTREACHED();
-      VLOG(2) << "EncodeVideoFrame(): drop frame due to no hw buffers";
-      return;
-    }
-    const int index = input_buffers_free_.back();
-    base::SharedMemory* input_buffer = input_buffers_[index];
-
-    // TODO(pwestin): this allocation and copy can be removed once we don't
-    // pass the video frame through liblingle.
-
-    scoped_refptr<media::VideoFrame> frame =
-        media::VideoFrame::WrapExternalPackedMemory(
-            video_frame->format(),
-            video_frame->coded_size(),
-            video_frame->visible_rect(),
-            video_frame->natural_size(),
-            reinterpret_cast<uint8*>(input_buffer->memory()),
-            input_buffer->mapped_size(),
-            input_buffer->handle(),
-            video_frame->GetTimestamp(),
-            base::Bind(&LocalVideoEncodeAcceleratorClient::FinishedWithInBuffer,
-                       this,
-                       index));
-
-    if (!frame) {
-      VLOG(1) << "EncodeVideoFrame(): failed to create frame";
-      NotifyError(media::VideoEncodeAccelerator::kPlatformFailureError);
-      return;
-    }
-    // Do a stride copy of the input frame to match the input requirements.
-    media::CopyYPlane(video_frame->data(VideoFrame::kYPlane),
-                      video_frame->stride(VideoFrame::kYPlane),
-                      video_frame->natural_size().height(),
-                      frame.get());
-    media::CopyUPlane(video_frame->data(VideoFrame::kUPlane),
-                      video_frame->stride(VideoFrame::kUPlane),
-                      video_frame->natural_size().height(),
-                      frame.get());
-    media::CopyVPlane(video_frame->data(VideoFrame::kVPlane),
-                      video_frame->stride(VideoFrame::kVPlane),
-                      video_frame->natural_size().height(),
-                      frame.get());
-
     encoded_frame_data_storage_.push_back(
         EncodedFrameReturnData(capture_time, frame_encoded_callback));
 
     // BitstreamBufferReady will be called once the encoder is done.
-    video_encode_accelerator_->Encode(frame, key_frame_requested);
+    video_encode_accelerator_->Encode(video_frame, key_frame_requested);
   }
 
  protected:
-  virtual void NotifyInitializeDone() OVERRIDE {
-    DCHECK(encoder_task_runner_);
-    DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
-
-    cast_environment_->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(&ExternalVideoEncoder::EncoderInitialized, weak_owner_));
-  }
-
   virtual void NotifyError(VideoEncodeAccelerator::Error error) OVERRIDE {
     DCHECK(encoder_task_runner_);
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
     VLOG(1) << "ExternalVideoEncoder NotifyError: " << error;
 
-    if (video_encode_accelerator_) {
-      video_encode_accelerator_.release()->Destroy();
-    }
+    video_encode_accelerator_.reset();
     cast_environment_->PostTask(
         CastEnvironment::MAIN,
         FROM_HERE,
@@ -207,33 +181,11 @@ class LocalVideoEncodeAcceleratorClient
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
     DCHECK(video_encode_accelerator_);
 
-    for (unsigned int i = 0; i < input_count + kInputBufferExtraCount; ++i) {
-      base::SharedMemory* shm =
-          gpu_factories_->CreateSharedMemory(media::VideoFrame::AllocationSize(
-              media::VideoFrame::I420, input_coded_size));
-      if (!shm) {
-        VLOG(1) << "RequireBitstreamBuffers(): failed to create input buffer ";
-        return;
-      }
-      input_buffers_.push_back(shm);
-      input_buffers_free_.push_back(i);
-    }
-
-    for (int j = 0; j < kOutputBufferCount; ++j) {
-      base::SharedMemory* shm =
-          gpu_factories_->CreateSharedMemory(output_buffer_size);
-      if (!shm) {
-        VLOG(1) << "RequireBitstreamBuffers(): failed to create input buffer ";
-        return;
-      }
-      output_buffers_.push_back(shm);
-    }
-    // Immediately provide all output buffers to the VEA.
-    for (size_t i = 0; i < output_buffers_.size(); ++i) {
-      video_encode_accelerator_->UseOutputBitstreamBuffer(
-          media::BitstreamBuffer(static_cast<int32>(i),
-                                 output_buffers_[i]->handle(),
-                                 output_buffers_[i]->mapped_size()));
+    for (size_t j = 0; j < kOutputBufferCount; ++j) {
+      create_video_encode_memory_cb_.Run(
+          output_buffer_size,
+          base::Bind(&LocalVideoEncodeAcceleratorClient::OnCreateSharedMemory,
+                     this));
     }
   }
 
@@ -260,44 +212,54 @@ class LocalVideoEncodeAcceleratorClient
       NotifyError(media::VideoEncodeAccelerator::kPlatformFailureError);
       return;
     }
-    if (encoded_frame_data_storage_.empty()) {
-      NOTREACHED();
-      NotifyError(media::VideoEncodeAccelerator::kPlatformFailureError);
-      return;
+    if (key_frame)
+      key_frame_encountered_ = true;
+    if (!key_frame_encountered_) {
+      // Do not send video until we have encountered the first key frame.
+      // Save the bitstream buffer in |stream_header_| to be sent later along
+      // with the first key frame.
+      stream_header_.append(static_cast<const char*>(output_buffer->memory()),
+                            payload_size);
+    } else if (!encoded_frame_data_storage_.empty()) {
+      scoped_ptr<transport::EncodedFrame> encoded_frame(
+          new transport::EncodedFrame());
+      encoded_frame->dependency = key_frame ? transport::EncodedFrame::KEY :
+          transport::EncodedFrame::DEPENDENT;
+      encoded_frame->frame_id = ++last_encoded_frame_id_;
+      if (key_frame)
+        encoded_frame->referenced_frame_id = encoded_frame->frame_id;
+      else
+        encoded_frame->referenced_frame_id = encoded_frame->frame_id - 1;
+      encoded_frame->reference_time =
+          encoded_frame_data_storage_.front().capture_time;
+      encoded_frame->rtp_timestamp =
+          GetVideoRtpTimestamp(encoded_frame->reference_time);
+      if (!stream_header_.empty()) {
+        encoded_frame->data = stream_header_;
+        stream_header_.clear();
+      }
+      encoded_frame->data.append(
+          static_cast<const char*>(output_buffer->memory()), payload_size);
+
+      cast_environment_->PostTask(
+          CastEnvironment::MAIN,
+          FROM_HERE,
+          base::Bind(&LogFrameEncodedEvent,
+                     cast_environment_,
+                     cast_environment_->Clock()->NowTicks(),
+                     encoded_frame->rtp_timestamp,
+                     encoded_frame->frame_id));
+
+      cast_environment_->PostTask(
+          CastEnvironment::MAIN,
+          FROM_HERE,
+          base::Bind(encoded_frame_data_storage_.front().frame_encoded_callback,
+                     base::Passed(&encoded_frame)));
+
+      encoded_frame_data_storage_.pop_front();
+    } else {
+      VLOG(1) << "BitstreamBufferReady(): no encoded frame data available";
     }
-    scoped_ptr<transport::EncodedVideoFrame> encoded_frame(
-        new transport::EncodedVideoFrame());
-
-    encoded_frame->codec = codec_;
-    encoded_frame->key_frame = key_frame;
-    encoded_frame->last_referenced_frame_id = last_encoded_frame_id_;
-    last_encoded_frame_id_++;
-    encoded_frame->frame_id = last_encoded_frame_id_;
-    encoded_frame->rtp_timestamp =
-        GetVideoRtpTimestamp(encoded_frame_data_storage_.front().capture_time);
-    if (key_frame) {
-      // Self referenced.
-      encoded_frame->last_referenced_frame_id = encoded_frame->frame_id;
-    }
-
-    encoded_frame->data.insert(
-        0, static_cast<const char*>(output_buffer->memory()), payload_size);
-
-    cast_environment_->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(LogFrameEncodedEvent,
-                   cast_environment_,
-                   encoded_frame_data_storage_.front().capture_time));
-
-    cast_environment_->PostTask(
-        CastEnvironment::MAIN,
-        FROM_HERE,
-        base::Bind(encoded_frame_data_storage_.front().frame_encoded_callback,
-                   base::Passed(&encoded_frame),
-                   encoded_frame_data_storage_.front().capture_time));
-
-    encoded_frame_data_storage_.pop_front();
 
     // We need to re-add the output buffer to the encoder after we are done
     // with it.
@@ -308,14 +270,37 @@ class LocalVideoEncodeAcceleratorClient
   }
 
  private:
-  // Encoder is done with the provided input buffer.
-  void FinishedWithInBuffer(int input_index) {
+  // Note: This method can be called on any thread.
+  void OnCreateSharedMemory(scoped_ptr<base::SharedMemory> memory) {
+    encoder_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&LocalVideoEncodeAcceleratorClient::ReceivedSharedMemory,
+                   this,
+                   base::Passed(&memory)));
+  }
+
+  void ReceivedSharedMemory(scoped_ptr<base::SharedMemory> memory) {
     DCHECK(encoder_task_runner_);
     DCHECK(encoder_task_runner_->RunsTasksOnCurrentThread());
-    DCHECK_GE(input_index, 0);
-    DCHECK_LT(input_index, static_cast<int>(input_buffers_.size()));
-    VLOG(2) << "EncodeFrameFinished(): index=" << input_index;
-    input_buffers_free_.push_back(input_index);
+
+    output_buffers_.push_back(memory.release());
+
+    // Wait until all requested buffers are received.
+    if (output_buffers_.size() < kOutputBufferCount)
+      return;
+
+    // Immediately provide all output buffers to the VEA.
+    for (size_t i = 0; i < output_buffers_.size(); ++i) {
+      video_encode_accelerator_->UseOutputBitstreamBuffer(
+          media::BitstreamBuffer(static_cast<int32>(i),
+                                 output_buffers_[i]->handle(),
+                                 output_buffers_[i]->mapped_size()));
+    }
+
+    cast_environment_->PostTask(
+        CastEnvironment::MAIN,
+        FROM_HERE,
+        base::Bind(&ExternalVideoEncoder::EncoderInitialized, weak_owner_));
   }
 
   friend class base::RefCountedThreadSafe<LocalVideoEncodeAcceleratorClient>;
@@ -323,22 +308,18 @@ class LocalVideoEncodeAcceleratorClient
   virtual ~LocalVideoEncodeAcceleratorClient() {}
 
   const scoped_refptr<CastEnvironment> cast_environment_;
-  scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories_;
   scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner_;
-  const base::WeakPtr<ExternalVideoEncoder> weak_owner_;
-
   scoped_ptr<media::VideoEncodeAccelerator> video_encode_accelerator_;
+  const CreateVideoEncodeMemoryCallback create_video_encode_memory_cb_;
+  const base::WeakPtr<ExternalVideoEncoder> weak_owner_;
   int max_frame_rate_;
   transport::VideoCodec codec_;
   uint32 last_encoded_frame_id_;
+  bool key_frame_encountered_;
+  std::string stream_header_;
 
-  // Shared memory buffers for input/output with the VideoAccelerator.
-  ScopedVector<base::SharedMemory> input_buffers_;
+  // Shared memory buffers for output with the VideoAccelerator.
   ScopedVector<base::SharedMemory> output_buffers_;
-
-  // Input buffers ready to be filled with input from Encode(). As a LIFO since
-  // we don't care about ordering.
-  std::vector<int> input_buffers_free_;
 
   // FIFO list.
   std::list<EncodedFrameReturnData> encoded_frame_data_storage_;
@@ -349,25 +330,19 @@ class LocalVideoEncodeAcceleratorClient
 ExternalVideoEncoder::ExternalVideoEncoder(
     scoped_refptr<CastEnvironment> cast_environment,
     const VideoSenderConfig& video_config,
-    scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories)
+    const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+    const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb)
     : video_config_(video_config),
       cast_environment_(cast_environment),
       encoder_active_(false),
       key_frame_requested_(false),
-      skip_next_frame_(false),
-      skip_count_(0),
-      encoder_task_runner_(gpu_factories->GetTaskRunner()),
       weak_factory_(this) {
-  DCHECK(gpu_factories);
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  video_accelerator_client_ = new LocalVideoEncodeAcceleratorClient(
-      cast_environment, gpu_factories, weak_factory_.GetWeakPtr());
 
-  encoder_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&LocalVideoEncodeAcceleratorClient::Initialize,
-                 video_accelerator_client_,
-                 video_config));
+  create_vea_cb.Run(base::Bind(&ProxyCreateVideoEncodeAccelerator,
+                               cast_environment,
+                               weak_factory_.GetWeakPtr(),
+                               create_video_encode_mem_cb));
 }
 
 ExternalVideoEncoder::~ExternalVideoEncoder() {
@@ -387,6 +362,26 @@ void ExternalVideoEncoder::EncoderError() {
   encoder_active_ = false;
 }
 
+void ExternalVideoEncoder::OnCreateVideoEncodeAccelerator(
+    const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
+    scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner,
+    scoped_ptr<media::VideoEncodeAccelerator> vea) {
+  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
+  encoder_task_runner_ = encoder_task_runner;
+
+  video_accelerator_client_ =
+      new LocalVideoEncodeAcceleratorClient(cast_environment_,
+                                            encoder_task_runner,
+                                            vea.Pass(),
+                                            create_video_encode_mem_cb,
+                                            weak_factory_.GetWeakPtr());
+  encoder_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(&LocalVideoEncodeAcceleratorClient::Initialize,
+                 video_accelerator_client_,
+                 video_config_));
+}
+
 bool ExternalVideoEncoder::EncodeVideoFrame(
     const scoped_refptr<media::VideoFrame>& video_frame,
     const base::TimeTicks& capture_time,
@@ -395,19 +390,6 @@ bool ExternalVideoEncoder::EncodeVideoFrame(
 
   if (!encoder_active_)
     return false;
-
-  if (skip_next_frame_) {
-    VLOG(1) << "Skip encoding frame";
-    ++skip_count_;
-    skip_next_frame_ = false;
-    return false;
-  }
-  base::TimeTicks now = cast_environment_->Clock()->NowTicks();
-  cast_environment_->Logging()->InsertFrameEvent(
-      now,
-      kVideoFrameSentToEncoder,
-      GetVideoRtpTimestamp(capture_time),
-      kFrameIdUnknown);
 
   encoder_task_runner_->PostTask(
       FROM_HERE,
@@ -424,17 +406,19 @@ bool ExternalVideoEncoder::EncodeVideoFrame(
 
 // Inform the encoder about the new target bit rate.
 void ExternalVideoEncoder::SetBitRate(int new_bit_rate) {
+  if (!encoder_active_) {
+    // If we receive SetBitRate() before VEA creation callback is invoked,
+    // cache the new bit rate in the encoder config and use the new settings
+    // to initialize VEA.
+    video_config_.start_bitrate = new_bit_rate;
+    return;
+  }
+
   encoder_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&LocalVideoEncodeAcceleratorClient::SetBitRate,
                  video_accelerator_client_,
                  new_bit_rate));
-}
-
-// Inform the encoder to not encode the next frame.
-void ExternalVideoEncoder::SkipNextFrame(bool skip_next_frame) {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  skip_next_frame_ = skip_next_frame;
 }
 
 // Inform the encoder to encode the next frame as a key frame.
@@ -446,11 +430,6 @@ void ExternalVideoEncoder::GenerateKeyFrame() {
 // Inform the encoder to only reference frames older or equal to frame_id;
 void ExternalVideoEncoder::LatestFrameIdToReference(uint32 /*frame_id*/) {
   // Do nothing not supported.
-}
-
-int ExternalVideoEncoder::NumberOfSkippedFrames() const {
-  DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
-  return skip_count_;
 }
 
 }  //  namespace cast

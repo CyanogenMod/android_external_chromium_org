@@ -9,13 +9,15 @@
 #include "chrome/browser/local_discovery/storage/privet_filesystem_async_util.h"
 #include "chrome/browser/local_discovery/storage/privet_filesystem_constants.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
+#include "webkit/browser/fileapi/file_system_url.h"
 
 namespace local_discovery {
 
 PrivetFileSystemBackend::PrivetFileSystemBackend(
-    fileapi::ExternalMountPoints* mount_points)
+    fileapi::ExternalMountPoints* mount_points,
+    content::BrowserContext* browser_context)
     : mount_points_(mount_points),
-      async_util_(new PrivetFileSystemAsyncUtil()) {
+      async_util_(new PrivetFileSystemAsyncUtil(browser_context)) {
 }
 
 PrivetFileSystemBackend::~PrivetFileSystemBackend() {
@@ -34,15 +36,14 @@ void PrivetFileSystemBackend::Initialize(fileapi::FileSystemContext* context) {
       base::FilePath(kPrivetFilePath));
 }
 
-void PrivetFileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    fileapi::FileSystemType type,
+void PrivetFileSystemBackend::ResolveURL(
+    const fileapi::FileSystemURL& url,
     fileapi::OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
-  // Copied from src/chrome/browser/chromeos/fileapi/file_system_backend.cc
-  // This is deprecated for non-sandboxed filesystems.
-  NOTREACHED();
-  callback.Run(GURL(), std::string(), base::File::FILE_ERROR_SECURITY);
+  // TODO(noamsml): Provide a proper root url and a proper name.
+  GURL root_url = GURL(
+      fileapi::GetExternalFileSystemRootURIString(url.origin(), std::string()));
+  callback.Run(root_url, std::string(), base::File::FILE_OK);
 }
 
 fileapi::FileSystemQuotaUtil* PrivetFileSystemBackend::GetQuotaUtil() {
@@ -71,6 +72,11 @@ PrivetFileSystemBackend::CreateFileSystemOperation(
   return fileapi::FileSystemOperation::Create(
       url, context,
       make_scoped_ptr(new fileapi::FileSystemOperationContext(context)));
+}
+
+bool PrivetFileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  return false;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>

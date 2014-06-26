@@ -23,7 +23,9 @@ struct NativeWebKeyboardEvent;
 class WebContents;
 }
 
+namespace password_manager {
 class PasswordManager;
+}
 
 namespace autofill {
 
@@ -42,15 +44,15 @@ class PasswordGenerationPopupControllerImpl
   // |previous| if it is not returned. |bounds| is the bounds of the element
   // that we are showing the dropdown for in screen space. |form| is the
   // identifier for the form that we are filling, and is used to notify
-  // |password_manager| if the password is generated. |generator| is used to
-  // create the password shown. If not NULL, |observer| will be notified of
-  // changes of the popup state.
+  // |password_manager| if the password is generated. |max_length| is used to
+  // determine the length of the password shown. If not NULL, |observer| will
+  // be notified of changes of the popup state.
   static base::WeakPtr<PasswordGenerationPopupControllerImpl> GetOrCreate(
       base::WeakPtr<PasswordGenerationPopupControllerImpl> previous,
       const gfx::RectF& bounds,
       const PasswordForm& form,
-      PasswordGenerator* generator,
-      PasswordManager* password_manager,
+      int max_length,
+      password_manager::PasswordManager* password_manager,
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       gfx::NativeView container_view);
@@ -77,8 +79,8 @@ class PasswordGenerationPopupControllerImpl
   PasswordGenerationPopupControllerImpl(
       const gfx::RectF& bounds,
       const PasswordForm& form,
-      PasswordGenerator* generator,
-      PasswordManager* password_manager,
+      int max_length,
+      password_manager::PasswordManager* password_manager,
       PasswordGenerationPopupObserver* observer,
       content::WebContents* web_contents,
       gfx::NativeView container_view);
@@ -87,10 +89,8 @@ class PasswordGenerationPopupControllerImpl
   virtual void Hide() OVERRIDE;
   virtual void ViewDestroyed() OVERRIDE;
   virtual void SetSelectionAtPoint(const gfx::Point& point) OVERRIDE;
-  virtual void AcceptSelectionAtPoint(const gfx::Point& point) OVERRIDE;
+  virtual bool AcceptSelectedLine() OVERRIDE;
   virtual void SelectionCleared() OVERRIDE;
-  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool ShouldHideOnOutsideClick() const OVERRIDE;
   virtual void OnSavedPasswordsLinkClicked() OVERRIDE;
   virtual gfx::NativeView container_view() OVERRIDE;
   virtual const gfx::FontList& font_list() const OVERRIDE;
@@ -126,10 +126,13 @@ class PasswordGenerationPopupControllerImpl
   void CalculateBounds();
 
   PasswordForm form_;
-  PasswordGenerator* generator_;
-  PasswordManager* password_manager_;
+  password_manager::PasswordManager* password_manager_;
+
   // May be NULL.
   PasswordGenerationPopupObserver* observer_;
+
+  // Controls how passwords are generated.
+  scoped_ptr<PasswordGenerator> generator_;
 
   // Contains common popup functionality.
   PopupControllerCommon controller_common_;

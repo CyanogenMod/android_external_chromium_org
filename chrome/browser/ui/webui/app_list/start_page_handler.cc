@@ -8,10 +8,8 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/pref_service.h"
-#include "base/sys_info.h"
 #include "base/values.h"
-#include "chrome/browser/extensions/extension_service.h"
+#include "base/version.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/hotword_service.h"
 #include "chrome/browser/ui/app_list/app_list_controller_delegate.h"
@@ -20,12 +18,14 @@
 #include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
-#include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/web_contents_view.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/speech_ui_model_observer.h"
 #include "ui/events/event_constants.h"
@@ -33,6 +33,10 @@
 namespace app_list {
 
 namespace {
+
+#if defined(OS_CHROMEOS)
+const char kOldHotwordExtensionVersionString[] = "0.1.1.5014_0";
+#endif
 
 scoped_ptr<base::DictionaryValue> CreateAppInfo(
     const extensions::Extension* app) {
@@ -56,7 +60,10 @@ scoped_ptr<base::DictionaryValue> CreateAppInfo(
 
 }  // namespace
 
-StartPageHandler::StartPageHandler() : recommended_apps_(NULL) {}
+StartPageHandler::StartPageHandler()
+    : recommended_apps_(NULL),
+      extension_registry_observer_(this) {
+}
 
 StartPageHandler::~StartPageHandler() {
   if (recommended_apps_)
@@ -84,6 +91,29 @@ void StartPageHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
+void StartPageHandler::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension) {
+#if defined(OS_CHROMEOS)
+  DCHECK_EQ(Profile::FromWebUI(web_ui()),
+            Profile::FromBrowserContext(browser_context));
+  if (extension->id() == extension_misc::kHotwordExtensionId)
+    OnHotwordEnabledChanged();
+#endif
+}
+
+void StartPageHandler::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UnloadedExtensionInfo::Reason reason) {
+#if defined(OS_CHROMEOS)
+  DCHECK_EQ(Profile::FromWebUI(web_ui()),
+            Profile::FromBrowserContext(browser_context));
+  if (extension->id() == extension_misc::kHotwordExtensionId)
+    OnHotwordEnabledChanged();
+#endif
+}
+
 void StartPageHandler::OnRecommendedAppsChanged() {
   SendRecommendedApps();
 }
@@ -101,32 +131,25 @@ void StartPageHandler::SendRecommendedApps() {
 }
 
 #if defined(OS_CHROMEOS)
-bool StartPageHandler::HotwordEnabled() {
-  Profile* profile = Profile::FromWebUI(web_ui());
-  return HotwordService::DoesHotwordSupportLanguage(profile) &&
-      profile->GetPrefs()->GetBoolean(prefs::kHotwordAppListEnabled);
-}
-
 void StartPageHandler::OnHotwordEnabledChanged() {
-  web_ui()->CallJavascriptFunction(
-      "appList.startPage.setHotwordEnabled",
-      base::FundamentalValue(HotwordEnabled()));
-}
-
-void StartPageHandler::SynchronizeHotwordEnabled() {
+  // If the hotword extension is new enough, we should use the new
+  // hotwordPrivate API to provide the feature.
+  // TODO(mukai): remove this after everything gets stable.
   Profile* profile = Profile::FromWebUI(web_ui());
-  PrefService* pref_service = profile->GetPrefs();
-  const PrefService::Preference* pref =
-      pref_service->FindPreference(prefs::kHotwordSearchEnabled);
-  if (!pref || pref->IsDefaultValue())
-    return;
 
-  bool search_enabled = false;
-  if (!pref->GetValue()->GetAsBoolean(&search_enabled))
-    return;
-
-  if (pref_service->GetBoolean(prefs::kHotwordAppListEnabled) != search_enabled)
-    pref_service->SetBoolean(prefs::kHotwordAppListEnabled, search_enabled);
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  const extensions::Extension* hotword_extension =
+      registry->GetExtensionById(extension_misc::kHotwordExtensionId,
+                                 extensions::ExtensionRegistry::ENABLED);
+  if (hotword_extension &&
+      hotword_extension->version()->CompareTo(
+          base::Version(kOldHotwordExtensionVersionString)) <= 0) {
+    StartPageService* service = StartPageService::Get(profile);
+    web_ui()->CallJavascriptFunction(
+        "appList.startPage.setHotwordEnabled",
+        base::FundamentalValue(service->HotwordEnabled()));
+  }
 }
 #endif
 
@@ -143,21 +166,28 @@ void StartPageHandler::HandleInitialize(const base::ListValue* args) {
 
 #if defined(OS_CHROMEOS)
   if (app_list::switches::IsVoiceSearchEnabled() &&
-      HotwordService::DoesHotwordSupportLanguage(profile) &&
-      base::SysInfo::IsRunningOnChromeOS()) {
-    SynchronizeHotwordEnabled();
+      HotwordService::DoesHotwordSupportLanguage(profile)) {
     OnHotwordEnabledChanged();
     pref_change_registrar_.Init(profile->GetPrefs());
     pref_change_registrar_.Add(
         prefs::kHotwordSearchEnabled,
-        base::Bind(&StartPageHandler::SynchronizeHotwordEnabled,
-                   base::Unretained(this)));
-    pref_change_registrar_.Add(
-        prefs::kHotwordAppListEnabled,
         base::Bind(&StartPageHandler::OnHotwordEnabledChanged,
                    base::Unretained(this)));
+
+    extension_registry_observer_.Add(
+        extensions::ExtensionRegistry::Get(profile));
   }
 #endif
+
+  web_ui()->CallJavascriptFunction(
+      "appList.startPage.setNaclArch",
+      base::StringValue(omaha_query_params::OmahaQueryParams::GetNaclArch()));
+
+  if (!app_list::switches::IsExperimentalAppListEnabled()) {
+    web_ui()->CallJavascriptFunction(
+        "appList.startPage.onAppListShown",
+        base::FundamentalValue(service->HotwordEnabled()));
+  }
 }
 
 void StartPageHandler::HandleLaunchApp(const base::ListValue* args) {
@@ -165,9 +195,9 @@ void StartPageHandler::HandleLaunchApp(const base::ListValue* args) {
   CHECK(args->GetString(0, &app_id));
 
   Profile* profile = Profile::FromWebUI(web_ui());
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  const extensions::Extension* app = service->GetInstalledExtension(app_id);
+  const extensions::Extension* app =
+      extensions::ExtensionRegistry::Get(profile)
+          ->GetExtensionById(app_id, extensions::ExtensionRegistry::EVERYTHING);
   if (!app) {
     NOTREACHED();
     return;
@@ -175,8 +205,8 @@ void StartPageHandler::HandleLaunchApp(const base::ListValue* args) {
 
   AppListControllerDelegate* controller = AppListService::Get(
       chrome::GetHostDesktopTypeForNativeView(
-          web_ui()->GetWebContents()->GetView()->GetNativeView()))
-      ->GetControllerDelegate();
+          web_ui()->GetWebContents()->GetNativeView()))->
+              GetControllerDelegate();
   controller->ActivateApp(profile,
                           app,
                           AppListControllerDelegate::LAUNCH_FROM_APP_LIST,
@@ -218,6 +248,8 @@ void StartPageHandler::HandleSpeechRecognition(const base::ListValue* args) {
     new_state = SPEECH_RECOGNITION_IN_SPEECH;
   else if (state_string == "STOPPING")
     new_state = SPEECH_RECOGNITION_STOPPING;
+  else if (state_string == "NETWORK_ERROR")
+    new_state = SPEECH_RECOGNITION_NETWORK_ERROR;
 
   StartPageService* service =
       StartPageService::Get(Profile::FromWebUI(web_ui()));

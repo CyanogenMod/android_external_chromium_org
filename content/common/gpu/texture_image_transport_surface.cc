@@ -30,8 +30,7 @@ namespace content {
 namespace {
 
 bool IsContextValid(ImageTransportHelper* helper) {
-  return helper->stub()->decoder()->GetGLContext()->IsCurrent(NULL) ||
-      helper->stub()->decoder()->WasContextLost();
+  return helper->stub()->decoder()->GetGLContext()->IsCurrent(NULL);
 }
 
 }  // namespace
@@ -175,19 +174,26 @@ void TextureImageTransportSurface::OnResize(gfx::Size size,
 }
 
 void TextureImageTransportSurface::OnWillDestroyStub() {
-  DCHECK(IsContextValid(helper_.get()));
+  bool have_context = IsContextValid(helper_.get());
   helper_->stub()->RemoveDestructionObserver(this);
 
   // We are losing the stub owning us, this is our last chance to clean up the
   // resources we allocated in the stub's context.
-  ReleaseBackTexture();
-  ReleaseFrontTexture();
+  if (have_context) {
+    ReleaseBackTexture();
+    ReleaseFrontTexture();
+  } else {
+    backbuffer_ = NULL;
+    back_mailbox_ = Mailbox();
+    frontbuffer_ = NULL;
+    front_mailbox_ = Mailbox();
+  }
 
-  if (fbo_id_) {
+  if (fbo_id_ && have_context) {
     glDeleteFramebuffersEXT(1, &fbo_id_);
     CHECK_GL_ERROR();
-    fbo_id_ = 0;
   }
+  fbo_id_ = 0;
 
   stub_destroyed_ = true;
 }
@@ -268,11 +274,8 @@ bool TextureImageTransportSurface::PostSubBuffer(
   return true;
 }
 
-std::string TextureImageTransportSurface::GetExtensions() {
-  std::string extensions = gfx::GLSurface::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool TextureImageTransportSurface::SupportsPostSubBuffer() {
+  return true;
 }
 
 gfx::Size TextureImageTransportSurface::GetSize() {
@@ -348,10 +351,6 @@ void TextureImageTransportSurface::BufferPresentedImpl(const Mailbox& mailbox) {
   }
 }
 
-void TextureImageTransportSurface::OnResizeViewACK() {
-  NOTREACHED();
-}
-
 void TextureImageTransportSurface::ReleaseBackTexture() {
   DCHECK(IsContextValid(helper_.get()));
   backbuffer_ = NULL;
@@ -400,26 +399,26 @@ void TextureImageTransportSurface::CreateBackTexture() {
         current_size_.width(), current_size_.height(), 0,
         GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     gpu::gles2::ErrorState* error_state = decoder->GetErrorState();
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_MIN_FILTER,
-                                  GL_LINEAR);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_MAG_FILTER,
-                                  GL_LINEAR);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_WRAP_S,
-                                  GL_CLAMP_TO_EDGE);
-    texture_manager->SetParameter("Backbuffer",
-                                  error_state,
-                                  backbuffer_.get(),
-                                  GL_TEXTURE_WRAP_T,
-                                  GL_CLAMP_TO_EDGE);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_MIN_FILTER,
+                                   GL_LINEAR);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_MAG_FILTER,
+                                   GL_LINEAR);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_WRAP_S,
+                                   GL_CLAMP_TO_EDGE);
+    texture_manager->SetParameteri("Backbuffer",
+                                   error_state,
+                                   backbuffer_.get(),
+                                   GL_TEXTURE_WRAP_T,
+                                   GL_CLAMP_TO_EDGE);
     texture_manager->SetLevelInfo(backbuffer_.get(),
                                   GL_TEXTURE_2D,
                                   0,

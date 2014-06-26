@@ -17,18 +17,12 @@
 #include "ui/base/ime/composition_text.h"
 #include "ui/base/ime/input_method_base.h"
 
-namespace chromeos {
-namespace ibus {
-class CompositionText;
-}  // namespace ibus
-}  // namespace chromeos
-
 namespace ui {
 
 // A ui::InputMethod implementation based on IBus.
 class UI_BASE_EXPORT InputMethodChromeOS
     : public InputMethodBase,
-      public chromeos::IBusInputContextHandlerInterface {
+      public chromeos::IMEInputContextHandlerInterface {
  public:
   explicit InputMethodChromeOS(internal::InputMethodDelegate* delegate);
   virtual ~InputMethodChromeOS();
@@ -94,6 +88,9 @@ class UI_BASE_EXPORT InputMethodChromeOS
   // Checks if there is pending input method result.
   bool HasInputMethodResult() const;
 
+  // Sends a fake key event for IME composing without physical key events.
+  void SendFakeProcessKeyEvent(bool pressed) const;
+
   // Abandons all pending key events. It usually happends when we lose keyboard
   // focus, the text input type is changed or we are destroyed.
   void AbandonAllPendingKeyEvents();
@@ -102,7 +99,7 @@ class UI_BASE_EXPORT InputMethodChromeOS
   // true if character composer comsumes key event.
   bool ExecuteCharacterComposer(const ui::KeyEvent& event);
 
-  // chromeos::IBusInputContextHandlerInterface overrides:
+  // chromeos::IMEInputContextHandlerInterface overrides:
   virtual void CommitText(const std::string& text) OVERRIDE;
   virtual void UpdateCompositionText(const chromeos::CompositionText& text,
                                      uint32 cursor_pos,
@@ -114,6 +111,10 @@ class UI_BASE_EXPORT InputMethodChromeOS
 
   // Callback function for IMEEngineHandlerInterface::ProcessKeyEvent.
   void ProcessKeyEventDone(uint32 id, ui::KeyEvent* event, bool is_handled);
+
+  // Returns whether an input field is focused. Note that password field is not
+  // considered as an input field.
+  bool IsInputFieldFocused();
 
   // All pending key events. Note: we do not own these object, we just save
   // pointers to these object so that we can abandon them when necessary.
@@ -133,9 +134,6 @@ class UI_BASE_EXPORT InputMethodChromeOS
   base::string16 previous_surrounding_text_;
   gfx::Range previous_selection_range_;
 
-  // Indicates if input context is focused or not.
-  bool context_focused_;
-
   // Indicates if there is an ongoing composition text.
   bool composing_text_;
 
@@ -148,8 +146,6 @@ class UI_BASE_EXPORT InputMethodChromeOS
   // An object to compose a character from a sequence of key presses
   // including dead key etc.
   CharacterComposer character_composer_;
-
-  TextInputType previous_textinput_type_;
 
   // Used for making callbacks.
   base::WeakPtrFactory<InputMethodChromeOS> weak_ptr_factory_;

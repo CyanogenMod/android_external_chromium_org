@@ -4,17 +4,20 @@
 
 #include "chrome/browser/sync/glue/sync_backend_host_core.h"
 
-#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/sync_backend_registrar.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
+#include "sync/internal_api/public/events/protocol_event.h"
 #include "sync/internal_api/public/http_post_provider_factory.h"
 #include "sync/internal_api/public/internal_components_factory.h"
+#include "sync/internal_api/public/sessions/commit_counters.h"
+#include "sync/internal_api/public/sessions/status_counters.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
+#include "sync/internal_api/public/sessions/update_counters.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/sync_manager_factory.h"
 
@@ -103,6 +106,8 @@ SyncBackendHostCore::SyncBackendHostCore(
       sync_loop_(NULL),
       registrar_(NULL),
       has_sync_setup_completed_(has_sync_setup_completed),
+      forward_protocol_events_(false),
+      forward_type_info_(false),
       weak_ptr_factory_(this) {
   DCHECK(backend.get());
 }
@@ -297,6 +302,33 @@ void SyncBackendHostCore::OnPassphraseTypeChanged(
       type, passphrase_time);
 }
 
+void SyncBackendHostCore::OnCommitCountersUpdated(
+    syncer::ModelType type,
+    const syncer::CommitCounters& counters) {
+  host_.Call(
+      FROM_HERE,
+      &SyncBackendHostImpl::HandleDirectoryCommitCountersUpdatedOnFrontendLoop,
+      type, counters);
+}
+
+void SyncBackendHostCore::OnUpdateCountersUpdated(
+    syncer::ModelType type,
+    const syncer::UpdateCounters& counters) {
+  host_.Call(
+      FROM_HERE,
+      &SyncBackendHostImpl::HandleDirectoryUpdateCountersUpdatedOnFrontendLoop,
+      type, counters);
+}
+
+void SyncBackendHostCore::OnStatusCountersUpdated(
+    syncer::ModelType type,
+    const syncer::StatusCounters& counters) {
+  host_.Call(
+      FROM_HERE,
+      &SyncBackendHostImpl::HandleDirectoryStatusCountersUpdatedOnFrontendLoop,
+      type, counters);
+}
+
 void SyncBackendHostCore::OnActionableError(
     const syncer::SyncProtocolError& sync_error) {
   if (!sync_loop_)
@@ -314,6 +346,18 @@ void SyncBackendHostCore::OnMigrationRequested(syncer::ModelTypeSet types) {
       FROM_HERE,
       &SyncBackendHostImpl::HandleMigrationRequestedOnFrontendLoop,
       types);
+}
+
+void SyncBackendHostCore::OnProtocolEvent(
+    const syncer::ProtocolEvent& event) {
+  // TODO(rlarocque): Find a way to pass event_clone as a scoped_ptr.
+  if (forward_protocol_events_) {
+    scoped_ptr<syncer::ProtocolEvent> event_clone(event.Clone());
+    host_.Call(
+        FROM_HERE,
+        &SyncBackendHostImpl::HandleProtocolEventOnFrontendLoop,
+        event_clone.release());
+  }
 }
 
 void SyncBackendHostCore::DoOnInvalidatorStateChange(
@@ -376,23 +420,6 @@ void SyncBackendHostCore::DoInitialize(
                       options->unrecoverable_error_handler.Pass(),
                       options->report_unrecoverable_error_function,
                       &stop_syncing_signal_);
-
-  // |sync_manager_| may end up being NULL here in tests (in
-  // synchronous initialization mode).
-  //
-  // TODO(akalin): Fix this behavior (see http://crbug.com/140354).
-  if (sync_manager_) {
-    // Now check the command line to see if we need to simulate an
-    // unrecoverable error for testing purpose. Note the error is thrown
-    // only if the initialization succeeded. Also it makes sense to use this
-    // flag only when restarting the browser with an account already setup. If
-    // you use this before setting up the setup would not succeed as an error
-    // would be encountered.
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kSyncThrowUnrecoverableError)) {
-      sync_manager_->ThrowUnrecoverableError();
-    }
-  }
 }
 
 void SyncBackendHostCore::DoUpdateCredentials(
@@ -460,16 +487,18 @@ void SyncBackendHostCore::DoInitialProcessControlTypes() {
 }
 
 void SyncBackendHostCore::DoFinishInitialProcessControlTypes() {
+  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
+
   registrar_->ActivateDataType(syncer::DEVICE_INFO,
                                syncer::GROUP_PASSIVE,
                                synced_device_tracker_.get(),
                                sync_manager_->GetUserShare());
 
-  host_.Call(
-      FROM_HERE,
-      &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
-      js_backend_,
-      debug_info_listener_);
+  host_.Call(FROM_HERE,
+             &SyncBackendHostImpl::HandleInitializationSuccessOnFrontendLoop,
+             js_backend_,
+             debug_info_listener_,
+             sync_manager_->GetSyncContextProxy());
 
   js_backend_.Reset();
   debug_info_listener_.Reset();
@@ -529,6 +558,7 @@ void SyncBackendHostCore::DoShutdown(bool sync_disabled) {
 void SyncBackendHostCore::DoDestroySyncManager() {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   if (sync_manager_) {
+    DisableDirectoryTypeDebugInfoForwarding();
     save_changes_timer_.reset();
     sync_manager_->RemoveObserver(this);
     sync_manager_->ShutdownOnSyncThread();
@@ -592,12 +622,87 @@ void SyncBackendHostCore::DoRetryConfiguration(
              retry_callback);
 }
 
+void SyncBackendHostCore::SendBufferedProtocolEventsAndEnableForwarding() {
+  DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
+  forward_protocol_events_ = true;
+
+  if (sync_manager_) {
+    // Grab our own copy of the buffered events.
+    // The buffer is not modified by this operation.
+    std::vector<syncer::ProtocolEvent*> buffered_events;
+    sync_manager_->GetBufferedProtocolEvents().release(&buffered_events);
+
+    // Send them all over the fence to the host.
+    for (std::vector<syncer::ProtocolEvent*>::iterator it =
+         buffered_events.begin(); it != buffered_events.end(); ++it) {
+      // TODO(rlarocque): Make it explicit that host_ takes ownership.
+      host_.Call(
+          FROM_HERE,
+          &SyncBackendHostImpl::HandleProtocolEventOnFrontendLoop,
+          *it);
+    }
+  }
+}
+
+void SyncBackendHostCore::DisableProtocolEventForwarding() {
+  forward_protocol_events_ = false;
+}
+
+void SyncBackendHostCore::EnableDirectoryTypeDebugInfoForwarding() {
+  DCHECK(sync_manager_);
+
+  forward_type_info_ = true;
+
+  if (!sync_manager_->HasDirectoryTypeDebugInfoObserver(this))
+    sync_manager_->RegisterDirectoryTypeDebugInfoObserver(this);
+  sync_manager_->RequestEmitDebugInfo();
+}
+
+void SyncBackendHostCore::DisableDirectoryTypeDebugInfoForwarding() {
+  DCHECK(sync_manager_);
+
+  if (!forward_type_info_)
+    return;
+
+  forward_type_info_ = false;
+
+  if (sync_manager_->HasDirectoryTypeDebugInfoObserver(this))
+    sync_manager_->UnregisterDirectoryTypeDebugInfoObserver(this);
+}
+
 void SyncBackendHostCore::DeleteSyncDataFolder() {
   DCHECK_EQ(base::MessageLoop::current(), sync_loop_);
   if (base::DirectoryExists(sync_data_folder_path_)) {
     if (!base::DeleteFile(sync_data_folder_path_, true))
       SLOG(DFATAL) << "Could not delete the Sync Data folder.";
   }
+}
+
+void SyncBackendHostCore::GetAllNodesForTypes(
+    syncer::ModelTypeSet types,
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    base::Callback<void(const std::vector<syncer::ModelType>& type,
+                        ScopedVector<base::ListValue>)> callback) {
+  std::vector<syncer::ModelType> types_vector;
+  ScopedVector<base::ListValue> node_lists;
+
+  syncer::ModelSafeRoutingInfo routes;
+  registrar_->GetModelSafeRoutingInfo(&routes);
+  syncer::ModelTypeSet enabled_types = GetRoutingInfoTypes(routes);
+
+  for (syncer::ModelTypeSet::Iterator it = types.First(); it.Good(); it.Inc()) {
+    types_vector.push_back(it.Get());
+    if (!enabled_types.Has(it.Get())) {
+      node_lists.push_back(new base::ListValue());
+    } else {
+      node_lists.push_back(
+          sync_manager_->GetAllNodesForType(it.Get()).release());
+    }
+  }
+
+  task_runner->PostTask(
+      FROM_HERE,
+      base::Bind(callback, types_vector, base::Passed(&node_lists)));
 }
 
 void SyncBackendHostCore::StartSavingChanges() {

@@ -2,17 +2,24 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""Profiler using data collected from a Monsoon power meter.
+
+http://msoon.com/LabEquipment/PowerMonitor/
+Data collected is a namedtuple of (amps, volts), at 5000 samples/second.
+Output graph plots power in watts over time in seconds.
+"""
+
 import csv
 import multiprocessing
 
 from telemetry.core import exceptions
 from telemetry.core.platform import profiler
 from telemetry.core.platform.profiler import monsoon
+from telemetry.util import statistics
 
 
 def _CollectData(output_path, is_collecting):
   mon = monsoon.Monsoon(wait=False)
-  mon.SetMaxCurrent(2.0)
   # Note: Telemetry requires the device to be connected by USB, but that
   # puts it in charging mode. This increases the power consumption.
   mon.SetUsbPassthrough(1)
@@ -34,7 +41,8 @@ def _CollectData(output_path, is_collecting):
     mon.StopDataCollection()
 
   # Add x-axis labels.
-  plot_data = [(i / 5000., sample(0)) for i, sample in enumerate(samples)]
+  plot_data = [(i / 5000., sample.amps * sample.volts)
+               for i, sample in enumerate(samples)]
 
   # Print data in csv.
   with open(output_path, 'w') as output_file:
@@ -42,17 +50,21 @@ def _CollectData(output_path, is_collecting):
     output_writer.writerows(plot_data)
     output_file.flush()
 
+  power_samples = [s.amps * s.volts for s in samples]
+
+  print 'Monsoon profile power readings in watts:'
+  print ('  Total    = %f' % statistics.TrapezoidalRule(power_samples, 1/5000.))
+  print ('  Average  = %f' % statistics.ArithmeticMean(power_samples) +
+         '+-%f' % statistics.StandardDeviation(power_samples))
+  print ('  Peak     = %f' % max(power_samples))
+  print ('  Duration = %f' % (len(power_samples) / 5000.))
+
   print 'To view the Monsoon profile, run:'
   print ('  echo "set datafile separator \',\'; plot \'%s\' with lines" | '
       'gnuplot --persist' % output_path)
 
 
 class MonsoonProfiler(profiler.Profiler):
-  """Profiler that tracks current using Monsoon Power Monitor.
-
-  http://www.msoon.com/LabEquipment/PowerMonitor/
-  The Monsoon device measures current in amps at 5000 samples/second.
-  """
   def __init__(self, browser_backend, platform_backend, output_path, state):
     super(MonsoonProfiler, self).__init__(
         browser_backend, platform_backend, output_path, state)

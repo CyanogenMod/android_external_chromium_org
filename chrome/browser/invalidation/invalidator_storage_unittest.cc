@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/invalidation/invalidator_storage.h"
+#include "components/invalidation/invalidator_storage.h"
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
@@ -32,7 +32,7 @@ TEST_F(InvalidatorStorageTest, Clear) {
   EXPECT_TRUE(storage.GetBootstrapData().empty());
   EXPECT_TRUE(storage.GetInvalidatorClientId().empty());
 
-  storage.SetInvalidatorClientId("fake_id");
+  storage.ClearAndSetNewClientId("fake_id");
   EXPECT_EQ("fake_id", storage.GetInvalidatorClientId());
 
   storage.SetBootstrapData("test");
@@ -48,14 +48,14 @@ TEST_F(InvalidatorStorageTest, SetGetNotifierClientId) {
   InvalidatorStorage storage(&pref_service_);
   const std::string client_id("fK6eDzAIuKqx9A4+93bljg==");
 
-  storage.SetInvalidatorClientId(client_id);
+  storage.ClearAndSetNewClientId(client_id);
   EXPECT_EQ(client_id, storage.GetInvalidatorClientId());
 }
 
 TEST_F(InvalidatorStorageTest, SetGetBootstrapData) {
   InvalidatorStorage storage(&pref_service_);
   const std::string mess("n\0tK\0\0l\344", 8);
-  ASSERT_FALSE(IsStringUTF8(mess));
+  ASSERT_FALSE(base::IsStringUTF8(mess));
 
   storage.SetBootstrapData(mess);
   EXPECT_EQ(mess, storage.GetBootstrapData());

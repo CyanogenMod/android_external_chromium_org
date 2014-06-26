@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/signed_in_devices/signed_in_devices_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -20,13 +19,8 @@
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/common/extensions/api/signed_in_devices.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 
 using browser_sync::DeviceInfo;
@@ -88,27 +82,28 @@ void SignedInDevicesChangeObserver::OnDeviceInfoChange() {
 
   event->restrict_to_browser_context = profile_;
 
-  ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
+  EventRouter::Get(profile_)->DispatchEventToExtension(
       extension_id_, event.Pass());
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SignedInDevicesManager> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<SignedInDevicesManager> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SignedInDevicesManager>*
-    SignedInDevicesManager::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SignedInDevicesManager>*
+SignedInDevicesManager::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 SignedInDevicesManager::SignedInDevicesManager()
-    : profile_(NULL) {}
+    : profile_(NULL), extension_registry_observer_(this) {
+}
 
-SignedInDevicesManager::SignedInDevicesManager(Profile* profile)
-    : profile_(profile) {
-  extensions::EventRouter* router = extensions::ExtensionSystem::Get(
-      profile_)->event_router();
-
+SignedInDevicesManager::SignedInDevicesManager(content::BrowserContext* context)
+    : profile_(Profile::FromBrowserContext(context)),
+      extension_registry_observer_(this) {
+  extensions::EventRouter* router = extensions::EventRouter::Get(profile_);
   if (router) {
     router->RegisterObserver(
         this, api::signed_in_devices::OnDeviceInfoChange::kEventName);
@@ -116,8 +111,7 @@ SignedInDevicesManager::SignedInDevicesManager(Profile* profile)
 
   // Register for unload event so we could clear all our listeners when
   // extensions have unloaded.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile_->GetOriginalProfile()));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
 }
 
 SignedInDevicesManager::~SignedInDevicesManager() {}
@@ -144,7 +138,6 @@ void SignedInDevicesManager::OnListenerRemoved(
   RemoveChangeObserverForExtension(details.extension_id);
 }
 
-
 void SignedInDevicesManager::RemoveChangeObserverForExtension(
     const std::string& extension_id) {
   for (ScopedVector<SignedInDevicesChangeObserver>::iterator it =
@@ -158,15 +151,11 @@ void SignedInDevicesManager::RemoveChangeObserverForExtension(
   }
 }
 
-void SignedInDevicesManager::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_UNLOADED);
-  UnloadedExtensionInfo* reason =
-      content::Details<UnloadedExtensionInfo>(details).ptr();
-  RemoveChangeObserverForExtension(reason->extension->id());
+void SignedInDevicesManager::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  RemoveChangeObserverForExtension(extension->id());
 }
 
 }  // namespace extensions
-

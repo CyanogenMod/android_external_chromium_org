@@ -37,11 +37,7 @@ class AppWindowInteractiveTest : public extensions::PlatformAppBrowserTest {
  public:
   bool RunAppWindowInteractiveTest(const char* testName) {
     ExtensionTestMessageListener launched_listener("Launched", true);
-    LoadAndLaunchPlatformApp("window_api_interactive");
-    if (!launched_listener.WaitUntilSatisfied()) {
-      message_ = "Did not get the 'Launched' message.";
-      return false;
-    }
+    LoadAndLaunchPlatformApp("window_api_interactive", &launched_listener);
 
     ResultCatcher catcher;
     launched_listener.Reply(testName);
@@ -83,8 +79,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest, ESCLeavesFullscreenWindow) {
 #endif
 
   ExtensionTestMessageListener launched_listener("Launched", true);
-  LoadAndLaunchPlatformApp("leave_fullscreen");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("leave_fullscreen", &launched_listener);
 
   // We start by making sure the window is actually focused.
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
@@ -127,8 +122,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest, ESCLeavesFullscreenDOM) {
 #endif
 
   ExtensionTestMessageListener launched_listener("Launched", true);
-  LoadAndLaunchPlatformApp("leave_fullscreen");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("leave_fullscreen", &launched_listener);
 
   // We start by making sure the window is actually focused.
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
@@ -179,8 +173,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest,
 #endif
 
   ExtensionTestMessageListener launched_listener("Launched", true);
-  LoadAndLaunchPlatformApp("prevent_leave_fullscreen");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("prevent_leave_fullscreen", &launched_listener);
 
   // We start by making sure the window is actually focused.
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
@@ -228,8 +221,7 @@ IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest,
 #endif
 
   ExtensionTestMessageListener launched_listener("Launched", true);
-  LoadAndLaunchPlatformApp("prevent_leave_fullscreen");
-  ASSERT_TRUE(launched_listener.WaitUntilSatisfied());
+  LoadAndLaunchPlatformApp("prevent_leave_fullscreen", &launched_listener);
 
   // We start by making sure the window is actually focused.
   ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
@@ -250,6 +242,57 @@ IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest,
 
     WaitUntilKeyFocus();
     ASSERT_TRUE(SimulateKeyPress(ui::VKEY_A));
+
+    fs_changed.Wait();
+  }
+
+  // Depending on the platform, going fullscreen might create an animation.
+  // We want to make sure that the ESC key we will send next is actually going
+  // to be received and the application might not receive key events during the
+  // animation so we should wait for the key focus to be back.
+  WaitUntilKeyFocus();
+
+  ASSERT_TRUE(SimulateKeyPress(ui::VKEY_ESCAPE));
+
+  ExtensionTestMessageListener second_key_listener("B_KEY_RECEIVED", false);
+
+  ASSERT_TRUE(SimulateKeyPress(ui::VKEY_B));
+
+  ASSERT_TRUE(second_key_listener.WaitUntilSatisfied());
+
+  // We assume that at that point, if we had to leave fullscreen, we should be.
+  // However, by nature, we can not guarantee that and given that we do test
+  // that nothing happens, we might end up with random-success when the feature
+  // is broken.
+  EXPECT_TRUE(GetFirstAppWindow()->GetBaseWindow()->IsFullscreen());
+}
+
+// This test is duplicated from ESCDoesNotLeaveFullscreenWindow.
+// It runs the same test, but uses the old permission names: 'fullscreen'
+// and 'overrideEscFullscreen'.
+IN_PROC_BROWSER_TEST_F(AppWindowInteractiveTest,
+                       ESCDoesNotLeaveFullscreenOldPermission) {
+// This test is flaky on MacOS 10.6.
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  if (base::mac::IsOSSnowLeopard())
+    return;
+#endif
+
+  ExtensionTestMessageListener launched_listener("Launched", true);
+  LoadAndLaunchPlatformApp("prevent_leave_fullscreen_old", &launched_listener);
+
+  // We start by making sure the window is actually focused.
+  ASSERT_TRUE(ui_test_utils::ShowAndFocusNativeWindow(
+      GetFirstAppWindow()->GetNativeWindow()));
+
+  // When receiving the reply, the application will try to go fullscreen using
+  // the Window API but there is no synchronous way to know if that actually
+  // succeeded. Also, failure will not be notified. A failure case will only be
+  // known with a timeout.
+  {
+    FullscreenChangeWaiter fs_changed(GetFirstAppWindow()->GetBaseWindow());
+
+    launched_listener.Reply("window");
 
     fs_changed.Wait();
   }

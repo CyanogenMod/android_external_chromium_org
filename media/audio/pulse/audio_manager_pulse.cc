@@ -35,6 +35,13 @@ using pulse::WaitForOperationCompletion;
 // Maximum number of output streams that can be open simultaneously.
 static const int kMaxOutputStreams = 50;
 
+// Define bounds for the output buffer size.
+static const int kMinimumOutputBufferSize = 512;
+static const int kMaximumOutputBufferSize = 8192;
+
+// Default input buffer size.
+static const int kDefaultInputBufferSize = 1024;
+
 static const base::FilePath::CharType kPulseLib[] =
     FILE_PATH_LITERAL("libpulse.so.0");
 
@@ -121,12 +128,14 @@ void AudioManagerPulse::GetAudioOutputDeviceNames(
 
 AudioParameters AudioManagerPulse::GetInputStreamParameters(
     const std::string& device_id) {
-  static const int kDefaultInputBufferSize = 1024;
+  int user_buffer_size = GetUserBufferSize();
+  int buffer_size = user_buffer_size ?
+      user_buffer_size : kDefaultInputBufferSize;
 
   // TODO(xians): add support for querying native channel layout for pulse.
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
-      GetNativeSampleRate(), 16, kDefaultInputBufferSize);
+      GetNativeSampleRate(), 16, buffer_size);
 }
 
 AudioOutputStream* AudioManagerPulse::MakeLinearOutputStream(
@@ -160,22 +169,20 @@ AudioParameters AudioManagerPulse::GetPreferredOutputStreamParameters(
     const std::string& output_device_id,
     const AudioParameters& input_params) {
   // TODO(tommi): Support |output_device_id|.
-  DLOG_IF(ERROR, !output_device_id.empty()) << "Not implemented!";
-  static const int kDefaultOutputBufferSize = 512;
+  VLOG_IF(0, !output_device_id.empty()) << "Not implemented!";
 
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
-  int buffer_size = kDefaultOutputBufferSize;
+  int buffer_size = kMinimumOutputBufferSize;
   int bits_per_sample = 16;
   int input_channels = 0;
-  int sample_rate;
+  int sample_rate = GetNativeSampleRate();
   if (input_params.IsValid()) {
     bits_per_sample = input_params.bits_per_sample();
     channel_layout = input_params.channel_layout();
     input_channels = input_params.input_channels();
-    buffer_size = std::min(buffer_size, input_params.frames_per_buffer());
-    sample_rate = input_params.sample_rate();
-  } else {
-    sample_rate = GetNativeSampleRate();
+    buffer_size =
+        std::min(kMaximumOutputBufferSize,
+                 std::max(buffer_size, input_params.frames_per_buffer()));
   }
 
   int user_buffer_size = GetUserBufferSize();
@@ -220,7 +227,7 @@ bool AudioManagerPulse::Init() {
   // Check if the pulse library is avialbale.
   paths[kModulePulse].push_back(kPulseLib);
   if (!InitializeStubs(paths)) {
-    DLOG(WARNING) << "Failed on loading the Pulse library and symbols";
+    VLOG(1) << "Failed on loading the Pulse library and symbols";
     return false;
   }
 #endif  // defined(DLOPEN_PULSEAUDIO)
@@ -248,8 +255,8 @@ bool AudioManagerPulse::Init() {
   pa_context_set_state_callback(input_context_, &pulse::ContextStateCallback,
                                 input_mainloop_);
   if (pa_context_connect(input_context_, NULL, PA_CONTEXT_NOAUTOSPAWN, NULL)) {
-    DLOG(ERROR) << "Failed to connect to the context.  Error: "
-                << pa_strerror(pa_context_errno(input_context_));
+    VLOG(0) << "Failed to connect to the context.  Error: "
+            << pa_strerror(pa_context_errno(input_context_));
     return false;
   }
 

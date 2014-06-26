@@ -32,6 +32,10 @@
 #include "base/android/jni_string.h"
 #endif
 
+#if defined(USE_AURA)
+#include "ui/events/platform/platform_event_source.h"
+#endif
+
 using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
 using base::UTF16ToUTF8;
@@ -39,11 +43,30 @@ using base::UTF16ToUTF8;
 namespace ui {
 
 class ClipboardTest : public PlatformTest {
+ public:
+#if defined(USE_AURA)
+  ClipboardTest() : event_source_(ui::PlatformEventSource::CreateDefault()) {}
+#else
+  ClipboardTest() {}
+#endif
+
+  static void WriteObjectsToClipboard(ui::Clipboard* clipboard,
+                                      const Clipboard::ObjectMap& objects) {
+    clipboard->WriteObjects(ui::CLIPBOARD_TYPE_COPY_PASTE, objects);
+  }
+
  protected:
   Clipboard& clipboard() { return clipboard_; }
 
+  void WriteObjectsToClipboard(const Clipboard::ObjectMap& objects) {
+    WriteObjectsToClipboard(&clipboard(), objects);
+  }
+
  private:
   base::MessageLoopForUI message_loop_;
+#if defined(USE_AURA)
+  scoped_ptr<PlatformEventSource> event_source_;
+#endif
   Clipboard clipboard_;
 };
 
@@ -136,7 +159,9 @@ TEST_F(ClipboardTest, RTFTest) {
   EXPECT_EQ(rtf, result);
 }
 
-#if defined(TOOLKIT_GTK)
+// TODO(dnicoara) Enable test once Ozone implements clipboard support:
+// crbug.com/361707
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && !defined(USE_OZONE)
 TEST_F(ClipboardTest, MultipleBufferTest) {
   base::string16 text(ASCIIToUTF16("Standard")), text_result;
   base::string16 markup(ASCIIToUTF16("<string>Selection</string>"));
@@ -231,27 +256,6 @@ TEST_F(ClipboardTest, UniodeHTMLTest) {
 }
 #endif  // defined(OS_WIN)
 
-#if defined(TOOLKIT_GTK)
-// Regression test for crbug.com/56298 (pasting empty HTML crashes Linux).
-TEST_F(ClipboardTest, EmptyHTMLTest) {
-  // ScopedClipboardWriter doesn't let us write empty data to the clipboard.
-  clipboard().clipboard_data_ = new Clipboard::TargetMap();
-  // The 1 is so the compiler doesn't warn about allocating an empty array.
-  char* empty = new char[1];
-  clipboard().InsertMapping("text/html", empty, 0U);
-  clipboard().SetGtkClipboard(CLIPBOARD_TYPE_COPY_PASTE);
-
-  EXPECT_TRUE(clipboard().IsFormatAvailable(Clipboard::GetHtmlFormatType(),
-                                            CLIPBOARD_TYPE_COPY_PASTE));
-  base::string16 markup_result;
-  std::string url_result;
-  uint32 ignored;
-  clipboard().ReadHTML(CLIPBOARD_TYPE_COPY_PASTE, &markup_result, &url_result,
-                       &ignored, &ignored);
-  EXPECT_PRED2(MarkupMatches, base::string16(), markup_result);
-}
-#endif
-
 // TODO(estade): Port the following test (decide what target we use for urls)
 #if !defined(OS_POSIX) || defined(OS_MACOSX)
 TEST_F(ClipboardTest, BookmarkTest) {
@@ -335,6 +339,9 @@ TEST_F(ClipboardTest, URLTest) {
 #endif
 }
 
+// TODO(dcheng): The tests for copying to the clipboard also test IPC
+// interaction... consider moving them to a different layer so we can
+// consolidate the validation logic.
 // Note that |bitmap_data| is not premultiplied!
 static void TestBitmapWrite(Clipboard* clipboard,
                             const uint32* bitmap_data,
@@ -376,7 +383,7 @@ static void TestBitmapWrite(Clipboard* clipboard,
   ASSERT_TRUE(Clipboard::ReplaceSharedMemHandle(
       &objects, handle_to_share, current_process));
 
-  clipboard->WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  ClipboardTest::WriteObjectsToClipboard(clipboard, objects);
 
   EXPECT_TRUE(clipboard->IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                            CLIPBOARD_TYPE_COPY_PASTE));
@@ -388,19 +395,8 @@ static void TestBitmapWrite(Clipboard* clipboard,
     for (int i = 0; i < image.width(); ++i) {
       int offset = i + j * image.width();
       uint32 pixel = SkPreMultiplyColor(bitmap_data[offset]);
-#if defined(TOOLKIT_GTK)
-      // Non-Aura GTK doesn't support alpha transparency. Instead, the alpha
-      // channel is always set to 0xFF - see http://crbug.com/154573.
-      // However, since we premultiplied above, we must also premultiply here
-      // before unpremultiplying and setting alpha to 0xFF; otherwise, the
-      // results will not match GTK's.
-      EXPECT_EQ(
-          SkUnPreMultiply::PMColorToColor(pixel) | 0xFF000000, row_address[i])
-          << "i = " << i << ", j = " << j;
-#else
       EXPECT_EQ(pixel, row_address[i])
           << "i = " << i << ", j = " << j;
-#endif  // defined(TOOLKIT_GTK)
     }
   }
 }
@@ -461,7 +457,7 @@ TEST_F(ClipboardTest, SharedBitmapWithTwoNegativeSizes) {
   Clipboard::ObjectMap objects;
   objects[Clipboard::CBF_SMBITMAP] = params;
 
-  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  WriteObjectsToClipboard(objects);
   EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                              CLIPBOARD_TYPE_COPY_PASTE));
 }
@@ -484,7 +480,7 @@ TEST_F(ClipboardTest, SharedBitmapWithOneNegativeSize) {
   Clipboard::ObjectMap objects;
   objects[Clipboard::CBF_SMBITMAP] = params;
 
-  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  WriteObjectsToClipboard(objects);
   EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                              CLIPBOARD_TYPE_COPY_PASTE));
 }
@@ -509,7 +505,7 @@ TEST_F(ClipboardTest, BitmapWithSuperSize) {
   Clipboard::ObjectMap objects;
   objects[Clipboard::CBF_SMBITMAP] = params;
 
-  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  WriteObjectsToClipboard(objects);
   EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                              CLIPBOARD_TYPE_COPY_PASTE));
 }
@@ -533,7 +529,7 @@ TEST_F(ClipboardTest, BitmapWithSuperSize2) {
   Clipboard::ObjectMap objects;
   objects[Clipboard::CBF_SMBITMAP] = params;
 
-  clipboard().WriteObjects(CLIPBOARD_TYPE_COPY_PASTE, objects);
+  WriteObjectsToClipboard(objects);
   EXPECT_FALSE(clipboard().IsFormatAvailable(Clipboard::GetBitmapFormatType(),
                                              CLIPBOARD_TYPE_COPY_PASTE));
 }

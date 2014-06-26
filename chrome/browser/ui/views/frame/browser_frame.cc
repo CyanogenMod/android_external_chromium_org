@@ -11,6 +11,7 @@
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/browser/ui/ash/ash_init.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window_state.h"
@@ -25,30 +26,26 @@
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/theme_provider.h"
+#include "ui/events/event_handler.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/widget/native_widget.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include "chrome/browser/ui/views/frame/glass_browser_frame_view.h"
-#include "ui/views/widget/native_widget_win.h"
-#endif
-
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 #include "chrome/browser/shell_integration_linux.h"
 #endif
 
-#if defined(USE_ASH)
-#include "chrome/browser/ui/ash/ash_init.h"
+#if defined(OS_CHROMEOS)
+#include "ash/session/session_state_delegate.h"
 #endif
 
-#if defined(OS_CHROMEOS)
-#include "ash/session_state_delegate.h"
+#if defined(USE_X11)
+#include "chrome/browser/ui/views/frame/browser_command_handler_x11.h"
 #endif
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -65,19 +62,21 @@ BrowserFrame::BrowserFrame(BrowserView* browser_view)
   set_is_secondary_widget(false);
   // Don't focus anything on creation, selecting a tab will set the focus.
   set_focus_on_creation(false);
+
+#if defined(USE_X11)
+  browser_command_handler_.reset(
+      new BrowserCommandHandlerX11(browser_view_->browser()));
+#endif
 }
 
 BrowserFrame::~BrowserFrame() {
+  if (browser_command_handler_ && GetNativeView())
+    GetNativeView()->RemovePreTargetHandler(browser_command_handler_.get());
 }
 
 // static
 const gfx::FontList& BrowserFrame::GetTitleFontList() {
-#if !defined(OS_WIN) || defined(USE_AURA)
   static const gfx::FontList* title_font_list = new gfx::FontList();
-#else
-  static const gfx::FontList* title_font_list =
-      new gfx::FontList(views::NativeWidgetWin::GetWindowTitleFontList());
-#endif
   ANNOTATE_LEAKING_OBJECT_PTR(title_font_list);
   return *title_font_list;
 }
@@ -101,16 +100,15 @@ void BrowserFrame::InitBrowserFrame() {
                                              &params.bounds,
                                              &params.show_state);
   }
-#if defined(USE_ASH)
+
   if (browser_view_->browser()->host_desktop_type() ==
       chrome::HOST_DESKTOP_TYPE_ASH || chrome::ShouldOpenAshOnStartup()) {
     params.context = ash::Shell::GetPrimaryRootWindow();
 #if defined(OS_WIN)
-   // If this window is under ASH on Windows, we need it to be translucent.
-   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+    // If this window is under ASH on Windows, we need it to be translucent.
+    params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
 #endif
   }
-#endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Set up a custom WM_CLASS for some sorts of window types. This allows
@@ -118,11 +116,11 @@ void BrowserFrame::InitBrowserFrame() {
   // windows and e.g app windows.
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
   const Browser& browser = *browser_view_->browser();
-  params.wm_class_class = ShellIntegrationLinux::GetProgramClassName();
+  params.wm_class_class = shell_integration_linux::GetProgramClassName();
   params.wm_class_name = params.wm_class_class;
   if (browser.is_app() && !browser.is_devtools()) {
     // This window is a hosted app or v1 packaged app.
-    // NOTE: v2 packaged app windows are created by NativeAppWindowViews.
+    // NOTE: v2 packaged app windows are created by ChromeNativeAppWindowViews.
     params.wm_class_name = web_app::GetWMClassFromAppName(browser.app_name());
   } else if (command_line.HasSwitch(switches::kUserDataDir)) {
     // Set the class name to e.g. "Chrome (/tmp/my-user-data)".  The
@@ -149,6 +147,9 @@ void BrowserFrame::InitBrowserFrame() {
     DCHECK(non_client_view());
     non_client_view()->set_context_menu_controller(this);
   }
+
+  if (browser_command_handler_)
+    GetNativeWindow()->AddPreTargetHandler(browser_command_handler_.get());
 }
 
 void BrowserFrame::SetThemeProvider(scoped_ptr<ui::ThemeProvider> provider) {
@@ -161,7 +162,9 @@ int BrowserFrame::GetMinimizeButtonOffset() const {
 }
 
 gfx::Rect BrowserFrame::GetBoundsForTabStrip(views::View* tabstrip) const {
-  return browser_frame_view_->GetBoundsForTabStrip(tabstrip);
+  // This can be invoked before |browser_frame_view_| has been set.
+  return browser_frame_view_ ?
+      browser_frame_view_->GetBoundsForTabStrip(tabstrip) : gfx::Rect();
 }
 
 int BrowserFrame::GetTopInset() const {
@@ -181,7 +184,17 @@ views::View* BrowserFrame::GetFrameView() const {
 }
 
 bool BrowserFrame::UseCustomFrame() const {
-  return use_custom_frame_pref_.GetValue();
+  return use_custom_frame_pref_.GetValue() &&
+      browser_view_->IsBrowserTypeNormal();
+}
+
+bool BrowserFrame::ShouldSaveWindowPlacement() const {
+  return native_browser_frame_->ShouldSaveWindowPlacement();
+}
+
+void BrowserFrame::GetWindowPlacement(gfx::Rect* bounds,
+                                      ui::WindowShowState* show_state) const {
+  return native_browser_frame_->GetWindowPlacement(bounds, show_state);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -199,7 +212,7 @@ views::NonClientFrameView* BrowserFrame::CreateNonClientFrameView() {
 }
 
 bool BrowserFrame::GetAccelerator(int command_id,
-                                  ui::Accelerator* accelerator) {
+                                  ui::Accelerator* accelerator) const {
   return browser_view_->GetAccelerator(command_id, accelerator);
 }
 
@@ -225,10 +238,10 @@ void BrowserFrame::OnNativeWidgetActivationChanged(bool active) {
   if (active) {
     // When running under remote desktop, if the remote desktop client is not
     // active on the users desktop, then none of the windows contained in the
-    // remote desktop will be activated.  However, NativeWidgetWin::Activate()
-    // will still bring this browser window to the foreground.  We explicitly
-    // set ourselves as the last active browser window to ensure that we get
-    // treated as such by the rest of Chrome.
+    // remote desktop will be activated.  However, NativeWidget::Activate() will
+    // still bring this browser window to the foreground.  We explicitly set
+    // ourselves as the last active browser window to ensure that we get treated
+    // as such by the rest of Chrome.
     BrowserList::SetLastActive(browser_view_->browser());
   }
   Widget::OnNativeWidgetActivationChanged(active);
@@ -249,12 +262,16 @@ void BrowserFrame::ShowContextMenuForView(views::View* source,
   int hit_test = non_client_view()->NonClientHitTest(point_in_view_coords);
   if (hit_test == HTCAPTION || hit_test == HTNOWHERE) {
     menu_runner_.reset(new views::MenuRunner(GetSystemMenuModel()));
-    if (menu_runner_->RunMenuAt(source->GetWidget(), NULL,
-          gfx::Rect(p, gfx::Size(0,0)), views::MenuItemView::TOPLEFT,
-          source_type,
-          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-        views::MenuRunner::MENU_DELETED)
+    if (menu_runner_->RunMenuAt(source->GetWidget(),
+                                NULL,
+                                gfx::Rect(p, gfx::Size(0, 0)),
+                                views::MENU_ANCHOR_TOPLEFT,
+                                source_type,
+                                views::MenuRunner::HAS_MNEMONICS |
+                                    views::MenuRunner::CONTEXT_MENU) ==
+        views::MenuRunner::MENU_DELETED) {
       return;
+    }
   }
 }
 
@@ -286,11 +303,9 @@ NewAvatarButton* BrowserFrame::GetNewAvatarMenuButton() {
   return browser_frame_view_->new_avatar_button();
 }
 
-#if !defined(OS_WIN) || defined(USE_AURA)
 bool BrowserFrame::ShouldLeaveOffsetNearTopBorder() {
   return !IsMaximized();
 }
-#endif  // OS_WIN
 
 void BrowserFrame::OnUseCustomChromeFrameChanged() {
   // Tell the window manager to add or remove system borders.

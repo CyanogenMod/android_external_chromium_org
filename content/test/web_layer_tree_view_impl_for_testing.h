@@ -34,6 +34,7 @@ class WebLayerTreeViewImplForTesting
   virtual void clearRootLayer();
   virtual void setViewportSize(const blink::WebSize& unused_deprecated,
                                const blink::WebSize& device_viewport_size);
+  virtual void setViewportSize(const blink::WebSize& device_viewport_size);
   virtual blink::WebSize layoutViewportSize() const;
   virtual blink::WebSize deviceViewportSize() const;
   virtual void setDeviceScaleFactor(float scale_factor);
@@ -51,7 +52,6 @@ class WebLayerTreeViewImplForTesting
   virtual void setNeedsAnimate();
   virtual bool commitRequested() const;
   virtual void didStopFlinging();
-  virtual bool compositeAndReadback(void* pixels, const blink::WebRect& rect);
   virtual void finishAllRendering();
   virtual void setDeferCommits(bool defer_commits);
   virtual void registerViewportLayers(
@@ -69,13 +69,11 @@ class WebLayerTreeViewImplForTesting
                                    float page_scale) OVERRIDE;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE;
-  virtual void DidInitializeOutputSurface(bool success) OVERRIDE {}
+  virtual void DidInitializeOutputSurface() OVERRIDE {}
   virtual void WillCommit() OVERRIDE {}
   virtual void DidCommit() OVERRIDE {}
   virtual void DidCommitAndDrawFrame() OVERRIDE {}
   virtual void DidCompleteSwapBuffers() OVERRIDE {}
-  virtual scoped_refptr<cc::ContextProvider>
-      OffscreenContextProvider() OVERRIDE;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
   virtual void ScheduleComposite() OVERRIDE {}

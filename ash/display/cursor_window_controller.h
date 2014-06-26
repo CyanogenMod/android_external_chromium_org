@@ -10,11 +10,9 @@
 #include "ui/gfx/display.h"
 
 namespace ash {
-namespace test{
+namespace test {
 class MirrorWindowTestApi;
 }
-
-namespace internal {
 
 class CursorWindowDelegate;
 
@@ -84,7 +82,6 @@ class CursorWindowController {
   DISALLOW_COPY_AND_ASSIGN(CursorWindowController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_CURSOR_WINDOW_CONTROLLER_H_

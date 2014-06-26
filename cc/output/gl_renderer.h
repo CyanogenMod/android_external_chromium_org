@@ -7,6 +7,7 @@
 
 #include "base/cancelable_callback.h"
 #include "cc/base/cc_export.h"
+#include "cc/base/scoped_ptr_deque.h"
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/output/direct_renderer.h"
 #include "cc/output/gl_renderer_draw_cache.h"
@@ -44,6 +45,8 @@ class ScopedEnsureFramebufferAllocation;
 // Class that handles drawing of composited render layers using GL.
 class CC_EXPORT GLRenderer : public DirectRenderer {
  public:
+  class ScopedUseGrContext;
+
   static scoped_ptr<GLRenderer> Create(
       RendererClient* client,
       const LayerTreeSettings* settings,
@@ -62,16 +65,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   virtual void DoNoOp() OVERRIDE;
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
 
-  virtual void GetFramebufferPixels(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
-
   virtual bool IsContextLost() OVERRIDE;
-
-  virtual void SetVisible(bool visible) OVERRIDE;
-
-  virtual void SendManagedMemoryStats(size_t bytes_visible,
-                                      size_t bytes_visible_and_nearby,
-                                      size_t bytes_allocated) OVERRIDE;
 
   static void DebugGLCall(gpu::gles2::GLES2Interface* gl,
                           const char* command,
@@ -86,8 +80,9 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
              TextureMailboxDeleter* texture_mailbox_deleter,
              int highp_threshold_min);
 
+  virtual void DidChangeVisibility() OVERRIDE;
+
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
-  void InitializeGrContext();
 
   const gfx::QuadF& SharedGeometryQuad() const { return shared_geometry_quad_; }
   const GeometryBinding* SharedGeometry() const {
@@ -199,26 +194,24 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   typedef base::Callback<void(scoped_ptr<CopyOutputRequest> copy_request,
                               bool success)>
       AsyncGetFramebufferPixelsCleanupCallback;
-  void DoGetFramebufferPixels(
-      uint8* pixels,
-      const gfx::Rect& window_rect,
-      const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback);
-  void FinishedReadback(
-      const AsyncGetFramebufferPixelsCleanupCallback& cleanup_callback,
-      unsigned source_buffer,
-      unsigned query,
-      uint8_t* dest_pixels,
-      const gfx::Size& size);
-  void PassOnSkBitmap(scoped_ptr<SkBitmap> bitmap,
-                      scoped_ptr<SkAutoLockPixels> lock,
-                      scoped_ptr<CopyOutputRequest> request,
-                      bool success);
+  void FinishedReadback(unsigned source_buffer,
+                        unsigned query,
+                        const gfx::Size& size);
 
   void ReinitializeGLState();
+  void RestoreGLState();
+  void RestoreFramebuffer(DrawingFrame* frame);
 
   virtual void DiscardBackbuffer() OVERRIDE;
   virtual void EnsureBackbuffer() OVERRIDE;
   void EnforceMemoryPolicy();
+
+  void ScheduleOverlays(DrawingFrame* frame);
+
+  typedef ScopedPtrVector<ResourceProvider::ScopedReadLockGL>
+      OverlayResourceLockList;
+  OverlayResourceLockList pending_overlay_resources_;
+  OverlayResourceLockList in_use_overlay_resources_;
 
   RendererCapabilitiesImpl capabilities_;
 
@@ -286,10 +279,10 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   // Video shaders.
   typedef ProgramBinding<VertexShaderVideoTransform, FragmentShaderRGBATex>
       VideoStreamTextureProgram;
-  typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVVideo>
-      VideoYUVProgram;
-  typedef ProgramBinding<VertexShaderPosTexYUVStretch, FragmentShaderYUVAVideo>
-      VideoYUVAProgram;
+  typedef ProgramBinding<VertexShaderPosTexYUVStretchOffset,
+                         FragmentShaderYUVVideo> VideoYUVProgram;
+  typedef ProgramBinding<VertexShaderPosTexYUVStretchOffset,
+                         FragmentShaderYUVAVideo> VideoYUVAProgram;
 
   // Special purpose / effects shaders.
   typedef ProgramBinding<VertexShaderPos, FragmentShaderColor>
@@ -409,7 +402,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   gfx::Rect viewport_;
   bool is_backbuffer_discarded_;
   bool is_using_bind_uniform_;
-  bool visible_;
   bool is_scissor_enabled_;
   bool scissor_rect_needs_reset_;
   bool stencil_shadow_;
@@ -424,7 +416,11 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   scoped_ptr<ResourceProvider::ScopedWriteLockGL> current_framebuffer_lock_;
 
-  scoped_refptr<ResourceProvider::Fence> last_swap_fence_;
+  class SyncQuery;
+  ScopedPtrDeque<SyncQuery> pending_sync_queries_;
+  ScopedPtrDeque<SyncQuery> available_sync_queries_;
+  scoped_ptr<SyncQuery> current_sync_query_;
+  bool use_sync_query_;
 
   SkBitmap on_demand_tile_raster_bitmap_;
   ResourceProvider::ResourceId on_demand_tile_raster_resource_id_;

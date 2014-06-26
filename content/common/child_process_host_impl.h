@@ -26,6 +26,10 @@ namespace gfx {
 struct GpuMemoryBufferHandle;
 }
 
+namespace IPC {
+class MessageFilter;
+}
+
 namespace content {
 class ChildProcessHostDelegate;
 
@@ -58,7 +62,7 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   virtual void ForceShutdown() OVERRIDE;
   virtual std::string CreateChannel() OVERRIDE;
   virtual bool IsChannelOpening() OVERRIDE;
-  virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
+  virtual void AddFilter(IPC::MessageFilter* filter) OVERRIDE;
 #if defined(OS_POSIX)
   virtual int TakeClientFileDescriptor() OVERRIDE;
 #endif
@@ -72,6 +76,7 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
+  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Message handlers:
   void OnShutdownRequest();
@@ -80,6 +85,7 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   void OnAllocateGpuMemoryBuffer(uint32 width,
                                  uint32 height,
                                  uint32 internalformat,
+                                 uint32 usage,
                                  gfx::GpuMemoryBufferHandle* handle);
 
   ChildProcessHostDelegate* delegate_;
@@ -91,7 +97,7 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   // Holds all the IPC message filters.  Since this object lives on the IO
   // thread, we don't have a IPC::ChannelProxy and so we manage filters
   // manually.
-  std::vector<scoped_refptr<IPC::ChannelProxy::MessageFilter> > filters_;
+  std::vector<scoped_refptr<IPC::MessageFilter> > filters_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildProcessHostImpl);
 };

@@ -5,32 +5,50 @@
 #ifndef CONTENT_SHELL_RENDERER_TEST_RUNNER_GAMEPAD_CONTROLLER_H_
 #define CONTENT_SHELL_RENDERER_TEST_RUNNER_GAMEPAD_CONTROLLER_H_
 
+#include <map>
+
 #include "base/memory/weak_ptr.h"
+#include "content/public/renderer/renderer_gamepad_provider.h"
 #include "third_party/WebKit/public/platform/WebGamepads.h"
 
 namespace blink {
 class WebFrame;
-}
-
-namespace WebTestRunner {
-class WebTestDelegate;
+class WebGamepadListener;
 }
 
 namespace content {
 
-class GamepadController : public base::SupportsWeakPtr<GamepadController> {
+class WebTestDelegate;
+
+class GamepadController
+    : public base::SupportsWeakPtr<GamepadController>,
+      public RendererGamepadProvider {
  public:
   GamepadController();
-  ~GamepadController();
+  virtual ~GamepadController();
 
   void Reset();
   void Install(blink::WebFrame* frame);
-  void SetDelegate(WebTestRunner::WebTestDelegate* delegate);
+  void SetDelegate(WebTestDelegate* delegate);
+
+  // RendererGamepadProvider implementation.
+  virtual void SampleGamepads(
+      blink::WebGamepads& gamepads) OVERRIDE;
+  virtual void SetGamepadListener(
+      blink::WebGamepadListener* listener) OVERRIDE;
 
  private:
   friend class GamepadControllerBindings;
 
+  // TODO(b.kelemen): for historical reasons Connect just initializes the
+  // object. The 'gamepadconnected' event will be dispatched via
+  // DispatchConnected. Tests for connected events need to first connect(),
+  // then set the gamepad data and finally call dispatchConnected().
+  // We should consider renaming Connect to Init and DispatchConnected to
+  // Connect and at the same time updating all the gamepad tests.
   void Connect(int index);
+  void DispatchConnected(int index);
+
   void Disconnect(int index);
   void SetId(int index, const std::string& src);
   void SetButtonCount(int index, int buttons);
@@ -40,7 +58,10 @@ class GamepadController : public base::SupportsWeakPtr<GamepadController> {
 
   blink::WebGamepads gamepads_;
 
-  WebTestRunner::WebTestDelegate* delegate_;
+  blink::WebGamepadListener* listener_;
+
+  // Mapping from gamepad index to connection state.
+  std::map<int, bool> pending_changes_;
 
   base::WeakPtrFactory<GamepadController> weak_factory_;
 

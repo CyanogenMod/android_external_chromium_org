@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/pp_content_decryptor.idl modified Mon Dec 30 15:55:57 2013. */
+/* From private/pp_content_decryptor.idl modified Thu Jun  5 13:39:15 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
 #define PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
@@ -366,7 +366,8 @@ PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_AudioDecoderConfig, 20);
 typedef enum {
   PP_VIDEOCODEC_UNKNOWN = 0,
   PP_VIDEOCODEC_VP8 = 1,
-  PP_VIDEOCODEC_H264 = 2
+  PP_VIDEOCODEC_H264 = 2,
+  PP_VIDEOCODEC_VP9 = 3
 } PP_VideoCodec;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoCodec, 4);
 
@@ -377,7 +378,7 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoCodec, 4);
  */
 typedef enum {
   PP_VIDEOCODECPROFILE_UNKNOWN = 0,
-  PP_VIDEOCODECPROFILE_VP8_MAIN = 1,
+  PP_VIDEOCODECPROFILE_NOT_NEEDED = 1,
   PP_VIDEOCODECPROFILE_H264_BASELINE = 2,
   PP_VIDEOCODECPROFILE_H264_MAIN = 3,
   PP_VIDEOCODECPROFILE_H264_EXTENDED = 4,
@@ -448,6 +449,29 @@ typedef enum {
   PP_DECRYPTORSTREAMTYPE_VIDEO = 1
 } PP_DecryptorStreamType;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptorStreamType, 4);
+
+/**
+ * <code>PP_SessionType</code> contains session type constants.
+ */
+typedef enum {
+  PP_SESSIONTYPE_TEMPORARY = 0,
+  PP_SESSIONTYPE_PERSISTENT = 1
+} PP_SessionType;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_SessionType, 4);
+
+/**
+ * <code>PP_CdmExceptionCode</code> contains exception code constants.
+ */
+typedef enum {
+  PP_CDMEXCEPTIONCODE_NOTSUPPORTEDERROR = 1,
+  PP_CDMEXCEPTIONCODE_INVALIDSTATEERROR = 2,
+  PP_CDMEXCEPTIONCODE_INVALIDACCESSERROR = 3,
+  PP_CDMEXCEPTIONCODE_QUOTAEXCEEDEDERROR = 4,
+  PP_CDMEXCEPTIONCODE_UNKNOWNERROR = 5,
+  PP_CDMEXCEPTIONCODE_CLIENTERROR = 6,
+  PP_CDMEXCEPTIONCODE_OUTPUTERROR = 7
+} PP_CdmExceptionCode;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CdmExceptionCode, 4);
 /**
  * @}
  */

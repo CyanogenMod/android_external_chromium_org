@@ -45,6 +45,8 @@ class AppListServiceDisabled : public AppListService {
     return NULL;
   }
 
+  virtual void CreateShortcut() OVERRIDE {}
+
   virtual gfx::NativeWindow GetAppListWindow() OVERRIDE {
     return NULL;
   }
@@ -66,4 +68,4 @@ void AppListService::InitAll(Profile* initial_profile) {}
 void AppListService::RegisterPrefs(PrefRegistrySimple* registry) {}
 
 // static
-void AppListService::RecordShowTimings(const CommandLine& command_line) {}
+void AppListService::RecordShowTimings(const base::CommandLine& command_line) {}

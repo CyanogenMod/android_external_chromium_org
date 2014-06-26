@@ -7,7 +7,8 @@
 
 #include "base/callback_forward.h"
 #include "chrome/browser/lifetime/browser_close_manager.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/signin/signin_header_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
@@ -45,6 +46,7 @@ struct SSLStatus;
 }
 
 namespace extensions {
+class Command;
 class Extension;
 }
 
@@ -225,13 +227,9 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void ShowBookmarkAppBubble(const WebApplicationInfo& web_app_info,
                                      const std::string& extension_id) = 0;
 
-  // Shows the bookmark prompt.
-  // TODO(yosin): Make ShowBookmarkPrompt pure virtual.
-  virtual void ShowBookmarkPrompt() {}
-
   // Shows the translate bubble.
   virtual void ShowTranslateBubble(content::WebContents* contents,
-                                   TranslateTabHelper::TranslateStep step,
+                                   translate::TranslateStep step,
                                    TranslateErrors::Type error_type) = 0;
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
@@ -366,8 +364,16 @@ class BrowserWindow : public ui::BaseWindow {
   virtual void ShowAvatarBubble(content::WebContents* web_contents,
                                 const gfx::Rect& rect) = 0;
 
-  // Shows the avatar bubble on the window frame off of the avatar button.
-  virtual void ShowAvatarBubbleFromAvatarButton() = 0;
+  // Shows the avatar bubble on the window frame off of the avatar button with
+  // the given mode. The Service Type specified by GAIA is provided as well.
+  enum AvatarBubbleMode {
+    AVATAR_BUBBLE_MODE_DEFAULT,
+    AVATAR_BUBBLE_MODE_ACCOUNT_MANAGEMENT,
+    AVATAR_BUBBLE_MODE_SIGNIN,
+    AVATAR_BUBBLE_MODE_REAUTH,
+  };
+  virtual void ShowAvatarBubbleFromAvatarButton(AvatarBubbleMode mode,
+      const signin::ManageAccountsParams& manage_accounts_params) = 0;
 
   // Show bubble for password generation positioned relative to |rect|. The
   // subclasses implementing this interface do not own the |password_generator|
@@ -386,6 +392,19 @@ class BrowserWindow : public ui::BaseWindow {
   // shown.  Invoked when a new RenderHostView is created for a non-NTP
   // navigation entry and the bookmark bar is detached.
   virtual int GetRenderViewHeightInsetWithDetachedBookmarkBar() = 0;
+
+  // Executes |command| registered by |extension|.
+  virtual void ExecuteExtensionCommand(const extensions::Extension* extension,
+                                       const extensions::Command& command) = 0;
+
+  // Shows the page action for the extension.
+  virtual void ShowPageActionPopup(const extensions::Extension* extension) = 0;
+
+  // Shows the browser action for the extension. NOTE(wittman): This function
+  // grants tab permissions to the browser action popup, so it should only be
+  // invoked due to user action, not due to invocation from an extensions API.
+  virtual void ShowBrowserActionPopup(
+      const extensions::Extension* extension) = 0;
 
  protected:
   friend class BrowserCloseManager;

@@ -11,20 +11,15 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
-#include "chrome/test/base/chrome_render_view_host_test_harness.h"
-#include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/autofill_external_delegate.h"
 #include "components/autofill/core/browser/autofill_manager.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/autofill/core/browser/test_autofill_client.h"
 #include "components/autofill/core/browser/test_autofill_driver.h"
-#include "components/autofill/core/browser/test_autofill_manager_delegate.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/webdata/common/web_data_service_test_util.h"
-#include "content/public/test/test_browser_thread.h"
-#include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/rect.h"
@@ -48,15 +43,12 @@ class MockWebDataService : public AutofillWebDataService {
   virtual ~MockWebDataService() {}
 };
 
-class MockAutofillManagerDelegate
-    : public autofill::TestAutofillManagerDelegate {
+class MockAutofillClient : public TestAutofillClient {
  public:
-  MockAutofillManagerDelegate(
-      scoped_refptr<MockWebDataService> web_data_service)
+  MockAutofillClient(scoped_refptr<MockWebDataService> web_data_service)
       : web_data_service_(web_data_service),
-        prefs_(test::PrefServiceForTesting()) {
-  }
-  virtual ~MockAutofillManagerDelegate() {}
+        prefs_(test::PrefServiceForTesting()) {}
+  virtual ~MockAutofillClient() {}
   virtual scoped_refptr<AutofillWebDataService>
       GetDatabase() OVERRIDE { return web_data_service_; }
   virtual PrefService* GetPrefs() OVERRIDE { return prefs_.get(); }
@@ -65,7 +57,7 @@ class MockAutofillManagerDelegate
   scoped_refptr<MockWebDataService> web_data_service_;
   scoped_ptr<PrefService> prefs_;
 
-  DISALLOW_COPY_AND_ASSIGN(MockAutofillManagerDelegate);
+  DISALLOW_COPY_AND_ASSIGN(MockAutofillClient);
 };
 
 }  // namespace
@@ -76,11 +68,10 @@ class AutocompleteHistoryManagerTest : public testing::Test {
 
   virtual void SetUp() OVERRIDE {
     web_data_service_ = new MockWebDataService();
-    manager_delegate_.reset(new MockAutofillManagerDelegate(web_data_service_));
+    autofill_client_.reset(new MockAutofillClient(web_data_service_));
     autofill_driver_.reset(new TestAutofillDriver());
-    autocomplete_manager_.reset(
-        new AutocompleteHistoryManager(autofill_driver_.get(),
-                                       manager_delegate_.get()));
+    autocomplete_manager_.reset(new AutocompleteHistoryManager(
+        autofill_driver_.get(), autofill_client_.get()));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -91,7 +82,7 @@ class AutocompleteHistoryManagerTest : public testing::Test {
   scoped_refptr<MockWebDataService> web_data_service_;
   scoped_ptr<AutocompleteHistoryManager> autocomplete_manager_;
   scoped_ptr<AutofillDriver> autofill_driver_;
-  scoped_ptr<MockAutofillManagerDelegate> manager_delegate_;
+  scoped_ptr<MockAutofillClient> autofill_client_;
 };
 
 // Tests that credit card numbers are not sent to the WebDatabase to be saved.
@@ -199,14 +190,10 @@ class MockAutofillExternalDelegate : public AutofillExternalDelegate {
   DISALLOW_COPY_AND_ASSIGN(MockAutofillExternalDelegate);
 };
 
-class AutocompleteHistoryManagerNoIPC : public AutocompleteHistoryManager {
-  public:
-   AutocompleteHistoryManagerNoIPC(AutofillDriver* driver,
-                                   AutofillManagerDelegate* delegate)
-       : AutocompleteHistoryManager(driver, delegate) {
-     // Ensure that IPC is not sent during the test.
-     set_send_ipc(false);
-   }
+class TestAutocompleteHistoryManager : public AutocompleteHistoryManager {
+ public:
+  TestAutocompleteHistoryManager(AutofillDriver* driver, AutofillClient* client)
+      : AutocompleteHistoryManager(driver, client) {}
 
   using AutocompleteHistoryManager::SendSuggestions;
 };
@@ -215,14 +202,14 @@ class AutocompleteHistoryManagerNoIPC : public AutocompleteHistoryManager {
 
 // Make sure our external delegate is called at the right time.
 TEST_F(AutocompleteHistoryManagerTest, ExternalDelegate) {
-  AutocompleteHistoryManagerNoIPC autocomplete_history_manager(
-      autofill_driver_.get(), manager_delegate_.get());
+  TestAutocompleteHistoryManager autocomplete_history_manager(
+      autofill_driver_.get(), autofill_client_.get());
 
-  scoped_ptr<AutofillManager> autofill_manager(new AutofillManager(
-      autofill_driver_.get(),
-      manager_delegate_.get(),
-      "en-US",
-      AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER));
+  scoped_ptr<AutofillManager> autofill_manager(
+      new AutofillManager(autofill_driver_.get(),
+                          autofill_client_.get(),
+                          "en-US",
+                          AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER));
 
   MockAutofillExternalDelegate external_delegate(autofill_manager.get(),
                                                  autofill_driver_.get());
@@ -231,6 +218,48 @@ TEST_F(AutocompleteHistoryManagerTest, ExternalDelegate) {
   // Should trigger a call to OnSuggestionsReturned, verified by the mock.
   EXPECT_CALL(external_delegate, OnSuggestionsReturned(_, _, _, _, _));
   autocomplete_history_manager.SendSuggestions(NULL);
+}
+
+// Verify that no autocomplete suggestion is returned for textarea.
+TEST_F(AutocompleteHistoryManagerTest, NoAutocompleteSuggestionsForTextarea) {
+  TestAutocompleteHistoryManager autocomplete_history_manager(
+      autofill_driver_.get(), autofill_client_.get());
+
+  scoped_ptr<AutofillManager> autofill_manager(
+      new AutofillManager(autofill_driver_.get(),
+                          autofill_client_.get(),
+                          "en-US",
+                          AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER));
+
+  MockAutofillExternalDelegate external_delegate(autofill_manager.get(),
+                                                 autofill_driver_.get());
+  autocomplete_history_manager.SetExternalDelegate(&external_delegate);
+
+  FormData form;
+  form.name = ASCIIToUTF16("MyForm");
+  form.method = ASCIIToUTF16("POST");
+  form.origin = GURL("http://myform.com/form.html");
+  form.action = GURL("http://myform.com/submit.html");
+  form.user_submitted = true;
+
+  FormFieldData field;
+  test::CreateTestFormField("Address", "address", "", "textarea", &field);
+
+  EXPECT_CALL(external_delegate,
+              OnSuggestionsReturned(0,
+                                    std::vector<base::string16>(),
+                                    std::vector<base::string16>(),
+                                    std::vector<base::string16>(),
+                                    std::vector<int>()));
+  autocomplete_history_manager.OnGetAutocompleteSuggestions(
+      0,
+      field.name,
+      field.value,
+      field.form_control_type,
+      std::vector<base::string16>(),
+      std::vector<base::string16>(),
+      std::vector<base::string16>(),
+      std::vector<int>());
 }
 
 }  // namespace autofill

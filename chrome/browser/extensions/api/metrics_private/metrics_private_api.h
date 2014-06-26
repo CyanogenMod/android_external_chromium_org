@@ -22,7 +22,7 @@ class MetricsPrivateGetIsCrashReportingEnabledFunction
   virtual ~MetricsPrivateGetIsCrashReportingEnabledFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateGetFieldTrialFunction : public SyncExtensionFunction {
@@ -34,7 +34,7 @@ class MetricsPrivateGetFieldTrialFunction : public SyncExtensionFunction {
   virtual ~MetricsPrivateGetFieldTrialFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateGetVariationParamsFunction : public SyncExtensionFunction {
@@ -46,7 +46,7 @@ class MetricsPrivateGetVariationParamsFunction : public SyncExtensionFunction {
   virtual ~MetricsPrivateGetVariationParamsFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordUserActionFunction : public SyncExtensionFunction {
@@ -58,13 +58,12 @@ class MetricsPrivateRecordUserActionFunction : public SyncExtensionFunction {
   virtual ~MetricsPrivateRecordUserActionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsHistogramHelperFunction : public SyncExtensionFunction {
  protected:
   virtual ~MetricsHistogramHelperFunction() {}
-  bool GetNameAndSample(std::string* name, int* sample);
   virtual bool RecordValue(const std::string& name,
                            base::HistogramType type,
                            int min, int max, size_t buckets,
@@ -81,7 +80,20 @@ class MetricsPrivateRecordValueFunction
   virtual ~MetricsPrivateRecordValueFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
+};
+
+class MetricsPrivateRecordSparseValueFunction
+    : public MetricsHistogramHelperFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("metricsPrivate.recordSparseValue",
+                             METRICSPRIVATE_RECORDSPARSEVALUE)
+
+ protected:
+  virtual ~MetricsPrivateRecordSparseValueFunction() {}
+
+  // ExtensionFunction:
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordPercentageFunction
@@ -94,7 +106,7 @@ class MetricsPrivateRecordPercentageFunction
   virtual ~MetricsPrivateRecordPercentageFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordCountFunction
@@ -107,7 +119,7 @@ class MetricsPrivateRecordCountFunction
   virtual ~MetricsPrivateRecordCountFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordSmallCountFunction
@@ -120,7 +132,7 @@ class MetricsPrivateRecordSmallCountFunction
   virtual ~MetricsPrivateRecordSmallCountFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordMediumCountFunction
@@ -133,7 +145,7 @@ class MetricsPrivateRecordMediumCountFunction
   virtual ~MetricsPrivateRecordMediumCountFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordTimeFunction : public MetricsHistogramHelperFunction {
@@ -145,7 +157,7 @@ class MetricsPrivateRecordTimeFunction : public MetricsHistogramHelperFunction {
   virtual ~MetricsPrivateRecordTimeFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordMediumTimeFunction
@@ -158,7 +170,7 @@ class MetricsPrivateRecordMediumTimeFunction
   virtual ~MetricsPrivateRecordMediumTimeFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class MetricsPrivateRecordLongTimeFunction
@@ -171,7 +183,7 @@ class MetricsPrivateRecordLongTimeFunction
   virtual ~MetricsPrivateRecordLongTimeFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 } // namespace extensions

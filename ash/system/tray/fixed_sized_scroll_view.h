@@ -10,7 +10,6 @@
 #include "ui/views/controls/scroll_view.h"
 
 namespace ash {
-namespace internal {
 
 // A custom scroll-view that has a specified dimension.
 class FixedSizedScrollView : public views::ScrollView {
@@ -27,7 +26,7 @@ class FixedSizedScrollView : public views::ScrollView {
   void set_fixed_size(const gfx::Size& size) { fixed_size_ = size; }
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
  protected:
@@ -40,7 +39,6 @@ class FixedSizedScrollView : public views::ScrollView {
   DISALLOW_COPY_AND_ASSIGN(FixedSizedScrollView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_FIXED_SIZED_SCROLL_VIEW_H_

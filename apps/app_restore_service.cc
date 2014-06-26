@@ -10,17 +10,12 @@
 #include "apps/launcher.h"
 #include "apps/saved_files_service.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/app_runtime/app_runtime_api.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
-
-#if defined(OS_WIN)
-#include "win8/util/win8_util.h"
-#endif
 
 using extensions::Extension;
 using extensions::ExtensionHost;
@@ -35,10 +30,6 @@ bool AppRestoreService::ShouldRestoreApps(bool is_browser_restart) {
 #if defined(OS_CHROMEOS)
   // Chromeos always restarts apps, even if it was a regular shutdown.
   should_restore_apps = true;
-#elif defined(OS_WIN)
-  // Packaged apps are not supported in Metro mode, so don't try to start them.
-  if (win8::IsSingleWindowMetroMode())
-    should_restore_apps = false;
 #endif
   return should_restore_apps;
 }

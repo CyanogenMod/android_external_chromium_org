@@ -29,7 +29,12 @@ class ClipboardEvent;
 class CursorShapeInfo;
 }  // namespace protocol
 
+namespace client {
+class LogToServer;
+}
+
 class VideoRenderer;
+class TokenFetcherProxy;
 
 // ClientUserInterface that indirectly makes and receives JNI calls.
 class ChromotingJniInstance
@@ -54,24 +59,37 @@ class ChromotingJniInstance
   // up. Must be called before destruction.
   void Cleanup();
 
+  // Requests the android app to fetch a third-party token.
+  void FetchThirdPartyToken(
+      const GURL& token_url,
+      const std::string& client_id,
+      const std::string& scope,
+      const base::WeakPtr<TokenFetcherProxy> token_fetcher_proxy);
+
+  // Called by the android app when the token is fetched.
+  void HandleOnThirdPartyTokenFetched(const std::string& token,
+                                      const std::string& shared_secret);
+
   // Provides the user's PIN and resumes the host authentication attempt. Call
   // on the UI thread once the user has finished entering this PIN into the UI,
   // but only after the UI has been asked to provide a PIN (via FetchSecret()).
-  void ProvideSecret(const std::string& pin, bool create_pair);
+  void ProvideSecret(const std::string& pin, bool create_pair,
+                     const std::string& device_name);
 
   // Schedules a redraw on the display thread. May be called from any thread.
   void RedrawDesktop();
 
   // Moves the host's cursor to the specified coordinates, optionally with some
   // mouse button depressed. If |button| is BUTTON_UNDEFINED, no click is made.
-  void PerformMouseAction(int x, int y,
-                          protocol::MouseEvent_MouseButton button,
-                          bool button_down);
-
-  void PerformMouseWheelDeltaAction(int delta_x, int delta_y);
+  void SendMouseEvent(int x, int y,
+                      protocol::MouseEvent_MouseButton button,
+                      bool button_down);
+  void SendMouseWheelEvent(int delta_x, int delta_y);
 
   // Sends the provided keyboard scan code to the host.
-  void PerformKeyboardAction(int key_code, bool key_down);
+  bool SendKeyEvent(int key_code, bool key_down);
+
+  void SendTextEvent(const std::string& text);
 
   // Records paint time for statistics logging, if enabled. May be called from
   // any thread.
@@ -115,6 +133,11 @@ class ChromotingJniInstance
   void FetchSecret(bool pairable,
                    const protocol::SecretFetchedCallback& callback);
 
+  // Sets the device name. Can be called on any thread.
+  void SetDeviceName(const std::string& device_name);
+
+  void SendKeyEventInternal(int usb_key_code, bool key_down);
+
   // Enables or disables periodic logging of performance statistics. Called on
   // the network thread.
   void EnableStatsLogging(bool enabled);
@@ -143,6 +166,8 @@ class ChromotingJniInstance
   scoped_ptr<ChromotingClient> client_;
   XmppSignalStrategy::XmppServerConfig xmpp_config_;
   scoped_ptr<XmppSignalStrategy> signaling_;  // Must outlive client_
+  scoped_ptr<client::LogToServer> log_to_server_;
+  base::WeakPtr<TokenFetcherProxy> token_fetcher_proxy_;
 
   // Pass this the user's PIN once we have it. To be assigned and accessed on
   // the UI thread, but must be posted to the network thread to call it.
@@ -154,11 +179,17 @@ class ChromotingJniInstance
   // once per run, and always before any reference to this flag.)
   bool create_pairing_;
 
+  // The device name to appear in the paired-clients list. Accessed on the
+  // network thread.
+  std::string device_name_;
+
   // If this is true, performance statistics will be periodically written to
   // the Android log. Used on the network thread.
   bool stats_logging_enabled_;
 
   friend class base::RefCountedThreadSafe<ChromotingJniInstance>;
+
+  base::WeakPtrFactory<ChromotingJniInstance> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromotingJniInstance);
 };

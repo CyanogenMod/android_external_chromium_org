@@ -7,10 +7,11 @@
 #include "base/lazy_instance.h"
 #include "base/prefs/pref_service.h"
 #include "base/values.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -42,6 +43,8 @@ static const char kMappingUrl[] = "url";
 static const char kMappingProviderTitle[] = "provider_title";
 static const char kMappingTitle[] = "mapped_title";
 
+static bool g_disable_partner_bookmarks_editing = false;
+
 }  // namespace
 
 // static
@@ -70,6 +73,11 @@ void PartnerBookmarksShim::RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
+// static
+void PartnerBookmarksShim::DisablePartnerBookmarksEditing() {
+  g_disable_partner_bookmarks_editing = true;
+}
+
 bool PartnerBookmarksShim::IsLoaded() const {
   return g_partner_model_keeper.Get().loaded;
 }
@@ -83,21 +91,34 @@ bool PartnerBookmarksShim::IsReachable(const BookmarkNode* node) const {
   DCHECK(IsPartnerBookmark(node));
   if (!HasPartnerBookmarks())
     return false;
-  for (const BookmarkNode* i = node; i != NULL; i = i->parent()) {
-    const NodeRenamingMapKey key(i->url(), i->GetTitle());
-    NodeRenamingMap::const_iterator remap = node_rename_remove_map_.find(key);
-    if (remap != node_rename_remove_map_.end() && remap->second.empty())
-      return false;
+  if (!g_disable_partner_bookmarks_editing) {
+    for (const BookmarkNode* i = node; i != NULL; i = i->parent()) {
+      const NodeRenamingMapKey key(i->url(), i->GetTitle());
+      NodeRenamingMap::const_iterator remap = node_rename_remove_map_.find(key);
+      if (remap != node_rename_remove_map_.end() && remap->second.empty())
+        return false;
+    }
   }
   return true;
 }
 
+bool PartnerBookmarksShim::IsEditable(const BookmarkNode* node) const {
+  DCHECK(IsPartnerBookmark(node));
+  if (!HasPartnerBookmarks())
+    return false;
+  if (g_disable_partner_bookmarks_editing)
+    return false;
+  return true;
+}
+
 void PartnerBookmarksShim::RemoveBookmark(const BookmarkNode* node) {
+  DCHECK(IsEditable(node));
   RenameBookmark(node, base::string16());
 }
 
 void PartnerBookmarksShim::RenameBookmark(const BookmarkNode* node,
                                           const base::string16& title) {
+  DCHECK(IsEditable(node));
   const NodeRenamingMapKey key(node->url(), node->GetTitle());
   node_rename_remove_map_[key] = title;
   SaveNodeMapping();
@@ -126,10 +147,12 @@ base::string16 PartnerBookmarksShim::GetTitle(const BookmarkNode* node) const {
   DCHECK(node);
   DCHECK(IsPartnerBookmark(node));
 
-  const NodeRenamingMapKey key(node->url(), node->GetTitle());
-  NodeRenamingMap::const_iterator i = node_rename_remove_map_.find(key);
-  if (i != node_rename_remove_map_.end())
-    return i->second;
+  if (!g_disable_partner_bookmarks_editing) {
+    const NodeRenamingMapKey key(node->url(), node->GetTitle());
+    NodeRenamingMap::const_iterator i = node_rename_remove_map_.find(key);
+    if (i != node_rename_remove_map_.end())
+      return i->second;
+  }
 
   return node->GetTitle();
 }
@@ -182,6 +205,11 @@ void PartnerBookmarksShim::ClearInBrowserContextForTesting(
 void PartnerBookmarksShim::ClearPartnerModelForTesting() {
   g_partner_model_keeper.Get().loaded = false;
   g_partner_model_keeper.Get().partner_bookmarks_root.reset(0);
+}
+
+// static
+void PartnerBookmarksShim::EnablePartnerBookmarksEditing() {
+  g_disable_partner_bookmarks_editing = false;
 }
 
 PartnerBookmarksShim::PartnerBookmarksShim(PrefService* prefs)

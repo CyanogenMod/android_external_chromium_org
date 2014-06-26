@@ -16,14 +16,11 @@
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/gfx/animation/animation_container_element.h"
 
 using aura::Window;
 using ui::Layer;
 
 namespace ash {
-namespace internal {
-
 class WindowAnimationsTest : public ash::test::AshTestBase {
  public:
   WindowAnimationsTest() {}
@@ -73,7 +70,7 @@ TEST_F(WindowAnimationsTest, HideShowBrightnessGrayscaleAnimation) {
   EXPECT_TRUE(window->layer()->visible());
 
   // Hiding.
-  views::corewm::SetWindowVisibilityAnimationType(
+  ::wm::SetWindowVisibilityAnimationType(
       window.get(),
       WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE);
   AnimateOnChildWindowVisibilityChanged(window.get(), false);
@@ -82,7 +79,7 @@ TEST_F(WindowAnimationsTest, HideShowBrightnessGrayscaleAnimation) {
   EXPECT_FALSE(window->layer()->visible());
 
   // Showing.
-  views::corewm::SetWindowVisibilityAnimationType(
+  ::wm::SetWindowVisibilityAnimationType(
       window.get(),
       WINDOW_VISIBILITY_ANIMATION_TYPE_BRIGHTNESS_GRAYSCALE);
   AnimateOnChildWindowVisibilityChanged(window.get(), true);
@@ -91,11 +88,8 @@ TEST_F(WindowAnimationsTest, HideShowBrightnessGrayscaleAnimation) {
   EXPECT_TRUE(window->layer()->visible());
 
   // Stays shown.
-  gfx::AnimationContainerElement* element =
-      static_cast<gfx::AnimationContainerElement*>(
-      window->layer()->GetAnimator());
-  element->Step(base::TimeTicks::Now() +
-                base::TimeDelta::FromSeconds(5));
+  window->layer()->GetAnimator()->Step(base::TimeTicks::Now() +
+                                       base::TimeDelta::FromSeconds(5));
   EXPECT_EQ(0.0f, window->layer()->GetTargetBrightness());
   EXPECT_EQ(0.0f, window->layer()->GetTargetGrayscale());
   EXPECT_TRUE(window->layer()->visible());
@@ -113,6 +107,8 @@ TEST_F(WindowAnimationsTest, LayerTargetVisibility) {
   EXPECT_TRUE(window->layer()->GetTargetVisibility());
 }
 
+namespace wm {
+
 TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
   ui::ScopedAnimationDurationScaleMode normal_duration_mode(
       ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
@@ -125,7 +121,8 @@ TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
   EXPECT_EQ(1.0f, old_layer->GetTargetOpacity());
 
   // Cross fade to a larger size, as in a maximize animation.
-  CrossFadeToBounds(window.get(), gfx::Rect(0, 0, 640, 480));
+  GetWindowState(window.get())->SetBoundsDirectCrossFade(
+      gfx::Rect(0, 0, 640, 480));
   // Window's layer has been replaced.
   EXPECT_NE(old_layer, window->layer());
   // Original layer stays opaque and stretches to new size.
@@ -140,14 +137,15 @@ TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
   EXPECT_EQ(gfx::Transform(), window->layer()->GetTargetTransform());
 
   // Run the animations to completion.
-  static_cast<gfx::AnimationContainerElement*>(old_layer->GetAnimator())->Step(
-      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(1));
-  static_cast<gfx::AnimationContainerElement*>(window->layer()->GetAnimator())->
-      Step(base::TimeTicks::Now() + base::TimeDelta::FromSeconds(1));
+  old_layer->GetAnimator()->Step(base::TimeTicks::Now() +
+                                 base::TimeDelta::FromSeconds(1));
+  window->layer()->GetAnimator()->Step(base::TimeTicks::Now() +
+                                       base::TimeDelta::FromSeconds(1));
 
   // Cross fade to a smaller size, as in a restore animation.
   old_layer = window->layer();
-  CrossFadeToBounds(window.get(), gfx::Rect(5, 10, 320, 240));
+  GetWindowState(window.get())->SetBoundsDirectCrossFade(
+      gfx::Rect(5, 10, 320, 240));
   // Again, window layer has been replaced.
   EXPECT_NE(old_layer, window->layer());
   // Original layer fades out and stretches down to new size.
@@ -161,11 +159,13 @@ TEST_F(WindowAnimationsTest, CrossFadeToBounds) {
   EXPECT_EQ(1.0f, window->layer()->GetTargetOpacity());
   EXPECT_EQ(gfx::Transform(), window->layer()->GetTargetTransform());
 
-  static_cast<gfx::AnimationContainerElement*>(old_layer->GetAnimator())->Step(
-      base::TimeTicks::Now() + base::TimeDelta::FromSeconds(1));
-  static_cast<gfx::AnimationContainerElement*>(window->layer()->GetAnimator())->
-      Step(base::TimeTicks::Now() + base::TimeDelta::FromSeconds(1));
+  old_layer->GetAnimator()->Step(base::TimeTicks::Now() +
+                                 base::TimeDelta::FromSeconds(1));
+  window->layer()->GetAnimator()->Step(base::TimeTicks::Now() +
+                                       base::TimeDelta::FromSeconds(1));
 }
+
+}  // namespace wm
 
 TEST_F(WindowAnimationsTest, LockAnimationDuration) {
   ui::ScopedAnimationDurationScaleMode normal_duration_mode(
@@ -197,6 +197,8 @@ TEST_F(WindowAnimationsTest, LockAnimationDuration) {
 
   // Test that it is possible to lock transition duration
   {
+    // Update layer as minimizing will replace the window's layer.
+    layer = window->layer();
     ui::ScopedLayerAnimationSettings settings1(layer->GetAnimator());
     settings1.SetTransitionDuration(base::TimeDelta::FromMilliseconds(1000));
     // Duration is locked in outer scope.
@@ -217,6 +219,7 @@ TEST_F(WindowAnimationsTest, LockAnimationDuration) {
 
   // Test that duration respects default.
   {
+    layer = window->layer();
     // Query default duration.
     MinimizeAnimationObserver observer(layer->GetAnimator());
     wm::GetWindowState(window.get())->Minimize();
@@ -225,6 +228,7 @@ TEST_F(WindowAnimationsTest, LockAnimationDuration) {
     window->Show();
     layer->GetAnimator()->StopAnimating();
 
+    layer = window->layer();
     ui::ScopedLayerAnimationSettings settings(layer->GetAnimator());
     settings.LockTransitionDuration();
     // Setting transition duration is ignored since duration is locked
@@ -239,5 +243,4 @@ TEST_F(WindowAnimationsTest, LockAnimationDuration) {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

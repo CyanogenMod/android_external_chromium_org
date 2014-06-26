@@ -7,10 +7,13 @@
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/chrome_content_client.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
+using feedback::FeedbackData;
 
 namespace {
 
@@ -44,6 +47,8 @@ void FeedbackService::SendFeedback(
     const SendFeedbackCallback& callback) {
   send_feedback_callback_ = callback;
   feedback_data_ = feedback_data;
+  feedback_data_->set_locale(g_browser_process->GetApplicationLocale());
+  feedback_data_->set_user_agent(GetUserAgent());
 
   if (!feedback_data_->attached_file_uuid().empty()) {
     // Self-deleting object.
@@ -68,9 +73,8 @@ void FeedbackService::SendFeedback(
 
 void FeedbackService::AttachedFileCallback(scoped_ptr<std::string> data,
                                            int64 /* total_blob_length */) {
-  if (!data.get())
-    feedback_data_->set_attached_file_uuid(std::string());
-  else
+  feedback_data_->set_attached_file_uuid(std::string());
+  if (data)
     feedback_data_->AttachAndCompressFileData(data.Pass());
 
   CompleteSendFeedback();
@@ -78,9 +82,8 @@ void FeedbackService::AttachedFileCallback(scoped_ptr<std::string> data,
 
 void FeedbackService::ScreenshotCallback(scoped_ptr<std::string> data,
                                          int64 /* total_blob_length */) {
-  if (!data.get())
-    feedback_data_->set_screenshot_uuid(std::string());
-  else
+  feedback_data_->set_screenshot_uuid(std::string());
+  if (data)
     feedback_data_->set_image(data.Pass());
 
   CompleteSendFeedback();
@@ -120,12 +123,8 @@ void FeedbackService::CompleteSendFeedback() {
   // b.) The associated data object exists, meaning that the data has been read
   //     and the read callback has updated the associated data on the feedback
   //     object.
-  bool attached_file_completed =
-      feedback_data_->attached_file_uuid().empty() ||
-      feedback_data_->attached_filedata();
-  bool screenshot_completed =
-      feedback_data_->screenshot_uuid().empty() ||
-      feedback_data_->image();
+  bool attached_file_completed = feedback_data_->attached_file_uuid().empty();
+  bool screenshot_completed = feedback_data_->screenshot_uuid().empty();
 
   if (screenshot_completed && attached_file_completed) {
     // Signal the feedback object that the data from the feedback page has been

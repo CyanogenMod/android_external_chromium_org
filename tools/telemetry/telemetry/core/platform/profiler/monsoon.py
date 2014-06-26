@@ -2,12 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Interface for a USB-connected Monsoon power meter
-(http://msoon.com/LabEquipment/PowerMonitor/).
+"""Interface for a USB-connected Monsoon power meter.
 
+http://msoon.com/LabEquipment/PowerMonitor/
 Currently Unix-only. Relies on fcntl, /dev, and /tmp.
 """
 
+import collections
 import logging
 import os
 import select
@@ -18,6 +19,10 @@ from telemetry.core import util
 
 util.AddDirToPythonPath(util.GetTelemetryDir(), 'third_party', 'pyserial')
 import serial  # pylint: disable=F0401
+import serial.tools.list_ports
+
+
+Power = collections.namedtuple('Power', ['amps', 'volts'])
 
 
 class Monsoon:
@@ -40,6 +45,8 @@ class Monsoon:
     can be specified with 'serialno' (using the number printed on its back).
     With wait=False, IOError is thrown if a device is not immediately available.
     """
+    assert float(serial.VERSION) >= 2.7, \
+     'Monsoon requires pyserial v2.7 or later. You have %s' % serial.VERSION
 
     self._coarse_ref = self._fine_ref = self._coarse_zero = self._fine_zero = 0
     self._coarse_scale = self._fine_scale = 0
@@ -50,33 +57,33 @@ class Monsoon:
       self.ser = serial.Serial(device, timeout=1)
       return
 
-    while 1:  # Try all /dev/ttyACM* until we find one we can use.
-      for dev in os.listdir('/dev'):
-        if not dev.startswith('ttyACM'):
+    while 1:
+      for (port, desc, _) in serial.tools.list_ports.comports():
+        if not desc.lower().startswith('mobile device power monitor'):
           continue
-        tmpname = '/tmp/monsoon.%s.%s' % (os.uname()[0], dev)
+        tmpname = '/tmp/monsoon.%s.%s' % (os.uname()[0], os.path.basename(port))
         self._tempfile = open(tmpname, 'w')
         try:  # Use a lockfile to ensure exclusive access.
           # Put the import in here to avoid doing it on unsupported platforms.
           import fcntl
           fcntl.lockf(self._tempfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError:
-          logging.error('device %s is in use', dev)
+          logging.error('device %s is in use', port)
           continue
 
         try:  # Try to open the device.
-          self.ser = serial.Serial('/dev/%s' % dev, timeout=1)
+          self.ser = serial.Serial(port, timeout=1)
           self.StopDataCollection()  # Just in case.
           self._FlushInput()  # Discard stale input.
           status = self.GetStatus()
         except IOError, e:
-          logging.error('error opening device %s: %s', dev, e)
+          logging.error('error opening device %s: %s', port, e)
           continue
 
         if not status:
-          logging.error('no response from device %s', dev)
+          logging.error('no response from device %s', port)
         elif serialno and status['serialNumber'] != serialno:
-          logging.error('device %s is #%d', dev, status['serialNumber'])
+          logging.error('device %s is #%d', port, status['serialNumber'])
         else:
           if status['hardwareRevision'] == 1:
             self._voltage_multiplier = 62.5 / 10**6
@@ -210,7 +217,7 @@ class Monsoon:
             sample += ((usb & ~1) - self._coarse_zero) * self._coarse_scale
           else:
             sample += (usb - self._fine_zero) * self._fine_scale
-          out.append((sample, main_voltage_v))
+          out.append(Power(sample, main_voltage_v))
         return out
 
       elif packet_type == 1:

@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/files/file_path.h"
+#include "chrome/browser/drive/drive_app_registry_observer.h"
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/drive_api_parser.h"
@@ -57,8 +58,8 @@ DriveAppInfo::DriveAppInfo() {
 DriveAppInfo::DriveAppInfo(
     const std::string& app_id,
     const std::string& product_id,
-    const google_apis::InstalledApp::IconList& app_icons,
-    const google_apis::InstalledApp::IconList& document_icons,
+    const IconList& app_icons,
+    const IconList& document_icons,
     const std::string& app_name,
     const GURL& create_url,
     bool is_removable)
@@ -158,8 +159,8 @@ void DriveAppRegistry::UpdateFromAppList(const google_apis::AppList& app_list) {
     const google_apis::AppResource& app = *app_list.items()[i];
     const std::string id = app.application_id();
 
-    google_apis::InstalledApp::IconList app_icons;
-    google_apis::InstalledApp::IconList document_icons;
+    DriveAppInfo::IconList app_icons;
+    DriveAppInfo::IconList document_icons;
     for (size_t j = 0; j < app.icons().size(); ++j) {
       const google_apis::DriveAppIcon& icon = *app.icons()[j];
       if (icon.icon_url().is_empty())
@@ -186,6 +187,18 @@ void DriveAppRegistry::UpdateFromAppList(const google_apis::AppList& app_list) {
     AddAppSelectorList(app.primary_file_extensions(), id, &extension_map_);
     AddAppSelectorList(app.secondary_file_extensions(), id, &extension_map_);
   }
+
+  FOR_EACH_OBSERVER(DriveAppRegistryObserver,
+                    observers_,
+                    OnDriveAppRegistryUpdated());
+}
+
+void DriveAppRegistry::AddObserver(DriveAppRegistryObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void DriveAppRegistry::RemoveObserver(DriveAppRegistryObserver* observer) {
+  observers_.RemoveObserver(observer);
 }
 
 void DriveAppRegistry::UninstallApp(const std::string& app_id,
@@ -217,12 +230,12 @@ bool DriveAppRegistry::IsAppUninstallSupported() {
 
 namespace util {
 
-GURL FindPreferredIcon(const google_apis::InstalledApp::IconList& icons,
+GURL FindPreferredIcon(const DriveAppInfo::IconList& icons,
                        int preferred_size) {
   if (icons.empty())
     return GURL();
 
-  google_apis::InstalledApp::IconList sorted_icons = icons;
+  DriveAppInfo::IconList sorted_icons = icons;
   std::sort(sorted_icons.rbegin(), sorted_icons.rend());
 
   // Go forward while the size is larger or equal to preferred_size.

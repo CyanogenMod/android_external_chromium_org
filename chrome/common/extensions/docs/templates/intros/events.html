@@ -23,22 +23,22 @@ is always a function that you define to handle the event,
 but the parameters to the function depend on
 which event you're handling.
 Checking the documentation for
-$ref:alarms.onAlarm,
+$(ref:alarms.onAlarm),
 you can see that the function has a single parameter:
-an $ref:alarms.Alarm object
+an $(ref:alarms.Alarm) object
 that has details about the elapsed alarm.
 </p>
 
 Example APIs using Events:
-$ref:alarms,
+$(ref:alarms),
 {{?is_apps}}
-$ref:app.runtime,
-$ref:app.window,
+$(ref:app.runtime),
+$(ref:app.window),
 {{/is_apps}}
-$ref:i18n,
-$ref:identity,
-$ref:runtime.
-Most <a href="api_index.html">chrome APIs</a> do.
+$(ref:i18n),
+$(ref:identity),
+$(ref:runtime).
+Most <a href="api_index">chrome APIs</a> do.
 
 {{^is_apps}}
 <div class="doc-family extensions">
@@ -52,8 +52,8 @@ for very high efficiency.
 </p>
 
 <p>Declarative event handlers are used for example in the <a
-href="declarativeWebRequest.html">Declarative Web Request API</a> and <a
-href="declarativeContent.html">Declarative Content API</a>. This page describes
+href="declarativeWebRequest">Declarative Web Request API</a> and <a
+href="declarativeContent">Declarative Content API</a>. This page describes
 the underlying concepts of all declarative event handlers.
 </p>
 
@@ -88,13 +88,13 @@ var rule = {
 <h3 id="eventobjects">Event objects</h3>
 
 <p>
-<a href="events.html">Event objects</a> may support rules. These event objects
+<a href="events">Event objects</a> may support rules. These event objects
 don't call a callback function when events happen but test whether any
 registered rule has at least one fulfilled condition and execute the actions
 associated with this rule. Event objects supporting the declarative API have
-three relevant methods: $ref:events.Event.addRules,
-$ref:events.Event.removeRules, and
-$ref:events.Event.getRules.
+three relevant methods: $(ref:events.Event.addRules),
+$(ref:events.Event.removeRules), and
+$(ref:events.Event.getRules).
 </p>
 
 <h3 id="addingrules">Adding rules</h3>
@@ -116,8 +116,8 @@ contains an array of inserted rules appearing in the same order as in the passed
 <code>rule_list</code> where the optional parameters <code>id</code> and
 <code>priority</code> were filled with the generated values. If any rule is
 invalid, e.g., because it contained an invalid condition or action, none of the
-rules are added and the 
-  $ref:runtime.lastError variable is set when
+rules are added and the
+  $(ref:runtime.lastError) variable is set when
 the callback function is called. Each rule in <code>rule_list</code> must
 contain a unique identifier that is not currently used by another rule or an
 empty identifier.
@@ -126,7 +126,7 @@ empty identifier.
 <p class="note">
 <strong>Note:</strong> Rules are persistent across browsing sessions. Therefore,
 you should install rules during extension installation time using the
-<code>$ref:runtime.onInstalled</code>
+<code>$(ref:runtime.onInstalled)</code>
 event. Note that this event is also triggered when an extension is updated.
 Therefore, you should first clear previously installed rules and then register
 new rules.
@@ -194,7 +194,7 @@ var rule1 = {...};
 var rule2 = {...};
 chrome.declarativeWebRequest.onRequest.addRules([rule1, rule2]);</pre>
   <li>Prefer substring matching over matching using regular expressions in a
-  $ref:events.UrlFilter.  Substring based matching is extremely fast.
+  $(ref:events.UrlFilter).  Substring based matching is extremely fast.
   <p>Instead of</p>
   <pre>
 var match = new chrome.declarativeWebRequest.RequestMatcher({
@@ -235,7 +235,7 @@ chrome.declarativeWebRequest.onRequest.addRules([rule]);</pre>
 <p>Filtered events are a mechanism that allows listeners to specify a subset of
 events that they are interested in. A listener that makes use of a filter won't
 be invoked for events that don't pass the filter, which makes the listening
-code more declarative and efficient - an <a href="event_pages.html">event
+code more declarative and efficient - an <a href="event_pages">event
   page</a> page need not be woken up to handle events it doesn't care
 about.</p>
 
@@ -266,7 +266,7 @@ event in the "filters" section.</p>
 
 <p>When matching URLs (as in the example above), event filters support the same
 URL matching capabilities as expressible with a
-  $ref:events.UrlFilter, except for scheme and port
+  $(ref:events.UrlFilter), except for scheme and port
 matching.</p>
 
 </div>

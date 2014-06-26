@@ -18,8 +18,7 @@
 namespace google_apis {
 
 class AboutResource;
-class ResourceEntry;
-class ResourceList;
+class FileResource;
 
 }  // namespace google_apis
 
@@ -60,7 +59,6 @@ class FakeFileSystem : public FileSystemInterface {
                     const FileOperationCallback& callback) OVERRIDE;
   virtual void Move(const base::FilePath& src_file_path,
                     const base::FilePath& dest_file_path,
-                    bool preserve_last_modified,
                     const FileOperationCallback& callback) OVERRIDE;
   virtual void Remove(const base::FilePath& file_path,
                       bool is_recursive,
@@ -88,7 +86,7 @@ class FakeFileSystem : public FileSystemInterface {
                        const GetFileCallback& callback) OVERRIDE;
   virtual void GetFileForSaving(const base::FilePath& file_path,
                                 const GetFileCallback& callback) OVERRIDE;
-  virtual void GetFileContent(
+  virtual base::Closure GetFileContent(
       const base::FilePath& file_path,
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
@@ -98,7 +96,8 @@ class FakeFileSystem : public FileSystemInterface {
       const GetResourceEntryCallback& callback) OVERRIDE;
   virtual void ReadDirectory(
       const base::FilePath& file_path,
-      const ReadDirectoryCallback& callback) OVERRIDE;
+      const ReadDirectoryEntriesCallback& entries_callback,
+      const FileOperationCallback& completion_callback) OVERRIDE;
   virtual void Search(const std::string& search_query,
                       const GURL& next_link,
                       const SearchCallback& callback) OVERRIDE;
@@ -120,18 +119,16 @@ class FakeFileSystem : public FileSystemInterface {
   virtual void MarkCacheFileAsUnmounted(
       const base::FilePath& cache_file_path,
       const FileOperationCallback& callback) OVERRIDE;
-  virtual void GetCacheEntry(
-      const base::FilePath& drive_file_path,
-      const GetCacheEntryCallback& callback) OVERRIDE;
+  virtual void AddPermission(const base::FilePath& drive_file_path,
+                             const std::string& email,
+                             google_apis::drive::PermissionRole role,
+                             const FileOperationCallback& callback) OVERRIDE;
   virtual void Reset(const FileOperationCallback& callback) OVERRIDE;
+  virtual void GetPathFromResourceId(const std::string& resource_id,
+                                     const GetFilePathCallback& callback)
+      OVERRIDE;
 
  private:
-  // Helper of GetResourceEntryById.
-  void GetResourceEntryByIdAfterGetResourceEntry(
-      const GetResourceEntryCallback& callback,
-      google_apis::GDataErrorCode error_in,
-      scoped_ptr<google_apis::ResourceEntry> resource_entry);
-
   // Helpers of GetFileContent.
   // How the method works:
   // 1) Gets ResourceEntry of the path.
@@ -144,12 +141,12 @@ class FakeFileSystem : public FileSystemInterface {
       const FileOperationCallback& completion_callback,
       FileError error,
       scoped_ptr<ResourceEntry> entry);
-  void GetFileContentAfterGetWapiResourceEntry(
+  void GetFileContentAfterGetFileResource(
       const GetFileContentInitializedCallback& initialized_callback,
       const google_apis::GetContentCallback& get_content_callback,
       const FileOperationCallback& completion_callback,
       google_apis::GDataErrorCode gdata_error,
-      scoped_ptr<google_apis::ResourceEntry> gdata_entry);
+      scoped_ptr<google_apis::FileResource> gdata_entry);
   void GetFileContentAfterDownloadFile(
       const FileOperationCallback& completion_callback,
       google_apis::GDataErrorCode gdata_error,
@@ -175,11 +172,11 @@ class FakeFileSystem : public FileSystemInterface {
       const GetResourceEntryCallback& callback,
       FileError error,
       scoped_ptr<ResourceEntry> parent_entry);
-  void GetResourceEntryAfterGetResourceList(
+  void GetResourceEntryAfterGetFileList(
       const base::FilePath& base_name,
       const GetResourceEntryCallback& callback,
       google_apis::GDataErrorCode gdata_error,
-      scoped_ptr<google_apis::ResourceList> resource_list);
+      scoped_ptr<google_apis::FileList> file_list);
 
   DriveServiceInterface* drive_service_;  // Not owned.
   base::ScopedTempDir cache_dir_;

@@ -24,6 +24,7 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
+#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
@@ -57,7 +58,6 @@
 #include "url/gurl.h"
 #include "url/url_util.h"
 #include "webkit/child/multipart_response_delegate.h"
-#include "webkit/renderer/compositor_bindings/web_layer_impl.h"
 
 using blink::WebCanvas;
 using blink::WebConsoleMessage;
@@ -544,7 +544,7 @@ WebPluginImpl::WebPluginImpl(
       first_geometry_update_(true),
       ignore_response_error_(false),
       file_path_(file_path),
-      mime_type_(UTF16ToASCII(params.mimeType)),
+      mime_type_(base::UTF16ToASCII(params.mimeType)),
       weak_factory_(this),
       loader_client_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
@@ -578,13 +578,6 @@ void WebPluginImpl::SetWindow(gfx::PluginWindowHandle window) {
 #else
     accepts_input_events_ = false;
 
-#if defined(USE_X11)
-    // Tell the view delegate that the plugin window was created, so that it
-    // can create necessary container widgets.
-    render_frame_->Send(new ViewHostMsg_CreatePluginContainer(
-        render_frame_->GetRenderWidget()->routing_id(), window));
-#endif  // USE_X11
-
 #endif  // OS_MACOSX
   } else {
     DCHECK(!window_);  // Make sure not called twice.
@@ -600,13 +593,8 @@ void WebPluginImpl::SetAcceptsInputEvents(bool accepts) {
 void WebPluginImpl::WillDestroyWindow(gfx::PluginWindowHandle window) {
   DCHECK_EQ(window, window_);
   window_ = gfx::kNullPluginWindow;
-  if (render_view_.get()) {
-#if defined(USE_X11)
-    render_frame_->Send(new ViewHostMsg_DestroyPluginContainer(
-        render_frame_->GetRenderWidget()->routing_id(), window));
-#endif
+  if (render_view_.get())
     render_frame_->GetRenderWidget()->CleanupWindowInPluginMoves(window);
-  }
 }
 
 GURL WebPluginImpl::CompleteURL(const char* url) {
@@ -670,8 +658,8 @@ bool WebPluginImpl::IsValidUrl(const GURL& url, Referrer referrer_flag) {
     // Do url check to make sure that there are no @, ;, \ chars in between url
     // scheme and url path.
     const char* url_to_check(url.spec().data());
-    url_parse::Parsed parsed;
-    url_parse::ParseStandardURL(url_to_check, strlen(url_to_check), &parsed);
+    url::Parsed parsed;
+    url::ParseStandardURL(url_to_check, strlen(url_to_check), &parsed);
     if (parsed.path.begin <= parsed.scheme.end())
       return true;
     std::string string_to_search;
@@ -864,7 +852,7 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
     if (next_io_surface_id_) {
       if (!io_surface_layer_.get()) {
         io_surface_layer_ = cc::IOSurfaceLayer::Create();
-        web_layer_.reset(new webkit::WebLayerImpl(io_surface_layer_));
+        web_layer_.reset(new WebLayerImpl(io_surface_layer_));
         container_->setWebLayer(web_layer_.get());
       }
       io_surface_layer_->SetIOSurfaceProperties(
@@ -1182,8 +1170,8 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   // case in that the request is a javascript url and the target is "_self",
   // in which case we route the output to the plugin rather than routing it
   // to the plugin's frame.
-  bool is_javascript_url = url_util::FindAndCompareScheme(
-      url, strlen(url), "javascript", NULL);
+  bool is_javascript_url =
+      url::FindAndCompareScheme(url, strlen(url), "javascript", NULL);
   RoutingStatus routing_status = RouteToFrame(
       url, is_javascript_url, popups_allowed, method, target, buf, len,
       notify_id, referrer_flag);
@@ -1358,14 +1346,14 @@ void WebPluginImpl::InitiateHTTPRangeRequest(
 void WebPluginImpl::DidStartLoading() {
   if (render_view_.get()) {
     // TODO(darin): Make is_loading_ be a counter!
-    render_view_->didStartLoading();
+    render_view_->DidStartLoading();
   }
 }
 
 void WebPluginImpl::DidStopLoading() {
   if (render_view_.get()) {
     // TODO(darin): Make is_loading_ be a counter!
-    render_view_->didStopLoading();
+    render_view_->DidStopLoading();
   }
 }
 

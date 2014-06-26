@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -8,6 +8,7 @@
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 
 namespace ui {
 class EventHandler;
@@ -17,7 +18,7 @@ namespace ash {
 
 class WindowCycleList;
 
-// Controls cycling through windows with the keyboard, for example, via alt-tab.
+// Controls cycling through windows with the keyboard via alt-tab.
 // Windows are sorted primarily by most recently used, and then by screen order.
 // We activate windows as you cycle through them, so the order on the screen
 // may change during the gesture, but the most recently used list isn't updated
@@ -30,6 +31,7 @@ class ASH_EXPORT WindowCycleController {
     FORWARD,
     BACKWARD
   };
+
   WindowCycleController();
   virtual ~WindowCycleController();
 
@@ -37,42 +39,34 @@ class ASH_EXPORT WindowCycleController {
   // certain times, such as when the lock screen is visible.
   static bool CanCycle();
 
-  // Cycles between windows in the given |direction|. If |is_alt_down| then
-  // interprets this call as the start of a multi-step cycle sequence and
-  // installs a key filter to watch for alt being released.
-  void HandleCycleWindow(Direction direction, bool is_alt_down);
-
-  // Cycles between windows without maintaining a multi-step cycle sequence
-  // (see above).
-  void HandleLinearCycleWindow();
-
-  // Informs the controller that the Alt key has been released and it can
-  // terminate the existing multi-step cycle.
-  void AltKeyReleased();
+  // Cycles between windows in the given |direction|.
+  void HandleCycleWindow(Direction direction);
 
   // Returns true if we are in the middle of a window cycling gesture.
-  bool IsCycling() const { return windows_.get() != NULL; }
+  bool IsCycling() const { return window_cycle_list_.get() != NULL; }
 
-  // Returns the WindowCycleList. Really only useful for testing.
-  const WindowCycleList* windows() const { return windows_.get(); }
-
- private:
-  // Call to start cycling windows.  You must call StopCycling() when done.
+  // Call to start cycling windows. This funtion adds a pre-target handler to
+  // listen to the alt key release.
   void StartCycling();
 
+  // Stops the current window cycle and removes the event filter.
+  void StopCycling();
+
+  // Returns the WindowCycleList. Really only useful for testing.
+  const WindowCycleList* window_cycle_list() const {
+    return window_cycle_list_.get();
+  }
+
+ private:
   // Cycles to the next or previous window based on |direction|.
   void Step(Direction direction);
 
-  // Installs an event filter to watch for release of the alt key.
-  void InstallEventFilter();
-
-  // Stops the current window cycle and cleans up the event filter.
-  void StopCycling();
-
-  scoped_ptr<WindowCycleList> windows_;
+  scoped_ptr<WindowCycleList> window_cycle_list_;
 
   // Event handler to watch for release of alt key.
   scoped_ptr<ui::EventHandler> event_handler_;
+
+  base::Time cycle_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowCycleController);
 };

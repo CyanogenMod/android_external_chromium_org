@@ -19,7 +19,7 @@ AwDrawGLFunctionTable* g_gl_draw_functions = NULL;
 
 class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
  public:
-  GpuMemoryBufferImpl(int buffer_id, gfx::Size size)
+  GpuMemoryBufferImpl(long buffer_id, gfx::Size size)
       : buffer_id_(buffer_id),
         size_(size),
         mapped_(false) {
@@ -31,25 +31,12 @@ class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
   }
 
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void Map(gfx::GpuMemoryBuffer::AccessMode mode,
-                   void** vaddr) OVERRIDE {
-    AwMapMode map_mode = MAP_READ_ONLY;
-    switch (mode) {
-      case GpuMemoryBuffer::READ_ONLY:
-        map_mode = MAP_READ_ONLY;
-        break;
-      case GpuMemoryBuffer::WRITE_ONLY:
-        map_mode = MAP_WRITE_ONLY;
-        break;
-      case GpuMemoryBuffer::READ_WRITE:
-        map_mode = MAP_READ_WRITE;
-        break;
-      default:
-        LOG(DFATAL) << "Unknown map mode: " << mode;
-    }
-    int err = g_gl_draw_functions->map(buffer_id_, map_mode, vaddr);
+  virtual void* Map() OVERRIDE {
+    void* vaddr = NULL;
+    int err = g_gl_draw_functions->map(buffer_id_, MAP_READ_WRITE, &vaddr);
     DCHECK(!err);
     mapped_ = true;
+    return vaddr;
   }
   virtual void Unmap() OVERRIDE {
     int err = g_gl_draw_functions->unmap(buffer_id_);
@@ -62,13 +49,13 @@ class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
   }
   virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE {
     gfx::GpuMemoryBufferHandle handle;
-    handle.type = gfx::EGL_CLIENT_BUFFER;
+    handle.type = gfx::ANDROID_NATIVE_BUFFER;
     handle.native_buffer = g_gl_draw_functions->get_native_buffer(buffer_id_);
     return handle;
   }
 
  private:
-  int buffer_id_;
+  long buffer_id_;
   gfx::Size size_;
   bool mapped_;
 
@@ -86,12 +73,13 @@ GpuMemoryBufferFactoryImpl::~GpuMemoryBufferFactoryImpl() {
 gfx::GpuMemoryBuffer* GpuMemoryBufferFactoryImpl::CreateGpuMemoryBuffer(
     size_t width,
     size_t height,
-    unsigned internalformat) {
+    unsigned internalformat,
+    unsigned usage) {
   // For Android WebView we assume the |internalformat| will always be
   // GL_RGBA8_OES.
   CHECK_EQ(static_cast<GLenum>(GL_RGBA8_OES), internalformat);
   CHECK(g_gl_draw_functions);
-  int buffer_id = g_gl_draw_functions->create_graphic_buffer(width, height);
+  long buffer_id = g_gl_draw_functions->create_graphic_buffer(width, height);
   if (!buffer_id)
     return NULL;
 

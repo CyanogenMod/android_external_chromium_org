@@ -9,7 +9,7 @@
 #include "base/task_runner_util.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry_service.h"
-#include "chrome/browser/guestview/webview/webview_guest.h"
+#include "chrome/browser/guest_view/web_view/web_view_guest.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/events.h"
 #include "content/public/browser/browser_thread.h"
@@ -17,6 +17,7 @@
 #include "content/public/browser/render_view_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using extensions::api::events::Rule;
 
@@ -59,7 +60,8 @@ bool RulesFunction::HasPermission() {
   std::string event_name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &event_name));
   if (IsWebViewEvent(event_name) &&
-      extension_->HasAPIPermission(extensions::APIPermission::kWebView))
+      extension_->permissions_data()->HasAPIPermission(
+          extensions::APIPermission::kWebView))
     return true;
   Feature::Availability availability =
       ExtensionAPI::GetSharedInstance()->IsAvailable(
@@ -68,7 +70,7 @@ bool RulesFunction::HasPermission() {
   return availability.is_available();
 }
 
-bool RulesFunction::RunImpl() {
+bool RulesFunction::RunAsync() {
   std::string event_name;
   EXTENSION_FUNCTION_VALIDATE(args_->GetString(0, &event_name));
 
@@ -93,7 +95,7 @@ bool RulesFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(rules_registry_.get());
 
   if (content::BrowserThread::CurrentlyOn(rules_registry_->owner_thread())) {
-    bool success = RunImplOnCorrectThread();
+    bool success = RunAsyncOnCorrectThread();
     SendResponse(success);
   } else {
     scoped_refptr<base::MessageLoopProxy> message_loop_proxy =
@@ -102,14 +104,14 @@ bool RulesFunction::RunImpl() {
     base::PostTaskAndReplyWithResult(
         message_loop_proxy.get(),
         FROM_HERE,
-        base::Bind(&RulesFunction::RunImplOnCorrectThread, this),
+        base::Bind(&RulesFunction::RunAsyncOnCorrectThread, this),
         base::Bind(&RulesFunction::SendResponse, this));
   }
 
   return true;
 }
 
-bool EventsEventAddRulesFunction::RunImplOnCorrectThread() {
+bool EventsEventAddRulesFunction::RunAsyncOnCorrectThread() {
   scoped_ptr<AddRules::Params> params(AddRules::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -121,7 +123,7 @@ bool EventsEventAddRulesFunction::RunImplOnCorrectThread() {
   return error_.empty();
 }
 
-bool EventsEventRemoveRulesFunction::RunImplOnCorrectThread() {
+bool EventsEventRemoveRulesFunction::RunAsyncOnCorrectThread() {
   scoped_ptr<RemoveRules::Params> params(RemoveRules::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -135,7 +137,7 @@ bool EventsEventRemoveRulesFunction::RunImplOnCorrectThread() {
   return error_.empty();
 }
 
-bool EventsEventGetRulesFunction::RunImplOnCorrectThread() {
+bool EventsEventGetRulesFunction::RunAsyncOnCorrectThread() {
   scoped_ptr<GetRules::Params> params(GetRules::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 

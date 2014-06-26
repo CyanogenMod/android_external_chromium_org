@@ -51,6 +51,8 @@ static std::string BuildReport(const std::string& hostname,
   for (size_t i = 0; i < pem_encoded_chain.size(); ++i)
     *cert_chain += pem_encoded_chain[i];
 
+  request.add_pin(ssl_info.pinning_failure_log);
+
   std::string out;
   request.SerializeToString(&out);
   return out;
@@ -60,7 +62,7 @@ scoped_ptr<net::URLRequest>
 ChromeFraudulentCertificateReporter::CreateURLRequest(
     net::URLRequestContext* context) {
   scoped_ptr<net::URLRequest> request =
-      context->CreateRequest(upload_url_, net::DEFAULT_PRIORITY, this);
+      context->CreateRequest(upload_url_, net::DEFAULT_PRIORITY, this, NULL);
   request->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
                         net::LOAD_DO_NOT_SAVE_COOKIES);
   return request.Pass();

@@ -9,7 +9,6 @@ namespace app_list {
 AppListViewDelegate::User::User() : active(false) {
 }
 
-AppListViewDelegate::User::~User() {
-}
+AppListViewDelegate::User::~User() {}
 
 }  // app_list

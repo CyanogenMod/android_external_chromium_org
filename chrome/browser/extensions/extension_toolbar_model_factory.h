@@ -7,10 +7,13 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+
+class Profile;
+
+namespace extensions {
 
 class ExtensionToolbarModel;
-class Profile;
 
 class ExtensionToolbarModelFactory : public BrowserContextKeyedServiceFactory {
  public:
@@ -24,12 +27,14 @@ class ExtensionToolbarModelFactory : public BrowserContextKeyedServiceFactory {
   ExtensionToolbarModelFactory();
   virtual ~ExtensionToolbarModelFactory();
 
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_TOOLBAR_MODEL_FACTORY_H_

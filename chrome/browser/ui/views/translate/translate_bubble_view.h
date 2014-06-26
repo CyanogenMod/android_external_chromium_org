@@ -9,7 +9,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/translate/language_combobox_model.h"
 #include "chrome/browser/ui/translate/translate_bubble_model.h"
 #include "components/translate/core/common/translate_errors.h"
@@ -29,6 +29,10 @@ class Link;
 class View;
 }
 
+namespace ui {
+class SimpleComboboxModel;
+}
+
 class TranslateBubbleView : public views::BubbleDelegateView,
                             public views::ButtonListener,
                             public views::ComboboxListener,
@@ -40,7 +44,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   // Shows the Translate bubble.
   static void ShowBubble(views::View* anchor_view,
                          content::WebContents* web_contents,
-                         TranslateTabHelper::TranslateStep step,
+                         translate::TranslateStep step,
                          TranslateErrors::Type error_type);
 
   // If true, the Translate bubble is being shown.
@@ -61,7 +65,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
 
   // views::View methods.
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // views::CombboxListener methods.
   virtual void OnPerformAction(views::Combobox* combobox) OVERRIDE;
@@ -70,8 +74,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
   // content::WebContentsObserver method.
-  virtual void WebContentsDestroyed(content::WebContents* web_contents)
-      OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // Returns the current view state.
   TranslateBubbleModel::ViewState GetViewState() const;
@@ -121,7 +124,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
                       content::WebContents* web_contents);
 
   // Returns the current child view.
-  views::View* GetCurrentView();
+  views::View* GetCurrentView() const;
 
   // Handles the event when the user presses a button.
   void HandleButtonPressed(ButtonID sender_id);
@@ -170,6 +173,7 @@ class TranslateBubbleView : public views::BubbleDelegateView,
   views::View* error_view_;
   views::View* advanced_view_;
 
+  scoped_ptr<ui::SimpleComboboxModel> denial_combobox_model_;
   scoped_ptr<LanguageComboboxModel> source_language_combobox_model_;
   scoped_ptr<LanguageComboboxModel> target_language_combobox_model_;
 

@@ -21,7 +21,6 @@
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state_handler.h"
 #include "chromeos/network/network_state_handler_observer.h"
-#include "chromeos/network/shill_property_util.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
@@ -69,6 +68,7 @@ content::WebUIDataSource* CreateChooseMobileNetworkUIHTMLSource() {
   source->AddLocalizedString("connect", IDS_OPTIONS_SETTINGS_CONNECT);
   source->AddLocalizedString("cancel", IDS_CANCEL);
 
+  source->SetUseJsonJSFormatV2();
   source->SetJsonPath("strings.js");
   source->AddResourcePath("choose_mobile_network.js",
                           IDR_CHOOSE_MOBILE_NETWORK_JS);

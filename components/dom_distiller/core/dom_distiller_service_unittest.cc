@@ -14,12 +14,14 @@
 #include "components/dom_distiller/core/dom_distiller_model.h"
 #include "components/dom_distiller/core/dom_distiller_store.h"
 #include "components/dom_distiller/core/dom_distiller_test_util.h"
-#include "components/dom_distiller/core/fake_db.h"
 #include "components/dom_distiller/core/fake_distiller.h"
+#include "components/dom_distiller/core/fake_distiller_page.h"
 #include "components/dom_distiller/core/task_tracker.h"
+#include "components/leveldb_proto/testing/fake_db.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using leveldb_proto::test::FakeDB;
 using testing::Invoke;
 using testing::Return;
 using testing::_;
@@ -33,6 +35,8 @@ class FakeViewRequestDelegate : public ViewRequestDelegate {
  public:
   virtual ~FakeViewRequestDelegate() {}
   MOCK_METHOD1(OnArticleReady, void(const DistilledArticleProto* proto));
+  MOCK_METHOD1(OnArticleUpdated,
+               void(ArticleDistillationUpdate article_update));
 };
 
 class MockDistillerObserver : public DomDistillerObserver {
@@ -76,13 +80,16 @@ class DomDistillerServiceTest : public testing::Test {
  public:
   virtual void SetUp() {
     main_loop_.reset(new base::MessageLoop());
-    FakeDB* fake_db = new FakeDB(&db_model_);
-    FakeDB::EntryMap store_model;
-    store_ = test::util::CreateStoreWithFakeDB(fake_db, store_model);
+    FakeDB<ArticleEntry>* fake_db = new FakeDB<ArticleEntry>(&db_model_);
+    FakeDB<ArticleEntry>::EntryMap store_model;
+    store_ =
+        test::util::CreateStoreWithFakeDB(fake_db, store_model);
     distiller_factory_ = new MockDistillerFactory();
+    distiller_page_factory_ = new MockDistillerPageFactory();
     service_.reset(new DomDistillerService(
         scoped_ptr<DomDistillerStoreInterface>(store_),
-        scoped_ptr<DistillerFactory>(distiller_factory_)));
+        scoped_ptr<DistillerFactory>(distiller_factory_),
+        scoped_ptr<DistillerPageFactory>(distiller_page_factory_)));
     fake_db->InitCallback(true);
     fake_db->LoadCallback(true);
   }
@@ -98,9 +105,10 @@ class DomDistillerServiceTest : public testing::Test {
   // store is owned by service_.
   DomDistillerStoreInterface* store_;
   MockDistillerFactory* distiller_factory_;
+  MockDistillerPageFactory* distiller_page_factory_;
   scoped_ptr<DomDistillerService> service_;
   scoped_ptr<base::MessageLoop> main_loop_;
-  FakeDB::EntryMap db_model_;
+  FakeDB<ArticleEntry>::EntryMap db_model_;
 };
 
 TEST_F(DomDistillerServiceTest, TestViewEntry) {
@@ -117,10 +125,10 @@ TEST_F(DomDistillerServiceTest, TestViewEntry) {
   store_->AddEntry(entry);
 
   FakeViewRequestDelegate viewer_delegate;
-  scoped_ptr<ViewerHandle> handle =
-      service_->ViewEntry(&viewer_delegate, entry_id);
+  scoped_ptr<ViewerHandle> handle = service_->ViewEntry(
+      &viewer_delegate, service_->CreateDefaultDistillerPage(), entry_id);
 
-  ASSERT_FALSE(distiller->GetCallback().is_null());
+  ASSERT_FALSE(distiller->GetArticleCallback().is_null());
 
   scoped_ptr<DistilledArticleProto> proto = CreateDefaultArticle();
   EXPECT_CALL(viewer_delegate, OnArticleReady(proto.get()));
@@ -135,9 +143,10 @@ TEST_F(DomDistillerServiceTest, TestViewUrl) {
 
   FakeViewRequestDelegate viewer_delegate;
   GURL url("http://www.example.com/p1");
-  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(&viewer_delegate, url);
+  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(
+      &viewer_delegate, service_->CreateDefaultDistillerPage(), url);
 
-  ASSERT_FALSE(distiller->GetCallback().is_null());
+  ASSERT_FALSE(distiller->GetArticleCallback().is_null());
   EXPECT_EQ(url, distiller->GetUrl());
 
   scoped_ptr<DistilledArticleProto> proto = CreateDefaultArticle();
@@ -159,10 +168,12 @@ TEST_F(DomDistillerServiceTest, TestMultipleViewUrl) {
   GURL url("http://www.example.com/p1");
   GURL url2("http://www.example.com/a/p1");
 
-  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(&viewer_delegate, url);
-  scoped_ptr<ViewerHandle> handle2 = service_->ViewUrl(&viewer_delegate2, url2);
+  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(
+      &viewer_delegate, service_->CreateDefaultDistillerPage(), url);
+  scoped_ptr<ViewerHandle> handle2 = service_->ViewUrl(
+      &viewer_delegate2, service_->CreateDefaultDistillerPage(), url2);
 
-  ASSERT_FALSE(distiller->GetCallback().is_null());
+  ASSERT_FALSE(distiller->GetArticleCallback().is_null());
   EXPECT_EQ(url, distiller->GetUrl());
 
   scoped_ptr<DistilledArticleProto> proto = CreateDefaultArticle();
@@ -170,7 +181,7 @@ TEST_F(DomDistillerServiceTest, TestMultipleViewUrl) {
 
   RunDistillerCallback(distiller, proto.Pass());
 
-  ASSERT_FALSE(distiller2->GetCallback().is_null());
+  ASSERT_FALSE(distiller2->GetArticleCallback().is_null());
   EXPECT_EQ(url2, distiller2->GetUrl());
 
   scoped_ptr<DistilledArticleProto> proto2 = CreateDefaultArticle();
@@ -190,9 +201,10 @@ TEST_F(DomDistillerServiceTest, TestViewUrlCancelled) {
 
   FakeViewRequestDelegate viewer_delegate;
   GURL url("http://www.example.com/p1");
-  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(&viewer_delegate, url);
+  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(
+      &viewer_delegate, service_->CreateDefaultDistillerPage(), url);
 
-  ASSERT_FALSE(distiller->GetCallback().is_null());
+  ASSERT_FALSE(distiller->GetArticleCallback().is_null());
   EXPECT_EQ(url, distiller->GetUrl());
 
   EXPECT_CALL(viewer_delegate, OnArticleReady(_)).Times(0);
@@ -211,7 +223,8 @@ TEST_F(DomDistillerServiceTest, TestViewUrlDoesNotAddEntry) {
 
   FakeViewRequestDelegate viewer_delegate;
   GURL url("http://www.example.com/p1");
-  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(&viewer_delegate, url);
+  scoped_ptr<ViewerHandle> handle = service_->ViewUrl(
+      &viewer_delegate, service_->CreateDefaultDistillerPage(), url);
 
   scoped_ptr<DistilledArticleProto> proto = CreateArticleWithURL(url.spec());
   EXPECT_CALL(viewer_delegate, OnArticleReady(proto.get()));
@@ -232,9 +245,11 @@ TEST_F(DomDistillerServiceTest, TestAddAndRemoveEntry) {
   MockArticleAvailableCallback article_cb;
   EXPECT_CALL(article_cb, DistillationCompleted(true));
 
-  std::string entry_id = service_->AddToList(url, ArticleCallback(&article_cb));
+  std::string entry_id =
+      service_->AddToList(url, service_->CreateDefaultDistillerPage().Pass(),
+                          ArticleCallback(&article_cb));
 
-  ASSERT_FALSE(distiller->GetCallback().is_null());
+  ASSERT_FALSE(distiller->GetArticleCallback().is_null());
   EXPECT_EQ(url, distiller->GetUrl());
 
   scoped_ptr<DistilledArticleProto> proto = CreateArticleWithURL(url.spec());
@@ -261,7 +276,9 @@ TEST_F(DomDistillerServiceTest, TestCancellation) {
   EXPECT_CALL(article_cb, DistillationCompleted(false));
 
   GURL url("http://www.example.com/p1");
-  std::string entry_id = service_->AddToList(url, ArticleCallback(&article_cb));
+  std::string entry_id =
+      service_->AddToList(url, service_->CreateDefaultDistillerPage().Pass(),
+                          ArticleCallback(&article_cb));
 
   // Remove entry will cause the |article_cb| to be called with false value.
   service_->RemoveEntry(entry_id);
@@ -281,7 +298,8 @@ TEST_F(DomDistillerServiceTest, TestMultipleObservers) {
 
   DomDistillerService::ArticleAvailableCallback article_cb;
   GURL url("http://www.example.com/p1");
-  std::string entry_id = service_->AddToList(url, article_cb);
+  std::string entry_id = service_->AddToList(
+      url, service_->CreateDefaultDistillerPage().Pass(), article_cb);
 
   // Distillation should notify all observers that article is added.
   std::vector<DomDistillerObserver::ArticleUpdate> expected_updates;
@@ -291,9 +309,8 @@ TEST_F(DomDistillerServiceTest, TestMultipleObservers) {
   expected_updates.push_back(update);
 
   for (int i = 0; i < kObserverCount; ++i) {
-    EXPECT_CALL(
-        observers[i],
-        ArticleEntriesUpdated(util::HasExpectedUpdates(expected_updates)));
+    EXPECT_CALL(observers[i], ArticleEntriesUpdated(
+                                  util::HasExpectedUpdates(expected_updates)));
   }
 
   scoped_ptr<DistilledArticleProto> proto = CreateDefaultArticle();
@@ -304,9 +321,8 @@ TEST_F(DomDistillerServiceTest, TestMultipleObservers) {
   expected_updates.clear();
   expected_updates.push_back(update);
   for (int i = 0; i < kObserverCount; ++i) {
-    EXPECT_CALL(
-        observers[i],
-        ArticleEntriesUpdated(util::HasExpectedUpdates(expected_updates)));
+    EXPECT_CALL(observers[i], ArticleEntriesUpdated(
+                                  util::HasExpectedUpdates(expected_updates)));
   }
 
   service_->RemoveEntry(entry_id);
@@ -323,12 +339,14 @@ TEST_F(DomDistillerServiceTest, TestMultipleCallbacks) {
   // Adding a URL and then distilling calls all clients.
   GURL url("http://www.example.com/p1");
   const std::string entry_id =
-      service_->AddToList(url, ArticleCallback(&article_cb[0]));
+      service_->AddToList(url, service_->CreateDefaultDistillerPage().Pass(),
+                          ArticleCallback(&article_cb[0]));
   EXPECT_CALL(article_cb[0], DistillationCompleted(true));
 
   for (int i = 1; i < kClientsCount; ++i) {
-    EXPECT_EQ(entry_id,
-              service_->AddToList(url, ArticleCallback(&article_cb[i])));
+    EXPECT_EQ(entry_id, service_->AddToList(
+                            url, service_->CreateDefaultDistillerPage().Pass(),
+                            ArticleCallback(&article_cb[i])));
     EXPECT_CALL(article_cb[i], DistillationCompleted(true));
   }
 
@@ -338,8 +356,9 @@ TEST_F(DomDistillerServiceTest, TestMultipleCallbacks) {
   // Add the same url again, all callbacks should be called with true.
   for (int i = 0; i < kClientsCount; ++i) {
     EXPECT_CALL(article_cb[i], DistillationCompleted(true));
-    EXPECT_EQ(entry_id,
-              service_->AddToList(url, ArticleCallback(&article_cb[i])));
+    EXPECT_EQ(entry_id, service_->AddToList(
+                            url, service_->CreateDefaultDistillerPage().Pass(),
+                            ArticleCallback(&article_cb[i])));
   }
 
   base::RunLoop().RunUntilIdle();
@@ -356,12 +375,14 @@ TEST_F(DomDistillerServiceTest, TestMultipleCallbacksOnRemove) {
   // called with false.
   GURL url("http://www.example.com/p1");
   const std::string entry_id =
-      service_->AddToList(url, ArticleCallback(&article_cb[0]));
+      service_->AddToList(url, service_->CreateDefaultDistillerPage().Pass(),
+                          ArticleCallback(&article_cb[0]));
 
   EXPECT_CALL(article_cb[0], DistillationCompleted(false));
   for (int i = 1; i < kClientsCount; ++i) {
-    EXPECT_EQ(entry_id,
-              service_->AddToList(url, ArticleCallback(&article_cb[i])));
+    EXPECT_EQ(entry_id, service_->AddToList(
+                            url, service_->CreateDefaultDistillerPage().Pass(),
+                            ArticleCallback(&article_cb[i])));
     EXPECT_CALL(article_cb[i], DistillationCompleted(false));
   }
 
@@ -385,11 +406,12 @@ TEST_F(DomDistillerServiceTest, TestMultiplePageArticle) {
   MockArticleAvailableCallback article_cb;
   EXPECT_CALL(article_cb, DistillationCompleted(true));
 
-  std::string entry_id =
-      service_->AddToList(pages_url[0], ArticleCallback(&article_cb));
+  std::string entry_id = service_->AddToList(
+      pages_url[0], service_->CreateDefaultDistillerPage().Pass(),
+      ArticleCallback(&article_cb));
 
   ArticleEntry entry;
-  ASSERT_FALSE(distiller->GetCallback().is_null());
+  ASSERT_FALSE(distiller->GetArticleCallback().is_null());
   EXPECT_EQ(pages_url[0], distiller->GetUrl());
 
   // Create the article with pages to pass to the distiller.

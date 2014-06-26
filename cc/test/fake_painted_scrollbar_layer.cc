@@ -28,15 +28,15 @@ FakePaintedScrollbarLayer::FakePaintedScrollbarLayer(
       update_count_(0),
       push_properties_count_(0),
       fake_scrollbar_(fake_scrollbar) {
-  SetAnchorPoint(gfx::PointF(0.f, 0.f));
   SetBounds(gfx::Size(1, 1));
   SetIsDrawable(true);
 }
 
 FakePaintedScrollbarLayer::~FakePaintedScrollbarLayer() {}
 
-bool FakePaintedScrollbarLayer::Update(ResourceUpdateQueue* queue,
-                                       const OcclusionTracker* occlusion) {
+bool FakePaintedScrollbarLayer::Update(
+    ResourceUpdateQueue* queue,
+    const OcclusionTracker<Layer>* occlusion) {
   bool updated = PaintedScrollbarLayer::Update(queue, occlusion);
   ++update_count_;
   return updated;

@@ -6,9 +6,9 @@
 
 #include "base/pickle.h"
 #include "base/values.h"
-#include "chrome/common/extensions/permissions/socket_permission.h"
-#include "chrome/common/extensions/permissions/socket_permission_data.h"
 #include "extensions/common/permissions/permissions_info.h"
+#include "extensions/common/permissions/socket_permission.h"
+#include "extensions/common/permissions/socket_permission_data.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -293,7 +293,7 @@ TEST(SocketPermissionTest, IPC) {
     value->AppendString("tcp-connect:*.example.com:80");
     value->AppendString("udp-bind::8080");
     value->AppendString("udp-send-to::8888");
-    ASSERT_TRUE(permission1->FromValue(value.get(), NULL));
+    ASSERT_TRUE(permission1->FromValue(value.get(), NULL, NULL));
 
     EXPECT_FALSE(permission1->Equal(permission2.get()));
 
@@ -317,13 +317,13 @@ TEST(SocketPermissionTest, Value) {
   value->AppendString("tcp-connect:*.example.com:80");
   value->AppendString("udp-bind::8080");
   value->AppendString("udp-send-to::8888");
-  ASSERT_TRUE(permission1->FromValue(value.get(), NULL));
+  ASSERT_TRUE(permission1->FromValue(value.get(), NULL, NULL));
 
   EXPECT_FALSE(permission1->Equal(permission2.get()));
 
   scoped_ptr<base::Value> vtmp(permission1->ToValue());
   ASSERT_TRUE(vtmp);
-  ASSERT_TRUE(permission2->FromValue(vtmp.get(), NULL));
+  ASSERT_TRUE(permission2->FromValue(vtmp.get(), NULL, NULL));
   EXPECT_TRUE(permission1->Equal(permission2.get()));
 }
 

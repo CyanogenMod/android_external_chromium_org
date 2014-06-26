@@ -7,27 +7,30 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/system_monitor/system_monitor.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/webrtc_audio_private.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "media/audio/audio_device_name.h"
 #include "url/gurl.h"
+
+namespace content {
+class ResourceContext;
+}
 
 namespace extensions {
 
 // Listens for device changes and forwards as an extension event.
 class WebrtcAudioPrivateEventService
-    : public ProfileKeyedAPI,
+    : public BrowserContextKeyedAPI,
       public base::SystemMonitor::DevicesChangedObserver {
  public:
-  explicit WebrtcAudioPrivateEventService(Profile* profile);
+  explicit WebrtcAudioPrivateEventService(content::BrowserContext* context);
   virtual ~WebrtcAudioPrivateEventService();
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   virtual void Shutdown() OVERRIDE;
-  static ProfileKeyedAPIFactory<WebrtcAudioPrivateEventService>*
+  static BrowserContextKeyedAPIFactory<WebrtcAudioPrivateEventService>*
       GetFactoryInstance();
   static const char* service_name();
 
@@ -36,11 +39,11 @@ class WebrtcAudioPrivateEventService
       base::SystemMonitor::DeviceType device_type) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<WebrtcAudioPrivateEventService>;
+  friend class BrowserContextKeyedAPIFactory<WebrtcAudioPrivateEventService>;
 
   void SignalEvent();
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 };
 
 // Common base for WebrtcAudioPrivate functions, that provides a
@@ -114,7 +117,7 @@ class WebrtcAudioPrivateGetSinksFunction : public WebrtcAudioPrivateFunction {
   // Sequence of events is that we query the list of sinks on the
   // AudioManager's thread, then calculate HMACs on the IO thread,
   // then finish on the UI thread.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   void DoQuery();
   virtual void OnOutputDeviceNames(
       scoped_ptr<media::AudioDeviceNames> raw_ids) OVERRIDE;
@@ -130,7 +133,7 @@ class WebrtcAudioPrivateGetActiveSinkFunction
   DECLARE_EXTENSION_FUNCTION("webrtcAudioPrivate.getActiveSink",
                              WEBRTC_AUDIO_PRIVATE_GET_ACTIVE_SINK);
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   virtual void OnControllerList(
       const content::RenderViewHost::AudioOutputControllerList&
       controllers) OVERRIDE;
@@ -149,7 +152,7 @@ class WebrtcAudioPrivateSetActiveSinkFunction
   DECLARE_EXTENSION_FUNCTION("webrtcAudioPrivate.setActiveSink",
                              WEBRTC_AUDIO_PRIVATE_SET_ACTIVE_SINK);
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   virtual void OnControllerList(
       const content::RenderViewHost::AudioOutputControllerList&
       controllers) OVERRIDE;
@@ -181,7 +184,7 @@ class WebrtcAudioPrivateGetAssociatedSinkFunction
   DECLARE_EXTENSION_FUNCTION("webrtcAudioPrivate.getAssociatedSink",
                              WEBRTC_AUDIO_PRIVATE_GET_ASSOCIATED_SINK);
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // This implementation is slightly complicated because of different
   // thread requirements for the various functions we need to invoke.

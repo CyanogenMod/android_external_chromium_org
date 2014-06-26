@@ -11,17 +11,21 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_all_tabs_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_editor_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_name_folder_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_tree_browser_cell.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+
+using bookmarks::BookmarkExpandedStateTracker;
 
 @interface BookmarkEditorBaseController ()
 
@@ -140,16 +144,20 @@ class BookmarkEditorBaseControllerBridge : public BookmarkModelObserver {
       [controller_ modelChangedPreserveSelection:YES];
   }
 
-  virtual void BookmarkNodeRemoved(BookmarkModel* model,
-                                   const BookmarkNode* parent,
-                                   int old_index,
-                                   const BookmarkNode* node) OVERRIDE {
+  virtual void BookmarkNodeRemoved(
+      BookmarkModel* model,
+      const BookmarkNode* parent,
+      int old_index,
+      const BookmarkNode* node,
+      const std::set<GURL>& removed_urls) OVERRIDE {
     [controller_ nodeRemoved:node fromParent:parent];
     if (node->is_folder())
       [controller_ modelChangedPreserveSelection:NO];
   }
 
-  virtual void BookmarkAllNodesRemoved(BookmarkModel* model) OVERRIDE {
+  virtual void BookmarkAllUserNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE {
     [controller_ modelChangedPreserveSelection:NO];
   }
 
@@ -498,11 +506,14 @@ NSString* const kOkEnabledName = @"okEnabled";
 }
 
 - (NSMutableArray*)addChildFoldersFromNode:(const BookmarkNode*)node {
+  ChromeBookmarkClient* client =
+      ChromeBookmarkClientFactory::GetForProfile(profile_);
   NSMutableArray* childFolders = nil;
   int childCount = node->child_count();
   for (int i = 0; i < childCount; ++i) {
     const BookmarkNode* childNode = node->GetChild(i);
-    if (childNode->is_folder() && childNode->IsVisible()) {
+    if (childNode->is_folder() && childNode->IsVisible() &&
+        client->CanBeEditedByUser(childNode)) {
       NSString* childName = base::SysUTF16ToNSString(childNode->GetTitle());
       NSMutableArray* children = [self addChildFoldersFromNode:childNode];
       BookmarkFolderInfo* folderInfo =

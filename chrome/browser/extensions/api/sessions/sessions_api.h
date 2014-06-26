@@ -7,13 +7,14 @@
 
 #include <string>
 
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/sessions/tab_restore_service.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
 #include "chrome/common/extensions/api/sessions.h"
 #include "chrome/common/extensions/api/tabs.h"
 #include "chrome/common/extensions/api/windows.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
 
 class Profile;
 
@@ -28,7 +29,7 @@ class SessionId;
 class SessionsGetRecentlyClosedFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~SessionsGetRecentlyClosedFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("sessions.getRecentlyClosed",
                              SESSIONS_GETRECENTLYCLOSED)
 
@@ -46,7 +47,7 @@ class SessionsGetRecentlyClosedFunction : public ChromeSyncExtensionFunction {
 class SessionsGetDevicesFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~SessionsGetDevicesFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("sessions.getDevices", SESSIONS_GETDEVICES)
 
  private:
@@ -67,12 +68,12 @@ class SessionsGetDevicesFunction : public ChromeSyncExtensionFunction {
 class SessionsRestoreFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~SessionsRestoreFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("sessions.restore", SESSIONS_RESTORE)
 
  private:
   void SetInvalidIdError(const std::string& invalid_id);
-  void SetResultRestoredTab(const content::WebContents* contents);
+  void SetResultRestoredTab(content::WebContents* contents);
   bool SetResultRestoredWindow(int window_id);
   bool RestoreMostRecentlyClosed(Browser* browser);
   bool RestoreLocalSession(const SessionId& session_id, Browser* browser);
@@ -80,21 +81,60 @@ class SessionsRestoreFunction : public ChromeSyncExtensionFunction {
                              Browser* browser);
 };
 
-class SessionsAPI : public ProfileKeyedAPI {
+class SessionsEventRouter : public TabRestoreServiceObserver {
  public:
-  explicit SessionsAPI(Profile* profile);
+  explicit SessionsEventRouter(Profile* profile);
+  virtual ~SessionsEventRouter();
+
+  // Observer callback for TabRestoreServiceObserver. Sends data on
+  // recently closed tabs to the javascript side of this page to
+  // display to the user.
+  virtual void TabRestoreServiceChanged(TabRestoreService* service) OVERRIDE;
+
+  // Observer callback to notice when our associated TabRestoreService
+  // is destroyed.
+  virtual void TabRestoreServiceDestroyed(TabRestoreService* service) OVERRIDE;
+
+ private:
+  Profile* profile_;
+
+  // TabRestoreService that we are observing.
+  TabRestoreService* tab_restore_service_;
+
+  DISALLOW_COPY_AND_ASSIGN(SessionsEventRouter);
+};
+
+class SessionsAPI : public BrowserContextKeyedAPI,
+                    public extensions::EventRouter::Observer {
+ public:
+  explicit SessionsAPI(content::BrowserContext* context);
   virtual ~SessionsAPI();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<SessionsAPI>* GetFactoryInstance();
- private:
-  friend class ProfileKeyedAPIFactory<SessionsAPI>;
+  // BrowserContextKeyedService implementation.
+  virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<SessionsAPI>* GetFactoryInstance();
+
+  // EventRouter::Observer implementation.
+  virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
+      OVERRIDE;
+
+ private:
+  friend class BrowserContextKeyedAPIFactory<SessionsAPI>;
+
+  content::BrowserContext* browser_context_;
+
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "SessionsAPI";
   }
   static const bool kServiceIsNULLWhileTesting = true;
+
+  // Created lazily upon OnListenerAdded.
+  scoped_ptr<SessionsEventRouter> sessions_event_router_;
+
+  DISALLOW_COPY_AND_ASSIGN(SessionsAPI);
 };
 
 }  // namespace extensions

@@ -13,18 +13,20 @@
 #include "base/files/file_path.h"
 #include "base/guid.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
+#include "chrome/browser/browsing_data/browsing_data_remover_test_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
+#include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/extensions/mock_extension_special_storage_policy.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
@@ -42,6 +44,9 @@
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
+#include "components/domain_reliability/clear_mode.h"
+#include "components/domain_reliability/monitor.h"
+#include "components/domain_reliability/service.h"
 #include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/local_storage_usage_info.h"
@@ -49,6 +54,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_utils.h"
 #include "net/cookies/cookie_store.h"
 #include "net/ssl/server_bound_cert_service.h"
 #include "net/ssl/server_bound_cert_store.h"
@@ -60,6 +66,12 @@
 
 using content::BrowserThread;
 using content::StoragePartition;
+using domain_reliability::CLEAR_BEACONS;
+using domain_reliability::CLEAR_CONTEXTS;
+using domain_reliability::DomainReliabilityClearMode;
+using domain_reliability::DomainReliabilityMonitor;
+using domain_reliability::DomainReliabilityService;
+using domain_reliability::DomainReliabilityServiceFactory;
 using testing::_;
 using testing::Invoke;
 using testing::WithArgs;
@@ -93,48 +105,6 @@ const base::FilePath::CharType kDomStorageOrigin3[] =
 
 const base::FilePath::CharType kDomStorageExt[] = FILE_PATH_LITERAL(
     "chrome-extension_abcdefghijklmnopqrstuvwxyz_0.localstorage");
-
-class AwaitCompletionHelper : public BrowsingDataRemover::Observer {
- public:
-  AwaitCompletionHelper() : start_(false), already_quit_(false) {}
-  virtual ~AwaitCompletionHelper() {}
-
-  void BlockUntilNotified() {
-    if (!already_quit_) {
-      DCHECK(!start_);
-      start_ = true;
-      base::MessageLoop::current()->Run();
-    } else {
-      DCHECK(!start_);
-      already_quit_ = false;
-    }
-  }
-
-  void Notify() {
-    if (start_) {
-      DCHECK(!already_quit_);
-      base::MessageLoop::current()->Quit();
-      start_ = false;
-    } else {
-      DCHECK(!already_quit_);
-      already_quit_ = true;
-    }
-  }
-
- protected:
-  // BrowsingDataRemover::Observer implementation.
-  virtual void OnBrowsingDataRemoverDone() OVERRIDE {
-    Notify();
-  }
-
- private:
-  // Helps prevent from running message_loop, if the callback invoked
-  // immediately.
-  bool start_;
-  bool already_quit_;
-
-  DISALLOW_COPY_AND_ASSIGN(AwaitCompletionHelper);
-};
 
 #if defined(OS_CHROMEOS)
 void FakeDBusCall(const chromeos::BoolDBusMethodCallback& callback) {
@@ -172,7 +142,7 @@ class TestStoragePartition : public StoragePartition {
   virtual quota::QuotaManager* GetQuotaManager() OVERRIDE {
     return NULL;
   }
-  virtual appcache::AppCacheService* GetAppCacheService() OVERRIDE {
+  virtual content::AppCacheService* GetAppCacheService() OVERRIDE {
     return NULL;
   }
   virtual fileapi::FileSystemContext* GetFileSystemContext() OVERRIDE {
@@ -187,8 +157,7 @@ class TestStoragePartition : public StoragePartition {
   virtual content::IndexedDBContext* GetIndexedDBContext() OVERRIDE {
     return NULL;
   }
-  virtual content::ServiceWorkerContextWrapper*
-  GetServiceWorkerContext() OVERRIDE {
+  virtual content::ServiceWorkerContext* GetServiceWorkerContext() OVERRIDE {
     return NULL;
   }
 
@@ -245,21 +214,27 @@ class RemoveCookieTester {
 
   // Returns true, if the given cookie exists in the cookie store.
   bool ContainsCookie() {
+    scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+        new content::MessageLoopRunner;
+    quit_closure_ = message_loop_runner->QuitClosure();
     get_cookie_success_ = false;
     cookie_store_->GetCookiesWithOptionsAsync(
         kOrigin1, net::CookieOptions(),
         base::Bind(&RemoveCookieTester::GetCookieCallback,
                    base::Unretained(this)));
-    await_completion_.BlockUntilNotified();
+    message_loop_runner->Run();
     return get_cookie_success_;
   }
 
   void AddCookie() {
+    scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+        new content::MessageLoopRunner;
+    quit_closure_ = message_loop_runner->QuitClosure();
     cookie_store_->SetCookieWithOptionsAsync(
         kOrigin1, "A=1", net::CookieOptions(),
         base::Bind(&RemoveCookieTester::SetCookieCallback,
                    base::Unretained(this)));
-    await_completion_.BlockUntilNotified();
+    message_loop_runner->Run();
   }
 
  protected:
@@ -275,16 +250,16 @@ class RemoveCookieTester {
       EXPECT_EQ("", cookies);
       get_cookie_success_ = false;
     }
-    await_completion_.Notify();
+    quit_closure_.Run();
   }
 
   void SetCookieCallback(bool result) {
     ASSERT_TRUE(result);
-    await_completion_.Notify();
+    quit_closure_.Run();
   }
 
   bool get_cookie_success_;
-  AwaitCompletionHelper await_completion_;
+  base::Closure quit_closure_;
   net::CookieStore* cookie_store_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoveCookieTester);
@@ -408,13 +383,16 @@ class RemoveHistoryTester {
 
   // Returns true, if the given URL exists in the history service.
   bool HistoryContainsURL(const GURL& url) {
+    scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+        new content::MessageLoopRunner;
+    quit_closure_ = message_loop_runner->QuitClosure();
     history_service_->QueryURL(
         url,
         true,
-        &consumer_,
         base::Bind(&RemoveHistoryTester::SaveResultAndQuit,
-                   base::Unretained(this)));
-    await_completion_.BlockUntilNotified();
+                   base::Unretained(this)),
+        &tracker_);
+    message_loop_runner->Run();
     return query_url_success_;
   }
 
@@ -426,22 +404,20 @@ class RemoveHistoryTester {
 
  private:
   // Callback for HistoryService::QueryURL.
-  void SaveResultAndQuit(HistoryService::Handle,
-                         bool success,
-                         const history::URLRow*,
-                         history::VisitVector*) {
+  void SaveResultAndQuit(bool success,
+                         const history::URLRow&,
+                         const history::VisitVector&) {
     query_url_success_ = success;
-    await_completion_.Notify();
+    quit_closure_.Run();
   }
 
   // For History requests.
-  CancelableRequestConsumer consumer_;
+  base::CancelableTaskTracker tracker_;
   bool query_url_success_;
+  base::Closure quit_closure_;
 
   // TestingProfile owns the history service; we shouldn't delete it.
   HistoryService* history_service_;
-
-  AwaitCompletionHelper await_completion_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoveHistoryTester);
 };
@@ -451,7 +427,7 @@ class RemoveAutofillTester : public autofill::PersonalDataManagerObserver {
   explicit RemoveAutofillTester(TestingProfile* profile)
       : personal_data_manager_(
             autofill::PersonalDataManagerFactory::GetForProfile(profile)) {
-        autofill::test::DisableSystemServices(profile);
+    autofill::test::DisableSystemServices(profile->GetPrefs());
     personal_data_manager_->AddObserver(this);
   }
 
@@ -545,8 +521,11 @@ class RemoveLocalStorageTester {
 
   // Returns true, if the given origin URL exists.
   bool DOMStorageExistsForOrigin(const GURL& origin) {
+    scoped_refptr<content::MessageLoopRunner> message_loop_runner =
+        new content::MessageLoopRunner;
+    quit_closure_ = message_loop_runner->QuitClosure();
     GetLocalStorageUsage();
-    await_completion_.BlockUntilNotified();
+    message_loop_runner->Run();
     for (size_t i = 0; i < infos_.size(); ++i) {
       if (origin == infos_[i].origin)
         return true;
@@ -562,10 +541,10 @@ class RemoveLocalStorageTester {
     base::CreateDirectory(storage_path);
 
     // Write some files.
-    file_util::WriteFile(storage_path.Append(kDomStorageOrigin1), NULL, 0);
-    file_util::WriteFile(storage_path.Append(kDomStorageOrigin2), NULL, 0);
-    file_util::WriteFile(storage_path.Append(kDomStorageOrigin3), NULL, 0);
-    file_util::WriteFile(storage_path.Append(kDomStorageExt), NULL, 0);
+    base::WriteFile(storage_path.Append(kDomStorageOrigin1), NULL, 0);
+    base::WriteFile(storage_path.Append(kDomStorageOrigin2), NULL, 0);
+    base::WriteFile(storage_path.Append(kDomStorageOrigin3), NULL, 0);
+    base::WriteFile(storage_path.Append(kDomStorageExt), NULL, 0);
 
     // Tweak their dates.
     base::Time now = base::Time::Now();
@@ -591,7 +570,7 @@ class RemoveLocalStorageTester {
   void OnGotLocalStorageUsage(
       const std::vector<content::LocalStorageUsageInfo>& infos) {
     infos_ = infos;
-    await_completion_.Notify();
+    quit_closure_.Run();
   }
 
   // We don't own these pointers.
@@ -599,10 +578,115 @@ class RemoveLocalStorageTester {
   content::DOMStorageContext* dom_storage_context_;
 
   std::vector<content::LocalStorageUsageInfo> infos_;
-
-  AwaitCompletionHelper await_completion_;
+  base::Closure quit_closure_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoveLocalStorageTester);
+};
+
+class MockDomainReliabilityService : public DomainReliabilityService {
+ public:
+  MockDomainReliabilityService() : clear_count_(0) {}
+
+  virtual ~MockDomainReliabilityService() {}
+
+  virtual scoped_ptr<DomainReliabilityMonitor> CreateMonitor(
+      scoped_refptr<base::SequencedTaskRunner> network_task_runner) OVERRIDE {
+    NOTREACHED();
+    return scoped_ptr<DomainReliabilityMonitor>();
+  }
+
+  virtual void ClearBrowsingData(DomainReliabilityClearMode clear_mode,
+                                 const base::Closure& callback) OVERRIDE {
+    clear_count_++;
+    last_clear_mode_ = clear_mode;
+    callback.Run();
+  }
+
+  int clear_count() const { return clear_count_; }
+
+  DomainReliabilityClearMode last_clear_mode() const {
+    return last_clear_mode_;
+  }
+
+ private:
+  unsigned clear_count_;
+  DomainReliabilityClearMode last_clear_mode_;
+};
+
+struct TestingDomainReliabilityServiceFactoryUserData
+    : public base::SupportsUserData::Data {
+  TestingDomainReliabilityServiceFactoryUserData(
+      content::BrowserContext* context,
+      MockDomainReliabilityService* service)
+      : context(context),
+        service(service),
+        attached(false) {}
+  virtual ~TestingDomainReliabilityServiceFactoryUserData() {}
+
+  content::BrowserContext* const context;
+  MockDomainReliabilityService* const service;
+  bool attached;
+
+  static const void* kKey;
+};
+
+// static
+const void* TestingDomainReliabilityServiceFactoryUserData::kKey =
+    &TestingDomainReliabilityServiceFactoryUserData::kKey;
+
+KeyedService* TestingDomainReliabilityServiceFactoryFunction(
+    content::BrowserContext* context) {
+  const void* kKey = TestingDomainReliabilityServiceFactoryUserData::kKey;
+
+  TestingDomainReliabilityServiceFactoryUserData* data =
+      static_cast<TestingDomainReliabilityServiceFactoryUserData*>(
+          context->GetUserData(kKey));
+  EXPECT_TRUE(data);
+  EXPECT_EQ(data->context, context);
+  EXPECT_FALSE(data->attached);
+
+  data->attached = true;
+  return data->service;
+}
+
+class ClearDomainReliabilityTester {
+ public:
+  explicit ClearDomainReliabilityTester(TestingProfile* profile) :
+      profile_(profile),
+      mock_service_(new MockDomainReliabilityService()) {
+    AttachService();
+  }
+
+  unsigned clear_count() { return mock_service_->clear_count(); }
+
+  DomainReliabilityClearMode last_clear_mode() {
+    return mock_service_->last_clear_mode();
+  }
+
+ private:
+  void AttachService() {
+    const void* kKey = TestingDomainReliabilityServiceFactoryUserData::kKey;
+
+    // Attach kludgey UserData struct to profile.
+    TestingDomainReliabilityServiceFactoryUserData* data =
+        new TestingDomainReliabilityServiceFactoryUserData(profile_,
+                                                           mock_service_);
+    EXPECT_FALSE(profile_->GetUserData(kKey));
+    profile_->SetUserData(kKey, data);
+
+    // Set and use factory that will attach service stuffed in kludgey struct.
+    DomainReliabilityServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+        profile_,
+        &TestingDomainReliabilityServiceFactoryFunction);
+
+    // Verify and detach kludgey struct.
+    EXPECT_EQ(data, profile_->GetUserData(kKey));
+    EXPECT_TRUE(data->attached);
+    profile_->RemoveUserData(kKey);
+  }
+
+  TestingProfile* profile_;
+  MockDomainReliabilityService* mock_service_;
 };
 
 // Test Class ----------------------------------------------------------------
@@ -638,17 +722,16 @@ class BrowsingDataRemoverTest : public testing::Test,
     TestStoragePartition storage_partition;
     remover->OverrideStoragePartitionForTesting(&storage_partition);
 
-    AwaitCompletionHelper await_completion;
-    remover->AddObserver(&await_completion);
-
     called_with_details_.reset(new BrowsingDataRemover::NotificationDetails());
 
     // BrowsingDataRemover deletes itself when it completes.
     int origin_set_mask = BrowsingDataHelper::UNPROTECTED_WEB;
     if (include_protected_origins)
       origin_set_mask |= BrowsingDataHelper::PROTECTED_WEB;
+
+    BrowsingDataRemoverCompletionObserver completion_observer(remover);
     remover->Remove(remove_mask, origin_set_mask);
-    await_completion.BlockUntilNotified();
+    completion_observer.BlockUntilCompletion();
 
     // Save so we can verify later.
     storage_partition_removal_data_ =
@@ -663,15 +746,13 @@ class BrowsingDataRemoverTest : public testing::Test,
     TestStoragePartition storage_partition;
     remover->OverrideStoragePartitionForTesting(&storage_partition);
 
-    AwaitCompletionHelper await_completion;
-    remover->AddObserver(&await_completion);
-
     called_with_details_.reset(new BrowsingDataRemover::NotificationDetails());
 
     // BrowsingDataRemover deletes itself when it completes.
+    BrowsingDataRemoverCompletionObserver completion_observer(remover);
     remover->RemoveImpl(remove_mask, remove_origin,
         BrowsingDataHelper::UNPROTECTED_WEB);
-    await_completion.BlockUntilNotified();
+    completion_observer.BlockUntilCompletion();
 
     // Save so we can verify later.
     storage_partition_removal_data_ =
@@ -713,8 +794,10 @@ class BrowsingDataRemoverTest : public testing::Test,
     registrar_.RemoveAll();
   }
 
- private:
+ protected:
   scoped_ptr<BrowsingDataRemover::NotificationDetails> called_with_details_;
+
+ private:
   content::NotificationRegistrar registrar_;
 
   content::TestBrowserThreadBundle thread_bundle_;
@@ -1574,6 +1657,53 @@ TEST_F(BrowsingDataRemoverTest, AutofillOriginsRemovedWithHistory) {
   EXPECT_TRUE(tester.HasOrigin(kChromeOrigin));
 }
 
+TEST_F(BrowsingDataRemoverTest, CompletionInhibition) {
+  // The |completion_inhibitor| on the stack should prevent removal sessions
+  // from completing until after ContinueToCompletion() is called.
+  BrowsingDataRemoverCompletionInhibitor completion_inhibitor;
+
+  called_with_details_.reset(new BrowsingDataRemover::NotificationDetails());
+
+  // BrowsingDataRemover deletes itself when it completes.
+  BrowsingDataRemover* remover = BrowsingDataRemover::CreateForPeriod(
+      GetProfile(), BrowsingDataRemover::EVERYTHING);
+  remover->Remove(BrowsingDataRemover::REMOVE_HISTORY,
+                  BrowsingDataHelper::UNPROTECTED_WEB);
+
+  // Process messages until the inhibitor is notified, and then some, to make
+  // sure we do not complete asynchronously before ContinueToCompletion() is
+  // called.
+  completion_inhibitor.BlockUntilNearCompletion();
+  base::RunLoop().RunUntilIdle();
+
+  // Verify that the completion notification has not yet been broadcasted.
+  EXPECT_EQ(-1, GetRemovalMask());
+  EXPECT_EQ(-1, GetOriginSetMask());
+
+  // Now run the removal process until completion, and verify that observers are
+  // now notified, and the notifications is sent out.
+  BrowsingDataRemoverCompletionObserver completion_observer(remover);
+  completion_inhibitor.ContinueToCompletion();
+  completion_observer.BlockUntilCompletion();
+
+  EXPECT_EQ(BrowsingDataRemover::REMOVE_HISTORY, GetRemovalMask());
+  EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+}
+
+TEST_F(BrowsingDataRemoverTest, ZeroSuggestCacheClear) {
+  PrefService* prefs = GetProfile()->GetPrefs();
+  prefs->SetString(prefs::kZeroSuggestCachedResults,
+                   "[\"\", [\"foo\", \"bar\"]]");
+  BlockUntilBrowsingDataRemoved(BrowsingDataRemover::EVERYTHING,
+                                BrowsingDataRemover::REMOVE_COOKIES,
+                                false);
+
+  // Expect the prefs to be cleared when cookies are removed.
+  EXPECT_TRUE(prefs->GetString(prefs::kZeroSuggestCachedResults).empty());
+  EXPECT_EQ(BrowsingDataRemover::REMOVE_COOKIES, GetRemovalMask());
+  EXPECT_EQ(BrowsingDataHelper::UNPROTECTED_WEB, GetOriginSetMask());
+}
+
 #if defined(OS_CHROMEOS)
 TEST_F(BrowsingDataRemoverTest, ContentProtectionPlatformKeysRemoval) {
   chromeos::ScopedTestDeviceSettingsService test_device_settings_service;
@@ -1603,3 +1733,57 @@ TEST_F(BrowsingDataRemoverTest, ContentProtectionPlatformKeysRemoval) {
   chromeos::DBusThreadManager::Shutdown();
 }
 #endif
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Null) {
+  ClearDomainReliabilityTester tester(GetProfile());
+
+  EXPECT_EQ(0u, tester.clear_count());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Beacons) {
+  ClearDomainReliabilityTester tester(GetProfile());
+
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY, false);
+  EXPECT_EQ(1u, tester.clear_count());
+  EXPECT_EQ(CLEAR_BEACONS, tester.last_clear_mode());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_Contexts) {
+  ClearDomainReliabilityTester tester(GetProfile());
+
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_COOKIES, false);
+  EXPECT_EQ(1u, tester.clear_count());
+  EXPECT_EQ(CLEAR_CONTEXTS, tester.last_clear_mode());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_ContextsWin) {
+  ClearDomainReliabilityTester tester(GetProfile());
+
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY |
+      BrowsingDataRemover::REMOVE_COOKIES, false);
+  EXPECT_EQ(1u, tester.clear_count());
+  EXPECT_EQ(CLEAR_CONTEXTS, tester.last_clear_mode());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_ProtectedOrigins) {
+  ClearDomainReliabilityTester tester(GetProfile());
+
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_COOKIES, true);
+  EXPECT_EQ(1u, tester.clear_count());
+  EXPECT_EQ(CLEAR_CONTEXTS, tester.last_clear_mode());
+}
+
+TEST_F(BrowsingDataRemoverTest, DomainReliability_NoMonitor) {
+  BlockUntilBrowsingDataRemoved(
+      BrowsingDataRemover::EVERYTHING,
+      BrowsingDataRemover::REMOVE_HISTORY |
+      BrowsingDataRemover::REMOVE_COOKIES, false);
+}

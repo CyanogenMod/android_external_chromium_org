@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/avatar_menu.h"
@@ -64,10 +64,6 @@ class ProfileListChromeOSTest : public testing::Test {
     // AvatarMenu and multiple profiles works after user logged in.
     manager_.SetLoggedIn(true);
 
-    // We only instantiate UserMenuModel if multi-profile mode is enabled.
-    CommandLine* cl = CommandLine::ForCurrentProcess();
-    cl->AppendSwitch(switches::kMultiProfiles);
-
     // Initialize the UserManager singleton to a fresh FakeUserManager instance.
     user_manager_enabler_.reset(
         new ScopedUserManagerEnabler(new FakeUserManager));
@@ -78,7 +74,7 @@ class ProfileListChromeOSTest : public testing::Test {
   }
 
   void AddProfile(base::string16 name, bool log_in) {
-    std::string email_string = UTF16ToASCII(name) + "@example.com";
+    std::string email_string = base::UTF16ToASCII(name) + "@example.com";
 
     // Add a user to the fake user manager.
     GetFakeUserManager()->AddUser(email_string);
@@ -181,7 +177,7 @@ TEST_F(ProfileListChromeOSTest, DontShowManagedUsers) {
       cache->GetUserDataDir().AppendASCII("p2"), managed_name,
       base::string16(), 0, "TEST_ID");
 
-  GetFakeUserManager()->AddUser(UTF16ToASCII(managed_name));
+  GetFakeUserManager()->AddUser(base::UTF16ToASCII(managed_name));
 
   AvatarMenu* menu = GetAvatarMenu();
   ASSERT_EQ(1U, menu->GetNumberOfItems());
@@ -225,7 +221,7 @@ TEST_F(ProfileListChromeOSTest, ActiveItem) {
   AddProfile(name2, true);
 
   // Initialize ProfileHelper, it will be accessed from GetActiveProfileIndex.
-  std::string email_string = UTF16ToASCII(name1) + "@example.com";
+  std::string email_string = base::UTF16ToASCII(name1) + "@example.com";
   std::string hash = email_string + kUserIdHashSuffix;
   ActiveUserChanged(
       g_browser_process->platform_part()->profile_helper(), hash);
@@ -261,7 +257,7 @@ TEST_F(ProfileListChromeOSTest, ModifyingNameResortsCorrectly) {
   // Change name of the first profile, to trigger resorting of the profiles:
   // now the first menu item should be named "beta", and the second be "gamma".
   GetFakeUserManager()->SaveUserDisplayName(
-      UTF16ToASCII(name1) + "@example.com", newname1);
+      base::UTF16ToASCII(name1) + "@example.com", newname1);
   manager()->profile_info_cache()->SetNameOfProfileAtIndex(0, newname1);
 
   const AvatarMenu::Item& item1next = menu->GetItemAt(0);

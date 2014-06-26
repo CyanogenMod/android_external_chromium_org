@@ -7,47 +7,41 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/image_loader.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 
+namespace extensions {
+
 namespace {
-
-// Returns pixel size under maximal scale factor for the icon whose device
-// independent size is |size_in_dip|
-int GetSizeForMaxScaleFactor(int size_in_dip) {
-  float max_scale_factor_scale = gfx::ImageSkia::GetMaxSupportedScale();
-
-  return static_cast<int>(size_in_dip * max_scale_factor_scale);
-}
 
 // Returns bitmap for the default icon with size equal to the default icon's
 // pixel size under maximal supported scale factor.
 SkBitmap GetDefaultIconBitmapForMaxScaleFactor(bool is_app) {
-  const gfx::ImageSkia& image = is_app ?
-      extensions::IconsInfo::GetDefaultAppIcon() :
-      extensions::IconsInfo::GetDefaultExtensionIcon();
+  const gfx::ImageSkia& image =
+      is_app ? util::GetDefaultAppIcon() : util::GetDefaultExtensionIcon();
   return image.GetRepresentation(
       gfx::ImageSkia::GetMaxSupportedScale()).sk_bitmap();
 }
 
 }  // namespace
-
-// Size of extension icon in top left of dialog.
-static const int kIconSize = 69;
 
 ExtensionUninstallDialog::ExtensionUninstallDialog(
     Profile* profile,
@@ -57,6 +51,7 @@ ExtensionUninstallDialog::ExtensionUninstallDialog(
       browser_(browser),
       delegate_(delegate),
       extension_(NULL),
+      triggering_extension_(NULL),
       state_(kImageIsLoading),
       ui_loop_(base::MessageLoop::current()) {
   if (browser) {
@@ -69,30 +64,38 @@ ExtensionUninstallDialog::ExtensionUninstallDialog(
 ExtensionUninstallDialog::~ExtensionUninstallDialog() {
 }
 
-void ExtensionUninstallDialog::ConfirmUninstall(
-    const extensions::Extension* extension) {
+void ExtensionUninstallDialog::ConfirmProgrammaticUninstall(
+    const Extension* extension,
+    const Extension* triggering_extension) {
+  triggering_extension_ = triggering_extension;
+  ConfirmUninstall(extension);
+}
+
+void ExtensionUninstallDialog::ConfirmUninstall(const Extension* extension) {
   DCHECK(ui_loop_ == base::MessageLoop::current());
   extension_ = extension;
-  // Bookmark apps may not have 128x128 icons so accept 48x48 icons.
+  // Bookmark apps may not have 128x128 icons so accept 64x64 icons.
   const int icon_size = extension_->from_bookmark()
-      ? extension_misc::EXTENSION_ICON_MEDIUM
-      : extension_misc::EXTENSION_ICON_LARGE;
-  extensions::ExtensionResource image = extensions::IconsInfo::GetIconResource(
-      extension_,
-      icon_size,
-      ExtensionIconSet::MATCH_BIGGER);
-  // Load the icon whose pixel size is large enough to be displayed under
-  // maximal supported scale factor. UI code will scale the icon down if needed.
-  int pixel_size = GetSizeForMaxScaleFactor(kIconSize);
+                            ? extension_misc::EXTENSION_ICON_SMALL * 2
+                            : extension_misc::EXTENSION_ICON_LARGE;
+  ExtensionResource image = IconsInfo::GetIconResource(
+      extension_, icon_size, ExtensionIconSet::MATCH_BIGGER);
 
   // Load the image asynchronously. The response will be sent to OnImageLoaded.
   state_ = kImageIsLoading;
-  extensions::ImageLoader* loader =
-      extensions::ImageLoader::Get(profile_);
-  loader->LoadImageAsync(extension_, image,
-                         gfx::Size(pixel_size, pixel_size),
-                         base::Bind(&ExtensionUninstallDialog::OnImageLoaded,
-                                    AsWeakPtr()));
+  ImageLoader* loader = ImageLoader::Get(profile_);
+
+  std::vector<ImageLoader::ImageRepresentation> images_list;
+  images_list.push_back(ImageLoader::ImageRepresentation(
+      image,
+      ImageLoader::ImageRepresentation::NEVER_RESIZE,
+      gfx::Size(),
+      ui::SCALE_FACTOR_100P));
+  loader->LoadImagesAsync(extension_,
+                          images_list,
+                          base::Bind(&ExtensionUninstallDialog::OnImageLoaded,
+                                     AsWeakPtr(),
+                                     extension_->id()));
 }
 
 void ExtensionUninstallDialog::SetIcon(const gfx::Image& image) {
@@ -109,7 +112,16 @@ void ExtensionUninstallDialog::SetIcon(const gfx::Image& image) {
   }
 }
 
-void ExtensionUninstallDialog::OnImageLoaded(const gfx::Image& image) {
+void ExtensionUninstallDialog::OnImageLoaded(const std::string& extension_id,
+                                             const gfx::Image& image) {
+  const Extension* target_extension =
+      ExtensionRegistry::Get(profile_)
+          ->GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
+  if (!target_extension) {
+    delegate_->ExtensionUninstallCanceled();
+    return;
+  }
+
   SetIcon(image);
 
   // Show the dialog unless the browser has been closed while we were waiting
@@ -136,3 +148,16 @@ void ExtensionUninstallDialog::Observe(
     delegate_->ExtensionUninstallCanceled();
   }
 }
+
+std::string ExtensionUninstallDialog::GetHeadingText() {
+  if (triggering_extension_) {
+    return l10n_util::GetStringFUTF8(
+        IDS_EXTENSION_PROGRAMMATIC_UNINSTALL_PROMPT_HEADING,
+        base::UTF8ToUTF16(triggering_extension_->name()),
+        base::UTF8ToUTF16(extension_->name()));
+  }
+  return l10n_util::GetStringFUTF8(IDS_EXTENSION_UNINSTALL_PROMPT_HEADING,
+                                   base::UTF8ToUTF16(extension_->name()));
+}
+
+}  // namespace extensions

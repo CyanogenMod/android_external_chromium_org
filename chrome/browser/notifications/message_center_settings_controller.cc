@@ -14,7 +14,6 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/app_icon_loader_impl.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
@@ -28,11 +27,15 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/notifications.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/favicon/favicon_types.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_util.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -205,15 +208,14 @@ void MessageCenterSettingsController::GetNotifierList(
   DesktopNotificationService* notification_service =
       DesktopNotificationServiceFactory::GetForProfile(profile);
 
-  UErrorCode error;
+  UErrorCode error = U_ZERO_ERROR;
   scoped_ptr<icu::Collator> collator(icu::Collator::createInstance(error));
   scoped_ptr<NotifierComparator> comparator;
   if (!U_FAILURE(error))
     comparator.reset(new NotifierComparator(collator.get()));
 
-  ExtensionService* extension_service = profile->GetExtensionService();
-  const extensions::ExtensionSet* extension_set =
-      extension_service->extensions();
+  const extensions::ExtensionSet& extension_set =
+      extensions::ExtensionRegistry::Get(profile)->enabled_extensions();
   // The extension icon size has to be 32x32 at least to load bigger icons if
   // the icon doesn't exist for the specified size, and in that case it falls
   // back to the default icon. The fetched icon will be resized in the settings
@@ -221,17 +223,17 @@ void MessageCenterSettingsController::GetNotifierList(
   // crbug.com/222931
   app_icon_loader_.reset(new extensions::AppIconLoaderImpl(
       profile, extension_misc::EXTENSION_ICON_SMALL, this));
-  for (extensions::ExtensionSet::const_iterator iter = extension_set->begin();
-       iter != extension_set->end();
+  for (extensions::ExtensionSet::const_iterator iter = extension_set.begin();
+       iter != extension_set.end();
        ++iter) {
     const extensions::Extension* extension = iter->get();
-    if (!extension->HasAPIPermission(
+    if (!extension->permissions_data()->HasAPIPermission(
             extensions::APIPermission::kNotification)) {
       continue;
     }
 
     // Exclude cached ephemeral apps that are not currently running.
-    if (extension->is_ephemeral() &&
+    if (extensions::util::IsEphemeralApp(extension->id(), profile) &&
         extensions::util::IsExtensionIdle(extension->id(), profile)) {
       continue;
     }
@@ -284,17 +286,18 @@ void MessageCenterSettingsController::GetNotifierList(
         name,
         notification_service->IsNotifierEnabled(notifier_id)));
     patterns_[name] = iter->primary_pattern;
-    FaviconService::FaviconForURLParams favicon_params(
+    FaviconService::FaviconForPageURLParams favicon_params(
         url,
-        chrome::FAVICON | chrome::TOUCH_ICON,
+        favicon_base::FAVICON | favicon_base::TOUCH_ICON,
         message_center::kSettingsIconSize);
     // Note that favicon service obtains the favicon from history. This means
     // that it will fail to obtain the image if there are no history data for
     // that URL.
-    favicon_service->GetFaviconImageForURL(
+    favicon_service->GetFaviconImageForPageURL(
         favicon_params,
         base::Bind(&MessageCenterSettingsController::OnFaviconLoaded,
-                   base::Unretained(this), url),
+                   base::Unretained(this),
+                   url),
         favicon_tracker_.get());
   }
 
@@ -371,6 +374,9 @@ void MessageCenterSettingsController::SetNotifierEnabled(
           notifier.notifier_id.id, enabled);
     }
   }
+  FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
+                    observers_,
+                    NotifierEnabledChanged(notifier.notifier_id, enabled));
 }
 
 void MessageCenterSettingsController::OnNotifierSettingsClosing() {
@@ -392,8 +398,7 @@ bool MessageCenterSettingsController::NotifierHasAdvancedSettings(
     return false;
   Profile* profile = notifier_groups_[current_notifier_group_]->profile();
 
-  extensions::EventRouter* event_router =
-      extensions::ExtensionSystem::Get(profile)->event_router();
+  extensions::EventRouter* event_router = extensions::EventRouter::Get(profile);
 
   return event_router->ExtensionHasEventListener(
       extension_id, extensions::api::notifications::OnShowSettings::kEventName);
@@ -413,8 +418,7 @@ void MessageCenterSettingsController::OnNotifierAdvancedSettingsRequested(
     return;
   Profile* profile = notifier_groups_[current_notifier_group_]->profile();
 
-  extensions::EventRouter* event_router =
-      extensions::ExtensionSystem::Get(profile)->event_router();
+  extensions::EventRouter* event_router = extensions::EventRouter::Get(profile);
   scoped_ptr<base::ListValue> args(new base::ListValue());
 
   scoped_ptr<extensions::Event> event(new extensions::Event(
@@ -424,7 +428,7 @@ void MessageCenterSettingsController::OnNotifierAdvancedSettingsRequested(
 
 void MessageCenterSettingsController::OnFaviconLoaded(
     const GURL& url,
-    const chrome::FaviconImageResult& favicon_result) {
+    const favicon_base::FaviconImageResult& favicon_result) {
   FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
                     observers_,
                     UpdateIconImage(NotifierId(url), favicon_result.image));
@@ -477,12 +481,12 @@ void MessageCenterSettingsController::CreateNotifierGroupForGuestLogin() {
   chromeos::User* user = user_manager->GetActiveUser();
   Profile* profile = user_manager->GetProfileByUser(user);
   DCHECK(profile);
-  notifier_groups_.push_back(new message_center::ProfileNotifierGroup(
-      gfx::Image(user->image()),
-      user->GetDisplayName(),
-      user->GetDisplayName(),
-      0,
-      profile));
+  notifier_groups_.push_back(
+      new message_center::ProfileNotifierGroup(gfx::Image(user->GetImage()),
+                                               user->GetDisplayName(),
+                                               user->GetDisplayName(),
+                                               0,
+                                               profile));
 
   FOR_EACH_OBSERVER(message_center::NotifierSettingsObserver,
                     observers_,

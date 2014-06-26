@@ -17,9 +17,11 @@
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
+class BlobWriteCallbackImpl;
 class IndexedDBCursor;
 class IndexedDBDatabaseCallbacks;
 
@@ -32,25 +34,25 @@ class CONTENT_EXPORT IndexedDBTransaction
       int64 id,
       scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
       const std::set<int64>& object_store_ids,
-      indexed_db::TransactionMode,
+      blink::WebIDBTransactionMode,
       IndexedDBDatabase* db,
       IndexedDBBackingStore::Transaction* backing_store_transaction);
 
   virtual void Abort();
-  void Commit();
+  leveldb::Status Commit();
   void Abort(const IndexedDBDatabaseError& error);
 
   // Called by the transaction coordinator when this transaction is unblocked.
   void Start();
 
-  indexed_db::TransactionMode mode() const { return mode_; }
+  blink::WebIDBTransactionMode mode() const { return mode_; }
   const std::set<int64>& scope() const { return object_store_ids_; }
 
   void ScheduleTask(Operation task) {
-    ScheduleTask(IndexedDBDatabase::NORMAL_TASK, task);
+    ScheduleTask(blink::WebIDBTaskTypeNormal, task);
   }
-  void ScheduleTask(Operation task, Operation abort_task);
-  void ScheduleTask(IndexedDBDatabase::TaskType, Operation task);
+  void ScheduleTask(blink::WebIDBTaskType, Operation task);
+  void ScheduleAbortTask(Operation abort_task);
   void RegisterOpenCursor(IndexedDBCursor* cursor);
   void UnregisterOpenCursor(IndexedDBCursor* cursor);
   void AddPreemptiveEvent() { pending_preemptive_events_++; }
@@ -67,9 +69,11 @@ class CONTENT_EXPORT IndexedDBTransaction
   IndexedDBDatabaseCallbacks* connection() const { return callbacks_; }
 
   enum State {
-    CREATED,   // Created, but not yet started by coordinator.
-    STARTED,   // Started by the coordinator.
-    FINISHED,  // Either aborted or committed.
+    CREATED,     // Created, but not yet started by coordinator.
+    STARTED,     // Started by the coordinator.
+    COMMITTING,  // In the process of committing, possibly waiting for blobs
+                 // to be written.
+    FINISHED,    // Either aborted or committed.
   };
 
   State state() const { return state_; }
@@ -85,6 +89,15 @@ class CONTENT_EXPORT IndexedDBTransaction
   const Diagnostics& diagnostics() const { return diagnostics_; }
 
  private:
+  friend class BlobWriteCallbackImpl;
+
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTestMode, AbortPreemptive);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTest, Timeout);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTest,
+                           SchedulePreemptiveTask);
+  FRIEND_TEST_ALL_PREFIXES(IndexedDBTransactionTestMode,
+                           ScheduleNormalTask);
+
   friend class base::RefCounted<IndexedDBTransaction>;
   virtual ~IndexedDBTransaction();
 
@@ -93,13 +106,15 @@ class CONTENT_EXPORT IndexedDBTransaction
   bool IsTaskQueueEmpty() const;
   bool HasPendingTasks() const;
 
+  void BlobWriteComplete(bool success);
   void ProcessTaskQueue();
   void CloseOpenCursors();
+  leveldb::Status CommitPhaseTwo();
   void Timeout();
 
   const int64 id_;
   const std::set<int64> object_store_ids_;
-  const indexed_db::TransactionMode mode_;
+  const blink::WebIDBTransactionMode mode_;
 
   bool used_;
   State state_;
@@ -118,6 +133,8 @@ class CONTENT_EXPORT IndexedDBTransaction
 
    private:
     std::queue<Operation> queue_;
+
+    DISALLOW_COPY_AND_ASSIGN(TaskQueue);
   };
 
   class TaskStack {
@@ -131,6 +148,8 @@ class CONTENT_EXPORT IndexedDBTransaction
 
    private:
     std::stack<Operation> stack_;
+
+    DISALLOW_COPY_AND_ASSIGN(TaskStack);
   };
 
   TaskQueue task_queue_;

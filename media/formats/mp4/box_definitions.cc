@@ -256,20 +256,34 @@ bool SyncSample::Parse(BoxReader* reader) {
 
   is_present = true;
 
+  entries.resize(entry_count);
+
   if (entry_count == 0)
     return true;
 
-  // Skip over the entries since we don't actually care about
-  // them right now. In most fragmented files with an stss, there
-  // aren't any entries anyways because the random access point info
-  // is signalled in the fragments.
-  int64 skip_size = 4 * entry_count;
-  if (skip_size > INT_MAX)
-    return false;
-
-  RCHECK(reader->SkipBytes(skip_size));
+  for (size_t i = 0; i < entry_count; ++i)
+    RCHECK(reader->Read4(&entries[i]));
 
   return true;
+}
+
+bool SyncSample::IsSyncSample(size_t k) const {
+  // ISO/IEC 14496-12 Section 8.6.2.1 : If the sync sample box is not present,
+  // every sample is a sync sample.
+  if (!is_present)
+    return true;
+
+  // ISO/IEC 14496-12  Section 8.6.2.3 : If entry_count is zero, there are no
+  // sync samples within the stream.
+  if (entries.size() == 0u)
+    return false;
+
+  for (size_t i = 0; i < entries.size(); ++i) {
+    if (entries[i] == k)
+      return true;
+  }
+
+  return false;
 }
 
 SampleTable::SampleTable() {}
@@ -349,6 +363,16 @@ AVCDecoderConfigurationRecord::~AVCDecoderConfigurationRecord() {}
 FourCC AVCDecoderConfigurationRecord::BoxType() const { return FOURCC_AVCC; }
 
 bool AVCDecoderConfigurationRecord::Parse(BoxReader* reader) {
+  return ParseInternal(reader, reader->log_cb());
+}
+
+bool AVCDecoderConfigurationRecord::Parse(const uint8* data, int data_size) {
+  BufferReader reader(data, data_size);
+  return ParseInternal(&reader, LogCB());
+}
+
+bool AVCDecoderConfigurationRecord::ParseInternal(BufferReader* reader,
+                                                  const LogCB& log_cb) {
   RCHECK(reader->Read1(&version) && version == 1 &&
          reader->Read1(&profile_indication) &&
          reader->Read1(&profile_compatibility) &&
@@ -359,6 +383,8 @@ bool AVCDecoderConfigurationRecord::Parse(BoxReader* reader) {
          (length_size_minus_one & 0xfc) == 0xfc);
   length_size = (length_size_minus_one & 0x3) + 1;
 
+  RCHECK(length_size != 3); // Only values of 1, 2, and 4 are valid.
+
   uint8 num_sps;
   RCHECK(reader->Read1(&num_sps) && (num_sps & 0xe0) == 0xe0);
   num_sps &= 0x1f;
@@ -368,6 +394,14 @@ bool AVCDecoderConfigurationRecord::Parse(BoxReader* reader) {
     uint16 sps_length;
     RCHECK(reader->Read2(&sps_length) &&
            reader->ReadVec(&sps_list[i], sps_length));
+    RCHECK(sps_list[i].size() > 4);
+
+    if (!log_cb.is_null()) {
+      MEDIA_LOG(log_cb) << "Video codec: avc1." << std::hex
+                        << static_cast<int>(sps_list[i][1])
+                        << static_cast<int>(sps_list[i][2])
+                        << static_cast<int>(sps_list[i][3]);
+    }
   }
 
   uint8 num_pps;
@@ -458,7 +492,13 @@ bool ElementaryStreamDescriptor::Parse(BoxReader* reader) {
 
   object_type = es_desc.object_type();
 
-  RCHECK(aac.Parse(es_desc.decoder_specific_info()));
+  if (object_type != 0x40) {
+    MEDIA_LOG(reader->log_cb()) << "Audio codec: mp4a."
+                                << std::hex << static_cast<int>(object_type);
+  }
+
+  if (es_desc.IsAAC(object_type))
+    RCHECK(aac.Parse(es_desc.decoder_specific_info(), reader->log_cb()));
 
   return true;
 }
@@ -760,19 +800,116 @@ bool TrackFragmentRun::Parse(BoxReader* reader) {
   return true;
 }
 
+SampleToGroup::SampleToGroup() : grouping_type(0), grouping_type_parameter(0) {}
+SampleToGroup::~SampleToGroup() {}
+FourCC SampleToGroup::BoxType() const { return FOURCC_SBGP; }
+
+bool SampleToGroup::Parse(BoxReader* reader) {
+  RCHECK(reader->ReadFullBoxHeader() &&
+         reader->Read4(&grouping_type));
+
+  if (reader->version() == 1)
+    RCHECK(reader->Read4(&grouping_type_parameter));
+
+  if (grouping_type != FOURCC_SEIG) {
+    DLOG(WARNING) << "SampleToGroup box with grouping_type '" << grouping_type
+                  << "' is not supported.";
+    return true;
+  }
+
+  uint32 count;
+  RCHECK(reader->Read4(&count));
+  entries.resize(count);
+  for (uint32 i = 0; i < count; ++i) {
+    RCHECK(reader->Read4(&entries[i].sample_count) &&
+           reader->Read4(&entries[i].group_description_index));
+  }
+  return true;
+}
+
+CencSampleEncryptionInfoEntry::CencSampleEncryptionInfoEntry()
+    : is_encrypted(false), iv_size(0) {}
+CencSampleEncryptionInfoEntry::~CencSampleEncryptionInfoEntry() {}
+
+SampleGroupDescription::SampleGroupDescription() : grouping_type(0) {}
+SampleGroupDescription::~SampleGroupDescription() {}
+FourCC SampleGroupDescription::BoxType() const { return FOURCC_SGPD; }
+
+bool SampleGroupDescription::Parse(BoxReader* reader) {
+  RCHECK(reader->ReadFullBoxHeader() &&
+         reader->Read4(&grouping_type));
+
+  if (grouping_type != FOURCC_SEIG) {
+    DLOG(WARNING) << "SampleGroupDescription box with grouping_type '"
+                  << grouping_type << "' is not supported.";
+    return true;
+  }
+
+  const uint8 version = reader->version();
+
+  const size_t kKeyIdSize = 16;
+  const size_t kEntrySize = sizeof(uint32) + kKeyIdSize;
+  uint32 default_length = 0;
+  if (version == 1) {
+      RCHECK(reader->Read4(&default_length));
+      RCHECK(default_length == 0 || default_length >= kEntrySize);
+  }
+
+  uint32 count;
+  RCHECK(reader->Read4(&count));
+  entries.resize(count);
+  for (uint32 i = 0; i < count; ++i) {
+    if (version == 1) {
+      if (default_length == 0) {
+        uint32 description_length = 0;
+        RCHECK(reader->Read4(&description_length));
+        RCHECK(description_length >= kEntrySize);
+      }
+    }
+
+    uint8 flag;
+    RCHECK(reader->SkipBytes(2) &&  // reserved.
+           reader->Read1(&flag) &&
+           reader->Read1(&entries[i].iv_size) &&
+           reader->ReadVec(&entries[i].key_id, kKeyIdSize));
+
+    entries[i].is_encrypted = (flag != 0);
+    if (entries[i].is_encrypted) {
+      RCHECK(entries[i].iv_size == 8 || entries[i].iv_size == 16);
+    } else {
+      RCHECK(entries[i].iv_size == 0);
+    }
+  }
+  return true;
+}
+
 TrackFragment::TrackFragment() {}
 TrackFragment::~TrackFragment() {}
 FourCC TrackFragment::BoxType() const { return FOURCC_TRAF; }
 
 bool TrackFragment::Parse(BoxReader* reader) {
-  return reader->ScanChildren() &&
+  RCHECK(reader->ScanChildren() &&
          reader->ReadChild(&header) &&
          // Media Source specific: 'tfdt' required
          reader->ReadChild(&decode_time) &&
          reader->MaybeReadChildren(&runs) &&
          reader->MaybeReadChild(&auxiliary_offset) &&
          reader->MaybeReadChild(&auxiliary_size) &&
-         reader->MaybeReadChild(&sdtp);
+         reader->MaybeReadChild(&sdtp));
+
+  // There could be multiple SampleGroupDescription and SampleToGroup boxes with
+  // different grouping types. For common encryption, the relevant grouping type
+  // is 'seig'. Continue reading until 'seig' is found, or until running out of
+  // child boxes.
+  while (sample_group_description.grouping_type != FOURCC_SEIG &&
+         reader->HasChild(&sample_group_description)) {
+    RCHECK(reader->ReadChild(&sample_group_description));
+  }
+  while (sample_to_group.grouping_type != FOURCC_SEIG &&
+         reader->HasChild(&sample_to_group)) {
+    RCHECK(reader->ReadChild(&sample_to_group));
+  }
+  return true;
 }
 
 MovieFragment::MovieFragment() {}
@@ -801,7 +938,6 @@ bool IndependentAndDisposableSamples::Parse(BoxReader* reader) {
   for (int i = 0; i < sample_count; ++i) {
     uint8 sample_info;
     RCHECK(reader->Read1(&sample_info));
-    RCHECK((sample_info >> 6) == 0);  // reserved.
 
     sample_depends_on_[i] =
         static_cast<SampleDependsOn>((sample_info >> 4) & 0x3);

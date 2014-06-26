@@ -12,16 +12,15 @@ import android.test.suitebuilder.annotation.MediumTest;
 import android.text.Editable;
 import android.text.Selection;
 import android.view.MotionEvent;
+import android.view.ViewGroup;
 
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.UrlUtils;
-import org.chromium.content.browser.ContentView;
 import org.chromium.content.browser.RenderCoordinates;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.TestInputMethodManagerWrapper;
 import org.chromium.content.browser.test.util.TestTouchUtils;
 import org.chromium.content.browser.test.util.TouchCommon;
@@ -140,6 +139,18 @@ public class SelectionHandleTest extends ContentShellTestBase {
     }
 
     /**
+     * Test is flaky: crbug.com/290375
+     * @MediumTest
+     * @Feature({ "TextSelection", "Main" })
+     */
+    @FlakyTest
+    public void testUpdateContainerViewAndNoneditableSelectionHandles() throws Throwable {
+        launchWithUrl(TestPageType.NONEDITABLE.dataUrl);
+        replaceContainerView();
+        doSelectionHandleTestUrlLaunched(TestPageType.NONEDITABLE);
+    }
+
+    /**
      * Verifies that when a long-press is performed on editable text (within a
      * textarea), selection handles appear and that handles can be dragged to
      * extend the selection. Does not check exact handle position as this will
@@ -152,9 +163,20 @@ public class SelectionHandleTest extends ContentShellTestBase {
         doSelectionHandleTest(TestPageType.EDITABLE);
     }
 
+    @MediumTest
+    @Feature({ "TextSelection" })
+    public void testUpdateContainerViewAndEditableSelectionHandles() throws Throwable {
+        launchWithUrl(TestPageType.EDITABLE.dataUrl);
+        replaceContainerView();
+        doSelectionHandleTestUrlLaunched(TestPageType.EDITABLE);
+    }
+
     private void doSelectionHandleTest(TestPageType pageType) throws Throwable {
         launchWithUrl(pageType.dataUrl);
+        doSelectionHandleTestUrlLaunched(pageType);
+    }
 
+    private void doSelectionHandleTestUrlLaunched(TestPageType pageType) throws Throwable {
         clickNodeToShowSelectionHandles(pageType.nodeId);
         assertWaitForSelectionEditableEquals(pageType.selectionShouldBeEditable);
 
@@ -325,7 +347,6 @@ public class SelectionHandleTest extends ContentShellTestBase {
 
     private void dragHandleTo(final HandleView handle, final int dragToX, final int dragToY,
             final int steps) throws Throwable {
-        ContentView view = getContentView();
         assertTrue(ThreadUtils.runOnUiThreadBlocking(new Callable<Boolean>() {
             @Override
             public Boolean call() {
@@ -337,7 +358,7 @@ public class SelectionHandleTest extends ContentShellTestBase {
                 int realDragToX = dragToX + (realX - adjustedX);
                 int realDragToY = dragToY + (realY - adjustedY);
 
-                ContentView view = getContentView();
+                ViewGroup view = getContentViewCore().getContainerView();
                 int[] fromLocation = TestTouchUtils.getAbsoluteLocationFromRelative(
                         view, realX, realY);
                 int[] toLocation = TestTouchUtils.getAbsoluteLocationFromRelative(
@@ -370,12 +391,11 @@ public class SelectionHandleTest extends ContentShellTestBase {
     }
 
     private Rect getNodeBoundsPix(String nodeId) throws Throwable {
-        Rect nodeBounds = DOMUtils.getNodeBounds(getContentView(),
-                new TestCallbackHelperContainer(getContentView()), nodeId);
+        Rect nodeBounds = DOMUtils.getNodeBounds(getContentViewCore(), nodeId);
 
-        RenderCoordinates renderCoordinates = getContentView().getRenderCoordinates();
-        int offsetX = getContentView().getContentViewCore().getViewportSizeOffsetWidthPix();
-        int offsetY = getContentView().getContentViewCore().getViewportSizeOffsetHeightPix();
+        RenderCoordinates renderCoordinates = getContentViewCore().getRenderCoordinates();
+        int offsetX = getContentViewCore().getViewportSizeOffsetWidthPix();
+        int offsetY = getContentViewCore().getViewportSizeOffsetHeightPix();
 
         int left = (int) renderCoordinates.fromLocalCssToPix(nodeBounds.left) + offsetX;
         int right = (int) renderCoordinates.fromLocalCssToPix(nodeBounds.right) + offsetX;
@@ -391,7 +411,7 @@ public class SelectionHandleTest extends ContentShellTestBase {
         TouchCommon touchCommon = new TouchCommon(this);
         int centerX = nodeWindowBounds.centerX();
         int centerY = nodeWindowBounds.centerY();
-        touchCommon.longPressView(getContentView(), centerX, centerY);
+        touchCommon.longPressView(getContentViewCore().getContainerView(), centerX, centerY);
 
         assertWaitForHandlesShowingEquals(true);
         assertWaitForHandleViewStopped(getStartHandle());
@@ -403,7 +423,7 @@ public class SelectionHandleTest extends ContentShellTestBase {
 
     private void clickToDismissHandles() throws Throwable {
         TestTouchUtils.sleepForDoubleTapTimeout(getInstrumentation());
-        new TouchCommon(this).singleClickView(getContentView(), 0, 0);
+        new TouchCommon(this).singleClickView(getContentViewCore().getContainerView(), 0, 0);
         assertWaitForHandlesShowingEquals(false);
     }
 

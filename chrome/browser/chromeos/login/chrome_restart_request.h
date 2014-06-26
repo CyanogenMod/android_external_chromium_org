@@ -7,8 +7,11 @@
 
 #include <string>
 
-class CommandLine;
 class GURL;
+
+namespace base {
+class CommandLine;
+}
 
 namespace chromeos {
 
@@ -16,8 +19,9 @@ namespace chromeos {
 // the given command line.
 std::string GetOffTheRecordCommandLine(
     const GURL& start_url,
-    const CommandLine& base_command_line,
-    CommandLine* command_line);
+    bool is_oobe_completed,
+    const base::CommandLine& base_command_line,
+    base::CommandLine* command_line);
 
 // Request session manager to restart chrome with a new command line.
 void RestartChrome(const std::string& command_line);

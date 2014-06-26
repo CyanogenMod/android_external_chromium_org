@@ -7,47 +7,14 @@
 #include "ash/shell.h"
 #include "ash/sticky_keys/sticky_keys_controller.h"
 #include "ash/test/ash_test_base.h"
-#include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/window_tree_host_delegate.h"
 #include "ui/events/event.h"
 
 namespace ash {
 
 class StickyKeysOverlayTest : public test::AshTestBase {
  public:
-  StickyKeysOverlayTest() :
-      controller_(NULL),
-      overlay_(NULL) {}
-
+  StickyKeysOverlayTest() {}
   virtual ~StickyKeysOverlayTest() {}
-
-  virtual void SetUp() OVERRIDE {
-    test::AshTestBase::SetUp();
-
-    controller_ = Shell::GetInstance()->sticky_keys_controller();
-    controller_->Enable(true);
-    overlay_ = controller_->GetOverlayForTest();
-    ASSERT_TRUE(overlay_);
-  }
-
-  void PressAndReleaseKey(ui::KeyboardCode code) {
-    SendKeyEvent(ui::ET_KEY_PRESSED, code);
-    SendKeyEvent(ui::ET_KEY_RELEASED, code);
-  }
-
-  void SendKeyEvent(ui::EventType type, ui::KeyboardCode code) {
-    ui::KeyEvent event(type, code, 0, false);
-    ui::Event::DispatcherApi dispatcher(&event);
-    dispatcher.set_target(Shell::GetInstance()->GetPrimaryRootWindow());
-
-    ui::EventDispatchDetails details = Shell::GetPrimaryRootWindow()->
-        GetDispatcher()->OnEventFromSource(&event);
-    CHECK(!details.dispatcher_destroyed);
-  }
-
-  StickyKeysController* controller_;
-  StickyKeysOverlay* overlay_;
 };
 
 TEST_F(StickyKeysOverlayTest, OverlayVisibility) {
@@ -71,136 +38,7 @@ TEST_F(StickyKeysOverlayTest, ModifierKeyState) {
             overlay.GetModifierKeyState(ui::EF_CONTROL_DOWN));
 }
 
-TEST_F(StickyKeysOverlayTest, OneModifierEnabled) {
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-
-  // Pressing modifier key should show overlay.
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_ENABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-
-  // Pressing a normal key should hide overlay.
-  PressAndReleaseKey(ui::VKEY_T);
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-}
-
-TEST_F(StickyKeysOverlayTest, TwoModifiersEnabled) {
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-
-  // Pressing two modifiers should show overlay.
-  PressAndReleaseKey(ui::VKEY_SHIFT);
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_ENABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_ENABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-
-  // Pressing a normal key should hide overlay.
-  PressAndReleaseKey(ui::VKEY_N);
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-}
-
-TEST_F(StickyKeysOverlayTest, LockedModifier) {
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_ALT_DOWN));
-
-  // Pressing a modifier key twice should lock modifier and show overlay.
-  PressAndReleaseKey(ui::VKEY_LMENU);
-  PressAndReleaseKey(ui::VKEY_LMENU);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_LOCKED,
-            overlay_->GetModifierKeyState(ui::EF_ALT_DOWN));
-
-  // Pressing a normal key should not hide overlay.
-  PressAndReleaseKey(ui::VKEY_D);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_LOCKED,
-            overlay_->GetModifierKeyState(ui::EF_ALT_DOWN));
-}
-
-TEST_F(StickyKeysOverlayTest, LockedAndNormalModifier) {
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-
-  // Pressing a modifier key twice should lock modifier and show overlay.
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_LOCKED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-
-  // Pressing another modifier key should still show overlay.
-  PressAndReleaseKey(ui::VKEY_SHIFT);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_LOCKED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_ENABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-
-  // Pressing a normal key should not hide overlay but disable normal modifier.
-  PressAndReleaseKey(ui::VKEY_D);
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_LOCKED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-}
-
-TEST_F(StickyKeysOverlayTest, ModifiersDisabled) {
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_ALT_DOWN));
-
-  // Enable modifiers.
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  PressAndReleaseKey(ui::VKEY_SHIFT);
-  PressAndReleaseKey(ui::VKEY_SHIFT);
-  PressAndReleaseKey(ui::VKEY_LMENU);
-
-  EXPECT_TRUE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_ENABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_LOCKED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_ENABLED,
-            overlay_->GetModifierKeyState(ui::EF_ALT_DOWN));
-
-  // Disable modifiers and overlay should be hidden.
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  PressAndReleaseKey(ui::VKEY_CONTROL);
-  PressAndReleaseKey(ui::VKEY_SHIFT);
-  PressAndReleaseKey(ui::VKEY_LMENU);
-  PressAndReleaseKey(ui::VKEY_LMENU);
-
-  EXPECT_FALSE(overlay_->is_visible());
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_CONTROL_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_SHIFT_DOWN));
-  EXPECT_EQ(STICKY_KEY_STATE_DISABLED,
-            overlay_->GetModifierKeyState(ui::EF_ALT_DOWN));
-}
+// Additional sticky key overlay tests that depend on chromeos::EventRewriter
+// are now in chrome/browser/chromeos/events/event_rewriter_unittest.cc .
 
 }  // namespace ash

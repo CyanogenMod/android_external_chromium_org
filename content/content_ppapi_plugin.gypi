@@ -7,10 +7,12 @@
     ['enable_plugins==1', {
       'dependencies': [
         '../base/base.gyp:base',
+        '../mojo/mojo.gyp:mojo_interface_provider_bindings',
         '../ppapi/ppapi_internal.gyp:ppapi_ipc',
+        '../ui/base/ui_base.gyp:ui_base',
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/gfx/gfx.gyp:gfx_geometry',
-        '../ui/ui.gyp:ui',
+        '../third_party/WebKit/public/blink.gyp:blink',
       ],
       'sources': [
         'ppapi_plugin/broker_process_dispatcher.cc',

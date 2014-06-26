@@ -6,8 +6,8 @@
 
 #include "ash/shell_window_ids.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace {
 
@@ -21,8 +21,8 @@ aura::Window* GetLocalProcessWindowAtPointImpl(
   if (!window->IsVisible())
     return NULL;
 
-  if (window->id() == ash::internal::kShellWindowId_PhantomWindow ||
-      window->id() == ash::internal::kShellWindowId_OverlayContainer)
+  if (window->id() == ash::kShellWindowId_PhantomWindow ||
+      window->id() == ash::kShellWindowId_OverlayContainer)
     return NULL;
 
   if (window->layer()->type() == ui::LAYER_TEXTURED)

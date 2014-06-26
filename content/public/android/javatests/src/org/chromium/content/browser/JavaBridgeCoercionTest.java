@@ -312,7 +312,7 @@ public class JavaBridgeCoercionTest extends JavaBridgeTestBase {
         assertNull(mTestObject.waitForObjectValue());
 
         executeJavaScript("testObject.setStringValue(Number.NaN);");
-        assertEquals("NaN", mTestObject.waitForStringValue());
+        assertTrue("nan".equalsIgnoreCase(mTestObject.waitForStringValue()));
 
         executeJavaScript("testObject.setBooleanValue(Number.NaN);");
         assertFalse(mTestObject.waitForBooleanValue());
@@ -353,7 +353,7 @@ public class JavaBridgeCoercionTest extends JavaBridgeTestBase {
         assertNull(mTestObject.waitForObjectValue());
 
         executeJavaScript("testObject.setStringValue(Infinity);");
-        assertEquals("Inf", mTestObject.waitForStringValue());
+        assertTrue("inf".equalsIgnoreCase(mTestObject.waitForStringValue()));
 
         executeJavaScript("testObject.setBooleanValue(Infinity);");
         assertFalse(mTestObject.waitForBooleanValue());
@@ -661,5 +661,73 @@ public class JavaBridgeCoercionTest extends JavaBridgeTestBase {
 
         executeJavaScript("testObject.setBooleanValue(undefined);");
         assertFalse(mTestObject.waitForBooleanValue());
+    }
+
+    // Verify that ArrayBuffers are not converted into objects or strings when passed
+    // to Java. Basically, ArrayBuffers are treated as generic JavaScript objects.
+    @SmallTest
+    @Feature({"AndroidWebView", "Android-JavaBridge"})
+    public void testPassArrayBuffer() throws Throwable {
+        executeJavaScript("buffer = new ArrayBuffer(16);");
+
+        executeJavaScript("testObject.setObjectValue(buffer);");
+        assertNull(mTestObject.waitForObjectValue());
+
+        executeJavaScript("testObject.setStringValue(buffer);");
+        assertEquals("undefined", mTestObject.waitForStringValue());
+    }
+
+    // Verify that ArrayBufferViewss are not converted into objects or strings when passed
+    // to Java. Basically, ArrayBufferViews are treated as generic JavaScript objects.
+    // Here, a DataView is used as an ArrayBufferView instance (since the latter is
+    // an interface and can't be instantiated directly).
+    @SmallTest
+    @Feature({"AndroidWebView", "Android-JavaBridge"})
+    public void testPassDataView() throws Throwable {
+        executeJavaScript("buffer = new ArrayBuffer(16);");
+
+        executeJavaScript("testObject.setObjectValue(new DataView(buffer));");
+        assertNull(mTestObject.waitForObjectValue());
+
+        executeJavaScript("testObject.setStringValue(new DataView(buffer));");
+        assertEquals("undefined", mTestObject.waitForStringValue());
+    }
+
+    // Verify that Date objects are not converted into double values, strings or objects.
+    @SmallTest
+    @Feature({"AndroidWebView", "Android-JavaBridge"})
+    public void testPassDateObject() throws Throwable {
+        executeJavaScript("testObject.setDoubleValue(new Date(2000, 0, 1));");
+        assertEquals(0.0, mTestObject.waitForDoubleValue());
+
+        executeJavaScript("testObject.setStringValue(new Date(2000, 0, 1));");
+        assertEquals("undefined", mTestObject.waitForStringValue());
+
+        executeJavaScript("testObject.setObjectValue(new Date(2000, 0, 1));");
+        assertNull(mTestObject.waitForObjectValue());
+    }
+
+    // Verify that RegExp objects are not converted into strings or objects.
+    @SmallTest
+    @Feature({"AndroidWebView", "Android-JavaBridge"})
+    public void testPassRegExpObject() throws Throwable {
+        executeJavaScript("testObject.setStringValue(/abc/);");
+        assertEquals("undefined", mTestObject.waitForStringValue());
+
+        executeJavaScript("testObject.setObjectValue(/abc/);");
+        assertNull(mTestObject.waitForObjectValue());
+    }
+
+    // Verify that Function objects are not converted into strings or objects.
+    @SmallTest
+    @Feature({"AndroidWebView", "Android-JavaBridge"})
+    public void testPassFunctionObject() throws Throwable {
+        executeJavaScript("func = new Function('a', 'b', 'return a + b');");
+
+        executeJavaScript("testObject.setStringValue(func);");
+        assertEquals("undefined", mTestObject.waitForStringValue());
+
+        executeJavaScript("testObject.setObjectValue(func);");
+        assertNull(mTestObject.waitForObjectValue());
     }
 }

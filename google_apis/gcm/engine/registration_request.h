@@ -13,15 +13,19 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
 #include "google_apis/gcm/base/gcm_export.h"
 #include "net/base/backoff_entry.h"
 #include "net/url_request/url_fetcher_delegate.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequestContextGetter;
 }
 
 namespace gcm {
+
+class GCMStatsRecorder;
 
 // Registration request is used to obtain registration IDs for applications that
 // want to use GCM. It requires a set of parameters to be specified to identify
@@ -40,6 +44,10 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
     AUTHENTICATION_FAILED,      // Authentication failed.
     DEVICE_REGISTRATION_ERROR,  // Chrome is not properly registered.
     UNKNOWN_ERROR,              // Unknown error.
+    URL_FETCHING_FAILED,        // URL fetching failed.
+    HTTP_NOT_OK,                // HTTP status was not OK.
+    RESPONSE_PARSING_FAILED,    // Registration response parsing failed.
+    REACHED_MAX_RETRIES,        // Reached maximum number of retries.
     // NOTE: always keep this entry at the end. Add new status types only
     // immediately above this line. Make sure to update the corresponding
     // histogram enum accordingly.
@@ -58,7 +66,6 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
     RequestInfo(uint64 android_id,
                 uint64 security_token,
                 const std::string& app_id,
-                const std::string& cert,
                 const std::vector<std::string>& sender_ids);
     ~RequestInfo();
 
@@ -75,10 +82,13 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
   };
 
   RegistrationRequest(
+      const GURL& registration_url,
       const RequestInfo& request_info,
       const net::BackoffEntry::Policy& backoff_policy,
       const RegistrationCallback& callback,
-      scoped_refptr<net::URLRequestContextGetter> request_context_getter);
+      int max_retry_count,
+      scoped_refptr<net::URLRequestContextGetter> request_context_getter,
+      GCMStatsRecorder* recorder);
   virtual ~RegistrationRequest();
 
   void Start();
@@ -91,12 +101,22 @@ class GCM_EXPORT RegistrationRequest : public net::URLFetcherDelegate {
   // failure, when |update_backoff| is true.
   void RetryWithBackoff(bool update_backoff);
 
+  // Parse the response returned by the URL fetcher into token, and returns the
+  // status.
+  Status ParseResponse(const net::URLFetcher* source, std::string* token);
+
   RegistrationCallback callback_;
   RequestInfo request_info_;
+  GURL registration_url_;
 
   net::BackoffEntry backoff_entry_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_ptr<net::URLFetcher> url_fetcher_;
+  int retries_left_;
+  base::TimeTicks request_start_time_;
+
+  // Recorder that records GCM activities for debugging purpose. Not owned.
+  GCMStatsRecorder* recorder_;
 
   base::WeakPtrFactory<RegistrationRequest> weak_ptr_factory_;
 

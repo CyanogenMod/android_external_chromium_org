@@ -9,13 +9,22 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/layers/texture_layer.h"
+#include "cc/layers/texture_layer_client.h"
+#include "content/public/test/layouttest_support.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayer.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureLayerClient.h"
 #include "third_party/WebKit/public/platform/WebExternalTextureMailbox.h"
+#include "third_party/WebKit/public/platform/WebLayer.h"
 #include "third_party/WebKit/public/web/WebPlugin.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
 
-namespace WebTestRunner {
+namespace blink {
+class WebFrame;
+class WebLayer;
+}
+
+namespace content {
 
 class WebTestDelegate;
 
@@ -31,7 +40,7 @@ class WebTestDelegate;
 //
 // Whether the plugin accepts touch events or not can be customized using the
 // 'accepts-touch' plugin parameter (defaults to false).
-class TestPlugin : public blink::WebPlugin, public blink::WebExternalTextureLayerClient {
+class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
 public:
     static TestPlugin* create(blink::WebFrame*, const blink::WebPluginParams&, WebTestDelegate*);
     virtual ~TestPlugin();
@@ -61,10 +70,11 @@ public:
     virtual void didFailLoadingFrameRequest(const blink::WebURL&, void* notifyData, const blink::WebURLError&) { }
     virtual bool isPlaceholder();
 
-    // WebExternalTextureLayerClient methods:
-    virtual blink::WebGraphicsContext3D* context();
-    virtual bool prepareMailbox(blink::WebExternalTextureMailbox*, blink::WebExternalBitmap*);
-    virtual void mailboxReleased(const blink::WebExternalTextureMailbox&);
+    // cc::TextureLayerClient methods:
+    virtual bool PrepareTextureMailbox(
+        cc::TextureMailbox* mailbox,
+        scoped_ptr<cc::SingleReleaseCallback>* releaseCallback,
+        bool useSharedMemory) OVERRIDE;
 
 private:
     TestPlugin(blink::WebFrame*, const blink::WebPluginParams&, WebTestDelegate*);
@@ -104,15 +114,18 @@ private:
     float parseOpacity(const blink::WebString&);
     bool parseBoolean(const blink::WebString&);
 
-    // Functions for loading and drawing scene.
+    // Functions for loading and drawing scene in GL.
     bool initScene();
-    void drawScene();
+    void drawSceneGL();
     void destroyScene();
     bool initProgram();
     bool initPrimitive();
     void drawPrimitive();
     unsigned loadShader(unsigned type, const std::string& source);
     unsigned loadProgram(const std::string& vertexSource, const std::string& fragmentSource);
+
+    // Functions for drawing scene in Software.
+    void drawSceneSoftware(void* memory, size_t bytes);
 
     blink::WebFrame* m_frame;
     WebTestDelegate* m_delegate;
@@ -121,11 +134,13 @@ private:
     blink::WebRect m_rect;
     blink::WebGraphicsContext3D* m_context;
     unsigned m_colorTexture;
-    blink::WebExternalTextureMailbox m_mailbox;
+    cc::TextureMailbox m_textureMailbox;
+    scoped_ptr<base::SharedMemory> m_sharedBitmap;
     bool m_mailboxChanged;
     unsigned m_framebuffer;
     Scene m_scene;
-    scoped_ptr<blink::WebExternalTextureLayer> m_layer;
+    scoped_refptr<cc::TextureLayer> m_layer;
+    scoped_ptr<blink::WebLayer> m_webLayer;
 
     blink::WebPluginContainer::TouchEventRequestType m_touchEventRequest;
     // Requests touch events from the WebPluginContainerImpl multiple times to tickle webkit.org/b/108381
@@ -140,6 +155,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(TestPlugin);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_TESTPLUGIN_H_

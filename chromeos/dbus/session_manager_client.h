@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "base/observer_list.h"
@@ -22,19 +23,13 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   // Interface for observing changes from the session manager.
   class Observer {
    public:
+    virtual ~Observer() {}
+
     // Called when the owner key is set.
     virtual void OwnerKeySet(bool success) {}
 
     // Called when the property change is complete.
     virtual void PropertyChangeComplete(bool success) {}
-
-    // Called when the session manager requests that the lock screen be
-    // displayed.  NotifyLockScreenShown() is called after the lock screen
-    // is shown (the canonical "is the screen locked?" state lives in the
-    // session manager).
-    // TODO(derat): Delete this once the session manager is calling the
-    // "LockScreen" method instead.
-    virtual void LockScreen() {}
 
     // Called when the session manager announces that the screen has been locked
     // successfully (i.e. after NotifyLockScreenShown() has been called).
@@ -48,6 +43,22 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
     // Called after EmitLoginPromptVisible is called.
     virtual void EmitLoginPromptVisibleCalled() {}
   };
+
+  // Interface for performing actions on behalf of the stub implementation.
+  class StubDelegate {
+   public:
+    virtual ~StubDelegate() {}
+
+    // Locks the screen. Invoked by the stub when RequestLockScreen() is called.
+    // In the real implementation of SessionManagerClient::RequestLockScreen(),
+    // a lock request is forwarded to the session manager; in the stub, this is
+    // short-circuited and the screen is locked immediately.
+    virtual void LockScreenForStub() = 0;
+  };
+
+  // Sets the delegate used by the stub implementation. Ownership of |delegate|
+  // remains with the caller.
+  virtual void SetStubDelegate(StubDelegate* delegate) = 0;
 
   // Adds and removes the observer.
   virtual void AddObserver(Observer* observer) = 0;
@@ -141,11 +152,8 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
 
   // Attempts to asynchronously store |policy_blob| as user policy for the given
   // |username|. Upon completion of the store attempt, we will call callback.
-  // The |policy_key| argument is not sent to the session manager, but is used
-  // by the stub implementation to enable policy validation on desktop builds.
   virtual void StorePolicyForUser(const std::string& username,
                                   const std::string& policy_blob,
-                                  const std::string& policy_key,
                                   const StorePolicyCallback& callback) = 0;
 
   // Sends a request to store a policy blob for the specified device-local
@@ -159,6 +167,18 @@ class CHROMEOS_EXPORT SessionManagerClient : public DBusClient {
   // is restarted inside an already started session for a particular user.
   virtual void SetFlagsForUser(const std::string& username,
                                const std::vector<std::string>& flags) = 0;
+
+  typedef base::Callback<void(const std::vector<std::string>& state_keys)>
+      StateKeysCallback;
+
+  // Get the currently valid server-backed state keys for the device.
+  // Server-backed state keys are opaque, device-unique, time-dependent,
+  // client-determined identifiers that are used for keying state in the cloud
+  // for the device to retrieve after a device factory reset.
+  //
+  // The state keys are returned asynchronously via |callback|. The callback
+  // will be invoked with an empty state key vector in case of errors.
+  virtual void GetServerBackedStateKeys(const StateKeysCallback& callback) = 0;
 
   // Creates the instance.
   static SessionManagerClient* Create(DBusClientImplementationType type);

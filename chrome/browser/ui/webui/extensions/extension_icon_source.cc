@@ -14,17 +14,17 @@
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/image_loader.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/component_extension_resources_map.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
@@ -219,18 +219,19 @@ void ExtensionIconSource::LoadFaviconImage(int request_id) {
 
   GURL favicon_url =
       AppLaunchInfo::GetFullLaunchURL(GetData(request_id)->extension);
-  favicon_service->GetRawFaviconForURL(
-      FaviconService::FaviconForURLParams(favicon_url, chrome::FAVICON,
-                                          gfx::kFaviconSize),
+  favicon_service->GetRawFaviconForPageURL(
+      FaviconService::FaviconForPageURLParams(
+          favicon_url, favicon_base::FAVICON, gfx::kFaviconSize),
       ui::SCALE_FACTOR_100P,
       base::Bind(&ExtensionIconSource::OnFaviconDataAvailable,
-                 base::Unretained(this), request_id),
+                 base::Unretained(this),
+                 request_id),
       &cancelable_task_tracker_);
 }
 
 void ExtensionIconSource::OnFaviconDataAvailable(
     int request_id,
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   ExtensionIconRequest* request = GetData(request_id);
 
   // Fallback to the default icon if there wasn't a favicon.

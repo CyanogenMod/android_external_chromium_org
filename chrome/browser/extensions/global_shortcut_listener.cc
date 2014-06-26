@@ -12,7 +12,8 @@ using content::BrowserThread;
 
 namespace extensions {
 
-GlobalShortcutListener::GlobalShortcutListener() {
+GlobalShortcutListener::GlobalShortcutListener()
+    : shortcut_handling_suspended_(false) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -24,6 +25,8 @@ GlobalShortcutListener::~GlobalShortcutListener() {
 bool GlobalShortcutListener::RegisterAccelerator(
     const ui::Accelerator& accelerator, Observer* observer) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (IsShortcutHandlingSuspended())
+    return false;
 
   AcceleratorMap::const_iterator it = accelerator_map_.find(accelerator);
   if (it != accelerator_map_.end()) {
@@ -47,6 +50,8 @@ bool GlobalShortcutListener::RegisterAccelerator(
 void GlobalShortcutListener::UnregisterAccelerator(
     const ui::Accelerator& accelerator, Observer* observer) {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (IsShortcutHandlingSuspended())
+    return;
 
   AcceleratorMap::iterator it = accelerator_map_.find(accelerator);
   // We should never get asked to unregister something that we didn't register.
@@ -58,6 +63,47 @@ void GlobalShortcutListener::UnregisterAccelerator(
   accelerator_map_.erase(it);
   if (accelerator_map_.empty())
     StopListening();
+}
+
+void GlobalShortcutListener::UnregisterAccelerators(Observer* observer) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (IsShortcutHandlingSuspended())
+    return;
+
+  AcceleratorMap::iterator it = accelerator_map_.begin();
+  while (it != accelerator_map_.end()) {
+    if (it->second == observer) {
+      AcceleratorMap::iterator to_remove = it++;
+      UnregisterAccelerator(to_remove->first, observer);
+    } else {
+      ++it;
+    }
+  }
+}
+
+void GlobalShortcutListener::SetShortcutHandlingSuspended(bool suspended) {
+  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (shortcut_handling_suspended_ == suspended)
+    return;
+
+  shortcut_handling_suspended_ = suspended;
+  for (AcceleratorMap::iterator it = accelerator_map_.begin();
+       it != accelerator_map_.end();
+       ++it) {
+    // On Linux, when shortcut handling is suspended we cannot simply early
+    // return in NotifyKeyPressed (similar to what we do for non-global
+    // shortcuts) because we'd eat the keyboard event thereby preventing the
+    // user from setting the shortcut. Therefore we must unregister while
+    // handling is suspended and register when handling resumes.
+    if (shortcut_handling_suspended_)
+      UnregisterAcceleratorImpl(it->first);
+    else
+      RegisterAcceleratorImpl(it->first);
+  }
+}
+
+bool GlobalShortcutListener::IsShortcutHandlingSuspended() const {
+  return shortcut_handling_suspended_;
 }
 
 void GlobalShortcutListener::NotifyKeyPressed(

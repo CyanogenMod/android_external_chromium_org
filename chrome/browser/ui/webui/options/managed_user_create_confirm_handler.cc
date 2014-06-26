@@ -12,12 +12,12 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_types.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -35,10 +35,10 @@ void ManagedUserCreateConfirmHandler::GetLocalizedValues(
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
-    { "managedUserCreatedTitle", IDS_NEW_MANAGED_USER_CREATED_TITLE },
-    { "managedUserCreatedText", IDS_NEW_MANAGED_USER_CREATED_TEXT },
-    { "managedUserCreatedDone", IDS_NEW_MANAGED_USER_CREATED_DONE_BUTTON },
-    { "managedUserCreatedSwitch", IDS_NEW_MANAGED_USER_CREATED_SWITCH_BUTTON },
+    { "managedUserCreatedTitle", IDS_SUPERVISED_USER_CREATED_TITLE },
+    { "managedUserCreatedText", IDS_SUPERVISED_USER_CREATED_TEXT },
+    { "managedUserCreatedDone", IDS_SUPERVISED_USER_CREATED_DONE_BUTTON },
+    { "managedUserCreatedSwitch", IDS_SUPERVISED_USER_CREATED_SWITCH_BUTTON },
   };
 
   SigninManagerBase* signin =

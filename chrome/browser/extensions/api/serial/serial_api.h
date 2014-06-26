@@ -8,9 +8,10 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/extensions/api/api_function.h"
-#include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/common/extensions/api/serial.h"
+#include "device/serial/serial.mojom.h"
+#include "extensions/browser/api/api_resource_manager.h"
+#include "extensions/browser/api/async_api_function.h"
 
 namespace extensions {
 
@@ -74,12 +75,12 @@ class SerialConnectFunction : public SerialAsyncApiFunction {
 
   scoped_ptr<serial::Connect::Params> params_;
 
-  // SerialEventDispatcher is owned by a Profile.
+  // SerialEventDispatcher is owned by a BrowserContext.
   SerialEventDispatcher* serial_event_dispatcher_;
 
   // This connection is created within SerialConnectFunction.
   // From there it is either destroyed in OnConnected (upon failure)
-  // or its ownership is transferred to the profile's.
+  // or its ownership is transferred to the
   // ApiResourceManager<SerialConnection>.
   SerialConnection* connection_;
 };
@@ -242,5 +243,17 @@ class SerialSetControlSignalsFunction : public SerialAsyncApiFunction {
 }  // namespace api
 
 }  // namespace extensions
+
+namespace mojo {
+
+template <>
+class TypeConverter<device::SerialDeviceInfoPtr,
+                    linked_ptr<extensions::api::serial::DeviceInfo> > {
+ public:
+  static linked_ptr<extensions::api::serial::DeviceInfo> ConvertTo(
+      const device::SerialDeviceInfoPtr& input);
+};
+
+}  // namespace mojo
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_SERIAL_SERIAL_API_H_

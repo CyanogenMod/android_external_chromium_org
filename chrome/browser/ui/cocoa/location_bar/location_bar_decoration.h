@@ -77,13 +77,18 @@ class LocationBarDecoration {
 
   // Called on mouse down.  Return |false| to indicate that the press
   // was not processed and should be handled by the cell.
-  virtual bool OnMousePressed(NSRect frame);
+  virtual bool OnMousePressed(NSRect frame, NSPoint location);
 
   // Called to get the right-click menu, return |nil| for no menu.
   virtual NSMenu* GetMenu();
 
   // Gets the font used to draw text in the decoration.
   virtual NSFont* GetFont() const;
+
+  // Helper to get where the bubble point should land. |frame| specifies the
+  // decorations' image rectangle. Defaults to |frame.origin| if not overriden.
+  // The return value is in the same coordinate system as |frame|.
+  virtual NSPoint GetBubblePointInFrame(NSRect frame);
 
   static void DrawLabel(NSString* label,
                         NSDictionary* attributes,

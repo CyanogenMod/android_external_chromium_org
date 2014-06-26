@@ -9,7 +9,6 @@
 
 #include <string>
 
-#include "base/platform_file.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_base.h"
 
@@ -22,6 +21,13 @@ class FilePath;
 namespace fileapi {
 class FileSystemContext;
 }
+
+namespace file_manager {
+namespace util {
+struct EntryDefinition;
+typedef std::vector<EntryDefinition> EntryDefinitionList;
+}  // namespace util
+}  // namespace file_manager
 
 namespace extensions {
 
@@ -36,7 +42,7 @@ class FileBrowserPrivateRequestFileSystemFunction
   virtual ~FileBrowserPrivateRequestFileSystemFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void RespondSuccessOnUIThread(const std::string& name,
@@ -54,6 +60,10 @@ class FileBrowserPrivateRequestFileSystemFunction
       int child_id,
       Profile* profile,
       scoped_refptr<const extensions::Extension> extension);
+
+  // Called when the entry definition is computed.
+  void OnEntryDefinition(
+      const file_manager::util::EntryDefinition& entry_definition);
 };
 
 // Base class for FileBrowserPrivateAddFileWatchFunction and
@@ -71,7 +81,7 @@ class FileWatchFunctionBase : public LoggedAsyncExtensionFunction {
       const std::string& extension_id) = 0;
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // Calls SendResponse() with |success| converted to base::Value.
   void Respond(bool success);
@@ -123,7 +133,7 @@ class FileBrowserPrivateGetSizeStatsFunction
   virtual ~FileBrowserPrivateGetSizeStatsFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void GetDriveAvailableSpaceCallback(drive::FileError error,
@@ -147,7 +157,7 @@ class FileBrowserPrivateValidatePathNameLengthFunction
   void OnFilePathLimitRetrieved(size_t current_length, size_t max_length);
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.formatVolume method.
@@ -162,7 +172,7 @@ class FileBrowserPrivateFormatVolumeFunction
   virtual ~FileBrowserPrivateFormatVolumeFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.startCopy method.
@@ -176,10 +186,10 @@ class FileBrowserPrivateStartCopyFunction
   virtual ~FileBrowserPrivateStartCopyFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  // Part of RunImpl(). Called after Copy() is started on IO thread.
+  // Part of RunAsync(). Called after Copy() is started on IO thread.
   void RunAfterStartCopy(int operation_id);
 };
 
@@ -194,7 +204,27 @@ class FileBrowserPrivateCancelCopyFunction
   virtual ~FileBrowserPrivateCancelCopyFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
+};
+
+// Implements the chrome.fileBrowserPrivateInternal.resolveIsolatedEntries
+// method.
+class FileBrowserPrivateInternalResolveIsolatedEntriesFunction
+    : public ChromeAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION(
+      "fileBrowserPrivateInternal.resolveIsolatedEntries",
+      FILEBROWSERPRIVATE_RESOLVEISOLATEDENTRIES)
+
+ protected:
+  virtual ~FileBrowserPrivateInternalResolveIsolatedEntriesFunction() {}
+
+  // AsyncExtensionFunction overrides.
+  virtual bool RunAsync() OVERRIDE;
+
+ private:
+  void RunAsyncAfterConvertFileDefinitionListToEntryDefinitionList(scoped_ptr<
+      file_manager::util::EntryDefinitionList> entry_definition_list);
 };
 
 }  // namespace extensions

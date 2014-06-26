@@ -24,6 +24,14 @@ function handleDragOver(e) {
   e.preventDefault();
 }
 
+function handleDrop(e) {
+  var file = e.dataTransfer.files[0];
+  if (file) {
+    e.preventDefault();
+    importLog(file);
+  }
+}
+
 function showError(fileName) {
   $('status').textContent = localStrings.getStringF('parseError', fileName);
 }
@@ -92,10 +100,9 @@ function collapseMultiLineStrings() {
 
 /**
  * Read in a log asynchronously, calling parseSystemLog if successful.
- * @param {Event} e The drop event from dropping a file dragged onto the page.
+ * @param {File} file The file to read.
  */
-function importLog(e) {
-  var file = e.dataTransfer.files[0];
+function importLog(file) {
   if (file && file.size <= MAX_FILE_SIZE) {
     var reader = new FileReader();
     reader.onload = function() {
@@ -112,7 +119,6 @@ function importLog(e) {
   } else if (file) {
     showError(file.name);
   }
-  e.preventDefault();
 }
 
 /**
@@ -143,7 +149,7 @@ function parseSystemLog(text) {
       value = lines[i].substring(delimiter + 1);
 
     // Delimiters are based on kMultilineIndicatorString, kMultilineStartString,
-    // and kMultilineEndString in chrome/browser/feedback/feedback_data.cc.
+    // and kMultilineEndString in components/feedback/feedback_data.cc.
     // If these change, we should check for both the old and new versions.
     if (value == '<multiline>') {
       // Skip start delimiter.
@@ -180,7 +186,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   var tp = $('t');
   tp.addEventListener('dragover', handleDragOver, false);
-  tp.addEventListener('drop', importLog, false);
+  tp.addEventListener('drop', handleDrop, false);
 
   collapseMultiLineStrings();
 });

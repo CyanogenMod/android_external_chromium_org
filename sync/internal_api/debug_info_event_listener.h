@@ -51,6 +51,7 @@ class SYNC_EXPORT_PRIVATE DebugInfoEventListener
   virtual void OnActionableError(
       const SyncProtocolError& sync_error) OVERRIDE;
   virtual void OnMigrationRequested(ModelTypeSet types) OVERRIDE;
+  virtual void OnProtocolEvent(const ProtocolEvent& event) OVERRIDE;
 
   // SyncEncryptionHandler::Observer implementation.
   virtual void OnPassphraseRequired(
@@ -95,7 +96,7 @@ class SYNC_EXPORT_PRIVATE DebugInfoEventListener
   FRIEND_TEST_ALL_PREFIXES(DebugInfoEventListenerTest, VerifyClearEvents);
 
   void AddEventToQueue(const sync_pb::DebugEventInfo& event_info);
-  void CreateAndAddEvent(sync_pb::DebugEventInfo::SingletonEventType type);
+  void CreateAndAddEvent(sync_pb::SyncEnums::SingletonDebugEventType type);
 
   typedef std::deque<sync_pb::DebugEventInfo> DebugEventInfoQueue;
   DebugEventInfoQueue events_;

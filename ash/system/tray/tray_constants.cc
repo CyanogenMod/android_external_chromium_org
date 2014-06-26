@@ -16,10 +16,10 @@ const int kPaddingFromInnerEdgeOfLauncherVerticalAlignment = 9;
 const int kPaddingFromBottomOfScreenVerticalAlignment = 10;
 
 // Padding used to position the system menu relative to the status area.
-const int kAlternateLayoutBubblePaddingHorizontalBottom = 6;
-const int kAlternateLayoutBubblePaddingHorizontalSide = 10;
-const int kAlternateLayoutBubblePaddingVerticalBottom = 3;
-const int kAlternateLayoutBubblePaddingVerticalSide = 15;
+const int kBubblePaddingHorizontalBottom = 6;
+const int kBubblePaddingHorizontalSide = 10;
+const int kBubblePaddingVerticalBottom = 3;
+const int kBubblePaddingVerticalSide = 15;
 
 const int kPaddingFromEdgeOfShelf = 3;
 
@@ -29,6 +29,9 @@ const int kTrayBubbleAnchorTopInsetBottomAnchor = 3;
 const int kTrayImageItemHorizontalPaddingBottomAlignment = 1;
 const int kTrayImageItemHorizontalPaddingVerticalAlignment = 1;
 const int kTrayImageItemVerticalPaddingVerticalAlignment = 1;
+
+// Size of tray items on the primary axis.
+const int kTrayItemSize = 32;
 
 const int kTrayLabelItemHorizontalPaddingBottomAlignment = 7;
 
@@ -43,8 +46,8 @@ const int kTrayPopupAutoCloseDelayForTextInSeconds = 5;
 const int kTrayPopupPaddingHorizontal = 18;
 const int kTrayPopupPaddingBetweenItems = 10;
 const int kTrayPopupTextSpacingVertical = 4;
+const int kTrayPopupUserCardVerticalPadding = 10;
 
-const int kTrayPopupItemHeight = 48;
 const int kTrayPopupDetailsIconWidth = 25;
 const int kTrayPopupDetailsLabelExtraLeftMargin = 8;
 const int kTrayPopupScrollSeparatorHeight = 15;
@@ -73,19 +76,11 @@ const int kNotificationButtonWidth = 32;
 const int kTrayNotificationContentsWidth = kTrayPopupMinWidth -
     (kNotificationIconWidth + kNotificationButtonWidth +
      (kTrayPopupPaddingHorizontal / 2) * 3);
-const int kTraySpacing = 8;
-const int kAlternateTraySpacing = 4;
-const int kShelfItemHeight = 31;
-const int kAlternateShelfItemHeight = 38;
 
-int GetTraySpacing() {
-  return ash::switches::UseAlternateShelfLayout() ?
-      kAlternateTraySpacing : kTraySpacing;
-}
+const int kTrayAvatarCornerRadius = 2;
+const int kTrayAvatarSize = 32;
 
-int GetShelfItemHeight() {
-  return ash::switches::UseAlternateShelfLayout() ?
-      kAlternateShelfItemHeight : kShelfItemHeight;
-}
+const int kTraySpacing = 4;
+const int kShelfItemHeight = 38;
 
 }  // namespace ash

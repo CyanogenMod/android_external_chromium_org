@@ -22,10 +22,12 @@ namespace views {
 class MenuRunner;
 }
 
+class StatusTrayWin;
+
 class StatusIconWin : public StatusIcon {
  public:
   // Constructor which provides this icon's unique ID and messaging window.
-  StatusIconWin(UINT id, HWND window, UINT message);
+  StatusIconWin(StatusTrayWin* tray, UINT id, HWND window, UINT message);
   virtual ~StatusIconWin();
 
   // Handles a click event from the user - if |left_button_click| is true and
@@ -40,6 +42,7 @@ class StatusIconWin : public StatusIcon {
   void ResetIcon();
 
   UINT icon_id() const { return icon_id_; }
+  HWND window() const { return window_; }
   UINT message_id() const { return message_id_; }
 
   // Overridden from StatusIcon:
@@ -49,14 +52,17 @@ class StatusIconWin : public StatusIcon {
   virtual void DisplayBalloon(const gfx::ImageSkia& icon,
                               const base::string16& title,
                               const base::string16& contents) OVERRIDE;
+  virtual void ForceVisible() OVERRIDE;
 
  protected:
   // Overridden from StatusIcon:
-  virtual void UpdatePlatformContextMenu(
-      StatusIconMenuModel* menu) OVERRIDE;
+  virtual void UpdatePlatformContextMenu(StatusIconMenuModel* menu) OVERRIDE;
 
  private:
   void InitIconData(NOTIFYICONDATA* icon_data);
+
+  // The tray that owns us.  Weak.
+  StatusTrayWin* tray_;
 
   // The unique ID corresponding to this icon.
   UINT icon_id_;
@@ -80,31 +86,6 @@ class StatusIconWin : public StatusIcon {
   scoped_ptr<views::MenuRunner> menu_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(StatusIconWin);
-};
-
-// Implements status notifications using Windows 8 metro style notifications.
-class StatusIconMetro : public StatusIcon {
- public:
-  // Constructor which provides this icon's unique ID and messaging window.
-  explicit StatusIconMetro(UINT id);
-  virtual ~StatusIconMetro();
-
-  // Overridden from StatusIcon:
-  virtual void SetImage(const gfx::ImageSkia& image) OVERRIDE;
-  virtual void SetPressedImage(const gfx::ImageSkia& image) OVERRIDE;
-  virtual void SetToolTip(const base::string16& tool_tip) OVERRIDE;
-  virtual void DisplayBalloon(const gfx::ImageSkia& icon,
-                              const base::string16& title,
-                              const base::string16& contents) OVERRIDE;
- protected:
-  virtual void UpdatePlatformContextMenu(
-      StatusIconMenuModel* menu) OVERRIDE;
-
- private:
-  base::string16 tool_tip_;
-  const UINT id_;
-
-  DISALLOW_COPY_AND_ASSIGN(StatusIconMetro);
 };
 
 #endif  // CHROME_BROWSER_UI_VIEWS_STATUS_ICONS_STATUS_ICON_WIN_H_

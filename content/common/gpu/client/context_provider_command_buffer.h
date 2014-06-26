@@ -33,11 +33,6 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
 
   CommandBufferProxyImpl* GetCommandBufferProxy();
 
-  void set_leak_on_destroy() {
-    base::AutoLock lock(main_thread_lock_);
-    leak_on_destroy_ = true;
-  }
-
   // ContextProviderWebContext implementation.
   virtual WebGraphicsContext3DCommandBufferImpl* WebContext3D() OVERRIDE;
 
@@ -49,6 +44,7 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
   virtual Capabilities ContextCapabilities() OVERRIDE;
   virtual bool IsContextLost() OVERRIDE;
   virtual void VerifyContexts() OVERRIDE;
+  virtual void DeleteCachedResources() OVERRIDE;
   virtual bool DestroyedOnMainThread() OVERRIDE;
   virtual void SetLostContextCallback(
       const LostContextCallback& lost_context_callback) OVERRIDE;
@@ -81,7 +77,6 @@ class CONTENT_EXPORT ContextProviderCommandBuffer
   MemoryPolicyChangedCallback memory_policy_changed_callback_;
 
   base::Lock main_thread_lock_;
-  bool leak_on_destroy_;
   bool destroyed_;
 
   class LostContextCallbackProxy;

@@ -13,19 +13,16 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/media_galleries_private/gallery_watch_manager.h"
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_api.h"
 #include "chrome/browser/extensions/api/media_galleries_private/media_galleries_private_event_router.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/state_store.h"
 #include "extensions/common/extension.h"
 
 namespace extensions {
@@ -38,7 +35,7 @@ const char kRegisteredGalleryWatchers[] = "media_gallery_watchers";
 // Converts the storage |list| value to WatchedGalleryIds.
 MediaGalleryPrefIdSet WatchedGalleryIdsFromValue(
     const base::ListValue* list) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   MediaGalleryPrefIdSet gallery_ids;
   std::string gallery_id_str;
   for (size_t i = 0; i < list->GetSize(); ++i) {
@@ -54,7 +51,7 @@ MediaGalleryPrefIdSet WatchedGalleryIdsFromValue(
 // Converts WatchedGalleryIds to a storage list value.
 scoped_ptr<base::ListValue> WatchedGalleryIdsToValue(
     const MediaGalleryPrefIdSet gallery_ids) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   scoped_ptr<base::ListValue> list(new base::ListValue());
   for (MediaGalleryPrefIdSet::const_iterator id_iter = gallery_ids.begin();
        id_iter != gallery_ids.end(); ++id_iter)
@@ -65,29 +62,24 @@ scoped_ptr<base::ListValue> WatchedGalleryIdsToValue(
 // Looks up an extension by ID. Does not include disabled extensions.
 const Extension* GetExtensionById(Profile* profile,
                                   const std::string& extension_id) {
-  ExtensionService* service = profile->GetExtensionService();
-  if (!service)
-    return NULL;
-  return service->GetExtensionById(extension_id, false);
+  return ExtensionRegistry::Get(profile)->enabled_extensions().GetByID(
+      extension_id);
 }
 
 }  // namespace
 
 GalleryWatchStateTracker::GalleryWatchStateTracker(Profile* profile)
-    : profile_(profile) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    : profile_(profile), extension_registry_observer_(this) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(profile_);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile_));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
   MediaGalleriesPreferences* preferences =
       g_browser_process->media_file_system_registry()->GetPreferences(profile);
   preferences->AddGalleryChangeObserver(this);
 }
 
 GalleryWatchStateTracker::~GalleryWatchStateTracker() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   MediaGalleriesPreferences* preferences =
       g_browser_process->media_file_system_registry()->GetPreferences(profile_);
   preferences->RemoveGalleryChangeObserver(this);
@@ -96,17 +88,13 @@ GalleryWatchStateTracker::~GalleryWatchStateTracker() {
 // static
 GalleryWatchStateTracker* GalleryWatchStateTracker::GetForProfile(
     Profile* profile) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-#if defined(OS_WIN)
-  // Gallery watch operation is supported only on windows.
-  // Please refer to crbug.com/144491 for more details.
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(profile);
   MediaGalleriesPrivateAPI* private_api =
       MediaGalleriesPrivateAPI::Get(profile);
-  if (!private_api)
-    return NULL;  // In unit tests, we don't have a MediaGalleriesPrivateAPI.
-  return private_api->GetGalleryWatchStateTracker();
-#endif
+  // In unit tests, we don't have a MediaGalleriesPrivateAPI.
+  if (private_api)
+    return private_api->GetGalleryWatchStateTracker();
   return NULL;
 }
 
@@ -114,7 +102,7 @@ void GalleryWatchStateTracker::OnPermissionAdded(
     MediaGalleriesPreferences* preferences,
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   // Granted gallery permission.
   if (HasGalleryWatchInfo(extension_id, gallery_id, false))
     SetupGalleryWatch(extension_id, gallery_id, preferences);
@@ -124,7 +112,7 @@ void GalleryWatchStateTracker::OnPermissionRemoved(
     MediaGalleriesPreferences* preferences,
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   // Revoked gallery permission.
   if (HasGalleryWatchInfo(extension_id, gallery_id, true))
     RemoveGalleryWatch(extension_id, gallery_id, preferences);
@@ -176,7 +164,7 @@ void GalleryWatchStateTracker::RemoveAllGalleryWatchersForExtension(
 void GalleryWatchStateTracker::OnGalleryWatchAdded(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   bool update_storage =
       AddWatchedGalleryIdInfoForExtension(extension_id, gallery_id);
   if (update_storage)
@@ -186,7 +174,7 @@ void GalleryWatchStateTracker::OnGalleryWatchAdded(
 void GalleryWatchStateTracker::OnGalleryWatchRemoved(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!ContainsKey(watched_extensions_map_, extension_id))
     return;
   watched_extensions_map_[extension_id].erase(gallery_id);
@@ -195,52 +183,42 @@ void GalleryWatchStateTracker::OnGalleryWatchRemoved(
   WriteToStorage(extension_id);
 }
 
-void GalleryWatchStateTracker::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
-      if (!storage)
-        return;
-      storage->GetExtensionValue(
-          extension->id(),
-          kRegisteredGalleryWatchers,
-          base::Bind(&GalleryWatchStateTracker::ReadFromStorage,
-                     AsWeakPtr(),
-                     extension->id()));
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      Extension* extension = const_cast<Extension*>(
-          content::Details<extensions::UnloadedExtensionInfo>(
-              details)->extension);
-      DCHECK(extension);
-      if (!ContainsKey(watched_extensions_map_, extension->id()))
-        return;
-      content::BrowserThread::PostTask(
-          content::BrowserThread::FILE, FROM_HERE,
-          base::Bind(&GalleryWatchManager::OnExtensionUnloaded,
-                     profile_,
-                     extension->id()));
-      for (WatchedGalleriesMap::iterator iter =
-               watched_extensions_map_[extension->id()].begin();
-           iter != watched_extensions_map_[extension->id()].end(); ++iter) {
-        iter->second = false;
-      }
-      break;
-    }
-    default:
-      NOTREACHED();
+void GalleryWatchStateTracker::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
+  if (!storage)
+    return;
+  storage->GetExtensionValue(
+      extension->id(),
+      kRegisteredGalleryWatchers,
+      base::Bind(&GalleryWatchStateTracker::ReadFromStorage,
+                 AsWeakPtr(),
+                 extension->id()));
+}
+
+void GalleryWatchStateTracker::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  if (!ContainsKey(watched_extensions_map_, extension->id()))
+    return;
+  content::BrowserThread::PostTask(
+      content::BrowserThread::FILE, FROM_HERE,
+      base::Bind(&GalleryWatchManager::OnExtensionUnloaded,
+                 profile_,
+                 extension->id()));
+  for (WatchedGalleriesMap::iterator iter =
+       watched_extensions_map_[extension->id()].begin();
+       iter != watched_extensions_map_[extension->id()].end(); ++iter) {
+    iter->second = false;
   }
 }
 
 void GalleryWatchStateTracker::WriteToStorage(const std::string& extension_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   StateStore* storage = ExtensionSystem::Get(profile_)->state_store();
   if (!storage)
     return;
@@ -255,7 +233,7 @@ void GalleryWatchStateTracker::WriteToStorage(const std::string& extension_id) {
 void GalleryWatchStateTracker::ReadFromStorage(
     const std::string& extension_id,
     scoped_ptr<base::Value> value) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   MediaGalleriesPreferences* preferences =
       g_browser_process->media_file_system_registry()->GetPreferences(profile_);
   base::ListValue* list = NULL;
@@ -276,7 +254,7 @@ void GalleryWatchStateTracker::SetupGalleryWatch(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id,
     MediaGalleriesPreferences* preferences) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const Extension* extension = GetExtensionById(profile_, extension_id);
   DCHECK(extension);
   base::FilePath gallery_file_path(preferences->LookUpGalleryPathForExtension(
@@ -305,7 +283,7 @@ void GalleryWatchStateTracker::RemoveGalleryWatch(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id,
     MediaGalleriesPreferences* preferences) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   const Extension* extension = GetExtensionById(profile_, extension_id);
   DCHECK(extension);
   base::FilePath gallery_file_path(preferences->LookUpGalleryPathForExtension(
@@ -325,7 +303,7 @@ bool GalleryWatchStateTracker::HasGalleryWatchInfo(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id,
     bool has_active_watcher) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   return (ContainsKey(watched_extensions_map_, extension_id) &&
           ContainsKey(watched_extensions_map_[extension_id], gallery_id) &&
           watched_extensions_map_[extension_id][gallery_id] ==
@@ -336,7 +314,7 @@ void GalleryWatchStateTracker::HandleSetupGalleryWatchResponse(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id,
     bool success) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (!success)
     return;  // Failed to setup the gallery watch for the given extension.
   AddWatchedGalleryIdInfoForExtension(extension_id, gallery_id);
@@ -345,7 +323,7 @@ void GalleryWatchStateTracker::HandleSetupGalleryWatchResponse(
 bool GalleryWatchStateTracker::AddWatchedGalleryIdInfoForExtension(
     const std::string& extension_id,
     MediaGalleryPrefId gallery_id) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   if (HasGalleryWatchInfo(extension_id, gallery_id, true))
     return false;
   watched_extensions_map_[extension_id][gallery_id] = true;

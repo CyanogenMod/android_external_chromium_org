@@ -18,7 +18,6 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/prerender/prerender_field_trial.h"
 #include "chrome/browser/safe_browsing/client_side_detection_service.h"
 #include "chrome/browser/safe_browsing/download_protection_service.h"
@@ -30,10 +29,11 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/url_constants.h"
+#include "components/metrics/metrics_service.h"
 #include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
+#include "url/url_constants.h"
 
 using content::BrowserThread;
 
@@ -56,8 +56,7 @@ void RecordGetHashCheckStatus(
   } else {
     result = SafeBrowsingProtocolManager::GET_HASH_FULL_HASH_MISS;
   }
-  bool is_download = check_type == safe_browsing_util::BINURL ||
-                     check_type == safe_browsing_util::BINHASH;
+  bool is_download = check_type == safe_browsing_util::BINURL;
   SafeBrowsingProtocolManager::RecordGetHashResult(is_download, result);
 }
 
@@ -69,7 +68,70 @@ bool IsExpectedThreat(
                                              threat_type);
 }
 
+// Return the list id from the first result in |full_hashes| which matches
+// |hash|, or INVALID if none match.
+safe_browsing_util::ListType GetHashThreatListType(
+    const SBFullHash& hash,
+    const std::vector<SBFullHashResult>& full_hashes) {
+  for (size_t i = 0; i < full_hashes.size(); ++i) {
+    if (SBFullHashEqual(hash, full_hashes[i].hash))
+      return static_cast<safe_browsing_util::ListType>(full_hashes[i].list_id);
+  }
+  return safe_browsing_util::INVALID;
+}
+
+// Given a URL, compare all the possible host + path full hashes to the set of
+// provided full hashes.  Returns the list id of the a matching result from
+// |full_hashes|, or INVALID if none match.
+safe_browsing_util::ListType GetUrlThreatListType(
+    const GURL& url,
+    const std::vector<SBFullHashResult>& full_hashes) {
+  if (full_hashes.empty())
+    return safe_browsing_util::INVALID;
+
+  std::vector<std::string> patterns;
+  safe_browsing_util::GeneratePatternsToCheck(url, &patterns);
+
+  for (size_t i = 0; i < patterns.size(); ++i) {
+    safe_browsing_util::ListType threat =
+        GetHashThreatListType(SBFullHashForString(patterns[i]), full_hashes);
+    if (threat != safe_browsing_util::INVALID)
+      return threat;
+  }
+  return safe_browsing_util::INVALID;
+}
+
+SBThreatType GetThreatTypeFromListType(safe_browsing_util::ListType list_type) {
+  switch (list_type) {
+    case safe_browsing_util::PHISH:
+      return SB_THREAT_TYPE_URL_PHISHING;
+    case safe_browsing_util::MALWARE:
+      return SB_THREAT_TYPE_URL_MALWARE;
+    case safe_browsing_util::BINURL:
+      return SB_THREAT_TYPE_BINARY_MALWARE_URL;
+    case safe_browsing_util::EXTENSIONBLACKLIST:
+      return SB_THREAT_TYPE_EXTENSION;
+    default:
+      DVLOG(1) << "Unknown safe browsing list id " << list_type;
+      return SB_THREAT_TYPE_SAFE;
+  }
+}
+
 }  // namespace
+
+// static
+SBThreatType SafeBrowsingDatabaseManager::GetHashThreatType(
+    const SBFullHash& hash,
+    const std::vector<SBFullHashResult>& full_hashes) {
+  return GetThreatTypeFromListType(GetHashThreatListType(hash, full_hashes));
+}
+
+// static
+SBThreatType SafeBrowsingDatabaseManager::GetUrlThreatType(
+    const GURL& url,
+    const std::vector<SBFullHashResult>& full_hashes) {
+  return GetThreatTypeFromListType(GetUrlThreatListType(url, full_hashes));
+}
 
 SafeBrowsingDatabaseManager::SafeBrowsingCheck::SafeBrowsingCheck(
     const std::vector<GURL>& urls,
@@ -115,12 +177,6 @@ void SafeBrowsingDatabaseManager::Client::OnSafeBrowsingResult(
     }
   } else if (!check.full_hashes.empty()) {
     switch (check.check_type) {
-      case safe_browsing_util::BINHASH:
-        DCHECK_EQ(1u, check.full_hashes.size());
-        OnCheckDownloadHashResult(
-            safe_browsing_util::SBFullHashToString(check.full_hashes[0]),
-            check.full_hash_results[0]);
-        break;
       case safe_browsing_util::EXTENSIONBLACKLIST: {
         std::set<std::string> unsafe_extension_ids;
         for (size_t i = 0; i < check.full_hashes.size(); ++i) {
@@ -206,9 +262,9 @@ SafeBrowsingDatabaseManager::~SafeBrowsingDatabaseManager() {
 }
 
 bool SafeBrowsingDatabaseManager::CanCheckUrl(const GURL& url) const {
-  return url.SchemeIs(content::kFtpScheme) ||
-         url.SchemeIs(content::kHttpScheme) ||
-         url.SchemeIs(content::kHttpsScheme);
+  return url.SchemeIs(url::kFtpScheme) ||
+         url.SchemeIs(url::kHttpScheme) ||
+         url.SchemeIs(url::kHttpsScheme);
 }
 
 bool SafeBrowsingDatabaseManager::CheckDownloadUrl(
@@ -230,32 +286,6 @@ bool SafeBrowsingDatabaseManager::CheckDownloadUrl(
   StartSafeBrowsingCheck(
       check,
       base::Bind(&SafeBrowsingDatabaseManager::CheckDownloadUrlOnSBThread, this,
-                 check));
-  return false;
-}
-
-bool SafeBrowsingDatabaseManager::CheckDownloadHash(
-    const std::string& full_hash,
-    Client* client) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  DCHECK(!full_hash.empty());
-  if (!enabled_ || !enable_download_protection_ || full_hash.empty())
-    return true;
-
-  // We need to check the database for url prefix, and later may fetch the url
-  // from the safebrowsing backends. These need to be asynchronous.
-  std::vector<SBFullHash> full_hashes(
-      1, safe_browsing_util::StringToSBFullHash(full_hash));
-  SafeBrowsingCheck* check =
-      new SafeBrowsingCheck(std::vector<GURL>(),
-                            full_hashes,
-                            client,
-                            safe_browsing_util::BINHASH,
-                            std::vector<SBThreatType>(1,
-                                SB_THREAT_TYPE_BINARY_MALWARE_HASH));
-  StartSafeBrowsingCheck(
-      check,
-      base::Bind(&SafeBrowsingDatabaseManager::CheckDownloadHashOnSBThread,this,
                  check));
   return false;
 }
@@ -345,6 +375,14 @@ bool SafeBrowsingDatabaseManager::IsMalwareKillSwitchOn() {
   return database_->IsMalwareIPMatchKillSwitchOn();
 }
 
+bool SafeBrowsingDatabaseManager::IsCsdWhitelistKillSwitchOn() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!enabled_ || !MakeDatabaseAvailable()) {
+    return true;
+  }
+  return database_->IsCsdWhitelistKillSwitchOn();
+}
+
 bool SafeBrowsingDatabaseManager::CheckBrowseUrl(const GURL& url,
                                                  Client* client) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -369,13 +407,11 @@ bool SafeBrowsingDatabaseManager::CheckBrowseUrl(const GURL& url,
     return false;
   }
 
-  std::string list;
   std::vector<SBPrefix> prefix_hits;
-  std::vector<SBFullHashResult> full_hits;
+  std::vector<SBFullHashResult> cache_hits;
 
   bool prefix_match =
-      database_->ContainsBrowseUrl(url, &list, &prefix_hits, &full_hits,
-          sb_service_->protocol_manager()->last_update());
+      database_->ContainsBrowseUrl(url, &prefix_hits, &cache_hits);
 
   UMA_HISTOGRAM_TIMES("SB2.FilterCheck", base::TimeTicks::Now() - start);
 
@@ -389,9 +425,9 @@ bool SafeBrowsingDatabaseManager::CheckBrowseUrl(const GURL& url,
                                                    client,
                                                    safe_browsing_util::MALWARE,
                                                    expected_threats);
-  check->need_get_hash = full_hits.empty();
+  check->need_get_hash = cache_hits.empty();
   check->prefix_hits.swap(prefix_hits);
-  check->full_hits.swap(full_hits);
+  check->cache_hits.swap(cache_hits);
   checks_.insert(check);
 
   BrowserThread::PostTask(
@@ -427,7 +463,7 @@ void SafeBrowsingDatabaseManager::CancelCheck(Client* client) {
 void SafeBrowsingDatabaseManager::HandleGetHashResults(
     SafeBrowsingCheck* check,
     const std::vector<SBFullHashResult>& full_hashes,
-    bool can_cache) {
+    const base::TimeDelta& cache_lifetime) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   if (!enabled_)
@@ -445,10 +481,9 @@ void SafeBrowsingDatabaseManager::HandleGetHashResults(
   std::vector<SBPrefix> prefixes = check->prefix_hits;
   OnHandleGetHashResults(check, full_hashes);  // 'check' is deleted here.
 
-  if (can_cache && MakeDatabaseAvailable()) {
-    // Cache the GetHash results in memory:
-    database_->CacheHashResults(prefixes, full_hashes);
-  }
+  // Cache the GetHash results.
+  if (cache_lifetime != base::TimeDelta() && MakeDatabaseAvailable())
+    database_->CacheHashResults(prefixes, full_hashes, cache_lifetime);
 }
 
 void SafeBrowsingDatabaseManager::GetChunks(GetChunksCallback callback) {
@@ -459,23 +494,25 @@ void SafeBrowsingDatabaseManager::GetChunks(GetChunksCallback callback) {
       &SafeBrowsingDatabaseManager::GetAllChunksFromDatabase, this, callback));
 }
 
-void SafeBrowsingDatabaseManager::AddChunks(const std::string& list,
-                                            SBChunkList* chunks,
-                                            AddChunksCallback callback) {
+void SafeBrowsingDatabaseManager::AddChunks(
+    const std::string& list,
+    scoped_ptr<ScopedVector<SBChunkData> > chunks,
+    AddChunksCallback callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(enabled_);
   DCHECK(!callback.is_null());
   safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
       &SafeBrowsingDatabaseManager::AddDatabaseChunks, this, list,
-      chunks, callback));
+      base::Passed(&chunks), callback));
 }
 
 void SafeBrowsingDatabaseManager::DeleteChunks(
-    std::vector<SBChunkDelete>* chunk_deletes) {
+    scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK(enabled_);
   safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
-      &SafeBrowsingDatabaseManager::DeleteDatabaseChunks, this, chunk_deletes));
+      &SafeBrowsingDatabaseManager::DeleteDatabaseChunks, this,
+      base::Passed(&chunk_deletes)));
 }
 
 void SafeBrowsingDatabaseManager::UpdateStarted() {
@@ -501,11 +538,6 @@ void SafeBrowsingDatabaseManager::ResetDatabase() {
   DCHECK(enabled_);
   safe_browsing_thread_->message_loop()->PostTask(FROM_HERE, base::Bind(
       &SafeBrowsingDatabaseManager::OnResetDatabase, this));
-}
-
-void SafeBrowsingDatabaseManager::PurgeMemory() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  CloseDatabase();
 }
 
 void SafeBrowsingDatabaseManager::LogPauseDelay(base::TimeDelta time) {
@@ -566,7 +598,6 @@ void SafeBrowsingDatabaseManager::DoStopOnIOThread() {
   enabled_ = false;
 
   // Delete queued checks, calling back any clients with 'SB_THREAT_TYPE_SAFE'.
-  // If we don't do this here we may fail to close the database below.
   while (!queued_checks_.empty()) {
     QueuedCheck queued = queued_checks_.front();
     if (queued.client) {
@@ -580,11 +611,23 @@ void SafeBrowsingDatabaseManager::DoStopOnIOThread() {
     queued_checks_.pop_front();
   }
 
-  // Close the database.  We don't simply DeleteSoon() because if a close is
-  // already pending, we'll double-free, and we don't set |database_| to NULL
-  // because if there is still anything running on the db thread, it could
-  // create a new database object (via GetDatabase()) that would then leak.
-  CloseDatabase();
+  // Close the database.  Cases to avoid:
+  //  * If |closing_database_| is true, continuing will queue up a second
+  //    request, |closing_database_| will be reset after handling the first
+  //    request, and if any functions on the db thread recreate the database, we
+  //    could start using it on the IO thread and then have the second request
+  //    handler delete it out from under us.
+  //  * If |database_| is NULL, then either no creation request is in flight, in
+  //    which case we don't need to do anything, or one is in flight, in which
+  //    case the database will be recreated before our deletion request is
+  //    handled, and could be used on the IO thread in that time period, leading
+  //    to the same problem as above.
+  // Checking DatabaseAvailable() avoids both of these.
+  if (DatabaseAvailable()) {
+    closing_database_ = true;
+    safe_browsing_thread_->message_loop()->PostTask(FROM_HERE,
+        base::Bind(&SafeBrowsingDatabaseManager::OnCloseDatabase, this));
+  }
 
   // Flush the database thread. Any in-progress database check results will be
   // ignored and cleaned up below.
@@ -631,37 +674,6 @@ bool SafeBrowsingDatabaseManager::MakeDatabaseAvailable() {
       base::Bind(base::IgnoreResult(&SafeBrowsingDatabaseManager::GetDatabase),
                  this));
   return false;
-}
-
-void SafeBrowsingDatabaseManager::CloseDatabase() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  // Cases to avoid:
-  //  * If |closing_database_| is true, continuing will queue up a second
-  //    request, |closing_database_| will be reset after handling the first
-  //    request, and if any functions on the db thread recreate the database, we
-  //    could start using it on the IO thread and then have the second request
-  //    handler delete it out from under us.
-  //  * If |database_| is NULL, then either no creation request is in flight, in
-  //    which case we don't need to do anything, or one is in flight, in which
-  //    case the database will be recreated before our deletion request is
-  //    handled, and could be used on the IO thread in that time period, leading
-  //    to the same problem as above.
-  //  * If |queued_checks_| is non-empty and |database_| is non-NULL, we're
-  //    about to be called back (in DatabaseLoadComplete()).  This will call
-  //    CheckUrl(), which will want the database.  Closing the database here
-  //    would lead to an infinite loop in DatabaseLoadComplete(), and even if it
-  //    didn't, it would be pointless since we'd just want to recreate.
-  //
-  // The first two cases above are handled by checking DatabaseAvailable().
-  if (!DatabaseAvailable() || !queued_checks_.empty())
-    return;
-
-  closing_database_ = true;
-  if (safe_browsing_thread_.get()) {
-    safe_browsing_thread_->message_loop()->PostTask(FROM_HERE,
-        base::Bind(&SafeBrowsingDatabaseManager::OnCloseDatabase, this));
-  }
 }
 
 SafeBrowsingDatabase* SafeBrowsingDatabaseManager::GetDatabase() {
@@ -735,8 +747,7 @@ void SafeBrowsingDatabaseManager::OnCheckDone(SafeBrowsingCheck* check) {
     check->start = base::TimeTicks::Now();
     // Note: If |this| is deleted or stopped, the protocol_manager will
     // be destroyed as well - hence it's OK to do unretained in this case.
-    bool is_download = check->check_type == safe_browsing_util::BINURL ||
-                       check->check_type == safe_browsing_util::BINHASH;
+    bool is_download = check->check_type == safe_browsing_util::BINURL;
     sb_service_->protocol_manager()->GetFullHash(
         check->prefix_hits,
         base::Bind(&SafeBrowsingDatabaseManager::HandleGetHashResults,
@@ -746,7 +757,7 @@ void SafeBrowsingDatabaseManager::OnCheckDone(SafeBrowsingCheck* check) {
   } else {
     // We may have cached results for previous GetHash queries.  Since
     // this data comes from cache, don't histogram hits.
-    HandleOneCheck(check, check->full_hits);
+    HandleOneCheck(check, check->cache_hits);
   }
 }
 
@@ -819,14 +830,13 @@ void SafeBrowsingDatabaseManager::DatabaseLoadComplete() {
 }
 
 void SafeBrowsingDatabaseManager::AddDatabaseChunks(
-    const std::string& list_name, SBChunkList* chunks,
+    const std::string& list_name,
+    scoped_ptr<ScopedVector<SBChunkData> > chunks,
     AddChunksCallback callback) {
   DCHECK_EQ(base::MessageLoop::current(),
             safe_browsing_thread_->message_loop());
-  if (chunks) {
-    GetDatabase()->InsertChunks(list_name, *chunks);
-    delete chunks;
-  }
+  if (chunks)
+    GetDatabase()->InsertChunks(list_name, chunks->get());
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&SafeBrowsingDatabaseManager::OnAddChunksComplete, this,
@@ -834,39 +844,11 @@ void SafeBrowsingDatabaseManager::AddDatabaseChunks(
 }
 
 void SafeBrowsingDatabaseManager::DeleteDatabaseChunks(
-    std::vector<SBChunkDelete>* chunk_deletes) {
+    scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) {
   DCHECK_EQ(base::MessageLoop::current(),
             safe_browsing_thread_->message_loop());
-  if (chunk_deletes) {
+  if (chunk_deletes)
     GetDatabase()->DeleteChunks(*chunk_deletes);
-    delete chunk_deletes;
-  }
-}
-
-SBThreatType SafeBrowsingDatabaseManager::GetThreatTypeFromListname(
-    const std::string& list_name) {
-  if (safe_browsing_util::IsPhishingList(list_name)) {
-    return SB_THREAT_TYPE_URL_PHISHING;
-  }
-
-  if (safe_browsing_util::IsMalwareList(list_name)) {
-    return SB_THREAT_TYPE_URL_MALWARE;
-  }
-
-  if (safe_browsing_util::IsBadbinurlList(list_name)) {
-    return SB_THREAT_TYPE_BINARY_MALWARE_URL;
-  }
-
-  if (safe_browsing_util::IsBadbinhashList(list_name)) {
-    return SB_THREAT_TYPE_BINARY_MALWARE_HASH;
-  }
-
-  if (safe_browsing_util::IsExtensionList(list_name)) {
-    return SB_THREAT_TYPE_EXTENSION;
-  }
-
-  DVLOG(1) << "Unknown safe browsing list " << list_name;
-  return SB_THREAT_TYPE_SAFE;
 }
 
 void SafeBrowsingDatabaseManager::DatabaseUpdateFinished(
@@ -906,14 +888,6 @@ void SafeBrowsingDatabaseManager::OnResetDatabase() {
   GetDatabase()->ResetDatabase();
 }
 
-void SafeBrowsingDatabaseManager::CacheHashResults(
-  const std::vector<SBPrefix>& prefixes,
-  const std::vector<SBFullHashResult>& full_hashes) {
-  DCHECK_EQ(base::MessageLoop::current(),
-            safe_browsing_thread_->message_loop());
-  GetDatabase()->CacheHashResults(prefixes, full_hashes);
-}
-
 void SafeBrowsingDatabaseManager::OnHandleGetHashResults(
     SafeBrowsingCheck* check,
     const std::vector<SBFullHashResult>& full_hashes) {
@@ -948,13 +922,19 @@ bool SafeBrowsingDatabaseManager::HandleOneCheck(
 
   bool is_threat = false;
 
+  // TODO(shess): GetHashThreadListType() contains a loop,
+  // GetUrlThreatListType() a loop around that loop.  Having another loop out
+  // here concerns me.  It is likely that SAFE is an expected outcome, which
+  // means all of those loops run to completion.  Refactoring this to generate a
+  // set of sorted items to compare in sequence would probably improve things.
+  //
+  // Additionally, the set of patterns generated from the urls is very similar
+  // to the patterns generated in ContainsBrowseUrl() and other database checks,
+  // which are called from this code.  Refactoring that across the checks could
+  // interact well with batching the checks here.
+
   for (size_t i = 0; i < check->urls.size(); ++i) {
-    int index =
-        safe_browsing_util::GetUrlHashIndex(check->urls[i], full_hashes);
-    if (index == -1)
-      continue;
-    SBThreatType threat =
-        GetThreatTypeFromListname(full_hashes[index].list_name);
+    SBThreatType threat = GetUrlThreatType(check->urls[i], full_hashes);
     if (threat != SB_THREAT_TYPE_SAFE &&
         IsExpectedThreat(threat, check->expected_threats)) {
       check->url_results[i] = threat;
@@ -963,12 +943,7 @@ bool SafeBrowsingDatabaseManager::HandleOneCheck(
   }
 
   for (size_t i = 0; i < check->full_hashes.size(); ++i) {
-    int index =
-        safe_browsing_util::GetHashIndex(check->full_hashes[i], full_hashes);
-    if (index == -1)
-      continue;
-    SBThreatType threat =
-        GetThreatTypeFromListname(full_hashes[index].list_name);
+    SBThreatType threat = GetHashThreatType(check->full_hashes[i], full_hashes);
     if (threat != SB_THREAT_TYPE_SAFE &&
         IsExpectedThreat(threat, check->expected_threats)) {
       check->full_hash_results[i] = threat;
@@ -978,31 +953,6 @@ bool SafeBrowsingDatabaseManager::HandleOneCheck(
 
   SafeBrowsingCheckDone(check);
   return is_threat;
-}
-
-void SafeBrowsingDatabaseManager::CheckDownloadHashOnSBThread(
-    SafeBrowsingCheck* check) {
-  DCHECK_EQ(base::MessageLoop::current(),
-            safe_browsing_thread_->message_loop());
-  DCHECK(enable_download_protection_);
-
-  DCHECK_EQ(1u, check->full_hashes.size());
-  SBFullHash full_hash = check->full_hashes[0];
-
-  if (!database_->ContainsDownloadHashPrefix(full_hash.prefix)) {
-    // Good, we don't have hash for this url prefix.
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&SafeBrowsingDatabaseManager::CheckDownloadHashDone, this,
-                   check));
-    return;
-  }
-
-  check->need_get_hash = true;
-  check->prefix_hits.push_back(full_hash.prefix);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&SafeBrowsingDatabaseManager::OnCheckDone, this, check));
 }
 
 void SafeBrowsingDatabaseManager::CheckDownloadUrlOnSBThread(
@@ -1074,12 +1024,6 @@ void SafeBrowsingDatabaseManager::TimeoutCallback(SafeBrowsingCheck* check) {
 }
 
 void SafeBrowsingDatabaseManager::CheckDownloadUrlDone(
-    SafeBrowsingCheck* check) {
-  DCHECK(enable_download_protection_);
-  SafeBrowsingCheckDone(check);
-}
-
-void SafeBrowsingDatabaseManager::CheckDownloadHashDone(
     SafeBrowsingCheck* check) {
   DCHECK(enable_download_protection_);
   SafeBrowsingCheckDone(check);

@@ -11,12 +11,12 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/fileapi/blob_storage_host.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/streams/stream_registry.h"
@@ -29,7 +29,6 @@
 #include "net/url_request/url_request_context_getter.h"
 #include "url/gurl.h"
 #include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_storage_host.h"
 #include "webkit/browser/fileapi/file_observers.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -47,7 +46,6 @@ using fileapi::FileSystemOperation;
 using fileapi::FileSystemURL;
 using webkit_blob::BlobData;
 using webkit_blob::BlobStorageContext;
-using webkit_blob::BlobStorageHost;
 
 namespace content {
 
@@ -146,11 +144,9 @@ base::TaskRunner* FileAPIMessageFilter::OverrideTaskRunnerForMessage(
   return NULL;
 }
 
-bool FileAPIMessageFilter::OnMessageReceived(
-    const IPC::Message& message, bool* message_was_ok) {
-  *message_was_ok = true;
+bool FileAPIMessageFilter::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(FileAPIMessageFilter, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(FileAPIMessageFilter, message)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_OpenFileSystem, OnOpenFileSystem)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_ResolveURL, OnResolveURL)
     IPC_MESSAGE_HANDLER(FileSystemHostMsg_DeleteFileSystem, OnDeleteFileSystem)
@@ -194,7 +190,7 @@ bool FileAPIMessageFilter::OnMessageReceived(
     IPC_MESSAGE_HANDLER(StreamHostMsg_Clone, OnCloneStream)
     IPC_MESSAGE_HANDLER(StreamHostMsg_Remove, OnRemoveStream)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 
@@ -496,10 +492,18 @@ void FileAPIMessageFilter::OnCreateSnapshotFile(
     return;
   }
 
-  operations_[request_id] = operation_runner()->CreateSnapshotFile(
-      url,
-      base::Bind(&FileAPIMessageFilter::DidCreateSnapshot,
-                 this, request_id, url));
+  FileSystemBackend* backend = context_->GetFileSystemBackend(url.type());
+  if (backend->SupportsStreaming(url)) {
+    operations_[request_id] = operation_runner()->GetMetadata(
+        url,
+        base::Bind(&FileAPIMessageFilter::DidGetMetadataForStreaming,
+                   this, request_id));
+  } else {
+    operations_[request_id] = operation_runner()->CreateSnapshotFile(
+        url,
+        base::Bind(&FileAPIMessageFilter::DidCreateSnapshot,
+                   this, request_id, url));
+  }
 }
 
 void FileAPIMessageFilter::OnDidReceiveSnapshotFile(int request_id) {
@@ -704,16 +708,35 @@ void FileAPIMessageFilter::DidGetMetadata(
   operations_.erase(request_id);
 }
 
+void FileAPIMessageFilter::DidGetMetadataForStreaming(
+    int request_id,
+    base::File::Error result,
+    const base::File::Info& info) {
+  if (result == base::File::FILE_OK) {
+    // For now, streaming Blobs are implemented as a successful snapshot file
+    // creation with an empty path.
+    Send(new FileSystemMsg_DidCreateSnapshotFile(request_id, info,
+                                                 base::FilePath()));
+  } else {
+    Send(new FileSystemMsg_DidFail(request_id, result));
+  }
+  operations_.erase(request_id);
+}
+
 void FileAPIMessageFilter::DidReadDirectory(
     int request_id,
     base::File::Error result,
     const std::vector<fileapi::DirectoryEntry>& entries,
     bool has_more) {
-  if (result == base::File::FILE_OK)
-    Send(new FileSystemMsg_DidReadDirectory(request_id, entries, has_more));
-  else
+  if (result == base::File::FILE_OK) {
+    if (!entries.empty() || !has_more)
+      Send(new FileSystemMsg_DidReadDirectory(request_id, entries, has_more));
+  } else {
+    DCHECK(!has_more);
     Send(new FileSystemMsg_DidFail(request_id, result));
-  operations_.erase(request_id);
+  }
+  if (!has_more)
+    operations_.erase(request_id);
 }
 
 void FileAPIMessageFilter::DidWrite(int request_id,
@@ -745,16 +768,22 @@ void FileAPIMessageFilter::DidOpenFileSystem(int request_id,
   // For OpenFileSystem we do not create a new operation, so no unregister here.
 }
 
-void FileAPIMessageFilter::DidResolveURL(int request_id,
-                                         base::File::Error result,
-                                         const fileapi::FileSystemInfo& info,
-                                         const base::FilePath& file_path,
-                                         bool is_directory) {
+void FileAPIMessageFilter::DidResolveURL(
+    int request_id,
+    base::File::Error result,
+    const fileapi::FileSystemInfo& info,
+    const base::FilePath& file_path,
+    fileapi::FileSystemContext::ResolvedEntryType type) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (result == base::File::FILE_OK &&
+      type == fileapi::FileSystemContext::RESOLVED_ENTRY_NOT_FOUND)
+    result = base::File::FILE_ERROR_NOT_FOUND;
+
   if (result == base::File::FILE_OK) {
     DCHECK(info.root_url.is_valid());
     Send(new FileSystemMsg_DidResolveURL(
-        request_id, info, file_path, is_directory));
+        request_id, info, file_path,
+        type == fileapi::FileSystemContext::RESOLVED_ENTRY_DIRECTORY));
   } else {
     Send(new FileSystemMsg_DidFail(request_id, result));
   }
@@ -784,16 +813,6 @@ void FileAPIMessageFilter::DidCreateSnapshot(
 
   if (result != base::File::FILE_OK) {
     Send(new FileSystemMsg_DidFail(request_id, result));
-    return;
-  }
-
-  // TODO(tommycli): This allows streaming blobs to use a 'fake' snapshot file
-  // with an empty path. We want to eventually have explicit plumbing for
-  // the creation of Blobs without snapshot files, probably called something
-  // like GetMetadataForStreaming.
-  if (platform_path.empty()) {
-    Send(new FileSystemMsg_DidCreateSnapshotFile(request_id, info,
-                                                 base::FilePath()));
     return;
   }
 

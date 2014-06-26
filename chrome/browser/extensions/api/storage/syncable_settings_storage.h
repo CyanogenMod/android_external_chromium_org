@@ -11,8 +11,8 @@
 #include "base/observer_list_threadsafe.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/storage/setting_sync_data.h"
-#include "chrome/browser/extensions/api/storage/settings_observer.h"
-#include "chrome/browser/value_store/value_store.h"
+#include "extensions/browser/api/storage/settings_observer.h"
+#include "extensions/browser/value_store/value_store.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/syncable_service.h"
 
@@ -49,6 +49,8 @@ class SyncableSettingsStorage : public ValueStore {
   virtual WriteResult Remove(const std::string& key) OVERRIDE;
   virtual WriteResult Remove(const std::vector<std::string>& keys) OVERRIDE;
   virtual WriteResult Clear() OVERRIDE;
+  virtual bool Restore() OVERRIDE;
+  virtual bool RestoreKey(const std::string& key) OVERRIDE;
 
   // Sync-related methods, analogous to those on SyncableService (handled by
   // ExtensionSettings), but with looser guarantees about when the methods

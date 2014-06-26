@@ -8,7 +8,8 @@
  implemented_in="chrome/browser/chromeos/extensions/file_manager/file_browser_private_api_functions.h"]
 namespace fileBrowserPrivate {
 // Type of the mounted volume.
-enum VolumeType { drive, downloads, removable, archive, cloud_device };
+enum VolumeType { drive, downloads, removable, archive, cloud_device, provided,
+                  mtp, testing };
 
 // Device type. Available if this is removable volume.
 enum DeviceType { usb, sd, optical, mobile, unknown };
@@ -80,6 +81,18 @@ enum SearchType { EXCLUDE_DIRECTORIES, SHARED_WITH_ME, OFFLINE, ALL };
 // Zooming mode.
 enum ZoomOperationType { in, out, reset };
 
+// Specifies how to open inspector.
+enum InspectionType {
+  // Open inspector for foreground page.
+  normal,
+  // Open inspector for foreground page and bring focus to the console.
+  console,
+  // Open inspector for foreground page in inspect element mode.
+  element,
+  // Open inspector for background page.
+  background
+};
+
 // Device event type.
 enum DeviceEventType {
   // Device is added.
@@ -92,6 +105,8 @@ enum DeviceEventType {
   scan_canceled,
   // Device is removed.
   removed,
+  // Device is hard unplugged.
+  hard_unplugged,
   // Format started.
   format_start,
   // Format succeeded.
@@ -124,6 +139,21 @@ enum TaskResult {
   empty
 };
 
+// Drive share type.
+enum DriveShareType {
+  can_edit,
+  can_comment,
+  can_view
+};
+
+// ImageSet that represents multi-scale images.
+dictionary ImageSet {
+  // 1x scale URL.
+  DOMString scale1xUrl;
+  // 2x scale URL.
+  DOMString scale2xUrl;
+};
+
 // A file task represents an action that the file manager can perform over the
 // currently selected files. See
 // chrome/browser/chromeos/extensions/file_manager/file_tasks.h for details
@@ -144,6 +174,12 @@ dictionary FileTask {
 
 // Drive file properties.
 dictionary DriveEntryProperties {
+  // Size of this file.
+  double? fileSize;
+
+  // Timestamp of entry update time, in milliseconds past the epoch.
+  double? lastModifiedTime;
+
   // URL to the Drive thumbnail image for this file.
   DOMString? thumbnailUrl;
 
@@ -201,8 +237,8 @@ dictionary ProfileInfo {
   // multi-profile suuport.
   boolean isCurrentProfile;
 
-  // Data URI of profile image;
-  DOMString? imageUri;
+  // Image set of profile image.
+  ImageSet? profileImage;
 };
 
 // Mounted disk volume metadata.
@@ -210,13 +246,19 @@ dictionary VolumeMetadata {
   // ID of the disk volume.
   DOMString volumeId;
 
+  // Id the provided file system (for proviided file systems).
+  DOMString? fileSystemId;
+
+  // Extension providing this volume (for provided file systems).
+  DOMString? extensionId;
+
+  // Label of the volume (if available).
+  DOMString? volumeLabel;
+
   // Description of the profile where the volume belongs.
   // TODO(hirono): Remove the property because of the design change of
-  // multi-profile suuport.
+  // multi-profile support.
   ProfileInfo profile;
-
-  // Disk volume mount point path.
-  DOMString mountPath;
 
   // The path to the mounted device, archive file or network resource.
   DOMString? sourcePath;
@@ -230,9 +272,6 @@ dictionary VolumeMetadata {
   // Path to identify the device. This is consistent with DeviceEvent's
   // devicePath.
   DOMString? devicePath;
-
-  // Label of the device.
-  DOMString? deviceLabel;
 
   // Whether the device is parent or not (i.e. sdb rather than sdb1).
   boolean? isParentDevice;
@@ -309,8 +348,8 @@ dictionary CopyProgressStatus {
   // pre-compute the size of files being copied for the file (not directory).
   double? size;
 
-  // FileError's code of the error. Available only for ERROR event.
-  long? error;
+  // DOMError's name. Available only for ERROR event.
+  DOMString? error;
 };
 
 // Payload data for file transfer cancel response.
@@ -424,9 +463,9 @@ callback RemoveFileWatchCallback = void(optional boolean success);
 // |the caller has no appropriate permissions.
 callback RequestFileSystemCallback = void(optional object fileSystem);
 
-// |fileProperties| A dictionary containing properties of the requested entry.
+// |fileProperties| A dictionary containing properties of the requested entries.
 callback GetDriveEntryPropertiesCallback =
-    void(DriveEntryProperties fileProperties);
+    void(DriveEntryProperties[] entryProperties);
 
 // |localFilePaths| An array of the local file paths for the requested files,
 // one entry for each file in fileUrls.
@@ -484,6 +523,10 @@ callback GetShareUrlCallback = void(DOMString shareUrl);
 callback GetProfilesCallback = void(ProfileInfo[] profiles,
                                     DOMString runningProfile,
                                     DOMString displayProfile);
+
+// |entryUrl| URL of an entry in a normal file system.
+callback ResolveEntriesCallback =
+    void([instanceOf=FileEntry] object[] entries);
 
 interface Functions {
   // Logout the current user for navigating to the re-authentication screen for
@@ -570,17 +613,18 @@ interface Functions {
                          boolean shouldReturnLocalPath,
                          SimpleCallback callback);
 
-  // Requests Drive file properties for a file.
-  // |fileUrl| URL of a file
+  // Requests Drive file properties for files.
+  // |fileUrls| list of URLs of files
   // |callback|
-  static void getDriveEntryProperties(DOMString fileUrl,
-                                      GetDriveEntryPropertiesCallback callback);
+  static void getDriveEntryProperties(
+      DOMString[] fileUrls,
+      GetDriveEntryPropertiesCallback callback);
 
   // Pins/unpins a Drive file in the cache.
   // |fileUrl| URL of a file to pin/unpin.
   // |pin| Pass true to pin the file.
-  // |callback| Completion callback. $ref:runtime.lastError will be set if there
-  //     was an error.
+  // |callback| Completion callback. $(ref:runtime.lastError) will be set if
+  //     there was an error.
   static void pinDriveFile(DOMString fileUrl,
                            boolean pin,
                            optional SimpleCallback callback);
@@ -590,6 +634,15 @@ interface Functions {
   // |callback|
   static void getDriveFiles(DOMString[] fileUrls,
                             GetDriveFilesCallback callback);
+
+  // Resolves file entries in the isolated file system and returns corresponding
+  // entries in the external file system mounted to Chrome OS file manager
+  // backend. If resolving entry fails, the entry will be just ignored and the
+  // corresponding entry does not appear in the result.
+  [nocompile]
+  static void resolveIsolatedEntries(
+      [instanceOf=FileEntry] object[] entries,
+      ResolveEntriesCallback callback);
 
   // Mount a resource or a file.
   // |source| Mount point source. For compressed files it is relative file path
@@ -701,6 +754,13 @@ interface Functions {
   // |callback|
   static void getShareUrl(DOMString url, GetShareUrlCallback callback);
 
+  // Requests to share drive files.
+  // |url| URL of a file to be shared.
+  // |shareType| Type of access that is getting granted.
+  static void requestDriveShare(DOMString url,
+                                DriveShareType shareType,
+                                SimpleCallback callback);
+
   // Requests to install a webstore item.
   // |item_id| The id of the item to install.
   // |callback|
@@ -713,6 +773,10 @@ interface Functions {
   // Moves the window to other user's desktop.
   static void visitDesktop(DOMString profileId,
                            optional SimpleCallback callback);
+
+  // Opens inspector window.
+  // |type| InspectionType which specifies how to open inspector.
+  static void openInspector(InspectionType type);
 };
 
 interface Events {

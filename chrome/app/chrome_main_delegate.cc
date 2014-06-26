@@ -4,7 +4,9 @@
 
 #include "chrome/app/chrome_main_delegate.h"
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
+#include "base/cpu.h"
 #include "base/files/file_path.h"
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
@@ -14,17 +16,20 @@
 #include "base/path_service.h"
 #include "base/process/memory.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "chrome/browser/chrome_content_browser_client.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_content_client.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/profiling.h"
+#include "chrome/common/switch_utils.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/plugin/chrome_content_plugin_client.h"
 #include "chrome/renderer/chrome_content_renderer_client.h"
@@ -42,7 +47,6 @@
 #include "base/strings/string_util.h"
 #include "chrome/common/child_process_logging.h"
 #include "sandbox/win/src/sandbox.h"
-#include "tools/memory_watcher/memory_watcher.h"
 #include "ui/base/resource/resource_bundle_win.h"
 #endif
 
@@ -96,6 +100,14 @@
 #include "components/breakpad/app/breakpad_linux.h"
 #endif
 
+#if defined(OS_LINUX)
+#include "base/environment.h"
+#endif
+
+#if defined(OS_MACOSX) || defined(OS_WIN)
+#include "chrome/browser/policy/policy_path_parser.h"
+#endif
+
 #if !defined(CHROME_MULTIPLE_DLL_CHILD)
 base::LazyInstance<chrome::ChromeContentBrowserClient>
     g_chrome_content_browser_client = LAZY_INSTANCE_INITIALIZER;
@@ -104,7 +116,7 @@ base::LazyInstance<chrome::ChromeContentBrowserClient>
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
 base::LazyInstance<ChromeContentRendererClient>
     g_chrome_content_renderer_client = LAZY_INSTANCE_INITIALIZER;
-base::LazyInstance<chrome::ChromeContentUtilityClient>
+base::LazyInstance<ChromeContentUtilityClient>
     g_chrome_content_utility_client = LAZY_INSTANCE_INITIALIZER;
 base::LazyInstance<chrome::ChromeContentPluginClient>
     g_chrome_content_plugin_client = LAZY_INSTANCE_INITIALIZER;
@@ -121,15 +133,6 @@ extern int ServiceProcessMain(const content::MainFunctionParams&);
 namespace {
 
 #if defined(OS_WIN)
-const wchar_t kProfilingDll[] = L"memory_watcher.dll";
-
-// Load the memory profiling DLL.  All it needs to be activated
-// is to be loaded.  Return true on success, false otherwise.
-bool LoadMemoryProfiler() {
-  HMODULE prof_module = LoadLibrary(kProfilingDll);
-  return prof_module != NULL;
-}
-
 // Early versions of Chrome incorrectly registered a chromehtml: URL handler,
 // which gives us nothing but trouble. Avoid launching chrome this way since
 // some apps fail to properly escape arguments.
@@ -188,7 +191,8 @@ static void AdjustLinuxOOMScore(const std::string& process_type) {
              process_type == switches::kServiceProcess) {
     score = kMiscScore;
 #ifndef DISABLE_NACL
-  } else if (process_type == switches::kNaClLoaderProcess) {
+  } else if (process_type == switches::kNaClLoaderProcess ||
+             process_type == switches::kNaClLoaderNonSfiProcess) {
     score = kPluginScore;
 #endif
   } else if (process_type == switches::kZygoteProcess ||
@@ -210,16 +214,6 @@ static void AdjustLinuxOOMScore(const std::string& process_type) {
     base::AdjustOOMScore(base::GetCurrentProcId(), score);
 }
 #endif  // defined(OS_LINUX)
-
-// Enable the heap profiler if the appropriate command-line switch is
-// present, bailing out of the app we can't.
-void EnableHeapProfiler(const CommandLine& command_line) {
-#if defined(OS_WIN)
-  if (command_line.HasSwitch(switches::kMemoryProfiling))
-    if (!LoadMemoryProfiler())
-      exit(-1);
-#endif
-}
 
 // Returns true if this subprocess type needs the ResourceBundle initialized
 // and resources loaded.
@@ -309,6 +303,64 @@ struct MainFunction {
   const char* name;
   int (*function)(const content::MainFunctionParams&);
 };
+
+// Initializes the user data dir. Must be called before InitializeLocalState().
+void InitializeUserDataDir() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::FilePath user_data_dir =
+      command_line->GetSwitchValuePath(switches::kUserDataDir);
+  std::string process_type =
+      command_line->GetSwitchValueASCII(switches::kProcessType);
+
+#if defined(OS_LINUX)
+  // On Linux, Chrome does not support running multiple copies under different
+  // DISPLAYs, so the profile directory can be specified in the environment to
+  // support the virtual desktop use-case.
+  if (user_data_dir.empty()) {
+    std::string user_data_dir_string;
+    scoped_ptr<base::Environment> environment(base::Environment::Create());
+    if (environment->GetVar("CHROME_USER_DATA_DIR", &user_data_dir_string) &&
+        base::IsStringUTF8(user_data_dir_string)) {
+      user_data_dir = base::FilePath::FromUTF8Unsafe(user_data_dir_string);
+    }
+  }
+#endif
+#if defined(OS_MACOSX) || defined(OS_WIN)
+  policy::path_parser::CheckUserDataDirPolicy(&user_data_dir);
+#endif
+
+  const bool specified_directory_was_invalid = !user_data_dir.empty() &&
+      !PathService::OverrideAndCreateIfNeeded(chrome::DIR_USER_DATA,
+          user_data_dir, false, true);
+  // Save inaccessible or invalid paths so the user may be prompted later.
+  if (specified_directory_was_invalid)
+    chrome::SetInvalidSpecifiedUserDataDir(user_data_dir);
+
+  // Warn and fail early if the process fails to get a user data directory.
+  if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir)) {
+    // If an invalid command-line or policy override was specified, the user
+    // will be given an error with that value. Otherwise, use the directory
+    // returned by PathService (or the fallback default directory) in the error.
+    if (!specified_directory_was_invalid) {
+      // PathService::Get() returns false and yields an empty path if it fails
+      // to create DIR_USER_DATA. Retrieve the default value manually to display
+      // a more meaningful error to the user in that case.
+      if (user_data_dir.empty())
+        chrome::GetDefaultUserDataDirectory(&user_data_dir);
+      chrome::SetInvalidSpecifiedUserDataDir(user_data_dir);
+    }
+
+    // The browser process (which is identified by an empty |process_type|) will
+    // handle the error later; other processes that need the dir crash here.
+    CHECK(process_type.empty()) << "Unable to get the user data directory "
+                                << "for process type: " << process_type;
+  }
+
+  // Append the fallback user data directory to the commandline. Otherwise,
+  // child or service processes will attempt to use the invalid directory.
+  if (specified_directory_was_invalid)
+    command_line->AppendSwitchPath(switches::kUserDataDir, user_data_dir);
+}
 
 }  // namespace
 
@@ -405,6 +457,16 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 #endif
 
 #if defined(OS_CHROMEOS)
+  // Initialize primary user homedir (in multi-profile session) as it may be
+  // passed as a command line switch.
+  base::FilePath homedir;
+  if (command_line.HasSwitch(chromeos::switches::kHomedir)) {
+    homedir = base::FilePath(
+        command_line.GetSwitchValueASCII(chromeos::switches::kHomedir));
+    PathService::OverrideAndCreateIfNeeded(
+        base::DIR_HOME, homedir, true, false);
+  }
+
   // If we are recovering from a crash on ChromeOS, then we will do some
   // recovery using the diagnostics module, and then continue on. We fake up a
   // command line to tell it that we want it to recover, and to preserve the
@@ -468,8 +530,9 @@ bool ChromeMainDelegate::BasicStartupComplete(int* exit_code) {
 }
 
 #if defined(OS_MACOSX)
-void ChromeMainDelegate::InitMacCrashReporter(const CommandLine& command_line,
-                                              const std::string& process_type) {
+void ChromeMainDelegate::InitMacCrashReporter(
+    const base::CommandLine& command_line,
+    const std::string& process_type) {
   // TODO(mark): Right now, InitCrashReporter() needs to be called after
   // CommandLine::Init() and chrome::RegisterPathProvider().  Ideally,
   // Breakpad initialization could occur sooner, preferably even before the
@@ -496,12 +559,10 @@ void ChromeMainDelegate::InitMacCrashReporter(const CommandLine& command_line,
   //    itself.
   // * If Breakpad is disabled, we only turn on Crash Reporter for the
   //    Browser process in release mode.
-  if (!command_line.HasSwitch(switches::kDisableBreakpad)) {
-    bool disable_apple_crash_reporter = is_debug_build ||
-        base::mac::IsBackgroundOnlyProcess();
-    if (!breakpad::IsCrashReporterEnabled() && disable_apple_crash_reporter) {
-      base::mac::DisableOSCrashDumps();
-    }
+  if (base::mac::IsBackgroundOnlyProcess() ||
+      breakpad::IsCrashReporterEnabled() ||
+      is_debug_build) {
+    base::mac::DisableOSCrashDumps();
   }
 
   // Mac Chrome is packaged with a main app bundle and a helper app bundle.
@@ -577,13 +638,19 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #if defined(OS_WIN)
   child_process_logging::Init();
 #endif
+#if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
+  // Create an instance of the CPU class to parse /proc/cpuinfo and cache
+  // cpu_brand info.
+  base::CPU cpu_info;
+#endif
+
+  // Initialize the user data dir for any process type that needs it.
+  if (chrome::ProcessNeedsProfileDir(process_type))
+    InitializeUserDataDir();
 
   stats_counter_timer_.reset(new base::StatsCounterTimer("Chrome.Init"));
   startup_timer_.reset(new base::StatsScope<base::StatsCounterTimer>
                        (*stats_counter_timer_));
-
-  // Enable the heap profiler as early as possible!
-  EnableHeapProfiler(command_line);
 
   // Enable Message Loop related state asap.
   if (command_line.HasSwitch(switches::kMessageLoopHistogrammer))
@@ -600,7 +667,9 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #endif
 
 #if defined(OS_WIN)
-  // TODO(darin): Kill this once http://crbug.com/52609 is fixed.
+  // TODO(zturner): Throbber icons are still stored in chrome.dll, this can be
+  // killed once those are merged into resources.pak.  See
+  // GlassBrowserFrameView::InitThrobberIcons() and http://crbug.com/368327.
   ui::SetResourcesDataDLL(_AtlBaseModule.GetResourceInstance());
 #endif
 
@@ -669,7 +738,7 @@ void ChromeMainDelegate::PreSandboxStartup() {
 #if !defined(CHROME_MULTIPLE_DLL_BROWSER)
     if (process_type == switches::kUtilityProcess ||
         process_type == switches::kZygoteProcess) {
-      chrome::ChromeContentUtilityClient::PreSandboxStartup();
+      ChromeContentUtilityClient::PreSandboxStartup();
     }
 #endif
   }
@@ -772,11 +841,10 @@ bool ChromeMainDelegate::DelaySandboxInitialization(
       process_type == switches::kRelauncherProcess;
 }
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
-content::ZygoteForkDelegate* ChromeMainDelegate::ZygoteStarting() {
-#if defined(DISABLE_NACL)
-  return NULL;
-#else
-  return new NaClForkDelegate();
+void ChromeMainDelegate::ZygoteStarting(
+    ScopedVector<content::ZygoteForkDelegate>* delegates) {
+#if !defined(DISABLE_NACL)
+  nacl::AddNaClZygoteForkDelegates(delegates);
 #endif
 }
 

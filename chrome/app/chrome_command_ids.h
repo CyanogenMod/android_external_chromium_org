@@ -86,8 +86,8 @@
 #define IDC_EMAIL_PAGE_LOCATION         35006
 #define IDC_ADVANCED_PRINT              35007
 #define IDC_PRINT_TO_DESTINATION        35008
-#define IDC_BOOKMARK_PAGE_FROM_STAR     35009
-#define IDC_TRANSLATE_PAGE              35010
+#define IDC_TRANSLATE_PAGE              35009
+#define IDC_MANAGE_PASSWORDS_FOR_PAGE   35010
 
 // When adding a new encoding to this list, be sure to append it to the
 // EncodingMenuController::kValidEncodingIds array in
@@ -210,6 +210,9 @@
 #define IDC_RECENT_TABS_NO_DEVICE_TABS  40240
 #define IDC_SHOW_SETTINGS_RESET_BUBBLE  40241
 #define IDC_TAKE_SCREENSHOT             40242
+#define IDC_SHOW_SYNC_ERROR             40243
+#define IDC_DISTILL_PAGE                40244
+#define IDC_HELP_MENU                   40245
 
 // Spell-check
 // Insert any additional suggestions before _LAST; these have to be consecutive.
@@ -235,13 +238,8 @@
 #define IDC_WRITING_DIRECTION_RTL        41123
 
 // Translate
-#define IDC_TRANSLATE_OPTIONS_ALWAYS                42000
-#define IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG  42001
-#define IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_SITE  42002
-#define IDC_TRANSLATE_REPORT_BAD_LANGUAGE_DETECTION 42003
-#define IDC_TRANSLATE_OPTIONS_ABOUT                 42004
-#define IDC_TRANSLATE_ORIGINAL_LANGUAGE_BASE        42100
-#define IDC_TRANSLATE_TARGET_LANGUAGE_BASE          42400
+#define IDC_TRANSLATE_ORIGINAL_LANGUAGE_BASE 42100
+#define IDC_TRANSLATE_TARGET_LANGUAGE_BASE   42400
 
 // Speech input
 #define IDC_TOGGLE_SPEECH_INPUT         42500
@@ -339,14 +337,10 @@
 #define IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT 51011
 #define IDC_BOOKMARK_BAR_UNDO 51012
 #define IDC_BOOKMARK_BAR_REDO 51013
+#define IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS 51014
 
 // Context menu items in the status tray
 #define IDC_STATUS_TRAY_KEEP_CHROME_RUNNING_IN_BACKGROUND 51100
-
-// Context menu items for speech recognition
-#define IDC_SPEECH_INPUT_MENU 51200
-#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_FILTER_PROFANITIES 51201
-#define IDC_CONTENT_CONTEXT_SPEECH_INPUT_ABOUT 51202
 
 // Context menu items for media stream status tray
 #define IDC_MEDIA_STREAM_DEVICE_STATUS_TRAY 51300

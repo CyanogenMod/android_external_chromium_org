@@ -4,17 +4,16 @@
 
 #include "extensions/common/url_pattern_set.h"
 
-#include <algorithm>
 #include <iterator>
 
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/stl_util.h"
 #include "base/values.h"
-#include "content/public/common/url_constants.h"
 #include "extensions/common/error_utils.h"
 #include "extensions/common/url_pattern.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace extensions {
 
@@ -28,7 +27,6 @@ const char kInvalidURLPatternError[] = "Invalid url pattern '*'";
 void URLPatternSet::CreateDifference(const URLPatternSet& set1,
                                      const URLPatternSet& set2,
                                      URLPatternSet* out) {
-  out->ClearPatterns();
   out->patterns_ = base::STLSetDifference<std::set<URLPattern> >(
       set1.patterns_, set2.patterns_);
 }
@@ -37,22 +35,16 @@ void URLPatternSet::CreateDifference(const URLPatternSet& set1,
 void URLPatternSet::CreateIntersection(const URLPatternSet& set1,
                                        const URLPatternSet& set2,
                                        URLPatternSet* out) {
-  out->ClearPatterns();
-  std::set_intersection(set1.patterns_.begin(), set1.patterns_.end(),
-                        set2.patterns_.begin(), set2.patterns_.end(),
-                        std::inserter<std::set<URLPattern> >(
-                            out->patterns_, out->patterns_.begin()));
+  out->patterns_ = base::STLSetIntersection<std::set<URLPattern> >(
+      set1.patterns_, set2.patterns_);
 }
 
 // static
 void URLPatternSet::CreateUnion(const URLPatternSet& set1,
                                 const URLPatternSet& set2,
                                 URLPatternSet* out) {
-  out->ClearPatterns();
-  std::set_union(set1.patterns_.begin(), set1.patterns_.end(),
-                 set2.patterns_.begin(), set2.patterns_.end(),
-                 std::inserter<std::set<URLPattern> >(
-                     out->patterns_, out->patterns_.begin()));
+  out->patterns_ = base::STLSetUnion<std::set<URLPattern> >(
+      set1.patterns_, set2.patterns_);
 }
 
 // static
@@ -206,7 +198,7 @@ bool URLPatternSet::Populate(const std::vector<std::string>& patterns,
       }
       return false;
     }
-    if (!allow_file_access && pattern.MatchesScheme(content::kFileScheme)) {
+    if (!allow_file_access && pattern.MatchesScheme(url::kFileScheme)) {
       pattern.SetValidSchemes(
           pattern.valid_schemes() & ~URLPattern::SCHEME_FILE);
     }

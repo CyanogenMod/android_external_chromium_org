@@ -7,8 +7,8 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/browser/sync/sync_prefs.h"
 #include "chrome/common/extensions/api/preferences_private.h"
+#include "components/sync_driver/sync_prefs.h"
 
 namespace extensions {
 
@@ -27,12 +27,12 @@ PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction::OnStateChanged() {
       ProfileSyncServiceFactory::GetForProfile(GetProfile());
   if (sync_service->sync_initialized()) {
     sync_service->RemoveObserver(this);
-    RunImpl();
-    Release();  // Balanced in RunImpl().
+    RunAsync();
+    Release();  // Balanced in RunAsync().
   }
 }
 
-bool PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction::RunImpl() {
+bool PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction::RunAsync() {
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetForProfile(GetProfile());
   if (!sync_service)
@@ -46,7 +46,7 @@ bool PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction::RunImpl() {
   syncer::ModelTypeSet result_set = syncer::UserSelectableTypes();
 
   // Only include categories that are synced.
-  browser_sync::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
+  sync_driver::SyncPrefs sync_prefs(GetProfile()->GetPrefs());
   if (!sync_prefs.HasKeepEverythingSynced()) {
     result_set = syncer::Intersection(result_set,
                                       sync_service->GetPreferredDataTypes());

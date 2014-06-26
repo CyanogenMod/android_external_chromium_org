@@ -69,7 +69,7 @@ int QuicReliableClientStream::WriteStreamData(
   // We should not have data buffered.
   DCHECK(!HasBufferedData());
   // Writes the data, or buffers it.
-  WriteOrBufferData(data, fin);
+  WriteOrBufferData(data, fin, NULL);
   if (!HasBufferedData()) {
     return OK;
   }
@@ -93,9 +93,7 @@ void QuicReliableClientStream::OnError(int error) {
 }
 
 bool QuicReliableClientStream::CanWrite(const CompletionCallback& callback) {
-  bool can_write =  session()->connection()->CanWrite(
-      NOT_RETRANSMISSION, HAS_RETRANSMITTABLE_DATA,
-      id() == kCryptoStreamId ? IS_HANDSHAKE : NOT_HANDSHAKE);
+  bool can_write =  session()->connection()->CanWrite(HAS_RETRANSMITTABLE_DATA);
   if (!can_write) {
     session()->MarkWriteBlocked(id(), EffectivePriority());
     DCHECK(callback_.is_null());

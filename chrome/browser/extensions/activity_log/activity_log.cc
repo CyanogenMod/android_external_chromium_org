@@ -9,6 +9,7 @@
 
 #include "base/command_line.h"
 #include "base/json/json_string_value_serializer.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -17,10 +18,7 @@
 #include "chrome/browser/extensions/activity_log/counting_policy.h"
 #include "chrome/browser/extensions/activity_log/fullstream_ui_policy.h"
 #include "chrome/browser/extensions/api/activity_log_private/activity_log_private_api.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/install_tracker.h"
-#include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_manager_factory.h"
@@ -29,13 +27,15 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_factory.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_system_provider.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/one_shot_event.h"
 #include "third_party/re2/re2/re2.h"
 #include "url/gurl.h"
 
@@ -45,9 +45,10 @@
 
 namespace constants = activity_log_constants;
 
+namespace extensions {
+
 namespace {
 
-using extensions::Action;
 using constants::kArgUrlPlaceholder;
 using content::BrowserThread;
 
@@ -125,6 +126,7 @@ static const ApiInfo kApiInfoTable[] = {
     {Action::ACTION_API_CALL, "webstore.install", 0, NONE, NULL},
     {Action::ACTION_API_CALL, "windows.create", 0, DICT_LOOKUP, "url"},
     {Action::ACTION_DOM_ACCESS, "Document.location", 0, NONE, NULL},
+    {Action::ACTION_DOM_ACCESS, "HTMLAnchorElement.href", 0, NONE, NULL},
     {Action::ACTION_DOM_ACCESS, "HTMLButtonElement.formAction", 0, NONE, NULL},
     {Action::ACTION_DOM_ACCESS, "HTMLEmbedElement.src", 0, NONE, NULL},
     {Action::ACTION_DOM_ACCESS, "HTMLFormElement.action", 0, NONE, NULL},
@@ -199,7 +201,7 @@ bool GetUrlForTabId(int tab_id,
                     bool* is_incognito) {
   content::WebContents* contents = NULL;
   Browser* browser = NULL;
-  bool found = extensions::ExtensionTabUtil::GetTabById(
+  bool found = ExtensionTabUtil::GetTabById(
       tab_id,
       profile,
       true,  // Search incognito tabs, too.
@@ -334,54 +336,31 @@ void ExtractUrls(scoped_refptr<Action> action, Profile* profile) {
 
 }  // namespace
 
-namespace extensions {
+// SET THINGS UP. --------------------------------------------------------------
 
-// ActivityLogFactory
+static base::LazyInstance<BrowserContextKeyedAPIFactory<ActivityLog> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
-ActivityLogFactory* ActivityLogFactory::GetInstance() {
-  return Singleton<ActivityLogFactory>::get();
-}
-
-BrowserContextKeyedService* ActivityLogFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
-  return new ActivityLog(static_cast<Profile*>(profile));
-}
-
-content::BrowserContext* ActivityLogFactory::GetBrowserContextToUse(
-    content::BrowserContext* context) const {
-  return ExtensionsBrowserClient::Get()->GetOriginalContext(context);
-}
-
-ActivityLogFactory::ActivityLogFactory()
-    : BrowserContextKeyedServiceFactory(
-        "ActivityLog",
-        BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
-  DependsOn(InstallTrackerFactory::GetInstance());
+BrowserContextKeyedAPIFactory<ActivityLog>* ActivityLog::GetFactoryInstance() {
+  return g_factory.Pointer();
 }
 
 // static
 ActivityLog* ActivityLog::GetInstance(content::BrowserContext* context) {
-  return ActivityLogFactory::GetForBrowserContext(context);
+  return ActivityLog::GetFactoryInstance()->Get(
+      Profile::FromBrowserContext(context));
 }
-
-ActivityLogFactory::~ActivityLogFactory() {
-}
-
-// ActivityLog
-
-// SET THINGS UP. --------------------------------------------------------------
 
 // Use GetInstance instead of directly creating an ActivityLog.
-ActivityLog::ActivityLog(Profile* profile)
+ActivityLog::ActivityLog(content::BrowserContext* context)
     : database_policy_(NULL),
       database_policy_type_(ActivityLogPolicy::POLICY_INVALID),
       uma_policy_(NULL),
-      profile_(profile),
+      profile_(Profile::FromBrowserContext(context)),
       db_enabled_(false),
       testing_mode_(false),
       has_threads_(true),
-      tracker_(NULL),
+      extension_registry_observer_(this),
       watchdog_apps_active_(0) {
   // This controls whether logging statements are printed & which policy is set.
   testing_mode_ = CommandLine::ForCurrentProcess()->HasSwitch(
@@ -413,13 +392,13 @@ ActivityLog::ActivityLog(Profile* profile)
 
   ExtensionSystem::Get(profile_)->ready().Post(
       FROM_HERE,
-      base::Bind(&ActivityLog::InitInstallTracker, base::Unretained(this)));
+      base::Bind(&ActivityLog::StartObserving, base::Unretained(this)));
 
-// None of this should run on Android since the AL is behind ENABLE_EXTENSION
+// None of this should run on Android since the AL is behind ENABLE_EXTENSIONS
 // checks. However, UmaPolicy can't even compile on Android because it uses
 // BrowserList and related classes that aren't compiled for Android.
 #if !defined(OS_ANDROID)
-  if (!profile->IsOffTheRecord())
+  if (!profile_->IsOffTheRecord())
     uma_policy_ = new UmaPolicy(profile_);
 #endif
 
@@ -458,12 +437,6 @@ void ActivityLog::SetDatabasePolicy(
   database_policy_type_ = policy_type;
 }
 
-// SHUT DOWN. ------------------------------------------------------------------
-
-void ActivityLog::Shutdown() {
-  if (tracker_) tracker_->RemoveObserver(this);
-}
-
 ActivityLog::~ActivityLog() {
   if (uma_policy_)
     uma_policy_->Close();
@@ -473,9 +446,8 @@ ActivityLog::~ActivityLog() {
 
 // MAINTAIN STATUS. ------------------------------------------------------------
 
-void ActivityLog::InitInstallTracker() {
-  tracker_ = InstallTrackerFactory::GetForProfile(profile_);
-  tracker_->AddObserver(this);
+void ActivityLog::StartObserving() {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
 }
 
 void ActivityLog::ChooseDatabasePolicy() {
@@ -497,11 +469,12 @@ bool ActivityLog::IsWatchdogAppActive() {
   return (watchdog_apps_active_ > 0);
 }
 
-void ActivityLog::SetWatchdogAppActive(bool active) {
+void ActivityLog::SetWatchdogAppActiveForTesting(bool active) {
   watchdog_apps_active_ = active ? 1 : 0;
 }
 
-void ActivityLog::OnExtensionLoaded(const Extension* extension) {
+void ActivityLog::OnExtensionLoaded(content::BrowserContext* browser_context,
+                                    const Extension* extension) {
   if (!ActivityLogAPI::IsExtensionWhitelisted(extension->id())) return;
   if (has_threads_)
     db_enabled_ = true;
@@ -512,7 +485,9 @@ void ActivityLog::OnExtensionLoaded(const Extension* extension) {
     ChooseDatabasePolicy();
 }
 
-void ActivityLog::OnExtensionUnloaded(const Extension* extension) {
+void ActivityLog::OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                      const Extension* extension,
+                                      UnloadedExtensionInfo::Reason reason) {
   if (!ActivityLogAPI::IsExtensionWhitelisted(extension->id())) return;
   watchdog_apps_active_--;
   profile_->GetPrefs()->SetInteger(prefs::kWatchdogExtensionActive,
@@ -520,12 +495,14 @@ void ActivityLog::OnExtensionUnloaded(const Extension* extension) {
   if (watchdog_apps_active_ == 0 &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableExtensionActivityLogging)) {
-   db_enabled_ = false;
+    db_enabled_ = false;
   }
 }
 
 // OnExtensionUnloaded will also be called right before this.
-void ActivityLog::OnExtensionUninstalled(const Extension* extension) {
+void ActivityLog::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
   if (ActivityLogAPI::IsExtensionWhitelisted(extension->id()) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableExtensionActivityLogging) &&
@@ -589,6 +566,7 @@ void ActivityLog::LogAction(scoped_refptr<Action> action) {
     VLOG(1) << action->PrintForDebug();
 }
 
+#if defined(ENABLE_EXTENSIONS)
 void ActivityLog::OnScriptsExecuted(
     const content::WebContents* web_contents,
     const ExecutingScriptsMap& extension_ids,
@@ -596,16 +574,11 @@ void ActivityLog::OnScriptsExecuted(
     const GURL& on_url) {
   Profile* profile =
       Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  const ExtensionService* extension_service =
-      ExtensionSystem::Get(profile)->extension_service();
-  const ExtensionSet* extensions = extension_service->extensions();
-  const prerender::PrerenderManager* prerender_manager =
-      prerender::PrerenderManagerFactory::GetForProfile(
-          Profile::FromBrowserContext(web_contents->GetBrowserContext()));
-
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile);
   for (ExecutingScriptsMap::const_iterator it = extension_ids.begin();
        it != extension_ids.end(); ++it) {
-    const Extension* extension = extensions->GetByID(it->first);
+    const Extension* extension =
+        registry->GetExtensionById(it->first, ExtensionRegistry::ENABLED);
     if (!extension || ActivityLogAPI::IsExtensionWhitelisted(extension->id()))
       continue;
 
@@ -622,6 +595,9 @@ void ActivityLog::OnScriptsExecuted(
       action->set_page_title(base::UTF16ToUTF8(web_contents->GetTitle()));
       action->set_page_incognito(
           web_contents->GetBrowserContext()->IsOffTheRecord());
+
+      const prerender::PrerenderManager* prerender_manager =
+          prerender::PrerenderManagerFactory::GetForProfile(profile);
       if (prerender_manager &&
           prerender_manager->IsWebContentsPrerendering(web_contents, NULL))
         action->mutable_other()->SetBoolean(constants::kActionPrerender, true);
@@ -634,11 +610,12 @@ void ActivityLog::OnScriptsExecuted(
     }
   }
 }
+#endif
 
 void ActivityLog::OnApiEventDispatched(const std::string& extension_id,
                                        const std::string& event_name,
                                        scoped_ptr<base::ListValue> event_args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   scoped_refptr<Action> action = new Action(extension_id,
                                             base::Time::Now(),
                                             Action::ACTION_API_EVENT,
@@ -650,7 +627,7 @@ void ActivityLog::OnApiEventDispatched(const std::string& extension_id,
 void ActivityLog::OnApiFunctionCalled(const std::string& extension_id,
                                       const std::string& api_name,
                                       scoped_ptr<base::ListValue> args) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   scoped_refptr<Action> action = new Action(extension_id,
                                             base::Time::Now(),
                                             Action::ACTION_API_CALL,
@@ -714,6 +691,12 @@ void ActivityLog::DeleteDatabase() {
   if (!database_policy_)
     return;
   database_policy_->DeleteDatabase();
+}
+
+template <>
+void BrowserContextKeyedAPIFactory<ActivityLog>::DeclareFactoryDependencies() {
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
+  DependsOn(ExtensionRegistryFactory::GetInstance());
 }
 
 }  // namespace extensions

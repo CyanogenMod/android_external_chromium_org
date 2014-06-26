@@ -47,8 +47,6 @@ class WebViewPlugin : public blink::WebPlugin,
     virtual void PluginDestroyed() = 0;
   };
 
-  explicit WebViewPlugin(Delegate* delegate);
-
   // Convenience method to set up a new WebViewPlugin using |preferences|
   // and displaying |html_data|. |url| should be a (fake) chrome:// URL; it is
   // only used for navigation and never actually resolved.
@@ -110,29 +108,34 @@ class WebViewPlugin : public blink::WebPlugin,
   virtual void setToolTipText(const blink::WebString&,
                               blink::WebTextDirection);
 
-  virtual void startDragging(blink::WebFrame* frame,
+  virtual void startDragging(blink::WebLocalFrame* frame,
                              const blink::WebDragData& drag_data,
                              blink::WebDragOperationsMask mask,
                              const blink::WebImage& image,
                              const blink::WebPoint& point);
+
+  // TODO(ojan): Remove this override and have this class use a non-null
+  // layerTreeView.
+  virtual bool allowsBrokenNullLayerTreeView() const;
 
   // WebWidgetClient methods:
   virtual void didInvalidateRect(const blink::WebRect&);
   virtual void didChangeCursor(const blink::WebCursorInfo& cursor);
 
   // WebFrameClient methods:
-  virtual void didClearWindowObject(blink::WebFrame* frame, int world_id);
+  virtual void didClearWindowObject(blink::WebLocalFrame* frame);
 
   // This method is defined in WebPlugin as well as in WebFrameClient, but with
   // different parameters. We only care about implementing the WebPlugin
   // version, so we implement this method and call the default in WebFrameClient
   // (which does nothing) to correctly overload it.
-  virtual void didReceiveResponse(blink::WebFrame* frame,
+  virtual void didReceiveResponse(blink::WebLocalFrame* frame,
                                   unsigned identifier,
                                   const blink::WebURLResponse& response);
 
  private:
   friend class base::DeleteHelper<WebViewPlugin>;
+  WebViewPlugin(Delegate* delegate, const WebPreferences& preferences);
   virtual ~WebViewPlugin();
 
   // Manages its own lifetime.

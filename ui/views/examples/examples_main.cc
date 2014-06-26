@@ -12,19 +12,25 @@
 #include "ui/aura/env.h"
 #include "ui/base/ime/input_method_initializer.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/base/ui_base_paths.h"
+#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/gfx/screen.h"
 #include "ui/gl/gl_surface.h"
-#include "ui/views/corewm/wm_state.h"
 #include "ui/views/examples/example_base.h"
 #include "ui/views/examples/examples_window.h"
 #include "ui/views/test/desktop_test_views_delegate.h"
+#include "ui/wm/core/wm_state.h"
 
 #if !defined(OS_CHROMEOS)
 #include "ui/views/widget/desktop_aura/desktop_screen.h"
 #endif
+
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
+#endif
+
+#if defined(USE_X11)
+#include "ui/gfx/x/x11_connection.h"
 #endif
 
 int main(int argc, char** argv) {
@@ -35,31 +41,37 @@ int main(int argc, char** argv) {
   CommandLine::Init(argc, argv);
 
   base::AtExitManager at_exit;
-  base::MessageLoopForUI message_loop;
 
-  base::i18n::InitializeICU();
-
-  base::FilePath pak_dir;
-  PathService::Get(base::DIR_MODULE, &pak_dir);
-
-  base::FilePath pak_file;
-  pak_file = pak_dir.Append(FILE_PATH_LITERAL("ui_test.pak"));
-
-  ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+#if defined(USE_X11)
+  // This demo uses InProcessContextFactory which uses X on a separate Gpu
+  // thread.
+  gfx::InitializeThreadedX11();
+#endif
 
   gfx::GLSurface::InitializeOneOff();
 
   // The ContextFactory must exist before any Compositors are created.
-  bool allow_test_contexts = false;
-  ui::InitializeContextFactoryForTests(allow_test_contexts);
+  scoped_ptr<ui::InProcessContextFactory> context_factory(
+      new ui::InProcessContextFactory());
 
-  aura::Env::CreateInstance();
+  base::MessageLoopForUI message_loop;
+
+  base::i18n::InitializeICU();
+
+  ui::RegisterPathProvider();
+
+  base::FilePath ui_test_pak_path;
+  DCHECK(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
+
+  aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(context_factory.get());
 
   ui::InitializeInputMethodForTesting();
 
   {
     views::DesktopTestViewsDelegate views_delegate;
-    views::corewm::WMState wm_state;
+    wm::WMState wm_state;
 
 #if !defined(OS_CHROMEOS)
     scoped_ptr<gfx::Screen> desktop_screen(views::CreateDesktopScreen());

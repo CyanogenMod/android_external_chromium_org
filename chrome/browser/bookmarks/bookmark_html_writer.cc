@@ -8,28 +8,27 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/bookmarks/bookmark_codec.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/common/favicon/favicon_types.h"
+#include "components/bookmarks/browser/bookmark_codec.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
-#include "grit/generated_resources.h"
+#include "grit/components_strings.h"
 #include "net/base/escape.h"
-#include "net/base/file_stream.h"
-#include "net/base/net_errors.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/favicon_size.h"
 
+using bookmarks::BookmarkCodec;
 using content::BrowserThread;
 
 namespace {
@@ -145,8 +144,8 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
 
     Write(kFolderChildrenEnd);
     Write(kNewline);
-    // File stream close is forced so that unit test could read it.
-    file_stream_.reset();
+    // File close is forced so that unit test could read it.
+    file_.reset();
 
     NotifyOnFinish();
   }
@@ -169,9 +168,9 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
 
   // Opens the file, returning true on success.
   bool OpenFile() {
-    file_stream_.reset(new net::FileStream(NULL));
-    int flags = base::PLATFORM_FILE_CREATE_ALWAYS | base::PLATFORM_FILE_WRITE;
-    return (file_stream_->OpenSync(path_, flags) == net::OK);
+    int flags = base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE;
+    file_.reset(new base::File(path_, flags));
+    return file_->IsValid();
   }
 
   // Increments the indent.
@@ -195,10 +194,9 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   // Writes raw text out returning true on success. This does not escape
   // the text in anyway.
   bool Write(const std::string& text) {
-    // net::FileStream does not allow 0-byte writes.
     if (!text.length())
       return true;
-    size_t wrote = file_stream_->WriteSync(text.c_str(), text.length());
+    size_t wrote = file_->WriteAtCurrentPos(text.c_str(), text.length());
     bool result = (wrote == text.length());
     DCHECK(result);
     return result;
@@ -207,7 +205,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   // Writes out the text string (as UTF8). The text is escaped based on
   // type.
   bool Write(const std::string& text, TextType type) {
-    DCHECK(IsStringUTF8(text));
+    DCHECK(base::IsStringUTF8(text));
     std::string utf8_string;
 
     switch (type) {
@@ -373,7 +371,7 @@ class Writer : public base::RefCountedThreadSafe<Writer> {
   BookmarksExportObserver* observer_;
 
   // File we're writing to.
-  scoped_ptr<net::FileStream> file_stream_;
+  scoped_ptr<base::File> file_;
 
   // How much we indent when writing a bookmark/folder. This is modified
   // via IncrementIndent and DecrementIndent.
@@ -460,9 +458,9 @@ bool BookmarkFaviconFetcher::FetchNextFavicon() {
     if (favicons_map_->end() == iter) {
       FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
           profile_, Profile::EXPLICIT_ACCESS);
-      favicon_service->GetRawFaviconForURL(
-          FaviconService::FaviconForURLParams(
-              GURL(url), chrome::FAVICON, gfx::kFaviconSize),
+      favicon_service->GetRawFaviconForPageURL(
+          FaviconService::FaviconForPageURLParams(
+              GURL(url), favicon_base::FAVICON, gfx::kFaviconSize),
           ui::SCALE_FACTOR_100P,
           base::Bind(&BookmarkFaviconFetcher::OnFaviconDataAvailable,
                      base::Unretained(this)),
@@ -476,7 +474,7 @@ bool BookmarkFaviconFetcher::FetchNextFavicon() {
 }
 
 void BookmarkFaviconFetcher::OnFaviconDataAvailable(
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   GURL url;
   if (!bookmark_urls_.empty()) {
     url = GURL(bookmark_urls_.front());

@@ -4,7 +4,7 @@
 
 from branch_utility import BranchUtility
 from compiled_file_system import CompiledFileSystem
-from environment import IsDevServer
+from environment import IsDevServer, IsReleaseServer
 from github_file_system_provider import GithubFileSystemProvider
 from host_file_system_provider import HostFileSystemProvider
 from third_party.json_schema_compiler.memoize import memoize
@@ -35,11 +35,13 @@ class InstanceServletRenderServletDelegate(RenderServlet.Delegate):
   def CreateServerInstance(self):
     object_store_creator = ObjectStoreCreator(start_empty=False)
     branch_utility = self._delegate.CreateBranchUtility(object_store_creator)
-    # In production have offline=True so that we can catch cron errors.  In
+    # In production have offline=True so that we can catch cron errors. In
     # development it's annoying to have to run the cron job, so offline=False.
+    # Note that offline=True if running on any appengine server due to
+    # http://crbug.com/345361.
     host_file_system_provider = self._delegate.CreateHostFileSystemProvider(
         object_store_creator,
-        offline=not IsDevServer())
+        offline=not (IsDevServer() or IsReleaseServer()))
     github_file_system_provider = self._delegate.CreateGithubFileSystemProvider(
         object_store_creator)
     return ServerInstance(object_store_creator,

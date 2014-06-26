@@ -5,7 +5,6 @@
 #include "media/filters/chunk_demuxer.h"
 
 #include <algorithm>
-#include <deque>
 #include <limits>
 #include <list>
 
@@ -18,11 +17,16 @@
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/stream_parser_buffer.h"
 #include "media/base/video_decoder_config.h"
+#include "media/filters/frame_processor.h"
 #include "media/filters/stream_parser_factory.h"
 
 using base::TimeDelta;
 
 namespace media {
+
+static TimeDelta EndTimestamp(const StreamParser::BufferQueue& queue) {
+  return queue.back()->timestamp() + queue.back()->duration();
+}
 
 // List of time ranges for each SourceBuffer.
 typedef std::list<Ranges<TimeDelta> > RangesList;
@@ -86,17 +90,13 @@ class SourceState {
   typedef base::Callback<ChunkDemuxerStream*(
       DemuxerStream::Type)> CreateDemuxerStreamCB;
 
-  // Callback signature used to notify ChunkDemuxer of timestamps
-  // that may cause the duration to be updated.
-  typedef base::Callback<void(
-      TimeDelta, ChunkDemuxerStream*)> IncreaseDurationCB;
-
   typedef base::Callback<void(
       ChunkDemuxerStream*, const TextTrackConfig&)> NewTextTrackCB;
 
-  SourceState(scoped_ptr<StreamParser> stream_parser, const LogCB& log_cb,
-              const CreateDemuxerStreamCB& create_demuxer_stream_cb,
-              const IncreaseDurationCB& increase_duration_cb);
+  SourceState(
+      scoped_ptr<StreamParser> stream_parser,
+      scoped_ptr<FrameProcessor> frame_processor, const LogCB& log_cb,
+      const CreateDemuxerStreamCB& create_demuxer_stream_cb);
 
   ~SourceState();
 
@@ -108,35 +108,36 @@ class SourceState {
 
   // Appends new data to the StreamParser.
   // Returns true if the data was successfully appended. Returns false if an
-  // error occurred.
-  bool Append(const uint8* data, size_t length);
+  // error occurred. |*timestamp_offset| is used and possibly updated by the
+  // append. |append_window_start| and |append_window_end| correspond to the MSE
+  // spec's similarly named source buffer attributes that are used in coded
+  // frame processing.
+  bool Append(const uint8* data, size_t length,
+              TimeDelta append_window_start,
+              TimeDelta append_window_end,
+              TimeDelta* timestamp_offset);
 
   // Aborts the current append sequence and resets the parser.
-  void Abort();
+  void Abort(TimeDelta append_window_start,
+             TimeDelta append_window_end,
+             TimeDelta* timestamp_offset);
 
   // Calls Remove(|start|, |end|, |duration|) on all
   // ChunkDemuxerStreams managed by this object.
   void Remove(TimeDelta start, TimeDelta end, TimeDelta duration);
 
-  // Sets |timestamp_offset_| if possible.
-  // Returns if the offset was set. Returns false if the offset could not be
-  // updated at this time.
-  bool SetTimestampOffset(TimeDelta timestamp_offset);
+  // Returns true if currently parsing a media segment, or false otherwise.
+  bool parsing_media_segment() const { return parsing_media_segment_; }
 
-  // Sets |sequence_mode_| to |sequence_mode| if possible.
-  // Returns true if the mode update was allowed. Returns false if the mode
-  // could not be updated at this time.
-  bool SetSequenceMode(bool sequence_mode);
+  // Sets |frame_processor_|'s sequence mode to |sequence_mode|.
+  void SetSequenceMode(bool sequence_mode);
 
-  TimeDelta timestamp_offset() const { return timestamp_offset_; }
-
-  void set_append_window_start(TimeDelta start) {
-    append_window_start_ = start;
-  }
-  void set_append_window_end(TimeDelta end) { append_window_end_ = end; }
+  // Signals the coded frame processor to update its group start timestamp to be
+  // |timestamp_offset| if it is in sequence append mode.
+  void SetGroupStartTimestampIfInSequenceMode(base::TimeDelta timestamp_offset);
 
   // Returns the range of buffered data in this source, capped at |duration|.
-  // |ended| - Set to true if end of stream has been signalled and the special
+  // |ended| - Set to true if end of stream has been signaled and the special
   // end of stream range logic needs to be executed.
   Ranges<TimeDelta> GetBufferedRanges(TimeDelta duration, bool ended) const;
 
@@ -176,63 +177,33 @@ class SourceState {
   // Called by the |stream_parser_| at the end of a media segment.
   void OnEndOfMediaSegment();
 
-  // Called by the |stream_parser_| when new buffers have been parsed. It
-  // applies |timestamp_offset_| to all buffers in |audio_buffers|,
-  // |video_buffers| and |text_map| and then calls Append() with the modified
-  // buffers on |audio_|, |video_| and/or the text demuxer streams associated
-  // with the track numbers in |text_map|.
+  // Called by the |stream_parser_| when new buffers have been parsed.
+  // It processes the new buffers using |frame_processor_|, which includes
+  // appending the processed frames to associated demuxer streams for each
+  // frame's track.
   // Returns true on a successful call. Returns false if an error occurred while
   // processing the buffers.
   bool OnNewBuffers(const StreamParser::BufferQueue& audio_buffers,
                     const StreamParser::BufferQueue& video_buffers,
                     const StreamParser::TextBufferQueueMap& text_map);
 
-  // Helper function for OnNewBuffers() when new text buffers have been parsed.
-  // It applies |timestamp_offset_| to all buffers in |buffers| and then appends
-  // the (modified) buffers to the demuxer stream associated with
-  // the track having |text_track_id|.
-  // Returns true on a successful call. Returns false if an error occurred while
-  // processing the buffers.
-  bool OnTextBuffers(StreamParser::TrackId text_track_id,
-                     const StreamParser::BufferQueue& buffers);
-
-  // Helper function that appends |buffers| to |stream| and calls
-  // |increase_duration_cb_| to potentially update the duration.
-  // Returns true if the append was successful. Returns false if
-  // |stream| is NULL or something in |buffers| caused the append to fail.
-  bool AppendAndUpdateDuration(ChunkDemuxerStream* stream,
-                               const StreamParser::BufferQueue& buffers);
-
-  // Helper function that adds |timestamp_offset_| to each buffer in |buffers|.
-  void AdjustBufferTimestamps(const StreamParser::BufferQueue& buffers);
-
-  // Filters out buffers that are outside of the append window
-  // [|append_window_start_|, |append_window_end_|).
-  // |needs_keyframe| is a pointer to the |xxx_need_keyframe_| flag
-  // associated with the |buffers|. Its state is read an updated as
-  // this method filters |buffers|.
-  // Buffers that are inside the append window are appended to the end
-  // of |filtered_buffers|.
-  void FilterWithAppendWindow(const StreamParser::BufferQueue& buffers,
-                              bool* needs_keyframe,
-                              StreamParser::BufferQueue* filtered_buffers);
+  void OnSourceInitDone(bool success,
+                        const StreamParser::InitParameters& params);
 
   CreateDemuxerStreamCB create_demuxer_stream_cb_;
-  IncreaseDurationCB increase_duration_cb_;
   NewTextTrackCB new_text_track_cb_;
 
-  // The offset to apply to media segment timestamps.
-  TimeDelta timestamp_offset_;
+  // During Append(), if OnNewBuffers() coded frame processing updates the
+  // timestamp offset then |*timestamp_offset_during_append_| is also updated
+  // so Append()'s caller can know the new offset. This pointer is only non-NULL
+  // during the lifetime of an Append() call.
+  TimeDelta* timestamp_offset_during_append_;
 
-  // Tracks the mode by which appended media is processed. If true, then
-  // appended media is processed using "sequence" mode. Otherwise, appended
-  // media is processed using "segments" mode.
-  // TODO(wolenetz): Enable "sequence" mode logic. See http://crbug.com/249422
-  // and http://crbug.com/333437.
-  bool sequence_mode_;
-
-  TimeDelta append_window_start_;
-  TimeDelta append_window_end_;
+  // During Append(), coded frame processing triggered by OnNewBuffers()
+  // requires these two attributes. These are only valid during the lifetime of
+  // an Append() call.
+  TimeDelta append_window_start_during_append_;
+  TimeDelta append_window_end_during_append_;
 
   // Set to true if the next buffers appended within the append window
   // represent the start of a new media segment. This flag being set
@@ -240,143 +211,51 @@ class SourceState {
   // appended. The flag is set on actual media segment boundaries and
   // when the "append window" filtering causes discontinuities in the
   // appended data.
+  // TODO(wolenetz/acolwell): Investigate if we need this, or if coded frame
+  // processing's discontinuity logic is enough. See http://crbug.com/351489.
   bool new_media_segment_;
 
-  // Keeps track of whether |timestamp_offset_| or |sequence_mode_| can be
-  // updated. These cannot be updated if a media segment is being parsed.
+  // Keeps track of whether a media segment is being parsed.
   bool parsing_media_segment_;
 
   // The object used to parse appended data.
   scoped_ptr<StreamParser> stream_parser_;
 
-  ChunkDemuxerStream* audio_;
-  bool audio_needs_keyframe_;
-
-  ChunkDemuxerStream* video_;
-  bool video_needs_keyframe_;
+  ChunkDemuxerStream* audio_;  // Not owned by |this|.
+  ChunkDemuxerStream* video_;  // Not owned by |this|.
 
   typedef std::map<StreamParser::TrackId, ChunkDemuxerStream*> TextStreamMap;
-  TextStreamMap text_stream_map_;
+  TextStreamMap text_stream_map_;  // |this| owns the map's stream pointers.
 
+  scoped_ptr<FrameProcessor> frame_processor_;
   LogCB log_cb_;
+  StreamParser::InitCB init_cb_;
+
+  // Indicates that timestampOffset should be updated automatically during
+  // OnNewBuffers() based on the earliest end timestamp of the buffers provided.
+  // TODO(wolenetz): Refactor this function while integrating April 29, 2014
+  // changes to MSE spec. See http://crbug.com/371499.
+  bool auto_update_timestamp_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(SourceState);
 };
 
-class ChunkDemuxerStream : public DemuxerStream {
- public:
-  typedef std::deque<scoped_refptr<StreamParserBuffer> > BufferQueue;
-
-  explicit ChunkDemuxerStream(Type type);
-  virtual ~ChunkDemuxerStream();
-
-  // ChunkDemuxerStream control methods.
-  void StartReturningData();
-  void AbortReads();
-  void CompletePendingReadIfPossible();
-  void Shutdown();
-
-  // SourceBufferStream manipulation methods.
-  void Seek(TimeDelta time);
-  bool IsSeekWaitingForData() const;
-
-  // Add buffers to this stream.  Buffers are stored in SourceBufferStreams,
-  // which handle ordering and overlap resolution.
-  // Returns true if buffers were successfully added.
-  bool Append(const StreamParser::BufferQueue& buffers);
-
-  // Removes buffers between |start| and |end| according to the steps
-  // in the "Coded Frame Removal Algorithm" in the Media Source
-  // Extensions Spec.
-  // https://dvcs.w3.org/hg/html-media/raw-file/default/media-source/media-source.html#sourcebuffer-coded-frame-removal
-  //
-  // |duration| is the current duration of the presentation. It is
-  // required by the computation outlined in the spec.
-  void Remove(TimeDelta start, TimeDelta end, TimeDelta duration);
-
-  // Signal to the stream that duration has changed to |duration|.
-  void OnSetDuration(TimeDelta duration);
-
-  // Returns the range of buffered data in this stream, capped at |duration|.
-  Ranges<TimeDelta> GetBufferedRanges(TimeDelta duration) const;
-
-  // Returns the duration of the buffered data.
-  // Returns TimeDelta() if the stream has no buffered data.
-  TimeDelta GetBufferedDuration() const;
-
-  // Signal to the stream that buffers handed in through subsequent calls to
-  // Append() belong to a media segment that starts at |start_timestamp|.
-  void OnNewMediaSegment(TimeDelta start_timestamp);
-
-  // Called when midstream config updates occur.
-  // Returns true if the new config is accepted.
-  // Returns false if the new config should trigger an error.
-  bool UpdateAudioConfig(const AudioDecoderConfig& config, const LogCB& log_cb);
-  bool UpdateVideoConfig(const VideoDecoderConfig& config, const LogCB& log_cb);
-  void UpdateTextConfig(const TextTrackConfig& config, const LogCB& log_cb);
-
-  void MarkEndOfStream();
-  void UnmarkEndOfStream();
-
-  // DemuxerStream methods.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-
-  // Returns the text track configuration.  It is an error to call this method
-  // if type() != TEXT.
-  TextTrackConfig text_track_config();
-
-  // Sets the memory limit, in bytes, on the SourceBufferStream.
-  void set_memory_limit_for_testing(int memory_limit) {
-    stream_->set_memory_limit_for_testing(memory_limit);
-  }
-
- private:
-  enum State {
-    UNINITIALIZED,
-    RETURNING_DATA_FOR_READS,
-    RETURNING_ABORT_FOR_READS,
-    SHUTDOWN,
-  };
-
-  // Assigns |state_| to |state|
-  void ChangeState_Locked(State state);
-
-  void CompletePendingReadIfPossible_Locked();
-
-  // Specifies the type of the stream.
-  Type type_;
-
-  scoped_ptr<SourceBufferStream> stream_;
-
-  mutable base::Lock lock_;
-  State state_;
-  ReadCB read_cb_;
-
-  DISALLOW_IMPLICIT_CONSTRUCTORS(ChunkDemuxerStream);
-};
-
 SourceState::SourceState(scoped_ptr<StreamParser> stream_parser,
+                         scoped_ptr<FrameProcessor> frame_processor,
                          const LogCB& log_cb,
-                         const CreateDemuxerStreamCB& create_demuxer_stream_cb,
-                         const IncreaseDurationCB& increase_duration_cb)
+                         const CreateDemuxerStreamCB& create_demuxer_stream_cb)
     : create_demuxer_stream_cb_(create_demuxer_stream_cb),
-      increase_duration_cb_(increase_duration_cb),
-      sequence_mode_(false),
-      append_window_end_(kInfiniteDuration()),
+      timestamp_offset_during_append_(NULL),
       new_media_segment_(false),
       parsing_media_segment_(false),
       stream_parser_(stream_parser.release()),
       audio_(NULL),
-      audio_needs_keyframe_(true),
       video_(NULL),
-      video_needs_keyframe_(true),
-      log_cb_(log_cb) {
+      frame_processor_(frame_processor.release()),
+      log_cb_(log_cb),
+      auto_update_timestamp_offset_(false) {
   DCHECK(!create_demuxer_stream_cb_.is_null());
-  DCHECK(!increase_duration_cb_.is_null());
+  DCHECK(frame_processor_);
 }
 
 SourceState::~SourceState() {
@@ -391,48 +270,65 @@ void SourceState::Init(const StreamParser::InitCB& init_cb,
                        const StreamParser::NeedKeyCB& need_key_cb,
                        const NewTextTrackCB& new_text_track_cb) {
   new_text_track_cb_ = new_text_track_cb;
+  init_cb_ = init_cb;
 
-  stream_parser_->Init(init_cb,
-                       base::Bind(&SourceState::OnNewConfigs,
-                                  base::Unretained(this),
-                                  allow_audio,
-                                  allow_video),
-                       base::Bind(&SourceState::OnNewBuffers,
-                                  base::Unretained(this)),
-                       new_text_track_cb_.is_null(),
-                       need_key_cb,
-                       base::Bind(&SourceState::OnNewMediaSegment,
-                                  base::Unretained(this)),
-                       base::Bind(&SourceState::OnEndOfMediaSegment,
-                                  base::Unretained(this)),
-                       log_cb_);
+  stream_parser_->Init(
+      base::Bind(&SourceState::OnSourceInitDone, base::Unretained(this)),
+      base::Bind(&SourceState::OnNewConfigs,
+                 base::Unretained(this),
+                 allow_audio,
+                 allow_video),
+      base::Bind(&SourceState::OnNewBuffers, base::Unretained(this)),
+      new_text_track_cb_.is_null(),
+      need_key_cb,
+      base::Bind(&SourceState::OnNewMediaSegment, base::Unretained(this)),
+      base::Bind(&SourceState::OnEndOfMediaSegment, base::Unretained(this)),
+      log_cb_);
 }
 
-bool SourceState::SetTimestampOffset(TimeDelta timestamp_offset) {
-  if (parsing_media_segment_)
-    return false;
+void SourceState::SetSequenceMode(bool sequence_mode) {
+  DCHECK(!parsing_media_segment_);
 
-  timestamp_offset_ = timestamp_offset;
-  return true;
+  frame_processor_->SetSequenceMode(sequence_mode);
 }
 
-bool SourceState::SetSequenceMode(bool sequence_mode) {
-  if (parsing_media_segment_)
-    return false;
+void SourceState::SetGroupStartTimestampIfInSequenceMode(
+    base::TimeDelta timestamp_offset) {
+  DCHECK(!parsing_media_segment_);
 
-  sequence_mode_ = sequence_mode;
-  return true;
+  frame_processor_->SetGroupStartTimestampIfInSequenceMode(timestamp_offset);
 }
 
+bool SourceState::Append(const uint8* data, size_t length,
+                         TimeDelta append_window_start,
+                         TimeDelta append_window_end,
+                         TimeDelta* timestamp_offset) {
+  DCHECK(timestamp_offset);
+  DCHECK(!timestamp_offset_during_append_);
+  append_window_start_during_append_ = append_window_start;
+  append_window_end_during_append_ = append_window_end;
+  timestamp_offset_during_append_ = timestamp_offset;
 
-bool SourceState::Append(const uint8* data, size_t length) {
-  return stream_parser_->Parse(data, length);
+  // TODO(wolenetz/acolwell): Curry and pass a NewBuffersCB here bound with
+  // append window and timestamp offset pointer. See http://crbug.com/351454.
+  bool err = stream_parser_->Parse(data, length);
+  timestamp_offset_during_append_ = NULL;
+  return err;
 }
 
-void SourceState::Abort() {
+void SourceState::Abort(TimeDelta append_window_start,
+                        TimeDelta append_window_end,
+                        base::TimeDelta* timestamp_offset) {
+  DCHECK(timestamp_offset);
+  DCHECK(!timestamp_offset_during_append_);
+  timestamp_offset_during_append_ = timestamp_offset;
+  append_window_start_during_append_ = append_window_start;
+  append_window_end_during_append_ = append_window_end;
+
   stream_parser_->Flush();
-  audio_needs_keyframe_ = true;
-  video_needs_keyframe_ = true;
+  timestamp_offset_during_append_ = NULL;
+
+  frame_processor_->Reset();
   parsing_media_segment_ = false;
 }
 
@@ -619,19 +515,6 @@ bool SourceState::IsSeekWaitingForData() const {
   return false;
 }
 
-void SourceState::AdjustBufferTimestamps(
-    const StreamParser::BufferQueue& buffers) {
-  if (timestamp_offset_ == TimeDelta())
-    return;
-
-  for (StreamParser::BufferQueue::const_iterator itr = buffers.begin();
-       itr != buffers.end(); ++itr) {
-    (*itr)->SetDecodeTimestamp(
-        (*itr)->GetDecodeTimestamp() + timestamp_offset_);
-    (*itr)->set_timestamp((*itr)->timestamp() + timestamp_offset_);
-  }
-}
-
 bool SourceState::OnNewConfigs(
     bool allow_audio, bool allow_video,
     const AudioDecoderConfig& audio_config,
@@ -677,8 +560,15 @@ bool SourceState::OnNewConfigs(
         DVLOG(1) << "Failed to create an audio stream.";
         return false;
       }
+
+      if (!frame_processor_->AddTrack(FrameProcessorBase::kAudioTrackId,
+                                      audio_)) {
+        DVLOG(1) << "Failed to add audio track to frame processor.";
+        return false;
+      }
     }
 
+    frame_processor_->OnPossibleAudioConfigUpdate(audio_config);
     success &= audio_->UpdateAudioConfig(audio_config, log_cb_);
   }
 
@@ -688,6 +578,12 @@ bool SourceState::OnNewConfigs(
 
       if (!video_) {
         DVLOG(1) << "Failed to create a video stream.";
+        return false;
+      }
+
+      if (!frame_processor_->AddTrack(FrameProcessorBase::kVideoTrackId,
+                                      video_)) {
+        DVLOG(1) << "Failed to add video track to frame processor.";
         return false;
       }
     }
@@ -701,6 +597,12 @@ bool SourceState::OnNewConfigs(
          itr != text_configs.end(); ++itr) {
       ChunkDemuxerStream* const text_stream =
           create_demuxer_stream_cb_.Run(DemuxerStream::TEXT);
+      if (!frame_processor_->AddTrack(itr->first, text_stream)) {
+        success &= false;
+        MEDIA_LOG(log_cb_) << "Failed to add text track ID " << itr->first
+                           << " to frame processor.";
+        break;
+      }
       text_stream->UpdateTextConfig(itr->second, log_cb_);
       text_stream_map_[itr->first] = text_stream;
       new_text_track_cb_.Run(text_stream, itr->second);
@@ -720,8 +622,17 @@ bool SourceState::OnNewConfigs(
         success &= false;
         MEDIA_LOG(log_cb_) << "New text track config does not match old one.";
       } else {
-        text_stream_map_.clear();
-        text_stream_map_[config_itr->first] = text_stream;
+        StreamParser::TrackId old_id = stream_itr->first;
+        StreamParser::TrackId new_id = config_itr->first;
+        if (new_id != old_id) {
+          if (frame_processor_->UpdateTrack(old_id, new_id)) {
+            text_stream_map_.clear();
+            text_stream_map_[config_itr->first] = text_stream;
+          } else {
+            success &= false;
+            MEDIA_LOG(log_cb_) << "Error remapping single text track number";
+          }
+        }
       }
     } else {
       for (TextConfigItr config_itr = text_configs.begin();
@@ -750,6 +661,8 @@ bool SourceState::OnNewConfigs(
     }
   }
 
+  frame_processor_->SetAllTrackBuffersNeedRandomAccessPoint();
+
   DVLOG(1) << "OnNewConfigs() : " << (success ? "success" : "failed");
   return success;
 }
@@ -770,172 +683,59 @@ bool SourceState::OnNewBuffers(
     const StreamParser::BufferQueue& audio_buffers,
     const StreamParser::BufferQueue& video_buffers,
     const StreamParser::TextBufferQueueMap& text_map) {
-  DCHECK(!audio_buffers.empty() || !video_buffers.empty() ||
-         !text_map.empty());
+  DVLOG(2) << "OnNewBuffers()";
+  DCHECK(timestamp_offset_during_append_);
+  DCHECK(parsing_media_segment_);
 
-  // TODO(wolenetz): DCHECK + return false if any of these buffers have UNKNOWN
-  // type() in upcoming coded frame processing compliant implementation. See
-  // http://crbug.com/249422.
+  const TimeDelta timestamp_offset_before_processing =
+      *timestamp_offset_during_append_;
 
-  AdjustBufferTimestamps(audio_buffers);
-  AdjustBufferTimestamps(video_buffers);
-
-  StreamParser::BufferQueue filtered_audio;
-  StreamParser::BufferQueue filtered_video;
-
-  FilterWithAppendWindow(audio_buffers, &audio_needs_keyframe_,
-                         &filtered_audio);
-
-  FilterWithAppendWindow(video_buffers, &video_needs_keyframe_,
-                         &filtered_video);
-
-  if ((!filtered_audio.empty() || !filtered_video.empty()) &&
-      new_media_segment_) {
-    // Find the earliest timestamp in the filtered buffers and use that for the
-    // segment start timestamp.
-    TimeDelta segment_timestamp = kNoTimestamp();
-
-    if (!filtered_audio.empty())
-      segment_timestamp = filtered_audio.front()->GetDecodeTimestamp();
-
-    if (!filtered_video.empty() &&
-        (segment_timestamp == kNoTimestamp() ||
-         filtered_video.front()->GetDecodeTimestamp() < segment_timestamp)) {
-      segment_timestamp = filtered_video.front()->GetDecodeTimestamp();
-    }
-
-    new_media_segment_ = false;
-
-    if (audio_)
-      audio_->OnNewMediaSegment(segment_timestamp);
-
-    if (video_)
-      video_->OnNewMediaSegment(segment_timestamp);
-
-    for (TextStreamMap::iterator itr = text_stream_map_.begin();
-         itr != text_stream_map_.end(); ++itr) {
-      itr->second->OnNewMediaSegment(segment_timestamp);
+  // Calculate the new timestamp offset for audio/video tracks if the stream
+  // parser has requested automatic updates.
+  TimeDelta new_timestamp_offset = timestamp_offset_before_processing;
+  if (auto_update_timestamp_offset_) {
+    const bool have_audio_buffers = !audio_buffers.empty();
+    const bool have_video_buffers = !video_buffers.empty();
+    if (have_audio_buffers && have_video_buffers) {
+      new_timestamp_offset +=
+          std::min(EndTimestamp(audio_buffers), EndTimestamp(video_buffers));
+    } else if (have_audio_buffers) {
+      new_timestamp_offset += EndTimestamp(audio_buffers);
+    } else if (have_video_buffers) {
+      new_timestamp_offset += EndTimestamp(video_buffers);
     }
   }
 
-  if (!filtered_audio.empty() &&
-      !AppendAndUpdateDuration(audio_, filtered_audio)) {
+  if (!frame_processor_->ProcessFrames(audio_buffers,
+                                       video_buffers,
+                                       text_map,
+                                       append_window_start_during_append_,
+                                       append_window_end_during_append_,
+                                       &new_media_segment_,
+                                       timestamp_offset_during_append_)) {
     return false;
   }
 
-  if (!filtered_video.empty() &&
-      !AppendAndUpdateDuration(video_, filtered_video)) {
-    return false;
+  // Only update the timestamp offset if the frame processor hasn't already.
+  if (auto_update_timestamp_offset_ &&
+      timestamp_offset_before_processing == *timestamp_offset_during_append_) {
+    *timestamp_offset_during_append_ = new_timestamp_offset;
   }
 
-  if (text_map.empty())
-    return true;
-
-  // Process any buffers for each of the text tracks in the map.
-  bool all_text_buffers_empty = true;
-  for (StreamParser::TextBufferQueueMap::const_iterator itr = text_map.begin();
-       itr != text_map.end();
-       ++itr) {
-    const StreamParser::BufferQueue text_buffers = itr->second;
-    if (!text_buffers.empty()) {
-      all_text_buffers_empty = false;
-      if (!OnTextBuffers(itr->first, text_buffers))
-        return false;
-    }
-  }
-
-  DCHECK(!all_text_buffers_empty);
   return true;
 }
 
-bool SourceState::OnTextBuffers(
-    StreamParser::TrackId text_track_id,
-    const StreamParser::BufferQueue& buffers) {
-  DCHECK(!buffers.empty());
-
-  TextStreamMap::iterator itr = text_stream_map_.find(text_track_id);
-  if (itr == text_stream_map_.end())
-    return false;
-
-  AdjustBufferTimestamps(buffers);
-
-  StreamParser::BufferQueue filtered_buffers;
-  bool needs_keyframe = false;
-  FilterWithAppendWindow(buffers, &needs_keyframe, &filtered_buffers);
-
-  if (filtered_buffers.empty())
-    return true;
-
-  return AppendAndUpdateDuration(itr->second, filtered_buffers);
+void SourceState::OnSourceInitDone(bool success,
+                                   const StreamParser::InitParameters& params) {
+  auto_update_timestamp_offset_ = params.auto_update_timestamp_offset;
+  base::ResetAndReturn(&init_cb_).Run(success, params);
 }
 
-bool SourceState::AppendAndUpdateDuration(
-    ChunkDemuxerStream* stream,
-    const StreamParser::BufferQueue& buffers) {
-  DCHECK(!buffers.empty());
-
-  if (!stream || !stream->Append(buffers))
-    return false;
-
-  increase_duration_cb_.Run(buffers.back()->timestamp(), stream);
-  return true;
-}
-
-void SourceState::FilterWithAppendWindow(
-    const StreamParser::BufferQueue& buffers, bool* needs_keyframe,
-    StreamParser::BufferQueue* filtered_buffers) {
-  DCHECK(needs_keyframe);
-  DCHECK(filtered_buffers);
-
-  // This loop implements steps 1.9, 1.10, & 1.11 of the "Coded frame
-  // processing loop" in the Media Source Extensions spec.
-  // These steps filter out buffers that are not within the "append
-  // window" and handles resyncing on the next random access point
-  // (i.e., next keyframe) if a buffer gets dropped.
-  for (StreamParser::BufferQueue::const_iterator itr = buffers.begin();
-       itr != buffers.end(); ++itr) {
-    // Filter out buffers that are outside the append window. Anytime
-    // a buffer gets dropped we need to set |*needs_keyframe| to true
-    // because we can only resume decoding at keyframes.
-    TimeDelta presentation_timestamp = (*itr)->timestamp();
-
-    // TODO(acolwell): Change |frame_end_timestamp| value to
-    // |presentation_timestamp + (*itr)->duration()|, like the spec
-    // requires, once frame durations are actually present in all buffers.
-    TimeDelta frame_end_timestamp = presentation_timestamp;
-    if (presentation_timestamp < append_window_start_ ||
-        frame_end_timestamp > append_window_end_) {
-      DVLOG(1) << "Dropping buffer outside append window."
-               << " presentation_timestamp "
-               << presentation_timestamp.InSecondsF();
-      *needs_keyframe = true;
-
-      // This triggers a discontinuity so we need to treat the next frames
-      // appended within the append window as if they were the beginning of a
-      // new segment.
-      new_media_segment_ = true;
-      continue;
-    }
-
-    // If |*needs_keyframe| is true then filter out buffers until we
-    // encounter the next keyframe.
-    if (*needs_keyframe) {
-      if (!(*itr)->IsKeyframe()) {
-        DVLOG(1) << "Dropping non-keyframe. presentation_timestamp "
-                 << presentation_timestamp.InSecondsF();
-        continue;
-      }
-
-      *needs_keyframe = false;
-    }
-
-    filtered_buffers->push_back(*itr);
-  }
-}
-
-ChunkDemuxerStream::ChunkDemuxerStream(Type type)
+ChunkDemuxerStream::ChunkDemuxerStream(Type type, bool splice_frames_enabled)
     : type_(type),
-      state_(UNINITIALIZED) {
+      state_(UNINITIALIZED),
+      splice_frames_enabled_(splice_frames_enabled),
+      partial_append_window_trimming_enabled_(false) {
 }
 
 void ChunkDemuxerStream::StartReturningData() {
@@ -1067,7 +867,18 @@ bool ChunkDemuxerStream::UpdateAudioConfig(const AudioDecoderConfig& config,
   base::AutoLock auto_lock(lock_);
   if (!stream_) {
     DCHECK_EQ(state_, UNINITIALIZED);
-    stream_.reset(new SourceBufferStream(config, log_cb));
+
+    // On platforms which support splice frames, enable splice frames and
+    // partial append window support for most codecs (notably: not opus).
+    const bool codec_supported = config.codec() == kCodecMP3 ||
+                                 config.codec() == kCodecAAC ||
+                                 config.codec() == kCodecVorbis;
+    splice_frames_enabled_ = splice_frames_enabled_ && codec_supported;
+    partial_append_window_trimming_enabled_ =
+        splice_frames_enabled_ && codec_supported;
+
+    stream_.reset(
+        new SourceBufferStream(config, log_cb, splice_frames_enabled_));
     return true;
   }
 
@@ -1082,7 +893,8 @@ bool ChunkDemuxerStream::UpdateVideoConfig(const VideoDecoderConfig& config,
 
   if (!stream_) {
     DCHECK_EQ(state_, UNINITIALIZED);
-    stream_.reset(new SourceBufferStream(config, log_cb));
+    stream_.reset(
+        new SourceBufferStream(config, log_cb, splice_frames_enabled_));
     return true;
   }
 
@@ -1095,7 +907,7 @@ void ChunkDemuxerStream::UpdateTextConfig(const TextTrackConfig& config,
   base::AutoLock auto_lock(lock_);
   DCHECK(!stream_);
   DCHECK_EQ(state_, UNINITIALIZED);
-  stream_.reset(new SourceBufferStream(config, log_cb));
+  stream_.reset(new SourceBufferStream(config, log_cb, splice_frames_enabled_));
 }
 
 void ChunkDemuxerStream::MarkEndOfStream() {
@@ -1133,6 +945,8 @@ VideoDecoderConfig ChunkDemuxerStream::video_decoder_config() {
   base::AutoLock auto_lock(lock_);
   return stream_->GetCurrentVideoDecoderConfig();
 }
+
+bool ChunkDemuxerStream::SupportsConfigChanges() { return true; }
 
 TextTrackConfig ChunkDemuxerStream::text_track_config() {
   CHECK_EQ(type_, TEXT);
@@ -1199,7 +1013,8 @@ void ChunkDemuxerStream::CompletePendingReadIfPossible_Locked() {
 
 ChunkDemuxer::ChunkDemuxer(const base::Closure& open_cb,
                            const NeedKeyCB& need_key_cb,
-                           const LogCB& log_cb)
+                           const LogCB& log_cb,
+                           bool splice_frames_enabled)
     : state_(WAITING_FOR_INIT),
       cancel_next_seek_(false),
       host_(NULL),
@@ -1208,7 +1023,9 @@ ChunkDemuxer::ChunkDemuxer(const base::Closure& open_cb,
       enable_text_(false),
       log_cb_(log_cb),
       duration_(kNoTimestamp()),
-      user_specified_duration_(-1) {
+      user_specified_duration_(-1),
+      liveness_(LIVENESS_UNKNOWN),
+      splice_frames_enabled_(splice_frames_enabled) {
   DCHECK(!open_cb_.is_null());
   DCHECK(!need_key_cb_.is_null());
 }
@@ -1271,12 +1088,6 @@ void ChunkDemuxer::Seek(TimeDelta time, const PipelineStatusCB& cb) {
   base::ResetAndReturn(&seek_cb_).Run(PIPELINE_OK);
 }
 
-void ChunkDemuxer::OnAudioRendererDisabled() {
-  base::AutoLock auto_lock(lock_);
-  audio_->Shutdown();
-  disabled_audio_ = audio_.Pass();
-}
-
 // Demuxer implementation.
 DemuxerStream* ChunkDemuxer::GetStream(DemuxerStream::Type type) {
   DCHECK_NE(type, DemuxerStream::TEXT);
@@ -1290,8 +1101,12 @@ DemuxerStream* ChunkDemuxer::GetStream(DemuxerStream::Type type) {
   return NULL;
 }
 
-TimeDelta ChunkDemuxer::GetStartTime() const {
-  return TimeDelta();
+base::Time ChunkDemuxer::GetTimelineOffset() const {
+  return timeline_offset_;
+}
+
+Demuxer::Liveness ChunkDemuxer::GetLiveness() const {
+  return liveness_;
 }
 
 void ChunkDemuxer::StartWaitingForSeek(TimeDelta seek_time) {
@@ -1358,11 +1173,14 @@ ChunkDemuxer::Status ChunkDemuxer::AddId(const std::string& id,
   if (has_video)
     source_id_video_ = id;
 
+  scoped_ptr<FrameProcessor> frame_processor(
+      new FrameProcessor(base::Bind(&ChunkDemuxer::IncreaseDurationIfNecessary,
+                         base::Unretained(this))));
+
   scoped_ptr<SourceState> source_state(
-      new SourceState(stream_parser.Pass(), log_cb_,
+      new SourceState(stream_parser.Pass(),
+                      frame_processor.Pass(), log_cb_,
                       base::Bind(&ChunkDemuxer::CreateDemuxerStream,
-                                 base::Unretained(this)),
-                      base::Bind(&ChunkDemuxer::IncreaseDurationIfNecessary,
                                  base::Unretained(this))));
 
   SourceState::NewTextTrackCB new_text_track_cb;
@@ -1408,11 +1226,14 @@ Ranges<TimeDelta> ChunkDemuxer::GetBufferedRanges(const std::string& id) const {
 }
 
 void ChunkDemuxer::AppendData(const std::string& id,
-                              const uint8* data,
-                              size_t length) {
+                              const uint8* data, size_t length,
+                              TimeDelta append_window_start,
+                              TimeDelta append_window_end,
+                              TimeDelta* timestamp_offset) {
   DVLOG(1) << "AppendData(" << id << ", " << length << ")";
 
   DCHECK(!id.empty());
+  DCHECK(timestamp_offset);
 
   Ranges<TimeDelta> ranges;
 
@@ -1432,7 +1253,10 @@ void ChunkDemuxer::AppendData(const std::string& id,
     switch (state_) {
       case INITIALIZING:
         DCHECK(IsValidId(id));
-        if (!source_state_map_[id]->Append(data, length)) {
+        if (!source_state_map_[id]->Append(data, length,
+                                           append_window_start,
+                                           append_window_end,
+                                           timestamp_offset)) {
           ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
           return;
         }
@@ -1440,7 +1264,10 @@ void ChunkDemuxer::AppendData(const std::string& id,
 
       case INITIALIZED: {
         DCHECK(IsValidId(id));
-        if (!source_state_map_[id]->Append(data, length)) {
+        if (!source_state_map_[id]->Append(data, length,
+                                           append_window_start,
+                                           append_window_end,
+                                           timestamp_offset)) {
           ReportError_Locked(PIPELINE_ERROR_DECODE);
           return;
         }
@@ -1471,12 +1298,17 @@ void ChunkDemuxer::AppendData(const std::string& id,
     host_->AddBufferedTimeRange(ranges.start(i), ranges.end(i));
 }
 
-void ChunkDemuxer::Abort(const std::string& id) {
+void ChunkDemuxer::Abort(const std::string& id,
+                         TimeDelta append_window_start,
+                         TimeDelta append_window_end,
+                         TimeDelta* timestamp_offset) {
   DVLOG(1) << "Abort(" << id << ")";
   base::AutoLock auto_lock(lock_);
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
-  source_state_map_[id]->Abort();
+  source_state_map_[id]->Abort(append_window_start,
+                               append_window_end,
+                               timestamp_offset);
 }
 
 void ChunkDemuxer::Remove(const std::string& id, TimeDelta start,
@@ -1487,6 +1319,16 @@ void ChunkDemuxer::Remove(const std::string& id, TimeDelta start,
 
   DCHECK(!id.empty());
   CHECK(IsValidId(id));
+  DCHECK(start >= base::TimeDelta()) << start.InSecondsF();
+  DCHECK(start < end) << "start " << start.InSecondsF()
+                      << " end " << end.InSecondsF();
+  DCHECK(duration_ != kNoTimestamp());
+  DCHECK(start <= duration_) << "start " << start.InSecondsF()
+                             << " duration " << duration_.InSecondsF();
+
+  if (start == duration_)
+    return;
+
   source_state_map_[id]->Remove(start, end, duration_);
 }
 
@@ -1523,6 +1365,7 @@ void ChunkDemuxer::SetDuration(double duration) {
   // This can be different if the value of |duration| doesn't fit the range or
   // precision of TimeDelta.
   TimeDelta min_duration = TimeDelta::FromInternalValue(1);
+  // Don't use TimeDelta::Max() here, as we want the largest finite time delta.
   TimeDelta max_duration = TimeDelta::FromInternalValue(kint64max - 1);
   double min_duration_in_seconds = min_duration.InSecondsF();
   double max_duration_in_seconds = max_duration.InSecondsF();
@@ -1551,23 +1394,37 @@ void ChunkDemuxer::SetDuration(double duration) {
   }
 }
 
-bool ChunkDemuxer::SetTimestampOffset(const std::string& id, TimeDelta offset) {
+bool ChunkDemuxer::IsParsingMediaSegment(const std::string& id) {
   base::AutoLock auto_lock(lock_);
-  DVLOG(1) << "SetTimestampOffset(" << id << ", " << offset.InSecondsF() << ")";
+  DVLOG(1) << "IsParsingMediaSegment(" << id << ")";
   CHECK(IsValidId(id));
 
-  return source_state_map_[id]->SetTimestampOffset(offset);
+  return source_state_map_[id]->parsing_media_segment();
 }
 
-bool ChunkDemuxer::SetSequenceMode(const std::string& id,
+void ChunkDemuxer::SetSequenceMode(const std::string& id,
                                    bool sequence_mode) {
   base::AutoLock auto_lock(lock_);
   DVLOG(1) << "SetSequenceMode(" << id << ", " << sequence_mode << ")";
   CHECK(IsValidId(id));
   DCHECK_NE(state_, ENDED);
 
-  return source_state_map_[id]->SetSequenceMode(sequence_mode);
+  source_state_map_[id]->SetSequenceMode(sequence_mode);
 }
+
+void ChunkDemuxer::SetGroupStartTimestampIfInSequenceMode(
+    const std::string& id,
+    base::TimeDelta timestamp_offset) {
+  base::AutoLock auto_lock(lock_);
+  DVLOG(1) << "SetGroupStartTimestampIfInSequenceMode(" << id << ", "
+           << timestamp_offset.InSecondsF() << ")";
+  CHECK(IsValidId(id));
+  DCHECK_NE(state_, ENDED);
+
+  source_state_map_[id]->SetGroupStartTimestampIfInSequenceMode(
+      timestamp_offset);
+}
+
 
 void ChunkDemuxer::MarkEndOfStream(PipelineStatus status) {
   DVLOG(1) << "MarkEndOfStream(" << status << ")";
@@ -1617,22 +1474,6 @@ void ChunkDemuxer::UnmarkEndOfStream() {
        itr != source_state_map_.end(); ++itr) {
     itr->second->UnmarkEndOfStream();
   }
-}
-
-void ChunkDemuxer::SetAppendWindowStart(const std::string& id,
-                                        TimeDelta start) {
-  base::AutoLock auto_lock(lock_);
-  DVLOG(1) << "SetAppendWindowStart(" << id << ", "
-           << start.InSecondsF() << ")";
-  CHECK(IsValidId(id));
-  source_state_map_[id]->set_append_window_start(start);
-}
-
-void ChunkDemuxer::SetAppendWindowEnd(const std::string& id, TimeDelta end) {
-  base::AutoLock auto_lock(lock_);
-  DVLOG(1) << "SetAppendWindowEnd(" << id << ", " << end.InSecondsF() << ")";
-  CHECK(IsValidId(id));
-  source_state_map_[id]->set_append_window_end(end);
 }
 
 void ChunkDemuxer::Shutdown() {
@@ -1708,9 +1549,11 @@ bool ChunkDemuxer::IsSeekWaitingForData_Locked() const {
   return false;
 }
 
-void ChunkDemuxer::OnSourceInitDone(bool success, TimeDelta duration) {
+void ChunkDemuxer::OnSourceInitDone(
+    bool success,
+    const StreamParser::InitParameters& params) {
   DVLOG(1) << "OnSourceInitDone(" << success << ", "
-           << duration.InSecondsF() << ")";
+           << params.duration.InSecondsF() << ")";
   lock_.AssertAcquired();
   DCHECK_EQ(state_, INITIALIZING);
   if (!success || (!audio_ && !video_)) {
@@ -1718,15 +1561,39 @@ void ChunkDemuxer::OnSourceInitDone(bool success, TimeDelta duration) {
     return;
   }
 
-  if (duration != TimeDelta() && duration_ == kNoTimestamp())
-    UpdateDuration(duration);
+  if (params.duration != TimeDelta() && duration_ == kNoTimestamp())
+    UpdateDuration(params.duration);
+
+  if (!params.timeline_offset.is_null()) {
+    if (!timeline_offset_.is_null() &&
+        params.timeline_offset != timeline_offset_) {
+      MEDIA_LOG(log_cb_)
+          << "Timeline offset is not the same across all SourceBuffers.";
+      ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
+      return;
+    }
+
+    timeline_offset_ = params.timeline_offset;
+  }
+
+  if (params.liveness != LIVENESS_UNKNOWN) {
+    if (liveness_ != LIVENESS_UNKNOWN && params.liveness != liveness_) {
+      MEDIA_LOG(log_cb_)
+          << "Liveness is not the same across all SourceBuffers.";
+      ReportError_Locked(DEMUXER_ERROR_COULD_NOT_OPEN);
+      return;
+    }
+
+    liveness_ = params.liveness;
+  }
 
   // Wait until all streams have initialized.
   if ((!source_id_audio_.empty() && !audio_) ||
-      (!source_id_video_.empty() && !video_))
+      (!source_id_video_.empty() && !video_)) {
     return;
+  }
 
-  SeekAllSources(GetStartTime());
+  SeekAllSources(base::TimeDelta());
   StartReturningData();
 
   if (duration_ == kNoTimestamp())
@@ -1743,17 +1610,20 @@ ChunkDemuxer::CreateDemuxerStream(DemuxerStream::Type type) {
     case DemuxerStream::AUDIO:
       if (audio_)
         return NULL;
-      audio_.reset(new ChunkDemuxerStream(DemuxerStream::AUDIO));
+      audio_.reset(
+          new ChunkDemuxerStream(DemuxerStream::AUDIO, splice_frames_enabled_));
       return audio_.get();
       break;
     case DemuxerStream::VIDEO:
       if (video_)
         return NULL;
-      video_.reset(new ChunkDemuxerStream(DemuxerStream::VIDEO));
+      video_.reset(
+          new ChunkDemuxerStream(DemuxerStream::VIDEO, splice_frames_enabled_));
       return video_.get();
       break;
     case DemuxerStream::TEXT: {
-      return new ChunkDemuxerStream(DemuxerStream::TEXT);
+      return new ChunkDemuxerStream(DemuxerStream::TEXT,
+                                    splice_frames_enabled_);
       break;
     }
     case DemuxerStream::UNKNOWN:
@@ -1784,18 +1654,24 @@ void ChunkDemuxer::UpdateDuration(TimeDelta new_duration) {
   host_->SetDuration(new_duration);
 }
 
-void ChunkDemuxer::IncreaseDurationIfNecessary(
-    TimeDelta last_appended_buffer_timestamp,
-    ChunkDemuxerStream* stream) {
-  DCHECK(last_appended_buffer_timestamp != kNoTimestamp());
-  if (last_appended_buffer_timestamp <= duration_)
+void ChunkDemuxer::IncreaseDurationIfNecessary(TimeDelta new_duration) {
+  DCHECK(new_duration != kNoTimestamp());
+  DCHECK(new_duration != kInfiniteDuration());
+
+  // Per April 1, 2014 MSE spec editor's draft:
+  // https://dvcs.w3.org/hg/html-media/raw-file/d471a4412040/media-source/
+  //     media-source.html#sourcebuffer-coded-frame-processing
+  // 5. If the media segment contains data beyond the current duration, then run
+  //    the duration change algorithm with new duration set to the maximum of
+  //    the current duration and the group end timestamp.
+
+  if (new_duration <= duration_)
     return;
 
-  TimeDelta stream_duration = stream->GetBufferedDuration();
-  DCHECK(stream_duration > TimeDelta());
+  DVLOG(2) << __FUNCTION__ << ": Increasing duration: "
+           << duration_.InSecondsF() << " -> " << new_duration.InSecondsF();
 
-  if (stream_duration > duration_)
-    UpdateDuration(stream_duration);
+  UpdateDuration(new_duration);
 }
 
 void ChunkDemuxer::DecreaseDurationIfNecessary() {

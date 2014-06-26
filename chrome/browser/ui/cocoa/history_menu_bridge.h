@@ -31,7 +31,7 @@ namespace {
 class HistoryMenuBridgeTest;
 }
 
-namespace chrome {
+namespace favicon_base {
 struct FaviconImageResult;
 }
 
@@ -179,8 +179,7 @@ class HistoryMenuBridge : public content::NotificationObserver,
 
   // Callback method for when HistoryService query results are ready with the
   // most recently-visited sites.
-  void OnVisitedHistoryResults(CancelableRequestProvider::Handle handle,
-                               history::QueryResults* results);
+  void OnVisitedHistoryResults(history::QueryResults* results);
 
   // Creates a HistoryItem* for the given tab entry. Caller takes ownership of
   // the result and must delete it when finished.
@@ -195,7 +194,7 @@ class HistoryMenuBridge : public content::NotificationObserver,
   // sets the image on the menu. Called on the same same thread that
   // GetFaviconForHistoryItem() was called on (UI thread).
   void GotFaviconData(HistoryItem* item,
-                      const chrome::FaviconImageResult& image_result);
+                      const favicon_base::FaviconImageResult& image_result);
 
   // Cancels a favicon load request for a given HistoryItem, if one is in
   // progress.

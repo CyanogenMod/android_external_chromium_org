@@ -41,7 +41,7 @@ void WriteNode::SetIsFolder(bool folder) {
   MarkForSyncing();
 }
 
-void WriteNode::SetTitle(const std::wstring& title) {
+void WriteNode::SetTitle(const std::string& title) {
   DCHECK_NE(GetModelType(), UNSPECIFIED);
   ModelType type = GetModelType();
   // It's possible the nigori lost the set of encrypted types. If the current
@@ -57,7 +57,8 @@ void WriteNode::SetTitle(const std::wstring& title) {
   if (type != BOOKMARKS && needs_encryption) {
     new_legal_title = kEncryptedString;
   } else {
-    SyncAPINameToServerName(base::WideToUTF8(title), &new_legal_title);
+    DCHECK(base::IsStringUTF8(title));
+    SyncAPINameToServerName(title, &new_legal_title);
     base::TruncateUTF8ToByteSize(new_legal_title, 255, &new_legal_title);
   }
 
@@ -309,13 +310,12 @@ BaseNode::InitByLookupResult WriteNode::InitByClientTagLookup(
   return DecryptIfNecessary() ? INIT_OK : INIT_FAILED_DECRYPT_IF_NECESSARY;
 }
 
-BaseNode::InitByLookupResult WriteNode::InitByTagLookup(
-    const std::string& tag) {
+BaseNode::InitByLookupResult WriteNode::InitTypeRoot(ModelType type) {
   DCHECK(!entry_) << "Init called twice";
-  if (tag.empty())
+  if (!IsRealDataType(type))
     return INIT_FAILED_PRECONDITION;
   entry_ = new syncable::MutableEntry(transaction_->GetWrappedWriteTrans(),
-                                      syncable::GET_BY_SERVER_TAG, tag);
+                                      syncable::GET_TYPE_ROOT, type);
   if (!entry_->good())
     return INIT_FAILED_ENTRY_NOT_GOOD;
   if (entry_->GetIsDel())
@@ -462,6 +462,11 @@ bool WriteNode::SetPosition(const BaseNode& new_parent,
 
   // Now set the predecessor, which sets IS_UNSYNCED as necessary.
   return PutPredecessor(predecessor);
+}
+
+void WriteNode::SetAttachmentMetadata(
+    const sync_pb::AttachmentMetadata& attachment_metadata) {
+  entry_->PutAttachmentMetadata(attachment_metadata);
 }
 
 const syncable::Entry* WriteNode::GetEntry() const {

@@ -17,8 +17,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/xkeyboard.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
@@ -172,6 +172,7 @@ struct I18nContentToMessage {
   { "keyboardOverlayNewTab", IDS_KEYBOARD_OVERLAY_NEW_TAB },
   { "keyboardOverlayNewTerminal", IDS_KEYBOARD_OVERLAY_NEW_TERMINAL },
   { "keyboardOverlayNewWindow", IDS_KEYBOARD_OVERLAY_NEW_WINDOW },
+  { "keyboardOverlayNextUser", IDS_KEYBOARD_OVERLAY_NEXT_USER },
   { "keyboardOverlayNextWindow", IDS_KEYBOARD_OVERLAY_NEXT_WINDOW },
   { "keyboardOverlayNextWord", IDS_KEYBOARD_OVERLAY_NEXT_WORD },
   { "keyboardOverlayOpen", IDS_KEYBOARD_OVERLAY_OPEN },
@@ -185,6 +186,7 @@ struct I18nContentToMessage {
   { "keyboardOverlayPaste", IDS_KEYBOARD_OVERLAY_PASTE },
   { "keyboardOverlayPasteAsPlainText",
     IDS_KEYBOARD_OVERLAY_PASTE_AS_PLAIN_TEXT },
+  { "keyboardOverlayPreviousUser", IDS_KEYBOARD_OVERLAY_PREVIOUS_USER },
   { "keyboardOverlayPreviousWindow", IDS_KEYBOARD_OVERLAY_PREVIOUS_WINDOW },
   { "keyboardOverlayPreviousWord", IDS_KEYBOARD_OVERLAY_PREVIOUS_WORD },
   { "keyboardOverlayPrint", IDS_KEYBOARD_OVERLAY_PRINT },
@@ -261,7 +263,7 @@ content::WebUIDataSource* CreateKeyboardOverlayUIHTMLSource() {
                      CommandLine::ForCurrentProcess()->HasSwitch(
                          chromeos::switches::kHasChromeOSDiamondKey));
   ash::Shell* shell = ash::Shell::GetInstance();
-  ash::internal::DisplayManager* display_manager = shell->display_manager();
+  ash::DisplayManager* display_manager = shell->display_manager();
   source->AddBoolean("keyboardOverlayIsDisplayUIScalingEnabled",
                      display_manager->IsDisplayUIScalingEnabled());
   source->SetJsonPath("strings.js");

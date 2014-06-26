@@ -10,6 +10,7 @@
 #include "base/callback.h"
 #include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
+#include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
@@ -19,11 +20,11 @@
 #include "chrome/browser/chromeos/app_mode/app_session_lifetime.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/chromeos/app_mode/startup_app_launcher.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/oobe_display.h"
 #include "chrome/browser/chromeos/login/screens/error_screen_actor.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/oobe_display.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
@@ -85,8 +86,6 @@ class AppLaunchController::AppWindowWatcher
       NotifyAppWindowCreated();
     }
   }
-  virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) OVERRIDE {}
-  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE {}
 
   void NotifyAppWindowCreated() {
     controller_->OnAppWindowCreated();
@@ -119,6 +118,7 @@ AppLaunchController::AppLaunchController(const std::string& app_id,
       waiting_for_network_(false),
       network_wait_timedout_(false),
       showing_network_dialog_(false),
+      network_config_requested_(false),
       launch_splash_start_time_(0) {
 }
 
@@ -141,8 +141,8 @@ void AppLaunchController::StartAppLaunch() {
   app_launch_splash_screen_actor_->Show(app_id_);
 
   KioskAppManager::App app;
-  CHECK(KioskAppManager::Get() &&
-        KioskAppManager::Get()->GetApp(app_id_, &app));
+  CHECK(KioskAppManager::Get());
+  CHECK(KioskAppManager::Get()->GetApp(app_id_, &app));
   kiosk_profile_loader_.reset(
       new KioskProfileLoader(app.user_id, false, this));
   kiosk_profile_loader_->Start();
@@ -216,11 +216,19 @@ void AppLaunchController::OnCancelAppLaunch() {
   OnLaunchFailed(KioskAppLaunchError::USER_CANCEL);
 }
 
+void AppLaunchController::OnNetworkConfigRequested(bool requested) {
+  network_config_requested_ = requested;
+  if (requested)
+    MaybeShowNetworkConfigureUI();
+  else
+    startup_app_launcher_->RestartLauncher();
+}
+
 void AppLaunchController::OnNetworkStateChanged(bool online) {
   if (!waiting_for_network_)
     return;
 
-  if (online)
+  if (online && !network_config_requested_)
     startup_app_launcher_->ContinueWithNetworkReady();
   else if (network_wait_timedout_)
     MaybeShowNetworkConfigureUI();
@@ -229,6 +237,9 @@ void AppLaunchController::OnNetworkStateChanged(bool online) {
 void AppLaunchController::OnProfileLoaded(Profile* profile) {
   DVLOG(1) << "Profile loaded... Starting app launch.";
   profile_ = profile;
+
+  // This is needed to trigger input method extensions being loaded.
+  profile_->InitChromeOSPreferences();
 
   kiosk_profile_loader_.reset();
   startup_app_launcher_.reset(
@@ -300,7 +311,10 @@ bool AppLaunchController::NeedOwnerAuthToConfigureNetwork() {
 void AppLaunchController::MaybeShowNetworkConfigureUI() {
   if (CanConfigureNetwork()) {
     if (NeedOwnerAuthToConfigureNetwork()) {
-      app_launch_splash_screen_actor_->ToggleNetworkConfig(true);
+      if (network_config_requested_)
+        OnConfigureNetwork();
+      else
+        app_launch_splash_screen_actor_->ToggleNetworkConfig(true);
     } else {
       showing_network_dialog_ = true;
       app_launch_splash_screen_actor_->ShowNetworkConfigureUI();
@@ -312,7 +326,7 @@ void AppLaunchController::MaybeShowNetworkConfigureUI() {
 }
 
 void AppLaunchController::InitializeNetwork() {
-  // Show the network configration dialog if network is not initialized
+  // Show the network configuration dialog if network is not initialized
   // after a brief wait time.
   waiting_for_network_ = true;
   network_wait_timer_.Start(
@@ -357,6 +371,10 @@ void AppLaunchController::OnInstallingApp() {
 
 void AppLaunchController::OnReadyToLaunch() {
   launcher_ready_ = true;
+
+  if (network_config_requested_)
+    return;
+
   if (!webui_visible_)
     return;
 
@@ -400,6 +418,10 @@ void AppLaunchController::OnLaunchFailed(KioskAppLaunchError::Error error) {
   KioskAppLaunchError::Save(error);
   chrome::AttemptUserExit();
   CleanUp();
+}
+
+bool AppLaunchController::IsShowingNetworkConfigScreen() {
+  return network_config_requested_;
 }
 
 }   // namespace chromeos

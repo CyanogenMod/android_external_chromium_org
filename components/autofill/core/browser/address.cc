@@ -49,6 +49,9 @@ base::string16 Address::GetRawInfo(ServerFieldType type) const {
     case ADDRESS_HOME_LINE2:
       return street_address_.size() > 1 ? street_address_[1] : base::string16();
 
+    case ADDRESS_HOME_LINE3:
+      return street_address_.size() > 2 ? street_address_[2] : base::string16();
+
     case ADDRESS_HOME_DEPENDENT_LOCALITY:
       return dependent_locality_;
 
@@ -93,6 +96,13 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
       TrimStreetAddress();
       break;
 
+    case ADDRESS_HOME_LINE3:
+      if (street_address_.size() < 3)
+        street_address_.resize(3);
+      street_address_[2] = value;
+      TrimStreetAddress();
+      break;
+
     case ADDRESS_HOME_DEPENDENT_LOCALITY:
       dependent_locality_ = value;
       break;
@@ -107,8 +117,8 @@ void Address::SetRawInfo(ServerFieldType type, const base::string16& value) {
 
     case ADDRESS_HOME_COUNTRY:
       DCHECK(value.empty() ||
-             (value.length() == 2u && IsStringASCII(value)));
-      country_code_ = UTF16ToASCII(value);
+             (value.length() == 2u && base::IsStringASCII(value)));
+      country_code_ = base::UTF16ToASCII(value);
       break;
 
     case ADDRESS_HOME_ZIP:
@@ -144,13 +154,16 @@ bool Address::SetInfo(const AutofillType& type,
                       const base::string16& value,
                       const std::string& app_locale) {
   if (type.html_type() == HTML_TYPE_COUNTRY_CODE) {
-    if (!value.empty() && (value.size() != 2u || !IsStringASCII(value))) {
+    if (!value.empty() && (value.size() != 2u || !base::IsStringASCII(value))) {
       country_code_ = std::string();
       return false;
     }
 
-    country_code_ = StringToUpperASCII(UTF16ToASCII(value));
+    country_code_ = StringToUpperASCII(base::UTF16ToASCII(value));
     return true;
+  } else if (type.html_type() == HTML_TYPE_FULL_ADDRESS) {
+    // Parsing a full address is too hard.
+    return false;
   }
 
   ServerFieldType storable_type = type.GetStorableType();
@@ -198,6 +211,7 @@ void Address::GetMatchingTypes(const base::string16& text,
 void Address::GetSupportedTypes(ServerFieldTypeSet* supported_types) const {
   supported_types->insert(ADDRESS_HOME_LINE1);
   supported_types->insert(ADDRESS_HOME_LINE2);
+  supported_types->insert(ADDRESS_HOME_LINE3);
   supported_types->insert(ADDRESS_HOME_STREET_ADDRESS);
   supported_types->insert(ADDRESS_HOME_DEPENDENT_LOCALITY);
   supported_types->insert(ADDRESS_HOME_CITY);

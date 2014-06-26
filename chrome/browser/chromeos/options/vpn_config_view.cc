@@ -367,7 +367,9 @@ bool VPNConfigView::Login() {
         shill::kProviderTypeProperty, GetProviderTypeString());
 
     SetConfigProperties(&properties);
-    bool shared = !LoginState::Get()->IsUserAuthenticated();
+    bool shared = false;
+    bool modifiable = false;
+    ChildNetworkConfigView::GetShareStateForLoginState(&shared, &modifiable);
 
     bool only_policy_autoconnect =
         onc::PolicyAllowsOnlyPolicyNetworksToAutoconnect(!shared);
@@ -447,8 +449,7 @@ const std::string VPNConfigView::GetServerCACertPEM() const {
     return std::string();
   } else {
     int cert_index = index - 1;
-    return CertLibrary::Get()->GetCertPEMAt(
-        CertLibrary::CERT_TYPE_SERVER_CA, cert_index);
+    return CertLibrary::Get()->GetServerCACertPEMAt(cert_index);
   }
 }
 
@@ -458,8 +459,7 @@ const std::string VPNConfigView::GetUserCertID() const {
   } else {
     // Certificates are listed in the order they appear in the model.
     int index = user_cert_combobox_ ? user_cert_combobox_->selected_index() : 0;
-    return CertLibrary::Get()->GetCertPkcs11IdAt(
-        CertLibrary::CERT_TYPE_USER, index);
+    return CertLibrary::Get()->GetUserCertPkcs11IdAt(index);
   }
 }
 
@@ -709,6 +709,7 @@ void VPNConfigView::InitFromProperties(
 
   std::string provider_type, server_hostname, username, group_name;
   bool psk_passphrase_required = false;
+  bool user_passphrase_required = true;
   const base::DictionaryValue* provider_properties;
   if (service_properties.GetDictionaryWithoutPathExpansion(
           shill::kProviderProperty, &provider_properties)) {
@@ -716,25 +717,27 @@ void VPNConfigView::InitFromProperties(
         shill::kTypeProperty, &provider_type);
     provider_properties->GetStringWithoutPathExpansion(
         shill::kHostProperty, &server_hostname);
-  }
-  if (provider_type == shill::kProviderL2tpIpsec) {
-    provider_properties->GetStringWithoutPathExpansion(
-        shill::kL2tpIpsecClientCertIdProperty, &client_cert_id_);
-    ca_cert_pem_ = GetPemFromDictionary(
-        provider_properties, shill::kL2tpIpsecCaCertPemProperty);
-    provider_properties->GetBooleanWithoutPathExpansion(
-        shill::kL2tpIpsecPskRequiredProperty, &psk_passphrase_required);
-    provider_properties->GetStringWithoutPathExpansion(
-        shill::kL2tpIpsecUserProperty, &username);
-    provider_properties->GetStringWithoutPathExpansion(
-        shill::kL2tpIpsecTunnelGroupProperty, &group_name);
-  } else if (provider_type == shill::kProviderOpenVpn) {
-    provider_properties->GetStringWithoutPathExpansion(
-        shill::kOpenVPNClientCertIdProperty, &client_cert_id_);
-    ca_cert_pem_ = GetPemFromDictionary(
-        provider_properties, shill::kOpenVPNCaCertPemProperty);
-    provider_properties->GetStringWithoutPathExpansion(
-        shill::kOpenVPNUserProperty, &username);
+    if (provider_type == shill::kProviderL2tpIpsec) {
+      provider_properties->GetStringWithoutPathExpansion(
+          shill::kL2tpIpsecClientCertIdProperty, &client_cert_id_);
+      ca_cert_pem_ = GetPemFromDictionary(
+          provider_properties, shill::kL2tpIpsecCaCertPemProperty);
+      provider_properties->GetBooleanWithoutPathExpansion(
+          shill::kL2tpIpsecPskRequiredProperty, &psk_passphrase_required);
+      provider_properties->GetStringWithoutPathExpansion(
+          shill::kL2tpIpsecUserProperty, &username);
+      provider_properties->GetStringWithoutPathExpansion(
+          shill::kL2tpIpsecTunnelGroupProperty, &group_name);
+    } else if (provider_type == shill::kProviderOpenVpn) {
+      provider_properties->GetStringWithoutPathExpansion(
+          shill::kOpenVPNClientCertIdProperty, &client_cert_id_);
+      ca_cert_pem_ = GetPemFromDictionary(
+          provider_properties, shill::kOpenVPNCaCertPemProperty);
+      provider_properties->GetStringWithoutPathExpansion(
+          shill::kOpenVPNUserProperty, &username);
+      provider_properties->GetBooleanWithoutPathExpansion(
+          shill::kPassphraseRequiredProperty, &user_passphrase_required);
+    }
   }
   bool save_credentials = false;
   service_properties.GetBooleanWithoutPathExpansion(
@@ -756,10 +759,13 @@ void VPNConfigView::InitFromProperties(
     group_name_textfield_->SetText(base::UTF8ToUTF16(group_name));
   if (psk_passphrase_textfield_)
     psk_passphrase_textfield_->SetShowFake(!psk_passphrase_required);
+  if (user_passphrase_textfield_)
+    user_passphrase_textfield_->SetShowFake(!user_passphrase_required);
   if (save_credentials_checkbox_)
     save_credentials_checkbox_->SetChecked(save_credentials);
 
   Refresh();
+  UpdateCanLogin();
 }
 
 void VPNConfigView::ParseUIProperties(const NetworkState* vpn) {
@@ -886,8 +892,8 @@ void VPNConfigView::Refresh() {
     server_ca_cert_combobox_->ModelChanged();
     if (enable_server_ca_cert_ && !ca_cert_pem_.empty()) {
       // Select the current server CA certificate in the combobox.
-      int cert_index = CertLibrary::Get()->GetCertIndexByPEM(
-          CertLibrary::CERT_TYPE_SERVER_CA, ca_cert_pem_);
+      int cert_index =
+          CertLibrary::Get()->GetServerCACertIndexByPEM(ca_cert_pem_);
       if (cert_index >= 0) {
         // Skip item for "Default"
         server_ca_cert_combobox_->SetSelectedIndex(1 + cert_index);
@@ -902,8 +908,8 @@ void VPNConfigView::Refresh() {
   if (user_cert_combobox_) {
     user_cert_combobox_->ModelChanged();
     if (enable_user_cert_ && !client_cert_id_.empty()) {
-      int cert_index = CertLibrary::Get()->GetCertIndexByPkcs11Id(
-          CertLibrary::CERT_TYPE_USER, client_cert_id_);
+      int cert_index =
+          CertLibrary::Get()->GetUserCertIndexByPkcs11Id(client_cert_id_);
       if (cert_index >= 0)
         user_cert_combobox_->SetSelectedIndex(cert_index);
       else
@@ -989,7 +995,8 @@ void VPNConfigView::UpdateErrorLabel() {
     const NetworkState* vpn = NetworkHandler::Get()->network_state_handler()->
         GetNetworkState(service_path_);
     if (vpn && vpn->connection_state() == shill::kStateFailure)
-      error_msg = ash::network_connect::ErrorString(vpn->error(), vpn->path());
+      error_msg = ash::network_connect::ErrorString(
+          vpn->last_error(), vpn->path());
   }
   if (!error_msg.empty()) {
     error_label_->SetText(error_msg);
@@ -1029,7 +1036,7 @@ const std::string VPNConfigView::GetTextFromField(views::Textfield* textfield,
   if (!trim_whitespace)
     return untrimmed;
   std::string result;
-  TrimWhitespaceASCII(untrimmed, TRIM_ALL, &result);
+  base::TrimWhitespaceASCII(untrimmed, base::TRIM_ALL, &result);
   return result;
 }
 

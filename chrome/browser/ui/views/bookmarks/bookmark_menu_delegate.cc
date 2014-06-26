@@ -6,8 +6,9 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
@@ -16,6 +17,7 @@
 #include "chrome/browser/ui/views/bookmarks/bookmark_drag_drop_views.h"
 #include "chrome/browser/ui/views/event_utils.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
@@ -48,7 +50,6 @@ BookmarkMenuDelegate::BookmarkMenuDelegate(Browser* browser,
       page_navigator_(navigator),
       parent_(parent),
       menu_(NULL),
-      for_drop_(false),
       parent_menu_item_(NULL),
       next_menu_id_(first_menu_id),
       min_menu_id_(first_menu_id),
@@ -72,12 +73,23 @@ void BookmarkMenuDelegate::Init(views::MenuDelegate* real_delegate,
   location_ = location;
   if (parent) {
     parent_menu_item_ = parent;
+
+    // Add a separator if there are existing items in the menu, and if the
+    // current node has children. If |node| is the bookmark bar then the
+    // managed node is shown as its first child, if it's not empty.
+    BookmarkModel* model = GetBookmarkModel();
+    ChromeBookmarkClient* client = GetChromeBookmarkClient();
+    bool show_managed = show_options == SHOW_PERMANENT_FOLDERS &&
+                        node == model->bookmark_bar_node() &&
+                        !client->managed_node()->empty();
+    bool has_children =
+        (start_child_index < node->child_count()) || show_managed;
     int initial_count = parent->GetSubmenu() ?
         parent->GetSubmenu()->GetMenuItemCount() : 0;
-    if ((start_child_index < node->child_count()) &&
-        (initial_count > 0)) {
+    if (has_children && initial_count > 0)
       parent->AppendSeparator();
-    }
+    if (show_managed)
+      BuildMenuForManagedNode(parent, &next_menu_id_);
     BuildMenu(node, start_child_index, parent, &next_menu_id_);
     if (show_options == SHOW_PERMANENT_FOLDERS)
       BuildMenusForPermanentNodes(parent, &next_menu_id_);
@@ -94,6 +106,10 @@ void BookmarkMenuDelegate::SetPageNavigator(PageNavigator* navigator) {
 
 BookmarkModel* BookmarkMenuDelegate::GetBookmarkModel() {
   return BookmarkModelFactory::GetForProfile(profile_);
+}
+
+ChromeBookmarkClient* BookmarkMenuDelegate::GetChromeBookmarkClient() {
+  return ChromeBookmarkClientFactory::GetForProfile(profile_);
 }
 
 void BookmarkMenuDelegate::SetActiveMenu(const BookmarkNode* node,
@@ -174,7 +190,8 @@ bool BookmarkMenuDelegate::CanDrop(MenuItemView* menu,
   if (drop_data_.has_single_url())
     return true;
 
-  const BookmarkNode* drag_node = drop_data_.GetFirstNode(profile_);
+  const BookmarkNode* drag_node =
+      drop_data_.GetFirstNode(GetBookmarkModel(), profile_->GetPath());
   if (!drag_node) {
     // Dragging a folder from another profile, always accept.
     return true;
@@ -231,8 +248,8 @@ int BookmarkMenuDelegate::GetDropOperation(
       break;
   }
   DCHECK(drop_parent);
-  return chrome::GetBookmarkDropOperation(profile_, event, drop_data_,
-                                          drop_parent, index_to_drop_at);
+  return chrome::GetBookmarkDropOperation(
+      profile_, event, drop_data_, drop_parent, index_to_drop_at);
 }
 
 int BookmarkMenuDelegate::OnPerformDrop(
@@ -270,8 +287,9 @@ int BookmarkMenuDelegate::OnPerformDrop(
       break;
   }
 
+  bool copy = event.source_operations() == ui::DragDropTypes::DRAG_COPY;
   return chrome::DropBookmarks(profile_, drop_data_,
-                               drop_parent, index_to_drop_at);
+                               drop_parent, index_to_drop_at, copy);
 }
 
 bool BookmarkMenuDelegate::ShowContextMenu(MenuItemView* source,
@@ -312,7 +330,7 @@ void BookmarkMenuDelegate::WriteDragData(MenuItemView* sender,
   content::RecordAction(UserMetricsAction("BookmarkBar_DragFromFolder"));
 
   BookmarkNodeData drag_data(menu_id_to_node_map_[sender->GetCommand()]);
-  drag_data.Write(profile_, data);
+  drag_data.Write(profile_->GetPath(), data);
 }
 
 int BookmarkMenuDelegate::GetDragOperations(MenuItemView* sender) {
@@ -409,8 +427,11 @@ MenuItemView* BookmarkMenuDelegate::CreateMenu(const BookmarkNode* parent,
   menu->SetCommand(next_menu_id_++);
   menu_id_to_node_map_[menu->GetCommand()] = parent;
   menu->set_has_icons(true);
+  bool show_permanent = show_options == SHOW_PERMANENT_FOLDERS;
+  if (show_permanent && parent == GetBookmarkModel()->bookmark_bar_node())
+    BuildMenuForManagedNode(menu, &next_menu_id_);
   BuildMenu(parent, start_child_index, menu, &next_menu_id_);
-  if (show_options == SHOW_PERMANENT_FOLDERS)
+  if (show_permanent)
     BuildMenusForPermanentNodes(menu, &next_menu_id_);
   return menu;
 }
@@ -420,14 +441,15 @@ void BookmarkMenuDelegate::BuildMenusForPermanentNodes(
     int* next_menu_id) {
   BookmarkModel* model = GetBookmarkModel();
   bool added_separator = false;
-  BuildMenuForPermanentNode(model->other_node(), menu, next_menu_id,
-                            &added_separator);
-  BuildMenuForPermanentNode(model->mobile_node(), menu, next_menu_id,
-                            &added_separator);
+  BuildMenuForPermanentNode(model->other_node(), IDR_BOOKMARK_BAR_FOLDER, menu,
+                            next_menu_id, &added_separator);
+  BuildMenuForPermanentNode(model->mobile_node(), IDR_BOOKMARK_BAR_FOLDER, menu,
+                            next_menu_id, &added_separator);
 }
 
 void BookmarkMenuDelegate::BuildMenuForPermanentNode(
     const BookmarkNode* node,
+    int icon_resource_id,
     MenuItemView* menu,
     int* next_menu_id,
     bool* added_separator) {
@@ -446,11 +468,21 @@ void BookmarkMenuDelegate::BuildMenuForPermanentNode(
   }
 
   ui::ResourceBundle* rb = &ui::ResourceBundle::GetSharedInstance();
-  gfx::ImageSkia* folder_icon = rb->GetImageSkiaNamed(IDR_BOOKMARK_BAR_FOLDER);
+  gfx::ImageSkia* folder_icon = rb->GetImageSkiaNamed(icon_resource_id);
   MenuItemView* submenu = menu->AppendSubMenuWithIcon(
       id, node->GetTitle(), *folder_icon);
   BuildMenu(node, 0, submenu, next_menu_id);
   menu_id_to_node_map_[id] = node;
+}
+
+void BookmarkMenuDelegate::BuildMenuForManagedNode(
+    MenuItemView* menu,
+    int* next_menu_id) {
+  // Don't add a separator for this menu.
+  bool added_separator = true;
+  const BookmarkNode* node = GetChromeBookmarkClient()->managed_node();
+  BuildMenuForPermanentNode(node, IDR_BOOKMARK_BAR_FOLDER_MANAGED, menu,
+                            next_menu_id, &added_separator);
 }
 
 void BookmarkMenuDelegate::BuildMenu(const BookmarkNode* parent,

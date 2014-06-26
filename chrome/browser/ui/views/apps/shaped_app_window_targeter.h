@@ -5,14 +5,14 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_APPS_SHAPED_APP_WINDOW_TARGETER_H_
 #define CHROME_BROWSER_UI_VIEWS_APPS_SHAPED_APP_WINDOW_TARGETER_H_
 
-#include "ui/wm/public/masked_window_targeter.h"
+#include "ui/wm/core/masked_window_targeter.h"
 
-class NativeAppWindowViews;
+class ChromeNativeAppWindowViews;
 
 class ShapedAppWindowTargeter : public wm::MaskedWindowTargeter {
  public:
   ShapedAppWindowTargeter(aura::Window* window,
-                          NativeAppWindowViews* app_window);
+                          ChromeNativeAppWindowViews* app_window);
   virtual ~ShapedAppWindowTargeter();
 
  private:
@@ -20,7 +20,7 @@ class ShapedAppWindowTargeter : public wm::MaskedWindowTargeter {
   virtual bool GetHitTestMask(aura::Window* window,
                               gfx::Path* mask) const OVERRIDE;
 
-  NativeAppWindowViews* app_window_;
+  ChromeNativeAppWindowViews* app_window_;
 
   DISALLOW_COPY_AND_ASSIGN(ShapedAppWindowTargeter);
 };

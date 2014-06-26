@@ -16,6 +16,7 @@
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_manager.h"
 #include "sync/internal_api/public/sync_manager_factory.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
@@ -142,21 +143,16 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
   // Turns on encryption of all present and future sync data.
   virtual void EnableEncryptEverything() = 0;
 
-  // Activates change processing for the given data type.  This must
-  // be called synchronously with the data type's model association so
-  // no changes are dropped between model association and change
-  // processor activation.
-  virtual void ActivateDataType(
-      syncer::ModelType type, syncer::ModelSafeGroup group,
-      ChangeProcessor* change_processor) = 0;
-
-  // Deactivates change processing for the given data type.
-  virtual void DeactivateDataType(syncer::ModelType type) = 0;
-
   // Called on |frontend_loop_| to obtain a handle to the UserShare needed for
   // creating transactions.  Should not be called before we signal
   // initialization is complete with OnBackendInitialized().
   virtual syncer::UserShare* GetUserShare() const = 0;
+
+  // Called on |frontend_loop_| to obtain a handle to the SyncContext needed by
+  // the non-blocking sync types to communicate with the server.
+  //
+  // Should be called only when the backend is initialized.
+  virtual scoped_ptr<syncer::SyncContextProxy> GetSyncContextProxy() = 0;
 
   // Called from any thread to obtain current status information in detailed or
   // summarized form.
@@ -191,6 +187,30 @@ class SyncBackendHost : public BackendDataTypeConfigurer {
 
   // Fetches the DeviceInfo tracker.
   virtual SyncedDeviceTracker* GetSyncedDeviceTracker() const = 0;
+
+  // Requests that the backend forward to the fronent any protocol events in
+  // its buffer and begin forwarding automatically from now on.  Repeated calls
+  // to this function may result in the same events being emitted several
+  // times.
+  virtual void RequestBufferedProtocolEventsAndEnableForwarding() = 0;
+
+  // Disables protocol event forwarding.
+  virtual void DisableProtocolEventForwarding() = 0;
+
+  // Returns a ListValue representing all nodes for the specified types through
+  // |callback| on this thread.
+  virtual void GetAllNodesForTypes(
+      syncer::ModelTypeSet types,
+      base::Callback<void(const std::vector<syncer::ModelType>&,
+                          ScopedVector<base::ListValue>)> type) = 0;
+
+  // Enables the sending of directory type debug counters.  Also, for every
+  // time it is called, it makes an explicit request that updates to an update
+  // for all counters be emitted.
+  virtual void EnableDirectoryTypeDebugInfoForwarding() = 0;
+
+  // Disables the sending of directory type debug counters.
+  virtual void DisableDirectoryTypeDebugInfoForwarding() = 0;
 
   virtual base::MessageLoop* GetSyncLoopForTesting() = 0;
 

@@ -49,11 +49,24 @@ base::File::Error FindAlbumInfo(const std::string& key,
   return base::File::FILE_OK;
 }
 
+std::vector<std::string> GetVirtualPathComponents(
+    const fileapi::FileSystemURL& url) {
+  ImportedMediaGalleryRegistry* imported_registry =
+      ImportedMediaGalleryRegistry::GetInstance();
+  base::FilePath root = imported_registry->ImportedRoot().AppendASCII("picasa");
+
+  DCHECK(root.IsParent(url.path()) || root == url.path());
+  base::FilePath virtual_path;
+  root.AppendRelativePath(url.path(), &virtual_path);
+
+  std::vector<std::string> result;
+  fileapi::VirtualPath::GetComponentsUTF8Unsafe(virtual_path, &result);
+  return result;
+}
+
 PicasaDataProvider::DataType GetDataTypeForURL(
     const fileapi::FileSystemURL& url) {
-  std::vector<std::string> components;
-  fileapi::VirtualPath::GetComponentsUTF8Unsafe(url.path(), &components);
-
+  std::vector<std::string> components = GetVirtualPathComponents(url);
   if (components.size() >= 2 && components[0] == kPicasaDirAlbums)
     return PicasaDataProvider::ALBUMS_IMAGES_DATA;
 
@@ -76,26 +89,40 @@ void PicasaFileUtil::GetFileInfoOnTaskRunnerThread(
     scoped_ptr<fileapi::FileSystemOperationContext> context,
     const fileapi::FileSystemURL& url,
     const GetFileInfoCallback& callback) {
-  GetDataProvider()->RefreshData(
-      GetDataTypeForURL(url),
-      base::Bind(&PicasaFileUtil::GetFileInfoWithFreshDataProvider,
-                 weak_factory_.GetWeakPtr(),
-                 base::Passed(&context),
-                 url,
-                 callback));
+  PicasaDataProvider* data_provider = GetDataProvider();
+  // |data_provider| may be NULL if the file system was revoked before this
+  // operation had a chance to run.
+  if (!data_provider) {
+    GetFileInfoWithFreshDataProvider(context.Pass(), url, callback, false);
+  } else {
+    data_provider->RefreshData(
+        GetDataTypeForURL(url),
+        base::Bind(&PicasaFileUtil::GetFileInfoWithFreshDataProvider,
+                   weak_factory_.GetWeakPtr(),
+                   base::Passed(&context),
+                   url,
+                   callback));
+  }
 }
 
 void PicasaFileUtil::ReadDirectoryOnTaskRunnerThread(
     scoped_ptr<fileapi::FileSystemOperationContext> context,
     const fileapi::FileSystemURL& url,
     const ReadDirectoryCallback& callback) {
-  GetDataProvider()->RefreshData(
-      GetDataTypeForURL(url),
-      base::Bind(&PicasaFileUtil::ReadDirectoryWithFreshDataProvider,
-                 weak_factory_.GetWeakPtr(),
-                 base::Passed(&context),
-                 url,
-                 callback));
+  PicasaDataProvider* data_provider = GetDataProvider();
+  // |data_provider| may be NULL if the file system was revoked before this
+  // operation had a chance to run.
+  if (!data_provider) {
+    ReadDirectoryWithFreshDataProvider(context.Pass(), url, callback, false);
+  } else {
+    data_provider->RefreshData(
+        GetDataTypeForURL(url),
+        base::Bind(&PicasaFileUtil::ReadDirectoryWithFreshDataProvider,
+                   weak_factory_.GetWeakPtr(),
+                   base::Passed(&context),
+                   url,
+                   callback));
+  }
 }
 
 base::File::Error PicasaFileUtil::GetFileInfoSync(
@@ -107,8 +134,7 @@ base::File::Error PicasaFileUtil::GetFileInfoSync(
   if (platform_path)
     *platform_path = base::FilePath();
 
-  std::vector<std::string> components;
-  fileapi::VirtualPath::GetComponentsUTF8Unsafe(url.path(), &components);
+  std::vector<std::string> components = GetVirtualPathComponents(url);
 
   switch (components.size()) {
     case 0:
@@ -176,9 +202,7 @@ base::File::Error PicasaFileUtil::ReadDirectorySync(
   if (!file_info.is_directory)
     return base::File::FILE_ERROR_NOT_A_DIRECTORY;
 
-  std::vector<std::string> components;
-  fileapi::VirtualPath::GetComponentsUTF8Unsafe(url.path(), &components);
-
+  std::vector<std::string> components = GetVirtualPathComponents(url);
   switch (components.size()) {
     case 0: {
       // Root directory.
@@ -283,8 +307,7 @@ base::File::Error PicasaFileUtil::GetLocalFilePath(
     base::FilePath* local_file_path) {
   DCHECK(local_file_path);
   DCHECK(url.is_valid());
-  std::vector<std::string> components;
-  fileapi::VirtualPath::GetComponentsUTF8Unsafe(url.path(), &components);
+  std::vector<std::string> components = GetVirtualPathComponents(url);
 
   switch (components.size()) {
     case 2:

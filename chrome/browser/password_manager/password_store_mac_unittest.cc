@@ -25,6 +25,9 @@ using content::BrowserThread;
 using crypto::MockAppleKeychain;
 using internal_keychain_helpers::FormsMatchForMerge;
 using internal_keychain_helpers::STRICT_FORM_MATCH;
+using password_manager::LoginDatabase;
+using password_manager::PasswordStore;
+using password_manager::PasswordStoreConsumer;
 using testing::_;
 using testing::DoAll;
 using testing::Invoke;
@@ -55,6 +58,27 @@ ACTION(QuitUIMessageLoop) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   base::MessageLoop::current()->Quit();
 }
+
+class TestPasswordStoreMac : public PasswordStoreMac {
+ public:
+  TestPasswordStoreMac(
+      scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+      crypto::AppleKeychain* keychain,
+      LoginDatabase* login_db)
+      : PasswordStoreMac(main_thread_runner,
+                         db_thread_runner,
+                         keychain,
+                         login_db) {
+  }
+
+  using PasswordStoreMac::GetBackgroundTaskRunner;
+
+ private:
+  virtual ~TestPasswordStoreMac() {}
+
+  DISALLOW_COPY_AND_ASSIGN(TestPasswordStoreMac);
+};
 
 }  // namespace
 
@@ -162,6 +186,7 @@ static PasswordForm* CreatePasswordFormFromData(
   form->preferred = form_data.preferred;
   form->ssl_valid = form_data.ssl_valid;
   form->date_created = base::Time::FromDoubleT(form_data.creation_time);
+  form->date_synced = form->date_created + base::TimeDelta::FromDays(1);
   if (form_data.signon_realm)
     form->signon_realm = std::string(form_data.signon_realm);
   if (form_data.origin)
@@ -232,6 +257,9 @@ static void CheckFormsAgainstExpectations(
     EXPECT_EQ(expectation->ssl_valid, form->ssl_valid) << test_label;
     EXPECT_DOUBLE_EQ(expectation->creation_time,
                      form->date_created.ToDoubleT()) << test_label;
+    base::Time created = base::Time::FromDoubleT(expectation->creation_time);
+    EXPECT_EQ(created + base::TimeDelta::FromDays(1),
+              form->date_synced) << test_label;
   }
 }
 
@@ -1038,26 +1066,22 @@ class PasswordStoreMacTest : public testing::Test {
 
     keychain_ = new MockAppleKeychain();
 
-    store_ = new PasswordStoreMac(
+    store_ = new TestPasswordStoreMac(
         base::MessageLoopProxy::current(),
         base::MessageLoopProxy::current(),
         keychain_,
         login_db_);
-    ASSERT_TRUE(store_->Init());
+    ASSERT_TRUE(store_->Init(syncer::SyncableService::StartSyncFlare()));
   }
 
   virtual void TearDown() {
     store_->Shutdown();
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::MessageLoop::QuitClosure());
-    base::MessageLoop::current()->Run();
+    EXPECT_FALSE(store_->GetBackgroundTaskRunner());
   }
 
   void WaitForStoreUpdate() {
     // Do a store-level query to wait for all the operations above to be done.
     MockPasswordStoreConsumer consumer;
-    ON_CALL(consumer, OnGetPasswordStoreResults(_))
-        .WillByDefault(QuitUIMessageLoop());
     EXPECT_CALL(consumer, OnGetPasswordStoreResults(_))
         .WillOnce(DoAll(WithArg<0>(STLDeleteElements0()), QuitUIMessageLoop()));
     store_->GetLogins(PasswordForm(), PasswordStore::ALLOW_PROMPT, &consumer);
@@ -1070,7 +1094,7 @@ class PasswordStoreMacTest : public testing::Test {
 
   MockAppleKeychain* keychain_;  // Owned by store_.
   LoginDatabase* login_db_;  // Owned by store_.
-  scoped_refptr<PasswordStoreMac> store_;
+  scoped_refptr<TestPasswordStoreMac> store_;
   base::ScopedTempDir db_dir_;
 };
 
@@ -1199,8 +1223,6 @@ TEST_F(PasswordStoreMacTest, TestDBKeychainAssociation) {
   m_form.signon_realm = "http://m.facebook.com";
   m_form.origin = GURL("http://m.facebook.com/index.html");
   MockPasswordStoreConsumer consumer;
-  ON_CALL(consumer, OnGetPasswordStoreResults(_))
-      .WillByDefault(QuitUIMessageLoop());
   EXPECT_CALL(consumer, OnGetPasswordStoreResults(_)).WillOnce(DoAll(
       WithArg<0>(Invoke(&consumer, &MockPasswordStoreConsumer::CopyElements)),
       WithArg<0>(STLDeleteElements0()),

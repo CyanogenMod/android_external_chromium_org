@@ -9,7 +9,6 @@
 #include <string>
 
 #include "chrome/browser/extensions/activity_log/activity_log_policy.h"
-
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "url/gurl.h"
@@ -46,11 +45,17 @@ class UmaPolicy : public ActivityLogPolicy,
     CREATED_INPUT,
     CREATED_EMBED,
     CREATED_OBJECT,
+    AD_INJECTED,
+    AD_REMOVED,
+    AD_REPLACED,
+    AD_LIKELY_INJECTED,
+    AD_LIKELY_REPLACED,
     MAX_STATUS  // Insert new page statuses right before this one.
   };
 
   explicit UmaPolicy(Profile* profile);
 
+  // ActivityLogPolicy implementation.
   virtual void ProcessAction(scoped_refptr<Action> action) OVERRIDE;
   virtual void Close() OVERRIDE;
 
@@ -93,10 +98,12 @@ class UmaPolicy : public ActivityLogPolicy,
   void SetupOpenedPage(const std::string& url);
 
   // When a page is closing, remove it from the SiteMap url_status_.
-  void CleanupClosedPage(const std::string& url);
+  void CleanupClosedPage(const std::string& cleaned_url,
+                         content::WebContents* web_contents);
 
   // When a page is closing, save statistics about the page to histograms.
-  void HistogramOnClose(const std::string& url);
+  void HistogramOnClose(const std::string& cleaned_url,
+                        content::WebContents* web_contents);
 
   // Standardizes the way URLs are treated.
   static std::string CleanURL(const GURL& gurl);

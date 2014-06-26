@@ -13,9 +13,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service.h"
@@ -25,6 +23,8 @@
 #include "chrome/browser/undo/bookmark_undo_service.h"
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/browser/undo/bookmark_undo_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/read_node.h"
@@ -44,13 +44,16 @@ namespace browser_sync {
 static const char kMobileBookmarksTag[] = "synced_bookmarks";
 
 BookmarkChangeProcessor::BookmarkChangeProcessor(
+    Profile* profile,
     BookmarkModelAssociator* model_associator,
     DataTypeErrorHandler* error_handler)
     : ChangeProcessor(error_handler),
       bookmark_model_(NULL),
+      profile_(profile),
       model_associator_(model_associator) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(model_associator);
+  DCHECK(profile);
   DCHECK(error_handler);
 }
 
@@ -59,12 +62,10 @@ BookmarkChangeProcessor::~BookmarkChangeProcessor() {
     bookmark_model_->RemoveObserver(this);
 }
 
-void BookmarkChangeProcessor::StartImpl(Profile* profile) {
+void BookmarkChangeProcessor::StartImpl() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(profile);
-  profile_ = profile;
   DCHECK(!bookmark_model_);
-  bookmark_model_ = BookmarkModelFactory::GetForProfile(profile);
+  bookmark_model_ = BookmarkModelFactory::GetForProfile(profile_);
   DCHECK(bookmark_model_->loaded());
   bookmark_model_->AddObserver(this);
 }
@@ -75,7 +76,7 @@ void BookmarkChangeProcessor::UpdateSyncNodeProperties(
     syncer::WriteNode* dst) {
   // Set the properties of the item.
   dst->SetIsFolder(src->is_folder());
-  dst->SetTitle(base::UTF16ToWideHack(src->GetTitle()));
+  dst->SetTitle(base::UTF16ToUTF8(src->GetTitle()));
   sync_pb::BookmarkSpecifics bookmark_specifics(dst->GetBookmarkSpecifics());
   if (!src->is_folder())
     bookmark_specifics.set_url(src->url().spec());
@@ -148,6 +149,8 @@ void BookmarkChangeProcessor::RemoveAllSyncNodes() {
             syncer::kInvalidId) {
       RemoveAllChildNodes(&trans, bookmark_model_->mobile_node()->id());
     }
+    // Note: the root node may have additional extra nodes. Currently none of
+    // them are meant to sync.
   }
 
   // Don't need to update versions of deleted nodes.
@@ -204,29 +207,27 @@ void BookmarkChangeProcessor::RemoveAllChildNodes(
   }
 }
 
-void BookmarkChangeProcessor::BookmarkModelLoaded(BookmarkModel* model,
-                                                  bool ids_reassigned) {
-  NOTREACHED();
-}
-
-void BookmarkChangeProcessor::BookmarkModelBeingDeleted(
-    BookmarkModel* model) {
-  NOTREACHED();
-  bookmark_model_ = NULL;
-}
-
-void BookmarkChangeProcessor::BookmarkNodeAdded(BookmarkModel* model,
-                                                const BookmarkNode* parent,
-                                                int index) {
-  DCHECK(share_handle());
+void BookmarkChangeProcessor::CreateOrUpdateSyncNode(const BookmarkNode* node) {
+  const BookmarkNode* parent = node->parent();
+  int index = node->parent()->GetIndexOf(node);
 
   int64 new_version = syncer::syncable::kInvalidTransactionVersion;
   int64 sync_id = syncer::kInvalidId;
   {
     // Acquire a scoped write lock via a transaction.
     syncer::WriteTransaction trans(FROM_HERE, share_handle(), &new_version);
-    sync_id = CreateSyncNode(parent, model, index, &trans,
-                             model_associator_, error_handler());
+    sync_id = model_associator_->GetSyncIdFromChromeId(node->id());
+    if (sync_id != syncer::kInvalidId) {
+      UpdateSyncNode(
+          node, bookmark_model_, &trans, model_associator_, error_handler());
+    } else {
+      sync_id = CreateSyncNode(parent,
+                               bookmark_model_,
+                               index,
+                               &trans,
+                               model_associator_,
+                               error_handler());
+    }
   }
 
   if (syncer::kInvalidId != sync_id) {
@@ -235,9 +236,27 @@ void BookmarkChangeProcessor::BookmarkNodeAdded(BookmarkModel* model,
     // of added node here. After switching to ordinals for positioning,
     // PREV_ID/NEXT_ID will be deprecated and siblings will not be updated.
     UpdateTransactionVersion(
-        new_version, model,
+        new_version,
+        bookmark_model_,
         std::vector<const BookmarkNode*>(1, parent->GetChild(index)));
   }
+}
+
+void BookmarkChangeProcessor::BookmarkModelLoaded(BookmarkModel* model,
+                                                  bool ids_reassigned) {
+  NOTREACHED();
+}
+
+void BookmarkChangeProcessor::BookmarkModelBeingDeleted(BookmarkModel* model) {
+  NOTREACHED();
+  bookmark_model_ = NULL;
+}
+
+void BookmarkChangeProcessor::BookmarkNodeAdded(BookmarkModel* model,
+                                                const BookmarkNode* parent,
+                                                int index) {
+  DCHECK(share_handle());
+  CreateOrUpdateSyncNode(parent->GetChild(index));
 }
 
 // static
@@ -267,14 +286,18 @@ int64 BookmarkChangeProcessor::CreateSyncNode(const BookmarkNode* parent,
   return sync_child.GetId();
 }
 
-void BookmarkChangeProcessor::BookmarkNodeRemoved(BookmarkModel* model,
-                                                  const BookmarkNode* parent,
-                                                  int index,
-                                                  const BookmarkNode* node) {
+void BookmarkChangeProcessor::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   RemoveSyncNodeHierarchy(node);
 }
 
-void BookmarkChangeProcessor::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkChangeProcessor::BookmarkAllUserNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   RemoveAllSyncNodes();
 }
 
@@ -285,77 +308,29 @@ void BookmarkChangeProcessor::BookmarkNodeChanged(BookmarkModel* model,
     NOTREACHED() << "Saw update to permanent node!";
     return;
   }
+  CreateOrUpdateSyncNode(node);
+}
 
-  int64 new_version = syncer::syncable::kInvalidTransactionVersion;
-  {
-    // Acquire a scoped write lock via a transaction.
-    syncer::WriteTransaction trans(FROM_HERE, share_handle(), &new_version);
-
-    // Lookup the sync node that's associated with |node|.
-    syncer::WriteNode sync_node(&trans);
-    if (!model_associator_->InitSyncNodeFromChromeId(node->id(), &sync_node)) {
-      // TODO(tim): Investigating bug 121587.
-      if (model_associator_->GetSyncIdFromChromeId(node->id()) ==
-                                                   syncer::kInvalidId) {
-        error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-            "Bookmark id not found in model associator on BookmarkNodeChanged");
-        LOG(ERROR) << "Bad id.";
-      } else if (!sync_node.GetEntry()->good()) {
-        error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-            "Could not InitByIdLookup on BookmarkNodeChanged, good() failed");
-        LOG(ERROR) << "Bad entry.";
-      } else if (sync_node.GetEntry()->GetIsDel()) {
-        error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-            "Could not InitByIdLookup on BookmarkNodeChanged, is_del true");
-        LOG(ERROR) << "Deleted entry.";
-      } else {
-        syncer::Cryptographer* crypto = trans.GetCryptographer();
-        syncer::ModelTypeSet encrypted_types(trans.GetEncryptedTypes());
-        const sync_pb::EntitySpecifics& specifics =
-            sync_node.GetEntry()->GetSpecifics();
-        CHECK(specifics.has_encrypted());
-        const bool can_decrypt = crypto->CanDecrypt(specifics.encrypted());
-        const bool agreement = encrypted_types.Has(syncer::BOOKMARKS);
-        if (!agreement && !can_decrypt) {
-          error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-              "Could not InitByIdLookup on BookmarkNodeChanged, "
-              " Cryptographer thinks bookmarks not encrypted, and CanDecrypt"
-              " failed.");
-          LOG(ERROR) << "Case 1.";
-        } else if (agreement && can_decrypt) {
-          error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-              "Could not InitByIdLookup on BookmarkNodeChanged, "
-              " Cryptographer thinks bookmarks are encrypted, and CanDecrypt"
-              " succeeded (?!), but DecryptIfNecessary failed.");
-          LOG(ERROR) << "Case 2.";
-        } else if (agreement) {
-          error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-              "Could not InitByIdLookup on BookmarkNodeChanged, "
-              " Cryptographer thinks bookmarks are encrypted, but CanDecrypt"
-              " failed.");
-          LOG(ERROR) << "Case 3.";
-        } else {
-          error_handler()->OnSingleDatatypeUnrecoverableError(FROM_HERE,
-              "Could not InitByIdLookup on BookmarkNodeChanged, "
-              " Cryptographer thinks bookmarks not encrypted, but CanDecrypt"
-              " succeeded (super weird, btw)");
-          LOG(ERROR) << "Case 4.";
-        }
-      }
-      return;
-    }
-
-    UpdateSyncNodeProperties(node, model, &sync_node);
-
-    DCHECK_EQ(sync_node.GetIsFolder(), node->is_folder());
-    DCHECK_EQ(model_associator_->GetChromeNodeFromSyncId(
-              sync_node.GetParentId()),
-              node->parent());
-    DCHECK_EQ(node->parent()->GetIndexOf(node), sync_node.GetPositionIndex());
+// Static.
+int64 BookmarkChangeProcessor::UpdateSyncNode(
+    const BookmarkNode* node,
+    BookmarkModel* model,
+    syncer::WriteTransaction* trans,
+    BookmarkModelAssociator* associator,
+    DataTypeErrorHandler* error_handler) {
+  // Lookup the sync node that's associated with |node|.
+  syncer::WriteNode sync_node(trans);
+  if (!associator->InitSyncNodeFromChromeId(node->id(), &sync_node)) {
+    error_handler->OnSingleDatatypeUnrecoverableError(
+        FROM_HERE, "Could not load bookmark node on update.");
+    return syncer::kInvalidId;
   }
-
-  UpdateTransactionVersion(new_version, model,
-                           std::vector<const BookmarkNode*>(1, node));
+  UpdateSyncNodeProperties(node, model, &sync_node);
+  DCHECK_EQ(sync_node.GetIsFolder(), node->is_folder());
+  DCHECK_EQ(associator->GetChromeNodeFromSyncId(sync_node.GetParentId()),
+            node->parent());
+  DCHECK_EQ(node->parent()->GetIndexOf(node), sync_node.GetPositionIndex());
+  return sync_node.GetId();
 }
 
 void BookmarkChangeProcessor::BookmarkMetaInfoChanged(
@@ -578,7 +553,7 @@ void BookmarkChangeProcessor::ApplyChangesFromSyncModel(
 
   syncer::ReadNode synced_bookmarks(trans);
   int64 synced_bookmarks_id = syncer::kInvalidId;
-  if (synced_bookmarks.InitByTagLookup(kMobileBookmarksTag) ==
+  if (synced_bookmarks.InitByTagLookupForBookmarks(kMobileBookmarksTag) ==
       syncer::BaseNode::INIT_OK) {
     synced_bookmarks_id = synced_bookmarks.GetId();
   }
@@ -710,7 +685,7 @@ void BookmarkChangeProcessor::UpdateBookmarkWithSyncData(
         base::Time::FromInternalValue(specifics.creation_time_us()));
   }
   SetBookmarkFavicon(&sync_node, node, model, profile);
-  SetBookmarkMetaInfo(&sync_node, node, model);
+  model->SetNodeMetaInfoMap(node, *GetBookmarkMetaInfo(&sync_node));
 }
 
 // static
@@ -739,8 +714,11 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
 
   const BookmarkNode* node;
   if (sync_node->GetIsFolder()) {
-    node = model->AddFolder(
-        parent, index, base::UTF8ToUTF16(sync_node->GetTitle()));
+    node =
+        model->AddFolderWithMetaInfo(parent,
+                                     index,
+                                     base::UTF8ToUTF16(sync_node->GetTitle()),
+                                     GetBookmarkMetaInfo(sync_node).get());
   } else {
     // 'creation_time_us' was added in m24. Assume a time of 0 means now.
     const sync_pb::BookmarkSpecifics& specifics =
@@ -748,15 +726,17 @@ const BookmarkNode* BookmarkChangeProcessor::CreateBookmarkNode(
     const int64 create_time_internal = specifics.creation_time_us();
     base::Time create_time = (create_time_internal == 0) ?
         base::Time::Now() : base::Time::FromInternalValue(create_time_internal);
-    node = model->AddURLWithCreationTime(parent, index,
-                                         base::UTF8ToUTF16(
-                                             sync_node->GetTitle()),
-                                         GURL(specifics.url()), create_time);
+    node = model->AddURLWithCreationTimeAndMetaInfo(
+        parent,
+        index,
+        base::UTF8ToUTF16(sync_node->GetTitle()),
+        GURL(specifics.url()),
+        create_time,
+        GetBookmarkMetaInfo(sync_node).get());
     if (node)
       SetBookmarkFavicon(sync_node, node, model, profile);
   }
-  if (node)
-    SetBookmarkMetaInfo(sync_node, node, model);
+
   return node;
 }
 
@@ -790,18 +770,18 @@ bool BookmarkChangeProcessor::SetBookmarkFavicon(
 }
 
 // static
-void BookmarkChangeProcessor::SetBookmarkMetaInfo(
-    const syncer::BaseNode* sync_node,
-    const BookmarkNode* bookmark_node,
-    BookmarkModel* bookmark_model) {
+scoped_ptr<BookmarkNode::MetaInfoMap>
+BookmarkChangeProcessor::GetBookmarkMetaInfo(
+    const syncer::BaseNode* sync_node) {
   const sync_pb::BookmarkSpecifics& specifics =
       sync_node->GetBookmarkSpecifics();
-  BookmarkNode::MetaInfoMap meta_info_map;
+  scoped_ptr<BookmarkNode::MetaInfoMap> meta_info_map(
+      new BookmarkNode::MetaInfoMap);
   for (int i = 0; i < specifics.meta_info_size(); ++i) {
-    meta_info_map[specifics.meta_info(i).key()] =
+    (*meta_info_map)[specifics.meta_info(i).key()] =
         specifics.meta_info(i).value();
   }
-  bookmark_model->SetNodeMetaInfoMap(bookmark_node, meta_info_map);
+  return meta_info_map.Pass();
 }
 
 // static
@@ -842,7 +822,7 @@ void BookmarkChangeProcessor::ApplyBookmarkFavicon(
   gfx::Size pixel_size(gfx::kFaviconSize, gfx::kFaviconSize);
   favicon_service->MergeFavicon(bookmark_node->url(),
                                 icon_url,
-                                chrome::FAVICON,
+                                favicon_base::FAVICON,
                                 bitmap_data,
                                 pixel_size);
 }

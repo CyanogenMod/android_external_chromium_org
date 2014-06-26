@@ -6,6 +6,7 @@
 
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/cpu.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/lazy_instance.h"
@@ -136,11 +137,8 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kProcessPerTab);
     command_line.AppendSwitch(switches::kEnableLogging);
     command_line.AppendSwitch(switches::kAllowFileAccessFromFiles);
-#if !defined(OS_ANDROID)
-    // OSMesa is not yet available for Android. http://crbug.com/248925
-    command_line.AppendSwitchASCII(
-        switches::kUseGL, gfx::kGLImplementationOSMesaName);
-#endif
+    command_line.AppendSwitchASCII(switches::kUseGL,
+                                   gfx::kGLImplementationOSMesaName);
     command_line.AppendSwitch(switches::kSkipGpuDataLoading);
     command_line.AppendSwitchASCII(switches::kTouchEvents,
                                    switches::kTouchEventsEnabled);
@@ -149,9 +147,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 #if defined(OS_ANDROID)
     command_line.AppendSwitch(
         switches::kDisableGestureRequirementForMediaPlayback);
-    // Capturing pixel results does not yet work when implementation-side
-    // painting is enabled. See http://crbug.com/250777
-    command_line.AppendSwitch(cc::switches::kDisableImplSidePainting);
 #endif
 
     if (!command_line.HasSwitch(switches::kStableReleaseMode)) {
@@ -167,12 +162,15 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
     command_line.AppendSwitch(switches::kEnableInbandTextTracks);
     command_line.AppendSwitch(switches::kMuteAudio);
 
-#if defined(USE_AURA)
+#if defined(USE_AURA) || defined(OS_ANDROID)
     // TODO: crbug.com/311404 Make layout tests work w/ delegated renderer.
     command_line.AppendSwitch(switches::kDisableDelegatedRenderer);
+    command_line.AppendSwitch(cc::switches::kCompositeToMailbox);
 #endif
 
     command_line.AppendSwitch(switches::kEnableFileCookies);
+
+    command_line.AppendSwitch(switches::kEnablePreciseMemoryInfo);
 
     // Unless/until WebM files are added to the media layout tests, we need to
     // avoid removing MP4/H264/AAC so that layout tests can run on Android.
@@ -191,6 +189,11 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
 }
 
 void ShellMainDelegate::PreSandboxStartup() {
+#if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
+  // Create an instance of the CPU class to parse /proc/cpuinfo and cache
+  // cpu_brand info.
+  base::CPU cpu_info;
+#endif
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableCrashReporter)) {
     std::string process_type =
@@ -259,7 +262,8 @@ void ShellMainDelegate::InitializeResourceBundle() {
   // ResourceBundle pak at launch time.
   int pak_fd =
       base::GlobalDescriptors::GetInstance()->MaybeGet(kShellPakDescriptor);
-  if (pak_fd != base::kInvalidPlatformFileValue) {
+  if (pak_fd >= 0) {
+    // This is clearly wrong. See crbug.com/330930
     ui::ResourceBundle::InitSharedInstanceWithPakFile(base::File(pak_fd),
                                                       false);
     ResourceBundle::GetSharedInstance().AddDataPackFromFile(

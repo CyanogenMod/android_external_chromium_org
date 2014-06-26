@@ -13,17 +13,19 @@
 #include "base/values.h"
 #include "chrome/browser/search/instant_io_context.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/url_constants.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "net/url_request/url_request.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/jstemplate_builder.h"
+#include "ui/base/webui/web_ui_util.h"
 #include "url/gurl.h"
 
 namespace {
@@ -46,10 +48,9 @@ const struct Resource{
   { "images/close_2_hover.png", IDR_CLOSE_2_H, "image/png" },
   { "images/close_2_active.png", IDR_CLOSE_2_P, "image/png" },
   { "images/close_2_white.png", IDR_CLOSE_2_MASK, "image/png" },
-  { "images/2x/google_logo.png",
-    IDR_LOCAL_NTP_IMAGES_2X_LOGO_PNG, "image/png" },
-  { "images/2x/white_google_logo.png",
-    IDR_LOCAL_NTP_IMAGES_2X_WHITE_LOGO_PNG, "image/png" },
+  { "images/google_logo.png", IDR_LOCAL_NTP_IMAGES_LOGO_PNG, "image/png" },
+  { "images/white_google_logo.png",
+    IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG, "image/png" },
 };
 
 // Strips any query parameters from the specified path.
@@ -69,7 +70,8 @@ bool DefaultSearchProviderIsGoogle(Profile* profile) {
   const TemplateURL* default_provider =
       template_url_service->GetDefaultSearchProvider();
   return default_provider &&
-      (TemplateURLPrepopulateData::GetEngineType(*default_provider) ==
+      (TemplateURLPrepopulateData::GetEngineType(
+          *default_provider, template_url_service->search_terms_data()) ==
        SEARCH_ENGINE_GOOGLE);
 }
 
@@ -120,6 +122,11 @@ std::string GetConfigData(Profile* profile) {
   return config_data_js;
 }
 
+std::string GetLocalNtpPath() {
+  return std::string(chrome::kChromeSearchScheme) + "://" +
+         std::string(chrome::kChromeSearchLocalNtpHost) + "/";
+}
+
 }  // namespace
 
 LocalNtpSource::LocalNtpSource(Profile* profile) : profile_(profile) {
@@ -143,17 +150,22 @@ void LocalNtpSource::StartDataRequest(
     callback.Run(base::RefCountedString::TakeString(&config_data_js));
     return;
   }
+  float scale = 1.0f;
+  std::string filename;
+  webui::ParsePathAndScale(
+      GURL(GetLocalNtpPath() + stripped_path), &filename, &scale);
+  ui::ScaleFactor scale_factor = ui::GetSupportedScaleFactor(scale);
   for (size_t i = 0; i < arraysize(kResources); ++i) {
-    if (stripped_path == kResources[i].filename) {
+    if (filename == kResources[i].filename) {
       scoped_refptr<base::RefCountedStaticMemory> response(
-          ResourceBundle::GetSharedInstance().LoadDataResourceBytes(
-              kResources[i].identifier));
+          ResourceBundle::GetSharedInstance().LoadDataResourceBytesForScale(
+              kResources[i].identifier, scale_factor));
       callback.Run(response.get());
       return;
     }
   }
   callback.Run(NULL);
-};
+}
 
 std::string LocalNtpSource::GetMimeType(
     const std::string& path) const {
@@ -172,8 +184,8 @@ bool LocalNtpSource::ShouldServiceRequest(
     return false;
 
   if (request->url().SchemeIs(chrome::kChromeSearchScheme)) {
-    DCHECK(StartsWithASCII(request->url().path(), "/", true));
-    std::string filename = request->url().path().substr(1);
+    std::string filename;
+    webui::ParsePathAndScale(request->url(), &filename, NULL);
     for (size_t i = 0; i < arraysize(kResources); ++i) {
       if (filename == kResources[i].filename)
         return true;

@@ -24,7 +24,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/shell/browser/shell.h"
@@ -258,7 +257,7 @@ bool WebKitTestController::PrepareForLayoutTest(
     current_pid_ = base::kNullProcessId;
     main_window_->LoadURL(test_url);
   } else {
-#if defined(TOOLKIT_GTK) || defined(OS_MACOSX)
+#if defined(OS_MACOSX)
     // Shell::SizeTo is not implemented on all platforms.
     main_window_->SizeTo(initial_size_);
 #endif
@@ -277,7 +276,7 @@ bool WebKitTestController::PrepareForLayoutTest(
         PAGE_TRANSITION_TYPED | PAGE_TRANSITION_FROM_ADDRESS_BAR);
     params.should_clear_history_list = true;
     main_window_->web_contents()->GetController().LoadURLWithParams(params);
-    main_window_->web_contents()->GetView()->Focus();
+    main_window_->web_contents()->Focus();
   }
   main_window_->web_contents()->GetRenderViewHost()->SetActive(true);
   main_window_->web_contents()->GetRenderViewHost()->Focus();
@@ -328,7 +327,7 @@ void WebKitTestController::OverrideWebkitPrefs(WebPreferences* prefs) {
     ApplyLayoutTestDefaultPreferences(prefs);
     if (is_compositing_test_) {
       CommandLine& command_line = *CommandLine::ForCurrentProcess();
-      if (!command_line.HasSwitch(switches::kEnableSoftwareCompositing))
+      if (!command_line.HasSwitch(switches::kDisableGpu))
         prefs->accelerated_2d_canvas_enabled = true;
       prefs->accelerated_compositing_for_video_enabled = true;
       prefs->mock_scrollbars_enabled = true;
@@ -422,7 +421,13 @@ void WebKitTestController::RenderProcessGone(base::TerminationStatus status) {
   DiscardMainWindow();
 }
 
-void WebKitTestController::WebContentsDestroyed(WebContents* web_contents) {
+void WebKitTestController::DevToolsProcessCrashed() {
+  DCHECK(CalledOnValidThread());
+  printer_->AddErrorMessage("#CRASHED - devtools");
+  DiscardMainWindow();
+}
+
+void WebKitTestController::WebContentsDestroyed() {
   DCHECK(CalledOnValidThread());
   printer_->AddErrorMessage("FAIL: main window was destroyed");
   DiscardMainWindow();
@@ -570,11 +575,12 @@ void WebKitTestController::OnClearDevToolsLocalStorage() {
   StoragePartition* storage_partition =
       BrowserContext::GetStoragePartition(browser_context, NULL);
   storage_partition->GetDOMStorageContext()->DeleteLocalStorage(
-      content::GetDevToolsPathAsURL("").GetOrigin());
+      content::GetDevToolsPathAsURL("", "").GetOrigin());
 }
 
-void WebKitTestController::OnShowDevTools(const std::string& settings) {
-  main_window_->ShowDevToolsForTest(settings);
+void WebKitTestController::OnShowDevTools(const std::string& settings,
+                                          const std::string& frontend_url) {
+  main_window_->ShowDevToolsForTest(settings, frontend_url);
 }
 
 void WebKitTestController::OnCloseDevTools() {

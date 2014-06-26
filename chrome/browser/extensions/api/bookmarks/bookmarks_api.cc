@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
+
 #include "chrome/browser/extensions/api/bookmarks/bookmarks_api.h"
 
 #include "base/bind.h"
@@ -13,6 +15,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
+#include "base/rand_util.h"
 #include "base/sha1.h"
 #include "base/stl_util.h"
 #include "base/strings/string16.h"
@@ -21,13 +24,12 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/bookmarks/bookmark_html_writer.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_uma.h"
 #include "chrome/browser/platform_util.h"
@@ -38,13 +40,17 @@
 #include "chrome/common/extensions/api/bookmarks.h"
 #include "chrome/common/importer/importer_data_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/user_prefs/user_prefs.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_function_dispatcher.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/quota_service.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -59,6 +65,8 @@ namespace bookmarks = api::bookmarks;
 
 using base::TimeDelta;
 using bookmarks::BookmarkTreeNode;
+using bookmarks::CreateDetails;
+using content::BrowserContext;
 using content::BrowserThread;
 using content::WebContents;
 
@@ -94,18 +102,68 @@ base::FilePath GetDefaultFilepathForBookmarkExport() {
   return default_path.Append(filename);
 }
 
+bool IsEnhancedBookmarksExtensionActive(Profile* profile) {
+  static const char *enhanced_extension_hashes[] = {
+    "D5736E4B5CF695CB93A2FB57E4FDC6E5AFAB6FE2",  // http://crbug.com/312900
+    "D57DE394F36DC1C3220E7604C575D29C51A6C495",  // http://crbug.com/319444
+    "3F65507A3B39259B38C8173C6FFA3D12DF64CCE9"   // http://crbug.com/371562
+  };
+  const ExtensionSet& extensions =
+      ExtensionRegistry::Get(profile)->enabled_extensions();
+  for (ExtensionSet::const_iterator it = extensions.begin();
+       it != extensions.end(); ++it) {
+    const Extension* extension = *it;
+    if (extension->permissions_data()->HasAPIPermission(
+            APIPermission::kBookmarkManagerPrivate)) {
+      std::string hash = base::SHA1HashString(extension->id());
+      hash = base::HexEncode(hash.c_str(), hash.length());
+      for (size_t i = 0; i < arraysize(enhanced_extension_hashes); i++)
+        if (hash == enhanced_extension_hashes[i])
+          return true;
+    }
+  }
+  return false;
+}
+
+std::string ToBase36(int64 value) {
+  DCHECK(value >= 0);
+  std::string str;
+  while (value > 0) {
+    int digit = value % 36;
+    value /= 36;
+    str += (digit < 10 ? '0' + digit : 'a' + digit - 10);
+  }
+  std::reverse(str.begin(), str.end());
+  return str;
+}
+
+// Generate a metadata ID based on a the current time and a random number for
+// enhanced bookmarks, to be assigned pre-sync.
+std::string GenerateEnhancedBookmarksID(bool is_folder) {
+  static const char bookmark_prefix[] = "cc_";
+  static const char folder_prefix[] = "cf_";
+  // Use [0..range_mid) for bookmarks, [range_mid..2*range_mid) for folders.
+  int range_mid = 36*36*36*36 / 2;
+  int rand = base::RandInt(0, range_mid - 1);
+  int64 unix_epoch_time_in_ms =
+      (base::Time::Now() - base::Time::UnixEpoch()).InMilliseconds();
+  return std::string(is_folder ? folder_prefix : bookmark_prefix) +
+      ToBase36(is_folder ? range_mid + rand : rand) +
+      ToBase36(unix_epoch_time_in_ms);
+}
+
 }  // namespace
 
-void BookmarksFunction::Run() {
+bool BookmarksFunction::RunAsync() {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
   if (!model->loaded()) {
     // Bookmarks are not ready yet.  We'll wait.
     model->AddObserver(this);
     AddRef();  // Balanced in Loaded().
-    return;
+    return true;
   }
 
-  bool success = RunImpl();
+  bool success = RunOnReady();
   if (success) {
     content::NotificationService::current()->Notify(
         chrome::NOTIFICATION_EXTENSION_BOOKMARKS_API_INVOKED,
@@ -113,6 +171,15 @@ void BookmarksFunction::Run() {
         content::Details<const BookmarksFunction>(this));
   }
   SendResponse(success);
+  return true;
+}
+
+BookmarkModel* BookmarksFunction::GetBookmarkModel() {
+  return BookmarkModelFactory::GetForProfile(GetProfile());
+}
+
+ChromeBookmarkClient* BookmarksFunction::GetChromeBookmarkClient() {
+  return ChromeBookmarkClientFactory::GetForProfile(GetProfile());
 }
 
 bool BookmarksFunction::GetBookmarkIdAsInt64(const std::string& id_string,
@@ -130,10 +197,67 @@ const BookmarkNode* BookmarksFunction::GetBookmarkNodeFromId(
   if (!GetBookmarkIdAsInt64(id_string, &id))
     return NULL;
 
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
-  const BookmarkNode* node = model->GetNodeByID(id);
+  const BookmarkNode* node = GetBookmarkNodeByID(
+      BookmarkModelFactory::GetForProfile(GetProfile()), id);
   if (!node)
     error_ = keys::kNoNodeError;
+
+  return node;
+}
+
+const BookmarkNode* BookmarksFunction::CreateBookmarkNode(
+    BookmarkModel* model,
+    const CreateDetails& details,
+    const BookmarkNode::MetaInfoMap* meta_info) {
+  int64 parentId;
+
+  if (!details.parent_id.get()) {
+    // Optional, default to "other bookmarks".
+    parentId = model->other_node()->id();
+  } else {
+    if (!GetBookmarkIdAsInt64(*details.parent_id, &parentId))
+      return NULL;
+  }
+  const BookmarkNode* parent = GetBookmarkNodeByID(model, parentId);
+  if (!CanBeModified(parent))
+    return NULL;
+
+  int index;
+  if (!details.index.get()) {  // Optional (defaults to end).
+    index = parent->child_count();
+  } else {
+    index = *details.index;
+    if (index > parent->child_count() || index < 0) {
+      error_ = keys::kInvalidIndexError;
+      return NULL;
+    }
+  }
+
+  base::string16 title;  // Optional.
+  if (details.title.get())
+    title = base::UTF8ToUTF16(*details.title.get());
+
+  std::string url_string;  // Optional.
+  if (details.url.get())
+    url_string = *details.url.get();
+
+  GURL url(url_string);
+  if (!url_string.empty() && !url.is_valid()) {
+    error_ = keys::kInvalidUrlError;
+    return NULL;
+  }
+
+  const BookmarkNode* node;
+  if (url_string.length())
+    node = model->AddURLWithCreationTimeAndMetaInfo(
+        parent, index, title, url, base::Time::Now(), meta_info);
+  else
+    node = model->AddFolderWithMetaInfo(parent, index, title, meta_info);
+  DCHECK(node);
+  if (!node) {
+    error_ = keys::kNoNodeError;
+    return NULL;
+  }
 
   return node;
 }
@@ -146,19 +270,37 @@ bool BookmarksFunction::EditBookmarksEnabled() {
   return false;
 }
 
+bool BookmarksFunction::CanBeModified(const BookmarkNode* node) {
+  if (!node) {
+    error_ = keys::kNoParentError;
+    return false;
+  }
+  if (node->is_root()) {
+    error_ = keys::kModifySpecialError;
+    return false;
+  }
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
+  if (client->IsDescendantOfManagedNode(node)) {
+    error_ = keys::kModifyManagedError;
+    return false;
+  }
+  return true;
+}
+
 void BookmarksFunction::BookmarkModelChanged() {
 }
 
 void BookmarksFunction::BookmarkModelLoaded(BookmarkModel* model,
                                             bool ids_reassigned) {
   model->RemoveObserver(this);
-  Run();
-  Release();  // Balanced in Run().
+  RunOnReady();
+  Release();  // Balanced in RunOnReady().
 }
 
-BookmarkEventRouter::BookmarkEventRouter(Profile* profile, BookmarkModel* model)
-    : profile_(profile),
-      model_(model) {
+BookmarkEventRouter::BookmarkEventRouter(Profile* profile)
+    : browser_context_(profile),
+      model_(BookmarkModelFactory::GetForProfile(profile)),
+      client_(ChromeBookmarkClientFactory::GetForProfile(profile)) {
   model_->AddObserver(this);
 }
 
@@ -171,8 +313,9 @@ BookmarkEventRouter::~BookmarkEventRouter() {
 void BookmarkEventRouter::DispatchEvent(
     const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (extensions::ExtensionSystem::Get(profile_)->event_router()) {
-    extensions::ExtensionSystem::Get(profile_)->event_router()->BroadcastEvent(
+  EventRouter* event_router = EventRouter::Get(browser_context_);
+  if (event_router) {
+    event_router->BroadcastEvent(
         make_scoped_ptr(new extensions::Event(event_name, event_args.Pass())));
   }
 }
@@ -192,50 +335,61 @@ void BookmarkEventRouter::BookmarkNodeMoved(BookmarkModel* model,
                                             int old_index,
                                             const BookmarkNode* new_parent,
                                             int new_index) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
   const BookmarkNode* node = new_parent->GetChild(new_index);
-  args->Append(new base::StringValue(base::Int64ToString(node->id())));
-  base::DictionaryValue* object_args = new base::DictionaryValue();
-  object_args->SetString(keys::kParentIdKey,
-                         base::Int64ToString(new_parent->id()));
-  object_args->SetInteger(keys::kIndexKey, new_index);
-  object_args->SetString(keys::kOldParentIdKey,
-                         base::Int64ToString(old_parent->id()));
-  object_args->SetInteger(keys::kOldIndexKey, old_index);
-  args->Append(object_args);
+  bookmarks::OnMoved::MoveInfo move_info;
+  move_info.parent_id = base::Int64ToString(new_parent->id());
+  move_info.index = new_index;
+  move_info.old_parent_id = base::Int64ToString(old_parent->id());
+  move_info.old_index = old_index;
 
-  DispatchEvent(bookmarks::OnMoved::kEventName, args.Pass());
+  DispatchEvent(
+      bookmarks::OnMoved::kEventName,
+      bookmarks::OnMoved::Create(base::Int64ToString(node->id()), move_info));
+}
+
+void BookmarkEventRouter::OnWillAddBookmarkNode(BookmarkModel* model,
+                                                BookmarkNode* node) {
+  // TODO(wittman): Remove this once extension hooks are in place to allow the
+  // enhanced bookmarks extension to manage all bookmark creation code
+  // paths. See http://crbug.com/383557.
+  if (IsEnhancedBookmarksExtensionActive(Profile::FromBrowserContext(
+          browser_context_))) {
+    static const char key[] = "stars.id";
+    std::string value;
+    if (!node->GetMetaInfo(key, &value))
+      node->SetMetaInfo(key, GenerateEnhancedBookmarksID(node->is_folder()));
+  }
 }
 
 void BookmarkEventRouter::BookmarkNodeAdded(BookmarkModel* model,
                                             const BookmarkNode* parent,
                                             int index) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
   const BookmarkNode* node = parent->GetChild(index);
-  args->Append(new base::StringValue(base::Int64ToString(node->id())));
   scoped_ptr<BookmarkTreeNode> tree_node(
-      bookmark_api_helpers::GetBookmarkTreeNode(node, false, false));
-  args->Append(tree_node->ToValue().release());
-
-  DispatchEvent(bookmarks::OnCreated::kEventName, args.Pass());
+      bookmark_api_helpers::GetBookmarkTreeNode(client_, node, false, false));
+  DispatchEvent(bookmarks::OnCreated::kEventName,
+                bookmarks::OnCreated::Create(base::Int64ToString(node->id()),
+                                             *tree_node));
 }
 
-void BookmarkEventRouter::BookmarkNodeRemoved(BookmarkModel* model,
-                                              const BookmarkNode* parent,
-                                              int index,
-                                              const BookmarkNode* node) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Append(new base::StringValue(base::Int64ToString(node->id())));
-  base::DictionaryValue* object_args = new base::DictionaryValue();
-  object_args->SetString(keys::kParentIdKey,
-                         base::Int64ToString(parent->id()));
-  object_args->SetInteger(keys::kIndexKey, index);
-  args->Append(object_args);
+void BookmarkEventRouter::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
+  bookmarks::OnRemoved::RemoveInfo remove_info;
+  remove_info.parent_id = base::Int64ToString(parent->id());
+  remove_info.index = index;
 
-  DispatchEvent(bookmarks::OnRemoved::kEventName, args.Pass());
+  DispatchEvent(bookmarks::OnRemoved::kEventName,
+                bookmarks::OnRemoved::Create(base::Int64ToString(node->id()),
+                                             remove_info));
 }
 
-void BookmarkEventRouter::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkEventRouter::BookmarkAllUserNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   NOTREACHED();
   // TODO(shashishekhar) Currently this notification is only used on Android,
   // which does not support extensions. If Desktop needs to support this, add
@@ -244,21 +398,19 @@ void BookmarkEventRouter::BookmarkAllNodesRemoved(BookmarkModel* model) {
 
 void BookmarkEventRouter::BookmarkNodeChanged(BookmarkModel* model,
                                               const BookmarkNode* node) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Append(new base::StringValue(base::Int64ToString(node->id())));
-
   // TODO(erikkay) The only three things that BookmarkModel sends this
   // notification for are title, url and favicon.  Since we're currently
   // ignoring favicon and since the notification doesn't say which one anyway,
   // for now we only include title and url.  The ideal thing would be to change
   // BookmarkModel to indicate what changed.
-  base::DictionaryValue* object_args = new base::DictionaryValue();
-  object_args->SetString(keys::kTitleKey, node->GetTitle());
+  bookmarks::OnChanged::ChangeInfo change_info;
+  change_info.title = base::UTF16ToUTF8(node->GetTitle());
   if (node->is_url())
-    object_args->SetString(keys::kUrlKey, node->url().spec());
-  args->Append(object_args);
+    change_info.url.reset(new std::string(node->url().spec()));
 
-  DispatchEvent(bookmarks::OnChanged::kEventName, args.Pass());
+  DispatchEvent(bookmarks::OnChanged::kEventName,
+                bookmarks::OnChanged::Create(base::Int64ToString(node->id()),
+                                             change_info));
 }
 
 void BookmarkEventRouter::BookmarkNodeFaviconChanged(BookmarkModel* model,
@@ -269,78 +421,71 @@ void BookmarkEventRouter::BookmarkNodeFaviconChanged(BookmarkModel* model,
 void BookmarkEventRouter::BookmarkNodeChildrenReordered(
     BookmarkModel* model,
     const BookmarkNode* node) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  args->Append(new base::StringValue(base::Int64ToString(node->id())));
+  bookmarks::OnChildrenReordered::ReorderInfo reorder_info;
   int childCount = node->child_count();
-  base::ListValue* children = new base::ListValue();
   for (int i = 0; i < childCount; ++i) {
     const BookmarkNode* child = node->GetChild(i);
-    base::Value* child_id =
-        new base::StringValue(base::Int64ToString(child->id()));
-    children->Append(child_id);
+    reorder_info.child_ids.push_back(base::Int64ToString(child->id()));
   }
-  base::DictionaryValue* reorder_info = new base::DictionaryValue();
-  reorder_info->Set(keys::kChildIdsKey, children);
-  args->Append(reorder_info);
 
-  DispatchEvent(bookmarks::OnChildrenReordered::kEventName, args.Pass());
+  DispatchEvent(bookmarks::OnChildrenReordered::kEventName,
+                bookmarks::OnChildrenReordered::Create(
+                    base::Int64ToString(node->id()), reorder_info));
 }
 
 void BookmarkEventRouter::ExtensiveBookmarkChangesBeginning(
     BookmarkModel* model) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  DispatchEvent(bookmarks::OnImportBegan::kEventName, args.Pass());
+  DispatchEvent(bookmarks::OnImportBegan::kEventName,
+                bookmarks::OnImportBegan::Create());
 }
 
 void BookmarkEventRouter::ExtensiveBookmarkChangesEnded(BookmarkModel* model) {
-  scoped_ptr<base::ListValue> args(new base::ListValue());
-  DispatchEvent(bookmarks::OnImportEnded::kEventName, args.Pass());
+  DispatchEvent(bookmarks::OnImportEnded::kEventName,
+                bookmarks::OnImportEnded::Create());
 }
 
-BookmarksAPI::BookmarksAPI(Profile* profile) : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnCreated::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnRemoved::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnChanged::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnMoved::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnChildrenReordered::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnImportBegan::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, bookmarks::OnImportEnded::kEventName);
+BookmarksAPI::BookmarksAPI(BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter* event_router = EventRouter::Get(browser_context_);
+  event_router->RegisterObserver(this, bookmarks::OnCreated::kEventName);
+  event_router->RegisterObserver(this, bookmarks::OnRemoved::kEventName);
+  event_router->RegisterObserver(this, bookmarks::OnChanged::kEventName);
+  event_router->RegisterObserver(this, bookmarks::OnMoved::kEventName);
+  event_router->RegisterObserver(this,
+                                 bookmarks::OnChildrenReordered::kEventName);
+  event_router->RegisterObserver(this, bookmarks::OnImportBegan::kEventName);
+  event_router->RegisterObserver(this, bookmarks::OnImportEnded::kEventName);
 }
 
 BookmarksAPI::~BookmarksAPI() {
 }
 
 void BookmarksAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<BookmarksAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<BookmarksAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<BookmarksAPI>* BookmarksAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<BookmarksAPI>*
+BookmarksAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 void BookmarksAPI::OnListenerAdded(const EventListenerInfo& details) {
-  bookmark_event_router_.reset(new BookmarkEventRouter(profile_,
-      BookmarkModelFactory::GetForProfile(profile_)));
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  bookmark_event_router_.reset(
+      new BookmarkEventRouter(Profile::FromBrowserContext(browser_context_)));
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
-bool BookmarksGetFunction::RunImpl() {
+bool BookmarksGetFunction::RunOnReady() {
   scoped_ptr<bookmarks::Get::Params> params(
       bookmarks::Get::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   std::vector<linked_ptr<BookmarkTreeNode> > nodes;
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
   if (params->id_or_id_list.as_strings) {
     std::vector<std::string>& ids = *params->id_or_id_list.as_strings;
     size_t count = ids.size();
@@ -349,21 +494,21 @@ bool BookmarksGetFunction::RunImpl() {
       const BookmarkNode* node = GetBookmarkNodeFromId(ids[i]);
       if (!node)
         return false;
-      bookmark_api_helpers::AddNode(node, &nodes, false);
+      bookmark_api_helpers::AddNode(client, node, &nodes, false);
     }
   } else {
     const BookmarkNode* node =
         GetBookmarkNodeFromId(*params->id_or_id_list.as_string);
     if (!node)
       return false;
-    bookmark_api_helpers::AddNode(node, &nodes, false);
+    bookmark_api_helpers::AddNode(client, node, &nodes, false);
   }
 
   results_ = bookmarks::Get::Results::Create(nodes);
   return true;
 }
 
-bool BookmarksGetChildrenFunction::RunImpl() {
+bool BookmarksGetChildrenFunction::RunOnReady() {
   scoped_ptr<bookmarks::GetChildren::Params> params(
       bookmarks::GetChildren::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -376,14 +521,15 @@ bool BookmarksGetChildrenFunction::RunImpl() {
   int child_count = node->child_count();
   for (int i = 0; i < child_count; ++i) {
     const BookmarkNode* child = node->GetChild(i);
-    bookmark_api_helpers::AddNode(child, &nodes, false);
+    bookmark_api_helpers::AddNode(
+        GetChromeBookmarkClient(), child, &nodes, false);
   }
 
   results_ = bookmarks::GetChildren::Results::Create(nodes);
   return true;
 }
 
-bool BookmarksGetRecentFunction::RunImpl() {
+bool BookmarksGetRecentFunction::RunOnReady() {
   scoped_ptr<bookmarks::GetRecent::Params> params(
       bookmarks::GetRecent::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -400,23 +546,24 @@ bool BookmarksGetRecentFunction::RunImpl() {
   std::vector<const BookmarkNode*>::iterator i = nodes.begin();
   for (; i != nodes.end(); ++i) {
     const BookmarkNode* node = *i;
-    bookmark_api_helpers::AddNode(node, &tree_nodes, false);
+    bookmark_api_helpers::AddNode(
+        GetChromeBookmarkClient(), node, &tree_nodes, false);
   }
 
   results_ = bookmarks::GetRecent::Results::Create(tree_nodes);
   return true;
 }
 
-bool BookmarksGetTreeFunction::RunImpl() {
+bool BookmarksGetTreeFunction::RunOnReady() {
   std::vector<linked_ptr<BookmarkTreeNode> > nodes;
   const BookmarkNode* node =
       BookmarkModelFactory::GetForProfile(GetProfile())->root_node();
-  bookmark_api_helpers::AddNode(node, &nodes, true);
+  bookmark_api_helpers::AddNode(GetChromeBookmarkClient(), node, &nodes, true);
   results_ = bookmarks::GetTree::Results::Create(nodes);
   return true;
 }
 
-bool BookmarksGetSubTreeFunction::RunImpl() {
+bool BookmarksGetSubTreeFunction::RunOnReady() {
   scoped_ptr<bookmarks::GetSubTree::Params> params(
       bookmarks::GetSubTree::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -426,12 +573,12 @@ bool BookmarksGetSubTreeFunction::RunImpl() {
     return false;
 
   std::vector<linked_ptr<BookmarkTreeNode> > nodes;
-  bookmark_api_helpers::AddNode(node, &nodes, true);
+  bookmark_api_helpers::AddNode(GetChromeBookmarkClient(), node, &nodes, true);
   results_ = bookmarks::GetSubTree::Results::Create(nodes);
   return true;
 }
 
-bool BookmarksSearchFunction::RunImpl() {
+bool BookmarksSearchFunction::RunOnReady() {
   scoped_ptr<bookmarks::Search::Params> params(
       bookmarks::Search::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -471,9 +618,10 @@ bool BookmarksSearchFunction::RunImpl() {
   }
 
   std::vector<linked_ptr<BookmarkTreeNode> > tree_nodes;
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
   for (std::vector<const BookmarkNode*>::iterator node_iter = nodes.begin();
        node_iter != nodes.end(); ++node_iter) {
-    bookmark_api_helpers::AddNode(*node_iter, &tree_nodes, false);
+    bookmark_api_helpers::AddNode(client, *node_iter, &tree_nodes, false);
   }
 
   results_ = bookmarks::Search::Results::Create(tree_nodes);
@@ -495,7 +643,7 @@ bool BookmarksRemoveFunction::ExtractIds(const base::ListValue* args,
   return true;
 }
 
-bool BookmarksRemoveFunction::RunImpl() {
+bool BookmarksRemoveFunction::RunOnReady() {
   if (!EditBookmarksEnabled())
     return false;
 
@@ -511,14 +659,15 @@ bool BookmarksRemoveFunction::RunImpl() {
   if (name() == BookmarksRemoveTreeFunction::function_name())
     recursive = true;
 
-  BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
-  if (!bookmark_api_helpers::RemoveNode(model, id, recursive, &error_))
+  BookmarkModel* model = GetBookmarkModel();
+  ChromeBookmarkClient* client = GetChromeBookmarkClient();
+  if (!bookmark_api_helpers::RemoveNode(model, client, id, recursive, &error_))
     return false;
 
   return true;
 }
 
-bool BookmarksCreateFunction::RunImpl() {
+bool BookmarksCreateFunction::RunOnReady() {
   if (!EditBookmarksEnabled())
     return false;
 
@@ -527,63 +676,12 @@ bool BookmarksCreateFunction::RunImpl() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
-  int64 parentId;
-
-  if (!params->bookmark.parent_id.get()) {
-    // Optional, default to "other bookmarks".
-    parentId = model->other_node()->id();
-  } else {
-    if (!GetBookmarkIdAsInt64(*params->bookmark.parent_id, &parentId))
-      return false;
-  }
-  const BookmarkNode* parent = model->GetNodeByID(parentId);
-  if (!parent) {
-    error_ = keys::kNoParentError;
+  const BookmarkNode* node = CreateBookmarkNode(model, params->bookmark, NULL);
+  if (!node)
     return false;
-  }
-  if (parent->is_root()) {  // Can't create children of the root.
-    error_ = keys::kModifySpecialError;
-    return false;
-  }
 
-  int index;
-  if (!params->bookmark.index.get()) {  // Optional (defaults to end).
-    index = parent->child_count();
-  } else {
-    index = *params->bookmark.index;
-    if (index > parent->child_count() || index < 0) {
-      error_ = keys::kInvalidIndexError;
-      return false;
-    }
-  }
-
-  base::string16 title;  // Optional.
-  if (params->bookmark.title.get())
-    title = base::UTF8ToUTF16(*params->bookmark.title.get());
-
-  std::string url_string;  // Optional.
-  if (params->bookmark.url.get())
-    url_string = *params->bookmark.url.get();
-
-  GURL url(url_string);
-  if (!url_string.empty() && !url.is_valid()) {
-    error_ = keys::kInvalidUrlError;
-    return false;
-  }
-
-  const BookmarkNode* node;
-  if (url_string.length())
-    node = model->AddURL(parent, index, title, url);
-  else
-    node = model->AddFolder(parent, index, title);
-  DCHECK(node);
-  if (!node) {
-    error_ = keys::kNoNodeError;
-    return false;
-  }
-
-  scoped_ptr<BookmarkTreeNode> ret(
-      bookmark_api_helpers::GetBookmarkTreeNode(node, false, false));
+  scoped_ptr<BookmarkTreeNode> ret(bookmark_api_helpers::GetBookmarkTreeNode(
+      GetChromeBookmarkClient(), node, false, false));
   results_ = bookmarks::Create::Results::Create(*ret);
 
   return true;
@@ -597,7 +695,7 @@ bool BookmarksMoveFunction::ExtractIds(const base::ListValue* args,
   return BookmarksUpdateFunction::ExtractIds(args, ids, invalid_id);
 }
 
-bool BookmarksMoveFunction::RunImpl() {
+bool BookmarksMoveFunction::RunOnReady() {
   if (!EditBookmarksEnabled())
     return false;
 
@@ -624,17 +722,10 @@ bool BookmarksMoveFunction::RunImpl() {
     if (!GetBookmarkIdAsInt64(*params->destination.parent_id, &parentId))
       return false;
 
-    parent = model->GetNodeByID(parentId);
+    parent = GetBookmarkNodeByID(model, parentId);
   }
-  if (!parent) {
-    error_ = keys::kNoParentError;
-    // TODO(erikkay) return an error message.
+  if (!CanBeModified(parent) || !CanBeModified(node))
     return false;
-  }
-  if (parent == model->root_node()) {
-    error_ = keys::kModifySpecialError;
-    return false;
-  }
 
   int index;
   if (params->destination.index.get()) {  // Optional (defaults to end).
@@ -650,7 +741,8 @@ bool BookmarksMoveFunction::RunImpl() {
   model->Move(node, parent, index);
 
   scoped_ptr<BookmarkTreeNode> tree_node(
-      bookmark_api_helpers::GetBookmarkTreeNode(node, false, false));
+      bookmark_api_helpers::GetBookmarkTreeNode(
+          GetChromeBookmarkClient(), node, false, false));
   results_ = bookmarks::Move::Results::Create(*tree_node);
 
   return true;
@@ -664,7 +756,7 @@ bool BookmarksUpdateFunction::ExtractIds(const base::ListValue* args,
   return BookmarksRemoveFunction::ExtractIds(args, ids, invalid_id);
 }
 
-bool BookmarksUpdateFunction::RunImpl() {
+bool BookmarksUpdateFunction::RunOnReady() {
   if (!EditBookmarksEnabled())
     return false;
 
@@ -691,7 +783,7 @@ bool BookmarksUpdateFunction::RunImpl() {
   }
 
   const BookmarkNode* node = GetBookmarkNodeFromId(params->id);
-  if (!node)
+  if (!CanBeModified(node))
     return false;
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(GetProfile());
@@ -705,7 +797,8 @@ bool BookmarksUpdateFunction::RunImpl() {
     model->SetURL(node, url);
 
   scoped_ptr<BookmarkTreeNode> tree_node(
-      bookmark_api_helpers::GetBookmarkTreeNode(node, false, false));
+      bookmark_api_helpers::GetBookmarkTreeNode(
+          GetChromeBookmarkClient(), node, false, false));
   results_ = bookmarks::Update::Results::Create(*tree_node);
   return true;
 }
@@ -732,8 +825,9 @@ class BookmarkBucketMapper : public BucketMapper {
 // unique bucket.
 class CreateBookmarkBucketMapper : public BookmarkBucketMapper<std::string> {
  public:
-  explicit CreateBookmarkBucketMapper(Profile* profile) : profile_(profile) {}
-  // TODO(tim): This should share code with BookmarksCreateFunction::RunImpl,
+  explicit CreateBookmarkBucketMapper(BrowserContext* context)
+      : browser_context_(context) {}
+  // TODO(tim): This should share code with BookmarksCreateFunction::RunOnReady,
   // but I can't figure out a good way to do that with all the macros.
   virtual void GetBucketsForArgs(const base::ListValue* args,
                                  BucketList* buckets) OVERRIDE {
@@ -746,11 +840,12 @@ class CreateBookmarkBucketMapper : public BookmarkBucketMapper<std::string> {
       if (!json->GetString(keys::kParentIdKey, &parent_id))
         return;
     }
-    BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
+    BookmarkModel* model = BookmarkModelFactory::GetForProfile(
+        Profile::FromBrowserContext(browser_context_));
 
     int64 parent_id_int64;
     base::StringToInt64(parent_id, &parent_id_int64);
-    const BookmarkNode* parent = model->GetNodeByID(parent_id_int64);
+    const BookmarkNode* parent = GetBookmarkNodeByID(model, parent_id_int64);
     if (!parent)
       return;
 
@@ -766,14 +861,16 @@ class CreateBookmarkBucketMapper : public BookmarkBucketMapper<std::string> {
     // |bucket_id| strings we construct here, so we hash it to save space.
     buckets->push_back(GetBucket(base::SHA1HashString(bucket_id)));
   }
+
  private:
-  Profile* profile_;
+  BrowserContext* browser_context_;
 };
 
 // Mapper for 'bookmarks.remove'.
 class RemoveBookmarksBucketMapper : public BookmarkBucketMapper<std::string> {
  public:
-  explicit RemoveBookmarksBucketMapper(Profile* profile) : profile_(profile) {}
+  explicit RemoveBookmarksBucketMapper(BrowserContext* context)
+      : browser_context_(context) {}
   virtual void GetBucketsForArgs(const base::ListValue* args,
                                  BucketList* buckets) OVERRIDE {
     typedef std::list<int64> IdList;
@@ -785,8 +882,9 @@ class RemoveBookmarksBucketMapper : public BookmarkBucketMapper<std::string> {
     }
 
     for (IdList::iterator it = ids.begin(); it != ids.end(); ++it) {
-      BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
-      const BookmarkNode* node = model->GetNodeByID(*it);
+      BookmarkModel* model = BookmarkModelFactory::GetForProfile(
+          Profile::FromBrowserContext(browser_context_));
+      const BookmarkNode* node = GetBookmarkNodeByID(model, *it);
       if (!node || node->is_root())
         return;
 
@@ -797,8 +895,9 @@ class RemoveBookmarksBucketMapper : public BookmarkBucketMapper<std::string> {
       buckets->push_back(GetBucket(base::SHA1HashString(bucket_id)));
     }
   }
+
  private:
-  Profile* profile_;
+  BrowserContext* browser_context_;
 };
 
 // Mapper for any bookmark function accepting bookmark IDs as parameters, where
@@ -832,16 +931,18 @@ class BookmarksQuotaLimitFactory {
 
   // For bookmarks.create.
   static void BuildForCreate(QuotaLimitHeuristics* heuristics,
-                             Profile* profile) {
-    BuildWithMappers(heuristics, new CreateBookmarkBucketMapper(profile),
-                                 new CreateBookmarkBucketMapper(profile));
+                             BrowserContext* context) {
+    BuildWithMappers(heuristics,
+                     new CreateBookmarkBucketMapper(context),
+                     new CreateBookmarkBucketMapper(context));
   }
 
   // For bookmarks.remove.
   static void BuildForRemove(QuotaLimitHeuristics* heuristics,
-                             Profile* profile) {
-    BuildWithMappers(heuristics, new RemoveBookmarksBucketMapper(profile),
-                                 new RemoveBookmarksBucketMapper(profile));
+                             BrowserContext* context) {
+    BuildWithMappers(heuristics,
+                     new RemoveBookmarksBucketMapper(context),
+                     new RemoveBookmarksBucketMapper(context));
   }
 
  private:
@@ -886,7 +987,7 @@ void BookmarksMoveFunction::GetQuotaLimitHeuristics(
 void BookmarksUpdateFunction::GetQuotaLimitHeuristics(
     QuotaLimitHeuristics* heuristics) const {
   BookmarksQuotaLimitFactory::Build<BookmarksUpdateFunction>(heuristics);
-};
+}
 
 void BookmarksCreateFunction::GetQuotaLimitHeuristics(
     QuotaLimitHeuristics* heuristics) const {
@@ -944,7 +1045,7 @@ void BookmarksIOFunction::ShowSelectFileDialog(
   file_type_info.extensions.resize(1);
   file_type_info.extensions[0].push_back(FILE_PATH_LITERAL("html"));
   gfx::NativeWindow owning_window = web_contents ?
-      platform_util::GetTopLevel(web_contents->GetView()->GetNativeView())
+      platform_util::GetTopLevel(web_contents->GetNativeView())
           : NULL;
 #if defined(OS_WIN)
   if (!owning_window &&
@@ -974,7 +1075,7 @@ void BookmarksIOFunction::MultiFilesSelected(
   NOTREACHED() << "Should not be able to select multiple files";
 }
 
-bool BookmarksImportFunction::RunImpl() {
+bool BookmarksImportFunction::RunOnReady() {
   if (!EditBookmarksEnabled())
     return false;
   SelectFile(ui::SelectFileDialog::SELECT_OPEN_FILE);
@@ -984,10 +1085,6 @@ bool BookmarksImportFunction::RunImpl() {
 void BookmarksImportFunction::FileSelected(const base::FilePath& path,
                                            int index,
                                            void* params) {
-#if !defined(OS_ANDROID)
-  // Android does not have support for the standard importers.
-  // TODO(jgreenwald): remove ifdef once extensions are no longer built on
-  // Android.
   // Deletes itself.
   ExternalProcessImporterHost* importer_host = new ExternalProcessImporterHost;
   importer::SourceProfile source_profile;
@@ -1000,11 +1097,10 @@ void BookmarksImportFunction::FileSelected(const base::FilePath& path,
 
   importer::LogImporterUseToMetrics("BookmarksAPI",
                                     importer::TYPE_BOOKMARKS_FILE);
-#endif
   Release();  // Balanced in BookmarksIOFunction::SelectFile()
 }
 
-bool BookmarksExportFunction::RunImpl() {
+bool BookmarksExportFunction::RunOnReady() {
   SelectFile(ui::SelectFileDialog::SELECT_SAVEAS_FILE);
   return true;
 }
@@ -1012,12 +1108,9 @@ bool BookmarksExportFunction::RunImpl() {
 void BookmarksExportFunction::FileSelected(const base::FilePath& path,
                                            int index,
                                            void* params) {
-#if !defined(OS_ANDROID)
-  // Android does not have support for the standard exporter.
   // TODO(jgreenwald): remove ifdef once extensions are no longer built on
   // Android.
   bookmark_html_writer::WriteBookmarks(GetProfile(), path, NULL);
-#endif
   Release();  // Balanced in BookmarksIOFunction::SelectFile()
 }
 

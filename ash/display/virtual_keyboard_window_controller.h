@@ -6,6 +6,7 @@
 #define ASH_DISPLAY_VIRTUAL_KEYBOARD_WINDOW_CONTROLLER_H_
 
 #include "ash/ash_export.h"
+#include "ash/shell_observer.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/display.h"
@@ -15,18 +16,16 @@ class KeyboardController;
 }
 
 namespace ash {
+class DisplayInfo;
+class RootWindowController;
 
 namespace test {
 class VirtualKeyboardWindowControllerTest;
 }  // namespace test
 
-namespace internal {
-class DisplayInfo;
-class RootWindowController;
-
 // This class maintains the RootWindowController dedicated for
 // virtual keyboard.
-class ASH_EXPORT VirtualKeyboardWindowController {
+class ASH_EXPORT VirtualKeyboardWindowController : public ShellObserver {
  public:
   VirtualKeyboardWindowController();
   virtual ~VirtualKeyboardWindowController();
@@ -39,6 +38,10 @@ class ASH_EXPORT VirtualKeyboardWindowController {
 
   // Close the mirror window.
   void Close();
+
+  // ShellObserver:
+  virtual void OnMaximizeModeStarted() OVERRIDE;
+  virtual void OnMaximizeModeEnded() OVERRIDE;
 
  private:
   friend class test::VirtualKeyboardWindowControllerTest;
@@ -55,7 +58,6 @@ class ASH_EXPORT VirtualKeyboardWindowController {
   DISALLOW_COPY_AND_ASSIGN(VirtualKeyboardWindowController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_VIRTUAL_KEYBOARD_WINDOW_CONTROLLER_H_

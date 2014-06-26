@@ -44,9 +44,7 @@
       'app/nibs/MainMenu.xib',
       'app/nibs/OneClickSigninBubble.xib',
       'app/nibs/OneClickSigninDialog.xib',
-      'app/nibs/SadTab.xib',
       'app/nibs/SaveAccessoryView.xib',
-      'app/nibs/SpeechRecognitionBubble.xib',
       'app/nibs/TaskManager.xib',
       'app/nibs/Toolbar.xib',
       'app/nibs/WrenchMenu.xib',
@@ -60,8 +58,8 @@
       'app/nibs/GlobalErrorBubble.xib',
       'app/nibs/HungRendererDialog.xib',
       'app/nibs/InfoBar.xib',
-      'app/nibs/Notification.xib',
       'app/nibs/Panel.xib',
+      'app/nibs/SadTab.xib',
     ],  # mac_untranslated_xibs
     'mac_all_xibs': [
       '<@(mac_translated_xibs)',

@@ -29,11 +29,11 @@
 #include "base/files/file_path.h"
 #include "base/linux_util.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/global_descriptors.h"
 #include "base/process/memory.h"
 #include "base/strings/string_util.h"
+#include "breakpad/src/client/linux/crash_generation/crash_generation_client.h"
 #include "breakpad/src/client/linux/handler/exception_handler.h"
 #include "breakpad/src/client/linux/minidump_writer/directory_reader.h"
 #include "breakpad/src/common/linux/linux_libc_support.h"
@@ -189,6 +189,12 @@ char* my_strncat(char *dest, const char* src, size_t len) {
 }
 #endif
 
+#if !defined(OS_CHROMEOS)
+bool my_isxdigit(char c) {
+  return (c >= '0' && c <= '9') || ((c | 0x20) >= 'a' && (c | 0x20) <= 'f');
+}
+#endif
+
 size_t LengthWithoutTrailingSpaces(const char* str, size_t len) {
   while (len > 0 && str[len - 1] == ' ') {
     len--;
@@ -196,27 +202,11 @@ size_t LengthWithoutTrailingSpaces(const char* str, size_t len) {
   return len;
 }
 
-// Populates the passed in allocated string and its size with the distro of
-// the crashing process.
-// The passed string is expected to be at least kDistroSize bytes long.
-void PopulateDistro(char* distro, size_t* distro_len_param) {
-  size_t distro_len = std::min(my_strlen(base::g_linux_distro), kDistroSize);
-  memcpy(distro, base::g_linux_distro, distro_len);
-  if (distro_len_param)
-    *distro_len_param = distro_len;
-}
-
 void SetClientIdFromCommandLine(const CommandLine& command_line) {
-  // Get the guid and linux distro from the command line switch.
+  // Get the guid from the command line switch.
   std::string switch_value =
       command_line.GetSwitchValueASCII(switches::kEnableCrashReporter);
-  size_t separator = switch_value.find(",");
-  if (separator != std::string::npos) {
-    GetBreakpadClient()->SetClientID(switch_value.substr(0, separator));
-    base::SetLinuxDistro(switch_value.substr(separator + 1));
-  } else {
-    GetBreakpadClient()->SetClientID(switch_value);
-  }
+  GetBreakpadClient()->SetClientID(switch_value);
 }
 
 // MIME substrings.
@@ -297,6 +287,7 @@ class MimeWriter {
 
   const char* const mime_boundary_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(MimeWriter);
 };
 
@@ -403,8 +394,7 @@ void MimeWriter::AddItemWithoutTrailingSpaces(const void* base, size_t size) {
 // This subclass is used on Chromium OS to report crashes in a format easy for
 // the central crash reporting facility to understand.
 // Format is <name>:<data length in decimal>:<data>
-class CrashReporterWriter : public MimeWriter
-{
+class CrashReporterWriter : public MimeWriter {
  public:
   explicit CrashReporterWriter(int fd);
 
@@ -513,7 +503,7 @@ void CrashReporterWriter::AddFileContents(const char* filename_msg,
   AddItem(file_data, file_size);
   Flush();
 }
-#endif
+#endif  // defined(OS_CHROMEOS)
 
 void DumpProcess() {
   if (g_breakpad)
@@ -530,6 +520,10 @@ size_t WriteLog(const char* buf, size_t nbytes) {
 #else
   return sys_write(2, buf, nbytes);
 #endif
+}
+
+size_t WriteNewline() {
+  return WriteLog("\n", 1);
 }
 
 #if defined(OS_ANDROID)
@@ -687,16 +681,13 @@ bool CrashDoneInProcessNoUpload(
   }
 
   // Start constructing the message to send to the browser.
-  char distro[kDistroSize + 1] = {0};
-  size_t distro_length = 0;
-  PopulateDistro(distro, &distro_length);
   BreakpadInfo info = {0};
   info.filename = NULL;
   info.fd = descriptor.fd();
   info.process_type = g_process_type;
   info.process_type_length = my_strlen(g_process_type);
-  info.distro = distro;
-  info.distro_length = distro_length;
+  info.distro = NULL;
+  info.distro_length = 0;
   info.upload = false;
   info.process_start_time = g_process_start_time;
   info.pid = g_pid;
@@ -706,8 +697,8 @@ bool CrashDoneInProcessNoUpload(
   base::android::BuildInfo* android_build_info =
       base::android::BuildInfo::GetInstance();
   if (android_build_info->sdk_int() >= 18 &&
-      strcmp(android_build_info->build_type(), "eng") != 0 &&
-      strcmp(android_build_info->build_type(), "userdebug") != 0) {
+      my_strcmp(android_build_info->build_type(), "eng") != 0 &&
+      my_strcmp(android_build_info->build_type(), "userdebug") != 0) {
     // On JB MR2 and later, the system crash handler displays a dialog. For
     // renderer crashes, this is a bad user experience and so this is disabled
     // for user builds of Android.
@@ -758,88 +749,100 @@ void EnableNonBrowserCrashDumping(const std::string& process_type,
 }
 #else
 // Non-Browser = Extension, Gpu, Plugins, Ppapi and Renderer
-bool NonBrowserCrashHandler(const void* crash_context,
-                            size_t crash_context_size,
-                            void* context) {
-  const int fd = reinterpret_cast<intptr_t>(context);
-  int fds[2] = { -1, -1 };
-  if (sys_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
-    static const char msg[] = "Failed to create socket for crash dumping.\n";
-    WriteLog(msg, sizeof(msg) - 1);
-    return false;
+class NonBrowserCrashHandler : public google_breakpad::CrashGenerationClient {
+ public:
+  NonBrowserCrashHandler()
+      : server_fd_(base::GlobalDescriptors::GetInstance()->Get(
+            kCrashDumpSignal)) {
   }
 
-  // Start constructing the message to send to the browser.
-  char distro[kDistroSize + 1] = {0};
-  PopulateDistro(distro, NULL);
+  virtual ~NonBrowserCrashHandler() {}
 
-  char b;  // Dummy variable for sys_read below.
-  const char* b_addr = &b;  // Get the address of |b| so we can create the
-                            // expected /proc/[pid]/syscall content in the
-                            // browser to convert namespace tids.
+  virtual bool RequestDump(const void* crash_context,
+                           size_t crash_context_size) OVERRIDE {
+    int fds[2] = { -1, -1 };
+    if (sys_socketpair(AF_UNIX, SOCK_STREAM, 0, fds) < 0) {
+      static const char msg[] = "Failed to create socket for crash dumping.\n";
+      WriteLog(msg, sizeof(msg) - 1);
+      return false;
+    }
 
-  // The length of the control message:
-  static const unsigned kControlMsgSize = sizeof(fds);
-  static const unsigned kControlMsgSpaceSize = CMSG_SPACE(kControlMsgSize);
-  static const unsigned kControlMsgLenSize = CMSG_LEN(kControlMsgSize);
+    // Start constructing the message to send to the browser.
+    char b;  // Dummy variable for sys_read below.
+    const char* b_addr = &b;  // Get the address of |b| so we can create the
+                              // expected /proc/[pid]/syscall content in the
+                              // browser to convert namespace tids.
 
-  struct kernel_msghdr msg;
-  my_memset(&msg, 0, sizeof(struct kernel_msghdr));
-  struct kernel_iovec iov[kCrashIovSize];
-  iov[0].iov_base = const_cast<void*>(crash_context);
-  iov[0].iov_len = crash_context_size;
-  iov[1].iov_base = distro;
-  iov[1].iov_len = kDistroSize + 1;
-  iov[2].iov_base = &b_addr;
-  iov[2].iov_len = sizeof(b_addr);
-  iov[3].iov_base = &fds[0];
-  iov[3].iov_len = sizeof(fds[0]);
-  iov[4].iov_base = &g_process_start_time;
-  iov[4].iov_len = sizeof(g_process_start_time);
-  iov[5].iov_base = &base::g_oom_size;
-  iov[5].iov_len = sizeof(base::g_oom_size);
-  google_breakpad::SerializedNonAllocatingMap* serialized_map;
-  iov[6].iov_len = g_crash_keys->Serialize(
-      const_cast<const google_breakpad::SerializedNonAllocatingMap**>(
-          &serialized_map));
-  iov[6].iov_base = serialized_map;
-#if defined(ADDRESS_SANITIZER)
-  iov[7].iov_base = const_cast<char*>(g_asan_report_str);
-  iov[7].iov_len = kMaxAsanReportSize + 1;
+    // The length of the control message:
+    static const unsigned kControlMsgSize = sizeof(int);
+    static const unsigned kControlMsgSpaceSize = CMSG_SPACE(kControlMsgSize);
+    static const unsigned kControlMsgLenSize = CMSG_LEN(kControlMsgSize);
+
+    struct kernel_msghdr msg;
+    my_memset(&msg, 0, sizeof(struct kernel_msghdr));
+    struct kernel_iovec iov[kCrashIovSize];
+    iov[0].iov_base = const_cast<void*>(crash_context);
+    iov[0].iov_len = crash_context_size;
+    iov[1].iov_base = &b_addr;
+    iov[1].iov_len = sizeof(b_addr);
+    iov[2].iov_base = &fds[0];
+    iov[2].iov_len = sizeof(fds[0]);
+    iov[3].iov_base = &g_process_start_time;
+    iov[3].iov_len = sizeof(g_process_start_time);
+    iov[4].iov_base = &base::g_oom_size;
+    iov[4].iov_len = sizeof(base::g_oom_size);
+    google_breakpad::SerializedNonAllocatingMap* serialized_map;
+    iov[5].iov_len = g_crash_keys->Serialize(
+        const_cast<const google_breakpad::SerializedNonAllocatingMap**>(
+            &serialized_map));
+    iov[5].iov_base = serialized_map;
+#if !defined(ADDRESS_SANITIZER)
+    COMPILE_ASSERT(5 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
+#else
+    iov[6].iov_base = const_cast<char*>(g_asan_report_str);
+    iov[6].iov_len = kMaxAsanReportSize + 1;
+    COMPILE_ASSERT(6 == kCrashIovSize - 1, Incorrect_Number_Of_Iovec_Members);
 #endif
 
-  msg.msg_iov = iov;
-  msg.msg_iovlen = kCrashIovSize;
-  char cmsg[kControlMsgSpaceSize];
-  my_memset(cmsg, 0, kControlMsgSpaceSize);
-  msg.msg_control = cmsg;
-  msg.msg_controllen = sizeof(cmsg);
+    msg.msg_iov = iov;
+    msg.msg_iovlen = kCrashIovSize;
+    char cmsg[kControlMsgSpaceSize];
+    my_memset(cmsg, 0, kControlMsgSpaceSize);
+    msg.msg_control = cmsg;
+    msg.msg_controllen = sizeof(cmsg);
 
-  struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg);
-  hdr->cmsg_level = SOL_SOCKET;
-  hdr->cmsg_type = SCM_RIGHTS;
-  hdr->cmsg_len = kControlMsgLenSize;
-  ((int*) CMSG_DATA(hdr))[0] = fds[0];
-  ((int*) CMSG_DATA(hdr))[1] = fds[1];
+    struct cmsghdr *hdr = CMSG_FIRSTHDR(&msg);
+    hdr->cmsg_level = SOL_SOCKET;
+    hdr->cmsg_type = SCM_RIGHTS;
+    hdr->cmsg_len = kControlMsgLenSize;
+    ((int*)CMSG_DATA(hdr))[0] = fds[1];
 
-  if (HANDLE_EINTR(sys_sendmsg(fd, &msg, 0)) < 0) {
-    static const char errmsg[] = "Failed to tell parent about crash.\n";
-    WriteLog(errmsg, sizeof(errmsg) - 1);
+    if (HANDLE_EINTR(sys_sendmsg(server_fd_, &msg, 0)) < 0) {
+      static const char errmsg[] = "Failed to tell parent about crash.\n";
+      WriteLog(errmsg, sizeof(errmsg) - 1);
+      IGNORE_RET(sys_close(fds[0]));
+      IGNORE_RET(sys_close(fds[1]));
+      return false;
+    }
     IGNORE_RET(sys_close(fds[1]));
-    return false;
-  }
-  IGNORE_RET(sys_close(fds[1]));
 
-  if (HANDLE_EINTR(sys_read(fds[0], &b, 1)) != 1) {
-    static const char errmsg[] = "Parent failed to complete crash dump.\n";
-    WriteLog(errmsg, sizeof(errmsg) - 1);
+    if (HANDLE_EINTR(sys_read(fds[0], &b, 1)) != 1) {
+      static const char errmsg[] = "Parent failed to complete crash dump.\n";
+      WriteLog(errmsg, sizeof(errmsg) - 1);
+    }
+    IGNORE_RET(sys_close(fds[0]));
+
+    return true;
   }
 
-  return true;
-}
+ private:
+  // The pipe FD to the browser process, which will handle the crash dumping.
+  const int server_fd_;
+
+  DISALLOW_COPY_AND_ASSIGN(NonBrowserCrashHandler);
+};
 
 void EnableNonBrowserCrashDumping() {
-  const int fd = base::GlobalDescriptors::GetInstance()->Get(kCrashDumpSignal);
   g_is_crash_reporter_enabled = true;
   // We deliberately leak this object.
   DCHECK(!g_breakpad);
@@ -848,10 +851,10 @@ void EnableNonBrowserCrashDumping() {
       MinidumpDescriptor("/tmp"),  // Unused but needed or Breakpad will assert.
       NULL,
       NULL,
-      reinterpret_cast<void*>(fd),  // Param passed to the crash handler.
+      NULL,
       true,
       -1);
-  g_breakpad->set_crash_handler(NonBrowserCrashHandler);
+  g_breakpad->set_crash_generation_client(new NonBrowserCrashHandler());
 }
 #endif  // defined(OS_ANDROID)
 
@@ -862,6 +865,26 @@ void SetCrashKeyValue(const base::StringPiece& key,
 
 void ClearCrashKey(const base::StringPiece& key) {
   g_crash_keys->RemoveKey(key.data());
+}
+
+// GetBreakpadClient() cannot call any Set methods until after InitCrashKeys().
+void InitCrashKeys() {
+  g_crash_keys = new CrashKeyStorage;
+  GetBreakpadClient()->RegisterCrashKeys();
+  base::debug::SetCrashKeyReportingFunctions(&SetCrashKeyValue, &ClearCrashKey);
+}
+
+// Miscellaneous initialization functions to call after Breakpad has been
+// enabled.
+void PostEnableBreakpadInitialization() {
+  SetProcessStartTime();
+  g_pid = getpid();
+
+  base::debug::SetDumpWithoutCrashingFunction(&DumpProcess);
+#if defined(ADDRESS_SANITIZER)
+  // Register the callback for AddressSanitizer error reporting.
+  __asan_set_error_report_callback(AsanLinuxBreakpadCallback);
+#endif
 }
 
 }  // namespace
@@ -998,6 +1021,103 @@ void ExecUploadProcessOrTerminate(const BreakpadInfo& info,
   execve(args[0], const_cast<char**>(args), environ);
   WriteLog(msg, sizeof(msg) - 1);
   sys__exit(1);
+}
+
+// Runs in the helper process to wait for the upload process running
+// ExecUploadProcessOrTerminate() to finish. Returns the number of bytes written
+// to |fd| and save the written contents to |buf|.
+// |buf| needs to be big enough to hold |bytes_to_read| + 1 characters.
+size_t WaitForCrashReportUploadProcess(int fd, size_t bytes_to_read,
+                                       char* buf) {
+  size_t bytes_read = 0;
+
+  // Upload should finish in about 10 seconds. Add a few more 500 ms
+  // internals to account for process startup time.
+  for (size_t wait_count = 0; wait_count < 24; ++wait_count) {
+    struct kernel_pollfd poll_fd;
+    poll_fd.fd = fd;
+    poll_fd.events = POLLIN | POLLPRI | POLLERR;
+    int ret = sys_poll(&poll_fd, 1, 500);
+    if (ret < 0) {
+      // Error
+      break;
+    } else if (ret > 0) {
+      // There is data to read.
+      ssize_t len = HANDLE_EINTR(
+          sys_read(fd, buf + bytes_read, bytes_to_read - bytes_read));
+      if (len < 0)
+        break;
+      bytes_read += len;
+      if (bytes_read == bytes_to_read)
+        break;
+    }
+    // |ret| == 0 -> timed out, continue waiting.
+    // or |bytes_read| < |bytes_to_read| still, keep reading.
+  }
+  buf[bytes_to_read] = 0;  // Always NUL terminate the buffer.
+  return bytes_read;
+}
+
+// |buf| should be |expected_len| + 1 characters in size and NULL terminated.
+bool IsValidCrashReportId(const char* buf, size_t bytes_read,
+                          size_t expected_len) {
+  if (bytes_read != expected_len)
+    return false;
+#if defined(OS_CHROMEOS)
+  return my_strcmp(buf, "_sys_cr_finished") == 0;
+#else
+  for (size_t i = 0; i < bytes_read; ++i) {
+    if (!my_isxdigit(buf[i]))
+      return false;
+  }
+  return true;
+#endif
+}
+
+// |buf| should be |expected_len| + 1 characters in size and NULL terminated.
+void HandleCrashReportId(const char* buf, size_t bytes_read,
+                         size_t expected_len) {
+  WriteNewline();
+  if (!IsValidCrashReportId(buf, bytes_read, expected_len)) {
+#if defined(OS_CHROMEOS)
+    static const char msg[] = "Crash_reporter failed to process crash report";
+#else
+    static const char msg[] = "Failed to get crash dump id.";
+#endif
+    WriteLog(msg, sizeof(msg) - 1);
+    WriteNewline();
+    return;
+  }
+
+#if defined(OS_CHROMEOS)
+  static const char msg[] = "Crash dump received by crash_reporter\n";
+  WriteLog(msg, sizeof(msg) - 1);
+#else
+  // Write crash dump id to stderr.
+  static const char msg[] = "Crash dump id: ";
+  WriteLog(msg, sizeof(msg) - 1);
+  WriteLog(buf, my_strlen(buf));
+  WriteNewline();
+
+  // Write crash dump id to crash log as: seconds_since_epoch,crash_id
+  struct kernel_timeval tv;
+  if (g_crash_log_path && !sys_gettimeofday(&tv, NULL)) {
+    uint64_t time = kernel_timeval_to_ms(&tv) / 1000;
+    char time_str[kUint64StringSize];
+    const unsigned time_len = my_uint64_len(time);
+    my_uint64tos(time_str, time, time_len);
+
+    const int kLogOpenFlags = O_CREAT | O_WRONLY | O_APPEND | O_CLOEXEC;
+    int log_fd = sys_open(g_crash_log_path, kLogOpenFlags, 0600);
+    if (log_fd > 0) {
+      sys_write(log_fd, time_str, time_len);
+      sys_write(log_fd, ",", 1);
+      sys_write(log_fd, buf, my_strlen(buf));
+      sys_write(log_fd, "\n", 1);
+      IGNORE_RET(sys_close(log_fd));
+    }
+  }
+#endif
 }
 
 #if defined(OS_CHROMEOS)
@@ -1185,6 +1305,7 @@ void HandleCrashDump(const BreakpadInfo& info) {
   MimeWriter writer(temp_file_fd, mime_boundary);
 #endif
   {
+    // TODO(thestig) Do not use this inside a compromised context.
     std::string product_name;
     std::string version;
 
@@ -1390,53 +1511,13 @@ void HandleCrashDump(const BreakpadInfo& info) {
       // Helper process.
       if (upload_child > 0) {
         IGNORE_RET(sys_close(fds[1]));
-        char id_buf[17];  // Crash report IDs are expected to be 16 chars.
-        ssize_t len = -1;
-        // Upload should finish in about 10 seconds. Add a few more 500 ms
-        // internals to account for process startup time.
-        for (size_t wait_count = 0; wait_count < 24; ++wait_count) {
-          struct kernel_pollfd poll_fd;
-          poll_fd.fd = fds[0];
-          poll_fd.events = POLLIN | POLLPRI | POLLERR;
-          int ret = sys_poll(&poll_fd, 1, 500);
-          if (ret < 0) {
-            // Error
-            break;
-          } else if (ret > 0) {
-            // There is data to read.
-            len = HANDLE_EINTR(sys_read(fds[0], id_buf, sizeof(id_buf) - 1));
-            break;
-          }
-          // ret == 0 -> timed out, continue waiting.
-        }
-        if (len > 0) {
-          // Write crash dump id to stderr.
-          id_buf[len] = 0;
-          static const char msg[] = "\nCrash dump id: ";
-          WriteLog(msg, sizeof(msg) - 1);
-          WriteLog(id_buf, my_strlen(id_buf));
-          WriteLog("\n", 1);
 
-          // Write crash dump id to crash log as: seconds_since_epoch,crash_id
-          struct kernel_timeval tv;
-          if (g_crash_log_path && !sys_gettimeofday(&tv, NULL)) {
-            uint64_t time = kernel_timeval_to_ms(&tv) / 1000;
-            char time_str[kUint64StringSize];
-            const unsigned time_len = my_uint64_len(time);
-            my_uint64tos(time_str, time, time_len);
+        const size_t kCrashIdLength = 16;
+        char id_buf[kCrashIdLength + 1];
+        size_t bytes_read =
+            WaitForCrashReportUploadProcess(fds[0], kCrashIdLength, id_buf);
+        HandleCrashReportId(id_buf, bytes_read, kCrashIdLength);
 
-            int log_fd = sys_open(g_crash_log_path,
-                                  O_CREAT | O_WRONLY | O_APPEND,
-                                  0600);
-            if (log_fd > 0) {
-              sys_write(log_fd, time_str, time_len);
-              sys_write(log_fd, ",", 1);
-              sys_write(log_fd, id_buf, my_strlen(id_buf));
-              sys_write(log_fd, "\n", 1);
-              IGNORE_RET(sys_close(log_fd));
-            }
-          }
-        }
         if (sys_waitpid(upload_child, NULL, WNOHANG) == 0) {
           // Upload process is still around, kill it.
           sys_kill(upload_child, SIGKILL);
@@ -1484,6 +1565,7 @@ void InitCrashReporter(const std::string& process_type) {
       return;
     }
 
+    InitCrashKeys();
     EnableCrashDumping(GetBreakpadClient()->IsRunningUnattended());
   } else if (GetBreakpadClient()->EnableBreakpadForProcess(process_type)) {
 #if defined(OS_ANDROID)
@@ -1498,25 +1580,14 @@ void InitCrashReporter(const std::string& process_type) {
     // simplicity.
     if (!parsed_command_line.HasSwitch(switches::kEnableCrashReporter))
       return;
+    InitCrashKeys();
     SetClientIdFromCommandLine(parsed_command_line);
     EnableNonBrowserCrashDumping();
     VLOG(1) << "Non Browser crash dumping enabled for: " << process_type;
 #endif  // #if defined(OS_ANDROID)
   }
 
-  SetProcessStartTime();
-  g_pid = getpid();
-
-  base::debug::SetDumpWithoutCrashingFunction(&DumpProcess);
-#if defined(ADDRESS_SANITIZER)
-  // Register the callback for AddressSanitizer error reporting.
-  __asan_set_error_report_callback(AsanLinuxBreakpadCallback);
-#endif
-
-  g_crash_keys = new CrashKeyStorage;
-  GetBreakpadClient()->RegisterCrashKeys();
-  base::debug::SetCrashKeyReportingFunctions(
-      &SetCrashKeyValue, &ClearCrashKey);
+  PostEnableBreakpadInitialization();
 }
 
 #if defined(OS_ANDROID)
@@ -1528,7 +1599,7 @@ void InitNonBrowserCrashReporterForAndroid(const std::string& process_type) {
     // (preventing the browser from inspecting the renderer process).
     int minidump_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
         GetBreakpadClient()->GetAndroidMinidumpDescriptor());
-    if (minidump_fd == base::kInvalidPlatformFileValue) {
+    if (minidump_fd < 0) {
       NOTREACHED() << "Could not find minidump FD, crash reporting disabled.";
     } else {
       EnableNonBrowserCrashDumping(process_type, minidump_fd);

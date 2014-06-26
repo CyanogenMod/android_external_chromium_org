@@ -14,7 +14,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_member.h"
+#include "base/time/time.h"
 #include "chrome/browser/net/ssl_config_service_manager.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_usage_stats.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/browser_thread_delegate.h"
 #include "net/base/network_change_notifier.h"
@@ -22,15 +25,17 @@
 #include "net/socket/next_proto.h"
 
 class ChromeNetLog;
-class CommandLine;
 class PrefProxyConfigTracker;
 class PrefService;
 class PrefRegistrySimple;
 class SystemURLRequestContextGetter;
 
+namespace base {
+class CommandLine;
+}
+
 namespace chrome_browser_net {
 class DnsProbeService;
-class HttpPipeliningCompatibilityClient;
 }
 
 namespace extensions {
@@ -49,11 +54,9 @@ class HttpServerProperties;
 class HttpTransactionFactory;
 class HttpUserAgentSettings;
 class NetworkDelegate;
-class NetworkTimeNotifier;
 class ServerBoundCertService;
 class ProxyConfigService;
 class ProxyService;
-class SdchManager;
 class SSLConfigService;
 class TransportSecurityState;
 class URLRequestContext;
@@ -66,6 +69,10 @@ class URLSecurityManager;
 namespace policy {
 class PolicyService;
 }  // namespace policy
+
+namespace test {
+class IOThreadPeer;
+}  // namespace test
 
 // Contains state associated with, initialized and cleaned up on, and
 // primarily used on, the IO thread.
@@ -85,7 +92,7 @@ class IOThread : public content::BrowserThreadDelegate {
         set_ = true;
         value_ = value;
       }
-      void CopyToIfSet(T* value) {
+      void CopyToIfSet(T* value) const {
         if (set_) {
           *value = value_;
         }
@@ -140,6 +147,7 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_ptr<net::URLRequestContext> proxy_script_fetcher_context;
     scoped_ptr<net::ProxyService> system_proxy_service;
     scoped_ptr<net::HttpTransactionFactory> system_http_transaction_factory;
+    scoped_ptr<net::URLRequestJobFactory> system_url_request_job_factory;
     scoped_ptr<net::URLRequestContext> system_request_context;
     SystemRequestContextLeakChecker system_request_context_leak_checker;
     // |system_cookie_store| and |system_server_bound_cert_service| are shared
@@ -147,26 +155,32 @@ class IOThread : public content::BrowserThreadDelegate {
     scoped_refptr<net::CookieStore> system_cookie_store;
     scoped_refptr<extensions::EventRouterForwarder>
         extension_event_router_forwarder;
-    scoped_ptr<chrome_browser_net::HttpPipeliningCompatibilityClient>
-        http_pipelining_compatibility_client;
     scoped_ptr<net::HostMappingRules> host_mapping_rules;
     scoped_ptr<net::HttpUserAgentSettings> http_user_agent_settings;
     bool ignore_certificate_errors;
-    bool http_pipelining_enabled;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
+
     Optional<size_t> initial_max_spdy_concurrent_streams;
-    Optional<size_t> max_spdy_concurrent_streams_limit;
     Optional<bool> force_spdy_single_domain;
-    Optional<bool> enable_spdy_ip_pooling;
     Optional<bool> enable_spdy_compression;
     Optional<bool> enable_spdy_ping_based_connection_checking;
     Optional<net::NextProto> spdy_default_protocol;
+    net::NextProtoVector next_protos;
     Optional<string> trusted_spdy_proxy;
+    Optional<bool> force_spdy_over_ssl;
+    Optional<bool> force_spdy_always;
+    std::set<net::HostPortPair> forced_spdy_exclusions;
+    Optional<bool> use_alternate_protocols;
+    Optional<bool> enable_websocket_over_spdy;
+
     Optional<bool> enable_quic;
-    Optional<bool> enable_quic_https;
+    Optional<bool> enable_quic_pacing;
+    Optional<bool> enable_quic_time_based_loss_detection;
     Optional<bool> enable_quic_port_selection;
     Optional<size_t> quic_max_packet_length;
+    net::QuicTagVector quic_connection_options;
+    Optional<std::string> quic_user_agent_id;
     Optional<net::QuicVersionVector> quic_supported_versions;
     Optional<net::HostPortPair> origin_to_force_quic_on;
     bool enable_user_alternate_protocol_ports;
@@ -174,7 +188,10 @@ class IOThread : public content::BrowserThreadDelegate {
     // main frame load fails with a DNS error in order to provide more useful
     // information to the renderer so it can show a more specific error page.
     scoped_ptr<chrome_browser_net::DnsProbeService> dns_probe_service;
-    scoped_ptr<net::NetworkTimeNotifier> network_time_notifier;
+    scoped_ptr<data_reduction_proxy::DataReductionProxyParams>
+        data_reduction_proxy_params;
+    scoped_ptr<data_reduction_proxy::DataReductionProxyUsageStats>
+        data_reduction_proxy_usage_stats;
   };
 
   // |net_log| must either outlive the IOThread or be NULL.
@@ -210,10 +227,17 @@ class IOThread : public content::BrowserThreadDelegate {
 
   void InitializeNetworkSessionParams(net::HttpNetworkSession::Params* params);
 
+  base::TimeTicks creation_time() const;
+
  private:
+  // Map from name to value for all parameters associate with a field trial.
+  typedef std::map<std::string, std::string> VariationParameters;
+
   // Provide SystemURLRequestContextGetter with access to
   // InitSystemRequestContext().
   friend class SystemURLRequestContextGetter;
+
+  friend class test::IOThreadPeer;
 
   // BrowserThreadDelegate implementation, runs on the IO thread.
   // This handles initialization and destruction of state that must
@@ -222,7 +246,12 @@ class IOThread : public content::BrowserThreadDelegate {
   virtual void InitAsync() OVERRIDE;
   virtual void CleanUp() OVERRIDE;
 
-  void InitializeNetworkOptions(const CommandLine& parsed_command_line);
+  // Initializes |params| based on the settings in |globals|.
+  static void InitializeNetworkSessionParamsFromGlobals(
+      const Globals& globals,
+      net::HttpNetworkSession::Params* params);
+
+  void InitializeNetworkOptions(const base::CommandLine& parsed_command_line);
 
   // Enable SPDY with the given mode, which may contain the following:
   //
@@ -263,32 +292,71 @@ class IOThread : public content::BrowserThreadDelegate {
 
   // Configures QUIC options based on the flags in |command_line| as
   // well as the QUIC field trial group.
-  void ConfigureQuic(const CommandLine& command_line);
+  void ConfigureQuic(const base::CommandLine& command_line);
+
+  // Configures QUIC options in |globals| based on the flags in |command_line|
+  // as well as the QUIC field trial group and parameters.
+  static void ConfigureQuicGlobals(
+      const base::CommandLine& command_line,
+      base::StringPiece quic_trial_group,
+      const VariationParameters& quic_trial_params,
+      Globals* globals);
 
   // Returns true if QUIC should be enabled, either as a result
   // of a field trial or a command line flag.
-  bool ShouldEnableQuic(const CommandLine& command_line,
-                        base::StringPiece quic_trial_group);
-
-  // Returns true if HTTPS over QUIC should be enabled, either as a result
-  // of a field trial or a command line flag.
-  bool ShouldEnableQuicHttps(const CommandLine& command_line,
-                             base::StringPiece quic_trial_group);
+  static bool ShouldEnableQuic(
+      const base::CommandLine& command_line,
+      base::StringPiece quic_trial_group);
 
   // Returns true if the selection of the ephemeral port in bind() should be
   // performed by Chromium, and false if the OS should select the port.  The OS
   // option is used to prevent Windows from posting a security security warning
   // dialog.
-  bool ShouldEnableQuicPortSelection(const CommandLine& command_line);
+  static bool ShouldEnableQuicPortSelection(
+      const base::CommandLine& command_line);
+
+  // Returns true if QUIC packet pacing should be negotiated during the
+  // QUIC handshake.
+  static bool ShouldEnableQuicPacing(
+      const base::CommandLine& command_line,
+      base::StringPiece quic_trial_group,
+      const VariationParameters& quic_trial_params);
+
+  // Returns true if QUIC time-base loss detection should be negotiated during
+  // the QUIC handshake.
+  static bool ShouldEnableQuicTimeBasedLossDetection(
+      const base::CommandLine& command_line,
+      base::StringPiece quic_trial_group,
+      const VariationParameters& quic_trial_params);
 
   // Returns the maximum length for QUIC packets, based on any flags in
   // |command_line| or the field trial.  Returns 0 if there is an error
   // parsing any of the options, or if the default value should be used.
-  size_t GetQuicMaxPacketLength(const CommandLine& command_line,
-                                base::StringPiece quic_trial_group);
+  static size_t GetQuicMaxPacketLength(
+      const base::CommandLine& command_line,
+      base::StringPiece quic_trial_group,
+      const VariationParameters& quic_trial_params);
 
-  // Returns the quic versions specified by any flags in |command_line|.
-  net::QuicVersion GetQuicVersion(const CommandLine& command_line);
+  // Returns the QUIC versions specified by any flags in |command_line|
+  // or |quic_trial_params|.
+  static net::QuicVersion GetQuicVersion(
+      const base::CommandLine& command_line,
+      const VariationParameters& quic_trial_params);
+
+  // Returns the QUIC version specified by |quic_version| or
+  // QUIC_VERSION_UNSUPPORTED if |quic_version| is invalid.
+  static net::QuicVersion ParseQuicVersion(const std::string& quic_version);
+
+  // Returns the QUIC connection options specified by any flags in
+  // |command_line| or |quic_trial_params|.
+  static net::QuicTagVector GetQuicConnectionOptions(
+      const base::CommandLine& command_line,
+      const VariationParameters& quic_trial_params);
+
+  // Returns the list of QUIC tags represented by the comma separated
+  // string in |connection_options|.
+  static net::QuicTagVector ParseQuicConnectionOptions(
+      const std::string& connection_options);
 
   // The NetLog is owned by the browser process, to allow logging from other
   // threads during shutdown, but is used most frequently on the IOThread.
@@ -325,7 +393,6 @@ class IOThread : public content::BrowserThreadDelegate {
   std::string auth_server_whitelist_;
   std::string auth_delegate_whitelist_;
   std::string gssapi_library_name_;
-  std::vector<GURL> spdyproxy_auth_origins_;
 
   // This is an instance of the default SSLConfigServiceManager for the current
   // platform and it gets SSL preferences from local_state object.
@@ -340,12 +407,12 @@ class IOThread : public content::BrowserThreadDelegate {
   scoped_refptr<net::URLRequestContextGetter>
       system_url_request_context_getter_;
 
-  net::SdchManager* sdch_manager_;
-
   // True if SPDY is disabled by policy.
   bool is_spdy_disabled_by_policy_;
 
   base::WeakPtrFactory<IOThread> weak_factory_;
+
+  const base::TimeTicks creation_time_;
 
   DISALLOW_COPY_AND_ASSIGN(IOThread);
 };

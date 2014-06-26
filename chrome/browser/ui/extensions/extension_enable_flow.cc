@@ -12,6 +12,8 @@
 #include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 
 using extensions::Extension;
@@ -23,7 +25,8 @@ ExtensionEnableFlow::ExtensionEnableFlow(Profile* profile,
       extension_id_(extension_id),
       delegate_(delegate),
       parent_contents_(NULL),
-      parent_window_(NULL) {
+      parent_window_(NULL),
+      extension_registry_observer_(this) {
 }
 
 ExtensionEnableFlow::~ExtensionEnableFlow() {
@@ -54,7 +57,8 @@ void ExtensionEnableFlow::Run() {
       extensions::ExtensionSystem::Get(profile_)->extension_service();
   const Extension* extension = service->GetExtensionById(extension_id_, true);
   if (!extension) {
-    extension = service->GetTerminatedExtension(extension_id_);
+    extension = extensions::ExtensionRegistry::Get(profile_)->GetExtensionById(
+        extension_id_, extensions::ExtensionRegistry::TERMINATED);
     // It's possible (though unlikely) the app could have been uninstalled since
     // the user clicked on it.
     if (!extension)
@@ -85,8 +89,8 @@ void ExtensionEnableFlow::CheckPermissionAndMaybePromptUser() {
     return;
   }
 
-  extensions::ExtensionPrefs* extension_prefs = service->extension_prefs();
-  if (!extension_prefs->DidExtensionEscalatePermissions(extension_id_)) {
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile_);
+  if (!prefs->DidExtensionEscalatePermissions(extension_id_)) {
     // Enable the extension immediately if its privileges weren't escalated.
     // This is a no-op if the extension was previously terminated.
     service->EnableExtension(extension_id_);
@@ -108,49 +112,40 @@ void ExtensionEnableFlow::CreatePrompt() {
 }
 
 void ExtensionEnableFlow::StartObserving() {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile_));
+  extension_registry_observer_.Add(
+      extensions::ExtensionRegistry::Get(profile_));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
-                 content::Source<Profile>(profile_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
                  content::Source<Profile>(profile_));
 }
 
 void ExtensionEnableFlow::StopObserving() {
   registrar_.RemoveAll();
+  extension_registry_observer_.RemoveAll();
 }
 
 void ExtensionEnableFlow::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      if (extension->id() == extension_id_) {
-        StopObserving();
-        CheckPermissionAndMaybePromptUser();
-      }
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_LOAD_ERROR, type);
+  StopObserving();
+  delegate_->ExtensionEnableFlowAborted(false);
+}
 
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_LOAD_ERROR: {
-      StopObserving();
-      delegate_->ExtensionEnableFlowAborted(false);
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
-      const Extension* extension =
-          content::Details<const Extension>(details).ptr();
-      if (extension->id() == extension_id_) {
-        StopObserving();
-        delegate_->ExtensionEnableFlowAborted(false);
-      }
+void ExtensionEnableFlow::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  if (extension->id() == extension_id_) {
+    StopObserving();
+    CheckPermissionAndMaybePromptUser();
+  }
+}
 
-      break;
-    }
-    default:
-      NOTREACHED();
+void ExtensionEnableFlow::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  if (extension->id() == extension_id_) {
+    StopObserving();
+    delegate_->ExtensionEnableFlowAborted(false);
   }
 }
 

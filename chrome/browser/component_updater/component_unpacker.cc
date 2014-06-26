@@ -10,18 +10,18 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/memory/scoped_handle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/component_updater/component_patcher.h"
 #include "chrome/browser/component_updater/component_updater_service.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "crypto/secure_hash.h"
 #include "crypto/signature_verifier.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/crx_file.h"
 #include "third_party/zlib/google/zip.h"
 
@@ -61,8 +61,10 @@ class CRXValidator {
     crypto::SignatureVerifier verifier;
     if (!verifier.VerifyInit(extension_misc::kSignatureAlgorithm,
                              sizeof(extension_misc::kSignatureAlgorithm),
-                             &signature[0], signature.size(),
-                             &key[0], key.size())) {
+                             &signature[0],
+                             signature.size(),
+                             &key[0],
+                             key.size())) {
       // Signature verification initialization failed. This is most likely
       // caused by a public key in the wrong format (should encode algorithm).
       return;
@@ -98,18 +100,17 @@ ComponentUnpacker::ComponentUnpacker(
     const std::vector<uint8>& pk_hash,
     const base::FilePath& path,
     const std::string& fingerprint,
-    ComponentPatcher* patcher,
     ComponentInstaller* installer,
+    bool in_process,
     scoped_refptr<base::SequencedTaskRunner> task_runner)
     : pk_hash_(pk_hash),
       path_(path),
       is_delta_(false),
       fingerprint_(fingerprint),
-      patcher_(patcher),
       installer_(installer),
+      in_process_(in_process),
       error_(kNone),
       extended_error_(0),
-      ptr_factory_(this),
       task_runner_(task_runner) {
 }
 
@@ -130,34 +131,34 @@ scoped_ptr<base::DictionaryValue> ReadManifest(
   if (!root->IsType(base::Value::TYPE_DICTIONARY))
     return scoped_ptr<base::DictionaryValue>();
   return scoped_ptr<base::DictionaryValue>(
-      static_cast<base::DictionaryValue*>(root.release())).Pass();
+             static_cast<base::DictionaryValue*>(root.release())).Pass();
 }
 
 bool ComponentUnpacker::UnpackInternal() {
   return Verify() && Unzip() && BeginPatching();
 }
 
-void ComponentUnpacker::Unpack(
-    const base::Callback<void(Error, int)>& callback) {
+void ComponentUnpacker::Unpack(const Callback& callback) {
   callback_ = callback;
   if (!UnpackInternal())
     Finish();
 }
 
 bool ComponentUnpacker::Verify() {
+  VLOG(1) << "Verifying component: " << path_.value();
   if (pk_hash_.empty() || path_.empty()) {
     error_ = kInvalidParams;
     return false;
   }
   // First, validate the CRX header and signature. As of today
   // this is SHA1 with RSA 1024.
-  ScopedStdioHandle file(base::OpenFile(path_, "rb"));
+  base::ScopedFILE file(base::OpenFile(path_, "rb"));
   if (!file.get()) {
     error_ = kInvalidFile;
     return false;
   }
   CRXValidator validator(file.get());
-  file.Close();
+  file.reset();
   if (!validator.valid()) {
     error_ = kInvalidFile;
     return false;
@@ -173,26 +174,31 @@ bool ComponentUnpacker::Verify() {
   sha256->Finish(hash, arraysize(hash));
 
   if (!std::equal(pk_hash_.begin(), pk_hash_.end(), hash)) {
+    VLOG(1) << "Hash mismatch: " << path_.value();
     error_ = kInvalidId;
     return false;
   }
+  VLOG(1) << "Verification successful: " << path_.value();
   return true;
 }
 
 bool ComponentUnpacker::Unzip() {
   base::FilePath& destination = is_delta_ ? unpack_diff_path_ : unpack_path_;
+  VLOG(1) << "Unpacking in: " << destination.value();
   if (!base::CreateNewTempDirectory(base::FilePath::StringType(),
                                     &destination)) {
+    VLOG(1) << "Unable to create temporary directory for unpacking.";
     error_ = kUnzipPathError;
     return false;
   }
   if (!zip::Unzip(path_, destination)) {
+    VLOG(1) << "Unzipping failed.";
     error_ = kUnzipFailed;
     return false;
   }
+  VLOG(1) << "Unpacked successfully";
   return true;
 }
-
 
 bool ComponentUnpacker::BeginPatching() {
   if (is_delta_) {  // Package is a diff package.
@@ -202,20 +208,23 @@ bool ComponentUnpacker::BeginPatching() {
       error_ = kUnzipPathError;
       return false;
     }
+    patcher_ = new ComponentPatcher(unpack_diff_path_,
+                                    unpack_path_,
+                                    installer_,
+                                    in_process_,
+                                    task_runner_);
     task_runner_->PostTask(
-        FROM_HERE, base::Bind(&DifferentialUpdatePatch,
-                              unpack_diff_path_,
-                              unpack_path_,
-                              patcher_,
-                              installer_,
-                              base::Bind(&ComponentUnpacker::EndPatching,
-                                         GetWeakPtr())));
+        FROM_HERE,
+        base::Bind(&ComponentPatcher::Start,
+                   patcher_,
+                   base::Bind(&ComponentUnpacker::EndPatching,
+                              scoped_refptr<ComponentUnpacker>(this))));
   } else {
-    task_runner_->PostTask(
-        FROM_HERE, base::Bind(&ComponentUnpacker::EndPatching,
-                              GetWeakPtr(),
-                              kNone,
-                              0));
+    task_runner_->PostTask(FROM_HERE,
+                           base::Bind(&ComponentUnpacker::EndPatching,
+                                      scoped_refptr<ComponentUnpacker>(this),
+                                      kNone,
+                                      0));
   }
   return true;
 }
@@ -223,6 +232,7 @@ bool ComponentUnpacker::BeginPatching() {
 void ComponentUnpacker::EndPatching(Error error, int extended_error) {
   error_ = error;
   extended_error_ = extended_error;
+  patcher_ = NULL;
   if (error_ != kNone) {
     Finish();
     return;
@@ -240,7 +250,7 @@ void ComponentUnpacker::EndPatching(Error error, int extended_error) {
 void ComponentUnpacker::Install() {
   // Write the fingerprint to disk.
   if (static_cast<int>(fingerprint_.size()) !=
-      file_util::WriteFile(
+      base::WriteFile(
           unpack_path_.Append(FILE_PATH_LITERAL("manifest.fingerprint")),
           fingerprint_.c_str(),
           fingerprint_.size())) {
@@ -265,10 +275,6 @@ void ComponentUnpacker::Finish() {
   if (!unpack_path_.empty())
     base::DeleteFile(unpack_path_, true);
   callback_.Run(error_, extended_error_);
-}
-
-base::WeakPtr<ComponentUnpacker> ComponentUnpacker::GetWeakPtr() {
-  return ptr_factory_.GetWeakPtr();
 }
 
 ComponentUnpacker::~ComponentUnpacker() {

@@ -4,7 +4,6 @@
 
 #include "components/policy/core/common/cloud/user_cloud_policy_store.h"
 
-#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
@@ -42,7 +41,7 @@ bool WriteStringToFile(const base::FilePath path, const std::string& data) {
   }
 
   int size = data.size();
-  if (file_util::WriteFile(path, data.c_str(), size) != size) {
+  if (base::WriteFile(path, data.c_str(), size) != size) {
     DLOG(WARNING) << "Failed to write " << path.value();
     return false;
   }
@@ -57,8 +56,6 @@ class UserCloudPolicyStoreTest : public testing::Test {
   UserCloudPolicyStoreTest() {}
 
   virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kEnablePolicyKeyVerification);
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDir());
     store_.reset(
         new UserCloudPolicyStore(policy_file(),
@@ -168,9 +165,8 @@ TEST_F(UserCloudPolicyStoreTest, LoadWithInvalidFile) {
   ASSERT_TRUE(base::CreateDirectory(policy_file().DirName()));
   std::string bogus_data = "bogus_data";
   int size = bogus_data.size();
-  ASSERT_EQ(size, file_util::WriteFile(policy_file(),
-                                       bogus_data.c_str(),
-                                       bogus_data.size()));
+  ASSERT_EQ(size, base::WriteFile(policy_file(),
+                                  bogus_data.c_str(), bogus_data.size()));
 
   ExpectError(store_.get(), CloudPolicyStore::STATUS_LOAD_ERROR);
   store_->Load();
@@ -201,9 +197,8 @@ TEST_F(UserCloudPolicyStoreTest, LoadImmediatelyWithInvalidFile) {
   ASSERT_TRUE(base::CreateDirectory(policy_file().DirName()));
   std::string bogus_data = "bogus_data";
   int size = bogus_data.size();
-  ASSERT_EQ(size, file_util::WriteFile(policy_file(),
-                                       bogus_data.c_str(),
-                                       bogus_data.size()));
+  ASSERT_EQ(size, base::WriteFile(policy_file(),
+                                  bogus_data.c_str(), bogus_data.size()));
 
   ExpectError(store_.get(), CloudPolicyStore::STATUS_LOAD_ERROR);
   store_->LoadImmediately();  // Should load without running the message loop.
@@ -226,7 +221,7 @@ TEST_F(UserCloudPolicyStoreTest, Migration) {
   ASSERT_TRUE(unsigned_builder.policy().SerializeToString(&data));
   ASSERT_TRUE(base::CreateDirectory(policy_file().DirName()));
   int size = data.size();
-  ASSERT_EQ(size, file_util::WriteFile(policy_file(), data.c_str(), size));
+  ASSERT_EQ(size, base::WriteFile(policy_file(), data.c_str(), size));
 
   // Now make sure the data can get loaded.
   Sequence s;

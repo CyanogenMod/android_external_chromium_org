@@ -5,7 +5,7 @@
 #include "ash/system/date/date_default_view.h"
 
 #include "ash/metrics/user_metrics_recorder.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/system/date/date_view.h"
 #include "ash/system/tray/special_popup_row.h"
@@ -27,7 +27,6 @@ const int kPaddingVertical = 19;
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 DateDefaultView::DateDefaultView(ash::user::LoginStatus login)
     : help_(NULL),
@@ -47,7 +46,7 @@ DateDefaultView::DateDefaultView(ash::user::LoginStatus login)
       login == ash::user::LOGGED_IN_NONE)
     return;
 
-  date_view_->SetActionable(true);
+  date_view_->SetAction(TrayDate::SHOW_DATE_SETTINGS);
 
   help_ = new TrayPopupHeaderButton(this,
                                     IDR_AURA_UBER_TRAY_HELP,
@@ -118,5 +117,4 @@ void DateDefaultView::ButtonPressed(views::Button* sender,
   }
 }
 
-}  // namespace internal
 }  // namespace ash

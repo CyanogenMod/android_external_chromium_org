@@ -104,6 +104,7 @@ void UserMetricsRecorder::RecordUserMetricsAction(UserMetricsAction action) {
     case ash::UMA_SHELF_ALIGNMENT_SET_RIGHT:
       base::RecordAction(
           base::UserMetricsAction("Shelf_AlignmentSetRight"));
+      break;
     case ash::UMA_STATUS_AREA_AUDIO_CURRENT_INPUT_DEVICE:
       base::RecordAction(
           base::UserMetricsAction("StatusArea_Audio_CurrentInputDevice"));
@@ -357,86 +358,78 @@ void UserMetricsRecorder::RecordUserMetricsAction(UserMetricsAction action) {
     case ash::UMA_WINDOW_MAXIMIZE_BUTTON_CLICK_MINIMIZE:
       base::RecordAction(base::UserMetricsAction("MinButton_Clk"));
       break;
-    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE:
-      base::RecordAction(base::UserMetricsAction("MaxButton_Maximize"));
-      break;
     case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_LEFT:
       base::RecordAction(base::UserMetricsAction("MaxButton_MaxLeft"));
       break;
     case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MAXIMIZE_RIGHT:
       base::RecordAction(base::UserMetricsAction("MaxButton_MaxRight"));
       break;
-    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_MINIMIZE:
-      base::RecordAction(base::UserMetricsAction("MaxButton_Minimize"));
-      break;
-    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_RESTORE:
-      base::RecordAction(base::UserMetricsAction("MaxButton_Restore"));
-      break;
-    case ash::UMA_WINDOW_MAXIMIZE_BUTTON_SHOW_BUBBLE:
-      base::RecordAction(base::UserMetricsAction("MaxButton_ShowBubble"));
-      break;
     case ash::UMA_WINDOW_OVERVIEW:
       base::RecordAction(
           base::UserMetricsAction("WindowSelector_Overview"));
       break;
-    case ash::UMA_WINDOW_SELECTION:
+    case ash::UMA_WINDOW_OVERVIEW_ENTER_KEY:
       base::RecordAction(
-          base::UserMetricsAction("WindowSelector_Selection"));
+          base::UserMetricsAction("WindowSelector_OverviewEnterKey"));
+      break;
+    case ash::UMA_WINDOW_CYCLE:
+      base::RecordAction(
+          base::UserMetricsAction("WindowCycleController_Cycle"));
       break;
   }
 }
 
 void UserMetricsRecorder::RecordPeriodicMetrics() {
-  internal::ShelfLayoutManager* manager =
-      internal::ShelfLayoutManager::ForShelf(Shell::GetPrimaryRootWindow());
+  ShelfLayoutManager* manager =
+      ShelfLayoutManager::ForShelf(Shell::GetPrimaryRootWindow());
   if (manager) {
     UMA_HISTOGRAM_ENUMERATION("Ash.ShelfAlignmentOverTime",
-        manager->SelectValueForShelfAlignment(
-            internal::SHELF_ALIGNMENT_UMA_ENUM_VALUE_BOTTOM,
-            internal::SHELF_ALIGNMENT_UMA_ENUM_VALUE_LEFT,
-            internal::SHELF_ALIGNMENT_UMA_ENUM_VALUE_RIGHT,
-            -1),
-        internal::SHELF_ALIGNMENT_UMA_ENUM_VALUE_COUNT);
+                              manager->SelectValueForShelfAlignment(
+                                  SHELF_ALIGNMENT_UMA_ENUM_VALUE_BOTTOM,
+                                  SHELF_ALIGNMENT_UMA_ENUM_VALUE_LEFT,
+                                  SHELF_ALIGNMENT_UMA_ENUM_VALUE_RIGHT,
+                                  -1),
+                              SHELF_ALIGNMENT_UMA_ENUM_VALUE_COUNT);
   }
 
-  enum ActiveWindowShowType {
-    ACTIVE_WINDOW_SHOW_TYPE_NO_ACTIVE_WINDOW,
-    ACTIVE_WINDOW_SHOW_TYPE_OTHER,
-    ACTIVE_WINDOW_SHOW_TYPE_MAXIMIZED,
-    ACTIVE_WINDOW_SHOW_TYPE_FULLSCREEN,
-    ACTIVE_WINDOW_SHOW_TYPE_SNAPPED,
-    ACTIVE_WINDOW_SHOW_TYPE_COUNT
+  enum ActiveWindowStateType {
+    ACTIVE_WINDOW_STATE_TYPE_NO_ACTIVE_WINDOW,
+    ACTIVE_WINDOW_STATE_TYPE_OTHER,
+    ACTIVE_WINDOW_STATE_TYPE_MAXIMIZED,
+    ACTIVE_WINDOW_STATE_TYPE_FULLSCREEN,
+    ACTIVE_WINDOW_STATE_TYPE_SNAPPED,
+    ACTIVE_WINDOW_STATE_TYPE_COUNT
   };
 
-  ActiveWindowShowType active_window_show_type =
-      ACTIVE_WINDOW_SHOW_TYPE_NO_ACTIVE_WINDOW;
+  ActiveWindowStateType active_window_state_type =
+      ACTIVE_WINDOW_STATE_TYPE_NO_ACTIVE_WINDOW;
   wm::WindowState* active_window_state = ash::wm::GetActiveWindowState();
   if (active_window_state) {
-    switch(active_window_state->window_show_type()) {
-      case wm::SHOW_TYPE_MAXIMIZED:
-        active_window_show_type = ACTIVE_WINDOW_SHOW_TYPE_MAXIMIZED;
+    switch (active_window_state->GetStateType()) {
+      case wm::WINDOW_STATE_TYPE_MAXIMIZED:
+        active_window_state_type = ACTIVE_WINDOW_STATE_TYPE_MAXIMIZED;
         break;
-      case wm::SHOW_TYPE_FULLSCREEN:
-        active_window_show_type = ACTIVE_WINDOW_SHOW_TYPE_FULLSCREEN;
+      case wm::WINDOW_STATE_TYPE_FULLSCREEN:
+        active_window_state_type = ACTIVE_WINDOW_STATE_TYPE_FULLSCREEN;
         break;
-      case wm::SHOW_TYPE_LEFT_SNAPPED:
-      case wm::SHOW_TYPE_RIGHT_SNAPPED:
-        active_window_show_type = ACTIVE_WINDOW_SHOW_TYPE_SNAPPED;
+      case wm::WINDOW_STATE_TYPE_LEFT_SNAPPED:
+      case wm::WINDOW_STATE_TYPE_RIGHT_SNAPPED:
+        active_window_state_type = ACTIVE_WINDOW_STATE_TYPE_SNAPPED;
         break;
-      case wm::SHOW_TYPE_DEFAULT:
-      case wm::SHOW_TYPE_NORMAL:
-      case wm::SHOW_TYPE_MINIMIZED:
-      case wm::SHOW_TYPE_INACTIVE:
-      case wm::SHOW_TYPE_DETACHED:
-      case wm::SHOW_TYPE_END:
-      case wm::SHOW_TYPE_AUTO_POSITIONED:
-        active_window_show_type = ACTIVE_WINDOW_SHOW_TYPE_OTHER;
+      case wm::WINDOW_STATE_TYPE_DEFAULT:
+      case wm::WINDOW_STATE_TYPE_NORMAL:
+      case wm::WINDOW_STATE_TYPE_MINIMIZED:
+      case wm::WINDOW_STATE_TYPE_INACTIVE:
+      case wm::WINDOW_STATE_TYPE_DETACHED:
+      case wm::WINDOW_STATE_TYPE_END:
+      case wm::WINDOW_STATE_TYPE_AUTO_POSITIONED:
+        active_window_state_type = ACTIVE_WINDOW_STATE_TYPE_OTHER;
         break;
     }
   }
   UMA_HISTOGRAM_ENUMERATION("Ash.ActiveWindowShowTypeOverTime",
-                            active_window_show_type,
-                            ACTIVE_WINDOW_SHOW_TYPE_COUNT);
+                            active_window_state_type,
+                            ACTIVE_WINDOW_STATE_TYPE_COUNT);
 }
 
 }  // namespace ash

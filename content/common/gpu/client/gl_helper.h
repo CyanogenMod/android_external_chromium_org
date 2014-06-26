@@ -131,19 +131,8 @@ class ScopedTextureBinder : ScopedBinder<Target> {
   }
 };
 
-class ScopedFlush {
- public:
-  explicit ScopedFlush(gpu::gles2::GLES2Interface* gl) : gl_(gl) {}
-
-  ~ScopedFlush() { gl_->Flush(); }
-
- private:
-  gpu::gles2::GLES2Interface* gl_;
-
-  DISALLOW_COPY_AND_ASSIGN(ScopedFlush);
-};
-
 class ReadbackYUVInterface;
+class GLHelperReadbackSupport;
 
 // Provides higher level operations on top of the gpu::gles2::GLES2Interface
 // interfaces.
@@ -184,7 +173,8 @@ class CONTENT_EXPORT GLHelper {
       const gfx::Size& dst_size,
       unsigned char* out,
       const SkBitmap::Config config,
-      const base::Callback<void(bool)>& callback);
+      const base::Callback<void(bool)>& callback,
+      GLHelper::ScalerQuality quality);
 
   // Copies the block of pixels specified with |src_subrect| from |src_mailbox|,
   // scales it to |dst_size|, and writes it into |out|.
@@ -203,7 +193,8 @@ class CONTENT_EXPORT GLHelper {
       const gfx::Size& dst_size,
       unsigned char* out,
       const SkBitmap::Config config,
-      const base::Callback<void(bool)>& callback);
+      const base::Callback<void(bool)>& callback,
+      GLHelper::ScalerQuality quality);
 
   // Copies the texture data out of |texture| into |out|.  |size| is the
   // size of the texture.  No post processing is applied to the pixels.  The
@@ -277,8 +268,9 @@ class CONTENT_EXPORT GLHelper {
   // size of the framebuffer.
   void CopyTextureFullImage(GLuint texture, const gfx::Size& size);
 
-  // Check whether rgb565 readback is supported or not.
-  bool CanUseRgb565Readback();
+  // Flushes GL commands.
+  void Flush();
+
 
   // A scaler will cache all intermediate textures and programs
   // needed to scale from a specified size to a destination size.
@@ -328,6 +320,10 @@ class CONTENT_EXPORT GLHelper {
   // 0 if GL_EXT_draw_buffers is not available.
   GLint MaxDrawBuffers();
 
+  // Checks whether the readbback is supported for texture with the
+  // matching config. This doesnt check for cross format readbacks.
+  bool IsReadbackConfigSupported(SkBitmap::Config texture_format);
+
  protected:
   class CopyTextureToImpl;
 
@@ -336,12 +332,16 @@ class CONTENT_EXPORT GLHelper {
   // Creates |scaler_impl_| if NULL.
   void InitScalerImpl();
 
+  enum ReadbackSwizzle {
+    kSwizzleNone = 0,
+    kSwizzleBGRA
+  };
+
   gpu::gles2::GLES2Interface* gl_;
   gpu::ContextSupport* context_support_;
   scoped_ptr<CopyTextureToImpl> copy_texture_to_impl_;
   scoped_ptr<GLHelperScaling> scaler_impl_;
-  bool initialized_565_format_check_;
-  bool support_565_format_;
+  scoped_ptr<GLHelperReadbackSupport> readback_support_;
 
   DISALLOW_COPY_AND_ASSIGN(GLHelper);
 };

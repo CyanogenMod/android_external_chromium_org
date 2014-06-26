@@ -57,6 +57,7 @@
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "net/ocsp/nss_ocsp.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/ssl_client_socket.h"
@@ -64,11 +65,8 @@
 #include "net/test/cert_test_util.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/url_request/data_protocol_handler.h"
-#include "net/url_request/file_protocol_handler.h"
-#include "net/url_request/ftp_protocol_handler.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request.h"
-#include "net/url_request/url_request_file_dir_job.h"
 #include "net/url_request/url_request_http_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
 #include "net/url_request/url_request_redirect_job.h"
@@ -76,6 +74,16 @@
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+
+#if !defined(DISABLE_FILE_SUPPORT)
+#include "net/base/filename_util.h"
+#include "net/url_request/file_protocol_handler.h"
+#include "net/url_request/url_request_file_dir_job.h"
+#endif
+
+#if !defined(DISABLE_FTP_SUPPORT)
+#include "net/url_request/ftp_protocol_handler.h"
+#endif
 
 #if defined(OS_WIN)
 #include "base/win/scoped_com_initializer.h"
@@ -367,7 +375,8 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE;
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
 
   virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
@@ -390,7 +399,7 @@ class BlockingNetworkDelegate : public TestNetworkDelegate {
   int retval_;  // To be returned in non-auth stages.
   AuthRequiredResponse auth_retval_;
 
-  GURL redirect_url_;  // Used if non-empty.
+  GURL redirect_url_;  // Used if non-empty during OnBeforeURLRequest.
   int block_on_;  // Bit mask: in which stages to block.
 
   // |auth_credentials_| will be copied to |*target_auth_credential_| on
@@ -482,10 +491,13 @@ int BlockingNetworkDelegate::OnHeadersReceived(
     URLRequest* request,
     const CompletionCallback& callback,
     const HttpResponseHeaders* original_response_headers,
-    scoped_refptr<HttpResponseHeaders>* override_response_headers) {
-  TestNetworkDelegate::OnHeadersReceived(
-      request, callback, original_response_headers,
-      override_response_headers);
+    scoped_refptr<HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
+  TestNetworkDelegate::OnHeadersReceived(request,
+                                         callback,
+                                         original_response_headers,
+                                         override_response_headers,
+                                         allowed_unsafe_redirect_url);
 
   return MaybeBlockStage(ON_HEADERS_RECEIVED, callback);
 }
@@ -592,8 +604,10 @@ class URLRequestTest : public PlatformTest {
     default_context_.set_network_delegate(&default_network_delegate_);
     default_context_.set_net_log(&net_log_);
     job_factory_.SetProtocolHandler("data", new DataProtocolHandler);
+#if !defined(DISABLE_FILE_SUPPORT)
     job_factory_.SetProtocolHandler(
         "file", new FileProtocolHandler(base::MessageLoopProxy::current()));
+#endif
     default_context_.set_job_factory(&job_factory_);
     default_context_.Init();
   }
@@ -683,6 +697,7 @@ TEST_F(URLRequestTest, DataURLImageTest) {
   }
 }
 
+#if !defined(DISABLE_FILE_SUPPORT)
 TEST_F(URLRequestTest, FileTest) {
   base::FilePath app_path;
   PathService::Get(base::FILE_EXE, &app_path);
@@ -738,7 +753,7 @@ TEST_F(URLRequestTest, FileTestFullSpecifiedRange) {
   base::FilePath temp_path;
   EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
   GURL temp_url = FilePathToFileURL(temp_path);
-  EXPECT_TRUE(file_util::WriteFile(temp_path, buffer.get(), buffer_size));
+  EXPECT_TRUE(base::WriteFile(temp_path, buffer.get(), buffer_size));
 
   int64 file_size;
   EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
@@ -782,7 +797,7 @@ TEST_F(URLRequestTest, FileTestHalfSpecifiedRange) {
   base::FilePath temp_path;
   EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
   GURL temp_url = FilePathToFileURL(temp_path);
-  EXPECT_TRUE(file_util::WriteFile(temp_path, buffer.get(), buffer_size));
+  EXPECT_TRUE(base::WriteFile(temp_path, buffer.get(), buffer_size));
 
   int64 file_size;
   EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
@@ -825,7 +840,7 @@ TEST_F(URLRequestTest, FileTestMultipleRanges) {
   base::FilePath temp_path;
   EXPECT_TRUE(base::CreateTemporaryFile(&temp_path));
   GURL temp_url = FilePathToFileURL(temp_path);
-  EXPECT_TRUE(file_util::WriteFile(temp_path, buffer.get(), buffer_size));
+  EXPECT_TRUE(base::WriteFile(temp_path, buffer.get(), buffer_size));
 
   int64 file_size;
   EXPECT_TRUE(base::GetFileSize(temp_path, &file_size));
@@ -853,7 +868,7 @@ TEST_F(URLRequestTest, AllowFileURLs) {
   base::FilePath test_file;
   ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir.path(), &test_file));
   std::string test_data("monkey");
-  file_util::WriteFile(test_file, test_data.data(), test_data.size());
+  base::WriteFile(test_file, test_data.data(), test_data.size());
   GURL test_file_url = net::FilePathToFileURL(test_file);
 
   {
@@ -881,80 +896,6 @@ TEST_F(URLRequestTest, AllowFileURLs) {
   }
 }
 
-TEST_F(URLRequestTest, InvalidUrlTest) {
-  TestDelegate d;
-  {
-    URLRequest r(GURL("invalid url"), DEFAULT_PRIORITY, &d, &default_context_);
-
-    r.Start();
-    EXPECT_TRUE(r.is_pending());
-
-    base::RunLoop().Run();
-    EXPECT_TRUE(d.request_failed());
-  }
-}
-
-#if defined(OS_WIN)
-TEST_F(URLRequestTest, ResolveShortcutTest) {
-  base::FilePath app_path;
-  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
-  app_path = app_path.AppendASCII("net");
-  app_path = app_path.AppendASCII("data");
-  app_path = app_path.AppendASCII("url_request_unittest");
-  app_path = app_path.AppendASCII("with-headers.html");
-
-  std::wstring lnk_path = app_path.value() + L".lnk";
-
-  base::win::ScopedCOMInitializer com_initializer;
-
-  // Temporarily create a shortcut for test
-  {
-    base::win::ScopedComPtr<IShellLink> shell;
-    ASSERT_TRUE(SUCCEEDED(shell.CreateInstance(CLSID_ShellLink, NULL,
-                                               CLSCTX_INPROC_SERVER)));
-    base::win::ScopedComPtr<IPersistFile> persist;
-    ASSERT_TRUE(SUCCEEDED(shell.QueryInterface(persist.Receive())));
-    EXPECT_TRUE(SUCCEEDED(shell->SetPath(app_path.value().c_str())));
-    EXPECT_TRUE(SUCCEEDED(shell->SetDescription(L"ResolveShortcutTest")));
-    EXPECT_TRUE(SUCCEEDED(persist->Save(lnk_path.c_str(), TRUE)));
-  }
-
-  TestDelegate d;
-  {
-    URLRequest r(FilePathToFileURL(base::FilePath(lnk_path)),
-                 DEFAULT_PRIORITY,
-                 &d,
-                 &default_context_);
-
-    r.Start();
-    EXPECT_TRUE(r.is_pending());
-
-    base::RunLoop().Run();
-
-    WIN32_FILE_ATTRIBUTE_DATA data;
-    GetFileAttributesEx(app_path.value().c_str(),
-                        GetFileExInfoStandard, &data);
-    HANDLE file = CreateFile(app_path.value().c_str(), GENERIC_READ,
-                             FILE_SHARE_READ, NULL, OPEN_EXISTING,
-                             FILE_ATTRIBUTE_NORMAL, NULL);
-    EXPECT_NE(INVALID_HANDLE_VALUE, file);
-    scoped_ptr<char[]> buffer(new char[data.nFileSizeLow]);
-    DWORD read_size;
-    BOOL result;
-    result = ReadFile(file, buffer.get(), data.nFileSizeLow,
-                      &read_size, NULL);
-    std::string content(buffer.get(), read_size);
-    CloseHandle(file);
-
-    EXPECT_TRUE(!r.is_pending());
-    EXPECT_EQ(1, d.received_redirect_count());
-    EXPECT_EQ(content, d.data_received());
-  }
-
-  // Clean the shortcut
-  DeleteFile(lnk_path.c_str());
-}
-#endif  // defined(OS_WIN)
 
 TEST_F(URLRequestTest, FileDirCancelTest) {
   // Put in mock resource provider.
@@ -1053,7 +994,84 @@ TEST_F(URLRequestTest, FileDirRedirectSingleSlash) {
   ASSERT_EQ(1, d.received_redirect_count());
   ASSERT_FALSE(req.status().is_success());
 }
-#endif
+#endif  // defined(OS_WIN)
+
+#endif  // !defined(DISABLE_FILE_SUPPORT)
+
+TEST_F(URLRequestTest, InvalidUrlTest) {
+  TestDelegate d;
+  {
+    URLRequest r(GURL("invalid url"), DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    EXPECT_TRUE(r.is_pending());
+
+    base::RunLoop().Run();
+    EXPECT_TRUE(d.request_failed());
+  }
+}
+
+#if defined(OS_WIN)
+TEST_F(URLRequestTest, ResolveShortcutTest) {
+  base::FilePath app_path;
+  PathService::Get(base::DIR_SOURCE_ROOT, &app_path);
+  app_path = app_path.AppendASCII("net");
+  app_path = app_path.AppendASCII("data");
+  app_path = app_path.AppendASCII("url_request_unittest");
+  app_path = app_path.AppendASCII("with-headers.html");
+
+  std::wstring lnk_path = app_path.value() + L".lnk";
+
+  base::win::ScopedCOMInitializer com_initializer;
+
+  // Temporarily create a shortcut for test
+  {
+    base::win::ScopedComPtr<IShellLink> shell;
+    ASSERT_TRUE(SUCCEEDED(shell.CreateInstance(CLSID_ShellLink, NULL,
+                                               CLSCTX_INPROC_SERVER)));
+    base::win::ScopedComPtr<IPersistFile> persist;
+    ASSERT_TRUE(SUCCEEDED(shell.QueryInterface(persist.Receive())));
+    EXPECT_TRUE(SUCCEEDED(shell->SetPath(app_path.value().c_str())));
+    EXPECT_TRUE(SUCCEEDED(shell->SetDescription(L"ResolveShortcutTest")));
+    EXPECT_TRUE(SUCCEEDED(persist->Save(lnk_path.c_str(), TRUE)));
+  }
+
+  TestDelegate d;
+  {
+    URLRequest r(FilePathToFileURL(base::FilePath(lnk_path)),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &default_context_);
+
+    r.Start();
+    EXPECT_TRUE(r.is_pending());
+
+    base::RunLoop().Run();
+
+    WIN32_FILE_ATTRIBUTE_DATA data;
+    GetFileAttributesEx(app_path.value().c_str(),
+                        GetFileExInfoStandard, &data);
+    HANDLE file = CreateFile(app_path.value().c_str(), GENERIC_READ,
+                             FILE_SHARE_READ, NULL, OPEN_EXISTING,
+                             FILE_ATTRIBUTE_NORMAL, NULL);
+    EXPECT_NE(INVALID_HANDLE_VALUE, file);
+    scoped_ptr<char[]> buffer(new char[data.nFileSizeLow]);
+    DWORD read_size;
+    BOOL result;
+    result = ReadFile(file, buffer.get(), data.nFileSizeLow,
+                      &read_size, NULL);
+    std::string content(buffer.get(), read_size);
+    CloseHandle(file);
+
+    EXPECT_TRUE(!r.is_pending());
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(content, d.data_received());
+  }
+
+  // Clean the shortcut
+  DeleteFile(lnk_path.c_str());
+}
+#endif  // defined(OS_WIN)
 
 // Custom URLRequestJobs for use with interceptor tests
 class RestartTestJob : public URLRequestTestJob {
@@ -1693,8 +1711,8 @@ TEST_F(URLRequestTest, InterceptLoadTimingProxy) {
 
 // Make sure that URLRequest correctly adjusts proxy times when they're before
 // |request_start|, due to already having a connected socket.  This happens in
-// the case of reusing a SPDY session or HTTP pipeline.  The connected socket is
-// not considered reused in this test (May be a preconnect).
+// the case of reusing a SPDY session.  The connected socket is not considered
+// reused in this test (May be a preconnect).
 //
 // To mix things up from the test above, assumes DNS times but no SSL times.
 TEST_F(URLRequestTest, InterceptLoadTimingEarlyProxyResolution) {
@@ -1845,6 +1863,8 @@ TEST_F(URLRequestTest, NetworkDelegateProxyError) {
 
   // Check we see a failed request.
   EXPECT_FALSE(req.status().is_success());
+  // The proxy server is not set before failure.
+  EXPECT_TRUE(req.proxy_server().IsEmpty());
   EXPECT_EQ(URLRequestStatus::FAILED, req.status().status());
   EXPECT_EQ(ERR_PROXY_CONNECTION_FAILED, req.status().error());
 
@@ -2416,8 +2436,8 @@ class FixedDateNetworkDelegate : public TestNetworkDelegate {
       net::URLRequest* request,
       const net::CompletionCallback& callback,
       const net::HttpResponseHeaders* original_response_headers,
-      scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
-      OVERRIDE;
+      scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
 
  private:
   std::string fixed_date_;
@@ -2429,7 +2449,8 @@ int FixedDateNetworkDelegate::OnHeadersReceived(
     net::URLRequest* request,
     const net::CompletionCallback& callback,
     const net::HttpResponseHeaders* original_response_headers,
-    scoped_refptr<net::HttpResponseHeaders>* override_response_headers) {
+    scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+    GURL* allowed_unsafe_redirect_url) {
   net::HttpResponseHeaders* new_response_headers =
       new net::HttpResponseHeaders(original_response_headers->raw_headers());
 
@@ -2440,7 +2461,8 @@ int FixedDateNetworkDelegate::OnHeadersReceived(
   return TestNetworkDelegate::OnHeadersReceived(request,
                                                 callback,
                                                 original_response_headers,
-                                                override_response_headers);
+                                                override_response_headers,
+                                                allowed_unsafe_redirect_url);
 }
 
 // Test that cookie expiration times are adjusted for server/client clock
@@ -2717,6 +2739,8 @@ TEST_F(URLRequestTestHTTP, ProxyTunnelRedirectTest) {
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    // The proxy server is not set before failure.
+    EXPECT_TRUE(r.proxy_server().IsEmpty());
     EXPECT_EQ(ERR_TUNNEL_CONNECTION_FAILED, r.status().error());
     EXPECT_EQ(1, d.response_started_count());
     // We should not have followed the redirect.
@@ -2743,6 +2767,8 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateTunnelConnectionFailed) {
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    // The proxy server is not set before failure.
+    EXPECT_TRUE(r.proxy_server().IsEmpty());
     EXPECT_EQ(ERR_TUNNEL_CONNECTION_FAILED, r.status().error());
     EXPECT_EQ(1, d.response_started_count());
     // We should not have followed the redirect.
@@ -2817,6 +2843,8 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateCancelRequest) {
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    // The proxy server is not set before cancellation.
+    EXPECT_TRUE(r.proxy_server().IsEmpty());
     EXPECT_EQ(ERR_EMPTY_RESPONSE, r.status().error());
     EXPECT_EQ(1, network_delegate.created_requests());
     EXPECT_EQ(0, network_delegate.destroyed_requests());
@@ -2847,6 +2875,8 @@ void NetworkDelegateCancelRequest(BlockingNetworkDelegate::BlockMode block_mode,
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    // The proxy server is not set before cancellation.
+    EXPECT_TRUE(r.proxy_server().IsEmpty());
     EXPECT_EQ(ERR_BLOCKED_BY_CLIENT, r.status().error());
     EXPECT_EQ(1, network_delegate.created_requests());
     EXPECT_EQ(0, network_delegate.destroyed_requests());
@@ -2923,6 +2953,7 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequest) {
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_TRUE(r.proxy_server().Equals(test_server_.host_port_pair()));
     EXPECT_EQ(0, r.status().error());
     EXPECT_EQ(redirect_url, r.url());
     EXPECT_EQ(original_url, r.original_url());
@@ -2955,6 +2986,7 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestSynchronously) {
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_TRUE(r.proxy_server().Equals(test_server_.host_port_pair()));
     EXPECT_EQ(0, r.status().error());
     EXPECT_EQ(redirect_url, r.url());
     EXPECT_EQ(original_url, r.original_url());
@@ -3003,6 +3035,40 @@ TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestPost) {
     EXPECT_EQ(0, network_delegate.destroyed_requests());
     EXPECT_EQ("POST", r.method());
     EXPECT_EQ(kData, d.data_received());
+  }
+  EXPECT_EQ(1, network_delegate.destroyed_requests());
+}
+
+// Tests that the network delegate can block and redirect a request to a new
+// URL during OnHeadersReceived.
+TEST_F(URLRequestTestHTTP, NetworkDelegateRedirectRequestOnHeadersReceived) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  BlockingNetworkDelegate network_delegate(
+      BlockingNetworkDelegate::AUTO_CALLBACK);
+  network_delegate.set_block_on(BlockingNetworkDelegate::ON_HEADERS_RECEIVED);
+  GURL redirect_url(test_server_.GetURL("simple.html"));
+  network_delegate.set_redirect_on_headers_received_url(redirect_url);
+
+  TestURLRequestContextWithProxy context(
+      test_server_.host_port_pair().ToString(), &network_delegate);
+
+  {
+    GURL original_url(test_server_.GetURL("empty.html"));
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &context);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_TRUE(r.proxy_server().Equals(test_server_.host_port_pair()));
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(redirect_url, r.url());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(2, network_delegate.created_requests());
+    EXPECT_EQ(0, network_delegate.destroyed_requests());
   }
   EXPECT_EQ(1, network_delegate.destroyed_requests());
 }
@@ -3453,6 +3519,8 @@ TEST_F(URLRequestTestHTTP, UnexpectedServerAuthTest) {
     base::RunLoop().Run();
 
     EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    // The proxy server is not set before failure.
+    EXPECT_TRUE(r.proxy_server().IsEmpty());
     EXPECT_EQ(ERR_TUNNEL_CONNECTION_FAILED, r.status().error());
   }
 }
@@ -3919,10 +3987,13 @@ class AsyncLoggingNetworkDelegate : public TestNetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE {
-    TestNetworkDelegate::OnHeadersReceived(request, callback,
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE {
+    TestNetworkDelegate::OnHeadersReceived(request,
+                                           callback,
                                            original_response_headers,
-                                           override_response_headers);
+                                           override_response_headers,
+                                           allowed_unsafe_redirect_url);
     return RunCallbackAsynchronously(request, callback);
   }
 
@@ -4735,7 +4806,7 @@ TEST_F(URLRequestTestHTTP, PostFileTest) {
 
     base::FilePath dir;
     PathService::Get(base::DIR_EXE, &dir);
-    file_util::SetCurrentDirectory(dir);
+    base::SetCurrentDirectory(dir);
 
     ScopedVector<UploadElementReader> element_readers;
 
@@ -4916,14 +4987,13 @@ TEST_F(URLRequestTestHTTP, ProcessSTS) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
-  EXPECT_TRUE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+            domain_state.sts.upgrade_mode);
+  EXPECT_TRUE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
@@ -4960,17 +5030,15 @@ TEST_F(URLRequestTestHTTP, MAYBE_ProcessPKP) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_DEFAULT,
-            domain_state.upgrade_mode);
-  EXPECT_FALSE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+            domain_state.sts.upgrade_mode);
+  EXPECT_FALSE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
   EXPECT_TRUE(domain_state.HasPublicKeyPins());
-  EXPECT_NE(domain_state.upgrade_expiry,
-            domain_state.dynamic_spki_hashes_expiry);
+  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
@@ -4993,14 +5061,13 @@ TEST_F(URLRequestTestHTTP, ProcessSTSOnce) {
   // We should have set parameters from the first header, not the second.
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
-  EXPECT_FALSE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+            domain_state.sts.upgrade_mode);
+  EXPECT_FALSE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 }
 
 TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
@@ -5023,25 +5090,23 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP) {
   // We should have set parameters from the first header, not the second.
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
+            domain_state.sts.upgrade_mode);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
   EXPECT_TRUE(domain_state.HasPublicKeyPins());
 #endif
-  EXPECT_NE(domain_state.upgrade_expiry,
-            domain_state.dynamic_spki_hashes_expiry);
+  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
 
   // Even though there is an HSTS header asserting includeSubdomains, it is
   // the *second* such header, and we MUST process only the first.
-  EXPECT_FALSE(domain_state.sts_include_subdomains);
+  EXPECT_FALSE(domain_state.sts.include_subdomains);
   // includeSubdomains does not occur in the test HPKP header.
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 }
 
 // Tests that when multiple HPKP headers are present, asserting different
@@ -5065,22 +5130,20 @@ TEST_F(URLRequestTestHTTP, ProcessSTSAndPKP2) {
 
   TransportSecurityState* security_state =
       default_context_.transport_security_state();
-  bool sni_available = true;
   TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(security_state->GetDomainState(
-      SpawnedTestServer::kLocalhost, sni_available, &domain_state));
+  EXPECT_TRUE(security_state->GetDynamicDomainState(
+      SpawnedTestServer::kLocalhost, &domain_state));
   EXPECT_EQ(TransportSecurityState::DomainState::MODE_FORCE_HTTPS,
-            domain_state.upgrade_mode);
+            domain_state.sts.upgrade_mode);
 #if defined(OS_ANDROID)
   // Android's CertVerifyProc does not (yet) handle pins.
 #else
   EXPECT_TRUE(domain_state.HasPublicKeyPins());
 #endif
-  EXPECT_NE(domain_state.upgrade_expiry,
-            domain_state.dynamic_spki_hashes_expiry);
+  EXPECT_NE(domain_state.sts.expiry, domain_state.pkp.expiry);
 
-  EXPECT_TRUE(domain_state.sts_include_subdomains);
-  EXPECT_FALSE(domain_state.pkp_include_subdomains);
+  EXPECT_TRUE(domain_state.sts.include_subdomains);
+  EXPECT_FALSE(domain_state.pkp.include_subdomains);
 }
 
 TEST_F(URLRequestTestHTTP, ContentTypeNormalizationTest) {
@@ -5104,18 +5167,25 @@ TEST_F(URLRequestTestHTTP, ContentTypeNormalizationTest) {
   req.Cancel();
 }
 
-TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictRedirects) {
+TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictDataRedirects) {
   // Test URLRequestJobFactory::ProtocolHandler::IsSafeRedirectTarget().
-  GURL file_url("file:///foo.txt");
   GURL data_url("data:,foo");
-  FileProtocolHandler file_protocol_handler(base::MessageLoopProxy::current());
-  EXPECT_FALSE(file_protocol_handler.IsSafeRedirectTarget(file_url));
   DataProtocolHandler data_protocol_handler;
   EXPECT_FALSE(data_protocol_handler.IsSafeRedirectTarget(data_url));
 
   // Test URLRequestJobFactoryImpl::IsSafeRedirectTarget().
-  EXPECT_FALSE(job_factory_.IsSafeRedirectTarget(file_url));
   EXPECT_FALSE(job_factory_.IsSafeRedirectTarget(data_url));
+}
+
+#if !defined(DISABLE_FILE_SUPPORT)
+TEST_F(URLRequestTestHTTP, ProtocolHandlerAndFactoryRestrictFileRedirects) {
+  // Test URLRequestJobFactory::ProtocolHandler::IsSafeRedirectTarget().
+  GURL file_url("file:///foo.txt");
+  FileProtocolHandler file_protocol_handler(base::MessageLoopProxy::current());
+  EXPECT_FALSE(file_protocol_handler.IsSafeRedirectTarget(file_url));
+
+  // Test URLRequestJobFactoryImpl::IsSafeRedirectTarget().
+  EXPECT_FALSE(job_factory_.IsSafeRedirectTarget(file_url));
 }
 
 TEST_F(URLRequestTestHTTP, RestrictFileRedirects) {
@@ -5132,6 +5202,7 @@ TEST_F(URLRequestTestHTTP, RestrictFileRedirects) {
   EXPECT_EQ(URLRequestStatus::FAILED, req.status().status());
   EXPECT_EQ(ERR_UNSAFE_REDIRECT, req.status().error());
 }
+#endif  // !defined(DISABLE_FILE_SUPPORT)
 
 TEST_F(URLRequestTestHTTP, RestrictDataRedirects) {
   ASSERT_TRUE(test_server_.Start());
@@ -5161,6 +5232,238 @@ TEST_F(URLRequestTestHTTP, RedirectToInvalidURL) {
 
   EXPECT_EQ(URLRequestStatus::FAILED, req.status().status());
   EXPECT_EQ(ERR_INVALID_URL, req.status().error());
+}
+
+// Make sure redirects are cached, despite not reading their bodies.
+TEST_F(URLRequestTestHTTP, CacheRedirect) {
+  ASSERT_TRUE(test_server_.Start());
+  GURL redirect_url =
+      test_server_.GetURL("files/redirect302-to-echo-cacheable");
+
+  {
+    TestDelegate d;
+    URLRequest req(redirect_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(test_server_.GetURL("echo"), req.url());
+  }
+
+  {
+    TestDelegate d;
+    d.set_quit_on_redirect(true);
+    URLRequest req(redirect_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(0, d.response_started_count());
+    EXPECT_TRUE(req.was_cached());
+
+    req.FollowDeferredRedirect();
+    base::RunLoop().Run();
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(1, d.response_started_count());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_EQ(test_server_.GetURL("echo"), req.url());
+  }
+}
+
+// Make sure a request isn't cached when a NetworkDelegate forces a redirect
+// when the headers are read, since the body won't have been read.
+TEST_F(URLRequestTestHTTP, NoCacheOnNetworkDelegateRedirect) {
+  ASSERT_TRUE(test_server_.Start());
+  // URL that is normally cached.
+  GURL initial_url = test_server_.GetURL("cachetime");
+
+  {
+    // Set up the TestNetworkDelegate tp force a redirect.
+    GURL redirect_to_url = test_server_.GetURL("echo");
+    default_network_delegate_.set_redirect_on_headers_received_url(
+        redirect_to_url);
+
+    TestDelegate d;
+    URLRequest req(initial_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_EQ(1, d.received_redirect_count());
+    EXPECT_EQ(redirect_to_url, req.url());
+  }
+
+  {
+    TestDelegate d;
+    URLRequest req(initial_url, DEFAULT_PRIORITY, &d, &default_context_);
+    req.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, req.status().status());
+    EXPECT_FALSE(req.was_cached());
+    EXPECT_EQ(0, d.received_redirect_count());
+    EXPECT_EQ(initial_url, req.url());
+  }
+}
+
+// Tests that redirection to an unsafe URL is allowed when it has been marked as
+// safe.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectToWhitelistedUnsafeURL) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL unsafe_url("data:text/html,this-is-considered-an-unsafe-url");
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(test_server_.GetURL("whatever"),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(unsafe_url, r.url());
+    EXPECT_EQ("this-is-considered-an-unsafe-url", d.data_received());
+  }
+}
+
+// Tests that a redirect to a different unsafe URL is blocked, even after adding
+// some other URL to the whitelist.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectToDifferentUnsafeURL) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL unsafe_url("data:text/html,something");
+  GURL different_unsafe_url("data:text/html,something-else");
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(
+      different_unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(test_server_.GetURL("whatever"),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(URLRequestStatus::FAILED, r.status().status());
+    EXPECT_EQ(ERR_UNSAFE_REDIRECT, r.status().error());
+  }
+}
+
+// Redirects from an URL with fragment to an unsafe URL with fragment should
+// be allowed, and the reference fragment of the target URL should be preserved.
+TEST_F(URLRequestTestHTTP, UnsafeRedirectWithDifferentReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#fragment1"));
+  GURL unsafe_url("data:,url-marked-safe-and-used-in-redirect#fragment2");
+  GURL expected_url("data:,url-marked-safe-and-used-in-redirect#fragment2");
+
+  default_network_delegate_.set_redirect_on_headers_received_url(unsafe_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(expected_url, r.url());
+  }
+}
+
+// When a delegate has specified a safe redirect URL, but it does not match the
+// redirect target, then do not prevent the reference fragment from being added.
+TEST_F(URLRequestTestHTTP, RedirectWithReferenceFragmentAndUnrelatedUnsafeUrl) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#expected-fragment"));
+  GURL unsafe_url("data:text/html,this-url-does-not-match-redirect-url");
+  GURL redirect_url(test_server_.GetURL("target"));
+  GURL expected_redirect_url(test_server_.GetURL("target#expected-fragment"));
+
+  default_network_delegate_.set_redirect_on_headers_received_url(redirect_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(unsafe_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(expected_redirect_url, r.url());
+  }
+}
+
+// When a delegate has specified a safe redirect URL, assume that the redirect
+// URL should not be changed. In particular, the reference fragment should not
+// be modified.
+TEST_F(URLRequestTestHTTP, RedirectWithReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#should-not-be-appended"));
+  GURL redirect_url("data:text/html,expect-no-reference-fragment");
+
+  default_network_delegate_.set_redirect_on_headers_received_url(redirect_url);
+  default_network_delegate_.set_allowed_unsafe_redirect_url(redirect_url);
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(redirect_url, r.url());
+  }
+}
+
+// When a URLRequestRedirectJob is created, the redirection must be followed and
+// the reference fragment of the target URL must not be modified.
+TEST_F(URLRequestTestHTTP, RedirectJobWithReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("original#should-not-be-appended"));
+  GURL redirect_url(test_server_.GetURL("echo"));
+
+  TestDelegate d;
+  URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+  URLRequestRedirectJob* job = new URLRequestRedirectJob(
+      &r, &default_network_delegate_, redirect_url,
+      URLRequestRedirectJob::REDIRECT_302_FOUND, "Very Good Reason");
+  AddTestInterceptor()->set_main_intercept_job(job);
+
+  r.Start();
+  base::RunLoop().Run();
+
+  EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+  EXPECT_EQ(net::OK, r.status().error());
+  EXPECT_EQ(original_url, r.original_url());
+  EXPECT_EQ(redirect_url, r.url());
 }
 
 TEST_F(URLRequestTestHTTP, NoUserPassInReferrer) {
@@ -5742,6 +6045,57 @@ TEST_F(URLRequestTestHTTP, Redirect307Tests) {
   HTTPRedirectMethodTest(url, "HEAD", "HEAD", false);
 }
 
+TEST_F(URLRequestTestHTTP, Redirect308Tests) {
+  ASSERT_TRUE(test_server_.Start());
+
+  const GURL url = test_server_.GetURL("files/redirect308-to-echo");
+
+  HTTPRedirectMethodTest(url, "POST", "POST", true);
+  HTTPRedirectMethodTest(url, "PUT", "PUT", true);
+  HTTPRedirectMethodTest(url, "HEAD", "HEAD", false);
+}
+
+// Make sure that 308 responses without bodies are not treated as redirects.
+// Certain legacy apis that pre-date the response code expect this behavior
+// (Like Google Drive).
+TEST_F(URLRequestTestHTTP, NoRedirectOn308WithoutLocationHeader) {
+  ASSERT_TRUE(test_server_.Start());
+
+  TestDelegate d;
+  const GURL url = test_server_.GetURL("files/308-without-location-header");
+
+  URLRequest request(url, DEFAULT_PRIORITY, &d, &default_context_);
+
+  request.Start();
+  base::RunLoop().Run();
+  EXPECT_EQ(URLRequestStatus::SUCCESS, request.status().status());
+  EXPECT_EQ(OK, request.status().error());
+  EXPECT_EQ(0, d.received_redirect_count());
+  EXPECT_EQ(308, request.response_headers()->response_code());
+  EXPECT_EQ("This is not a redirect.", d.data_received());
+}
+
+TEST_F(URLRequestTestHTTP, Redirect302PreserveReferenceFragment) {
+  ASSERT_TRUE(test_server_.Start());
+
+  GURL original_url(test_server_.GetURL("files/redirect302-to-echo#fragment"));
+  GURL expected_url(test_server_.GetURL("echo#fragment"));
+
+  TestDelegate d;
+  {
+    URLRequest r(original_url, DEFAULT_PRIORITY, &d, &default_context_);
+
+    r.Start();
+    base::RunLoop().Run();
+
+    EXPECT_EQ(2U, r.url_chain().size());
+    EXPECT_EQ(URLRequestStatus::SUCCESS, r.status().status());
+    EXPECT_EQ(net::OK, r.status().error());
+    EXPECT_EQ(original_url, r.original_url());
+    EXPECT_EQ(expected_url, r.url());
+  }
+}
+
 TEST_F(URLRequestTestHTTP, InterceptPost302RedirectGet) {
   ASSERT_TRUE(test_server_.Start());
 
@@ -5761,7 +6115,7 @@ TEST_F(URLRequestTestHTTP, InterceptPost302RedirectGet) {
 
   URLRequestRedirectJob* job = new URLRequestRedirectJob(
       &req, &default_network_delegate_, test_server_.GetURL("echo"),
-      URLRequestRedirectJob::REDIRECT_302_FOUND);
+      URLRequestRedirectJob::REDIRECT_302_FOUND, "Very Good Reason");
   AddTestInterceptor()->set_main_intercept_job(job);
 
   req.Start();
@@ -5788,7 +6142,8 @@ TEST_F(URLRequestTestHTTP, InterceptPost307RedirectPost) {
 
   URLRequestRedirectJob* job = new URLRequestRedirectJob(
       &req, &default_network_delegate_, test_server_.GetURL("echo"),
-      URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT);
+      URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT,
+      "Very Good Reason");
   AddTestInterceptor()->set_main_intercept_job(job);
 
   req.Start();
@@ -5923,7 +6278,7 @@ TEST_F(URLRequestTestHTTP, DefaultUserAgent) {
                  &default_context_);
   req.Start();
   base::RunLoop().Run();
-  EXPECT_EQ(req.context()->http_user_agent_settings()->GetUserAgent(req.url()),
+  EXPECT_EQ(req.context()->http_user_agent_settings()->GetUserAgent(),
             d.data_received());
 }
 
@@ -5992,7 +6347,7 @@ TEST_F(URLRequestTestHTTP, SetSubsequentJobPriority) {
   scoped_refptr<URLRequestRedirectJob> redirect_job =
       new URLRequestRedirectJob(
           &req, &default_network_delegate_, test_server_.GetURL("echo"),
-          URLRequestRedirectJob::REDIRECT_302_FOUND);
+          URLRequestRedirectJob::REDIRECT_302_FOUND, "Very Good Reason");
   AddTestInterceptor()->set_main_intercept_job(redirect_job.get());
 
   req.SetPriority(LOW);
@@ -6006,6 +6361,80 @@ TEST_F(URLRequestTestHTTP, SetSubsequentJobPriority) {
   // Should trigger |job| to be started.
   base::RunLoop().Run();
   EXPECT_EQ(LOW, job->priority());
+}
+
+// Check that creating a network request while entering/exiting suspend mode
+// fails as it should.  This is the only case where an HttpTransactionFactory
+// does not return an HttpTransaction.
+TEST_F(URLRequestTestHTTP, NetworkSuspendTest) {
+  // Create a new HttpNetworkLayer that thinks it's suspended.
+  HttpNetworkSession::Params params;
+  params.host_resolver = default_context_.host_resolver();
+  params.cert_verifier = default_context_.cert_verifier();
+  params.transport_security_state = default_context_.transport_security_state();
+  params.proxy_service = default_context_.proxy_service();
+  params.ssl_config_service = default_context_.ssl_config_service();
+  params.http_auth_handler_factory =
+      default_context_.http_auth_handler_factory();
+  params.network_delegate = &default_network_delegate_;
+  params.http_server_properties = default_context_.http_server_properties();
+  scoped_ptr<HttpNetworkLayer> network_layer(
+      new HttpNetworkLayer(new HttpNetworkSession(params)));
+  network_layer->OnSuspend();
+
+  HttpCache http_cache(network_layer.release(), default_context_.net_log(),
+                       HttpCache::DefaultBackend::InMemory(0));
+
+  TestURLRequestContext context(true);
+  context.set_http_transaction_factory(&http_cache);
+  context.Init();
+
+  TestDelegate d;
+  URLRequest req(GURL("http://127.0.0.1/"),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &context);
+  req.Start();
+  base::RunLoop().Run();
+
+  EXPECT_TRUE(d.request_failed());
+  EXPECT_EQ(URLRequestStatus::FAILED, req.status().status());
+  EXPECT_EQ(ERR_NETWORK_IO_SUSPENDED, req.status().error());
+}
+
+// Check that creating a network request while entering/exiting suspend mode
+// fails as it should in the case there is no cache.  This is the only case
+// where an HttpTransactionFactory does not return an HttpTransaction.
+TEST_F(URLRequestTestHTTP, NetworkSuspendTestNoCache) {
+  // Create a new HttpNetworkLayer that thinks it's suspended.
+  HttpNetworkSession::Params params;
+  params.host_resolver = default_context_.host_resolver();
+  params.cert_verifier = default_context_.cert_verifier();
+  params.transport_security_state = default_context_.transport_security_state();
+  params.proxy_service = default_context_.proxy_service();
+  params.ssl_config_service = default_context_.ssl_config_service();
+  params.http_auth_handler_factory =
+      default_context_.http_auth_handler_factory();
+  params.network_delegate = &default_network_delegate_;
+  params.http_server_properties = default_context_.http_server_properties();
+  HttpNetworkLayer network_layer(new HttpNetworkSession(params));
+  network_layer.OnSuspend();
+
+  TestURLRequestContext context(true);
+  context.set_http_transaction_factory(&network_layer);
+  context.Init();
+
+  TestDelegate d;
+  URLRequest req(GURL("http://127.0.0.1/"),
+                 DEFAULT_PRIORITY,
+                 &d,
+                 &context);
+  req.Start();
+  base::RunLoop().Run();
+
+  EXPECT_TRUE(d.request_failed());
+  EXPECT_EQ(URLRequestStatus::FAILED, req.status().status());
+  EXPECT_EQ(ERR_NETWORK_IO_SUSPENDED, req.status().error());
 }
 
 class HTTPSRequestTest : public testing::Test {
@@ -6129,12 +6558,11 @@ TEST_F(HTTPSRequestTest, HTTPSExpiredTest) {
 // Tests TLSv1.1 -> TLSv1 fallback. Verifies that we don't fall back more
 // than necessary.
 TEST_F(HTTPSRequestTest, TLSv1Fallback) {
-  uint16 default_version_max = SSLConfigService::default_version_max();
   // The OpenSSL library in use may not support TLS 1.1.
 #if !defined(USE_OPENSSL)
-  EXPECT_GT(default_version_max, SSL_PROTOCOL_VERSION_TLS1);
+  EXPECT_GT(kDefaultSSLVersionMax, SSL_PROTOCOL_VERSION_TLS1);
 #endif
-  if (default_version_max <= SSL_PROTOCOL_VERSION_TLS1)
+  if (kDefaultSSLVersionMax <= SSL_PROTOCOL_VERSION_TLS1)
     return;
 
   SpawnedTestServer::SSLOptions ssl_options(
@@ -6261,11 +6689,10 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
       base::FilePath(FILE_PATH_LITERAL("net/data/ssl")));
   ASSERT_TRUE(test_server.Start());
 
-  // We require that the URL be www.google.com in order to pick up the
-  // preloaded and dynamic HSTS and public key pin entries in the
-  // TransportSecurityState. This means that we have to use a
-  // MockHostResolver in order to direct www.google.com to the testserver.
-  // By default, MockHostResolver maps all hosts to 127.0.0.1.
+  // We require that the URL be www.google.com in order to pick up the static
+  // and dynamic STS and PKP entries in the TransportSecurityState. This means
+  // that we have to use a MockHostResolver in order to direct www.google.com to
+  // the testserver. By default, MockHostResolver maps all hosts to 127.0.0.1.
 
   MockHostResolver host_resolver;
   TestNetworkDelegate network_delegate;  // Must outlive URLRequest.
@@ -6273,11 +6700,16 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   context.set_network_delegate(&network_delegate);
   context.set_host_resolver(&host_resolver);
   TransportSecurityState transport_security_state;
-  TransportSecurityState::DomainState domain_state;
-  EXPECT_TRUE(transport_security_state.GetDomainState("www.google.com", true,
-                                                      &domain_state));
+
+  TransportSecurityState::DomainState static_domain_state;
+  EXPECT_TRUE(transport_security_state.GetStaticDomainState(
+      "www.google.com", true, &static_domain_state));
   context.set_transport_security_state(&transport_security_state);
   context.Init();
+
+  TransportSecurityState::DomainState dynamic_domain_state;
+  EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
+      "www.google.com", &dynamic_domain_state));
 
   TestDelegate d;
   URLRequest r(GURL(base::StringPrintf("https://www.google.com:%d",
@@ -6296,21 +6728,24 @@ TEST_F(HTTPSRequestTest, HTTPSErrorsNoClobberTSSTest) {
   EXPECT_TRUE(d.have_certificate_errors());
   EXPECT_TRUE(d.certificate_errors_are_fatal());
 
-  // Get a fresh copy of the state, and check that it hasn't been updated.
-  TransportSecurityState::DomainState new_domain_state;
-  EXPECT_TRUE(transport_security_state.GetDomainState("www.google.com", true,
-                                                      &new_domain_state));
-  EXPECT_EQ(new_domain_state.upgrade_mode, domain_state.upgrade_mode);
-  EXPECT_EQ(new_domain_state.sts_include_subdomains,
-            domain_state.sts_include_subdomains);
-  EXPECT_EQ(new_domain_state.pkp_include_subdomains,
-            domain_state.pkp_include_subdomains);
-  EXPECT_TRUE(FingerprintsEqual(new_domain_state.static_spki_hashes,
-                                domain_state.static_spki_hashes));
-  EXPECT_TRUE(FingerprintsEqual(new_domain_state.dynamic_spki_hashes,
-                                domain_state.dynamic_spki_hashes));
-  EXPECT_TRUE(FingerprintsEqual(new_domain_state.bad_static_spki_hashes,
-                                domain_state.bad_static_spki_hashes));
+  // Get a fresh copy of the states, and check that they haven't changed.
+  TransportSecurityState::DomainState new_static_domain_state;
+  EXPECT_TRUE(transport_security_state.GetStaticDomainState(
+      "www.google.com", true, &new_static_domain_state));
+  TransportSecurityState::DomainState new_dynamic_domain_state;
+  EXPECT_FALSE(transport_security_state.GetDynamicDomainState(
+      "www.google.com", &new_dynamic_domain_state));
+
+  EXPECT_EQ(new_static_domain_state.sts.upgrade_mode,
+            static_domain_state.sts.upgrade_mode);
+  EXPECT_EQ(new_static_domain_state.sts.include_subdomains,
+            static_domain_state.sts.include_subdomains);
+  EXPECT_EQ(new_static_domain_state.pkp.include_subdomains,
+            static_domain_state.pkp.include_subdomains);
+  EXPECT_TRUE(FingerprintsEqual(new_static_domain_state.pkp.spki_hashes,
+                                static_domain_state.pkp.spki_hashes));
+  EXPECT_TRUE(FingerprintsEqual(new_static_domain_state.pkp.bad_spki_hashes,
+                                static_domain_state.pkp.bad_spki_hashes));
 }
 
 // Make sure HSTS preserves a POST request's method and body.
@@ -6869,12 +7304,12 @@ static bool SystemSupportsHardFailRevocationChecking() {
 // several tests are effected because our testing EV certificate won't be
 // recognised as EV.
 static bool SystemUsesChromiumEVMetadata() {
-#if defined(USE_OPENSSL)
+#if defined(USE_OPENSSL_CERTS) && !defined(OS_ANDROID)
   // http://crbug.com/117478 - OpenSSL does not support EV validation.
   return false;
-#elif defined(OS_MACOSX) && !defined(OS_IOS)
-  // On OS X, we use the system to tell us whether a certificate is EV or not
-  // and the system won't recognise our testing root.
+#elif (defined(OS_MACOSX) && !defined(OS_IOS)) || defined(OS_ANDROID)
+  // On OS X and Android, we use the system to tell us whether a certificate is
+  // EV or not and the system won't recognise our testing root.
   return false;
 #else
   return true;

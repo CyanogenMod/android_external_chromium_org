@@ -16,7 +16,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/extension_icon_set.h"
+#include "extensions/common/extension_icon_set.h"
 #include "third_party/skia/include/core/SkColor.h"
 // TODO(robertphillips): change this to "class SkBaseDevice;"
 #include "third_party/skia/include/core/SkDevice.h"
@@ -41,6 +41,9 @@ class ExtensionAction {
   // Use this ID to indicate the default state for properties that take a tab_id
   // parameter.
   static const int kDefaultTabId;
+
+  // Max size (both dimensions) for page actions.
+  static const int kPageActionIconMaxSize;
 
   ExtensionAction(const std::string& extension_id,
                   extensions::ActionInfo::Type action_type,
@@ -67,9 +70,6 @@ class ExtensionAction {
   // action id -- only used with legacy page actions API
   std::string id() const { return id_; }
   void set_id(const std::string& id) { id_ = id; }
-
-  bool has_changed() const { return has_changed_; }
-  void set_has_changed(bool value) { has_changed_ = value; }
 
   // Set the url which the popup will load when the user clicks this action's
   // icon.  Setting an empty URL will disable the popup for a given tab.
@@ -182,6 +182,16 @@ class ExtensionAction {
                                   int tab_id,
                                   const gfx::Size& spacing) const;
 
+  // Determine whether or not the ExtensionAction has a value set for the given
+  // |tab_id| for each property.
+  bool HasPopupUrl(int tab_id) const;
+  bool HasTitle(int tab_id) const;
+  bool HasBadgeText(int tab_id) const;
+  bool HasBadgeBackgroundColor(int tab_id) const;
+  bool HasBadgeTextColor(int tab_id) const;
+  bool HasIsVisible(int tab_id) const;
+  bool HasIcon(int tab_id) const;
+
  private:
   // Returns width of the current icon for tab_id.
   // TODO(tbarzic): The icon selection is done in ExtensionActionIconFactory.
@@ -255,10 +265,6 @@ class ExtensionAction {
   // The id for the ExtensionAction, for example: "RssPageAction". This is
   // needed for compat with an older version of the page actions API.
   std::string id_;
-
-  // True if the ExtensionAction's settings have changed from what was
-  // specified in the manifest.
-  bool has_changed_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionAction);
 };

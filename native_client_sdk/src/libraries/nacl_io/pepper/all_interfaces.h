@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 /* Given an interface like this:
  *
  *   struct PPB_Frob_1_1 {
@@ -68,6 +67,7 @@ END_INTERFACE(FileRefInterface, PPB_FileRef_1_1)
 /* Chrome M14 required */
 BEGIN_INTERFACE(FileSystemInterface, PPB_FileSystem_1_0,
                 PPB_FILESYSTEM_INTERFACE_1_0)
+  METHOD1(FileSystemInterface, PP_Bool, IsFileSystem, PP_Resource)
   METHOD2(FileSystemInterface, PP_Resource, Create, PP_Instance,
           PP_FileSystemType)
   METHOD3(FileSystemInterface, int32_t, Open, PP_Resource, int64_t,
@@ -111,6 +111,14 @@ BEGIN_INTERFACE(VarArrayBufferInterface, PPB_VarArrayBuffer_1_0,
   METHOD1(VarArrayBufferInterface, void*, Map, PP_Var)
   METHOD1(VarArrayBufferInterface, void, Unmap, PP_Var)
 END_INTERFACE(VarArrayBufferInterface, PPB_VarArrayBuffer_1_0)
+
+BEGIN_INTERFACE(VarDictionaryInterface, PPB_VarDictionary_1_0,
+                PPB_VAR_DICTIONARY_INTERFACE_1_0)
+  METHOD0(VarDictionaryInterface, PP_Var, Create)
+  METHOD3(VarDictionaryInterface, PP_Bool, Set, PP_Var, PP_Var, PP_Var)
+  METHOD2(VarDictionaryInterface, PP_Var, Get, PP_Var, PP_Var)
+  METHOD1(VarDictionaryInterface, PP_Var, GetKeys, PP_Var)
+END_INTERFACE(VarDictionaryInterface, PPB_VarDictionary_1_0)
 
 /* Chrome M18 required */
 BEGIN_INTERFACE(VarInterface, PPB_Var_1_1, PPB_VAR_INTERFACE_1_1)

@@ -9,20 +9,43 @@
 namespace app_list {
 namespace switches {
 
-// If set, the experimental app list will be used.
-const char kEnableExperimentalAppList[] = "enable-experimental-app-list";
+// If set, the app info context menu item is not available in the app list UI.
+const char kDisableAppInfo[] = "disable-app-list-app-info";
 
-// If set, folder will be enabled in app list UI.
-const char kEnableFolderUI[] = "enable-app-list-folder-ui";
+// Disables syncing of the app list independent of extensions.
+const char kDisableSyncAppList[] = "disable-sync-app-list";
 
 // If set, the voice search is disabled in app list UI.
 const char kDisableVoiceSearch[] = "disable-app-list-voice-search";
 
-// If set, the app info context menu item is available in the app list UI.
-const char kEnableAppInfo[] = "enable-app-list-app-info";
+// If set, the app list will be centered and wide instead of tall.
+const char kEnableCenteredAppList[] = "enable-centered-app-list";
+
+// If set, Drive apps of the user shows side-by-side with Chrome apps.
+const char kEnableDriveAppsInAppList[] = "enable-drive-apps-in-app-list";
+
+// If set, the experimental app list will be used. Implies
+// --enable-centered-app-list.
+const char kEnableExperimentalAppList[] = "enable-experimental-app-list";
+
+// Enables syncing of the app list independent of extensions.
+const char kEnableSyncAppList[] = "enable-sync-app-list";
+
+bool IsAppListSyncEnabled() {
+#if defined(TOOLKIT_VIEWS)
+  return !CommandLine::ForCurrentProcess()->HasSwitch(kDisableSyncAppList);
+#else
+  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableSyncAppList);
+#endif
+}
 
 bool IsFolderUIEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableFolderUI);
+#if !defined(TOOLKIT_VIEWS)
+  return false;  // Folder UI not implemented for Cocoa.
+#endif
+  // Folder UI is available only when AppList sync is enabled, and should
+  // not be disabled separately.
+  return IsAppListSyncEnabled();
 }
 
 bool IsVoiceSearchEnabled() {
@@ -35,8 +58,26 @@ bool IsVoiceSearchEnabled() {
 }
 
 bool IsAppInfoEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableAppInfo);
+#if defined(TOOLKIT_VIEWS)
+  return !CommandLine::ForCurrentProcess()->HasSwitch(kDisableAppInfo);
+#else
+  return false;
+#endif
 }
 
-}  // namespcae switches
+bool IsExperimentalAppListEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(
+      kEnableExperimentalAppList);
+}
+
+bool IsCenteredAppListEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableCenteredAppList) ||
+         IsExperimentalAppListEnabled();
+}
+
+bool IsDriveAppsInAppListEnabled() {
+  return CommandLine::ForCurrentProcess()->HasSwitch(kEnableDriveAppsInAppList);
+}
+
+}  // namespace switches
 }  // namespace app_list

@@ -11,6 +11,7 @@
 #include "ui/views/layout/layout_manager.h"
 
 namespace gfx {
+class Rect;
 class Size;
 }
 
@@ -30,6 +31,33 @@ class VIEWS_EXPORT BoxLayout : public LayoutManager {
     kVertical,
   };
 
+  // This specifies where along the main axis the children should be laid out.
+  // e.g. a horizontal layout of MAIN_AXIS_ALIGNMENT_END will result in the
+  // child views being right-aligned.
+  enum MainAxisAlignment {
+    MAIN_AXIS_ALIGNMENT_START,
+    MAIN_AXIS_ALIGNMENT_CENTER,
+    MAIN_AXIS_ALIGNMENT_END,
+
+    // This distributes extra space among the child views. This increases the
+    // size of child views along the main axis rather than the space between
+    // them.
+    MAIN_AXIS_ALIGNMENT_FILL,
+    // TODO(calamity): Add MAIN_AXIS_ALIGNMENT_JUSTIFY which spreads blank space
+    // in-between the child views.
+  };
+
+  // This specifies where along the cross axis the children should be laid out.
+  // e.g. a horizontal layout of CROSS_AXIS_ALIGNMENT_END will result in the
+  // child views being bottom-aligned.
+  enum CrossAxisAlignment {
+    // This causes the child view to stretch to fit the host in the cross axis.
+    CROSS_AXIS_ALIGNMENT_STRETCH,
+    CROSS_AXIS_ALIGNMENT_START,
+    CROSS_AXIS_ALIGNMENT_CENTER,
+    CROSS_AXIS_ALIGNMENT_END,
+  };
+
   // Use |inside_border_horizontal_spacing| and
   // |inside_border_vertical_spacing| to add additional space between the child
   // view area and the host view border. |between_child_spacing| controls the
@@ -40,22 +68,55 @@ class VIEWS_EXPORT BoxLayout : public LayoutManager {
             int between_child_spacing);
   virtual ~BoxLayout();
 
-  void set_spread_blank_space(bool spread) {
-    spread_blank_space_ = spread;
+  void set_main_axis_alignment(MainAxisAlignment main_axis_alignment) {
+    main_axis_alignment_ = main_axis_alignment;
+  }
+
+  void set_cross_axis_alignment(CrossAxisAlignment cross_axis_alignment) {
+    cross_axis_alignment_ = cross_axis_alignment;
+  }
+
+  void set_inside_border_insets(const gfx::Insets& insets) {
+    inside_border_insets_ = insets;
   }
 
   // Overridden from views::LayoutManager:
   virtual void Layout(View* host) OVERRIDE;
-  virtual gfx::Size GetPreferredSize(View* host) OVERRIDE;
-  virtual int GetPreferredHeightForWidth(View* host, int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize(const View* host) const OVERRIDE;
+  virtual int GetPreferredHeightForWidth(const View* host,
+                                         int width) const OVERRIDE;
 
  private:
+  // Returns the size and position along the main axis of |rect|.
+  int MainAxisSize(const gfx::Rect& rect) const;
+  int MainAxisPosition(const gfx::Rect& rect) const;
+
+  // Sets the size and position along the main axis of |rect|.
+  void SetMainAxisSize(int size, gfx::Rect* rect) const;
+  void SetMainAxisPosition(int position, gfx::Rect* rect) const;
+
+  // Returns the size and position along the cross axis of |rect|.
+  int CrossAxisSize(const gfx::Rect& rect) const;
+  int CrossAxisPosition(const gfx::Rect& rect) const;
+
+  // Sets the size and position along the cross axis of |rect|.
+  void SetCrossAxisSize(int size, gfx::Rect* rect) const;
+  void SetCrossAxisPosition(int size, gfx::Rect* rect) const;
+
+  // Returns the main axis size for the given view. |child_area_width| is needed
+  // to calculate the height of the view when the orientation is vertical.
+  int MainAxisSizeForView(const View* view, int child_area_width) const;
+
+  // Returns the cross axis size for the given view.
+  int CrossAxisSizeForView(const View* view) const;
+
   // The preferred size for the dialog given the width of the child area.
-  gfx::Size GetPreferredSizeForChildWidth(View* host, int child_area_width);
+  gfx::Size GetPreferredSizeForChildWidth(const View* host,
+                                          int child_area_width) const;
 
   // The amount of space the layout requires in addition to any space for the
   // child views.
-  gfx::Size NonChildSize(View* host);
+  gfx::Size NonChildSize(const View* host) const;
 
   const Orientation orientation_;
 
@@ -65,9 +126,13 @@ class VIEWS_EXPORT BoxLayout : public LayoutManager {
   // Spacing to put in between child views.
   const int between_child_spacing_;
 
-  // Whether the available extra space should be distributed among the child
-  // views.
-  bool spread_blank_space_;
+  // The alignment of children in the main axis. This is
+  // MAIN_AXIS_ALIGNMENT_START by default.
+  MainAxisAlignment main_axis_alignment_;
+
+  // The alignment of children in the cross axis. This is
+  // CROSS_AXIS_ALIGNMENT_STRETCH by default.
+  CrossAxisAlignment cross_axis_alignment_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(BoxLayout);
 };

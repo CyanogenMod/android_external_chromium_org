@@ -12,11 +12,20 @@
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/local_discovery/privet_constants.h"
-#include "components/cloud_devices/printer_description.h"
+#include "components/cloud_devices/common/printer_description.h"
 #include "net/base/url_util.h"
+#include "printing/pwg_raster_settings.h"
 #include "printing/units.h"
+#include "ui/gfx/text_elider.h"
 #include "url/gurl.h"
+
+using namespace cloud_devices::printer;
+
+namespace cloud_print {
+extern const char kContentTypeJSON[];
+}
 
 namespace local_discovery {
 
@@ -35,7 +44,6 @@ const char kPrivetURLValueClientName[] = "Chrome";
 const char kPrivetContentTypePDF[] = "application/pdf";
 const char kPrivetContentTypePWGRaster[] = "image/pwg-raster";
 const char kPrivetContentTypeAny[] = "*/*";
-const char kPrivetContentTypeCJT[] = "application/json";
 
 const char kPrivetStorageListPath[] = "/privet/storage/list";
 const char kPrivetStorageContentPath[] = "/privet/storage/content";
@@ -48,6 +56,8 @@ const int kPrivetCancelationTimeoutSeconds = 3;
 const int kPrivetLocalPrintMaxRetries = 2;
 
 const int kPrivetLocalPrintDefaultTimeout = 5;
+
+const size_t kPrivetLocalPrintMaxJobNameLength = 64;
 
 GURL CreatePrivetURL(const std::string& path) {
   GURL url(kUrlPlaceHolder);
@@ -77,7 +87,7 @@ GURL CreatePrivetParamURL(const std::string& path,
 }  // namespace
 
 PrivetInfoOperationImpl::PrivetInfoOperationImpl(
-    PrivetHTTPClientImpl* privet_client,
+    PrivetHTTPClient* privet_client,
     const PrivetJSONOperation::ResultCallback& callback)
     : privet_client_(privet_client), callback_(callback) {
 }
@@ -90,7 +100,7 @@ void PrivetInfoOperationImpl::Start() {
       CreatePrivetURL(kPrivetInfoPath), net::URLFetcher::GET, this);
 
   url_fetcher_->DoNotRetryOnTransientError();
-  url_fetcher_->AllowEmptyPrivetToken();
+  url_fetcher_->SendEmptyPrivetToken();
 
   url_fetcher_->Start();
 }
@@ -107,16 +117,16 @@ void PrivetInfoOperationImpl::OnError(PrivetURLFetcher* fetcher,
 void PrivetInfoOperationImpl::OnParsedJson(PrivetURLFetcher* fetcher,
                                            const base::DictionaryValue* value,
                                            bool has_error) {
-  if (!has_error)
-    privet_client_->CacheInfo(value);
   callback_.Run(value);
 }
 
 PrivetRegisterOperationImpl::PrivetRegisterOperationImpl(
-    PrivetHTTPClientImpl* privet_client,
+    PrivetHTTPClient* privet_client,
     const std::string& user,
     PrivetRegisterOperation::Delegate* delegate)
-    : user_(user), delegate_(delegate), privet_client_(privet_client),
+    : user_(user),
+      delegate_(delegate),
+      privet_client_(privet_client),
       ongoing_(false) {
 }
 
@@ -306,7 +316,7 @@ void PrivetRegisterOperationImpl::StartInfoOperation() {
 }
 
 PrivetRegisterOperationImpl::Cancelation::Cancelation(
-    PrivetHTTPClientImpl* privet_client,
+    PrivetHTTPClient* privet_client,
     const std::string& user) {
   url_fetcher_ =
       privet_client->CreateURLFetcher(
@@ -337,11 +347,13 @@ void PrivetRegisterOperationImpl::Cancelation::Cleanup() {
 }
 
 PrivetJSONOperationImpl::PrivetJSONOperationImpl(
-    PrivetHTTPClientImpl* privet_client,
+    PrivetHTTPClient* privet_client,
     const std::string& path,
     const std::string& query_params,
     const PrivetJSONOperation::ResultCallback& callback)
-    : privet_client_(privet_client), path_(path), query_params_(query_params),
+    : privet_client_(privet_client),
+      path_(path),
+      query_params_(query_params),
       callback_(callback) {
 }
 
@@ -379,12 +391,16 @@ void PrivetJSONOperationImpl::OnNeedPrivetToken(
 }
 
 PrivetDataReadOperationImpl::PrivetDataReadOperationImpl(
-    PrivetHTTPClientImpl* privet_client,
+    PrivetHTTPClient* privet_client,
     const std::string& path,
     const std::string& query_params,
     const PrivetDataReadOperation::ResultCallback& callback)
-    : privet_client_(privet_client), path_(path), query_params_(query_params),
-      callback_(callback), has_range_(false), save_to_file_(false) {
+    : privet_client_(privet_client),
+      path_(path),
+      query_params_(query_params),
+      callback_(callback),
+      has_range_(false),
+      save_to_file_(false) {
 }
 
 PrivetDataReadOperationImpl::~PrivetDataReadOperationImpl() {
@@ -450,12 +466,11 @@ bool PrivetDataReadOperationImpl::OnRawData(PrivetURLFetcher* fetcher,
 }
 
 PrivetLocalPrintOperationImpl::PrivetLocalPrintOperationImpl(
-    PrivetHTTPClientImpl* privet_client,
+    PrivetHTTPClient* privet_client,
     PrivetLocalPrintOperation::Delegate* delegate)
     : privet_client_(privet_client),
       delegate_(delegate),
       use_pdf_(false),
-      has_capabilities_(false),
       has_extended_workflow_(false),
       started_(false),
       offline_(false),
@@ -483,7 +498,6 @@ void PrivetLocalPrintOperationImpl::Start() {
 void PrivetLocalPrintOperationImpl::OnPrivetInfoDone(
     const base::DictionaryValue* value) {
   if (value && !value->HasKey(kPrivetKeyError)) {
-    has_capabilities_ = false;
     has_extended_workflow_ = false;
     bool has_printing = false;
 
@@ -492,9 +506,7 @@ void PrivetLocalPrintOperationImpl::OnPrivetInfoDone(
       for (size_t i = 0; i < api_list->GetSize(); i++) {
         std::string api;
         api_list->GetString(i, &api);
-        if (api == kPrivetCapabilitiesPath) {
-          has_capabilities_ = true;
-        } else if (api == kPrivetSubmitdocPath) {
+        if (api == kPrivetSubmitdocPath) {
           has_printing = true;
         } else if (api == kPrivetCreatejobPath) {
           has_extended_workflow_ = true;
@@ -514,26 +526,22 @@ void PrivetLocalPrintOperationImpl::OnPrivetInfoDone(
 }
 
 void PrivetLocalPrintOperationImpl::StartInitialRequest() {
-  if (has_capabilities_) {
-    GetCapabilities();
+  use_pdf_ = false;
+  ContentTypesCapability content_types;
+  if (content_types.LoadFrom(capabilities_)) {
+    use_pdf_ = content_types.Contains(kPrivetContentTypePDF) ||
+               content_types.Contains(kPrivetContentTypeAny);
+  }
+
+  if (use_pdf_) {
+    StartPrinting();
   } else {
-    // Since we have no capabilities, the only reasonable format we can
-    // request is PWG Raster.
-    use_pdf_ = false;
+    DpiCapability dpis;
+    if (dpis.LoadFrom(capabilities_)) {
+      dpi_ = std::max(dpis.GetDefault().horizontal, dpis.GetDefault().vertical);
+    }
     StartConvertToPWG();
   }
-}
-
-void PrivetLocalPrintOperationImpl::GetCapabilities() {
-  current_response_ = base::Bind(
-      &PrivetLocalPrintOperationImpl::OnCapabilitiesResponse,
-      base::Unretained(this));
-
-  url_fetcher_= privet_client_->CreateURLFetcher(
-      CreatePrivetURL(kPrivetCapabilitiesPath), net::URLFetcher::GET, this);
-  url_fetcher_->DoNotRetryOnTransientError();
-
-  url_fetcher_->Start();
 }
 
 void PrivetLocalPrintOperationImpl::DoCreatejob() {
@@ -543,7 +551,8 @@ void PrivetLocalPrintOperationImpl::DoCreatejob() {
 
   url_fetcher_= privet_client_->CreateURLFetcher(
       CreatePrivetURL(kPrivetCreatejobPath), net::URLFetcher::POST, this);
-  url_fetcher_->SetUploadData(kPrivetContentTypeCJT, ticket_);
+  url_fetcher_->SetUploadData(cloud_print::kContentTypeJSON,
+                              ticket_.ToString());
 
   url_fetcher_->Start();
 }
@@ -565,10 +574,15 @@ void PrivetLocalPrintOperationImpl::DoSubmitdoc() {
                                     user_);
   }
 
+  base::string16 shortened_jobname;
+
+  gfx::ElideString(base::UTF8ToUTF16(jobname_),
+                   kPrivetLocalPrintMaxJobNameLength,
+                   &shortened_jobname);
+
   if (!jobname_.empty()) {
-    url = net::AppendQueryParameter(url,
-                                    kPrivetURLKeyJobname,
-                                    jobname_);
+    url = net::AppendQueryParameter(
+        url, kPrivetURLKeyJobname, base::UTF16ToUTF8(shortened_jobname));
   }
 
   if (!jobid_.empty()) {
@@ -599,16 +613,67 @@ void PrivetLocalPrintOperationImpl::DoSubmitdoc() {
 }
 
 void PrivetLocalPrintOperationImpl::StartPrinting() {
-  if (has_extended_workflow_ && !ticket_.empty() && jobid_.empty()) {
+  if (has_extended_workflow_ && jobid_.empty()) {
     DoCreatejob();
   } else {
     DoSubmitdoc();
   }
 }
 
+void PrivetLocalPrintOperationImpl::FillPwgRasterSettings(
+    printing::PwgRasterSettings* transform_settings) {
+  PwgRasterConfigCapability raster_capability;
+  // If the raster capability fails to load, raster_capability will contain
+  // the default value.
+  raster_capability.LoadFrom(capabilities_);
+
+  DuplexTicketItem duplex_item;
+  DuplexType duplex_value = NO_DUPLEX;
+
+  DocumentSheetBack document_sheet_back =
+      raster_capability.value().document_sheet_back;
+
+  if (duplex_item.LoadFrom(ticket_)) {
+    duplex_value = duplex_item.value();
+  }
+
+  transform_settings->odd_page_transform = printing::TRANSFORM_NORMAL;
+  switch (duplex_value) {
+    case NO_DUPLEX:
+      transform_settings->odd_page_transform = printing::TRANSFORM_NORMAL;
+      break;
+    case LONG_EDGE:
+      if (document_sheet_back == ROTATED) {
+        transform_settings->odd_page_transform = printing::TRANSFORM_ROTATE_180;
+      } else if (document_sheet_back == FLIPPED) {
+        transform_settings->odd_page_transform =
+            printing::TRANSFORM_FLIP_VERTICAL;
+      }
+      break;
+    case SHORT_EDGE:
+      if (document_sheet_back == MANUAL_TUMBLE) {
+        transform_settings->odd_page_transform = printing::TRANSFORM_ROTATE_180;
+      } else if (document_sheet_back == FLIPPED) {
+        transform_settings->odd_page_transform =
+            printing::TRANSFORM_FLIP_HORIZONTAL;
+      }
+  }
+
+  transform_settings->rotate_all_pages =
+      raster_capability.value().rotate_all_pages;
+
+  transform_settings->reverse_page_order =
+      raster_capability.value().reverse_order_streaming;
+}
+
 void PrivetLocalPrintOperationImpl::StartConvertToPWG() {
+  printing::PwgRasterSettings transform_settings;
+
+  FillPwgRasterSettings(&transform_settings);
+
   if (!pwg_raster_converter_)
     pwg_raster_converter_ = PWGRasterConverter::CreateDefault();
+
   double scale = dpi_;
   scale /= printing::kPointsPerInch;
   // Make vertical rectangle to optimize streaming to printer. Fix orientation
@@ -616,41 +681,11 @@ void PrivetLocalPrintOperationImpl::StartConvertToPWG() {
   gfx::Rect area(std::min(page_size_.width(), page_size_.height()) * scale,
                  std::max(page_size_.width(), page_size_.height()) * scale);
   pwg_raster_converter_->Start(
-      data_, printing::PdfRenderSettings(area, dpi_, true),
+      data_,
+      printing::PdfRenderSettings(area, dpi_, true),
+      transform_settings,
       base::Bind(&PrivetLocalPrintOperationImpl::OnPWGRasterConverted,
                  base::Unretained(this)));
-}
-
-void PrivetLocalPrintOperationImpl::OnCapabilitiesResponse(
-    bool has_error,
-    const base::DictionaryValue* value) {
-  if (has_error) {
-    delegate_->OnPrivetPrintingError(this, 200);
-    return;
-  }
-
-  cloud_devices::CloudDeviceDescription description;
-  if (!description.InitFromDictionary(make_scoped_ptr(value->DeepCopy()))) {
-    delegate_->OnPrivetPrintingError(this, 200);
-    return;
-  }
-
-  use_pdf_ = false;
-  cloud_devices::printer::ContentTypesCapability content_types;
-  if (content_types.LoadFrom(description)) {
-    use_pdf_ = content_types.Contains(kPrivetContentTypePDF) ||
-               content_types.Contains(kPrivetContentTypeAny);
-  }
-
-  if (use_pdf_) {
-    StartPrinting();
-  } else {
-    cloud_devices::printer::DpiCapability dpis;
-    if (dpis.LoadFrom(description)) {
-      dpi_ = std::max(dpis.GetDefault().horizontal, dpis.GetDefault().vertical);
-    }
-    StartConvertToPWG();
-  }
 }
 
 void PrivetLocalPrintOperationImpl::OnSubmitdocResponse(
@@ -755,7 +790,13 @@ void PrivetLocalPrintOperationImpl::SetData(base::RefCountedBytes* data) {
 
 void PrivetLocalPrintOperationImpl::SetTicket(const std::string& ticket) {
   DCHECK(!started_);
-  ticket_ = ticket;
+  ticket_.InitFromString(ticket);
+}
+
+void PrivetLocalPrintOperationImpl::SetCapabilities(
+    const std::string& capabilities) {
+  DCHECK(!started_);
+  capabilities_.InitFromString(capabilities);
 }
 
 void PrivetLocalPrintOperationImpl::SetUsername(const std::string& user) {
@@ -787,24 +828,13 @@ PrivetHTTPClientImpl::PrivetHTTPClientImpl(
     const std::string& name,
     const net::HostPortPair& host_port,
     net::URLRequestContextGetter* request_context)
-    : name_(name),
-      fetcher_factory_(request_context),
-      host_port_(host_port) {
-}
+    : name_(name), request_context_(request_context), host_port_(host_port) {}
 
 PrivetHTTPClientImpl::~PrivetHTTPClientImpl() {
 }
 
-const base::DictionaryValue* PrivetHTTPClientImpl::GetCachedInfo() const {
-  return cached_info_.get();
-}
-
-scoped_ptr<PrivetRegisterOperation>
-PrivetHTTPClientImpl::CreateRegisterOperation(
-    const std::string& user,
-    PrivetRegisterOperation::Delegate* delegate) {
-  return scoped_ptr<PrivetRegisterOperation>(
-      new PrivetRegisterOperationImpl(this, user, delegate));
+const std::string& PrivetHTTPClientImpl::GetName() {
+  return name_;
 }
 
 scoped_ptr<PrivetJSONOperation> PrivetHTTPClientImpl::CreateInfoOperation(
@@ -813,69 +843,20 @@ scoped_ptr<PrivetJSONOperation> PrivetHTTPClientImpl::CreateInfoOperation(
       new PrivetInfoOperationImpl(this, callback));
 }
 
-scoped_ptr<PrivetJSONOperation>
-PrivetHTTPClientImpl::CreateCapabilitiesOperation(
-    const PrivetJSONOperation::ResultCallback& callback) {
-  return scoped_ptr<PrivetJSONOperation>(
-      new PrivetJSONOperationImpl(this, kPrivetCapabilitiesPath, "", callback));
-}
-
-scoped_ptr<PrivetLocalPrintOperation>
-PrivetHTTPClientImpl::CreateLocalPrintOperation(
-    PrivetLocalPrintOperation::Delegate* delegate) {
-  return scoped_ptr<PrivetLocalPrintOperation>(
-      new PrivetLocalPrintOperationImpl(this, delegate));
-}
-
-scoped_ptr<PrivetJSONOperation>
-PrivetHTTPClientImpl::CreateStorageListOperation(
-      const std::string& path,
-      const PrivetJSONOperation::ResultCallback& callback) {
-  std::string url_param = base::StringPrintf(kPrivetStorageParamPathFormat,
-                                            path.c_str());
-  return scoped_ptr<PrivetJSONOperation>(
-      new PrivetJSONOperationImpl(this, kPrivetStorageListPath, url_param,
-                                  callback));
-}
-
-
-scoped_ptr<PrivetDataReadOperation>
-PrivetHTTPClientImpl::CreateStorageReadOperation(
-    const std::string& path,
-    const PrivetDataReadOperation::ResultCallback& callback) {
-  std::string url_param = base::StringPrintf(kPrivetStorageParamPathFormat,
-                                             path.c_str());
-  return scoped_ptr<PrivetDataReadOperation>(
-      new PrivetDataReadOperationImpl(this, kPrivetStorageContentPath,
-                                      url_param, callback));
-}
-
-const std::string& PrivetHTTPClientImpl::GetName() {
-  return name_;
-}
-
 scoped_ptr<PrivetURLFetcher> PrivetHTTPClientImpl::CreateURLFetcher(
-    const GURL& url, net::URLFetcher::RequestType request_type,
-    PrivetURLFetcher::Delegate* delegate) const {
+    const GURL& url,
+    net::URLFetcher::RequestType request_type,
+    PrivetURLFetcher::Delegate* delegate) {
   GURL::Replacements replacements;
   replacements.SetHostStr(host_port_.host());
   std::string port(base::IntToString(host_port_.port()));  // Keep string alive.
   replacements.SetPortStr(port);
-  return fetcher_factory_.CreateURLFetcher(url.ReplaceComponents(replacements),
-                                           request_type, delegate);
+  return scoped_ptr<PrivetURLFetcher>(
+      new PrivetURLFetcher(url.ReplaceComponents(replacements),
+                           request_type,
+                           request_context_.get(),
+                           delegate));
 }
-
-void PrivetHTTPClientImpl::CacheInfo(const base::DictionaryValue* cached_info) {
-  cached_info_.reset(cached_info->DeepCopy());
-  std::string token;
-  if (cached_info_->GetString(kPrivetInfoKeyToken, &token)) {
-    fetcher_factory_.set_token(token);
-  }
-}
-
-bool PrivetHTTPClientImpl::HasToken() const {
-  return fetcher_factory_.get_token() != "";
-};
 
 void PrivetHTTPClientImpl::RefreshPrivetToken(
     const PrivetURLFetcher::TokenCallback& callback) {
@@ -907,6 +888,82 @@ void PrivetHTTPClientImpl::OnPrivetInfoDone(
        i != token_callbacks.end(); i++) {
     i->Run(token);
   }
+}
+
+PrivetV1HTTPClientImpl::PrivetV1HTTPClientImpl(
+    scoped_ptr<PrivetHTTPClient> info_client)
+    : info_client_(info_client.Pass()) {
+}
+
+PrivetV1HTTPClientImpl::~PrivetV1HTTPClientImpl() {
+}
+
+const std::string& PrivetV1HTTPClientImpl::GetName() {
+  return info_client()->GetName();
+}
+
+scoped_ptr<PrivetJSONOperation> PrivetV1HTTPClientImpl::CreateInfoOperation(
+    const PrivetJSONOperation::ResultCallback& callback) {
+  return info_client()->CreateInfoOperation(callback);
+}
+
+scoped_ptr<PrivetRegisterOperation>
+PrivetV1HTTPClientImpl::CreateRegisterOperation(
+    const std::string& user,
+    PrivetRegisterOperation::Delegate* delegate) {
+  return scoped_ptr<PrivetRegisterOperation>(
+      new PrivetRegisterOperationImpl(info_client(), user, delegate));
+}
+
+scoped_ptr<PrivetJSONOperation>
+PrivetV1HTTPClientImpl::CreateCapabilitiesOperation(
+    const PrivetJSONOperation::ResultCallback& callback) {
+  return scoped_ptr<PrivetJSONOperation>(new PrivetJSONOperationImpl(
+      info_client(), kPrivetCapabilitiesPath, "", callback));
+}
+
+scoped_ptr<PrivetLocalPrintOperation>
+PrivetV1HTTPClientImpl::CreateLocalPrintOperation(
+    PrivetLocalPrintOperation::Delegate* delegate) {
+  return scoped_ptr<PrivetLocalPrintOperation>(
+      new PrivetLocalPrintOperationImpl(info_client(), delegate));
+}
+
+scoped_ptr<PrivetJSONOperation>
+PrivetV1HTTPClientImpl::CreateStorageListOperation(
+    const std::string& path,
+    const PrivetJSONOperation::ResultCallback& callback) {
+  std::string url_param =
+      base::StringPrintf(kPrivetStorageParamPathFormat, path.c_str());
+  return scoped_ptr<PrivetJSONOperation>(new PrivetJSONOperationImpl(
+      info_client(), kPrivetStorageListPath, url_param, callback));
+}
+
+scoped_ptr<PrivetDataReadOperation>
+PrivetV1HTTPClientImpl::CreateStorageReadOperation(
+    const std::string& path,
+    const PrivetDataReadOperation::ResultCallback& callback) {
+  std::string url_param =
+      base::StringPrintf(kPrivetStorageParamPathFormat, path.c_str());
+  return scoped_ptr<PrivetDataReadOperation>(new PrivetDataReadOperationImpl(
+      info_client(), kPrivetStorageContentPath, url_param, callback));
+}
+
+PrivetV3HTTPClientImpl::PrivetV3HTTPClientImpl(
+    scoped_ptr<PrivetHTTPClient> info_client)
+    : info_client_(info_client.Pass()) {
+}
+
+PrivetV3HTTPClientImpl::~PrivetV3HTTPClientImpl() {
+}
+
+const std::string& PrivetV3HTTPClientImpl::GetName() {
+  return info_client()->GetName();
+}
+
+scoped_ptr<PrivetJSONOperation> PrivetV3HTTPClientImpl::CreateInfoOperation(
+    const PrivetJSONOperation::ResultCallback& callback) {
+  return info_client()->CreateInfoOperation(callback);
 }
 
 }  // namespace local_discovery

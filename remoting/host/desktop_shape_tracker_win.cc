@@ -57,7 +57,7 @@ void DesktopShapeTrackerWin::RefreshDesktopShape() {
   // Accumulate a new desktop shape from current window positions.
   scoped_ptr<EnumDesktopShapeData> shape_data(new EnumDesktopShapeData);
   if (!EnumWindows(EnumWindowsCallback, (LPARAM)shape_data.get())) {
-    LOG_GETLASTERROR(ERROR) << "Failed to enumerate windows";
+    PLOG(ERROR) << "Failed to enumerate windows";
     desktop_shape_.Clear();
     return;
   }
@@ -71,7 +71,7 @@ void DesktopShapeTrackerWin::RefreshDesktopShape() {
     CHECK(bytes_size != 0);
 
     // Fetch the Windows RECTs that comprise the region.
-    std::vector<char> buffer(bytes_size);;
+    std::vector<char> buffer(bytes_size);
     LPRGNDATA region_data = reinterpret_cast<LPRGNDATA>(buffer.data());
     DWORD result = GetRegionData(old_desktop_region_, bytes_size, region_data);
     CHECK(result == bytes_size);

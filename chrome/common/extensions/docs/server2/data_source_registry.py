@@ -2,20 +2,25 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from api_data_source import APIDataSource
+from api_list_data_source import APIListDataSource
 from data_source import DataSource
-from intro_data_source import IntroDataSource
 from manifest_data_source import ManifestDataSource
 from permissions_data_source import PermissionsDataSource
 from sidenav_data_source import SidenavDataSource
 from strings_data_source import StringsDataSource
-from template_data_source import TemplateDataSource
+from template_data_source import (
+    ArticleDataSource, IntroDataSource, PartialDataSource)
 from whats_new_data_source import WhatsNewDataSource
 
 
 _all_data_sources = {
+  'apis': APIDataSource,
+  'api_list': APIListDataSource,
+  'articles': ArticleDataSource,
   'intros': IntroDataSource,
   'manifest_source': ManifestDataSource,
-  'partials': TemplateDataSource,
+  'partials': PartialDataSource,
   'permissions': PermissionsDataSource,
   'sidenavs': SidenavDataSource,
   'strings': StringsDataSource,

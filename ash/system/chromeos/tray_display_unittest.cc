@@ -14,6 +14,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ash_strings.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/display.h"
 #include "ui/message_center/message_center.h"
@@ -22,7 +23,6 @@
 #include "ui/views/controls/label.h"
 
 namespace ash {
-namespace internal {
 
 base::string16 GetTooltipText(const base::string16& headline,
                               const base::string16& name1,
@@ -84,6 +84,7 @@ class TrayDisplayTest : public ash::test::AshTestBase {
   void CloseNotification();
   bool IsDisplayVisibleInTray() const;
   base::string16 GetTrayDisplayText() const;
+  void CheckAccessibleName() const;
   base::string16 GetTrayDisplayTooltipText() const;
   base::string16 GetDisplayNotificationText() const;
   base::string16 GetDisplayNotificationAdditionalText() const;
@@ -127,6 +128,14 @@ bool TrayDisplayTest::IsDisplayVisibleInTray() const {
 
 base::string16 TrayDisplayTest::GetTrayDisplayText() const {
   return tray_display_->GetDefaultViewMessage();
+}
+
+void TrayDisplayTest::CheckAccessibleName() const {
+  ui::AXViewState state;
+  if (tray_display_->GetAccessibleStateForTesting(&state)) {
+    base::string16 expected = tray_display_->GetDefaultViewMessage();
+    EXPECT_EQ(expected, state.name);
+  }
 }
 
 base::string16 TrayDisplayTest::GetTrayDisplayTooltipText() const {
@@ -177,6 +186,7 @@ TEST_F(TrayDisplayTest, NoInternalDisplay) {
   EXPECT_EQ(GetTooltipText(expected, GetFirstDisplayName(), "400x400",
                            GetSecondDisplayName(), "200x200"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   // mirroring
   Shell::GetInstance()->display_manager()->SetSoftwareMirroring(true);
@@ -188,6 +198,7 @@ TEST_F(TrayDisplayTest, NoInternalDisplay) {
   EXPECT_EQ(expected, GetTrayDisplayText());
   EXPECT_EQ(GetMirroredTooltipText(expected, GetFirstDisplayName(), "400x400"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 }
 
 TEST_F(TrayDisplayTest, InternalDisplay) {
@@ -208,6 +219,7 @@ TEST_F(TrayDisplayTest, InternalDisplay) {
   EXPECT_EQ(GetTooltipText(expected, GetFirstDisplayName(), "400x400",
                            GetSecondDisplayName(), "200x200"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   // Mirroring
   display_manager->SetSoftwareMirroring(true);
@@ -220,6 +232,7 @@ TEST_F(TrayDisplayTest, InternalDisplay) {
   EXPECT_EQ(expected, GetTrayDisplayText());
   EXPECT_EQ(GetMirroredTooltipText(expected, GetFirstDisplayName(), "400x400"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 }
 
 TEST_F(TrayDisplayTest, InternalDisplayResized) {
@@ -237,6 +250,7 @@ TEST_F(TrayDisplayTest, InternalDisplayResized) {
   EXPECT_EQ(GetTooltipText(base::string16(), GetFirstDisplayName(), "600x600",
                            base::string16(), std::string()),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   // Extended
   UpdateDisplay("400x400@1.5,200x200");
@@ -248,6 +262,7 @@ TEST_F(TrayDisplayTest, InternalDisplayResized) {
   EXPECT_EQ(GetTooltipText(expected, GetFirstDisplayName(), "600x600",
                            GetSecondDisplayName(), "200x200"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   // Mirroring
   display_manager->SetSoftwareMirroring(true);
@@ -259,6 +274,7 @@ TEST_F(TrayDisplayTest, InternalDisplayResized) {
   EXPECT_EQ(expected, GetTrayDisplayText());
   EXPECT_EQ(GetMirroredTooltipText(expected, GetFirstDisplayName(), "600x600"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   // Closed lid mode.
   display_manager->SetSoftwareMirroring(false);
@@ -273,6 +289,7 @@ TEST_F(TrayDisplayTest, InternalDisplayResized) {
       GetTooltipText(
           expected, GetFirstDisplayName(), "600x600", base::string16(), ""),
       GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 }
 
 TEST_F(TrayDisplayTest, ExternalDisplayResized) {
@@ -300,6 +317,7 @@ TEST_F(TrayDisplayTest, ExternalDisplayResized) {
   EXPECT_EQ(GetTooltipText(expected, GetFirstDisplayName(), "400x400",
                            GetSecondDisplayName(), "300x300"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   // Mirroring
   display_manager->SetSoftwareMirroring(true);
@@ -311,6 +329,7 @@ TEST_F(TrayDisplayTest, ExternalDisplayResized) {
   EXPECT_EQ(expected, GetTrayDisplayText());
   EXPECT_EQ(GetMirroredTooltipText(expected, GetFirstDisplayName(), "400x400"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 }
 
 TEST_F(TrayDisplayTest, OverscanDisplay) {
@@ -367,6 +386,7 @@ TEST_F(TrayDisplayTest, UpdateDuringDisplayConfigurationChange) {
   EXPECT_EQ(GetTooltipText(base::string16(), GetFirstDisplayName(), "600x600",
                            base::string16(), std::string()),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   UpdateDisplay("400x400,200x200");
   EXPECT_TRUE(tray()->HasSystemBubble());
@@ -378,6 +398,7 @@ TEST_F(TrayDisplayTest, UpdateDuringDisplayConfigurationChange) {
   EXPECT_EQ(GetTooltipText(expected, GetFirstDisplayName(), "400x400",
                            GetSecondDisplayName(), "200x200"),
             GetTrayDisplayTooltipText());
+  CheckAccessibleName();
 
   UpdateDisplay("400x400@1.5");
   tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
@@ -551,5 +572,4 @@ TEST_F(TrayDisplayTest, UpdateAfterSuppressDisplayNotification) {
       GetDisplayNotificationText());
 }
 
-}  // namespace internal
 }  // namespace ash

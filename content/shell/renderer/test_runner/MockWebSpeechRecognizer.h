@@ -19,7 +19,7 @@ class WebSpeechRecognitionParams;
 class WebSpeechRecognizerClient;
 }
 
-namespace WebTestRunner {
+namespace content {
 
 class WebTestDelegate;
 
@@ -43,7 +43,7 @@ public:
     // Methods accessed from Task objects:
     blink::WebSpeechRecognizerClient* client() { return m_client; }
     blink::WebSpeechRecognitionHandle& handle() { return m_handle; }
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
 
     class Task {
     public:
@@ -81,6 +81,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(MockWebSpeechRecognizer);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_MOCKWEBSPEECHRECOGNIZER_H_

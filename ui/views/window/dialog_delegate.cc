@@ -10,7 +10,6 @@
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_frame_view.h"
 #include "ui/views/controls/button/label_button.h"
-#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_observer.h"
 #include "ui/views/window/dialog_client_view.h"
@@ -24,23 +23,24 @@ DialogDelegate::~DialogDelegate() {
 }
 
 // static
-Widget* DialogDelegate::CreateDialogWidget(DialogDelegate* dialog,
-                                           gfx::NativeWindow context,
-                                           gfx::NativeWindow parent) {
+Widget* DialogDelegate::CreateDialogWidget(WidgetDelegate* delegate,
+                                           gfx::NativeView context,
+                                           gfx::NativeView parent) {
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params;
-  params.delegate = dialog;
+  params.delegate = delegate;
+  DialogDelegate* dialog = delegate->AsDialogDelegate();
   if (!dialog || dialog->UseNewStyleForThisDialog()) {
     params.opacity = Widget::InitParams::TRANSLUCENT_WINDOW;
     params.remove_standard_frame = true;
+    // The bubble frame includes its own shadow; remove any native shadowing.
+    params.shadow_type = views::Widget::InitParams::SHADOW_TYPE_NONE;
   }
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-  // Dialogs on Linux always have custom frames.
-  params.remove_standard_frame = true;
-#endif
   params.context = context;
   params.parent = parent;
-  params.top_level = true;
+  // Web-modal (ui::MODAL_TYPE_CHILD) dialogs with parents are marked as child
+  // widgets to prevent top-level window behavior (independent movement, etc).
+  params.child = parent && (delegate->GetModalType() == ui::MODAL_TYPE_CHILD);
   widget->Init(params);
   return widget;
 }
@@ -156,18 +156,16 @@ NonClientFrameView* DialogDelegate::CreateNonClientFrameView(Widget* widget) {
 // static
 NonClientFrameView* DialogDelegate::CreateDialogFrameView(Widget* widget) {
   BubbleFrameView* frame = new BubbleFrameView(gfx::Insets());
-  const SkColor color = widget->GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_DialogBackground);
-  frame->SetBubbleBorder(scoped_ptr<BubbleBorder>(new BubbleBorder(
-      BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, color)));
+  scoped_ptr<BubbleBorder> border(new BubbleBorder(
+      BubbleBorder::FLOAT, BubbleBorder::SMALL_SHADOW, SK_ColorRED));
+  border->set_use_theme_background_color(true);
+  frame->SetBubbleBorder(border.Pass());
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
   if (delegate) {
     View* titlebar_view = delegate->CreateTitlebarExtraView();
     if (titlebar_view)
       frame->SetTitlebarExtraView(titlebar_view);
   }
-  // TODO(msw): Add a matching shadow type and remove the bubble frame border?
-  corewm::SetShadowType(widget->GetNativeWindow(), corewm::SHADOW_TYPE_NONE);
   return frame;
 }
 
@@ -183,8 +181,8 @@ DialogClientView* DialogDelegate::GetDialogClientView() {
   return GetWidget()->client_view()->AsDialogClientView();
 }
 
-ui::AccessibilityTypes::Role DialogDelegate::GetAccessibleWindowRole() const {
-  return ui::AccessibilityTypes::ROLE_DIALOG;
+ui::AXRole DialogDelegate::GetAccessibleWindowRole() const {
+  return ui::AX_ROLE_DIALOG;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

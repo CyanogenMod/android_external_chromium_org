@@ -3,13 +3,16 @@
 // found in the LICENSE file.
 
 #include "media/cast/rtcp/test_rtcp_packet_builder.h"
+
 #include "base/logging.h"
+#include "media/cast/rtcp/rtcp_utility.h"
 
 namespace media {
 namespace cast {
 
 TestRtcpPacketBuilder::TestRtcpPacketBuilder()
-    : ptr_of_length_(NULL), big_endian_writer_(buffer_, kMaxIpPacketSize) {}
+    : ptr_of_length_(NULL),
+      big_endian_writer_(reinterpret_cast<char*>(buffer_), kMaxIpPacketSize) {}
 
 void TestRtcpPacketBuilder::AddSr(uint32 sender_ssrc,
                                   int number_of_report_blocks) {
@@ -186,7 +189,9 @@ void TestRtcpPacketBuilder::AddRemb(uint32 sender_ssrc, uint32 media_ssrc) {
   big_endian_writer_.WriteU32(media_ssrc);
 }
 
-void TestRtcpPacketBuilder::AddCast(uint32 sender_ssrc, uint32 media_ssrc) {
+void TestRtcpPacketBuilder::AddCast(uint32 sender_ssrc,
+                                    uint32 media_ssrc,
+                                    uint16 target_delay_ms) {
   AddRtcpHeader(206, 15);
   big_endian_writer_.WriteU32(sender_ssrc);
   big_endian_writer_.WriteU32(media_ssrc);
@@ -195,8 +200,8 @@ void TestRtcpPacketBuilder::AddCast(uint32 sender_ssrc, uint32 media_ssrc) {
   big_endian_writer_.WriteU8('S');
   big_endian_writer_.WriteU8('T');
   big_endian_writer_.WriteU8(kAckFrameId);
-  big_endian_writer_.WriteU8(3);   // Loss fields.
-  big_endian_writer_.WriteU16(0);  // Reserved.
+  big_endian_writer_.WriteU8(3);     // Loss fields.
+  big_endian_writer_.WriteU16(target_delay_ms);
   big_endian_writer_.WriteU8(kLostFrameId);
   big_endian_writer_.WriteU16(kRtcpCastAllPacketsLost);
   big_endian_writer_.WriteU8(0);  // Lost packet id mask.
@@ -206,21 +211,6 @@ void TestRtcpPacketBuilder::AddCast(uint32 sender_ssrc, uint32 media_ssrc) {
   big_endian_writer_.WriteU8(kFrameIdWithLostPackets);
   big_endian_writer_.WriteU16(kLostPacketId3);
   big_endian_writer_.WriteU8(0);  // Lost packet id mask.
-}
-
-void TestRtcpPacketBuilder::AddSenderLog(uint32 sender_ssrc) {
-  AddRtcpHeader(204, 1);
-  big_endian_writer_.WriteU32(sender_ssrc);
-  big_endian_writer_.WriteU8('C');
-  big_endian_writer_.WriteU8('A');
-  big_endian_writer_.WriteU8('S');
-  big_endian_writer_.WriteU8('T');
-}
-
-void TestRtcpPacketBuilder::AddSenderFrameLog(uint8 event_id,
-                                              uint32 rtp_timestamp) {
-  big_endian_writer_.WriteU32((static_cast<uint32>(event_id) << 24) +
-                              (rtp_timestamp & 0xffffff));
 }
 
 void TestRtcpPacketBuilder::AddReceiverLog(uint32 sender_ssrc) {
@@ -243,9 +233,10 @@ void TestRtcpPacketBuilder::AddReceiverFrameLog(uint32 rtp_timestamp,
 }
 
 void TestRtcpPacketBuilder::AddReceiverEventLog(uint16 event_data,
-                                                uint8 event_id,
+                                                CastLoggingEvent event,
                                                 uint16 event_timesamp_delta) {
   big_endian_writer_.WriteU16(event_data);
+  uint8 event_id = ConvertEventTypeToWireFormat(event);
   uint16 type_and_delta = static_cast<uint16>(event_id) << 12;
   type_and_delta += event_timesamp_delta & 0x0fff;
   big_endian_writer_.WriteU16(type_and_delta);

@@ -21,7 +21,7 @@ class WebURL;
 class WebView;
 }
 
-namespace WebTestRunner {
+namespace content {
 
 class TestInterfaces;
 class WebTestDelegate;
@@ -56,6 +56,6 @@ private:
     scoped_ptr<TestInterfaces> m_interfaces;
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_WEBTESTINTERFACES_H_

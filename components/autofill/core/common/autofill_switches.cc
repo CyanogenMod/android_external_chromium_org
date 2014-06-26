@@ -7,26 +7,13 @@
 namespace autofill {
 namespace switches {
 
-// Flag used to tell Chrome the base url of the Autofill service.
-const char kAutofillServiceUrl[]            = "autofill-service-url";
-
 // Forces the password manager to not ignore autocomplete='off' for password
 // forms.
 const char kDisableIgnoreAutocompleteOff[]  = "do-not-ignore-autocomplete-off";
 
-// Disables an interactive autocomplete UI. See kEnableInteractiveAutocomplete
-// for a description.
-const char kDisableInteractiveAutocomplete[] =
-    "disable-interactive-autocomplete";
-
 // Disables password generation when we detect that the user is going through
 // account creation.
 const char kDisablePasswordGeneration[]     = "disable-password-generation";
-
-// Enables an interactive autocomplete UI and a way to invoke this UI from
-// WebKit by enabling HTMLFormElement#requestAutocomplete (and associated
-// autocomplete* events and logic).
-const char kEnableInteractiveAutocomplete[] = "enable-interactive-autocomplete";
 
 // Enables password generation when we detect that the user is going through
 // account creation.

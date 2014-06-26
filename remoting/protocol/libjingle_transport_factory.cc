@@ -10,7 +10,6 @@
 #include "base/timer/timer.h"
 #include "jingle/glue/channel_socket_adapter.h"
 #include "jingle/glue/pseudotcp_adapter.h"
-#include "jingle/glue/thread_wrapper.h"
 #include "jingle/glue/utils.h"
 #include "net/base/net_errors.h"
 #include "remoting/base/constants.h"
@@ -20,6 +19,7 @@
 #include "third_party/libjingle/source/talk/base/network.h"
 #include "third_party/libjingle/source/talk/p2p/base/constants.h"
 #include "third_party/libjingle/source/talk/p2p/base/p2ptransportchannel.h"
+#include "third_party/libjingle/source/talk/p2p/base/port.h"
 #include "third_party/libjingle/source/talk/p2p/client/basicportallocator.h"
 #include "third_party/libjingle/source/talk/p2p/client/httpportallocator.h"
 
@@ -132,6 +132,8 @@ LibjingleStreamTransport::LibjingleStreamTransport(
       can_start_(false),
       channel_was_writable_(false),
       connect_attempts_left_(kMaxReconnectAttempts) {
+  DCHECK(!ice_username_fragment_.empty());
+  DCHECK(!ice_password_.empty());
 }
 
 LibjingleStreamTransport::~LibjingleStreamTransport() {
@@ -205,10 +207,8 @@ void LibjingleStreamTransport::DoStart() {
       this, &LibjingleStreamTransport::OnRouteChange);
   channel_->SignalWritableState.connect(
       this, &LibjingleStreamTransport::OnWritableState);
-  if (network_settings_.nat_traversal_mode ==
-      NetworkSettings::NAT_TRAVERSAL_DISABLED) {
-    channel_->set_incoming_only(true);
-  }
+  channel_->set_incoming_only(
+      !(network_settings_.flags & NetworkSettings::NAT_TRAVERSAL_OUTGOING));
 
   channel_->Connect();
 
@@ -250,6 +250,14 @@ void LibjingleStreamTransport::DoStart() {
 void LibjingleStreamTransport::AddRemoteCandidate(
     const cricket::Candidate& candidate) {
   DCHECK(CalledOnValidThread());
+
+  // To enforce the no-relay setting, it's not enough to not produce relay
+  // candidates. It's also necessary to discard remote relay candidates.
+  bool relay_allowed = (network_settings_.flags &
+                        NetworkSettings::NAT_TRAVERSAL_RELAY) != 0;
+  if (!relay_allowed && candidate.type() == cricket::RELAY_PORT_TYPE)
+    return;
+
   if (channel_) {
     channel_->OnCandidate(candidate);
   } else {
@@ -314,8 +322,6 @@ void LibjingleStreamTransport::OnRouteChange(
 void LibjingleStreamTransport::OnWritableState(
     cricket::TransportChannel* channel) {
   DCHECK_EQ(channel, channel_.get());
-
-  event_handler_->OnTransportReady(this, channel->writable());
 
   if (channel->writable()) {
     channel_was_writable_ = true;
@@ -411,7 +417,6 @@ LibjingleTransportFactory::LibjingleTransportFactory(
     : signal_strategy_(signal_strategy),
       port_allocator_(port_allocator.Pass()),
       network_settings_(network_settings) {
-  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 }
 
 LibjingleTransportFactory::~LibjingleTransportFactory() {
@@ -452,8 +457,9 @@ LibjingleTransportFactory::CreateDatagramTransport() {
 }
 
 void LibjingleTransportFactory::EnsureFreshJingleInfo() {
-  if (network_settings_.nat_traversal_mode !=
-          NetworkSettings::NAT_TRAVERSAL_ENABLED ||
+  uint32 stun_or_relay_flags = NetworkSettings::NAT_TRAVERSAL_STUN |
+      NetworkSettings::NAT_TRAVERSAL_RELAY;
+  if (!(network_settings_.flags & stun_or_relay_flags) ||
       jingle_info_request_) {
     return;
   }

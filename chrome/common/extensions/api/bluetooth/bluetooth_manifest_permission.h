@@ -23,7 +23,7 @@ namespace extensions {
 
 class BluetoothManifestPermission : public ManifestPermission {
  public:
-  typedef std::set<std::string> BluetoothProfileUuidSet;
+  typedef std::set<std::string> BluetoothUuidSet;
   BluetoothManifestPermission();
   virtual ~BluetoothManifestPermission();
 
@@ -35,8 +35,10 @@ class BluetoothManifestPermission : public ManifestPermission {
 
   bool CheckRequest(const Extension* extension,
                     const BluetoothPermissionRequest& request) const;
+  bool CheckSocketPermitted(const Extension* extension) const;
+  bool CheckLowEnergyPermitted(const Extension* extension) const;
 
-  void AddPermission(const std::string& profile_uuid);
+  void AddPermission(const std::string& uuid);
 
   // extensions::ManifestPermission overrides.
   virtual std::string name() const OVERRIDE;
@@ -58,12 +60,14 @@ class BluetoothManifestPermission : public ManifestPermission {
   virtual bool Read(const IPC::Message* m, PickleIterator* iter) OVERRIDE;
   virtual void Log(std::string* log) const OVERRIDE;
 
-  const BluetoothProfileUuidSet& profile_uuids() const {
-    return profile_uuids_;
+  const BluetoothUuidSet& uuids() const {
+    return uuids_;
   }
 
  private:
-  BluetoothProfileUuidSet profile_uuids_;
+  BluetoothUuidSet uuids_;
+  bool socket_;
+  bool low_energy_;
 };
 
 }  // namespace extensions

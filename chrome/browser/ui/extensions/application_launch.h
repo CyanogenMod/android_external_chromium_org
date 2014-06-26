@@ -14,8 +14,11 @@
 #include "url/gurl.h"
 
 class Browser;
-class CommandLine;
 class Profile;
+
+namespace base {
+class CommandLine;
+}
 
 namespace content {
 class WebContents;
@@ -72,7 +75,7 @@ struct AppLaunchParams {
 
   // If non-empty, information from the command line may be passed on to the
   // application.
-  CommandLine command_line;
+  base::CommandLine command_line;
 
   // If non-empty, the current directory from which any relative paths on the
   // command line should be expanded from.
@@ -85,13 +88,16 @@ void OpenApplicationWithReenablePrompt(const AppLaunchParams& params);
 // Open the application in a way specified by |params|.
 content::WebContents* OpenApplication(const AppLaunchParams& params);
 
-// Open |url| in an app shortcut window. |override_bounds| param is optional.
+// Open |url| in an app shortcut window.
 // There are two kinds of app shortcuts: Shortcuts to a URL,
 // and shortcuts that open an installed application.  This function
 // is used to open the former.  To open the latter, use
 // application_launch::OpenApplication().
 content::WebContents* OpenAppShortcutWindow(Profile* profile,
-                                            const GURL& url,
-                                            const gfx::Rect& override_bounds);
+                                            const GURL& url);
+
+// Whether the extension can be launched by sending a
+// chrome.app.runtime.onLaunched event.
+bool CanLaunchViaEvent(const extensions::Extension* extension);
 
 #endif  // CHROME_BROWSER_UI_EXTENSIONS_APPLICATION_LAUNCH_H_

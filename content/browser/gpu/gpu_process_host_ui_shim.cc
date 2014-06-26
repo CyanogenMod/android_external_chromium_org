@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
@@ -17,10 +16,14 @@
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/gl/gl_switches.h"
+
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_platform.h"
+#include "ui/ozone/public/gpu_platform_support_host.h"
+#endif
 
 namespace content {
 
@@ -68,7 +71,7 @@ class ScopedSendOnIOThread {
   bool cancelled_;
 };
 
-RenderWidgetHostViewPort* GetRenderWidgetHostViewFromSurfaceID(
+RenderWidgetHostViewBase* GetRenderWidgetHostViewFromSurfaceID(
     int surface_id) {
   int render_process_id = 0;
   int render_widget_id = 0;
@@ -78,7 +81,7 @@ RenderWidgetHostViewPort* GetRenderWidgetHostViewFromSurfaceID(
 
   RenderWidgetHost* host =
       RenderWidgetHost::FromID(render_process_id, render_widget_id);
-  return host ? RenderWidgetHostViewPort::FromRWHV(host->GetView()) : NULL;
+  return host ? static_cast<RenderWidgetHostViewBase*>(host->GetView()) : NULL;
 }
 
 }  // namespace
@@ -92,6 +95,11 @@ void RouteToGpuProcessHostUIShimTask(int host_id, const IPC::Message& msg) {
 GpuProcessHostUIShim::GpuProcessHostUIShim(int host_id)
     : host_id_(host_id) {
   g_hosts_by_id.Pointer()->AddWithID(this, host_id_);
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()
+      ->GetGpuPlatformSupportHost()
+      ->OnChannelEstablished(host_id, this);
+#endif
 }
 
 // static
@@ -107,6 +115,12 @@ void GpuProcessHostUIShim::Destroy(int host_id, const std::string& message) {
   GpuDataManagerImpl::GetInstance()->AddLogMessage(
       logging::LOG_ERROR, "GpuProcessHostUIShim",
       message);
+
+#if defined(USE_OZONE)
+  ui::OzonePlatform::GetInstance()
+      ->GetGpuPlatformSupportHost()
+      ->OnChannelDestroyed(host_id);
+#endif
 
   delete FromID(host_id);
 }
@@ -146,6 +160,13 @@ bool GpuProcessHostUIShim::Send(IPC::Message* msg) {
 
 bool GpuProcessHostUIShim::OnMessageReceived(const IPC::Message& message) {
   DCHECK(CalledOnValidThread());
+
+#if defined(USE_OZONE)
+  if (ui::OzonePlatform::GetInstance()
+          ->GetGpuPlatformSupportHost()
+          ->OnMessageReceived(message))
+    return true;
+#endif
 
   if (message.routing_id() != MSG_ROUTING_CONTROL)
     return false;
@@ -196,8 +217,6 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
                         OnUpdateVSyncParameters)
     IPC_MESSAGE_HANDLER(GpuHostMsg_FrameDrawn, OnFrameDrawn)
 
-    IPC_MESSAGE_HANDLER(GpuHostMsg_ResizeView, OnResizeView)
-
     IPC_MESSAGE_UNHANDLED_ERROR()
   IPC_END_MESSAGE_MAP()
 
@@ -238,37 +257,9 @@ void GpuProcessHostUIShim::OnGraphicsInfoCollected(
   GpuDataManagerImpl::GetInstance()->UpdateGpuInfo(gpu_info);
 }
 
-void GpuProcessHostUIShim::OnResizeView(int32 surface_id,
-                                        int32 route_id,
-                                        gfx::Size size) {
-  // Always respond even if the window no longer exists. The GPU process cannot
-  // make progress on the resizing command buffer until it receives the
-  // response.
-  ScopedSendOnIOThread delayed_send(
-      host_id_,
-      new AcceleratedSurfaceMsg_ResizeViewACK(route_id));
-
-  RenderWidgetHostViewPort* view =
-      GetRenderWidgetHostViewFromSurfaceID(surface_id);
-  if (!view)
-    return;
-
-  view->ResizeCompositingSurface(size);
-}
-
-static base::TimeDelta GetSwapDelay() {
-  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
-  int delay = 0;
-  if (cmd_line->HasSwitch(switches::kGpuSwapDelay)) {
-    base::StringToInt(cmd_line->GetSwitchValueNative(
-        switches::kGpuSwapDelay).c_str(), &delay);
-  }
-  return base::TimeDelta::FromMilliseconds(delay);
-}
-
 void GpuProcessHostUIShim::OnAcceleratedSurfaceInitialized(int32 surface_id,
                                                            int32 route_id) {
-  RenderWidgetHostViewPort* view =
+  RenderWidgetHostViewBase* view =
       GetRenderWidgetHostViewFromSurfaceID(surface_id);
   if (!view)
     return;
@@ -290,16 +281,12 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
       new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
                                                 ack_params));
 
-  RenderWidgetHostViewPort* view = GetRenderWidgetHostViewFromSurfaceID(
+  RenderWidgetHostViewBase* view = GetRenderWidgetHostViewFromSurfaceID(
       params.surface_id);
   if (!view)
     return;
 
   delayed_send.Cancel();
-
-  static const base::TimeDelta swap_delay = GetSwapDelay();
-  if (swap_delay.ToInternalValue())
-    base::PlatformThread::Sleep(swap_delay);
 
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params view_params = params;
 
@@ -336,7 +323,7 @@ void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(
       new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
                                                 ack_params));
 
-  RenderWidgetHostViewPort* view =
+  RenderWidgetHostViewBase* view =
       GetRenderWidgetHostViewFromSurfaceID(params.surface_id);
   if (!view)
     return;
@@ -359,7 +346,7 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceSuspend(int32 surface_id) {
   TRACE_EVENT0("renderer",
       "GpuProcessHostUIShim::OnAcceleratedSurfaceSuspend");
 
-  RenderWidgetHostViewPort* view =
+  RenderWidgetHostViewBase* view =
       GetRenderWidgetHostViewFromSurfaceID(surface_id);
   if (!view)
     return;
@@ -369,7 +356,7 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceSuspend(int32 surface_id) {
 
 void GpuProcessHostUIShim::OnAcceleratedSurfaceRelease(
     const GpuHostMsg_AcceleratedSurfaceRelease_Params& params) {
-  RenderWidgetHostViewPort* view = GetRenderWidgetHostViewFromSurfaceID(
+  RenderWidgetHostViewBase* view = GetRenderWidgetHostViewFromSurfaceID(
       params.surface_id);
   if (!view)
     return;

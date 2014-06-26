@@ -10,7 +10,6 @@
 #include "ui/views/view.h"
 
 namespace ash {
-namespace internal {
 
 // A SmoothedThrobber with tooltip.
 class SystemTrayThrobber : public views::SmoothedThrobber {
@@ -42,7 +41,7 @@ class ThrobberView : public views::View {
   void SetTooltipText(const base::string16& tooltip_text);
 
   // Overriden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool GetTooltipText(
       const gfx::Point& p, base::string16* tooltip) const OVERRIDE;
@@ -59,7 +58,6 @@ class ThrobberView : public views::View {
   DISALLOW_COPY_AND_ASSIGN(ThrobberView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_THROBBER_VIEW_H_

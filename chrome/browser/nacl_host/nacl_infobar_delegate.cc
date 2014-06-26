@@ -4,8 +4,8 @@
 
 #include "chrome/browser/nacl_host/nacl_infobar_delegate.h"
 
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -50,9 +50,11 @@ base::string16 NaClInfoBarDelegate::GetLinkText() const {
 }
 
 bool NaClInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL("https://support.google.com/chrome/?p=ib_nacl"), content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL("https://support.google.com/chrome/?p=ib_nacl"),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }

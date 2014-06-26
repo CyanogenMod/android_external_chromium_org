@@ -6,31 +6,33 @@
 #define CHROME_BROWSER_UI_VIEWS_BOOKMARKS_BOOKMARK_BAR_VIEW_H_
 
 #include <set>
-#include <string>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_change_registrar.h"
-#include "chrome/browser/bookmarks/bookmark_model_observer.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/bookmarks/bookmark_stats.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar_instructions_delegate.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_menu_controller_observer.h"
 #include "chrome/browser/ui/views/detachable_toolbar_view.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_node_data.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
-#include "ui/views/controls/menu/menu_item_view.h"
+#include "ui/views/controls/menu/menu_types.h"
 #include "ui/views/drag_controller.h"
 
 class BookmarkContextMenu;
+class BookmarkModel;
 class Browser;
 class BrowserView;
+class ChromeBookmarkClient;
+class Profile;
 
 namespace content {
 class PageNavigator;
@@ -43,7 +45,8 @@ class SlideAnimation;
 namespace views {
 class CustomButton;
 class MenuButton;
-class TextButton;
+class MenuItemView;
+class LabelButton;
 }
 
 // BookmarkBarView renders the BookmarkModel.  Each starred entry on the
@@ -119,7 +122,7 @@ class BookmarkBarView : public DetachableToolbarView,
 
   // Returns the position to anchor the menu for |button| at.
   void GetAnchorPositionForButton(views::MenuButton* button,
-                                  views::MenuItemView::AnchorPosition* anchor);
+                                  views::MenuAnchorPosition* anchor);
 
   // Returns the button responsible for showing bookmarks in the other bookmark
   // folder.
@@ -162,13 +165,14 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual int GetToolbarOverlap() const OVERRIDE;
 
   // View methods:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual gfx::Size GetMinimumSize() OVERRIDE;
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
   virtual bool GetDropFormats(
       int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
@@ -182,7 +186,7 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual const char* GetClassName() const OVERRIDE;
 
   // AccessiblePaneView:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // gfx::AnimationDelegate:
   virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
@@ -214,8 +218,11 @@ class BookmarkBarView : public DetachableToolbarView,
   virtual void BookmarkNodeRemoved(BookmarkModel* model,
                                    const BookmarkNode* parent,
                                    int old_index,
-                                   const BookmarkNode* node) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(BookmarkModel* model) OVERRIDE;
+                                   const BookmarkNode* node,
+                                   const std::set<GURL>& removed_urls) OVERRIDE;
+  virtual void BookmarkAllUserNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeChildrenReordered(BookmarkModel* model,
@@ -254,7 +261,7 @@ class BookmarkBarView : public DetachableToolbarView,
   friend class BookmarkBarViewEventTestBase;
   FRIEND_TEST_ALL_PREFIXES(BookmarkBarViewTest, SwitchProfile);
   FRIEND_TEST_ALL_PREFIXES(BookmarkBarViewTest,
-                           NoAppsShortcutWithoutInstantExtended);
+                           ManagedShowAppsShortcutInBookmarksBar);
   FRIEND_TEST_ALL_PREFIXES(BookmarkBarViewInstantExtendedTest,
                            AppsShortcutVisibility);
 
@@ -279,10 +286,10 @@ class BookmarkBarView : public DetachableToolbarView,
   // Returns the number of buttons corresponding to starred urls/folders. This
   // is equivalent to the number of children the bookmark bar node from the
   // bookmark bar model has.
-  int GetBookmarkButtonCount();
+  int GetBookmarkButtonCount() const;
 
   // Returns the button at the specified index.
-  views::TextButton* GetBookmarkButton(int index);
+  views::LabelButton* GetBookmarkButton(int index);
 
   // Returns BOOKMARK_LAUNCH_LOCATION_DETACHED_BAR or
   // BOOKMARK_LAUNCH_LOCATION_ATTACHED_BAR based on detached state.
@@ -295,6 +302,9 @@ class BookmarkBarView : public DetachableToolbarView,
   // Creates the button showing the other bookmarked items.
   views::MenuButton* CreateOtherBookmarkedButton();
 
+  // Creates the button showing the managed bookmarks items.
+  views::MenuButton* CreateManagedBookmarksButton();
+
   // Creates the button used when not all bookmark buttons fit.
   views::MenuButton* CreateOverflowButton();
 
@@ -302,11 +312,11 @@ class BookmarkBarView : public DetachableToolbarView,
   views::View* CreateBookmarkButton(const BookmarkNode* node);
 
   // Creates the button for rendering the apps page shortcut.
-  views::TextButton* CreateAppsPageShortcutButton();
+  views::LabelButton* CreateAppsPageShortcutButton();
 
   // Configures the button from the specified node. This sets the text,
   // and icon.
-  void ConfigureButton(const BookmarkNode* node, views::TextButton* button);
+  void ConfigureButton(const BookmarkNode* node, views::LabelButton* button);
 
   // Implementation for BookmarkNodeAddedImpl.
   void BookmarkNodeAddedImpl(BookmarkModel* model,
@@ -356,18 +366,15 @@ class BookmarkBarView : public DetachableToolbarView,
   // Updates the colors for all the child objects in the bookmarks bar.
   void UpdateColors();
 
-  // Updates the visibility of |other_bookmarked_button_|. Also shows or hide
-  // the separator if required.
-  void UpdateOtherBookmarksVisibility();
+  // Updates the visibility of |other_bookmarked_button_| and
+  // |managed_bookmarks_button_|. Also shows or hides the separator if required.
+  void UpdateButtonsVisibility();
 
   // Updates the visibility of |bookmarks_separator_view_|.
   void UpdateBookmarksSeparatorVisibility();
 
-  // This method computes the bounds for the bookmark bar items. If
-  // |compute_bounds_only| = TRUE, the bounds for the items are just computed,
-  // but are not set. This mode is used by GetPreferredSize() to obtain the
-  // desired bounds. If |compute_bounds_only| = FALSE, the bounds are set.
-  gfx::Size LayoutItems(bool compute_bounds_only);
+  // This method computes the bounds for the bookmark bar items.
+  void LayoutItems();
 
   // Updates the visibility of the apps shortcut based on the pref value.
   void OnAppsPageShortcutVisibilityPrefChanged();
@@ -378,9 +385,12 @@ class BookmarkBarView : public DetachableToolbarView,
   // Used for opening urls.
   content::PageNavigator* page_navigator_;
 
-  // Model providing details as to the starred entries/folders that should be
-  // shown. This is owned by the Profile.
+  // BookmarkModel that owns the entries and folders that are shown in this
+  // view. This is owned by the Profile.
   BookmarkModel* model_;
+
+  // ChromeBookmarkClient. This is owned by the Profile.
+  ChromeBookmarkClient* client_;
 
   // Used to manage showing a Menu, either for the most recently bookmarked
   // entries, or for the starred folder.
@@ -398,8 +408,11 @@ class BookmarkBarView : public DetachableToolbarView,
   // Shows the other bookmark entries.
   views::MenuButton* other_bookmarked_button_;
 
+  // Shows the managed bookmarks entries.
+  views::MenuButton* managed_bookmarks_button_;
+
   // Shows the Apps page shortcut.
-  views::TextButton* apps_page_shortcut_;
+  views::LabelButton* apps_page_shortcut_;
 
   // Task used to delay showing of the drop menu.
   base::WeakPtrFactory<BookmarkBarView> show_folder_method_factory_;

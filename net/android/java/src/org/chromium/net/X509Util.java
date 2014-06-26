@@ -18,9 +18,11 @@ import android.util.Pair;
 import org.chromium.base.JNINamespace;
 
 import java.io.ByteArrayInputStream;
+import java.io.File;
 import java.io.IOException;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
+import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.PublicKey;
 import java.security.cert.Certificate;
@@ -31,7 +33,6 @@ import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Enumeration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -141,24 +142,31 @@ public class X509Util {
     private static KeyStore sTestKeyStore;
 
     /**
-     * Hash set of the subject and public key of system roots. This is used to
-     * determine whether a chain ends at a well-known root or not.
-     *
-     * Querying the system KeyStore for the root directly doesn't work as the
-     * root of the verified chain may be the server's version of a root rather
-     * than the system one. For instance, the server may send a certificate
-     * signed by another CA, while the system store contains a self-signed root
-     * with the same subject and SPKI.  The chain will terminate at that root
-     * but X509TrustManagerExtensions will return the server's version.
+     * The system key store. This is used to determine whether a trust anchor is a system trust
+     * anchor or user-installed.
      */
-    private static Set<Pair<X500Principal, PublicKey>> sSystemTrustRoots;
+    private static KeyStore sSystemKeyStore;
 
     /**
-     * True if the system trust roots were initialized. (sSystemTrustRoots may
-     * still be null if system trust roots cannot be distinguished from
-     * user-installed ones.)
+     * The directory where system certificates are stored. This is used to determine whether a
+     * trust anchor is a system trust anchor or user-installed. The KeyStore API alone is not
+     * sufficient to efficiently query whether a given X500Principal, PublicKey pair is a trust
+     * anchor.
      */
-    private static boolean sLoadedSystemTrustRoots;
+    private static File sSystemCertificateDirectory;
+
+    /**
+     * An in-memory cache of which trust anchors are system trust roots. This avoids reading and
+     * decoding the root from disk on every verification. Mirrors a similar in-memory cache in
+     * Conscrypt's X509TrustManager implementation.
+     */
+    private static Set<Pair<X500Principal, PublicKey>> sSystemTrustAnchorCache;
+
+    /**
+     * True if the system key store has been loaded. If the "AndroidCAStore" KeyStore instance
+     * was not found, sSystemKeyStore may be null while sLoadedSystemKeyStore is true.
+     */
+    private static boolean sLoadedSystemKeyStore;
 
     /**
      * Lock object used to synchronize all calls that modify or depend on the trust managers.
@@ -184,18 +192,26 @@ public class X509Util {
             if (sDefaultTrustManager == null) {
                 sDefaultTrustManager = X509Util.createTrustManager(null);
             }
-            if (!sLoadedSystemTrustRoots) {
+            if (!sLoadedSystemKeyStore) {
                 try {
-                    sSystemTrustRoots = buildSystemTrustRootSet();
+                    sSystemKeyStore = KeyStore.getInstance("AndroidCAStore");
+                    try {
+                        sSystemKeyStore.load(null);
+                    } catch (IOException e) {
+                        // No IO operation is attempted.
+                    }
+                    sSystemCertificateDirectory =
+                            new File(System.getenv("ANDROID_ROOT") + "/etc/security/cacerts");
                 } catch (KeyStoreException e) {
-                    // If the device does not have an "AndroidCAStore" KeyStore, don't make the
-                    // failure fatal. Instead default conservatively to setting isIssuedByKnownRoot
-                    // to false everywhere.
-                    Log.w(TAG, "Could not load system trust root set", e);
+                    // Could not load AndroidCAStore. Continue anyway; isKnownRoot will always
+                    // return false.
                 }
                 if (!sDisableNativeCodeForTest)
-                    nativeRecordCertVerifyCapabilitiesHistogram(sSystemTrustRoots != null);
-                sLoadedSystemTrustRoots = true;
+                    nativeRecordCertVerifyCapabilitiesHistogram(sSystemKeyStore != null);
+                sLoadedSystemKeyStore = true;
+            }
+            if (sSystemTrustAnchorCache == null) {
+                sSystemTrustAnchorCache = new HashSet<Pair<X500Principal, PublicKey>>();
             }
             if (sTestKeyStore == null) {
                 sTestKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
@@ -216,37 +232,10 @@ public class X509Util {
         }
     }
 
-    private static Set<Pair<X500Principal, PublicKey>> buildSystemTrustRootSet() throws
-            CertificateException, KeyStoreException, NoSuchAlgorithmException {
-        // Load the Android CA store.
-        KeyStore systemKeyStore = KeyStore.getInstance("AndroidCAStore");
-        try {
-            systemKeyStore.load(null);
-        } catch (IOException e) {
-            // No IO operation is attempted.
-        }
-
-        // System trust roots have prefix of "system:".
-        Set<Pair<X500Principal, PublicKey>> roots = new HashSet<Pair<X500Principal, PublicKey>>();
-        Enumeration<String> aliases = systemKeyStore.aliases();
-        while (aliases.hasMoreElements()) {
-            String alias = aliases.nextElement();
-            if (!alias.startsWith("system:"))
-                continue;
-            Certificate cert = systemKeyStore.getCertificate(alias);
-            if (cert != null && cert instanceof X509Certificate) {
-                X509Certificate x509Cert = (X509Certificate)cert;
-                roots.add(new Pair<X500Principal, PublicKey>(x509Cert.getSubjectX500Principal(),
-                                                             x509Cert.getPublicKey()));
-            }
-        }
-        return roots;
-    }
-
     /**
      * Creates a X509TrustManagerImplementation backed up by the given key
      * store. When null is passed as a key store, system default trust store is
-     * used.
+     * used. Returns null if no created TrustManager was suitable.
      * @throws KeyStoreException, NoSuchAlgorithmException on error initializing the TrustManager.
      */
     private static X509TrustManagerImplementation createTrustManager(KeyStore keyStore) throws
@@ -264,10 +253,12 @@ public class X509Util {
                         return new X509TrustManagerIceCreamSandwich((X509TrustManager) tm);
                     }
                 } catch (IllegalArgumentException e) {
-                    Log.e(TAG, "Error creating trust manager: " + e);
+                    String className = tm.getClass().getName();
+                    Log.e(TAG, "Error creating trust manager (" + className + "): " + e);
                 }
             }
         }
+        Log.e(TAG, "Could not find suitable trust manager");
         return null;
     }
 
@@ -285,15 +276,9 @@ public class X509Util {
     private static void reloadDefaultTrustManager() throws KeyStoreException,
             NoSuchAlgorithmException, CertificateException {
         sDefaultTrustManager = null;
-        sSystemTrustRoots = null;
-        sLoadedSystemTrustRoots = false;
+        sSystemTrustAnchorCache = null;
         nativeNotifyKeyChainChanged();
         ensureInitialized();
-    }
-
-    public static void notifyClientCertificatesChanged() {
-        Log.d(TAG, "ClientCertificatesChanged!");
-        nativeNotifyClientCertificatesChanged();
     }
 
     /**
@@ -328,6 +313,79 @@ public class X509Util {
                 // No IO operation is attempted.
             }
         }
+    }
+
+    private static final char[] HEX_DIGITS = {
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+        'a', 'b', 'c', 'd', 'e', 'f',
+    };
+
+    private static String hashPrincipal(X500Principal principal) throws NoSuchAlgorithmException {
+        // Android hashes a principal as the first four bytes of its MD5 digest, encoded in
+        // lowercase hex and reversed. Verified in 4.2, 4.3, and 4.4.
+        byte[] digest = MessageDigest.getInstance("MD5").digest(principal.getEncoded());
+        char[] hexChars = new char[8];
+        for (int i = 0; i < 4; i++) {
+            hexChars[2 * i] = HEX_DIGITS[(digest[3 - i] >> 4) & 0xf];
+            hexChars[2 * i + 1] = HEX_DIGITS[digest[3 - i] & 0xf];
+        }
+        return new String(hexChars);
+    }
+
+    private static boolean isKnownRoot(X509Certificate root)
+            throws NoSuchAlgorithmException, KeyStoreException {
+        // Could not find the system key store. Conservatively report false.
+        if (sSystemKeyStore == null)
+            return false;
+
+        // Check the in-memory cache first; avoid decoding the anchor from disk
+        // if it has been seen before.
+        Pair<X500Principal, PublicKey> key =
+            new Pair<X500Principal, PublicKey>(root.getSubjectX500Principal(), root.getPublicKey());
+        if (sSystemTrustAnchorCache.contains(key))
+            return true;
+
+        // Note: It is not sufficient to call sSystemKeyStore.getCertificiateAlias. If the server
+        // supplies a copy of a trust anchor, X509TrustManagerExtensions returns the server's
+        // version rather than the system one. getCertificiateAlias will then fail to find an anchor
+        // name. This is fixed upstream in https://android-review.googlesource.com/#/c/91605/
+        //
+        // TODO(davidben): When the change trickles into an Android release, query sSystemKeyStore
+        // directly.
+
+        // System trust anchors are stored under a hash of the principal. In case of collisions,
+        // a number is appended.
+        String hash = hashPrincipal(root.getSubjectX500Principal());
+        for (int i = 0; true; i++) {
+            String alias = hash + '.' + i;
+            if (!new File(sSystemCertificateDirectory, alias).exists())
+                break;
+
+            Certificate anchor = sSystemKeyStore.getCertificate("system:" + alias);
+            // It is possible for this to return null if the user deleted a trust anchor. In
+            // that case, the certificate remains in the system directory but is also added to
+            // another file. Continue iterating as there may be further collisions after the
+            // deleted anchor.
+            if (anchor == null)
+                continue;
+
+            if (!(anchor instanceof X509Certificate)) {
+                // This should never happen.
+                String className = anchor.getClass().getName();
+                Log.e(TAG, "Anchor " + alias + " not an X509Certificate: " + className);
+                continue;
+            }
+
+            // If the subject and public key match, this is a system root.
+            X509Certificate anchorX509 = (X509Certificate)anchor;
+            if (root.getSubjectX500Principal().equals(anchorX509.getSubjectX500Principal()) &&
+                root.getPublicKey().equals(anchorX509.getPublicKey())) {
+                sSystemTrustAnchorCache.add(key);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -409,6 +467,10 @@ public class X509Util {
         }
 
         synchronized (sLock) {
+            // If no trust manager was found, fail without crashing on the null pointer.
+            if (sDefaultTrustManager == null)
+                return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_FAILED);
+
             List<X509Certificate> verifiedChain;
             try {
                 verifiedChain = sDefaultTrustManager.checkServerTrusted(serverCertificates,
@@ -428,11 +490,9 @@ public class X509Util {
             }
 
             boolean isIssuedByKnownRoot = false;
-            if (sSystemTrustRoots != null && verifiedChain.size() > 0) {
+            if (verifiedChain.size() > 0) {
                 X509Certificate root = verifiedChain.get(verifiedChain.size() - 1);
-                isIssuedByKnownRoot = sSystemTrustRoots.contains(
-                        new Pair<X500Principal, PublicKey>(root.getSubjectX500Principal(),
-                                                           root.getPublicKey()));
+                isIssuedByKnownRoot = isKnownRoot(root);
             }
 
             return new AndroidCertVerifyResult(CertVerifyStatusAndroid.VERIFY_OK,
@@ -443,9 +503,6 @@ public class X509Util {
     public static void setDisableNativeCodeForTest(boolean disabled) {
         sDisableNativeCodeForTest = disabled;
     }
-
-    private static native void nativeNotifyClientCertificatesChanged();
-
     /**
      * Notify the native net::CertDatabase instance that the system database has been updated.
      */

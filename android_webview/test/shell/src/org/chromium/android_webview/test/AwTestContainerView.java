@@ -29,12 +29,16 @@ import org.chromium.content.browser.ContentViewCore;
  */
 public class AwTestContainerView extends FrameLayout {
     private AwContents mAwContents;
+    private AwContents.NativeGLDelegate mNativeGLDelegate;
     private AwContents.InternalAccessDelegate mInternalAccessDelegate;
 
     public AwTestContainerView(Context context) {
         super(context);
+        mNativeGLDelegate = new NativeGLDelegate();
         mInternalAccessDelegate = new InternalAccessAdapter();
         setOverScrollMode(View.OVER_SCROLL_ALWAYS);
+        setFocusable(true);
+        setFocusableInTouchMode(true);
     }
 
     public void initialize(AwContents awContents) {
@@ -47,6 +51,10 @@ public class AwTestContainerView extends FrameLayout {
 
     public AwContents getAwContents() {
         return mAwContents;
+    }
+
+    public AwContents.NativeGLDelegate getNativeGLDelegate() {
+        return mNativeGLDelegate;
     }
 
     public AwContents.InternalAccessDelegate getInternalAccessDelegate() {
@@ -175,6 +183,19 @@ public class AwTestContainerView extends FrameLayout {
         return mAwContents.performAccessibilityAction(action, arguments);
     }
 
+    private static class NativeGLDelegate implements AwContents.NativeGLDelegate {
+        @Override
+        public boolean requestDrawGL(Canvas canvas, boolean waitForCompletion,
+                View containerview) {
+            return false;
+        }
+
+        @Override
+        public void detachGLFunctor() {
+            // Intentional no-op.
+        }
+    }
+
     // TODO: AwContents could define a generic class that holds an implementation similar to
     // the one below.
     private class InternalAccessAdapter implements AwContents.InternalAccessDelegate {
@@ -249,11 +270,6 @@ public class AwTestContainerView extends FrameLayout {
         @Override
         public int super_getScrollBarStyle() {
             return AwTestContainerView.super.getScrollBarStyle();
-        }
-
-        @Override
-        public boolean requestDrawGL(Canvas canvas) {
-            return false;
         }
     }
 }

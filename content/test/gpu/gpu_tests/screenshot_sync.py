@@ -7,16 +7,17 @@ import screenshot_sync_expectations as expectations
 
 from telemetry import test
 from telemetry.core import util
+from telemetry.page import page
 from telemetry.page import page_set
 from telemetry.page import page_test
+# pylint: disable=W0401,W0614
+from telemetry.page.actions.all_page_actions import *
 
 data_path = os.path.join(
     util.GetChromiumSrcDir(), 'content', 'test', 'data', 'gpu')
 
-class ScreenshotSyncValidator(page_test.PageTest):
-  def __init__(self):
-    super(ScreenshotSyncValidator, self).__init__('ValidatePage')
-
+@test.Disabled('mac')
+class _ScreenshotSyncValidator(page_test.PageTest):
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
@@ -26,30 +27,33 @@ class ScreenshotSyncValidator(page_test.PageTest):
       message = tab.EvaluateJavaScript('window.__testMessage')
       raise page_test.Failure(message)
 
+
+@test.Disabled('mac')
+class ScreenshotSyncPage(page.Page):
+  def __init__(self, page_set, base_dir):
+    super(ScreenshotSyncPage, self).__init__(
+      url='file://screenshot_sync.html',
+      page_set=page_set,
+      base_dir=base_dir,
+      name='ScreenshotSync')
+    self.user_agent_type = 'desktop'
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.NavigateToPage(self)
+    action_runner.WaitForJavaScriptCondition(
+        'window.__testComplete', timeout_in_seconds=120)
+
+
+@test.Disabled('mac')
 class ScreenshotSyncProcess(test.Test):
   """Tests that screenhots are properly synchronized with the frame one which
   they were requested"""
-  test = ScreenshotSyncValidator
+  test = _ScreenshotSyncValidator
 
   def CreateExpectations(self, page_set):
     return expectations.ScreenshotSyncExpectations()
 
   def CreatePageSet(self, options):
-    page_set_dict = {
-      'description': 'Test cases for screenshot synchronization',
-      'user_agent_type': 'desktop',
-      'serving_dirs': [''],
-      'pages': [
-        {
-          'name': 'ScreenshotSync',
-          'url': 'file://screenshot_sync.html',
-          'navigate_steps': [
-            { 'action': 'navigate' },
-            { 'action': 'wait',
-              'javascript': 'window.__testComplete',
-              'timeout': 120 }
-          ]
-        }
-      ]
-    }
-    return page_set.PageSet.FromDict(page_set_dict, data_path)
+    ps = page_set.PageSet(file_path=data_path, serving_dirs=[''])
+    ps.AddPage(ScreenshotSyncPage(ps, ps.base_dir))
+    return ps

@@ -12,6 +12,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/common/file_chooser_params.h"
 #include "content/public/common/page_zoom.h"
+#include "mojo/public/cpp/system/core.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class GURL;
@@ -78,8 +79,11 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // should be a combination of values from BindingsPolicy.
   virtual void AllowBindings(int binding_flags) = 0;
 
-  // Tells the renderer to clear the focused node (if any).
-  virtual void ClearFocusedNode() = 0;
+  // Tells the renderer to clear the focused element (if any).
+  virtual void ClearFocusedElement() = 0;
+
+  // Returns true if the current focused element is editable.
+  virtual bool IsFocusedElementEditable() = 0;
 
   // Causes the renderer to close the current page, including running its
   // onunload event handler.  A ClosePage_ACK message will be sent to the
@@ -90,15 +94,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // image at that location).
   virtual void CopyImageAt(int x, int y) = 0;
 
-  // Notifies the renderer about the result of a desktop notification.
-  virtual void DesktopNotificationPermissionRequestDone(
-      int callback_context) = 0;
-  virtual void DesktopNotificationPostDisplay(int callback_context) = 0;
-  virtual void DesktopNotificationPostError(int notification_id,
-                                    const base::string16& message) = 0;
-  virtual void DesktopNotificationPostClose(int notification_id,
-                                            bool by_user) = 0;
-  virtual void DesktopNotificationPostClick(int notification_id) = 0;
+  // Saves the image at location x, y to the disk (if there indeed is an
+  // image at that location).
+  virtual void SaveImageAt(int x, int y) = 0;
 
   // Notifies the listener that a directory enumeration is complete.
   virtual void DirectoryEnumerationFinished(
@@ -114,11 +112,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void DragSourceEndedAt(
       int client_x, int client_y, int screen_x, int screen_y,
       blink::WebDragOperation operation) = 0;
-
-  // Notifies the renderer that a drag and drop operation is in progress, with
-  // droppable items positioned over the renderer's view.
-  virtual void DragSourceMovedTo(
-      int client_x, int client_y, int screen_x, int screen_y) = 0;
 
   // Notifies the renderer that we're done with the drag and drop operation.
   // This allows the renderer to reset some state.
@@ -158,18 +151,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       const gfx::Point& location,
       const blink::WebMediaPlayerAction& action) = 0;
 
-  // Runs some javascript within the context of a frame in the page.
-  virtual void ExecuteJavascriptInWebFrame(const base::string16& frame_xpath,
-                                           const base::string16& jscript) = 0;
-
-  // Runs some javascript within the context of a frame in the page. The result
-  // is sent back via the provided callback.
-  typedef base::Callback<void(const base::Value*)> JavascriptResultCallback;
-  virtual void ExecuteJavascriptInWebFrameCallbackResult(
-      const base::string16& frame_xpath,
-      const base::string16& jscript,
-      const JavascriptResultCallback& callback) = 0;
-
   // Tells the renderer to perform the given action on the plugin located at
   // the given point.
   virtual void ExecutePluginActionAtLocation(
@@ -177,15 +158,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Asks the renderer to exit fullscreen
   virtual void ExitFullscreen() = 0;
-
-  // Causes the renderer to invoke the onbeforeunload event handler.  The
-  // result will be returned via ViewMsg_ShouldClose. See also ClosePage and
-  // SwapOut, which fire the PageUnload event.
-  //
-  // Set bool for_cross_site_transition when this close is just for the current
-  // RenderView in the case of a cross-site transition. False means we're
-  // closing the entire tab.
-  virtual void FirePageBeforeUnload(bool for_cross_site_transition) = 0;
 
   // Notifies the Listener that one or more files have been chosen by the user
   // from a file chooser dialog for the form. |permissions| is the file
@@ -202,11 +174,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   virtual SiteInstance* GetSiteInstance() const = 0;
 
-  // Requests the renderer to evaluate an xpath to a frame and insert css
-  // into that frame's document.
-  virtual void InsertCSS(const base::string16& frame_xpath,
-                         const std::string& css) = 0;
-
   // Returns true if the RenderView is active and has not crashed. Virtual
   // because it is overridden by TestRenderViewHost.
   virtual bool IsRenderViewLive() const = 0;
@@ -214,9 +181,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // Notification that a move or resize renderer's containing window has
   // started.
   virtual void NotifyMoveOrResizeStarted() = 0;
-
-  // Reloads the current focused frame.
-  virtual void ReloadFrame() = 0;
 
   // Sets a property with the given name and value on the Web UI binding object.
   // Must call AllowWebUIBindings() on this renderer first.
@@ -230,16 +194,11 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // RenderViewHostDelegate.
   virtual void SyncRendererPrefs() = 0;
 
-  virtual void ToggleSpeechInput() = 0;
-
   // Returns the current WebKit preferences.
   virtual WebPreferences GetWebkitPreferences() = 0;
 
   // Passes a list of Webkit preferences to the renderer.
   virtual void UpdateWebkitPreferences(const WebPreferences& prefs) = 0;
-
-  // Informs the renderer process of a change in timezone.
-  virtual void NotifyTimezoneChange() = 0;
 
   // Retrieves the list of AudioOutputController objects associated
   // with this object and passes it to the callback you specify, on
@@ -251,6 +210,9 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const = 0;
 
+  // Notify the render view host to select the word around the caret.
+  virtual void SelectWordAroundCaret() = 0;
+
 #if defined(OS_ANDROID)
   // Selects and zooms to the find result nearest to the point (x,y)
   // defined in find-in-page coordinates.
@@ -258,9 +220,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
 
   // Asks the renderer to send the rects of the current find matches.
   virtual void RequestFindMatchRects(int current_version) = 0;
-
-  // Disables fullscreen media playback for encrypted video.
-  virtual void DisableFullscreenEncryptedMediaPlayback() = 0;
 #endif
 
  private:

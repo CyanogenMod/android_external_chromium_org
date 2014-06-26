@@ -31,7 +31,7 @@ bool SearchIPCRouterPolicyImpl::ShouldProcessFocusOmnibox(bool is_active_tab) {
 }
 
 bool SearchIPCRouterPolicyImpl::ShouldProcessNavigateToURL(bool is_active_tab) {
-  return is_active_tab && !is_incognito_;
+  return is_active_tab && !is_incognito_ && chrome::IsInstantNTP(web_contents_);
 }
 
 bool SearchIPCRouterPolicyImpl::ShouldProcessDeleteMostVisitedItem() {
@@ -73,6 +73,15 @@ bool SearchIPCRouterPolicyImpl::ShouldSendSetSuggestionToPrefetch() {
 
 bool SearchIPCRouterPolicyImpl::ShouldSendSetOmniboxStartMargin() {
   return true;
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSendSetInputInProgress(
+    bool is_active_tab) {
+  return is_active_tab && !is_incognito_;
+}
+
+bool SearchIPCRouterPolicyImpl::ShouldSendOmniboxFocusChanged() {
+  return !is_incognito_;
 }
 
 bool SearchIPCRouterPolicyImpl::ShouldSendMostVisitedItems() {

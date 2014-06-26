@@ -36,7 +36,7 @@ namespace extensions {
 
 class FakeSerialGetDevicesFunction : public AsyncExtensionFunction {
  public:
-  virtual bool RunImpl() OVERRIDE {
+  virtual bool RunAsync() OVERRIDE {
     base::ListValue* devices = new base::ListValue();
     base::DictionaryValue* device0 = new base::DictionaryValue();
     device0->SetString("path", "/dev/fakeserial");
@@ -175,12 +175,10 @@ IN_PROC_BROWSER_TEST_F(SerialApiTest, SerialFakeHardware) {
   catcher.RestrictToProfile(browser()->profile());
 
 #if SIMULATE_SERIAL_PORTS
-  ASSERT_TRUE(ExtensionFunctionDispatcher::OverrideFunction(
-      "serial.getDevices",
-      FakeSerialGetDevicesFunctionFactory));
-  ASSERT_TRUE(ExtensionFunctionDispatcher::OverrideFunction(
-      "serial.connect",
-      FakeSerialConnectFunctionFactory));
+  ASSERT_TRUE(extensions::ExtensionFunctionDispatcher::OverrideFunction(
+      "serial.getDevices", FakeSerialGetDevicesFunctionFactory));
+  ASSERT_TRUE(extensions::ExtensionFunctionDispatcher::OverrideFunction(
+      "serial.connect", FakeSerialConnectFunctionFactory));
 #endif
 
   ASSERT_TRUE(RunExtensionTest("serial/api")) << message_;

@@ -8,6 +8,8 @@
 #include <winspool.h>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_bstr.h"
@@ -42,10 +44,15 @@ void GetDeviceCapabilityArray(const wchar_t* printer,
   int count = DeviceCapabilities(printer, port, id, NULL, NULL);
   if (count <= 0)
     return;
-  result->resize(count);
-  CHECK_EQ(count,
-           DeviceCapabilities(printer, port, id,
-                              reinterpret_cast<LPTSTR>(result->data()), NULL));
+  std::vector<T> tmp;
+  tmp.resize(count * 2);
+  count = DeviceCapabilities(printer, port, id,
+                             reinterpret_cast<LPTSTR>(tmp.data()), NULL);
+  if (count <= 0)
+    return;
+  CHECK_LE(count, base::checked_cast<int>(tmp.size()));
+  tmp.resize(count);
+  result->swap(tmp);
 }
 
 void LoadPaper(const wchar_t* printer,
@@ -87,39 +94,36 @@ void LoadPaper(const wchar_t* printer,
       base::string16 tmp_name(name_start, kMaxPaperName);
       // Trim trailing zeros.
       tmp_name = tmp_name.c_str();
-      paper.name = base::WideToUTF8(tmp_name);
+      paper.display_name = base::WideToUTF8(tmp_name);
     }
+    if (!ids.empty())
+      paper.vendor_id = base::UintToString(ids[i]);
     caps->papers.push_back(paper);
   }
 
   if (devmode) {
-    short default_id = 0;
-    gfx::Size default_size;
+    // Copy paper with the same ID as default paper.
+    if (devmode->dmFields & DM_PAPERSIZE) {
+      for (size_t i = 0; i < ids.size(); ++i) {
+        if (ids[i] == devmode->dmPaperSize) {
+          DCHECK_EQ(ids.size(), caps->papers.size());
+          caps->default_paper = caps->papers[i];
+          break;
+        }
+      }
+    }
 
-    if (devmode->dmFields & DM_PAPERSIZE)
-      default_id = devmode->dmPaperSize;
+    gfx::Size default_size;
     if (devmode->dmFields & DM_PAPERWIDTH)
       default_size.set_width(devmode->dmPaperWidth * kToUm);
     if (devmode->dmFields & DM_PAPERLENGTH)
       default_size.set_height(devmode->dmPaperLength * kToUm);
 
-    if (default_size.IsEmpty()) {
-      for (size_t i = 0; i < ids.size(); ++i) {
-        if (ids[i] == default_id) {
-          PrinterSemanticCapsAndDefaults::Paper paper;
-          paper.size_um.SetSize(sizes[i].x * kToUm, sizes[i].y * kToUm);
-          if (!names.empty()) {
-            const wchar_t* name_start = names[i].chars;
-            base::string16 tmp_name(name_start, kMaxPaperName);
-            // Trim trailing zeros.
-            tmp_name = tmp_name.c_str();
-            paper.name = base::WideToUTF8(tmp_name);
-          }
-          caps->default_paper = paper;
-          break;
-        }
-      }
-    } else {
+    if (!default_size.IsEmpty()) {
+      // Reset default paper if |dmPaperWidth| or |dmPaperLength| does not
+      // match default paper set by.
+      if (default_size != caps->default_paper.size_um)
+        caps->default_paper = PrinterSemanticCapsAndDefaults::Paper();
       caps->default_paper.size_um = default_size;
     }
   }
@@ -226,13 +230,15 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
   DCHECK_EQ(name, base::UTF8ToUTF16(printer_name));
 
   PrinterSemanticCapsAndDefaults caps;
-  UserDefaultDevMode user_settings;
-  if (user_settings.Init(printer_handle)) {
-    if (user_settings.get()->dmFields & DM_COLOR)
-      caps.color_default = (user_settings.get()->dmColor == DMCOLOR_COLOR);
 
-    if (user_settings.get()->dmFields & DM_DUPLEX) {
-      switch (user_settings.get()->dmDuplex) {
+  scoped_ptr<DEVMODE, base::FreeDeleter> user_settings =
+      CreateDevMode(printer_handle, NULL);
+  if (user_settings) {
+    if (user_settings->dmFields & DM_COLOR)
+      caps.color_default = (user_settings->dmColor == DMCOLOR_COLOR);
+
+    if (user_settings->dmFields & DM_DUPLEX) {
+      switch (user_settings->dmDuplex) {
       case DMDUP_SIMPLEX:
         caps.duplex_default = SIMPLEX;
         break;
@@ -247,8 +253,8 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
       }
     }
 
-    if (user_settings.get()->dmFields & DM_COLLATE)
-      caps.collate_default = (user_settings.get()->dmCollate == DMCOLLATE_TRUE);
+    if (user_settings->dmFields & DM_COLLATE)
+      caps.collate_default = (user_settings->dmCollate == DMCOLLATE_TRUE);
   } else {
     LOG(WARNING) << "Fallback to color/simplex mode.";
     caps.color_default = caps.color_changeable;
@@ -259,6 +265,8 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
   // http://msdn.microsoft.com/en-us/library/windows/desktop/dd183552(v=vs.85).aspx
   caps.color_changeable =
       (DeviceCapabilities(name, port, DC_COLORDEVICE, NULL, NULL) == 1);
+  caps.color_model = printing::COLOR;
+  caps.bw_model = printing::GRAY;
 
   caps.duplex_capable =
       (DeviceCapabilities(name, port, DC_DUPLEX, NULL, NULL) == 1);
@@ -313,7 +321,8 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
     }
     ScopedPrinterHandle printer_handle;
     if (printer_handle.OpenPrinter(printer_name_wide.c_str())) {
-      scoped_ptr<DEVMODE[]> devmode_out(CreateDevMode(printer_handle, NULL));
+      scoped_ptr<DEVMODE, base::FreeDeleter> devmode_out(
+          CreateDevMode(printer_handle, NULL));
       if (!devmode_out)
         return false;
       base::win::ScopedComPtr<IStream> printer_defaults_stream;
@@ -321,8 +330,7 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
                                  printer_defaults_stream.Receive());
       DCHECK(SUCCEEDED(hr));
       if (printer_defaults_stream) {
-        DWORD dm_size = devmode_out.get()->dmSize +
-                        devmode_out.get()->dmDriverExtra;
+        DWORD dm_size = devmode_out->dmSize + devmode_out->dmDriverExtra;
         hr = XPSModule::ConvertDevModeToPrintTicket(provider, dm_size,
             devmode_out.get(), kPTJobScope, printer_defaults_stream);
         DCHECK(SUCCEEDED(hr));

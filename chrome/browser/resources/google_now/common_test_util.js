@@ -78,20 +78,73 @@ function getMockHandlerContainer(eventIdentifier) {
  * As a result, we can't use built-in JS promises since they run asynchronously.
  * Instead of mocking all possible calls to promises, a skeleton
  * implementation is provided to get the tests to pass.
+ *
+ * This functionality and logic originates from ECMAScript 6's spec of promises.
  */
 var Promise = function() {
   function PromisePrototypeObject(asyncTask) {
-    var result;
-    asyncTask(
-        function(asyncResult) {
-          result = asyncResult;
-        },
-        function() {}); // Errors are unsupported.
-
-    function then(callback) {
-      callback.call(null, result);
+    function isThenable(value) {
+      return (typeof value === 'object') && isCallable(value.then);
     }
-    return {then: then, isPromise: true};
+
+    function isCallable(value) {
+      return typeof value === 'function';
+    }
+
+    function callResolveRejectFunc(func) {
+      var funcResult;
+      var funcResolved = false;
+      func(
+          function(resolveResult) {
+            funcResult = resolveResult;
+            funcResolved = true;
+          },
+          function(rejectResult) {
+            funcResult = rejectResult;
+            funcResolved = false;
+          });
+      return { result: funcResult, resolved: funcResolved };
+    }
+
+    function then(onResolve, onReject) {
+      var resolutionHandler =
+          isCallable(onResolve) ? onResolve : function() { return result; };
+      var rejectionHandler =
+          isCallable(onReject) ? onReject : function() { return result; };
+      var handlerResult =
+          resolved ? resolutionHandler(result) : rejectionHandler(result);
+      var promiseResolved = resolved;
+      if (isThenable(handlerResult)) {
+        var resolveReject = callResolveRejectFunc(handlerResult.then);
+        handlerResult = resolveReject.result;
+        promiseResolved = resolveReject.resolved;
+      }
+
+      if (promiseResolved) {
+        return Promise.resolve(handlerResult);
+      } else {
+        return Promise.reject(handlerResult);
+      }
+    }
+
+    // Promises use the function name "catch" to call back error handlers.
+    // We can't use "catch" since function or variable names cannot use the word
+    // "catch".
+    function catchFunc(onRejected) {
+      return this.then(undefined, onRejected);
+    }
+
+    var resolveReject = callResolveRejectFunc(asyncTask);
+    var result = resolveReject.result;
+    var resolved = resolveReject.resolved;
+
+    if (isThenable(result)) {
+      var thenResolveReject = callResolveRejectFunc(result.then);
+      result = thenResolveReject.result;
+      resolved = thenResolveReject.resolved;
+    }
+
+    return {then: then, catch: catchFunc, isPromise: true};
   }
 
   function all(arrayOfPromises) {
@@ -110,6 +163,43 @@ var Promise = function() {
     });
     return promise;
   }
+
+  function resolve(value) {
+    var promise = new PromisePrototypeObject(function(resolve) {
+      resolve(value);
+    });
+    return promise;
+  }
+
+  function reject(value) {
+    var promise = new PromisePrototypeObject(function(resolve, reject) {
+      reject(value);
+    });
+    return promise;
+  }
+
   PromisePrototypeObject.all = all;
+  PromisePrototypeObject.resolve = resolve;
+  PromisePrototypeObject.reject = reject;
   return PromisePrototypeObject;
 }();
+
+/**
+ * Sets up the test to expect a Chrome Local Storage call.
+ * @param {Object} fixture Mock JS Test Object.
+ * @param {Object} defaultObject Storage request default object.
+ * @param {Object} result Storage result.
+ * @param {boolean=} opt_AllowRejection Allow Promise Rejection
+ */
+function expectChromeLocalStorageGet(
+    fixture, defaultObject, result, opt_AllowRejection) {
+  if (opt_AllowRejection === undefined) {
+    fixture.mockApis.expects(once()).
+      fillFromChromeLocalStorage(eqJSON(defaultObject)).
+      will(returnValue(Promise.resolve(result)));
+  } else {
+    fixture.mockApis.expects(once()).
+      fillFromChromeLocalStorage(eqJSON(defaultObject), opt_AllowRejection).
+      will(returnValue(Promise.resolve(result)));
+  }
+}

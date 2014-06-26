@@ -17,8 +17,6 @@
 #include "chrome/browser/drive/drive_service_interface.h"
 #include "content/public/browser/browser_thread.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
-#include "testing/gtest/include/gtest/gtest.h"
 
 namespace drive {
 namespace test_util {
@@ -69,7 +67,6 @@ void FakeFileSystem::Copy(const base::FilePath& src_file_path,
 
 void FakeFileSystem::Move(const base::FilePath& src_file_path,
                           const base::FilePath& dest_file_path,
-                          bool preserve_last_modified,
                           const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
@@ -128,7 +125,7 @@ void FakeFileSystem::GetFileForSaving(const base::FilePath& file_path,
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void FakeFileSystem::GetFileContent(
+base::Closure FakeFileSystem::GetFileContent(
     const base::FilePath& file_path,
     const GetFileContentInitializedCallback& initialized_callback,
     const google_apis::GetContentCallback& get_content_callback,
@@ -141,6 +138,7 @@ void FakeFileSystem::GetFileContent(
                  weak_ptr_factory_.GetWeakPtr(),
                  initialized_callback, get_content_callback,
                  completion_callback));
+  return base::Bind(&base::DoNothing);
 }
 
 void FakeFileSystem::GetResourceEntry(
@@ -169,7 +167,8 @@ void FakeFileSystem::GetResourceEntry(
 
 void FakeFileSystem::ReadDirectory(
     const base::FilePath& file_path,
-    const ReadDirectoryCallback& callback) {
+    const ReadDirectoryEntriesCallback& entries_callback,
+    const FileOperationCallback& completion_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
@@ -216,13 +215,20 @@ void FakeFileSystem::MarkCacheFileAsUnmounted(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
-void FakeFileSystem::GetCacheEntry(
-    const base::FilePath& drive_file_path,
-    const GetCacheEntryCallback& callback) {
+void FakeFileSystem::AddPermission(const base::FilePath& drive_file_path,
+                                   const std::string& email,
+                                   google_apis::drive::PermissionRole role,
+                                   const FileOperationCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 void FakeFileSystem::Reset(const FileOperationCallback& callback) {
+}
+
+void FakeFileSystem::GetPathFromResourceId(
+    const std::string& resource_id,
+    const GetFilePathCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 // Implementation of GetFileContent.
@@ -246,23 +252,23 @@ void FakeFileSystem::GetFileContentAfterGetResourceEntry(
     return;
   }
 
-  // Fetch google_apis::ResourceEntry for its |download_url|.
-  drive_service_->GetResourceEntry(
+  // Fetch google_apis::FileResource for its |download_url|.
+  drive_service_->GetFileResource(
       entry->resource_id(),
       base::Bind(
-          &FakeFileSystem::GetFileContentAfterGetWapiResourceEntry,
+          &FakeFileSystem::GetFileContentAfterGetFileResource,
           weak_ptr_factory_.GetWeakPtr(),
           initialized_callback,
           get_content_callback,
           completion_callback));
 }
 
-void FakeFileSystem::GetFileContentAfterGetWapiResourceEntry(
+void FakeFileSystem::GetFileContentAfterGetFileResource(
     const GetFileContentInitializedCallback& initialized_callback,
     const google_apis::GetContentCallback& get_content_callback,
     const FileOperationCallback& completion_callback,
     google_apis::GDataErrorCode gdata_error,
-    scoped_ptr<google_apis::ResourceEntry> gdata_entry) {
+    scoped_ptr<google_apis::FileResource> gdata_entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   FileError error = GDataToFileError(gdata_error);
@@ -274,8 +280,8 @@ void FakeFileSystem::GetFileContentAfterGetWapiResourceEntry(
 
   scoped_ptr<ResourceEntry> entry(new ResourceEntry);
   std::string parent_resource_id;
-  bool converted =
-      ConvertToResourceEntry(*gdata_entry, entry.get(), &parent_resource_id);
+  bool converted = ConvertFileResourceToResourceEntry(
+      *gdata_entry, entry.get(), &parent_resource_id);
   DCHECK(converted);
   entry->set_parent_local_id(parent_resource_id);
 
@@ -283,17 +289,15 @@ void FakeFileSystem::GetFileContentAfterGetWapiResourceEntry(
       cache_dir_.path().AppendASCII(entry->resource_id());
   if (base::PathExists(cache_path)) {
     // Cache file is found.
-    initialized_callback.Run(FILE_ERROR_OK, entry.Pass(), cache_path,
-                             base::Closure());
+    initialized_callback.Run(FILE_ERROR_OK, cache_path, entry.Pass());
     completion_callback.Run(FILE_ERROR_OK);
     return;
   }
 
-  initialized_callback.Run(FILE_ERROR_OK, entry.Pass(), base::FilePath(),
-                           base::Bind(&base::DoNothing));
+  initialized_callback.Run(FILE_ERROR_OK, base::FilePath(), entry.Pass());
   drive_service_->DownloadFile(
       cache_path,
-      gdata_entry->resource_id(),
+      gdata_entry->file_id(),
       base::Bind(&FakeFileSystem::GetFileContentAfterDownloadFile,
                  weak_ptr_factory_.GetWeakPtr(),
                  completion_callback),
@@ -343,18 +347,18 @@ void FakeFileSystem::GetResourceEntryAfterGetParentEntryInfo(
   }
 
   DCHECK(parent_entry);
-  drive_service_->GetResourceListInDirectory(
+  drive_service_->GetFileListInDirectory(
       parent_entry->resource_id(),
       base::Bind(
-          &FakeFileSystem::GetResourceEntryAfterGetResourceList,
+          &FakeFileSystem::GetResourceEntryAfterGetFileList,
           weak_ptr_factory_.GetWeakPtr(), base_name, callback));
 }
 
-void FakeFileSystem::GetResourceEntryAfterGetResourceList(
+void FakeFileSystem::GetResourceEntryAfterGetFileList(
     const base::FilePath& base_name,
     const GetResourceEntryCallback& callback,
     google_apis::GDataErrorCode gdata_error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
+    scoped_ptr<google_apis::FileList> file_list) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   FileError error = GDataToFileError(gdata_error);
@@ -363,14 +367,13 @@ void FakeFileSystem::GetResourceEntryAfterGetResourceList(
     return;
   }
 
-  DCHECK(resource_list);
-  const ScopedVector<google_apis::ResourceEntry>& entries =
-      resource_list->entries();
+  DCHECK(file_list);
+  const ScopedVector<google_apis::FileResource>& entries = file_list->items();
   for (size_t i = 0; i < entries.size(); ++i) {
     scoped_ptr<ResourceEntry> entry(new ResourceEntry);
     std::string parent_resource_id;
-    bool converted =
-        ConvertToResourceEntry(*entries[i], entry.get(), &parent_resource_id);
+    bool converted = ConvertFileResourceToResourceEntry(
+        *entries[i], entry.get(), &parent_resource_id);
     DCHECK(converted);
     entry->set_parent_local_id(parent_resource_id);
 

@@ -31,7 +31,7 @@ class SearchIPCRouterPolicyTest : public BrowserWithTestWindowTest {
     SearchTabHelper* search_tab_helper =
         SearchTabHelper::FromWebContents(web_contents());
     EXPECT_NE(static_cast<SearchTabHelper*>(NULL), search_tab_helper);
-    return search_tab_helper->ipc_router().policy();
+    return search_tab_helper->ipc_router().policy_for_testing();
   }
 
   void SetIncognitoProfile() {
@@ -113,6 +113,14 @@ TEST_F(SearchIPCRouterPolicyTest, ProcessNavigateToURL) {
   EXPECT_TRUE(GetSearchIPCRouterPolicy()->ShouldProcessNavigateToURL(true));
 }
 
+TEST_F(SearchIPCRouterPolicyTest, DoNotProcessNavigateToURL) {
+  NavigateAndCommitActiveTab(GURL("chrome-search://foo/bar"));
+  EXPECT_FALSE(GetSearchIPCRouterPolicy()->ShouldProcessNavigateToURL(true));
+
+  NavigateAndCommitActiveTab(GURL("file://foo/bar"));
+  EXPECT_FALSE(GetSearchIPCRouterPolicy()->ShouldProcessNavigateToURL(true));
+}
+
 TEST_F(SearchIPCRouterPolicyTest, ProcessPasteIntoOmniboxMsg) {
   NavigateAndCommitActiveTab(GURL(chrome::kChromeSearchLocalNtpUrl));
   EXPECT_TRUE(GetSearchIPCRouterPolicy()->ShouldProcessPasteIntoOmnibox(true));
@@ -146,6 +154,7 @@ TEST_F(SearchIPCRouterPolicyTest, DoNotProcessMessagesForInactiveTab) {
   EXPECT_FALSE(router_policy->ShouldProcessFocusOmnibox(false));
   EXPECT_FALSE(router_policy->ShouldProcessNavigateToURL(false));
   EXPECT_FALSE(router_policy->ShouldProcessPasteIntoOmnibox(false));
+  EXPECT_FALSE(router_policy->ShouldSendSetInputInProgress(false));
 }
 
 TEST_F(SearchIPCRouterPolicyTest, SendSetDisplayInstantResults) {
@@ -174,6 +183,8 @@ TEST_F(SearchIPCRouterPolicyTest,
   EXPECT_FALSE(router_policy->ShouldSendSetPromoInformation());
   EXPECT_FALSE(router_policy->ShouldSendThemeBackgroundInfo());
   EXPECT_FALSE(router_policy->ShouldSendMostVisitedItems());
+  EXPECT_FALSE(router_policy->ShouldSendSetInputInProgress(true));
+  EXPECT_FALSE(router_policy->ShouldSendOmniboxFocusChanged());
 }
 
 TEST_F(SearchIPCRouterPolicyTest,

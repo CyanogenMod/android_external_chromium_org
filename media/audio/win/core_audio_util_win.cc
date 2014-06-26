@@ -230,6 +230,18 @@ ScopedComPtr<IMMDeviceEnumerator> CoreAudioUtil::CreateDeviceEnumerator() {
   ScopedComPtr<IMMDeviceEnumerator> device_enumerator;
   HRESULT hr = device_enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
                                                 NULL, CLSCTX_INPROC_SERVER);
+  if (hr == CO_E_NOTINITIALIZED) {
+    LOG(ERROR) << "CoCreateInstance fails with CO_E_NOTINITIALIZED";
+    // We have seen crashes which indicates that this method can in fact
+    // fail with CO_E_NOTINITIALIZED in combination with certain 3rd party
+    // modules. Calling CoInitializeEx is an attempt to resolve the reported
+    // issues. See http://crbug.com/378465 for details.
+    hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (SUCCEEDED(hr)) {
+      hr = device_enumerator.CreateInstance(__uuidof(MMDeviceEnumerator),
+                                            NULL, CLSCTX_INPROC_SERVER);
+    }
+  }
   CHECK(SUCCEEDED(hr));
   return device_enumerator;
 }
@@ -672,7 +684,20 @@ HRESULT CoreAudioUtil::GetPreferredAudioParameters(
     // actual error code. The exact value is not important here.
     return AUDCLNT_E_ENDPOINT_CREATE_FAILED;
   }
-  return GetPreferredAudioParameters(client, params);
+
+  HRESULT hr = GetPreferredAudioParameters(client, params);
+  if (FAILED(hr))
+    return hr;
+
+  if (role == eCommunications) {
+    // Raise the 'DUCKING' flag for default communication devices.
+    *params = AudioParameters(params->format(), params->channel_layout(),
+        params->channels(), params->input_channels(), params->sample_rate(),
+        params->bits_per_sample(), params->frames_per_buffer(),
+        params->effects() | AudioParameters::DUCKING);
+  }
+
+  return hr;
 }
 
 HRESULT CoreAudioUtil::GetPreferredAudioParameters(

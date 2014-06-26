@@ -4,13 +4,14 @@
 
 #include "content/shell/renderer/test_runner/MockSpellCheck.h"
 
+#include "base/logging.h"
 #include "content/shell/renderer/test_runner/TestCommon.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -32,8 +33,8 @@ MockSpellCheck::~MockSpellCheck() { }
 
 bool MockSpellCheck::spellCheckWord(const WebString& text, int* misspelledOffset, int* misspelledLength)
 {
-    BLINK_ASSERT(misspelledOffset);
-    BLINK_ASSERT(misspelledLength);
+    DCHECK(misspelledOffset);
+    DCHECK(misspelledLength);
 
     // Initialize this spellchecker.
     initializeIfNeeded();
@@ -87,7 +88,7 @@ bool MockSpellCheck::spellCheckWord(const WebString& text, int* misspelledOffset
         else
             wordLength = distance(firstChar, lastChar);
 
-        BLINK_ASSERT(0 < wordOffset + wordLength);
+        DCHECK_LT(0, wordOffset + wordLength);
         stringText = stringText.substr(wordOffset + wordLength);
         skippedLength += wordOffset + wordLength;
     }
@@ -181,4 +182,4 @@ bool MockSpellCheck::initializeIfNeeded()
     return false;
 }
 
-}
+}  // namespace content

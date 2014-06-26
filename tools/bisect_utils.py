@@ -40,7 +40,12 @@ DEFAULT_GCLIENT_CUSTOM_DEPS = {
         "chrome/deps/adobe/flash/binaries/ppapi/win/.git",
     "src/third_party/adobe/flash/binaries/ppapi/win_x64":
         "https://chrome-internal.googlesource.com/"
-        "chrome/deps/adobe/flash/binaries/ppapi/win_x64/.git",}
+        "chrome/deps/adobe/flash/binaries/ppapi/win_x64/.git",
+    "src/chrome/tools/test/reference_build/chrome_win": None,
+    "src/chrome/tools/test/reference_build/chrome_mac": None,
+    "src/chrome/tools/test/reference_build/chrome_linux": None,
+    "src/third_party/WebKit/LayoutTests": None,
+    "src/tools/valgrind": None,}
 
 GCLIENT_SPEC_DATA = [
   { "name"        : "src",
@@ -54,6 +59,7 @@ GCLIENT_SPEC_DATA = [
 GCLIENT_SPEC_ANDROID = "\ntarget_os = ['android']"
 GCLIENT_CUSTOM_DEPS_V8 = {"src/v8_bleeding_edge": "git://github.com/v8/v8.git"}
 FILE_DEPS_GIT = '.DEPS.git'
+FILE_DEPS = 'DEPS'
 
 REPO_PARAMS = [
   'https://chrome-internal.googlesource.com/chromeos/manifest-internal/',
@@ -247,22 +253,6 @@ def IsDepsFileBlink():
   return 'blink.git' in locals['vars']['webkit_url']
 
 
-def RemoveThirdPartyWebkitDirectory():
-  """Removes third_party/WebKit.
-
-  Returns:
-    True on success.
-  """
-  try:
-    path_to_dir = os.path.join(os.getcwd(), 'third_party', 'WebKit')
-    if os.path.exists(path_to_dir):
-      shutil.rmtree(path_to_dir)
-  except OSError, e:
-    if e.errno != errno.ENOENT:
-      return False
-  return True
-
-
 def OnAccessError(func, path, exc_info):
   """
   Source: http://stackoverflow.com/questions/2656322/python-shutil-rmtree-fails-on-windows-with-access-is-denied
@@ -287,14 +277,17 @@ def OnAccessError(func, path, exc_info):
     raise
 
 
-def RemoveThirdPartyLibjingleDirectory():
-  """Removes third_party/libjingle. At some point, libjingle was causing issues
-  syncing when using the git workflow (crbug.com/266324).
+def RemoveThirdPartyDirectory(dir_name):
+  """Removes third_party directory from the source.
+
+  At some point, some of the third_parties were causing issues to changes in
+  the way they are synced. We remove such folder in order to avoid sync errors
+  while bisecting.
 
   Returns:
-    True on success.
+    True on success, otherwise False.
   """
-  path_to_dir = os.path.join(os.getcwd(), 'third_party', 'libjingle')
+  path_to_dir = os.path.join(os.getcwd(), 'third_party', dir_name)
   try:
     if os.path.exists(path_to_dir):
       shutil.rmtree(path_to_dir, onerror=OnAccessError)
@@ -355,11 +348,13 @@ def SetupGitDepot(opts, custom_deps):
       cwd = os.getcwd()
       os.chdir('src')
       if not IsDepsFileBlink():
-        passed_deps_check = RemoveThirdPartyWebkitDirectory()
+        passed_deps_check = RemoveThirdPartyDirectory('Webkit')
       else:
         passed_deps_check = True
       if passed_deps_check:
-        passed_deps_check = RemoveThirdPartyLibjingleDirectory()
+        passed_deps_check = RemoveThirdPartyDirectory('libjingle')
+      if passed_deps_check:
+        passed_deps_check = RemoveThirdPartyDirectory('skia')
       os.chdir(cwd)
 
     if passed_deps_check:
@@ -453,7 +448,19 @@ def SetupAndroidBuildEnvironment(opts, path_to_src=None):
   for line in out.splitlines():
     (k, _, v) = line.partition('=')
     os.environ[k] = v
+  # envsetup.sh no longer sets OS=android to GYP_DEFINES env variable
+  # (CL/170273005). Set this variable explicitly inorder to build chrome on
+  # android.
+  try:
+    if 'OS=android' not in os.environ['GYP_DEFINES']:
+      os.environ['GYP_DEFINES'] = '%s %s' % (os.environ['GYP_DEFINES'],
+                                              'OS=android')
+  except KeyError:
+    os.environ['GYP_DEFINES'] = 'OS=android'
 
+  if opts.use_goma:
+    os.environ['GYP_DEFINES'] = '%s %s' % (os.environ['GYP_DEFINES'],
+                                           'use_goma=1')
   return not proc.returncode
 
 

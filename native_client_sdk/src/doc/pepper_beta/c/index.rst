@@ -6,12 +6,14 @@
 Pepper C API Reference (Beta)
 ##########################################
 
-This page lists the C API for Pepper 33. Apps that use this API can
-run in Chrome 33 or higher.
+This page lists the C API for Pepper 36. Apps that use this API can
+run in Chrome 36 or higher.
 
 `Interfaces <group___interfaces.html>`_
 =======================================
   * `PPB_Audio <struct_p_p_b___audio__1__1.html>`_
+
+  * `PPB_AudioBuffer <struct_p_p_b___audio_buffer__0__1.html>`_
 
   * `PPB_AudioConfig <struct_p_p_b___audio_config__1__1.html>`_
 
@@ -21,7 +23,9 @@ run in Chrome 33 or higher.
 
   * `PPB_FileIO <struct_p_p_b___file_i_o__1__1.html>`_
 
-  * `PPB_FileRef <struct_p_p_b___file_ref__1__1.html>`_
+  * `PPB_FileMapping <struct_p_p_b___file_mapping__0__1.html>`_
+
+  * `PPB_FileRef <struct_p_p_b___file_ref__1__2.html>`_
 
   * `PPB_FileSystem <struct_p_p_b___file_system__1__0.html>`_
 
@@ -43,7 +47,11 @@ run in Chrome 33 or higher.
 
   * `PPB_Instance <struct_p_p_b___instance__1__0.html>`_
 
-  * `PPB_KeyboardInputEvent <struct_p_p_b___keyboard_input_event__1__0.html>`_
+  * `PPB_KeyboardInputEvent <struct_p_p_b___keyboard_input_event__1__2.html>`_
+
+  * `PPB_MediaStreamAudioTrack <struct_p_p_b___media_stream_audio_track__0__1.html>`_
+
+  * `PPB_MediaStreamVideoTrack <struct_p_p_b___media_stream_video_track__1__0.html>`_
 
   * `PPB_MessageLoop <struct_p_p_b___message_loop__1__0.html>`_
 
@@ -77,13 +85,17 @@ run in Chrome 33 or higher.
 
   * `PPB_URLResponseInfo <struct_p_p_b___u_r_l_response_info__1__0.html>`_
 
-  * `PPB_Var <struct_p_p_b___var__1__1.html>`_
+  * `PPB_Var <struct_p_p_b___var__1__2.html>`_
 
   * `PPB_VarArray <struct_p_p_b___var_array__1__0.html>`_
 
   * `PPB_VarArrayBuffer <struct_p_p_b___var_array_buffer__1__0.html>`_
 
   * `PPB_VarDictionary <struct_p_p_b___var_dictionary__1__0.html>`_
+
+  * `PPB_VideoDecoder <struct_p_p_b___video_decoder__0__1.html>`_
+
+  * `PPB_VideoFrame <struct_p_p_b___video_frame__0__1.html>`_
 
   * `PPB_View <struct_p_p_b___view__1__1.html>`_
 
@@ -144,6 +156,8 @@ run in Chrome 33 or higher.
 
   * `PP_Var <struct_p_p___var.html>`_
 
+  * `PP_VideoPicture <struct_p_p___video_picture.html>`_
+
   * `PP_VarValue <union_p_p___var_value.html>`_
 
 
@@ -164,6 +178,8 @@ Files
   * `pp_array_output.h <pp__array__output_8h.html>`_
 
   * `pp_bool.h <pp__bool_8h.html>`_
+
+  * `pp_codecs.h <pp__codecs_8h.html>`_
 
   * `pp_completion_callback.h <pp__completion__callback_8h.html>`_
 
@@ -201,6 +217,8 @@ Files
 
   * `ppb_audio.h <ppb__audio_8h.html>`_
 
+  * `ppb_audio_buffer.h <ppb__audio__buffer_8h.html>`_
+
   * `ppb_audio_config.h <ppb__audio__config_8h.html>`_
 
   * `ppb_console.h <ppb__console_8h.html>`_
@@ -208,6 +226,8 @@ Files
   * `ppb_core.h <ppb__core_8h.html>`_
 
   * `ppb_file_io.h <ppb__file__io_8h.html>`_
+
+  * `ppb_file_mapping.h <ppb__file__mapping_8h.html>`_
 
   * `ppb_file_ref.h <ppb__file__ref_8h.html>`_
 
@@ -228,6 +248,10 @@ Files
   * `ppb_input_event.h <ppb__input__event_8h.html>`_
 
   * `ppb_instance.h <ppb__instance_8h.html>`_
+
+  * `ppb_media_stream_audio_track.h <ppb__media__stream__audio__track_8h.html>`_
+
+  * `ppb_media_stream_video_track.h <ppb__media__stream__video__track_8h.html>`_
 
   * `ppb_message_loop.h <ppb__message__loop_8h.html>`_
 
@@ -264,6 +288,10 @@ Files
   * `ppb_var_array_buffer.h <ppb__var__array__buffer_8h.html>`_
 
   * `ppb_var_dictionary.h <ppb__var__dictionary_8h.html>`_
+
+  * `ppb_video_decoder.h <ppb__video__decoder_8h.html>`_
+
+  * `ppb_video_frame.h <ppb__video__frame_8h.html>`_
 
   * `ppb_view.h <ppb__view_8h.html>`_
 

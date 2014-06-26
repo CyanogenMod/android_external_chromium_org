@@ -11,7 +11,6 @@
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ssl/ssl_error_info.h"
@@ -20,6 +19,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
 #include "content/public/browser/cert_store.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -51,6 +51,7 @@ ToolbarModelImpl::ToolbarModelImpl(ToolbarModelDelegate* delegate)
 ToolbarModelImpl::~ToolbarModelImpl() {
 }
 
+// static
 ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevelForWebContents(
       content::WebContents* web_contents) {
   if (!web_contents)
@@ -103,6 +104,10 @@ base::string16 ToolbarModelImpl::GetText() const {
   if (WouldOmitURLDueToOriginChip())
     return base::string16();
 
+  return GetFormattedURL(NULL);
+}
+
+base::string16 ToolbarModelImpl::GetFormattedURL(size_t* prefix_end) const {
   std::string languages;  // Empty if we don't have a |navigation_controller|.
   Profile* profile = GetProfile();
   if (profile)
@@ -116,7 +121,8 @@ base::string16 ToolbarModelImpl::GetText() const {
   // the space.
   return AutocompleteInput::FormattedStringWithEquivalentMeaning(
       url, net::FormatUrl(url, languages, net::kFormatUrlOmitAll,
-                          net::UnescapeRule::NORMAL, NULL, NULL, NULL));
+                          net::UnescapeRule::NORMAL, NULL, prefix_end, NULL),
+      profile);
 }
 
 base::string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
@@ -127,14 +133,13 @@ base::string16 ToolbarModelImpl::GetCorpusNameForMobile() const {
   // otherwise look for the corpus name in the query parameters.
   const std::string& query_str(google_util::HasGoogleSearchQueryParam(
       url.ref()) ? url.ref() : url.query());
-  url_parse::Component query(0, query_str.length()), key, value;
+  url::Component query(0, query_str.length()), key, value;
   const char kChipKey[] = "sboxchip";
-  while (url_parse::ExtractQueryKeyValue(query_str.c_str(), &query, &key,
-                                         &value)) {
+  while (url::ExtractQueryKeyValue(query_str.c_str(), &query, &key, &value)) {
     if (key.is_nonempty() && query_str.substr(key.begin, key.len) == kChipKey) {
       return net::UnescapeAndDecodeUTF8URLComponent(
           query_str.substr(value.begin, value.len),
-          net::UnescapeRule::NORMAL, NULL);
+          net::UnescapeRule::NORMAL);
     }
   }
   return base::string16();
@@ -148,31 +153,64 @@ GURL ToolbarModelImpl::GetURL() const {
       return ShouldDisplayURL() ? entry->GetVirtualURL() : GURL();
   }
 
-  return GURL(content::kAboutBlankURL);
-}
-
-bool ToolbarModelImpl::WouldOmitURLDueToOriginChip() const {
-  // When users type URLs and hit enter, continue to show those URLs until
-  // the navigation commits, because having the omnibox clear immediately
-  // feels like the input was ignored.
-  const NavigationController* navigation_controller = GetNavigationController();
-  if (navigation_controller) {
-    const NavigationEntry* entry = navigation_controller->GetPendingEntry();
-    if (entry &&
-        (entry->GetTransitionType() & content::PAGE_TRANSITION_TYPED) != 0) {
-      return false;
-    }
-  }
-
-  bool should_display_origin_chip =
-      chrome::ShouldDisplayOriginChip() || chrome::ShouldDisplayOriginChipV2();
-  return should_display_origin_chip && delegate_->InTabbedBrowser() &&
-      ShouldDisplayURL() && url_replacement_enabled();
+  return GURL(url::kAboutBlankURL);
 }
 
 bool ToolbarModelImpl::WouldPerformSearchTermReplacement(
     bool ignore_editing) const {
   return !GetSearchTerms(ignore_editing).empty();
+}
+
+ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevel(
+    bool ignore_editing) const {
+  // When editing, assume no security style.
+  return (input_in_progress() && !ignore_editing) ?
+      NONE : GetSecurityLevelForWebContents(delegate_->GetActiveWebContents());
+}
+
+int ToolbarModelImpl::GetIcon() const {
+  if (WouldPerformSearchTermReplacement(false)) {
+    // The secured version of the search icon is necessary if neither the search
+    // button nor origin chip are present to indicate the security state.
+    return (chrome::GetDisplaySearchButtonConditions() ==
+        chrome::DISPLAY_SEARCH_BUTTON_NEVER) &&
+        !chrome::ShouldDisplayOriginChip() ?
+            IDR_OMNIBOX_SEARCH_SECURED : IDR_OMNIBOX_SEARCH;
+  }
+
+  return GetIconForSecurityLevel(GetSecurityLevel(false));
+}
+
+int ToolbarModelImpl::GetIconForSecurityLevel(SecurityLevel level) const {
+  static int icon_ids[NUM_SECURITY_LEVELS] = {
+    IDR_LOCATION_BAR_HTTP,
+    IDR_OMNIBOX_HTTPS_VALID,
+    IDR_OMNIBOX_HTTPS_VALID,
+    IDR_OMNIBOX_HTTPS_WARNING,
+    IDR_OMNIBOX_HTTPS_POLICY_WARNING,
+    IDR_OMNIBOX_HTTPS_INVALID,
+  };
+  DCHECK(arraysize(icon_ids) == NUM_SECURITY_LEVELS);
+  return icon_ids[level];
+}
+
+base::string16 ToolbarModelImpl::GetEVCertName() const {
+  if (GetSecurityLevel(false) != EV_SECURE)
+    return base::string16();
+
+  // Note: Navigation controller and active entry are guaranteed non-NULL or
+  // the security level would be NONE.
+  scoped_refptr<net::X509Certificate> cert;
+  content::CertStore::GetInstance()->RetrieveCert(
+      GetNavigationController()->GetVisibleEntry()->GetSSL().cert_id, &cert);
+
+  // EV are required to have an organization name and country.
+  DCHECK(!cert->subject().organization_names.empty());
+  DCHECK(!cert->subject().country_name.empty());
+  return l10n_util::GetStringFUTF16(
+      IDS_SECURE_CONNECTION_EV,
+      base::UTF8ToUTF16(cert->subject().organization_names[0]),
+      base::UTF8ToUTF16(cert->subject().country_name));
 }
 
 bool ToolbarModelImpl::ShouldDisplayURL() const {
@@ -201,71 +239,49 @@ bool ToolbarModelImpl::ShouldDisplayURL() const {
     }
   }
 
-  if (chrome::IsInstantNTP(delegate_->GetActiveWebContents()))
+  return !chrome::IsInstantNTP(delegate_->GetActiveWebContents());
+}
+
+bool ToolbarModelImpl::WouldOmitURLDueToOriginChip() const {
+  const char kInterstitialShownKey[] = "interstitial_shown";
+
+  // When users type URLs and hit enter, continue to show those URLs until
+  // the navigation commits or an interstitial is shown, because having the
+  // omnibox clear immediately feels like the input was ignored.
+  NavigationController* navigation_controller = GetNavigationController();
+  if (navigation_controller) {
+    NavigationEntry* pending_entry = navigation_controller->GetPendingEntry();
+    if (pending_entry) {
+      const NavigationEntry* visible_entry =
+          navigation_controller->GetVisibleEntry();
+      base::string16 unused;
+      // Keep track that we've shown the origin chip on an interstitial so it
+      // can be shown even after the interstitial was dismissed, to avoid
+      // showing the chip, removing it and then showing it again.
+      if (visible_entry &&
+          visible_entry->GetPageType() == content::PAGE_TYPE_INTERSTITIAL &&
+          !pending_entry->GetExtraData(kInterstitialShownKey, &unused))
+        pending_entry->SetExtraData(kInterstitialShownKey, base::string16());
+      const content::PageTransition transition_type =
+          pending_entry->GetTransitionType();
+      if ((transition_type & content::PAGE_TRANSITION_TYPED) != 0 &&
+          !pending_entry->GetExtraData(kInterstitialShownKey, &unused))
+        return false;
+    }
+  }
+
+  if (!delegate_->InTabbedBrowser() || !ShouldDisplayURL() ||
+      !url_replacement_enabled())
     return false;
 
-  return true;
-}
-
-ToolbarModel::SecurityLevel ToolbarModelImpl::GetSecurityLevel(
-    bool ignore_editing) const {
-  // When editing, assume no security style.
-  return (input_in_progress() && !ignore_editing) ?
-      NONE : GetSecurityLevelForWebContents(delegate_->GetActiveWebContents());
-}
-
-int ToolbarModelImpl::GetIcon() const {
-  if (WouldPerformSearchTermReplacement(false)) {
-    return (chrome::GetDisplaySearchButtonConditions() ==
-        chrome::DISPLAY_SEARCH_BUTTON_NEVER) ?
-            IDR_OMNIBOX_SEARCH_SECURED : IDR_OMNIBOX_SEARCH;
-  }
-
-  // When the original site chip experiment is running, the icon in the location
-  // bar, when not the search icon, should be the page icon.
   if (chrome::ShouldDisplayOriginChip())
-    return GetIconForSecurityLevel(NONE);
+    return true;
 
-  return GetIconForSecurityLevel(GetSecurityLevel(false));
-}
-
-int ToolbarModelImpl::GetIconForSecurityLevel(SecurityLevel level) const {
-  static int icon_ids[NUM_SECURITY_LEVELS] = {
-    IDR_LOCATION_BAR_HTTP,
-    IDR_OMNIBOX_HTTPS_VALID,
-    IDR_OMNIBOX_HTTPS_VALID,
-    IDR_OMNIBOX_HTTPS_WARNING,
-    IDR_OMNIBOX_HTTPS_POLICY_WARNING,
-    IDR_OMNIBOX_HTTPS_INVALID,
-  };
-  DCHECK(arraysize(icon_ids) == NUM_SECURITY_LEVELS);
-  return icon_ids[level];
-}
-
-base::string16 ToolbarModelImpl::GetEVCertName() const {
-  DCHECK_EQ(EV_SECURE, GetSecurityLevel(false));
-  scoped_refptr<net::X509Certificate> cert;
-  // Note: Navigation controller and active entry are guaranteed non-NULL or
-  // the security level would be NONE.
-  content::CertStore::GetInstance()->RetrieveCert(
-      GetNavigationController()->GetVisibleEntry()->GetSSL().cert_id, &cert);
-  return GetEVCertName(*cert.get());
-}
-
-// static
-base::string16 ToolbarModelImpl::GetEVCertName(
-    const net::X509Certificate& cert) {
-  // EV are required to have an organization name and country.
-  if (cert.subject().organization_names.empty() ||
-      cert.subject().country_name.empty()) {
-    NOTREACHED();
-    return base::string16();
-  }
-
-  return l10n_util::GetStringFUTF16(
-      IDS_SECURE_CONNECTION_EV,
-      base::UTF8ToUTF16(cert.subject().organization_names[0]),
-      base::UTF8ToUTF16(cert.subject().country_name));
+  const chrome::OriginChipCondition chip_condition =
+      chrome::GetOriginChipCondition();
+  return (chip_condition == chrome::ORIGIN_CHIP_ALWAYS) ||
+      ((chip_condition == chrome::ORIGIN_CHIP_ON_SRP) &&
+       WouldPerformSearchTermReplacement(false));
 }
 
 NavigationController* ToolbarModelImpl::GetNavigationController() const {

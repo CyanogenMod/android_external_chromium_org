@@ -19,9 +19,7 @@
 #include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/history/history_service.h"
@@ -30,9 +28,12 @@
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/permissions/permission_set.h"
@@ -40,7 +41,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -201,7 +202,7 @@ TEST_F(ProfileSigninConfirmationHelperTest, PromptForNewProfile_Extensions) {
   // (The web store doesn't count.)
   scoped_refptr<extensions::Extension> webstore =
       CreateExtension("web store", extension_misc::kWebStoreAppId);
-  extensions->extension_prefs()->AddGrantedPermissions(
+  extensions::ExtensionPrefs::Get(profile_.get())->AddGrantedPermissions(
       webstore->id(), make_scoped_refptr(new extensions::PermissionSet).get());
   extensions->AddExtension(webstore.get());
   EXPECT_FALSE(GetCallbackResult(
@@ -209,7 +210,7 @@ TEST_F(ProfileSigninConfirmationHelperTest, PromptForNewProfile_Extensions) {
 
   scoped_refptr<extensions::Extension> extension =
       CreateExtension("foo", std::string());
-  extensions->extension_prefs()->AddGrantedPermissions(
+  extensions::ExtensionPrefs::Get(profile_.get())->AddGrantedPermissions(
       extension->id(), make_scoped_refptr(new extensions::PermissionSet).get());
   extensions->AddExtension(extension.get());
   EXPECT_TRUE(GetCallbackResult(

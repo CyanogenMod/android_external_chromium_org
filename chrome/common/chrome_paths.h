@@ -7,6 +7,10 @@
 
 #include "build/build_config.h"
 
+namespace base {
+class FilePath;
+}
+
 // This file declares path keys for the chrome module.  These can be used with
 // the PathService to access various special directories and files.
 
@@ -41,6 +45,8 @@ enum {
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   DIR_MANAGED_PREFS,            // Directory that stores the managed prefs plist
                                 // files for the current user.
+  DIR_USER_APPLICATIONS,        // ~/Applications
+  DIR_USER_LIBRARY,             // ~/Library
 #endif
 #if defined(OS_CHROMEOS) || (defined(OS_MACOSX) && !defined(OS_IOS))
   DIR_USER_EXTERNAL_EXTENSIONS,  // Directory for per-user external extensions
@@ -64,6 +70,8 @@ enum {
   DIR_COMPONENT_UPDATED_PEPPER_FLASH_PLUGIN,  // Base directory of the Pepper
                                               // Flash plugins downloaded by the
                                               // component updater.
+  DIR_PEPPER_FLASH_DEBUGGER_PLUGIN,  // Base directory of the debugging version
+                                     // of the Pepper Flash plugin.
   FILE_RESOURCE_MODULE,         // Full path and filename of the module that
                                 // contains embedded resources (version,
                                 // strings, images, etc.).
@@ -86,6 +94,8 @@ enum {
   FILE_O1D_PLUGIN,              // Full path to the O1D Pepper plugin file.
   FILE_EFFECTS_PLUGIN,          // Full path to the Effects Pepper plugin file.
   FILE_GTALK_PLUGIN,            // Full path to the GTalk Pepper plugin file.
+  DIR_COMPONENT_CLD2,           // Directory that contains component-updated
+                                // Compact Language Detector files
   DIR_COMPONENT_WIDEVINE_CDM,   // Directory that contains component-updated
                                 // Widevine CDM files.
   FILE_WIDEVINE_CDM_ADAPTER,    // Full path to the Widevine CDM adapter file.
@@ -93,6 +103,7 @@ enum {
                                 // binary data (e.g., html files and images
                                 // used by internal pages).
   DIR_RESOURCES_EXTENSION,      // Full path to extension resources.
+  DIR_RECOVERY_BASE,            // Full path to the dir for Recovery component.
 #if defined(OS_CHROMEOS)
   DIR_CHROMEOS_WALLPAPERS,      // Directory where downloaded chromeos
                                 // wallpapers reside.
@@ -101,15 +112,18 @@ enum {
   DIR_CHROMEOS_CUSTOM_WALLPAPERS,     // Directory where custom wallpapers
                                       // reside.
 #endif
-  DIR_MANAGED_USERS_DEFAULT_APPS,  // Directory where installer places .crx
-                                   // files to be installed when managed user
-                                   // session starts.
-
+  DIR_SUPERVISED_USERS_DEFAULT_APPS,  // Directory where installer places .crx
+                                      // files to be installed when managed user
+                                      // session starts.
 #if defined(OS_LINUX) || (defined(OS_MACOSX) && !defined(OS_IOS))
   DIR_NATIVE_MESSAGING,         // System directory where native messaging host
                                 // manifest files are stored.
   DIR_USER_NATIVE_MESSAGING,    // Directory with Native Messaging Hosts
                                 // installed per-user.
+#endif
+#if !defined(OS_ANDROID)
+  DIR_GLOBAL_GCM_STORE,         // Directory where the global GCM instance
+                                // stores its data.
 #endif
 
   // Valid only in development environment; TODO(darin): move these
@@ -122,6 +136,10 @@ enum {
 
 // Call once to register the provider for the path keys defined above.
 void RegisterPathProvider();
+
+// Get or set the invalid user data dir that was originally specified.
+void SetInvalidSpecifiedUserDataDir(const base::FilePath& user_data_dir);
+const base::FilePath& GetInvalidSpecifiedUserDataDir();
 
 }  // namespace chrome
 

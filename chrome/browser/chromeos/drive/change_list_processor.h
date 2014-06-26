@@ -17,7 +17,8 @@
 
 namespace google_apis {
 class AboutResource;
-class ResourceList;
+class ChangeList;
+class FileList;
 }  // google_apis
 
 namespace drive {
@@ -67,7 +68,8 @@ class DirectoryFetchInfo {
 class ChangeList {
  public:
   ChangeList();  // For tests.
-  explicit ChangeList(const google_apis::ResourceList& resource_list);
+  explicit ChangeList(const google_apis::ChangeList& change_list);
+  explicit ChangeList(const google_apis::FileList& file_list);
   ~ChangeList();
 
   const std::vector<ResourceEntry>& entries() const { return entries_; }
@@ -115,13 +117,12 @@ class ChangeListProcessor {
   // The set of changed directories as a result of change list processing.
   const std::set<base::FilePath>& changed_dirs() const { return changed_dirs_; }
 
-  // Updates the changestamp of a directory according to |directory_fetch_info|
-  // and adds or refreshes the child entries from |change_lists|.
+  // Adds or refreshes the child entries from |change_list| to the directory.
   static FileError RefreshDirectory(
       ResourceMetadata* resource_metadata,
       const DirectoryFetchInfo& directory_fetch_info,
-      ScopedVector<ChangeList> change_lists,
-      base::FilePath* out_file_path);
+      scoped_ptr<ChangeList> change_list,
+      std::vector<ResourceEntry>* out_refreshed_entries);
 
   // Sets |entry|'s parent_local_id.
   static FileError SetParentLocalIdOfEntry(

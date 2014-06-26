@@ -21,7 +21,7 @@ bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
 void ResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     ResourceContext* resource_context,
-    appcache::AppCacheService* appcache_service,
+    AppCacheService* appcache_service,
     ResourceType::Type resource_type,
     int child_id,
     int route_id,
@@ -46,9 +46,11 @@ ResourceDispatcherHostLoginDelegate*
   return NULL;
 }
 
-bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
-                                                            int child_id,
-                                                            int route_id) {
+bool ResourceDispatcherHostDelegate::HandleExternalProtocol(
+    const GURL& url,
+    int child_id,
+    int route_id,
+    bool initiated_by_user_gesture) {
   return true;
 }
 
@@ -59,21 +61,16 @@ bool ResourceDispatcherHostDelegate::ShouldForceDownloadResource(
 }
 
 bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
-    content::ResourceContext* resource_context,
-    const GURL& url,
+    net::URLRequest* request,
     const std::string& mime_type,
     GURL* origin,
-    std::string* target_id) {
+    std::string* payload) {
   return false;
 }
 
 void ResourceDispatcherHostDelegate::OnStreamCreated(
-    content::ResourceContext* resource_context,
-    int render_process_id,
-    int render_view_id,
-    const std::string& target_id,
-    scoped_ptr<StreamHandle> stream,
-    int64 expected_content_size) {
+    net::URLRequest* request,
+    scoped_ptr<content::StreamHandle> stream) {
 }
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(

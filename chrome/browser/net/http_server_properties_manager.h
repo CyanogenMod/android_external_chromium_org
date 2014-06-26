@@ -15,7 +15,6 @@
 #include "base/timer/timer.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
-#include "net/http/http_pipelined_host_capability.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_server_properties_impl.h"
 
@@ -89,7 +88,7 @@ class HttpServerPropertiesManager
 
   // Returns true if |server| supports SPDY. Should only be called from IO
   // thread.
-  virtual bool SupportsSpdy(const net::HostPortPair& server) const OVERRIDE;
+  virtual bool SupportsSpdy(const net::HostPortPair& server) OVERRIDE;
 
   // Add |server| as the SPDY server which supports SPDY protocol into the
   // persisitent store. Should only be called from IO thread.
@@ -97,13 +96,12 @@ class HttpServerPropertiesManager
                                bool support_spdy) OVERRIDE;
 
   // Returns true if |server| has an Alternate-Protocol header.
-  virtual bool HasAlternateProtocol(
-      const net::HostPortPair& server) const OVERRIDE;
+  virtual bool HasAlternateProtocol(const net::HostPortPair& server) OVERRIDE;
 
   // Returns the Alternate-Protocol and port for |server|.
   // HasAlternateProtocol(server) must be true.
   virtual net::PortAlternateProtocolPair GetAlternateProtocol(
-      const net::HostPortPair& server) const OVERRIDE;
+      const net::HostPortPair& server) OVERRIDE;
 
   // Sets the Alternate-Protocol for |server|.
   virtual void SetAlternateProtocol(
@@ -115,14 +113,31 @@ class HttpServerPropertiesManager
   virtual void SetBrokenAlternateProtocol(
       const net::HostPortPair& server) OVERRIDE;
 
+  // Returns true if Alternate-Protocol for |server| was recently BROKEN.
+  virtual bool WasAlternateProtocolRecentlyBroken(
+      const net::HostPortPair& server) OVERRIDE;
+
+  // Confirms that Alternate-Protocol for |server| is working.
+  virtual void ConfirmAlternateProtocol(
+      const net::HostPortPair& server) OVERRIDE;
+
+  // Clears the Alternate-Protocol for |server|.
+  virtual void ClearAlternateProtocol(const net::HostPortPair& server) OVERRIDE;
+
   // Returns all Alternate-Protocol mappings.
   virtual const net::AlternateProtocolMap&
       alternate_protocol_map() const OVERRIDE;
 
+  virtual void SetAlternateProtocolExperiment(
+      net::AlternateProtocolExperiment experiment) OVERRIDE;
+
+  virtual net::AlternateProtocolExperiment GetAlternateProtocolExperiment()
+      const OVERRIDE;
+
   // Gets a reference to the SettingsMap stored for a host.
   // If no settings are stored, returns an empty SettingsMap.
   virtual const net::SettingsMap& GetSpdySettings(
-      const net::HostPortPair& host_port_pair) const OVERRIDE;
+      const net::HostPortPair& host_port_pair) OVERRIDE;
 
   // Saves an individual SPDY setting for a host. Returns true if SPDY setting
   // is to be persisted.
@@ -146,17 +161,6 @@ class HttpServerPropertiesManager
 
   virtual const NetworkStats* GetServerNetworkStats(
       const net::HostPortPair& host_port_pair) const OVERRIDE;
-
-  virtual net::HttpPipelinedHostCapability GetPipelineCapability(
-      const net::HostPortPair& origin) OVERRIDE;
-
-  virtual void SetPipelineCapability(
-      const net::HostPortPair& origin,
-      net::HttpPipelinedHostCapability capability) OVERRIDE;
-
-  virtual void ClearPipelineCapabilities() OVERRIDE;
-
-  virtual net::PipelineCapabilityMap GetPipelineCapabilityMap() const OVERRIDE;
 
  protected:
   // --------------------
@@ -182,7 +186,7 @@ class HttpServerPropertiesManager
       std::vector<std::string>* spdy_servers,
       net::SpdySettingsMap* spdy_settings_map,
       net::AlternateProtocolMap* alternate_protocol_map,
-      net::PipelineCapabilityMap* pipeline_capability_map,
+      net::AlternateProtocolExperiment alternate_protocol_experiment,
       bool detected_corrupted_prefs);
 
   // These are used to delay updating the preferences when cached data in
@@ -209,7 +213,6 @@ class HttpServerPropertiesManager
       base::ListValue* spdy_server_list,
       net::SpdySettingsMap* spdy_settings_map,
       net::AlternateProtocolMap* alternate_protocol_map,
-      net::PipelineCapabilityMap* pipeline_capability_map,
       const base::Closure& completion);
 
  private:

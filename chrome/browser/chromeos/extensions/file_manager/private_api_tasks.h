@@ -7,7 +7,10 @@
 #ifndef CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_TASKS_H_
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_TASKS_H_
 
+#include <vector>
+
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_base.h"
+#include "chrome/browser/chromeos/file_manager/file_tasks.h"
 #include "chrome/common/extensions/api/file_browser_private.h"
 
 namespace extensions {
@@ -23,7 +26,7 @@ class FileBrowserPrivateExecuteTaskFunction
   virtual ~FileBrowserPrivateExecuteTaskFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void OnTaskExecuted(
@@ -41,7 +44,12 @@ class FileBrowserPrivateGetFileTasksFunction
   virtual ~FileBrowserPrivateGetFileTasksFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
+
+ private:
+  void OnSniffingMimeTypeCompleted(
+      scoped_ptr<app_file_handler_util::PathAndMimeTypeSet> path_mime_set,
+      scoped_ptr<std::vector<GURL> > file_urls);
 };
 
 // Implements the chrome.fileBrowserPrivate.setDefaultTask method.
@@ -55,7 +63,7 @@ class FileBrowserPrivateSetDefaultTaskFunction
   virtual ~FileBrowserPrivateSetDefaultTaskFunction() {}
 
   // SyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 }  // namespace extensions

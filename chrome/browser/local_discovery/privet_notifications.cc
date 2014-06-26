@@ -14,11 +14,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/local_discovery/privet_device_lister_impl.h"
 #include "chrome/browser/local_discovery/privet_http_asynchronous_factory.h"
-#include "chrome/browser/local_discovery/privet_traffic_detector.h"
 #include "chrome/browser/local_discovery/service_discovery_shared_client.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
@@ -27,6 +27,7 @@
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
@@ -35,8 +36,11 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notifier_settings.h"
+
+#if defined(ENABLE_MDNS)
+#include "chrome/browser/local_discovery/privet_traffic_detector.h"
+#endif
 
 namespace local_discovery {
 
@@ -69,7 +73,8 @@ void ReportPrivetUmaEvent(PrivetNotificationsEvent privet_event) {
 
 PrivetNotificationsListener::PrivetNotificationsListener(
     scoped_ptr<PrivetHTTPAsynchronousFactory> privet_http_factory,
-    Delegate* delegate) : delegate_(delegate), devices_active_(0) {
+    Delegate* delegate)
+    : delegate_(delegate), devices_active_(0) {
   privet_http_factory_.swap(privet_http_factory);
 }
 
@@ -112,6 +117,11 @@ void PrivetNotificationsListener::DeviceChanged(
 
 void PrivetNotificationsListener::CreateInfoOperation(
     scoped_ptr<PrivetHTTPClient> http_client) {
+  if (!http_client) {
+    // Do nothing if resolution fails.
+    return;
+  }
+
   std::string name = http_client->GetName();
   DeviceContextMap::iterator device_iter = devices_seen_.find(name);
   DCHECK(device_iter != devices_seen_.end());
@@ -216,9 +226,7 @@ void PrivetNotificationService::DeviceCacheFlushed() {
 bool PrivetNotificationService::IsEnabled() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
   return !command_line->HasSwitch(switches::kDisableDeviceDiscovery) &&
-      !command_line->HasSwitch(
-          switches::kDisableDeviceDiscoveryNotifications) &&
-      message_center::IsRichNotificationEnabled();
+      !command_line->HasSwitch(switches::kDisableDeviceDiscoveryNotifications);
 }
 
 // static
@@ -284,6 +292,15 @@ void PrivetNotificationService::PrivetRemoveNotification() {
 }
 
 void PrivetNotificationService::Start() {
+#if defined(CHROMEOS)
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfileIfExists(
+          Profile::FromBrowserContext(profile_));
+
+  if (!signin_manager || signin_manager->GetAuthenticatedUsername().empty())
+    return;
+#endif
+
   enable_privet_notification_member_.Init(
       prefs::kLocalDiscoveryNotificationsEnabled,
       Profile::FromBrowserContext(profile_)->GetPrefs(),
@@ -293,6 +310,7 @@ void PrivetNotificationService::Start() {
 }
 
 void PrivetNotificationService::OnNotificationsEnabledChanged() {
+#if defined(ENABLE_MDNS)
   if (IsForced()) {
     StartLister();
   } else if (*enable_privet_notification_member_) {
@@ -308,12 +326,22 @@ void PrivetNotificationService::OnNotificationsEnabledChanged() {
     service_discovery_client_ = NULL;
     privet_notifications_listener_.reset();
   }
+#else
+  if (IsForced() || *enable_privet_notification_member_) {
+    StartLister();
+  } else {
+    device_lister_.reset();
+    service_discovery_client_ = NULL;
+    privet_notifications_listener_.reset();
+  }
+#endif
 }
 
 void PrivetNotificationService::StartLister() {
   ReportPrivetUmaEvent(PRIVET_LISTER_STARTED);
+#if defined(ENABLE_MDNS)
   traffic_detector_ = NULL;
-  DCHECK(!service_discovery_client_);
+#endif  // ENABLE_MDNS
   service_discovery_client_ = ServiceDiscoverySharedClient::GetInstance();
   device_lister_.reset(new PrivetDeviceListerImpl(service_discovery_client_,
                                                   this));
@@ -340,7 +368,7 @@ std::string PrivetNotificationDelegate::id() const {
   return kPrivetNotificationID;
 }
 
-content::RenderViewHost* PrivetNotificationDelegate::GetRenderViewHost() const {
+content::WebContents* PrivetNotificationDelegate::GetWebContents() const {
   return NULL;
 }
 

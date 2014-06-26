@@ -4,6 +4,7 @@
 
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,16 +22,14 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/abstract_profile_sync_service_test.h"
 #include "chrome/browser/sync/glue/autofill_data_type_controller.h"
 #include "chrome/browser/sync/glue/autofill_profile_data_type_controller.h"
-#include "chrome/browser/sync/glue/generic_change_processor.h"
-#include "chrome/browser/sync/glue/shared_change_processor.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -38,7 +37,9 @@
 #include "chrome/browser/sync/test_profile_sync_service.h"
 #include "chrome/browser/webdata/autocomplete_syncable_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
@@ -46,6 +47,7 @@
 #include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
 #include "components/autofill/core/browser/webdata/autofill_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/webdata/common/web_data_service_test_util.h"
 #include "components/webdata/common/web_database.h"
@@ -80,14 +82,13 @@ using base::WaitableEvent;
 using browser_sync::AutofillDataTypeController;
 using browser_sync::AutofillProfileDataTypeController;
 using browser_sync::DataTypeController;
-using browser_sync::GenericChangeProcessor;
-using browser_sync::SharedChangeProcessor;
 using content::BrowserThread;
 using syncer::AUTOFILL;
+using syncer::AUTOFILL_PROFILE;
 using syncer::BaseNode;
 using syncer::syncable::BASE_VERSION;
 using syncer::syncable::CREATE;
-using syncer::syncable::GET_BY_SERVER_TAG;
+using syncer::syncable::GET_TYPE_ROOT;
 using syncer::syncable::MutableEntry;
 using syncer::syncable::SERVER_SPECIFICS;
 using syncer::syncable::SPECIFICS;
@@ -108,6 +109,8 @@ class Id;
 
 namespace {
 
+const char kTestProfileName[] = "test-profile";
+
 void RunAndSignal(const base::Closure& cb, WaitableEvent* event) {
   cb.Run();
   event->Signal();
@@ -123,10 +126,11 @@ class AutofillTableMock : public AutofillTable {
                     const base::string16& value));  // NOLINT
   MOCK_METHOD1(GetAllAutofillEntries,
                bool(std::vector<AutofillEntry>* entries));  // NOLINT
-  MOCK_METHOD3(GetAutofillTimestamps,
+  MOCK_METHOD4(GetAutofillTimestamps,
                bool(const base::string16& name,  // NOLINT
                     const base::string16& value,
-                    std::vector<base::Time>* timestamps));
+                    base::Time* date_created,
+                    base::Time* date_last_used));
   MOCK_METHOD1(UpdateAutofillEntries,
                bool(const std::vector<AutofillEntry>&));  // NOLINT
   MOCK_METHOD1(GetAutofillProfiles,
@@ -337,8 +341,7 @@ class WebDataServiceFake : public AutofillWebDataService {
   DISALLOW_COPY_AND_ASSIGN(WebDataServiceFake);
 };
 
-BrowserContextKeyedService* BuildMockWebDataServiceWrapper(
-    content::BrowserContext* profile) {
+KeyedService* BuildMockWebDataServiceWrapper(content::BrowserContext* profile) {
   return new MockWebDataServiceWrapper(
       NULL,
       new WebDataServiceFake(),
@@ -354,25 +357,13 @@ ACTION_P(MakeAutocompleteSyncComponents, wds) {
 
 ACTION_P(ReturnNewDataTypeManagerWithDebugListener, debug_listener) {
   return new browser_sync::DataTypeManagerImpl(
+      base::Closure(),
       debug_listener,
       arg1,
       arg2,
       arg3,
       arg4,
       arg5);
-}
-
-ACTION(MakeGenericChangeProcessor) {
-  syncer::UserShare* user_share = arg0->GetUserShare();
-  return new GenericChangeProcessor(
-      arg1,
-      arg2,
-      arg3,
-      user_share);
-}
-
-ACTION(MakeSharedChangeProcessor) {
-  return new SharedChangeProcessor();
 }
 
 ACTION_P(MakeAutofillProfileSyncComponents, wds) {
@@ -401,17 +392,14 @@ class AutofillEntryFactory : public AbstractAutofillFactory {
       ProfileSyncComponentsFactory* factory,
       TestingProfile* profile,
       ProfileSyncService* service) OVERRIDE {
-    return new AutofillDataTypeController(factory, profile, service);
+    return new AutofillDataTypeController(
+        factory, profile, DataTypeController::DisableTypeCallback());
   }
 
   virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
                               ProfileSyncService* service,
                               AutofillWebDataService* wds,
                               DataTypeController* dtc) OVERRIDE {
-    EXPECT_CALL(*factory, CreateGenericChangeProcessor(_,_,_,_)).
-        WillOnce(MakeGenericChangeProcessor());
-    EXPECT_CALL(*factory, CreateSharedChangeProcessor()).
-        WillOnce(MakeSharedChangeProcessor());
     EXPECT_CALL(*factory, GetSyncableServiceForType(syncer::AUTOFILL)).
         WillOnce(MakeAutocompleteSyncComponents(wds));
   }
@@ -423,17 +411,14 @@ class AutofillProfileFactory : public AbstractAutofillFactory {
       ProfileSyncComponentsFactory* factory,
       TestingProfile* profile,
       ProfileSyncService* service) OVERRIDE {
-    return new AutofillProfileDataTypeController(factory, profile, service);
+    return new AutofillProfileDataTypeController(
+        factory, profile, DataTypeController::DisableTypeCallback());
   }
 
   virtual void SetExpectation(ProfileSyncComponentsFactoryMock* factory,
                               ProfileSyncService* service,
                               AutofillWebDataService* wds,
                               DataTypeController* dtc) OVERRIDE {
-    EXPECT_CALL(*factory, CreateGenericChangeProcessor(_,_,_,_)).
-        WillOnce(MakeGenericChangeProcessor());
-    EXPECT_CALL(*factory, CreateSharedChangeProcessor()).
-        WillOnce(MakeSharedChangeProcessor());
     EXPECT_CALL(*factory,
         GetSyncableServiceForType(syncer::AUTOFILL_PROFILE)).
         WillOnce(MakeAutofillProfileSyncComponents(wds));
@@ -447,31 +432,10 @@ class MockPersonalDataManager : public PersonalDataManager {
   MOCK_METHOD0(LoadProfiles, void());
   MOCK_METHOD0(LoadCreditCards, void());
   MOCK_METHOD0(Refresh, void());
-};
 
-class MockPersonalDataManagerService
-    : public autofill::PersonalDataManagerService {
- public:
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
-    return new MockPersonalDataManagerService();
+  static KeyedService* Build(content::BrowserContext* profile) {
+    return new MockPersonalDataManager();
   }
-
-  MockPersonalDataManagerService() {
-    personal_data_manager_.reset(new MockPersonalDataManager());
-  }
-  virtual ~MockPersonalDataManagerService() {}
-
-  virtual void Shutdown() OVERRIDE {
-    personal_data_manager_.reset();
-  }
-
-  virtual MockPersonalDataManager* GetPersonalDataManager() OVERRIDE {
-    return personal_data_manager_.get();
-  }
-
- private:
-  scoped_ptr<MockPersonalDataManager> personal_data_manager_;
-  DISALLOW_COPY_AND_ASSIGN(MockPersonalDataManagerService);
 };
 
 template <class T> class AddAutofillHelper;
@@ -490,7 +454,8 @@ class ProfileSyncServiceAutofillTest
 
  protected:
   ProfileSyncServiceAutofillTest()
-   : debug_ptr_factory_(this) {
+      : profile_manager_(TestingBrowserProcess::GetGlobal()),
+        debug_ptr_factory_(this) {
   }
   virtual ~ProfileSyncServiceAutofillTest() {
   }
@@ -511,34 +476,38 @@ class ProfileSyncServiceAutofillTest
 
   virtual void SetUp() OVERRIDE {
     AbstractProfileSyncServiceTest::SetUp();
-    TestingProfile::Builder builder;
-    builder.AddTestingFactory(
+    ASSERT_TRUE(profile_manager_.SetUp());
+    TestingProfile::TestingFactories testing_factories;
+    testing_factories.push_back(std::make_pair(
         ProfileOAuth2TokenServiceFactory::GetInstance(),
-        FakeProfileOAuth2TokenServiceWrapper::BuildAutoIssuingTokenService);
-    profile_ = builder.Build().Pass();
+        BuildAutoIssuingFakeProfileOAuth2TokenService));
+    profile_ = profile_manager_.CreateTestingProfile(
+        kTestProfileName,
+        scoped_ptr<PrefServiceSyncable>(),
+        base::UTF8ToUTF16(kTestProfileName),
+        0,
+        std::string(),
+        testing_factories);
     web_database_.reset(new WebDatabaseFake(&autofill_table_));
     MockWebDataServiceWrapper* wrapper =
         static_cast<MockWebDataServiceWrapper*>(
             WebDataServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-                profile_.get(), BuildMockWebDataServiceWrapper));
+                profile_, BuildMockWebDataServiceWrapper));
     web_data_service_ =
         static_cast<WebDataServiceFake*>(wrapper->GetAutofillWebData().get());
     web_data_service_->SetDatabase(web_database_.get());
 
-    MockPersonalDataManagerService* personal_data_manager_service =
-        static_cast<MockPersonalDataManagerService*>(
-            autofill::PersonalDataManagerFactory::GetInstance()
-                ->SetTestingFactoryAndUse(
-                    profile_.get(), MockPersonalDataManagerService::Build));
-    personal_data_manager_ =
-        personal_data_manager_service->GetPersonalDataManager();
+    personal_data_manager_ = static_cast<MockPersonalDataManager*>(
+        autofill::PersonalDataManagerFactory::GetInstance()
+            ->SetTestingFactoryAndUse(profile_,
+                                      MockPersonalDataManager::Build));
 
     EXPECT_CALL(*personal_data_manager_, LoadProfiles()).Times(1);
     EXPECT_CALL(*personal_data_manager_, LoadCreditCards()).Times(1);
 
     personal_data_manager_->Init(
         WebDataServiceFactory::GetAutofillWebDataForProfile(
-            profile_.get(), Profile::EXPLICIT_ACCESS),
+            profile_, Profile::EXPLICIT_ACCESS),
         profile_->GetPrefs(),
         profile_->IsOffTheRecord());
 
@@ -547,23 +516,21 @@ class ProfileSyncServiceAutofillTest
 
   virtual void TearDown() OVERRIDE {
     // Note: The tear down order is important.
-    ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(
-        profile_.get(), NULL);
+    ProfileSyncServiceFactory::GetInstance()->SetTestingFactory(profile_, NULL);
     web_data_service_->ShutdownOnUIThread();
     web_data_service_->ShutdownSyncableService();
     web_data_service_ = NULL;
     // To prevent a leak, fully release TestURLRequestContext to ensure its
     // destruction on the IO message loop.
-    profile_.reset();
+    profile_ = NULL;
+    profile_manager_.DeleteTestingProfile(kTestProfileName);
     AbstractProfileSyncServiceTest::TearDown();
   }
-
 
   int GetSyncCount(syncer::ModelType type) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode node(&trans);
-    if (node.InitByTagLookup(syncer::ModelTypeToRootTag(type)) !=
-        syncer::BaseNode::INIT_OK)
+    if (node.InitTypeRoot(type) != syncer::BaseNode::INIT_OK)
       return 0;
     return node.GetTotalNodeCount() - 1;
   }
@@ -572,18 +539,15 @@ class ProfileSyncServiceAutofillTest
                         bool will_fail_association,
                         syncer::ModelType type) {
     AbstractAutofillFactory* factory = GetFactory(type);
-    SigninManagerBase* signin =
-        SigninManagerFactory::GetForProfile(profile_.get());
+    SigninManagerBase* signin = SigninManagerFactory::GetForProfile(profile_);
     signin->SetAuthenticatedUsername("test_user@gmail.com");
-    sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(
-        profile_.get(), callback);
+    sync_service_ = TestProfileSyncService::BuildAutoStartAsyncInit(profile_,
+                                                                    callback);
 
     ProfileSyncComponentsFactoryMock* components =
         sync_service_->components_factory_mock();
     DataTypeController* data_type_controller =
-        factory->CreateDataTypeController(components,
-                                          profile_.get(),
-                                          sync_service_);
+        factory->CreateDataTypeController(components, profile_, sync_service_);
     factory->SetExpectation(components,
                             sync_service_,
                             web_data_service_.get(),
@@ -597,7 +561,7 @@ class ProfileSyncServiceAutofillTest
         WillRepeatedly(Return(true));
 
     // We need tokens to get the tests going
-    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get())
+    ProfileOAuth2TokenServiceFactory::GetForProfile(profile_)
         ->UpdateCredentials("test_user@gmail.com", "oauth2_login_token");
 
     sync_service_->RegisterDataTypeController(data_type_controller);
@@ -619,9 +583,7 @@ class ProfileSyncServiceAutofillTest
   bool AddAutofillSyncNode(const AutofillEntry& entry) {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(
-            syncer::ModelTypeToRootTag(syncer::AUTOFILL)) !=
-                BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(syncer::AUTOFILL) != BaseNode::INIT_OK) {
       return false;
     }
 
@@ -645,8 +607,7 @@ class ProfileSyncServiceAutofillTest
   bool AddAutofillSyncNode(const AutofillProfile& profile) {
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(autofill::kAutofillProfileTag) !=
-            BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(AUTOFILL_PROFILE) != BaseNode::INIT_OK) {
       return false;
     }
     syncer::WriteNode node(&trans);
@@ -669,9 +630,7 @@ class ProfileSyncServiceAutofillTest
                                     std::vector<AutofillProfile>* profiles) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(
-            syncer::ModelTypeToRootTag(syncer::AUTOFILL)) !=
-                BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(syncer::AUTOFILL) != BaseNode::INIT_OK) {
       return false;
     }
 
@@ -692,7 +651,8 @@ class ProfileSyncServiceAutofillTest
           timestamps.push_back(Time::FromInternalValue(
               autofill.usage_timestamp(i)));
         }
-        entries->push_back(AutofillEntry(key, timestamps));
+        entries->push_back(
+            AutofillEntry(key, timestamps.front(), timestamps.back()));
       } else if (autofill.has_profile()) {
         AutofillProfile p;
         p.set_guid(autofill.profile().guid());
@@ -709,8 +669,7 @@ class ProfileSyncServiceAutofillTest
       std::vector<AutofillProfile>* profiles) {
     syncer::ReadTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode autofill_root(&trans);
-    if (autofill_root.InitByTagLookup(autofill::kAutofillProfileTag) !=
-            BaseNode::INIT_OK) {
+    if (autofill_root.InitTypeRoot(AUTOFILL_PROFILE) != BaseNode::INIT_OK) {
       return false;
     }
 
@@ -734,7 +693,7 @@ class ProfileSyncServiceAutofillTest
 
   void SetIdleChangeProcessorExpectations() {
     EXPECT_CALL(autofill_table_, RemoveFormElement(_, _)).Times(0);
-    EXPECT_CALL(autofill_table_, GetAutofillTimestamps(_, _, _)).Times(0);
+    EXPECT_CALL(autofill_table_, GetAutofillTimestamps(_, _, _, _)).Times(0);
     EXPECT_CALL(autofill_table_, UpdateAutofillEntries(_)).Times(0);
   }
 
@@ -746,14 +705,13 @@ class ProfileSyncServiceAutofillTest
     // entries.
     static Time base_time = Time::Now().LocalMidnight();
 
-    std::vector<Time> timestamps;
-    if (time_shift0 > 0)
-      timestamps.push_back(base_time + TimeDelta::FromSeconds(time_shift0));
-    if (time_shift1 > 0)
-      timestamps.push_back(base_time + TimeDelta::FromSeconds(time_shift1));
+    base::Time date_created = base_time + TimeDelta::FromSeconds(time_shift0);
+    base::Time date_last_used = date_created;
+    if (time_shift1 >= 0)
+      date_last_used = base_time + TimeDelta::FromSeconds(time_shift1);
     return AutofillEntry(
         AutofillKey(base::ASCIIToUTF16(name), base::ASCIIToUTF16(value)),
-        timestamps);
+        date_created, date_last_used);
   }
 
   static AutofillEntry MakeAutofillEntry(const char* name,
@@ -766,7 +724,8 @@ class ProfileSyncServiceAutofillTest
   friend class AddAutofillHelper<AutofillProfile>;
   friend class FakeServerUpdater;
 
-  scoped_ptr<TestingProfile> profile_;
+  TestingProfileManager profile_manager_;
+  TestingProfile* profile_;
   AutofillTableMock autofill_table_;
   scoped_ptr<WebDatabaseFake> web_database_;
   scoped_refptr<WebDataServiceFake> web_data_service_;
@@ -855,10 +814,10 @@ class FakeServerUpdater : public base::RefCountedThreadSafe<FakeServerUpdater> {
     sync_pb::AutofillSpecifics new_autofill;
     new_autofill.set_name(base::UTF16ToUTF8(entry_.key().name()));
     new_autofill.set_value(base::UTF16ToUTF8(entry_.key().value()));
-    const std::vector<base::Time>& ts(entry_.timestamps());
-    for (std::vector<base::Time>::const_iterator timestamp = ts.begin();
-         timestamp != ts.end(); ++timestamp) {
-      new_autofill.add_usage_timestamp(timestamp->ToInternalValue());
+    new_autofill.add_usage_timestamp(entry_.date_created().ToInternalValue());
+    if (entry_.date_created() != entry_.date_last_used()) {
+      new_autofill.add_usage_timestamp(
+          entry_.date_last_used().ToInternalValue());
     }
 
     sync_pb::EntitySpecifics entity_specifics;
@@ -874,8 +833,7 @@ class FakeServerUpdater : public base::RefCountedThreadSafe<FakeServerUpdater> {
 
       // Create actual entry based on autofill protobuf information.
       // Simulates effects of UpdateLocalDataFromServerData
-      MutableEntry parent(&trans, GET_BY_SERVER_TAG,
-                          syncer::ModelTypeToRootTag(syncer::AUTOFILL));
+      MutableEntry parent(&trans, GET_TYPE_ROOT, syncer::AUTOFILL);
       MutableEntry item(&trans, CREATE, syncer::AUTOFILL, parent.GetId(), tag);
       ASSERT_TRUE(item.good());
       item.PutSpecifics(entity_specifics);
@@ -1240,10 +1198,11 @@ TEST_F(ProfileSyncServiceAutofillTest, ProcessUserChangeAddEntry) {
   ASSERT_TRUE(create_root.success());
 
   AutofillEntry added_entry(MakeAutofillEntry("added", "entry", 1));
-  std::vector<base::Time> timestamps(added_entry.timestamps());
 
-  EXPECT_CALL(autofill_table_, GetAutofillTimestamps(_, _, _)).
-      WillOnce(DoAll(SetArgumentPointee<2>(timestamps), Return(true)));
+  EXPECT_CALL(autofill_table_, GetAutofillTimestamps(_, _, _, _)).
+      WillOnce(DoAll(SetArgumentPointee<2>(added_entry.date_created()),
+                     SetArgumentPointee<3>(added_entry.date_last_used()),
+                     Return(true)));
 
   AutofillChangeList changes;
   changes.push_back(AutofillChange(AutofillChange::ADD, added_entry.key()));
@@ -1296,10 +1255,11 @@ TEST_F(ProfileSyncServiceAutofillTest, ProcessUserChangeUpdateEntry) {
   ASSERT_TRUE(create_root.success());
 
   AutofillEntry updated_entry(MakeAutofillEntry("my", "entry", 1, 2));
-  std::vector<base::Time> timestamps(updated_entry.timestamps());
 
-  EXPECT_CALL(autofill_table_, GetAutofillTimestamps(_, _, _)).
-      WillOnce(DoAll(SetArgumentPointee<2>(timestamps), Return(true)));
+  EXPECT_CALL(autofill_table_, GetAutofillTimestamps(_, _, _, _)).
+      WillOnce(DoAll(SetArgumentPointee<2>(updated_entry.date_created()),
+                     SetArgumentPointee<3>(updated_entry.date_last_used()),
+                     Return(true)));
 
   AutofillChangeList changes;
   changes.push_back(AutofillChange(AutofillChange::UPDATE,

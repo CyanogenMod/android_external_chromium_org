@@ -124,6 +124,10 @@ void AudioOutputDispatcherImpl::Shutdown() {
   // Close all idle streams immediately.  The |close_timer_| will handle
   // invalidating any outstanding tasks upon its destruction.
   CloseAllIdleStreams();
+
+  // No AudioOutputProxy objects should hold a reference to us when we get
+  // to this stage.
+  DCHECK(HasOneRef()) << "Only the AudioManager should hold a reference";
 }
 
 bool AudioOutputDispatcherImpl::CreateAndOpenStream() {
@@ -166,19 +170,6 @@ void AudioOutputDispatcherImpl::CloseIdleStreams(size_t keep_alive) {
     audio_stream_ids_.erase(it);
   }
   idle_streams_.erase(idle_streams_.begin() + keep_alive, idle_streams_.end());
-}
-
-void AudioOutputDispatcherImpl::CloseStreamsForWedgeFix() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-  CloseAllIdleStreams();
-}
-
-void AudioOutputDispatcherImpl::RestartStreamsForWedgeFix() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  // Should only be called when the dispatcher is used with fake streams which
-  // don't need to be shutdown or restarted.
-  CHECK_EQ(params_.format(), AudioParameters::AUDIO_FAKE);
 }
 
 }  // namespace media

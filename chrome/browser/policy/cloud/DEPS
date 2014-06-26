@@ -10,6 +10,7 @@ include_rules = [
   "-content",
   "+chrome/browser/policy",
   "+chrome/browser/policy/cloud",
+  "+components/invalidation",
 ]
 
 specific_include_rules = {
@@ -24,11 +25,10 @@ specific_include_rules = {
   r"user_cloud_policy_invalidator|"
   r"user_cloud_policy_invalidator_factory|"
   r"user_cloud_policy_manager_factory|"
-  r"user_policy_signin_service_android|"
   r"user_policy_signin_service_base|"
   r"user_policy_signin_service|"
   r"user_policy_signin_service_factory|"
-  r"user_policy_signin_service_ios|"
+  r"user_policy_signin_service_mobile|"
   r"user_policy_signin_service_unittest)"
   r"\.(cc|h|mm)": [
     "+chrome",
@@ -45,11 +45,6 @@ specific_include_rules = {
 
   r"cloud_policy_invalidator.h": [
     "+sync/internal_api/public/base/invalidation.h",
-  ],
-
-  # TODO(joaodasilva): remove these exceptions.
-  r"cloud_policy_invalidator\.cc": [
-    "+chrome/browser/invalidation/invalidation_service.h",
   ],
 
   r"cloud_policy_invalidator_unittest\.cc": [

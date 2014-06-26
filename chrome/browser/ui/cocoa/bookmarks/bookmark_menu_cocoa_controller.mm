@@ -7,7 +7,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_BOOKMARK_MENU
 #import "chrome/browser/app_controller_mac.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
@@ -15,8 +14,9 @@
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/l10n_util.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #import "ui/base/cocoa/menu_controller.h"
 
 using base::UserMetricsAction;
@@ -80,7 +80,7 @@ const NSUInteger kMaximumMenuPixelsWide = 300;
 // Return the a BookmarkNode that has the given id (called
 // "identifier" here to avoid conflict with objc's concept of "id").
 - (const BookmarkNode*)nodeForIdentifier:(int)identifier {
-  return bridge_->GetBookmarkModel()->GetNodeByID(identifier);
+  return GetBookmarkNodeByID(bridge_->GetBookmarkModel(), identifier);
 }
 
 // Open the URL of the given BookmarkNode in the current tab.

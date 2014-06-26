@@ -10,7 +10,7 @@
 #include "gin/array_buffer.h"
 #include "gin/object_template_builder.h"
 #include "gin/per_context_data.h"
-#include "mojo/public/gles2/gles2.h"
+#include "mojo/public/c/gles2/gles2.h"
 
 namespace gin {
 template<>
@@ -170,7 +170,7 @@ void Context::ContextLost() {
   if (!runner_)
     return;
   gin::Runner::Scope scope(runner_.get());
-  v8::Isolate* isolate = runner_->isolate();
+  v8::Isolate* isolate = runner_->GetContextHolder()->isolate();
 
   v8::Handle<v8::Function> callback = v8::Local<v8::Function>::New(
       isolate, context_lost_callback_);

@@ -37,7 +37,7 @@ class TextureImageTransportSurface
   virtual gfx::Size GetSize() OVERRIDE;
   virtual void* GetHandle() OVERRIDE;
   virtual unsigned GetFormat() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
   virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
@@ -50,7 +50,6 @@ class TextureImageTransportSurface
   // ImageTransportSurface implementation.
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
-  virtual void OnResizeViewACK() OVERRIDE;
   virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
   virtual void SetLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;

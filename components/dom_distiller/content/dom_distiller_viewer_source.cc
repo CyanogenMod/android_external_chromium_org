@@ -11,107 +11,235 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/strings/string_util.h"
-#include "components/dom_distiller/core/dom_distiller_service.h"
-#include "components/dom_distiller/core/proto/distilled_article.pb.h"
-#include "components/dom_distiller/core/proto/distilled_page.pb.h"
+#include "base/strings/utf_string_conversions.h"
 #include "components/dom_distiller/core/task_tracker.h"
+#include "components/dom_distiller/core/url_constants.h"
+#include "components/dom_distiller/core/viewer.h"
+#include "content/public/browser/navigation_details.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "grit/component_resources.h"
-#include "grit/component_strings.h"
-#include "net/base/escape.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "net/base/url_util.h"
 #include "net/url_request/url_request.h"
-#include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "url/gurl.h"
-
-namespace {
-
-const char kCssPath[] = "readability.css";
-
-std::string ReplaceHtmlTemplateValues(std::string title, std::string content) {
-  base::StringPiece html_template =
-      ResourceBundle::GetSharedInstance().GetRawDataResource(
-          IDR_DOM_DISTILLER_VIEWER_HTML);
-  std::vector<std::string> substitutions;
-  substitutions.push_back(title);     // $1
-  substitutions.push_back(kCssPath);  // $2
-  substitutions.push_back(title);     // $3
-  substitutions.push_back(content);   // $4
-  return ReplaceStringPlaceholders(html_template, substitutions, NULL);
-}
-
-}  // namespace
 
 namespace dom_distiller {
 
 // Handles receiving data asynchronously for a specific entry, and passing
-// it along to the data callback for the data source.
-class RequestViewerHandle : public ViewRequestDelegate {
+// it along to the data callback for the data source. Lifetime matches that of
+// the current main frame's page in the Viewer instance.
+class DomDistillerViewerSource::RequestViewerHandle
+    : public ViewRequestDelegate,
+      public content::WebContentsObserver {
  public:
   explicit RequestViewerHandle(
+      content::WebContents* web_contents,
+      const std::string& expected_scheme,
+      const std::string& expected_request_path,
       const content::URLDataSource::GotDataCallback& callback);
   virtual ~RequestViewerHandle();
 
   // ViewRequestDelegate implementation.
-  virtual void OnArticleReady(const DistilledArticleProto* article_proto)
-      OVERRIDE;
+  virtual void OnArticleReady(
+      const DistilledArticleProto* article_proto) OVERRIDE;
+
+  virtual void OnArticleUpdated(
+      ArticleDistillationUpdate article_update) OVERRIDE;
 
   void TakeViewerHandle(scoped_ptr<ViewerHandle> viewer_handle);
 
+  // WebContentsObserver:
+  virtual void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
+  virtual void DidFinishLoad(
+      int64 frame_id,
+      const GURL& validated_url,
+      bool is_main_frame,
+      content::RenderViewHost* render_view_host) OVERRIDE;
+
  private:
+  // Sends JavaScript to the attached Viewer, buffering data if the viewer isn't
+  // ready.
+  void SendJavaScript(const std::string& buffer);
+
+  // Cancels the current view request. Once called, no updates will be
+  // propagated to the view, and the request to DomDistillerService will be
+  // cancelled.
+  void Cancel();
+
   // The handle to the view request towards the DomDistillerService. It
   // needs to be kept around to ensure the distillation request finishes.
   scoped_ptr<ViewerHandle> viewer_handle_;
 
-  // This holds the callback to where the data retrieved is sent back.
+  // WebContents associated with the Viewer's render process.
+  content::WebContents* web_contents_;
+
+  // The scheme hosting the current view request;
+  std::string expected_scheme_;
+
+  // The query path for the current view request.
+  std::string expected_request_path_;
+
+  // Holds the callback to where the data retrieved is sent back.
   content::URLDataSource::GotDataCallback callback_;
+
+  // Number of pages of the distilled article content that have been rendered by
+  // the viewer.
+  int page_count_;
+
+  // Whether the page is sufficiently initialized to handle updates from the
+  // distiller.
+  bool waiting_for_page_ready_;
+
+  // Temporary store of pending JavaScript if the page isn't ready to receive
+  // data from distillation.
+  std::string buffer_;
 };
 
-RequestViewerHandle::RequestViewerHandle(
+DomDistillerViewerSource::RequestViewerHandle::RequestViewerHandle(
+    content::WebContents* web_contents,
+    const std::string& expected_scheme,
+    const std::string& expected_request_path,
     const content::URLDataSource::GotDataCallback& callback)
-    : callback_(callback) {}
+    : web_contents_(web_contents),
+      expected_scheme_(expected_scheme),
+      expected_request_path_(expected_request_path),
+      callback_(callback),
+      page_count_(0),
+      waiting_for_page_ready_(true) {
+  content::WebContentsObserver::Observe(web_contents_);
+}
 
-RequestViewerHandle::~RequestViewerHandle() {}
+DomDistillerViewerSource::RequestViewerHandle::~RequestViewerHandle() {
+  // Balanced with constructor although can be a no-op if frame navigated away.
+  content::WebContentsObserver::Observe(NULL);
+}
 
-void RequestViewerHandle::OnArticleReady(
-    const DistilledArticleProto* article_proto) {
-  DCHECK(article_proto);
-  std::string title;
-  std::string unsafe_article_html;
-  if (article_proto->has_title() && article_proto->pages_size() > 0 &&
-      article_proto->pages(0).has_html()) {
-    title = net::EscapeForHTML(article_proto->title());
-    // TODO(shashishekhar): Add support for correcting displaying multiple pages
-    // after discussing the right way to display them.
-    std::ostringstream unsafe_output_stream;
-    for (int page_num = 0; page_num < article_proto->pages_size(); ++page_num) {
-      unsafe_output_stream << article_proto->pages(page_num).html();
-    }
-    unsafe_article_html = unsafe_output_stream.str();
+void DomDistillerViewerSource::RequestViewerHandle::SendJavaScript(
+    const std::string& buffer) {
+  if (waiting_for_page_ready_) {
+    buffer_ += buffer;
   } else {
-    title = l10n_util::GetStringUTF8(IDS_DOM_DISTILLER_VIEWER_NO_DATA_TITLE);
-    unsafe_article_html =
-        l10n_util::GetStringUTF8(IDS_DOM_DISTILLER_VIEWER_NO_DATA_CONTENT);
+    if (web_contents_) {
+      web_contents_->GetMainFrame()->ExecuteJavaScript(
+          base::UTF8ToUTF16(buffer));
+    }
   }
-  std::string unsafe_page_html =
-      ReplaceHtmlTemplateValues(title, unsafe_article_html);
-  callback_.Run(base::RefCountedString::TakeString(&unsafe_page_html));
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::DidNavigateMainFrame(
+    const content::LoadCommittedDetails& details,
+    const content::FrameNavigateParams& params) {
+  const GURL& navigation = details.entry->GetURL();
+  if (details.is_in_page || (
+      navigation.SchemeIs(expected_scheme_.c_str()) &&
+      expected_request_path_ == navigation.query())) {
+    // In-page navigations, as well as the main view request can be ignored.
+    return;
+  }
+
+  Cancel();
+
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::RenderProcessGone(
+    base::TerminationStatus status) {
+  Cancel();
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::WebContentsDestroyed() {
+  Cancel();
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::Cancel() {
+  // Ensure we don't send any incremental updates to the Viewer.
+  web_contents_ = NULL;
+
+  // No need to listen for notifications.
+  content::WebContentsObserver::Observe(NULL);
+
+  // Schedule the Viewer for deletion. Ensures distillation is cancelled, and
+  // any pending data stored in |buffer_| is released.
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
 }
 
-void RequestViewerHandle::TakeViewerHandle(
+void DomDistillerViewerSource::RequestViewerHandle::DidFinishLoad(
+     int64 frame_id,
+     const GURL& validated_url,
+     bool is_main_frame,
+     content::RenderViewHost* render_view_host)  {
+  if (!is_main_frame || web_contents_ == NULL) {
+    return;
+  }
+  waiting_for_page_ready_ = false;
+  if (buffer_.empty()) {
+    return;
+  }
+  if (web_contents_) {
+    web_contents_->GetMainFrame()->ExecuteJavaScript(
+        base::UTF8ToUTF16(buffer_));
+  }
+  buffer_.clear();
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::OnArticleReady(
+    const DistilledArticleProto* article_proto) {
+  if (page_count_ == 0) {
+    // This is a single-page article.
+    std::string unsafe_page_html = viewer::GetUnsafeArticleHtml(article_proto);
+    callback_.Run(base::RefCountedString::TakeString(&unsafe_page_html));
+  } else if (page_count_ == article_proto->pages_size()) {
+    // We may still be showing the "Loading" indicator.
+    SendJavaScript(viewer::GetToggleLoadingIndicatorJs(true));
+  } else {
+    // It's possible that we didn't get some incremental updates from the
+    // distiller. Ensure all remaining pages are flushed to the viewer.
+    for (;page_count_ < article_proto->pages_size(); page_count_++) {
+      const DistilledPageProto& page = article_proto->pages(page_count_);
+      SendJavaScript(
+          viewer::GetUnsafeIncrementalDistilledPageJs(
+              &page,
+              page_count_ == article_proto->pages_size()));
+    }
+  }
+  // No need to hold on to the ViewerHandle now that distillation is complete.
+  viewer_handle_.reset();
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::OnArticleUpdated(
+    ArticleDistillationUpdate article_update) {
+  for (;page_count_ < static_cast<int>(article_update.GetPagesSize());
+       page_count_++) {
+    const DistilledPageProto& page =
+        article_update.GetDistilledPage(page_count_);
+    if (page_count_ == 0) {
+      // This is the first page, so send Viewer page scaffolding too.
+      std::string unsafe_page_html = viewer::GetUnsafePartialArticleHtml(&page);
+      callback_.Run(base::RefCountedString::TakeString(&unsafe_page_html));
+    } else {
+      SendJavaScript(
+          viewer::GetUnsafeIncrementalDistilledPageJs(&page, false));
+    }
+  }
+}
+
+void DomDistillerViewerSource::RequestViewerHandle::TakeViewerHandle(
     scoped_ptr<ViewerHandle> viewer_handle) {
   viewer_handle_ = viewer_handle.Pass();
 }
 
 DomDistillerViewerSource::DomDistillerViewerSource(
-    DomDistillerService* dom_distiller_service,
+    DomDistillerServiceInterface* dom_distiller_service,
     const std::string& scheme)
-    : scheme_(scheme), dom_distiller_service_(dom_distiller_service) {}
+    : scheme_(scheme), dom_distiller_service_(dom_distiller_service) {
+}
 
-DomDistillerViewerSource::~DomDistillerViewerSource() {}
+DomDistillerViewerSource::~DomDistillerViewerSource() {
+}
 
 std::string DomDistillerViewerSource::GetSource() const {
   return scheme_ + "://";
@@ -130,19 +258,30 @@ void DomDistillerViewerSource::StartDataRequest(
   DCHECK(render_view_host);
   CHECK_EQ(0, render_view_host->GetEnabledBindings());
 
-  if (kCssPath == path) {
-    std::string css = ResourceBundle::GetSharedInstance()
-                          .GetRawDataResource(IDR_DISTILLER_CSS)
-                          .as_string();
+  if (kViewerCssPath == path) {
+    std::string css = viewer::GetCss();
     callback.Run(base::RefCountedString::TakeString(&css));
     return;
   }
+  if (kViewerJsPath == path) {
+    std::string js = viewer::GetJavaScript();
+    callback.Run(base::RefCountedString::TakeString(&js));
+    return;
+  }
+  content::WebContents* web_contents =
+      content::WebContents::FromRenderFrameHost(
+          content::RenderFrameHost::FromID(render_process_id,
+                                           render_frame_id));
+  DCHECK(web_contents);
+  // An empty |path| is invalid, but guard against it. If not empty, assume
+  // |path| starts with '?', which is stripped away.
+  const std::string path_after_query_separator =
+      path.size() > 0 ? path.substr(1) : "";
+  RequestViewerHandle* request_viewer_handle = new RequestViewerHandle(
+      web_contents, scheme_, path_after_query_separator, callback);
+  scoped_ptr<ViewerHandle> viewer_handle = viewer::CreateViewRequest(
+      dom_distiller_service_, path, request_viewer_handle);
 
-  RequestViewerHandle* request_viewer_handle =
-      new RequestViewerHandle(callback);
-  std::string entry_id = StringToUpperASCII(path);
-  scoped_ptr<ViewerHandle> viewer_handle =
-      dom_distiller_service_->ViewEntry(request_viewer_handle, entry_id);
   if (viewer_handle) {
     // The service returned a |ViewerHandle| and guarantees it will call
     // the |RequestViewerHandle|, so passing ownership to it, to ensure the
@@ -154,19 +293,19 @@ void DomDistillerViewerSource::StartDataRequest(
     // |RequestViewerHandle| will never be called, so clean up now.
     delete request_viewer_handle;
 
-    std::string title = l10n_util::GetStringUTF8(
-        IDS_DOM_DISTILLER_VIEWER_FAILED_TO_FIND_ARTICLE_TITLE);
-    std::string content = l10n_util::GetStringUTF8(
-        IDS_DOM_DISTILLER_VIEWER_FAILED_TO_FIND_ARTICLE_CONTENT);
-    std::string html = ReplaceHtmlTemplateValues(title, content);
-    callback.Run(base::RefCountedString::TakeString(&html));
+    std::string error_page_html = viewer::GetErrorPageHtml();
+    callback.Run(base::RefCountedString::TakeString(&error_page_html));
   }
 };
 
-std::string DomDistillerViewerSource::GetMimeType(const std::string& path)
-    const {
-  if (path == kCssPath)
+std::string DomDistillerViewerSource::GetMimeType(
+    const std::string& path) const {
+  if (kViewerCssPath == path) {
     return "text/css";
+  }
+  if (kViewerJsPath == path) {
+    return "text/javascript";
+  }
   return "text/html";
 }
 
@@ -175,19 +314,15 @@ bool DomDistillerViewerSource::ShouldServiceRequest(
   return request->url().SchemeIs(scheme_.c_str());
 }
 
+// TODO(nyquist): Start tracking requests using this method.
 void DomDistillerViewerSource::WillServiceRequest(
     const net::URLRequest* request,
     std::string* path) const {
-  if (*path != kCssPath) {
-    // Since the full request is not available to StartDataRequest, replace the
-    // path to contain the data needed.
-    *path = request->url().host();
-  }
-};
+}
 
 std::string DomDistillerViewerSource::GetContentSecurityPolicyObjectSrc()
     const {
-  return "object-src 'none'; style-src 'self'";
+  return "object-src 'none'; style-src 'self';";
 }
 
 }  // namespace dom_distiller

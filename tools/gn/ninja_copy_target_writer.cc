@@ -18,7 +18,7 @@ NinjaCopyTargetWriter::~NinjaCopyTargetWriter() {
 }
 
 void NinjaCopyTargetWriter::Run() {
-  CHECK(target_->script_values().outputs().size() == 1);
+  CHECK(target_->action_values().outputs().size() == 1);
   FileTemplate output_template(GetOutputTemplate());
 
   std::vector<OutputFile> output_files;
@@ -30,7 +30,7 @@ void NinjaCopyTargetWriter::Run() {
 
     // Make the output file from the template.
     std::vector<std::string> template_result;
-    output_template.ApplyString(input_file.value(), &template_result);
+    output_template.Apply(input_file, &template_result);
     CHECK(template_result.size() == 1);
     OutputFile output_file(template_result[0]);
 

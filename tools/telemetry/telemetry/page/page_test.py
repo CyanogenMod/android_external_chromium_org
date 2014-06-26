@@ -1,81 +1,56 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-import logging
+
+from telemetry.core import command_line
 
 from telemetry.page import test_expectations
-from telemetry.page.actions import all_page_actions
-from telemetry.page.actions import interact
-from telemetry.page.actions import navigate
-from telemetry.page.actions import page_action
-
-
-def _GetActionFromData(action_data):
-  action_name = action_data['action']
-  action = all_page_actions.FindClassWithName(action_name)
-  if not action:
-    logging.critical('Could not find an action named %s.', action_name)
-    logging.critical('Check the page set for a typo and check the error '
-                     'log for possible Python loading/compilation errors.')
-    raise Exception('Action "%s" not found.' % action_name)
-  return action(action_data)
-
-
-def GetSubactionFromData(page, subaction_data, interactive):
-  subaction_name = subaction_data['action']
-  if hasattr(page, subaction_name):
-    return GetCompoundActionFromPage(page, subaction_name, interactive)
-  else:
-    return [_GetActionFromData(subaction_data)]
-
-
-def GetCompoundActionFromPage(page, action_name, interactive=False):
-  if interactive:
-    return [interact.InteractAction()]
-
-  if not action_name:
-    return []
-
-  action_data_list = getattr(page, action_name)
-  if not isinstance(action_data_list, list):
-    action_data_list = [action_data_list]
-
-  action_list = []
-  for subaction_data in action_data_list:
-    for _ in xrange(subaction_data.get('repeat', 1)):
-      action_list += GetSubactionFromData(page, subaction_data, interactive)
-  return action_list
+from telemetry.page.actions import action_runner as action_runner_module
 
 
 class Failure(Exception):
   """Exception that can be thrown from PageMeasurement to indicate an
   undesired but designed-for problem."""
-  pass
 
 
-class PageTest(object):
+class TestNotSupportedOnPlatformFailure(Failure):
+  """Exception that can be thrown to indicate that a certain feature required
+  to run the test is not available on the platform, hardware configuration, or
+  browser version."""
+
+
+class PageTest(command_line.Command):
   """A class styled on unittest.TestCase for creating page-specific tests."""
 
+  options = {}
+
   def __init__(self,
-               test_method_name,
                action_name_to_run='',
-               needs_browser_restart_after_each_run=False,
+               needs_browser_restart_after_each_page=False,
                discard_first_result=False,
                clear_cache_before_each_run=False,
-               attempts=3):
+               attempts=3,
+               max_failures=None,
+               max_errors=None,
+               is_action_name_to_run_optional=False):
+    super(PageTest, self).__init__()
+
     self.options = None
-    try:
-      self._test_method = getattr(self, test_method_name)
-    except AttributeError:
-      raise ValueError, 'No such method %s.%s' % (
-        self.__class_, test_method_name)  # pylint: disable=E1101
+    if action_name_to_run:
+      assert action_name_to_run.startswith('Run') \
+          and '_' not in action_name_to_run, \
+          ('Wrong way of naming action_name_to_run. By new convention,'
+           'action_name_to_run must start with Run- prefix and in CamelCase.')
     self._action_name_to_run = action_name_to_run
-    self._needs_browser_restart_after_each_run = (
-        needs_browser_restart_after_each_run)
+    self._needs_browser_restart_after_each_page = (
+        needs_browser_restart_after_each_page)
     self._discard_first_result = discard_first_result
     self._clear_cache_before_each_run = clear_cache_before_each_run
     self._close_tabs_before_run = True
     self._attempts = attempts
+    self._max_failures = max_failures
+    self._max_errors = max_errors
+    self._is_action_name_to_run_optional = is_action_name_to_run_optional
     assert self._attempts > 0, 'Test attempts must be greater than 0'
     # If the test overrides the TabForPage method, it is considered a multi-tab
     # test.  The main difference between this and a single-tab test is that we
@@ -86,6 +61,10 @@ class PageTest(object):
                               self.__class__.__bases__[0].TabForPage.__func__)
     # _exit_requested is set to true when the test requests an early exit.
     self._exit_requested = False
+
+  @classmethod
+  def SetArgumentDefaults(cls, parser):
+    parser.set_defaults(**cls.options)
 
   @property
   def discard_first_result(self):
@@ -124,13 +103,36 @@ class PageTest(object):
     assert self._attempts > 0, 'Test attempts must be greater than 0'
     self._attempts = count
 
+  @property
+  def max_failures(self):
+    """Maximum number of failures allowed for the page set."""
+    return self._max_failures
+
+  @max_failures.setter
+  def max_failures(self, count):
+    self._max_failures = count
+
+  @property
+  def max_errors(self):
+    """Maximum number of errors allowed for the page set."""
+    return self._max_errors
+
+  @max_errors.setter
+  def max_errors(self, count):
+    self._max_errors = count
+
+  def Run(self, args):
+    # Define this method to avoid pylint errors.
+    # TODO(dtu): Make this actually run the test with args.page_set.
+    pass
+
   def RestartBrowserBeforeEachPage(self):
     """ Should the browser be restarted for the page?
 
     This returns true if the test needs to unconditionally restart the
     browser for each page. It may be called before the browser is started.
     """
-    return self._needs_browser_restart_after_each_run
+    return self._needs_browser_restart_after_each_page
 
   def StopBrowserAfterPage(self, browser, page):  # pylint: disable=W0613
     """Should the browser be stopped after the page is run?
@@ -144,79 +146,51 @@ class PageTest(object):
     """
     return False
 
-  def AddCommandLineOptions(self, parser):
-    """Override to expose command-line options for this test.
-
-    The provided parser is an optparse.OptionParser instance and accepts all
-    normal results. The parsed options are available in Run as
-    self.options."""
-    pass
-
   def CustomizeBrowserOptions(self, options):
     """Override to add test-specific options to the BrowserOptions object"""
-    pass
-
-  def CustomizeBrowserOptionsForPageSet(self, page_set, options):
-    """Set options required for this page set.
-
-    These options will be used every time the browser is started while running
-    this page set. They may, however, be further modified by
-    CustomizeBrowserOptionsForSinglePage or by the profiler.
-    """
-    for page in page_set:
-      if not self.CanRunForPage(page):
-        return
-      interactive = options and options.interactive
-      for action in GetCompoundActionFromPage(
-          page, self._action_name_to_run, interactive):
-        action.CustomizeBrowserOptionsForPageSet(options)
 
   def CustomizeBrowserOptionsForSinglePage(self, page, options):
     """Set options specific to the test and the given page.
 
     This will be called with the current page when the browser is (re)started.
     Changing options at this point only makes sense if the browser is being
-    restarted for each page.
+    restarted for each page. Note that if page has a startup_url, the browser
+    will always be restarted for each run.
     """
-    interactive = options and options.interactive
-    for action in GetCompoundActionFromPage(
-        page, self._action_name_to_run, interactive):
-      action.CustomizeBrowserOptionsForSinglePage(options)
+    if page.startup_url:
+      options.browser_options.startup_url = page.startup_url
 
   def WillStartBrowser(self, browser):
     """Override to manipulate the browser environment before it launches."""
-    pass
 
   def DidStartBrowser(self, browser):
     """Override to customize the browser right after it has launched."""
-    pass
 
   def CanRunForPage(self, page):  # pylint: disable=W0613
     """Override to customize if the test can be ran for the given page."""
+    if self._action_name_to_run and not self._is_action_name_to_run_optional:
+      return hasattr(page, self._action_name_to_run)
     return True
 
-  def WillRunTest(self):
+  def WillRunTest(self, options):
     """Override to do operations before the page set(s) are navigated."""
-    pass
+    self.options = options
 
-  def DidRunTest(self, browser, results):
+  def DidRunTest(self, browser, results): # pylint: disable=W0613
     """Override to do operations after all page set(s) are completed.
 
     This will occur before the browser is torn down.
     """
-    pass
+    self.options = None
 
   def WillRunPageRepeats(self, page):
     """Override to do operations before each page is iterated over."""
-    pass
 
   def DidRunPageRepeats(self, page):
     """Override to do operations after each page is iterated over."""
-    pass
 
   def DidStartHTTPServer(self, tab):
     """Override to do operations after the HTTP server is started."""
-    pass
 
   def WillNavigateToPage(self, page, tab):
     """Override to do operations before the page is navigated, notably Telemetry
@@ -224,33 +198,19 @@ class PageTest(object):
     calling this function:
     * Ensure only one tab is open.
     * Call WaitForDocumentReadyStateToComplete on the tab."""
-    pass
 
   def DidNavigateToPage(self, page, tab):
     """Override to do operations right after the page is navigated and after
     all waiting for completion has occurred."""
-    pass
 
   def WillRunActions(self, page, tab):
     """Override to do operations before running the actions on the page."""
-    pass
 
   def DidRunActions(self, page, tab):
     """Override to do operations after running the actions on the page."""
-    pass
 
-  def WillRunAction(self, page, tab, action):
-    """Override to do operations before running the action on the page."""
-    pass
-
-  def DidRunAction(self, page, tab, action):
-    """Override to do operations after running the action on the page."""
-    pass
-
-  def CreatePageSet(self, args, options):   # pylint: disable=W0613
-    """Override to make this test generate its own page set instead of
-    allowing arbitrary page sets entered from the command-line."""
-    return None
+  def CleanUpAfterPage(self, page, tab):
+    """Called after the test run method was run, even if it failed."""
 
   def CreateExpectations(self, page_set):   # pylint: disable=W0613
     """Override to make this test generate its own expectations instead of
@@ -265,58 +225,39 @@ class PageTest(object):
   def ValidatePageSet(self, page_set):
     """Override to examine the page set before the test run.  Useful for
     example to validate that the pageset can be used with the test."""
-    pass
 
-  def Run(self, options, page, tab, results):
-    self.options = options
-    interactive = options and options.interactive
-    compound_action = GetCompoundActionFromPage(
-        page, self._action_name_to_run, interactive)
+  def ValidatePage(self, page, tab, results):
+    """Override to check the actual test assertions.
+
+    This is where most your test logic should go."""
+    raise NotImplementedError()
+
+  def RunPage(self, page, tab, results):
+    # Run actions.
+    interactive = self.options and self.options.interactive
+    action_runner = action_runner_module.ActionRunner(tab)
     self.WillRunActions(page, tab)
-    self._RunCompoundAction(page, tab, compound_action)
+    if interactive:
+      action_runner.PauseInteractive()
+    else:
+      self._RunMethod(page, self._action_name_to_run, action_runner)
     self.DidRunActions(page, tab)
-    try:
-      self._test_method(page, tab, results)
-    finally:
-      self.options = None
 
-  def _RunCompoundAction(self, page, tab, actions, run_setup_methods=True):
-    for i, action in enumerate(actions):
-      prev_action = actions[i - 1] if i > 0 else None
-      next_action = actions[i + 1] if i < len(actions) - 1 else None
+    # Run validator.
+    self.ValidatePage(page, tab, results)
 
-      if (action.RunsPreviousAction() and
-          next_action and next_action.RunsPreviousAction()):
-        raise page_action.PageActionFailed('Consecutive actions cannot both '
-                                           'have RunsPreviousAction() == True.')
-
-      if not (next_action and next_action.RunsPreviousAction()):
-        action.WillRunAction(page, tab)
-        if run_setup_methods:
-          self.WillRunAction(page, tab, action)
-        try:
-          action.RunAction(page, tab, prev_action)
-        finally:
-          if run_setup_methods:
-            self.DidRunAction(page, tab, action)
-
-      # Note that we must not call util.CloseConnections here. Many tests
-      # navigate to a URL in the first action and then wait for a condition
-      # in the second action. Calling util.CloseConnections here often
-      # aborts resource loads performed by the page.
+  def _RunMethod(self, page, method_name, action_runner):
+    if hasattr(page, method_name):
+      run_method = getattr(page, method_name)
+      run_method(action_runner)
 
   def RunNavigateSteps(self, page, tab):
     """Navigates the tab to the page URL attribute.
 
     Runs the 'navigate_steps' page attribute as a compound action.
     """
-    navigate_actions = GetCompoundActionFromPage(page, 'navigate_steps')
-    if not any(isinstance(action, navigate.NavigateAction)
-        for action in navigate_actions):
-      raise page_action.PageActionFailed(
-          'No NavigateAction in navigate_steps')
-
-    self._RunCompoundAction(page, tab, navigate_actions, False)
+    action_runner = action_runner_module.ActionRunner(tab)
+    page.RunNavigateSteps(action_runner)
 
   def IsExiting(self):
     return self._exit_requested

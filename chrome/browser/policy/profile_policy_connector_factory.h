@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_base_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_base_factory.h"
 
 template <typename T>
 struct DefaultSingletonTraits;
@@ -73,10 +73,9 @@ class ProfilePolicyConnectorFactory : public BrowserContextKeyedBaseFactory {
       content::BrowserContext* context) OVERRIDE;
   virtual void BrowserContextDestroyed(
       content::BrowserContext* context) OVERRIDE;
-  virtual void RegisterProfilePrefs(
-      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
   virtual void SetEmptyTestingFactory(
       content::BrowserContext* context) OVERRIDE;
+  virtual bool HasTestingFactory(content::BrowserContext* context) OVERRIDE;
   virtual void CreateServiceNow(content::BrowserContext* context) OVERRIDE;
 
   typedef std::map<Profile*, ProfilePolicyConnector*> ConnectorMap;

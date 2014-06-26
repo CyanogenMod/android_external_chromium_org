@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/commands/commands_handler.h"
 #include "chrome/common/extensions/features/feature_channel.h"
@@ -43,7 +44,8 @@ TEST_F(CommandsManifestTest, CommandManifestSimple) {
   ASSERT_TRUE(commands->end() != iter);
   const Command* named_command = &(*iter).second;
   ASSERT_STREQ("feature1", named_command->command_name().c_str());
-  ASSERT_STREQ("desc", UTF16ToASCII(named_command->description()).c_str());
+  ASSERT_STREQ("desc",
+               base::UTF16ToASCII(named_command->description()).c_str());
   ASSERT_EQ(ctrl_shift_f, named_command->accelerator());
 
   const Command* browser_action =
@@ -51,7 +53,7 @@ TEST_F(CommandsManifestTest, CommandManifestSimple) {
   ASSERT_TRUE(NULL != browser_action);
   ASSERT_STREQ("_execute_browser_action",
                browser_action->command_name().c_str());
-  ASSERT_STREQ("", UTF16ToASCII(browser_action->description()).c_str());
+  ASSERT_STREQ("", base::UTF16ToASCII(browser_action->description()).c_str());
   ASSERT_EQ(alt_shift_f, browser_action->accelerator());
 
   const Command* page_action =
@@ -59,7 +61,7 @@ TEST_F(CommandsManifestTest, CommandManifestSimple) {
   ASSERT_TRUE(NULL != page_action);
   ASSERT_STREQ("_execute_page_action",
       page_action->command_name().c_str());
-  ASSERT_STREQ("", UTF16ToASCII(page_action->description()).c_str());
+  ASSERT_STREQ("", base::UTF16ToASCII(page_action->description()).c_str());
   ASSERT_EQ(ctrl_f, page_action->accelerator());
 }
 
@@ -95,41 +97,21 @@ TEST_F(CommandsManifestTest, BrowserActionSynthesizesCommand) {
 }
 
 // This test makes sure that the "commands" feature and the "commands.global"
-// property behave as expected on dev and stable (enabled and working on dev,
-// not working on stable).
-TEST_F(CommandsManifestTest, ChannelTests) {
-  // This tests the following combinations.
-  // Ext+Command         Stable : OK.
-  // Ext+Command+Global  Stable : Property is silently ignored (expect success).
-  // App+Command         Stable : NOT OK.
-  // App+Command+Global  Stable : NOT OK.
-  {
-    std::string warning = "'commands' requires Google Chrome dev channel or "
-                          "newer, but this is the stable channel.";
-    ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_STABLE);
-    scoped_refptr<Extension> extension1 =
-        LoadAndExpectSuccess("command_ext.json");
-    scoped_refptr<Extension> extension2 =
-        LoadAndExpectSuccess("command_ext_global.json");
-    LoadAndExpectWarning("command_app.json", warning);
-    LoadAndExpectWarning("command_app_global.json", warning);
-  }
+// property load properly.
+TEST_F(CommandsManifestTest, LoadsOnStable) {
+  scoped_refptr<Extension> extension1 =
+      LoadAndExpectSuccess("command_ext.json");
+  scoped_refptr<Extension> extension2 =
+      LoadAndExpectSuccess("command_app.json");
+  scoped_refptr<Extension> extension3 =
+      LoadAndExpectSuccess("command_ext_global.json");
+  scoped_refptr<Extension> extension4 =
+      LoadAndExpectSuccess("command_app_global.json");
+}
 
-  // Ext+Command         Dev    : OK.
-  // App+Command         Dev    : OK.
-  // Ext+Command+Global  Dev    : OK.
-  // App+Command+Global  Dev    : OK.
-  {
-    ScopedCurrentChannel channel(chrome::VersionInfo::CHANNEL_DEV);
-    scoped_refptr<Extension> extension1 =
-        LoadAndExpectSuccess("command_ext.json");
-    scoped_refptr<Extension> extension2 =
-        LoadAndExpectSuccess("command_app.json");
-    scoped_refptr<Extension> extension3 =
-        LoadAndExpectSuccess("command_ext_global.json");
-    scoped_refptr<Extension> extension4 =
-        LoadAndExpectSuccess("command_app_global.json");
-  }
+TEST_F(CommandsManifestTest, CommandManifestShouldNotCountMediaKeys) {
+  scoped_refptr<Extension> extension =
+      LoadAndExpectSuccess("command_should_not_count_media_keys.json");
 }
 
 }  // namespace extensions

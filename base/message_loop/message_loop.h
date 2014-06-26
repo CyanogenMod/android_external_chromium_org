@@ -18,6 +18,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/message_loop/message_loop_proxy_impl.h"
 #include "base/message_loop/message_pump.h"
+#include "base/message_loop/timer_slack.h"
 #include "base/observer_list.h"
 #include "base/pending_task.h"
 #include "base/sequenced_task_runner_helpers.h"
@@ -32,21 +33,6 @@
 #include "base/message_loop/message_pump_io_ios.h"
 #elif defined(OS_POSIX)
 #include "base/message_loop/message_pump_libevent.h"
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-
-#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_NACL)
-#include "base/message_loop/message_pump_x11.h"
-#elif defined(USE_OZONE) && !defined(OS_NACL)
-#include "base/message_loop/message_pump_ozone.h"
-#else
-#define USE_GTK_MESSAGE_PUMP
-#include "base/message_loop/message_pump_gtk.h"
-#if defined(TOOLKIT_GTK)
-#include "base/message_loop/message_pump_x11.h"
-#endif
-#endif
-
-#endif
 #endif
 
 namespace base {
@@ -55,9 +41,6 @@ class HistogramBase;
 class MessagePumpObserver;
 class RunLoop;
 class ThreadTaskRunnerHandle;
-#if defined(OS_ANDROID)
-class MessagePumpForUI;
-#endif
 class WaitableEvent;
 
 // A MessageLoop is used to process events for a particular thread.  There is
@@ -93,13 +76,6 @@ class WaitableEvent;
 //
 class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
  public:
-
-#if defined(USE_AURA)
-  typedef MessagePumpObserver Observer;
-#elif defined(USE_GTK_MESSAGE_PUMP)
-  typedef MessagePumpGdkObserver Observer;
-#endif
-
   // A MessageLoop has a particular type, which indicates the set of
   // asynchronous events it may process in addition to tasks and timers.
   //
@@ -109,11 +85,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // TYPE_UI
   //   This type of ML also supports native UI events (e.g., Windows messages).
   //   See also MessageLoopForUI.
-  //
-  // TYPE_GPU
-  //   This type of ML also supports native UI events for use in the GPU
-  //   process. On Linux this will always be an X11 ML (as compared with the
-  //   sometimes-GTK ML in the browser process).
   //
   // TYPE_IO
   //   This type of ML also supports asynchronous IO.  See also
@@ -132,9 +103,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
     TYPE_DEFAULT,
     TYPE_UI,
     TYPE_CUSTOM,
-#if defined(TOOLKIT_GTK)
-    TYPE_GPU,
-#endif
     TYPE_IO,
 #if defined(OS_ANDROID)
     TYPE_JAVA,
@@ -154,7 +122,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   static void EnableHistogrammer(bool enable_histogrammer);
 
-  typedef MessagePump* (MessagePumpFactory)();
+  typedef scoped_ptr<MessagePump> (MessagePumpFactory)();
   // Uses the given base::MessagePumpForUIFactory to override the default
   // MessagePump implementation for 'TYPE_UI'. Returns true if the factory
   // was successfully registered.
@@ -162,10 +130,7 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   // Creates the default MessagePump based on |type|. Caller owns return
   // value.
-  // TODO(sky): convert this and InitMessagePumpForUIFactory() to return a
-  // scoped_ptr.
-  static MessagePump* CreateMessagePumpForType(Type type);
-
+  static scoped_ptr<MessagePump> CreateMessagePumpForType(Type type);
   // A DestructionObserver is notified when the current MessageLoop is being
   // destroyed.  These observers are notified prior to MessageLoop::current()
   // being changed to return NULL.  This gives interested parties the chance to
@@ -243,6 +208,18 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // live until the next run of the MessageLoop, or if the object needs to be
   // released on a particular thread.
   //
+  // A common pattern is to manually increment the object's reference count
+  // (AddRef), clear the pointer, then issue a ReleaseSoon.  The reference count
+  // is incremented manually to ensure clearing the pointer does not trigger a
+  // delete and to account for the upcoming decrement (ReleaseSoon).  For
+  // example:
+  //
+  // scoped_refptr<Foo> foo = ...
+  // foo->AddRef();
+  // Foo* raw_foo = foo.get();
+  // foo = NULL;
+  // message_loop->ReleaseSoon(raw_foo);
+  //
   // NOTE: This method may be called on any thread.  The object will be
   // released (and thus possibly deleted) on the thread that executes
   // MessageLoop::Run().  If this is not the same as the thread that calls
@@ -297,6 +274,11 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   // Construct a Closure that will call QuitWhenIdle(). Useful to schedule an
   // arbitrary MessageLoop to QuitWhenIdle.
   static Closure QuitWhenIdleClosure();
+
+  // Set the timer slack for this message loop.
+  void SetTimerSlack(TimerSlack timer_slack) {
+    pump_->SetTimerSlack(timer_slack);
+  }
 
   // Returns true if this loop is |type|. This allows subclasses (especially
   // those in tests) to specialize how they are identified.
@@ -408,24 +390,6 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
 
   //----------------------------------------------------------------------------
  protected:
-
-#if defined(OS_WIN)
-  MessagePumpWin* pump_win() {
-    return static_cast<MessagePumpWin*>(pump_.get());
-  }
-#elif defined(OS_POSIX) && !defined(OS_IOS)
-  MessagePumpLibevent* pump_libevent() {
-    return static_cast<MessagePumpLibevent*>(pump_.get());
-  }
-#if defined(TOOLKIT_GTK)
-  friend class MessagePumpX11;
-  MessagePumpX11* pump_gpu() {
-    DCHECK_EQ(TYPE_GPU, type());
-    return static_cast<MessagePumpX11*>(pump_.get());
-  }
-#endif
-#endif
-
   scoped_ptr<MessagePump> pump_;
 
  private:
@@ -541,6 +505,8 @@ class BASE_EXPORT MessageLoop : public MessagePump::Delegate {
   DISALLOW_COPY_AND_ASSIGN(MessageLoop);
 };
 
+#if !defined(OS_NACL)
+
 //-----------------------------------------------------------------------------
 // MessageLoopForUI extends MessageLoop with methods that are particular to a
 // MessageLoop instantiated with TYPE_UI.
@@ -580,27 +546,22 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
   void Start();
 #endif
 
-#if !defined(OS_NACL) && (defined(TOOLKIT_GTK) || defined(USE_OZONE) || \
-                          defined(OS_WIN) || defined(USE_X11))
-  // Please see message_pump_win/message_pump_glib for definitions of these
-  // methods.
+#if defined(OS_WIN)
+  typedef MessagePumpObserver Observer;
+
+  // Please see message_pump_win for definitions of these methods.
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 #endif
 
- protected:
-#if defined(USE_X11)
-  friend class MessagePumpX11;
-#endif
-#if defined(USE_OZONE) && !defined(OS_NACL)
-  friend class MessagePumpOzone;
-#endif
-
-#if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-  // TODO(rvargas): Make this platform independent.
-  MessagePumpForUI* pump_ui() {
-    return static_cast<MessagePumpForUI*>(pump_.get());
-  }
+#if defined(USE_OZONE) || (defined(OS_CHROMEOS) && !defined(USE_GLIB))
+  // Please see MessagePumpLibevent for definition.
+  bool WatchFileDescriptor(
+      int fd,
+      bool persistent,
+      MessagePumpLibevent::Mode mode,
+      MessagePumpLibevent::FileDescriptorWatcher* controller,
+      MessagePumpLibevent::Watcher* delegate);
 #endif
 };
 
@@ -609,6 +570,8 @@ class BASE_EXPORT MessageLoopForUI : public MessageLoop {
 // data that you need should be stored on the MessageLoop's pump_ instance.
 COMPILE_ASSERT(sizeof(MessageLoop) == sizeof(MessageLoopForUI),
                MessageLoopForUI_should_not_have_extra_member_variables);
+
+#endif  // !defined(OS_NACL)
 
 //-----------------------------------------------------------------------------
 // MessageLoopForIO extends MessageLoop with methods that are particular to a
@@ -619,6 +582,23 @@ COMPILE_ASSERT(sizeof(MessageLoop) == sizeof(MessageLoopForUI),
 //
 class BASE_EXPORT MessageLoopForIO : public MessageLoop {
  public:
+  MessageLoopForIO() : MessageLoop(TYPE_IO) {
+  }
+
+  // Returns the MessageLoopForIO of the current thread.
+  static MessageLoopForIO* current() {
+    MessageLoop* loop = MessageLoop::current();
+    DCHECK_EQ(MessageLoop::TYPE_IO, loop->type());
+    return static_cast<MessageLoopForIO*>(loop);
+  }
+
+  static bool IsCurrent() {
+    MessageLoop* loop = MessageLoop::current();
+    return loop && loop->type() == MessageLoop::TYPE_IO;
+  }
+
+#if !defined(OS_NACL)
+
 #if defined(OS_WIN)
   typedef MessagePumpForIO::IOHandler IOHandler;
   typedef MessagePumpForIO::IOContext IOContext;
@@ -645,70 +625,25 @@ class BASE_EXPORT MessageLoopForIO : public MessageLoop {
     WATCH_WRITE = MessagePumpLibevent::WATCH_WRITE,
     WATCH_READ_WRITE = MessagePumpLibevent::WATCH_READ_WRITE
   };
-
 #endif
 
-  MessageLoopForIO() : MessageLoop(TYPE_IO) {
-  }
-
-  // Returns the MessageLoopForIO of the current thread.
-  static MessageLoopForIO* current() {
-    MessageLoop* loop = MessageLoop::current();
-    DCHECK_EQ(MessageLoop::TYPE_IO, loop->type());
-    return static_cast<MessageLoopForIO*>(loop);
-  }
-
-  static bool IsCurrent() {
-    MessageLoop* loop = MessageLoop::current();
-    return loop && loop->type() == MessageLoop::TYPE_IO;
-  }
-
-  void AddIOObserver(IOObserver* io_observer) {
-    pump_io()->AddIOObserver(io_observer);
-  }
-
-  void RemoveIOObserver(IOObserver* io_observer) {
-    pump_io()->RemoveIOObserver(io_observer);
-  }
+  void AddIOObserver(IOObserver* io_observer);
+  void RemoveIOObserver(IOObserver* io_observer);
 
 #if defined(OS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
   void RegisterIOHandler(HANDLE file, IOHandler* handler);
   bool RegisterJobObject(HANDLE job, IOHandler* handler);
   bool WaitForIOCompletion(DWORD timeout, IOHandler* filter);
-
- protected:
-  // TODO(rvargas): Make this platform independent.
-  MessagePumpForIO* pump_io() {
-    return static_cast<MessagePumpForIO*>(pump_.get());
-  }
-
-#elif defined(OS_IOS)
-  // Please see MessagePumpIOSForIO for definition.
+#elif defined(OS_POSIX)
+  // Please see MessagePumpIOSForIO/MessagePumpLibevent for definition.
   bool WatchFileDescriptor(int fd,
                            bool persistent,
                            Mode mode,
                            FileDescriptorWatcher *controller,
                            Watcher *delegate);
-
- private:
-  MessagePumpIOSForIO* pump_io() {
-    return static_cast<MessagePumpIOSForIO*>(pump_.get());
-  }
-
-#elif defined(OS_POSIX)
-  // Please see MessagePumpLibevent for definition.
-  bool WatchFileDescriptor(int fd,
-                           bool persistent,
-                           Mode mode,
-                           FileDescriptorWatcher* controller,
-                           Watcher* delegate);
-
- private:
-  MessagePumpLibevent* pump_io() {
-    return static_cast<MessagePumpLibevent*>(pump_.get());
-  }
-#endif  // defined(OS_POSIX)
+#endif  // defined(OS_IOS) || defined(OS_POSIX)
+#endif  // !defined(OS_NACL)
 };
 
 // Do not add any member variables to MessageLoopForIO!  This is important b/c

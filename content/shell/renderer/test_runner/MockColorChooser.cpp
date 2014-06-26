@@ -5,12 +5,12 @@
 #include "content/shell/renderer/test_runner/MockColorChooser.h"
 
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 class HostMethodTask : public WebMethodTask<MockColorChooser> {
@@ -33,12 +33,12 @@ MockColorChooser::MockColorChooser(blink::WebColorChooserClient* client, WebTest
     , m_delegate(delegate)
     , m_proxy(proxy)
 {
-    m_proxy->didOpenChooser();
+    m_proxy->DidOpenChooser();
 }
 
 MockColorChooser::~MockColorChooser()
 {
-    m_proxy->didCloseChooser();
+    m_proxy->DidCloseChooser();
 }
 
 void MockColorChooser::setSelectedColor(const blink::WebColor)
@@ -55,4 +55,4 @@ void MockColorChooser::invokeDidEndChooser()
     m_client->didEndChooser();
 }
 
-}
+}  // namespace content

@@ -9,7 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "content/public/common/color_suggestion.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "third_party/WebKit/public/web/WebColorChooser.h"
 #include "third_party/WebKit/public/web/WebColorChooserClient.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -19,15 +19,15 @@ class WebFrame;
 }
 
 namespace content {
-class RenderViewImpl;
 
 class RendererWebColorChooserImpl : public blink::WebColorChooser,
-                                    public RenderViewObserver {
+                                    public RenderFrameObserver {
  public:
-  explicit RendererWebColorChooserImpl(RenderViewImpl* sender,
+  explicit RendererWebColorChooserImpl(RenderFrame* render_frame,
                                        blink::WebColorChooserClient*);
   virtual ~RendererWebColorChooserImpl();
 
+  // blink::WebColorChooser implementation:
   virtual void setSelectedColor(const blink::WebColor);
   virtual void endChooser();
 
@@ -37,7 +37,11 @@ class RendererWebColorChooserImpl : public blink::WebColorChooser,
   blink::WebColorChooserClient* client() { return client_; }
 
  private:
-  // RenderViewObserver implementation.
+  // RenderFrameObserver implementation:
+  // Don't destroy the RendererWebColorChooserImpl when the RenderFrame goes
+  // away. RendererWebColorChooserImpl is owned by
+  // blink::ColorChooserUIController.
+  virtual void OnDestruct() OVERRIDE {}
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   void OnDidChooseColorResponse(int color_chooser_id, SkColor color);

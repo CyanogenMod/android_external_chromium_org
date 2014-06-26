@@ -19,6 +19,8 @@
 #include "device/media_transfer_protocol/media_transfer_protocol_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+namespace storage_monitor {
+
 namespace {
 
 // Sample mtp device storage information.
@@ -27,6 +29,8 @@ const char kStorageLocation[] = "/usb:2,2,88888";
 const char kStorageUniqueId[] = "VendorModelSerial:COM:MOD2012:283";
 const char kStorageWithInvalidInfo[] = "usb:2,3,11111";
 const char kStorageWithValidInfo[] = "usb:2,2,88888";
+const char kStorageVendor[] = "ExampleVendor";
+const char kStorageProductName[] = "ExampleCamera";
 
 // Returns the mtp device id given the |unique_id|.
 std::string GetMtpDeviceId(const std::string& unique_id) {
@@ -34,12 +38,15 @@ std::string GetMtpDeviceId(const std::string& unique_id) {
 }
 
 // Helper function to get the device storage details such as device id, label
-// and location. On success, fills in |id|, |label| and |location|.
+// and location. On success, fills in |id|, |label|, |location|, |vendor_name|,
+// and |product_name|.
 void GetStorageInfo(const std::string& storage_name,
                     device::MediaTransferProtocolManager* mtp_manager,
                     std::string* id,
                     base::string16* label,
-                    std::string* location) {
+                    std::string* location,
+                    base::string16* vendor_name,
+                    base::string16* product_name) {
   if (storage_name == kStorageWithInvalidInfo)
     return;  // Do not set any storage details.
 
@@ -48,6 +55,8 @@ void GetStorageInfo(const std::string& storage_name,
   *id = GetMtpDeviceId(kStorageUniqueId);
   *label = base::ASCIIToUTF16(kStorageLabel);
   *location = kStorageLocation;
+  *vendor_name = base::ASCIIToUTF16(kStorageVendor);
+  *product_name = base::ASCIIToUTF16(kStorageProductName);
 }
 
 class TestMediaTransferProtocolDeviceObserverLinux
@@ -134,9 +143,11 @@ TEST_F(MediaTransferProtocolDeviceObserverLinuxTest, BasicAttachDetach) {
   EXPECT_EQ(1, observer().attach_calls());
   EXPECT_EQ(0, observer().detach_calls());
   EXPECT_EQ(device_id, observer().last_attached().device_id());
-  EXPECT_EQ(base::ASCIIToUTF16(kStorageLabel),
-            observer().last_attached().name());
   EXPECT_EQ(kStorageLocation, observer().last_attached().location());
+  EXPECT_EQ(base::ASCIIToUTF16(kStorageVendor),
+            observer().last_attached().vendor_name());
+  EXPECT_EQ(base::ASCIIToUTF16(kStorageProductName),
+            observer().last_attached().model_name());
 
   // Detach the attached storage.
   mtp_device_observer()->MtpStorageDetached(kStorageWithValidInfo);
@@ -159,3 +170,5 @@ TEST_F(MediaTransferProtocolDeviceObserverLinuxTest, StorageWithInvalidInfo) {
   EXPECT_EQ(0, observer().attach_calls());
   EXPECT_EQ(0, observer().detach_calls());
 }
+
+}  // namespace storage_monitor

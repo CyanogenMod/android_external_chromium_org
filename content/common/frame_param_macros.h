@@ -13,10 +13,11 @@
 #ifndef CONTENT_COMMON_FRAME_PARAM_MACROS_H_
 #define CONTENT_COMMON_FRAME_PARAM_MACROS_H_
 
-#include "cc/output/compositor_frame_ack.h"
 #include "cc/output/compositor_frame.h"
+#include "cc/output/compositor_frame_ack.h"
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_message_macros.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -35,6 +36,7 @@ IPC_STRUCT_BEGIN(FrameMsg_CompositorFrameSwapped_Params)
 
   IPC_STRUCT_MEMBER(cc::CompositorFrame, frame)
   IPC_STRUCT_MEMBER(uint32, output_surface_id)
+  IPC_STRUCT_MEMBER(base::SharedMemoryHandle, shared_memory_handle)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(FrameHostMsg_BuffersSwappedACK_Params)

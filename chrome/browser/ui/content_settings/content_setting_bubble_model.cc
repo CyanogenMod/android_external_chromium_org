@@ -27,6 +27,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -94,6 +95,7 @@ ContentSettingTitleAndLinkModel::ContentSettingTitleAndLinkModel(
   DCHECK_NE(content_type, CONTENT_SETTINGS_TYPE_NOTIFICATIONS);
   SetTitle();
   SetManageLink();
+  SetLearnMoreLink();
 }
 
 void ContentSettingTitleAndLinkModel::SetTitle() {
@@ -153,6 +155,22 @@ void ContentSettingTitleAndLinkModel::SetManageLink() {
 void ContentSettingTitleAndLinkModel::OnManageLinkClicked() {
   if (delegate_)
     delegate_->ShowContentSettingsPage(content_type());
+}
+
+void ContentSettingTitleAndLinkModel::SetLearnMoreLink() {
+  static const ContentSettingsTypeIdEntry kLearnMoreIDs[] = {
+    {CONTENT_SETTINGS_TYPE_PLUGINS, IDS_LEARN_MORE},
+  };
+  int learn_more_id =
+      GetIdForContentType(kLearnMoreIDs, arraysize(kLearnMoreIDs),
+                          content_type());
+  if (learn_more_id)
+    set_learn_more_link(l10n_util::GetStringUTF8(learn_more_id));
+}
+
+void ContentSettingTitleAndLinkModel::OnLearnMoreLinkClicked() {
+  if (delegate_)
+    delegate_->ShowLearnMorePage(content_type());
 }
 
 class ContentSettingTitleLinkAndCustomModel
@@ -993,9 +1011,10 @@ ContentSettingMixedScriptBubbleModel::ContentSettingMixedScriptBubbleModel(
 void ContentSettingMixedScriptBubbleModel::OnCustomLinkClicked() {
   content::RecordAction(UserMetricsAction("MixedScript_LoadAnyway_Bubble"));
   DCHECK(web_contents());
-  content::RenderViewHost* host = web_contents()->GetRenderViewHost();
-  host->Send(new ChromeViewMsg_SetAllowRunningInsecureContent(
-      host->GetRoutingID(), true));
+  web_contents()->SendToAllFrames(
+      new ChromeViewMsg_SetAllowRunningInsecureContent(MSG_ROUTING_NONE, true));
+  web_contents()->GetMainFrame()->Send(new ChromeViewMsg_ReloadFrame(
+      web_contents()->GetMainFrame()->GetRoutingID()));
 }
 
 ContentSettingRPHBubbleModel::ContentSettingRPHBubbleModel(
@@ -1029,23 +1048,22 @@ ContentSettingRPHBubbleModel::ContentSettingRPHBubbleModel(
     protocol = base::UTF8ToUTF16(pending_handler_.protocol());
   }
 
+  // Note that we ignore the |title| parameter.
   if (previous_handler_.IsEmpty()) {
     set_title(l10n_util::GetStringFUTF8(
         IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM,
-        pending_handler_.title(),
         base::UTF8ToUTF16(pending_handler_.url().host()),
         protocol));
   } else {
     set_title(l10n_util::GetStringFUTF8(
         IDS_REGISTER_PROTOCOL_HANDLER_CONFIRM_REPLACE,
-        pending_handler_.title(),
         base::UTF8ToUTF16(pending_handler_.url().host()),
-        protocol, previous_handler_.title()));
+        protocol,
+        base::UTF8ToUTF16(previous_handler_.url().host())));
   }
 
   std::string radio_allow_label =
-      l10n_util::GetStringFUTF8(IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT,
-                                pending_handler_.title());
+      l10n_util::GetStringUTF8(IDS_REGISTER_PROTOCOL_HANDLER_ACCEPT);
   std::string radio_deny_label =
       l10n_util::GetStringUTF8(IDS_REGISTER_PROTOCOL_HANDLER_DENY);
   std::string radio_ignore_label =

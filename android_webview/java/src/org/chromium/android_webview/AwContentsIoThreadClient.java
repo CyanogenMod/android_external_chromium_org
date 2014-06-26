@@ -4,8 +4,11 @@
 
 package org.chromium.android_webview;
 
+import org.chromium.android_webview.AwContentsClient;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
+
+import java.util.HashMap;
 
 /**
  * Delegate for handling callbacks. All methods are called on the IO thread.
@@ -14,29 +17,48 @@ import org.chromium.base.JNINamespace;
  * provided functionality.
  */
 @JNINamespace("android_webview")
-public interface AwContentsIoThreadClient {
+public abstract class AwContentsIoThreadClient {
     @CalledByNative
-    public int getCacheMode();
+    public abstract int getCacheMode();
 
     @CalledByNative
-    public InterceptedRequestData shouldInterceptRequest(String url, boolean isMainFrame);
+    public abstract boolean shouldBlockContentUrls();
 
     @CalledByNative
-    public boolean shouldBlockContentUrls();
+    public abstract boolean shouldBlockFileUrls();
 
     @CalledByNative
-    public boolean shouldBlockFileUrls();
+    public abstract boolean shouldBlockNetworkLoads();
 
     @CalledByNative
-    public boolean shouldBlockNetworkLoads();
+    public abstract boolean shouldAcceptThirdPartyCookies();
 
     @CalledByNative
-    public void onDownloadStart(String url,
-                                String userAgent,
-                                String contentDisposition,
-                                String mimeType,
-                                long contentLength);
+    public abstract void onDownloadStart(String url, String userAgent,
+        String contentDisposition, String mimeType, long contentLength);
 
     @CalledByNative
-    public void newLoginRequest(String realm, String account, String args);
+    public abstract void newLoginRequest(String realm, String account, String args);
+
+    public abstract AwWebResourceResponse shouldInterceptRequest(
+            AwContentsClient.ShouldInterceptRequestParams params);
+
+    // Protected methods ---------------------------------------------------------------------------
+
+    @CalledByNative
+    protected AwWebResourceResponse shouldInterceptRequest(String url, boolean isMainFrame,
+            boolean hasUserGesture, String method, String[] requestHeaderNames,
+            String[] requestHeaderValues) {
+        AwContentsClient.ShouldInterceptRequestParams params =
+            new AwContentsClient.ShouldInterceptRequestParams();
+        params.url = url;
+        params.isMainFrame = isMainFrame;
+        params.hasUserGesture = hasUserGesture;
+        params.method = method;
+        params.requestHeaders = new HashMap<String, String>(requestHeaderNames.length);
+        for (int i = 0; i < requestHeaderNames.length; ++i) {
+            params.requestHeaders.put(requestHeaderNames[i], requestHeaderValues[i]);
+        }
+        return shouldInterceptRequest(params);
+    }
 }

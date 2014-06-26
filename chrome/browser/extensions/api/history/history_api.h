@@ -10,12 +10,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/task/cancelable_task_tracker.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/history/history_notifications.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/common/extensions/api/history.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 
 namespace base {
@@ -53,27 +53,26 @@ class HistoryEventRouter : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(HistoryEventRouter);
 };
 
-class HistoryAPI : public ProfileKeyedAPI,
-                   public EventRouter::Observer {
+class HistoryAPI : public BrowserContextKeyedAPI, public EventRouter::Observer {
  public:
-  explicit HistoryAPI(Profile* profile);
+  explicit HistoryAPI(content::BrowserContext* context);
   virtual ~HistoryAPI();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<HistoryAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<HistoryAPI>* GetFactoryInstance();
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
 
  private:
-  friend class ProfileKeyedAPIFactory<HistoryAPI>;
+  friend class BrowserContextKeyedAPIFactory<HistoryAPI>;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "HistoryAPI";
   }
@@ -83,14 +82,13 @@ class HistoryAPI : public ProfileKeyedAPI,
   scoped_ptr<HistoryEventRouter> history_event_router_;
 };
 
-template<>
-void ProfileKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies();
+template <>
+void BrowserContextKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies();
 
 // Base class for history function APIs.
 class HistoryFunction : public ChromeAsyncExtensionFunction {
  protected:
   virtual ~HistoryFunction() {}
-  virtual void Run() OVERRIDE;
 
   bool ValidateUrl(const std::string& url_string, GURL* url);
   bool VerifyDeleteAllowed();
@@ -107,7 +105,7 @@ class HistoryFunctionWithCallback : public HistoryFunction {
   virtual ~HistoryFunctionWithCallback();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // Return true if the async call was completed, false otherwise.
   virtual bool RunAsyncImpl() = 0;
@@ -137,10 +135,9 @@ class HistoryGetVisitsFunction : public HistoryFunctionWithCallback {
   virtual bool RunAsyncImpl() OVERRIDE;
 
   // Callback for the history function to provide results.
-  void QueryComplete(HistoryService::Handle request_service,
-                     bool success,
-                     const history::URLRow* url_row,
-                     history::VisitVector* visits);
+  void QueryComplete(bool success,
+                     const history::URLRow& url_row,
+                     const history::VisitVector& visits);
 };
 
 class HistorySearchFunction : public HistoryFunctionWithCallback {
@@ -154,8 +151,7 @@ class HistorySearchFunction : public HistoryFunctionWithCallback {
   virtual bool RunAsyncImpl() OVERRIDE;
 
   // Callback for the history function to provide results.
-  void SearchComplete(HistoryService::Handle request_handle,
-                      history::QueryResults* results);
+  void SearchComplete(history::QueryResults* results);
 };
 
 class HistoryAddUrlFunction : public HistoryFunction {
@@ -166,7 +162,7 @@ class HistoryAddUrlFunction : public HistoryFunction {
   virtual ~HistoryAddUrlFunction() {}
 
   // HistoryFunctionWithCallback:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class HistoryDeleteAllFunction : public HistoryFunctionWithCallback {
@@ -192,7 +188,7 @@ class HistoryDeleteUrlFunction : public HistoryFunction {
   virtual ~HistoryDeleteUrlFunction() {}
 
   // HistoryFunctionWithCallback:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class HistoryDeleteRangeFunction : public HistoryFunctionWithCallback {

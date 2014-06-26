@@ -6,6 +6,7 @@
 #define COMPONENTS_POLICY_CORE_COMMON_SCHEMA_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -26,6 +27,12 @@ struct POLICY_EXPORT PropertiesNode;
 // the strategy to handle unknown properties or invalid values for dict type.
 // Note that in Schema::Normalize() allowed errors will be dropped and thus
 // ignored.
+// Unknown error indicates that some value in a dictionary (may or may not be
+// the one in root) have unknown property name according to schema.
+// Invalid error indicates a validation failure against the schema. As
+// validation is done recursively, a validation failure of dict properties or
+// list items might be ignored (or dropped in Normalize()) or trigger whole
+// dictionary/list validation failure.
 enum SchemaOnErrorStrategy {
   // No errors will be allowed.
   SCHEMA_STRICT = 0,
@@ -41,6 +48,10 @@ enum SchemaOnErrorStrategy {
   // Mismatched values will be ignored.
   SCHEMA_ALLOW_INVALID,
 };
+
+class Schema;
+
+typedef std::vector<Schema> SchemaList;
 
 // Describes the expected type of one policy. Also recursively describes the
 // types of inner elements, for structured types.
@@ -90,11 +101,18 @@ class POLICY_EXPORT Schema {
                 std::string* error_path,
                 std::string* error) const;
 
-  // Same as Validate() but drop values with errors instead of ignoring them.
+  // Similar to Validate() but drop values with errors instead of ignoring them.
+  // |changed| is a pointer to a boolean value, and indicate whether |value|
+  // is changed or not (probably dropped properties or items). Be sure to set
+  // the bool that |changed| pointed to to false before calling Normalize().
+  // |changed| can be NULL and in that case no boolean will be set.
+  // This function will also take the ownership of dropped base::Value and
+  // destroy them.
   bool Normalize(base::Value* value,
                  SchemaOnErrorStrategy strategy,
                  std::string* error_path,
-                 std::string* error) const;
+                 std::string* error,
+                 bool* changed) const;
 
   // Used to iterate over the known properties of TYPE_DICTIONARY schemas.
   class POLICY_EXPORT Iterator {
@@ -135,13 +153,24 @@ class POLICY_EXPORT Schema {
   // property name then the returned Schema is not valid.
   Schema GetKnownProperty(const std::string& key) const;
 
+  // Returns all Schemas from pattern properties that match |key|. May be empty.
+  SchemaList GetPatternProperties(const std::string& key) const;
+
   // Returns the Schema for additional properties. If additional properties are
   // not allowed for this Schema then the Schema returned is not valid.
   Schema GetAdditionalProperties() const;
 
   // Returns the Schema for |key| if it is a known property, otherwise returns
   // the Schema for additional properties.
+  // DEPRECATED: This function didn't consider patternProperties, use
+  // GetMatchingProperties() instead.
+  // TODO(binjin): Replace calls to this function with GetKnownProperty() or
+  // GetMatchingProperties() and remove this later.
   Schema GetProperty(const std::string& key) const;
+
+  // Returns all Schemas that are supposed to be validated against for |key|.
+  // May be empty.
+  SchemaList GetMatchingProperties(const std::string& key) const;
 
   // Returns the Schema for items of an array.
   // This method should be called only if type() == TYPE_LIST,

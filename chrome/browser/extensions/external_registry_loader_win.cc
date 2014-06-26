@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/memory/scoped_handle.h"
+#include "base/files/scoped_file.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -26,6 +26,9 @@ namespace {
 // The Registry subkey that contains information about external extensions.
 const char kRegistryExtensions[] = "Software\\Google\\Chrome\\Extensions";
 
+// Registry value of the key that defines the installation parameter.
+const wchar_t kRegistryExtensionInstallParam[] = L"install_parameter";
+
 // Registry value of the key that defines the path to the .crx file.
 const wchar_t kRegistryExtensionPath[] = L"path";
 
@@ -36,7 +39,7 @@ const wchar_t kRegistryExtensionVersion[] = L"version";
 const wchar_t kRegistryExtensionUpdateUrl[] = L"update_url";
 
 bool CanOpenFileForReading(const base::FilePath& path) {
-  ScopedStdioHandle file_handle(base::OpenFile(path, "rb"));
+  base::ScopedFILE file_handle(base::OpenFile(path, "rb"));
   return file_handle.get() != NULL;
 }
 
@@ -86,12 +89,19 @@ void ExternalRegistryLoader::LoadOnFileThread() {
       }
     }
 
-    std::string id = WideToASCII(*it);
+    std::string id = base::UTF16ToASCII(*it);
     StringToLowerASCII(&id);
     if (!Extension::IdIsValid(id)) {
       LOG(ERROR) << "Invalid id value " << id
                  << " for key " << key_path << ".";
       continue;
+    }
+
+    base::string16 extension_dist_id;
+    if (key.ReadValue(kRegistryExtensionInstallParam, &extension_dist_id) ==
+        ERROR_SUCCESS) {
+      prefs->SetString(id + "." + ExternalProviderImpl::kInstallParam,
+                       base::UTF16ToASCII(extension_dist_id));
     }
 
     // If there is an update URL present, copy it to prefs and ignore
@@ -101,7 +111,7 @@ void ExternalRegistryLoader::LoadOnFileThread() {
         == ERROR_SUCCESS) {
       prefs->SetString(
           id + "." + ExternalProviderImpl::kExternalUpdateUrl,
-          WideToASCII(extension_update_url));
+          base::UTF16ToASCII(extension_update_url));
       continue;
     }
 
@@ -146,7 +156,7 @@ void ExternalRegistryLoader::LoadOnFileThread() {
       continue;
     }
 
-    Version version(WideToASCII(extension_version));
+    Version version(base::UTF16ToASCII(extension_version));
     if (!version.IsValid()) {
       LOG(ERROR) << "Invalid version value " << extension_version
                  << " for key " << key_path << ".";
@@ -155,7 +165,7 @@ void ExternalRegistryLoader::LoadOnFileThread() {
 
     prefs->SetString(
         id + "." + ExternalProviderImpl::kExternalVersion,
-        WideToASCII(extension_version));
+        base::UTF16ToASCII(extension_version));
     prefs->SetString(
         id + "." + ExternalProviderImpl::kExternalCrx,
         extension_path_str);

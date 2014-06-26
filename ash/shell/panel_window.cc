@@ -8,8 +8,8 @@
 #include "ash/shell.h"
 #include "ash/wm/panels/panel_frame_view.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/widget/widget.h"
 
@@ -57,7 +57,7 @@ views::Widget* PanelWindow::CreateWidget() {
   return widget;
 }
 
-gfx::Size PanelWindow::GetPreferredSize() {
+gfx::Size PanelWindow::GetPreferredSize() const {
   return gfx::Size(kMinWidth, kMinHeight);
 }
 

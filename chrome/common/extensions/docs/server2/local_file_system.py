@@ -7,7 +7,7 @@ import sys
 
 from docs_server_utils import StringIdentity
 from file_system import FileSystem, FileNotFoundError, StatInfo
-from future import Gettable, Future
+from future import Future
 from path_util import AssertIsDirectory, AssertIsValid
 from test_util import ChromiumPath
 
@@ -69,6 +69,8 @@ class LocalFileSystem(FileSystem):
   filesystem.
   '''
   def __init__(self, base_path):
+    # Enforce POSIX path, so path validity checks pass for Windows.
+    base_path = base_path.replace(os.sep, '/')
     AssertIsDirectory(base_path)
     self._base_path = _ConvertToFilepath(base_path)
 
@@ -76,7 +78,7 @@ class LocalFileSystem(FileSystem):
   def Create(*path):
     return LocalFileSystem(ChromiumPath(*path))
 
-  def Read(self, paths):
+  def Read(self, paths, skip_not_found=False):
     def resolve():
       result = {}
       for path in paths:
@@ -88,7 +90,7 @@ class LocalFileSystem(FileSystem):
         else:
           result[path] = _ReadFile(full_path)
       return result
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def Refresh(self):
     return Future(value=())

@@ -8,15 +8,18 @@
 #include "ash/test/ash_test_base.h"
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/test/ui_controls.h"
+#include "ui/base/ui_base_paths.h"
+#include "ui/gl/gl_surface.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 class DraggableView : public views::View {
@@ -118,9 +121,28 @@ void DragDropAcrossMultiDisplay_Step1() {
 
 }  // namespace
 
-typedef test::AshTestBase DragDropTest;
+class DragDropTest : public test::AshTestBase {
+ public:
+  DragDropTest() {}
+  virtual ~DragDropTest() {}
 
-#if defined(OS_WIN)
+  virtual void SetUp() OVERRIDE {
+    gfx::GLSurface::InitializeOneOffForTests();
+
+    ui::RegisterPathProvider();
+    ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+    base::FilePath resources_pack_path;
+    PathService::Get(base::DIR_MODULE, &resources_pack_path);
+    resources_pack_path =
+        resources_pack_path.Append(FILE_PATH_LITERAL("resources.pak"));
+    ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+        resources_pack_path, ui::SCALE_FACTOR_NONE);
+
+    test::AshTestBase::SetUp();
+  }
+};
+
+#if !defined(OS_CHROMEOS)
 #define MAYBE_DragDropAcrossMultiDisplay DISABLED_DragDropAcrossMultiDisplay
 #else
 #define MAYBE_DragDropAcrossMultiDisplay DragDropAcrossMultiDisplay
@@ -161,5 +183,4 @@ TEST_F(DragDropTest, MAYBE_DragDropAcrossMultiDisplay) {
   target->Close();
 }
 
-}  // namespace internal
 }  // namespace ash

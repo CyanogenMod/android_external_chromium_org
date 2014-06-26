@@ -18,6 +18,15 @@ import sys
 import textwrap
 import zipfile
 
+CHROMIUM_SRC = os.path.join(
+    os.path.dirname(__file__), os.pardir, os.pardir, os.pardir)
+BUILD_ANDROID_GYP = os.path.join(
+    CHROMIUM_SRC, 'build', 'android', 'gyp')
+
+sys.path.append(BUILD_ANDROID_GYP)
+
+from util import build_utils
+
 
 class ParseError(Exception):
   """Exception thrown when we can't parse the input file."""
@@ -83,6 +92,12 @@ class CalledByNative(object):
     self.static_cast = GetStaticCastForReturnType(self.return_type)
 
 
+class ConstantField(object):
+  def __init__(self, **kwargs):
+    self.name = kwargs['name']
+    self.value = kwargs['value']
+
+
 def JavaDataTypeToC(java_type):
   """Returns a C datatype for the given java type."""
   java_pod_type_map = {
@@ -118,6 +133,14 @@ def JavaDataTypeToC(java_type):
     return 'jobject'
 
 
+def JavaDataTypeToCForCalledByNativeParam(java_type):
+  """Returns a C datatype to be when calling from native."""
+  if java_type == 'int':
+    return 'JniIntWrapper'
+  else:
+    return JavaDataTypeToC(java_type)
+
+
 def JavaReturnValueToC(java_type):
   """Returns a valid C return value for the given java type."""
   java_pod_type_map = {
@@ -140,6 +163,7 @@ class JniParams(object):
   _package = ''
   _inner_classes = []
   _remappings = []
+  _implicit_imports = []
 
   @staticmethod
   def SetFullyQualifiedClass(fully_qualified_class):
@@ -147,7 +171,23 @@ class JniParams(object):
     JniParams._package = '/'.join(fully_qualified_class.split('/')[:-1])
 
   @staticmethod
+  def AddAdditionalImport(class_name):
+    assert class_name.endswith('.class')
+    raw_class_name = class_name[:-len('.class')]
+    if '.' in raw_class_name:
+      raise SyntaxError('%s cannot be used in @JNIAdditionalImport. '
+                        'Only import unqualified outer classes.' % class_name)
+    new_import = 'L%s/%s' % (JniParams._package, raw_class_name)
+    if new_import in JniParams._imports:
+      raise SyntaxError('Do not use JNIAdditionalImport on an already '
+                        'imported class: %s' % (new_import.replace('/', '.')))
+    JniParams._imports += [new_import]
+
+  @staticmethod
   def ExtractImportsAndInnerClasses(contents):
+    if not JniParams._package:
+      raise RuntimeError('SetFullyQualifiedClass must be called before '
+                         'ExtractImportsAndInnerClasses')
     contents = contents.replace('\n', '')
     re_import = re.compile(r'import.*?(?P<class>\S*?);')
     for match in re.finditer(re_import, contents):
@@ -159,6 +199,12 @@ class JniParams(object):
       if not JniParams._fully_qualified_class.endswith(inner):
         JniParams._inner_classes += [JniParams._fully_qualified_class + '$' +
                                      inner]
+
+    re_additional_imports = re.compile(
+        r'@JNIAdditionalImport\(\s*{?(?P<class_names>.*?)}?\s*\)')
+    for match in re.finditer(re_additional_imports, contents):
+      for class_name in match.group('class_names').split(','):
+        JniParams.AddAdditionalImport(class_name.strip())
 
   @staticmethod
   def ParseJavaPSignature(signature_line):
@@ -187,6 +233,7 @@ class JniParams(object):
         'Ljava/lang/String',
         'Ljava/lang/Class',
     ]
+
     prefix = ''
     # Array?
     while param[-2:] == '[]':
@@ -200,6 +247,7 @@ class JniParams(object):
     if '/' in param:
       # Coming from javap, use the fully qualified param directly.
       return prefix + 'L' + JniParams.RemapClassName(param) + ';'
+
     for qualified_name in (object_param_list +
                            [JniParams._fully_qualified_class] +
                            JniParams._inner_classes):
@@ -232,10 +280,38 @@ class JniParams(object):
         if qualified_name.endswith('/' + outer):
           return (prefix + JniParams.RemapClassName(qualified_name) +
                   '$' + inner + ';')
+      raise SyntaxError('Inner class (%s) can not be '
+                        'used directly by JNI. Please import the outer '
+                        'class, probably:\n'
+                        'import %s.%s;' %
+                        (param, JniParams._package.replace('/', '.'),
+                         outer.replace('/', '.')))
+
+    JniParams._CheckImplicitImports(param)
 
     # Type not found, falling back to same package as this class.
     return (prefix + 'L' +
             JniParams.RemapClassName(JniParams._package + '/' + param) + ';')
+
+  @staticmethod
+  def _CheckImplicitImports(param):
+    # Ensure implicit imports, such as java.lang.*, are not being treated
+    # as being in the same package.
+    if not JniParams._implicit_imports:
+      # This file was generated from android.jar and lists
+      # all classes that are implicitly imported.
+      with file(os.path.join(os.path.dirname(sys.argv[0]),
+                             'android_jar.classes'), 'r') as f:
+        JniParams._implicit_imports = f.readlines()
+    for implicit_import in JniParams._implicit_imports:
+      implicit_import = implicit_import.strip().replace('.class', '')
+      implicit_import = implicit_import.replace('/', '.')
+      if implicit_import.endswith('.' + param):
+        raise SyntaxError('Ambiguous class (%s) can not be used directly '
+                          'by JNI.\nPlease import it, probably:\n\n'
+                          'import %s;' %
+                          (param, implicit_import))
+
 
   @staticmethod
   def Signature(params, returns, wrap):
@@ -270,8 +346,11 @@ class JniParams(object):
   def RemapClassName(class_name):
     """Remaps class names using the jarjar mapping table."""
     for old, new in JniParams._remappings:
-      if old in class_name:
+      if old.endswith('**') and old[:-2] in class_name:
+        return class_name.replace(old[:-2], new, 1)
+      if '*' not in old and class_name.endswith(old):
         return class_name.replace(old, new, 1)
+
     return class_name
 
   @staticmethod
@@ -279,17 +358,26 @@ class JniParams(object):
     """Parse jarjar mappings from a string."""
     JniParams._remappings = []
     for line in mappings.splitlines():
-      keyword, src, dest = line.split()
-      if keyword != 'rule':
+      rule = line.split()
+      if rule[0] != 'rule':
         continue
-      assert src.endswith('.**')
-      src = src[:-2].replace('.', '/')
+      _, src, dest = rule
+      src = src.replace('.', '/')
       dest = dest.replace('.', '/')
-      if dest.endswith('@0'):
-        JniParams._remappings.append((src, dest[:-2] + src))
+      if src.endswith('**'):
+        src_real_name = src[:-2]
       else:
-        assert dest.endswith('@1')
+        assert not '*' in src
+        src_real_name = src
+
+      if dest.endswith('@0'):
+        JniParams._remappings.append((src, dest[:-2] + src_real_name))
+      elif dest.endswith('@1'):
+        assert '**' in src
         JniParams._remappings.append((src, dest[:-2]))
+      else:
+        assert not '@' in dest
+        JniParams._remappings.append((src, dest))
 
 
 def ExtractJNINamespace(contents):
@@ -314,11 +402,11 @@ def ExtractNatives(contents, ptr_type):
   contents = contents.replace('\n', '')
   natives = []
   re_native = re.compile(r'(@NativeClassQualifiedName'
-                         '\(\"(?P<native_class_name>.*?)\"\))?\s*'
-                         '(@NativeCall(\(\"(?P<java_class_name>.*?)\"\)))?\s*'
-                         '(?P<qualifiers>\w+\s\w+|\w+|\s+)\s*?native '
-                         '(?P<return_type>\S*?) '
-                         '(?P<name>native\w+?)\((?P<params>.*?)\);')
+                         '\(\"(?P<native_class_name>.*?)\"\)\s+)?'
+                         '(@NativeCall(\(\"(?P<java_class_name>.*?)\"\))\s+)?'
+                         '(?P<qualifiers>\w+\s\w+|\w+|\s+)\s*native '
+                         '(?P<return_type>\S*) '
+                         '(?P<name>native\w+)\((?P<params>.*?)\);')
   for match in re.finditer(re_native, contents):
     native = NativeMethod(
         static='static' in match.group('qualifiers'),
@@ -341,6 +429,7 @@ def GetStaticCastForReturnType(return_type):
                'short[]': 'jshortArray',
                'int[]': 'jintArray',
                'long[]': 'jlongArray',
+               'float[]': 'jfloatArray',
                'double[]': 'jdoubleArray' }
   ret = type_map.get(return_type, None)
   if ret:
@@ -478,9 +567,13 @@ class JNIFromJavaP(object):
   def __init__(self, contents, options):
     self.contents = contents
     self.namespace = options.namespace
-    self.fully_qualified_class = re.match(
-        '.*?(class|interface) (?P<class_name>.*?)( |{)',
-        contents[1]).group('class_name')
+    for line in contents:
+      class_name = re.match(
+          '.*?(public).*?(class|interface) (?P<class_name>\S+?)( |\Z)',
+          line)
+      if class_name:
+        self.fully_qualified_class = class_name.group('class_name')
+        break
     self.fully_qualified_class = self.fully_qualified_class.replace('.', '/')
     # Java 7's javap includes type parameters in output, like HashSet<T>. Strip
     # away the <...> and use the raw class name that Java 6 would've given us.
@@ -523,9 +616,26 @@ class JNIFromJavaP(object):
           signature=JniParams.ParseJavaPSignature(contents[lineno + 1]),
           is_constructor=True)]
     self.called_by_natives = MangleCalledByNatives(self.called_by_natives)
+
+    self.constant_fields = []
+    re_constant_field = re.compile('.*?public static final int (?P<name>.*?);')
+    re_constant_field_value = re.compile(
+        '.*?Constant(Value| value): int (?P<value>(-*[0-9]+)?)')
+    for lineno, content in enumerate(contents[2:], 2):
+      match = re.match(re_constant_field, content)
+      if not match:
+        continue
+      value = re.match(re_constant_field_value, contents[lineno + 2])
+      if not value:
+        value = re.match(re_constant_field_value, contents[lineno + 3])
+      if value:
+        self.constant_fields.append(
+            ConstantField(name=match.group('name'),
+                          value=value.group('value')))
+
     self.inl_header_file_generator = InlHeaderFileGenerator(
         self.namespace, self.fully_qualified_class, [],
-        self.called_by_natives, options)
+        self.called_by_natives, self.constant_fields, options)
 
   def GetContent(self):
     return self.inl_header_file_generator.GetContent()
@@ -533,7 +643,8 @@ class JNIFromJavaP(object):
   @staticmethod
   def CreateFromClass(class_file, options):
     class_name = os.path.splitext(os.path.basename(class_file))[0]
-    p = subprocess.Popen(args=[options.javap, '-s', class_name],
+    p = subprocess.Popen(args=[options.javap, '-c', '-verbose',
+                               '-s', class_name],
                          cwd=os.path.dirname(class_file),
                          stdout=subprocess.PIPE,
                          stderr=subprocess.PIPE)
@@ -545,8 +656,14 @@ class JNIFromJavaP(object):
 class JNIFromJavaSource(object):
   """Uses the given java source file to generate the JNI header file."""
 
+  # Match single line comments, multiline comments, character literals, and
+  # double-quoted strings.
+  _comment_remover_regex = re.compile(
+      r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
+      re.DOTALL | re.MULTILINE)
+
   def __init__(self, contents, fully_qualified_class, options):
-    contents = self._RemoveComments(contents, options)
+    contents = self._RemoveComments(contents)
     JniParams.SetFullyQualifiedClass(fully_qualified_class)
     JniParams.ExtractImportsAndInnerClasses(contents)
     jni_namespace = ExtractJNINamespace(contents) or options.namespace
@@ -557,26 +674,26 @@ class JNIFromJavaSource(object):
                         fully_qualified_class)
     inl_header_file_generator = InlHeaderFileGenerator(
         jni_namespace, fully_qualified_class, natives, called_by_natives,
-        options)
+        [], options)
     self.content = inl_header_file_generator.GetContent()
 
-  def _RemoveComments(self, contents, options):
+  @classmethod
+  def _RemoveComments(cls, contents):
     # We need to support both inline and block comments, and we need to handle
-    # strings that contain '//' or '/*'. Rather than trying to do all that with
-    # regexps, we just pipe the contents through the C preprocessor. We tell cpp
-    # the file has already been preprocessed, so it just removes comments and
-    # doesn't try to parse #include, #pragma etc.
-    #
-    # TODO(husky): This is a bit hacky. It would be cleaner to use a real Java
+    # strings that contain '//' or '/*'.
+    # TODO(bulach): This is a bit hacky. It would be cleaner to use a real Java
     # parser. Maybe we could ditch JNIFromJavaSource and just always use
     # JNIFromJavaP; or maybe we could rewrite this script in Java and use APT.
     # http://code.google.com/p/chromium/issues/detail?id=138941
-    p = subprocess.Popen(args=[options.cpp, '-fpreprocessed'],
-                         stdin=subprocess.PIPE,
-                         stdout=subprocess.PIPE,
-                         stderr=subprocess.PIPE)
-    stdout, _ = p.communicate(contents)
-    return stdout
+    def replacer(match):
+      # Replace matches that are comments with nothing; return literals/strings
+      # unchanged.
+      s = match.group(0)
+      if s.startswith('/'):
+        return ''
+      else:
+        return s
+    return cls._comment_remover_regex.sub(replacer, contents)
 
   def GetContent(self):
     return self.content
@@ -593,13 +710,14 @@ class InlHeaderFileGenerator(object):
   """Generates an inline header file for JNI integration."""
 
   def __init__(self, namespace, fully_qualified_class, natives,
-               called_by_natives, options):
+               called_by_natives, constant_fields, options):
     self.namespace = namespace
     self.fully_qualified_class = fully_qualified_class
     self.class_name = self.fully_qualified_class.split('/')[-1]
     self.natives = natives
     self.called_by_natives = called_by_natives
     self.header_guard = fully_qualified_class.replace('/', '_') + '_JNI'
+    self.constant_fields = constant_fields
     self.options = options
     self.init_native = self.ExtractInitNative(options)
 
@@ -630,6 +748,8 @@ class InlHeaderFileGenerator(object):
 
 ${INCLUDES}
 
+#include "base/android/jni_int_wrapper.h"
+
 // Step 1: forward declarations.
 namespace {
 $CLASS_PATH_DEFINITIONS
@@ -638,6 +758,8 @@ $METHOD_ID_DEFINITIONS
 
 $OPEN_NAMESPACE
 $FORWARD_DECLARATIONS
+
+$CONSTANT_FIELDS
 
 // Step 2: method stubs.
 $METHOD_STUBS
@@ -655,6 +777,7 @@ $JNI_REGISTER_NATIVES
         'CLASS_PATH_DEFINITIONS': self.GetClassPathDefinitionsString(),
         'METHOD_ID_DEFINITIONS': self.GetMethodIDDefinitionsString(),
         'FORWARD_DECLARATIONS': self.GetForwardDeclarationsString(),
+        'CONSTANT_FIELDS': self.GetConstantFieldsString(),
         'METHOD_STUBS': self.GetMethodStubsString(),
         'OPEN_NAMESPACE': self.GetOpenNamespaceString(),
         'JNI_NATIVE_METHODS': self.GetJNINativeMethodsString(),
@@ -691,6 +814,15 @@ jmethodID g_${JAVA_CLASS}_${METHOD_ID_VAR_NAME} = NULL;""")
     for native in self.natives:
       if native.type != 'method':
         ret += [self.GetForwardDeclaration(native)]
+    return '\n'.join(ret)
+
+  def GetConstantFieldsString(self):
+    if not self.constant_fields:
+      return ''
+    ret = ['enum Java_%s_constant_fields {' % self.class_name]
+    for c in self.constant_fields:
+      ret += ['  %s = %s,' % (c.name, c.value)]
+    ret += ['};']
     return '\n'.join(ret)
 
   def GetMethodStubsString(self):
@@ -878,9 +1010,10 @@ Java_${FULLY_QUALIFIED_CLASS}_${INIT_NATIVE_NAME}(JNIEnv* env, jclass clazz) {
                            for param in native.params])
 
   def GetCalledByNativeParamsInDeclaration(self, called_by_native):
-    return ',\n    '.join([JavaDataTypeToC(param.datatype) + ' ' +
-                           param.name
-                           for param in called_by_native.params])
+    return ',\n    '.join([
+        JavaDataTypeToCForCalledByNativeParam(param.datatype) + ' ' +
+        param.name
+        for param in called_by_native.params])
 
   def GetForwardDeclaration(self, native):
     template = Template("""
@@ -924,6 +1057,14 @@ static ${RETURN} ${NAME}(JNIEnv* env, ${PARAMS_IN_DECLARATION}) {
     }
     return template.substitute(values)
 
+  def GetArgument(self, param):
+    return ('as_jint(' + param.name + ')'
+            if param.datatype == 'int' else param.name)
+
+  def GetArgumentsInCall(self, params):
+    """Return a string of arguments to call from native into Java"""
+    return [self.GetArgument(p) for p in params]
+
   def GetCalledByNativeValues(self, called_by_native):
     """Fills in necessary values for the CalledByNative methods."""
     if called_by_native.static or called_by_native.is_constructor:
@@ -938,7 +1079,7 @@ static ${RETURN} ${NAME}(JNIEnv* env, ${PARAMS_IN_DECLARATION}) {
         called_by_native)
     if params_in_declaration:
       params_in_declaration = ', ' + params_in_declaration
-    params_in_call = ', '.join(param.name for param in called_by_native.params)
+    params_in_call = ', '.join(self.GetArgumentsInCall(called_by_native.params))
     if params_in_call:
       params_in_call = ', ' + params_in_call
     pre_call = ''
@@ -1219,7 +1360,9 @@ declarations and print the header file to stdout (or a file).
 See SampleForTests.java for more details.
   """
   option_parser = optparse.OptionParser(usage=usage)
-  option_parser.add_option('-j', dest='jar_file',
+  build_utils.AddDepfileOption(option_parser)
+
+  option_parser.add_option('-j', '--jar_file', dest='jar_file',
                            help='Extract the list of input files from'
                            ' a specified jar file.'
                            ' Uses javap to extract the methods from a'
@@ -1292,6 +1435,11 @@ See SampleForTests.java for more details.
     with open(options.jarjar) as f:
       JniParams.SetJarJarMappings(f.read())
   GenerateJNIHeader(input_file, output_file, options)
+
+  if options.depfile:
+    build_utils.WriteDepfile(
+        options.depfile,
+        build_utils.GetPythonDependencies())
 
 
 if __name__ == '__main__':

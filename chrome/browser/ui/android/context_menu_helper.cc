@@ -66,6 +66,9 @@ void ContextMenuHelper::SetPopulator(jobject jpopulator) {
 base::android::ScopedJavaLocalRef<jobject>
 ContextMenuHelper::CreateJavaContextMenuParams(
     const content::ContextMenuParams& params) {
+  GURL sanitizedReferrer = (params.frame_url.is_empty() ?
+      params.page_url : params.frame_url).GetAsReferrer();
+
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jobject> jmenu_info =
       ContextMenuParamsAndroid::Java_ContextMenuParams_create(
@@ -76,7 +79,9 @@ ContextMenuHelper::CreateJavaContextMenuParams(
           ConvertUTF8ToJavaString(env, params.unfiltered_link_url.spec()).obj(),
           ConvertUTF8ToJavaString(env, params.src_url.spec()).obj(),
           ConvertUTF16ToJavaString(env, params.selection_text).obj(),
-          params.is_editable);
+          params.is_editable,
+          ConvertUTF8ToJavaString(env, sanitizedReferrer.spec()).obj(),
+          params.referrer_policy);
 
   std::vector<content::MenuItem>::const_iterator i;
   for (i = params.custom_items.begin(); i != params.custom_items.end(); ++i) {

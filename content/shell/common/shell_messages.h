@@ -13,6 +13,7 @@
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_platform_file.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 
 #define IPC_MESSAGE_START ShellMsgStart
 
@@ -84,8 +85,9 @@ IPC_SYNC_MESSAGE_ROUTED1_1(ShellViewHostMsg_ReadFileToString,
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_PrintMessage,
                     std::string /* message */)
 IPC_MESSAGE_ROUTED0(ShellViewHostMsg_ClearDevToolsLocalStorage)
-IPC_MESSAGE_ROUTED1(ShellViewHostMsg_ShowDevTools,
-                    std::string /* settings */)
+IPC_MESSAGE_ROUTED2(ShellViewHostMsg_ShowDevTools,
+                    std::string /* settings */,
+                    std::string /* frontend_url */)
 IPC_MESSAGE_ROUTED0(ShellViewHostMsg_CloseDevTools)
 IPC_MESSAGE_ROUTED1(ShellViewHostMsg_GoToOffset,
                     int /* offset */)

@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "build/build_config.h"
+#include "sandbox/linux/tests/sandbox_test_runner_function_pointer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace sandbox {
@@ -19,11 +20,29 @@ bool IsArchitectureArm();
 // Is Valgrind currently being used?
 bool IsRunningOnValgrind();
 
+#if defined(ADDRESS_SANITIZER)
+#define DISABLE_ON_ASAN(test_name) DISABLED_##test_name
+#else
+#define DISABLE_ON_ASAN(test_name) test_name
+#endif  // defined(ADDRESS_SANITIZER)
+
+#if defined(LEAK_SANITIZER)
+#define DISABLE_ON_LSAN(test_name) DISABLED_##test_name
+#else
+#define DISABLE_ON_LSAN(test_name) test_name
+#endif
+
 #if defined(THREAD_SANITIZER)
 #define DISABLE_ON_TSAN(test_name) DISABLED_##test_name
 #else
 #define DISABLE_ON_TSAN(test_name) test_name
 #endif  // defined(THREAD_SANITIZER)
+
+#if defined(OS_ANDROID)
+#define DISABLE_ON_ANDROID(test_name) DISABLED_##test_name
+#else
+#define DISABLE_ON_ANDROID(test_name) test_name
+#endif
 
 // While it is perfectly OK for a complex test to provide its own DeathCheck
 // function. Most death tests have very simple requirements. These tests should
@@ -34,6 +53,8 @@ bool IsRunningOnValgrind();
 //       gtests's ASSERT_XXX() macros instead of SANDBOX_ASSERT(). See
 //       unit_tests.cc for examples.
 #define DEATH_SUCCESS() sandbox::UnitTests::DeathSuccess, NULL
+#define DEATH_SUCCESS_ALLOW_NOISE() \
+  sandbox::UnitTests::DeathSuccessAllowNoise, NULL
 #define DEATH_MESSAGE(msg)          \
   sandbox::UnitTests::DeathMessage, \
       static_cast<const void*>(static_cast<const char*>(msg))
@@ -41,19 +62,20 @@ bool IsRunningOnValgrind();
   sandbox::UnitTests::DeathExitCode, \
       reinterpret_cast<void*>(static_cast<intptr_t>(rc))
 #define DEATH_BY_SIGNAL(s)           \
-  sandbox::UnitTests::DeathExitCode, \
+  sandbox::UnitTests::DeathBySignal, \
       reinterpret_cast<void*>(static_cast<intptr_t>(s))
 
 // A SANDBOX_DEATH_TEST is just like a SANDBOX_TEST (see below), but it assumes
 // that the test actually dies. The death test only passes if the death occurs
 // in the expected fashion, as specified by "death" and "death_aux". These two
 // parameters are typically set to one of the DEATH_XXX() macros.
-#define SANDBOX_DEATH_TEST(test_case_name, test_name, death)             \
-  void TEST_##test_name(void*);                                          \
-  TEST(test_case_name, test_name) {                                      \
-    sandbox::UnitTests::RunTestInProcess(TEST_##test_name, NULL, death); \
-  }                                                                      \
-  void TEST_##test_name(void*)
+#define SANDBOX_DEATH_TEST(test_case_name, test_name, death)                \
+  void TEST_##test_name(void);                                              \
+  TEST(test_case_name, test_name) {                                         \
+    SandboxTestRunnerFunctionPointer sandbox_test_runner(TEST_##test_name); \
+    sandbox::UnitTests::RunTestInProcess(&sandbox_test_runner, death);      \
+  }                                                                         \
+  void TEST_##test_name(void)
 
 // Define a new test case that runs inside of a GTest death test. This is
 // necessary, as most of our tests by definition make global and irreversible
@@ -62,6 +84,11 @@ bool IsRunningOnValgrind();
 #define SANDBOX_TEST(test_case_name, test_name) \
   SANDBOX_DEATH_TEST(test_case_name, test_name, DEATH_SUCCESS())
 
+// SANDBOX_TEST_ALLOW_NOISE is just like SANDBOX_TEST, except it does not
+// consider log error messages printed by the test to be test failures.
+#define SANDBOX_TEST_ALLOW_NOISE(test_case_name, test_name) \
+  SANDBOX_DEATH_TEST(test_case_name, test_name, DEATH_SUCCESS_ALLOW_NOISE())
+
 // Simple assertion macro that is compatible with running inside of a death
 // test. We unfortunately cannot use any of the GTest macros.
 #define SANDBOX_STR(x) #x
@@ -69,9 +96,10 @@ bool IsRunningOnValgrind();
   ((expr) ? static_cast<void>(0) : sandbox::UnitTests::AssertionFailure( \
                                        SANDBOX_STR(expr), __FILE__, __LINE__))
 
+// This class allows to run unittests in their own process. The main method is
+// RunTestInProcess().
 class UnitTests {
  public:
-  typedef void (*Test)(void*);
   typedef void (*DeathCheck)(int status,
                              const std::string& msg,
                              const void* aux);
@@ -80,8 +108,12 @@ class UnitTests {
   // directly. It is automatically invoked by SANDBOX_TEST(). Most sandboxing
   // functions make global irreversible changes to the execution environment
   // and must therefore execute in their own isolated process.
-  static void RunTestInProcess(Test test,
-                               void* arg,
+  // |test_runner| must implement the SandboxTestRunner interface and will run
+  // in a subprocess.
+  // Note: since the child process (created with fork()) will never return from
+  // RunTestInProcess(), |test_runner| is guaranteed to exist for the lifetime
+  // of the child process.
+  static void RunTestInProcess(SandboxTestRunner* test_runner,
                                DeathCheck death,
                                const void* death_aux);
 
@@ -102,6 +134,12 @@ class UnitTests {
   // This is the default test mode for SANDBOX_TEST(). The "aux" parameter
   // of this DeathCheck is unused (and thus unnamed)
   static void DeathSuccess(int status, const std::string& msg, const void*);
+
+  // A DeathCheck method that verifies that the test completed succcessfully
+  // allowing for log error messages.
+  static void DeathSuccessAllowNoise(int status,
+                                     const std::string& msg,
+                                     const void*);
 
   // A DeathCheck method that verifies that the test completed with error
   // code "1" and printed a message containing a particular substring. The

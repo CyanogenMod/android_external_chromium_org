@@ -15,20 +15,20 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
-#include "net/disk_cache/backend_impl.h"
+#include "net/disk_cache/blockfile/backend_impl.h"
+#include "net/disk_cache/blockfile/entry_impl.h"
+#include "net/disk_cache/blockfile/experiments.h"
+#include "net/disk_cache/blockfile/histogram_macros.h"
+#include "net/disk_cache/blockfile/mapped_file.h"
 #include "net/disk_cache/cache_util.h"
 #include "net/disk_cache/disk_cache_test_base.h"
 #include "net/disk_cache/disk_cache_test_util.h"
-#include "net/disk_cache/entry_impl.h"
-#include "net/disk_cache/experiments.h"
-#include "net/disk_cache/histogram_macros.h"
-#include "net/disk_cache/mapped_file.h"
-#include "net/disk_cache/mem_backend_impl.h"
+#include "net/disk_cache/memory/mem_backend_impl.h"
 #include "net/disk_cache/simple/simple_backend_impl.h"
 #include "net/disk_cache/simple/simple_entry_format.h"
 #include "net/disk_cache/simple/simple_test_util.h"
 #include "net/disk_cache/simple/simple_util.h"
-#include "net/disk_cache/tracing_cache_backend.h"
+#include "net/disk_cache/tracing/tracing_cache_backend.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
@@ -482,7 +482,7 @@ TEST_F(DiskCacheBackendTest, ExternalFiles) {
   const int kSize = 50;
   scoped_refptr<net::IOBuffer> buffer1(new net::IOBuffer(kSize));
   CacheTestFillBuffer(buffer1->data(), kSize, false);
-  ASSERT_EQ(kSize, file_util::WriteFile(filename, buffer1->data(), kSize));
+  ASSERT_EQ(kSize, base::WriteFile(filename, buffer1->data(), kSize));
 
   // Now let's create a file with the cache.
   disk_cache::Entry* entry;
@@ -668,10 +668,13 @@ TEST_F(DiskCacheBackendTest, ShutdownWithPendingCreate_Fast) {
 }
 #endif
 
+// Disabled on android since this test requires cache creator to create
+// blockfile caches.
+#if !defined(OS_ANDROID)
 TEST_F(DiskCacheTest, TruncatedIndex) {
   ASSERT_TRUE(CleanupCacheDir());
   base::FilePath index = cache_path_.AppendASCII("index");
-  ASSERT_EQ(5, file_util::WriteFile(index, "hello", 5));
+  ASSERT_EQ(5, base::WriteFile(index, "hello", 5));
 
   base::Thread cache_thread("CacheThread");
   ASSERT_TRUE(cache_thread.StartWithOptions(
@@ -693,6 +696,7 @@ TEST_F(DiskCacheTest, TruncatedIndex) {
 
   ASSERT_FALSE(backend);
 }
+#endif
 
 void DiskCacheBackendTest::BackendSetSize() {
   const int cache_size = 0x10000;  // 64 kB
@@ -1604,7 +1608,6 @@ void DiskCacheBackendTest::BackendDoomBetween() {
 
   AddDelay();
   Time middle_end = Time::Now();
-  AddDelay();
 
   ASSERT_EQ(net::OK, CreateEntry("fourth", &entry));
   entry->Close();
@@ -1837,6 +1840,9 @@ class BadEntropyProvider : public base::FieldTrial::EntropyProvider {
 
 // Tests that the disk cache successfully joins the control group, dropping the
 // existing cache in favour of a new empty cache.
+// Disabled on android since this test requires cache creator to create
+// blockfile caches.
+#if !defined(OS_ANDROID)
 TEST_F(DiskCacheTest, SimpleCacheControlJoin) {
   base::Thread cache_thread("CacheThread");
   ASSERT_TRUE(cache_thread.StartWithOptions(
@@ -1867,6 +1873,7 @@ TEST_F(DiskCacheTest, SimpleCacheControlJoin) {
   ASSERT_EQ(net::OK, cb.GetResult(rv));
   EXPECT_EQ(0, base_cache->GetEntryCount());
 }
+#endif
 
 // Tests that the disk cache can restart in the control group preserving
 // existing entries.
@@ -1945,6 +1952,9 @@ TEST_F(DiskCacheTest, SimpleCacheControlLeave) {
 }
 
 // Tests that the cache is properly restarted on recovery error.
+// Disabled on android since this test requires cache creator to create
+// blockfile caches.
+#if !defined(OS_ANDROID)
 TEST_F(DiskCacheBackendTest, DeleteOld) {
   ASSERT_TRUE(CopyTestCache("wrong_version"));
   SetNewEviction();
@@ -1971,6 +1981,7 @@ TEST_F(DiskCacheBackendTest, DeleteOld) {
   cache_.reset();
   EXPECT_TRUE(CheckCacheIntegrity(cache_path_, new_eviction_, mask_));
 }
+#endif
 
 // We want to be able to deal with messed up entries on disk.
 void DiskCacheBackendTest::BackendInvalidEntry2() {
@@ -3230,7 +3241,8 @@ TEST_F(DiskCacheBackendTest, SimpleDoomRecent) {
   BackendDoomRecent();
 }
 
-TEST_F(DiskCacheBackendTest, SimpleDoomBetween) {
+// crbug.com/330926, crbug.com/370677
+TEST_F(DiskCacheBackendTest, DISABLED_SimpleDoomBetween) {
   SetSimpleCacheMode();
   BackendDoomBetween();
 }
@@ -3317,7 +3329,7 @@ TEST_F(DiskCacheBackendTest, SimpleCacheOpenBadFile) {
   header.initial_magic_number = GG_UINT64_C(0xbadf00d);
   EXPECT_EQ(
       implicit_cast<int>(sizeof(header)),
-      file_util::WriteFile(entry_file1_path, reinterpret_cast<char*>(&header),
+      base::WriteFile(entry_file1_path, reinterpret_cast<char*>(&header),
                            sizeof(header)));
   ASSERT_EQ(net::ERR_FAILED, OpenEntry(key, &entry));
 }

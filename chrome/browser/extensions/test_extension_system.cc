@@ -10,11 +10,10 @@
 #include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_verifier.h"
+#include "chrome/browser/extensions/shared_module_service.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
-#include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/value_store/testing_value_store.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/event_router.h"
@@ -30,6 +29,8 @@
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/quota_service.h"
 #include "extensions/browser/runtime_data.h"
+#include "extensions/browser/state_store.h"
+#include "extensions/browser/value_store/testing_value_store.h"
 
 using content::BrowserThread;
 
@@ -39,7 +40,7 @@ TestExtensionSystem::TestExtensionSystem(Profile* profile)
     : profile_(profile),
       value_store_(NULL),
       info_map_(new InfoMap()),
-      error_console_(new ErrorConsole(profile, NULL)),
+      error_console_(new ErrorConsole(profile)),
       quota_service_(new QuotaService()) {}
 
 TestExtensionSystem::~TestExtensionSystem() {
@@ -73,7 +74,8 @@ ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
       install_directory,
       ExtensionPrefValueMapFactory::GetForBrowserContext(profile_),
       ExtensionsBrowserClient::Get()->CreateAppSorting().Pass(),
-      extensions_disabled);
+      extensions_disabled,
+      std::vector<ExtensionPrefsObserver*>());
     ExtensionPrefsFactory::GetInstance()->SetInstanceForTesting(
         profile_,
         extension_prefs);
@@ -86,8 +88,8 @@ ExtensionService* TestExtensionSystem::CreateExtensionService(
     bool autoupdate_enabled) {
   if (!ExtensionPrefs::Get(profile_))
     CreateExtensionPrefs(command_line, install_directory);
-  install_verifier_.reset(new InstallVerifier(ExtensionPrefs::Get(profile_),
-                                              NULL));
+  install_verifier_.reset(
+      new InstallVerifier(ExtensionPrefs::Get(profile_), profile_));
   // The ownership of |value_store_| is immediately transferred to state_store_,
   // but we keep a naked pointer to the TestingValueStore.
   scoped_ptr<TestingValueStore> value_store(new TestingValueStore());
@@ -152,9 +154,11 @@ TestExtensionSystem::lazy_background_task_queue() {
   return NULL;
 }
 
-EventRouter* TestExtensionSystem::event_router() {
-  return NULL;
+void TestExtensionSystem::SetEventRouter(scoped_ptr<EventRouter> event_router) {
+  event_router_.reset(event_router.release());
 }
+
+EventRouter* TestExtensionSystem::event_router() { return event_router_.get(); }
 
 ExtensionWarningService* TestExtensionSystem::warning_service() {
   return NULL;
@@ -180,9 +184,18 @@ const OneShotEvent& TestExtensionSystem::ready() const {
   return ready_;
 }
 
+ContentVerifier* TestExtensionSystem::content_verifier() {
+  return NULL;
+}
+
+scoped_ptr<ExtensionSet> TestExtensionSystem::GetDependentExtensions(
+    const Extension* extension) {
+  return extension_service()->shared_module_service()->GetDependentExtensions(
+      extension);
+}
+
 // static
-BrowserContextKeyedService* TestExtensionSystem::Build(
-    content::BrowserContext* profile) {
+KeyedService* TestExtensionSystem::Build(content::BrowserContext* profile) {
   return new TestExtensionSystem(static_cast<Profile*>(profile));
 }
 

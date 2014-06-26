@@ -4,22 +4,14 @@
 
 #include "chrome/browser/extensions/extension_action_manager.h"
 
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/api/system_indicator/system_indicator_manager.h"
 #include "chrome/browser/extensions/api/system_indicator/system_indicator_manager_factory.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/api/extension_action/action_info.h"
-#include "chrome/common/extensions/api/extension_action/page_action_handler.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extensions_browser_client.h"
-#include "extensions/common/extension.h"
-#include "extensions/common/feature_switch.h"
 
 namespace extensions {
 
@@ -45,7 +37,7 @@ class ExtensionActionManagerFactory : public BrowserContextKeyedServiceFactory {
           BrowserContextDependencyManager::GetInstance()) {
   }
 
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE {
     return new ExtensionActionManager(static_cast<Profile*>(profile));
   }
@@ -64,11 +56,10 @@ ExtensionActionManagerFactory::GetInstance() {
 }  // namespace
 
 ExtensionActionManager::ExtensionActionManager(Profile* profile)
-    : profile_(profile) {
+    : profile_(profile), extension_registry_observer_(this) {
   CHECK_EQ(profile, profile->GetOriginalProfile())
       << "Don't instantiate this with an incognito profile.";
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
 }
 
 ExtensionActionManager::~ExtensionActionManager() {
@@ -80,20 +71,13 @@ ExtensionActionManager* ExtensionActionManager::Get(Profile* profile) {
   return ExtensionActionManagerFactory::GetForProfile(profile);
 }
 
-void ExtensionActionManager::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      const Extension* extension =
-          content::Details<UnloadedExtensionInfo>(details)->extension;
-      page_actions_.erase(extension->id());
-      browser_actions_.erase(extension->id());
-      system_indicators_.erase(extension->id());
-      break;
-    }
-  }
+void ExtensionActionManager::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  page_actions_.erase(extension->id());
+  browser_actions_.erase(extension->id());
+  system_indicators_.erase(extension->id());
 }
 
 namespace {
@@ -116,8 +100,7 @@ ExtensionAction* GetOrCreateOrNull(
 
   // Only create action info for enabled extensions.
   // This avoids bugs where actions are recreated just after being removed
-  // in response to NOTIFICATION_EXTENSION_UNLOADED in
-  // ExtensionActionManager::Observe()
+  // in response to OnExtensionUnloaded().
   ExtensionService* service =
       ExtensionSystem::Get(profile)->extension_service();
   if (!service->GetExtensionById(extension_id, false))

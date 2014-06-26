@@ -29,6 +29,7 @@
       ],
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
+        '<(DEPTH)/third_party/khronos',
         '<(DEPTH)/third_party/mesa/src/include',
         '<(gl_binding_output_dir)',
       ],
@@ -49,6 +50,8 @@
         'android/surface_texture.h',
         'android/surface_texture_listener.cc',
         'android/surface_texture_listener.h',
+        'android/surface_texture_tracker.cc',
+        'android/surface_texture_tracker.h',
         'gl_bindings.h',
         'gl_bindings_skia_in_process.cc',
         'gl_bindings_skia_in_process.h',
@@ -68,6 +71,10 @@
         'gl_export.h',
         'gl_fence.cc',
         'gl_fence.h',
+        'gl_fence_arb.cc',
+        'gl_fence_arb.h',
+        'gl_fence_nv.cc',
+        'gl_fence_nv.h',
         'gl_gl_api_implementation.cc',
         'gl_gl_api_implementation.h',
         'gl_image.cc',
@@ -84,8 +91,6 @@
         'gl_implementation.cc',
         'gl_implementation.h',
         'gl_implementation_android.cc',
-        'gl_implementation_linux.cc',
-        'gl_implementation_linux.h',
         'gl_implementation_ozone.cc',
         'gl_implementation_mac.cc',
         'gl_implementation_win.cc',
@@ -98,6 +103,7 @@
         'gl_state_restorer.h',
         'gl_surface.cc',
         'gl_surface.h',
+        'gl_surface_android.cc',
         'gl_surface_mac.cc',
         'gl_surface_stub.cc',
         'gl_surface_stub.h',
@@ -105,14 +111,13 @@
         'gl_surface_x11.cc',
         'gl_surface_osmesa.cc',
         'gl_surface_osmesa.h',
+        'gl_surface_ozone.cc',
         'gl_switches.cc',
         'gl_switches.h',
         'gl_version_info.cc',
         'gl_version_info.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
-        'io_surface_support_mac.cc',
-        'io_surface_support_mac.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -135,7 +140,7 @@
           'variables': {
             'generator_path': 'generate_bindings.py',
             # Prefer khronos EGL/GLES headers by listing that path first.
-            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include',
+            'header_paths': '../../third_party/khronos:../../third_party/mesa/src/include:.:../../gpu',
           },
           'inputs': [
             '<(generator_path)',
@@ -176,6 +181,10 @@
             'egl_util.h',
             'gl_context_egl.cc',
             'gl_context_egl.h',
+            'gl_fence_egl.cc',
+            'gl_fence_egl.h',
+            'gl_image_egl.cc',
+            'gl_image_egl.h',
             'gl_surface_egl.cc',
             'gl_surface_egl.h',
             'gl_egl_api_implementation.cc',
@@ -186,6 +195,12 @@
           'include_dirs': [
             '<(DEPTH)/third_party/khronos',
         ],
+        }],
+        ['OS in ("android", "linux")', {
+          'sources': [
+            'gl_implementation_osmesa.cc',
+            'gl_implementation_osmesa.h',
+          ],
         }],
         ['use_x11 == 1', {
           'sources': [
@@ -211,6 +226,8 @@
             '<(DEPTH)/build/linux/system.gyp:x11',
             '<(DEPTH)/build/linux/system.gyp:xcomposite',
             '<(DEPTH)/build/linux/system.gyp:xext',
+            '<(DEPTH)/ui/events/platform/events_platform.gyp:events_platform',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['OS=="win"', {
@@ -248,17 +265,12 @@
             'gl_context_cgl.h',
             'gl_image_io_surface.cc',
             'gl_image_io_surface.h',
-            'gl_surface_cgl.cc',
-            'gl_surface_cgl.h',
-            'gl_context_nsview.mm',
-            'gl_context_nsview.h',
-            'gl_surface_nsview.mm',
-            'gl_surface_nsview.h',
             'scoped_cgl.cc',
             'scoped_cgl.h',
           ],
           'link_settings': {
             'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/IOSurface.framework',
               '$(SDKROOT)/System/Library/Frameworks/OpenGL.framework',
             ],
           },
@@ -268,8 +280,10 @@
             'gl_jni_headers',
           ],
           'sources': [
-            'gl_image_egl.cc',
-            'gl_image_egl.h',
+            'gl_image_android_native_buffer.cc',
+            'gl_image_android_native_buffer.h',
+            'gl_image_surface_texture.cc',
+            'gl_image_surface_texture.h',
           ],
           'link_settings': {
             'libraries': [
@@ -277,7 +291,6 @@
             ],
           },
           'sources!': [
-            'gl_context_osmesa.cc',
             'system_monitor_posix.cc',
           ],
           'defines': [
@@ -291,6 +304,12 @@
         ['use_ozone==1', {
           'dependencies': [
             '../ozone/ozone.gyp:ozone',
+            '../ozone/ozone.gyp:ozone_base',
+          ],
+        }],
+        ['OS=="android" and android_webview_build==0', {
+          'dependencies': [
+            '../android/ui_android.gyp:ui_java',
           ],
         }],
       ],
@@ -333,7 +352,6 @@
           'variables': {
             'jni_gen_package': 'ui/gl',
             'input_java_class': 'android/view/Surface.class',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jar_file_jni_generator.gypi' ],
         },
@@ -349,7 +367,6 @@
           ],
           'variables': {
             'jni_gen_package': 'ui/gl',
-            'jni_generator_ptr_type': 'long',
           },
           'includes': [ '../../build/jni_generator.gypi' ],
         },

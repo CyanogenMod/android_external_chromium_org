@@ -5,39 +5,20 @@
 #ifndef ASH_WM_SYSTEM_GESTURE_EVENT_FILTER_H_
 #define ASH_WM_SYSTEM_GESTURE_EVENT_FILTER_H_
 
-#include "ash/shell.h"
-#include "ash/touch/touch_uma.h"
-#include "base/timer/timer.h"
-#include "ui/aura/window_observer.h"
+#include "base/memory/scoped_ptr.h"
 #include "ui/events/event_handler.h"
-#include "ui/gfx/point.h"
-
-#include <map>
-
-namespace aura {
-class Window;
-}
-
-namespace ui {
-class LocatedEvent;
-}
 
 namespace ash {
+class LongPressAffordanceHandler;
+class OverviewGestureHandler;
+class ShelfGestureHandler;
 
 namespace test {
 class SystemGestureEventFilterTest;
 }
 
-namespace internal {
-class LongPressAffordanceHandler;
-class OverviewGestureHandler;
-class ShelfGestureHandler;
-class SystemPinchHandler;
-class TouchUMA;
-
 // An event filter which handles system level gesture events.
-class SystemGestureEventFilter : public ui::EventHandler,
-                                 public aura::WindowObserver {
+class SystemGestureEventFilter : public ui::EventHandler {
  public:
   SystemGestureEventFilter();
   virtual ~SystemGestureEventFilter();
@@ -48,23 +29,8 @@ class SystemGestureEventFilter : public ui::EventHandler,
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
-  // Overridden from aura::WindowObserver.
-  virtual void OnWindowVisibilityChanged(aura::Window* window,
-                                         bool visible) OVERRIDE;
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
-
  private:
   friend class ash::test::SystemGestureEventFilterTest;
-
-  // Removes system-gesture handlers for a window.
-  void ClearGestureHandlerForWindow(aura::Window* window);
-
-  typedef std::map<aura::Window*, SystemPinchHandler*> WindowPinchHandlerMap;
-  // Created on demand when a system-level pinch gesture is initiated. Destroyed
-  // when the system-level pinch gesture ends for the window.
-  WindowPinchHandlerMap pinch_handlers_;
-
-  bool system_gestures_enabled_;
 
   scoped_ptr<LongPressAffordanceHandler> long_press_affordance_;
   scoped_ptr<OverviewGestureHandler> overview_gesture_handler_;
@@ -73,7 +39,6 @@ class SystemGestureEventFilter : public ui::EventHandler,
   DISALLOW_COPY_AND_ASSIGN(SystemGestureEventFilter);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_SYSTEM_GESTURE_EVENT_FILTER_H_

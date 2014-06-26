@@ -15,14 +15,20 @@
 #include "chrome/browser/extensions/api/declarative_webrequest/request_stage.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
+#include "chrome/browser/extensions/api/web_request/web_request_api_constants.h"
 #include "chrome/browser/extensions/api/web_request/web_request_api_helpers.h"
 #include "chrome/browser/extensions/api/web_request/web_request_permissions.h"
+#include "chrome/browser/extensions/extension_renderer_state.h"
+#include "content/public/browser/resource_request_info.h"
 #include "content/public/common/url_constants.h"
 #include "extensions/browser/info_map.h"
+#include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/url_request/url_request.h"
 #include "third_party/re2/re2/re2.h"
+
+using content::ResourceRequestInfo;
 
 namespace extensions {
 
@@ -166,6 +172,15 @@ scoped_refptr<const WebRequestAction> CreateSetRequestHeaderAction(
   std::string value;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kValueKey, &value));
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  if (!helpers::IsValidHeaderValue(value)) {
+    *error = ErrorUtils::FormatErrorMessage(
+        extension_web_request_api_constants::kInvalidHeaderValue, name);
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
   return scoped_refptr<const WebRequestAction>(
       new WebRequestSetRequestHeaderAction(name, value));
 }
@@ -179,6 +194,10 @@ scoped_refptr<const WebRequestAction> CreateRemoveRequestHeaderAction(
   CHECK(value->GetAsDictionary(&dict));
   std::string name;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
   return scoped_refptr<const WebRequestAction>(
       new WebRequestRemoveRequestHeaderAction(name));
 }
@@ -194,6 +213,15 @@ scoped_refptr<const WebRequestAction> CreateAddResponseHeaderAction(
   std::string value;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kValueKey, &value));
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  if (!helpers::IsValidHeaderValue(value)) {
+    *error = ErrorUtils::FormatErrorMessage(
+        extension_web_request_api_constants::kInvalidHeaderValue, name);
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
   return scoped_refptr<const WebRequestAction>(
       new WebRequestAddResponseHeaderAction(name, value));
 }
@@ -209,6 +237,15 @@ scoped_refptr<const WebRequestAction> CreateRemoveResponseHeaderAction(
   std::string value;
   INPUT_FORMAT_VALIDATE(dict->GetString(keys::kNameKey, &name));
   bool has_value = dict->GetString(keys::kValueKey, &value);
+  if (!helpers::IsValidHeaderName(name)) {
+    *error = extension_web_request_api_constants::kInvalidHeaderName;
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
+  if (has_value && !helpers::IsValidHeaderValue(value)) {
+    *error = ErrorUtils::FormatErrorMessage(
+        extension_web_request_api_constants::kInvalidHeaderValue, name);
+    return scoped_refptr<const WebRequestAction>(NULL);
+  }
   return scoped_refptr<const WebRequestAction>(
       new WebRequestRemoveResponseHeaderAction(name, value, has_value));
 }
@@ -448,6 +485,16 @@ bool WebRequestAction::HasPermission(const InfoMap* extension_info_map,
   if (!extension_info_map)
     return true;
 
+  const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
+  int process_id = info ? info->GetChildID() : 0;
+  int route_id = info ? info->GetRouteID() : 0;
+  ExtensionRendererState::WebViewInfo webview_info;
+  // The embedder can always access all hosts from within a <webview>.
+  // The same is not true of extensions.
+  if (ExtensionRendererState::GetInstance()->GetWebViewInfo(
+          process_id, route_id, &webview_info)) {
+    return true;
+  }
   WebRequestPermissions::HostPermissionsCheck permission_check =
       WebRequestPermissions::REQUIRE_ALL_URLS;
   switch (host_permissions_strategy()) {
@@ -549,7 +596,7 @@ LinkedPtrEventResponseDelta WebRequestCancelAction::CreateDelta(
 //
 
 WebRequestRedirectAction::WebRequestRedirectAction(const GURL& redirect_url)
-    : WebRequestAction(ON_BEFORE_REQUEST,
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
                        ACTION_REDIRECT_REQUEST,
                        std::numeric_limits<int>::min(),
                        STRATEGY_DEFAULT),
@@ -586,7 +633,7 @@ LinkedPtrEventResponseDelta WebRequestRedirectAction::CreateDelta(
 
 WebRequestRedirectToTransparentImageAction::
     WebRequestRedirectToTransparentImageAction()
-    : WebRequestAction(ON_BEFORE_REQUEST,
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
                        ACTION_REDIRECT_TO_TRANSPARENT_IMAGE,
                        std::numeric_limits<int>::min(),
                        STRATEGY_NONE) {}
@@ -616,7 +663,7 @@ WebRequestRedirectToTransparentImageAction::CreateDelta(
 
 WebRequestRedirectToEmptyDocumentAction::
     WebRequestRedirectToEmptyDocumentAction()
-    : WebRequestAction(ON_BEFORE_REQUEST,
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
                        ACTION_REDIRECT_TO_EMPTY_DOCUMENT,
                        std::numeric_limits<int>::min(),
                        STRATEGY_NONE) {}
@@ -647,7 +694,7 @@ WebRequestRedirectToEmptyDocumentAction::CreateDelta(
 WebRequestRedirectByRegExAction::WebRequestRedirectByRegExAction(
     scoped_ptr<RE2> from_pattern,
     const std::string& to_pattern)
-    : WebRequestAction(ON_BEFORE_REQUEST,
+    : WebRequestAction(ON_BEFORE_REQUEST | ON_HEADERS_RECEIVED,
                        ACTION_REDIRECT_BY_REGEX_DOCUMENT,
                        std::numeric_limits<int>::min(),
                        STRATEGY_DEFAULT),

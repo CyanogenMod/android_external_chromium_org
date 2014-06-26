@@ -22,7 +22,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "components/policy/core/browser/configuration_policy_pref_store.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/test/web_contents_tester.h"
 #include "ui/base/test/data/resource.h"
 #include "webkit/common/webpreferences.h"
@@ -99,10 +99,6 @@ class ChromePrefServiceWebKitPrefs : public ChromeRenderViewHostTestHarness {
     // Set some (WebKit) user preferences.
     TestingPrefServiceSyncable* pref_services =
         profile()->GetTestingPrefService();
-#if defined(TOOLKIT_GTK)
-    pref_services->SetUserPref(prefs::kUsesSystemTheme,
-                               base::Value::CreateBooleanValue(false));
-#endif
     pref_services->SetUserPref(prefs::kDefaultCharset,
                                base::Value::CreateStringValue("utf8"));
     pref_services->SetUserPref(prefs::kWebKitDefaultFontSize,

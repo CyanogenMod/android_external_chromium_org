@@ -9,11 +9,11 @@
 #include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "chromeos/dbus/cros_disks_client.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/url_util.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 #define FPL(x) FILE_PATH_LITERAL(x)
 
@@ -37,11 +37,13 @@ TEST(ChromeOSFileSystemBackendTest, DefaultMountPoints) {
   fileapi::ExternalMountPoints::GetSystemInstance()->RevokeAllFileSystems();
 
   scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   chromeos::FileSystemBackend backend(
       NULL,  // drive_delegate
+      NULL,  // file_system_provider_delegate
+      NULL,  // mtp_delegate
       storage_policy,
       mount_points.get(),
       fileapi::ExternalMountPoints::GetSystemInstance());
@@ -61,18 +63,19 @@ TEST(ChromeOSFileSystemBackendTest, DefaultMountPoints) {
 
 TEST(ChromeOSFileSystemBackendTest, GetRootDirectories) {
   scoped_refptr<quota::SpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
 
   scoped_refptr<fileapi::ExternalMountPoints> system_mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
 
-  chromeos::FileSystemBackend backend(
-      NULL,  // drive_delegate
-      storage_policy,
-      mount_points.get(),
-      system_mount_points.get());
+  chromeos::FileSystemBackend backend(NULL,  // drive_delegate
+                                      NULL,  // file_system_provider_delegate
+                                      NULL,  // mtp_delegate
+                                      storage_policy,
+                                      mount_points.get(),
+                                      system_mount_points.get());
 
   const size_t initial_root_dirs_size = backend.GetRootDirectories().size();
 
@@ -106,19 +109,20 @@ TEST(ChromeOSFileSystemBackendTest, GetRootDirectories) {
 }
 
 TEST(ChromeOSFileSystemBackendTest, AccessPermissions) {
-  url_util::AddStandardScheme("chrome-extension");
+  url::AddStandardScheme("chrome-extension");
 
-  scoped_refptr<quota::MockSpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+  scoped_refptr<content::MockSpecialStoragePolicy> storage_policy =
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   scoped_refptr<fileapi::ExternalMountPoints> system_mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
-  chromeos::FileSystemBackend backend(
-      NULL,  // drive_delegate
-      storage_policy,
-      mount_points.get(),
-      system_mount_points.get());
+  chromeos::FileSystemBackend backend(NULL,  // drive_delegate
+                                      NULL,  // file_system_provider_delegate
+                                      NULL,  // mtp_delegate
+                                      storage_policy,
+                                      mount_points.get(),
+                                      system_mount_points.get());
 
   std::string extension("ddammdhioacbehjngdmkjcjbnfginlla");
 
@@ -198,27 +202,21 @@ TEST(ChromeOSFileSystemBackendTest, AccessPermissions) {
   backend.RevokeAccessForExtension(extension);
   EXPECT_FALSE(backend.IsAccessAllowed(
       CreateFileSystemURL(extension, "removable/foo", mount_points.get())));
-
-  fileapi::FileSystemURL internal_url = FileSystemURL::CreateForTest(
-      GURL("chrome://foo"),
-      fileapi::kFileSystemTypeExternal,
-      base::FilePath(FPL("removable/")));
-  // Internal WebUI should have full access.
-  EXPECT_TRUE(backend.IsAccessAllowed(internal_url));
 }
 
 TEST(ChromeOSFileSystemBackendTest, GetVirtualPathConflictWithSystemPoints) {
-  scoped_refptr<quota::MockSpecialStoragePolicy> storage_policy =
-      new quota::MockSpecialStoragePolicy();
+  scoped_refptr<content::MockSpecialStoragePolicy> storage_policy =
+      new content::MockSpecialStoragePolicy();
   scoped_refptr<fileapi::ExternalMountPoints> mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
   scoped_refptr<fileapi::ExternalMountPoints> system_mount_points(
       fileapi::ExternalMountPoints::CreateRefCounted());
-  chromeos::FileSystemBackend backend(
-      NULL,  // drive_delegate
-      storage_policy,
-      mount_points.get(),
-      system_mount_points.get());
+  chromeos::FileSystemBackend backend(NULL,  // drive_delegate
+                                      NULL,  // file_system_provider_delegate
+                                      NULL,  // mtp_delegate
+                                      storage_policy,
+                                      mount_points.get(),
+                                      system_mount_points.get());
 
   const fileapi::FileSystemType type = fileapi::kFileSystemTypeNativeLocal;
   const fileapi::FileSystemMountOption option =

@@ -4,10 +4,8 @@
 
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 
-#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -15,7 +13,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "url/gurl.h"
 
@@ -102,7 +99,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, ShowInUninitializedTab) {
   content::WebContents* tab2 =
       browser()->tab_strip_model()->GetWebContentsAt(2);
   ASSERT_TRUE(tab2);
-  EXPECT_FALSE([tab2->GetView()->GetNativeView() superview]);
+  EXPECT_FALSE([tab2->GetNativeView() superview]);
 
   // Show dialog and verify that it's not visible yet.
   NiceMock<ConstrainedWindowDelegateMock> delegate;
@@ -111,7 +108,7 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, ShowInUninitializedTab) {
 
   // Activate the tab and verify that the constrained window is shown.
   browser()->tab_strip_model()->ActivateTabAt(2, true);
-  EXPECT_TRUE([tab2->GetView()->GetNativeView() superview]);
+  EXPECT_TRUE([tab2->GetNativeView() superview]);
   EXPECT_TRUE([sheet_window_ isVisible]);
   EXPECT_EQ(1.0, [sheet_window_ alphaValue]);
 
@@ -156,17 +153,4 @@ IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, TabClose) {
   EXPECT_TRUE(tab_strip->CloseWebContentsAt(1,
                                             TabStripModel::CLOSE_USER_GESTURE));
   EXPECT_EQ(1, tab_strip->count());
-}
-
-// Test that adding a sheet disables fullscreen.
-IN_PROC_BROWSER_TEST_F(ConstrainedWindowMacTest, Fullscreen) {
-  EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_FULLSCREEN));
-
-  // Dialog will delete it self when closed.
-  NiceMock<ConstrainedWindowDelegateMock> delegate;
-  ConstrainedWindowMac dialog(&delegate, tab1_, sheet_);
-
-  EXPECT_FALSE(chrome::IsCommandEnabled(browser(), IDC_FULLSCREEN));
-
-  dialog.CloseWebContentsModalDialog();
 }

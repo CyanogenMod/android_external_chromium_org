@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
+
 #include <fcntl.h>
+#include <libdrm/drm_fourcc.h>
 #include <linux/videodev2.h>
 #include <poll.h>
 #include <sys/eventfd.h>
@@ -10,17 +12,23 @@
 #include <sys/mman.h>
 
 #include "base/debug/trace_event.h"
+#include "base/files/scoped_file.h"
 #include "base/posix/eintr_wrapper.h"
 #include "content/common/gpu/media/exynos_v4l2_video_device.h"
+#include "ui/gl/gl_bindings.h"
 
 namespace content {
 
 namespace {
-const char kDevice[] = "/dev/mfc-dec";
+const char kDecoderDevice[] = "/dev/mfc-dec";
+const char kEncoderDevice[] = "/dev/mfc-enc";
+const char kImageProcessorDevice[] = "/dev/gsc1";
 }
 
-ExynosV4L2Device::ExynosV4L2Device()
-    : device_fd_(-1), device_poll_interrupt_fd_(-1) {}
+ExynosV4L2Device::ExynosV4L2Device(Type type)
+    : type_(type),
+      device_fd_(-1),
+      device_poll_interrupt_fd_(-1) {}
 
 ExynosV4L2Device::~ExynosV4L2Device() {
   if (device_poll_interrupt_fd_ != -1) {
@@ -34,7 +42,7 @@ ExynosV4L2Device::~ExynosV4L2Device() {
 }
 
 int ExynosV4L2Device::Ioctl(int request, void* arg) {
-  return ioctl(device_fd_, request, arg);
+  return HANDLE_EINTR(ioctl(device_fd_, request, arg));
 }
 
 bool ExynosV4L2Device::Poll(bool poll_device, bool* event_pending) {
@@ -79,6 +87,7 @@ bool ExynosV4L2Device::SetDevicePollInterrupt() {
 
   const uint64 buf = 1;
   if (HANDLE_EINTR(write(device_poll_interrupt_fd_, &buf, sizeof(buf))) == -1) {
+    DPLOG(ERROR) << "SetDevicePollInterrupt(): write() failed";
     return false;
   }
   return true;
@@ -101,9 +110,22 @@ bool ExynosV4L2Device::ClearDevicePollInterrupt() {
 }
 
 bool ExynosV4L2Device::Initialize() {
-  DVLOG(2) << "Initialize(): opening device: " << kDevice;
+  const char* device_path = NULL;
+  switch (type_) {
+    case kDecoder:
+      device_path = kDecoderDevice;
+      break;
+    case kEncoder:
+      device_path = kEncoderDevice;
+      break;
+    case kImageProcessor:
+      device_path = kImageProcessorDevice;
+      break;
+  }
+
+  DVLOG(2) << "Initialize(): opening device: " << device_path;
   // Open the video device.
-  device_fd_ = HANDLE_EINTR(open(kDevice, O_RDWR | O_NONBLOCK | O_CLOEXEC));
+  device_fd_ = HANDLE_EINTR(open(device_path, O_RDWR | O_NONBLOCK | O_CLOEXEC));
   if (device_fd_ == -1) {
     return false;
   }
@@ -114,4 +136,76 @@ bool ExynosV4L2Device::Initialize() {
   }
   return true;
 }
+
+EGLImageKHR ExynosV4L2Device::CreateEGLImage(EGLDisplay egl_display,
+                                             EGLContext /* egl_context */,
+                                             GLuint texture_id,
+                                             gfx::Size frame_buffer_size,
+                                             unsigned int buffer_index,
+                                             size_t planes_count) {
+  DVLOG(3) << "CreateEGLImage()";
+
+  scoped_ptr<base::ScopedFD[]> dmabuf_fds(new base::ScopedFD[planes_count]);
+  for (size_t i = 0; i < planes_count; ++i) {
+    // Export the DMABUF fd so we can export it as a texture.
+    struct v4l2_exportbuffer expbuf;
+    memset(&expbuf, 0, sizeof(expbuf));
+    expbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
+    expbuf.index = buffer_index;
+    expbuf.plane = i;
+    expbuf.flags = O_CLOEXEC;
+    if (Ioctl(VIDIOC_EXPBUF, &expbuf) != 0) {
+      return EGL_NO_IMAGE_KHR;
+    }
+    dmabuf_fds[i].reset(expbuf.fd);
+  }
+  DCHECK_EQ(planes_count, 2u);
+  EGLint attrs[] = {
+      EGL_WIDTH,                     0, EGL_HEIGHT,                    0,
+      EGL_LINUX_DRM_FOURCC_EXT,      0, EGL_DMA_BUF_PLANE0_FD_EXT,     0,
+      EGL_DMA_BUF_PLANE0_OFFSET_EXT, 0, EGL_DMA_BUF_PLANE0_PITCH_EXT,  0,
+      EGL_DMA_BUF_PLANE1_FD_EXT,     0, EGL_DMA_BUF_PLANE1_OFFSET_EXT, 0,
+      EGL_DMA_BUF_PLANE1_PITCH_EXT,  0, EGL_NONE, };
+  attrs[1] = frame_buffer_size.width();
+  attrs[3] = frame_buffer_size.height();
+  attrs[5] = DRM_FORMAT_NV12;
+  attrs[7] = dmabuf_fds[0].get();
+  attrs[9] = 0;
+  attrs[11] = frame_buffer_size.width();
+  attrs[13] = dmabuf_fds[1].get();
+  attrs[15] = 0;
+  attrs[17] = frame_buffer_size.width();
+
+  EGLImageKHR egl_image = eglCreateImageKHR(
+      egl_display, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attrs);
+  if (egl_image == EGL_NO_IMAGE_KHR) {
+    return egl_image;
+  }
+  glBindTexture(GL_TEXTURE_EXTERNAL_OES, texture_id);
+  glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, egl_image);
+
+  return egl_image;
+}
+
+EGLBoolean ExynosV4L2Device::DestroyEGLImage(EGLDisplay egl_display,
+                                             EGLImageKHR egl_image) {
+  return eglDestroyImageKHR(egl_display, egl_image);
+}
+
+GLenum ExynosV4L2Device::GetTextureTarget() { return GL_TEXTURE_EXTERNAL_OES; }
+
+uint32 ExynosV4L2Device::PreferredInputFormat() {
+  // TODO(posciak): We should support "dontcare" returns here once we
+  // implement proper handling (fallback, negotiation) for this in users.
+  CHECK_EQ(type_, kEncoder);
+  return V4L2_PIX_FMT_NV12M;
+}
+
+uint32 ExynosV4L2Device::PreferredOutputFormat() {
+  // TODO(posciak): We should support "dontcare" returns here once we
+  // implement proper handling (fallback, negotiation) for this in users.
+  CHECK_EQ(type_, kDecoder);
+  return V4L2_PIX_FMT_NV12M;
+}
+
 }  //  namespace content

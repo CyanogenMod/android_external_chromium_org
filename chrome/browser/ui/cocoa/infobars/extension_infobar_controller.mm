@@ -8,7 +8,6 @@
 
 #include "chrome/browser/extensions/extension_infobar_delegate.h"
 #include "chrome/browser/extensions/extension_view_host.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -16,13 +15,13 @@
 #import "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
 #include "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -246,7 +245,7 @@ class InfobarBridge {
     extensions::ExtensionViewHost* extensionViewHost =
         [self delegate]->AsExtensionInfoBarDelegate()->extension_view_host();
     Browser* browser = chrome::FindBrowserWithWebContents(
-        [self infobar]->OwnerCocoa()->web_contents());
+        [self delegate]->AsExtensionInfoBarDelegate()->GetWebContents());
     contextMenuController_.reset([[ExtensionActionContextMenuController alloc]
         initWithExtension:extensionViewHost->extension()
                   browser:browser
@@ -260,12 +259,12 @@ class InfobarBridge {
 @end
 
 // static
-scoped_ptr<InfoBar> ExtensionInfoBarDelegate::CreateInfoBar(
+scoped_ptr<infobars::InfoBar> ExtensionInfoBarDelegate::CreateInfoBar(
     scoped_ptr<ExtensionInfoBarDelegate> delegate) {
   scoped_ptr<InfoBarCocoa> infobar(
-      new InfoBarCocoa(delegate.PassAs<InfoBarDelegate>()));
+      new InfoBarCocoa(delegate.PassAs<infobars::InfoBarDelegate>()));
   base::scoped_nsobject<ExtensionInfoBarController> controller(
       [[ExtensionInfoBarController alloc] initWithInfoBar:infobar.get()]);
   infobar->set_controller(controller);
-  return infobar.PassAs<InfoBar>();
+  return infobar.PassAs<infobars::InfoBar>();
 }

@@ -8,7 +8,6 @@
 #include "base/files/file_util_proxy.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/task_runner.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
@@ -18,9 +17,9 @@ namespace webkit_blob {
 
 namespace {
 
-const int kOpenFlagsForRead = base::PLATFORM_FILE_OPEN |
-                              base::PLATFORM_FILE_READ |
-                              base::PLATFORM_FILE_ASYNC;
+const int kOpenFlagsForRead = base::File::FLAG_OPEN |
+                              base::File::FLAG_READ |
+                              base::File::FLAG_ASYNC;
 
 }  // namespace
 
@@ -89,7 +88,7 @@ void LocalFileStreamReader::DidVerifyForOpen(
     return;
   }
 
-  stream_impl_.reset(new net::FileStream(NULL, task_runner_));
+  stream_impl_.reset(new net::FileStream(task_runner_));
   const int result = stream_impl_->Open(
       file_path_, kOpenFlagsForRead,
       base::Bind(&LocalFileStreamReader::DidOpenFileStream,
@@ -107,7 +106,7 @@ void LocalFileStreamReader::DidOpenFileStream(
     return;
   }
   result = stream_impl_->Seek(
-      net::FROM_BEGIN, initial_offset_,
+      base::File::FROM_BEGIN, initial_offset_,
       base::Bind(&LocalFileStreamReader::DidSeekFileStream,
                  weak_factory_.GetWeakPtr(),
                  callback));

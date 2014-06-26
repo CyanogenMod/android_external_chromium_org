@@ -6,12 +6,10 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
-#include "base/strings/utf_string_conversions.h"
-#include "base/synchronization/lock.h"
 #include "chrome/browser/chromeos/fileapi/file_access_permissions.h"
 #include "chrome/browser/chromeos/fileapi/file_system_backend_delegate.h"
+#include "chrome/browser/media_galleries/fileapi/media_file_system_backend.h"
 #include "chromeos/dbus/cros_disks_client.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/async_file_util.h"
@@ -21,13 +19,6 @@
 #include "webkit/browser/fileapi/file_system_operation.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/isolated_context.h"
-
-namespace {
-
-const char kChromeUIScheme[] = "chrome";
-
-}  // namespace
 
 namespace chromeos {
 
@@ -37,11 +28,15 @@ bool FileSystemBackend::CanHandleURL(const fileapi::FileSystemURL& url) {
     return false;
   return url.type() == fileapi::kFileSystemTypeNativeLocal ||
          url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal ||
-         url.type() == fileapi::kFileSystemTypeDrive;
+         url.type() == fileapi::kFileSystemTypeDrive ||
+         url.type() == fileapi::kFileSystemTypeProvided ||
+         url.type() == fileapi::kFileSystemTypeDeviceMediaAsFileStorage;
 }
 
 FileSystemBackend::FileSystemBackend(
     FileSystemBackendDelegate* drive_delegate,
+    FileSystemBackendDelegate* file_system_provider_delegate,
+    FileSystemBackendDelegate* mtp_delegate,
     scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy,
     scoped_refptr<fileapi::ExternalMountPoints> mount_points,
     fileapi::ExternalMountPoints* system_mount_points)
@@ -49,9 +44,10 @@ FileSystemBackend::FileSystemBackend(
       file_access_permissions_(new FileAccessPermissions()),
       local_file_util_(fileapi::AsyncFileUtil::CreateForLocalFileSystem()),
       drive_delegate_(drive_delegate),
+      file_system_provider_delegate_(file_system_provider_delegate),
+      mtp_delegate_(mtp_delegate),
       mount_points_(mount_points),
-      system_mount_points_(system_mount_points) {
-}
+      system_mount_points_(system_mount_points) {}
 
 FileSystemBackend::~FileSystemBackend() {
 }
@@ -84,6 +80,8 @@ bool FileSystemBackend::CanHandleType(fileapi::FileSystemType type) const {
     case fileapi::kFileSystemTypeRestrictedNativeLocal:
     case fileapi::kFileSystemTypeNativeLocal:
     case fileapi::kFileSystemTypeNativeForPlatformApp:
+    case fileapi::kFileSystemTypeDeviceMediaAsFileStorage:
+    case fileapi::kFileSystemTypeProvided:
       return true;
     default:
       return false;
@@ -93,15 +91,52 @@ bool FileSystemBackend::CanHandleType(fileapi::FileSystemType type) const {
 void FileSystemBackend::Initialize(fileapi::FileSystemContext* context) {
 }
 
-void FileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    fileapi::FileSystemType type,
-    fileapi::OpenFileSystemMode mode,
-    const OpenFileSystemCallback& callback) {
-  // TODO(nhiroki): Deprecate OpenFileSystem for non-sandboxed filesystem.
-  // (http://crbug.com/297412)
-  NOTREACHED();
-  callback.Run(GURL(), std::string(), base::File::FILE_ERROR_SECURITY);
+void FileSystemBackend::ResolveURL(const fileapi::FileSystemURL& url,
+                                   fileapi::OpenFileSystemMode mode,
+                                   const OpenFileSystemCallback& callback) {
+  std::string id;
+  fileapi::FileSystemType type;
+  std::string cracked_id;
+  base::FilePath path;
+  fileapi::FileSystemMountOption option;
+  if (!mount_points_->CrackVirtualPath(
+           url.virtual_path(), &id, &type, &cracked_id, &path, &option) &&
+      !system_mount_points_->CrackVirtualPath(
+           url.virtual_path(), &id, &type, &cracked_id, &path, &option)) {
+    // Not under a mount point, so return an error, since the root is not
+    // accessible.
+    GURL root_url = GURL(fileapi::GetExternalFileSystemRootURIString(
+        url.origin(), std::string()));
+    callback.Run(root_url, std::string(), base::File::FILE_ERROR_SECURITY);
+    return;
+  }
+
+  std::string name;
+  // Construct a URL restricted to the found mount point.
+  std::string root_url =
+      fileapi::GetExternalFileSystemRootURIString(url.origin(), id);
+
+  // For removable and archives, the file system root is the external mount
+  // point plus the inner mount point.
+  if (id == "archive" || id == "removable") {
+    std::vector<std::string> components;
+    url.virtual_path().GetComponents(&components);
+    DCHECK_EQ(id, components.at(0));
+    if (components.size() < 2) {
+      // Unable to access /archive and /removable directories directly. The
+      // inner mount name must be specified.
+      callback.Run(
+          GURL(root_url), std::string(), base::File::FILE_ERROR_SECURITY);
+      return;
+    }
+    std::string inner_mount_name = components[1];
+    root_url += inner_mount_name + "/";
+    name = inner_mount_name;
+  } else {
+    name = id;
+  }
+
+  callback.Run(GURL(root_url), name, base::File::FILE_OK);
 }
 
 fileapi::FileSystemQuotaUtil* FileSystemBackend::GetQuotaUtil() {
@@ -114,11 +149,6 @@ bool FileSystemBackend::IsAccessAllowed(
   if (!url.is_valid())
     return false;
 
-  // Permit access to mount points from internal WebUI.
-  const GURL& origin_url = url.origin();
-  if (origin_url.SchemeIs(kChromeUIScheme))
-    return true;
-
   // No extra check is needed for isolated file systems.
   if (url.mount_type() == fileapi::kFileSystemTypeIsolated)
     return true;
@@ -126,7 +156,7 @@ bool FileSystemBackend::IsAccessAllowed(
   if (!CanHandleURL(url))
     return false;
 
-  std::string extension_id = origin_url.host();
+  std::string extension_id = url.origin().host();
   // TODO(mtomasz): Temporarily whitelist TimeScapes. Remove this in M-31.
   // See: crbug.com/271946
   if (extension_id == "mlbmkoenclnokonejhlfakkeabdlmpek" &&
@@ -159,12 +189,13 @@ void FileSystemBackend::GrantFileAccessToExtension(
 
   std::string id;
   fileapi::FileSystemType type;
+  std::string cracked_id;
   base::FilePath path;
   fileapi::FileSystemMountOption option;
-  if (!mount_points_->CrackVirtualPath(virtual_path,
-                                       &id, &type, &path, &option) &&
-      !system_mount_points_->CrackVirtualPath(virtual_path,
-                                              &id, &type, &path, &option)) {
+  if (!mount_points_->CrackVirtualPath(virtual_path, &id, &type, &cracked_id,
+                                       &path, &option) &&
+      !system_mount_points_->CrackVirtualPath(virtual_path, &id, &type,
+                                              &cracked_id, &path, &option)) {
     return;
   }
 
@@ -194,12 +225,20 @@ std::vector<base::FilePath> FileSystemBackend::GetRootDirectories() const {
 
 fileapi::AsyncFileUtil* FileSystemBackend::GetAsyncFileUtil(
     fileapi::FileSystemType type) {
-  if (type == fileapi::kFileSystemTypeDrive)
-    return drive_delegate_->GetAsyncFileUtil(type);
-
-  DCHECK(type == fileapi::kFileSystemTypeNativeLocal ||
-         type == fileapi::kFileSystemTypeRestrictedNativeLocal);
-  return local_file_util_.get();
+  switch (type) {
+    case fileapi::kFileSystemTypeDrive:
+      return drive_delegate_->GetAsyncFileUtil(type);
+    case fileapi::kFileSystemTypeProvided:
+      return file_system_provider_delegate_->GetAsyncFileUtil(type);
+    case fileapi::kFileSystemTypeNativeLocal:
+    case fileapi::kFileSystemTypeRestrictedNativeLocal:
+      return local_file_util_.get();
+    case fileapi::kFileSystemTypeDeviceMediaAsFileStorage:
+      return mtp_delegate_->GetAsyncFileUtil(type);
+    default:
+      NOTREACHED();
+  }
+  return NULL;
 }
 
 fileapi::CopyOrMoveFileValidatorFactory*
@@ -221,12 +260,28 @@ fileapi::FileSystemOperation* FileSystemBackend::CreateFileSystemOperation(
     return NULL;
   }
 
+  if (url.type() == fileapi::kFileSystemTypeDeviceMediaAsFileStorage) {
+    // MTP file operations run on MediaTaskRunner.
+    return fileapi::FileSystemOperation::Create(
+        url, context,
+        make_scoped_ptr(new fileapi::FileSystemOperationContext(
+            context, MediaFileSystemBackend::MediaTaskRunner())));
+  }
+
   DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal ||
          url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal ||
-         url.type() == fileapi::kFileSystemTypeDrive);
+         url.type() == fileapi::kFileSystemTypeDrive ||
+         url.type() == fileapi::kFileSystemTypeProvided);
   return fileapi::FileSystemOperation::Create(
       url, context,
       make_scoped_ptr(new fileapi::FileSystemOperationContext(context)));
+}
+
+bool FileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  return url.type() == fileapi::kFileSystemTypeDrive ||
+         url.type() == fileapi::kFileSystemTypeProvided ||
+         url.type() == fileapi::kFileSystemTypeDeviceMediaAsFileStorage;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>
@@ -240,14 +295,25 @@ FileSystemBackend::CreateFileStreamReader(
   if (!IsAccessAllowed(url))
     return scoped_ptr<webkit_blob::FileStreamReader>();
 
-  if (url.type() == fileapi::kFileSystemTypeDrive) {
-    return drive_delegate_->CreateFileStreamReader(
-        url, offset, expected_modification_time, context);
+  switch (url.type()) {
+    case fileapi::kFileSystemTypeDrive:
+      return drive_delegate_->CreateFileStreamReader(
+          url, offset, expected_modification_time, context);
+    case fileapi::kFileSystemTypeProvided:
+      return file_system_provider_delegate_->CreateFileStreamReader(
+          url, offset, expected_modification_time, context);
+    case fileapi::kFileSystemTypeNativeLocal:
+    case fileapi::kFileSystemTypeRestrictedNativeLocal:
+      return scoped_ptr<webkit_blob::FileStreamReader>(
+          webkit_blob::FileStreamReader::CreateForFileSystemFile(
+              context, url, offset, expected_modification_time));
+    case fileapi::kFileSystemTypeDeviceMediaAsFileStorage:
+      return mtp_delegate_->CreateFileStreamReader(
+          url, offset, expected_modification_time, context);
+    default:
+      NOTREACHED();
   }
-
-  return scoped_ptr<webkit_blob::FileStreamReader>(
-      webkit_blob::FileStreamReader::CreateForFileSystemFile(
-          context, url, offset, expected_modification_time));
+  return scoped_ptr<webkit_blob::FileStreamReader>();
 }
 
 scoped_ptr<fileapi::FileStreamWriter>
@@ -260,16 +326,26 @@ FileSystemBackend::CreateFileStreamWriter(
   if (!IsAccessAllowed(url))
     return scoped_ptr<fileapi::FileStreamWriter>();
 
-  if (url.type() == fileapi::kFileSystemTypeDrive)
-    return drive_delegate_->CreateFileStreamWriter(url, offset, context);
-
-  if (url.type() == fileapi::kFileSystemTypeRestrictedNativeLocal)
-    return scoped_ptr<fileapi::FileStreamWriter>();
-
-  DCHECK(url.type() == fileapi::kFileSystemTypeNativeLocal);
-  return scoped_ptr<fileapi::FileStreamWriter>(
-      fileapi::FileStreamWriter::CreateForLocalFile(
-          context->default_file_task_runner(), url.path(), offset));
+  switch (url.type()) {
+    case fileapi::kFileSystemTypeDrive:
+      return drive_delegate_->CreateFileStreamWriter(url, offset, context);
+    case fileapi::kFileSystemTypeProvided:
+      return file_system_provider_delegate_->CreateFileStreamWriter(
+          url, offset, context);
+    case fileapi::kFileSystemTypeNativeLocal:
+      return scoped_ptr<fileapi::FileStreamWriter>(
+          fileapi::FileStreamWriter::CreateForLocalFile(
+              context->default_file_task_runner(), url.path(), offset,
+              fileapi::FileStreamWriter::OPEN_EXISTING_FILE));
+    case fileapi::kFileSystemTypeRestrictedNativeLocal:
+      // Restricted native local file system is read only.
+      return scoped_ptr<fileapi::FileStreamWriter>();
+    case fileapi::kFileSystemTypeDeviceMediaAsFileStorage:
+      return mtp_delegate_->CreateFileStreamWriter(url, offset, context);
+    default:
+      NOTREACHED();
+  }
+  return scoped_ptr<fileapi::FileStreamWriter>();
 }
 
 bool FileSystemBackend::GetVirtualPath(

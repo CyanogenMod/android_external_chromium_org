@@ -10,23 +10,19 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/google/google_url_tracker_factory.h"
 #include "chrome/browser/search_engines/search_host_to_urls_map.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/search_engines/util.h"
-#include "chrome/browser/webdata/web_data_service.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_observer.h"
 
@@ -35,6 +31,30 @@ using content::BrowserThread;
 typedef SearchHostToURLsMap::TemplateURLSet TemplateURLSet;
 
 namespace {
+
+void LoadDataOnUIThread(TemplateURLService* template_url_service,
+                        const base::Callback<void(ScopedVector<TemplateURL>,
+                                                  TemplateURL*)>& callback) {
+  ScopedVector<TemplateURL> template_url_copies;
+  TemplateURL* default_provider_copy = NULL;
+  TemplateURLService::TemplateURLVector original_template_urls =
+      template_url_service->GetTemplateURLs();
+  TemplateURL* original_default_provider =
+      template_url_service->GetDefaultSearchProvider();
+  for (TemplateURLService::TemplateURLVector::const_iterator it =
+           original_template_urls.begin();
+       it != original_template_urls.end();
+       ++it) {
+    template_url_copies.push_back(new TemplateURL((*it)->data()));
+    if (*it == original_default_provider)
+      default_provider_copy = template_url_copies.back();
+  }
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(callback,
+                                     base::Passed(template_url_copies.Pass()),
+                                     base::Unretained(default_provider_copy)));
+}
 
 // Implementation of SearchTermsData that may be used on the I/O thread.
 class IOThreadSearchTermsData : public SearchTermsData {
@@ -96,17 +116,11 @@ void GoogleURLChangeNotifier::OnChange(const std::string& google_base_url) {
 
 // Notices changes in the Google base URL and sends them along
 // to the SearchProviderInstallData on the I/O thread.
-class GoogleURLObserver : public content::NotificationObserver,
-                          public content::RenderProcessHostObserver {
+class GoogleURLObserver : public content::RenderProcessHostObserver {
  public:
   GoogleURLObserver(Profile* profile,
                     GoogleURLChangeNotifier* change_notifier,
                     content::RenderProcessHost* host);
-
-  // Implementation of content::NotificationObserver.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
   // Implementation of content::RenderProcessHostObserver.
   virtual void RenderProcessHostDestroyed(
@@ -115,8 +129,12 @@ class GoogleURLObserver : public content::NotificationObserver,
  private:
   virtual ~GoogleURLObserver() {}
 
+  // Callback that is called when the Google URL is updated.
+  void OnGoogleURLUpdated(GURL old_url, GURL new_url);
+
   scoped_refptr<GoogleURLChangeNotifier> change_notifier_;
-  content::NotificationRegistrar registrar_;
+
+  scoped_ptr<GoogleURLTracker::Subscription> google_url_updated_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(GoogleURLObserver);
 };
@@ -127,21 +145,24 @@ GoogleURLObserver::GoogleURLObserver(
     content::RenderProcessHost* host)
     : change_notifier_(change_notifier) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
-                 content::Source<Profile>(profile->GetOriginalProfile()));
+  GoogleURLTracker* google_url_tracker =
+      GoogleURLTrackerFactory::GetForProfile(profile);
+
+  // GoogleURLTracker is not created in tests.
+  if (google_url_tracker) {
+    google_url_updated_subscription_ =
+        google_url_tracker->RegisterCallback(base::Bind(
+            &GoogleURLObserver::OnGoogleURLUpdated, base::Unretained(this)));
+  }
   host->AddObserver(this);
 }
 
-void GoogleURLObserver::Observe(int type,
-                                const content::NotificationSource& source,
-                                const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_GOOGLE_URL_UPDATED, type);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&GoogleURLChangeNotifier::OnChange,
-                 change_notifier_.get(),
-                 content::Details<GoogleURLTracker::UpdatedDetails>(details)->
-                     second.spec()));
+void GoogleURLObserver::OnGoogleURLUpdated(GURL old_url, GURL new_url) {
+  BrowserThread::PostTask(BrowserThread::IO,
+                          FROM_HERE,
+                          base::Bind(&GoogleURLChangeNotifier::OnChange,
+                                     change_notifier_.get(),
+                                     new_url.spec()));
 }
 
 void GoogleURLObserver::RenderProcessHostDestroyed(
@@ -158,16 +179,15 @@ static bool IsSameOrigin(const GURL& requested_origin,
   DCHECK(requested_origin == requested_origin.GetOrigin());
   DCHECK(template_url->GetType() != TemplateURL::OMNIBOX_API_EXTENSION);
   return requested_origin ==
-      TemplateURLService::GenerateSearchURLUsingTermsData(template_url,
-          search_terms_data).GetOrigin();
+      template_url->GenerateSearchURL(search_terms_data).GetOrigin();
 }
 
 }  // namespace
 
 SearchProviderInstallData::SearchProviderInstallData(
-    Profile* profile, content::RenderProcessHost* host)
-    : web_service_(WebDataService::FromBrowserContext(profile)),
-      load_handle_(0),
+    Profile* profile,
+    content::RenderProcessHost* host)
+    : template_url_service_(TemplateURLServiceFactory::GetForProfile(profile)),
       google_base_url_(UIThreadSearchTermsData(profile).GoogleBaseURLValue()),
       weak_factory_(this) {
   // GoogleURLObserver is responsible for killing itself when
@@ -179,11 +199,6 @@ SearchProviderInstallData::SearchProviderInstallData(
 
 SearchProviderInstallData::~SearchProviderInstallData() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  if (load_handle_) {
-    DCHECK(web_service_.get());
-    web_service_->CancelRequest(load_handle_);
-  }
 }
 
 void SearchProviderInstallData::CallWhenLoaded(const base::Closure& closure) {
@@ -194,14 +209,24 @@ void SearchProviderInstallData::CallWhenLoaded(const base::Closure& closure) {
     return;
   }
 
+  bool do_load = closure_queue_.empty();
   closure_queue_.push_back(closure);
-  if (load_handle_)
+
+  // If the queue wasn't empty, there was already a load in progress.
+  if (!do_load)
     return;
 
-  if (web_service_.get())
-    load_handle_ = web_service_->GetKeywords(this);
-  else
+  if (template_url_service_) {
+    BrowserThread::PostTask(
+        BrowserThread::UI,
+        FROM_HERE,
+        base::Bind(&LoadDataOnUIThread,
+                   template_url_service_,
+                   base::Bind(&SearchProviderInstallData::OnTemplateURLsLoaded,
+                              weak_factory_.GetWeakPtr())));
+  } else {
     OnLoadFailed();
+  }
 }
 
 SearchProviderInstallData::State SearchProviderInstallData::GetInstallState(
@@ -233,35 +258,17 @@ void SearchProviderInstallData::OnGoogleURLChange(
   google_base_url_ = google_base_url;
 }
 
-void SearchProviderInstallData::OnWebDataServiceRequestDone(
-    WebDataService::Handle h,
-    const WDTypedResult* result) {
+void SearchProviderInstallData::OnTemplateURLsLoaded(
+    ScopedVector<TemplateURL> template_urls,
+    TemplateURL* default_provider) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  // Reset the load_handle so that we don't try and cancel the load in
-  // the destructor.
-  load_handle_ = 0;
+  template_urls_ = template_urls.Pass();
 
-  if (!result) {
-    // Results are null if the database went away or (most likely) wasn't
-    // loaded.
-    OnLoadFailed();
-    return;
-  }
-
-  TemplateURL* default_search_provider = NULL;
-  int new_resource_keyword_version = 0;
-  std::vector<TemplateURL*> extracted_template_urls;
-  GetSearchProvidersUsingKeywordResult(*result, NULL, NULL,
-      &extracted_template_urls, &default_search_provider,
-      &new_resource_keyword_version, NULL);
-  template_urls_.get().insert(template_urls_.get().begin(),
-                              extracted_template_urls.begin(),
-                              extracted_template_urls.end());
   IOThreadSearchTermsData search_terms_data(google_base_url_);
   provider_map_.reset(new SearchHostToURLsMap());
   provider_map_->Init(template_urls_.get(), search_terms_data);
-  SetDefault(default_search_provider);
+  SetDefault(default_provider);
   NotifyLoaded();
 }
 
@@ -276,8 +283,7 @@ void SearchProviderInstallData::SetDefault(const TemplateURL* template_url) {
   DCHECK(template_url->GetType() != TemplateURL::OMNIBOX_API_EXTENSION);
 
   IOThreadSearchTermsData search_terms_data(google_base_url_);
-  const GURL url(TemplateURLService::GenerateSearchURLUsingTermsData(
-      template_url, search_terms_data));
+  const GURL url(template_url->GenerateSearchURL(search_terms_data));
   if (!url.is_valid() || !url.has_host()) {
     default_search_origin_.clear();
     return;

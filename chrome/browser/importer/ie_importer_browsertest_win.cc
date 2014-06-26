@@ -31,7 +31,6 @@
 #include "chrome/browser/importer/external_process_importer_host.h"
 #include "chrome/browser/importer/importer_progress_observer.h"
 #include "chrome/browser/importer/importer_unittest_utils.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/importer/ie_importer_test_registry_overrider_win.h"
@@ -40,46 +39,46 @@
 #include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/importer/importer_bridge.h"
 #include "chrome/common/importer/importer_data_types.h"
-#include "chrome/common/importer/pstore_declarations.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "components/autofill/core/common/password_form.h"
-#include "components/webdata/encryptor/ie7_password_win.h"
+#include "components/os_crypt/ie7_password_win.h"
+#include "components/search_engines/template_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
 const BookmarkInfo kIEBookmarks[] = {
-  {true, 2, {L"Links", L"SubFolderOfLinks"},
-   L"SubLink",
-   "http://www.links-sublink.com/"},
-  {true, 1, {L"Links"},
-   L"TheLink",
-   "http://www.links-thelink.com/"},
+  {true, 2, {"Links", "SubFolderOfLinks"},
+    L"SubLink",
+    "http://www.links-sublink.com/"},
+  {true, 1, {"Links"},
+    L"TheLink",
+    "http://www.links-thelink.com/"},
   {false, 0, {},
-   L"Google Home Page",
-   "http://www.google.com/"},
+    L"Google Home Page",
+    "http://www.google.com/"},
   {false, 0, {},
-   L"TheLink",
-   "http://www.links-thelink.com/"},
-  {false, 1, {L"SubFolder"},
-   L"Title",
-   "http://www.link.com/"},
+    L"TheLink",
+    "http://www.links-thelink.com/"},
+  {false, 1, {"SubFolder"},
+    L"Title",
+    "http://www.link.com/"},
   {false, 0, {},
-   L"WithPortAndQuery",
-   "http://host:8080/cgi?q=query"},
-  {false, 1, {L"a"},
-   L"\x4E2D\x6587",
-   "http://chinese-title-favorite/"},
+    L"WithPortAndQuery",
+    "http://host:8080/cgi?q=query"},
+  {false, 1, {"a"},
+    L"\x4E2D\x6587",
+    "http://chinese-title-favorite/"},
   {false, 0, {},
-   L"SubFolder",
-   "http://www.subfolder.com/"},
+    L"SubFolder",
+    "http://www.subfolder.com/"},
 };
 
 const BookmarkInfo kIESortedBookmarks[] = {
   {false, 0, {}, L"a", "http://www.google.com/0"},
-  {false, 1, {L"b"}, L"a", "http://www.google.com/1"},
-  {false, 1, {L"b"}, L"b", "http://www.google.com/2"},
+  {false, 1, {"b"}, L"a", "http://www.google.com/1"},
+  {false, 1, {"b"}, L"b", "http://www.google.com/2"},
   {false, 0, {}, L"c", "http://www.google.com/3"},
 };
 
@@ -107,11 +106,11 @@ struct FaviconGroup {
 
 const FaviconGroup kIEFaviconGroup[2] = {
   {L"http://www.google.com/favicon.ico",
-   {L"http://www.google.com/",
-    L"http://www.subfolder.com/"}},
+    {L"http://www.google.com/",
+      L"http://www.subfolder.com/"}},
   {L"http://example.com/favicon.ico",
-   {L"http://host:8080/cgi?q=query",
-    L"http://chinese-title-favorite/"}},
+    {L"http://host:8080/cgi?q=query",
+      L"http://chinese-title-favorite/"}},
 };
 
 bool CreateOrderBlob(const base::FilePath& favorites_folder,
@@ -203,53 +202,13 @@ bool CreateUrlFileWithFavicon(const base::FilePath& file,
     return false;
 
   // Write dummy favicon image data in NTFS alternate data stream.
-  return favicon_url.empty() || (file_util::WriteFile(
+  return favicon_url.empty() || (base::WriteFile(
       file.ReplaceExtension(kFaviconStreamSuffix), kDummyFaviconImageData,
       sizeof kDummyFaviconImageData) != -1);
 }
 
 bool CreateUrlFile(const base::FilePath& file, const base::string16& url) {
   return CreateUrlFileWithFavicon(file, url, base::string16());
-}
-
-void ClearPStoreType(IPStore* pstore, const GUID* type, const GUID* subtype) {
-  base::win::ScopedComPtr<IEnumPStoreItems, NULL> item;
-  HRESULT result = pstore->EnumItems(0, type, subtype, 0, item.Receive());
-  if (result == PST_E_OK) {
-    base::char16* item_name;
-    while (SUCCEEDED(item->Next(1, &item_name, 0))) {
-      pstore->DeleteItem(0, type, subtype, item_name, NULL, 0);
-      CoTaskMemFree(item_name);
-    }
-  }
-  pstore->DeleteSubtype(0, type, subtype, 0);
-  pstore->DeleteType(0, type, 0);
-}
-
-void WritePStore(IPStore* pstore, const GUID* type, const GUID* subtype) {
-  struct PStoreItem {
-    base::char16* name;
-    int data_size;
-    char* data;
-  } items[] = {
-    {L"http://localhost:8080/security/index.htm#ref:StringData", 8,
-     "\x31\x00\x00\x00\x32\x00\x00\x00"},
-    {L"http://localhost:8080/security/index.htm#ref:StringIndex", 20,
-     "\x57\x49\x43\x4b\x18\x00\x00\x00\x02\x00"
-     "\x00\x00\x2f\x00\x74\x00\x01\x00\x00\x00"},
-    {L"user:StringData", 4,
-     "\x31\x00\x00\x00"},
-    {L"user:StringIndex", 20,
-     "\x57\x49\x43\x4b\x18\x00\x00\x00\x01\x00"
-     "\x00\x00\x2f\x00\x74\x00\x00\x00\x00\x00"},
-  };
-
-  for (int i = 0; i < arraysize(items); ++i) {
-    HRESULT res = pstore->WriteItem(0, type, subtype, items[i].name,
-        items[i].data_size, reinterpret_cast<BYTE*>(items[i].data),
-        NULL, 0, 0);
-    ASSERT_TRUE(res == PST_E_OK);
-  }
 }
 
 class TestObserver : public ProfileWriter,
@@ -498,8 +457,8 @@ IN_PROC_BROWSER_TEST_F(IEImporterBrowserTest, IEImporter) {
       L"http://www.links-sublink.com/"));
   ASSERT_TRUE(CreateUrlFile(path.AppendASCII("IEDefaultLink.url"),
                             L"http://go.microsoft.com/fwlink/?linkid=140813"));
-  file_util::WriteFile(path.AppendASCII("InvalidUrlFile.url"), "x", 1);
-  file_util::WriteFile(path.AppendASCII("PlainTextFile.txt"), "x", 1);
+  base::WriteFile(path.AppendASCII("InvalidUrlFile.url"), "x", 1);
+  base::WriteFile(path.AppendASCII("PlainTextFile.txt"), "x", 1);
 
   const base::char16* root_links[] = {
     L"Links",

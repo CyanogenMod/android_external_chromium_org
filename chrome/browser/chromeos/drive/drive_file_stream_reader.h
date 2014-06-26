@@ -88,9 +88,11 @@ class NetworkReaderProxy : public ReaderProxy {
  public:
   // If the instance is deleted during the download process, it is necessary
   // to cancel the job. |job_canceller| should be the callback to run the
-  // cancelling.
+  // cancelling. |full_content_length| is necessary for determining whether the
+  // deletion is done in the middle of download process.
   NetworkReaderProxy(
-      int64 offset, int64 content_length, const base::Closure& job_canceller);
+      int64 offset, int64 content_length, int64 full_content_length,
+      const base::Closure& job_canceller);
   virtual ~NetworkReaderProxy();
 
   // ReaderProxy overrides.
@@ -109,6 +111,10 @@ class NetworkReaderProxy : public ReaderProxy {
   // The number of bytes of remaining data (including the data not yet
   // received from the server).
   int64 remaining_content_length_;
+
+  // Flag to remember whether this read request is for reading till the end of
+  // the file.
+  const bool is_full_download_;
 
   int error_code_;
 
@@ -172,15 +178,17 @@ class DriveFileStreamReader {
            const net::CompletionCallback& callback);
 
  private:
+  // Used to store the cancel closure returned by FileSystemInterface.
+  void StoreCancelDownloadClosure(const base::Closure& cancel_download_closure);
+
   // Part of Initialize. Called after GetFileContent's initialization
   // is done.
   void InitializeAfterGetFileContentInitialized(
       const net::HttpByteRange& byte_range,
       const InitializeCompletionCallback& callback,
       FileError error,
-      scoped_ptr<ResourceEntry> entry,
       const base::FilePath& local_cache_file_path,
-      const base::Closure& cancel_download_closure);
+      scoped_ptr<ResourceEntry> entry);
 
   // Part of Initialize. Called when the local file open process is done.
   void InitializeAfterLocalFileOpen(
@@ -201,6 +209,7 @@ class DriveFileStreamReader {
 
   const FileSystemGetter file_system_getter_;
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
+  base::Closure cancel_download_closure_;
   scoped_ptr<internal::ReaderProxy> reader_proxy_;
 
   // This should remain the last member so it'll be destroyed first and

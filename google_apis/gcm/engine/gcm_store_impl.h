@@ -18,18 +18,23 @@ class SequencedTaskRunner;
 
 namespace gcm {
 
+class Encryptor;
+
 // An implementation of GCM Store that uses LevelDB for persistence.
 // It performs all blocking operations on the blocking task runner, and posts
 // all callbacks to the thread on which the GCMStoreImpl is created.
 class GCM_EXPORT GCMStoreImpl : public GCMStore {
  public:
-  GCMStoreImpl(bool use_mock_keychain,
-               const base::FilePath& path,
-               scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
+  GCMStoreImpl(const base::FilePath& path,
+               scoped_refptr<base::SequencedTaskRunner> blocking_task_runner,
+               scoped_ptr<Encryptor> encryptor);
   virtual ~GCMStoreImpl();
 
   // Load the directory and pass the initial state back to caller.
   virtual void Load(const LoadCallback& callback) OVERRIDE;
+
+  // Closes the GCM store.
+  virtual void Close() OVERRIDE;
 
   // Clears the GCM store of all data and destroys any LevelDB files associated
   // with this store.
@@ -42,6 +47,13 @@ class GCM_EXPORT GCMStoreImpl : public GCMStore {
   virtual void SetDeviceCredentials(uint64 device_android_id,
                                     uint64 device_security_token,
                                     const UpdateCallback& callback) OVERRIDE;
+
+  // Registration info.
+  virtual void AddRegistration(const std::string& app_id,
+                               const linked_ptr<RegistrationInfo>& registration,
+                               const UpdateCallback& callback) OVERRIDE;
+  virtual void RemoveRegistration(const std::string& app_id,
+                                  const UpdateCallback& callback) OVERRIDE;
 
   // Unacknowledged incoming message handling.
   virtual void AddIncomingMessage(const std::string& persistent_id,
@@ -64,14 +76,15 @@ class GCM_EXPORT GCMStoreImpl : public GCMStore {
   virtual void RemoveOutgoingMessages(const PersistentIdList& persistent_ids,
                                       const UpdateCallback& callback) OVERRIDE;
 
-  // User serial number handling.
-  virtual void SetNextSerialNumber(int64 next_serial_number,
-                                   const UpdateCallback& callback) OVERRIDE;
-  virtual void AddUserSerialNumber(const std::string& username,
-                                   int64 serial_number,
-                                   const UpdateCallback& callback) OVERRIDE;
-  virtual void RemoveUserSerialNumber(const std::string& username,
-                                      const UpdateCallback& callback) OVERRIDE;
+  // Sets last device's checkin time.
+  virtual void SetLastCheckinTime(const base::Time& last_checkin_time,
+                                  const UpdateCallback& callback) OVERRIDE;
+
+  // G-service settings handling.
+  virtual void SetGServicesSettings(
+      const std::map<std::string, std::string>& settings,
+      const std::string& settings_digest,
+      const UpdateCallback& callback) OVERRIDE;
 
  private:
   typedef std::map<std::string, int> AppIdToMessageCountMap;

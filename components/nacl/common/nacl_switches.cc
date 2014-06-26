@@ -19,9 +19,14 @@ const char kEnableNaClDebug[]               = "enable-nacl-debug";
 // sandbox.
 const char kEnableNaClNonSfiMode[]          = "enable-nacl-nonsfi-mode";
 
-// Causes the process to run as a NativeClient broker
+// Value for --type that causes the process to run as a NativeClient broker
 // (used for launching NaCl loader processes on 64-bit Windows).
 const char kNaClBrokerProcess[]             = "nacl-broker";
+
+// Disable sandbox even for non SFI mode. This is particularly unsafe
+// as non SFI NaCl heavily relies on the seccomp sandbox.
+const char kNaClDangerousNoSandboxNonSfi[]  =
+    "nacl-dangerous-no-sandbox-nonsfi";
 
 // Uses NaCl manifest URL to choose whether NaCl program will be debugged by
 // debug stub.
@@ -33,17 +38,18 @@ const char kNaClBrokerProcess[]             = "nacl-broker";
 // if manifest URL does not match any pattern.
 const char kNaClDebugMask[]                 = "nacl-debug-mask";
 
-// Native Client GDB debugger that will be launched automatically when needed.
-const char kNaClGdb[]                       = "nacl-gdb";
-
 // GDB script to pass to the nacl-gdb debugger at startup.
 const char kNaClGdbScript[]                 = "nacl-gdb-script";
 
-// On POSIX only: the contents of this flag are prepended to the nacl-loader
-// command line. Useful values might be "valgrind" or "xterm -e gdb --args".
-const char kNaClLoaderCmdPrefix[]           = "nacl-loader-cmd-prefix";
+// Native Client GDB debugger that will be launched automatically when needed.
+const char kNaClGdb[]                       = "nacl-gdb";
 
-// Causes the process to run as a NativeClient loader.
+// Value for --type that causes the process to run as a NativeClient loader
+// for non SFI mode.
+const char kNaClLoaderNonSfiProcess[]       = "nacl-loader-nonsfi";
+
+// Value for --type that causes the process to run as a NativeClient loader
+// for SFI mode.
 const char kNaClLoaderProcess[]             = "nacl-loader";
 
 }  // namespace switches

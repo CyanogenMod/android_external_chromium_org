@@ -11,7 +11,6 @@
 #include "ui/base/l10n/l10n_util.h"
 
 namespace ash {
-namespace internal {
 
 AppListShelfItemDelegate::AppListShelfItemDelegate() {
   ShelfItem app_list;
@@ -33,8 +32,8 @@ base::string16 AppListShelfItemDelegate::GetTitle() {
   ShelfModel* model = Shell::GetInstance()->shelf_model();
   DCHECK(model);
   return model->status() == ShelfModel::STATUS_LOADING ?
-      l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_SYNCING_TITLE) :
-      l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_TITLE);
+      l10n_util::GetStringUTF16(IDS_ASH_SHELF_APP_LIST_SYNCING_TITLE) :
+      l10n_util::GetStringUTF16(IDS_ASH_SHELF_APP_LIST_TITLE);
 }
 
 ui::MenuModel* AppListShelfItemDelegate::CreateContextMenu(
@@ -61,5 +60,4 @@ bool AppListShelfItemDelegate::ShouldShowTooltip() {
 void AppListShelfItemDelegate::Close() {
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ash/ime/input_method_menu_item.h"
+#include "ash/ime/input_method_menu_manager.h"
 #include "base/bind_helpers.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
@@ -38,13 +40,13 @@ enum TestType {
   kTestTypeComponent = 2,
 };
 
-class InputMethodEngineIBusBrowserTest
+class InputMethodEngineBrowserTest
     : public ExtensionBrowserTest,
       public ::testing::WithParamInterface<TestType> {
  public:
-  InputMethodEngineIBusBrowserTest()
+  InputMethodEngineBrowserTest()
       : ExtensionBrowserTest() {}
-  virtual ~InputMethodEngineIBusBrowserTest() {}
+  virtual ~InputMethodEngineBrowserTest() {}
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     ExtensionBrowserTest::SetUpInProcessBrowserTestFixture();
@@ -139,17 +141,17 @@ class KeyEventDoneCallback {
   DISALLOW_COPY_AND_ASSIGN(KeyEventDoneCallback);
 };
 
-INSTANTIATE_TEST_CASE_P(InputMethodEngineIBusBrowserTest,
-                        InputMethodEngineIBusBrowserTest,
+INSTANTIATE_TEST_CASE_P(InputMethodEngineBrowserTest,
+                        InputMethodEngineBrowserTest,
                         ::testing::Values(kTestTypeNormal));
-INSTANTIATE_TEST_CASE_P(InputMethodEngineIBusIncognitoBrowserTest,
-                        InputMethodEngineIBusBrowserTest,
+INSTANTIATE_TEST_CASE_P(InputMethodEngineIncognitoBrowserTest,
+                        InputMethodEngineBrowserTest,
                         ::testing::Values(kTestTypeIncognito));
-INSTANTIATE_TEST_CASE_P(InputMethodEngineIBusComponentExtensionBrowserTest,
-                        InputMethodEngineIBusBrowserTest,
+INSTANTIATE_TEST_CASE_P(InputMethodEngineComponentExtensionBrowserTest,
+                        InputMethodEngineBrowserTest,
                         ::testing::Values(kTestTypeComponent));
 
-IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
+IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
                        BasicScenarioTest) {
   LoadTestInputMethod();
 
@@ -229,7 +231,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
   IMEBridge::Get()->SetCandidateWindowHandler(NULL);
 }
 
-IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
+IN_PROC_BROWSER_TEST_P(InputMethodEngineBrowserTest,
                        APIArgumentTest) {
   LoadTestInputMethod();
 
@@ -334,7 +336,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:No, Shift:No, Caps:Yes");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent::keydown:a:KeyA:false:false:false:true";
+        "onKeyEvent::keydown:A:KeyA:false:false:false:true";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -372,7 +374,7 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     SCOPED_TRACE("KeyDown, Ctrl:No, alt:No, Shift:Yes, Caps:Yes");
     KeyEventDoneCallback callback(false);
     const std::string expected_value =
-        "onKeyEvent::keydown:A:KeyA:false:false:true:true";
+        "onKeyEvent::keydown:a:KeyA:false:false:true:true";
     ExtensionTestMessageListener keyevent_listener(expected_value, false);
 
     ui::KeyEvent key_event(ui::ET_KEY_PRESSED,
@@ -432,6 +434,46 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     ExtensionTestMessageListener keyevent_listener_up(
         std::string("onKeyEvent:") + kExtensionID +
         ":keyup:z:KeyZ:false:false:false:false",
+        false);
+
+    ASSERT_TRUE(content::ExecuteScript(host->host_contents(),
+                                       send_key_events_test_script));
+
+    ASSERT_TRUE(keyevent_listener_down.WaitUntilSatisfied());
+    EXPECT_TRUE(keyevent_listener_down.was_satisfied());
+    ASSERT_TRUE(keyevent_listener_up.WaitUntilSatisfied());
+    EXPECT_TRUE(keyevent_listener_up.was_satisfied());
+  }
+  {
+    SCOPED_TRACE("sendKeyEvents test with keyCode");
+    mock_input_context->Reset();
+    mock_candidate_window->Reset();
+
+    const char send_key_events_test_script[] =
+        "chrome.input.ime.sendKeyEvents({"
+        "  contextID: engineBridge.getFocusedContextID().contextID,"
+        "  keyData : [{"
+        "    type : 'keydown',"
+        "    requestId : '2',"
+        "    key : 'a',"
+        "    code : 'KeyQ',"
+        "    keyCode : 0x41,"
+        "  },{"
+        "    type : 'keyup',"
+        "    requestId : '3',"
+        "    key : 'a',"
+        "    code : 'KeyQ',"
+        "    keyCode : 0x41,"
+        "  }]"
+        "});";
+
+    ExtensionTestMessageListener keyevent_listener_down(
+        std::string("onKeyEvent:") + kExtensionID +
+        ":keydown:a:KeyQ:false:false:false:false",
+        false);
+    ExtensionTestMessageListener keyevent_listener_up(
+        std::string("onKeyEvent:") + kExtensionID +
+        ":keyup:a:KeyQ:false:false:false:false",
         false);
 
     ASSERT_TRUE(content::ExecuteScript(host->host_contents(),
@@ -800,8 +842,9 @@ IN_PROC_BROWSER_TEST_P(InputMethodEngineIBusBrowserTest,
     ASSERT_TRUE(content::ExecuteScript(
         host->host_contents(), set_menu_item_test_script));
 
-    const InputMethodPropertyList& props =
-        InputMethodManager::Get()->GetCurrentInputMethodProperties();
+    const ash::ime::InputMethodMenuItemList& props =
+        ash::ime::InputMethodMenuManager::GetInstance()->
+        GetCurrentInputMethodMenuItemList();
     ASSERT_EQ(5U, props.size());
 
     EXPECT_EQ("ID0", props[0].key);

@@ -7,22 +7,25 @@
 
 #include <string>
 
-#include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/sync/glue/non_frontend_data_type_controller.h"
+#include "components/sync_driver/non_ui_data_type_controller.h"
 
+class Profile;
+class ProfileSyncComponentsFactory;
+
+namespace password_manager {
 class PasswordStore;
-class ProfileSyncServicePasswordTest;
+}
 
 namespace browser_sync {
 
 // A class that manages the startup and shutdown of password sync.
-class PasswordDataTypeController : public NonFrontendDataTypeController {
+class PasswordDataTypeController : public NonUIDataTypeController {
  public:
   PasswordDataTypeController(
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
-      ProfileSyncService* sync_service);
+      const DisableTypeCallback& disable_callback);
 
   // NonFrontendDataTypeController implementation
   virtual syncer::ModelType type() const OVERRIDE;
@@ -31,18 +34,15 @@ class PasswordDataTypeController : public NonFrontendDataTypeController {
  protected:
   virtual ~PasswordDataTypeController();
 
-  // NonFrontendDataTypeController interface.
+  // NonUIDataTypeController interface.
   virtual bool PostTaskOnBackendThread(
       const tracked_objects::Location& from_here,
       const base::Closure& task) OVERRIDE;
-  virtual bool IsOnBackendThread() OVERRIDE;
   virtual bool StartModels() OVERRIDE;
-  virtual ProfileSyncComponentsFactory::SyncComponents CreateSyncComponents()
-      OVERRIDE;
-  virtual void DisconnectProcessor(ChangeProcessor* processor) OVERRIDE;
 
  private:
-  scoped_refptr<PasswordStore> password_store_;
+  Profile* const profile_;
+  scoped_refptr<password_manager::PasswordStore> password_store_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordDataTypeController);
 };

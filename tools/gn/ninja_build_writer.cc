@@ -5,11 +5,13 @@
 #include "tools/gn/ninja_build_writer.h"
 
 #include <fstream>
+#include <map>
 
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
 #include "base/process/process_handle.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "tools/gn/build_settings.h"
@@ -30,12 +32,14 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
   base::FilePath executable;
   PathService::Get(base::FILE_EXE, &executable);
 
-  CommandLine cmdline(executable);
+  CommandLine cmdline(executable.NormalizePathSeparatorsTo('/'));
+  cmdline.AppendArg("gen");
+  cmdline.AppendArg(build_settings->build_dir().value());
   cmdline.AppendSwitchPath("--root", build_settings->root_path());
   cmdline.AppendSwitch("-q");  // Don't write output.
 
   EscapeOptions escape_shell;
-  escape_shell.mode = ESCAPE_SHELL;
+  escape_shell.mode = ESCAPE_NINJA_COMMAND;
 #if defined(OS_WIN)
   // The command line code quoting varies by platform. We have one string,
   // possibly with spaces, that we want to quote. The Windows command line
@@ -47,7 +51,11 @@ std::string GetSelfInvocationCommand(const BuildSettings* build_settings) {
   const CommandLine::SwitchMap& switches = our_cmdline.GetSwitches();
   for (CommandLine::SwitchMap::const_iterator i = switches.begin();
        i != switches.end(); ++i) {
-    if (i->first != "q" && i->first != "root") {
+    // Only write arguments we haven't already written. Always skip "args"
+    // since those will have been written to the file and will be used
+    // implicitly in the future. Keeping --args would mean changes to the file
+    // would be ignored.
+    if (i->first != "q" && i->first != "root" && i->first != "args") {
       std::string escaped_value =
           EscapeString(FilePathToUTF8(i->second), escape_shell, NULL);
       cmdline.AppendSwitchASCII(i->first, escaped_value);
@@ -74,7 +82,7 @@ NinjaBuildWriter::NinjaBuildWriter(
       default_toolchain_targets_(default_toolchain_targets),
       out_(out),
       dep_out_(dep_out),
-      path_output_(build_settings->build_dir(), ESCAPE_NINJA, true),
+      path_output_(build_settings->build_dir(), ESCAPE_NINJA),
       helper_(build_settings) {
 }
 
@@ -126,23 +134,6 @@ void NinjaBuildWriter::WriteNinjaRules() {
        << "  generator = 1\n"
        << "  depfile = build.ninja.d\n";
 
-  // Provide a way to force regenerating ninja files if the user is suspicious
-  // something is out-of-date. This will be "ninja refresh".
-  out_ << "\nbuild refresh: gn\n";
-
-  // Provide a way to see what flags are associated with this build:
-  // This will be "ninja show".
-  const CommandLine& our_cmdline = *CommandLine::ForCurrentProcess();
-  std::string args = our_cmdline.GetSwitchValueASCII("args");
-  out_ << "rule echo\n";
-  out_ << "  command = echo $text\n";
-  out_ << "  description = ECHO $desc\n";
-  out_ << "build show: echo\n";
-  out_ << "  desc = build arguments:\n";
-  out_ << "  text = "
-       << (args.empty() ? std::string("No build args, using defaults.") : args)
-       << "\n";
-
   // Input build files. These go in the ".d" file. If we write them as
   // dependencies in the .ninja file itself, ninja will expect the files to
   // exist and will error if they don't. When files are listed in a depfile,
@@ -174,21 +165,68 @@ void NinjaBuildWriter::WriteSubninjas() {
 void NinjaBuildWriter::WritePhonyAndAllRules() {
   std::string all_rules;
 
-  // Write phony rules for the default toolchain (don't do other toolchains or
-  // we'll get naming conflicts).
+  // Write phony rules for all uniquely-named targets in the default toolchain.
+  // Don't do other toolchains or we'll get naming conflicts, and if the name
+  // isn't unique, also skip it. The exception is for the toplevel targets
+  // which we also find.
+  std::map<std::string, int> small_name_count;
+  std::vector<const Target*> toplevel_targets;
   for (size_t i = 0; i < default_toolchain_targets_.size(); i++) {
     const Target* target = default_toolchain_targets_[i];
+    const Label& label = target->label();
+    small_name_count[label.name()]++;
 
+    // Look for targets with a name of the form
+    //   dir = "//foo/", name = "foo"
+    // i.e. where the target name matches the top level directory. We will
+    // always write phony rules for these even if there is another target with
+    // the same short name.
+    const std::string& dir_string = label.dir().value();
+    if (dir_string.size() == label.name().size() + 3 &&  // Size matches.
+        dir_string[0] == '/' && dir_string[1] == '/' &&  // "//" at beginning.
+        dir_string[dir_string.size() - 1] == '/' &&  // "/" at end.
+        dir_string.compare(2, label.name().size(), label.name()) == 0)
+      toplevel_targets.push_back(target);
+  }
+
+  for (size_t i = 0; i < default_toolchain_targets_.size(); i++) {
+    const Target* target = default_toolchain_targets_[i];
+    const Label& label = target->label();
     OutputFile target_file = helper_.GetTargetOutputFile(target);
-    if (target_file.value() != target->label().name()) {
-      out_ << "build " << target->label().name() << ": phony ";
-      path_output_.WriteFile(out_, target_file);
-      out_ << std::endl;
+
+    // Write the long name "foo/bar:baz" for the target "//foo/bar:baz".
+    std::string long_name = label.GetUserVisibleName(false);
+    base::TrimString(long_name, "/", &long_name);
+    WritePhonyRule(target, target_file, long_name);
+
+    // Write the directory name with no target name if they match
+    // (e.g. "//foo/bar:bar" -> "foo/bar").
+    if (FindLastDirComponent(label.dir()) == label.name()) {
+      std::string medium_name =  DirectoryWithNoLastSlash(label.dir());
+      base::TrimString(medium_name, "/", &medium_name);
+      // That may have generated a name the same as the short name of the
+      // target which we already wrote.
+      if (medium_name != label.name())
+        WritePhonyRule(target, target_file, medium_name);
     }
+
+    // Write short names for ones which are unique.
+    if (small_name_count[label.name()] == 1)
+      WritePhonyRule(target, target_file, label.name());
 
     if (!all_rules.empty())
       all_rules.append(" $\n    ");
     all_rules.append(target_file.value());
+  }
+
+  // Pick up phony rules for the toplevel targets with non-unique names (which
+  // would have been skipped in the above loop).
+  for (size_t i = 0; i < toplevel_targets.size(); i++) {
+    if (small_name_count[toplevel_targets[i]->label().name()] > 1) {
+      const Target* target = toplevel_targets[i];
+      WritePhonyRule(target, helper_.GetTargetOutputFile(target),
+                     target->label().name());
+    }
   }
 
   if (!all_rules.empty()) {
@@ -197,3 +235,19 @@ void NinjaBuildWriter::WritePhonyAndAllRules() {
   }
 }
 
+void NinjaBuildWriter::WritePhonyRule(const Target* target,
+                                      const OutputFile& target_file,
+                                      const std::string& phony_name) {
+  if (target_file.value() == phony_name)
+    return;  // No need for a phony rule.
+
+  EscapeOptions ninja_escape;
+  ninja_escape.mode = ESCAPE_NINJA;
+
+  // Escape for special chars Ninja will handle.
+  std::string escaped = EscapeString(phony_name, ninja_escape, NULL);
+
+  out_ << "build " << escaped << ": phony ";
+  path_output_.WriteFile(out_, target_file);
+  out_ << std::endl;
+}

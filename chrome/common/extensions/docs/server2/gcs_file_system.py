@@ -8,7 +8,7 @@ from third_party.cloudstorage import errors
 
 from docs_server_utils import StringIdentity
 from file_system import FileSystem, FileNotFoundError, StatInfo
-from future import Gettable, Future
+from future import Future
 from path_util import (
     AssertIsDirectory, AssertIsFile, AssertIsValid, IsDirectory, Join)
 
@@ -79,7 +79,7 @@ class CloudStorageFileSystem(FileSystem):
       self._bucket = debug_bucket_prefix + self._bucket
     AssertIsValid(self._bucket)
 
-  def Read(self, paths):
+  def Read(self, paths, skip_not_found=False):
     def resolve():
       try:
         result = {}
@@ -96,7 +96,7 @@ class CloudStorageFileSystem(FileSystem):
         self._warnAboutAuthError()
         raise
 
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def Refresh(self):
     return Future(value=())

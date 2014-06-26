@@ -7,7 +7,9 @@
 #include <errno.h>
 #include <string.h>
 
+#include "nacl_io/log.h"
 #include "nacl_io/osdirent.h"
+#include "nacl_io/osinttypes.h"
 #include "nacl_io/osstat.h"
 #include "sdk_util/auto_lock.h"
 #include "sdk_util/macros.h"
@@ -40,16 +42,21 @@ Error DirNode::Read(const HandleAttr& attr,
                     size_t count,
                     int* out_bytes) {
   *out_bytes = 0;
+  LOG_TRACE("Can't read a directory.");
   return EISDIR;
 }
 
-Error DirNode::FTruncate(off_t size) { return EISDIR; }
+Error DirNode::FTruncate(off_t size) {
+  LOG_TRACE("Can't truncate a directory.");
+  return EISDIR;
+}
 
 Error DirNode::Write(const HandleAttr& attr,
                      const void* buf,
                      size_t count,
                      int* out_bytes) {
   *out_bytes = 0;
+  LOG_TRACE("Can't write to a directory.");
   return EISDIR;
 }
 
@@ -65,15 +72,23 @@ Error DirNode::GetDents(size_t offs,
 Error DirNode::AddChild(const std::string& name, const ScopedNode& node) {
   AUTO_LOCK(node_lock_);
 
-  if (name.empty())
+  if (name.empty()) {
+    LOG_ERROR("Can't add child with no name.");
     return ENOENT;
+  }
 
-  if (name.length() >= MEMBER_SIZE(dirent, d_name))
+  if (name.length() >= MEMBER_SIZE(dirent, d_name)) {
+    LOG_ERROR("Child name is too long: %" PRIuS " >= %" PRIuS,
+              name.length(),
+              MEMBER_SIZE(dirent, d_name));
     return ENAMETOOLONG;
+  }
 
   NodeMap_t::iterator it = map_.find(name);
-  if (it != map_.end())
+  if (it != map_.end()) {
+    LOG_TRACE("Can't add child \"%s\", it already exists.", name);
     return EEXIST;
+  }
 
   node->Link();
   map_[name] = node;

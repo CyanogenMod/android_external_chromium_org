@@ -34,7 +34,6 @@ import buildbot_common
 import build_projects
 import build_updater
 import build_version
-import generate_make
 import generate_notice
 import manifest_util
 import parse_dsc
@@ -50,38 +49,28 @@ sys.path.append(os.path.join(NACL_DIR, 'build'))
 import getos
 import oshelpers
 
-CYGTAR = os.path.join(NACL_DIR, 'build', 'cygtar.py')
+BUILD_DIR = os.path.join(NACL_DIR, 'build')
+NACL_TOOLCHAIN_DIR = os.path.join(NACL_DIR, 'toolchain')
+NACL_TOOLCHAINTARS_DIR = os.path.join(NACL_TOOLCHAIN_DIR, '.tars')
+
+CYGTAR = os.path.join(BUILD_DIR, 'cygtar.py')
+PKGVER = os.path.join(BUILD_DIR, 'package_version', 'package_version.py')
 
 NACLPORTS_URL = 'https://naclports.googlecode.com/svn/trunk/src'
-NACLPORTS_REV = 954
+NACLPORTS_REV = 1293
 
 GYPBUILD_DIR = 'gypbuild'
 
 options = None
 
-
-def GetGlibcToolchain():
-  tcdir = os.path.join(NACL_DIR, 'toolchain', '.tars')
-  tcname = 'toolchain_%s_x86.tar.bz2' % getos.GetPlatform()
-  return os.path.join(tcdir, tcname)
-
-
-def GetNewlibToolchain():
-  tcdir = os.path.join(NACL_DIR, 'toolchain', '.tars')
-  tcname = 'naclsdk_%s_x86.tgz' % getos.GetPlatform()
-  return os.path.join(tcdir, tcname)
-
-
-def GetBionicToolchain():
-  tcdir = os.path.join(NACL_DIR, 'toolchain', '.tars')
-  tcname = 'naclsdk_%s_arm_bionic.tgz' % getos.GetPlatform()
-  return os.path.join(tcdir, tcname)
-
-
-def GetPNaClToolchain():
-  tcdir = os.path.join(NACL_DIR, 'toolchain', '.tars')
-  tcname = 'naclsdk_pnacl_%s_x86.tgz' % getos.GetPlatform()
-  return os.path.join(tcdir, tcname)
+  # Map of: ToolchainName: (PackageName, SDKDir).
+TOOLCHAIN_PACKAGE_MAP = {
+    'newlib': ('nacl_x86_newlib', '%(platform)s_x86_newlib'),
+    'bionic': ('nacl_arm_bionic', '%(platform)s_arm_bionic'),
+    'arm': ('nacl_arm_newlib', '%(platform)s_arm_newlib'),
+    'glibc': ('nacl_x86_glibc', '%(platform)s_x86_glibc'),
+    'pnacl': ('pnacl_newlib', '%(platform)s_pnacl')
+    }
 
 
 def GetToolchainNaClInclude(tcname, tcpath, arch):
@@ -132,8 +121,14 @@ def GetToolchainDirName(tcname, xarch):
 
 
 def GetGypToolchainLib(tcname, xarch):
-  tcpath = os.path.join(GetGypGenDir(xarch), 'sdk', 'toolchain',
-                        GetToolchainDirName(tcname, xarch))
+  if xarch == 'arm':
+    toolchain = xarch
+  else:
+    toolchain = tcname
+
+  tcpath = os.path.join(GetGypGenDir(xarch), 'sdk',
+                        '%s_x86' % getos.GetPlatform(),
+                        TOOLCHAIN_PACKAGE_MAP[toolchain][0])
   return GetToolchainNaClLib(tcname, tcpath, xarch)
 
 
@@ -150,12 +145,12 @@ def GetPNaClNativeLib(tcpath, arch):
 
 
 def BuildStepDownloadToolchains(toolchains):
-  buildbot_common.BuildStep('Running download_toolchains.py')
-  download_script = os.path.join('build', 'download_toolchains.py')
-  args = [sys.executable, download_script, '--no-arm-trusted',
-          '--arm-untrusted', '--keep']
+  buildbot_common.BuildStep('Running package_version.py')
+  args = [sys.executable, PKGVER, '--exclude', 'arm_trusted']
   if 'bionic' in toolchains:
-    args.append('--allow-bionic')
+    build_platform = '%s_x86' % getos.GetPlatform()
+    args.extend(['--append', os.path.join(build_platform, 'nacl_arm_bionic')])
+  args.append('sync')
   buildbot_common.Run(args, cwd=NACL_DIR)
 
 
@@ -197,99 +192,43 @@ def BuildStepCopyTextFiles(pepperdir, pepper_ver, chrome_revision,
   open(os.path.join(pepperdir, 'README'), 'w').write(readme_text)
 
 
-def PrunePNaClToolchain(root):
-  dirs_to_prune = [
-    'lib-bc-x86-64',
-    'usr-bc-x86-64'
-    # TODO(sbc): remove this once its really not needed.
-    # Currently we seem to rely on it at least for <bits/stat.h>
-    #'sysroot',
-  ]
-  for dirname in dirs_to_prune:
-    buildbot_common.RemoveDir(os.path.join(root, dirname))
-
-
 def BuildStepUntarToolchains(pepperdir, toolchains):
   buildbot_common.BuildStep('Untar Toolchains')
   platform = getos.GetPlatform()
+  build_platform = '%s_x86' % platform
   tmpdir = os.path.join(OUT_DIR, 'tc_temp')
   buildbot_common.RemoveDir(tmpdir)
   buildbot_common.MakeDir(tmpdir)
 
-  if 'newlib' in toolchains:
-    # Untar the newlib toolchains
-    tarfile = GetNewlibToolchain()
-    buildbot_common.Run([sys.executable, CYGTAR, '-C', tmpdir, '-xf', tarfile],
-                        cwd=NACL_DIR)
+  # Create a list of extract packages tuples, the first part should be
+  # "$PACKAGE_TARGET/$PACKAGE". The second part should be the destination
+  # directory relative to pepperdir/toolchain.
+  extract_packages = []
+  for toolchain in toolchains:
+    toolchain_map = TOOLCHAIN_PACKAGE_MAP.get(toolchain, None)
+    if toolchain_map:
+      package_name, tcname = toolchain_map
+      package_tuple = (os.path.join(build_platform, package_name),
+                       tcname % {'platform': platform})
+      extract_packages.append(package_tuple)
 
-    # Then rename/move it to the pepper toolchain directory
-    srcdir = os.path.join(tmpdir, 'sdk', 'nacl-sdk')
-    tcname = platform + '_x86_newlib'
-    newlibdir = os.path.join(pepperdir, 'toolchain', tcname)
-    buildbot_common.Move(srcdir, newlibdir)
+  if extract_packages:
+    # Extract all of the packages into the temp directory.
+    package_names = [package_tuple[0] for package_tuple in extract_packages]
+    buildbot_common.Run([sys.executable, PKGVER,
+                           '--packages', ','.join(package_names),
+                           '--tar-dir', NACL_TOOLCHAINTARS_DIR,
+                           '--dest-dir', tmpdir,
+                           'extract'])
 
-  if 'bionic' in toolchains:
-    # Untar the bionic toolchains
-    tarfile = GetBionicToolchain()
-    tcname = platform + '_arm_bionic'
-    buildbot_common.Run([sys.executable, CYGTAR, '-C', tmpdir, '-xf', tarfile],
-                        cwd=NACL_DIR)
-    srcdir = os.path.join(tmpdir, tcname)
-    bionicdir = os.path.join(pepperdir, 'toolchain', tcname)
-    buildbot_common.Move(srcdir, bionicdir)
+    # Move all the packages we extracted to the correct destination.
+    for package_name, dest_dir in extract_packages:
+      full_src_dir = os.path.join(tmpdir, package_name)
+      full_dst_dir = os.path.join(pepperdir, 'toolchain', dest_dir)
+      buildbot_common.Move(full_src_dir, full_dst_dir)
 
-  if 'arm' in toolchains:
-    # Copy the existing arm toolchain from native_client tree
-    tcname = platform + '_arm_newlib'
-    arm_toolchain = os.path.join(NACL_DIR, 'toolchain', tcname)
-    arm_toolchain_sdk = os.path.join(pepperdir, 'toolchain',
-                                     os.path.basename(arm_toolchain))
-    buildbot_common.CopyDir(arm_toolchain, arm_toolchain_sdk)
-
-  if 'glibc' in toolchains:
-    # Untar the glibc toolchains
-    tarfile = GetGlibcToolchain()
-    tcname = platform + '_x86_glibc'
-    buildbot_common.Run([sys.executable, CYGTAR, '-C', tmpdir, '-xf', tarfile],
-                        cwd=NACL_DIR)
-
-    # Then rename/move it to the pepper toolchain directory
-    srcdir = os.path.join(tmpdir, 'toolchain', platform + '_x86')
-    glibcdir = os.path.join(pepperdir, 'toolchain', tcname)
-    buildbot_common.Move(srcdir, glibcdir)
-
-  # Untar the pnacl toolchains
-  if 'pnacl' in toolchains:
-    tmpdir = os.path.join(tmpdir, 'pnacl')
-    buildbot_common.RemoveDir(tmpdir)
-    buildbot_common.MakeDir(tmpdir)
-    tarfile = GetPNaClToolchain()
-    tcname = platform + '_pnacl'
-    buildbot_common.Run([sys.executable, CYGTAR, '-C', tmpdir, '-xf', tarfile],
-                        cwd=NACL_DIR)
-
-    # Then rename/move it to the pepper toolchain directory
-    pnacldir = os.path.join(pepperdir, 'toolchain', tcname)
-    buildbot_common.Move(tmpdir, pnacldir)
-    PrunePNaClToolchain(pnacldir)
-
+  # Cleanup the temporary directory we are no longer using.
   buildbot_common.RemoveDir(tmpdir)
-
-  if options.gyp and platform != 'win':
-    # If the gyp options is specified we install a toolchain
-    # wrapper so that gyp can switch toolchains via a commandline
-    # option.
-    bindir = os.path.join(pepperdir, 'toolchain', tcname, 'bin')
-    wrapper = os.path.join(SDK_SRC_DIR, 'tools', 'compiler-wrapper.py')
-    buildbot_common.MakeDir(bindir)
-    buildbot_common.CopyFile(wrapper, bindir)
-
-    # Module 'os' has no 'symlink' member (on Windows).
-    # pylint: disable=E1101
-
-    os.symlink('compiler-wrapper.py', os.path.join(bindir, 'i686-nacl-g++'))
-    os.symlink('compiler-wrapper.py', os.path.join(bindir, 'i686-nacl-gcc'))
-    os.symlink('compiler-wrapper.py', os.path.join(bindir, 'i686-nacl-ar'))
 
 
 # List of toolchain headers to install.
@@ -303,11 +242,10 @@ NACL_HEADER_MAP = {
       ('native_client/src/untrusted/irt/irt_dev.h', ''),
       ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
-      ('native_client/src/untrusted/nacl/nacl_thread.h', 'nacl/'),
       ('native_client/src/untrusted/pthread/pthread.h', ''),
       ('native_client/src/untrusted/pthread/semaphore.h', ''),
       ('native_client/src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
-      ('ppapi/nacl_irt/irt_ppapi.h', ''),
+      ('ppapi/nacl_irt/public/irt_ppapi.h', ''),
   ],
   'glibc': [
       ('native_client/src/include/nacl/nacl_exception.h', 'nacl/'),
@@ -316,9 +254,8 @@ NACL_HEADER_MAP = {
       ('native_client/src/untrusted/irt/irt_dev.h', ''),
       ('native_client/src/untrusted/nacl/nacl_dyncode.h', 'nacl/'),
       ('native_client/src/untrusted/nacl/nacl_startup.h', 'nacl/'),
-      ('native_client/src/untrusted/nacl/nacl_thread.h', 'nacl/'),
       ('native_client/src/untrusted/valgrind/dynamic_annotations.h', 'nacl/'),
-      ('ppapi/nacl_irt/irt_ppapi.h', ''),
+      ('ppapi/nacl_irt/public/irt_ppapi.h', ''),
   ],
   'host': []
 }
@@ -381,6 +318,13 @@ def MakeNinjaRelPath(path):
 
 
 TOOLCHAIN_LIBS = {
+  'bionic' : [
+    'libminidump_generator.a',
+    'libnacl_dyncode.a',
+    'libnacl_exception.a',
+    'libnacl_list_mappings.a',
+    'libppapi.a',
+  ],
   'newlib' : [
     'crti.o',
     'crtn.o',
@@ -461,6 +405,17 @@ def GypNinjaInstall(pepperdir, toolchains):
 
   InstallFiles(ninja_out_dir, os.path.join(pepperdir, 'tools'), tools_files)
 
+  # Add ARM binaries
+  if platform == 'linux':
+    tools_files = [
+      ['irt_core_newlib_arm.nexe', 'irt_core_arm.nexe'],
+      ['irt_core_newlib_arm.nexe', 'irt_core_arm.nexe'],
+      ['sel_ldr', 'sel_ldr_arm'],
+      ['nacl_helper_bootstrap', 'nacl_helper_bootstrap_arm']
+    ]
+    ninja_out_dir = os.path.join(OUT_DIR, build_dir + '-arm', 'Release')
+    InstallFiles(ninja_out_dir, os.path.join(pepperdir, 'tools'), tools_files)
+
   for tc in set(toolchains) & set(['newlib', 'glibc', 'pnacl']):
     if tc == 'pnacl':
       xarches = (None,)
@@ -474,6 +429,11 @@ def GypNinjaInstall(pepperdir, toolchains):
       src_dir = GetGypBuiltLib(tc, xarch)
       dst_dir = GetOutputToolchainLib(pepperdir, tc, xarch)
       InstallFiles(src_dir, dst_dir, TOOLCHAIN_LIBS[tc])
+
+      # Copy ARM newlib components to bionic
+      if tc == 'newlib' and xarch == 'arm' and 'bionic' in toolchains:
+        bionic_dir = GetOutputToolchainLib(pepperdir, 'bionic', xarch)
+        InstallFiles(src_dir, bionic_dir, TOOLCHAIN_LIBS['bionic'])
 
       if tc != 'pnacl':
         src_dir = GetGypToolchainLib(tc, xarch)
@@ -540,7 +500,7 @@ def GypNinjaBuild_Pnacl(rel_out_dir, target_arch):
   out_dir = MakeNinjaRelPath(rel_out_dir)
   gyp_file = os.path.join(SRC_DIR, 'ppapi', 'native_client', 'src',
                           'untrusted', 'pnacl_irt_shim', 'pnacl_irt_shim.gyp')
-  targets = ['pnacl_irt_shim']
+  targets = ['shim_aot']
   GypNinjaBuild(target_arch, gyp_py, gyp_file, targets, out_dir, False)
 
 
@@ -555,15 +515,12 @@ def GypNinjaBuild(arch, gyp_py_script, gyp_file, targets,
     gyp_defines.append('target_arch=%s' % arch)
     if arch == 'arm':
       if getos.GetPlatform() == 'linux':
-        if os.path.exists("/usr/bin/arm-linux-gnueabihf-gcc"):
-          # TODO(sbc): make this conditional once all our linux
-          # have the ARM cross compiler installed.
-          gyp_env['CC'] = 'arm-linux-gnueabihf-gcc'
-          gyp_env['CXX'] = 'arm-linux-gnueabihf-g++'
-          gyp_env['AR'] = 'arm-linux-gnueabihf-ar'
-          gyp_env['AS'] = 'arm-linux-gnueabihf-as'
-          gyp_env['CC_host'] = 'cc'
-          gyp_env['CXX_host'] = 'c++'
+        gyp_env['CC'] = 'arm-linux-gnueabihf-gcc'
+        gyp_env['CXX'] = 'arm-linux-gnueabihf-g++'
+        gyp_env['AR'] = 'arm-linux-gnueabihf-ar'
+        gyp_env['AS'] = 'arm-linux-gnueabihf-as'
+        gyp_env['CC_host'] = 'cc'
+        gyp_env['CXX_host'] = 'c++'
       gyp_defines += ['armv7=1', 'arm_thumb=0', 'arm_neon=1',
           'arm_float_abi=hard']
       if force_arm_gcc:
@@ -857,20 +814,25 @@ def BuildStepBuildNaClPorts(pepper_ver, pepperdir):
   env['PEPPER_DIR'] = os.path.basename(pepperdir)  # pepper_NN
   env['NACLPORTS_NO_ANNOTATE'] = "1"
   env['NACLPORTS_NO_UPLOAD'] = "1"
+  env['BUILDBOT_GOT_REVISION'] = str(NACLPORTS_REV)
 
-  build_script = 'build_tools/bots/linux/naclports-linux-sdk-bundle.sh'
+  build_script = 'build_tools/buildbot_sdk_bundle.sh'
   buildbot_common.BuildStep('Build naclports')
-  buildbot_common.Run([build_script], env=env, cwd=NACLPORTS_DIR)
 
   bundle_dir = os.path.join(NACLPORTS_DIR, 'out', 'sdk_bundle')
   out_dir = os.path.join(bundle_dir, 'pepper_%s' % pepper_ver)
+
+  # Remove the sdk_bundle directory to remove stale files from previous builds.
+  buildbot_common.RemoveDir(bundle_dir)
+
+  buildbot_common.Run([build_script], env=env, cwd=NACLPORTS_DIR)
 
   # Some naclports do not include a standalone LICENSE/COPYING file
   # so we explicitly list those here for inclusion.
   extra_licenses = ('tinyxml/readme.txt',
                     'jpeg-8d/README',
                     'zlib-1.2.3/README')
-  src_root = os.path.join(NACLPORTS_DIR, 'out', 'repository-i686')
+  src_root = os.path.join(NACLPORTS_DIR, 'out', 'build')
   output_license = os.path.join(out_dir, 'ports', 'LICENSE')
   GenerateNotice(src_root , output_license, extra_licenses)
   readme = os.path.join(out_dir, 'ports', 'README')
@@ -901,15 +863,17 @@ def BuildStepBuildAppEngine(pepperdir, chrome_revision):
 
 
 def main(args):
-  parser = optparse.OptionParser()
+  parser = optparse.OptionParser(description=__doc__)
+  parser.add_option('--nacl-tree-path',
+      help='Path to native client tree for bionic build.',
+      dest='nacl_tree_path')
+  parser.add_option('--qemu', help='Add qemu for ARM.',
+      action='store_true')
   parser.add_option('--bionic', help='Add bionic build.',
       action='store_true')
   parser.add_option('--tar', help='Force the tar step.',
       action='store_true')
   parser.add_option('--archive', help='Force the archive step.',
-      action='store_true')
-  parser.add_option('--gyp',
-      help='Use gyp to build examples/libraries/Makefiles.',
       action='store_true')
   parser.add_option('--release', help='PPAPI release version.',
       dest='release', default=None)
@@ -939,7 +903,29 @@ def main(args):
   if args:
     parser.error("Unexpected arguments: %s" % str(args))
 
-  generate_make.use_gyp = options.gyp
+  if options.nacl_tree_path:
+    options.bionic = True
+    toolchain_build = os.path.join(options.nacl_tree_path, 'toolchain_build')
+    print 'WARNING: Building bionic toolchain from NaCl checkout.'
+    print 'This option builds bionic from the sources currently in the'
+    print 'provided NativeClient checkout, and the results instead of '
+    print 'downloading a toolchain from the builder. This may result in a'
+    print 'NaCl SDK that can not run on ToT chrome.'
+    print 'NOTE:  To clobber you will need to run toolchain_build_bionic.py'
+    print 'directly from the NativeClient checkout.'
+    print ''
+    response = raw_input("Type 'y' and hit enter to continue.\n")
+    if response != 'y' and response != 'Y':
+      print 'Aborting.'
+      return 1
+
+    # Get head version of NativeClient tree
+    buildbot_common.BuildStep('Build bionic toolchain.')
+    buildbot_common.Run([sys.executable, 'toolchain_build_bionic.py', '-f'],
+                        cwd=toolchain_build)
+  else:
+    toolchain_build = None
+
   if buildbot_common.IsSDKBuilder():
     options.archive = True
     options.build_ports = True
@@ -947,8 +933,12 @@ def main(args):
     options.tar = True
 
   toolchains = ['newlib', 'glibc', 'arm', 'pnacl', 'host']
+
+  # Changes for experimental bionic builder
   if options.bionic:
     toolchains.append('bionic')
+    options.build_ports = False
+    options.build_app_engine = False
 
   print 'Building: ' + ' '.join(toolchains)
 
@@ -962,7 +952,10 @@ def main(args):
   pepper_old = str(chrome_version - 1)
   pepperdir = os.path.join(OUT_DIR, 'pepper_' + pepper_ver)
   pepperdir_old = os.path.join(OUT_DIR, 'pepper_' + pepper_old)
-  tarname = 'naclsdk_' + getos.GetPlatform() + '.tar.bz2'
+  if options.bionic:
+    tarname = 'naclsdk_bionic.tar.bz2'
+  else:
+    tarname = 'naclsdk_' + getos.GetPlatform() + '.tar.bz2'
   tarfile = os.path.join(OUT_DIR, tarname)
 
   if options.release:
@@ -978,9 +971,17 @@ def main(args):
     BuildStepCleanPepperDirs(pepperdir, pepperdir_old)
     BuildStepMakePepperDirs(pepperdir, ['include', 'toolchain', 'tools'])
     BuildStepDownloadToolchains(toolchains)
-    BuildStepUntarToolchains(pepperdir, toolchains)
-
-  BuildStepBuildToolchains(pepperdir, toolchains)
+    if options.nacl_tree_path:
+      # Instead of untarring, copy the raw bionic toolchain
+      not_bionic = [i for i in toolchains if i != 'bionic']
+      BuildStepUntarToolchains(pepperdir, not_bionic)
+      tcname = GetToolchainDirName('bionic', 'arm')
+      srcdir = os.path.join(toolchain_build, 'out', tcname)
+      bionicdir = os.path.join(pepperdir, 'toolchain', tcname)
+      oshelpers.Copy(['-r', srcdir, bionicdir])
+    else:
+      BuildStepUntarToolchains(pepperdir, toolchains)
+    BuildStepBuildToolchains(pepperdir, toolchains)
 
   BuildStepUpdateHelpers(pepperdir, True)
   BuildStepUpdateUserProjects(pepperdir, toolchains,
@@ -993,7 +994,8 @@ def main(args):
   GenerateNotice(pepperdir)
 
   # Verify the SDK contains what we expect.
-  BuildStepVerifyFilelist(pepperdir)
+  if not options.bionic:
+    BuildStepVerifyFilelist(pepperdir)
 
   if options.tar:
     BuildStepTarBundle(pepper_ver, tarfile)
@@ -1007,6 +1009,10 @@ def main(args):
 
   if options.build_app_engine and getos.GetPlatform() == 'linux':
     BuildStepBuildAppEngine(pepperdir, chrome_revision)
+
+  if options.qemu:
+    qemudir = os.path.join(NACL_DIR, 'toolchain', 'linux_arm-trusted')
+    oshelpers.Copy(['-r', qemudir, pepperdir])
 
   # Archive on non-trybots.
   if options.archive:

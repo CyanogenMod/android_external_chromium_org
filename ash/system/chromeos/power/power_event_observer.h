@@ -13,7 +13,6 @@
 #include "chromeos/dbus/session_manager_client.h"
 
 namespace ash {
-namespace internal {
 
 // A class that observes power-management-related events.
 class ASH_EXPORT PowerEventObserver
@@ -27,7 +26,7 @@ class ASH_EXPORT PowerEventObserver
   // chromeos::PowerManagerClient::Observer overrides:
   virtual void BrightnessChanged(int level, bool user_initiated) OVERRIDE;
   virtual void SuspendImminent() OVERRIDE;
-  virtual void SystemResumed(const base::TimeDelta& sleep_duration) OVERRIDE;
+  virtual void SuspendDone(const base::TimeDelta& sleep_duration) OVERRIDE;
 
   // chromeos::SessionManagerClient::Observer overrides.
   virtual void ScreenIsLocked() OVERRIDE;
@@ -44,7 +43,6 @@ class ASH_EXPORT PowerEventObserver
   DISALLOW_COPY_AND_ASSIGN(PowerEventObserver);
 };
 
-}  // namespace internal
 }  // namespace chromeos
 
 #endif  // ASH_SYSTEM_CHROMEOS_POWER_POWER_EVENT_OBSERVER_H_

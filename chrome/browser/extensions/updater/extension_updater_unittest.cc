@@ -35,11 +35,11 @@
 #include "chrome/browser/extensions/updater/extension_updater.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/updater/request_queue_impl.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/omaha_query_params/omaha_query_params.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/omaha_query_params/omaha_query_params.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -47,6 +47,7 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
@@ -60,9 +61,10 @@
 #include "net/url_request/url_request_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/third_party/mozilla/url_parse.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -112,6 +114,8 @@ const net::BackoffEntry::Policy kNoBackoffPolicy = {
 };
 
 const char kEmptyUpdateUrlData[] = "";
+
+const char kAuthUserQueryKey[] = "authuser";
 
 int kExpectedLoadFlags =
     net::LOAD_DO_NOT_SEND_COOKIES |
@@ -248,14 +252,32 @@ class NotificationsObserver : public content::NotificationObserver {
   DISALLOW_COPY_AND_ASSIGN(NotificationsObserver);
 };
 
+// Extracts the integer value of the |authuser| query parameter. Returns 0 if
+// the parameter is not set.
+int GetAuthUserQueryValue(const GURL& url) {
+  std::string query_string = url.query();
+  url::Component query(0, query_string.length());
+  url::Component key, value;
+  while (
+      url::ExtractQueryKeyValue(query_string.c_str(), &query, &key, &value)) {
+    std::string key_string = query_string.substr(key.begin, key.len);
+    if (key_string == kAuthUserQueryKey) {
+      int user_index = 0;
+      base::StringToInt(query_string.substr(value.begin, value.len),
+                        &user_index);
+      return user_index;
+    }
+  }
+  return 0;
+}
+
 }  // namespace
 
 // Base class for further specialized test classes.
 class MockService : public TestExtensionService {
  public:
   explicit MockService(TestExtensionPrefs* prefs)
-      : prefs_(prefs), pending_extension_manager_(*this) {
-  }
+      : prefs_(prefs), pending_extension_manager_(&profile_) {}
 
   virtual ~MockService() {}
 
@@ -300,8 +322,8 @@ class MockService : public TestExtensionService {
 
  protected:
   TestExtensionPrefs* const prefs_;
-  PendingExtensionManager pending_extension_manager_;
   TestingProfile profile_;
+  PendingExtensionManager pending_extension_manager_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockService);
@@ -331,10 +353,12 @@ void SetupPendingExtensionManagerForTest(
     const bool kIsFromSync = true;
     const bool kInstallSilently = true;
     const bool kMarkAcknowledged = false;
+    const bool kRemoteInstall = false;
     std::string id = id_util::GenerateId(base::StringPrintf("extension%i", i));
 
     pending_extension_manager->AddForTesting(
         PendingExtensionInfo(id,
+                             std::string(),
                              update_url,
                              Version(),
                              should_allow_install,
@@ -342,7 +366,8 @@ void SetupPendingExtensionManagerForTest(
                              kInstallSilently,
                              Manifest::INTERNAL,
                              Extension::NO_FLAGS,
-                             kMarkAcknowledged));
+                             kMarkAcknowledged,
+                             kRemoteInstall));
   }
 }
 
@@ -411,11 +436,9 @@ class ServiceForDownloadTests : public MockService {
       const std::string& id,
       const base::FilePath& extension_path,
       bool file_ownership_passed,
-      const GURL& download_url,
       CrxInstaller** out_crx_installer) OVERRIDE {
     extension_id_ = id;
     install_path_ = extension_path;
-    download_url_ = download_url;
 
     if (ContainsKey(fake_crx_installers_, id)) {
       *out_crx_installer = fake_crx_installers_[id];
@@ -437,7 +460,6 @@ class ServiceForDownloadTests : public MockService {
 
   const std::string& extension_id() const { return extension_id_; }
   const base::FilePath& install_path() const { return install_path_; }
-  const GURL& download_url() const { return download_url_; }
 
  private:
   // Hold the set of ids that UpdateExtension() should fake success on.
@@ -486,8 +508,8 @@ static void VerifyQueryAndExtractParameters(
   std::map<std::string, std::string> params;
   ExtractParameters(query, &params);
 
-  std::string omaha_params =
-      chrome::OmahaQueryParams::Get(chrome::OmahaQueryParams::CRX);
+  std::string omaha_params = omaha_query_params::OmahaQueryParams::Get(
+      omaha_query_params::OmahaQueryParams::CRX);
   std::map<std::string, std::string> expected;
   ExtractParameters(omaha_params, &expected);
 
@@ -790,8 +812,8 @@ class ExtensionUpdaterTest : public testing::Test {
 
   void TestMultipleManifestDownloading() {
     net::TestURLFetcherFactory factory;
+    factory.set_remove_fetcher_on_delete(true);
     net::TestURLFetcher* fetcher = NULL;
-    NotificationsObserver observer;
     MockService service(prefs_.get());
     MockExtensionDownloaderDelegate delegate;
     ExtensionDownloader downloader(&delegate, service.request_context());
@@ -814,100 +836,118 @@ class ExtensionUpdaterTest : public testing::Test {
         "4444", "4.0", &zeroDays, kEmptyUpdateUrlData, std::string());
 
     // This will start the first fetcher and queue the others. The next in queue
-    // is started as each fetcher receives its response.
+    // is started as each fetcher receives its response. Note that the fetchers
+    // don't necessarily run in the order that they are started from here.
+    GURL fetch1_url = fetch1->full_url();
+    GURL fetch2_url = fetch2->full_url();
+    GURL fetch3_url = fetch3->full_url();
+    GURL fetch4_url = fetch4->full_url();
     downloader.StartUpdateCheck(fetch1.Pass());
     downloader.StartUpdateCheck(fetch2.Pass());
     downloader.StartUpdateCheck(fetch3.Pass());
     downloader.StartUpdateCheck(fetch4.Pass());
     RunUntilIdle();
 
-    // The first fetch will fail.
-    fetcher = factory.GetFetcherByID(ExtensionDownloader::kManifestFetcherId);
-    EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
-    EXPECT_CALL(delegate, OnExtensionDownloadFailed(
-        "1111", ExtensionDownloaderDelegate::MANIFEST_FETCH_FAILED, _, _));
-    fetcher->set_url(kUpdateUrl);
-    fetcher->set_status(net::URLRequestStatus());
-    fetcher->set_response_code(400);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
-    RunUntilIdle();
-    Mock::VerifyAndClearExpectations(&delegate);
+    for (int i = 0; i < 4; ++i) {
+      fetcher = factory.GetFetcherByID(ExtensionDownloader::kManifestFetcherId);
+      ASSERT_TRUE(fetcher);
+      ASSERT_TRUE(fetcher->delegate());
+      EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
+      EXPECT_FALSE(fetcher->GetOriginalURL().is_empty());
 
-    // The second fetch gets invalid data.
-    const std::string kInvalidXml = "invalid xml";
-    fetcher = factory.GetFetcherByID(ExtensionDownloader::kManifestFetcherId);
-    EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
-    EXPECT_CALL(delegate, OnExtensionDownloadFailed(
-        "2222", ExtensionDownloaderDelegate::MANIFEST_INVALID, _, _))
-        .WillOnce(InvokeWithoutArgs(&delegate,
-                                    &MockExtensionDownloaderDelegate::Quit));
-    fetcher->set_url(kUpdateUrl);
-    fetcher->set_status(net::URLRequestStatus());
-    fetcher->set_response_code(200);
-    fetcher->SetResponseString(kInvalidXml);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
-    delegate.Wait();
-    Mock::VerifyAndClearExpectations(&delegate);
+      if (fetcher->GetOriginalURL() == fetch1_url) {
+        // The first fetch will fail.
+        EXPECT_CALL(delegate, OnExtensionDownloadFailed(
+            "1111", ExtensionDownloaderDelegate::MANIFEST_FETCH_FAILED, _, _));
+        fetcher->set_url(kUpdateUrl);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(400);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        RunUntilIdle();
+        Mock::VerifyAndClearExpectations(&delegate);
+        fetch1_url = GURL();
+      } else if (fetcher->GetOriginalURL() == fetch2_url) {
+        // The second fetch gets invalid data.
+        const std::string kInvalidXml = "invalid xml";
+        EXPECT_CALL(delegate, OnExtensionDownloadFailed(
+            "2222", ExtensionDownloaderDelegate::MANIFEST_INVALID, _, _))
+            .WillOnce(InvokeWithoutArgs(
+                &delegate,
+                &MockExtensionDownloaderDelegate::Quit));
+        fetcher->set_url(kUpdateUrl);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(200);
+        fetcher->SetResponseString(kInvalidXml);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        delegate.Wait();
+        Mock::VerifyAndClearExpectations(&delegate);
+        fetch2_url = GURL();
+      } else if (fetcher->GetOriginalURL() == fetch3_url) {
+        // The third fetcher doesn't have an update available.
+        const std::string kNoUpdate =
+            "<?xml version='1.0' encoding='UTF-8'?>"
+            "<gupdate xmlns='http://www.google.com/update2/response'"
+            "                protocol='2.0'>"
+            " <app appid='3333'>"
+            "  <updatecheck codebase='http://example.com/extension_3.0.0.0.crx'"
+            "               version='3.0.0.0' prodversionmin='3.0.0.0' />"
+            " </app>"
+            "</gupdate>";
+        EXPECT_CALL(delegate, IsExtensionPending("3333"))
+            .WillOnce(Return(false));
+        EXPECT_CALL(delegate, GetExtensionExistingVersion("3333", _))
+            .WillOnce(DoAll(SetArgPointee<1>("3.0.0.0"),
+                            Return(true)));
+        EXPECT_CALL(delegate, OnExtensionDownloadFailed(
+            "3333", ExtensionDownloaderDelegate::NO_UPDATE_AVAILABLE, _, _))
+            .WillOnce(InvokeWithoutArgs(
+                &delegate,
+                &MockExtensionDownloaderDelegate::Quit));
+        fetcher->set_url(kUpdateUrl);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(200);
+        fetcher->SetResponseString(kNoUpdate);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        delegate.Wait();
+        Mock::VerifyAndClearExpectations(&delegate);
+        fetch3_url = GURL();
+      } else if (fetcher->GetOriginalURL() == fetch4_url) {
+        // The last fetcher has an update.
+        NotificationsObserver observer;
+        const std::string kUpdateAvailable =
+            "<?xml version='1.0' encoding='UTF-8'?>"
+            "<gupdate xmlns='http://www.google.com/update2/response'"
+            "                protocol='2.0'>"
+            " <app appid='4444'>"
+            "  <updatecheck codebase='http://example.com/extension_1.2.3.4.crx'"
+            "               version='4.0.42.0' prodversionmin='4.0.42.0' />"
+            " </app>"
+            "</gupdate>";
+        EXPECT_CALL(delegate, IsExtensionPending("4444"))
+            .WillOnce(Return(false));
+        EXPECT_CALL(delegate, GetExtensionExistingVersion("4444", _))
+            .WillOnce(DoAll(SetArgPointee<1>("4.0.0.0"),
+                            Return(true)));
+        fetcher->set_url(kUpdateUrl);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(200);
+        fetcher->SetResponseString(kUpdateAvailable);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        observer.Wait();
+        Mock::VerifyAndClearExpectations(&delegate);
 
-    // The third fetcher doesn't have an update available.
-    const std::string kNoUpdate =
-        "<?xml version='1.0' encoding='UTF-8'?>"
-        "<gupdate xmlns='http://www.google.com/update2/response'"
-        "                protocol='2.0'>"
-        " <app appid='3333'>"
-        "  <updatecheck codebase='http://example.com/extension_3.0.0.0.crx'"
-        "               version='3.0.0.0' prodversionmin='3.0.0.0' />"
-        " </app>"
-        "</gupdate>";
-    fetcher = factory.GetFetcherByID(ExtensionDownloader::kManifestFetcherId);
-    EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
-    EXPECT_CALL(delegate, IsExtensionPending("3333")).WillOnce(Return(false));
-    EXPECT_CALL(delegate, GetExtensionExistingVersion("3333", _))
-        .WillOnce(DoAll(SetArgPointee<1>("3.0.0.0"),
-                        Return(true)));
-    EXPECT_CALL(delegate, OnExtensionDownloadFailed(
-        "3333", ExtensionDownloaderDelegate::NO_UPDATE_AVAILABLE, _, _))
-        .WillOnce(InvokeWithoutArgs(&delegate,
-                                    &MockExtensionDownloaderDelegate::Quit));
-    fetcher->set_url(kUpdateUrl);
-    fetcher->set_status(net::URLRequestStatus());
-    fetcher->set_response_code(200);
-    fetcher->SetResponseString(kNoUpdate);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
-    delegate.Wait();
-    Mock::VerifyAndClearExpectations(&delegate);
+        // Verify that the downloader decided to update this extension.
+        EXPECT_EQ(1u, observer.UpdatedCount());
+        EXPECT_TRUE(observer.Updated("4444"));
+        fetch4_url = GURL();
+      } else {
+        ADD_FAILURE() << "Unexpected fetch: " << fetcher->GetOriginalURL();
+      }
+    }
 
-    // The last fetcher has an update.
-    const std::string kUpdateAvailable =
-        "<?xml version='1.0' encoding='UTF-8'?>"
-        "<gupdate xmlns='http://www.google.com/update2/response'"
-        "                protocol='2.0'>"
-        " <app appid='4444'>"
-        "  <updatecheck codebase='http://example.com/extension_1.2.3.4.crx'"
-        "               version='4.0.42.0' prodversionmin='4.0.42.0' />"
-        " </app>"
-        "</gupdate>";
     fetcher = factory.GetFetcherByID(ExtensionDownloader::kManifestFetcherId);
-    EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
-    EXPECT_TRUE(fetcher->GetLoadFlags() == kExpectedLoadFlags);
-    EXPECT_CALL(delegate, IsExtensionPending("4444")).WillOnce(Return(false));
-    EXPECT_CALL(delegate, GetExtensionExistingVersion("4444", _))
-        .WillOnce(DoAll(SetArgPointee<1>("4.0.0.0"),
-                        Return(true)));
-    fetcher->set_url(kUpdateUrl);
-    fetcher->set_status(net::URLRequestStatus());
-    fetcher->set_response_code(200);
-    fetcher->SetResponseString(kUpdateAvailable);
-    fetcher->delegate()->OnURLFetchComplete(fetcher);
-    observer.Wait();
-    Mock::VerifyAndClearExpectations(&delegate);
-
-    // Verify that the downloader decided to update this extension.
-    EXPECT_EQ(1u, observer.UpdatedCount());
-    EXPECT_TRUE(observer.Updated("4444"));
+    if (fetcher)
+      ADD_FAILURE() << "Unexpected fetch: " << fetcher->GetOriginalURL();
   }
 
   void TestManifestRetryDownloading() {
@@ -1019,15 +1059,21 @@ class ExtensionUpdaterTest : public testing::Test {
       const bool kIsFromSync = true;
       const bool kInstallSilently = true;
       const bool kMarkAcknowledged = false;
+      const bool kRemoteInstall = false;
       PendingExtensionManager* pending_extension_manager =
           service->pending_extension_manager();
       pending_extension_manager->AddForTesting(
-          PendingExtensionInfo(id, test_url, version,
-                               &ShouldAlwaysInstall, kIsFromSync,
+          PendingExtensionInfo(id,
+                               std::string(),
+                               test_url,
+                               version,
+                               &ShouldAlwaysInstall,
+                               kIsFromSync,
                                kInstallSilently,
                                Manifest::INTERNAL,
                                Extension::NO_FLAGS,
-                               kMarkAcknowledged));
+                               kMarkAcknowledged,
+                               kRemoteInstall));
     }
 
     // Call back the ExtensionUpdater with a 200 response and some test data
@@ -1074,7 +1120,6 @@ class ExtensionUpdaterTest : public testing::Test {
       EXPECT_EQ(id, service->extension_id());
       base::FilePath tmpfile_path = service->install_path();
       EXPECT_FALSE(tmpfile_path.empty());
-      EXPECT_EQ(test_url, service->download_url());
       EXPECT_EQ(extension_file_path, tmpfile_path);
     }
   }
@@ -1082,7 +1127,10 @@ class ExtensionUpdaterTest : public testing::Test {
   // Update a single extension in an environment where the download request
   // initially responds with a 403 status. Expect the fetcher to automatically
   // retry with cookies enabled.
-  void TestSingleProtectedExtensionDownloading(bool use_https, bool fail) {
+  void TestSingleProtectedExtensionDownloading(bool use_https,
+                                               bool fail,
+                                               int max_authuser,
+                                               int valid_authuser) {
     net::TestURLFetcherFactory factory;
     net::TestURLFetcher* fetcher = NULL;
     scoped_ptr<ServiceForDownloadTests> service(
@@ -1135,16 +1183,46 @@ class ExtensionUpdaterTest : public testing::Test {
     }
 
     // Attempt to fetch again after the auth failure.
+    bool succeed = !fail;
     if (fail) {
-      // Fail and verify that the fetch queue is cleared.
-      fetcher->set_url(test_url);
-      fetcher->set_status(net::URLRequestStatus());
-      fetcher->set_response_code(403);
-      fetcher->delegate()->OnURLFetchComplete(fetcher);
-      RunUntilIdle();
-      EXPECT_EQ(0U, updater.downloader_->extensions_queue_.active_request());
-    } else {
-      // Succeed
+      // Do not simulate incremental authuser retries.
+      if (max_authuser == 0) {
+        // Fail and verify that the fetch queue is cleared.
+        fetcher->set_url(test_url);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(401);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        RunUntilIdle();
+
+        EXPECT_EQ(0U, updater.downloader_->extensions_queue_.active_request());
+        return;
+      }
+
+      // Simulate incremental authuser retries.
+      for (int user_index = 0; user_index <= max_authuser; ++user_index) {
+        const ExtensionDownloader::ExtensionFetch& fetch =
+            *updater.downloader_->extensions_queue_.active_request();
+        EXPECT_EQ(user_index, GetAuthUserQueryValue(fetch.url));
+        if (user_index == valid_authuser) {
+          succeed = true;
+          break;
+        }
+        fetcher =
+            factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
+        EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
+        fetcher->set_url(fetch.url);
+        fetcher->set_status(net::URLRequestStatus());
+        fetcher->set_response_code(403);
+        fetcher->delegate()->OnURLFetchComplete(fetcher);
+        RunUntilIdle();
+      }
+    }
+
+    // Succeed
+    if (succeed) {
+      fetcher =
+          factory.GetFetcherByID(ExtensionDownloader::kExtensionFetcherId);
+      EXPECT_TRUE(fetcher != NULL && fetcher->delegate() != NULL);
       base::FilePath extension_file_path(FILE_PATH_LITERAL("/whatever"));
       fetcher->set_url(test_url);
       fetcher->set_status(net::URLRequestStatus());
@@ -1157,7 +1235,6 @@ class ExtensionUpdaterTest : public testing::Test {
       EXPECT_EQ(id, service->extension_id());
       base::FilePath tmpfile_path = service->install_path();
       EXPECT_FALSE(tmpfile_path.empty());
-      EXPECT_EQ(test_url, service->download_url());
       EXPECT_EQ(extension_file_path, tmpfile_path);
     }
   }
@@ -1255,7 +1332,6 @@ class ExtensionUpdaterTest : public testing::Test {
     base::FilePath tmpfile_path = service.install_path();
     EXPECT_FALSE(tmpfile_path.empty());
     EXPECT_EQ(id1, service.extension_id());
-    EXPECT_EQ(url1, service.download_url());
     RunUntilIdle();
 
     // Make sure the second fetch finished and asked the service to do an
@@ -1278,7 +1354,6 @@ class ExtensionUpdaterTest : public testing::Test {
       // The second install should not have run, because the first has not
       // sent a notification that it finished.
       EXPECT_EQ(id1, service.extension_id());
-      EXPECT_EQ(url1, service.download_url());
 
       // Fake install notice.  This should start the second installation,
       // which will be checked below.
@@ -1288,7 +1363,6 @@ class ExtensionUpdaterTest : public testing::Test {
     }
 
     EXPECT_EQ(id2, service.extension_id());
-    EXPECT_EQ(url2, service.download_url());
     EXPECT_FALSE(service.install_path().empty());
 
     // Make sure the correct crx contents were passed for the update call.
@@ -1302,7 +1376,7 @@ class ExtensionUpdaterTest : public testing::Test {
   }
 
   void TestGalleryRequestsWithBrand(bool use_organic_brand_code) {
-    google_util::BrandForTesting brand_for_testing(
+    google_brand::BrandForTesting brand_for_testing(
         use_organic_brand_code ? "GGLS" : "TEST");
 
     // We want to test a variety of combinations of expected ping conditions for
@@ -1581,16 +1655,31 @@ TEST_F(ExtensionUpdaterTest, TestSingleExtensionDownloadingFailurePending) {
   TestSingleExtensionDownloading(true, false, true);
 }
 
-TEST_F(ExtensionUpdaterTest, TestSingleProtectedExtensionDownloading) {
-  TestSingleProtectedExtensionDownloading(true, false);
+TEST_F(ExtensionUpdaterTest, SingleProtectedExtensionDownloading) {
+  TestSingleProtectedExtensionDownloading(true, false, 0, 0);
 }
 
-TEST_F(ExtensionUpdaterTest, TestSingleProtectedExtensionDownloadingFailure) {
-  TestSingleProtectedExtensionDownloading(true, true);
+TEST_F(ExtensionUpdaterTest, SingleProtectedExtensionDownloadingFailure) {
+  TestSingleProtectedExtensionDownloading(true, true, 0, 0);
 }
 
-TEST_F(ExtensionUpdaterTest, TestSingleProtectedExtensionDownloadingNoHTTPS) {
-  TestSingleProtectedExtensionDownloading(false, false);
+TEST_F(ExtensionUpdaterTest, SingleProtectedExtensionDownloadingNoHTTPS) {
+  TestSingleProtectedExtensionDownloading(false, false, 0, 0);
+}
+
+TEST_F(ExtensionUpdaterTest,
+       SingleProtectedExtensionDownloadingWithNonDefaultAuthUser1) {
+  TestSingleProtectedExtensionDownloading(true, true, 2, 1);
+}
+
+TEST_F(ExtensionUpdaterTest,
+       SingleProtectedExtensionDownloadingWithNonDefaultAuthUser2) {
+  TestSingleProtectedExtensionDownloading(true, true, 2, 2);
+}
+
+TEST_F(ExtensionUpdaterTest,
+       SingleProtectedExtensionDownloadingAuthUserExhaustionFailure) {
+  TestSingleProtectedExtensionDownloading(true, true, 2, 5);
 }
 
 TEST_F(ExtensionUpdaterTest, TestMultipleExtensionDownloadingUpdatesFail) {

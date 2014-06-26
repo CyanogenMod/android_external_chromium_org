@@ -8,7 +8,7 @@
 #include <string>
 
 #include "chrome/browser/content_settings/permission_request_id.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "url/gurl.h"
 
 class PermissionQueueController;
@@ -21,18 +21,20 @@ class GeolocationInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
   // Creates a geolocation infobar and delegate and adds the infobar to
   // |infobar_service|.  Returns the infobar if it was successfully added.
-  static InfoBar* Create(InfoBarService* infobar_service,
-                         PermissionQueueController* controller,
-                         const PermissionRequestID& id,
-                         const GURL& requesting_frame,
-                         const std::string& display_languages);
+  static infobars::InfoBar* Create(InfoBarService* infobar_service,
+                                   PermissionQueueController* controller,
+                                   const PermissionRequestID& id,
+                                   const GURL& requesting_frame,
+                                   const std::string& display_languages,
+                                   const std::string& accept_button_label);
 
  protected:
   GeolocationInfoBarDelegate(PermissionQueueController* controller,
                              const PermissionRequestID& id,
                              const GURL& requesting_frame,
                              int contents_unique_id,
-                             const std::string& display_languages);
+                             const std::string& display_languages,
+                             const std::string& accept_button_label);
   virtual ~GeolocationInfoBarDelegate();
 
   // ConfirmInfoBarDelegate:
@@ -54,7 +56,7 @@ class GeolocationInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
   virtual bool ShouldExpireInternal(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
+      const NavigationDetails& details) const OVERRIDE;
   virtual base::string16 GetMessageText() const OVERRIDE;
   virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;

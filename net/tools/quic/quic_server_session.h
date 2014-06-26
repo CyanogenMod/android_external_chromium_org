@@ -38,14 +38,15 @@ class QuicServerSessionVisitor {
  public:
   virtual ~QuicServerSessionVisitor() {}
 
-  virtual void OnConnectionClosed(QuicGuid guid, QuicErrorCode error) = 0;
+  virtual void OnConnectionClosed(QuicConnectionId connection_id,
+                                  QuicErrorCode error) = 0;
   virtual void OnWriteBlocked(QuicBlockedWriterInterface* writer) = 0;
 };
 
 class QuicServerSession : public QuicSession {
  public:
   QuicServerSession(const QuicConfig& config,
-                    QuicConnection *connection,
+                    QuicConnection* connection,
                     QuicServerSessionVisitor* visitor);
 
   // Override the base class to notify the owner of the connection close.
@@ -72,7 +73,7 @@ class QuicServerSession : public QuicSession {
   virtual bool ShouldCreateIncomingDataStream(QuicStreamId id);
 
   virtual QuicCryptoServerStream* CreateQuicCryptoServerStream(
-    const QuicCryptoServerConfig& crypto_config);
+      const QuicCryptoServerConfig& crypto_config);
 
  private:
   friend class test::QuicServerSessionPeer;

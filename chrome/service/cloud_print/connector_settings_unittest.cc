@@ -28,7 +28,6 @@ const char kServiceStateContent[] =
     "      'proxy_id': 'PROXY',"
     "      'robot_email': '123@cloudprint.googleusercontent.com',"
     "      'robot_refresh_token': '123',"
-    "      'service_url': 'http://cp.google.com',"
     "      'xmpp_auth_token': 'xmp token',"
     "      'xmpp_ping_enabled': true,"
     "      'xmpp_ping_timeout_sec': 256,"
@@ -60,7 +59,7 @@ class ConnectorSettingsTest : public testing::Test {
     if (json) {
       std::string content = json;
       std::replace(content.begin(), content.end(), '\'', '"');
-      file_util::WriteFile(file_name, content.c_str(), content.size());
+      base::WriteFile(file_name, content.c_str(), content.size());
     }
     ServiceProcessPrefs* prefs =
         new ServiceProcessPrefs(file_name, message_loop_proxy_.get());
@@ -99,7 +98,7 @@ TEST_F(ConnectorSettingsTest, InitFromFile) {
   scoped_ptr<ServiceProcessPrefs> prefs(CreateTestFile(kServiceStateContent));
   ConnectorSettings settings;
   settings.InitFrom(prefs.get());
-  EXPECT_EQ("http://cp.google.com/", settings.server_url().spec());
+  EXPECT_EQ("https://www.google.com/cloudprint", settings.server_url().spec());
   EXPECT_EQ("PROXY", settings.proxy_id());
   EXPECT_FALSE(settings.proxy_id().empty());
   EXPECT_TRUE(settings.delete_on_enum_fail());

@@ -20,9 +20,12 @@
 #include "tools/gn/token.h"
 #include "tools/gn/toolchain.h"
 
-class CommandLine;
 class InputFile;
 class ParseNode;
+
+namespace base {
+class CommandLine;
+}
 
 extern const char kDotfile_Help[];
 
@@ -45,9 +48,19 @@ class CommonSetup {
     check_for_unused_overrides_ = s;
   }
 
+  // After a successful run, setting this will additionally cause the public
+  // headers to be checked. Defaults to false.
+  void set_check_public_headers(bool s) {
+    check_public_headers_ = s;
+  }
+
   BuildSettings& build_settings() { return build_settings_; }
   Builder* builder() { return builder_.get(); }
   LoaderImpl* loader() { return loader_.get(); }
+
+  // Name of the file in the root build directory that contains the build
+  // arguements.
+  static const char kBuildArgFileName[];
 
  protected:
   CommonSetup();
@@ -62,8 +75,11 @@ class CommonSetup {
   scoped_refptr<LoaderImpl> loader_;
   scoped_refptr<Builder> builder_;
 
+  SourceFile root_build_file_;
+
   bool check_for_bad_items_;
   bool check_for_unused_overrides_;
+  bool check_public_headers_;
 
  private:
   CommonSetup& operator=(const CommonSetup& other);  // Disallow.
@@ -78,7 +94,11 @@ class Setup : public CommonSetup {
 
   // Configures the build for the current command line. On success returns
   // true. On failure, prints the error and returns false.
-  bool DoSetup();
+  //
+  // The parameter is the string the user specified for the build directory. We
+  // will try to interpret this as a SourceDir if possible, and will fail if is
+  // is malformed.
+  bool DoSetup(const std::string& build_dir);
 
   // Runs the load, returning true on success. On failure, prints the error
   // and returns false. This includes both RunPreMessageLoop() and
@@ -89,12 +109,38 @@ class Setup : public CommonSetup {
 
   virtual Scheduler* GetScheduler() OVERRIDE;
 
+  // Returns the file used to store the build arguments. Note that the path
+  // might not exist.
+  SourceFile GetBuildArgFile() const;
+
+  // Sets whether the build arguments should be filled during setup from the
+  // command line/build argument file. This will be true by default. The use
+  // case for setting it to false is when editing build arguments, we don't
+  // want to rely on them being valid.
+  void set_fill_arguments(bool fa) { fill_arguments_ = fa; }
+
  private:
   // Fills build arguments. Returns true on success.
-  bool FillArguments(const CommandLine& cmdline);
+  bool FillArguments(const base::CommandLine& cmdline);
+
+  // Fills the build arguments from the command line or from the build arg file.
+  bool FillArgsFromCommandLine(const std::string& args);
+  bool FillArgsFromFile();
+
+  // Given an already-loaded args_input_file_, parses and saves the resulting
+  // arguments. Backend for the different FillArgs variants.
+  bool FillArgsFromArgsInputFile();
+
+  // Writes the build arguments to the build arg file.
+  bool SaveArgsToFile();
 
   // Fills the root directory into the settings. Returns true on success.
-  bool FillSourceDir(const CommandLine& cmdline);
+  bool FillSourceDir(const base::CommandLine& cmdline);
+
+  // Fills the build directory given the value the user has specified.
+  // Must happen after FillSourceDir so we can resolve source-relative
+  // paths.
+  bool FillBuildDir(const std::string& build_dir);
 
   // Fills the python path portion of the command line. On failure, sets
   // it to just "python".
@@ -103,7 +149,7 @@ class Setup : public CommonSetup {
   // Run config file.
   bool RunConfigFile();
 
-  bool FillOtherConfig(const CommandLine& cmdline);
+  bool FillOtherConfig(const base::CommandLine& cmdline);
 
   Scheduler scheduler_;
 
@@ -118,6 +164,10 @@ class Setup : public CommonSetup {
   scoped_ptr<InputFile> dotfile_input_file_;
   std::vector<Token> dotfile_tokens_;
   scoped_ptr<ParseNode> dotfile_root_;
+
+  // Set to true when we should populate the build arguments from the command
+  // line or build argument file. See setter above.
+  bool fill_arguments_;
 
   // State for invoking the command line args. We specifically want to keep
   // this around for the entire run so that Values can blame to the command

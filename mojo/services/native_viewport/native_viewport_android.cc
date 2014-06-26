@@ -60,7 +60,13 @@ void NativeViewportAndroid::SurfaceCreated(JNIEnv* env,
                                            jobject obj,
                                            jobject jsurface) {
   base::android::ScopedJavaLocalRef<jobject> protector(env, jsurface);
-  window_ = ANativeWindow_fromSurface(env, jsurface);
+  // Note: This ensures that any local references used by
+  // ANativeWindow_fromSurface are released immediately. This is needed as a
+  // workaround for https://code.google.com/p/android/issues/detail?id=68174
+  {
+    base::android::ScopedJavaLocalFrame scoped_local_reference_frame(env);
+    window_ = ANativeWindow_fromSurface(env, jsurface);
+  }
   delegate_->OnAcceleratedWidgetAvailable(window_);
 }
 
@@ -98,7 +104,7 @@ bool NativeViewportAndroid::TouchEvent(JNIEnv* env, jobject obj,
 void NativeViewportAndroid::Init(const gfx::Rect& bounds) {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_NativeViewportAndroid_createForActivity(env, context_->activity(),
-                                               reinterpret_cast<jint>(this));
+                                               reinterpret_cast<jlong>(this));
 }
 
 void NativeViewportAndroid::Show() {

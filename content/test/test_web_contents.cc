@@ -26,7 +26,6 @@ namespace content {
 
 TestWebContents::TestWebContents(BrowserContext* browser_context)
     : WebContentsImpl(browser_context, NULL),
-      transition_cross_site(false),
       delegate_view_override_(NULL),
       expect_set_history_length_and_prune_(false),
       expect_set_history_length_and_prune_site_instance_(NULL),
@@ -99,12 +98,15 @@ WebPreferences TestWebContents::TestGetWebkitPrefs() {
 bool TestWebContents::CreateRenderViewForRenderManager(
     RenderViewHost* render_view_host,
     int opener_route_id,
-    CrossProcessFrameConnector* frame_connector) {
+    int proxy_routing_id,
+    bool for_main_frame) {
+  UpdateMaxPageIDIfNecessary(render_view_host);
   // This will go to a TestRenderViewHost.
   static_cast<RenderViewHostImpl*>(
       render_view_host)->CreateRenderView(base::string16(),
                                           opener_route_id,
-                                          -1);
+                                          proxy_routing_id,
+                                          -1, false);
   return true;
 }
 
@@ -129,7 +131,7 @@ void TestWebContents::NavigateAndCommit(const GURL& url) {
 }
 
 void TestWebContents::TestSetIsLoading(bool value) {
-  SetIsLoading(GetRenderViewHost(), value, NULL);
+  SetIsLoading(GetRenderViewHost(), value, true, NULL);
 }
 
 void TestWebContents::CommitPendingNavigation() {
@@ -163,7 +165,7 @@ void TestWebContents::ProceedWithCrossSiteNavigation() {
     return;
   TestRenderViewHost* rvh = static_cast<TestRenderViewHost*>(
       GetRenderViewHost());
-  rvh->SendShouldCloseACK(true);
+  rvh->SendBeforeUnloadACK(true);
 }
 
 RenderViewHostDelegateView* TestWebContents::GetDelegateView() {
@@ -207,21 +209,17 @@ void TestWebContents::SetHistoryLengthAndPrune(
   EXPECT_EQ(expect_set_history_length_and_prune_min_page_id_, min_page_id);
 }
 
-void TestWebContents::TestDidFinishLoad(int64 frame_id,
-                                        const GURL& url,
-                                        bool is_main_frame) {
-  ViewHostMsg_DidFinishLoad msg(0, frame_id, url, is_main_frame);
-  OnMessageReceived(GetRenderViewHost(), msg);
+void TestWebContents::TestDidFinishLoad(const GURL& url) {
+  FrameHostMsg_DidFinishLoad msg(0, url);
+  frame_tree_.root()->current_frame_host()->OnMessageReceived(msg);
 }
 
 void TestWebContents::TestDidFailLoadWithError(
-    int64 frame_id,
     const GURL& url,
-    bool is_main_frame,
     int error_code,
     const base::string16& error_description) {
   FrameHostMsg_DidFailLoadWithError msg(
-      0, frame_id, url, is_main_frame, error_code, error_description);
+      0, url, error_code, error_description);
   frame_tree_.root()->current_frame_host()->OnMessageReceived(msg);
 }
 

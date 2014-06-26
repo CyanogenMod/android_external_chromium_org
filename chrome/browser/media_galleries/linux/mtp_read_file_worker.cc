@@ -15,6 +15,7 @@
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 using content::BrowserThread;
+using storage_monitor::StorageMonitor;
 
 namespace {
 
@@ -25,10 +26,10 @@ namespace {
 uint32 WriteDataChunkIntoSnapshotFileOnFileThread(
     const base::FilePath& snapshot_file_path,
     const std::string& data) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
   int bytes_written =
-      file_util::AppendToFile(snapshot_file_path, data.data(),
-                              base::checked_cast<int>(data.size()));
+      base::AppendToFile(snapshot_file_path, data.data(),
+                         base::checked_cast<int>(data.size()));
   return (static_cast<int>(data.size()) == bytes_written) ?
       base::checked_cast<uint32>(bytes_written) : 0;
 }
@@ -38,7 +39,7 @@ uint32 WriteDataChunkIntoSnapshotFileOnFileThread(
 MTPReadFileWorker::MTPReadFileWorker(const std::string& device_handle)
     : device_handle_(device_handle),
       weak_ptr_factory_(this) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(!device_handle_.empty());
 }
 
@@ -48,7 +49,7 @@ MTPReadFileWorker::~MTPReadFileWorker() {
 void MTPReadFileWorker::WriteDataIntoSnapshotFile(
     const SnapshotRequestInfo& request_info,
     const base::File::Info& snapshot_file_info) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   ReadDataChunkFromDeviceFile(
       make_scoped_ptr(new SnapshotFileDetails(request_info,
                                               snapshot_file_info)));
@@ -56,7 +57,7 @@ void MTPReadFileWorker::WriteDataIntoSnapshotFile(
 
 void MTPReadFileWorker::ReadDataChunkFromDeviceFile(
     scoped_ptr<SnapshotFileDetails> snapshot_file_details) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(snapshot_file_details.get());
 
   // To avoid calling |snapshot_file_details| methods and passing ownership of
@@ -79,7 +80,7 @@ void MTPReadFileWorker::OnDidReadDataChunkFromDeviceFile(
     scoped_ptr<SnapshotFileDetails> snapshot_file_details,
     const std::string& data,
     bool error) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(snapshot_file_details.get());
   snapshot_file_details->set_error_occurred(
       error || (data.size() != snapshot_file_details->BytesToRead()));
@@ -105,7 +106,7 @@ void MTPReadFileWorker::OnDidReadDataChunkFromDeviceFile(
 void MTPReadFileWorker::OnDidWriteDataChunkIntoSnapshotFile(
     scoped_ptr<SnapshotFileDetails> snapshot_file_details,
     uint32 bytes_written) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(snapshot_file_details.get());
   if (snapshot_file_details->AddBytesWritten(bytes_written)) {
     if (!snapshot_file_details->IsSnapshotFileWriteComplete()) {
@@ -120,7 +121,7 @@ void MTPReadFileWorker::OnDidWriteDataChunkIntoSnapshotFile(
 
 void MTPReadFileWorker::OnDidWriteIntoSnapshotFile(
     scoped_ptr<SnapshotFileDetails> snapshot_file_details) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(snapshot_file_details.get());
 
   if (snapshot_file_details->error_occurred()) {

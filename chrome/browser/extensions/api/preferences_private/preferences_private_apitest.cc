@@ -21,11 +21,18 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/supervised_user_signin_manager_wrapper.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/common/bookmark_constants.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "content/public/browser/browser_context.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/chromeos_switches.h"
+#endif
 
 using extensions::PreferencesPrivateGetSyncCategoriesWithoutPassphraseFunction;
 
@@ -37,15 +44,15 @@ class FakeProfileSyncService : public ProfileSyncService {
       : ProfileSyncService(
             NULL,
             profile,
-            NULL,
+            make_scoped_ptr<SupervisedUserSigninManagerWrapper>(NULL),
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
-            ProfileSyncService::MANUAL_START),
+            browser_sync::MANUAL_START),
         sync_initialized_(true),
         initialized_state_violation_(false) {}
 
   virtual ~FakeProfileSyncService() {}
 
-  static BrowserContextKeyedService* BuildFakeProfileSyncService(
+  static KeyedService* BuildFakeProfileSyncService(
       content::BrowserContext* context) {
     return new FakeProfileSyncService(static_cast<Profile*>(context));
   }
@@ -105,6 +112,13 @@ class PreferencesPrivateApiTest : public ExtensionApiTest {
   PreferencesPrivateApiTest() : browser_(NULL), service_(NULL) {}
   virtual ~PreferencesPrivateApiTest() {}
 
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+#if defined(OS_CHROMEOS)
+    command_line->AppendSwitch(
+        chromeos::switches::kIgnoreUserProfileMappingForTests);
+#endif
+  }
+
   virtual void SetUpOnMainThread() OVERRIDE {
     ExtensionApiTest::SetUpOnMainThread();
 
@@ -116,17 +130,18 @@ class PreferencesPrivateApiTest : public ExtensionApiTest {
 
     Profile* profile =
         Profile::CreateProfile(path, NULL, Profile::CREATE_MODE_SYNCHRONOUS);
-    browser_sync::SyncPrefs sync_prefs(profile->GetPrefs());
+    sync_driver::SyncPrefs sync_prefs(profile->GetPrefs());
     sync_prefs.SetKeepEverythingSynced(false);
 
     ProfileManager* profile_manager = g_browser_process->profile_manager();
     profile_manager->RegisterTestingProfile(profile, true, false);
-    browser_ = new Browser(Browser::CreateParams(
-        profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
 
     service_ = static_cast<FakeProfileSyncService*>(
         ProfileSyncServiceFactory::GetInstance()->SetTestingFactoryAndUse(
         profile, &FakeProfileSyncService::BuildFakeProfileSyncService));
+
+    browser_ = new Browser(Browser::CreateParams(
+        profile, chrome::HOST_DESKTOP_TYPE_NATIVE));
   }
 
   // Calls GetSyncCategoriesWithoutPassphraseFunction and verifies that the
@@ -159,7 +174,7 @@ PreferencesPrivateApiTest::TestGetSyncCategoriesWithoutPassphraseFunction() {
   const base::ListValue* categories = NULL;
   ASSERT_TRUE(result->GetList(0, &categories));
   EXPECT_NE(categories->end(),
-            categories->Find(base::StringValue(chrome::kBookmarksFileName)));
+            categories->Find(base::StringValue(bookmarks::kBookmarksFileName)));
   EXPECT_NE(categories->end(),
             categories->Find(base::StringValue(chrome::kPreferencesFilename)));
   EXPECT_EQ(categories->end(),
@@ -167,7 +182,7 @@ PreferencesPrivateApiTest::TestGetSyncCategoriesWithoutPassphraseFunction() {
                "Encrypted categories should not be present";
   EXPECT_EQ(categories->end(),
            categories->Find(base::StringValue("Typed URLs"))) <<
-               "Unsynced categories should not be present";;
+               "Unsynced categories should not be present";
 }
 
 IN_PROC_BROWSER_TEST_F(PreferencesPrivateApiTest,

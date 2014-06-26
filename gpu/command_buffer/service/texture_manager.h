@@ -5,15 +5,14 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEXTURE_MANAGER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEXTURE_MANAGER_H_
 
+#include <algorithm>
 #include <list>
 #include <set>
 #include <string>
 #include <vector>
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
-#include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/observer_list.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
@@ -159,9 +158,16 @@ class GPU_EXPORT Texture {
     return estimated_size() > 0;
   }
 
+  // Initialize TEXTURE_MAX_ANISOTROPY to 1 if we haven't done so yet.
+  void InitTextureMaxAnisotropyIfNeeded(GLenum target);
+
+  void OnWillModifyPixels();
+  void OnDidModifyPixels();
+
  private:
   friend class MailboxManager;
   friend class MailboxManagerTest;
+  friend class TextureDefinition;
   friend class TextureManager;
   friend class TextureRef;
   friend class TextureTestHelper;
@@ -249,10 +255,12 @@ class GPU_EXPORT Texture {
   bool ClearLevel(GLES2Decoder* decoder, GLenum target, GLint level);
 
   // Sets a texture parameter.
-  // TODO(gman): Expand to SetParameteri,f,iv,fv
+  // TODO(gman): Expand to SetParameteriv,fv
   // Returns GL_NO_ERROR on success. Otherwise the error to generate.
-  GLenum SetParameter(
+  GLenum SetParameteri(
       const FeatureInfo* feature_info, GLenum pname, GLint param);
+  GLenum SetParameterf(
+      const FeatureInfo* feature_info, GLenum pname, GLfloat param);
 
   // Makes each of the mip levels as though they were generated.
   bool MarkMipmapsGenerated(const FeatureInfo* feature_info);
@@ -379,6 +387,9 @@ class GPU_EXPORT Texture {
   // Cache of the computed CanRenderCondition flag.
   CanRenderCondition can_render_condition_;
 
+  // Whether we have initialized TEXTURE_MAX_ANISOTROPY to 1.
+  bool texture_max_anisotropy_initialized_;
+
   DISALLOW_COPY_AND_ASSIGN(Texture);
 };
 
@@ -392,10 +403,15 @@ class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
   static scoped_refptr<TextureRef> Create(TextureManager* manager,
                                           GLuint client_id,
                                           GLuint service_id);
+
+  void AddObserver() { num_observers_++; }
+  void RemoveObserver() { num_observers_--; }
+
   const Texture* texture() const { return texture_; }
   Texture* texture() { return texture_; }
   GLuint client_id() const { return client_id_; }
   GLuint service_id() const { return texture_->service_id(); }
+  GLint num_observers() const { return num_observers_; }
 
  private:
   friend class base::RefCounted<TextureRef>;
@@ -410,6 +426,7 @@ class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
   TextureManager* manager_;
   Texture* texture_;
   GLuint client_id_;
+  GLint num_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureRef);
 };
@@ -419,7 +436,7 @@ class GPU_EXPORT TextureRef : public base::RefCounted<TextureRef> {
 struct DecoderTextureState {
   // total_texture_upload_time automatically initialized to 0 in default
   // constructor.
-  DecoderTextureState(bool texsubimage2d_faster_than_teximage2d)
+  explicit DecoderTextureState(bool texsubimage2d_faster_than_teximage2d)
       : tex_image_2d_failed(false),
         texture_upload_count(0),
         texsubimage2d_faster_than_teximage2d(
@@ -469,7 +486,8 @@ class GPU_EXPORT TextureManager {
   TextureManager(MemoryTracker* memory_tracker,
                  FeatureInfo* feature_info,
                  GLsizei max_texture_size,
-                 GLsizei max_cube_map_texture_size);
+                 GLsizei max_cube_map_texture_size,
+                 bool use_default_textures);
   ~TextureManager();
 
   void set_framebuffer_manager(FramebufferManager* manager) {
@@ -556,7 +574,7 @@ class GPU_EXPORT TextureManager {
         ref, params.target, params.level, params.internal_format,
         params.width, params.height, 1 /* depth */,
         params.border, params.format,
-        params.type, true /* cleared */ );
+        params.type, true /* cleared */);
   }
 
   Texture* Produce(TextureRef* ref);
@@ -570,10 +588,13 @@ class GPU_EXPORT TextureManager {
 
   // Sets a texture parameter of a Texture
   // Returns GL_NO_ERROR on success. Otherwise the error to generate.
-  // TODO(gman): Expand to SetParameteri,f,iv,fv
-  void SetParameter(
+  // TODO(gman): Expand to SetParameteriv,fv
+  void SetParameteri(
       const char* function_name, ErrorState* error_state,
       TextureRef* ref, GLenum pname, GLint param);
+  void SetParameterf(
+      const char* function_name, ErrorState* error_state,
+      TextureRef* ref, GLenum pname, GLfloat param);
 
   // Makes each of the mip levels as though they were generated.
   // Returns false if that's not allowed for the given texture.
@@ -666,11 +687,18 @@ class GPU_EXPORT TextureManager {
       std::string* signature) const;
 
   void AddObserver(DestructionObserver* observer) {
-    destruction_observers_.AddObserver(observer);
+    destruction_observers_.push_back(observer);
   }
 
   void RemoveObserver(DestructionObserver* observer) {
-    destruction_observers_.RemoveObserver(observer);
+    for (unsigned int i = 0; i < destruction_observers_.size(); i++) {
+      if (destruction_observers_[i] == observer) {
+        std::swap(destruction_observers_[i], destruction_observers_.back());
+        destruction_observers_.pop_back();
+        return;
+      }
+    }
+    NOTREACHED();
   }
 
   struct DoTextImage2DArguments {
@@ -759,6 +787,8 @@ class GPU_EXPORT TextureManager {
   GLint max_levels_;
   GLint max_cube_map_levels_;
 
+  const bool use_default_textures_;
+
   int num_unrenderable_textures_;
   int num_unsafe_textures_;
   int num_uncleared_mips_;
@@ -778,7 +808,7 @@ class GPU_EXPORT TextureManager {
   // The default textures for each target (texture name = 0)
   scoped_refptr<TextureRef> default_textures_[kNumDefaultTextures];
 
-  ObserverList<DestructionObserver> destruction_observers_;
+  std::vector<DestructionObserver*> destruction_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureManager);
 };

@@ -19,6 +19,12 @@ const base::FilePath::CharType kMessagesFilename[] =
     FILE_PATH_LITERAL("messages.json");
 const base::FilePath::CharType kPlatformSpecificFolder[] =
     FILE_PATH_LITERAL("_platform_specific");
+const base::FilePath::CharType kMetadataFolder[] =
+    FILE_PATH_LITERAL("_metadata");
+const base::FilePath::CharType kVerifiedContentsFilename[] =
+    FILE_PATH_LITERAL("verified_contents.json");
+const base::FilePath::CharType kComputedHashesFilename[] =
+    FILE_PATH_LITERAL("computed_hashes.json");
 
 const char kInstallDirectoryName[] = "Extensions";
 
@@ -50,3 +56,28 @@ const char kStateStoreName[] = "Extension State";
 const char kRulesStoreName[] = "Extension Rules";
 
 }  // namespace extensions
+
+namespace extension_misc {
+
+const int kExtensionIconSizes[] = {EXTENSION_ICON_GIGANTOR,     // 512
+                                   EXTENSION_ICON_EXTRA_LARGE,  // 256
+                                   EXTENSION_ICON_LARGE,        // 128
+                                   EXTENSION_ICON_MEDIUM,       // 48
+                                   EXTENSION_ICON_SMALL,        // 32
+                                   EXTENSION_ICON_SMALLISH,     // 24
+                                   EXTENSION_ICON_BITTY,        // 16
+                                   // Additional 2x resources to load.
+                                   2 * EXTENSION_ICON_MEDIUM,  // 96
+                                   2 * EXTENSION_ICON_SMALL    // 64
+};
+
+const size_t kNumExtensionIconSizes = arraysize(kExtensionIconSizes);
+
+const int kExtensionActionIconSizes[] = {EXTENSION_ICON_ACTION,     // 19,
+                                         2 * EXTENSION_ICON_ACTION  // 38
+};
+
+const size_t kNumExtensionActionIconSizes =
+    arraysize(kExtensionActionIconSizes);
+
+}  // namespace extension_misc

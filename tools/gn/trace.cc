@@ -24,9 +24,7 @@ class TraceLog {
   TraceLog() {
     events_.reserve(16384);
   }
-  ~TraceLog() {
-    // Trace items leanked intentionally.
-  }
+  // Trace items leaked intentionally.
 
   void Add(TraceItem* item) {
     base::AutoLock lock(lock_);
@@ -169,8 +167,8 @@ void ScopedTrace::Done() {
 }
 
 void EnableTracing() {
-  CHECK(!trace_log);
-  trace_log = new TraceLog;
+  if (!trace_log)
+    trace_log = new TraceLog;
 }
 
 void AddTrace(TraceItem* item) {
@@ -187,6 +185,8 @@ std::string SummarizeTraces() {
   std::vector<const TraceItem*> parses;
   std::vector<const TraceItem*> file_execs;
   std::vector<const TraceItem*> script_execs;
+  std::vector<const TraceItem*> check_headers;
+  int headers_checked = 0;
   for (size_t i = 0; i < events.size(); i++) {
     switch (events[i]->type()) {
       case TraceItem::TRACE_FILE_PARSE:
@@ -198,6 +198,13 @@ std::string SummarizeTraces() {
       case TraceItem::TRACE_SCRIPT_EXECUTE:
         script_execs.push_back(events[i]);
         break;
+      case TraceItem::TRACE_CHECK_HEADERS:
+        check_headers.push_back(events[i]);
+        break;
+      case TraceItem::TRACE_CHECK_HEADER:
+        headers_checked++;
+        break;
+      case TraceItem::TRACE_SETUP:
       case TraceItem::TRACE_FILE_LOAD:
       case TraceItem::TRACE_FILE_WRITE:
       case TraceItem::TRACE_DEFINE_TARGET:
@@ -212,6 +219,19 @@ std::string SummarizeTraces() {
   out << std::endl;
   SummarizeScriptExecs(script_execs, out);
   out << std::endl;
+
+  // Generally there will only be one header check, but it's theoretically
+  // possible for more than one to run if more than one build is going in
+  // parallel. Just report the total of all of them.
+  if (!check_headers.empty()) {
+    float check_headers_time = 0;
+    for (size_t i = 0; i < check_headers.size(); i++)
+      check_headers_time += check_headers[i]->delta().InMillisecondsF();
+
+    out << "Header check time: (total time in ms, files checked)\n";
+    out << base::StringPrintf(" %8.2f  %d\n",
+                              check_headers_time, headers_checked);
+  }
 
   return out.str();
 }
@@ -246,6 +266,9 @@ void SaveTraces(const base::FilePath& file_name) {
 
     out << ",\"cat\":";
     switch (item.type()) {
+      case TraceItem::TRACE_SETUP:
+        out << "\"setup\"";
+        break;
       case TraceItem::TRACE_FILE_LOAD:
         out << "\"load\"";
         break;
@@ -263,6 +286,13 @@ void SaveTraces(const base::FilePath& file_name) {
         break;
       case TraceItem::TRACE_DEFINE_TARGET:
         out << "\"define\"";
+        break;
+      case TraceItem::TRACE_CHECK_HEADER:
+        out << "\"hdr\"";
+        break;
+      case TraceItem::TRACE_CHECK_HEADERS:
+        out << "\"header_check\"";
+        break;
     }
 
     if (!item.toolchain().empty() || !item.cmdline().empty()) {
@@ -290,6 +320,6 @@ void SaveTraces(const base::FilePath& file_name) {
   out << "]}";
 
   std::string out_str = out.str();
-  file_util::WriteFile(file_name, out_str.data(),
+  base::WriteFile(file_name, out_str.data(),
                        static_cast<int>(out_str.size()));
 }

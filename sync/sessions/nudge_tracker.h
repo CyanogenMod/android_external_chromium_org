@@ -86,6 +86,15 @@ class SYNC_EXPORT_PRIVATE NudgeTracker {
   // Returns the set of currently throttled types.
   ModelTypeSet GetThrottledTypes() const;
 
+  // Returns the set of types with local changes pending.
+  ModelTypeSet GetNudgedTypes() const;
+
+  // Returns the set of types that have pending invalidations.
+  ModelTypeSet GetNotifiedTypes() const;
+
+  // Returns the set of types that have pending refresh requests.
+  ModelTypeSet GetRefreshRequestedTypes() const;
+
   // Returns the 'source' of the GetUpdate request.
   //
   // This flag is deprecated, but still used by the server.  There can be more
@@ -94,7 +103,7 @@ class SYNC_EXPORT_PRIVATE NudgeTracker {
   // performing a sync.
   //
   // See the implementation for important information about the coalesce logic.
-  sync_pb::GetUpdatesCallerInfo::GetUpdatesSource updates_source() const;
+  sync_pb::GetUpdatesCallerInfo::GetUpdatesSource GetLegacySource() const;
 
   // Fills a GetUpdatesTrigger message for the next GetUpdates request.  This is
   // used by the DownloadUpdatesCommand to dump lots of useful per-type state

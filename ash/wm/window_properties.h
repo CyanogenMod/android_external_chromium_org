@@ -7,6 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/gfx/rect.h"
 
 namespace aura {
 class Window;
@@ -19,11 +20,22 @@ namespace ash {
 namespace wm {
 class WindowState;
 }  // namespace wm
-namespace internal {
 
 // Shell-specific window property keys.
 
 // Alphabetical sort.
+
+// A property key which stores the bounds to restore a window to. These take
+// preference over the current bounds/state. This is used by e.g. the always
+// maximized mode window manager.
+ASH_EXPORT extern const aura::WindowProperty<gfx::Rect*>* const
+    kRestoreBoundsOverrideKey;
+
+// A property key which stores the bounds to restore a window to. These take
+// preference over the current bounds/state if |kRestoreBoundsOverrideKey| is
+// set. This is used by e.g. the always maximized mode window manager.
+ASH_EXPORT extern const aura::WindowProperty<ui::WindowShowState>* const
+    kRestoreShowStateOverrideKey;
 
 // If this is set to true, the window stays in the same root window
 // even if the bounds outside of its root window is set.
@@ -40,7 +52,6 @@ extern const aura::WindowProperty<wm::WindowState*>* const kWindowStateKey;
 
 // Alphabetical sort.
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_WINDOW_PROPERTIES_H_

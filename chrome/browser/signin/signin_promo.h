@@ -19,6 +19,13 @@ class PrefRegistrySyncable;
 // Utility functions for sign in promos.
 namespace signin {
 
+const char kSignInPromoQueryKeyAutoClose[] = "auto_close";
+const char kSignInPromoQueryKeyContinue[] = "continue";
+const char kSignInPromoQueryKeySource[] = "source";
+const char kSignInPromoQueryKeyConstrained[] = "constrained";
+const char kSignInPromoQueryKeyShowAccountManagement[] =
+    "showAccountManagement";
+
 enum Source {
   SOURCE_START_PAGE = 0, // This must be first.
   SOURCE_NTP_LINK,
@@ -31,6 +38,8 @@ enum Source {
   SOURCE_BOOKMARK_BUBBLE,
   SOURCE_AVATAR_BUBBLE_SIGN_IN,
   SOURCE_AVATAR_BUBBLE_ADD_ACCOUNT,
+  SOURCE_DEVICES_PAGE,
+  SOURCE_REAUTH,
   SOURCE_UNKNOWN, // This must be last.
 };
 
@@ -60,6 +69,13 @@ GURL GetLandingURL(const char* option, int value);
 GURL GetPromoURL(Source source, bool auto_close);
 GURL GetPromoURL(Source source, bool auto_close, bool is_constrained);
 
+// As above, but also appends the |continue_url| as a parameter to the URL.
+// A |continue_url| may be set only when not using the web-based sign-in flow.
+GURL GetPromoURLWithContinueURL(Source source,
+                                bool auto_close,
+                                bool is_constrained,
+                                GURL continue_url);
+
 // Returns a sign in promo URL specifically for reauthenticating |account_id|.
 GURL GetReauthURL(Profile* profile, const std::string& account_id);
 
@@ -72,6 +88,10 @@ Source GetSourceForPromoURL(const GURL& url);
 
 // Returns true if the auto_close parameter in the given URL is set to true.
 bool IsAutoCloseEnabledInURL(const GURL& url);
+
+// Returns true if the showAccountManagement parameter in the given url is set
+// to true.
+bool ShouldShowAccountManagement(const GURL& url);
 
 // Returns true if the given URL is the standard continue URL used with the
 // sync promo when the web-based flow is enabled.  The query parameters

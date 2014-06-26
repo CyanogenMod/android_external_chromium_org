@@ -25,12 +25,12 @@ def DoDex(options, paths):
       lambda: build_utils.CheckOutput(dex_cmd, print_stderr=False),
       record_path=record_path,
       input_paths=paths,
-      input_strings=dex_cmd)
+      input_strings=dex_cmd,
+      force=not os.path.exists(options.dex_path))
+  build_utils.WriteJson(paths, options.dex_path + '.inputs')
 
-  build_utils.Touch(options.dex_path)
 
-
-def main(argv):
+def main():
   parser = optparse.OptionParser()
   parser.add_option('--android-sdk-tools',
                     help='Android sdk build tools directory.')
@@ -44,10 +44,9 @@ def main(argv):
                           'is enabled.'))
   parser.add_option('--no-locals',
                     help='Exclude locals list from the dex file.')
-  parser.add_option('--stamp', help='Path to touch on success.')
-
-  # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-  parser.add_option('--ignore', help='Ignored.')
+  parser.add_option('--excluded-paths-file',
+                    help='Path to a file containing a list of paths to exclude '
+                    'from the dex file.')
 
   options, paths = parser.parse_args()
 
@@ -55,11 +54,12 @@ def main(argv):
       and options.configuration_name == 'Release'):
     paths = [options.proguard_enabled_input_path]
 
-  DoDex(options, paths)
+  if options.excluded_paths_file:
+    exclude_paths = build_utils.ReadJson(options.excluded_paths_file)
+    paths = [p for p in paths if not p in exclude_paths]
 
-  if options.stamp:
-    build_utils.Touch(options.stamp)
+  DoDex(options, paths)
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())

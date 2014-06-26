@@ -10,6 +10,7 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/devtools/device/port_forwarding_controller.h"
 
 namespace base {
 class ListValue;
@@ -23,6 +24,7 @@ class DevToolsTargetsUIHandler {
  public:
   typedef base::Callback<void(const std::string&,
                               scoped_ptr<base::ListValue>)> Callback;
+  typedef base::Callback<void(DevToolsTargetImpl*)> TargetCallback;
 
   DevToolsTargetsUIHandler(const std::string& source_id, Callback callback);
   virtual ~DevToolsTargetsUIHandler();
@@ -35,10 +37,16 @@ class DevToolsTargetsUIHandler {
   static scoped_ptr<DevToolsTargetsUIHandler> CreateForWorkers(
       Callback callback);
 
-  void Inspect(const std::string& target_id, Profile* profile);
-  void Activate(const std::string& target_id);
-  void Close(const std::string& target_id);
-  void Reload(const std::string& target_id);
+  static scoped_ptr<DevToolsTargetsUIHandler> CreateForAdb(
+      Callback callback, Profile* profile);
+
+  DevToolsTargetImpl* GetTarget(const std::string& target_id);
+
+  virtual void Open(const std::string& browser_id, const std::string& url,
+                    const TargetCallback& callback);
+
+  virtual scoped_refptr<content::DevToolsAgentHost> GetBrowserAgentHost(
+      const std::string& browser_id);
 
  protected:
   base::DictionaryValue* Serialize(const DevToolsTargetImpl& target);
@@ -54,18 +62,19 @@ class DevToolsTargetsUIHandler {
   DISALLOW_COPY_AND_ASSIGN(DevToolsTargetsUIHandler);
 };
 
-class DevToolsRemoteTargetsUIHandler: public DevToolsTargetsUIHandler {
+class PortForwardingStatusSerializer
+    : private PortForwardingController::Listener {
  public:
-  DevToolsRemoteTargetsUIHandler(const std::string& source_id,
-                                Callback callback);
+  typedef base::Callback<void(const base::Value&)> Callback;
 
-  static scoped_ptr<DevToolsRemoteTargetsUIHandler> CreateForAdb(
-      Callback callback, Profile* profile);
+  PortForwardingStatusSerializer(const Callback& callback, Profile* profile);
+  virtual ~PortForwardingStatusSerializer();
 
-  virtual void Open(const std::string& browser_id, const std::string& url) = 0;
+  virtual void PortStatusChanged(const DevicesStatus&) OVERRIDE;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(DevToolsRemoteTargetsUIHandler);
+  Callback callback_;
+  Profile* profile_;
 };
 
 #endif  // CHROME_BROWSER_DEVTOOLS_DEVTOOLS_TARGETS_UI_H_

@@ -5,10 +5,16 @@
 package org.chromium.chrome.browser.appmenu;
 
 import android.app.Activity;
+import android.content.res.TypedArray;
+import android.graphics.Rect;
+import android.graphics.drawable.Drawable;
 import android.view.ContextThemeWrapper;
 import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.widget.PopupMenu;
+
+import com.google.common.annotations.VisibleForTesting;
 
 import org.chromium.chrome.browser.UmaBridge;
 
@@ -20,6 +26,7 @@ import java.util.ArrayList;
  */
 public class AppMenuHandler {
     private AppMenu mAppMenu;
+    private AppMenuDragHelper mAppMenuDragHelper;
     private Menu mMenu;
     private final ArrayList<AppMenuObserver> mObservers;
     private final int mMenuResourceId;
@@ -50,13 +57,15 @@ public class AppMenuHandler {
      * @param startDragging      Whether dragging is started. For example, if the app menu is
      *                           showed by tapping on a button, this should be false. If it is
      *                           showed by start dragging down on the menu button, this should
-     *                           be true. Note that if isByHardwareButton is true, this is
-     *                           ignored.
+     *                           be true. Note that if isByHardwareButton is true, this must
+     *                           be false since we no longer support hardware menu button
+     *                           dragging.
      * @return True, if the menu is shown, false, if menu is not shown, example reasons:
      *         the menu is not yet available to be shown, or the menu is already showing.
      */
     public boolean showAppMenu(View anchorView, boolean isByHardwareButton, boolean startDragging) {
-        if (!mDelegate.shouldShowAppMenu()) return false;
+        assert !(isByHardwareButton && startDragging);
+        if (!mDelegate.shouldShowAppMenu() || isAppMenuShowing()) return false;
 
         if (mMenu == null) {
             // Use a PopupMenu to create the Menu object. Note this is not the same as the
@@ -68,15 +77,31 @@ public class AppMenuHandler {
         mDelegate.prepareMenu(mMenu);
 
         if (mAppMenu == null) {
-            mAppMenu = new AppMenu(mActivity, mMenu, mDelegate.getItemRowHeight(), this);
+            TypedArray a = mActivity.obtainStyledAttributes(new int[]
+                    {android.R.attr.listPreferredItemHeightSmall, android.R.attr.listDivider});
+            int itemRowHeight = a.getDimensionPixelSize(0, 0);
+            Drawable itemDivider = a.getDrawable(1);
+            int itemDividerHeight = itemDivider.getIntrinsicHeight();
+            a.recycle();
+            mAppMenu = new AppMenu(mMenu, itemRowHeight, itemDividerHeight, this,
+                    mActivity.getResources());
+            mAppMenuDragHelper = new AppMenuDragHelper(mActivity, mAppMenu, itemRowHeight);
         }
 
         ContextThemeWrapper wrapper = new ContextThemeWrapper(mActivity,
                 mDelegate.getMenuThemeResourceId());
-        boolean showIcons = mDelegate.shouldShowIconRow();
-        mAppMenu.show(wrapper, anchorView, showIcons, isByHardwareButton, startDragging);
+        // Get the height and width of the display.
+        Rect appRect = new Rect();
+        mActivity.getWindow().getDecorView().getWindowVisibleDisplayFrame(appRect);
+        int rotation = mActivity.getWindowManager().getDefaultDisplay().getRotation();
+        mAppMenu.show(wrapper, anchorView, isByHardwareButton, rotation, appRect);
+        mAppMenuDragHelper.onShow(startDragging);
         UmaBridge.menuShow();
         return true;
+    }
+
+    void appMenuDismissed() {
+        mAppMenuDragHelper.onDismiss();
     }
 
     /**
@@ -89,8 +114,13 @@ public class AppMenuHandler {
     /**
      * @return The App Menu that the menu handler is interacting with.
      */
+    @VisibleForTesting
     AppMenu getAppMenu() {
         return mAppMenu;
+    }
+
+    AppMenuDragHelper getAppMenuDragHelper() {
+        return mAppMenuDragHelper;
     }
 
     /**
@@ -98,14 +128,6 @@ public class AppMenuHandler {
      */
     public void hideAppMenu() {
         if (mAppMenu != null && mAppMenu.isShowing()) mAppMenu.dismiss();
-    }
-
-    /**
-     * @return The number of items in the AppMenu.
-     */
-    public int getItemCount() {
-        if (mAppMenu == null) return -1;
-        return mAppMenu.getCount();
     }
 
     /**
@@ -124,41 +146,17 @@ public class AppMenuHandler {
         mObservers.remove(observer);
     }
 
+    void onOptionsItemSelected(MenuItem item) {
+        mActivity.onOptionsItemSelected(item);
+    }
+
     /**
      * Called by AppMenu to report that the App Menu visibility has changed.
-     * @param newState Whether the App Menu is showing.
-     * @param focusedPosition The current focused position.
+     * @param isVisible Whether the App Menu is showing.
      */
-    void onMenuVisibilityChanged(boolean newState, int focusedPosition) {
+    void onMenuVisibilityChanged(boolean isVisible) {
         for (int i = 0; i < mObservers.size(); ++i) {
-            mObservers.get(i).onMenuVisibilityChanged(newState, focusedPosition);
+            mObservers.get(i).onMenuVisibilityChanged(isVisible);
         }
-    }
-
-    /**
-     * Called by AppMenu to report that the keyboard focus has changed.
-     * @param focusedPosition The new focused position.
-     */
-    void onKeyboardFocusChanged(int focusedPosition) {
-        for (int i = 0; i < mObservers.size(); ++i) {
-            mObservers.get(i).onKeyboardFocusChanged(focusedPosition);
-        }
-    }
-
-    /**
-     * Called by AppMenu to report that the keyboard has activated an item.
-     * @param focusedPosition The activated item.
-     */
-    void onKeyboardActivatedItem(int focusedPosition) {
-        for (int i = 0; i < mObservers.size(); ++i) {
-            mObservers.get(i).onKeyboardActivatedItem(focusedPosition);
-        }
-    }
-
-    /**
-     * TODO(kkimlabs) remove this call.
-     */
-    public void hardwareMenuButtonUp() {
-        if (mAppMenu != null) mAppMenu.hardwareMenuButtonUp();
     }
 }

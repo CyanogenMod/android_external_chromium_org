@@ -67,7 +67,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
       const UpdateNetworkStateCB& update_network_state_cb,
       const DurationChangeCB& duration_change_cb);
 
-  const blink::WebTimeRanges& Buffered();
+  blink::WebTimeRanges Buffered() const;
   size_t DecodedFrameCount() const;
   size_t DroppedFrameCount() const;
   size_t AudioDecodedByteCount() const;
@@ -97,22 +97,20 @@ class MediaSourceDelegate : public media::DemuxerHost {
   // Called when DemuxerStreamPlayer needs to read data from ChunkDemuxer.
   void OnReadFromDemuxer(media::DemuxerStream::Type type);
 
-  // Called when the player needs the new config data from ChunkDemuxer.
-  void OnMediaConfigRequest();
-
   // Called by the Destroyer to destroy an instance of this object.
   void Destroy();
 
   // Called on the main thread to check whether the video stream is encrypted.
   bool IsVideoEncrypted();
 
+  // Gets the ChunkDemuxer timeline offset.
+  base::Time GetTimelineOffset() const;
+
  private:
   // This is private to enforce use of the Destroyer.
   virtual ~MediaSourceDelegate();
 
   // Methods inherited from DemuxerHost.
-  virtual void SetTotalBytes(int64 total_bytes) OVERRIDE;
-  virtual void AddBufferedByteRange(int64 start, int64 end) OVERRIDE;
   virtual void AddBufferedTimeRange(base::TimeDelta start,
                                     base::TimeDelta end) OVERRIDE;
   virtual void SetDuration(base::TimeDelta duration) OVERRIDE;
@@ -153,7 +151,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
   void OnNeedKey(const std::string& type,
                  const std::vector<uint8>& init_data);
   void NotifyDemuxerReady();
-  bool CanNotifyDemuxerReady();
 
   void StopDemuxer();
   void InitializeDemuxer();
@@ -170,7 +167,7 @@ class MediaSourceDelegate : public media::DemuxerHost {
                      const scoped_refptr<media::DecoderBuffer>& buffer);
 
   // Helper function for calculating duration.
-  int GetDurationMs();
+  base::TimeDelta GetDuration() const;
 
   bool IsSeeking() const;
 
@@ -182,14 +179,10 @@ class MediaSourceDelegate : public media::DemuxerHost {
   base::TimeDelta FindBufferedBrowserSeekTime_Locked(
       const base::TimeDelta& seek_time) const;
 
-  // Message loop for main renderer thread and corresponding weak pointer.
-  const scoped_refptr<base::MessageLoopProxy> main_loop_;
-  base::WeakPtrFactory<MediaSourceDelegate> main_weak_factory_;
-  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
-
-  // Message loop for media thread and corresponding weak pointer.
-  const scoped_refptr<base::MessageLoopProxy> media_loop_;
-  base::WeakPtrFactory<MediaSourceDelegate> media_weak_factory_;
+  // Get the demuxer configs for a particular stream identified by |is_audio|.
+  // Returns true on success, of false otherwise.
+  bool GetDemuxerConfigFromStream(media::DemuxerConfigs* configs,
+                                  bool is_audio);
 
   RendererDemuxerAndroid* demuxer_client_;
   int demuxer_client_id_;
@@ -211,8 +204,6 @@ class MediaSourceDelegate : public media::DemuxerHost {
 
   media::PipelineStatistics statistics_;
   media::Ranges<base::TimeDelta> buffered_time_ranges_;
-  // Keep a list of buffered time ranges.
-  blink::WebTimeRanges buffered_web_time_ranges_;
 
   MediaSourceOpenedCB media_source_opened_cb_;
   media::Demuxer::NeedKeyCB need_key_cb_;
@@ -239,6 +230,15 @@ class MediaSourceDelegate : public media::DemuxerHost {
   bool expecting_regular_seek_;
 
   size_t access_unit_size_;
+
+  // Message loop for main renderer and media threads.
+  const scoped_refptr<base::MessageLoopProxy> main_loop_;
+  const scoped_refptr<base::MessageLoopProxy> media_loop_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<MediaSourceDelegate> main_weak_factory_;
+  base::WeakPtrFactory<MediaSourceDelegate> media_weak_factory_;
+  base::WeakPtr<MediaSourceDelegate> main_weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaSourceDelegate);
 };

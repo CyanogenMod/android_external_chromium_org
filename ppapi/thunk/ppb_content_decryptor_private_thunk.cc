@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // From private/ppb_content_decryptor_private.idl,
-//   modified Mon Jan 13 12:02:23 2014.
+//   modified Thu Jun  5 13:39:15 2014.
 
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_content_decryptor_private.h"
@@ -16,18 +16,44 @@ namespace thunk {
 
 namespace {
 
-void SessionCreated(PP_Instance instance,
-                    uint32_t session_id,
-                    struct PP_Var web_session_id) {
-  VLOG(4) << "PPB_ContentDecryptor_Private::SessionCreated()";
+void PromiseResolved(PP_Instance instance, uint32_t promise_id) {
+  VLOG(4) << "PPB_ContentDecryptor_Private::PromiseResolved()";
   EnterInstance enter(instance);
   if (enter.failed())
     return;
-  enter.functions()->SessionCreated(instance, session_id, web_session_id);
+  enter.functions()->PromiseResolved(instance, promise_id);
+}
+
+void PromiseResolvedWithSession(PP_Instance instance,
+                                uint32_t promise_id,
+                                struct PP_Var web_session_id) {
+  VLOG(4) << "PPB_ContentDecryptor_Private::PromiseResolvedWithSession()";
+  EnterInstance enter(instance);
+  if (enter.failed())
+    return;
+  enter.functions()->PromiseResolvedWithSession(instance,
+                                                promise_id,
+                                                web_session_id);
+}
+
+void PromiseRejected(PP_Instance instance,
+                     uint32_t promise_id,
+                     PP_CdmExceptionCode exception_code,
+                     uint32_t system_code,
+                     struct PP_Var error_description) {
+  VLOG(4) << "PPB_ContentDecryptor_Private::PromiseRejected()";
+  EnterInstance enter(instance);
+  if (enter.failed())
+    return;
+  enter.functions()->PromiseRejected(instance,
+                                     promise_id,
+                                     exception_code,
+                                     system_code,
+                                     error_description);
 }
 
 void SessionMessage(PP_Instance instance,
-                    uint32_t session_id,
+                    struct PP_Var web_session_id,
                     struct PP_Var message,
                     struct PP_Var destination_url) {
   VLOG(4) << "PPB_ContentDecryptor_Private::SessionMessage()";
@@ -35,39 +61,41 @@ void SessionMessage(PP_Instance instance,
   if (enter.failed())
     return;
   enter.functions()->SessionMessage(instance,
-                                    session_id,
+                                    web_session_id,
                                     message,
                                     destination_url);
 }
 
-void SessionReady(PP_Instance instance, uint32_t session_id) {
+void SessionReady(PP_Instance instance, struct PP_Var web_session_id) {
   VLOG(4) << "PPB_ContentDecryptor_Private::SessionReady()";
   EnterInstance enter(instance);
   if (enter.failed())
     return;
-  enter.functions()->SessionReady(instance, session_id);
+  enter.functions()->SessionReady(instance, web_session_id);
 }
 
-void SessionClosed(PP_Instance instance, uint32_t session_id) {
+void SessionClosed(PP_Instance instance, struct PP_Var web_session_id) {
   VLOG(4) << "PPB_ContentDecryptor_Private::SessionClosed()";
   EnterInstance enter(instance);
   if (enter.failed())
     return;
-  enter.functions()->SessionClosed(instance, session_id);
+  enter.functions()->SessionClosed(instance, web_session_id);
 }
 
 void SessionError(PP_Instance instance,
-                  uint32_t session_id,
-                  int32_t media_error,
-                  int32_t system_code) {
+                  struct PP_Var web_session_id,
+                  PP_CdmExceptionCode exception_code,
+                  uint32_t system_code,
+                  struct PP_Var error_description) {
   VLOG(4) << "PPB_ContentDecryptor_Private::SessionError()";
   EnterInstance enter(instance);
   if (enter.failed())
     return;
   enter.functions()->SessionError(instance,
-                                  session_id,
-                                  media_error,
-                                  system_code);
+                                  web_session_id,
+                                  exception_code,
+                                  system_code,
+                                  error_description);
 }
 
 void DeliverBlock(PP_Instance instance,
@@ -143,9 +171,11 @@ void DeliverSamples(
                                     decrypted_sample_info);
 }
 
-const PPB_ContentDecryptor_Private_0_10
-    g_ppb_contentdecryptor_private_thunk_0_10 = {
-  &SessionCreated,
+const PPB_ContentDecryptor_Private_0_12
+    g_ppb_contentdecryptor_private_thunk_0_12 = {
+  &PromiseResolved,
+  &PromiseResolvedWithSession,
+  &PromiseRejected,
   &SessionMessage,
   &SessionReady,
   &SessionClosed,
@@ -160,9 +190,9 @@ const PPB_ContentDecryptor_Private_0_10
 
 }  // namespace
 
-PPAPI_THUNK_EXPORT const PPB_ContentDecryptor_Private_0_10*
-    GetPPB_ContentDecryptor_Private_0_10_Thunk() {
-  return &g_ppb_contentdecryptor_private_thunk_0_10;
+PPAPI_THUNK_EXPORT const PPB_ContentDecryptor_Private_0_12*
+    GetPPB_ContentDecryptor_Private_0_12_Thunk() {
+  return &g_ppb_contentdecryptor_private_thunk_0_12;
 }
 
 }  // namespace thunk

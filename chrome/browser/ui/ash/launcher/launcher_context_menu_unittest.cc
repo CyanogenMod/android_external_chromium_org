@@ -7,6 +7,7 @@
 #include "ash/shelf/shelf.h"
 #include "ash/shelf/shelf_item_types.h"
 #include "ash/shelf/shelf_model.h"
+#include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -14,7 +15,7 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/ash/launcher/chrome_launcher_controller.h"
 #include "chrome/test/base/testing_profile.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 class TestChromeLauncherController : public ChromeLauncherController {
  public:

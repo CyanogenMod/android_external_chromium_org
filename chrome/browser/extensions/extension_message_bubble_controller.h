@@ -6,12 +6,12 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_MESSAGE_BUBBLE_CONTROLLER_H_
 
 #include <string>
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/extension_message_bubble.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/common/extension.h"
 
 class Browser;
-class ExtensionService;
+class Profile;
 
 namespace extensions {
 
@@ -38,10 +38,17 @@ class ExtensionMessageBubbleController {
         const std::string& extension_id,
         BubbleAction action) = 0;
     virtual void PerformAction(const ExtensionIdList& list) = 0;
+    virtual void OnClose() {}
 
     // Text for various UI labels shown in the bubble.
     virtual base::string16 GetTitle() const = 0;
-    virtual base::string16 GetMessageBody() const = 0;
+    // Fetches the message to show in the body. |anchored_to_browser_action|
+    // will be true if the bubble is anchored against a specific extension
+    // icon, allowing the bubble to show a different message than when it is
+    // anchored against something else (e.g. show "This extension has..."
+    // instead of "An extension has...").
+    virtual base::string16 GetMessageBody(
+        bool anchored_to_browser_action) const = 0;
     virtual base::string16 GetOverflowText(
         const base::string16& overflow_count) const = 0;
     virtual base::string16 GetLearnMoreLabel() const = 0;
@@ -51,6 +58,10 @@ class ExtensionMessageBubbleController {
 
     // Whether to show a list of extensions in the bubble.
     virtual bool ShouldShowExtensionList() const = 0;
+
+    // In some cases, we want the delegate only to handle a single extension
+    // and this sets which extension.
+    virtual void RestrictToSingleExtension(const std::string& extension_id);
 
     // Record, through UMA, how many extensions were found.
     virtual void LogExtensionCount(size_t count) = 0;
@@ -68,6 +79,9 @@ class ExtensionMessageBubbleController {
   // Obtains a list of all extensions (by id) the controller knows about.
   const ExtensionIdList& GetExtensionIdList();
 
+  // Whether to close the bubble when it loses focus.
+  virtual bool CloseOnDeactivate();
+
   // Sets up the callbacks and shows the bubble.
   virtual void Show(ExtensionMessageBubble* bubble);
 
@@ -82,9 +96,6 @@ class ExtensionMessageBubbleController {
 
   // Get the data this class needs.
   ExtensionIdList* GetOrCreateExtensionList();
-
-  // Our extension service. Weak, not owned by us.
-  ExtensionService* service_;
 
   // A weak pointer to the profile we are associated with. Not owned by us.
   Profile* profile_;

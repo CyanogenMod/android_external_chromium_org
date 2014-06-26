@@ -2,15 +2,27 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//url/config.gni")
+
+# Sets the USE_ICU_ALTERNATIVES_ON_ANDROID define based on the build flag.
+config("url_icu_config") {
+  if (use_icu_alternatives_on_android) {
+    defines = [ "USE_ICU_ALTERNATIVES_ON_ANDROID=1" ]
+  }
+}
+
 component("url") {
-  external = true
   if (is_win) {
     # Don't conflict with Windows' "url.dll".
     output_name = "url_lib"
   }
   sources = [
+    "android/url_jni_registrar.cc",
+    "android/url_jni_registrar.h",
     "gurl.cc",
     "gurl.h",
+    "origin.cc",
+    "origin.h",
     "third_party/mozilla/url_parse.cc",
     "third_party/mozilla/url_parse.h",
     "url_canon.h",
@@ -33,6 +45,8 @@ component("url") {
     "url_canon_stdstring.cc",
     "url_canon_stdstring.h",
     "url_canon_stdurl.cc",
+    "url_constants.cc",
+    "url_constants.h",
     "url_export.h",
     "url_file.h",
     "url_parse_file.cc",
@@ -43,45 +57,78 @@ component("url") {
 
   defines = [ "URL_IMPLEMENTATION" ]
 
-  # if (is_win) {
-  #   TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-  #   'msvs_disabled_warnings': [ 4267, ]
-  # }
+  configs += [ ":url_icu_config" ]
+
+  if (is_win) {
+    cflags = [
+      "/wd4267", # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+    ]
+  }
 
   deps = [
     "//base",
+    "//base/third_party/dynamic_annotations",
     "//third_party/icu:icudata",
-    "//third_party/icu:icui18n",
-    "//third_party/icu:icuuc",
+    "//third_party/icu",
   ]
+
+  if (use_icu_alternatives_on_android) {
+    sources -= [
+      "url_canon_icu.cc",
+      "url_canon_icu.h",
+    ]
+    deps -= [
+      "//third_party/icu:icudata",
+      "//third_party/icu",
+    ]
+
+    sources += [
+      "url_canon_icu_alternatives_android.cc",
+      "url_canon_icu_alternatives_android.h",
+    ]
+  }
 }
 
-test("url_unittests") {
-  external = true
-  sources = [
-    "gurl_unittest.cc",
-    "url_canon_unittest.cc",
-    "url_parse_unittest.cc",
-    "url_test_utils.h",
-    "url_util_unittest.cc",
-  ]
+# TODO(dpranke): crbug.com/360936. Get this to build and run on Android.
+if (!is_android) {
+  test("url_unittests") {
+    sources = [
+      "gurl_unittest.cc",
+      "origin_unittest.cc",
+      "url_canon_icu_unittest.cc",
+      "url_canon_unittest.cc",
+      "url_parse_unittest.cc",
+      "url_test_utils.h",
+      "url_util_unittest.cc",
+    ]
 
-  #if (is_posix && !is_mac && !is_ios) {
-  #  if (linux_use_tcmalloc) {
-  #    deps += "//base/allocator"
-  #  }
-  #}
+    #if (is_posix && !is_mac && !is_ios) {
+    #  if (use_allocator!="none") {
+    #    deps += "//base/allocator"
+    #  }
+    #}
 
-  # if (is_win) {
-  #   TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-  #   'msvs_disabled_warnings': [ 4267, ]
-  # }
+    if (is_win) {
+      cflags = [
+        # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+        "/wd4267",
+      ]
+    }
 
-  deps = [
-    ":url",
-    "//base:base_i18n",
-    "//base/test:run_all_unittests",
-    "//testing/gtest",
-    "//third_party/icu:icuuc",
-  ]
+    deps = [
+      ":url",
+      "//base/test:run_all_unittests",
+      "//testing/gtest",
+      "//third_party/icu:icuuc",
+    ]
+
+    if (use_icu_alternatives_on_android) {
+      sources -= [
+        "url_canon_icu_unittest.cc",
+      ]
+      deps -= [
+        "//third_party/icu:icuuc",
+      ]
+    }
+  }
 }

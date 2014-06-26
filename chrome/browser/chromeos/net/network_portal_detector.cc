@@ -20,8 +20,7 @@ const char kCaptivePortalStatusUnknown[] = "Unknown";
 const char kCaptivePortalStatusOffline[] = "Offline";
 const char kCaptivePortalStatusOnline[]  = "Online";
 const char kCaptivePortalStatusPortal[]  = "Portal";
-const char kCaptivePortalStatusProxyAuthRequired[] =
-    "Proxy authentication required";
+const char kCaptivePortalStatusProxyAuthRequired[] = "ProxyAuthRequired";
 const char kCaptivePortalStatusUnrecognized[] = "Unrecognized";
 
 NetworkPortalDetector* g_network_portal_detector = NULL;
@@ -42,26 +41,31 @@ class NetworkPortalDetectorStubImpl : public NetworkPortalDetector {
   }
   virtual void RemoveObserver(Observer* /* observer */) OVERRIDE {}
   virtual CaptivePortalState GetCaptivePortalState(
-      const NetworkState* /* network */) OVERRIDE {
+      const std::string& /* service_path */) OVERRIDE {
     return CaptivePortalState();
   }
   virtual bool IsEnabled() OVERRIDE { return false; }
   virtual void Enable(bool /* start_detection */) OVERRIDE {}
   virtual bool StartDetectionIfIdle() OVERRIDE { return false; }
-  virtual void EnableLazyDetection() OVERRIDE {}
-  virtual void DisableLazyDetection() OVERRIDE {}
+  virtual void SetStrategy(
+      PortalDetectorStrategy::StrategyId /* id */) OVERRIDE {}
 };
 
 }  // namespace
 
 void NetworkPortalDetector::InitializeForTesting(
     NetworkPortalDetector* network_portal_detector) {
-  CHECK(!g_network_portal_detector)
-      << "NetworkPortalDetector::InitializeForTesting() is called after "
-      << "Initialize()";
-  CHECK(network_portal_detector);
-  g_network_portal_detector = network_portal_detector;
-  g_network_portal_detector_set_for_testing = true;
+  if (network_portal_detector) {
+    CHECK(!g_network_portal_detector_set_for_testing)
+        << "NetworkPortalDetector::InitializeForTesting is called twice";
+    CHECK(network_portal_detector);
+    delete g_network_portal_detector;
+    g_network_portal_detector = network_portal_detector;
+    g_network_portal_detector_set_for_testing = true;
+  } else {
+    g_network_portal_detector = NULL;
+    g_network_portal_detector_set_for_testing = false;
+  }
 }
 
 // static
@@ -85,10 +89,8 @@ void NetworkPortalDetector::Shutdown() {
   CHECK(g_network_portal_detector || g_network_portal_detector_set_for_testing)
       << "NetworkPortalDetectorImpl::Shutdown() is called "
       << "without previous call to Initialize()";
-  if (g_network_portal_detector) {
-    delete g_network_portal_detector;
-    g_network_portal_detector = NULL;
-  }
+  delete g_network_portal_detector;
+  g_network_portal_detector = NULL;
 }
 
 // static
@@ -116,6 +118,11 @@ std::string NetworkPortalDetector::CaptivePortalStatusString(
       NOTREACHED();
   }
   return kCaptivePortalStatusUnrecognized;
+}
+
+// static
+bool NetworkPortalDetector::IsInitialized() {
+  return g_network_portal_detector;
 }
 
 }  // namespace chromeos

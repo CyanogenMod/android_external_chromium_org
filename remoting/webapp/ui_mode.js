@@ -143,6 +143,8 @@ remoting.setMode = function(mode) {
     htmlNode.classList.remove('no-horizontal-scroll');
     htmlNode.classList.remove('no-vertical-scroll');
   }
+
+  remoting.testEvents.raiseEvent(remoting.testEvents.Names.uiModeChanged, mode);
 };
 
 /**
@@ -273,4 +275,13 @@ function confineOrRestoreFocus_(mutations) {
       }
     }
   }
+}
+
+/**
+ * @param {string} tag
+ */
+remoting.showSetupProcessingMessage = function(tag) {
+  var messageDiv = document.getElementById('host-setup-processing-message');
+  l10n.localizeElementFromTag(messageDiv, tag);
+  remoting.setMode(remoting.AppMode.HOST_SETUP_PROCESSING);
 }

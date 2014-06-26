@@ -9,12 +9,12 @@
 #include <vector>
 
 #include "ash/ash_export.h"
+#include "ui/display/types/display_constants.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
 
 namespace ash {
-namespace internal {
 
 // A struct that represents the display's mode info.
 struct ASH_EXPORT DisplayMode {
@@ -81,6 +81,11 @@ class ASH_EXPORT DisplayInfo {
   DisplayInfo(int64 id, const std::string& name, bool has_overscan);
   ~DisplayInfo();
 
+  // When this is set to true, Chrome switches High DPI when lower UI scale
+  // (<1.0f) is specified on 1x device to make UI sharp, e.g, upgrade 0.6
+  // scale on 1x DSF to 1.2 scale on 2x DSF.
+  static void SetAllowUpgradeToHighDPI(bool enable);
+
   int64 id() const { return id_; }
 
   // The name of the display.
@@ -97,6 +102,9 @@ class ASH_EXPORT DisplayInfo {
     touch_support_ = support;
   }
   gfx::Display::TouchSupport touch_support() const { return touch_support_; }
+
+  void set_touch_device_id(int id) { touch_device_id_ = id; }
+  int touch_device_id() const { return touch_device_id_; }
 
   // Gets/Sets the device scale factor of the display.
   float device_scale_factor() const { return device_scale_factor_; }
@@ -123,8 +131,14 @@ class ASH_EXPORT DisplayInfo {
   float configured_ui_scale() const { return configured_ui_scale_; }
   void set_configured_ui_scale(float scale) { configured_ui_scale_ = scale; }
 
-  // Returns the ui scale used for the device scale factor. This
-  // return 1.0f if the ui scale and dsf are both set to 2.0.
+  // Returns the ui scale and device scale factor actually used to create
+  // display that chrome sees. This can be different from one obtained
+  // from dispaly or one specified by a user in following situation.
+  // 1) DSF is 2.0f and UI scale is 2.0f. (Returns 1.0f and 1.0f respectiely)
+  // 2) Lower UI scale (< 1.0) is specified on 1.0f DSF device
+  // when 2x resources is available. (Returns 2.0f DSF + 1.2f UI scale
+  // for 1.0DSF + 0.6 UI scale).
+  float GetEffectiveDeviceScaleFactor() const;
   float GetEffectiveUIScale() const;
 
   // Copy the display info except for fields that can be modified by a
@@ -154,6 +168,35 @@ class ASH_EXPORT DisplayInfo {
     display_modes_.swap(display_modes);
   }
 
+  ui::ColorCalibrationProfile color_profile() const {
+    return color_profile_;
+  }
+
+  // Sets the color profile. It will ignore if the specified |profile| is not in
+  // |available_color_profiles_|.
+  void SetColorProfile(ui::ColorCalibrationProfile profile);
+
+  // Returns true if |profile| is in |available_color_profiles_|.
+  bool IsColorProfileAvailable(ui::ColorCalibrationProfile profile) const;
+
+  const std::vector<ui::ColorCalibrationProfile>&
+      available_color_profiles() const {
+    return available_color_profiles_;
+  }
+
+  void set_available_color_profiles(
+      const std::vector<ui::ColorCalibrationProfile>& profiles) {
+    available_color_profiles_ = profiles;
+  }
+
+  bool is_aspect_preserving_scaling() const {
+    return is_aspect_preserving_scaling_;
+  }
+
+  void set_is_aspect_preserving_scaling(bool value) {
+    is_aspect_preserving_scaling_ = value;
+  }
+
   // Returns a string representation of the DisplayInfo, excluding display
   // modes.
   std::string ToString() const;
@@ -168,6 +211,10 @@ class ASH_EXPORT DisplayInfo {
   bool has_overscan_;
   gfx::Display::Rotation rotation_;
   gfx::Display::TouchSupport touch_support_;
+
+  // If the display is also a touch device, it will have a positive
+  // |touch_device_id_|. Otherwise |touch_device_id_| is 0.
+  int touch_device_id_;
 
   // This specifies the device's pixel density. (For example, a
   // display whose DPI is higher than the threshold is considered to have
@@ -193,11 +240,21 @@ class ASH_EXPORT DisplayInfo {
   // True if this comes from native platform (DisplayChangeObserver).
   bool native_;
 
+  // True if the display is configured to preserve the aspect ratio. When the
+  // display is configured in a non-native mode, only parts of the display will
+  // be used such that the aspect ratio is preserved.
+  bool is_aspect_preserving_scaling_;
+
   // The list of modes supported by this display.
   std::vector<DisplayMode> display_modes_;
+
+  // The current profile of the color calibration.
+  ui::ColorCalibrationProfile color_profile_;
+
+  // The list of available variations for the color calibration.
+  std::vector<ui::ColorCalibrationProfile> available_color_profiles_;
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  //  ASH_DISPLAY_DISPLAY_INFO_H_

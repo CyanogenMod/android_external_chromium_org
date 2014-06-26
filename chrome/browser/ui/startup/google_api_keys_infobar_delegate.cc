@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/startup/google_api_keys_infobar_delegate.h"
 
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "google_apis/google_api_keys.h"
 #include "grit/chromium_strings.h"
@@ -43,10 +43,11 @@ base::string16 GoogleApiKeysInfoBarDelegate::GetLinkText() const {
 
 bool GoogleApiKeysInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL("http://www.chromium.org/developers/how-tos/api-keys"),
-      content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL("http://www.chromium.org/developers/how-tos/api-keys"),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }

@@ -122,6 +122,9 @@ class NotificationBridge;
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
 
+// Sets whether or not the current page is translated.
+- (void)setTranslateIconLit:(BOOL)on;
+
 // Happens when the zoom for the active tab changes, the active tab switches, or
 // a new tab or browser window is created. |canShowBubble| indicates if it is
 // appropriate to show a zoom bubble for the change.
@@ -142,6 +145,9 @@ class NotificationBridge;
 // associated window's coordinate system.
 - (NSPoint)bookmarkBubblePoint;
 
+// Point on the translate icon fot the Translate bubble.
+- (NSPoint)translateBubblePoint;
+
 // Returns the desired toolbar height for the given compression factor.
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight;
 
@@ -157,6 +163,12 @@ class NotificationBridge;
 
 // Returns the wrench button.
 - (NSView*)wrenchButton;
+
+// Activates the page action for the extension that has the given id.
+- (void)activatePageAction:(const std::string&)extension_id;
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id;
 
 @end
 

@@ -17,7 +17,7 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
-#include "components/autofill/core/browser/autofill_manager_delegate.h"
+#include "components/autofill/core/browser/autofill_client.h"
 
 class PrefService;
 
@@ -53,12 +53,13 @@ class Fingerprint;
 void GetFingerprint(
     uint64 obfuscated_gaia_id,
     const gfx::Rect& window_bounds,
-    const content::WebContents& web_contents,
+    content::WebContents* web_contents,
     const std::string& version,
     const std::string& charset,
     const std::string& accept_languages,
     const base::Time& install_time,
     const std::string& app_locale,
+    const std::string& user_agent,
     const base::Callback<void(scoped_ptr<Fingerprint>)>& callback);
 
 }  // namespace risk

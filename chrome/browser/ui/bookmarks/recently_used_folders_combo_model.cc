@@ -4,8 +4,8 @@
 
 #include "chrome/browser/ui/bookmarks/recently_used_folders_combo_model.h"
 
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -54,7 +54,8 @@ RecentlyUsedFoldersComboModel::RecentlyUsedFoldersComboModel(
   bookmark_model_->AddObserver(this);
   // Use + 2 to account for bookmark bar and other node.
   std::vector<const BookmarkNode*> nodes =
-      bookmark_utils::GetMostRecentlyModifiedFolders(model, kMaxMRUFolders + 2);
+      bookmark_utils::GetMostRecentlyModifiedUserFolders(model,
+                                                         kMaxMRUFolders + 2);
 
   for (size_t i = 0; i < nodes.size(); ++i)
     items_.push_back(Item(nodes[i], Item::TYPE_NODE));
@@ -80,9 +81,7 @@ RecentlyUsedFoldersComboModel::RecentlyUsedFoldersComboModel(
   items_.push_back(Item(model->other_node(), Item::TYPE_NODE));
   if (model->mobile_node()->IsVisible())
     items_.push_back(Item(model->mobile_node(), Item::TYPE_NODE));
-#if defined(USE_AURA) || defined(TOOLKIT_GTK)
   items_.push_back(Item(NULL, Item::TYPE_SEPARATOR));
-#endif
   items_.push_back(Item(NULL, Item::TYPE_CHOOSE_ANOTHER_FOLDER));
 
   std::vector<Item>::iterator it = std::find(items_.begin(),
@@ -182,8 +181,8 @@ void RecentlyUsedFoldersComboModel::BookmarkNodeRemoved(
     BookmarkModel* model,
     const BookmarkNode* parent,
     int old_index,
-    const BookmarkNode* node) {
-}
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {}
 
 void RecentlyUsedFoldersComboModel::BookmarkNodeChanged(
     BookmarkModel* model,
@@ -200,8 +199,9 @@ void RecentlyUsedFoldersComboModel::BookmarkNodeChildrenReordered(
       const BookmarkNode* node) {
 }
 
-void RecentlyUsedFoldersComboModel::BookmarkAllNodesRemoved(
-    BookmarkModel* model) {
+void RecentlyUsedFoldersComboModel::BookmarkAllUserNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   // Changing is rare enough that we don't attempt to readjust the contents.
   // Update |items_| so we aren't left pointing to a deleted node.
   bool changed = false;

@@ -5,16 +5,19 @@
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
 
 #include "ui/events/event.h"
-#include "ui/events/ozone/event_factory_ozone.h"
+#include "ui/ozone/public/event_factory_ozone.h"
 
 namespace ui {
 
 EventConverterEvdev::EventConverterEvdev() {}
 
+EventConverterEvdev::EventConverterEvdev(const EventDispatchCallback& callback)
+    : dispatch_callback_(callback) {}
+
 EventConverterEvdev::~EventConverterEvdev() {}
 
-void EventConverterEvdev::DispatchEvent(scoped_ptr<ui::Event> event) {
-  EventFactoryOzone::DispatchEvent(event.Pass());
+void EventConverterEvdev::DispatchEventToCallback(ui::Event* event) {
+  dispatch_callback_.Run(event);
 }
 
 }  // namespace ui

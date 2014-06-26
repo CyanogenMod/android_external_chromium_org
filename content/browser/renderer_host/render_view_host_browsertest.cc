@@ -15,11 +15,11 @@
 #include "content/public/common/content_paths.h"
 #include "content/public/common/frame_navigate_params.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
+#include "net/base/filename_util.h"
 #include "net/base/host_port_pair.h"
-#include "net/base/net_util.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
 namespace content {
@@ -115,6 +115,50 @@ IN_PROC_BROWSER_TEST_F(RenderViewHostTest, BasicRenderFrameHost) {
   EXPECT_TRUE(new_root->current_frame_host());
   EXPECT_NE(old_root->current_frame_host()->routing_id(),
             new_root->current_frame_host()->routing_id());
+}
+
+IN_PROC_BROWSER_TEST_F(RenderViewHostTest, IsFocusedElementEditable) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  GURL test_url = embedded_test_server()->GetURL("/touch_selection.html");
+  NavigateToURL(shell(), test_url);
+
+  RenderViewHost* rvh = shell()->web_contents()->GetRenderViewHost();
+  EXPECT_FALSE(rvh->IsFocusedElementEditable());
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(), "focus_textfield();"));
+  EXPECT_TRUE(rvh->IsFocusedElementEditable());
+}
+
+IN_PROC_BROWSER_TEST_F(RenderViewHostTest, ReleaseSessionOnCloseACK) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  GURL test_url = embedded_test_server()->GetURL(
+      "/access-session-storage.html");
+  NavigateToURL(shell(), test_url);
+
+  // Make a new Shell, a seperate tab with it's own session namespace and
+  // have it start loading a url but still be in progress.
+  ShellAddedObserver new_shell_observer;
+  EXPECT_TRUE(ExecuteScript(shell()->web_contents(), "window.open();"));
+  Shell* new_shell = new_shell_observer.GetShell();
+  new_shell->LoadURL(test_url);
+  RenderViewHost* rvh = new_shell->web_contents()->GetRenderViewHost();
+  SiteInstance* site_instance = rvh->GetSiteInstance();
+  scoped_refptr<SessionStorageNamespace> session_namespace =
+      rvh->GetDelegate()->GetSessionStorageNamespace(site_instance);
+  EXPECT_FALSE(session_namespace->HasOneRef());
+
+  // Close it, or rather start the close operation. The session namespace
+  // should remain until RPH gets an ACK from the renderer about having
+  // closed the view.
+  new_shell->Close();
+  EXPECT_FALSE(session_namespace->HasOneRef());
+
+  // Do something that causes ipc queues to flush and tasks in
+  // flight to complete such that we should have received the ACK.
+  NavigateToURL(shell(), test_url);
+
+  // Verify we have the only remaining reference to the namespace.
+  EXPECT_TRUE(session_namespace->HasOneRef());
 }
 
 }  // namespace content

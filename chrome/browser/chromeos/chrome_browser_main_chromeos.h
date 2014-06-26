@@ -8,11 +8,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/chrome_browser_main_linux.h"
+#include "chrome/browser/chromeos/external_metrics.h"
 #include "chrome/browser/chromeos/version_loader.h"
-
-namespace contacts {
-class ContactManager;
-}
 
 namespace content {
 class PowerSaveBlocker;
@@ -22,6 +19,7 @@ namespace chromeos {
 
 class DataPromoNotification;
 class EventRewriter;
+class EventRewriterController;
 class ExtensionSystemEventObserver;
 class IdleActionWarningObserver;
 class MagnificationManager;
@@ -61,7 +59,6 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   virtual void PostDestroyThreads() OVERRIDE;
 
  private:
-  scoped_ptr<contacts::ContactManager> contact_manager_;
   scoped_ptr<default_app_order::ExternalLoader> app_order_loader_;
   scoped_ptr<ExtensionSystemEventObserver> extension_system_event_observer_;
   scoped_ptr<PeripheralBatteryObserver> peripheral_battery_observer_;
@@ -72,7 +69,10 @@ class ChromeBrowserMainPartsChromeos : public ChromeBrowserMainPartsLinux {
   scoped_ptr<DataPromoNotification> data_promo_notification_;
 
   scoped_ptr<internal::DBusServices> dbus_services_;
-  scoped_ptr<EventRewriter> event_rewriter_;
+
+  scoped_ptr<EventRewriterController> keyboard_event_rewriters_;
+
+  scoped_refptr<chromeos::ExternalMetrics> external_metrics_;
 
   VersionLoader cros_version_loader_;
   base::CancelableTaskTracker tracker_;

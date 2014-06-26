@@ -50,11 +50,14 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "google_apis/gaia/google_service_auth_error.h"
-#include "grit/webkit_resources.h"
+#include "grit/component_scaled_resources.h"
+#include "grit/components_strings.h"
+#include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_data.h"
 #include "third_party/libaddressinput/chromium/cpp/include/libaddressinput/address_validator.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_WIN)
@@ -70,10 +73,13 @@ namespace {
 
 using ::i18n::addressinput::AddressData;
 using ::i18n::addressinput::AddressProblemFilter;
+using ::i18n::addressinput::AddressProblem;
 using ::i18n::addressinput::AddressProblems;
 using ::i18n::addressinput::AddressValidator;
 using testing::AtLeast;
+using testing::DoAll;
 using testing::Return;
+using testing::SetArgPointee;
 using testing::_;
 
 const char kSourceUrl[] = "http://localbike.shop";
@@ -89,15 +95,15 @@ const char* kFieldsFromPage[] =
       "cc-csc",
       "billing name",
       "billing address-line1",
-      "billing locality",
-      "billing region",
+      "billing address-level2",
+      "billing address-level1",
       "billing postal-code",
       "billing country",
       "billing tel",
       "shipping name",
       "shipping address-line1",
-      "shipping locality",
-      "shipping region",
+      "shipping address-level2",
+      "shipping address-level1",
       "shipping postal-code",
       "shipping country",
       "shipping tel",
@@ -200,10 +206,6 @@ class TestAutofillDialogView : public AutofillDialogView {
   }
 
   virtual base::string16 GetCvc() OVERRIDE { return base::string16(); }
-  virtual bool HitTestInput(ServerFieldType type,
-                            const gfx::Point& screen_point) OVERRIDE {
-    return false;
-  }
 
   virtual bool SaveDetailsLocally() OVERRIDE {
     return save_details_locally_checked_;
@@ -255,7 +257,7 @@ class TestAutofillDialogController
       const FormData& form_structure,
       const GURL& source_url,
       const AutofillMetrics& metric_logger,
-      const base::Callback<void(const FormStructure*)>& callback,
+      const AutofillClient::ResultCallback& callback,
       MockNewCreditCardBubbleController* mock_new_card_bubble_controller)
       : AutofillDialogControllerImpl(contents,
                                      form_structure,
@@ -263,8 +265,10 @@ class TestAutofillDialogController
                                      callback),
         metric_logger_(metric_logger),
         mock_wallet_client_(
-            Profile::FromBrowserContext(contents->GetBrowserContext())->
-                GetRequestContext(), this, source_url),
+            Profile::FromBrowserContext(contents->GetBrowserContext())
+                ->GetRequestContext(),
+            this,
+            source_url),
         mock_new_card_bubble_controller_(mock_new_card_bubble_controller),
         submit_button_delay_count_(0) {}
 
@@ -331,8 +335,10 @@ class TestAutofillDialogController
   using AutofillDialogControllerImpl::OnDidLoadRiskFingerprintData;
   using AutofillDialogControllerImpl::IsEditingExistingData;
   using AutofillDialogControllerImpl::IsManuallyEditingSection;
+  using AutofillDialogControllerImpl::IsPayingWithWallet;
   using AutofillDialogControllerImpl::IsSubmitPausedOn;
   using AutofillDialogControllerImpl::NOT_CHECKED;
+  using AutofillDialogControllerImpl::popup_input_type;
   using AutofillDialogControllerImpl::SignedInState;
 
  protected:
@@ -443,7 +449,7 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
     if (controller_)
       controller_->ViewClosed();
 
-    base::Callback<void(const FormStructure*)> callback =
+    AutofillClient::ResultCallback callback =
         base::Bind(&AutofillDialogControllerTest::FinishedCallback,
                    base::Unretained(this));
     controller_ = (new testing::NiceMock<TestAutofillDialogController>(
@@ -461,7 +467,8 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   void SetUpControllerWithFormData(const FormData& form_data) {
     ResetControllerWithFormData(form_data);
     controller()->Show();
-    if (!profile()->GetPrefs()->GetBoolean(
+    if (controller() &&
+        !profile()->GetPrefs()->GetBoolean(
             ::prefs::kAutofillDialogPayWithoutWallet)) {
       EXPECT_CALL(*controller()->GetTestingWalletClient(), GetWalletItems());
       controller()->OnDidFetchWalletCookieValue(std::string());
@@ -552,15 +559,16 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
     controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(0);
   }
 
-  void ValidateCCNumber(DialogSection section,
-                        const std::string& cc_number,
-                        bool should_pass) {
+  base::string16 ValidateCCNumber(DialogSection section,
+                                  const std::string& cc_number,
+                                  bool should_pass) {
     FieldValueMap outputs;
     outputs[ADDRESS_BILLING_COUNTRY] = ASCIIToUTF16("United States");
     outputs[CREDIT_CARD_NUMBER] = UTF8ToUTF16(cc_number);
     ValidityMessages messages =
         controller()->InputsAreValid(section, outputs);
     EXPECT_EQ(should_pass, !messages.HasSureError(CREDIT_CARD_NUMBER));
+    return messages.GetMessageOrDefault(CREDIT_CARD_NUMBER).text;
   }
 
   void SubmitWithWalletItems(scoped_ptr<wallet::WalletItems> wallet_items) {
@@ -641,7 +649,9 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
   }
 
  private:
-  void FinishedCallback(const FormStructure* form_structure) {
+  void FinishedCallback(AutofillClient::RequestAutocompleteResult result,
+                        const base::string16& debug_message,
+                        const FormStructure* form_structure) {
     form_structure_ = form_structure;
   }
 
@@ -671,6 +681,42 @@ class AutofillDialogControllerTest : public ChromeRenderViewHostTestHarness {
 };
 
 }  // namespace
+
+TEST_F(AutofillDialogControllerTest, RefuseToShowWithNoAutocompleteAttributes) {
+  FormFieldData email_field;
+  email_field.name = ASCIIToUTF16("email");
+  FormFieldData cc_field;
+  cc_field.name = ASCIIToUTF16("cc");
+  FormFieldData billing_field;
+  billing_field.name = ASCIIToUTF16("billing name");
+
+  FormData form_data;
+  form_data.fields.push_back(email_field);
+  form_data.fields.push_back(cc_field);
+  form_data.fields.push_back(billing_field);
+
+  SetUpControllerWithFormData(form_data);
+  EXPECT_FALSE(controller());
+}
+
+TEST_F(AutofillDialogControllerTest, RefuseToShowWithNoCcField) {
+  FormFieldData shipping_tel;
+  shipping_tel.autocomplete_attribute = "shipping tel";
+
+  FormData form_data;
+  form_data.fields.push_back(shipping_tel);
+
+  SetUpControllerWithFormData(form_data);
+  EXPECT_FALSE(controller());
+
+  // Any cc- field will do.
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-csc";
+  form_data.fields.push_back(cc_field);
+
+  SetUpControllerWithFormData(form_data);
+  EXPECT_TRUE(controller());
+}
 
 // Ensure the default ValidityMessage has the expected values.
 TEST_F(AutofillDialogControllerTest, DefaultValidityMessage) {
@@ -751,6 +797,21 @@ TEST_F(AutofillDialogControllerTest, PhoneNumberValidation) {
     outputs[phone] = ASCIIToUTF16("+112333 892 70 12 39");
     messages = controller()->InputsAreValid(section, outputs);
     EXPECT_TRUE(messages.HasSureError(phone));
+
+    // Input a valid Canadian number.
+    outputs[phone] = ASCIIToUTF16("+1 506 887 1234");
+    messages = controller()->InputsAreValid(section, outputs);
+    EXPECT_FALSE(HasAnyError(messages, phone));
+
+    // Input a valid Canadian number without the country code.
+    outputs[phone] = ASCIIToUTF16("506 887 1234");
+    messages = controller()->InputsAreValid(section, outputs);
+    EXPECT_TRUE(HasAnyError(messages, phone));
+
+    // Input a valid Canadian toll-free number.
+    outputs[phone] = ASCIIToUTF16("310 1234");
+    messages = controller()->InputsAreValid(section, outputs);
+    EXPECT_TRUE(HasAnyError(messages, phone));
   }
 }
 
@@ -873,9 +934,17 @@ TEST_F(AutofillDialogControllerTest, CreditCardNumberValidation) {
   ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberVisa, true);
   ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberMaster, true);
   ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberDiscover, true);
-  ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberAmex, false);
-  ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberIncomplete, false);
-  ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberInvalid, false);
+  EXPECT_EQ(l10n_util::GetStringUTF16(
+                IDS_AUTOFILL_CREDIT_CARD_NOT_SUPPORTED_BY_WALLET_FOR_MERCHANT),
+            ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberAmex, false));
+  EXPECT_EQ(
+      l10n_util::GetStringUTF16(
+          IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_NUMBER),
+      ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberIncomplete, false));
+  EXPECT_EQ(
+      l10n_util::GetStringUTF16(
+          IDS_AUTOFILL_DIALOG_VALIDATION_INVALID_CREDIT_CARD_NUMBER),
+      ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberInvalid, false));
 
   // Setup some wallet state on a merchant for which Wallet supports AMEX.
   controller()->OnDidGetWalletItems(
@@ -929,6 +998,74 @@ TEST_F(AutofillDialogControllerTest, AutofillProfiles) {
   shipping_model = controller()->MenuModelForSection(SECTION_SHIPPING);
   ASSERT_TRUE(shipping_model);
   EXPECT_EQ(4, shipping_model->GetItemCount());
+}
+
+// Checks that a valid profile is selected by default, but if invalid is
+// popped into edit mode.
+TEST_F(AutofillDialogControllerTest, AutofillProfilesPopInvalidIntoEdit) {
+  SwitchToAutofill();
+  SuggestionsMenuModel* shipping_model =
+      GetMenuModelForSection(SECTION_SHIPPING);
+  EXPECT_EQ(3, shipping_model->GetItemCount());
+  // "Same as billing" is selected.
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+
+  // Now make up a problem and make sure the profile isn't in the list.
+  Reset();
+  SwitchToAutofill();
+  AddressProblems problems;
+  problems.push_back(
+      AddressProblem(::i18n::addressinput::POSTAL_CODE,
+                     AddressProblem::MISMATCHING_VALUE,
+                     IDS_LEARN_MORE));
+  EXPECT_CALL(*controller()->GetMockValidator(),
+              ValidateAddress(CountryCodeMatcher("US"), _, _)).
+      WillRepeatedly(DoAll(SetArgPointee<2>(problems),
+                           Return(AddressValidator::SUCCESS)));
+
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+  shipping_model = GetMenuModelForSection(SECTION_SHIPPING);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+}
+
+// Makes sure suggestion profiles are re-validated when validation rules load.
+TEST_F(AutofillDialogControllerTest, AutofillProfilesRevalidateAfterRulesLoad) {
+  SwitchToAutofill();
+  SuggestionsMenuModel* shipping_model =
+      GetMenuModelForSection(SECTION_SHIPPING);
+  EXPECT_EQ(3, shipping_model->GetItemCount());
+  // "Same as billing" is selected.
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_FALSE(controller()->IsManuallyEditingSection(SECTION_BILLING));
+
+  AddressProblems problems;
+  problems.push_back(
+      AddressProblem(::i18n::addressinput::POSTAL_CODE,
+                     AddressProblem::MISMATCHING_VALUE,
+                     IDS_LEARN_MORE));
+  EXPECT_CALL(*controller()->GetMockValidator(),
+              ValidateAddress(CountryCodeMatcher("US"), _, _)).
+      WillRepeatedly(DoAll(SetArgPointee<2>(problems),
+                           Return(AddressValidator::SUCCESS)));
+
+  controller()->OnAddressValidationRulesLoaded("US", true);
+  EXPECT_EQ(4, shipping_model->GetItemCount());
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_SHIPPING));
+  EXPECT_TRUE(controller()->IsManuallyEditingSection(SECTION_BILLING));
 }
 
 // Makes sure that the choice of which Autofill profile to use for each section
@@ -1080,9 +1217,6 @@ TEST_F(AutofillDialogControllerTest, DoNotSuggestInvalidAddress) {
   full_profile.set_origin(kSettingsOrigin);
   full_profile.SetRawInfo(ADDRESS_HOME_STATE, ASCIIToUTF16("C"));
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
-
-  if (!i18ninput::Enabled())
-    EXPECT_FALSE(!!controller()->MenuModelForSection(SECTION_BILLING));
 }
 
 TEST_F(AutofillDialogControllerTest, DoNotSuggestIncompleteAddress) {
@@ -1091,6 +1225,22 @@ TEST_F(AutofillDialogControllerTest, DoNotSuggestIncompleteAddress) {
   profile.SetRawInfo(ADDRESS_HOME_STATE, base::string16());
   controller()->GetTestingManager()->AddTestingProfile(&profile);
 
+  // Same as shipping, manage, add new.
+  EXPECT_EQ(3,
+      controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+  EXPECT_FALSE(!!controller()->MenuModelForSection(SECTION_BILLING));
+}
+
+TEST_F(AutofillDialogControllerTest, DoSuggestShippingAddressWithoutEmail) {
+  SwitchToAutofill();
+  AutofillProfile profile(test::GetVerifiedProfile());
+  profile.SetRawInfo(EMAIL_ADDRESS, base::string16());
+  controller()->GetTestingManager()->AddTestingProfile(&profile);
+
+  // Same as shipping, manage, add new, profile with missing email.
+  EXPECT_EQ(4,
+      controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+  // Billing addresses require email.
   EXPECT_FALSE(!!controller()->MenuModelForSection(SECTION_BILLING));
 }
 
@@ -1210,10 +1360,13 @@ TEST_F(AutofillDialogControllerTest, BillingVsShippingPhoneNumber) {
   shipping_tel.autocomplete_attribute = "shipping tel";
   FormFieldData billing_tel;
   billing_tel.autocomplete_attribute = "billing tel";
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-csc";
 
   FormData form_data;
   form_data.fields.push_back(shipping_tel);
   form_data.fields.push_back(billing_tel);
+  form_data.fields.push_back(cc_field);
   SetUpControllerWithFormData(form_data);
 
   SwitchToAutofill();
@@ -1231,7 +1384,7 @@ TEST_F(AutofillDialogControllerTest, BillingVsShippingPhoneNumber) {
   billing_model->ActivatedAt(1);
 
   controller()->OnAccept();
-  ASSERT_EQ(2U, form_structure()->field_count());
+  ASSERT_EQ(3U, form_structure()->field_count());
   EXPECT_EQ(PHONE_HOME_WHOLE_NUMBER,
             form_structure()->field(0)->Type().GetStorableType());
   EXPECT_EQ(PHONE_HOME, form_structure()->field(0)->Type().group());
@@ -1260,12 +1413,15 @@ TEST_F(AutofillDialogControllerTest, BillingVsShippingStreetAddress) {
   FormFieldData billing_address_textarea;
   billing_address_textarea.autocomplete_attribute = "billing street-address";
   billing_address_textarea.form_control_type = "textarea";
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-csc";
 
   FormData form_data;
   form_data.fields.push_back(shipping_address);
   form_data.fields.push_back(billing_address);
   form_data.fields.push_back(shipping_address_textarea);
   form_data.fields.push_back(billing_address_textarea);
+  form_data.fields.push_back(cc_field);
   SetUpControllerWithFormData(form_data);
 
   SwitchToAutofill();
@@ -1283,7 +1439,7 @@ TEST_F(AutofillDialogControllerTest, BillingVsShippingStreetAddress) {
   billing_model->ActivatedAt(1);
 
   controller()->OnAccept();
-  ASSERT_EQ(4U, form_structure()->field_count());
+  ASSERT_EQ(5U, form_structure()->field_count());
   EXPECT_EQ(ADDRESS_HOME_STREET_ADDRESS,
             form_structure()->field(0)->Type().GetStorableType());
   EXPECT_EQ(ADDRESS_HOME, form_structure()->field(0)->Type().group());
@@ -1314,6 +1470,67 @@ TEST_F(AutofillDialogControllerTest, BillingVsShippingStreetAddress) {
             form_structure()->field(0)->value);
   EXPECT_NE(form_structure()->field(3)->value,
             form_structure()->field(2)->value);
+}
+
+// Test asking for different pieces of the name.
+TEST_F(AutofillDialogControllerTest, NamePieces) {
+  const char* const attributes[] = {
+      "shipping name",
+      "billing name",
+      "billing given-name",
+      "billing family-name",
+      "billing additional-name",
+      "cc-csc"
+  };
+
+  FormData form_data;
+  for (size_t i = 0; i < arraysize(attributes); ++i) {
+    FormFieldData field;
+    field.autocomplete_attribute.assign(attributes[i]);
+    form_data.fields.push_back(field);
+  }
+
+  SetUpControllerWithFormData(form_data);
+  SwitchToAutofill();
+
+  // Billing.
+  AutofillProfile test_profile(test::GetVerifiedProfile());
+  test_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("Fabian Jackson von Nacho"));
+  controller()->GetTestingManager()->AddTestingProfile(&test_profile);
+
+  // Credit card.
+  CreditCard credit_card(test::GetVerifiedCreditCard());
+  controller()->GetTestingManager()->AddTestingCreditCard(&credit_card);
+
+  // Make shipping name different from billing.
+  AutofillProfile test_profile2(test::GetVerifiedProfile2());
+  test_profile2.SetRawInfo(NAME_FULL, ASCIIToUTF16("Don Ford"));
+  controller()->GetTestingManager()->AddTestingProfile(&test_profile2);
+  ui::MenuModel* shipping_model =
+      controller()->MenuModelForSection(SECTION_SHIPPING);
+  shipping_model->ActivatedAt(2);
+
+  controller()->OnAccept();
+
+  EXPECT_EQ(NAME_FULL, form_structure()->field(0)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("Don Ford"),
+            form_structure()->field(0)->value);
+
+  EXPECT_EQ(NAME_FULL, form_structure()->field(1)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("Fabian Jackson von Nacho"),
+            form_structure()->field(1)->value);
+
+  EXPECT_EQ(NAME_FIRST, form_structure()->field(2)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("Fabian"),
+            form_structure()->field(2)->value);
+
+  EXPECT_EQ(NAME_LAST, form_structure()->field(3)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("von Nacho"),
+            form_structure()->field(3)->value);
+
+  EXPECT_EQ(NAME_MIDDLE, form_structure()->field(4)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("Jackson"),
+            form_structure()->field(4)->value);
 }
 
 TEST_F(AutofillDialogControllerTest, AcceptLegalDocuments) {
@@ -1699,7 +1916,7 @@ TEST_F(AutofillDialogControllerTest, SaveInstrumentSameAsBilling) {
   CreditCard full_card(test::GetCreditCard());
   for (size_t i = 0; i < inputs.size(); ++i) {
     const ServerFieldType type = inputs[i].type;
-    if (type == ADDRESS_BILLING_LINE1)
+    if (type == ADDRESS_BILLING_STREET_ADDRESS)
       outputs[type] = ASCIIToUTF16(kEditedBillingAddress);
     else
       outputs[type] = full_profile.GetInfo(AutofillType(type), "en-US");
@@ -2123,7 +2340,7 @@ TEST_F(AutofillDialogControllerTest, AutofillTypes) {
 
 TEST_F(AutofillDialogControllerTest, SaveDetailsInChrome) {
   SwitchToAutofill();
-  EXPECT_CALL(*controller()->GetView(), ModelChanged()).Times(2);
+  EXPECT_CALL(*controller()->GetView(), ModelChanged()).Times(4);
 
   AutofillProfile full_profile(test::GetVerifiedProfile());
   controller()->GetTestingManager()->AddTestingProfile(&full_profile);
@@ -2138,8 +2355,53 @@ TEST_F(AutofillDialogControllerTest, SaveDetailsInChrome) {
   controller()->MenuModelForSection(SECTION_BILLING)->ActivatedAt(1);
   EXPECT_TRUE(controller()->ShouldOfferToSaveInChrome());
 
+  profile()->GetPrefs()->SetBoolean(prefs::kAutofillEnabled, false);
+  EXPECT_FALSE(controller()->ShouldOfferToSaveInChrome());
+
+  profile()->GetPrefs()->SetBoolean(prefs::kAutofillEnabled, true);
+  controller()->MenuModelForSection(SECTION_BILLING)->ActivatedAt(1);
+  EXPECT_TRUE(controller()->ShouldOfferToSaveInChrome());
+
   profile()->ForceIncognito(true);
   EXPECT_FALSE(controller()->ShouldOfferToSaveInChrome());
+}
+
+TEST_F(AutofillDialogControllerTest, DisabledAutofill) {
+  SwitchToAutofill();
+  ASSERT_TRUE(profile()->GetPrefs()->GetBoolean(prefs::kAutofillEnabled));
+
+  AutofillProfile verified_profile(test::GetVerifiedProfile());
+  controller()->GetTestingManager()->AddTestingProfile(&verified_profile);
+
+  CreditCard credit_card(test::GetVerifiedCreditCard());
+  controller()->GetTestingManager()->AddTestingCreditCard(&credit_card);
+
+  // Verify suggestions menus should be showing when Autofill is enabled.
+  EXPECT_TRUE(controller()->MenuModelForSection(SECTION_CC));
+  EXPECT_TRUE(controller()->MenuModelForSection(SECTION_BILLING));
+  EXPECT_EQ(
+      4, controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+
+  EXPECT_CALL(*controller()->GetView(), ModelChanged());
+  profile()->GetPrefs()->SetBoolean(prefs::kAutofillEnabled, false);
+
+  // Verify billing and credit card suggestions menus are hidden when Autofill
+  // is disabled.
+  EXPECT_FALSE(controller()->MenuModelForSection(SECTION_CC));
+  EXPECT_FALSE(controller()->MenuModelForSection(SECTION_BILLING));
+  // And that the shipping suggestions menu has less selections.
+  EXPECT_EQ(
+      2, controller()->MenuModelForSection(SECTION_SHIPPING)->GetItemCount());
+
+  // Additionally, editing fields should not show Autofill popups.
+  ASSERT_NO_FATAL_FAILURE(controller()->UserEditedOrActivatedInput(
+      SECTION_BILLING,
+      NAME_BILLING_FULL,
+      gfx::NativeView(),
+      gfx::Rect(),
+      verified_profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      true));
+  EXPECT_EQ(UNKNOWN_TYPE, controller()->popup_input_type());
 }
 
 // Tests that user is prompted when using instrument with minimal address.
@@ -2226,7 +2488,7 @@ TEST_F(AutofillDialogControllerTest, ShippingSectionCanBeHidden) {
   FormFieldData cc_field;
   cc_field.autocomplete_attribute = "cc-number";
   FormFieldData billing_field;
-  billing_field.autocomplete_attribute = "billing region";
+  billing_field.autocomplete_attribute = "billing address-level1";
 
   FormData form_data;
   form_data.fields.push_back(email_field);
@@ -2252,7 +2514,7 @@ TEST_F(AutofillDialogControllerTest, ShippingSectionCanBeHiddenForWallet) {
   FormFieldData cc_field;
   cc_field.autocomplete_attribute = "cc-number";
   FormFieldData billing_field;
-  billing_field.autocomplete_attribute = "billing region";
+  billing_field.autocomplete_attribute = "billing address-level1";
 
   FormData form_data;
   form_data.fields.push_back(email_field);
@@ -2961,12 +3223,7 @@ TEST_F(AutofillDialogControllerTest, IconReservedForCreditCardField) {
   }
 }
 
-class AutofillDialogControllerI18nTest : public AutofillDialogControllerTest {
- private:
-  i18ninput::ScopedEnableForTesting enabled_;
-};
-
-TEST_F(AutofillDialogControllerI18nTest, CountryChangeUpdatesSection) {
+TEST_F(AutofillDialogControllerTest, CountryChangeUpdatesSection) {
   TestAutofillDialogView* view = controller()->GetView();
   view->ClearSectionUpdates();
 
@@ -2974,7 +3231,7 @@ TEST_F(AutofillDialogControllerI18nTest, CountryChangeUpdatesSection) {
                                            ADDRESS_HOME_COUNTRY,
                                            gfx::NativeView(),
                                            gfx::Rect(),
-                                           ASCIIToUTF16("China"),
+                                           ASCIIToUTF16("Belarus"),
                                            true);
   std::map<DialogSection, size_t> updates = view->section_updates();
   EXPECT_EQ(1U, updates[SECTION_SHIPPING]);
@@ -3006,12 +3263,12 @@ TEST_F(AutofillDialogControllerI18nTest, CountryChangeUpdatesSection) {
   EXPECT_EQ(1U, updates.size());
 }
 
-TEST_F(AutofillDialogControllerI18nTest, CorrectCountryFromInputs) {
+TEST_F(AutofillDialogControllerTest, CorrectCountryFromInputs) {
   EXPECT_CALL(*controller()->GetMockValidator(),
-              ValidateAddress(CountryCodeMatcher("CN"), _, _));
+              ValidateAddress(CountryCodeMatcher("DE"), _, _));
 
   FieldValueMap billing_inputs;
-  billing_inputs[ADDRESS_BILLING_COUNTRY] = ASCIIToUTF16("China");
+  billing_inputs[ADDRESS_BILLING_COUNTRY] = ASCIIToUTF16("Germany");
   controller()->InputsAreValid(SECTION_BILLING, billing_inputs);
 
   EXPECT_CALL(*controller()->GetMockValidator(),
@@ -3022,13 +3279,14 @@ TEST_F(AutofillDialogControllerI18nTest, CorrectCountryFromInputs) {
   controller()->InputsAreValid(SECTION_SHIPPING, shipping_inputs);
 }
 
-TEST_F(AutofillDialogControllerI18nTest, ValidationRulesLoadedOnCountryChange) {
+TEST_F(AutofillDialogControllerTest, ValidationRulesLoadedOnCountryChange) {
   ResetControllerWithFormData(DefaultFormData());
-  EXPECT_CALL(*controller()->GetMockValidator(), LoadRules("US"));
+  EXPECT_CALL(*controller()->GetMockValidator(),
+              LoadRules("US")).Times(AtLeast(1));
   controller()->Show();
 
   EXPECT_CALL(*controller()->GetMockValidator(), LoadRules("FR"));
-  controller()->UserEditedOrActivatedInput(SECTION_CC_BILLING,
+  controller()->UserEditedOrActivatedInput(SECTION_BILLING,
                                            ADDRESS_BILLING_COUNTRY,
                                            gfx::NativeView(),
                                            gfx::Rect(),
@@ -3036,7 +3294,18 @@ TEST_F(AutofillDialogControllerI18nTest, ValidationRulesLoadedOnCountryChange) {
                                            true);
 }
 
-TEST_F(AutofillDialogControllerI18nTest, InvalidWhenRulesNotReady) {
+TEST_F(AutofillDialogControllerTest, UsValidationRulesLoadedForJpOnlyProfile) {
+  ResetControllerWithFormData(DefaultFormData());
+  AutofillProfile jp_profile(base::GenerateGUID(), kSettingsOrigin);
+  jp_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("JP"));
+  controller()->GetTestingManager()->AddTestingProfile(&jp_profile);
+  EXPECT_CALL(*controller()->GetMockValidator(), LoadRules("US"));
+  EXPECT_CALL(*controller()->GetMockValidator(),
+              LoadRules("JP")).Times(AtLeast(1));
+  controller()->Show();
+}
+
+TEST_F(AutofillDialogControllerTest, InvalidWhenRulesNotReady) {
   // Select "Add new shipping address...".
   controller()->MenuModelForSection(SECTION_SHIPPING)->ActivatedAt(1);
 
@@ -3057,7 +3326,7 @@ TEST_F(AutofillDialogControllerI18nTest, InvalidWhenRulesNotReady) {
   EXPECT_TRUE(messages.GetMessageOrDefault(ADDRESS_HOME_COUNTRY).text.empty());
 }
 
-TEST_F(AutofillDialogControllerI18nTest, ValidButUnverifiedWhenRulesFail) {
+TEST_F(AutofillDialogControllerTest, ValidButUnverifiedWhenRulesFail) {
   SwitchToAutofill();
 
   // Add suggestions so the credit card and billing sections aren't showing
@@ -3094,6 +3363,248 @@ TEST_F(AutofillDialogControllerI18nTest, ValidButUnverifiedWhenRulesFail) {
             full_profile.GetRawInfo(NAME_FULL));
   EXPECT_EQ(imported_profile.origin(), GURL(kSourceUrl).GetOrigin().spec());
   EXPECT_FALSE(imported_profile.IsVerified());
+}
+
+TEST_F(AutofillDialogControllerTest, LimitedCountryChoices) {
+  ui::ComboboxModel* shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  const int default_number_of_countries =
+      shipping_country_model->GetItemCount();
+  // We show a lot of countries by default, but the exact number doesn't matter.
+  EXPECT_GT(default_number_of_countries, 50);
+
+  // Create a form data that simulates:
+  //   <select autocomplete="billing country">
+  //     <option value="AU">Down Under</option>
+  //     <option value="">fR</option>  <!-- Case doesn't matter -->
+  //     <option value="GRMNY">Germany</option>
+  //   </select>
+  // Only country codes are respected, whether they're in value or the option's
+  // text content. Thus the first two options should be recognized.
+  FormData form_data;
+  FormFieldData field;
+  field.autocomplete_attribute = "billing country";
+  field.option_contents.push_back(ASCIIToUTF16("Down Under"));
+  field.option_values.push_back(ASCIIToUTF16("AU"));
+  field.option_contents.push_back(ASCIIToUTF16("Fr"));
+  field.option_values.push_back(ASCIIToUTF16(""));
+  field.option_contents.push_back(ASCIIToUTF16("Germany"));
+  field.option_values.push_back(ASCIIToUTF16("GRMNY"));
+
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-csc";
+
+  form_data.fields.push_back(field);
+  form_data.fields.push_back(cc_field);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  // Shipping model shouldn't have changed.
+  shipping_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_HOME_COUNTRY);
+  EXPECT_EQ(default_number_of_countries,
+            shipping_country_model->GetItemCount());
+  // Billing model now only has two items.
+  ui::ComboboxModel* billing_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
+  ASSERT_EQ(2, billing_country_model->GetItemCount());
+  EXPECT_EQ(billing_country_model->GetItemAt(0), ASCIIToUTF16("Australia"));
+  EXPECT_EQ(billing_country_model->GetItemAt(1), ASCIIToUTF16("France"));
+
+  // Make sure it also applies to profile suggestions.
+  AutofillProfile us_profile(test::GetVerifiedProfile());
+  us_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("US"));
+  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
+  // Don't show a suggestion if the only one that exists is disabled.
+  EXPECT_FALSE(
+      controller()->SuggestionStateForSection(SECTION_BILLING).visible);
+
+  // Add a profile with an acceptable country; suggestion should be shown.
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+  AutofillProfile au_profile(test::GetVerifiedProfile2());
+  au_profile.SetRawInfo(ADDRESS_HOME_COUNTRY, ASCIIToUTF16("AU"));
+  controller()->GetTestingManager()->AddTestingProfile(&us_profile);
+  controller()->GetTestingManager()->AddTestingProfile(&au_profile);
+  ui::MenuModel* model = controller()->MenuModelForSection(SECTION_BILLING);
+  ASSERT_TRUE(model);
+  EXPECT_EQ(4, model->GetItemCount());
+  EXPECT_FALSE(model->IsEnabledAt(0));
+  EXPECT_TRUE(model->IsEnabledAt(1));
+
+  // Add <input type="text" autocomplete="billing country"></input>
+  // This should open up selection of all countries again.
+  FormFieldData field2;
+  field2.autocomplete_attribute = "billing country";
+  form_data.fields.push_back(field2);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  billing_country_model =
+      controller()->ComboboxModelForAutofillType(ADDRESS_BILLING_COUNTRY);
+  EXPECT_EQ(default_number_of_countries,
+            billing_country_model->GetItemCount());
+}
+
+// http://crbug.com/388018
+TEST_F(AutofillDialogControllerTest, NoCountryChoices) {
+  // Create a form data that simulates:
+  //   <select autocomplete="billing country">
+  //     <option value="ATL">Atlantis</option>
+  //     <option value="ELD">Eldorado</option>
+  //   </select>
+  // i.e. contains a list of no valid countries.
+  FormData form_data;
+  FormFieldData field;
+  field.autocomplete_attribute = "billing country";
+  field.option_contents.push_back(ASCIIToUTF16("Atlantis"));
+  field.option_values.push_back(ASCIIToUTF16("ATL"));
+  field.option_contents.push_back(ASCIIToUTF16("Eldorado"));
+  field.option_values.push_back(ASCIIToUTF16("ELD"));
+
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-csc";
+
+  form_data.fields.push_back(field);
+  form_data.fields.push_back(cc_field);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  // Controller aborts and self destructs.
+  EXPECT_EQ(0, controller());
+}
+
+TEST_F(AutofillDialogControllerTest, LimitedCcChoices) {
+  SwitchToAutofill();
+  // Typically, MC and Visa are both valid.
+  ValidateCCNumber(SECTION_CC, kTestCCNumberMaster, true);
+  ValidateCCNumber(SECTION_CC, kTestCCNumberVisa, true);
+
+  FormData form_data;
+  FormFieldData field;
+  field.autocomplete_attribute = "billing cc-type";
+  field.option_contents.push_back(ASCIIToUTF16("Visa"));
+  field.option_values.push_back(ASCIIToUTF16("V"));
+  field.option_contents.push_back(ASCIIToUTF16("American Express"));
+  field.option_values.push_back(ASCIIToUTF16("AX"));
+  form_data.fields.push_back(field);
+  ResetControllerWithFormData(form_data);
+  controller()->Show();
+
+  // MC is not valid because it's missing from FormData.
+  EXPECT_EQ(l10n_util::GetStringUTF16(
+                IDS_AUTOFILL_DIALOG_VALIDATION_UNACCEPTED_MASTERCARD),
+            ValidateCCNumber(SECTION_CC, kTestCCNumberMaster, false));
+  ValidateCCNumber(SECTION_CC, kTestCCNumberVisa, true);
+
+  CreditCard visa_card(test::GetVerifiedCreditCard());
+  CreditCard amex_card(test::GetVerifiedCreditCard2());
+
+  CreditCard master_card(base::GenerateGUID(), "chrome settings");
+  test::SetCreditCardInfo(
+      &master_card, "Mr Foo", "5105105105105100", "07", "2099");
+
+  controller()->GetTestingManager()->AddTestingCreditCard(&visa_card);
+  controller()->GetTestingManager()->AddTestingCreditCard(&amex_card);
+  controller()->GetTestingManager()->AddTestingCreditCard(&master_card);
+
+  // The stored MC is disabled in the dropdown.
+  ui::MenuModel* model = controller()->MenuModelForSection(SECTION_CC);
+  ASSERT_TRUE(model);
+  ASSERT_EQ(5, model->GetItemCount());
+  EXPECT_TRUE(model->IsEnabledAt(0));
+  EXPECT_TRUE(model->IsEnabledAt(1));
+  EXPECT_FALSE(model->IsEnabledAt(2));
+  EXPECT_TRUE(model->IsEnabledAt(3));
+  EXPECT_TRUE(model->IsEnabledAt(4));
+
+  // No MC; Wallet is disabled.
+  SetUpControllerWithFormData(form_data);
+  EXPECT_FALSE(controller()->IsPayingWithWallet());
+
+  // In Autofill mode, Discover is disallowed because it's not in FormData.
+  ValidateCCNumber(SECTION_CC, kTestCCNumberDiscover, false);
+
+  field.option_contents.push_back(ASCIIToUTF16("Mastercard"));
+  field.option_values.push_back(ASCIIToUTF16("Mastercard"));
+  form_data.fields[0] = field;
+
+  // Add MC to FormData; Wallet is enabled.
+  SetUpControllerWithFormData(form_data);
+  EXPECT_TRUE(controller()->IsPayingWithWallet());
+  // Even though Discover isn't in FormData, it's allowed because Wallet always
+  // generates a MC Virtual card.
+  ValidateCCNumber(SECTION_CC_BILLING, kTestCCNumberDiscover, true);
+}
+
+TEST_F(AutofillDialogControllerTest, SuggestCountrylessProfiles) {
+  SwitchToAutofill();
+
+  FieldValueMap outputs;
+  outputs[ADDRESS_HOME_COUNTRY] = ASCIIToUTF16("US");
+  controller()->GetView()->SetUserInput(SECTION_SHIPPING, outputs);
+
+  AutofillProfile profile(test::GetVerifiedProfile());
+  profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("The Man Without a Country"));
+  profile.SetRawInfo(ADDRESS_HOME_COUNTRY, base::string16());
+  controller()->GetTestingManager()->AddTestingProfile(&profile);
+
+  controller()->UserEditedOrActivatedInput(
+      SECTION_SHIPPING,
+      NAME_FULL,
+      gfx::NativeView(),
+      gfx::Rect(),
+      profile.GetRawInfo(NAME_FULL).substr(0, 1),
+      true);
+  EXPECT_EQ(NAME_FULL, controller()->popup_input_type());
+}
+
+TEST_F(AutofillDialogControllerTest, SwitchFromWalletWithFirstName) {
+  controller()->MenuModelForSection(SECTION_CC_BILLING)->ActivatedAt(2);
+
+  FieldValueMap outputs;
+  outputs[NAME_FULL] = ASCIIToUTF16("madonna");
+  controller()->GetView()->SetUserInput(SECTION_CC_BILLING, outputs);
+
+  ASSERT_NO_FATAL_FAILURE(SwitchToAutofill());
+}
+
+// Regression test for http://crbug.com/382777
+TEST_F(AutofillDialogControllerTest, WalletBillingCountry) {
+  FormFieldData cc_field;
+  cc_field.autocomplete_attribute = "cc-number";
+  FormFieldData billing_country, billing_country_name, shipping_country,
+      shipping_country_name;
+  billing_country.autocomplete_attribute = "billing country";
+  billing_country_name.autocomplete_attribute = "billing country-name";
+  shipping_country.autocomplete_attribute = "shipping country";
+  shipping_country_name.autocomplete_attribute = "shipping country-name";
+
+  FormData form_data;
+  form_data.fields.push_back(cc_field);
+  form_data.fields.push_back(billing_country);
+  form_data.fields.push_back(billing_country_name);
+  form_data.fields.push_back(shipping_country);
+  form_data.fields.push_back(shipping_country_name);
+
+  SetUpControllerWithFormData(form_data);
+  AcceptAndLoadFakeFingerprint();
+  controller()->OnDidGetFullWallet(wallet::GetTestFullWallet());
+  controller()->ForceFinishSubmit();
+
+  ASSERT_EQ(5U, form_structure()->field_count());
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(1)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("US"), form_structure()->field(1)->value);
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(2)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("United States"), form_structure()->field(2)->value);
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(3)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("US"), form_structure()->field(3)->value);
+  EXPECT_EQ(ADDRESS_HOME_COUNTRY,
+            form_structure()->field(4)->Type().GetStorableType());
+  EXPECT_EQ(ASCIIToUTF16("United States"), form_structure()->field(4)->value);
 }
 
 }  // namespace autofill

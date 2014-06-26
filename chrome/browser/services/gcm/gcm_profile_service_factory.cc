@@ -4,17 +4,25 @@
 
 #include "chrome/browser/services/gcm/gcm_profile_service_factory.h"
 
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/services/gcm/gcm_client_factory.h"
 #include "chrome/browser/services/gcm/gcm_profile_service.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+
+#if !defined(OS_ANDROID)
+#include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
+#include "components/gcm_driver/gcm_client_factory.h"
+#endif
 
 namespace gcm {
 
 // static
 GCMProfileService* GCMProfileServiceFactory::GetForProfile(Profile* profile) {
-  if (!gcm::GCMProfileService::IsGCMEnabled(profile))
+  // GCM is not supported in incognito mode.
+  if (profile->IsOffTheRecord())
     return NULL;
 
   return static_cast<GCMProfileService*>(
@@ -30,20 +38,25 @@ GCMProfileServiceFactory::GCMProfileServiceFactory()
     : BrowserContextKeyedServiceFactory(
         "GCMProfileService",
         BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(SigninManagerFactory::GetInstance());
+  DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
+#if !defined(OS_ANDROID)
+  DependsOn(LoginUIServiceFactory::GetInstance());
+#endif
 }
 
 GCMProfileServiceFactory::~GCMProfileServiceFactory() {
 }
 
-BrowserContextKeyedService* GCMProfileServiceFactory::BuildServiceInstanceFor(
+KeyedService* GCMProfileServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
-  Profile* profile = static_cast<Profile*>(context);
-  if (!gcm::GCMProfileService::IsGCMEnabled(profile))
-    return NULL;
-  GCMProfileService* service = new GCMProfileService(profile);
-  scoped_ptr<GCMClientFactory> gcm_client_factory(new GCMClientFactory);
-  service->Initialize(gcm_client_factory.Pass());
-  return service;
+#if defined(OS_ANDROID)
+  return new GCMProfileService(Profile::FromBrowserContext(context));
+#else
+  return new GCMProfileService(
+      Profile::FromBrowserContext(context),
+      scoped_ptr<GCMClientFactory>(new GCMClientFactory));
+#endif
 }
 
 content::BrowserContext* GCMProfileServiceFactory::GetBrowserContextToUse(

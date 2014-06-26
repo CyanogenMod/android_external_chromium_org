@@ -12,14 +12,13 @@
 #include "chrome/browser/extensions/app_sync_bundle.h"
 #include "chrome/browser/extensions/extension_sync_bundle.h"
 #include "chrome/browser/extensions/pending_enables.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "sync/api/string_ordinal.h"
 #include "sync/api/sync_change.h"
 #include "sync/api/syncable_service.h"
 
-class ExtensionErrorUI;
 class ExtensionSyncData;
 class Profile;
 
@@ -38,7 +37,7 @@ class SyncErrorFactory;
 }
 
 class ExtensionSyncService : public syncer::SyncableService,
-                             public BrowserContextKeyedService  {
+                             public KeyedService {
  public:
   ExtensionSyncService(Profile* profile,
                        extensions::ExtensionPrefs* extension_prefs,
@@ -95,6 +94,9 @@ class ExtensionSyncService : public syncer::SyncableService,
       const extensions::ExtensionSyncData& extension_sync_data);
   bool ProcessAppSyncData(const extensions::AppSyncData& app_sync_data);
 
+  // Processes the bookmark app specific parts of an AppSyncData.
+  void ProcessBookmarkAppSyncData(const extensions::AppSyncData& app_sync_data);
+
   syncer::SyncChange PrepareToSyncUninstallExtension(
       const extensions::Extension* extension,
       bool extensions_ready);
@@ -109,6 +111,8 @@ class ExtensionSyncService : public syncer::SyncableService,
   // |flare| provides a StartSyncFlare to the SyncableService. See
   // sync_start_util for more.
   void SetSyncStartFlare(const syncer::SyncableService::StartSyncFlare& flare);
+
+  Profile* profile() { return profile_; }
 
  private:
   // Return true if the sync type of |extension| matches |type|.
@@ -142,7 +146,6 @@ class ExtensionSyncService : public syncer::SyncableService,
   extensions::PendingEnables pending_app_enables_;
   extensions::PendingEnables pending_extension_enables_;
 
-  scoped_ptr<ExtensionErrorUI> extension_error_ui_;
   // Sequenced task runner for extension related file operations.
   scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
 

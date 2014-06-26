@@ -9,7 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/strings/string16.h"
-#include "chrome/browser/chromeos/login/default_user_images.h"
+#include "chrome/browser/chromeos/login/users/avatar/default_user_images.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
 #include "content/public/browser/web_ui.h"
 
@@ -57,7 +57,6 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
     virtual void AbortFlow() = 0;
     virtual void FinishFlow() = 0;
 
-    virtual void CheckCameraPresence() = 0;
     virtual void OnPhotoTaken(const std::string& raw_data) = 0;
     virtual void OnImageSelected(const std::string& image_url,
                                  const std::string& image_type) = 0;
@@ -124,7 +123,8 @@ class LocallyManagedUserCreationScreenHandler : public BaseScreenHandler {
 
   void HandleGetImages();
   void HandlePhotoTaken(const std::string& image_url);
-  void HandleCheckCameraPresence();
+  void HandleTakePhoto();
+  void HandleDiscardPhoto();
   void HandleSelectImage(const std::string& image_url,
                          const std::string& image_type);
 

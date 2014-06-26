@@ -21,7 +21,11 @@
 #endif
 
 namespace ash {
-namespace internal {
+namespace {
+
+bool allow_upgrade_to_high_dpi = false;
+
+}
 
 DisplayMode::DisplayMode()
     : refresh_rate(0.0f), interlaced(false), native(false) {}
@@ -38,6 +42,11 @@ DisplayMode::DisplayMode(const gfx::Size& size,
 // satic
 DisplayInfo DisplayInfo::CreateFromSpec(const std::string& spec) {
   return CreateFromSpecWithID(spec, gfx::Display::kInvalidDisplayID);
+}
+
+// static
+void DisplayInfo::SetAllowUpgradeToHighDPI(bool enable) {
+  allow_upgrade_to_high_dpi = enable;
 }
 
 // static
@@ -106,7 +115,7 @@ DisplayInfo DisplayInfo::CreateFromSpecWithID(const std::string& spec,
   } else {
 #if defined(OS_WIN)
     if (gfx::IsHighDPIEnabled()) {
-      device_scale_factor = gfx::GetModernUIScale();
+      device_scale_factor = gfx::GetDPIScale();
     }
 #endif
   }
@@ -170,10 +179,13 @@ DisplayInfo::DisplayInfo()
       has_overscan_(false),
       rotation_(gfx::Display::ROTATE_0),
       touch_support_(gfx::Display::TOUCH_SUPPORT_UNKNOWN),
+      touch_device_id_(0),
       device_scale_factor_(1.0f),
       overscan_insets_in_dip_(0, 0, 0, 0),
       configured_ui_scale_(1.0f),
-      native_(false) {
+      native_(false),
+      is_aspect_preserving_scaling_(false),
+      color_profile_(ui::COLOR_PROFILE_STANDARD) {
 }
 
 DisplayInfo::DisplayInfo(int64 id,
@@ -184,10 +196,12 @@ DisplayInfo::DisplayInfo(int64 id,
       has_overscan_(has_overscan),
       rotation_(gfx::Display::ROTATE_0),
       touch_support_(gfx::Display::TOUCH_SUPPORT_UNKNOWN),
+      touch_device_id_(0),
       device_scale_factor_(1.0f),
       overscan_insets_in_dip_(0, 0, 0, 0),
       configured_ui_scale_(1.0f),
-      native_(false) {
+      native_(false),
+      color_profile_(ui::COLOR_PROFILE_STANDARD) {
 }
 
 DisplayInfo::~DisplayInfo() {
@@ -204,6 +218,7 @@ void DisplayInfo::Copy(const DisplayInfo& native_info) {
   device_scale_factor_ = native_info.device_scale_factor_;
   display_modes_ = native_info.display_modes_;
   touch_support_ = native_info.touch_support_;
+  touch_device_id_ = native_info.touch_device_id_;
 
   // Copy overscan_insets_in_dip_ if it's not empty. This is for test
   // cases which use "/o" annotation which sets the overscan inset
@@ -212,13 +227,17 @@ void DisplayInfo::Copy(const DisplayInfo& native_info) {
   if (!native_info.overscan_insets_in_dip_.empty())
     overscan_insets_in_dip_ = native_info.overscan_insets_in_dip_;
 
-  // Rotation_ and ui_scale_ are given by preference, or unit
-  // tests. Don't copy if this native_info came from
+  // Rotation_ and ui_scale_ color_profile_ are given by preference,
+  // or unit tests. Don't copy if this native_info came from
   // DisplayChangeObserver.
   if (!native_info.native()) {
     rotation_ = native_info.rotation_;
     configured_ui_scale_ = native_info.configured_ui_scale_;
+    color_profile_ = native_info.color_profile();
   }
+
+  available_color_profiles_ = native_info.available_color_profiles();
+
   // Don't copy insets as it may be given by preference.  |rotation_|
   // is treated as a native so that it can be specified in
   // |CreateFromSpec|.
@@ -230,9 +249,23 @@ void DisplayInfo::SetBounds(const gfx::Rect& new_bounds_in_native) {
   UpdateDisplaySize();
 }
 
-float DisplayInfo::GetEffectiveUIScale() const {
-  if (device_scale_factor_ == 2.0f && configured_ui_scale_ == 2.0f)
+float DisplayInfo::GetEffectiveDeviceScaleFactor() const {
+  if (allow_upgrade_to_high_dpi && configured_ui_scale_ < 1.0f &&
+      device_scale_factor_ == 1.0f) {
+    return 2.0f;
+  } else if (device_scale_factor_ == 2.0f && configured_ui_scale_ == 2.0f) {
     return 1.0f;
+  }
+  return device_scale_factor_;
+}
+
+float DisplayInfo::GetEffectiveUIScale() const {
+  if (allow_upgrade_to_high_dpi && configured_ui_scale_ < 1.0f &&
+      device_scale_factor_ == 1.0f) {
+    return configured_ui_scale_ * 2.0f;
+  } else if (device_scale_factor_ == 2.0f && configured_ui_scale_ == 2.0f) {
+    return 1.0f;
+  }
   return configured_ui_scale_;
 }
 
@@ -266,7 +299,8 @@ std::string DisplayInfo::ToString() const {
   int rotation_degree = static_cast<int>(rotation_) * 90;
   return base::StringPrintf(
       "DisplayInfo[%lld] native bounds=%s, size=%s, scale=%f, "
-      "overscan=%s, rotation=%d, ui-scale=%f, touchscreen=%s",
+      "overscan=%s, rotation=%d, ui-scale=%f, touchscreen=%s, "
+      "touch-device-id=%d",
       static_cast<long long int>(id_),
       bounds_in_native_.ToString().c_str(),
       size_in_pixel_.ToString().c_str(),
@@ -278,7 +312,8 @@ std::string DisplayInfo::ToString() const {
           ? "yes"
           : touch_support_ == gfx::Display::TOUCH_SUPPORT_UNAVAILABLE
                 ? "no"
-                : "unknown");
+                : "unknown",
+      touch_device_id_);
 }
 
 std::string DisplayInfo::ToFullString() const {
@@ -298,5 +333,16 @@ std::string DisplayInfo::ToFullString() const {
   return ToString() + ", display_modes==" + display_modes_str;
 }
 
-}  // namespace internal
+void DisplayInfo::SetColorProfile(ui::ColorCalibrationProfile profile) {
+  if (IsColorProfileAvailable(profile))
+    color_profile_ = profile;
+}
+
+bool DisplayInfo::IsColorProfileAvailable(
+    ui::ColorCalibrationProfile profile) const {
+  return std::find(available_color_profiles_.begin(),
+                   available_color_profiles_.end(),
+                   profile) != available_color_profiles_.end();
+}
+
 }  // namespace ash

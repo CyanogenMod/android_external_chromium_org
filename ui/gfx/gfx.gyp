@@ -47,6 +47,9 @@
         'geometry/rect_conversions.h',
         'geometry/rect_f.cc',
         'geometry/rect_f.h',
+        'geometry/r_tree.h',
+        'geometry/r_tree_base.cc',
+        'geometry/r_tree_base.h',
         'geometry/safe_integer_conversions.h',
         'geometry/size.cc',
         'geometry/size.h',
@@ -65,33 +68,6 @@
         'geometry/vector3d_f.h',
       ],
     },
-    # TODO(beng): This should either generate its own executable or be part of
-    #             a gfx_unittests executable. Currently it's built as part of
-    #             ui_unittests.
-    {
-      'target_name': 'gfx_geometry_unittests',
-      'type': 'static_library',
-      'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:test_support_base',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
-        'gfx_geometry',
-      ],
-      'sources': [
-        'geometry/box_unittest.cc',
-        'geometry/cubic_bezier_unittest.cc',
-        'geometry/insets_unittest.cc',
-        'geometry/matrix3_unittest.cc',
-        'geometry/point_unittest.cc',
-        'geometry/point3_unittest.cc',
-        'geometry/quad_unittest.cc',
-        'geometry/rect_unittest.cc',
-        'geometry/safe_integer_conversions_unittest.cc',
-        'geometry/size_unittest.cc',
-        'geometry/vector2d_unittest.cc',
-        'geometry/vector3d_unittest.cc',
-      ],
-    },
     {
       'target_name': 'gfx',
       'type': '<(component)',
@@ -101,6 +77,7 @@
         '<(DEPTH)/base/base.gyp:base_static',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
         '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
         '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
@@ -116,6 +93,9 @@
       'defines': [
         'GFX_IMPLEMENTATION',
       ],
+      'include_dirs': [
+        '<(DEPTH)/third_party/icu/source/common'
+      ],
       'sources': [
         'android/device_display_info.cc',
         'android/device_display_info.h',
@@ -123,6 +103,8 @@
         'android/gfx_jni_registrar.h',
         'android/java_bitmap.cc',
         'android/java_bitmap.h',
+        'android/scroller.cc',
+        'android/scroller.h',
         'android/shared_device_display_info.cc',
         'android/shared_device_display_info.h',
         'android/view_configuration.cc',
@@ -150,8 +132,6 @@
         'canvas.cc',
         'canvas.h',
         'canvas_android.cc',
-        'canvas_paint_gtk.cc',
-        'canvas_paint_gtk.h',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
         'canvas_paint_win.cc',
@@ -166,7 +146,7 @@
         'color_analysis.h',
         'color_profile.cc',
         'color_profile.h',
-        'color_profile_mac.cc',
+        'color_profile_mac.mm',
         'color_profile_win.cc',
         'color_utils.cc',
         'color_utils.h',
@@ -227,28 +207,12 @@
         'native_widget_types.h',
         'nine_image_painter.cc',
         'nine_image_painter.h',
-        'ozone/dri/dri_skbitmap.cc',
-        'ozone/dri/dri_skbitmap.h',
-        'ozone/dri/dri_surface.cc',
-        'ozone/dri/dri_surface.h',
-        'ozone/dri/dri_surface_factory.cc',
-        'ozone/dri/dri_surface_factory.h',
-        'ozone/dri/dri_vsync_provider.cc',
-        'ozone/dri/dri_vsync_provider.h',
-        'ozone/dri/dri_wrapper.cc',
-        'ozone/dri/dri_wrapper.h',
-        'ozone/dri/hardware_display_controller.cc',
-        'ozone/dri/hardware_display_controller.h',
-        'ozone/impl/file_surface_factory.cc',
-        'ozone/impl/file_surface_factory.h',
-        'ozone/surface_factory_ozone.cc',
-        'ozone/surface_factory_ozone.h',
+        'overlay_transform.h',
         'pango_util.cc',
         'pango_util.h',
         'path.cc',
         'path.h',
         'path_aura.cc',
-        'path_gtk.cc',
         'path_win.cc',
         'path_win.h',
         'path_x11.cc',
@@ -270,6 +234,8 @@
         'range/range_win.cc',
         'render_text.cc',
         'render_text.h',
+        'render_text_harfbuzz.cc',
+        'render_text_harfbuzz.h',
         'render_text_mac.cc',
         'render_text_mac.h',
         'render_text_ozone.cc',
@@ -287,7 +253,6 @@
         'screen.h',
         'screen_android.cc',
         'screen_aura.cc',
-        'screen_gtk.cc',
         'screen_ios.mm',
         'screen_mac.mm',
         'screen_win.cc',
@@ -304,8 +269,6 @@
         'skbitmap_operations.h',
         'skia_util.cc',
         'skia_util.h',
-        'skia_utils_gtk.cc',
-        'skia_utils_gtk.h',
         'switches.cc',
         'switches.h',
         'sys_color_change_listener.cc',
@@ -335,10 +298,6 @@
         'win/singleton_hwnd.h',
         'win/window_impl.cc',
         'win/window_impl.h',
-        'x/x11_atom_cache.cc',
-        'x/x11_atom_cache.h',
-        'x/x11_types.cc',
-        'x/x11_types.h',
       ],
       'conditions': [
         ['OS=="ios"', {
@@ -360,24 +319,6 @@
         }, {  # use_canvas_skia!=1
           'sources!': [
             'canvas_skia.cc',
-          ],
-        }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:gtk',
-          ],
-          'sources': [
-            'gtk_native_view_id_manager.cc',
-            'gtk_native_view_id_manager.h',
-            'gtk_preserve_window.cc',
-            'gtk_preserve_window.h',
-            'gdk_compat.h',
-            'gtk_compat.h',
-            'gtk_util.cc',
-            'gtk_util.h',
-            'image/cairo_cached_surface.cc',
-            'image/cairo_cached_surface.h',
-            'scoped_gobject.h',
           ],
         }],
         ['OS=="win"', {
@@ -408,7 +349,7 @@
             ],
           },
         }],
-        ['use_aura==0', {
+        ['use_aura==0 and toolkit_views==0', {
           'sources!': [
             'nine_image_painter.cc',
             'nine_image_painter.h',
@@ -433,12 +374,15 @@
           'sources!': [
             'render_text.cc',
             'render_text.h',
+            'render_text_harfbuzz.cc',
+            'render_text_harfbuzz.h',
             'text_utils_skia.cc',
           ],
         }],
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11',
+            '../../build/linux/system.gyp:x11',
+            'x/gfx_x11.gyp:gfx_x11',
           ],
         }],
         ['use_pango==1', {
@@ -448,11 +392,6 @@
           'sources!': [
             'platform_font_ozone.cc',
             'render_text_ozone.cc',
-          ],
-        }],
-        ['ozone_platform_dri==1', {
-          'dependencies': [
-          '<(DEPTH)/build/linux/system.gyp:dridrm',
           ],
         }],
         ['desktop_linux==1 or chromeos==1', {
@@ -509,44 +448,20 @@
         }],
       ],
     },
-    {
-      'target_name': 'gfx_unittests',
-      'type': 'executable',
-      'sources': [
-        'range/range_unittest.cc',
-      ],
-      'dependencies': [
-        '../../base/base.gyp:run_all_unittests',
-        '../../testing/gtest.gyp:gtest',
-        'gfx',
-      ],
-    }
   ],
   'conditions': [
     ['OS=="android"' , {
      'targets': [
        {
-         'target_name': 'gfx_view_jni_headers',
-         'type': 'none',
-         'variables': {
-           'jni_gen_package': 'ui/gfx',
-           'input_java_class': 'android/view/ViewConfiguration.class',
-         },
-         'includes': [ '../../build/jar_file_jni_generator.gypi' ],
-       },
-       {
          'target_name': 'gfx_jni_headers',
          'type': 'none',
-         'dependencies': [
-           'gfx_view_jni_headers'
-         ],
          'sources': [
            '../android/java/src/org/chromium/ui/gfx/BitmapHelper.java',
            '../android/java/src/org/chromium/ui/gfx/DeviceDisplayInfo.java',
+           '../android/java/src/org/chromium/ui/gfx/ViewConfigurationHelper.java',
          ],
          'variables': {
            'jni_gen_package': 'ui/gfx',
-           'jni_generator_ptr_type': 'long'
          },
          'includes': [ '../../build/jni_generator.gypi' ],
        },

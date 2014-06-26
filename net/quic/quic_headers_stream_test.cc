@@ -4,6 +4,7 @@
 
 #include "net/quic/quic_headers_stream.h"
 
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
@@ -15,7 +16,6 @@
 using base::StringPiece;
 using std::string;
 using testing::Invoke;
-using testing::Return;
 using testing::StrictMock;
 using testing::WithArgs;
 using testing::_;
@@ -47,24 +47,34 @@ class MockVisitor : public SpdyFramerVisitorInterface {
                                  SpdyRstStreamStatus status));
   MOCK_METHOD1(OnSettings, void(bool clear_persisted));
   MOCK_METHOD3(OnSetting, void(SpdySettingsIds id, uint8 flags, uint32 value));
-  MOCK_METHOD1(OnPing, void(SpdyPingId unique_id));
+  MOCK_METHOD0(OnSettingsAck, void());
+  MOCK_METHOD0(OnSettingsEnd, void());
+  MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
   MOCK_METHOD2(OnGoAway, void(SpdyStreamId last_accepted_stream_id,
                               SpdyGoAwayStatus status));
-  MOCK_METHOD2(OnHeaders, void(SpdyStreamId stream_id, bool fin));
+  MOCK_METHOD3(OnHeaders, void(SpdyStreamId stream_id, bool fin, bool end));
   MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId stream_id,
                                     uint32 delta_window_size));
   MOCK_METHOD2(OnCredentialFrameData, bool(const char* credential_data,
                                            size_t len));
   MOCK_METHOD1(OnBlocked, void(SpdyStreamId stream_id));
-  MOCK_METHOD2(OnPushPromise, void(SpdyStreamId stream_id,
-                                   SpdyStreamId promised_stream_id));
+  MOCK_METHOD3(OnPushPromise, void(SpdyStreamId stream_id,
+                                   SpdyStreamId promised_stream_id,
+                                   bool end));
+  MOCK_METHOD2(OnContinuation, void(SpdyStreamId stream_id, bool end));
+  MOCK_METHOD6(OnAltSvc, void(SpdyStreamId stream_id,
+                              uint32 max_age,
+                              uint16 port,
+                              StringPiece protocol_id,
+                              StringPiece host,
+                              StringPiece origin));
 };
 
 class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
  public:
   static QuicVersionVector GetVersions() {
     QuicVersionVector versions;
-    versions.push_back(QUIC_VERSION_13);
+    versions.push_back(QuicVersionMax());
     return versions;
   }
 
@@ -78,11 +88,13 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
     headers_[":status"] = "200 Ok";
     headers_["content-length"] = "11";
     framer_.set_visitor(&visitor_);
-    EXPECT_EQ(QUIC_VERSION_13, session_.connection()->version());
+    EXPECT_EQ(QuicVersionMax(), session_.connection()->version());
     EXPECT_TRUE(headers_stream_ != NULL);
   }
 
-  QuicConsumedData SaveIov(const struct iovec* iov, int count) {
+  QuicConsumedData SaveIov(const IOVector& data) {
+    const iovec* iov = data.iovec();
+    int count = data.Capacity();
     for (int i = 0 ; i < count; ++i) {
       saved_data_.append(static_cast<char*>(iov[i].iov_base), iov[i].iov_len);
     }
@@ -114,10 +126,9 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
                                 QuicPriority priority,
                                 SpdyFrameType type) {
     // Write the headers and capture the outgoing data
-    EXPECT_CALL(session_, WritevData(kHeadersStreamId, _, _, _, false, NULL))
-        .WillOnce(WithArgs<1, 2>(
-            Invoke(this, &QuicHeadersStreamTest::SaveIov)));
-    headers_stream_->WriteHeaders(stream_id, headers_, fin);
+    EXPECT_CALL(session_, WritevData(kHeadersStreamId, _, _, false, _, NULL))
+        .WillOnce(WithArgs<1>(Invoke(this, &QuicHeadersStreamTest::SaveIov)));
+    headers_stream_->WriteHeaders(stream_id, headers_, fin, NULL);
 
     // Parse the outgoing data and check that it matches was was written.
     if (type == SYN_STREAM) {
@@ -183,7 +194,8 @@ TEST_P(QuicHeadersStreamTest, EffectivePriority) {
 }
 
 TEST_P(QuicHeadersStreamTest, WriteHeaders) {
-  for (QuicStreamId stream_id = 5; stream_id < 9; stream_id +=2) {
+  for (QuicStreamId stream_id = kClientDataStreamId1;
+       stream_id < kClientDataStreamId3; stream_id += 2) {
     for (int count = 0; count < 2; ++count) {
       bool fin = (count == 0);
       if (is_server()) {
@@ -198,7 +210,8 @@ TEST_P(QuicHeadersStreamTest, WriteHeaders) {
 }
 
 TEST_P(QuicHeadersStreamTest, ProcessRawData) {
-  for (QuicStreamId stream_id = 5; stream_id < 9; stream_id +=2) {
+  for (QuicStreamId stream_id = kClientDataStreamId1;
+       stream_id < kClientDataStreamId3; stream_id += 2) {
     for (int count = 0; count < 2; ++count) {
       bool fin = (count == 0);
       for (QuicPriority priority = 0; priority < 7; ++priority) {
@@ -235,7 +248,7 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyDataFrame) {
   scoped_ptr<SpdySerializedFrame> frame(framer_.SerializeFrame(data));
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(QUIC_INVALID_HEADERS_STREAM_DATA,
-                                             "SPDY DATA frame recevied."))
+                                             "SPDY DATA frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
@@ -247,7 +260,7 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyRstStreamFrame) {
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(
                   QUIC_INVALID_HEADERS_STREAM_DATA,
-                  "SPDY RST_STREAM frame recevied."))
+                  "SPDY RST_STREAM frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
@@ -260,7 +273,7 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdySettingsFrame) {
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(
                   QUIC_INVALID_HEADERS_STREAM_DATA,
-                  "SPDY SETTINGS frame recevied."))
+                  "SPDY SETTINGS frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
@@ -271,7 +284,7 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyPingFrame) {
   scoped_ptr<SpdySerializedFrame> frame(framer_.SerializeFrame(data));
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(QUIC_INVALID_HEADERS_STREAM_DATA,
-                                             "SPDY PING frame recevied."))
+                                             "SPDY PING frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
@@ -282,7 +295,7 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyGoAwayFrame) {
   scoped_ptr<SpdySerializedFrame> frame(framer_.SerializeFrame(data));
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(QUIC_INVALID_HEADERS_STREAM_DATA,
-                                             "SPDY GOAWAY frame recevied."))
+                                             "SPDY GOAWAY frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
@@ -293,7 +306,7 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyHeadersFrame) {
   scoped_ptr<SpdySerializedFrame> frame(framer_.SerializeFrame(data));
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(QUIC_INVALID_HEADERS_STREAM_DATA,
-                                             "SPDY HEADERS frame recevied."))
+                                             "SPDY HEADERS frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
@@ -305,10 +318,15 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyWindowUpdateFrame) {
   EXPECT_CALL(*connection_,
               SendConnectionCloseWithDetails(
                   QUIC_INVALID_HEADERS_STREAM_DATA,
-                  "SPDY WINDOW_UPDATE frame recevied."))
+                  "SPDY WINDOW_UPDATE frame received."))
       .WillOnce(InvokeWithoutArgs(this,
                                   &QuicHeadersStreamTest::CloseConnection));
   headers_stream_->ProcessRawData(frame->data(), frame->size());
+}
+
+TEST_P(QuicHeadersStreamTest, NoFlowControl) {
+  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
+  EXPECT_FALSE(headers_stream_->flow_controller()->IsEnabled());
 }
 
 }  // namespace

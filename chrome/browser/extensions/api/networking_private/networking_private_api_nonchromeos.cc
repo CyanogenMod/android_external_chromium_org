@@ -12,11 +12,11 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client.h"
 #include "chrome/browser/extensions/api/networking_private/networking_private_service_client_factory.h"
-#include "chrome/browser/extensions/extension_function_registry.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/networking_private.h"
 #include "components/onc/onc_constants.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_registry.h"
 #include "extensions/browser/extension_system.h"
 
 using extensions::NetworkingPrivateServiceClient;
@@ -30,7 +30,7 @@ NetworkingPrivateGetPropertiesFunction::
   ~NetworkingPrivateGetPropertiesFunction() {
 }
 
-bool NetworkingPrivateGetPropertiesFunction::RunImpl() {
+bool NetworkingPrivateGetPropertiesFunction::RunAsync() {
   scoped_ptr<api::GetProperties::Params> params =
       api::GetProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -68,7 +68,7 @@ NetworkingPrivateGetManagedPropertiesFunction::
   ~NetworkingPrivateGetManagedPropertiesFunction() {
 }
 
-bool NetworkingPrivateGetManagedPropertiesFunction::RunImpl() {
+bool NetworkingPrivateGetManagedPropertiesFunction::RunAsync() {
   scoped_ptr<api::GetManagedProperties::Params> params =
       api::GetManagedProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -87,10 +87,7 @@ bool NetworkingPrivateGetManagedPropertiesFunction::RunImpl() {
 void NetworkingPrivateGetManagedPropertiesFunction::Success(
     const std::string& network_guid,
     const base::DictionaryValue& dictionary) {
-  scoped_ptr<base::DictionaryValue> network_properties(dictionary.DeepCopy());
-  network_properties->SetStringWithoutPathExpansion(onc::network_config::kGUID,
-                                                    network_guid);
-  SetResult(network_properties.release());
+  SetResult(dictionary.DeepCopy());
   SendResponse(true);
 }
 
@@ -108,7 +105,7 @@ NetworkingPrivateGetStateFunction::
   ~NetworkingPrivateGetStateFunction() {
 }
 
-bool NetworkingPrivateGetStateFunction::RunImpl() {
+bool NetworkingPrivateGetStateFunction::RunAsync() {
   scoped_ptr<api::GetState::Params> params =
       api::GetState::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -145,7 +142,7 @@ NetworkingPrivateSetPropertiesFunction::
   ~NetworkingPrivateSetPropertiesFunction() {
 }
 
-bool NetworkingPrivateSetPropertiesFunction::RunImpl() {
+bool NetworkingPrivateSetPropertiesFunction::RunAsync() {
   scoped_ptr<api::SetProperties::Params> params =
       api::SetProperties::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -181,7 +178,7 @@ NetworkingPrivateCreateNetworkFunction::
 ~NetworkingPrivateCreateNetworkFunction() {
 }
 
-bool NetworkingPrivateCreateNetworkFunction::RunImpl() {
+bool NetworkingPrivateCreateNetworkFunction::RunAsync() {
   scoped_ptr<api::CreateNetwork::Params> params =
       api::CreateNetwork::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -213,13 +210,42 @@ void NetworkingPrivateCreateNetworkFunction::ResultCallback(
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateGetNetworksFunction
+
+NetworkingPrivateGetNetworksFunction::
+  ~NetworkingPrivateGetNetworksFunction() {
+}
+
+bool NetworkingPrivateGetNetworksFunction::RunAsync() {
+  scoped_ptr<api::GetNetworks::Params> params =
+      api::GetNetworks::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+
+  // TODO(stevenjb/mef): Apply filters (visible, configured).
+  NetworkingPrivateServiceClient* service_client =
+      NetworkingPrivateServiceClientFactory::GetForProfile(GetProfile());
+
+  service_client->GetVisibleNetworks(
+      api::ToString(params->filter.network_type),
+      base::Bind(&NetworkingPrivateGetNetworksFunction::ResultCallback, this));
+
+  return true;
+}
+
+void NetworkingPrivateGetNetworksFunction::ResultCallback(
+    const base::ListValue& network_list) {
+  SetResult(network_list.DeepCopy());
+  SendResponse(true);
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // NetworkingPrivateGetVisibleNetworksFunction
 
 NetworkingPrivateGetVisibleNetworksFunction::
   ~NetworkingPrivateGetVisibleNetworksFunction() {
 }
 
-bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
+bool NetworkingPrivateGetVisibleNetworksFunction::RunAsync() {
   scoped_ptr<api::GetVisibleNetworks::Params> params =
       api::GetVisibleNetworks::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -228,7 +254,7 @@ bool NetworkingPrivateGetVisibleNetworksFunction::RunImpl() {
       NetworkingPrivateServiceClientFactory::GetForProfile(GetProfile());
 
   service_client->GetVisibleNetworks(
-      api::GetVisibleNetworks::Params::ToString(params->type),
+      api::ToString(params->network_type),
       base::Bind(&NetworkingPrivateGetVisibleNetworksFunction::ResultCallback,
                  this));
 
@@ -248,7 +274,7 @@ NetworkingPrivateGetEnabledNetworkTypesFunction::
 ~NetworkingPrivateGetEnabledNetworkTypesFunction() {
 }
 
-bool NetworkingPrivateGetEnabledNetworkTypesFunction::RunImpl() {
+bool NetworkingPrivateGetEnabledNetworkTypesFunction::RunSync() {
   base::ListValue* network_list = new base::ListValue;
   network_list->Append(new base::StringValue(onc::network_type::kWiFi));
   SetResult(network_list);
@@ -262,7 +288,7 @@ NetworkingPrivateEnableNetworkTypeFunction::
 ~NetworkingPrivateEnableNetworkTypeFunction() {
 }
 
-bool NetworkingPrivateEnableNetworkTypeFunction::RunImpl() {
+bool NetworkingPrivateEnableNetworkTypeFunction::RunSync() {
   scoped_ptr<api::EnableNetworkType::Params> params =
       api::EnableNetworkType::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -276,7 +302,7 @@ NetworkingPrivateDisableNetworkTypeFunction::
 ~NetworkingPrivateDisableNetworkTypeFunction() {
 }
 
-bool NetworkingPrivateDisableNetworkTypeFunction::RunImpl() {
+bool NetworkingPrivateDisableNetworkTypeFunction::RunSync() {
   scoped_ptr<api::DisableNetworkType::Params> params =
       api::DisableNetworkType::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -290,7 +316,7 @@ NetworkingPrivateRequestNetworkScanFunction::
   ~NetworkingPrivateRequestNetworkScanFunction() {
 }
 
-bool NetworkingPrivateRequestNetworkScanFunction::RunImpl() {
+bool NetworkingPrivateRequestNetworkScanFunction::RunSync() {
   NetworkingPrivateServiceClient* service_client =
       NetworkingPrivateServiceClientFactory::GetForProfile(GetProfile());
   service_client->RequestNetworkScan();
@@ -304,7 +330,7 @@ NetworkingPrivateStartConnectFunction::
   ~NetworkingPrivateStartConnectFunction() {
 }
 
-bool NetworkingPrivateStartConnectFunction::RunImpl() {
+bool NetworkingPrivateStartConnectFunction::RunAsync() {
   scoped_ptr<api::StartConnect::Params> params =
       api::StartConnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -337,7 +363,7 @@ NetworkingPrivateStartDisconnectFunction::
   ~NetworkingPrivateStartDisconnectFunction() {
 }
 
-bool NetworkingPrivateStartDisconnectFunction::RunImpl() {
+bool NetworkingPrivateStartDisconnectFunction::RunAsync() {
   scoped_ptr<api::StartDisconnect::Params> params =
       api::StartDisconnect::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -371,7 +397,7 @@ void NetworkingPrivateStartDisconnectFunction::DisconnectionStartFailed(
 NetworkingPrivateVerifyDestinationFunction::
     ~NetworkingPrivateVerifyDestinationFunction() {}
 
-bool NetworkingPrivateVerifyDestinationFunction::RunImpl() {
+bool NetworkingPrivateVerifyDestinationFunction::RunAsync() {
   scoped_ptr<api::VerifyDestination::Params> params =
       api::VerifyDestination::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -406,13 +432,34 @@ NetworkingPrivateVerifyAndEncryptCredentialsFunction::
   ~NetworkingPrivateVerifyAndEncryptCredentialsFunction() {
 }
 
-bool NetworkingPrivateVerifyAndEncryptCredentialsFunction::RunImpl() {
+bool NetworkingPrivateVerifyAndEncryptCredentialsFunction::RunAsync() {
   scoped_ptr<api::VerifyAndEncryptCredentials::Params> params =
       api::VerifyAndEncryptCredentials::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
-  SetResult(new base::StringValue("encrypted_credentials"));
-  SendResponse(true);
+  NetworkingPrivateServiceClient* service_client =
+      NetworkingPrivateServiceClientFactory::GetForProfile(GetProfile());
+  service_client->VerifyAndEncryptCredentials(
+      args_.Pass(),
+      base::Bind(
+          &NetworkingPrivateVerifyAndEncryptCredentialsFunction::ResultCallback,
+          this),
+      base::Bind(
+          &NetworkingPrivateVerifyAndEncryptCredentialsFunction::ErrorCallback,
+          this));
   return true;
+}
+
+void NetworkingPrivateVerifyAndEncryptCredentialsFunction::ResultCallback(
+    const std::string& result) {
+  SetResult(new base::StringValue(result));
+  SendResponse(true);
+}
+
+void NetworkingPrivateVerifyAndEncryptCredentialsFunction::ErrorCallback(
+    const std::string& error_name,
+    const std::string& error) {
+  error_ = error_name;
+  SendResponse(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -422,7 +469,7 @@ NetworkingPrivateVerifyAndEncryptDataFunction::
   ~NetworkingPrivateVerifyAndEncryptDataFunction() {
 }
 
-bool NetworkingPrivateVerifyAndEncryptDataFunction::RunImpl() {
+bool NetworkingPrivateVerifyAndEncryptDataFunction::RunAsync() {
   scoped_ptr<api::VerifyAndEncryptData::Params> params =
       api::VerifyAndEncryptData::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -458,7 +505,7 @@ NetworkingPrivateSetWifiTDLSEnabledStateFunction::
   ~NetworkingPrivateSetWifiTDLSEnabledStateFunction() {
 }
 
-bool NetworkingPrivateSetWifiTDLSEnabledStateFunction::RunImpl() {
+bool NetworkingPrivateSetWifiTDLSEnabledStateFunction::RunAsync() {
   scoped_ptr<api::SetWifiTDLSEnabledState::Params> params =
       api::SetWifiTDLSEnabledState::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
@@ -473,9 +520,23 @@ NetworkingPrivateGetWifiTDLSStatusFunction::
   ~NetworkingPrivateGetWifiTDLSStatusFunction() {
 }
 
-bool NetworkingPrivateGetWifiTDLSStatusFunction::RunImpl() {
+bool NetworkingPrivateGetWifiTDLSStatusFunction::RunAsync() {
   scoped_ptr<api::GetWifiTDLSStatus::Params> params =
       api::GetWifiTDLSStatus::Params::Create(*args_);
+  EXTENSION_FUNCTION_VALIDATE(params);
+  SetError("not-implemented");
+  return false;
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// NetworkingPrivateGetCaptivePortalStatusFunction
+
+NetworkingPrivateGetCaptivePortalStatusFunction::
+    ~NetworkingPrivateGetCaptivePortalStatusFunction() {}
+
+bool NetworkingPrivateGetCaptivePortalStatusFunction::RunAsync() {
+  scoped_ptr<api::GetCaptivePortalStatus::Params> params =
+      api::GetCaptivePortalStatus::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params);
   SetError("not-implemented");
   return false;

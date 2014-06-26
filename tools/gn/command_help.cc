@@ -30,22 +30,20 @@ void PrintToplevelHelp() {
 
   OutputString(
       "\n"
-      "  When run with no arguments \"gn gen\" is assumed.\n"
-      "\n"
       "Common switches:\n");
   PrintShortHelp(
       "--args: Specifies build arguments overrides. "
       "See \"gn help buildargs\".");
   PrintShortHelp(
+      "--[no]color: Forces colored output on or off (rather than autodetect).");
+  PrintShortHelp(
+      "--dotfile: Specifies an alternate .gn file. See \"gn help dotfile\".");
+  PrintShortHelp(
       "--no-exec: Skips exec_script calls (for performance testing).");
   PrintShortHelp(
       "-q: Quiet mode, don't print anything on success.");
   PrintShortHelp(
-      "--output: Directory for build output (relative to source root).");
-  PrintShortHelp(
       "--root: Specifies source root (overrides .gn file).");
-  PrintShortHelp(
-      "--secondary: Specifies secondary source root (overrides .gn file).");
   PrintShortHelp(
       "--time: Outputs a summary of how long everything took.");
   PrintShortHelp(
@@ -55,17 +53,24 @@ void PrintToplevelHelp() {
   PrintShortHelp(
       "--version: Print the GN binary's version and exit.");
 
+  // Target declarations.
+  OutputString("\nTarget declarations (type \"gn help <function>\" for more "
+               "details):\n");
+  const functions::FunctionInfoMap& function_map = functions::GetFunctions();
+  for (functions::FunctionInfoMap::const_iterator i = function_map.begin();
+       i != function_map.end(); ++i) {
+    if (i->second.is_target)
+      PrintShortHelp(i->second.help_short);
+  }
+
   // Functions.
   OutputString("\nBuildfile functions (type \"gn help <function>\" for more "
                "details):\n");
-  const functions::FunctionInfoMap& function_map = functions::GetFunctions();
-  std::vector<std::string> sorted_functions;
   for (functions::FunctionInfoMap::const_iterator i = function_map.begin();
-       i != function_map.end(); ++i)
-    sorted_functions.push_back(i->first.as_string());
-  std::sort(sorted_functions.begin(), sorted_functions.end());
-  for (size_t i = 0; i < sorted_functions.size(); i++)
-    OutputString("  " + sorted_functions[i] + "\n", DECORATION_YELLOW);
+       i != function_map.end(); ++i) {
+    if (!i->second.is_target)
+      PrintShortHelp(i->second.help_short);
+  }
 
   // Built-in variables.
   OutputString("\nBuilt-in predefined variables (type \"gn help <variable>\" "

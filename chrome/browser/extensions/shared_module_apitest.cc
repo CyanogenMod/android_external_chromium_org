@@ -3,15 +3,17 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/extensions/extension_apitest.h"
+#include "chrome/browser/extensions/extension_test_message_listener.h"
 
 using extensions::Extension;
 
+// NB: We use LoadExtension instead of InstallExtension for shared modules so
+// the public-keys in their manifests are used to generate the extension ID, so
+// it can be imported correctly.  We use InstallExtension otherwise so the loads
+// happen through the CRX installer which validates imports.
+
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, SharedModule) {
   // import_pass depends on this shared module.
-  // NB: We use LoadExtension instead of InstallExtension here so the public-key
-  // in 'shared' is used to generate the extension ID so it can be imported
-  // correctly.  We use InstallExtension otherwise so the loads happen through
-  // the CRX installer which validates imports.
   ASSERT_TRUE(LoadExtension(
       test_data_dir_.AppendASCII("shared_module").AppendASCII("shared")));
 
@@ -23,4 +25,32 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, SharedModule) {
   EXPECT_FALSE(InstallExtension(
       test_data_dir_.AppendASCII("shared_module")
           .AppendASCII("import_non_existent"), 0));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, SharedModuleWhitelist) {
+  ASSERT_TRUE(LoadExtension(
+      test_data_dir_.AppendASCII("shared_module")
+          .AppendASCII("shared_whitelist")));
+
+  EXPECT_FALSE(InstallExtension(
+      test_data_dir_.AppendASCII("shared_module")
+          .AppendASCII("import_not_in_whitelist"), 0));
+}
+
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, SharedModuleInstallEvent) {
+  ExtensionTestMessageListener listener1("ready", false);
+
+  const Extension* extension = LoadExtension(
+      test_data_dir_.AppendASCII("shared_module").AppendASCII("shared"));
+  ASSERT_TRUE(extension);
+  ASSERT_TRUE(InstallExtension(
+      test_data_dir_.AppendASCII("shared_module").AppendASCII("import_pass"),
+      1));
+
+  EXPECT_TRUE(listener1.WaitUntilSatisfied());
+
+  ExtensionTestMessageListener listener2("shared_module_updated", false);
+  ReloadExtension(extension->id());
+
+  EXPECT_TRUE(listener2.WaitUntilSatisfied());
 }

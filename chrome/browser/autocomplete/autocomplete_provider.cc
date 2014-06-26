@@ -7,13 +7,14 @@
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/net_util.h"
 #include "url/gurl.h"
@@ -38,8 +39,6 @@ const char* AutocompleteProvider::TypeToString(Type type) {
       return "Bookmark";
     case TYPE_BUILTIN:
       return "Builtin";
-    case TYPE_CONTACT:
-      return "Contact";
     case TYPE_EXTENSION_APP:
       return "ExtensionApp";
     case TYPE_HISTORY_QUICK:
@@ -75,8 +74,6 @@ metrics::OmniboxEventProto_ProviderType AutocompleteProvider::
       return metrics::OmniboxEventProto::BOOKMARK;
     case TYPE_BUILTIN:
       return metrics::OmniboxEventProto::BUILTIN;
-    case TYPE_CONTACT:
-      return metrics::OmniboxEventProto::CONTACT;
     case TYPE_EXTENSION_APP:
       return metrics::OmniboxEventProto::EXTENSION_APPS;
     case TYPE_HISTORY_QUICK:
@@ -138,15 +135,18 @@ void AutocompleteProvider::UpdateStarredStateOfMatches() {
 }
 
 // static
-bool AutocompleteProvider::FixupUserInput(AutocompleteInput* input) {
-  const base::string16& input_text = input->text();
+AutocompleteProvider::FixupReturn AutocompleteProvider::FixupUserInput(
+    const AutocompleteInput& input) {
+  const base::string16& input_text = input.text();
+  const FixupReturn failed(false, input_text);
+
   // Fixup and canonicalize user input.
-  const GURL canonical_gurl(URLFixerUpper::FixupURL(
-      base::UTF16ToUTF8(input_text), std::string()));
+  const GURL canonical_gurl(
+      url_fixer::FixupURL(base::UTF16ToUTF8(input_text), std::string()));
   std::string canonical_gurl_str(canonical_gurl.possibly_invalid_spec());
   if (canonical_gurl_str.empty()) {
     // This probably won't happen, but there are no guarantees.
-    return false;
+    return failed;
   }
 
   // If the user types a number, GURL will convert it to a dotted quad.
@@ -155,19 +155,19 @@ bool AutocompleteProvider::FixupUserInput(AutocompleteInput* input) {
   // for hostname beginning with numbers (e.g. input of "17173" will be matched
   // against "0.0.67.21" instead of the original "17173", failing to find
   // "17173.com"), swap the original hostname in for the fixed-up one.
-  if ((input->type() != AutocompleteInput::URL) &&
+  if ((input.type() != metrics::OmniboxInputType::URL) &&
       canonical_gurl.HostIsIPAddress()) {
     std::string original_hostname =
-        base::UTF16ToUTF8(input_text.substr(input->parts().host.begin,
-                                            input->parts().host.len));
-    const url_parse::Parsed& parts =
+        base::UTF16ToUTF8(input_text.substr(input.parts().host.begin,
+                                            input.parts().host.len));
+    const url::Parsed& parts =
         canonical_gurl.parsed_for_possibly_invalid_spec();
     // parts.host must not be empty when HostIsIPAddress() is true.
     DCHECK(parts.host.is_nonempty());
     canonical_gurl_str.replace(parts.host.begin, parts.host.len,
                                original_hostname);
   }
-  base::string16 output = base::UTF8ToUTF16(canonical_gurl_str);
+  base::string16 output(base::UTF8ToUTF16(canonical_gurl_str));
   // Don't prepend a scheme when the user didn't have one.  Since the fixer
   // upper only prepends the "http" scheme, that's all we need to check for.
   if (!AutocompleteInput::HasHTTPScheme(input_text))
@@ -201,11 +201,10 @@ bool AutocompleteProvider::FixupUserInput(AutocompleteInput* input) {
     output.append(num_input_slashes - num_output_slashes, '/');
   else if (num_output_slashes > num_input_slashes)
     output.erase(output.length() - num_output_slashes + num_input_slashes);
+  if (output.empty())
+    return failed;
 
-  url_parse::Parsed parts;
-  URLFixerUpper::SegmentURL(output, &parts);
-  input->UpdateText(output, base::string16::npos, parts);
-  return !output.empty();
+  return FixupReturn(true, output);
 }
 
 // static
@@ -214,15 +213,14 @@ size_t AutocompleteProvider::TrimHttpPrefix(base::string16* url) {
   if (!AutocompleteInput::HasHTTPScheme(*url))
     return 0;
   size_t scheme_pos =
-      url->find(base::ASCIIToUTF16(content::kHttpScheme) + base::char16(':'));
+      url->find(base::ASCIIToUTF16(url::kHttpScheme) + base::char16(':'));
   DCHECK_NE(base::string16::npos, scheme_pos);
 
   // Erase scheme plus up to two slashes.
-  size_t prefix_end = scheme_pos + strlen(content::kHttpScheme) + 1;
+  size_t prefix_end = scheme_pos + strlen(url::kHttpScheme) + 1;
   const size_t after_slashes = std::min(url->length(), prefix_end + 2);
   while ((prefix_end < after_slashes) && ((*url)[prefix_end] == '/'))
     ++prefix_end;
   url->erase(scheme_pos, prefix_end - scheme_pos);
   return (scheme_pos == 0) ? prefix_end : 0;
 }
-

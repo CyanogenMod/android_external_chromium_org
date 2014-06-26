@@ -7,28 +7,34 @@
 
 #include <map>
 #include <set>
-#include <string>
+#include <vector>
 
 #include "base/basictypes.h"
-#include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/pref_filter.h"
-#include "chrome/browser/prefs/pref_hash_store.h"
+#include "chrome/browser/prefs/interceptable_pref_filter.h"
 #include "chrome/browser/prefs/tracked/tracked_preference.h"
 
+class PrefHashStore;
+class PrefService;
 class PrefStore;
+class TrackedPreferenceValidationDelegate;
 
 namespace base {
 class DictionaryValue;
+class Time;
 class Value;
 }  // namespace base
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}  // namespace user_prefs
 
 // Intercepts preference values as they are loaded from disk and verifies them
 // using a PrefHashStore. Keeps the PrefHashStore contents up to date as values
 // are changed.
-class PrefHashFilter : public PrefFilter {
+class PrefHashFilter : public InterceptablePrefFilter {
  public:
   enum EnforcementLevel {
     NO_ENFORCEMENT,
@@ -47,39 +53,59 @@ class PrefHashFilter : public PrefFilter {
   struct TrackedPreferenceMetadata {
     size_t reporting_id;
     const char* name;
-    // This preference will not be enforced above this level no matter what the
-    // |enforcement_level| is set to.
-    EnforcementLevel max_enforcement_level;
+    EnforcementLevel enforcement_level;
     PrefTrackingStrategy strategy;
   };
 
   // Constructs a PrefHashFilter tracking the specified |tracked_preferences|
-  // using |pref_hash_store| to check/store hashes.
+  // using |pref_hash_store| to check/store hashes. An optional |delegate| is
+  // notified of the status of each preference as it is checked.
   // |reporting_ids_count| is the count of all possible IDs (possibly greater
-  // than |tracked_preferences_size|). |enforcement_level| determines when this
-  // filter will enforce factory defaults upon detecting an untrusted preference
-  // value. |reset_callback| is called when a reset event occurs.
-  PrefHashFilter(scoped_ptr<PrefHashStore> pref_hash_store,
-                 const TrackedPreferenceMetadata tracked_preferences[],
-                 size_t tracked_preferences_size,
-                 size_t reporting_ids_count,
-                 EnforcementLevel enforcement_level,
-                 const base::Closure& reset_callback);
+  // than |tracked_preferences.size()|). If |report_super_mac_validity| is true,
+  // the state of the super MAC will be reported via UMA during
+  // FinalizeFilterOnLoad.
+  PrefHashFilter(
+      scoped_ptr<PrefHashStore> pref_hash_store,
+      const std::vector<TrackedPreferenceMetadata>& tracked_preferences,
+      TrackedPreferenceValidationDelegate* delegate,
+      size_t reporting_ids_count,
+      bool report_super_mac_validity);
 
   virtual ~PrefHashFilter();
 
-  // Initializes the PrefHashStore with hashes of the tracked preferences in
-  // |pref_store|.
-  void Initialize(const PrefStore& pref_store);
+  // Registers required user preferences.
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
-  // PrefFilter implementation.
-  virtual void FilterOnLoad(base::DictionaryValue* pref_store_contents)
-      OVERRIDE;
+  // Retrieves the time of the last reset event, if any, for the provided user
+  // preferences. If no reset has occurred, Returns a null |Time|.
+  static base::Time GetResetTime(PrefService* user_prefs);
+
+  // Clears the time of the last reset event, if any, for the provided user
+  // preferences.
+  static void ClearResetTime(PrefService* user_prefs);
+
+  // Initializes the PrefHashStore with hashes of the tracked preferences in
+  // |pref_store_contents|. |pref_store_contents| will be the |storage| passed
+  // to PrefHashStore::BeginTransaction().
+  void Initialize(base::DictionaryValue* pref_store_contents);
+
+  // PrefFilter remaining implementation.
   virtual void FilterUpdate(const std::string& path) OVERRIDE;
   virtual void FilterSerializeData(
-      const base::DictionaryValue* pref_store_contents) OVERRIDE;
+      base::DictionaryValue* pref_store_contents) OVERRIDE;
 
  private:
+  // InterceptablePrefFilter implementation.
+  virtual void FinalizeFilterOnLoad(
+      const PostFilterOnLoadCallback& post_filter_on_load_callback,
+      scoped_ptr<base::DictionaryValue> pref_store_contents,
+      bool prefs_altered) OVERRIDE;
+
+  // Callback to be invoked only once (and subsequently reset) on the next
+  // FilterOnLoad event. It will be allowed to modify the |prefs| handed to
+  // FilterOnLoad before handing them back to this PrefHashFilter.
+  FilterOnLoadInterceptor filter_on_load_interceptor_;
+
   // A map of paths to TrackedPreferences; this map owns this individual
   // TrackedPreference objects.
   typedef base::ScopedPtrHashMap<std::string, TrackedPreference>
@@ -96,7 +122,8 @@ class PrefHashFilter : public PrefFilter {
   // FilterSerializeData.
   ChangedPathsMap changed_paths_;
 
-  base::Closure reset_callback_;
+  // Whether to report the validity of the super MAC at load time (via UMA).
+  bool report_super_mac_validity_;
 
   DISALLOW_COPY_AND_ASSIGN(PrefHashFilter);
 };

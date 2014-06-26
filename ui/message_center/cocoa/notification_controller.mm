@@ -51,6 +51,21 @@
   [gfx::SkColorToCalibratedNSColor(message_center::kProgressBarSliceColor) set];
   [path fill];
 }
+
+- (id)accessibilityAttributeValue:(NSString*)attribute {
+  double progressValue = 0.0;
+  if ([attribute isEqualToString:NSAccessibilityDescriptionAttribute]) {
+    progressValue = [self doubleValue];
+  } else if ([attribute isEqualToString:NSAccessibilityMinValueAttribute]) {
+    progressValue = [self minValue];
+  } else if ([attribute isEqualToString:NSAccessibilityMaxValueAttribute]) {
+    progressValue = [self maxValue];
+  } else {
+    return [super accessibilityAttributeValue:attribute];
+  }
+
+  return [NSString stringWithFormat:@"%lf", progressValue];
+}
 @end
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -203,9 +218,23 @@
 @interface AccessibilityIgnoredBox : NSBox
 @end
 
+// Ignore this element, but expose its children to accessibility.
 @implementation AccessibilityIgnoredBox
 - (BOOL)accessibilityIsIgnored {
   return YES;
+}
+
+// Pretend this element has no children.
+// TODO(petewil): Until we have alt text available, we will hide the children of
+//  the box also.  Remove this override once alt text is set (by using
+// NSAccessibilityDescriptionAttribute).
+- (id)accessibilityAttributeValue:(NSString*)attribute {
+  // If we get a request for NSAccessibilityChildrenAttribute, return an empty
+  // array to pretend we have no children.
+  if ([attribute isEqualToString:NSAccessibilityChildrenAttribute])
+    return @[];
+  else
+    return [super accessibilityAttributeValue:attribute];
 }
 @end
 
@@ -250,10 +279,18 @@
 // Returns the wrapped text that could fit within the content rect with not
 // more than the given number of lines. The wrapped text would be painted using
 // the given font. The Ellipsis could be added at the end of the last line if
-// it is too long.
+// it is too long. Outputs the number of lines computed in the actualLines
+// parameter.
+- (base::string16)wrapText:(const base::string16&)text
+                   forFont:(NSFont*)font
+          maxNumberOfLines:(size_t)lines
+               actualLines:(size_t*)actualLines;
+
+// Same as above without outputting the lines formatted.
 - (base::string16)wrapText:(const base::string16&)text
                    forFont:(NSFont*)font
           maxNumberOfLines:(size_t)lines;
+
 @end
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -289,8 +326,7 @@
   [rootView addSubview:closeButton_];
 
   // Create the small image.
-  [self configureSmallImageInFrame:rootFrame];
-  [[self view] addSubview:smallImage_];
+  [rootView addSubview:[self createSmallImageInFrame:rootFrame]];
 
   NSRect contentFrame = [self currentContentRect];
 
@@ -343,26 +379,44 @@
       message_center::kTextTopPadding - messageBottomGap - contextMessageTopGap;
 
   // Set the title and recalculate the frame.
+  size_t actualTitleLines = 0;
   [title_ setString:base::SysUTF16ToNSString(
       [self wrapText:notification_->title()
-             forFont:[title_ font]
-       maxNumberOfLines:message_center::kTitleLineLimit])];
+                forFont:[title_ font]
+       maxNumberOfLines:message_center::kMaxTitleLines
+            actualLines:&actualTitleLines])];
   [title_ sizeToFit];
   NSRect titleFrame = [title_ frame];
   titleFrame.origin.y = NSMaxY(rootFrame) - titlePadding - NSHeight(titleFrame);
+
+  // The number of message lines depends on the number of context message lines
+  // and the lines within the title, and whether an image exists.
+  int messageLineLimit = message_center::kMessageExpandedLineLimit;
+  if (actualTitleLines > 1)
+    messageLineLimit -= (actualTitleLines - 1) * 2;
+  if (!notification_->image().IsEmpty()) {
+    messageLineLimit /= 2;
+    if (!notification_->context_message().empty())
+      messageLineLimit -= message_center::kContextMessageLineLimit;
+  }
+  if (messageLineLimit < 0)
+    messageLineLimit = 0;
 
   // Set the message and recalculate the frame.
   [message_ setString:base::SysUTF16ToNSString(
       [self wrapText:notification_->message()
              forFont:[message_ font]
-       maxNumberOfLines:message_center::kMessageExpandedLineLimit])];
+      maxNumberOfLines:messageLineLimit])];
   [message_ sizeToFit];
   NSRect messageFrame = [message_ frame];
 
   // If there are list items, then the message_ view should not be displayed.
   const std::vector<message_center::NotificationItem>& items =
       notification->items();
-  if (items.size() > 0) {
+  // If there are list items, don't show the main message.  Also if the message
+  // is empty, mark it as hidden and set 0 height, so it doesn't take up any
+  // space (size to fit leaves it 15 px tall.
+  if (items.size() > 0 || notification_->message().empty()) {
     [message_ setHidden:YES];
     messageFrame.origin.y = titleFrame.origin.y;
     messageFrame.size.height = 0;
@@ -706,17 +760,33 @@
                        forAttribute:NSAccessibilityTitleAttribute];
 }
 
-- (void)configureSmallImageInFrame:(NSRect)rootFrame {
+- (NSView*)createSmallImageInFrame:(NSRect)rootFrame {
   int smallImageXOffset =
       message_center::kSmallImagePadding + message_center::kSmallImageSize;
-  NSRect smallImageFrame =
+  NSRect boxFrame =
       NSMakeRect(NSMaxX(rootFrame) - smallImageXOffset,
                  NSMinY(rootFrame) + message_center::kSmallImagePadding,
                  message_center::kSmallImageSize,
                  message_center::kSmallImageSize);
+
+  // Put the smallImage inside another box which can hide it from accessibility
+  // until we have some alt text to go with it.  Once we have alt text, remove
+  // the box, and set NSAccessibilityDescriptionAttribute with it.
+  base::scoped_nsobject<NSBox> imageBox(
+      [[AccessibilityIgnoredBox alloc] initWithFrame:boxFrame]);
+  [self configureCustomBox:imageBox];
+  [imageBox setAutoresizingMask:NSViewMinYMargin];
+
+  NSRect smallImageFrame =
+      NSMakeRect(0,0,
+                 message_center::kSmallImageSize,
+                 message_center::kSmallImageSize);
+
   smallImage_.reset([[NSImageView alloc] initWithFrame:smallImageFrame]);
   [smallImage_ setImageScaling:NSImageScaleProportionallyUpOrDown];
-  [smallImage_ setAutoresizingMask:NSViewMinYMargin];
+  [imageBox setContentView:smallImage_];
+
+  return imageBox.autorelease();
 }
 
 - (void)configureTitleInFrame:(NSRect)contentFrame {
@@ -784,9 +854,11 @@
 
 - (base::string16)wrapText:(const base::string16&)text
                    forFont:(NSFont*)nsfont
-    maxNumberOfLines:(size_t)lines {
-  if (text.empty())
-    return text;
+          maxNumberOfLines:(size_t)lines
+               actualLines:(size_t*)actualLines {
+  *actualLines = 0;
+  if (text.empty() || lines == 0)
+    return base::string16();
   gfx::FontList font_list((gfx::Font(nsfont)));
   int width = NSWidth([self currentContentRect]);
   int height = (lines + 1) * font_list.GetHeight();
@@ -805,12 +877,23 @@
     base::string16 last =
         wrapped[lines - 1] + base::UTF8ToUTF16(gfx::kEllipsis);
     if (gfx::GetStringWidth(last, font_list) > width)
-      last = gfx::ElideText(last, font_list, width, gfx::ELIDE_AT_END);
+      last = gfx::ElideText(last, font_list, width, gfx::ELIDE_TAIL);
     wrapped.resize(lines - 1);
     wrapped.push_back(last);
   }
 
+  *actualLines = wrapped.size();
   return lines == 1 ? wrapped[0] : JoinString(wrapped, '\n');
+}
+
+- (base::string16)wrapText:(const base::string16&)text
+                   forFont:(NSFont*)nsfont
+          maxNumberOfLines:(size_t)lines {
+  size_t unused;
+  return [self wrapText:text
+                forFont:nsfont
+       maxNumberOfLines:lines
+            actualLines:&unused];
 }
 
 @end

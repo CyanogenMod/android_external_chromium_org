@@ -22,7 +22,6 @@
 #include "remoting/protocol/transport.h"
 #include "remoting/protocol/video_reader.h"
 #include "remoting/protocol/video_stub.h"
-#include "remoting/protocol/util.h"
 
 namespace remoting {
 namespace protocol {
@@ -33,7 +32,6 @@ ConnectionToHost::ConnectionToHost(
       event_callback_(NULL),
       client_stub_(NULL),
       clipboard_stub_(NULL),
-      video_stub_(NULL),
       audio_stub_(NULL),
       signal_strategy_(NULL),
       state_(INITIALIZING),
@@ -53,35 +51,18 @@ ConnectionToHost::~ConnectionToHost() {
     signal_strategy_->RemoveListener(this);
 }
 
-ClipboardStub* ConnectionToHost::clipboard_stub() {
-  return &clipboard_forwarder_;
-}
-
-HostStub* ConnectionToHost::host_stub() {
-  // TODO(wez): Add a HostFilter class, equivalent to input filter.
-  return control_dispatcher_.get();
-}
-
-InputStub* ConnectionToHost::input_stub() {
-  return &event_forwarder_;
-}
-
 void ConnectionToHost::Connect(SignalStrategy* signal_strategy,
-                               const std::string& host_jid,
-                               const std::string& host_public_key,
                                scoped_ptr<TransportFactory> transport_factory,
                                scoped_ptr<Authenticator> authenticator,
-                               HostEventCallback* event_callback,
-                               ClientStub* client_stub,
-                               ClipboardStub* clipboard_stub,
-                               VideoStub* video_stub,
-                               AudioStub* audio_stub) {
+                               const std::string& host_jid,
+                               const std::string& host_public_key,
+                               HostEventCallback* event_callback) {
+  DCHECK(client_stub_);
+  DCHECK(clipboard_stub_);
+  DCHECK(monitored_video_stub_);
+
   signal_strategy_ = signal_strategy;
   event_callback_ = event_callback;
-  client_stub_ = client_stub;
-  clipboard_stub_ = clipboard_stub;
-  video_stub_ = video_stub;
-  audio_stub_ = audio_stub;
   authenticator_ = authenticator.Pass();
 
   // Save jid of the host. The actual connection is created later after
@@ -100,6 +81,41 @@ void ConnectionToHost::Connect(SignalStrategy* signal_strategy,
 
 const SessionConfig& ConnectionToHost::config() {
   return session_->config();
+}
+
+ClipboardStub* ConnectionToHost::clipboard_forwarder() {
+  return &clipboard_forwarder_;
+}
+
+HostStub* ConnectionToHost::host_stub() {
+  // TODO(wez): Add a HostFilter class, equivalent to input filter.
+  return control_dispatcher_.get();
+}
+
+InputStub* ConnectionToHost::input_stub() {
+  return &event_forwarder_;
+}
+
+void ConnectionToHost::set_client_stub(ClientStub* client_stub) {
+  client_stub_ = client_stub;
+}
+
+void ConnectionToHost::set_clipboard_stub(ClipboardStub* clipboard_stub) {
+  clipboard_stub_ = clipboard_stub;
+}
+
+void ConnectionToHost::set_video_stub(VideoStub* video_stub) {
+  DCHECK(video_stub);
+  monitored_video_stub_.reset(new MonitoredVideoStub(
+      video_stub,
+      base::TimeDelta::FromSeconds(
+          MonitoredVideoStub::kConnectivityCheckDelaySeconds),
+      base::Bind(&ConnectionToHost::OnVideoChannelStatus,
+                 base::Unretained(this))));
+}
+
+void ConnectionToHost::set_audio_stub(AudioStub* audio_stub) {
+  audio_stub_ = audio_stub;
 }
 
 void ConnectionToHost::OnSignalStrategyStateChange(
@@ -126,8 +142,10 @@ void ConnectionToHost::OnSessionManagerReady() {
   // After SessionManager is initialized we can try to connect to the host.
   scoped_ptr<CandidateSessionConfig> candidate_config =
       CandidateSessionConfig::CreateDefault();
-  if (!audio_stub_)
-    CandidateSessionConfig::DisableAudioChannel(candidate_config.get());
+  if (!audio_stub_) {
+    candidate_config->DisableAudioChannel();
+  }
+  candidate_config->EnableVideoCodec(ChannelConfig::CODEC_VP9);
 
   session_ = session_manager_->Connect(
       host_jid_, authenticator_.Pass(), candidate_config.Pass());
@@ -152,6 +170,7 @@ void ConnectionToHost::OnSessionStateChange(
     case Session::CONNECTING:
     case Session::ACCEPTING:
     case Session::CONNECTED:
+    case Session::AUTHENTICATING:
       // Don't care about these events.
       break;
 
@@ -173,15 +192,15 @@ void ConnectionToHost::OnSessionStateChange(
                      base::Unretained(this)));
 
       video_reader_ = VideoReader::Create(session_->config());
-      video_reader_->Init(session_.get(), video_stub_, base::Bind(
-          &ConnectionToHost::OnChannelInitialized, base::Unretained(this)));
+      video_reader_->Init(session_.get(), monitored_video_stub_.get(),
+                          base::Bind(&ConnectionToHost::OnChannelInitialized,
+                                     base::Unretained(this)));
 
       audio_reader_ = AudioReader::Create(session_->config());
       if (audio_reader_.get()) {
-        audio_reader_->Init(
-            session_.get(), session_->config().audio_config(),
-            base::Bind(&ConnectionToHost::OnChannelInitialized,
-                       base::Unretained(this)));
+        audio_reader_->Init(session_.get(), session_->config().audio_config(),
+                            base::Bind(&ConnectionToHost::OnChannelInitialized,
+                                       base::Unretained(this)));
         audio_reader_->set_audio_stub(audio_stub_);
       }
       break;
@@ -215,15 +234,8 @@ void ConnectionToHost::OnSessionRouteChange(const std::string& channel_name,
   event_callback_->OnRouteChanged(channel_name, route);
 }
 
-void ConnectionToHost::OnSessionChannelReady(const std::string& channel_name,
-                                             bool ready) {
-  if (ready) {
-    not_ready_channels_.erase(channel_name);
-  } else if (!ready) {
-    not_ready_channels_.insert(channel_name);
-  }
-
-  event_callback_->OnConnectionReady(not_ready_channels_.empty());
+void ConnectionToHost::OnVideoChannelStatus(bool active) {
+  event_callback_->OnConnectionReady(active);
 }
 
 ConnectionToHost::State ConnectionToHost::state() const {

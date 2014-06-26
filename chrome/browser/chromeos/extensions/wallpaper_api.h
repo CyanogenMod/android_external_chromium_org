@@ -29,10 +29,10 @@ class WallpaperSetWallpaperFunction : public WallpaperFunctionBase {
   virtual ~WallpaperSetWallpaperFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  virtual void OnWallpaperDecoded(const gfx::ImageSkia& wallpaper) OVERRIDE;
+  virtual void OnWallpaperDecoded(const gfx::ImageSkia& image) OVERRIDE;
 
   // Generates thumbnail of custom wallpaper. A simple STRETCH is used for
   // generating thumbnail.
@@ -43,8 +43,7 @@ class WallpaperSetWallpaperFunction : public WallpaperFunctionBase {
   void ThumbnailGenerated(base::RefCountedBytes* data);
 
   // Called by OnURLFetchComplete().
-  void OnWallpaperFetched(net::URLRequestStatus::Status status,
-                          const std::string& response);
+  void OnWallpaperFetched(bool success, const std::string& response);
 
   scoped_ptr<extensions::api::wallpaper::SetWallpaper::Params> params_;
 

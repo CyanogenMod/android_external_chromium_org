@@ -8,7 +8,6 @@
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/shell/browser/shell_javascript_dialog.h"
 #include "content/shell/browser/webkit_test_controller.h"
 #include "content/shell/common/shell_switches.h"
@@ -43,7 +42,7 @@ void ShellJavaScriptDialogManager::RunJavaScriptDialog(
     return;
   }
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX) || defined(OS_WIN)
   *did_suppress_message = false;
 
   if (dialog_) {
@@ -55,8 +54,7 @@ void ShellJavaScriptDialogManager::RunJavaScriptDialog(
   base::string16 new_message_text = net::FormatUrl(origin_url, accept_lang) +
                               base::ASCIIToUTF16("\n\n") +
                               message_text;
-  gfx::NativeWindow parent_window =
-      web_contents->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow parent_window = web_contents->GetTopLevelNativeWindow();
 
   dialog_.reset(new ShellJavaScriptDialog(this,
                                           parent_window,
@@ -88,7 +86,7 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
     return;
   }
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX) || defined(OS_WIN)
   if (dialog_) {
     // Seriously!?
     callback.Run(true, base::string16());
@@ -99,8 +97,7 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
       message_text +
       base::ASCIIToUTF16("\n\nIs it OK to leave/reload this page?");
 
-  gfx::NativeWindow parent_window =
-      web_contents->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow parent_window = web_contents->GetTopLevelNativeWindow();
 
   dialog_.reset(new ShellJavaScriptDialog(this,
                                           parent_window,
@@ -117,7 +114,7 @@ void ShellJavaScriptDialogManager::RunBeforeUnloadDialog(
 
 void ShellJavaScriptDialogManager::CancelActiveAndPendingDialogs(
     WebContents* web_contents) {
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX) || defined(OS_WIN)
   if (dialog_) {
     dialog_->Cancel();
     dialog_.reset();
@@ -132,7 +129,7 @@ void ShellJavaScriptDialogManager::WebContentsDestroyed(
 }
 
 void ShellJavaScriptDialogManager::DialogClosed(ShellJavaScriptDialog* dialog) {
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(TOOLKIT_GTK)
+#if defined(OS_MACOSX) || defined(OS_WIN)
   DCHECK_EQ(dialog, dialog_.get());
   dialog_.reset();
 #else

@@ -10,7 +10,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/ui/tabs/dock_info.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_types.h"
 #include "content/public/browser/notification_observer.h"
@@ -24,6 +24,7 @@ namespace gfx {
 class Screen;
 }
 namespace ui {
+class EventHandler;
 class ListSelectionModel;
 }
 namespace views {
@@ -48,7 +49,6 @@ class TabStripModel;
 // is the default on aura.
 class TabDragController : public content::WebContentsDelegate,
                           public content::NotificationObserver,
-                          public base::MessageLoopForUI::Observer,
                           public views::WidgetObserver,
                           public TabStripModelObserver {
  public:
@@ -134,11 +134,6 @@ class TabDragController : public content::WebContentsDelegate,
   void EndDrag(EndDragReason reason);
 
  private:
-  class DockDisplayer;
-  friend class DockDisplayer;
-
-  typedef std::set<gfx::NativeView> DockWindows;
-
   // Used to indicate the direction the mouse has moved when attached.
   static const int kMovedMouseLeft  = 1 << 0;
   static const int kMovedMouseRight = 1 << 1;
@@ -243,11 +238,6 @@ class TabDragController : public content::WebContentsDelegate,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Overridden from MessageLoop::Observer:
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE;
-  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE;
-
   // Overriden from views::WidgetObserver:
   virtual void OnWidgetBoundsChanged(views::Widget* widget,
                                      const gfx::Rect& new_bounds) OVERRIDE;
@@ -323,8 +313,6 @@ class TabDragController : public content::WebContentsDelegate,
   // coordinates.
   DetachPosition GetDetachPosition(const gfx::Point& point_in_screen);
 
-  DockInfo GetDockInfoAtPoint(const gfx::Point& point_in_screen);
-
   // Attach the dragged Tab to the specified TabStrip.
   void Attach(TabStrip* attached_tabstrip, const gfx::Point& point_in_screen);
 
@@ -342,11 +330,14 @@ class TabDragController : public content::WebContentsDelegate,
   void RunMoveLoop(const gfx::Vector2d& drag_offset);
 
   // Determines the index to insert tabs at. |dragged_bounds| is the bounds of
-  // the tabs being dragged, |start| the index of the tab to start looking from
-  // and |delta| the amount to increment (1 or -1).
-  int GetInsertionIndexFrom(const gfx::Rect& dragged_bounds,
-                            int start,
-                            int delta) const;
+  // the tabs being dragged, |start| the index of the tab to start looking from.
+  // The search proceeds to the end of the strip.
+  int GetInsertionIndexFrom(const gfx::Rect& dragged_bounds, int start) const;
+
+  // Like GetInsertionIndexFrom(), but searches backwards from |start| to the
+  // beginning of the strip.
+  int GetInsertionIndexFromReversed(const gfx::Rect& dragged_bounds,
+                                    int start) const;
 
   // Returns the index where the dragged WebContents should be inserted into
   // |attached_tabstrip_| given the DraggedTabView's bounds |dragged_bounds| in
@@ -422,8 +413,6 @@ class TabDragController : public content::WebContentsDelegate,
   // Closes a hidden frame at the end of a drag session.
   void CleanUpHiddenFrame();
 
-  void DockDisplayerDestroyed(DockDisplayer* controller);
-
   void BringWindowUnderPointToFront(const gfx::Point& point_in_screen);
 
   // Convenience for getting the TabDragData corresponding to the tab the user
@@ -485,6 +474,11 @@ class TabDragController : public content::WebContentsDelegate,
     return (move_behavior_ == MOVE_VISIBILE_TABS) != 0;
   }
 
+  // Returns the NativeWindow at the specified point. If |exclude_dragged_view|
+  // is true, then the dragged view is not considered.
+  gfx::NativeWindow GetLocalProcessWindow(const gfx::Point& screen_point,
+                                          bool exclude_dragged_view);
+
   // If true detaching creates a new browser and enters a nested message loop.
   bool detach_into_browser_;
 
@@ -508,6 +502,10 @@ class TabDragController : public content::WebContentsDelegate,
   // UI elements are NULLd at various points during the lifetime of this
   // object.
   chrome::HostDesktopType host_desktop_type_;
+
+  // Aura mouse capture and release is used on Ash platforms as well as on
+  // Linux to ensure that pointer grab is not released prematurely.
+  bool use_aura_capture_policy_;
 
   // The position of the mouse (in screen coordinates) at the start of the drag
   // operation. This is used to calculate minimum elasticity before a
@@ -549,12 +547,6 @@ class TabDragController : public content::WebContentsDelegate,
   // The horizontal position of the mouse cursor in screen coordinates at the
   // time of the last re-order event.
   int last_move_screen_loc_;
-
-  DockInfo dock_info_;
-
-  DockWindows dock_windows_;
-
-  std::vector<DockDisplayer*> dock_controllers_;
 
   // Timer used to bring the window under the cursor to front. If the user
   // stops moving the mouse for a brief time over a browser window, it is
@@ -643,6 +635,8 @@ class TabDragController : public content::WebContentsDelegate,
   // See comment around use for more details.
   int attach_x_;
   int attach_index_;
+
+  scoped_ptr<ui::EventHandler> escape_tracker_;
 
   base::WeakPtrFactory<TabDragController> weak_factory_;
 

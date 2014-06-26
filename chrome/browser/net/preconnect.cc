@@ -60,7 +60,7 @@ void PreconnectOnIOThread(
 
   std::string user_agent;
   if (context->http_user_agent_settings())
-    user_agent = context->http_user_agent_settings()->GetUserAgent(url);
+    user_agent = context->http_user_agent_settings()->GetUserAgent();
   net::HttpRequestInfo request_info;
   request_info.url = url;
   request_info.method = "GET";
@@ -69,7 +69,7 @@ void PreconnectOnIOThread(
 
   net::NetworkDelegate* delegate = context->network_delegate();
   if (delegate->CanEnablePrivacyMode(url, first_party_for_cookies))
-    request_info.privacy_mode = net::kPrivacyModeEnabled;
+    request_info.privacy_mode = net::PRIVACY_MODE_ENABLED;
 
   // It almost doesn't matter whether we use net::LOWEST or net::HIGHEST
   // priority here, as we won't make a request, and will surrender the created
@@ -107,8 +107,7 @@ void PreconnectOnIOThread(
   // Setup the SSL Configuration.
   net::SSLConfig ssl_config;
   session->ssl_config_service()->GetSSLConfig(&ssl_config);
-  if (session->http_stream_factory()->has_next_protos())
-    ssl_config.next_protos = session->http_stream_factory()->next_protos();
+  session->GetNextProtos(&ssl_config.next_protos);
 
   // All preconnects should perform EV certificate verification.
   ssl_config.verify_ev_cert = true;

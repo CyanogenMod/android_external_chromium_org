@@ -95,17 +95,30 @@ class VIEWS_EXPORT Textfield : public View,
   // Checks if there is any selected text.
   bool HasSelection() const;
 
-  // Gets/Sets the text color to be used when painting the Textfield.
-  // Call |UseDefaultTextColor| to restore the default system color.
+  // Gets/sets the text color to be used when painting the Textfield.
+  // Call UseDefaultTextColor() to restore the default system color.
   SkColor GetTextColor() const;
   void SetTextColor(SkColor color);
   void UseDefaultTextColor();
 
-  // Gets/Sets the background color to be used when painting the Textfield.
-  // Call |UseDefaultBackgroundColor| to restore the default system color.
+  // Gets/sets the background color to be used when painting the Textfield.
+  // Call UseDefaultBackgroundColor() to restore the default system color.
   SkColor GetBackgroundColor() const;
   void SetBackgroundColor(SkColor color);
   void UseDefaultBackgroundColor();
+
+  // Gets/sets the selection text color to be used when painting the Textfield.
+  // Call UseDefaultSelectionTextColor() to restore the default system color.
+  SkColor GetSelectionTextColor() const;
+  void SetSelectionTextColor(SkColor color);
+  void UseDefaultSelectionTextColor();
+
+  // Gets/sets the selection background color to be used when painting the
+  // Textfield. Call UseDefaultSelectionBackgroundColor() to restore the default
+  // system color.
+  SkColor GetSelectionBackgroundColor() const;
+  void SetSelectionBackgroundColor(SkColor color);
+  void UseDefaultSelectionBackgroundColor();
 
   // Gets/Sets whether or not the cursor is enabled.
   bool GetCursorEnabled() const;
@@ -130,6 +143,11 @@ class VIEWS_EXPORT Textfield : public View,
   void set_placeholder_text_color(SkColor color) {
     placeholder_text_color_ = color;
   }
+
+  // Get or set the horizontal alignment used for the button from the underlying
+  // RenderText object.
+  gfx::HorizontalAlignment GetHorizontalAlignment() const;
+  void SetHorizontalAlignment(gfx::HorizontalAlignment alignment);
 
   // Displays a virtual keyboard or alternate input view if enabled.
   void ShowImeIfNeeded();
@@ -178,26 +196,19 @@ class VIEWS_EXPORT Textfield : public View,
   bool HasTextBeingDragged();
 
   // View overrides:
-  // TODO(msw): Match declaration and definition order to View.
   virtual int GetBaseline() const OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
-  virtual bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) OVERRIDE;
-  virtual void OnEnabledChanged() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
-  virtual gfx::Point GetKeyboardContextMenuLocation() OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
+  virtual bool SkipDefaultKeyEventProcessing(
+      const ui::KeyEvent& event) OVERRIDE;
   virtual bool GetDropFormats(
       int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
@@ -206,9 +217,14 @@ class VIEWS_EXPORT Textfield : public View,
   virtual void OnDragExited() OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void OnDragDone() OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  virtual void OnEnabledChanged() OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
+  virtual gfx::Point GetKeyboardContextMenuLocation() OVERRIDE;
+  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
 
   // TextfieldModel::Delegate overrides:
   virtual void OnCompositionTextConfirmedOrCleared() OVERRIDE;
@@ -239,6 +255,7 @@ class VIEWS_EXPORT Textfield : public View,
   virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
   virtual bool DrawsHandles() OVERRIDE;
   virtual void OpenContextMenu(const gfx::Point& anchor) OVERRIDE;
+  virtual void DestroyTouchSelection() OVERRIDE;
 
   // ui::SimpleMenuModel::Delegate overrides:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
@@ -278,6 +295,8 @@ class VIEWS_EXPORT Textfield : public View,
   virtual void OnCandidateWindowShown() OVERRIDE;
   virtual void OnCandidateWindowUpdated() OVERRIDE;
   virtual void OnCandidateWindowHidden() OVERRIDE;
+  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE;
+  virtual void ExecuteEditingCommand(int command_id) OVERRIDE;
 
  protected:
   // Returns the TextfieldModel's text/cursor/selection rendering model.
@@ -289,8 +308,7 @@ class VIEWS_EXPORT Textfield : public View,
   virtual base::string16 GetSelectionClipboardText() const;
 
  private:
-  friend class TextfieldTest;
-  friend class TouchSelectionControllerImplTest;
+  friend class TextfieldTestApi;
 
   // Handles a request to change the value of this text field from software
   // using an accessibility API (typically automation software, screen readers
@@ -299,9 +317,6 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Updates the painted background color.
   void UpdateBackgroundColor();
-
-  // Updates any colors that have not been explicitly set from the theme.
-  void UpdateColorsFromTheme(const ui::NativeTheme* theme);
 
   // Does necessary updates when the text and/or cursor position changes.
   void UpdateAfterChange(bool text_changed, bool cursor_changed);
@@ -316,6 +331,9 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Helper function to call MoveCursorTo on the TextfieldModel.
   void MoveCursorTo(const gfx::Point& point, bool select);
+
+  // Helper function to update the selection on a mouse drag.
+  void SelectThroughLastDragLocation();
 
   // Convenience method to notify the InputMethod and TouchSelectionController.
   void OnCaretBoundsChanged();
@@ -372,17 +390,16 @@ class VIEWS_EXPORT Textfield : public View,
 
   scoped_ptr<Painter> focus_painter_;
 
-  // Text color.  Only used if |use_default_text_color_| is false.
-  SkColor text_color_;
-
-  // Should we use the system text color instead of |text_color_|?
+  // Flags indicating whether various system colors should be used, and if not,
+  // what overriding color values should be used instead.
   bool use_default_text_color_;
-
-  // Background color.  Only used if |use_default_background_color_| is false.
-  SkColor background_color_;
-
-  // Should we use the system background color instead of |background_color_|?
   bool use_default_background_color_;
+  bool use_default_selection_text_color_;
+  bool use_default_selection_background_color_;
+  SkColor text_color_;
+  SkColor background_color_;
+  SkColor selection_text_color_;
+  SkColor selection_background_color_;
 
   // Text to display when empty.
   base::string16 placeholder_text_;
@@ -400,6 +417,10 @@ class VIEWS_EXPORT Textfield : public View,
   base::TimeDelta password_reveal_duration_;
   base::OneShotTimer<Textfield> password_reveal_timer_;
 
+  // Tracks whether a user action is being performed; i.e. OnBeforeUserAction()
+  // has been called, but OnAfterUserAction() has not yet been called.
+  bool performing_user_action_;
+
   // True if InputMethod::CancelComposition() should not be called.
   bool skip_input_method_cancel_composition_;
 
@@ -413,6 +434,10 @@ class VIEWS_EXPORT Textfield : public View,
 
   // Is the user potentially dragging and dropping from this view?
   bool initiating_drag_;
+
+  // A timer and point used to modify the selection when dragging.
+  base::RepeatingTimer<Textfield> drag_selection_timer_;
+  gfx::Point last_drag_location_;
 
   // State variables used to track double and triple clicks.
   size_t aggregated_clicks_;

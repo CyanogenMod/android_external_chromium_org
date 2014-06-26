@@ -5,6 +5,7 @@
 #include "base/file_util.h"
 
 #include <windows.h>
+#include <io.h>
 #include <psapi.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -51,6 +52,11 @@ bool DeleteFile(const FilePath& path, bool recursive) {
   if (path.value().length() >= MAX_PATH)
     return false;
 
+  // On XP SHFileOperation will return ERROR_ACCESS_DENIED instead of
+  // ERROR_FILE_NOT_FOUND, so just shortcut this here.
+  if (path.empty())
+    return true;
+
   if (!recursive) {
     // If not recursing, then first check to see if |path| is a directory.
     // If it is, then remove it with RemoveDirectory.
@@ -89,8 +95,10 @@ bool DeleteFile(const FilePath& path, bool recursive) {
 
   // Some versions of Windows return ERROR_FILE_NOT_FOUND (0x2) when deleting
   // an empty directory and some return 0x402 when they should be returning
-  // ERROR_FILE_NOT_FOUND. MSDN says Vista and up won't return 0x402.
-  return (err == 0 || err == ERROR_FILE_NOT_FOUND || err == 0x402);
+  // ERROR_FILE_NOT_FOUND. MSDN says Vista and up won't return 0x402.  Windows 7
+  // can return DE_INVALIDFILES (0x7C) for nonexistent directories.
+  return (err == 0 || err == ERROR_FILE_NOT_FOUND || err == 0x402 ||
+          err == 0x7C);
 }
 
 bool DeleteFileAfterReboot(const FilePath& path) {
@@ -254,8 +262,21 @@ bool GetTempDir(FilePath* path) {
   return true;
 }
 
-bool GetShmemTempDir(bool executable, FilePath* path) {
-  return GetTempDir(path);
+FilePath GetHomeDir() {
+  char16 result[MAX_PATH];
+  if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_PROFILE, NULL, SHGFP_TYPE_CURRENT,
+                                result)) &&
+      result[0]) {
+    return FilePath(result);
+  }
+
+  // Fall back to the temporary directory on failure.
+  FilePath temp;
+  if (GetTempDir(&temp))
+    return temp;
+
+  // Last resort.
+  return FilePath(L"C:\\");
 }
 
 bool CreateTemporaryFile(FilePath* path) {
@@ -272,11 +293,6 @@ bool CreateTemporaryFile(FilePath* path) {
   }
 
   return false;
-}
-
-FILE* CreateAndOpenTemporaryShmemFile(FilePath* path, bool executable) {
-  ThreadRestrictions::AssertIOAllowed();
-  return CreateAndOpenTemporaryFile(path);
 }
 
 // On POSIX we have semantics to create and open a temporary file
@@ -563,7 +579,21 @@ FILE* OpenFile(const FilePath& filename, const char* mode) {
   return _wfsopen(filename.value().c_str(), w_mode.c_str(), _SH_DENYNO);
 }
 
-int ReadFile(const FilePath& filename, char* data, int size) {
+FILE* FileToFILE(File file, const char* mode) {
+  if (!file.IsValid())
+    return NULL;
+  int fd =
+      _open_osfhandle(reinterpret_cast<intptr_t>(file.GetPlatformFile()), 0);
+  if (fd < 0)
+    return NULL;
+  file.TakePlatformFile();
+  FILE* stream = _fdopen(fd, mode);
+  if (!stream)
+    _close(fd);
+  return stream;
+}
+
+int ReadFile(const FilePath& filename, char* data, int max_size) {
   ThreadRestrictions::AssertIOAllowed();
   base::win::ScopedHandle file(CreateFile(filename.value().c_str(),
                                           GENERIC_READ,
@@ -576,29 +606,14 @@ int ReadFile(const FilePath& filename, char* data, int size) {
     return -1;
 
   DWORD read;
-  if (::ReadFile(file, data, size, &read, NULL) &&
-      static_cast<int>(read) == size)
+  if (::ReadFile(file, data, max_size, &read, NULL))
     return read;
+
   return -1;
 }
 
-}  // namespace base
-
-// -----------------------------------------------------------------------------
-
-namespace file_util {
-
-using base::DirectoryExists;
-using base::FilePath;
-using base::kFileShareAll;
-
-FILE* OpenFile(const std::string& filename, const char* mode) {
-  base::ThreadRestrictions::AssertIOAllowed();
-  return _fsopen(filename.c_str(), mode, _SH_DENYNO);
-}
-
 int WriteFile(const FilePath& filename, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   base::win::ScopedHandle file(CreateFile(filename.value().c_str(),
                                           GENERIC_WRITE,
                                           0,
@@ -607,8 +622,8 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
                                           0,
                                           NULL));
   if (!file) {
-    DLOG_GETLASTERROR(WARNING) << "CreateFile failed for path "
-                               << filename.value();
+    DPLOG(WARNING) << "CreateFile failed for path "
+                   << UTF16ToUTF8(filename.value());
     return -1;
   }
 
@@ -619,18 +634,18 @@ int WriteFile(const FilePath& filename, const char* data, int size) {
 
   if (!result) {
     // WriteFile failed.
-    DLOG_GETLASTERROR(WARNING) << "writing file " << filename.value()
-                               << " failed";
+    DPLOG(WARNING) << "writing file " << UTF16ToUTF8(filename.value())
+                   << " failed";
   } else {
     // Didn't write all the bytes.
     DLOG(WARNING) << "wrote" << written << " bytes to "
-                  << filename.value() << " expected " << size;
+                  << UTF16ToUTF8(filename.value()) << " expected " << size;
   }
   return -1;
 }
 
 int AppendToFile(const FilePath& filename, const char* data, int size) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   base::win::ScopedHandle file(CreateFile(filename.value().c_str(),
                                           FILE_APPEND_DATA,
                                           0,
@@ -639,8 +654,8 @@ int AppendToFile(const FilePath& filename, const char* data, int size) {
                                           0,
                                           NULL));
   if (!file) {
-    DLOG_GETLASTERROR(WARNING) << "CreateFile failed for path "
-                               << filename.value();
+    DPLOG(WARNING) << "CreateFile failed for path "
+                   << UTF16ToUTF8(filename.value());
     return -1;
   }
 
@@ -651,19 +666,19 @@ int AppendToFile(const FilePath& filename, const char* data, int size) {
 
   if (!result) {
     // WriteFile failed.
-    DLOG_GETLASTERROR(WARNING) << "writing file " << filename.value()
-                               << " failed";
+    DPLOG(WARNING) << "writing file " << UTF16ToUTF8(filename.value())
+                   << " failed";
   } else {
     // Didn't write all the bytes.
     DLOG(WARNING) << "wrote" << written << " bytes to "
-                  << filename.value() << " expected " << size;
+                  << UTF16ToUTF8(filename.value()) << " expected " << size;
   }
   return -1;
 }
 
 // Gets the current working directory for the process.
 bool GetCurrentDirectory(FilePath* dir) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   wchar_t system_buffer[MAX_PATH];
   system_buffer[0] = 0;
@@ -680,13 +695,13 @@ bool GetCurrentDirectory(FilePath* dir) {
 
 // Sets the current working directory for the process.
 bool SetCurrentDirectory(const FilePath& directory) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
   BOOL ret = ::SetCurrentDirectory(directory.value().c_str());
   return ret != 0;
 }
 
 int GetMaximumPathComponentLength(const FilePath& path) {
-  base::ThreadRestrictions::AssertIOAllowed();
+  ThreadRestrictions::AssertIOAllowed();
 
   wchar_t volume_path[MAX_PATH];
   if (!GetVolumePathNameW(path.NormalizePathSeparators().value().c_str(),
@@ -709,9 +724,8 @@ int GetMaximumPathComponentLength(const FilePath& path) {
   return std::min(whole_path_limit, static_cast<int>(max_length));
 }
 
-}  // namespace file_util
+// -----------------------------------------------------------------------------
 
-namespace base {
 namespace internal {
 
 bool MoveUnsafe(const FilePath& from_path, const FilePath& to_path) {

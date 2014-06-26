@@ -25,7 +25,8 @@ class ExtensionError {
  public:
   enum Type {
     MANIFEST_ERROR,
-    RUNTIME_ERROR
+    RUNTIME_ERROR,
+    NUM_ERROR_TYPES  // Put new values above this.
   };
 
   virtual ~ExtensionError();
@@ -83,6 +84,7 @@ class ExtensionError {
   // The number of times this error has occurred.
   size_t occurrences_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ExtensionError);
 };
 

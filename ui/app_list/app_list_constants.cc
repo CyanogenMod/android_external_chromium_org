@@ -7,8 +7,14 @@
 namespace app_list {
 
 const SkColor kContentsBackgroundColor = SkColorSetRGB(0xFB, 0xFB, 0xFB);
+const SkColor kContentsSwitcherBackgroundColor = SK_ColorWHITE;
 const SkColor kSearchBoxBackground = SK_ColorWHITE;
 const SkColor kTopSeparatorColor = SkColorSetRGB(0xE5, 0xE5, 0xE5);
+const SkColor kBottomSeparatorColor = SkColorSetRGB(0xE5, 0xE5, 0xE5);
+
+// The color of the separator used inside dialogs in the app list.
+const SkColor kDialogSeparatorColor = SkColorSetRGB(0xD1, 0xD1, 0xD1);
+const SkColor kDialogSubtitleColor = SkColorSetRGB(0x77, 0x77, 0x77);
 
 // 6% black over kContentsBackgroundColor
 const SkColor kHighlightedColor = SkColorSetRGB(0xE6, 0xE6, 0xE6);
@@ -26,6 +32,9 @@ const SkColor kResultURLTextColor = SkColorSetRGB(0x00, 0x99, 0x33);
 
 const SkColor kGridTitleColor = SkColorSetRGB(0x5A, 0x5A, 0x5A);
 const SkColor kGridTitleHoverColor = SkColorSetRGB(0x3C, 0x3C, 0x3C);
+
+// Color of the borders used in the experimental app list start page.
+const SkColor kStartPageBorderColor = SkColorSetRGB(0xEE, 0xEE, 0xEE);
 
 // Color of the folder ink bubble.
 const SkColor kFolderBubbleColor = SkColorSetRGB(0xD7, 0xD7, 0xD7);
@@ -51,7 +60,7 @@ const gfx::Tween::Type kFolderFadeInTweenType = gfx::Tween::EASE_IN_2;
 
 // Animation curve used for fading out the target page when opening or closing
 // a folder.
-const gfx::Tween::Type kFolderFadeOutTweenType = gfx::Tween::EASE_IN_3;
+const gfx::Tween::Type kFolderFadeOutTweenType = gfx::Tween::FAST_OUT_LINEAR_IN;
 
 // Preferred number of columns and rows in apps grid.
 const int kPreferredCols = 4;
@@ -62,9 +71,18 @@ const int kPreferredIconDimension = 48;
 const int kExperimentalPreferredCols = 6;
 const int kExperimentalPreferredRows = 3;
 
+// Radius of the circle, in which if entered, show re-order preview.
+const int kReorderDroppingCircleRadius = 35;
+
+// Max items allowed in a folder.
+size_t kMaxFolderItems = 16;
+
 // Number of the top items in a folder, which are shown inside the folder icon
 // and animated when opening and closing a folder.
 const size_t kNumFolderTopItems = 4;
+
+// Maximum length of the folder name in chars.
+const size_t kMaxFolderNameChars = 40;
 
 // Font style for app item labels.
 const ui::ResourceBundle::FontStyle kItemTextFontStyle =

@@ -2,6 +2,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+#extension-error-overlay {
+  max-width: 100%;
+}
+
 #extension-error-overlay .content-area {
   display: flex;
   flex-direction: column;
@@ -11,17 +15,17 @@
   flex: none;
 }
 
-#extension-error-overlay .highlighted-source {
+#extension-error-overlay .extension-code-highlighted-source {
   background-color: rgba(255, 195, 200, 255);
 }
 
 #extension-error-overlay-code {
- -webkit-margin-after: 10px;
-  border: 1px solid #ccc;
-  font-family: monospace;
+  -webkit-margin-after: 10px;
   font-size: 1.2em;
-  overflow: auto;
-  padding: 10px;
+}
+
+#extension-error-overlay .extension-code-source {
+  color: #555;
 }
 
 .extension-error-overlay-context {

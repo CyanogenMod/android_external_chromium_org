@@ -18,15 +18,17 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
 #include "base/process/launch.h"
 #include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "base/version.h"
 #include "base/win/metro.h"
 #include "base/win/registry.h"
 #include "base/win/windows_version.h"
+#include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/google_update_constants.h"
 #include "chrome/installer/util/helper.h"
@@ -173,7 +175,7 @@ bool InstallUtil::ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code) {
     params = params.substr(program.length());
   }
 
-  TrimWhitespace(params, TRIM_ALL, &params);
+  base::TrimWhitespace(params, base::TRIM_ALL, &params);
 
   HWND uac_foreground_window = CreateUACForegroundWindow();
 
@@ -219,8 +221,9 @@ void InstallUtil::GetChromeVersion(BrowserDistribution* dist,
   DCHECK(dist);
   RegKey key;
   HKEY reg_root = (system_install) ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
-  LONG result = key.Open(reg_root, dist->GetVersionKey().c_str(),
-                         KEY_QUERY_VALUE);
+  LONG result = key.Open(reg_root,
+                         dist->GetVersionKey().c_str(),
+                         KEY_QUERY_VALUE | KEY_WOW64_32KEY);
 
   base::string16 version_str;
   if (result == ERROR_SUCCESS)
@@ -230,7 +233,7 @@ void InstallUtil::GetChromeVersion(BrowserDistribution* dist,
   if (result == ERROR_SUCCESS && !version_str.empty()) {
     VLOG(1) << "Existing " << dist->GetDisplayName() << " version found "
             << version_str;
-    *version = Version(WideToASCII(version_str));
+    *version = Version(base::UTF16ToASCII(version_str));
   } else {
     DCHECK_EQ(ERROR_FILE_NOT_FOUND, result);
     VLOG(1) << "No existing " << dist->GetDisplayName()
@@ -244,8 +247,9 @@ void InstallUtil::GetCriticalUpdateVersion(BrowserDistribution* dist,
   DCHECK(dist);
   RegKey key;
   HKEY reg_root = (system_install) ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
-  LONG result =
-      key.Open(reg_root, dist->GetVersionKey().c_str(), KEY_QUERY_VALUE);
+  LONG result = key.Open(reg_root,
+                         dist->GetVersionKey().c_str(),
+                         KEY_QUERY_VALUE | KEY_WOW64_32KEY);
 
   base::string16 version_str;
   if (result == ERROR_SUCCESS)
@@ -256,7 +260,7 @@ void InstallUtil::GetCriticalUpdateVersion(BrowserDistribution* dist,
   if (result == ERROR_SUCCESS && !version_str.empty()) {
     VLOG(1) << "Critical Update version for " << dist->GetDisplayName()
             << " found " << version_str;
-    *version = Version(WideToASCII(version_str));
+    *version = Version(base::UTF16ToASCII(version_str));
   } else {
     DCHECK_EQ(ERROR_FILE_NOT_FOUND, result);
     VLOG(1) << "No existing " << dist->GetDisplayName()
@@ -284,21 +288,36 @@ void InstallUtil::AddInstallerResultItems(
   DCHECK(install_list);
   const HKEY root = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   DWORD installer_result = (GetInstallReturnCode(status) == 0) ? 0 : 1;
-  install_list->AddCreateRegKeyWorkItem(root, state_key);
-  install_list->AddSetRegValueWorkItem(root, state_key,
+  install_list->AddCreateRegKeyWorkItem(root, state_key, KEY_WOW64_32KEY);
+  install_list->AddSetRegValueWorkItem(root,
+                                       state_key,
+                                       KEY_WOW64_32KEY,
                                        installer::kInstallerResult,
-                                       installer_result, true);
-  install_list->AddSetRegValueWorkItem(root, state_key,
+                                       installer_result,
+                                       true);
+  install_list->AddSetRegValueWorkItem(root,
+                                       state_key,
+                                       KEY_WOW64_32KEY,
                                        installer::kInstallerError,
-                                       static_cast<DWORD>(status), true);
+                                       static_cast<DWORD>(status),
+                                       true);
   if (string_resource_id != 0) {
     base::string16 msg = installer::GetLocalizedString(string_resource_id);
-    install_list->AddSetRegValueWorkItem(root, state_key,
-        installer::kInstallerResultUIString, msg, true);
+    install_list->AddSetRegValueWorkItem(root,
+                                         state_key,
+                                         KEY_WOW64_32KEY,
+                                         installer::kInstallerResultUIString,
+                                         msg,
+                                         true);
   }
   if (launch_cmd != NULL && !launch_cmd->empty()) {
-    install_list->AddSetRegValueWorkItem(root, state_key,
-        installer::kInstallerSuccessLaunchCmdLine, *launch_cmd, true);
+    install_list->AddSetRegValueWorkItem(
+        root,
+        state_key,
+        KEY_WOW64_32KEY,
+        installer::kInstallerSuccessLaunchCmdLine,
+        *launch_cmd,
+        true);
   }
 }
 
@@ -309,8 +328,10 @@ void InstallUtil::UpdateInstallerStage(bool system_install,
   DCHECK_GT(installer::NUM_STAGES, stage);
   const HKEY root = system_install ? HKEY_LOCAL_MACHINE : HKEY_CURRENT_USER;
   RegKey state_key;
-  LONG result = state_key.Open(root, state_key_path.c_str(),
-                               KEY_QUERY_VALUE | KEY_SET_VALUE);
+  LONG result =
+      state_key.Open(root,
+                     state_key_path.c_str(),
+                     KEY_QUERY_VALUE | KEY_SET_VALUE | KEY_WOW64_32KEY);
   if (result == ERROR_SUCCESS) {
     if (stage == installer::NO_STAGE) {
       result = state_key.DeleteValue(installer::kInstallerExtraCode1);
@@ -355,8 +376,7 @@ bool InstallUtil::IsMultiInstall(BrowserDistribution* dist,
                                  bool system_install) {
   DCHECK(dist);
   ProductState state;
-  return state.Initialize(system_install, dist->GetType()) &&
-         state.is_multi_install();
+  return state.Initialize(system_install, dist) && state.is_multi_install();
 }
 
 bool CheckIsChromeSxSProcess() {
@@ -399,41 +419,20 @@ bool InstallUtil::IsChromeSxSProcess() {
   return sxs;
 }
 
-bool InstallUtil::GetSentinelFilePath(const base::FilePath::CharType* file,
-                                      BrowserDistribution* dist,
-                                      base::FilePath* path) {
-  base::FilePath exe_path;
-  if (!PathService::Get(base::DIR_EXE, &exe_path))
+// static
+bool InstallUtil::IsFirstRunSentinelPresent() {
+  // TODO(msw): Consolidate with first_run::internal::IsFirstRunSentinelPresent.
+  base::FilePath user_data_dir;
+  return !PathService::Get(chrome::DIR_USER_DATA, &user_data_dir) ||
+         base::PathExists(user_data_dir.Append(chrome::kFirstRunSentinel));
+}
+
+// static
+bool InstallUtil::GetEULASentinelFilePath(base::FilePath* path) {
+  base::FilePath user_data_dir;
+  if (!PathService::Get(chrome::DIR_USER_DATA, &user_data_dir))
     return false;
-
-  if (IsPerUserInstall(exe_path.value().c_str())) {
-    const base::FilePath maybe_product_dir(exe_path.DirName().DirName());
-    if (base::PathExists(exe_path.Append(installer::kChromeExe))) {
-      // DIR_EXE is most likely Chrome's directory in which case |exe_path| is
-      // the user-level sentinel path.
-      *path = exe_path;
-    } else if (base::PathExists(
-                   maybe_product_dir.Append(installer::kChromeExe))) {
-      // DIR_EXE can also be the Installer directory if this is called from a
-      // setup.exe running from Application\<version>\Installer (see
-      // InstallerState::GetInstallerDirectory) in which case Chrome's directory
-      // is two levels up.
-      *path = maybe_product_dir;
-    } else {
-      NOTREACHED();
-      return false;
-    }
-  } else {
-    std::vector<base::FilePath> user_data_dir_paths;
-    installer::GetChromeUserDataPaths(dist, &user_data_dir_paths);
-
-    if (!user_data_dir_paths.empty())
-      *path = user_data_dir_paths[0];
-    else
-      return false;
-  }
-
-  *path = path->Append(file);
+  *path = user_data_dir.Append(installer::kEULASentinelFile);
   return true;
 }
 
@@ -441,10 +440,20 @@ bool InstallUtil::GetSentinelFilePath(const base::FilePath::CharType* file,
 // in case of failure. It returns true if deletion is successful (or the key did
 // not exist), otherwise false.
 bool InstallUtil::DeleteRegistryKey(HKEY root_key,
-                                    const base::string16& key_path) {
+                                    const base::string16& key_path,
+                                    REGSAM wow64_access) {
   VLOG(1) << "Deleting registry key " << key_path;
-  LONG result = ::SHDeleteKey(root_key, key_path.c_str());
-  if (result != ERROR_SUCCESS && result != ERROR_FILE_NOT_FOUND) {
+  RegKey target_key;
+  LONG result = target_key.Open(root_key, key_path.c_str(),
+                                KEY_READ | KEY_WRITE | wow64_access);
+
+  if (result == ERROR_FILE_NOT_FOUND)
+    return true;
+
+  if (result == ERROR_SUCCESS)
+    result = target_key.DeleteKey(L"");
+
+  if (result != ERROR_SUCCESS) {
     LOG(ERROR) << "Failed to delete registry key: " << key_path
                << " error: " << result;
     return false;
@@ -457,9 +466,11 @@ bool InstallUtil::DeleteRegistryKey(HKEY root_key,
 // not exist), otherwise false.
 bool InstallUtil::DeleteRegistryValue(HKEY reg_root,
                                       const base::string16& key_path,
+                                      REGSAM wow64_access,
                                       const base::string16& value_name) {
   RegKey key;
-  LONG result = key.Open(reg_root, key_path.c_str(), KEY_SET_VALUE);
+  LONG result = key.Open(reg_root, key_path.c_str(),
+                         KEY_SET_VALUE | wow64_access);
   if (result == ERROR_SUCCESS)
     result = key.DeleteValue(value_name.c_str());
   if (result != ERROR_SUCCESS && result != ERROR_FILE_NOT_FOUND) {
@@ -475,6 +486,7 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryKeyIf(
     HKEY root_key,
     const base::string16& key_to_delete_path,
     const base::string16& key_to_test_path,
+    const REGSAM wow64_access,
     const wchar_t* value_name,
     const RegistryValuePredicate& predicate) {
   DCHECK(root_key);
@@ -482,11 +494,13 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryKeyIf(
   RegKey key;
   base::string16 actual_value;
   if (key.Open(root_key, key_to_test_path.c_str(),
-               KEY_QUERY_VALUE) == ERROR_SUCCESS &&
+               KEY_QUERY_VALUE | wow64_access) == ERROR_SUCCESS &&
       key.ReadValue(value_name, &actual_value) == ERROR_SUCCESS &&
       predicate.Evaluate(actual_value)) {
     key.Close();
-    delete_result = DeleteRegistryKey(root_key, key_to_delete_path)
+    delete_result = DeleteRegistryKey(root_key,
+                                      key_to_delete_path,
+                                      wow64_access)
         ? DELETED : DELETE_FAILED;
   }
   return delete_result;
@@ -496,6 +510,7 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryKeyIf(
 InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryValueIf(
     HKEY root_key,
     const wchar_t* key_path,
+    REGSAM wow64_access,
     const wchar_t* value_name,
     const RegistryValuePredicate& predicate) {
   DCHECK(root_key);
@@ -504,7 +519,8 @@ InstallUtil::ConditionalDeleteResult InstallUtil::DeleteRegistryValueIf(
   RegKey key;
   base::string16 actual_value;
   if (key.Open(root_key, key_path,
-               KEY_QUERY_VALUE | KEY_SET_VALUE) == ERROR_SUCCESS &&
+               KEY_QUERY_VALUE | KEY_SET_VALUE | wow64_access)
+          == ERROR_SUCCESS &&
       key.ReadValue(value_name, &actual_value) == ERROR_SUCCESS &&
       predicate.Evaluate(actual_value)) {
     LONG result = key.DeleteValue(value_name);
@@ -560,38 +576,35 @@ base::string16 InstallUtil::GetCurrentDate() {
 }
 
 // Open |path| with minimal access to obtain information about it, returning
-// true and populating |handle| on success.
+// true and populating |file| on success.
 // static
 bool InstallUtil::ProgramCompare::OpenForInfo(const base::FilePath& path,
-                                              base::win::ScopedHandle* handle) {
-  DCHECK(handle);
-  handle->Set(base::CreatePlatformFile(path, base::PLATFORM_FILE_OPEN, NULL,
-                                       NULL));
-  return handle->IsValid();
+                                              base::File* file) {
+  DCHECK(file);
+  file->Initialize(path, base::File::FLAG_OPEN);
+  return file->IsValid();
 }
 
-// Populate |info| for |handle|, returning true on success.
+// Populate |info| for |file|, returning true on success.
 // static
-bool InstallUtil::ProgramCompare::GetInfo(const base::win::ScopedHandle& handle,
+bool InstallUtil::ProgramCompare::GetInfo(const base::File& file,
                                           BY_HANDLE_FILE_INFORMATION* info) {
-  DCHECK(handle.IsValid());
-  return GetFileInformationByHandle(
-      const_cast<base::win::ScopedHandle&>(handle), info) != 0;
+  DCHECK(file.IsValid());
+  return GetFileInformationByHandle(file.GetPlatformFile(), info) != 0;
 }
 
 InstallUtil::ProgramCompare::ProgramCompare(const base::FilePath& path_to_match)
     : path_to_match_(path_to_match),
-      file_handle_(base::kInvalidPlatformFileValue),
       file_info_() {
   DCHECK(!path_to_match_.empty());
-  if (!OpenForInfo(path_to_match_, &file_handle_)) {
+  if (!OpenForInfo(path_to_match_, &file_)) {
     PLOG(WARNING) << "Failed opening " << path_to_match_.value()
                   << "; falling back to path string comparisons.";
-  } else if (!GetInfo(file_handle_, &file_info_)) {
+  } else if (!GetInfo(file_, &file_info_)) {
     PLOG(WARNING) << "Failed getting information for "
                   << path_to_match_.value()
                   << "; falling back to path string comparisons.";
-    file_handle_.Close();
+    file_.Close();
   }
 }
 
@@ -621,15 +634,15 @@ bool InstallUtil::ProgramCompare::EvaluatePath(
 
   // If the paths don't match and we couldn't open the expected file, we've done
   // our best.
-  if (!file_handle_.IsValid())
+  if (!file_.IsValid())
     return false;
 
   // Open the program and see if it references the expected file.
-  base::win::ScopedHandle handle;
+  base::File file;
   BY_HANDLE_FILE_INFORMATION info = {};
 
-  return (OpenForInfo(path, &handle) &&
-          GetInfo(handle, &info) &&
+  return (OpenForInfo(path, &file) &&
+          GetInfo(file, &info) &&
           info.dwVolumeSerialNumber == file_info_.dwVolumeSerialNumber &&
           info.nFileIndexHigh == file_info_.nFileIndexHigh &&
           info.nFileIndexLow == file_info_.nFileIndexLow);

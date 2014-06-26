@@ -42,6 +42,7 @@ void RecursivelyRemovePasswordData(ExplodedFrameState* state) {
 
 void RecursivelyRemoveScrollOffset(ExplodedFrameState* state) {
   state->scroll_offset = gfx::Point();
+  state->pinch_viewport_scroll_offset = gfx::PointF();
 }
 
 void RecursivelyRemoveReferrer(ExplodedFrameState* state) {
@@ -65,8 +66,7 @@ PageState PageState::CreateFromEncodedData(const std::string& data) {
 PageState PageState::CreateFromURL(const GURL& url) {
   ExplodedPageState state;
 
-  state.top.url_string = state.top.original_url_string =
-      ToNullableString16(url.possibly_invalid_spec());
+  state.top.url_string = ToNullableString16(url.possibly_invalid_spec());
 
   return ToPageState(state);
 }
@@ -79,8 +79,7 @@ PageState PageState::CreateForTesting(
     const base::FilePath* optional_body_file_path) {
   ExplodedPageState state;
 
-  state.top.url_string = state.top.original_url_string =
-      ToNullableString16(url.possibly_invalid_spec());
+  state.top.url_string = ToNullableString16(url.possibly_invalid_spec());
 
   if (optional_body_data || optional_body_file_path) {
     state.top.http_body.is_null = false;

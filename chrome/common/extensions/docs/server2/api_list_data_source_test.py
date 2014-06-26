@@ -2,12 +2,15 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import unittest
 import json
+
 from api_list_data_source import APIListDataSource
-from extensions_paths import EXTENSIONS
+from extensions_paths import CHROME_EXTENSIONS
 from server_instance import ServerInstance
 from test_file_system import TestFileSystem
+
 
 def _ToTestData(obj):
   '''Transforms |obj| into test data by turning a list of files into an object
@@ -15,23 +18,32 @@ def _ToTestData(obj):
   '''
   return dict((name, name) for name in obj)
 
+
 def _ToTestFeatures(names):
   '''Transforms a list of strings into a minimal JSON features object.
   '''
-  features = dict((name, {'name': name, 'platforms': platforms})
-              for name, platforms, in names)
+  def platforms_to_extension_types(platforms):
+    return ['platform_app' if platform == 'apps' else 'extension'
+            for platform in platforms]
+  features = dict((name, {
+                     'name': name,
+                     'extension_types': platforms_to_extension_types(platforms),
+                   }) for name, platforms in names)
   features['sockets.udp']['channel'] = 'dev'
   return features
 
-def _ToTestApiData(names):
+
+def _ToTestAPIData(names):
   api_data = dict((name, [{'namespace': name, 'description': description}])
               for name, description in names)
   return api_data
 
-def _ToTestApiSchema(names, apis):
+
+def _ToTestAPISchema(names, apis):
   for name, json_file in names:
     apis['api'][json_file] = json.dumps(_TEST_API_DATA[name])
   return apis
+
 
 _TEST_API_FEATURES = _ToTestFeatures([
   ('alarms', ['apps', 'extensions']),
@@ -48,7 +60,7 @@ _TEST_API_FEATURES = _ToTestFeatures([
 ])
 
 
-_TEST_API_DATA = _ToTestApiData([
+_TEST_API_DATA = _ToTestAPIData([
   ('alarms', u'<code>alarms</code>'),
   ('app.window', u'<code>app.window</code>'),
   ('browserAction', u'<code>browserAction</code>'),
@@ -78,7 +90,7 @@ _TEST_API_SCHEMA = [
 ]
 
 
-_TEST_DATA = _ToTestApiSchema(_TEST_API_SCHEMA, {
+_TEST_DATA = _ToTestAPISchema(_TEST_API_SCHEMA, {
   'api': {
     '_api_features.json': json.dumps(_TEST_API_FEATURES),
     '_manifest_features.json': '{}',
@@ -118,30 +130,22 @@ _TEST_DATA = _ToTestApiSchema(_TEST_API_SCHEMA, {
 class APIListDataSourceTest(unittest.TestCase):
   def setUp(self):
     server_instance = ServerInstance.ForTest(
-        TestFileSystem(_TEST_DATA, relative_to=EXTENSIONS))
-    self._factory = APIListDataSource.Factory(
-        server_instance.compiled_fs_factory,
-        server_instance.host_file_system_provider.GetTrunk(),
-        server_instance.features_bundle,
-        server_instance.object_store_creator,
-        server_instance.api_models,
-        server_instance.availability_finder,
-        server_instance.api_categorizer)
+        TestFileSystem(_TEST_DATA, relative_to=CHROME_EXTENSIONS))
+    # APIListDataSource takes a request but doesn't use it,
+    # so put None
+    self._api_list = APIListDataSource(server_instance, None)
     self.maxDiff = None
 
   def testApps(self):
-    api_list = self._factory.Create()
     self.assertEqual({
         'stable': [
           {
             'name': 'alarms',
-            'platforms': ['apps', 'extensions'],
             'version': 5,
             'description': u'<code>alarms</code>'
           },
           {
             'name': 'app.window',
-            'platforms': ['apps'],
             # Availability logic will look for a camelCase format filename
             # (i.e. 'app.window.html') at version 20 and below, but the
             # unix_name format above won't be found at these versions.
@@ -150,7 +154,6 @@ class APIListDataSourceTest(unittest.TestCase):
           },
           {
             'name': 'storage',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'version': 5,
             'description': u'<code>storage</code>'
@@ -158,55 +161,46 @@ class APIListDataSourceTest(unittest.TestCase):
         'dev': [
           {
             'name': 'sockets.udp',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'description': u'<code>sockets.udp</code>'
           }],
         'beta': [],
         'trunk': []
-        }, api_list.get('apps').get('chrome'))
+        }, self._api_list.get('apps').get('chrome'))
 
   def testExperimentalApps(self):
-    api_list = self._factory.Create()
     self.assertEqual([
         {
           'name': 'experimental.bluetooth',
-          'platforms': ['apps'],
           'description': u'<code>experimental.bluetooth</code>'
         },
         {
           'name': 'experimental.power',
-          'platforms': ['apps', 'extensions'],
           'last': True,
           'description': u'<code>experimental.power</code>'
-        }], api_list.get('apps').get('experimental'))
+        }], self._api_list.get('apps').get('experimental'))
 
   def testExtensions(self):
-    api_list = self._factory.Create()
     self.assertEqual({
         'stable': [
           {
             'name': 'alarms',
-            'platforms': ['apps', 'extensions'],
             'version': 5,
             'description': u'<code>alarms</code>'
           },
           {
             'name': 'browserAction',
-            'platforms': ['extensions'],
             # See comment above for 'app.window'.
             'version': 21,
             'description': u'<code>browserAction</code>'
           },
           {
             'name': 'infobars',
-            'platforms': ['extensions'],
             'version': 5,
             'description': u'<code>infobars</code>'
           },
           {
             'name': 'storage',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'version': 5,
             'description': u'<code>storage</code>'
@@ -214,28 +208,24 @@ class APIListDataSourceTest(unittest.TestCase):
         'dev': [
           {
             'name': 'sockets.udp',
-            'platforms': ['apps', 'extensions'],
             'last': True,
             'description': u'<code>sockets.udp</code>'
           }],
         'beta': [],
         'trunk': []
-        }, api_list.get('extensions').get('chrome'))
+        }, self._api_list.get('extensions').get('chrome'))
 
   def testExperimentalExtensions(self):
-    api_list = self._factory.Create()
     self.assertEqual([
         {
           'name': 'experimental.history',
-          'platforms': ['extensions'],
           'description': u'<code>experimental.history</code>'
         },
         {
           'name': 'experimental.power',
-          'platforms': ['apps', 'extensions'],
           'description': u'<code>experimental.power</code>',
           'last': True
-        }], api_list.get('extensions').get('experimental'))
+        }], self._api_list.get('extensions').get('experimental'))
 
 if __name__ == '__main__':
   unittest.main()

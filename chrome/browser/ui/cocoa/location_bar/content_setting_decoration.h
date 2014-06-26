@@ -34,20 +34,17 @@ class ContentSettingDecoration : public ImageDecoration {
 
   // Overridden from |LocationBarDecoration|
   virtual bool AcceptsMousePress() OVERRIDE;
-  virtual bool OnMousePressed(NSRect frame) OVERRIDE;
+  virtual bool OnMousePressed(NSRect frame, NSPoint location) OVERRIDE;
   virtual NSString* GetToolTip() OVERRIDE;
   virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE;
   virtual void DrawInFrame(NSRect frame, NSView* control_view) OVERRIDE;
+  virtual NSPoint GetBubblePointInFrame(NSRect frame) OVERRIDE;
 
   // Called from internal animator. Only public because ObjC objects can't
   // be friends.
   virtual void AnimationTimerFired();
 
  private:
-  // Helper to get where the bubble point should land.  Similar to
-  // |PageActionDecoration| or |StarDecoration| (|LocationBarViewMac|
-  // calls those).
-  NSPoint GetBubblePointInFrame(NSRect frame);
 
   void SetToolTip(NSString* tooltip);
 

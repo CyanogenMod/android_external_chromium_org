@@ -5,6 +5,7 @@
 #include "chrome/browser/chromeos/policy/configuration_policy_handler_chromeos.h"
 
 #include "base/callback.h"
+#include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_value_map.h"
 #include "base/values.h"
@@ -13,6 +14,7 @@
 #include "components/policy/core/browser/policy_error_map.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/policy_map.h"
+#include "components/policy/core/common/schema.h"
 #include "policy/policy_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -28,27 +30,49 @@ class ScreenMagnifierPolicyHandlerTest : public testing::Test {
   ScreenMagnifierPolicyHandler handler_;
 };
 
+class LoginScreenPowerManagementPolicyHandlerTest : public testing::Test {
+ protected:
+  LoginScreenPowerManagementPolicyHandlerTest();
+
+  virtual void SetUp() OVERRIDE;
+
+  Schema chrome_schema_;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LoginScreenPowerManagementPolicyHandlerTest);
+};
+
+LoginScreenPowerManagementPolicyHandlerTest::
+    LoginScreenPowerManagementPolicyHandlerTest() {
+}
+
+void LoginScreenPowerManagementPolicyHandlerTest::SetUp() {
+  chrome_schema_ = Schema::Wrap(GetChromeSchemaData());
+}
+
 TEST_F(ScreenMagnifierPolicyHandlerTest, Default) {
   handler_.ApplyPolicySettings(policy_, &prefs_);
-  EXPECT_FALSE(prefs_.GetValue(prefs::kScreenMagnifierEnabled, NULL));
-  EXPECT_FALSE(prefs_.GetValue(prefs::kScreenMagnifierType, NULL));
+  EXPECT_FALSE(
+      prefs_.GetValue(prefs::kAccessibilityScreenMagnifierEnabled, NULL));
+  EXPECT_FALSE(prefs_.GetValue(prefs::kAccessibilityScreenMagnifierType, NULL));
 }
 
 TEST_F(ScreenMagnifierPolicyHandlerTest, Disabled) {
   policy_.Set(key::kScreenMagnifierType,
               POLICY_LEVEL_MANDATORY,
               POLICY_SCOPE_USER,
-              base::Value::CreateIntegerValue(0),
+              new base::FundamentalValue(0),
               NULL);
   handler_.ApplyPolicySettings(policy_, &prefs_);
 
   const base::Value* enabled = NULL;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kScreenMagnifierEnabled, &enabled));
+  EXPECT_TRUE(
+      prefs_.GetValue(prefs::kAccessibilityScreenMagnifierEnabled, &enabled));
   ASSERT_TRUE(enabled);
   EXPECT_TRUE(base::FundamentalValue(false).Equals(enabled));
 
   const base::Value* type = NULL;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kScreenMagnifierType, &type));
+  EXPECT_TRUE(prefs_.GetValue(prefs::kAccessibilityScreenMagnifierType, &type));
   ASSERT_TRUE(type);
   EXPECT_TRUE(base::FundamentalValue(0).Equals(type));
 }
@@ -57,17 +81,18 @@ TEST_F(ScreenMagnifierPolicyHandlerTest, Enabled) {
   policy_.Set(key::kScreenMagnifierType,
               POLICY_LEVEL_MANDATORY,
               POLICY_SCOPE_USER,
-              base::Value::CreateIntegerValue(1),
+              new base::FundamentalValue(1),
               NULL);
   handler_.ApplyPolicySettings(policy_, &prefs_);
 
   const base::Value* enabled = NULL;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kScreenMagnifierEnabled, &enabled));
+  EXPECT_TRUE(
+      prefs_.GetValue(prefs::kAccessibilityScreenMagnifierEnabled, &enabled));
   ASSERT_TRUE(enabled);
   EXPECT_TRUE(base::FundamentalValue(true).Equals(enabled));
 
   const base::Value* type = NULL;
-  EXPECT_TRUE(prefs_.GetValue(prefs::kScreenMagnifierType, &type));
+  EXPECT_TRUE(prefs_.GetValue(prefs::kAccessibilityScreenMagnifierType, &type));
   ASSERT_TRUE(type);
   EXPECT_TRUE(base::FundamentalValue(1).Equals(type));
 }
@@ -224,7 +249,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, ValidONC) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue(kTestONC),
+                 new base::StringValue(kTestONC),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -238,7 +263,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, WrongType) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 base::Value::CreateBooleanValue(false),
+                 new base::FundamentalValue(false),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -253,7 +278,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, JSONParseError) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue(kTestONC),
+                 new base::StringValue(kTestONC),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -281,7 +306,7 @@ TEST(NetworkConfigurationPolicyHandlerTest, Sanitization) {
   policy_map.Set(key::kOpenNetworkConfiguration,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue(kTestONC),
+                 new base::StringValue(kTestONC),
                  NULL);
   scoped_ptr<NetworkConfigurationPolicyHandler> handler(
       NetworkConfigurationPolicyHandler::CreateForUserPolicy());
@@ -323,51 +348,35 @@ TEST(PinnedLauncherAppsPolicyHandler, PrefTranslation) {
   EXPECT_TRUE(base::Value::Equals(&expected_pinned_apps, value));
 }
 
-TEST(LoginScreenPowerManagementPolicyHandlerTest, Empty) {
+TEST_F(LoginScreenPowerManagementPolicyHandlerTest, Empty) {
   PolicyMap policy_map;
-  LoginScreenPowerManagementPolicyHandler handler;
+  LoginScreenPowerManagementPolicyHandler handler(chrome_schema_);
   PolicyErrorMap errors;
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.GetErrors(key::kDeviceLoginScreenPowerManagement).empty());
 }
 
-TEST(LoginScreenPowerManagementPolicyHandlerTest, ValidPolicy) {
+TEST_F(LoginScreenPowerManagementPolicyHandlerTest, ValidPolicy) {
   PolicyMap policy_map;
-  policy_map.Set(
-      key::kDeviceLoginScreenPowerManagement,
-      POLICY_LEVEL_MANDATORY,
-      POLICY_SCOPE_USER,
-      base::Value::CreateStringValue(kLoginScreenPowerManagementPolicy),
-      NULL);
-  LoginScreenPowerManagementPolicyHandler handler;
+  policy_map.Set(key::kDeviceLoginScreenPowerManagement,
+                 POLICY_LEVEL_MANDATORY,
+                 POLICY_SCOPE_USER,
+                 base::JSONReader::Read(kLoginScreenPowerManagementPolicy),
+                 NULL);
+  LoginScreenPowerManagementPolicyHandler handler(chrome_schema_);
   PolicyErrorMap errors;
   EXPECT_TRUE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_TRUE(errors.GetErrors(key::kDeviceLoginScreenPowerManagement).empty());
 }
 
-TEST(LoginScreenPowerManagementPolicyHandlerTest, WrongType) {
+TEST_F(LoginScreenPowerManagementPolicyHandlerTest, WrongType) {
   PolicyMap policy_map;
   policy_map.Set(key::kDeviceLoginScreenPowerManagement,
                  POLICY_LEVEL_MANDATORY,
                  POLICY_SCOPE_USER,
-                 base::Value::CreateBooleanValue(false),
+                 new base::FundamentalValue(false),
                  NULL);
-  LoginScreenPowerManagementPolicyHandler handler;
-  PolicyErrorMap errors;
-  EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
-  EXPECT_FALSE(
-      errors.GetErrors(key::kDeviceLoginScreenPowerManagement).empty());
-}
-
-TEST(LoginScreenPowerManagementPolicyHandlerTest, JSONParseError) {
-  const std::string policy("I'm not proper JSON!");
-  PolicyMap policy_map;
-  policy_map.Set(key::kDeviceLoginScreenPowerManagement,
-                 POLICY_LEVEL_MANDATORY,
-                 POLICY_SCOPE_USER,
-                 base::Value::CreateStringValue(policy),
-                 NULL);
-  LoginScreenPowerManagementPolicyHandler handler;
+  LoginScreenPowerManagementPolicyHandler handler(chrome_schema_);
   PolicyErrorMap errors;
   EXPECT_FALSE(handler.CheckPolicySettings(policy_map, &errors));
   EXPECT_FALSE(

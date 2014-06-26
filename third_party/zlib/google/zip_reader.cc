@@ -4,12 +4,12 @@
 
 #include "third_party/zlib/google/zip_reader.h"
 
-#include "base/file_util.h"
+#include "base/bind.h"
+#include "base/files/file.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "net/base/file_stream.h"
 #include "third_party/zlib/google/zip_internal.h"
 
 #if defined(USE_SYSTEM_MINIZIP)
@@ -107,7 +107,7 @@ bool ZipReader::OpenFromPlatformFile(base::PlatformFile zip_fd) {
 }
 
 bool ZipReader::OpenFromString(const std::string& data) {
-  zip_file_ = internal::PreprareMemoryForUnzipping(data);
+  zip_file_ = internal::PrepareMemoryForUnzipping(data);
   if (!zip_file_)
     return false;
   return OpenInternal();
@@ -205,10 +205,9 @@ bool ZipReader::ExtractCurrentEntryToFilePath(
   if (!base::CreateDirectory(output_dir_path))
     return false;
 
-  net::FileStream stream(NULL);
-  const int flags = (base::PLATFORM_FILE_CREATE_ALWAYS |
-                     base::PLATFORM_FILE_WRITE);
-  if (stream.OpenSync(output_file_path, flags) != 0)
+  base::File file(output_file_path,
+                  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+  if (!file.IsValid())
     return false;
 
   bool success = true;  // This becomes false when something bad happens.
@@ -225,14 +224,14 @@ bool ZipReader::ExtractCurrentEntryToFilePath(
       break;
     } else if (num_bytes_read > 0) {
       // Some data is read. Write it to the output file.
-      if (num_bytes_read != stream.WriteSync(buf, num_bytes_read)) {
+      if (num_bytes_read != file.WriteAtCurrentPos(buf, num_bytes_read)) {
         success = false;
         break;
       }
     }
   }
 
-  stream.CloseSync();
+  file.Close();
   unzCloseCurrentFile(zip_file_);
 
   if (current_entry_info()->last_modified() != base::Time::UnixEpoch())
@@ -275,16 +274,10 @@ void ZipReader::ExtractCurrentEntryToFilePathAsync(
     return;
   }
 
-  const int flags = (base::PLATFORM_FILE_CREATE_ALWAYS |
-                     base::PLATFORM_FILE_WRITE);
-  bool created = false;
-  base::PlatformFileError platform_file_error;
-  base::PlatformFile output_file = CreatePlatformFile(output_file_path,
-                                                      flags,
-                                                      &created,
-                                                      &platform_file_error);
+  const int flags = base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE;
+  base::File output_file(output_file_path, flags);
 
-  if (platform_file_error != base::PLATFORM_FILE_OK) {
+  if (!output_file.IsValid()) {
     DVLOG(1) << "Unzip failed: unable to create platform file at "
              << output_file_path.value();
     base::MessageLoopProxy::current()->PostTask(FROM_HERE, failure_callback);
@@ -295,7 +288,7 @@ void ZipReader::ExtractCurrentEntryToFilePathAsync(
       FROM_HERE,
       base::Bind(&ZipReader::ExtractChunk,
                  weak_ptr_factory_.GetWeakPtr(),
-                 output_file,
+                 Passed(output_file.Pass()),
                  success_callback,
                  failure_callback,
                  progress_callback,
@@ -339,7 +332,7 @@ bool ZipReader::ExtractCurrentEntryToFd(const int fd) {
     } else if (num_bytes_read > 0) {
       // Some data is read. Write it to the output file descriptor.
       if (num_bytes_read !=
-          file_util::WriteFileDescriptor(fd, buf, num_bytes_read)) {
+          base::WriteFileDescriptor(fd, buf, num_bytes_read)) {
         success = false;
         break;
       }
@@ -350,6 +343,58 @@ bool ZipReader::ExtractCurrentEntryToFd(const int fd) {
   return success;
 }
 #endif  // defined(OS_POSIX)
+
+bool ZipReader::ExtractCurrentEntryToString(
+    size_t max_read_bytes,
+    std::string* output) const {
+  DCHECK(output);
+  DCHECK(zip_file_);
+  DCHECK(max_read_bytes != 0);
+
+  if (current_entry_info()->is_directory()) {
+    output->clear();
+    return true;
+  }
+
+  const int open_result = unzOpenCurrentFile(zip_file_);
+  if (open_result != UNZ_OK)
+    return false;
+
+  // The original_size() is the best hint for the real size, so it saves
+  // doing reallocations for the common case when the uncompressed size is
+  // correct. However, we need to assume that the uncompressed size could be
+  // incorrect therefore this function needs to read as much data as possible.
+  std::string contents;
+  contents.reserve(std::min<size_t>(
+      max_read_bytes, current_entry_info()->original_size()));
+
+  bool success = true;  // This becomes false when something bad happens.
+  char buf[internal::kZipBufSize];
+  while (true) {
+    const int num_bytes_read = unzReadCurrentFile(zip_file_, buf,
+                                                  internal::kZipBufSize);
+    if (num_bytes_read == 0) {
+      // Reached the end of the file.
+      break;
+    } else if (num_bytes_read < 0) {
+      // If num_bytes_read < 0, then it's a specific UNZ_* error code.
+      success = false;
+      break;
+    } else if (num_bytes_read > 0) {
+      if (contents.size() + num_bytes_read > max_read_bytes) {
+        success = false;
+        break;
+      }
+      contents.append(buf, num_bytes_read);
+    }
+  }
+
+  unzCloseCurrentFile(zip_file_);
+  if (success)
+    output->swap(contents);
+
+  return success;
+}
 
 bool ZipReader::OpenInternal() {
   DCHECK(zip_file_);
@@ -374,7 +419,7 @@ void ZipReader::Reset() {
   current_entry_info_.reset();
 }
 
-void ZipReader::ExtractChunk(base::PlatformFile output_file,
+void ZipReader::ExtractChunk(base::File output_file,
                              const SuccessCallback& success_callback,
                              const FailureCallback& failure_callback,
                              const ProgressCallback& progress_callback,
@@ -387,20 +432,14 @@ void ZipReader::ExtractChunk(base::PlatformFile output_file,
 
   if (num_bytes_read == 0) {
     unzCloseCurrentFile(zip_file_);
-    base::ClosePlatformFile(output_file);
     success_callback.Run();
   } else if (num_bytes_read < 0) {
     DVLOG(1) << "Unzip failed: error while reading zipfile "
              << "(" << num_bytes_read << ")";
-    base::ClosePlatformFile(output_file);
     failure_callback.Run();
   } else {
-    if (num_bytes_read != base::WritePlatformFile(output_file,
-                                                  offset,
-                                                  buffer,
-                                                  num_bytes_read)) {
+    if (num_bytes_read != output_file.Write(offset, buffer, num_bytes_read)) {
       DVLOG(1) << "Unzip failed: unable to write all bytes to target.";
-      base::ClosePlatformFile(output_file);
       failure_callback.Run();
       return;
     }
@@ -413,7 +452,7 @@ void ZipReader::ExtractChunk(base::PlatformFile output_file,
         FROM_HERE,
         base::Bind(&ZipReader::ExtractChunk,
                    weak_ptr_factory_.GetWeakPtr(),
-                   output_file,
+                   Passed(output_file.Pass()),
                    success_callback,
                    failure_callback,
                    progress_callback,

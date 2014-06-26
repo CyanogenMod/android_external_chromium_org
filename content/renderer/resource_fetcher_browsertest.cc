@@ -13,10 +13,10 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/renderer/render_view.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
@@ -135,7 +135,7 @@ class ResourceFetcherTests : public ContentBrowserTest {
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
+    command_line->AppendSwitch(switches::kDisableGpu);
 #endif
   }
 
@@ -288,7 +288,7 @@ class ResourceFetcherTests : public ContentBrowserTest {
 // If this flakes, use http://crbug.com/51622.
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherDownload) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   ASSERT_TRUE(test_server()->Start());
   GURL url(test_server()->GetURL("files/simple_page.html"));
@@ -300,7 +300,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherDownload) {
 
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcher404) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Test 404 response.
   ASSERT_TRUE(test_server()->Start());
@@ -314,7 +314,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcher404) {
 // If this flakes, use http://crbug.com/51622.
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDidFail) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   PostTaskToInProcessRendererAndWait(
         base::Bind(&ResourceFetcherTests::ResourceFetcherDidFailOnRenderer,
@@ -323,7 +323,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, ResourceFetcherDidFail) {
 
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherTimeout) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Grab a page that takes at least 1 sec to respond, but set the fetcher to
   // timeout in 0 sec.
@@ -338,7 +338,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherTimeout) {
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests,
                        MAYBE_ResourceFetcherDeletedInCallback) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Grab a page that takes at least 1 sec to respond, but set the fetcher to
   // timeout in 0 sec.
@@ -356,7 +356,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests,
 // Test that ResourceFetchers can handle POSTs.
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherPost) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Grab a page that echos the POST body.
   ASSERT_TRUE(test_server()->Start());
@@ -371,7 +371,7 @@ IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherPost) {
 // Test that ResourceFetchers can set headers.
 IN_PROC_BROWSER_TEST_F(ResourceFetcherTests, MAYBE_ResourceFetcherSetHeader) {
   // Need to spin up the renderer.
-  NavigateToURL(shell(), GURL(kAboutBlankURL));
+  NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // Grab a page that echos the POST body.
   ASSERT_TRUE(test_server()->Start());

@@ -29,7 +29,6 @@
 class MockInstantServiceObserver : public InstantServiceObserver {
  public:
   MOCK_METHOD0(DefaultSearchProviderChanged, void());
-  MOCK_METHOD0(GoogleURLUpdated, void());
   MOCK_METHOD1(OmniboxStartMarginChanged, void(int));
 };
 
@@ -58,24 +57,45 @@ class InstantServiceTest : public InstantUnitTestBase {
   scoped_ptr<MockInstantServiceObserver> instant_service_observer_;
 };
 
-TEST_F(InstantServiceTest, DispatchDefaultSearchProviderChanged) {
+class InstantServiceEnabledTest : public InstantServiceTest {
+ protected:
+  virtual void SetUp() OVERRIDE {
+    ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+        "EmbeddedSearch", "Group1 use_cacheable_ntp:1 prefetch_results:1"));
+    InstantServiceTest::SetUp();
+  }
+};
+
+TEST_F(InstantServiceEnabledTest, DispatchDefaultSearchProviderChanged) {
   EXPECT_CALL(*instant_service_observer_.get(), DefaultSearchProviderChanged())
       .Times(1);
 
-  const std::string& new_base_url = "https://bar.com/";
-  SetDefaultSearchProvider(new_base_url);
+  const std::string new_base_url = "https://bar.com/";
+  SetUserSelectedDefaultSearchProvider(new_base_url);
 }
 
-TEST_F(InstantServiceTest, DispatchGoogleURLUpdated) {
-  EXPECT_CALL(*instant_service_observer_.get(), GoogleURLUpdated()).Times(1);
+TEST_F(InstantServiceTest, DontDispatchGoogleURLUpdatedForNonGoogleURLs) {
+  EXPECT_CALL(*instant_service_observer_.get(), DefaultSearchProviderChanged())
+      .Times(1);
+  const std::string new_dsp_url = "https://bar.com/";
+  SetUserSelectedDefaultSearchProvider(new_dsp_url);
+  testing::Mock::VerifyAndClearExpectations(instant_service_observer_.get());
 
-  const std::string& new_base_url = "https://www.google.es/";
+  EXPECT_CALL(*instant_service_observer_.get(), DefaultSearchProviderChanged())
+      .Times(0);
+  const std::string new_base_url = "https://www.google.es/";
   NotifyGoogleBaseURLUpdate(new_base_url);
 }
 
-TEST_F(InstantServiceTest, SendsSearchURLsToRenderer) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial("EmbeddedSearch",
-      "Group1 use_cacheable_ntp:1"));
+TEST_F(InstantServiceTest, DispatchGoogleURLUpdated) {
+  EXPECT_CALL(*instant_service_observer_.get(), DefaultSearchProviderChanged())
+      .Times(1);
+
+  const std::string new_base_url = "https://www.google.es/";
+  NotifyGoogleBaseURLUpdate(new_base_url);
+}
+
+TEST_F(InstantServiceEnabledTest, SendsSearchURLsToRenderer) {
   scoped_ptr<content::MockRenderProcessHost> rph(
       new content::MockRenderProcessHost(profile()));
   rph->sink().ClearMessages();
@@ -86,9 +106,10 @@ TEST_F(InstantServiceTest, SendsSearchURLsToRenderer) {
   EXPECT_EQ(1U, rph->sink().message_count());
   const IPC::Message* msg = rph->sink().GetMessageAt(0);
   ASSERT_TRUE(msg);
-  std::vector<GURL> search_urls;
-  GURL new_tab_page_url;
-  ChromeViewMsg_SetSearchURLs::Read(msg, &search_urls, &new_tab_page_url);
+  ChromeViewMsg_SetSearchURLs::Param params;
+  ChromeViewMsg_SetSearchURLs::Read(msg, &params);
+  std::vector<GURL> search_urls = params.a;
+  GURL new_tab_page_url = params.b;
   EXPECT_EQ(2U, search_urls.size());
   EXPECT_EQ("https://www.google.com/alt#quux=", search_urls[0].spec());
   EXPECT_EQ("https://www.google.com/url?bar=", search_urls[1].spec());
@@ -102,43 +123,38 @@ TEST_F(InstantServiceTest, InstantSearchDisabled) {
             GetInstantSearchPrerenderer());
 }
 
-TEST_F(InstantServiceTest,
+TEST_F(InstantServiceEnabledTest,
        ResetInstantSearchPrerenderer_DefaultProviderChanged) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 use_cacheable_ntp:1 prefetch_results:1"));
   EXPECT_CALL(*instant_service_observer_.get(), DefaultSearchProviderChanged())
       .Times(2);
 
   // Set a default search provider that doesn't support Instant.
   TemplateURLData data;
   data.SetURL("https://foobar.com/url?bar={searchTerms}");
-  TemplateURL* template_url = new TemplateURL(profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   // Takes ownership of |template_url|.
   template_url_service_->Add(template_url);
-  template_url_service_->SetDefaultSearchProvider(template_url);
+  template_url_service_->SetUserSelectedDefaultSearchProvider(template_url);
 
   EXPECT_EQ(static_cast<InstantSearchPrerenderer*>(NULL),
             GetInstantSearchPrerenderer());
 
   // Set a default search provider that supports Instant and make sure
   // InstantSearchPrerenderer is valid.
-  SetDefaultSearchProvider("https://google.com/");
+  SetUserSelectedDefaultSearchProvider("https://google.com/");
   EXPECT_NE(static_cast<InstantSearchPrerenderer*>(NULL),
             GetInstantSearchPrerenderer());
 }
 
-TEST_F(InstantServiceTest, ResetInstantSearchPrerenderer_GoogleBaseURLUpdated) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 use_cacheable_ntp:1 prefetch_results:1"));
+TEST_F(InstantServiceEnabledTest,
+       ResetInstantSearchPrerenderer_GoogleBaseURLUpdated) {
   EXPECT_CALL(*instant_service_observer_.get(), DefaultSearchProviderChanged())
       .Times(1);
-  EXPECT_CALL(*instant_service_observer_.get(), GoogleURLUpdated()).Times(1);
 
-  SetDefaultSearchProvider("https://google.com/");
   InstantSearchPrerenderer* old_prerenderer = GetInstantSearchPrerenderer();
-  EXPECT_NE(static_cast<InstantSearchPrerenderer*>(NULL), old_prerenderer);
+  EXPECT_TRUE(old_prerenderer != NULL);
 
-  const std::string& new_base_url = "https://www.google.es/";
+  const std::string new_base_url = "https://www.google.es/";
   NotifyGoogleBaseURLUpdate(new_base_url);
   EXPECT_NE(old_prerenderer, GetInstantSearchPrerenderer());
 }

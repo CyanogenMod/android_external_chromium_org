@@ -42,8 +42,9 @@ class UI_BASE_EXPORT SelectionOwner {
   // |data| to other windows.
   void TakeOwnershipOfSelection(const SelectionFormatMap& data);
 
-  // Releases the selection (if we own it) and clears any data we own.
-  void Clear();
+  // Clears our internal format map and clears the selection owner, whether we
+  // own the selection or not.
+  void ClearSelectionOwner();
 
   // It is our owner's responsibility to plumb X11 events on |xwindow_| to us.
   void OnSelectionRequest(const XSelectionRequestEvent& event);
@@ -52,6 +53,11 @@ class UI_BASE_EXPORT SelectionOwner {
   // don't, but there were open todos in the previous implementation.
 
  private:
+  // Attempts to convert the selection to |target|. If the conversion is
+  // successful, true is returned and the result is stored in the |property|
+  // of |requestor|.
+  bool ProcessTarget(::Atom target, ::Window requestor, ::Atom property);
+
   // Our X11 state.
   Display* x_display_;
   ::Window x_window_;

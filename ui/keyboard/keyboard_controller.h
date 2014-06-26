@@ -11,14 +11,13 @@
 #include "base/observer_list.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/ime/input_method_observer.h"
+#include "ui/base/ime/text_input_type.h"
+#include "ui/gfx/rect.h"
 #include "ui/keyboard/keyboard_export.h"
 #include "url/gurl.h"
 
 namespace aura {
 class Window;
-}
-namespace gfx {
-class Rect;
 }
 namespace ui {
 class InputMethod;
@@ -30,7 +29,6 @@ namespace keyboard {
 class CallbackAnimationObserver;
 class KeyboardControllerObserver;
 class KeyboardControllerProxy;
-class KeyboardLayoutManager;
 
 // Provides control of the virtual keyboard, including providing a container
 // and controlling visibility.
@@ -58,9 +56,9 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
     return container_.get() != NULL;
   }
 
-  // Sets the override content url. This is used by for input view for extension
-  // IMEs.
-  void SetOverrideContentUrl(const GURL& url);
+  // Reloads the content of the keyboard. No-op if the keyboard content is not
+  // loaded yet.
+  void Reload();
 
   // Hides virtual keyboard and notifies observer bounds change.
   // This function should be called with a delay to avoid layout flicker
@@ -78,6 +76,27 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   KeyboardControllerProxy* proxy() { return proxy_.get(); }
 
   void set_lock_keyboard(bool lock) { lock_keyboard_ = lock; }
+
+  // Force the keyboard to show up if not showing and lock the keyboard if
+  // |lock| is true.
+  void ShowKeyboard(bool lock);
+
+  // Sets the active keyboard controller. KeyboardController takes ownership of
+  // the instance. Calling ResetIntance with a new instance destroys the
+  // previous one. May be called with NULL to clear the instance.
+  static void ResetInstance(KeyboardController* controller);
+
+  // Retrieve the active keyboard controller.
+  static KeyboardController* GetInstance();
+
+  // Returns true if keyboard is currently visible.
+  bool keyboard_visible() { return keyboard_visible_; }
+
+  // Returns the current keyboard bounds. When the keyboard is not shown,
+  // an empty rectangle will get returned.
+  const gfx::Rect& current_keyboard_bounds() {
+    return current_keyboard_bounds_;
+  }
 
  private:
   // For access to Observer methods for simulation.
@@ -101,7 +120,10 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   virtual void OnShowImeIfNeeded() OVERRIDE;
 
   // Show virtual keyboard immediately with animation.
-  void ShowKeyboard();
+  void ShowKeyboardInternal();
+
+  // Clears any insets on web content windows.
+  void ResetWindowInsets();
 
   // Returns true if keyboard is scheduled to hide.
   bool WillHideKeyboard() const;
@@ -120,10 +142,16 @@ class KEYBOARD_EXPORT KeyboardController : public ui::InputMethodObserver,
   ui::InputMethod* input_method_;
   bool keyboard_visible_;
   bool lock_keyboard_;
+  ui::TextInputType type_;
 
   ObserverList<KeyboardControllerObserver> observer_list_;
 
   base::WeakPtrFactory<KeyboardController> weak_factory_;
+
+  // The currently used keyboard position.
+  gfx::Rect current_keyboard_bounds_;
+
+  static KeyboardController* instance_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyboardController);
 };

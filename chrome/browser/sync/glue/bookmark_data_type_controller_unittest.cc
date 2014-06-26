@@ -8,24 +8,28 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "base/run_loop.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/glue/change_processor_mock.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/test/base/profile_mock.h"
-#include "components/browser_context_keyed_service/refcounted_browser_context_keyed_service.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service.h"
+#include "components/sync_driver/change_processor_mock.h"
 #include "components/sync_driver/data_type_controller_mock.h"
 #include "components/sync_driver/model_associator_mock.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "sync/api/sync_error.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -36,7 +40,6 @@ using browser_sync::DataTypeController;
 using browser_sync::ModelAssociatorMock;
 using browser_sync::ModelLoadCallbackMock;
 using browser_sync::StartCallbackMock;
-using content::BrowserThread;
 using testing::_;
 using testing::DoAll;
 using testing::InvokeWithoutArgs;
@@ -47,29 +50,43 @@ namespace {
 
 class HistoryMock : public HistoryService {
  public:
-  explicit HistoryMock(Profile* profile) : HistoryService(profile) {}
+  explicit HistoryMock(history::HistoryClient* client, Profile* profile)
+      : HistoryService(client, profile) {}
   MOCK_METHOD0(BackendLoaded, bool(void));
 
  protected:
   virtual ~HistoryMock() {}
 };
 
-BrowserContextKeyedService* BuildBookmarkModel(
+KeyedService* BuildChromeBookmarkClient(content::BrowserContext* context) {
+  return new ChromeBookmarkClient(static_cast<Profile*>(context));
+}
+
+KeyedService* BuildBookmarkModelWithoutLoading(
     content::BrowserContext* context) {
   Profile* profile = static_cast<Profile*>(context);
-  BookmarkModel* bookmark_model = new BookmarkModel(profile);
-  bookmark_model->Load(profile->GetIOTaskRunner());
+  ChromeBookmarkClient* bookmark_client =
+      ChromeBookmarkClientFactory::GetForProfile(profile);
+  BookmarkModel* bookmark_model = new BookmarkModel(bookmark_client, false);
+  bookmark_client->Init(bookmark_model);
   return bookmark_model;
 }
 
-BrowserContextKeyedService* BuildBookmarkModelWithoutLoading(
-    content::BrowserContext* profile) {
-  return new BookmarkModel(static_cast<Profile*>(profile));
+KeyedService* BuildBookmarkModel(content::BrowserContext* context) {
+  BookmarkModel* bookmark_model = static_cast<BookmarkModel*>(
+      BuildBookmarkModelWithoutLoading(context));
+  Profile* profile = static_cast<Profile*>(context);
+  bookmark_model->Load(profile->GetPrefs(),
+                       profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
+                       profile->GetPath(),
+                       profile->GetIOTaskRunner(),
+                       content::BrowserThread::GetMessageLoopProxyForThread(
+                           content::BrowserThread::UI));
+  return bookmark_model;
 }
 
-BrowserContextKeyedService* BuildHistoryService(
-    content::BrowserContext* profile) {
-  return new HistoryMock(static_cast<Profile*>(profile));
+KeyedService* BuildHistoryService(content::BrowserContext* profile) {
+  return new HistoryMock(NULL, static_cast<Profile*>(profile));
 }
 
 }  // namespace
@@ -77,7 +94,7 @@ BrowserContextKeyedService* BuildHistoryService(
 class SyncBookmarkDataTypeControllerTest : public testing::Test {
  public:
   SyncBookmarkDataTypeControllerTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_),
+      : thread_bundle_(content::TestBrowserThreadBundle::DEFAULT),
         service_(&profile_) {}
 
   virtual void SetUp() {
@@ -101,6 +118,8 @@ class SyncBookmarkDataTypeControllerTest : public testing::Test {
   };
 
   void CreateBookmarkModel(BookmarkLoadPolicy bookmark_load_policy) {
+    ChromeBookmarkClientFactory::GetInstance()->SetTestingFactory(
+        &profile_, BuildChromeBookmarkClient);
     if (bookmark_load_policy == LOAD_MODEL) {
       bookmark_model_ = static_cast<BookmarkModel*>(
           BookmarkModelFactory::GetInstance()->SetTestingFactoryAndUse(
@@ -127,7 +146,6 @@ class SyncBookmarkDataTypeControllerTest : public testing::Test {
         WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
     EXPECT_CALL(*model_associator_, AssociateModels(_, _)).
         WillRepeatedly(Return(syncer::SyncError()));
-    EXPECT_CALL(service_, ActivateDataType(_, _, _));
   }
 
   void SetStopExpectations() {
@@ -145,8 +163,7 @@ class SyncBookmarkDataTypeControllerTest : public testing::Test {
                    base::Unretained(&start_callback_)));
   }
 
-  base::MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_refptr<BookmarkDataTypeController> bookmark_dtc_;
   scoped_ptr<ProfileSyncComponentsFactoryMock> profile_sync_factory_;
   ProfileMock profile_;
@@ -182,7 +199,12 @@ TEST_F(SyncBookmarkDataTypeControllerTest, StartBookmarkModelNotReady) {
                  base::Unretained(&model_load_callback_)));
   EXPECT_EQ(DataTypeController::MODEL_STARTING, bookmark_dtc_->state());
 
-  bookmark_model_->Load(profile_.GetIOTaskRunner());
+  bookmark_model_->Load(profile_.GetPrefs(),
+                        profile_.GetPrefs()->GetString(prefs::kAcceptLanguages),
+                        profile_.GetPath(),
+                        profile_.GetIOTaskRunner(),
+                        content::BrowserThread::GetMessageLoopProxyForThread(
+                            content::BrowserThread::UI));
   test::WaitForBookmarkModelToLoad(bookmark_model_);
   EXPECT_EQ(DataTypeController::MODEL_LOADED, bookmark_dtc_->state());
 
@@ -320,7 +342,7 @@ TEST_F(SyncBookmarkDataTypeControllerTest, OnSingleDatatypeUnrecoverableError) {
   SetAssociateExpectations();
   EXPECT_CALL(*model_associator_, SyncModelHasUserCreatedNodes(_)).
       WillRepeatedly(DoAll(SetArgumentPointee<0>(true), Return(true)));
-  EXPECT_CALL(service_, DisableBrokenDatatype(_,_,_)).
+  EXPECT_CALL(service_, DisableDatatype(_,_,_)).
       WillOnce(InvokeWithoutArgs(bookmark_dtc_.get(),
                                  &BookmarkDataTypeController::Stop));
   SetStopExpectations();

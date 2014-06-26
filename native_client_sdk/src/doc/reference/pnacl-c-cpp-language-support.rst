@@ -11,7 +11,7 @@ Source language support
 =======================
 
 The currently supported languages are C and C++. The PNaCl toolchain is
-based on Clang 3.3, which fully supports C++11 and most of C11. A
+based on recent Clang, which fully supports C++11 and most of C11. A
 detailed status of the language support is available `here
 <http://clang.llvm.org/cxx_status.html>`_.
 
@@ -19,10 +19,19 @@ For information on using languages other than C/C++, see the :ref:`FAQ
 section on other languages <other_languages>`.
 
 As for the standard libraries, the PNaCl toolchain is currently based on
-``libc++``, and the ``newlib`` standard C library (version is available
-through the macro ``NEWLIB_VERSION``). ``libstdc++`` is also supported
-but its use is discouraged; see :ref:`building_cpp_libraries` for more
-details.
+``libc++``, and the ``newlib`` standard C library. ``libstdc++`` is also
+supported but its use is discouraged; see :ref:`building_cpp_libraries`
+for more details.
+
+Versions
+--------
+
+Version information can be obtained:
+
+* Clang/LLVM: run ``pnacl-clang -v``.
+* ``newlib``: use the ``_NEWLIB_VERSION`` macro.
+* ``libc++``: use the ``_LIBCPP_VERSION`` macro.
+* ``libstdc++``: use the ``_GLIBCXX_VERSION`` macro.
 
 Preprocessor definitions
 ------------------------
@@ -49,7 +58,8 @@ locations to each other as the C11/C++11 standards do.
 
 Non-atomic memory accesses may be reordered, separated, elided or fused
 according to C and C++'s memory model before the pexe is created as well
-as after its creation.
+as after its creation. Accessing atomic memory location through
+non-atomic primitives is :ref:`Undefined Behavior <undefined_behavior>`.
 
 As in C11/C++11 some atomic accesses may be implemented with locks on
 certain platforms. The ``ATOMIC_*_LOCK_FREE`` macros will always be
@@ -160,6 +170,8 @@ in `Memory Model and Atomics`_.
 PNaCl and NaCl support ``setjmp`` and ``longjmp`` without any
 restrictions beyond C's.
 
+.. _exception_handling:
+
 C++ Exception Handling
 ======================
 
@@ -184,20 +196,233 @@ PNaCl this barrier is only guaranteed to order ``volatile`` and atomic
 memory accesses, though in practice the implementation attempts to also
 prevent reordering of memory accesses to objects which may escape.
 
+PNaCl supports :ref:`Portable SIMD Vectors <portable_simd_vectors>`,
+which are traditionally expressed through target-specific intrinsics or
+inline assembly.
+
 NaCl supports a fairly wide subset of inline assembly through GCC's
 inline assembly syntax, with the restriction that the sandboxing model
 for the target architecture has to be respected.
 
-Future Directions
+.. _portable_simd_vectors:
+
+Portable SIMD Vectors
+=====================
+
+SIMD vectors aren't part of the C/C++ standards and are traditionally
+very hardware-specific. Portable Native Client offers a portable version
+of SIMD vector datatypes and operations which map well to modern
+architectures and offer performance which matches or approaches
+hardware-specific uses.
+
+SIMD vector support was added to Portable Native Client for version 37
+of Chrome and more features, including performance enhancements, are
+expected to be added in subsequent releases.
+
+Hand-Coding Vector Extensions
+-----------------------------
+
+The initial vector support in Portable Native Client adds `LLVM vectors
+<http://clang.llvm.org/docs/LanguageExtensions.html#vectors-and-extended-vectors>`_
+and `GCC vectors
+<http://gcc.gnu.org/onlinedocs/gcc/Vector-Extensions.html>`_ since these
+are well supported by different hardware platforms and don't require any
+new compiler intrinsics.
+
+Vector types can be used through the ``vector_size`` attribute:
+
+.. naclcode::
+
+  #define VECTOR_BYTES 16
+  typedef int v4s __attribute__((vector_size(VECTOR_BYTES)));
+  v4s a = {1,2,3,4};
+  v4s b = {5,6,7,8};
+  v4s c, d, e;
+  c = a + b;  /* c = {6,8,10,12} */
+  d = b >> a; /* d = {2,1,0,0} */
+
+Vector comparisons are represented as a bitmask as wide as the compared
+elements of all ``0`` or all ``1``:
+
+.. naclcode::
+
+  typedef int v4s __attribute__((vector_size(16)));
+  v4s snip(v4s in) {
+    v4s limit = {32,64,128,256};
+    v4s mask = in > limit;
+    v4s ret = in & mask;
+    return ret;
+  }
+
+Vector datatypes are currently expected to be 128-bit wide with one of
+the following element types:
+
+============  ============  ================
+Type          Num Elements  Vector Bit Width
+============  ============  ================
+``uint8_t``   16            128
+``int8_t``    16            128
+``uint16_t``  8             128
+``int16_t``   8             128
+``uint32_t``  4             128
+``int32_t``   4             128
+``float``     4             128
+============  ============  ================
+
+64-bit integers and double-precision floating point will be supported in
+a future release, as will 256-bit and 512-bit vectors.
+
+The following operators are supported on vectors:
+
++----------------------------------------------+
+| unary ``+``, ``-``                           |
++----------------------------------------------+
+| ``++``, ``--``                               |
++----------------------------------------------+
+| ``+``, ``-``, ``*``, ``/``, ``%``            |
++----------------------------------------------+
+| ``&``, ``|``, ``^``, ``~``                   |
++----------------------------------------------+
+| ``>>``, ``<<``                               |
++----------------------------------------------+
+| ``!``, ``&&``, ``||``                        |
++----------------------------------------------+
+| ``==``, ``!=``, ``>``, ``<``, ``>=``, ``<=`` |
++----------------------------------------------+
+| ``=``                                        |
++----------------------------------------------+
+
+C-style casts can be used to convert one vector type to another without
+modifying the underlying bits. ``__builtin_convertvector`` can be used
+to convert from one type to another provided both types have the same
+number of elements, truncating when converting from floating-point to
+integer.
+
+.. naclcode::
+
+  typedef unsigned v4u __attribute__((vector_size(16)));
+  typedef float v4f __attribute__((vector_size(16)));
+  v4u a = {0x3f19999a,0x40000000,0x40490fdb,0x66ff0c30};
+  v4f b = (v4f) a; /* b = {0.6,2,3.14159,6.02214e+23}  */
+  v4u c = __builtin_convertvector(b, v4u); /* c = {0,2,3,0} */
+
+It is also possible to use array-style indexing into vectors to extract
+individual elements using ``[]``.
+
+.. naclcode::
+
+  typedef unsigned v4u __attribute__((vector_size(16)));
+  template<typename T>
+  void print(const T v) {
+    for (size_t i = 0; i != sizeof(v) / sizeof(v[0]); ++i)
+      std::cout << v[i] << ' ';
+    std::cout << std::endl;
+  }
+
+Vector shuffles (often called permutation or swizzle) operations are
+supported through ``__builtin_shufflevector``. The builtin has two
+vector arguments of the same element type, followed by a list of
+constant integers that specify the element indices of the first two
+vectors that should be extracted and returned in a new vector. These
+element indices are numbered sequentially starting with the first
+vector, continuing into the second vector. Thus, if ``vec1`` is a
+4-element vector, index ``5`` would refer to the second element of
+``vec2``. An index of ``-1`` can be used to indicate that the
+corresponding element in the returned vector is a don’t care and can be
+optimized by the backend.
+
+The result of ``__builtin_shufflevector`` is a vector with the same
+element type as ``vec1`` / ``vec2`` but that has an element count equal
+to the number of indices specified.
+
+.. naclcode::
+
+  // identity operation - return 4-element vector v1.
+  __builtin_shufflevector(v1, v1, 0, 1, 2, 3)
+
+  // "Splat" element 0 of v1 into a 4-element result.
+  __builtin_shufflevector(v1, v1, 0, 0, 0, 0)
+
+  // Reverse 4-element vector v1.
+  __builtin_shufflevector(v1, v1, 3, 2, 1, 0)
+
+  // Concatenate every other element of 4-element vectors v1 and v2.
+  __builtin_shufflevector(v1, v2, 0, 2, 4, 6)
+
+  // Concatenate every other element of 8-element vectors v1 and v2.
+  __builtin_shufflevector(v1, v2, 0, 2, 4, 6, 8, 10, 12, 14)
+
+  // Shuffle v1 with some elements being undefined
+  __builtin_shufflevector(v1, v1, 3, -1, 1, -1)
+
+One common use of ``__builtin_shufflevector`` is to perform
+vector-scalar operations:
+
+.. naclcode::
+
+  typedef int v4s __attribute__((vector_size(16)));
+  v4s shift_right_by(v4s shift_me, int shift_amount) {
+    v4s tmp = {shift_amount};
+    return shift_me >> __builtin_shuffle_vector(tmp, tmp, 0, 0, 0, 0);
+  }
+
+Auto-Vectorization
+------------------
+
+Auto-vectorization is currently not enabled for Portable Native Client,
+but will be in a future release.
+
+Undefined Behavior
+==================
+
+The C and C++ languages expose some undefined behavior which is
+discussed in :ref:`PNaCl Undefined Behavior <undefined_behavior>`.
+
+Floating-Point
+==============
+
+PNaCl exposes 32-bit and 64-bit floating point operations which are
+mostly IEEE-754 compliant. There are a few caveats:
+
+* Some :ref:`floating-point behavior is currently left as undefined
+  <undefined_behavior_fp>`.
+* The default rounding mode is round-to-nearest and other rounding modes
+  are currently not usable, which isn't IEEE-754 compliant. PNaCl could
+  support switching modes (the 4 modes exposed by C99 ``FLT_ROUNDS``
+  macros).
+* Signaling ``NaN`` never fault.
+* Fast-math optimizations are currently supported before *pexe* creation
+  time. A *pexe* loses all fast-math information when it is
+  created. Fast-math translation could be enabled at a later date,
+  potentially at a perf-function granularity. This wouldn't affect
+  already-existing *pexe*; it would be an opt-in feature.
+
+  * Fused-multiply-add have higher precision and often execute faster;
+    PNaCl currently disallows them in the *pexe* because they aren't
+    supported on all platforms and can't realistically be
+    emulated. PNaCl could (but currently doesn't) only generate them in
+    the backend if fast-math were specified and the hardware supports
+    the operation.
+  * Transcendentals aren't exposed by PNaCl's ABI; they are part of the
+    math library that is included in the *pexe*. PNaCl could, but
+    currently doesn't, use hardware support if fast-math were provided
+    in the *pexe*.
+
+Computed ``goto``
 =================
 
-SIMD
-----
+PNaCl supports computed ``goto``, a non-standard GCC extension to C used
+by some interpreters, by lowering them to ``switch`` statements. The
+resulting use of ``switch`` might not be as fast as the original
+indirect branches. If you are compiling a program that has a
+compile-time option for using computed ``goto``, it's possible that the
+program will run faster with the option turned off (e.g., if the program
+does extra work to take advantage of computed ``goto``).
 
-PNaCl currently doesn't support SIMD. We plan to add SIMD support in the
-very near future.
+NaCl supports computed ``goto`` without any transformation.
 
-NaCl supports SIMD.
+Future Directions
+=================
 
 Inter-Process Communication
 ---------------------------
@@ -236,11 +461,3 @@ POSIX-style signal handling really consists of two different features:
 If PNaCl were to support either of these, the interaction of
 ``volatile`` and atomics with same-thread signal handling would need
 to be carefully detailed.
-
-Computed ``goto``
------------------
-
-PNaCl currently doesn't support computed ``goto``, a non-standard
-extension to C used by some interpreters.
-
-NaCl supports computed ``goto``.

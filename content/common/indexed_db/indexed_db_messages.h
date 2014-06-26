@@ -4,6 +4,7 @@
 
 // Message definition file, included multiple times, hence no include guard.
 
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -13,8 +14,16 @@
 #include "content/common/indexed_db/indexed_db_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
-#include "third_party/WebKit/public/platform/WebIDBCursor.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+
+// Singly-included section for typedefs in multiply-included file.
+#ifndef CONTENT_COMMON_INDEXED_DB_INDEXED_DB_MESSAGES_H_
+#define CONTENT_COMMON_INDEXED_DB_INDEXED_DB_MESSAGES_H_
+
+// An index id, and corresponding set of keys to insert.
+typedef std::pair<int64, std::vector<content::IndexedDBKey> > IndexKeys;
+
+#endif  // CONTENT_COMMON_INDEXED_DB_INDEXED_DB_MESSAGES_H_
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -22,18 +31,14 @@
 
 // Argument structures used in messages
 
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBCursor::Direction,
-                          blink::WebIDBCursor::DirectionLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDatabase::PutMode,
-                          blink::WebIDBDatabase::PutModeLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDatabase::TaskType,
-                          blink::WebIDBDatabase::TaskTypeLast)
-IPC_ENUM_TRAITS(blink::WebIDBDatabase::TransactionMode)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBCursorDirection,
+                          blink::WebIDBCursorDirectionLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBPutMode, blink::WebIDBPutModeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBTaskType, blink::WebIDBTaskTypeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBTransactionMode,
+                          blink::WebIDBTransactionModeLast)
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDataLoss, blink::WebIDBDataLossTotal)
-
-// An index id, and corresponding set of keys to insert.
-typedef std::pair<int64, std::vector<content::IndexedDBKey> > IndexKeys;
 
 // Used to enumerate indexed databases.
 IPC_STRUCT_BEGIN(IndexedDBHostMsg_FactoryGetDatabaseNames_Params)
@@ -84,7 +89,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseCreateTransaction_Params)
   // The scope of the transaction.
   IPC_STRUCT_MEMBER(std::vector<int64>, object_store_ids)
   // The transaction mode.
-  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::TransactionMode, mode)
+  IPC_STRUCT_MEMBER(blink::WebIDBTransactionMode, mode)
 IPC_STRUCT_END()
 
 // Used to create an object store.
@@ -121,6 +126,16 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseGet_Params)
   IPC_STRUCT_MEMBER(bool, key_only)
 IPC_STRUCT_END()
 
+IPC_STRUCT_BEGIN(IndexedDBMsg_BlobOrFileInfo)
+IPC_STRUCT_MEMBER(bool, is_file)
+IPC_STRUCT_MEMBER(std::string, uuid)
+IPC_STRUCT_MEMBER(base::string16, mime_type)
+IPC_STRUCT_MEMBER(uint64, size)
+IPC_STRUCT_MEMBER(base::string16, file_path)
+IPC_STRUCT_MEMBER(base::string16, file_name)
+IPC_STRUCT_MEMBER(double, last_modified)
+IPC_STRUCT_END()
+
 // Used to set a value in an object store.
 IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabasePut_Params)
   // The id any response should contain.
@@ -139,9 +154,11 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabasePut_Params)
   // The key to set it on (may not be "valid"/set in some cases).
   IPC_STRUCT_MEMBER(content::IndexedDBKey, key)
   // Whether this is an add or a put.
-  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::PutMode, put_mode)
+  IPC_STRUCT_MEMBER(blink::WebIDBPutMode, put_mode)
   // The index ids and the list of keys for each index.
   IPC_STRUCT_MEMBER(std::vector<IndexKeys>, index_keys)
+  // Sideband data for any blob or file encoded in value.
+  IPC_STRUCT_MEMBER(std::vector<IndexedDBMsg_BlobOrFileInfo>, blob_or_file_info)
 IPC_STRUCT_END()
 
 // Used to open both cursors and object cursors in IndexedDB.
@@ -160,11 +177,11 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseOpenCursor_Params)
   // The serialized key range.
   IPC_STRUCT_MEMBER(content::IndexedDBKeyRange, key_range)
   // The direction of this cursor.
-  IPC_STRUCT_MEMBER(blink::WebIDBCursor::Direction, direction)
+  IPC_STRUCT_MEMBER(blink::WebIDBCursorDirection, direction)
   // If this is just retrieving the key
   IPC_STRUCT_MEMBER(bool, key_only)
   // The priority of this cursor.
-  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::TaskType, task_type)
+  IPC_STRUCT_MEMBER(blink::WebIDBTaskType, task_type)
 IPC_STRUCT_END()
 
 // Used to open both cursors and object cursors in IndexedDB.
@@ -238,6 +255,8 @@ IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessIDBCursor_Params)
   IPC_STRUCT_MEMBER(content::IndexedDBKey, key)
   IPC_STRUCT_MEMBER(content::IndexedDBKey, primary_key)
   IPC_STRUCT_MEMBER(std::string, value)
+  // Sideband data for any blob or file encoded in value.
+  IPC_STRUCT_MEMBER(std::vector<IndexedDBMsg_BlobOrFileInfo>, blob_or_file_info)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessCursorContinue_Params)
@@ -247,6 +266,8 @@ IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessCursorContinue_Params)
   IPC_STRUCT_MEMBER(content::IndexedDBKey, key)
   IPC_STRUCT_MEMBER(content::IndexedDBKey, primary_key)
   IPC_STRUCT_MEMBER(std::string, value)
+  // Sideband data for any blob or file encoded in value.
+  IPC_STRUCT_MEMBER(std::vector<IndexedDBMsg_BlobOrFileInfo>, blob_or_file_info)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params)
@@ -256,6 +277,27 @@ IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params)
   IPC_STRUCT_MEMBER(std::vector<content::IndexedDBKey>, keys)
   IPC_STRUCT_MEMBER(std::vector<content::IndexedDBKey>, primary_keys)
   IPC_STRUCT_MEMBER(std::vector<std::string>, values)
+  // Sideband data for any blob or file encoded in value.
+  IPC_STRUCT_MEMBER(std::vector<std::vector<IndexedDBMsg_BlobOrFileInfo> >,
+                    blob_or_file_infos)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessValue_Params)
+  IPC_STRUCT_MEMBER(int32, ipc_thread_id)
+  IPC_STRUCT_MEMBER(int32, ipc_callbacks_id)
+  IPC_STRUCT_MEMBER(std::string, value)
+  // Sideband data for any blob or file encoded in value.
+  IPC_STRUCT_MEMBER(std::vector<IndexedDBMsg_BlobOrFileInfo>, blob_or_file_info)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(IndexedDBMsg_CallbacksSuccessValueWithKey_Params)
+  IPC_STRUCT_MEMBER(int32, ipc_thread_id)
+  IPC_STRUCT_MEMBER(int32, ipc_callbacks_id)
+  IPC_STRUCT_MEMBER(std::string, value)
+  IPC_STRUCT_MEMBER(content::IndexedDBKey, primary_key)
+  IPC_STRUCT_MEMBER(content::IndexedDBKeyPath, key_path)
+  // Sideband data for any blob or file encoded in value.
+  IPC_STRUCT_MEMBER(std::vector<IndexedDBMsg_BlobOrFileInfo>, blob_or_file_info)
 IPC_STRUCT_END()
 
 IPC_STRUCT_BEGIN(IndexedDBIndexMetadata)
@@ -324,16 +366,13 @@ IPC_MESSAGE_CONTROL3(IndexedDBMsg_CallbacksSuccessIndexedDBKey,
                      int32 /* ipc_thread_id */,
                      int32 /* ipc_callbacks_id */,
                      content::IndexedDBKey /* indexed_db_key */)
-IPC_MESSAGE_CONTROL3(IndexedDBMsg_CallbacksSuccessValue,
-                     int32 /* ipc_thread_id */,
-                     int32 /* ipc_callbacks_id */,
-                     std::string /* value */)
-IPC_MESSAGE_CONTROL5(IndexedDBMsg_CallbacksSuccessValueWithKey,
-                     int32 /* ipc_thread_id */,
-                     int32 /* ipc_callbacks_id */,
-                     std::string /* value */,
-                     content::IndexedDBKey /* indexed_db_key */,
-                     content::IndexedDBKeyPath /* indexed_db_keypath */)
+
+IPC_MESSAGE_CONTROL1(IndexedDBMsg_CallbacksSuccessValue,
+                     IndexedDBMsg_CallbacksSuccessValue_Params)
+
+IPC_MESSAGE_CONTROL1(IndexedDBMsg_CallbacksSuccessValueWithKey,
+                     IndexedDBMsg_CallbacksSuccessValueWithKey_Params)
+
 IPC_MESSAGE_CONTROL3(IndexedDBMsg_CallbacksSuccessInteger,
                      int32 /* ipc_thread_id */,
                      int32 /* ipc_callbacks_id */,
@@ -384,10 +423,10 @@ IPC_MESSAGE_CONTROL3(IndexedDBMsg_DatabaseCallbacksComplete,
 
 // WebIDBCursor::advance() message.
 IPC_MESSAGE_CONTROL4(IndexedDBHostMsg_CursorAdvance,
-                     int32, /* ipc_cursor_id */
-                     int32, /* ipc_thread_id */
-                     int32, /* ipc_callbacks_id */
-                     unsigned long) /* count */
+                     int32,  /* ipc_cursor_id */
+                     int32,  /* ipc_thread_id */
+                     int32,  /* ipc_callbacks_id */
+                     uint32) /* count */
 
 // WebIDBCursor::continue() message.
 IPC_MESSAGE_CONTROL5(IndexedDBHostMsg_CursorContinue,
@@ -421,6 +460,9 @@ IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_FactoryOpen,
 // WebIDBFactory::deleteDatabase() message.
 IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_FactoryDeleteDatabase,
                      IndexedDBHostMsg_FactoryDeleteDatabase_Params)
+
+IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_AckReceivedBlobs,
+                     std::vector<std::string>) /* uuids */
 
 // WebIDBDatabase::createObjectStore() message.
 IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_DatabaseCreateObjectStore,

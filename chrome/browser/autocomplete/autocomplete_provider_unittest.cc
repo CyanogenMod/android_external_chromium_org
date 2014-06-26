@@ -19,12 +19,13 @@
 #include "chrome/browser/autocomplete/keyword_provider.h"
 #include "chrome/browser/autocomplete/search_provider.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search_engines/search_engines_switches.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
@@ -96,7 +97,7 @@ void TestProvider::Start(const AutocompleteInput& input,
       3, 1, AutocompleteMatchType::SEARCH_SUGGEST,
       TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("query")));
 
-  if (input.matches_requested() == AutocompleteInput::ALL_MATCHES) {
+  if (input.want_asynchronous_matches()) {
     done_ = false;
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&TestProvider::Run, this));
@@ -218,11 +219,11 @@ void AutocompleteProviderTest::RegisterTemplateURL(
   TemplateURLData data;
   data.SetURL(template_url);
   data.SetKeyword(keyword);
-  TemplateURL* default_t_url = new TemplateURL(&profile_, data);
+  TemplateURL* default_t_url = new TemplateURL(data);
   TemplateURLService* turl_model =
       TemplateURLServiceFactory::GetForProfile(&profile_);
   turl_model->Add(default_t_url);
-  turl_model->SetDefaultSearchProvider(default_t_url);
+  turl_model->SetUserSelectedDefaultSearchProvider(default_t_url);
   turl_model->Load();
   TemplateURLID default_provider_id = default_t_url->id();
   ASSERT_NE(0, default_provider_id);
@@ -294,19 +295,20 @@ void AutocompleteProviderTest::
   // Reset the default TemplateURL.
   TemplateURLData data;
   data.SetURL("http://defaultturl/{searchTerms}");
-  TemplateURL* default_t_url = new TemplateURL(&profile_, data);
+  TemplateURL* default_t_url = new TemplateURL(data);
   TemplateURLService* turl_model =
       TemplateURLServiceFactory::GetForProfile(&profile_);
   turl_model->Add(default_t_url);
-  turl_model->SetDefaultSearchProvider(default_t_url);
+  turl_model->SetUserSelectedDefaultSearchProvider(default_t_url);
   TemplateURLID default_provider_id = default_t_url->id();
   ASSERT_NE(0, default_provider_id);
 
   // Create another TemplateURL for KeywordProvider.
-  data.short_name = base::ASCIIToUTF16("k");
-  data.SetKeyword(base::ASCIIToUTF16("k"));
-  data.SetURL("http://keyword/{searchTerms}");
-  TemplateURL* keyword_t_url = new TemplateURL(&profile_, data);
+  TemplateURLData data2;
+  data2.short_name = base::ASCIIToUTF16("k");
+  data2.SetKeyword(base::ASCIIToUTF16("k"));
+  data2.SetURL("http://keyword/{searchTerms}");
+  TemplateURL* keyword_t_url = new TemplateURL(data2);
   turl_model->Add(keyword_t_url);
   ASSERT_NE(0, keyword_t_url->id());
 
@@ -327,7 +329,7 @@ void AutocompleteProviderTest::ResetControllerWithKeywordProvider() {
   data.short_name = base::ASCIIToUTF16("foo.com");
   data.SetKeyword(base::ASCIIToUTF16("foo.com"));
   data.SetURL("http://foo.com/{searchTerms}");
-  TemplateURL* keyword_t_url = new TemplateURL(&profile_, data);
+  TemplateURL* keyword_t_url = new TemplateURL(data);
   turl_model->Add(keyword_t_url);
   ASSERT_NE(0, keyword_t_url->id());
 
@@ -335,7 +337,7 @@ void AutocompleteProviderTest::ResetControllerWithKeywordProvider() {
   data.short_name = base::ASCIIToUTF16("bar.com");
   data.SetKeyword(base::ASCIIToUTF16("bar.com"));
   data.SetURL("http://bar.com/{searchTerms}");
-  keyword_t_url = new TemplateURL(&profile_, data);
+  keyword_t_url = new TemplateURL(data);
   turl_model->Add(keyword_t_url);
   ASSERT_NE(0, keyword_t_url->id());
 
@@ -403,8 +405,8 @@ void AutocompleteProviderTest::RunQuery(const base::string16 query) {
   result_.Reset();
   controller_->Start(AutocompleteInput(
       query, base::string16::npos, base::string16(), GURL(),
-      AutocompleteInput::INVALID_SPEC, true, false, true,
-      AutocompleteInput::ALL_MATCHES));
+      metrics::OmniboxEventProto::INVALID_SPEC, true, false, true, true,
+      &profile_));
 
   if (!controller_->done())
     // The message loop will terminate when all autocomplete input has been
@@ -422,8 +424,8 @@ void AutocompleteProviderTest::RunExactKeymatchTest(
   // keyword or not.)
   controller_->Start(AutocompleteInput(
       base::ASCIIToUTF16("k test"), base::string16::npos, base::string16(),
-      GURL(), AutocompleteInput::INVALID_SPEC, true, false,
-      allow_exact_keyword_match, AutocompleteInput::SYNCHRONOUS_MATCHES));
+      GURL(), metrics::OmniboxEventProto::INVALID_SPEC, true, false,
+      allow_exact_keyword_match, false, &profile_));
   EXPECT_TRUE(controller_->done());
   EXPECT_EQ(AutocompleteProvider::TYPE_SEARCH,
       controller_->result().default_match()->provider->type());
@@ -648,7 +650,8 @@ TEST_F(AutocompleteProviderTest, GetDestinationURL) {
   EXPECT_EQ("//aqs=chrome.0.69i57j69i58j5l2j0l3j69i59.2456j1j0&", url.path());
 
   // Test page classification set.
-  controller_->input_.current_page_classification_ = AutocompleteInput::OTHER;
+  controller_->input_.current_page_classification_ =
+      metrics::OmniboxEventProto::OTHER;
   controller_->search_provider_->field_trial_triggered_in_session_ = false;
   EXPECT_FALSE(
       controller_->search_provider_->field_trial_triggered_in_session());

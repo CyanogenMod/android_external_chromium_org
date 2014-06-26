@@ -12,11 +12,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
-#include "chrome/browser/ui/app_list/chrome_signin_delegate.h"
+#include "chrome/browser/search/hotword_client.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "ui/app_list/app_list_view_delegate.h"
 
 class AppListControllerDelegate;
@@ -32,8 +33,7 @@ class FilePath;
 }
 
 namespace content {
-class NotificationDetails;
-class NotificationSource;
+class WebContents;
 }
 
 namespace gfx {
@@ -46,16 +46,16 @@ class AppSyncUIStateWatcher;
 
 class AppListViewDelegate : public app_list::AppListViewDelegate,
                             public app_list::StartPageObserver,
-                            public content::NotificationObserver,
-                            public ProfileInfoCacheObserver {
+                            public HotwordClient,
+                            public ProfileInfoCacheObserver,
+                            public SigninManagerBase::Observer,
+                            public SigninManagerFactory::Observer {
  public:
   AppListViewDelegate(Profile* profile,
                       AppListControllerDelegate* controller);
   virtual ~AppListViewDelegate();
 
  private:
-  // Registers the current profile for notifications.
-  void RegisterForNotifications();
   // Updates the app list's current profile and ProfileMenuItems.
   void OnProfileChanged();
 
@@ -63,7 +63,6 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual bool ForceNativeDesktop() const OVERRIDE;
   virtual void SetProfileByPath(const base::FilePath& profile_path) OVERRIDE;
   virtual app_list::AppListModel* GetModel() OVERRIDE;
-  virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE;
   virtual app_list::SpeechUIModel* GetSpeechUI() OVERRIDE;
   virtual void GetShortcutPathForApp(
       const std::string& app_id,
@@ -88,9 +87,13 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void ToggleSpeechRecognition() OVERRIDE;
   virtual void ShowForProfileByPath(
       const base::FilePath& profile_path) OVERRIDE;
-  virtual content::WebContents* GetStartPageContents() OVERRIDE;
-  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE;
+#if defined(TOOLKIT_VIEWS)
+  virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE;
+  virtual views::View* CreateCustomPageWebView(const gfx::Size& size) OVERRIDE;
+#endif
+  virtual bool IsSpeechRecognitionEnabled() OVERRIDE;
   virtual const Users& GetUsers() const OVERRIDE;
+  virtual bool ShouldCenterWindow() const OVERRIDE;
   virtual void AddObserver(
       app_list::AppListViewDelegateObserver* observer) OVERRIDE;
   virtual void RemoveObserver(
@@ -103,10 +106,19 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
   virtual void OnSpeechRecognitionStateChanged(
       app_list::SpeechRecognitionState new_state) OVERRIDE;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Overridden from HotwordClient:
+  virtual void OnHotwordStateChanged(bool started) OVERRIDE;
+  virtual void OnHotwordRecognized() OVERRIDE;
+
+  // Overridden from SigninManagerFactory::Observer:
+  virtual void SigninManagerCreated(SigninManagerBase* manager) OVERRIDE;
+  virtual void SigninManagerShutdown(SigninManagerBase* manager) OVERRIDE;
+
+  // Overridden from SigninManagerBase::Observer:
+  virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
+  virtual void GoogleSigninSucceeded(const std::string& username,
+                                     const std::string& password) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
 
   // Overridden from ProfileInfoCacheObserver:
   virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
@@ -132,13 +144,18 @@ class AppListViewDelegate : public app_list::AppListViewDelegate,
 
   Users users_;
 
-  content::NotificationRegistrar registrar_;
-  ChromeSigninDelegate signin_delegate_;
 #if defined(USE_ASH)
   scoped_ptr<AppSyncUIStateWatcher> app_sync_ui_state_watcher_;
 #endif
 
   ObserverList<app_list::AppListViewDelegateObserver> observers_;
+
+  // Used to track the SigninManagers that this instance is observing so that
+  // this instance can be removed as an observer on its destruction.
+  ScopedObserver<SigninManagerBase, AppListViewDelegate> scoped_observer_;
+
+  // Contents of the additional custom launcher page. May be NULL.
+  scoped_ptr<content::WebContents> custom_page_web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListViewDelegate);
 };

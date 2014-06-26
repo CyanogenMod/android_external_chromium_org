@@ -19,7 +19,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "ui/events/event_switches.h"
-#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/device_data_manager_x11.h"
 #include "ui/events/x/device_list_cache_x.h"
 #include "ui/gfx/x/x11_types.h"
 
@@ -32,7 +32,7 @@ TouchFactory::TouchFactory()
       touch_device_list_(),
       max_touch_points_(-1),
       id_generator_(0) {
-  if (!DeviceDataManager::GetInstance()->IsXInput2Available())
+  if (!DeviceDataManagerX11::GetInstance()->IsXInput2Available())
     return;
 
   XDisplay* display = gfx::GetXDisplay();
@@ -104,7 +104,7 @@ void TouchFactory::UpdateDeviceList(Display* display) {
   }
 #endif
 
-  if (!DeviceDataManager::GetInstance()->IsXInput2Available())
+  if (!DeviceDataManagerX11::GetInstance()->IsXInput2Available())
     return;
 
   // Instead of asking X for the list of devices all the time, let's maintain a
@@ -130,10 +130,9 @@ void TouchFactory::UpdateDeviceList(Display* display) {
         XIAnyClassInfo* xiclassinfo = devinfo->classes[k];
         if (xiclassinfo->type == XITouchClass) {
           XITouchClassInfo* tci =
-              reinterpret_cast<XITouchClassInfo *>(xiclassinfo);
+              reinterpret_cast<XITouchClassInfo*>(xiclassinfo);
           // Only care direct touch device (such as touch screen) right now
           if (tci->mode == XIDirectTouch) {
-            CacheTouchscreenIds(display, devinfo->deviceid);
             touch_device_lookup_[devinfo->deviceid] = true;
             touch_device_list_[devinfo->deviceid] = true;
             touch_device_available_ = true;
@@ -145,6 +144,21 @@ void TouchFactory::UpdateDeviceList(Display* display) {
 #endif
       pointer_device_lookup_[devinfo->deviceid] = true;
     }
+
+#if defined(USE_XI2_MT)
+    if (devinfo->use == XIFloatingSlave || devinfo->use == XISlavePointer) {
+      for (int k = 0; k < devinfo->num_classes; ++k) {
+        XIAnyClassInfo* xiclassinfo = devinfo->classes[k];
+        if (xiclassinfo->type == XITouchClass) {
+          XITouchClassInfo* tci =
+              reinterpret_cast<XITouchClassInfo*>(xiclassinfo);
+          // Only care direct touch device (such as touch screen) right now
+          if (tci->mode == XIDirectTouch)
+            CacheTouchscreenIds(display, devinfo->deviceid);
+        }
+      }
+    }
+#endif
   }
 }
 

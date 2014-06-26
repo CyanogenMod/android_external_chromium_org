@@ -11,8 +11,8 @@
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/window_observer.h"
+#include "ui/wm/public/activation_change_observer.h"
 
 namespace aura {
 class RootWindow;
@@ -23,12 +23,6 @@ class ActivationClient;
 }
 
 namespace ash {
-
-// List of containers which contain windows that can be switched to.
-ASH_EXPORT extern const int kSwitchableWindowContainerIds[];
-
-// The number of elements in kSwitchableWindowContainerIds.
-ASH_EXPORT extern const size_t kSwitchableWindowContainerIdsLength;
 
 // Maintains a most recently used list of windows. This is used for window
 // cycling using Alt+Tab and overview mode.

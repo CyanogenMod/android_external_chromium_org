@@ -10,22 +10,17 @@
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
-#include "chrome/common/chrome_switches.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace {
 // Returns true if the user is signed in and full history sync is enabled,
 // and false otherwise.
 bool IsHistorySyncEnabled(Profile* profile) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kHistoryDisableFullHistorySync)) {
-    ProfileSyncService* sync =
-        ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
-    return sync &&
-        sync->sync_initialized() &&
-        sync->GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES);
-  }
-  return false;
+  ProfileSyncService* sync =
+      ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
+  return sync &&
+      sync->sync_initialized() &&
+      sync->GetActiveDataTypes().Has(syncer::HISTORY_DELETE_DIRECTIVES);
 }
 
 }  // namespace
@@ -45,7 +40,7 @@ history::WebHistoryService* WebHistoryServiceFactory::GetForProfile(
   return NULL;
 }
 
-BrowserContextKeyedService* WebHistoryServiceFactory::BuildServiceInstanceFor(
+KeyedService* WebHistoryServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 

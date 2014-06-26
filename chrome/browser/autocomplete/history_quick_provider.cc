@@ -28,14 +28,14 @@
 #include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/common/autocomplete_match_type.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "net/base/escape.h"
@@ -64,13 +64,9 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
   if (disabled_)
     return;
 
-  // Don't bother with INVALID and FORCED_QUERY.  Also pass when looking for
-  // BEST_MATCH and there is no inline autocompletion because none of the HQP
-  // matches can score highly enough to qualify.
-  if ((input.type() == AutocompleteInput::INVALID) ||
-      (input.type() == AutocompleteInput::FORCED_QUERY) ||
-      (input.matches_requested() == AutocompleteInput::BEST_MATCH &&
-       input.prevent_inline_autocomplete()))
+  // Don't bother with INVALID and FORCED_QUERY.
+  if ((input.type() == metrics::OmniboxInputType::INVALID) ||
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
     return;
 
   autocomplete_input_ = input;
@@ -93,21 +89,14 @@ void HistoryQuickProvider::Start(const AutocompleteInput& input,
   }
 }
 
-void HistoryQuickProvider::DeleteMatch(const AutocompleteMatch& match) {
-  DCHECK(match.deletable);
-  DCHECK(match.destination_url.is_valid());
-  // Delete the match from the InMemoryURLIndex.
-  GetIndex()->DeleteURL(match.destination_url);
-  DeleteMatchFromMatches(match);
-}
-
 HistoryQuickProvider::~HistoryQuickProvider() {}
 
 void HistoryQuickProvider::DoAutocomplete() {
   // Get the matching URLs from the DB.
   ScoredHistoryMatches matches = GetIndex()->HistoryItemsForTerms(
       autocomplete_input_.text(),
-      autocomplete_input_.cursor_position());
+      autocomplete_input_.cursor_position(),
+      AutocompleteProvider::kMaxMatches);
   if (matches.empty())
     return;
 
@@ -124,9 +113,7 @@ void HistoryQuickProvider::DoAutocomplete() {
   // provider won't promote the URL-what-you-typed match to first
   // for these inputs.
   const bool can_have_url_what_you_typed_match_first =
-      autocomplete_input_.canonicalized_url().is_valid() &&
-      (autocomplete_input_.type() != AutocompleteInput::QUERY) &&
-      (autocomplete_input_.type() != AutocompleteInput::FORCED_QUERY) &&
+      (autocomplete_input_.type() != metrics::OmniboxInputType::QUERY) &&
       (!autocomplete_input_.parts().username.is_nonempty() ||
        autocomplete_input_.parts().password.is_nonempty() ||
        autocomplete_input_.parts().path.is_nonempty());
@@ -204,15 +191,10 @@ void HistoryQuickProvider::DoAutocomplete() {
   // Loop over every result and add it to matches_.  In the process,
   // guarantee that scores are decreasing.  |max_match_score| keeps
   // track of the highest score we can assign to any later results we
-  // see.  Also, if we're not allowing inline autocompletions in
-  // general or the current best suggestion isn't inlineable,
-  // artificially reduce the starting |max_match_score| (which
-  // therefore applies to all results) to something low enough that
-  // guarantees no result will be offered as an inline autocomplete
-  // suggestion.  Also do a similar reduction if we think there will be
+  // see.  Also, reduce |max_match_score| if we think there will be
   // a URL-what-you-typed match.  (We want URL-what-you-typed matches for
   // visited URLs to beat out any longer URLs, no matter how frequently
-  // they're visited.)  The strength of this last reduction depends on the
+  // they're visited.)  The strength of this reduction depends on the
   // likely score for the URL-what-you-typed result.
 
   // |template_url_service| or |template_url| can be NULL in unit tests.
@@ -220,13 +202,7 @@ void HistoryQuickProvider::DoAutocomplete() {
       TemplateURLServiceFactory::GetForProfile(profile_);
   TemplateURL* template_url = template_url_service ?
       template_url_service->GetDefaultSearchProvider() : NULL;
-  int max_match_score =
-      (OmniboxFieldTrial::ReorderForLegalDefaultMatch(
-         autocomplete_input_.current_page_classification()) ||
-       (!PreventInlineAutocomplete(autocomplete_input_) &&
-        matches.begin()->can_inline())) ?
-      matches.begin()->raw_score() :
-      (AutocompleteResult::kLowestDefaultScore - 1);
+  int max_match_score = matches.begin()->raw_score();
   if (will_have_url_what_you_typed_match_first) {
     max_match_score = std::min(max_match_score,
         url_what_you_typed_match_score - 1);
@@ -238,7 +214,8 @@ void HistoryQuickProvider::DoAutocomplete() {
     // These are low-quality, difficult-to-understand matches for users, and the
     // SearchProvider should surface past queries in a better way anyway.
     if (!template_url ||
-        !template_url->IsSearchURL(history_match.url_info.url())) {
+        !template_url->IsSearchURL(history_match.url_info.url(),
+                                   template_url_service->search_terms_data())) {
       // Set max_match_score to the score we'll assign this result:
       max_match_score = std::min(max_match_score, history_match.raw_score());
       matches_.push_back(QuickMatchToACMatch(history_match, max_match_score));
@@ -262,24 +239,28 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
   DCHECK(match.destination_url.is_valid());
 
   // Format the URL autocomplete presentation.
-  std::vector<size_t> offsets =
-      OffsetsFromTermMatches(history_match.url_matches());
   const net::FormatUrlTypes format_types = net::kFormatUrlOmitAll &
       ~(!history_match.match_in_scheme ? 0 : net::kFormatUrlOmitHTTP);
   match.fill_into_edit =
-      AutocompleteInput::FormattedStringWithEquivalentMeaning(info.url(),
-          net::FormatUrlWithOffsets(info.url(), languages_, format_types,
-              net::UnescapeRule::SPACES, NULL, NULL, &offsets));
+      AutocompleteInput::FormattedStringWithEquivalentMeaning(
+          info.url(),
+          net::FormatUrl(info.url(), languages_, format_types,
+                         net::UnescapeRule::SPACES, NULL, NULL, NULL),
+          profile_);
+  std::vector<size_t> offsets =
+      OffsetsFromTermMatches(history_match.url_matches());
+  base::OffsetAdjuster::Adjustments adjustments;
+  match.contents = net::FormatUrlWithAdjustments(
+      info.url(), languages_, format_types, net::UnescapeRule::SPACES, NULL,
+      NULL, &adjustments);
+  base::OffsetAdjuster::AdjustOffsets(adjustments, &offsets);
   history::TermMatches new_matches =
       ReplaceOffsetsInTermMatches(history_match.url_matches(), offsets);
-  match.contents = net::FormatUrl(info.url(), languages_, format_types,
-              net::UnescapeRule::SPACES, NULL, NULL, NULL);
   match.contents_class =
       SpansFromTermMatch(new_matches, match.contents.length(), true);
 
-  match.allowed_to_be_default_match = history_match.can_inline() &&
-      !PreventInlineAutocomplete(autocomplete_input_);
-  if (match.allowed_to_be_default_match) {
+  // Set |inline_autocompletion| and |allowed_to_be_default_match| if possible.
+  if (history_match.can_inline()) {
     DCHECK(!new_matches.empty());
     size_t inline_autocomplete_offset = new_matches[0].offset +
         new_matches[0].length;
@@ -291,6 +272,8 @@ AutocompleteMatch HistoryQuickProvider::QuickMatchToACMatch(
       match.inline_autocompletion =
           match.fill_into_edit.substr(inline_autocomplete_offset);
     }
+    match.allowed_to_be_default_match = match.inline_autocompletion.empty() ||
+        !PreventInlineAutocomplete(autocomplete_input_);
   }
 
   // Format the description autocomplete presentation.

@@ -1,4 +1,4 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@
 #include "ash/shell.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -27,8 +27,6 @@
 #include "ui/views/painter.h"
 
 namespace ash {
-namespace internal {
-
 // static
 const int AlternateAppListButton::kImageBoundsSize = 7;
 
@@ -39,7 +37,7 @@ AlternateAppListButton::AlternateAppListButton(views::ButtonListener* listener,
     : views::ImageButton(listener),
       host_(host),
       shelf_widget_(shelf_widget) {
-  SetAccessibleName(l10n_util::GetStringUTF16(IDS_AURA_APP_LIST_TITLE));
+  SetAccessibleName(l10n_util::GetStringUTF16(IDS_ASH_SHELF_APP_LIST_TITLE));
   SetSize(gfx::Size(ShelfLayoutManager::kShelfSize,
                     ShelfLayoutManager::kShelfSize));
   SetFocusPainter(views::Painter::CreateSolidFocusPainter(
@@ -124,7 +122,7 @@ void AlternateAppListButton::OnPaint(gfx::Canvas* canvas) {
   const gfx::ImageSkia* background_image =
       rb.GetImageNamed(background_image_id).ToImageSkia();
   const gfx::ImageSkia* forground_image =
-      rb.GetImageNamed(IDR_AURA_LAUNCHER_ICON_APPLIST_ALTERNATE).ToImageSkia();
+      rb.GetImageNamed(IDR_ASH_SHELF_ICON_APPLIST_ALTERNATE).ToImageSkia();
 
   gfx::Rect contents_bounds = GetContentsBounds();
   gfx::Rect background_bounds, forground_bounds;
@@ -165,10 +163,9 @@ void AlternateAppListButton::OnPaint(gfx::Canvas* canvas) {
 }
 
 void AlternateAppListButton::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
   state->name = host_->GetAccessibleName(this);
 }
 
-}  // namespace internal
 }  // namespace ash

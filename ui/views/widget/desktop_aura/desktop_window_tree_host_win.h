@@ -5,11 +5,11 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_WINDOW_TREE_HOST_WIN_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_WINDOW_TREE_HOST_WIN_H_
 
-#include "ui/aura/client/animation_host.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/views/views_export.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #include "ui/views/win/hwnd_message_handler_delegate.h"
+#include "ui/wm/public/animation_host.h"
 
 namespace aura {
 namespace client {
@@ -46,10 +46,8 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
  protected:
   // Overridden from DesktopWindowTreeHost:
   virtual void Init(aura::Window* content_window,
-                    const Widget::InitParams& params,
-                    aura::RootWindow::CreateParams* rw_create_params) OVERRIDE;
-  virtual void OnRootWindowCreated(aura::RootWindow* root,
-                                   const Widget::InitParams& params) OVERRIDE;
+                    const Widget::InitParams& params) OVERRIDE;
+  virtual void OnNativeWidgetCreated(const Widget::InitParams& params) OVERRIDE;
   virtual scoped_ptr<corewm::Tooltip> CreateTooltip() OVERRIDE;
   virtual scoped_ptr<aura::client::DragDropClient>
       CreateDragDropClient(DesktopNativeCursorManager* cursor_manager) OVERRIDE;
@@ -82,6 +80,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   virtual bool HasCapture() const OVERRIDE;
   virtual void SetAlwaysOnTop(bool always_on_top) OVERRIDE;
   virtual bool IsAlwaysOnTop() const OVERRIDE;
+  virtual void SetVisibleOnAllWorkspaces(bool always_visible) OVERRIDE;
   virtual bool SetWindowTitle(const base::string16& title) OVERRIDE;
   virtual void ClearNativeFocus() OVERRIDE;
   virtual Widget::MoveLoopResult RunMoveLoop(
@@ -93,7 +92,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   virtual bool ShouldUseNativeFrame() const OVERRIDE;
   virtual bool ShouldWindowContentsBeTransparent() const OVERRIDE;
   virtual void FrameTypeChanged() OVERRIDE;
-  virtual NonClientFrameView* CreateNonClientFrameView() OVERRIDE;
   virtual void SetFullscreen(bool fullscreen) OVERRIDE;
   virtual bool IsFullscreen() const OVERRIDE;
   virtual void SetOpacity(unsigned char opacity) OVERRIDE;
@@ -107,24 +105,17 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   virtual bool IsAnimatingClosed() const OVERRIDE;
 
   // Overridden from aura::WindowTreeHost:
-  virtual aura::RootWindow* GetRootWindow() OVERRIDE;
+  virtual ui::EventSource* GetEventSource() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
-  virtual void ToggleFullScreen() OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
-  virtual bool QueryMouseLocation(gfx::Point* location_return) OVERRIDE;
-  virtual bool ConfineCursorToRootWindow() OVERRIDE;
-  virtual void UnConfineCursor() OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void PrepareForShutdown() OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
   virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
@@ -148,10 +139,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
   virtual bool CanMaximize() const OVERRIDE;
   virtual bool CanActivate() const OVERRIDE;
   virtual bool WidgetSizeIsClientSize() const OVERRIDE;
-  virtual bool CanSaveFocus() const OVERRIDE;
-  virtual void SaveFocusOnDeactivate() OVERRIDE;
-  virtual void RestoreFocusOnActivate() OVERRIDE;
-  virtual void RestoreFocusOnEnable() OVERRIDE;
   virtual bool IsModal() const OVERRIDE;
   virtual int GetInitialShowState() const OVERRIDE;
   virtual bool WillProcessWorkAreaChange() const OVERRIDE;
@@ -216,6 +203,7 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
                              WPARAM w_param,
                              LPARAM l_param) OVERRIDE;
   virtual bool HandleScrollEvent(const ui::ScrollEvent& event) OVERRIDE;
+  virtual void HandleWindowSizeChanging() OVERRIDE;
 
   Widget* GetWidget();
   const Widget* GetWidget() const;
@@ -226,9 +214,6 @@ class VIEWS_EXPORT DesktopWindowTreeHostWin
 
   // Returns true if a modal window is active in the current root window chain.
   bool IsModalWindowActive() const;
-
-  // We are owned by the RootWindow, but we have to have a back pointer to it.
-  aura::RootWindow* root_window_;
 
   scoped_ptr<HWNDMessageHandler> message_handler_;
   scoped_ptr<aura::client::FocusClient> focus_client_;

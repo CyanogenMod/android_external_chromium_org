@@ -9,8 +9,9 @@
 #include "chrome/browser/autocomplete/extension_app_provider.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/url_database.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/url_database.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -90,8 +91,8 @@ void ExtensionAppProviderTest::RunTest(
   for (int i = 0; i < num_cases; ++i) {
     AutocompleteInput input(keyword_cases[i].input, base::string16::npos,
                             base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, true,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+                            metrics::OmniboxEventProto::INVALID_SPEC, true,
+                            false, true, true, profile_.get());
     app_provider_->Start(input, false);
     EXPECT_TRUE(app_provider_->done());
     matches = app_provider_->matches();
@@ -141,8 +142,8 @@ TEST_F(ExtensionAppProviderTest, CreateMatchSanitize) {
 
   AutocompleteInput input(ASCIIToUTF16("Test"), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, true, true,
-                          true, AutocompleteInput::BEST_MATCH);
+                          metrics::OmniboxEventProto::INVALID_SPEC, true, true,
+                          true, false, profile_.get());
   base::string16 url(ASCIIToUTF16("http://example.com"));
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
     ExtensionAppProvider::ExtensionApp extension_app =

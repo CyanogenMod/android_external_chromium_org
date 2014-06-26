@@ -10,9 +10,9 @@ function MockVolumeManager() {
   this.volumeInfoList = new cr.ui.ArrayDataModel([]);
 
   this.volumeInfoList.push(MockVolumeManager.createMockVolumeInfo(
-      util.VolumeType.DRIVE, 'drive'));
+      VolumeManagerCommon.VolumeType.DRIVE, 'drive'));
   this.volumeInfoList.push(MockVolumeManager.createMockVolumeInfo(
-      util.VolumeType.DOWNLOADS, 'downloads'));
+      VolumeManagerCommon.VolumeType.DOWNLOADS, 'downloads'));
 }
 
 /**
@@ -36,16 +36,17 @@ MockVolumeManager.prototype.getVolumeInfo = function(entry) {
  * @return {VolumeInfo} Created mock VolumeInfo.
  */
 MockVolumeManager.createMockVolumeInfo = function(type, volumeId) {
-  var rootEntry = new MockFileEntry(volumeId, '/');
+  var fileSystem = new MockFileSystem(volumeId);
 
   var volumeInfo = new VolumeInfo(
       type,
       volumeId,
-      rootEntry,
-      '',  // error
-      '',  // deviceType
+      fileSystem,
+      '',     // error
+      '',     // deviceType
       false,  // isReadonly
-      {isCurrentProfile: true, displayName: ''});  // profile
+      {isCurrentProfile: true, displayName: ''},  // profile
+      '');    // label
 
   return volumeInfo;
 };

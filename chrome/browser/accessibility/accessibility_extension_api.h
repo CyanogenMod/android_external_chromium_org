@@ -12,7 +12,7 @@
 #include "base/values.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/accessibility/ax_enums.h"
 
 namespace extensions {
 class ExtensionHost;
@@ -22,7 +22,7 @@ class ExtensionHost;
 // to the extension system.
 class ExtensionAccessibilityEventRouter {
  public:
-  typedef base::Callback<void(ui::AccessibilityTypes::Event,
+  typedef base::Callback<void(ui::AXEvent,
                               const AccessibilityControlInfo*)>
       ControlEventCallback;
   // Single instance of the event router.
@@ -47,15 +47,15 @@ class ExtensionAccessibilityEventRouter {
   void ClearControlEventCallback();
 
   // Route a window-related accessibility event.
-  void HandleWindowEvent(ui::AccessibilityTypes::Event event,
+  void HandleWindowEvent(ui::AXEvent event,
                          const AccessibilityWindowInfo* info);
 
   // Route a menu-related accessibility event.
-  void HandleMenuEvent(ui::AccessibilityTypes::Event event,
+  void HandleMenuEvent(ui::AXEvent event,
                        const AccessibilityMenuInfo* info);
 
   // Route a control-related accessibility event.
-  void HandleControlEvent(ui::AccessibilityTypes::Event event,
+  void HandleControlEvent(ui::AXEvent event,
                           const AccessibilityControlInfo* info);
 
   void OnChromeVoxLoadStateChanged(
@@ -77,6 +77,7 @@ class ExtensionAccessibilityEventRouter {
   void OnWindowOpened(const AccessibilityWindowInfo* details);
   void OnControlFocused(const AccessibilityControlInfo* details);
   void OnControlAction(const AccessibilityControlInfo* details);
+  void OnControlHover(const AccessibilityControlInfo* details);
   void OnTextChanged(const AccessibilityControlInfo* details);
   void OnMenuOpened(const AccessibilityMenuInfo* details);
   void OnMenuClosed(const AccessibilityMenuInfo* details);
@@ -98,43 +99,40 @@ class ExtensionAccessibilityEventRouter {
 // API function that enables or disables accessibility support.  Event
 // listeners are only installed when accessibility support is enabled, to
 // minimize the impact.
-class AccessibilitySetAccessibilityEnabledFunction
+class AccessibilityPrivateSetAccessibilityEnabledFunction
     : public ChromeSyncExtensionFunction {
-  virtual ~AccessibilitySetAccessibilityEnabledFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION(
-      "experimental.accessibility.setAccessibilityEnabled",
-      EXPERIMENTAL_ACCESSIBILITY_SETACCESSIBILITYENABLED)
+  virtual ~AccessibilityPrivateSetAccessibilityEnabledFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("accessibilityPrivate.setAccessibilityEnabled",
+                             EXPERIMENTAL_ACCESSIBILITY_SETACCESSIBILITYENABLED)
 };
 
 // API function that enables or disables web content accessibility support.
-class AccessibilitySetNativeAccessibilityEnabledFunction
+class AccessibilityPrivateSetNativeAccessibilityEnabledFunction
     : public ChromeSyncExtensionFunction {
-  virtual ~AccessibilitySetNativeAccessibilityEnabledFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual ~AccessibilityPrivateSetNativeAccessibilityEnabledFunction() {}
+  virtual bool RunSync() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION(
-      "experimental.accessibility.setNativeAccessibilityEnabled",
+      "accessibilityPrivate.setNativeAccessibilityEnabled",
       EXPERIMENTAL_ACCESSIBILITY_SETNATIVEACCESSIBILITYENABLED)
 };
 
 // API function that returns the most recent focused control.
-class AccessibilityGetFocusedControlFunction
+class AccessibilityPrivateGetFocusedControlFunction
     : public ChromeSyncExtensionFunction {
-  virtual ~AccessibilityGetFocusedControlFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION(
-      "experimental.accessibility.getFocusedControl",
-      EXPERIMENTAL_ACCESSIBILITY_GETFOCUSEDCONTROL)
+  virtual ~AccessibilityPrivateGetFocusedControlFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("accessibilityPrivate.getFocusedControl",
+                             EXPERIMENTAL_ACCESSIBILITY_GETFOCUSEDCONTROL)
 };
 
 // API function that returns alerts being shown on the give tab.
-class AccessibilityGetAlertsForTabFunction
+class AccessibilityPrivateGetAlertsForTabFunction
     : public ChromeSyncExtensionFunction {
-  virtual ~AccessibilityGetAlertsForTabFunction() {}
-  virtual bool RunImpl() OVERRIDE;
-  DECLARE_EXTENSION_FUNCTION(
-      "experimental.accessibility.getAlertsForTab",
-      EXPERIMENTAL_ACCESSIBILITY_GETALERTSFORTAB)
+  virtual ~AccessibilityPrivateGetAlertsForTabFunction() {}
+  virtual bool RunSync() OVERRIDE;
+  DECLARE_EXTENSION_FUNCTION("accessibilityPrivate.getAlertsForTab",
+                             EXPERIMENTAL_ACCESSIBILITY_GETALERTSFORTAB)
 };
 
 #endif  // CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EXTENSION_API_H_

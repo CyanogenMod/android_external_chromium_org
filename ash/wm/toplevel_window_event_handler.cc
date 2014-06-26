@@ -10,15 +10,16 @@
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_observer.h"
 #include "ash/wm/window_util.h"
-#include "ash/wm/workspace/snap_sizer.h"
+#include "ash/wm/wm_event.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
@@ -45,9 +46,9 @@ bool CanStartTwoFingerMove(aura::Window* window,
   // We allow moving a window via two fingers when the hittest components are
   // HTCLIENT. This is done so that a window can be dragged via two fingers when
   // the tab strip is full and hitting the caption area is difficult. We check
-  // the window type and the show state so that we do not steal touches from the
+  // the window type and the state type so that we do not steal touches from the
   // web contents.
-  if (!ash::wm::GetWindowState(window)->IsNormalShowState() ||
+  if (!wm::GetWindowState(window)->IsNormalOrSnapped() ||
       window->type() != ui::wm::WINDOW_TYPE_NORMAL) {
     return false;
   }
@@ -99,13 +100,11 @@ class ToplevelWindowEventHandler::ScopedWindowResizer
   WindowResizer* resizer() { return resizer_.get(); }
 
   // WindowObserver overrides:
-  virtual void OnWindowHierarchyChanging(
-      const HierarchyChangeParams& params) OVERRIDE;
   virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
 
   // WindowStateObserver overrides:
-  virtual void OnPreWindowShowTypeChange(wm::WindowState* window_state,
-                                         wm::WindowShowType type) OVERRIDE;
+  virtual void OnPreWindowStateTypeChange(wm::WindowState* window_state,
+                                          wm::WindowStateType type) OVERRIDE;
 
  private:
   ToplevelWindowEventHandler* handler_;
@@ -133,21 +132,10 @@ bool ToplevelWindowEventHandler::ScopedWindowResizer::IsMove() const {
       WindowResizer::kBoundsChange_Repositions;
 }
 
-void ToplevelWindowEventHandler::ScopedWindowResizer::OnWindowHierarchyChanging(
-    const HierarchyChangeParams& params) {
-  if (params.receiver != resizer_->GetTarget())
-    return;
-  wm::WindowState* state = wm::GetWindowState(params.receiver);
-  if (state->continue_drag_after_reparent())
-    state->set_continue_drag_after_reparent(false);
-  else
-    handler_->CompleteDrag(DRAG_COMPLETE);
-}
-
 void
-ToplevelWindowEventHandler::ScopedWindowResizer::OnPreWindowShowTypeChange(
+ToplevelWindowEventHandler::ScopedWindowResizer::OnPreWindowStateTypeChange(
     wm::WindowState* window_state,
-    wm::WindowShowType old) {
+    wm::WindowStateType old) {
   handler_->CompleteDrag(DRAG_COMPLETE);
 }
 
@@ -244,14 +232,14 @@ void ToplevelWindowEventHandler::OnGestureEvent(ui::GestureEvent* event) {
       if (!(WindowResizer::GetBoundsChangeForWindowComponent(component) &
             WindowResizer::kBoundsChange_Resizes))
         return;
-      internal::ResizeShadowController* controller =
+      ResizeShadowController* controller =
           Shell::GetInstance()->resize_shadow_controller();
       if (controller)
         controller->ShowShadow(target, component);
       return;
     }
     case ui::ET_GESTURE_END: {
-      internal::ResizeShadowController* controller =
+      ResizeShadowController* controller =
           Shell::GetInstance()->resize_shadow_controller();
       if (controller)
         controller->HideShadow(target);
@@ -336,38 +324,46 @@ void ToplevelWindowEventHandler::OnGestureEvent(ui::GestureEvent* event) {
       // window_resizer_->IsMove() instead of the hittest component at |event|'s
       // location.
       if (GetWindowComponent(target, *event) != HTCAPTION ||
-          !wm::GetWindowState(target)->IsNormalShowState()) {
+          !wm::GetWindowState(target)->IsNormalOrSnapped()) {
         return;
       }
 
       if (event->details().velocity_y() > kMinVertVelocityForWindowMinimize) {
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_MINIMIZED);
+        SetWindowStateTypeFromGesture(target, wm::WINDOW_STATE_TYPE_MINIMIZED);
       } else if (event->details().velocity_y() <
                  -kMinVertVelocityForWindowMinimize) {
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_MAXIMIZED);
+        SetWindowStateTypeFromGesture(target, wm::WINDOW_STATE_TYPE_MAXIMIZED);
       } else if (event->details().velocity_x() >
                  kMinHorizVelocityForWindowSwipe) {
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_RIGHT_SNAPPED);
+        SetWindowStateTypeFromGesture(target,
+                                      wm::WINDOW_STATE_TYPE_RIGHT_SNAPPED);
       } else if (event->details().velocity_x() <
                  -kMinHorizVelocityForWindowSwipe) {
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_LEFT_SNAPPED);
+        SetWindowStateTypeFromGesture(target,
+                                      wm::WINDOW_STATE_TYPE_LEFT_SNAPPED);
       }
       event->StopPropagation();
       return;
-    case ui::ET_GESTURE_MULTIFINGER_SWIPE:
-      if (!wm::GetWindowState(target)->IsNormalShowState())
+    case ui::ET_GESTURE_SWIPE:
+      DCHECK_GT(event->details().touch_points(), 0);
+      if (event->details().touch_points() == 1)
+        return;
+      if (!wm::GetWindowState(target)->IsNormalOrSnapped())
         return;
 
       CompleteDrag(DRAG_COMPLETE);
 
-      if (event->details().swipe_down())
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_MINIMIZED);
-      else if (event->details().swipe_up())
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_MAXIMIZED);
-      else if (event->details().swipe_right())
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_RIGHT_SNAPPED);
-      else
-        SetWindowShowTypeFromGesture(target, wm::SHOW_TYPE_LEFT_SNAPPED);
+      if (event->details().swipe_down()) {
+        SetWindowStateTypeFromGesture(target, wm::WINDOW_STATE_TYPE_MINIMIZED);
+      } else if (event->details().swipe_up()) {
+        SetWindowStateTypeFromGesture(target, wm::WINDOW_STATE_TYPE_MAXIMIZED);
+      } else if (event->details().swipe_right()) {
+        SetWindowStateTypeFromGesture(target,
+                                      wm::WINDOW_STATE_TYPE_RIGHT_SNAPPED);
+      } else {
+        SetWindowStateTypeFromGesture(target,
+                                      wm::WINDOW_STATE_TYPE_LEFT_SNAPPED);
+      }
       event->StopPropagation();
       return;
     default:
@@ -392,7 +388,8 @@ aura::client::WindowMoveResult ToplevelWindowEventHandler::RunMoveLoop(
     drag_location = gfx::ToFlooredPoint(drag_location_f);
     DCHECK(has_point);
   } else {
-    drag_location = root_window->GetDispatcher()->GetLastMouseLocationInRoot();
+    drag_location =
+        root_window->GetHost()->dispatcher()->GetLastMouseLocationInRoot();
     aura::Window::ConvertPointToTarget(
         root_window, source->parent(), &drag_location);
   }
@@ -482,7 +479,10 @@ void ToplevelWindowEventHandler::HandleMousePressed(
         ConvertPointToParent(target, event->location()));
     AttemptToStartDrag(target, location_in_parent, component,
                        aura::client::WINDOW_MOVE_SOURCE_MOUSE);
-    event->StopPropagation();
+    // Set as handled so that other event handlers do no act upon the event
+    // but still receive it so that they receive both parts of each pressed/
+    // released pair.
+    event->SetHandled();
   } else {
     CompleteDrag(DRAG_COMPLETE);
   }
@@ -497,12 +497,13 @@ void ToplevelWindowEventHandler::HandleMouseReleased(
   CompleteDrag(event->type() == ui::ET_MOUSE_RELEASED ?
                    DRAG_COMPLETE : DRAG_REVERT);
   // Completing the drag may result in hiding the window. If this happens
-  // return true so no other handlers/observers see the event. Otherwise
-  // they see the event on a hidden window.
+  // mark the event as handled so no other handlers/observers act upon the
+  // event. They should see the event on a hidden window, to determine targets
+  // of destructive actions such as hiding. They should not act upon them.
   if (window_resizer_ &&
       event->type() == ui::ET_MOUSE_CAPTURE_CHANGED &&
       !target->IsVisible()) {
-    event->StopPropagation();
+    event->SetHandled();
   }
 }
 
@@ -538,7 +539,7 @@ void ToplevelWindowEventHandler::HandleMouseMoved(
 
   // TODO(jamescook): Move the resize cursor update code into here from
   // CompoundEventFilter?
-  internal::ResizeShadowController* controller =
+  ResizeShadowController* controller =
       Shell::GetInstance()->resize_shadow_controller();
   if (controller) {
     if (event->flags() & ui::EF_IS_NON_CLIENT) {
@@ -560,42 +561,45 @@ void ToplevelWindowEventHandler::HandleMouseExited(
   if (event->phase() != ui::EP_POSTTARGET)
     return;
 
-  internal::ResizeShadowController* controller =
+  ResizeShadowController* controller =
       Shell::GetInstance()->resize_shadow_controller();
   if (controller)
     controller->HideShadow(target);
 }
 
-void ToplevelWindowEventHandler::SetWindowShowTypeFromGesture(
+void ToplevelWindowEventHandler::SetWindowStateTypeFromGesture(
     aura::Window* window,
-    wm::WindowShowType new_show_type) {
+    wm::WindowStateType new_state_type) {
   wm::WindowState* window_state = ash::wm::GetWindowState(window);
-  switch (new_show_type) {
-    case wm::SHOW_TYPE_MINIMIZED:
+  // TODO(oshima): Move extra logic (set_unminimize_to_restore_bounds,
+  // SetRestoreBoundsInParent) that modifies the window state
+  // into WindowState.
+  switch (new_state_type) {
+    case wm::WINDOW_STATE_TYPE_MINIMIZED:
       if (window_state->CanMinimize()) {
         window_state->Minimize();
         window_state->set_unminimize_to_restore_bounds(true);
         window_state->SetRestoreBoundsInParent(pre_drag_window_bounds_);
       }
       break;
-    case wm::SHOW_TYPE_MAXIMIZED:
+    case wm::WINDOW_STATE_TYPE_MAXIMIZED:
       if (window_state->CanMaximize()) {
         window_state->SetRestoreBoundsInParent(pre_drag_window_bounds_);
         window_state->Maximize();
       }
       break;
-    case wm::SHOW_TYPE_LEFT_SNAPPED:
+    case wm::WINDOW_STATE_TYPE_LEFT_SNAPPED:
       if (window_state->CanSnap()) {
         window_state->SetRestoreBoundsInParent(pre_drag_window_bounds_);
-        internal::SnapSizer::SnapWindow(window_state,
-                                        internal::SnapSizer::LEFT_EDGE);
+        const wm::WMEvent event(wm::WM_EVENT_SNAP_LEFT);
+        window_state->OnWMEvent(&event);
       }
       break;
-    case wm::SHOW_TYPE_RIGHT_SNAPPED:
+    case wm::WINDOW_STATE_TYPE_RIGHT_SNAPPED:
       if (window_state->CanSnap()) {
         window_state->SetRestoreBoundsInParent(pre_drag_window_bounds_);
-        internal::SnapSizer::SnapWindow(window_state,
-                                        internal::SnapSizer::RIGHT_EDGE);
+        const wm::WMEvent event(wm::WM_EVENT_SNAP_RIGHT);
+        window_state->OnWMEvent(&event);
       }
       break;
     default:

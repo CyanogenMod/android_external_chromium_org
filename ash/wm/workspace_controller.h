@@ -15,12 +15,11 @@ class Window;
 }
 
 namespace ash {
-namespace internal {
-
 class ShelfLayoutManager;
 class WorkspaceControllerTestHelper;
 class WorkspaceEventHandler;
 class WorkspaceLayoutManager;
+class WorkspaceLayoutManagerDelegate;
 
 // WorkspaceController acts as a central place that ties together all the
 // various workspace pieces.
@@ -37,19 +36,25 @@ class ASH_EXPORT WorkspaceController {
   // Starts the animation that occurs on first login.
   void DoInitialAnimation();
 
+  // Add a delegate which adds a backdrop behind the top window of the default
+  // workspace.
+  void SetMaximizeBackdropDelegate(
+      scoped_ptr<WorkspaceLayoutManagerDelegate> delegate);
+
+  WorkspaceLayoutManager* layout_manager() { return layout_manager_; }
+
  private:
   friend class WorkspaceControllerTestHelper;
 
   aura::Window* viewport_;
 
-  internal::ShelfLayoutManager* shelf_;
-  scoped_ptr<internal::WorkspaceEventHandler> event_handler_;
-  internal::WorkspaceLayoutManager* layout_manager_;
+  ShelfLayoutManager* shelf_;
+  scoped_ptr<WorkspaceEventHandler> event_handler_;
+  WorkspaceLayoutManager* layout_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(WorkspaceController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_WORKSPACE_CONTROLLER_H_

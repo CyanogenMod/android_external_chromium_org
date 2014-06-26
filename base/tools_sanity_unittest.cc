@@ -7,6 +7,8 @@
 // errors to verify the sanity of the tools.
 
 #include "base/atomicops.h"
+#include "base/debug/asan_invalid_access.h"
+#include "base/debug/profiler.h"
 #include "base/message_loop/message_loop.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread.h"
@@ -20,13 +22,20 @@ const base::subtle::Atomic32 kMagicValue = 42;
 
 // Helper for memory accesses that can potentially corrupt memory or cause a
 // crash during a native run.
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 #if defined(OS_IOS)
 // EXPECT_DEATH is not supported on IOS.
 #define HARMFUL_ACCESS(action,error_regexp) do { action; } while (0)
+#elif defined(SYZYASAN)
+// We won't get a meaningful error message because we're not running under the
+// SyzyASan logger, but we can at least make sure that the error has been
+// generated in the SyzyASan runtime.
+#define HARMFUL_ACCESS(action,unused) \
+if (debug::IsBinaryInstrumented()) { EXPECT_DEATH(action, \
+                                                  "AsanRuntime::OnError"); }
 #else
 #define HARMFUL_ACCESS(action,error_regexp) EXPECT_DEATH(action,error_regexp)
-#endif  // !OS_IOS
+#endif  // !OS_IOS && !SYZYASAN
 #else
 #define HARMFUL_ACCESS(action,error_regexp) \
 do { if (RunningOnValgrind()) { action; } } while (0)
@@ -94,10 +103,10 @@ TEST(ToolsSanityTest, MemoryLeak) {
   leak[4] = 1;  // Make sure the allocated memory is used.
 }
 
-#if defined(ADDRESS_SANITIZER) && (defined(OS_IOS) || defined(OS_WIN))
+#if (defined(ADDRESS_SANITIZER) && defined(OS_IOS)) || defined(SYZYASAN)
 // Because iOS doesn't support death tests, each of the following tests will
-// crash the whole program under Asan. On Windows Asan is based on SyzyAsan, the
-// error report mecanism is different than with Asan so those test will fail.
+// crash the whole program under Asan. On Windows Asan is based on SyzyAsan; the
+// error report mechanism is different than with Asan so these tests will fail.
 #define MAYBE_AccessesToNewMemory DISABLED_AccessesToNewMemory
 #define MAYBE_AccessesToMallocMemory DISABLED_AccessesToMallocMemory
 #else
@@ -113,7 +122,7 @@ TEST(ToolsSanityTest, MemoryLeak) {
 // tests should be put back under the (defined(OS_IOS) || defined(OS_WIN))
 // clause above.
 // See also http://crbug.com/172614.
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 #define MAYBE_SingleElementDeletedWithBraces \
     DISABLED_SingleElementDeletedWithBraces
 #define MAYBE_ArrayDeletedWithoutBraces DISABLED_ArrayDeletedWithoutBraces
@@ -135,7 +144,7 @@ TEST(ToolsSanityTest, MAYBE_AccessesToMallocMemory) {
 }
 
 TEST(ToolsSanityTest, MAYBE_ArrayDeletedWithoutBraces) {
-#if !defined(ADDRESS_SANITIZER)
+#if !defined(ADDRESS_SANITIZER) && !defined(SYZYASAN)
   // This test may corrupt memory if not run under Valgrind or compiled with
   // AddressSanitizer.
   if (!RunningOnValgrind())
@@ -161,7 +170,8 @@ TEST(ToolsSanityTest, MAYBE_SingleElementDeletedWithBraces) {
   delete [] foo;
 }
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+
 TEST(ToolsSanityTest, DISABLED_AddressSanitizerNullDerefCrashTest) {
   // Intentionally crash to make sure AddressSanitizer is running.
   // This test should not be ran on bots.
@@ -193,7 +203,31 @@ TEST(ToolsSanityTest, DISABLED_AddressSanitizerGlobalOOBCrashTest) {
   *access = 43;
 }
 
-#endif
+TEST(ToolsSanityTest, AsanHeapOverflow) {
+  HARMFUL_ACCESS(debug::AsanHeapOverflow() ,"to the right");
+}
+
+TEST(ToolsSanityTest, AsanHeapUnderflow) {
+  HARMFUL_ACCESS(debug::AsanHeapUnderflow(), "to the left");
+}
+
+TEST(ToolsSanityTest, AsanHeapUseAfterFree) {
+  HARMFUL_ACCESS(debug::AsanHeapUseAfterFree(), "heap-use-after-free");
+}
+
+#if defined(SYZYASAN)
+TEST(ToolsSanityTest, AsanCorruptHeapBlock) {
+  HARMFUL_ACCESS(debug::AsanCorruptHeapBlock(), "");
+}
+
+TEST(ToolsSanityTest, AsanCorruptHeap) {
+  // This test will kill the process by raising an exception, there's no
+  // particular string to look for in the stack trace.
+  EXPECT_DEATH(debug::AsanCorruptHeap(), "");
+}
+#endif  // SYZYASAN
+
+#endif  // ADDRESS_SANITIZER || SYZYASAN
 
 namespace {
 

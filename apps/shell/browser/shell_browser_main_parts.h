@@ -9,14 +9,10 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/public/browser/browser_main_parts.h"
-#include "ui/aura/root_window_observer.h"
-
-namespace aura {
-class TestScreen;
-}
+#include "content/public/common/main_function_params.h"
+#include "ui/aura/window_tree_host_observer.h"
 
 namespace content {
-class ShellBrowserContext;
 class ShellDevToolsDelegate;
 struct MainFunctionParams;
 }
@@ -24,6 +20,7 @@ struct MainFunctionParams;
 namespace extensions {
 class ShellExtensionsBrowserClient;
 class ShellExtensionSystem;
+class ShellOmahaQueryParamsDelegate;
 }
 
 namespace views {
@@ -34,21 +31,22 @@ namespace net {
 class NetLog;
 }
 
-namespace wm {
-class WMTestHelper;
-}
-
 namespace apps {
 
 class ShellBrowserContext;
+class ShellBrowserMainDelegate;
+class ShellDesktopController;
 class ShellExtensionsClient;
 
+#if defined(OS_CHROMEOS)
+class ShellNetworkController;
+#endif
+
 // Handles initialization of AppShell.
-class ShellBrowserMainParts : public content::BrowserMainParts,
-                              public aura::RootWindowObserver {
+class ShellBrowserMainParts : public content::BrowserMainParts {
  public:
-  explicit ShellBrowserMainParts(
-      const content::MainFunctionParams& parameters);
+  ShellBrowserMainParts(const content::MainFunctionParams& parameters,
+                        ShellBrowserMainDelegate* browser_main_delegate);
   virtual ~ShellBrowserMainParts();
 
   ShellBrowserContext* browser_context() {
@@ -67,42 +65,36 @@ class ShellBrowserMainParts : public content::BrowserMainParts,
   virtual void PreMainMessageLoopRun() OVERRIDE;
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
-
-  // aura::RootWindowObserver overrides:
-  virtual void OnWindowTreeHostCloseRequested(const aura::RootWindow* root)
-      OVERRIDE;
+  virtual void PostDestroyThreads() OVERRIDE;
 
  private:
-  // Creates the window that hosts the apps.
-  void CreateRootWindow();
-
-  // Closes and destroys the root window hosting the app.
-  void DestroyRootWindow();
-
-  // Window placement is controlled by a ViewsDelegate.
-  void CreateViewsDelegate();
-  void DestroyViewsDelegate();
-
   // Creates and initializes the ExtensionSystem.
   void CreateExtensionSystem();
 
+#if defined(OS_CHROMEOS)
+  scoped_ptr<ShellNetworkController> network_controller_;
+#endif
+  scoped_ptr<ShellDesktopController> desktop_controller_;
   scoped_ptr<ShellBrowserContext> browser_context_;
   scoped_ptr<ShellExtensionsClient> extensions_client_;
   scoped_ptr<extensions::ShellExtensionsBrowserClient>
       extensions_browser_client_;
   scoped_ptr<net::NetLog> net_log_;
-
-  // Enable a minimal set of views::corewm to be initialized.
-  scoped_ptr<wm::WMTestHelper> wm_test_helper_;
-
-  scoped_ptr<aura::TestScreen> test_screen_;
-
-  scoped_ptr<views::Widget> webview_window_;
-
   scoped_ptr<content::ShellDevToolsDelegate> devtools_delegate_;
+  scoped_ptr<extensions::ShellOmahaQueryParamsDelegate>
+      omaha_query_params_delegate_;
 
-  // Owned by the BrowserContextKeyedService system.
+  // Owned by the KeyedService system.
   extensions::ShellExtensionSystem* extension_system_;
+
+  // For running app browsertests.
+  const content::MainFunctionParams parameters_;
+
+  // If true, indicates the main message loop should be run
+  // in MainMessageLoopRun. If false, it has already been run.
+  bool run_message_loop_;
+
+  scoped_ptr<ShellBrowserMainDelegate> browser_main_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

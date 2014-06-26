@@ -11,24 +11,24 @@
 #include "ash/wm/resize_handle_window_targeter.h"
 #include "ash/wm/window_state.h"
 #include "base/metrics/histogram.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/capture_client.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/bubble/bubble_delegate.h"
-#include "ui/views/corewm/transient_window_manager.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/transient_window_manager.h"
+#include "ui/wm/core/window_util.h"
+#include "ui/wm/public/activation_client.h"
 
 using views::View;
 
@@ -62,13 +62,6 @@ const int kSwipeVerticalThresholdMultiplier = 3;
 // See ShouldIgnoreMouseEventAtLocation() for more details.
 const int kHeightOfDeadRegionAboveTopContainer = 10;
 
-// The height in pixels of the region below the top edge of the display in which
-// the mouse can trigger revealing the top-of-window views. The height must be
-// greater than 1px because the top pixel is used to trigger moving the cursor
-// between displays if the user has a vertical display layout (primary display
-// above/below secondary display).
-const int kMouseRevealBoundsHeight = 3;
-
 // Returns the BubbleDelegateView corresponding to |maybe_bubble| if
 // |maybe_bubble| is a bubble.
 views::BubbleDelegateView* AsBubbleDelegate(aura::Window* maybe_bubble) {
@@ -87,7 +80,7 @@ bool IsWindowTransientChildOf(aura::Window* maybe_transient,
     return false;
 
   for (aura::Window* window = maybe_transient; window;
-       window = views::corewm::GetTransientParent(window)) {
+       window = ::wm::GetTransientParent(window)) {
     if (window == toplevel)
       return true;
   }
@@ -110,6 +103,20 @@ gfx::Rect GetDisplayBoundsInScreen(aura::Window* window) {
 }
 
 }  // namespace
+
+// The height in pixels of the region below the top edge of the display in which
+// the mouse can trigger revealing the top-of-window views.
+#if defined(OS_WIN)
+// Windows 8 reserves some pixels at the top of the screen for the hand icon
+// that allows you to drag a metro app off the screen, so a few additional
+// pixels of space must be reserved for the mouse reveal.
+const int ImmersiveFullscreenController::kMouseRevealBoundsHeight = 9;
+#else
+// The height must be greater than 1px because the top pixel is used to trigger
+// moving the cursor between displays if the user has a vertical display layout
+// (primary display above/below secondary display).
+const int ImmersiveFullscreenController::kMouseRevealBoundsHeight = 3;
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -267,8 +274,13 @@ void ImmersiveFullscreenController::SetEnabled(WindowType window_type,
 
   EnableWindowObservers(enabled_);
 
+  ash::wm::WindowState* window_state = wm::GetWindowState(native_window_);
   // Auto hide the shelf in immersive fullscreen instead of hiding it.
-  wm::GetWindowState(native_window_)->set_hide_shelf_when_fullscreen(!enabled);
+  window_state->set_hide_shelf_when_fullscreen(!enabled);
+
+  // Update the window's immersive mode state for the window manager.
+  window_state->set_in_immersive_fullscreen(enabled);
+
   Shell::GetInstance()->UpdateShelfVisibility();
 
   if (enabled_) {
@@ -397,6 +409,12 @@ void ImmersiveFullscreenController::OnGestureEvent(ui::GestureEvent* event) {
     return;
 
   switch (event->type()) {
+#if defined(OS_WIN)
+    case ui::ET_GESTURE_WIN8_EDGE_SWIPE:
+      UpdateRevealedLocksForSwipe(GetSwipeType(event));
+      event->SetHandled();
+      break;
+#endif
     case ui::ET_GESTURE_SCROLL_BEGIN:
       if (ShouldHandleGestureEvent(GetEventLocationInScreen(*event))) {
         gesture_begun_ = true;
@@ -527,7 +545,7 @@ void ImmersiveFullscreenController::EnableWindowObservers(bool enable) {
     widget_->AddObserver(this);
     focus_manager->AddFocusChangeListener(this);
     Shell::GetInstance()->AddPreTargetHandler(this);
-    views::corewm::TransientWindowManager::Get(native_window_)->
+    ::wm::TransientWindowManager::Get(native_window_)->
         AddObserver(this);
 
     RecreateBubbleManager();
@@ -535,7 +553,7 @@ void ImmersiveFullscreenController::EnableWindowObservers(bool enable) {
     widget_->RemoveObserver(this);
     focus_manager->RemoveFocusChangeListener(this);
     Shell::GetInstance()->RemovePreTargetHandler(this);
-    views::corewm::TransientWindowManager::Get(native_window_)->
+    ::wm::TransientWindowManager::Get(native_window_)->
         RemoveObserver(this);
 
     // We have stopped observing whether transient children are added or removed
@@ -850,11 +868,15 @@ void ImmersiveFullscreenController::OnSlideClosedAnimationCompleted() {
 
 ImmersiveFullscreenController::SwipeType
 ImmersiveFullscreenController::GetSwipeType(ui::GestureEvent* event) const {
+#if defined(OS_WIN)
+  if (event->type() == ui::ET_GESTURE_WIN8_EDGE_SWIPE)
+    return SWIPE_OPEN;
+#endif
   if (event->type() != ui::ET_GESTURE_SCROLL_UPDATE)
     return SWIPE_NONE;
   // Make sure that it is a clear vertical gesture.
-  if (abs(event->details().scroll_y()) <=
-      kSwipeVerticalThresholdMultiplier * abs(event->details().scroll_x()))
+  if (std::abs(event->details().scroll_y()) <=
+      kSwipeVerticalThresholdMultiplier * std::abs(event->details().scroll_x()))
     return SWIPE_NONE;
   if (event->details().scroll_y() < 0)
     return SWIPE_CLOSE;
@@ -919,7 +941,7 @@ bool ImmersiveFullscreenController::ShouldHandleGestureEvent(
 void ImmersiveFullscreenController::RecreateBubbleManager() {
   bubble_manager_.reset(new BubbleManager(this));
   const std::vector<aura::Window*> transient_children =
-      views::corewm::GetTransientChildren(native_window_);
+      ::wm::GetTransientChildren(native_window_);
   for (size_t i = 0; i < transient_children.size(); ++i) {
     aura::Window* transient_child = transient_children[i];
     views::BubbleDelegateView* bubble_delegate =

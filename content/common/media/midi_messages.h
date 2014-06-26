@@ -8,7 +8,9 @@
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
+#include "ipc/param_traits_macros.h"
 #include "media/midi/midi_port_info.h"
+#include "media/midi/midi_result.h"
 #include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
@@ -22,17 +24,18 @@ IPC_STRUCT_TRAITS_BEGIN(media::MidiPortInfo)
   IPC_STRUCT_TRAITS_MEMBER(version)
 IPC_STRUCT_TRAITS_END()
 
+IPC_ENUM_TRAITS_MAX_VALUE(media::MidiResult, media::MIDI_RESULT_LAST)
+
 // Messages for IPC between MidiDispatcher and MidiDispatcherHost.
 
 // Renderer request to browser for using system exclusive messages.
-IPC_MESSAGE_CONTROL3(MidiHostMsg_RequestSysExPermission,
-                     int /* routing id */,
-                     int /* client id */,
-                     GURL /* origin */)
+IPC_MESSAGE_ROUTED3(MidiHostMsg_RequestSysExPermission,
+                    int /* client id */,
+                    GURL /* origin */,
+                    bool /* user_gesture */)
 
 // Renderer request to browser for canceling a previous permission request.
-IPC_MESSAGE_CONTROL3(MidiHostMsg_CancelSysExPermissionRequest,
-                     int /* render_view_id */,
+IPC_MESSAGE_ROUTED2(MidiHostMsg_CancelSysExPermissionRequest,
                      int /* bridge_id */,
                      GURL /* GURL of the frame */)
 
@@ -40,7 +43,7 @@ IPC_MESSAGE_CONTROL3(MidiHostMsg_CancelSysExPermissionRequest,
 
 IPC_MESSAGE_ROUTED2(MidiMsg_SysExPermissionApproved,
                     int /* client id */,
-                    bool /* success */)
+                    bool /* is_allowed */)
 
 // Messages for IPC between MidiMessageFilter and MidiHost.
 
@@ -57,7 +60,7 @@ IPC_MESSAGE_CONTROL3(MidiHostMsg_SendData,
 
 IPC_MESSAGE_CONTROL4(MidiMsg_SessionStarted,
                      int /* client id */,
-                     bool /* success */,
+                     media::MidiResult /* result */,
                      media::MidiPortInfoList /* input ports */,
                      media::MidiPortInfoList /* output ports */)
 

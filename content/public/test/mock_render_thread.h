@@ -10,11 +10,13 @@
 #include "base/strings/string16.h"
 #include "content/public/renderer/render_thread.h"
 #include "ipc/ipc_test_sink.h"
+#include "ipc/message_filter.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 
 struct ViewHostMsg_CreateWindow_Params;
 
 namespace IPC {
+class MessageFilter;
 class MessageReplyDeserializer;
 }
 
@@ -33,11 +35,6 @@ class MockRenderThread : public RenderThread {
   // Provides access to the messages that have been received by this thread.
   IPC::TestSink& sink() { return sink_; }
 
-  // Helpers for embedders to know when content IPC messages are received, since
-  // they don't have access to content IPC files.
-  void VerifyRunJavaScriptMessageSend(
-      const base::string16& expected_alert_message);
-
   // RenderThread implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
   virtual base::MessageLoop* GetMessageLoop() OVERRIDE;
@@ -49,8 +46,8 @@ class MockRenderThread : public RenderThread {
   virtual void AddRoute(int32 routing_id, IPC::Listener* listener) OVERRIDE;
   virtual void RemoveRoute(int32 routing_id) OVERRIDE;
   virtual int GenerateRoutingID() OVERRIDE;
-  virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
-  virtual void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) OVERRIDE;
+  virtual void AddFilter(IPC::MessageFilter* filter) OVERRIDE;
+  virtual void RemoveFilter(IPC::MessageFilter* filter) OVERRIDE;
   virtual void AddObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void RemoveObserver(RenderProcessObserver* observer) OVERRIDE;
   virtual void SetResourceDispatcherDelegate(
@@ -69,10 +66,12 @@ class MockRenderThread : public RenderThread {
   virtual void UpdateHistograms(int sequence_number) OVERRIDE;
   virtual int PostTaskToAllWebWorkers(const base::Closure& closure) OVERRIDE;
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) OVERRIDE;
+  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
 #if defined(OS_WIN)
   virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
   virtual void ReleaseCachedFonts() OVERRIDE;
 #endif
+  virtual ServiceRegistry* GetServiceRegistry() OVERRIDE;
 
   //////////////////////////////////////////////////////////////////////////
   // The following functions are called by the test itself.
@@ -102,13 +101,17 @@ class MockRenderThread : public RenderThread {
   // state.
   void SendCloseMessage();
 
+  // Dispatches control messages to observers.
+  bool OnControlMessageReceived(const IPC::Message& msg);
+
+  ObserverList<RenderProcessObserver>& observers() {
+    return observers_;
+  }
+
  protected:
   // This function operates as a regular IPC listener. Subclasses
   // overriding this should first delegate to this implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);
-
-  // Dispatches control messages to observers.
-  bool OnControlMessageReceived(const IPC::Message& msg);
 
   // The Widget expects to be returned valid route_id.
   void OnCreateWidget(int opener_id,
@@ -128,8 +131,6 @@ class MockRenderThread : public RenderThread {
 
   // The Frame expects to be returned a valid route_id different from its own.
   void OnCreateChildFrame(int new_frame_routing_id,
-                          int64 parent_frame_id,
-                          int64 frame_id,
                           const std::string& frame_name,
                           int* new_render_frame_id);
 
@@ -158,7 +159,7 @@ class MockRenderThread : public RenderThread {
   scoped_ptr<IPC::MessageReplyDeserializer> reply_deserializer_;
 
   // A list of message filters added to this thread.
-  std::vector<scoped_refptr<IPC::ChannelProxy::MessageFilter> > filters_;
+  std::vector<scoped_refptr<IPC::MessageFilter> > filters_;
 
   // Observers to notify.
   ObserverList<RenderProcessObserver> observers_;

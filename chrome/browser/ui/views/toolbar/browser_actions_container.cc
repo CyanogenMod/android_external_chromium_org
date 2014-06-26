@@ -22,6 +22,7 @@
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
 #include "chrome/browser/ui/views/toolbar/toolbar_view.h"
+#include "chrome/common/extensions/command.h"
 #include "chrome/common/pref_names.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
@@ -29,15 +30,20 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/nine_image_painter_factory.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/resize_area.h"
 #include "ui/views/metrics.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 using extensions::Extension;
@@ -50,6 +56,35 @@ const int kItemSpacing = ToolbarView::kStandardSpacing;
 
 // Horizontal spacing before the chevron (if visible).
 const int kChevronSpacing = kItemSpacing - 2;
+
+// A version of MenuButton with almost empty insets to fit properly on the
+// toolbar.
+class ChevronMenuButton : public views::MenuButton {
+ public:
+  ChevronMenuButton(views::ButtonListener* listener,
+                    const base::string16& text,
+                    views::MenuButtonListener* menu_button_listener,
+                    bool show_menu_marker)
+      : views::MenuButton(listener,
+                          text,
+                          menu_button_listener,
+                          show_menu_marker) {
+  }
+
+  virtual ~ChevronMenuButton() {}
+
+  virtual scoped_ptr<views::LabelButtonBorder> CreateDefaultBorder() const
+      OVERRIDE {
+    // The chevron resource was designed to not have any insets.
+    scoped_ptr<views::LabelButtonBorder> border =
+        views::MenuButton::CreateDefaultBorder();
+    border->set_insets(gfx::Insets());
+    return border.Pass();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ChevronMenuButton);
+};
 
 }  // namespace
 
@@ -78,7 +113,7 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
       show_menu_task_factory_(this) {
   set_id(VIEW_ID_BROWSER_ACTION_TOOLBAR);
 
-  model_ = ExtensionToolbarModel::Get(browser->profile());
+  model_ = extensions::ExtensionToolbarModel::Get(browser->profile());
   if (model_)
     model_->AddObserver(this);
 
@@ -92,8 +127,7 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
   resize_area_ = new views::ResizeArea(this);
   AddChildView(resize_area_);
 
-  chevron_ = new views::MenuButton(NULL, base::string16(), this, false);
-  chevron_->SetBorder(views::Border::NullBorder());
+  chevron_ = new ChevronMenuButton(NULL, base::string16(), this, false);
   chevron_->EnableCanvasFlippingForRTLUI(true);
   chevron_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS_CHEVRON));
@@ -102,6 +136,10 @@ BrowserActionsContainer::BrowserActionsContainer(Browser* browser,
 }
 
 BrowserActionsContainer::~BrowserActionsContainer() {
+  FOR_EACH_OBSERVER(BrowserActionsContainerObserver,
+                    observers_,
+                    OnBrowserActionsContainerDestroyed());
+
   if (overflow_menu_)
     overflow_menu_->set_observer(NULL);
   if (model_)
@@ -178,20 +216,51 @@ size_t BrowserActionsContainer::VisibleBrowserActions() const {
   return visible_actions;
 }
 
-gfx::Size BrowserActionsContainer::GetPreferredSize() {
-  if (browser_action_views_.empty())
-    return gfx::Size(ToolbarView::kStandardSpacing, 0);
+size_t BrowserActionsContainer::VisibleBrowserActionsAfterAnimation() const {
+  if (!animating())
+    return VisibleBrowserActions();
 
+  return WidthToIconCount(animation_target_size_);
+}
+
+void BrowserActionsContainer::ExecuteExtensionCommand(
+    const extensions::Extension* extension,
+    const extensions::Command& command) {
+  // Global commands are handled by the ExtensionCommandsGlobalRegistry
+  // instance.
+  DCHECK(!command.global());
+  extension_keybinding_registry_->ExecuteCommand(extension->id(),
+                                                 command.accelerator());
+}
+
+void BrowserActionsContainer::AddObserver(
+    BrowserActionsContainerObserver* observer) {
+  observers_.AddObserver(observer);
+}
+
+void BrowserActionsContainer::RemoveObserver(
+    BrowserActionsContainerObserver* observer) {
+  observers_.RemoveObserver(observer);
+}
+
+gfx::Size BrowserActionsContainer::GetPreferredSize() const {
   // We calculate the size of the view by taking the current width and
   // subtracting resize_amount_ (the latter represents how far the user is
   // resizing the view or, if animating the snapping, how far to animate it).
   // But we also clamp it to a minimum size and the maximum size, so that the
   // container can never shrink too far or take up more space than it needs. In
-  // other words: ContainerMinSize() < width() - resize < ClampTo(MAX).
-  int clamped_width = std::min(
-      std::max(ContainerMinSize(), container_width_ - resize_amount_),
+  // other words: MinimumNonemptyWidth() < width() - resize < ClampTo(MAX).
+  int preferred_width = std::min(
+      std::max(MinimumNonemptyWidth(), container_width_ - resize_amount_),
       IconCountToWidth(-1, false));
-  return gfx::Size(clamped_width, 0);
+  // Height will be ignored by the ToolbarView.
+  return gfx::Size(preferred_width, 0);
+}
+
+gfx::Size BrowserActionsContainer::GetMinimumSize() const {
+  int min_width = std::min(MinimumNonemptyWidth(), IconCountToWidth(-1, false));
+  // Height will be ignored by the ToolbarView.
+  return gfx::Size(min_width, 0);
 }
 
 void BrowserActionsContainer::Layout() {
@@ -201,8 +270,7 @@ void BrowserActionsContainer::Layout() {
   }
 
   SetVisible(true);
-  resize_area_->SetBounds(0, ToolbarView::kVertSpacing, kItemSpacing,
-                          IconHeight());
+  resize_area_->SetBounds(0, 0, kItemSpacing, height());
 
   // If the icons don't all fit, show the chevron (unless suppressed).
   int max_x = GetPreferredSize().width();
@@ -213,7 +281,9 @@ void BrowserActionsContainer::Layout() {
         ToolbarView::kStandardSpacing + chevron_size.width() + kChevronSpacing;
     chevron_->SetBounds(
         width() - ToolbarView::kStandardSpacing - chevron_size.width(),
-        ToolbarView::kVertSpacing, chevron_size.width(), chevron_size.height());
+        0,
+        chevron_size.width(),
+        chevron_size.height());
   } else {
     chevron_->SetVisible(false);
   }
@@ -360,8 +430,8 @@ int BrowserActionsContainer::OnPerformDrop(
 }
 
 void BrowserActionsContainer::GetAccessibleState(
-    ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_GROUPING;
+    ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_GROUP;
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_EXTENSIONS);
 }
 
@@ -386,7 +456,7 @@ void BrowserActionsContainer::WriteDragDataForView(View* sender,
     if (button == sender) {
       // Set the dragging image for the icon.
       gfx::ImageSkia badge(browser_action_views_[i]->GetIconWithBadge());
-      drag_utils::SetDragImageOnDataObject(badge, button->size(),
+      drag_utils::SetDragImageOnDataObject(badge,
                                            press_pt.OffsetFromOrigin(),
                                            data);
 
@@ -407,7 +477,8 @@ int BrowserActionsContainer::GetDragOperationsForView(View* sender,
 bool BrowserActionsContainer::CanStartDragForView(View* sender,
                                                   const gfx::Point& press_pt,
                                                   const gfx::Point& p) {
-  return true;
+  // We don't allow dragging while we're highlighting.
+  return !model_->is_highlighting();
 }
 
 void BrowserActionsContainer::OnResize(int resize_amount, bool done_resizing) {
@@ -439,8 +510,12 @@ void BrowserActionsContainer::AnimationEnded(const gfx::Animation* animation) {
   container_width_ = animation_target_size_;
   animation_target_size_ = 0;
   resize_amount_ = 0;
-  OnBrowserActionVisibilityChanged();
   suppress_chevron_ = false;
+  OnBrowserActionVisibilityChanged();
+
+  FOR_EACH_OBSERVER(BrowserActionsContainerObserver,
+                    observers_,
+                    OnBrowserActionsContainerAnimationEnded());
 }
 
 void BrowserActionsContainer::NotifyMenuDeleted(
@@ -485,10 +560,6 @@ void BrowserActionsContainer::OnBrowserActionVisibilityChanged() {
   owner_view_->SchedulePaint();
 }
 
-gfx::Point BrowserActionsContainer::GetViewContentOffset() const {
-  return gfx::Point(0, ToolbarView::kVertSpacing);
-}
-
 extensions::ActiveTabPermissionGranter*
     BrowserActionsContainer::GetActiveTabPermissionGranter() {
   content::WebContents* web_contents =
@@ -508,6 +579,27 @@ void BrowserActionsContainer::MoveBrowserAction(const std::string& extension_id,
     model_->MoveBrowserAction(extension, new_index);
     SchedulePaint();
   }
+}
+
+bool BrowserActionsContainer::ShowPopup(const extensions::Extension* extension,
+                                        bool should_grant) {
+  // Do not override other popups and only show in active window. The window
+  // must also have a toolbar, otherwise it should not be showing popups.
+  // TODO(justinlin): Remove toolbar check when http://crbug.com/308645 is
+  // fixed.
+  if (popup_ ||
+      !browser_->window()->IsActive() ||
+      !browser_->window()->IsToolbarVisible()) {
+    return false;
+  }
+
+  for (BrowserActionViews::iterator it = browser_action_views_.begin();
+       it != browser_action_views_.end(); ++it) {
+    BrowserActionButton* button = (*it)->button();
+    if (button && button->extension() == extension)
+      return ShowPopup(button, ExtensionPopup::SHOW, should_grant);
+  }
+  return false;
 }
 
 void BrowserActionsContainer::HidePopup() {
@@ -538,6 +630,13 @@ void BrowserActionsContainer::TestSetIconVisibilityCount(size_t icons) {
 }
 
 void BrowserActionsContainer::OnPaint(gfx::Canvas* canvas) {
+  // If the views haven't been initialized yet, wait for the next call to
+  // paint (one will be triggered by entering highlight mode).
+  if (model_->is_highlighting() && !browser_action_views_.empty()) {
+    views::Painter::PaintPainterAt(
+        canvas, highlight_painter_.get(), GetLocalBounds());
+  }
+
   // TODO(sky/glen): Instead of using a drop indicator, animate the icons while
   // dragging (like we do for tab dragging).
   if (drop_indicator_position_ > -1) {
@@ -545,7 +644,9 @@ void BrowserActionsContainer::OnPaint(gfx::Canvas* canvas) {
     static const int kDropIndicatorWidth = 2;
     gfx::Rect indicator_bounds(
         drop_indicator_position_ - (kDropIndicatorWidth / 2),
-        ToolbarView::kVertSpacing, kDropIndicatorWidth, IconHeight());
+        0,
+        kDropIndicatorWidth,
+        height());
 
     // Color of the drop indicator.
     static const SkColor kDropIndicatorColor = SK_ColorBLACK;
@@ -610,7 +711,7 @@ void BrowserActionsContainer::BrowserActionAdded(const Extension* extension,
   if (!ShouldDisplayBrowserAction(extension))
     return;
 
-  size_t visible_actions = VisibleBrowserActions();
+  size_t visible_actions = VisibleBrowserActionsAfterAnimation();
 
   // Add the new browser action to the vector and the view hierarchy.
   if (profile_->IsOffTheRecord())
@@ -642,7 +743,7 @@ void BrowserActionsContainer::BrowserActionRemoved(const Extension* extension) {
   if (popup_ && popup_->host()->extension() == extension)
     HidePopup();
 
-  size_t visible_actions = VisibleBrowserActions();
+  size_t visible_actions = VisibleBrowserActionsAfterAnimation();
   for (BrowserActionViews::iterator i(browser_action_views_.begin());
        i != browser_action_views_.end(); ++i) {
     if ((*i)->button()->extension() == extension) {
@@ -691,36 +792,30 @@ void BrowserActionsContainer::BrowserActionMoved(const Extension* extension,
 
 bool BrowserActionsContainer::BrowserActionShowPopup(
     const extensions::Extension* extension) {
-  // Do not override other popups and only show in active window. The window
-  // must also have a toolbar, otherwise it should not be showing popups.
-  // TODO(justinlin): Remove toolbar check when http://crbug.com/308645 is
-  // fixed.
-  if (popup_ ||
-      !browser_->window()->IsActive() ||
-      !browser_->window()->IsToolbarVisible()) {
-    return false;
-  }
-
-  for (BrowserActionViews::iterator it = browser_action_views_.begin();
-       it != browser_action_views_.end(); ++it) {
-    BrowserActionButton* button = (*it)->button();
-    if (button && button->extension() == extension)
-      return ShowPopup(button, ExtensionPopup::SHOW, false);
-  }
-  return false;
+  return ShowPopup(extension, false);
 }
 
 void BrowserActionsContainer::VisibleCountChanged() {
   SetContainerWidth();
 }
 
+void BrowserActionsContainer::HighlightModeChanged(bool is_highlighting) {
+  // The visual highlighting is done in OnPaint(). It's a bit of a pain that
+  // we delete and recreate everything here, but that's how it's done in
+  // BrowserActionMoved(), too. If we want to optimize it, we could move the
+  // existing icons, instead of deleting it all.
+  DeleteBrowserActionViews();
+  CreateBrowserActionViews();
+  SaveDesiredSizeAndAnimate(gfx::Tween::LINEAR, browser_action_views_.size());
+}
+
 void BrowserActionsContainer::LoadImages() {
   ui::ThemeProvider* tp = GetThemeProvider();
-  chevron_->SetIcon(*tp->GetImageSkiaNamed(IDR_BROWSER_ACTIONS_OVERFLOW));
-  chevron_->SetHoverIcon(*tp->GetImageSkiaNamed(
-      IDR_BROWSER_ACTIONS_OVERFLOW_H));
-  chevron_->SetPushedIcon(*tp->GetImageSkiaNamed(
-      IDR_BROWSER_ACTIONS_OVERFLOW_P));
+  chevron_->SetImage(views::Button::STATE_NORMAL,
+                     *tp->GetImageSkiaNamed(IDR_BROWSER_ACTIONS_OVERFLOW));
+
+  const int kImages[] = IMAGE_GRID(IDR_DEVELOPER_MODE_HIGHLIGHT);
+  highlight_painter_.reset(views::Painter::CreateImageGridPainter(kImages));
 }
 
 void BrowserActionsContainer::SetContainerWidth() {
@@ -795,7 +890,7 @@ size_t BrowserActionsContainer::WidthToIconCount(int pixels) const {
       std::max(0, available_space + kItemSpacing) / IconWidth(true));
 }
 
-int BrowserActionsContainer::ContainerMinSize() const {
+int BrowserActionsContainer::MinimumNonemptyWidth() const {
   return ToolbarView::kStandardSpacing + kChevronSpacing +
       chevron_->GetPreferredSize().width() + ToolbarView::kStandardSpacing;
 }
@@ -811,7 +906,6 @@ void BrowserActionsContainer::SaveDesiredSizeAndAnimate(
   // always at least as wide as in an incognito window.
   if (!profile_->IsOffTheRecord())
     model_->SetVisibleIconCount(num_visible_icons);
-
   int target_size = IconCountToWidth(num_visible_icons,
       num_visible_icons < browser_action_views_.size());
   if (!disable_animations_during_testing_) {
@@ -842,7 +936,7 @@ bool BrowserActionsContainer::ShowPopup(
   GURL popup_url;
   if (model_->ExecuteBrowserAction(
           extension, browser_, &popup_url, should_grant) !=
-      ExtensionToolbarModel::ACTION_SHOW_POPUP) {
+      extensions::ExtensionToolbarModel::ACTION_SHOW_POPUP) {
     return false;
   }
 
@@ -860,12 +954,8 @@ bool BrowserActionsContainer::ShowPopup(
   // since buttons can be activated from the overflow menu (chevron). In that
   // case we show the popup as originating from the chevron.
   View* reference_view = button->parent()->visible() ? button : chevron_;
-  views::BubbleBorder::Arrow arrow = base::i18n::IsRTL() ?
-      views::BubbleBorder::TOP_LEFT : views::BubbleBorder::TOP_RIGHT;
-  popup_ = ExtensionPopup::ShowPopup(popup_url,
-                                     browser_,
-                                     reference_view,
-                                     arrow,
+  popup_ = ExtensionPopup::ShowPopup(popup_url, browser_, reference_view,
+                                     views::BubbleBorder::TOP_RIGHT,
                                      show_action);
   popup_->GetWidget()->AddObserver(this);
   popup_button_ = button;

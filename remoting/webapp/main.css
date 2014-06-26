@@ -20,6 +20,7 @@ tfoot, thead, tr, th, td, button {
 
 .inset {
   padding: 20px 20px 0 20px;
+  position: relative;
 }
 
 body {
@@ -29,6 +30,7 @@ body {
   margin: 0;
   direction: __MSG_@@bidi_dir__;
 }
+
 
 /*
 * The "app-v2" class is added to the <html> node by remoting.init if it's
@@ -232,6 +234,7 @@ Component: Modal Dialog
   overflow: hidden;
   z-index: 100;
   opacity: 0.0;
+  margin: auto;
   -webkit-transform: scale(1.05);
   -webkit-transition: all 0.218s;
 }
@@ -617,11 +620,10 @@ button {
   top: 200px;
   left: 0;
   width: 100%;
-  display: flex;
 }
 
 .dialog-screen {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
@@ -675,6 +677,7 @@ html.apps-v2.scrollable {
 
 #session-client-plugin {
   display: block;
+  flex-shrink: 0;
 }
 
 .session-client-inactive {
@@ -706,12 +709,17 @@ html.apps-v2.scrollable {
   display: none !important;
 }
 
+.full-width {
+  width: 100%;
+}
+
 .full-height {
   height: 100%;
 }
 
 .horizontally-centered {
   display: flex;
+  align-items: center;
 }
 
 .vertically-centered {
@@ -747,13 +755,13 @@ html.apps-v2.scrollable {
 }
 
 /* mediasource-video-output is hidden by default. */
-#mediasource-video-output {
+#video-container video {
   display: none;
 }
 
 /* Use absolute positioning for mediasource-video-output so that it's rendered
  * at the same position as the plugin. */
-#video-container.mediasource-rendering #mediasource-video-output {
+#video-container.mediasource-rendering video {
   display: block;
   position: absolute;
   left: 0;
@@ -768,6 +776,6 @@ html.apps-v2.scrollable {
  * TODO(sergeyu): This is temporary solution. Ideally mouse and keyboard events
  * should be captured on JS level and passed to the plugin.
  */
-#video-container.mediasource-rendering #client-plugin-container {
+#video-container.mediasource-rendering .client-plugin-container {
   opacity: 0;
 }

@@ -263,12 +263,6 @@ void AdjustParagraphDirectionality(base::string16* paragraph) {
 #endif
 }
 
-#if defined(OS_WIN)
-std::string GetCanonicalLocale(const std::string& locale) {
-  return base::i18n::GetCanonicalLocale(locale.c_str());
-}
-#endif
-
 struct AvailableLocalesTraits
     : base::DefaultLazyInstanceTraits<std::vector<std::string> > {
   static std::vector<std::string>* New(void* instance) {
@@ -312,6 +306,10 @@ base::LazyInstance<std::vector<std::string>, AvailableLocalesTraits>
 }  // namespace
 
 namespace l10n_util {
+
+std::string GetCanonicalLocale(const std::string& locale) {
+  return base::i18n::GetCanonicalLocale(locale.c_str());
+}
 
 bool CheckAndResolveLocale(const std::string& locale,
                            std::string* resolved_locale) {
@@ -507,7 +505,8 @@ bool IsLocaleNameTranslated(const char* locale,
   // the translation is available or not.  If ICU doesn't have a translated
   // name for this locale, GetDisplayNameForLocale will just return the
   // locale code.
-  return !IsStringASCII(display_name) || UTF16ToASCII(display_name) != locale;
+  return !base::IsStringASCII(display_name) ||
+      base::UTF16ToASCII(display_name) != locale;
 }
 
 base::string16 GetDisplayNameForLocale(const std::string& locale,

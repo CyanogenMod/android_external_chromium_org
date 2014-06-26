@@ -22,10 +22,13 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/settings_window_manager.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
 #include "grit/ash_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -34,7 +37,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
 #include "ui/gfx/image/image.h"
-#include "ui/views/corewm/window_animations.h"
+#include "ui/wm/core/window_animations.h"
 
 BrowserShortcutLauncherItemController::BrowserShortcutLauncherItemController(
     ChromeLauncherController* launcher_controller)
@@ -96,6 +99,22 @@ void BrowserShortcutLauncherItemController::UpdateBrowserItemState() {
     browser_item.status = browser_status;
     model->Set(browser_index, browser_item);
   }
+}
+
+void BrowserShortcutLauncherItemController::SetShelfIDForBrowserWindowContents(
+    Browser* browser,
+    content::WebContents* web_contents) {
+  // We need to call SetShelfIDForWindow for V1 applications since they are
+  // content which might change and as such change the application type.
+  if (!browser ||
+      !launcher_controller()->IsBrowserFromActiveUser(browser) ||
+      browser->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH ||
+      chrome::IsTrustedPopupWindowWithScheme(browser, content::kChromeUIScheme))
+    return;
+
+  ash::SetShelfIDForWindow(
+      launcher_controller()->GetShelfIDForWebContents(web_contents),
+      browser->window()->GetNativeWindow());
 }
 
 bool BrowserShortcutLauncherItemController::IsOpen() const {
@@ -244,10 +263,10 @@ bool BrowserShortcutLauncherItemController::ShouldShowTooltip() {
 
 gfx::Image BrowserShortcutLauncherItemController::GetBrowserListIcon(
     content::WebContents* web_contents) const {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   return rb.GetImageNamed(IsIncognito(web_contents) ?
-      IDR_AURA_LAUNCHER_LIST_INCOGNITO_BROWSER :
-      IDR_AURA_LAUNCHER_LIST_BROWSER);
+      IDR_ASH_SHELF_LIST_INCOGNITO_BROWSER :
+      IDR_ASH_SHELF_LIST_BROWSER);
 }
 
 base::string16 BrowserShortcutLauncherItemController::GetBrowserListTitle(
@@ -289,7 +308,7 @@ void BrowserShortcutLauncherItemController::ActivateOrAdvanceToNextBrowser() {
     // bounce it (if it is already active).
     if (browser == items[0]) {
       AnimateWindow(browser->window()->GetNativeWindow(),
-                    views::corewm::WINDOW_ANIMATION_TYPE_BOUNCE);
+                    wm::WINDOW_ANIMATION_TYPE_BOUNCE);
       return;
     }
     browser = items[0];
@@ -317,13 +336,23 @@ void BrowserShortcutLauncherItemController::ActivateOrAdvanceToNextBrowser() {
 
 bool BrowserShortcutLauncherItemController::IsBrowserRepresentedInBrowserList(
     Browser* browser) {
-  return (browser &&
-          launcher_controller()->IsBrowserFromActiveUser(browser) &&
-          browser->host_desktop_type() == chrome::HOST_DESKTOP_TYPE_ASH &&
-          (browser->is_type_tabbed() ||
-           !browser->is_app() ||
-           !browser->is_type_popup() ||
-           launcher_controller()->
-               GetShelfIDForAppID(web_app::GetExtensionIdFromApplicationName(
-                   browser->app_name())) <= 0));
+  // Only Ash desktop browser windows for the active user are represented.
+  if (!browser ||
+      !launcher_controller()->IsBrowserFromActiveUser(browser) ||
+      browser->host_desktop_type() != chrome::HOST_DESKTOP_TYPE_ASH)
+    return false;
+
+  // v1 App popup windows with a valid app id have their own icon.
+  if (browser->is_app() &&
+      browser->is_type_popup() &&
+      launcher_controller()->GetShelfIDForAppID(
+          web_app::GetExtensionIdFromApplicationName(browser->app_name())) > 0)
+    return false;
+
+  // Stand-alone chrome:// windows (e.g. settings) have their own icon.
+  if (chrome::IsTrustedPopupWindowWithScheme(browser, content::kChromeUIScheme))
+    return false;
+
+  // Tabbed browser and other popup windows are all represented.
+  return true;
 }

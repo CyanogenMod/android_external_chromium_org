@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -24,6 +25,7 @@ class FakeSessionManagerClient : public SessionManagerClient {
 
   // SessionManagerClient overrides
   virtual void Init(dbus::Bus* bus) OVERRIDE;
+  virtual void SetStubDelegate(StubDelegate* delegate) OVERRIDE;
   virtual void AddObserver(Observer* observer) OVERRIDE;
   virtual void RemoveObserver(Observer* observer) OVERRIDE;
   virtual bool HasObserver(Observer* observer) OVERRIDE;
@@ -51,7 +53,6 @@ class FakeSessionManagerClient : public SessionManagerClient {
                                  const StorePolicyCallback& callback) OVERRIDE;
   virtual void StorePolicyForUser(const std::string& username,
                                   const std::string& policy_blob,
-                                  const std::string& policy_key,
                                   const StorePolicyCallback& callback) OVERRIDE;
   virtual void StoreDeviceLocalAccountPolicy(
       const std::string& account_id,
@@ -59,6 +60,8 @@ class FakeSessionManagerClient : public SessionManagerClient {
       const StorePolicyCallback& callback) OVERRIDE;
   virtual void SetFlagsForUser(const std::string& username,
                                const std::vector<std::string>& flags) OVERRIDE;
+  virtual void GetServerBackedStateKeys(const StateKeysCallback& callback)
+      OVERRIDE;
 
   const std::string& device_policy() const;
   void set_device_policy(const std::string& policy_blob);
@@ -74,6 +77,13 @@ class FakeSessionManagerClient : public SessionManagerClient {
 
   // Notify observers about a property change completion.
   void OnPropertyChangeComplete(bool success);
+
+  // Configures the list of state keys used to satisfy
+  // GetServerBackedStateKeys() requests.
+  void set_server_backed_state_keys(
+      const std::vector<std::string>& state_keys) {
+    server_backed_state_keys_ = state_keys;
+  }
 
   int start_device_wipe_call_count() const {
     return start_device_wipe_call_count_;
@@ -95,6 +105,7 @@ class FakeSessionManagerClient : public SessionManagerClient {
   std::map<std::string, std::string> device_local_account_policy_;
   ObserverList<Observer> observers_;
   SessionManagerClient::ActiveSessionsMap user_sessions_;
+  std::vector<std::string> server_backed_state_keys_;
 
   int start_device_wipe_call_count_;
   int notify_lock_screen_shown_call_count_;

@@ -40,7 +40,6 @@ class RuntimeData : public ExtensionRegistryObserver {
 
   // Getter and setter for the flag that specifies if the extension has used
   // the webrequest API.
-  // TODO(mpcomplete): remove. http://crbug.com/100411
   bool HasUsedWebRequest(const Extension* extension) const;
   void SetHasUsedWebRequest(const Extension* extension, bool value);
 
@@ -52,7 +51,10 @@ class RuntimeData : public ExtensionRegistryObserver {
   void ClearAll();
 
   // ExtensionRegistryObserver overrides. Public for testing.
-  virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE;
 
  private:
   // Bitmasks for runtime states.

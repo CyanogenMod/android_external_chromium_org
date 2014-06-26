@@ -50,10 +50,21 @@ bool CopyStringFromDictionary(const base::DictionaryValue& source,
                               base::DictionaryValue* dest) {
   std::string string_value;
   if (!source.GetStringWithoutPathExpansion(key, &string_value) ||
-      string_value.empty())
+      string_value.empty()) {
     return false;
+  }
   dest->SetStringWithoutPathExpansion(key, string_value);
   return true;
+}
+
+// This is the same normalization that Shill applies to security types for the
+// sake of comparing/identifying WiFi networks. See Shill's
+// WiFiService::GetSecurityClass.
+std::string GetSecurityClass(const std::string& security) {
+  if (security == shill::kSecurityRsn || security == shill::kSecurityWpa)
+    return shill::kSecurityPsk;
+  else
+    return security;
 }
 
 }  // namespace
@@ -67,11 +78,16 @@ std::string GetSSIDFromProperties(const base::DictionaryValue& properties,
                                   bool* unknown_encoding) {
   if (unknown_encoding)
     *unknown_encoding = false;
+
+  // Get name for debugging.
+  std::string name;
+  properties.GetStringWithoutPathExpansion(shill::kNameProperty, &name);
+
   std::string hex_ssid;
   properties.GetStringWithoutPathExpansion(shill::kWifiHexSsid, &hex_ssid);
 
   if (hex_ssid.empty()) {
-    NET_LOG_ERROR("GetSSIDFromProperties", "No HexSSID set.");
+    NET_LOG_DEBUG("GetSSIDFromProperties: No HexSSID set.", name);
     return std::string();
   }
 
@@ -80,15 +96,18 @@ std::string GetSSIDFromProperties(const base::DictionaryValue& properties,
   if (base::HexStringToBytes(hex_ssid, &raw_ssid_bytes)) {
     ssid = std::string(raw_ssid_bytes.begin(), raw_ssid_bytes.end());
     NET_LOG_DEBUG(
-        "GetSSIDFromProperties",
-        base::StringPrintf("%s, SSID: %s", hex_ssid.c_str(), ssid.c_str()));
+        "GetSSIDFromProperties: " +
+            base::StringPrintf("%s, SSID: %s", hex_ssid.c_str(), ssid.c_str()),
+        name);
   } else {
-    NET_LOG_ERROR("GetSSIDFromProperties",
-                  base::StringPrintf("Error processing: %s", hex_ssid.c_str()));
+    NET_LOG_ERROR(
+        "GetSSIDFromProperties: " +
+            base::StringPrintf("Error processing: %s", hex_ssid.c_str()),
+        name);
     return std::string();
   }
 
-  if (IsStringUTF8(ssid))
+  if (base::IsStringUTF8(ssid))
     return ssid;
 
   // Detect encoding and convert to UTF-8.
@@ -115,9 +134,26 @@ std::string GetSSIDFromProperties(const base::DictionaryValue& properties,
   if (unknown_encoding)
     *unknown_encoding = true;
   NET_LOG_DEBUG(
-      "GetSSIDFromProperties",
-      base::StringPrintf("Unrecognized Encoding=%s", encoding.c_str()));
+      "GetSSIDFromProperties: " +
+          base::StringPrintf("Unrecognized Encoding=%s", encoding.c_str()),
+      name);
   return ssid;
+}
+
+std::string GetNetworkIdFromProperties(
+    const base::DictionaryValue& properties) {
+  if (properties.empty())
+    return "EmptyProperties";
+  std::string result;
+  if (properties.GetStringWithoutPathExpansion(shill::kGuidProperty, &result))
+    return result;
+  if (properties.GetStringWithoutPathExpansion(shill::kSSIDProperty, &result))
+    return result;
+  if (properties.GetStringWithoutPathExpansion(shill::kNameProperty, &result))
+    return result;
+  std::string type = "UnknownType";
+  properties.GetStringWithoutPathExpansion(shill::kTypeProperty, &type);
+  return "Unidentified " + type;
 }
 
 std::string GetNameFromProperties(const std::string& service_path,
@@ -135,6 +171,10 @@ std::string GetNameFromProperties(const std::string& service_path,
 
   std::string type;
   properties.GetStringWithoutPathExpansion(shill::kTypeProperty, &type);
+  if (type.empty()) {
+    NET_LOG_ERROR("GetNameFromProperties: No type", service_path);
+    return validated_name;
+  }
   if (!NetworkTypePattern::WiFi().MatchesType(type))
     return validated_name;
 
@@ -198,6 +238,7 @@ void SetUIData(const NetworkUIData& ui_data,
 }
 
 bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
+                               const bool properties_read_from_shill,
                                base::DictionaryValue* dest) {
   bool success = true;
 
@@ -209,8 +250,15 @@ bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
   success &= !type.empty();
   dest->SetStringWithoutPathExpansion(shill::kTypeProperty, type);
   if (type == shill::kTypeWifi) {
-    success &= CopyStringFromDictionary(
-        service_properties, shill::kSecurityProperty, dest);
+    std::string security;
+    service_properties.GetStringWithoutPathExpansion(shill::kSecurityProperty,
+                                                     &security);
+    if (security.empty()) {
+      success = false;
+    } else {
+      dest->SetStringWithoutPathExpansion(shill::kSecurityProperty,
+                                          GetSecurityClass(security));
+    }
     success &=
         CopyStringFromDictionary(service_properties, shill::kWifiHexSsid, dest);
     success &= CopyStringFromDictionary(
@@ -218,24 +266,33 @@ bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
   } else if (type == shill::kTypeVPN) {
     success &= CopyStringFromDictionary(
         service_properties, shill::kNameProperty, dest);
+
     // VPN Provider values are read from the "Provider" dictionary, but written
     // with the keys "Provider.Type" and "Provider.Host".
-    const base::DictionaryValue* provider_properties = NULL;
-    if (!service_properties.GetDictionaryWithoutPathExpansion(
-             shill::kProviderProperty, &provider_properties)) {
-      NET_LOG_ERROR("CopyIdentifyingProperties", "Missing VPN provider dict");
-      return false;
-    }
+    // TODO(pneubeck): Simplify this once http://crbug.com/381135 is fixed.
     std::string vpn_provider_type;
-    provider_properties->GetStringWithoutPathExpansion(shill::kTypeProperty,
-                                                       &vpn_provider_type);
+    std::string vpn_provider_host;
+    if (properties_read_from_shill) {
+      const base::DictionaryValue* provider_properties = NULL;
+      if (!service_properties.GetDictionaryWithoutPathExpansion(
+              shill::kProviderProperty, &provider_properties)) {
+        NET_LOG_ERROR("Missing VPN provider dict",
+                      GetNetworkIdFromProperties(service_properties));
+      }
+      provider_properties->GetStringWithoutPathExpansion(shill::kTypeProperty,
+                                                         &vpn_provider_type);
+      provider_properties->GetStringWithoutPathExpansion(shill::kHostProperty,
+                                                         &vpn_provider_host);
+    } else {
+      service_properties.GetStringWithoutPathExpansion(
+          shill::kProviderTypeProperty, &vpn_provider_type);
+      service_properties.GetStringWithoutPathExpansion(
+          shill::kProviderHostProperty, &vpn_provider_host);
+    }
     success &= !vpn_provider_type.empty();
     dest->SetStringWithoutPathExpansion(shill::kProviderTypeProperty,
                                         vpn_provider_type);
 
-    std::string vpn_provider_host;
-    provider_properties->GetStringWithoutPathExpansion(shill::kHostProperty,
-                                                       &vpn_provider_host);
     success &= !vpn_provider_host.empty();
     dest->SetStringWithoutPathExpansion(shill::kProviderHostProperty,
                                         vpn_provider_host);
@@ -246,160 +303,73 @@ bool CopyIdentifyingProperties(const base::DictionaryValue& service_properties,
     NOTREACHED() << "Unsupported network type " << type;
     success = false;
   }
-  if (!success)
-    NET_LOG_ERROR("CopyIdentifyingProperties", "Missing required properties");
+  if (!success) {
+    NET_LOG_ERROR("Missing required properties",
+                  GetNetworkIdFromProperties(service_properties));
+  }
   return success;
 }
 
-bool DoIdentifyingPropertiesMatch(const base::DictionaryValue& properties_a,
-                                  const base::DictionaryValue& properties_b) {
-  base::DictionaryValue identifying_a;
-  if (!CopyIdentifyingProperties(properties_a, &identifying_a))
+bool DoIdentifyingPropertiesMatch(const base::DictionaryValue& new_properties,
+                                  const base::DictionaryValue& old_properties) {
+  base::DictionaryValue new_identifying;
+  if (!CopyIdentifyingProperties(
+          new_properties,
+          false /* properties were not read from Shill */,
+          &new_identifying)) {
     return false;
-  base::DictionaryValue identifying_b;
-  if (!CopyIdentifyingProperties(properties_b, &identifying_b))
+  }
+  base::DictionaryValue old_identifying;
+  if (!CopyIdentifyingProperties(old_properties,
+                                 true /* properties were read from Shill */,
+                                 &old_identifying)) {
     return false;
+  }
 
-  return identifying_a.Equals(&identifying_b);
+  return new_identifying.Equals(&old_identifying);
+}
+
+bool IsPassphraseKey(const std::string& key) {
+  return key == shill::kEapPrivateKeyPasswordProperty ||
+      key == shill::kEapPasswordProperty ||
+      key == shill::kL2tpIpsecPasswordProperty ||
+      key == shill::kOpenVPNPasswordProperty ||
+      key == shill::kOpenVPNAuthUserPassProperty ||
+      key == shill::kOpenVPNTLSAuthContentsProperty ||
+      key == shill::kPassphraseProperty ||
+      key == shill::kOpenVPNOTPProperty ||
+      key == shill::kEapPrivateKeyProperty ||
+      key == shill::kEapPinProperty ||
+      key == shill::kApnPasswordProperty;
+}
+
+bool GetHomeProviderFromProperty(const base::Value& value,
+                                 std::string* home_provider_id) {
+  const base::DictionaryValue* dict = NULL;
+  if (!value.GetAsDictionary(&dict))
+    return false;
+  std::string home_provider_country;
+  std::string home_provider_name;
+  dict->GetStringWithoutPathExpansion(shill::kOperatorCountryKey,
+                                      &home_provider_country);
+  dict->GetStringWithoutPathExpansion(shill::kOperatorNameKey,
+                                      &home_provider_name);
+  // Set home_provider_id
+  if (!home_provider_name.empty() && !home_provider_country.empty()) {
+    *home_provider_id = base::StringPrintf(
+        "%s (%s)", home_provider_name.c_str(), home_provider_country.c_str());
+  } else {
+    if (!dict->GetStringWithoutPathExpansion(shill::kOperatorCodeKey,
+                                             home_provider_id)) {
+      return false;
+    }
+    LOG(WARNING)
+        << "Provider name and country not defined, using code instead: "
+        << *home_provider_id;
+  }
+  return true;
 }
 
 }  // namespace shill_property_util
-
-namespace {
-
-const char kPatternDefault[] = "PatternDefault";
-const char kPatternEthernet[] = "PatternEthernet";
-const char kPatternWireless[] = "PatternWireless";
-const char kPatternMobile[] = "PatternMobile";
-const char kPatternNonVirtual[] = "PatternNonVirtual";
-
-enum NetworkTypeBitFlag {
-  kNetworkTypeNone = 0,
-  kNetworkTypeEthernet = 1 << 0,
-  kNetworkTypeWifi = 1 << 1,
-  kNetworkTypeWimax = 1 << 2,
-  kNetworkTypeCellular = 1 << 3,
-  kNetworkTypeVPN = 1 << 4,
-  kNetworkTypeEthernetEap = 1 << 5,
-  kNetworkTypeBluetooth = 1 << 6
-};
-
-struct ShillToBitFlagEntry {
-  const char* shill_network_type;
-  NetworkTypeBitFlag bit_flag;
-} shill_type_to_flag[] = {
-  { shill::kTypeEthernet, kNetworkTypeEthernet },
-  { shill::kTypeEthernetEap, kNetworkTypeEthernetEap },
-  { shill::kTypeWifi, kNetworkTypeWifi },
-  { shill::kTypeWimax, kNetworkTypeWimax },
-  { shill::kTypeCellular, kNetworkTypeCellular },
-  { shill::kTypeVPN, kNetworkTypeVPN },
-  { shill::kTypeBluetooth, kNetworkTypeBluetooth }
-};
-
-NetworkTypeBitFlag ShillNetworkTypeToFlag(const std::string& shill_type) {
-  for (size_t i = 0; i < arraysize(shill_type_to_flag); ++i) {
-    if (shill_type_to_flag[i].shill_network_type == shill_type)
-      return shill_type_to_flag[i].bit_flag;
-  }
-  NET_LOG_ERROR("ShillNetworkTypeToFlag", "Unknown type: " + shill_type);
-  return kNetworkTypeNone;
-}
-
-}  // namespace
-
-// static
-NetworkTypePattern NetworkTypePattern::Default() {
-  return NetworkTypePattern(~0);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::Wireless() {
-  return NetworkTypePattern(kNetworkTypeWifi | kNetworkTypeWimax |
-                            kNetworkTypeCellular);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::Mobile() {
-  return NetworkTypePattern(kNetworkTypeCellular | kNetworkTypeWimax);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::NonVirtual() {
-  return NetworkTypePattern(~kNetworkTypeVPN);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::Ethernet() {
-  return NetworkTypePattern(kNetworkTypeEthernet);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::WiFi() {
-  return NetworkTypePattern(kNetworkTypeWifi);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::Cellular() {
-  return NetworkTypePattern(kNetworkTypeCellular);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::VPN() {
-  return NetworkTypePattern(kNetworkTypeVPN);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::Wimax() {
-  return NetworkTypePattern(kNetworkTypeWimax);
-}
-
-// static
-NetworkTypePattern NetworkTypePattern::Primitive(
-    const std::string& shill_network_type) {
-  return NetworkTypePattern(ShillNetworkTypeToFlag(shill_network_type));
-}
-
-bool NetworkTypePattern::Equals(const NetworkTypePattern& other) const {
-  return pattern_ == other.pattern_;
-}
-
-bool NetworkTypePattern::MatchesType(
-    const std::string& shill_network_type) const {
-  return MatchesPattern(Primitive(shill_network_type));
-}
-
-bool NetworkTypePattern::MatchesPattern(
-    const NetworkTypePattern& other_pattern) const {
-  if (Equals(other_pattern))
-    return true;
-
-  return pattern_ & other_pattern.pattern_;
-}
-
-std::string NetworkTypePattern::ToDebugString() const {
-  if (Equals(Default()))
-    return kPatternDefault;
-  if (Equals(Ethernet()))
-    return kPatternEthernet;
-  if (Equals(Wireless()))
-    return kPatternWireless;
-  if (Equals(Mobile()))
-    return kPatternMobile;
-  if (Equals(NonVirtual()))
-    return kPatternNonVirtual;
-
-  std::string str;
-  for (size_t i = 0; i < arraysize(shill_type_to_flag); ++i) {
-    if (!(pattern_ & shill_type_to_flag[i].bit_flag))
-      continue;
-    if (!str.empty())
-      str += "|";
-    str += shill_type_to_flag[i].shill_network_type;
-  }
-  return str;
-}
-
-NetworkTypePattern::NetworkTypePattern(int pattern) : pattern_(pattern) {}
 
 }  // namespace chromeos

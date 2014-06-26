@@ -9,11 +9,11 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -51,7 +51,7 @@ class BookmarkEditorViewTest : public testing::Test {
   std::string base_path() const { return "file:///c:/tmp/"; }
 
   const BookmarkNode* GetNode(const std::string& name) {
-    return model_->GetMostRecentlyAddedNodeForURL(GURL(base_path() + name));
+    return model_->GetMostRecentlyAddedUserNodeForURL(GURL(base_path() + name));
   }
 
   BookmarkNode* GetMutableNode(const std::string& name) {
@@ -431,5 +431,5 @@ TEST_F(BookmarkEditorViewTest, NewFolderTitleUpdatedOnCommit) {
   ASSERT_EQ(1, parent->child_count());
   const BookmarkNode* new_folder = parent->GetChild(0);
   ASSERT_TRUE(new_folder->is_folder());
-  EXPECT_EQ("modified", UTF16ToASCII(new_folder->GetTitle()));
+  EXPECT_EQ("modified", base::UTF16ToASCII(new_folder->GetTitle()));
 }

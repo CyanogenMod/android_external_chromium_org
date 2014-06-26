@@ -22,8 +22,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 const int kButtonHoverAlpha = 150;
@@ -39,8 +37,8 @@ const int kBackgroundOffset = (48 - kButtonHoverSize) / 2;
 OverflowButton::OverflowButton(views::ButtonListener* listener)
     : CustomButton(listener),
       bottom_image_(NULL) {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  bottom_image_ = rb.GetImageNamed(IDR_AURA_LAUNCHER_OVERFLOW).ToImageSkia();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  bottom_image_ = rb.GetImageNamed(IDR_ASH_SHELF_OVERFLOW).ToImageSkia();
 
 
   SetAccessibilityFocusable(true);
@@ -90,56 +88,35 @@ void OverflowButton::OnPaint(gfx::Canvas* canvas) {
   ShelfAlignment alignment = layout_manager->GetAlignment();
 
   gfx::Rect bounds(GetContentsBounds());
-  if (ash::switches::UseAlternateShelfLayout()) {
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    int background_image_id = 0;
-    if (layout_manager->shelf_widget()->shelf()->IsShowingOverflowBubble())
-      background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_PRESSED;
-    else if(layout_manager->shelf_widget()->GetDimsShelf())
-      background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_ON_BLACK;
-    else
-      background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_NORMAL;
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  int background_image_id = 0;
+  if (layout_manager->shelf_widget()->shelf()->IsShowingOverflowBubble())
+    background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_PRESSED;
+  else if(layout_manager->shelf_widget()->GetDimsShelf())
+    background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_ON_BLACK;
+  else
+    background_image_id = IDR_AURA_NOTIFICATION_BACKGROUND_NORMAL;
 
-    const gfx::ImageSkia* background =
-        rb.GetImageNamed(background_image_id).ToImageSkia();
-    if (alignment == SHELF_ALIGNMENT_LEFT) {
-      bounds = gfx::Rect(
-          bounds.right() - background->width() -
-              ShelfLayoutManager::kShelfItemInset,
-          bounds.y() + (bounds.height() - background->height()) / 2,
-          background->width(), background->height());
-    } else if (alignment == SHELF_ALIGNMENT_RIGHT) {
-      bounds = gfx::Rect(
-          bounds.x() + ShelfLayoutManager::kShelfItemInset,
-          bounds.y() + (bounds.height() - background->height()) / 2,
-          background->width(), background->height());
-    } else {
-      bounds = gfx::Rect(
-          bounds.x() + (bounds.width() - background->width()) / 2,
-          bounds.y() + ShelfLayoutManager::kShelfItemInset,
-          background->width(), background->height());
-    }
-    canvas->DrawImageInt(*background, bounds.x(), bounds.y());
+  const gfx::ImageSkia* background =
+      rb.GetImageNamed(background_image_id).ToImageSkia();
+  if (alignment == SHELF_ALIGNMENT_LEFT) {
+    bounds = gfx::Rect(
+        bounds.right() - background->width() -
+            ShelfLayoutManager::kShelfItemInset,
+        bounds.y() + (bounds.height() - background->height()) / 2,
+        background->width(), background->height());
+  } else if (alignment == SHELF_ALIGNMENT_RIGHT) {
+    bounds = gfx::Rect(
+        bounds.x() + ShelfLayoutManager::kShelfItemInset,
+        bounds.y() + (bounds.height() - background->height()) / 2,
+        background->width(), background->height());
   } else {
-    if (alignment == SHELF_ALIGNMENT_BOTTOM) {
-      bounds = gfx::Rect(
-          bounds.x() + ((bounds.width() - kButtonHoverSize) / 2) - 1,
-          bounds.y() + kBackgroundOffset - 1,
-          kButtonHoverSize, kButtonHoverSize);
-    } else {
-      bounds = gfx::Rect(
-          bounds.x() + kBackgroundOffset -1,
-          bounds.y() + ((bounds.height() - kButtonHoverSize) / 2) -1,
-          kButtonHoverSize, kButtonHoverSize);
-    }
-    if (hover_animation_->is_animating()) {
-      PaintBackground(
-          canvas,
-          kButtonHoverAlpha * hover_animation_->GetCurrentValue());
-    } else if (state() == STATE_HOVERED || state() == STATE_PRESSED) {
-      PaintBackground(canvas, kButtonHoverAlpha);
-    }
+    bounds = gfx::Rect(
+        bounds.x() + (bounds.width() - background->width()) / 2,
+        bounds.y() + ShelfLayoutManager::kShelfItemInset,
+        background->width(), background->height());
   }
+  canvas->DrawImageInt(*background, bounds.x(), bounds.y());
 
   if (height() < kButtonHoverSize)
     return;
@@ -171,5 +148,4 @@ void OverflowButton::OnPaint(gfx::Canvas* canvas) {
                        bounds.y() + ((bounds.height() - image->height()) / 2));
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -5,10 +5,11 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/signin/core/browser/signin_manager.h"
 
 LoginUIServiceFactory::LoginUIServiceFactory()
     : BrowserContextKeyedServiceFactory(
@@ -29,7 +30,7 @@ LoginUIServiceFactory* LoginUIServiceFactory::GetInstance() {
   return Singleton<LoginUIServiceFactory>::get();
 }
 
-BrowserContextKeyedService* LoginUIServiceFactory::BuildServiceInstanceFor(
+KeyedService* LoginUIServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   return new LoginUIService(static_cast<Profile*>(profile));
 }

@@ -12,16 +12,21 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/local_discovery/privet_http.h"
+#include "components/cloud_devices/common/cloud_device_description.h"
 #include "printing/pdf_render_settings.h"
+
+namespace printing {
+struct PwgRasterSettings;
+};
 
 namespace local_discovery {
 
-class PrivetHTTPClientImpl;
+class PrivetHTTPClient;
 
 class PrivetInfoOperationImpl : public PrivetJSONOperation,
                                 public PrivetURLFetcher::Delegate {
  public:
-  PrivetInfoOperationImpl(PrivetHTTPClientImpl* privet_client,
+  PrivetInfoOperationImpl(PrivetHTTPClient* privet_client,
                           const PrivetJSONOperation::ResultCallback& callback);
   virtual ~PrivetInfoOperationImpl();
 
@@ -36,7 +41,7 @@ class PrivetInfoOperationImpl : public PrivetJSONOperation,
                             bool has_error) OVERRIDE;
 
  private:
-  PrivetHTTPClientImpl* privet_client_;
+  PrivetHTTPClient* privet_client_;
   PrivetJSONOperation::ResultCallback callback_;
   scoped_ptr<PrivetURLFetcher> url_fetcher_;
 };
@@ -46,7 +51,7 @@ class PrivetRegisterOperationImpl
       public PrivetURLFetcher::Delegate,
       public base::SupportsWeakPtr<PrivetRegisterOperationImpl> {
  public:
-  PrivetRegisterOperationImpl(PrivetHTTPClientImpl* privet_client,
+  PrivetRegisterOperationImpl(PrivetHTTPClient* privet_client,
                               const std::string& user,
                               PrivetRegisterOperation::Delegate* delegate);
   virtual ~PrivetRegisterOperationImpl();
@@ -70,8 +75,7 @@ class PrivetRegisterOperationImpl
  private:
   class Cancelation : public PrivetURLFetcher::Delegate {
    public:
-    Cancelation(PrivetHTTPClientImpl* privet_client,
-                const std::string& user);
+    Cancelation(PrivetHTTPClient* privet_client, const std::string& user);
     virtual ~Cancelation();
 
     virtual void OnError(PrivetURLFetcher* fetcher,
@@ -94,7 +98,6 @@ class PrivetRegisterOperationImpl
   void StartInfoOperation();
   void OnPrivetInfoDone(const base::DictionaryValue* value);
 
-
   void StartResponse(const base::DictionaryValue& value);
   void GetClaimTokenResponse(const base::DictionaryValue& value);
   void CompleteResponse(const base::DictionaryValue& value);
@@ -105,7 +108,7 @@ class PrivetRegisterOperationImpl
   std::string current_action_;
   scoped_ptr<PrivetURLFetcher> url_fetcher_;
   PrivetRegisterOperation::Delegate* delegate_;
-  PrivetHTTPClientImpl* privet_client_;
+  PrivetHTTPClient* privet_client_;
   ResponseHandler next_response_handler_;
   // Required to ensure destroying completed register operations doesn't cause
   // extraneous cancelations.
@@ -118,11 +121,10 @@ class PrivetRegisterOperationImpl
 class PrivetJSONOperationImpl : public PrivetJSONOperation,
                                 public PrivetURLFetcher::Delegate {
  public:
-  PrivetJSONOperationImpl(
-      PrivetHTTPClientImpl* privet_client,
-      const std::string& path,
-      const std::string& query_params,
-      const PrivetJSONOperation::ResultCallback& callback);
+  PrivetJSONOperationImpl(PrivetHTTPClient* privet_client,
+                          const std::string& path,
+                          const std::string& query_params,
+                          const PrivetJSONOperation::ResultCallback& callback);
   virtual ~PrivetJSONOperationImpl();
   virtual void Start() OVERRIDE;
 
@@ -138,7 +140,7 @@ class PrivetJSONOperationImpl : public PrivetJSONOperation,
       const PrivetURLFetcher::TokenCallback& callback) OVERRIDE;
 
  private:
-  PrivetHTTPClientImpl* privet_client_;
+  PrivetHTTPClient* privet_client_;
   std::string path_;
   std::string query_params_;
   PrivetJSONOperation::ResultCallback callback_;
@@ -150,7 +152,7 @@ class PrivetDataReadOperationImpl : public PrivetDataReadOperation,
                                     public PrivetURLFetcher::Delegate {
  public:
   PrivetDataReadOperationImpl(
-      PrivetHTTPClientImpl* privet_client,
+      PrivetHTTPClient* privet_client,
       const std::string& path,
       const std::string& query_params,
       const PrivetDataReadOperation::ResultCallback& callback);
@@ -178,7 +180,7 @@ class PrivetDataReadOperationImpl : public PrivetDataReadOperation,
                          const base::FilePath& file_path) OVERRIDE;
 
  private:
-  PrivetHTTPClientImpl* privet_client_;
+  PrivetHTTPClient* privet_client_;
   std::string path_;
   std::string query_params_;
   int range_start_;
@@ -195,14 +197,15 @@ class PrivetLocalPrintOperationImpl
     : public PrivetLocalPrintOperation,
       public PrivetURLFetcher::Delegate {
  public:
-  PrivetLocalPrintOperationImpl(
-      PrivetHTTPClientImpl* privet_client,
-      PrivetLocalPrintOperation::Delegate* delegate);
+  PrivetLocalPrintOperationImpl(PrivetHTTPClient* privet_client,
+                                PrivetLocalPrintOperation::Delegate* delegate);
 
   virtual ~PrivetLocalPrintOperationImpl();
   virtual void Start() OVERRIDE;
 
   virtual void SetData(base::RefCountedBytes* data) OVERRIDE;
+
+  virtual void SetCapabilities(const std::string& capabilities) OVERRIDE;
 
   virtual void SetTicket(const std::string& ticket) OVERRIDE;
 
@@ -233,7 +236,6 @@ class PrivetLocalPrintOperationImpl
       ResponseCallback;
 
   void StartInitialRequest();
-  void GetCapabilities();
   void DoCreatejob();
   void DoSubmitdoc();
 
@@ -241,25 +243,25 @@ class PrivetLocalPrintOperationImpl
   void StartPrinting();
 
   void OnPrivetInfoDone(const base::DictionaryValue* value);
-  void OnCapabilitiesResponse(bool has_error,
-                              const base::DictionaryValue* value);
   void OnSubmitdocResponse(bool has_error,
                            const base::DictionaryValue* value);
   void OnCreatejobResponse(bool has_error,
                            const base::DictionaryValue* value);
   void OnPWGRasterConverted(bool success, const base::FilePath& pwg_file_path);
+  void FillPwgRasterSettings(printing::PwgRasterSettings* transfrom_settings);
 
-  PrivetHTTPClientImpl* privet_client_;
+  PrivetHTTPClient* privet_client_;
   PrivetLocalPrintOperation::Delegate* delegate_;
 
   ResponseCallback current_response_;
 
-  std::string ticket_;
+  cloud_devices::CloudDeviceDescription ticket_;
+  cloud_devices::CloudDeviceDescription capabilities_;
+
   scoped_refptr<base::RefCountedBytes> data_;
   base::FilePath pwg_file_path_;
 
   bool use_pdf_;
-  bool has_capabilities_;
   bool has_extended_workflow_;
   bool started_;
   bool offline_;
@@ -288,42 +290,16 @@ class PrivetHTTPClientImpl : public PrivetHTTPClient {
       net::URLRequestContextGetter* request_context);
   virtual ~PrivetHTTPClientImpl();
 
-  virtual const base::DictionaryValue* GetCachedInfo() const OVERRIDE;
-
-  virtual scoped_ptr<PrivetRegisterOperation> CreateRegisterOperation(
-      const std::string& user,
-      PrivetRegisterOperation::Delegate* delegate) OVERRIDE;
-
+  // PrivetHTTPClient implementation.
+  virtual const std::string& GetName() OVERRIDE;
   virtual scoped_ptr<PrivetJSONOperation> CreateInfoOperation(
       const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
-
-  virtual scoped_ptr<PrivetJSONOperation> CreateCapabilitiesOperation(
-      const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
-
-  virtual scoped_ptr<PrivetLocalPrintOperation> CreateLocalPrintOperation(
-      PrivetLocalPrintOperation::Delegate* delegate) OVERRIDE;
-
-  virtual scoped_ptr<PrivetJSONOperation> CreateStorageListOperation(
-      const std::string& path,
-      const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
-
-  virtual scoped_ptr<PrivetDataReadOperation> CreateStorageReadOperation(
-      const std::string& path,
-      const PrivetDataReadOperation::ResultCallback& callback) OVERRIDE;
-
-  virtual const std::string& GetName() OVERRIDE;
-
-  scoped_ptr<PrivetURLFetcher> CreateURLFetcher(
+  virtual scoped_ptr<PrivetURLFetcher> CreateURLFetcher(
       const GURL& url,
       net::URLFetcher::RequestType request_type,
-      PrivetURLFetcher::Delegate* delegate) const;
-
-  void CacheInfo(const base::DictionaryValue* cached_info);
-
-  bool HasToken() const;
-
-  void RefreshPrivetToken(
-      const PrivetURLFetcher::TokenCallback& token_callback);
+      PrivetURLFetcher::Delegate* delegate) OVERRIDE;
+  virtual void RefreshPrivetToken(
+      const PrivetURLFetcher::TokenCallback& token_callback) OVERRIDE;
 
  private:
   typedef std::vector<PrivetURLFetcher::TokenCallback> TokenCallbackVector;
@@ -331,12 +307,60 @@ class PrivetHTTPClientImpl : public PrivetHTTPClient {
   void OnPrivetInfoDone(const base::DictionaryValue* value);
 
   std::string name_;
-  PrivetURLFetcherFactory fetcher_factory_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
   net::HostPortPair host_port_;
-  scoped_ptr<base::DictionaryValue> cached_info_;
 
   scoped_ptr<PrivetJSONOperation> info_operation_;
   TokenCallbackVector token_callbacks_;
+
+  DISALLOW_COPY_AND_ASSIGN(PrivetHTTPClientImpl);
+};
+
+class PrivetV1HTTPClientImpl : public PrivetV1HTTPClient {
+ public:
+  explicit PrivetV1HTTPClientImpl(scoped_ptr<PrivetHTTPClient> info_client);
+  virtual ~PrivetV1HTTPClientImpl();
+
+  virtual const std::string& GetName() OVERRIDE;
+  virtual scoped_ptr<PrivetJSONOperation> CreateInfoOperation(
+      const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
+  virtual scoped_ptr<PrivetRegisterOperation> CreateRegisterOperation(
+      const std::string& user,
+      PrivetRegisterOperation::Delegate* delegate) OVERRIDE;
+  virtual scoped_ptr<PrivetJSONOperation> CreateCapabilitiesOperation(
+      const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
+  virtual scoped_ptr<PrivetLocalPrintOperation> CreateLocalPrintOperation(
+      PrivetLocalPrintOperation::Delegate* delegate) OVERRIDE;
+  virtual scoped_ptr<PrivetJSONOperation> CreateStorageListOperation(
+      const std::string& path,
+      const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
+  virtual scoped_ptr<PrivetDataReadOperation> CreateStorageReadOperation(
+      const std::string& path,
+      const PrivetDataReadOperation::ResultCallback& callback) OVERRIDE;
+
+ private:
+  PrivetHTTPClient* info_client() { return info_client_.get(); }
+
+  scoped_ptr<PrivetHTTPClient> info_client_;
+
+  DISALLOW_COPY_AND_ASSIGN(PrivetV1HTTPClientImpl);
+};
+
+class PrivetV3HTTPClientImpl : public PrivetV3HTTPClient {
+ public:
+  explicit PrivetV3HTTPClientImpl(scoped_ptr<PrivetHTTPClient> info_client);
+  virtual ~PrivetV3HTTPClientImpl();
+
+  virtual const std::string& GetName() OVERRIDE;
+  virtual scoped_ptr<PrivetJSONOperation> CreateInfoOperation(
+      const PrivetJSONOperation::ResultCallback& callback) OVERRIDE;
+
+ private:
+  PrivetHTTPClient* info_client() { return info_client_.get(); }
+
+  scoped_ptr<PrivetHTTPClient> info_client_;
+
+  DISALLOW_COPY_AND_ASSIGN(PrivetV3HTTPClientImpl);
 };
 
 }  // namespace local_discovery

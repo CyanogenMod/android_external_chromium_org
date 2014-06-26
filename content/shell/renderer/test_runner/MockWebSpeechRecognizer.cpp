@@ -4,6 +4,7 @@
 
 #include "content/shell/renderer/test_runner/MockWebSpeechRecognizer.h"
 
+#include "base/logging.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
 #include "third_party/WebKit/public/web/WebSpeechRecognitionResult.h"
 #include "third_party/WebKit/public/web/WebSpeechRecognizerClient.h"
@@ -11,7 +12,7 @@
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -113,7 +114,7 @@ void MockWebSpeechRecognizer::start(const WebSpeechRecognitionHandle& handle, co
     m_taskQueue.push_back(new ClientCallTask(this, &WebSpeechRecognizerClient::didStartSound));
 
     if (!m_mockTranscripts.empty()) {
-        BLINK_ASSERT(m_mockTranscripts.size() == m_mockConfidences.size());
+        DCHECK_EQ(m_mockTranscripts.size(), m_mockConfidences.size());
 
         for (size_t i = 0; i < m_mockTranscripts.size(); ++i)
             m_taskQueue.push_back(new ResultTask(this, m_mockTranscripts[i], m_mockConfidences[i]));
@@ -136,7 +137,7 @@ void MockWebSpeechRecognizer::stop(const WebSpeechRecognitionHandle& handle, Web
     m_client = client;
 
     // FIXME: Implement.
-    BLINK_ASSERT_NOT_REACHED();
+    NOTREACHED();
 }
 
 void MockWebSpeechRecognizer::abort(const WebSpeechRecognitionHandle& handle, WebSpeechRecognizerClient* client)
@@ -223,4 +224,4 @@ void MockWebSpeechRecognizer::StepTask::runIfValid()
     m_object->m_delegate->postTask(new StepTask(m_object));
 }
 
-}
+}  // namespace content

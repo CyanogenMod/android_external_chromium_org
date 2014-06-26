@@ -4,6 +4,7 @@
 
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "build/build_config.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/vector2d.h"
@@ -57,6 +58,15 @@ int GetChangedMouseButtonFlagsFromNative(
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return gfx::Vector2d();
+}
+
+base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
+  NOTIMPLEMENTED() <<
+      "Don't know how to copy base::NativeEvent for this platform";
+  return NULL;
+}
+
+void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
@@ -137,6 +147,11 @@ KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
 const char* CodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return "";
+}
+
+uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 }  // namespace ui

@@ -16,7 +16,7 @@
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chromeos/dbus/cryptohome_client.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
@@ -42,8 +42,7 @@ EnrollmentScreen::EnrollmentScreen(
     EnrollmentScreenActor* actor)
     : WizardScreen(observer),
       actor_(actor),
-      is_auto_enrollment_(false),
-      can_exit_enrollment_(true),
+      enrollment_mode_(EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL),
       enrollment_failed_once_(false),
       lockbox_init_duration_(0),
       weak_ptr_factory_(this) {
@@ -55,13 +54,13 @@ EnrollmentScreen::EnrollmentScreen(
 
 EnrollmentScreen::~EnrollmentScreen() {}
 
-void EnrollmentScreen::SetParameters(bool is_auto_enrollment,
-                                     bool can_exit_enrollment,
-                                     const std::string& user) {
-  is_auto_enrollment_ = is_auto_enrollment;
-  can_exit_enrollment_ = can_exit_enrollment;
+void EnrollmentScreen::SetParameters(
+    EnrollmentScreenActor::EnrollmentMode enrollment_mode,
+    const std::string& management_domain,
+    const std::string& user) {
+  enrollment_mode_ = enrollment_mode;
   user_ = user.empty() ? user : gaia::CanonicalizeEmail(user);
-  actor_->SetParameters(this, is_auto_enrollment_, can_exit_enrollment, user_);
+  actor_->SetParameters(this, enrollment_mode_, management_domain);
 }
 
 void EnrollmentScreen::PrepareToShow() {
@@ -69,7 +68,7 @@ void EnrollmentScreen::PrepareToShow() {
 }
 
 void EnrollmentScreen::Show() {
-  if (is_auto_enrollment_ && !enrollment_failed_once_) {
+  if (is_auto_enrollment() && !enrollment_failed_once_) {
     actor_->Show();
     UMA(policy::kMetricEnrollmentAutoStarted);
     actor_->ShowEnrollmentSpinnerScreen();
@@ -92,8 +91,8 @@ std::string EnrollmentScreen::GetName() const {
 void EnrollmentScreen::OnLoginDone(const std::string& user) {
   user_ = gaia::CanonicalizeEmail(user);
 
-  UMA(is_auto_enrollment_ ? policy::kMetricEnrollmentAutoRetried
-                          : policy::kMetricEnrollmentStarted);
+  UMA(is_auto_enrollment() ? policy::kMetricEnrollmentAutoRetried
+                           : policy::kMetricEnrollmentStarted);
 
   actor_->ShowEnrollmentSpinnerScreen();
   actor_->FetchOAuthToken();
@@ -146,7 +145,7 @@ void EnrollmentScreen::OnRetry() {
 }
 
 void EnrollmentScreen::OnCancel() {
-  if (!can_exit_enrollment_) {
+  if (enrollment_mode_ == EnrollmentScreenActor::ENROLLMENT_MODE_FORCED) {
     actor_->ResetAuth(
         base::Bind(&ScreenObserver::OnExit,
                    base::Unretained(get_screen_observer()),
@@ -154,10 +153,10 @@ void EnrollmentScreen::OnCancel() {
     return;
   }
 
-  if (is_auto_enrollment_)
+  if (is_auto_enrollment())
     policy::AutoEnrollmentClient::CancelAutoEnrollment();
-  UMA(is_auto_enrollment_ ? policy::kMetricEnrollmentAutoCancelled
-                          : policy::kMetricEnrollmentCancelled);
+  UMA(is_auto_enrollment() ? policy::kMetricEnrollmentAutoCancelled
+                           : policy::kMetricEnrollmentCancelled);
   actor_->ResetAuth(
       base::Bind(&ScreenObserver::OnExit,
                  base::Unretained(get_screen_observer()),
@@ -174,7 +173,7 @@ void EnrollmentScreen::OnConfirmationClosed() {
     return;
   }
 
-  if (is_auto_enrollment_ &&
+  if (is_auto_enrollment() &&
       !enrollment_failed_once_ &&
       !user_.empty() &&
       LoginUtils::IsWhitelisted(user_, NULL)) {
@@ -203,28 +202,44 @@ void EnrollmentScreen::RegisterForDevicePolicy(
     return;
   }
 
-  policy::DeviceCloudPolicyManagerChromeOS::AllowedDeviceModes modes;
-  modes[policy::DEVICE_MODE_ENTERPRISE] = true;
-  modes[policy::DEVICE_MODE_RETAIL_KIOSK] = !is_auto_enrollment_;
+  policy::DeviceCloudPolicyInitializer::AllowedDeviceModes device_modes;
+  device_modes[policy::DEVICE_MODE_ENTERPRISE] = true;
+  device_modes[policy::DEVICE_MODE_RETAIL_KIOSK] =
+      enrollment_mode_ == EnrollmentScreenActor::ENROLLMENT_MODE_MANUAL;
   connector->ScheduleServiceInitialization(0);
-  connector->GetDeviceCloudPolicyManager()->StartEnrollment(
-      token, is_auto_enrollment_, modes,
+
+  policy::DeviceCloudPolicyInitializer* dcp_initializer =
+      connector->GetDeviceCloudPolicyInitializer();
+  CHECK(dcp_initializer);
+  dcp_initializer->StartEnrollment(
+      connector->device_management_service(),
+      token, is_auto_enrollment(), device_modes,
       base::Bind(&EnrollmentScreen::ReportEnrollmentStatus,
                  weak_ptr_factory_.GetWeakPtr()));
+}
+
+void EnrollmentScreen::ShowEnrollmentStatusOnSuccess(
+    const policy::EnrollmentStatus& status) {
+  actor_->ShowEnrollmentStatus(status);
+  StartupUtils::MarkOobeCompleted();
 }
 
 void EnrollmentScreen::ReportEnrollmentStatus(
     policy::EnrollmentStatus status) {
   bool success = status.status() == policy::EnrollmentStatus::STATUS_SUCCESS;
   enrollment_failed_once_ |= !success;
+  if (status.status() == policy::EnrollmentStatus::STATUS_SUCCESS) {
+    StartupUtils::MarkDeviceRegistered(
+        base::Bind(&EnrollmentScreen::ShowEnrollmentStatusOnSuccess,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   status));
+    UMA(is_auto_enrollment() ? policy::kMetricEnrollmentAutoOK
+                             : policy::kMetricEnrollmentOK);
+    return;
+  }
   actor_->ShowEnrollmentStatus(status);
 
   switch (status.status()) {
-    case policy::EnrollmentStatus::STATUS_SUCCESS:
-      StartupUtils::MarkDeviceRegistered();
-      UMA(is_auto_enrollment_ ? policy::kMetricEnrollmentAutoOK
-                              : policy::kMetricEnrollmentOK);
-      return;
     case policy::EnrollmentStatus::STATUS_REGISTRATION_FAILED:
     case policy::EnrollmentStatus::STATUS_POLICY_FETCH_FAILED:
       switch (status.client_status()) {
@@ -255,6 +270,9 @@ void EnrollmentScreen::ReportEnrollmentStatus(
         case policy::DM_STATUS_SERVICE_DEPROVISIONED:
           UMAFailure(policy::kMetricEnrollmentDeprovisioned);
           return;
+        case policy::DM_STATUS_SERVICE_DOMAIN_MISMATCH:
+          UMAFailure(policy::kMetricEnrollmentDomainMismatch);
+          return;
       }
       break;
     case policy::EnrollmentStatus::STATUS_REGISTRATION_BAD_MODE:
@@ -266,6 +284,7 @@ void EnrollmentScreen::ReportEnrollmentStatus(
     case policy::EnrollmentStatus::STATUS_LOCK_WRONG_USER:
       UMAFailure(policy::kMetricEnrollmentWrongUserError);
       return;
+    case policy::EnrollmentStatus::STATUS_NO_STATE_KEYS:
     case policy::EnrollmentStatus::STATUS_VALIDATION_FAILED:
     case policy::EnrollmentStatus::STATUS_STORE_ERROR:
     case policy::EnrollmentStatus::STATUS_LOCK_ERROR:
@@ -280,6 +299,9 @@ void EnrollmentScreen::ReportEnrollmentStatus(
     case policy::EnrollmentStatus::STATUS_ROBOT_REFRESH_STORE_FAILED:
       UMAFailure(policy::kMetricEnrollmentRobotRefreshTokenStoreFailed);
       return;
+    case policy::EnrollmentStatus::STATUS_SUCCESS:
+      NOTREACHED();
+      return;
   }
 
   NOTREACHED();
@@ -287,7 +309,7 @@ void EnrollmentScreen::ReportEnrollmentStatus(
 }
 
 void EnrollmentScreen::UMAFailure(int sample) {
-  if (is_auto_enrollment_)
+  if (is_auto_enrollment())
     sample = policy::kMetricEnrollmentAutoFailed;
   UMA(sample);
 }

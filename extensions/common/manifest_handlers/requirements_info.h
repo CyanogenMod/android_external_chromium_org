@@ -20,8 +20,8 @@ struct RequirementsInfo : public Extension::ManifestData {
   virtual ~RequirementsInfo();
 
   bool webgl;
-  bool css3d;
   bool npapi;
+  bool window_shape;
 
   static const RequirementsInfo& GetRequirements(const Extension* extension);
 };

@@ -17,20 +17,25 @@
 // 5. MediaStreamManager will call the proper media device manager to open the
 //    device and let the MediaStreamRequester know it has been done.
 
+// If either user or test harness selects --use-fake-device-for-media-stream,
+// a fake video device or devices are used instead of real ones.
+
 // When enumeration and open are done in separate operations,
 // MediaStreamUIController is not involved as in steps.
 
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_MANAGER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_MEDIA_STREAM_MANAGER_H_
 
-#include <map>
+#include <list>
 #include <set>
 #include <string>
+#include <utility>
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/power_monitor/power_observer.h"
 #include "base/system_monitor/system_monitor.h"
 #include "content/browser/renderer_host/media/media_stream_provider.h"
 #include "content/common/content_export.h"
@@ -57,6 +62,7 @@ class VideoCaptureManager;
 class CONTENT_EXPORT MediaStreamManager
     : public MediaStreamProviderListener,
       public base::MessageLoop::DestructionObserver,
+      public base::PowerObserver,
       public base::SystemMonitor::DevicesChangedObserver {
  public:
   // Callback to deliver the result of a media request.
@@ -97,7 +103,8 @@ class CONTENT_EXPORT MediaStreamManager
                       const ResourceContext::SaltCallback& sc,
                       int page_request_id,
                       const StreamOptions& components,
-                      const GURL& security_origin);
+                      const GURL& security_origin,
+                      bool user_gesture);
 
   void CancelRequest(int render_process_id,
                      int render_view_id,
@@ -122,13 +129,15 @@ class CONTENT_EXPORT MediaStreamManager
   // and video devices and also start monitoring device changes, such as
   // plug/unplug. The new device lists will be delivered via media observer to
   // MediaCaptureDevicesDispatcher.
+  // If |have_permission| is false, we remove the device label from the result.
   virtual std::string EnumerateDevices(MediaStreamRequester* requester,
                                        int render_process_id,
                                        int render_view_id,
                                        const ResourceContext::SaltCallback& sc,
                                        int page_request_id,
                                        MediaStreamType type,
-                                       const GURL& security_origin);
+                                       const GURL& security_origin,
+                                       bool have_permission);
 
   // Open a device identified by |device_id|.  |type| must be either
   // MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
@@ -142,6 +151,16 @@ class CONTENT_EXPORT MediaStreamManager
                   MediaStreamType type,
                   const GURL& security_origin);
 
+  // Finds and returns the device id corresponding to the given
+  // |source_id|. Returns true if there was a raw device id that matched the
+  // given |source_id|, false if nothing matched it.
+  bool TranslateSourceIdToDeviceId(
+      MediaStreamType stream_type,
+      const ResourceContext::SaltCallback& rc,
+      const GURL& security_origin,
+      const std::string& source_id,
+      std::string* device_id) const;
+
   // Called by UI to make sure the device monitor is started so that UI receive
   // notifications about device changes.
   void EnsureDeviceMonitorStarted();
@@ -153,15 +172,12 @@ class CONTENT_EXPORT MediaStreamManager
                       int capture_session_id) OVERRIDE;
   virtual void DevicesEnumerated(MediaStreamType stream_type,
                                  const StreamDeviceInfoArray& devices) OVERRIDE;
+  virtual void Aborted(MediaStreamType stream_type,
+                       int capture_session_id) OVERRIDE;
 
   // Implements base::SystemMonitor::DevicesChangedObserver.
   virtual void OnDevicesChanged(
       base::SystemMonitor::DeviceType device_type) OVERRIDE;
-
-  // Used by unit test to make sure fake devices are used instead of a real
-  // devices, which is needed for server based testing or certain tests (which
-  // can pass --use-fake-device-for-media-stream).
-  void UseFakeDevice();
 
   // Called by the tests to specify a fake UI that should be used for next
   // generated stream (or when using --use-fake-ui-for-media-stream).
@@ -192,6 +208,10 @@ class CONTENT_EXPORT MediaStreamManager
   // logging from webrtcLoggingPrivate API. Safe to call from any thread.
   static void SendMessageToNativeLog(const std::string& message);
 
+  // base::PowerObserver overrides.
+  virtual void OnSuspend() OVERRIDE;
+  virtual void OnResume() OVERRIDE;
+
  protected:
   // Used for testing.
   MediaStreamManager();
@@ -209,7 +229,10 @@ class CONTENT_EXPORT MediaStreamManager
     StreamDeviceInfoArray devices;
   };
 
-  typedef std::map<std::string, DeviceRequest*> DeviceRequests;
+  // |DeviceRequests| is a list to ensure requests are processed in the order
+  // they arrive. The first member of the pair is the label of the
+  // |DeviceRequest|.
+  typedef std::list<std::pair<std::string, DeviceRequest*> > DeviceRequests;
 
   // Initializes the device managers on IO thread.  Auto-starts the device
   // thread and registers this as a listener with the device managers.
@@ -221,10 +244,16 @@ class CONTENT_EXPORT MediaStreamManager
                             const StreamDeviceInfoArray& devices);
 
   void HandleAccessRequestResponse(const std::string& label,
-                                   const MediaStreamDevices& devices);
+                                   const MediaStreamDevices& devices,
+                                   content::MediaStreamRequestResult result);
   void StopMediaStreamFromBrowser(const std::string& label);
 
   void DoEnumerateDevices(const std::string& label);
+
+  // Enumerates audio output devices. No caching.
+  void EnumerateAudioOutputDevices(const std::string& label);
+
+  void AudioOutputDevicesEnumerated(const StreamDeviceInfoArray& devices);
 
   // Helpers.
   // Checks if all devices that was requested in the request identififed by
@@ -284,7 +313,8 @@ class CONTENT_EXPORT MediaStreamManager
   void FinalizeGenerateStream(const std::string& label,
                               DeviceRequest* request);
   void FinalizeRequestFailed(const std::string& label,
-                             DeviceRequest* request);
+                             DeviceRequest* request,
+                             content::MediaStreamRequestResult result);
   void FinalizeOpenDevice(const std::string& label,
                           DeviceRequest* request);
   void FinalizeMediaAccessRequest(const std::string& label,
@@ -307,6 +337,9 @@ class CONTENT_EXPORT MediaStreamManager
   // Helpers to start and stop monitoring devices.
   void StartMonitoring();
   void StopMonitoring();
+#if defined(OS_MACOSX)
+  void StartMonitoringOnUIThread();
+#endif
 
   // Finds the requested device id from constraints. The requested device type
   // must be MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
@@ -323,17 +356,14 @@ class CONTENT_EXPORT MediaStreamManager
   void AddLogMessageOnUIThread(const std::set<int>& render_process_ids,
                                const std::string& message);
 
-  // Finds and returns the device id corresponding to the given
-  // |source_id|. Returns true if there was a raw device id that matched the
-  // given |source_id|, false if nothing matched it.
-  bool TranslateSourceIdToDeviceId(
-      MediaStreamType stream_type,
-      const ResourceContext::SaltCallback& rc,
-      const GURL& security_origin,
-      const std::string& source_id,
-      std::string* device_id) const;
+  // Handles the callback from MediaStreamUIProxy to receive the UI window id,
+  // used for excluding the notification window in desktop capturing.
+  void OnMediaStreamUIWindowId(MediaStreamType video_type,
+                               StreamDeviceInfoArray devices,
+                               gfx::NativeViewId window_id);
 
-  // Task runner shared by VideoCaptureManager and AudioInputDeviceManager.
+  // Task runner shared by VideoCaptureManager and AudioInputDeviceManager and
+  // used for enumerating audio output devices.
   // Note: Enumeration tasks may take seconds to complete so must never be run
   // on any of the BrowserThreads (UI, IO, etc).  See http://crbug.com/256945.
   scoped_refptr<base::SingleThreadTaskRunner> device_task_runner_;

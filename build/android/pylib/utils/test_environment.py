@@ -3,11 +3,11 @@
 # found in the LICENSE file.
 
 import logging
-import os
 import psutil
 import signal
 
-from pylib import android_commands
+from pylib.device import device_errors
+from pylib.device import device_utils
 
 
 def _KillWebServers():
@@ -30,17 +30,17 @@ def _KillWebServers():
         logging.warning('Failed waiting for %s to die. %s', p.pid, e)
 
 
-
 def CleanupLeftoverProcesses():
   """Clean up the test environment, restarting fresh adb and HTTP daemons."""
   _KillWebServers()
-  did_restart_host_adb = False
-  for device in android_commands.GetAttachedDevices():
-    adb = android_commands.AndroidCommands(device, api_strict_mode=True)
-    # Make sure we restart the host adb server only once.
-    if not did_restart_host_adb:
-      adb.RestartAdbServer()
-      did_restart_host_adb = True
-    adb.RestartAdbdOnDevice()
-    adb.EnableAdbRoot()
-    adb.WaitForDevicePm()
+  device_utils.RestartServer()
+  p = device_utils.DeviceUtils.parallel()
+  p.old_interface.RestartAdbdOnDevice()
+  try:
+    p.EnableRoot()
+  except device_errors.CommandFailedError as e:
+    # TODO(jbudorick) Handle this exception appropriately after interface
+    #                 conversions are finished.
+    logging.error(str(e))
+  p.WaitUntilFullyBooted()
+

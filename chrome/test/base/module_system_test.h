@@ -6,10 +6,10 @@
 #define CHROME_TEST_BASE_MODULE_SYSTEM_TEST_H_
 
 #include "chrome/renderer/extensions/chrome_v8_context.h"
-#include "chrome/renderer/extensions/module_system.h"
-#include "chrome/renderer/extensions/scoped_persistent.h"
-#include "v8/include/v8.h"
+#include "extensions/renderer/module_system.h"
+#include "extensions/renderer/scoped_persistent.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "v8/include/v8.h"
 
 // Test fixture for testing JS that makes use of the module system.
 //
@@ -63,7 +63,6 @@ class ModuleSystemTest : public testing::Test {
   AssertNatives* assert_natives_;
   class StringSourceMap;
   scoped_ptr<StringSourceMap> source_map_;
-  scoped_ptr<extensions::ModuleSystem> module_system_;
   bool should_assertions_be_made_;
 
  private:

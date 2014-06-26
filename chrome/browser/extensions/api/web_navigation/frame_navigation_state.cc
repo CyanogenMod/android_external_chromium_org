@@ -14,14 +14,14 @@ namespace {
 
 // URL schemes for which we'll send events.
 const char* kValidSchemes[] = {
-  content::kChromeUIScheme,
-  content::kHttpScheme,
-  content::kHttpsScheme,
-  content::kFileScheme,
-  content::kFtpScheme,
-  content::kJavaScriptScheme,
-  content::kDataScheme,
-  content::kFileSystemScheme,
+    content::kChromeUIScheme,
+    url::kHttpScheme,
+    url::kHttpsScheme,
+    url::kFileScheme,
+    url::kFtpScheme,
+    url::kJavaScriptScheme,
+    url::kDataScheme,
+    url::kFileSystemScheme,
 };
 
 }  // namespace
@@ -81,13 +81,11 @@ bool FrameNavigationState::IsValidUrl(const GURL& url) const {
       return true;
   }
   // Allow about:blank and about:srcdoc.
-  if (url.spec() == content::kAboutBlankURL ||
+  if (url.spec() == url::kAboutBlankURL ||
       url.spec() == content::kAboutSrcDocURL) {
     return true;
   }
-  if (allow_extension_scheme_ && url.scheme() == extensions::kExtensionScheme)
-    return true;
-  return false;
+  return allow_extension_scheme_ && url.scheme() == kExtensionScheme;
 }
 
 void FrameNavigationState::TrackFrame(FrameID frame_id,
@@ -101,7 +99,7 @@ void FrameNavigationState::TrackFrame(FrameID frame_id,
   frame_state.url = url;
   frame_state.is_main_frame = is_main_frame;
   frame_state.is_iframe_srcdoc = is_iframe_srcdoc;
-  DCHECK(!is_iframe_srcdoc || url == GURL(content::kAboutBlankURL));
+  DCHECK(!is_iframe_srcdoc || url == GURL(url::kAboutBlankURL));
   frame_state.is_navigating = true;
   frame_state.is_committed = false;
   frame_state.is_server_redirected = false;
@@ -109,7 +107,7 @@ void FrameNavigationState::TrackFrame(FrameID frame_id,
   if (!is_main_frame) {
     frame_state.parent_frame_num = parent_frame_id.frame_num;
   } else {
-    DCHECK(parent_frame_id.frame_num == -1);
+    DCHECK_EQ(-1, parent_frame_id.frame_num);
     frame_state.parent_frame_num = -1;
   }
   frame_ids_.insert(frame_id);

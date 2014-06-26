@@ -7,7 +7,6 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -15,7 +14,6 @@
 #include "base/time/time.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/proto/google_streaming_api.pb.h"
-#include "content/public/common/content_switches.h"
 #include "content/public/common/speech_recognition_error.h"
 #include "content/public/common/speech_recognition_result.h"
 #include "google_apis/google_api_keys.h"
@@ -67,21 +65,6 @@ void DumpResponse(const std::string& response) {
         DVLOG(1) << "    TRANSCRIPT:\t" << alt.transcript();
     }
   }
-}
-
-std::string GetAPIKey() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kSpeechRecognitionWebserviceKey)) {
-    DVLOG(1) << "GetAPIKey() used key from command-line.";
-    return command_line.GetSwitchValueASCII(
-        switches::kSpeechRecognitionWebserviceKey);
-  }
-
-  std::string api_key = google_apis::GetAPIKey();
-  if (api_key.empty())
-    DVLOG(1) << "GetAPIKey() returned empty string!";
-
-  return api_key;
 }
 
 }  // namespace
@@ -317,7 +300,7 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // Setup downstream fetcher.
   std::vector<std::string> downstream_args;
   downstream_args.push_back(
-      "key=" + net::EscapeQueryParamValue(GetAPIKey(), true));
+      "key=" + net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
   downstream_args.push_back("pair=" + request_key);
   downstream_args.push_back("output=pb");
   GURL downstream_url(std::string(kWebServiceBaseUrl) +
@@ -337,7 +320,7 @@ GoogleStreamingRemoteEngine::ConnectBothStreams(const FSMEventArgs&) {
   // TODO(hans): Support for user-selected grammars.
   std::vector<std::string> upstream_args;
   upstream_args.push_back("key=" +
-      net::EscapeQueryParamValue(GetAPIKey(), true));
+      net::EscapeQueryParamValue(google_apis::GetAPIKey(), true));
   upstream_args.push_back("pair=" + request_key);
   upstream_args.push_back("output=pb");
   upstream_args.push_back(
@@ -579,8 +562,8 @@ std::string GoogleStreamingRemoteEngine::GetAcceptedLanguages() const {
 
 // TODO(primiano): Is there any utility in the codebase that already does this?
 std::string GoogleStreamingRemoteEngine::GenerateRequestKey() const {
-  const int64 kKeepLowBytes = GG_LONGLONG(0x00000000FFFFFFFF);
-  const int64 kKeepHighBytes = GG_LONGLONG(0xFFFFFFFF00000000);
+  const int64 kKeepLowBytes = 0x00000000FFFFFFFFLL;
+  const int64 kKeepHighBytes = 0xFFFFFFFF00000000LL;
 
   // Just keep the least significant bits of timestamp, in order to reduce
   // probability of collisions.

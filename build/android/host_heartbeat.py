@@ -7,12 +7,13 @@
 """Sends a heart beat pulse to the currently online Android devices.
 This heart beat lets the devices know that they are connected to a host.
 """
+# pylint: disable=W0702
 
-import os
 import sys
 import time
 
 from pylib import android_commands
+from pylib.device import device_utils
 
 PULSE_PERIOD = 20
 
@@ -20,9 +21,9 @@ def main():
   while True:
     try:
       devices = android_commands.GetAttachedDevices()
-      for device in devices:
-        android_cmd = android_commands.AndroidCommands(device)
-        android_cmd.RunShellCommand('touch /sdcard/host_heartbeat')
+      for device_serial in devices:
+        device_utils.DeviceUtils(device_serial).RunShellCommand(
+            'touch /sdcard/host_heartbeat')
     except:
       # Keep the heatbeat running bypassing all errors.
       pass

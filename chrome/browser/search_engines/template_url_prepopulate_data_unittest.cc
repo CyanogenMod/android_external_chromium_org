@@ -6,15 +6,14 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/prepopulated_engines.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
-#include "chrome/browser/search_engines/template_url.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/common/chrome_switches.h"
-#include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service_syncable.h"
-#include "chrome/test/base/testing_profile.h"
+#include "components/google/core/browser/google_switches.h"
+#include "components/pref_registry/testing_pref_service_syncable.h"
+#include "components/search_engines/prepopulated_engines.h"
+#include "components/search_engines/search_engines_pref_names.h"
+#include "components/search_engines/search_terms_data.h"
+#include "components/search_engines/template_url.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -22,18 +21,33 @@
 using base::ASCIIToUTF16;
 
 namespace {
+
 SearchEngineType GetEngineType(const std::string& url) {
   TemplateURLData data;
   data.SetURL(url);
-  return TemplateURLPrepopulateData::GetEngineType(TemplateURL(NULL, data));
+  return TemplateURLPrepopulateData::GetEngineType(TemplateURL(data),
+                                                   SearchTermsData());
 }
+
+std::string GetHostFromTemplateURLData(const TemplateURLData& data) {
+  return TemplateURL(data).url_ref().GetHost(SearchTermsData());
+}
+
 }  // namespace
 
-typedef testing::Test TemplateURLPrepopulateDataTest;
+class TemplateURLPrepopulateDataTest : public testing::Test {
+ public:
+  virtual void SetUp() OVERRIDE {
+    TemplateURLPrepopulateData::RegisterProfilePrefs(prefs_.registry());
+  }
+
+ protected:
+  user_prefs::TestingPrefServiceSyncable prefs_;
+};
 
 // Verifies the set of prepopulate data doesn't contain entries with duplicate
 // ids.
-TEST(TemplateURLPrepopulateDataTest, UniqueIDs) {
+TEST_F(TemplateURLPrepopulateDataTest, UniqueIDs) {
   const int kCountryIds[] = {
       'A'<<8|'D', 'A'<<8|'E', 'A'<<8|'F', 'A'<<8|'G', 'A'<<8|'I',
       'A'<<8|'L', 'A'<<8|'M', 'A'<<8|'N', 'A'<<8|'O', 'A'<<8|'Q',
@@ -85,28 +99,25 @@ TEST(TemplateURLPrepopulateDataTest, UniqueIDs) {
       'V'<<8|'N', 'V'<<8|'U', 'W'<<8|'F', 'W'<<8|'S', 'Y'<<8|'E',
       'Y'<<8|'T', 'Z'<<8|'A', 'Z'<<8|'M', 'Z'<<8|'W', -1 };
 
-  TestingProfile profile;
   for (size_t i = 0; i < arraysize(kCountryIds); ++i) {
-    profile.GetPrefs()->SetInteger(prefs::kCountryIDAtInstall, kCountryIds[i]);
+    prefs_.SetInteger(prefs::kCountryIDAtInstall, kCountryIds[i]);
     size_t default_index;
-    ScopedVector<TemplateURL> urls =
-        TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+    ScopedVector<TemplateURLData> urls =
+        TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_,
                                                            &default_index);
     std::set<int> unique_ids;
     for (size_t turl_i = 0; turl_i < urls.size(); ++turl_i) {
-      ASSERT_TRUE(unique_ids.find(urls[turl_i]->prepopulate_id()) ==
+      ASSERT_TRUE(unique_ids.find(urls[turl_i]->prepopulate_id) ==
                   unique_ids.end());
-      unique_ids.insert(urls[turl_i]->prepopulate_id());
+      unique_ids.insert(urls[turl_i]->prepopulate_id);
     }
   }
 }
 
 // Verifies that default search providers from the preferences file
 // override the built-in ones.
-TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
-  TestingProfile profile;
-  TestingPrefServiceSyncable* prefs = profile.GetTestingPrefService();
-  prefs->SetUserPref(prefs::kSearchProviderOverridesVersion,
+TEST_F(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
+  prefs_.SetUserPref(prefs::kSearchProviderOverridesVersion,
                      base::Value::CreateIntegerValue(1));
   base::ListValue* overrides = new base::ListValue;
   scoped_ptr<base::DictionaryValue> entry(new base::DictionaryValue);
@@ -118,27 +129,27 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   entry->SetString("encoding", "UTF-8");
   entry->SetInteger("id", 1001);
   overrides->Append(entry->DeepCopy());
-  prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
+  prefs_.SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
-  int version = TemplateURLPrepopulateData::GetDataVersion(prefs);
+  int version = TemplateURLPrepopulateData::GetDataVersion(&prefs_);
   EXPECT_EQ(1, version);
 
   size_t default_index;
-  ScopedVector<TemplateURL> t_urls =
-      TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+  ScopedVector<TemplateURLData> t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_,
                                                          &default_index);
 
   ASSERT_EQ(1u, t_urls.size());
-  EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name());
+  EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name);
   EXPECT_EQ(ASCIIToUTF16("fook"), t_urls[0]->keyword());
-  EXPECT_EQ("foo.com", t_urls[0]->url_ref().GetHost());
-  EXPECT_EQ("foi.com", t_urls[0]->favicon_url().host());
-  EXPECT_EQ(1u, t_urls[0]->input_encodings().size());
-  EXPECT_EQ(1001, t_urls[0]->prepopulate_id());
-  EXPECT_TRUE(t_urls[0]->suggestions_url().empty());
-  EXPECT_TRUE(t_urls[0]->instant_url().empty());
-  EXPECT_EQ(0u, t_urls[0]->alternate_urls().size());
-  EXPECT_TRUE(t_urls[0]->search_terms_replacement_key().empty());
+  EXPECT_EQ("foo.com", GetHostFromTemplateURLData(*t_urls[0]));
+  EXPECT_EQ("foi.com", t_urls[0]->favicon_url.host());
+  EXPECT_EQ(1u, t_urls[0]->input_encodings.size());
+  EXPECT_EQ(1001, t_urls[0]->prepopulate_id);
+  EXPECT_TRUE(t_urls[0]->suggestions_url.empty());
+  EXPECT_TRUE(t_urls[0]->instant_url.empty());
+  EXPECT_EQ(0u, t_urls[0]->alternate_urls.size());
+  EXPECT_TRUE(t_urls[0]->search_terms_replacement_key.empty());
 
   // Test the optional settings too.
   entry->SetString("suggest_url", "http://foo.com/suggest?q={searchTerms}");
@@ -149,25 +160,25 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   entry->SetString("search_terms_replacement_key", "espv");
   overrides = new base::ListValue;
   overrides->Append(entry->DeepCopy());
-  prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
+  prefs_.SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
-  t_urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
-                                                              &default_index);
+  t_urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(
+      &prefs_, &default_index);
   ASSERT_EQ(1u, t_urls.size());
-  EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name());
+  EXPECT_EQ(ASCIIToUTF16("foo"), t_urls[0]->short_name);
   EXPECT_EQ(ASCIIToUTF16("fook"), t_urls[0]->keyword());
-  EXPECT_EQ("foo.com", t_urls[0]->url_ref().GetHost());
-  EXPECT_EQ("foi.com", t_urls[0]->favicon_url().host());
-  EXPECT_EQ(1u, t_urls[0]->input_encodings().size());
-  EXPECT_EQ(1001, t_urls[0]->prepopulate_id());
+  EXPECT_EQ("foo.com", GetHostFromTemplateURLData(*t_urls[0]));
+  EXPECT_EQ("foi.com", t_urls[0]->favicon_url.host());
+  EXPECT_EQ(1u, t_urls[0]->input_encodings.size());
+  EXPECT_EQ(1001, t_urls[0]->prepopulate_id);
   EXPECT_EQ("http://foo.com/suggest?q={searchTerms}",
-            t_urls[0]->suggestions_url());
+            t_urls[0]->suggestions_url);
   EXPECT_EQ("http://foo.com/instant?q={searchTerms}",
-            t_urls[0]->instant_url());
-  ASSERT_EQ(1u, t_urls[0]->alternate_urls().size());
+            t_urls[0]->instant_url);
+  ASSERT_EQ(1u, t_urls[0]->alternate_urls.size());
   EXPECT_EQ("http://foo.com/alternate?q={searchTerms}",
-            t_urls[0]->alternate_urls()[0]);
-  EXPECT_EQ("espv", t_urls[0]->search_terms_replacement_key());
+            t_urls[0]->alternate_urls[0]);
+  EXPECT_EQ("espv", t_urls[0]->search_terms_replacement_key);
 
   // Test that subsequent providers are loaded even if an intermediate
   // provider has an incomplete configuration.
@@ -183,17 +194,16 @@ TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrefs) {
   entry->SetString("keyword", "bazk");
   entry->SetString("encoding", "UTF-8");
   overrides->Append(entry->DeepCopy());
-  prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
+  prefs_.SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
-  t_urls = TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
-                                                              &default_index);
+  t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_,
+                                                         &default_index);
   EXPECT_EQ(2u, t_urls.size());
 }
 
-TEST(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
-  TestingProfile profile;
-  TestingPrefServiceSyncable* prefs = profile.GetTestingPrefService();
-  prefs->SetUserPref(prefs::kSearchProviderOverridesVersion,
+TEST_F(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
+  prefs_.SetUserPref(prefs::kSearchProviderOverridesVersion,
                      base::Value::CreateIntegerValue(1));
   base::ListValue* overrides = new base::ListValue;
   base::DictionaryValue* entry(new base::DictionaryValue);
@@ -205,87 +215,91 @@ TEST(TemplateURLPrepopulateDataTest, ClearProvidersFromPrefs) {
   entry->SetString("encoding", "UTF-8");
   entry->SetInteger("id", 1001);
   overrides->Append(entry);
-  prefs->SetUserPref(prefs::kSearchProviderOverrides, overrides);
+  prefs_.SetUserPref(prefs::kSearchProviderOverrides, overrides);
 
-  int version = TemplateURLPrepopulateData::GetDataVersion(prefs);
+  int version = TemplateURLPrepopulateData::GetDataVersion(&prefs_);
   EXPECT_EQ(1, version);
 
   // This call removes the above search engine.
-  TemplateURLPrepopulateData::ClearPrepopulatedEnginesInPrefs(&profile);
+  TemplateURLPrepopulateData::ClearPrepopulatedEnginesInPrefs(&prefs_);
 
-  version = TemplateURLPrepopulateData::GetDataVersion(prefs);
+  version = TemplateURLPrepopulateData::GetDataVersion(&prefs_);
   EXPECT_EQ(TemplateURLPrepopulateData::kCurrentDataVersion, version);
 
   size_t default_index;
-  ScopedVector<TemplateURL> t_urls =
-      TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+  ScopedVector<TemplateURLData> t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_,
                                                          &default_index);
   ASSERT_FALSE(t_urls.empty());
   for (size_t i = 0; i < t_urls.size(); ++i) {
-    EXPECT_NE(ASCIIToUTF16("foo"), t_urls[i]->short_name());
+    EXPECT_NE(ASCIIToUTF16("foo"), t_urls[i]->short_name);
     EXPECT_NE(ASCIIToUTF16("fook"), t_urls[i]->keyword());
-    EXPECT_NE("foi.com", t_urls[i]->favicon_url().host());
-    EXPECT_NE("foo.com", t_urls[i]->url_ref().GetHost());
-    EXPECT_NE(1001, t_urls[i]->prepopulate_id());
+    EXPECT_NE("foi.com", t_urls[i]->favicon_url.host());
+    EXPECT_NE("foo.com", GetHostFromTemplateURLData(*t_urls[i]));
+    EXPECT_NE(1001, t_urls[i]->prepopulate_id);
   }
   // Ensures the default URL is Google and has the optional fields filled.
-  EXPECT_EQ(ASCIIToUTF16("Google"), t_urls[default_index]->short_name());
-  EXPECT_FALSE(t_urls[default_index]->suggestions_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->instant_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->image_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->new_tab_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->image_url_post_params().empty());
+  EXPECT_EQ(ASCIIToUTF16("Google"), t_urls[default_index]->short_name);
+  EXPECT_FALSE(t_urls[default_index]->suggestions_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->instant_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->image_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->new_tab_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->contextual_search_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->image_url_post_params.empty());
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
-            TemplateURLPrepopulateData::GetEngineType(*t_urls[default_index]));
+            TemplateURLPrepopulateData::GetEngineType(
+                TemplateURL(*t_urls[default_index]),
+                SearchTermsData()));
 }
 
 // Verifies that built-in search providers are processed correctly.
-TEST(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
+TEST_F(TemplateURLPrepopulateDataTest, ProvidersFromPrepopulated) {
   // Use United States.
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(
-      switches::kCountry, "US");
-  TestingProfile profile;
+  prefs_.SetInteger(prefs::kCountryIDAtInstall, 'U'<<8|'S');
   size_t default_index;
-  ScopedVector<TemplateURL> t_urls =
-      TemplateURLPrepopulateData::GetPrepopulatedEngines(&profile,
+  ScopedVector<TemplateURLData> t_urls =
+      TemplateURLPrepopulateData::GetPrepopulatedEngines(&prefs_,
                                                          &default_index);
 
   // Ensure all the URLs have the required fields populated.
   ASSERT_FALSE(t_urls.empty());
   for (size_t i = 0; i < t_urls.size(); ++i) {
-    ASSERT_FALSE(t_urls[i]->short_name().empty());
+    ASSERT_FALSE(t_urls[i]->short_name.empty());
     ASSERT_FALSE(t_urls[i]->keyword().empty());
-    ASSERT_FALSE(t_urls[i]->favicon_url().host().empty());
-    ASSERT_FALSE(t_urls[i]->url_ref().GetHost().empty());
-    ASSERT_FALSE(t_urls[i]->input_encodings().empty());
-    EXPECT_GT(t_urls[i]->prepopulate_id(), 0);
+    ASSERT_FALSE(t_urls[i]->favicon_url.host().empty());
+    ASSERT_FALSE(GetHostFromTemplateURLData(*t_urls[i]).empty());
+    ASSERT_FALSE(t_urls[i]->input_encodings.empty());
+    EXPECT_GT(t_urls[i]->prepopulate_id, 0);
   }
 
   // Ensures the default URL is Google and has the optional fields filled.
-  EXPECT_EQ(ASCIIToUTF16("Google"), t_urls[default_index]->short_name());
-  EXPECT_FALSE(t_urls[default_index]->suggestions_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->instant_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->image_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->new_tab_url().empty());
-  EXPECT_FALSE(t_urls[default_index]->image_url_post_params().empty());
+  EXPECT_EQ(ASCIIToUTF16("Google"), t_urls[default_index]->short_name);
+  EXPECT_FALSE(t_urls[default_index]->suggestions_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->instant_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->image_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->new_tab_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->contextual_search_url.empty());
+  EXPECT_FALSE(t_urls[default_index]->image_url_post_params.empty());
   // Expect at least 2 alternate_urls.
   // This caught a bug with static initialization of arrays, so leave this in.
-  EXPECT_GT(t_urls[default_index]->alternate_urls().size(), 1u);
-  for (size_t i = 0; i < t_urls[default_index]->alternate_urls().size(); ++i)
-    EXPECT_FALSE(t_urls[default_index]->alternate_urls()[i].empty());
+  EXPECT_GT(t_urls[default_index]->alternate_urls.size(), 1u);
+  for (size_t i = 0; i < t_urls[default_index]->alternate_urls.size(); ++i)
+    EXPECT_FALSE(t_urls[default_index]->alternate_urls[i].empty());
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE,
-            TemplateURLPrepopulateData::GetEngineType(*t_urls[default_index]));
-  EXPECT_FALSE(t_urls[default_index]->search_terms_replacement_key().empty());
+            TemplateURLPrepopulateData::GetEngineType(
+                TemplateURL(*t_urls[default_index]),
+                SearchTermsData()));
+  EXPECT_FALSE(t_urls[default_index]->search_terms_replacement_key.empty());
 }
 
-TEST(TemplateURLPrepopulateDataTest, GetEngineTypeBasic) {
+TEST_F(TemplateURLPrepopulateDataTest, GetEngineTypeBasic) {
   EXPECT_EQ(SEARCH_ENGINE_OTHER, GetEngineType("http://example.com/"));
   EXPECT_EQ(SEARCH_ENGINE_ASK, GetEngineType("http://www.ask.com/"));
   EXPECT_EQ(SEARCH_ENGINE_OTHER, GetEngineType("http://search.atlas.cz/"));
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE, GetEngineType("http://www.google.com/"));
 }
 
-TEST(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
+TEST_F(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
   // Google URLs in different forms.
   const char* kGoogleURLs[] = {
     // Original with google:baseURL:
@@ -334,38 +348,4 @@ TEST(TemplateURLPrepopulateDataTest, GetEngineTypeAdvanced) {
   CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
                                                       "http://www.foo.com/");
   EXPECT_EQ(SEARCH_ENGINE_GOOGLE, GetEngineType(foo_url));
-}
-
-TEST(TemplateURLPrepopulateDataTest, GetLogoURLGoogle) {
-  TemplateURLData data;
-  data.SetURL("http://www.google.com/");
-  TemplateURL turl(NULL, data);
-  GURL logo_100_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
-  GURL logo_200_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_200_PERCENT);
-
-  EXPECT_EQ("www.google.com", logo_100_url.host());
-  EXPECT_EQ("www.google.com", logo_200_url.host());
-  EXPECT_NE(logo_100_url, logo_200_url);
-}
-
-TEST(TemplateURLPrepopulateDataTest, GetLogoURLUnknown) {
-  TemplateURLData data;
-  data.SetURL("http://webalta.ru/");
-  TemplateURL turl(NULL, data);
-  GURL logo_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
-
-  EXPECT_TRUE(logo_url.is_empty());
-}
-
-TEST(TemplateURLPrepopulateDataTest, GetLogoURLInvalid) {
-  TemplateURLData data;
-  data.SetURL("http://invalid:search:url/");
-  TemplateURL turl(NULL, data);
-  GURL logo_url = TemplateURLPrepopulateData::GetLogoURL(
-      turl, TemplateURLPrepopulateData::LOGO_100_PERCENT);
-
-  EXPECT_TRUE(logo_url.is_empty());
 }

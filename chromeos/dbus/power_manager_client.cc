@@ -14,6 +14,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/observer_list.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
@@ -79,7 +81,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
   virtual void DecreaseScreenBrightness(bool allow_off) OVERRIDE {
     dbus::MethodCall method_call(
         power_manager::kPowerManagerInterface,
-        power_manager::kDecreaseScreenBrightness);
+        power_manager::kDecreaseScreenBrightnessMethod);
     dbus::MessageWriter writer(&method_call);
     writer.AppendBool(allow_off);
     power_manager_proxy_->CallMethod(
@@ -89,22 +91,25 @@ class PowerManagerClientImpl : public PowerManagerClient {
   }
 
   virtual void IncreaseScreenBrightness() OVERRIDE {
-    SimpleMethodCallToPowerManager(power_manager::kIncreaseScreenBrightness);
+    SimpleMethodCallToPowerManager(
+        power_manager::kIncreaseScreenBrightnessMethod);
   }
 
   virtual void DecreaseKeyboardBrightness() OVERRIDE {
-    SimpleMethodCallToPowerManager(power_manager::kDecreaseKeyboardBrightness);
+    SimpleMethodCallToPowerManager(
+        power_manager::kDecreaseKeyboardBrightnessMethod);
   }
 
   virtual void IncreaseKeyboardBrightness() OVERRIDE {
-    SimpleMethodCallToPowerManager(power_manager::kIncreaseKeyboardBrightness);
+    SimpleMethodCallToPowerManager(
+        power_manager::kIncreaseKeyboardBrightnessMethod);
   }
 
   virtual void SetScreenBrightnessPercent(double percent,
                                           bool gradual) OVERRIDE {
     dbus::MethodCall method_call(
         power_manager::kPowerManagerInterface,
-        power_manager::kSetScreenBrightnessPercent);
+        power_manager::kSetScreenBrightnessPercentMethod);
     dbus::MessageWriter writer(&method_call);
     writer.AppendDouble(percent);
     writer.AppendInt32(
@@ -119,8 +124,9 @@ class PowerManagerClientImpl : public PowerManagerClient {
 
   virtual void GetScreenBrightnessPercent(
       const GetScreenBrightnessPercentCallback& callback) OVERRIDE {
-    dbus::MethodCall method_call(power_manager::kPowerManagerInterface,
-                                 power_manager::kGetScreenBrightnessPercent);
+    dbus::MethodCall method_call(
+        power_manager::kPowerManagerInterface,
+        power_manager::kGetScreenBrightnessPercentMethod);
     power_manager_proxy_->CallMethod(
         &method_call,
         dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
@@ -262,18 +268,18 @@ class PowerManagerClientImpl : public PowerManagerClient {
 
     power_manager_proxy_->ConnectToSignal(
         power_manager::kPowerManagerInterface,
-        power_manager::kSuspendStateChangedSignal,
-        base::Bind(&PowerManagerClientImpl::SuspendStateChangedReceived,
-                   weak_ptr_factory_.GetWeakPtr()),
+        power_manager::kSuspendImminentSignal,
+        base::Bind(
+            &PowerManagerClientImpl::SuspendImminentReceived,
+            weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&PowerManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
 
     power_manager_proxy_->ConnectToSignal(
         power_manager::kPowerManagerInterface,
-        power_manager::kSuspendImminentSignal,
-        base::Bind(
-            &PowerManagerClientImpl::SuspendImminentReceived,
-            weak_ptr_factory_.GetWeakPtr()),
+        power_manager::kSuspendDoneSignal,
+        base::Bind(&PowerManagerClientImpl::SuspendDoneReceived,
+                   weak_ptr_factory_.GetWeakPtr()),
         base::Bind(&PowerManagerClientImpl::SignalConnected,
                    weak_ptr_factory_.GetWeakPtr()));
 
@@ -407,7 +413,7 @@ class PowerManagerClientImpl : public PowerManagerClient {
       dbus::Response* response) {
     if (!response) {
       LOG(ERROR) << "Error calling "
-                 << power_manager::kGetScreenBrightnessPercent;
+                 << power_manager::kGetScreenBrightnessPercentMethod;
       return;
     }
     dbus::MessageReader reader(response);
@@ -446,29 +452,58 @@ class PowerManagerClientImpl : public PowerManagerClient {
     }
 
     dbus::MessageReader reader(signal);
-    power_manager::SuspendImminent protobuf_imminent;
-    if (!reader.PopArrayOfBytesAsProto(&protobuf_imminent)) {
+    power_manager::SuspendImminent proto;
+    if (!reader.PopArrayOfBytesAsProto(&proto)) {
       LOG(ERROR) << "Unable to decode protocol buffer from "
                  << power_manager::kSuspendImminentSignal << " signal";
       return;
     }
 
+    VLOG(1) << "Got " << power_manager::kSuspendImminentSignal << " signal "
+            << "announcing suspend attempt " << proto.suspend_id();
     if (suspend_is_pending_) {
       LOG(WARNING) << "Got " << power_manager::kSuspendImminentSignal
                    << " signal about pending suspend attempt "
-                   << protobuf_imminent.suspend_id() << " while still waiting "
+                   << proto.suspend_id() << " while still waiting "
                    << "on attempt " << pending_suspend_id_;
     }
 
-    pending_suspend_id_ = protobuf_imminent.suspend_id();
+    pending_suspend_id_ = proto.suspend_id();
     suspend_is_pending_ = true;
     num_pending_suspend_readiness_callbacks_ = 0;
     FOR_EACH_OBSERVER(Observer, observers_, SuspendImminent());
     MaybeReportSuspendReadiness();
   }
 
+  void SuspendDoneReceived(dbus::Signal* signal) {
+    dbus::MessageReader reader(signal);
+    power_manager::SuspendDone proto;
+    if (!reader.PopArrayOfBytesAsProto(&proto)) {
+      LOG(ERROR) << "Unable to decode protocol buffer from "
+                 << power_manager::kSuspendDoneSignal << " signal";
+      return;
+    }
+
+    const base::TimeDelta duration =
+        base::TimeDelta::FromInternalValue(proto.suspend_duration());
+    VLOG(1) << "Got " << power_manager::kSuspendDoneSignal << " signal:"
+            << " suspend_id=" << proto.suspend_id()
+            << " duration=" << duration.InSeconds() << " sec";
+    FOR_EACH_OBSERVER(
+        PowerManagerClient::Observer, observers_, SuspendDone(duration));
+  }
+
   void IdleActionImminentReceived(dbus::Signal* signal) {
-    FOR_EACH_OBSERVER(Observer, observers_, IdleActionImminent());
+    dbus::MessageReader reader(signal);
+    power_manager::IdleActionImminent proto;
+    if (!reader.PopArrayOfBytesAsProto(&proto)) {
+      LOG(ERROR) << "Unable to decode protocol buffer from "
+                 << power_manager::kIdleActionImminentSignal << " signal";
+      return;
+    }
+    FOR_EACH_OBSERVER(Observer, observers_,
+        IdleActionImminent(base::TimeDelta::FromInternalValue(
+            proto.time_until_idle_action())));
   }
 
   void IdleActionDeferredReceived(dbus::Signal* signal) {
@@ -518,31 +553,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
                           LidEventReceived(open, timestamp));
         break;
       }
-    }
-  }
-
-  void SuspendStateChangedReceived(dbus::Signal* signal) {
-    dbus::MessageReader reader(signal);
-    power_manager::SuspendState proto;
-    if (!reader.PopArrayOfBytesAsProto(&proto)) {
-      LOG(ERROR) << "Unable to decode protocol buffer from "
-                 << power_manager::kSuspendStateChangedSignal << " signal";
-      return;
-    }
-
-    VLOG(1) << "Got " << power_manager::kSuspendStateChangedSignal << " signal:"
-            << " type=" << proto.type() << " wall_time=" << proto.wall_time();
-    base::Time wall_time =
-        base::Time::FromInternalValue(proto.wall_time());
-    switch (proto.type()) {
-      case power_manager::SuspendState_Type_SUSPEND_TO_MEMORY:
-        last_suspend_wall_time_ = wall_time;
-        break;
-      case power_manager::SuspendState_Type_RESUME:
-        FOR_EACH_OBSERVER(
-            PowerManagerClient::Observer, observers_,
-            SystemResumed(wall_time - last_suspend_wall_time_));
-        break;
     }
   }
 
@@ -602,6 +612,8 @@ class PowerManagerClientImpl : public PowerManagerClient {
         power_manager::kHandleSuspendReadinessMethod);
     dbus::MessageWriter writer(&method_call);
 
+    VLOG(1) << "Announcing readiness of suspend delay " << suspend_delay_id_
+            << " for suspend attempt " << pending_suspend_id_;
     power_manager::SuspendReadinessInfo protobuf_request;
     protobuf_request.set_delay_id(suspend_delay_id_);
     protobuf_request.set_suspend_id(pending_suspend_id_);
@@ -640,10 +652,6 @@ class PowerManagerClientImpl : public PowerManagerClient {
   // attempt but have not yet been called.
   int num_pending_suspend_readiness_callbacks_;
 
-  // Wall time from the latest signal telling us that the system was about to
-  // suspend to memory.
-  base::Time last_suspend_wall_time_;
-
   // Last state passed to SetIsProjecting().
   bool last_is_projecting_;
 
@@ -675,12 +683,12 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
 
   // PowerManagerClient overrides:
   virtual void Init(dbus::Bus* bus) OVERRIDE {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-        chromeos::switches::kEnableStubInteractive)) {
-      const int kStatusUpdateMs = 1000;
+    ParseCommandLineSwitch();
+    if (power_cycle_delay_ != base::TimeDelta()) {
       update_timer_.Start(FROM_HERE,
-          base::TimeDelta::FromMilliseconds(kStatusUpdateMs), this,
-          &PowerManagerClientStubImpl::UpdateStatus);
+                          power_cycle_delay_,
+                          this,
+                          &PowerManagerClientStubImpl::UpdateStatus);
     }
   }
 
@@ -830,6 +838,30 @@ class PowerManagerClientStubImpl : public PowerManagerClient {
                       BrightnessChanged(brightness_level, user_initiated));
   }
 
+  void ParseCommandLineSwitch() {
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    if (!command_line || !command_line->HasSwitch(switches::kPowerStub))
+      return;
+    std::string option_str =
+        command_line->GetSwitchValueASCII(switches::kPowerStub);
+    base::StringPairs string_pairs;
+    base::SplitStringIntoKeyValuePairs(option_str, '=', ',', &string_pairs);
+    for (base::StringPairs::iterator iter = string_pairs.begin();
+         iter != string_pairs.end(); ++iter) {
+      ParseOption((*iter).first, (*iter).second);
+    }
+  }
+
+  void ParseOption(const std::string& arg0, const std::string& arg1) {
+    if (arg0 == "cycle" || arg0 == "interactive") {
+      int seconds = 1;
+      if (!arg1.empty())
+        base::StringToInt(arg1, &seconds);
+      power_cycle_delay_ = base::TimeDelta::FromSeconds(seconds);
+    }
+  }
+
+  base::TimeDelta power_cycle_delay_;  // Time over which to cycle power state
   bool discharging_;
   int battery_percentage_;
   double brightness_;

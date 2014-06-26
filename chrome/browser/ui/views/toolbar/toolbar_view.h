@@ -24,12 +24,17 @@ class BackButton;
 class BrowserActionsContainer;
 class Browser;
 class HomeButton;
-class OriginChipView;
 class ReloadButton;
 class ToolbarButton;
 class WrenchMenu;
 class WrenchMenuModel;
 class WrenchToolbarButton;
+
+namespace extensions {
+class Command;
+class Extension;
+class ExtensionMessageBubbleFactory;
+}
 
 namespace views {
 class MenuListener;
@@ -82,17 +87,27 @@ class ToolbarView : public views::AccessiblePaneView,
   // Returns the view to which the Translate bubble should be anchored.
   views::View* GetTranslateBubbleAnchor();
 
+  // Executes |command| registered by |extension|.
+  void ExecuteExtensionCommand(const extensions::Extension* extension,
+                               const extensions::Command& command);
+
+  // Shows the extension's page action, if present.
+  void ShowPageActionPopup(const extensions::Extension* extension);
+
+  // Shows the extension's browser action, if present.
+  void ShowBrowserActionPopup(const extensions::Extension* extension);
+
   // Accessors...
   Browser* browser() const { return browser_; }
   BrowserActionsContainer* browser_actions() const { return browser_actions_; }
   ReloadButton* reload_button() const { return reload_; }
   LocationBarView* location_bar() const { return location_bar_; }
-  OriginChipView* origin_chip() const { return origin_chip_view_; }
   views::MenuButton* app_menu() const;
+  HomeButton* home_button() const { return home_; }
 
   // Overridden from AccessiblePaneView
   virtual bool SetPaneFocus(View* initial_focus) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Overridden from views::MenuButtonListener:
   virtual void OnMenuButtonClicked(views::View* source,
@@ -134,7 +149,8 @@ class ToolbarView : public views::AccessiblePaneView,
       int command_id, ui::Accelerator* accelerator) OVERRIDE;
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
@@ -184,6 +200,9 @@ class ToolbarView : public views::AccessiblePaneView,
   // Returns the number of pixels above the location bar in non-normal display.
   int PopupTopSpacing() const;
 
+  // Given toolbar contents of size |size|, returns the total toolbar size.
+  gfx::Size SizeForContentSize(gfx::Size size) const;
+
   // Loads the images for all the child views.
   void LoadImages();
 
@@ -195,7 +214,8 @@ class ToolbarView : public views::AccessiblePaneView,
   void ShowCriticalNotification();
 
   // Shows the outdated install notification bubble against the wrench menu.
-  void ShowOutdatedInstallNotification();
+  // |auto_update_enabled| is set to true when auto-upate is on.
+  void ShowOutdatedInstallNotification(bool auto_update_enabled);
 
   // Updates the badge and the accessible name of the app menu (Wrench).
   void UpdateAppMenuState();
@@ -213,7 +233,6 @@ class ToolbarView : public views::AccessiblePaneView,
   ReloadButton* reload_;
   HomeButton* home_;
   LocationBarView* location_bar_;
-  OriginChipView* origin_chip_view_;
   BrowserActionsContainer* browser_actions_;
   WrenchToolbarButton* app_menu_;
   Browser* browser_;
@@ -229,6 +248,11 @@ class ToolbarView : public views::AccessiblePaneView,
   // menu should be listed later.
   scoped_ptr<WrenchMenuModel> wrench_menu_model_;
   scoped_ptr<WrenchMenu> wrench_menu_;
+
+  // The factory to create bubbles to warn about dangerous/suspicious
+  // extensions.
+  scoped_ptr<extensions::ExtensionMessageBubbleFactory>
+      extension_message_bubble_factory_;
 
   // A list of listeners to call when the menu opens.
   ObserverList<views::MenuListener> menu_listeners_;

@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_SIGNIN_SIGNIN_BROWSERTEST_H_
 
 #include "base/command_line.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/chrome_signin_client.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/singleton_tabs.h"
@@ -31,7 +31,7 @@
 #include "net/url_request/url_request_status.h"
 
 namespace {
-const char kNonSigninURL[] = "www.google.com";
+const char kNonSigninURL[] = "http://www.google.com";
 }
 
 class SigninBrowserTest : public InProcessBrowserTest {
@@ -52,7 +52,7 @@ class SigninBrowserTest : public InProcessBrowserTest {
             ",EXCLUDE localhost");
     command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
     // All tests in this file are for the web based sign in flows.
-    // TODO(guohui): adds new tests for inline sign in flows.
+    // TODO(guohui): fix tests for inline sign in flows.
     command_line->AppendSwitch(switches::kEnableWebBasedSignin);
   }
 
@@ -107,8 +107,8 @@ const bool kOneClickSigninEnabled = false;
 #define MAYBE_ProcessIsolation ProcessIsolation
 #endif
 IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_ProcessIsolation) {
-  SigninManager* signin = SigninManagerFactory::GetForProfile(
-      browser()->profile());
+  SigninClient* signin =
+      ChromeSigninClientFactory::GetForProfile(browser()->profile());
   EXPECT_FALSE(signin->HasSigninProcess());
 
   ui_test_utils::NavigateToURL(browser(), signin::GetPromoURL(
@@ -148,9 +148,16 @@ IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_ProcessIsolation) {
       active_tab->GetRenderProcessHost()->GetID()));
 }
 
-IN_PROC_BROWSER_TEST_F(SigninBrowserTest, NotTrustedAfterRedirect) {
-  SigninManager* signin = SigninManagerFactory::GetForProfile(
-      browser()->profile());
+#if defined (OS_MACOSX)
+// crbug.com/375197
+#define MAYBE_NotTrustedAfterRedirect DISABLED_NotTrustedAfterRedirect
+#else
+#define MAYBE_NotTrustedAfterRedirect NotTrustedAfterRedirect
+#endif
+
+IN_PROC_BROWSER_TEST_F(SigninBrowserTest, MAYBE_NotTrustedAfterRedirect) {
+  SigninClient* signin =
+      ChromeSigninClientFactory::GetForProfile(browser()->profile());
   EXPECT_FALSE(signin->HasSigninProcess());
 
   GURL url = signin::GetPromoURL(signin::SOURCE_NTP_LINK, true);
@@ -203,11 +210,11 @@ class BackOnNTPCommitObserver : public content::WebContentsObserver {
 // DidStopLoading of the NTP.
 IN_PROC_BROWSER_TEST_F(SigninBrowserTest, SigninSkipForNowAndGoBack) {
   GURL ntp_url(chrome::kChromeUINewTabURL);
-  GURL start_url = signin::GetPromoURL(signin::SOURCE_START_PAGE, true);
+  GURL start_url = signin::GetPromoURL(signin::SOURCE_START_PAGE, false);
   GURL skip_url = signin::GetLandingURL("ntp", 1);
 
-  SigninManager* signin = SigninManagerFactory::GetForProfile(
-      browser()->profile());
+  SigninClient* signin =
+      ChromeSigninClientFactory::GetForProfile(browser()->profile());
   EXPECT_FALSE(signin->HasSigninProcess());
 
   ui_test_utils::NavigateToURL(browser(), start_url);
@@ -232,11 +239,10 @@ IN_PROC_BROWSER_TEST_F(SigninBrowserTest, SigninSkipForNowAndGoBack) {
   // has had a chance to remove the navigation entry.
   BackOnNTPCommitObserver commit_observer(web_contents);
 
-  // Since the navigation to the blank URL is monitored for, the
-  // OneClickSigninHelper initiates immediately a navigation to the NTP.
-  // Thus, we expect the visible URL to be the NTP.
+  // Since OneClickSigninHelper aborts redirect to NTP, thus we expect the
+  // visible URL to be the starting URL.
   EXPECT_EQ(skip_url, web_contents->GetLastCommittedURL());
-  EXPECT_EQ(ntp_url, web_contents->GetVisibleURL());
+  EXPECT_EQ(start_url, web_contents->GetVisibleURL());
 
   content::WindowedNotificationObserver observer(
       content::NOTIFICATION_LOAD_STOP,

@@ -14,6 +14,7 @@
 #include "ui/gfx/icon_util.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/win/dpi.h"
 
 // static
 IconGroupID IconLoader::ReadGroupIDFromFilepath(
@@ -23,10 +24,16 @@ IconGroupID IconLoader::ReadGroupIDFromFilepath(
   return filepath.value();
 }
 
+// static
 bool IconLoader::IsIconMutableFromFilepath(const base::FilePath& filepath) {
   return filepath.MatchesExtension(L".exe") ||
          filepath.MatchesExtension(L".dll") ||
          filepath.MatchesExtension(L".ico");
+}
+
+// static
+content::BrowserThread::ID IconLoader::ReadIconThreadID() {
+  return content::BrowserThread::FILE;
 }
 
 void IconLoader::ReadIcon() {
@@ -54,7 +61,8 @@ void IconLoader::ReadIcon() {
     scoped_ptr<SkBitmap> bitmap(IconUtil::CreateSkBitmapFromHICON(
         file_info.hIcon));
     if (bitmap.get()) {
-      gfx::ImageSkia image_skia = gfx::ImageSkia::CreateFrom1xBitmap(*bitmap);
+      gfx::ImageSkia image_skia(gfx::ImageSkiaRep(
+          *bitmap, gfx::win::GetDeviceScaleFactor()));
       image_skia.MakeThreadSafe();
       image_.reset(new gfx::Image(image_skia));
       DestroyIcon(file_info.hIcon);

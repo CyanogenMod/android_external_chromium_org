@@ -18,9 +18,6 @@
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/extensions/features/base_feature_provider.h"
-#include "chrome/common/extensions/features/complex_feature.h"
-#include "chrome/common/extensions/features/simple_feature.h"
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/tracing.h"
@@ -28,7 +25,11 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/common/feature_switch.h"
+#include "extensions/common/features/base_feature_provider.h"
+#include "extensions/common/features/complex_feature.h"
 #include "extensions/common/features/feature.h"
+#include "extensions/common/features/simple_feature.h"
+#include "extensions/common/switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/perf/perf_test.h"
 #include "ui/compositor/compositor_switches.h"
@@ -112,12 +113,6 @@ class TabCapturePerformanceTest
                                       ScalingMethod());
     }
 
-    // UI tests boot up render views starting from about:blank. This causes
-    // the renderer to start up thinking it cannot use the GPU. To work
-    // around that, and allow the frame rate test to use the GPU, we must
-    // pass kAllowWebUICompositing.
-    command_line->AppendSwitch(switches::kAllowWebUICompositing);
-
     // Some of the tests may launch http requests through JSON or AJAX
     // which causes a security error (cross domain request) when the page
     // is loaded from the local file system ( file:// ). The following switch
@@ -130,17 +125,15 @@ class TabCapturePerformanceTest
       command_line->AppendSwitchASCII(switches::kWindowSize, "2000,1500");
     }
 
-    if (!HasFlag(kUseGpu)) {
+    if (!HasFlag(kUseGpu))
       command_line->AppendSwitch(switches::kDisableGpu);
-    } else {
-      command_line->AppendSwitch(switches::kForceCompositingMode);
-    }
 
     if (HasFlag(kDisableVsync))
       command_line->AppendSwitch(switches::kDisableGpuVsync);
 
-    command_line->AppendSwitchASCII(switches::kWhitelistedExtensionID,
-                                    kExtensionId);
+    command_line->AppendSwitchASCII(
+        extensions::switches::kWhitelistedExtensionID,
+        kExtensionId);
     ExtensionApiTest::SetUpCommandLine(command_line);
   }
 
@@ -152,12 +145,14 @@ class TabCapturePerformanceTest
     trace_analyzer::Query query =
         trace_analyzer::Query::EventNameIs(event_name) &&
         (trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_BEGIN) ||
+         trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_COMPLETE) ||
          trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_ASYNC_BEGIN) ||
          trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_FLOW_BEGIN) ||
          trace_analyzer::Query::EventPhaseIs(TRACE_EVENT_PHASE_INSTANT));
     analyzer->FindEvents(query, &events);
     if (events.size() < 20) {
-      LOG(ERROR) << "Not enough events of type " << event_name << " found.";
+      LOG(ERROR) << "Not enough events of type " << event_name << " found ("
+                 << events.size() << ").";
       return false;
     }
 
@@ -191,7 +186,7 @@ class TabCapturePerformanceTest
     }
 
     std::string json_events;
-    ASSERT_TRUE(tracing::BeginTracing("test_fps,mirroring"));
+    ASSERT_TRUE(tracing::BeginTracing("gpu,mirroring"));
     std::string page = "performance.html";
     page += HasFlag(kTestThroughWebRTC) ? "?WebRTC=1" : "?WebRTC=0";
     // Ideally we'd like to run a higher capture rate when vsync is disabled,
@@ -203,19 +198,14 @@ class TabCapturePerformanceTest
     scoped_ptr<trace_analyzer::TraceAnalyzer> analyzer;
     analyzer.reset(trace_analyzer::TraceAnalyzer::Create(json_events));
 
-    // Only one of these PrintResults should actually print something.
     // The printed result will be the average time between frames in the
     // browser window.
-    bool sw_frames = PrintResults(analyzer.get(),
-                                  test_name,
-                                  "TestFrameTickSW",
-                                  "ms");
-    bool gpu_frames = PrintResults(analyzer.get(),
-                                   test_name,
-                                   "TestFrameTickGPU",
-                                   "ms");
-    EXPECT_TRUE(sw_frames || gpu_frames);
-    EXPECT_NE(sw_frames, gpu_frames);
+    bool gpu_frames = PrintResults(
+        analyzer.get(),
+        test_name,
+        "RenderWidget::didCommitAndDrawCompositorFrame",
+        "ms");
+    EXPECT_TRUE(gpu_frames);
 
     // This prints out the average time between capture events.
     // As the capture frame rate is capped at 30fps, this score

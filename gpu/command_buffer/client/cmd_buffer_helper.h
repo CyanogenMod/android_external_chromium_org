@@ -64,14 +64,6 @@ class GPU_EXPORT CommandBufferHelper {
   // returns, the command buffer service is aware of all pending commands.
   void Flush();
 
-  // Flushes the commands, setting the put pointer to let the buffer interface
-  // know that new commands have been added. After a flush returns, the command
-  // buffer service is aware of all pending commands and it is guaranteed to
-  // have made some progress in processing them. Returns whether the flush was
-  // successful. The flush will fail if the command buffer service has
-  // disconnected.
-  bool FlushSync();
-
   // Waits until all the commands have been executed. Returns whether it
   // was successful. The function will fail if the command buffer service has
   // disconnected.
@@ -92,6 +84,15 @@ class GPU_EXPORT CommandBufferHelper {
   //   shutdown.
   int32 InsertToken();
 
+  // Returns true if the token has passed.
+  // Parameters:
+  //   the value of the token to check whether it has passed
+  bool HasTokenPassed(int32 token) const {
+    if (token > token_)
+      return true;  // we wrapped
+    return last_token_read() >= token;
+  }
+
   // Waits until the token of a particular value has passed through the command
   // stream (i.e. commands inserted before that token have been executed).
   // NOTE: This will call Flush if it needs to block.
@@ -101,7 +102,7 @@ class GPU_EXPORT CommandBufferHelper {
 
   // Called prior to each command being issued. Waits for a certain amount of
   // space to be available. Returns address of space.
-  CommandBufferEntry* GetSpace(int32 entries) {
+  void* GetSpace(int32 entries) {
 #if defined(CMD_HELPER_PERIODIC_FLUSH_CHECK)
     // Allow this command buffer to be pre-empted by another if a "reasonable"
     // amount of work has been done. On highend machines, this reduces the
@@ -132,14 +133,27 @@ class GPU_EXPORT CommandBufferHelper {
     return space;
   }
 
+  template <typename T>
+  void ForceNullCheck(T* data) {
+#if defined(OS_WIN) && defined(ARCH_CPU_64_BITS)
+    // 64-bit MSVC's alias analysis was determining that the command buffer
+    // entry couldn't be NULL, so it optimized out the NULL check.
+    // Dereferencing the same datatype through a volatile pointer seems to
+    // prevent that from happening. http://crbug.com/361936
+    if (data)
+      static_cast<volatile T*>(data)->header;
+#endif
+  }
+
   // Typed version of GetSpace. Gets enough room for the given type and returns
   // a reference to it.
   template <typename T>
   T* GetCmdSpace() {
     COMPILE_ASSERT(T::kArgFlags == cmd::kFixed, Cmd_kArgFlags_not_kFixed);
     int32 space_needed = ComputeNumEntries(sizeof(T));
-    void* data = GetSpace(space_needed);
-    return reinterpret_cast<T*>(data);
+    T* data = static_cast<T*>(GetSpace(space_needed));
+    ForceNullCheck(data);
+    return data;
   }
 
   // Typed version of GetSpace for immediate commands.
@@ -147,8 +161,9 @@ class GPU_EXPORT CommandBufferHelper {
   T* GetImmediateCmdSpace(size_t data_space) {
     COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
     int32 space_needed = ComputeNumEntries(sizeof(T) + data_space);
-    void* data = GetSpace(space_needed);
-    return reinterpret_cast<T*>(data);
+    T* data = static_cast<T*>(GetSpace(space_needed));
+    ForceNullCheck(data);
+    return data;
   }
 
   // Typed version of GetSpace for immediate commands.
@@ -156,8 +171,9 @@ class GPU_EXPORT CommandBufferHelper {
   T* GetImmediateCmdSpaceTotalSize(size_t total_space) {
     COMPILE_ASSERT(T::kArgFlags == cmd::kAtLeastN, Cmd_kArgFlags_not_kAtLeastN);
     int32 space_needed = ComputeNumEntries(total_space);
-    void* data = GetSpace(space_needed);
-    return reinterpret_cast<T*>(data);
+    T* data = static_cast<T*>(GetSpace(space_needed));
+    ForceNullCheck(data);
+    return data;
   }
 
   int32 last_token_read() const {
@@ -252,9 +268,9 @@ class GPU_EXPORT CommandBufferHelper {
     return command_buffer_;
   }
 
-  Buffer get_ring_buffer() const {
-    return ring_buffer_;
-  }
+  scoped_refptr<Buffer> get_ring_buffer() const { return ring_buffer_; }
+
+  uint32 flush_generation() const { return flush_generation_; }
 
   void FreeRingBuffer();
 
@@ -272,9 +288,6 @@ class GPU_EXPORT CommandBufferHelper {
   }
 
  private:
-  // Waits until get changes, updating the value of get_.
-  void WaitForGetChange();
-
   // Returns the number of available entries (they may not be contiguous).
   int32 AvailableEntries() {
     return (get_offset() - put_ - 1 + total_entry_count_) % total_entry_count_;
@@ -284,6 +297,10 @@ class GPU_EXPORT CommandBufferHelper {
   bool AllocateRingBuffer();
   void FreeResources();
 
+  // Waits for the get offset to be in a specific range, inclusive. Returns
+  // false if there was an error.
+  bool WaitForGetOffsetInRange(int32 start, int32 end);
+
 #if defined(CMD_HELPER_PERIODIC_FLUSH_CHECK)
   // Calls Flush if automatic flush conditions are met.
   void PeriodicFlushCheck();
@@ -292,7 +309,7 @@ class GPU_EXPORT CommandBufferHelper {
   CommandBuffer* command_buffer_;
   int32 ring_buffer_id_;
   int32 ring_buffer_size_;
-  Buffer ring_buffer_;
+  scoped_refptr<gpu::Buffer> ring_buffer_;
   CommandBufferEntry* entries_;
   int32 total_entry_count_;  // the total number of entries
   int32 immediate_entry_count_;
@@ -310,6 +327,10 @@ class GPU_EXPORT CommandBufferHelper {
 
   // Using C runtime instead of base because this file cannot depend on base.
   clock_t last_flush_time_;
+
+  // Incremented every time the helper flushes the command buffer.
+  // Can be used to track when prior commands have been flushed.
+  uint32 flush_generation_;
 
   friend class CommandBufferHelperTest;
   DISALLOW_COPY_AND_ASSIGN(CommandBufferHelper);

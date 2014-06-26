@@ -89,11 +89,13 @@ class PrivetURLFetcherTest : public ::testing::Test {
     request_context_= new net::TestURLRequestContextGetter(
         base::MessageLoopProxy::current());
     privet_urlfetcher_.reset(new PrivetURLFetcher(
-        kSamplePrivetToken,
         GURL(kSamplePrivetURL),
         net::URLFetcher::POST,
         request_context_.get(),
         &delegate_));
+
+    PrivetURLFetcher::SetTokenForHost(GURL(kSamplePrivetURL).GetOrigin().spec(),
+                                      kSamplePrivetToken);
   }
   virtual ~PrivetURLFetcherTest() {
   }
@@ -204,14 +206,27 @@ TEST_F(PrivetURLFetcherTest, Header) {
 }
 
 TEST_F(PrivetURLFetcherTest, Header2) {
-  privet_urlfetcher_.reset(new PrivetURLFetcher(
-      "",
-      GURL(kSamplePrivetURL),
-      net::URLFetcher::POST,
-      request_context_.get(),
-      &delegate_));
+  PrivetURLFetcher::SetTokenForHost(GURL(kSamplePrivetURL).GetOrigin().spec(),
+                                    "");
 
-  privet_urlfetcher_->AllowEmptyPrivetToken();
+  privet_urlfetcher_->SendEmptyPrivetToken();
+  privet_urlfetcher_->Start();
+
+  net::TestURLFetcher* fetcher = fetcher_factory_.GetFetcherByID(0);
+  ASSERT_TRUE(fetcher != NULL);
+  net::HttpRequestHeaders headers;
+  fetcher->GetExtraRequestHeaders(&headers);
+
+  std::string header_token;
+  ASSERT_TRUE(headers.GetHeader("X-Privet-Token", &header_token));
+  EXPECT_EQ(kEmptyPrivetToken, header_token);
+}
+
+TEST_F(PrivetURLFetcherTest, AlwaysSendEmpty) {
+  PrivetURLFetcher::SetTokenForHost(GURL(kSamplePrivetURL).GetOrigin().spec(),
+                                    "SampleToken");
+
+  privet_urlfetcher_->SendEmptyPrivetToken();
   privet_urlfetcher_->Start();
 
   net::TestURLFetcher* fetcher = fetcher_factory_.GetFetcherByID(0);

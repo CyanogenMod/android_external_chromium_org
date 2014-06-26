@@ -5,7 +5,6 @@
 #include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
 
 #include "base/files/file_util_proxy.h"
-#include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -138,8 +137,10 @@ void SandboxFileStreamWriter::DidCreateSnapshotFile(
   }
   DCHECK(!local_file_writer_.get());
   local_file_writer_.reset(FileStreamWriter::CreateForLocalFile(
-      file_system_context_->default_file_task_runner(), platform_path,
-      initial_offset_));
+      file_system_context_->default_file_task_runner(),
+      platform_path,
+      initial_offset_,
+      FileStreamWriter::OPEN_EXISTING_FILE));
 
   quota::QuotaManagerProxy* quota_manager_proxy =
       file_system_context_->quota_manager_proxy();

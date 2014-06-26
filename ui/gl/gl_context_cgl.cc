@@ -13,7 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
-#include "ui/gl/gl_surface_cgl.h"
+#include "ui/gl/gl_surface.h"
 #include "ui/gl/gpu_switching_manager.h"
 
 namespace gfx {
@@ -178,6 +178,7 @@ bool GLContextCGL::MakeCurrent(GLSurface* surface) {
   if (IsCurrent(surface))
     return true;
 
+  ScopedReleaseCurrent release_current;
   TRACE_EVENT0("gpu", "GLContextCGL::MakeCurrent");
 
   if (CGLSetCurrentContext(
@@ -191,7 +192,6 @@ bool GLContextCGL::MakeCurrent(GLSurface* surface) {
 
   SetCurrent(surface);
   if (!InitializeDynamicBindings()) {
-    ReleaseCurrent(surface);
     return false;
   }
 
@@ -200,6 +200,7 @@ bool GLContextCGL::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
+  release_current.Cancel();
   return true;
 }
 

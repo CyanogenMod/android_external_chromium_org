@@ -31,7 +31,8 @@ static const char kMp4InitDataType[] = "video/mp4";
 class MP4StreamParserTest : public testing::Test {
  public:
   MP4StreamParserTest()
-      : configs_received_(false) {
+      : configs_received_(false),
+        lower_bound_(base::TimeDelta::Max()) {
     std::set<int> audio_object_types;
     audio_object_types.insert(kISO_14496_3);
     parser_.reset(new MP4StreamParser(audio_object_types, false));
@@ -40,6 +41,7 @@ class MP4StreamParserTest : public testing::Test {
  protected:
   scoped_ptr<MP4StreamParser> parser_;
   bool configs_received_;
+  base::TimeDelta lower_bound_;
 
   bool AppendData(const uint8* data, size_t length) {
     return parser_->Parse(data, length);
@@ -58,9 +60,10 @@ class MP4StreamParserTest : public testing::Test {
     return true;
   }
 
-  void InitF(bool init_ok, base::TimeDelta duration) {
+  void InitF(bool init_ok, const StreamParser::InitParameters& params) {
     DVLOG(1) << "InitF: ok=" << init_ok
-             << ", dur=" << duration.InMilliseconds();
+             << ", dur=" << params.duration.InMilliseconds()
+             << ", autoTimestampOffset=" << params.auto_update_timestamp_offset;
   }
 
   bool NewConfigF(const AudioDecoderConfig& ac,
@@ -71,7 +74,6 @@ class MP4StreamParserTest : public testing::Test {
     configs_received_ = true;
     return true;
   }
-
 
   void DumpBuffers(const std::string& label,
                    const StreamParser::BufferQueue& buffers) {
@@ -95,6 +97,24 @@ class MP4StreamParserTest : public testing::Test {
     if (!text_map.empty())
       return false;
 
+    // Find the second highest timestamp so that we know what the
+    // timestamps on the next set of buffers must be >= than.
+    base::TimeDelta audio = !audio_buffers.empty() ?
+        audio_buffers.back()->GetDecodeTimestamp() : kNoTimestamp();
+    base::TimeDelta video = !video_buffers.empty() ?
+        video_buffers.back()->GetDecodeTimestamp() : kNoTimestamp();
+    base::TimeDelta second_highest_timestamp =
+        (audio == kNoTimestamp() ||
+         (video != kNoTimestamp() && audio > video)) ? video : audio;
+
+    DCHECK(second_highest_timestamp != kNoTimestamp());
+
+    if (lower_bound_ != kNoTimestamp() &&
+        second_highest_timestamp < lower_bound_) {
+      return false;
+    }
+
+    lower_bound_ = second_highest_timestamp;
     return true;
   }
 
@@ -107,10 +127,12 @@ class MP4StreamParserTest : public testing::Test {
 
   void NewSegmentF() {
     DVLOG(1) << "NewSegmentF";
+    lower_bound_ = kNoTimestamp();
   }
 
   void EndOfSegmentF() {
     DVLOG(1) << "EndOfSegmentF()";
+    lower_bound_ = base::TimeDelta::Max();
   }
 
   void InitializeParser() {
@@ -202,6 +224,23 @@ TEST_F(MP4StreamParserTest, NoMoovAfterFlush) {
   EXPECT_TRUE(AppendDataInPieces(buffer->data() + kFirstMoofOffset,
                                  buffer->data_size() - kFirstMoofOffset,
                                  512));
+}
+
+// Test an invalid file where there are encrypted samples, but
+// SampleAuxiliaryInformation{Sizes|Offsets}Box (saiz|saio) are missing.
+// The parser should fail instead of crash. See http://crbug.com/361347
+TEST_F(MP4StreamParserTest, MissingSampleAuxInfo) {
+  InitializeParser();
+
+  scoped_refptr<DecoderBuffer> buffer =
+      ReadTestDataFile("bear-1280x720-a_frag-cenc_missing-saiz-saio.mp4");
+  EXPECT_FALSE(AppendDataInPieces(buffer->data(), buffer->data_size(), 512));
+}
+
+// Test a file where all video samples start with an Access Unit
+// Delimiter (AUD) NALU.
+TEST_F(MP4StreamParserTest, VideoSamplesStartWithAUDs) {
+  ParseMP4File("bear-1280x720-av_with-aud-nalus_frag.mp4", 512);
 }
 
 // TODO(strobe): Create and test media which uses CENC auxiliary info stored

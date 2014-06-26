@@ -30,6 +30,17 @@ class NativeMediaFileUtil : public fileapi::AsyncFileUtil {
   static base::File::Error BufferIsMediaHeader(net::IOBuffer* buf,
                                                      size_t length);
 
+  // Methods to support CreateOrOpen. Public so they can be shared with
+  // DeviceMediaAsyncFileUtil.
+  static void CreatedSnapshotFileForCreateOrOpen(
+      base::SequencedTaskRunner* media_task_runner,
+      int file_flags,
+      const fileapi::AsyncFileUtil::CreateOrOpenCallback& callback,
+      base::File::Error result,
+      const base::File::Info& file_info,
+      const base::FilePath& platform_path,
+      const scoped_refptr<webkit_blob::ShareableFileReference>& file_ref);
+
   // AsyncFileUtil overrides.
   virtual void CreateOrOpen(
       scoped_ptr<fileapi::FileSystemOperationContext> context,
@@ -187,7 +198,6 @@ class NativeMediaFileUtil : public fileapi::AsyncFileUtil {
       base::FilePath* platform_path,
       scoped_refptr<webkit_blob::ShareableFileReference>* file_ref);
 
- protected:
   MediaPathFilter* media_path_filter() {
     return media_path_filter_;
   }
@@ -195,7 +205,7 @@ class NativeMediaFileUtil : public fileapi::AsyncFileUtil {
  private:
   // Like GetLocalFilePath(), but always take media_path_filter() into
   // consideration. If the media_path_filter() check fails, return
-  // PLATFORM_FILE_ERROR_SECURITY. |local_file_path| does not have to exist.
+  // Fila::FILE_ERROR_SECURITY. |local_file_path| does not have to exist.
   base::File::Error GetFilteredLocalFilePath(
       fileapi::FileSystemOperationContext* context,
       const fileapi::FileSystemURL& file_system_url,
@@ -206,7 +216,7 @@ class NativeMediaFileUtil : public fileapi::AsyncFileUtil {
   // If |local_file_path| is a file, then take media_path_filter() into
   // consideration.
   // If the media_path_filter() check fails, return |failure_error|.
-  // If |local_file_path| is a directory, return PLATFORM_FILE_OK.
+  // If |local_file_path| is a directory, return File::FILE_OK.
   base::File::Error GetFilteredLocalFilePathForExistingFileOrDirectory(
       fileapi::FileSystemOperationContext* context,
       const fileapi::FileSystemURL& file_system_url,
@@ -215,7 +225,7 @@ class NativeMediaFileUtil : public fileapi::AsyncFileUtil {
 
 
   // Not owned, owned by the backend which owns this.
-  MediaPathFilter* media_path_filter_;
+  MediaPathFilter* const media_path_filter_;
 
   base::WeakPtrFactory<NativeMediaFileUtil> weak_factory_;
 

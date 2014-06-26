@@ -4,20 +4,67 @@
 
 #include "chrome/browser/ui/ash/session_state_delegate_views.h"
 
+#include "ash/session/user_info.h"
 #include "base/logging.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace {
-// This isn't really used. It is mainly here to make the compiler happy.
-gfx::ImageSkia null_image;
-}
+
+class EmptyUserInfo : public ash::UserInfo {
+ public:
+  EmptyUserInfo() {}
+  virtual ~EmptyUserInfo() {}
+
+  // ash::UserInfo:
+  virtual base::string16 GetDisplayName() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return base::UTF8ToUTF16(std::string());
+  }
+  virtual base::string16 GetGivenName() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return base::UTF8ToUTF16(std::string());
+  }
+  virtual std::string GetEmail() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return std::string();
+  }
+  virtual std::string GetUserID() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return std::string();
+  }
+
+  virtual const gfx::ImageSkia& GetImage() const OVERRIDE {
+    NOTIMPLEMENTED();
+    // To make the compiler happy.
+    return null_image_;
+  }
+
+ private:
+  const gfx::ImageSkia null_image_;
+
+  DISALLOW_COPY_AND_ASSIGN(EmptyUserInfo);
+};
+
+}  // namespace
 
 SessionStateDelegate::SessionStateDelegate() {
 }
 
 SessionStateDelegate::~SessionStateDelegate() {
+}
+
+content::BrowserContext* SessionStateDelegate::GetBrowserContextByIndex(
+    ash::MultiProfileIndex index) {
+  NOTIMPLEMENTED();
+  return NULL;
+}
+
+content::BrowserContext* SessionStateDelegate::GetBrowserContextForWindow(
+    aura::Window* window) {
+  NOTIMPLEMENTED();
+  return NULL;
 }
 
 int SessionStateDelegate::GetMaximumNumberOfLoggedInUsers() const {
@@ -54,33 +101,24 @@ bool SessionStateDelegate::IsUserSessionBlocked() const {
   return false;
 }
 
-const base::string16 SessionStateDelegate::GetUserDisplayName(
-    ash::MultiProfileIndex index) const {
-  NOTIMPLEMENTED();
-  return base::UTF8ToUTF16("");
+ash::SessionStateDelegate::SessionState SessionStateDelegate::GetSessionState()
+    const {
+  return SESSION_STATE_ACTIVE;
 }
 
-const std::string SessionStateDelegate::GetUserEmail(
+const ash::UserInfo* SessionStateDelegate::GetUserInfo(
     ash::MultiProfileIndex index) const {
-  NOTIMPLEMENTED();
-  return "";
+  return GetUserInfo(static_cast<content::BrowserContext*>(NULL));
 }
 
-const std::string SessionStateDelegate::GetUserID(
-    ash::MultiProfileIndex index) const {
-  NOTIMPLEMENTED();
-  return "";
+const ash::UserInfo* SessionStateDelegate::GetUserInfo(
+    content::BrowserContext* context) const {
+  static const ash::UserInfo* kUserInfo = new EmptyUserInfo();
+  return kUserInfo;
 }
 
-const gfx::ImageSkia& SessionStateDelegate::GetUserImage(
-    ash::MultiProfileIndex index) const {
-  NOTIMPLEMENTED();
-  // To make the compiler happy.
-  return null_image;
-}
-
-void SessionStateDelegate::GetLoggedInUsers(ash::UserIdList* users) {
-  NOTIMPLEMENTED();
+bool SessionStateDelegate::ShouldShowAvatar(aura::Window* window) const {
+  return false;
 }
 
 void SessionStateDelegate::SwitchActiveUser(const std::string& user_id) {
@@ -99,11 +137,4 @@ void SessionStateDelegate::AddSessionStateObserver(
 void SessionStateDelegate::RemoveSessionStateObserver(
     ash::SessionStateObserver* observer) {
   NOTIMPLEMENTED();
-}
-
-bool SessionStateDelegate::TransferWindowToDesktopOfUser(
-    aura::Window* window,
-    ash::MultiProfileIndex index) {
-  NOTIMPLEMENTED();
-  return false;
 }

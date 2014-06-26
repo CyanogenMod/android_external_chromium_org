@@ -26,9 +26,10 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
+#import "ui/base/cocoa/cocoa_base_utils.h"
 #include "ui/base/clipboard/clipboard.h"
-#import "ui/base/cocoa/cocoa_event_utils.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/geometry/rect.h"
 
@@ -115,9 +116,9 @@ const OmniboxViewMacState* GetStateFromTab(const WebContents* tab) {
       tab->GetUserData(&kOmniboxViewMacStateKey));
 }
 
-// Helper to make converting url_parse ranges to NSRange easier to
+// Helper to make converting url ranges to NSRange easier to
 // read.
-NSRange ComponentToNSRange(const url_parse::Component& component) {
+NSRange ComponentToNSRange(const url::Component& component) {
   return NSMakeRange(static_cast<NSInteger>(component.begin),
                      static_cast<NSInteger>(component.len));
 }
@@ -146,7 +147,10 @@ OmniboxViewMac::OmniboxViewMac(OmniboxEditController* controller,
       selection_before_change_(NSMakeRange(0, 0)),
       marked_range_before_change_(NSMakeRange(0, 0)),
       delete_was_pressed_(false),
-      delete_at_end_pressed_(false) {
+      delete_at_end_pressed_(false),
+      in_coalesced_update_block_(false),
+      do_coalesced_text_update_(false),
+      do_coalesced_range_update_(false) {
   [field_ setObserver:this];
 
   // Needed so that editing doesn't lose the styling.
@@ -205,9 +209,16 @@ void OmniboxViewMac::OnTabChanged(const WebContents* web_contents) {
 }
 
 void OmniboxViewMac::Update() {
-  if (chrome::ShouldDisplayOriginChipV2()) {
-    [[field_ cell] setPlaceholderString:
-        base::SysUTF16ToNSString(GetHintText())];
+  if (chrome::ShouldDisplayOriginChip()) {
+    NSDictionary* placeholder_attributes = @{
+      NSFontAttributeName : GetFieldFont(gfx::Font::NORMAL),
+      NSForegroundColorAttributeName : [NSColor disabledControlTextColor]
+    };
+    base::scoped_nsobject<NSMutableAttributedString> placeholder_text(
+        [[NSMutableAttributedString alloc]
+            initWithString:base::SysUTF16ToNSString(GetHintText())
+                attributes:placeholder_attributes]);
+    [[field_ cell] setPlaceholderAttributedString:placeholder_text];
   }
   if (model()->UpdatePermanentText()) {
     // Something visibly changed.  Re-enable URL replacement.
@@ -230,6 +241,25 @@ void OmniboxViewMac::Update() {
   }
 }
 
+void OmniboxViewMac::OpenMatch(const AutocompleteMatch& match,
+                               WindowOpenDisposition disposition,
+                               const GURL& alternate_nav_url,
+                               const base::string16& pasted_text,
+                               size_t selected_line) {
+  // Coalesce text and selection updates from the following function. If we
+  // don't do this, the user may see intermediate states as brief flickers.
+  in_coalesced_update_block_ = true;
+  OmniboxView::OpenMatch(
+      match, disposition, alternate_nav_url, pasted_text, selected_line);
+  in_coalesced_update_block_ = false;
+  if (do_coalesced_text_update_)
+    SetText(coalesced_text_update_);
+  do_coalesced_text_update_ = false;
+  if (do_coalesced_range_update_)
+    SetSelectedRange(coalesced_range_update_);
+  do_coalesced_range_update_ = false;
+}
+
 base::string16 OmniboxViewMac::GetText() const {
   return base::SysNSStringToUTF16([field_ stringValue]);
 }
@@ -244,6 +274,12 @@ NSRange OmniboxViewMac::GetMarkedRange() const {
 }
 
 void OmniboxViewMac::SetSelectedRange(const NSRange range) {
+  if (in_coalesced_update_block_) {
+    do_coalesced_range_update_ = true;
+    coalesced_range_update_ = range;
+    return;
+  }
+
   // This can be called when we don't have focus.  For instance, when
   // the user clicks the "Go" button.
   if (model()->has_focus()) {
@@ -370,6 +406,14 @@ void OmniboxViewMac::SetText(const base::string16& display_text) {
 }
 
 void OmniboxViewMac::SetTextInternal(const base::string16& display_text) {
+  if (in_coalesced_update_block_) {
+    do_coalesced_text_update_ = true;
+    coalesced_text_update_ = display_text;
+    // Don't do any selection changes, since they apply to the previous text.
+    do_coalesced_range_update_ = false;
+    return;
+  }
+
   NSString* ss = base::SysUTF16ToNSString(display_text);
   NSMutableAttributedString* as =
       [[[NSMutableAttributedString alloc] initWithString:ss] autorelease];
@@ -415,6 +459,12 @@ void OmniboxViewMac::EmphasizeURLComponents() {
     ApplyTextAttributes(GetText(), storage);
 
     [storage endEditing];
+
+    // This function can be called during the editor's -resignFirstResponder. If
+    // that happens, |storage| and |field_| will not be synced automatically any
+    // more. Calling -stringValue ensures that |field_| reflects the changes to
+    // |storage|.
+    [field_ stringValue];
   } else {
     SetText(GetText());
   }
@@ -425,7 +475,7 @@ void OmniboxViewMac::ApplyTextAttributes(const base::string16& display_text,
   NSUInteger as_length = [as length];
   NSRange as_entire_string = NSMakeRange(0, as_length);
 
-  [as addAttribute:NSFontAttributeName value:GetFieldFont()
+  [as addAttribute:NSFontAttributeName value:GetFieldFont(gfx::Font::NORMAL)
              range:as_entire_string];
 
   // A kinda hacky way to add breaking at periods. This is what Safari does.
@@ -444,9 +494,9 @@ void OmniboxViewMac::ApplyTextAttributes(const base::string16& display_text,
   [as addAttribute:NSParagraphStyleAttributeName value:paragraph_style
              range:as_entire_string];
 
-  url_parse::Component scheme, host;
+  url::Component scheme, host;
   AutocompleteInput::ParseForEmphasizeComponents(
-      display_text, &scheme, &host);
+      display_text, profile(), &scheme, &host);
   bool grey_out_url = display_text.substr(scheme.begin, scheme.len) ==
       base::UTF8ToUTF16(extensions::kExtensionScheme);
   if (model()->CurrentTextIsURL() &&
@@ -775,12 +825,7 @@ void OmniboxViewMac::OnSetFocus(bool control_down) {
   model()->OnSetFocus(control_down);
   controller()->OnSetFocus();
 
-  // TODO(groby): Not entirely correct, since the chip should only be disabled
-  // after mouseDown: was handled, to allow clicking on the origin chip.
-  if (chrome::ShouldDisplayOriginChipV2()) {
-    controller()->GetToolbarModel()->set_origin_chip_enabled(false);
-    controller()->OnChanged();
-  }
+  HandleOriginChipMouseRelease();
 }
 
 void OmniboxViewMac::OnKillFocus() {
@@ -788,18 +833,7 @@ void OmniboxViewMac::OnKillFocus() {
   model()->OnWillKillFocus(NULL);
   model()->OnKillFocus();
 
-  // If user input is not in progress, re-enable the origin chip and URL
-  // replacement.  This addresses the case where the URL was shown by a call
-  // to ShowURL().  If the Omnibox achieved focus by other means, the calls to
-  // set_url_replacement_enabled, UpdatePermanentText and RevertAll are not
-  // required (a call to OnChanged would be sufficient) but do no harm.
-  if (chrome::ShouldDisplayOriginChipV2() &&
-      !model()->user_input_in_progress()) {
-    controller()->GetToolbarModel()->set_origin_chip_enabled(true);
-    controller()->GetToolbarModel()->set_url_replacement_enabled(true);
-    model()->UpdatePermanentText();
-    RevertAll();
-  }
+  OnDidKillFocus();
 }
 
 void OmniboxViewMac::OnMouseDown(NSInteger button_number) {
@@ -966,10 +1000,10 @@ void OmniboxViewMac::FocusLocation(bool select_all) {
 }
 
 // static
-NSFont* OmniboxViewMac::GetFieldFont() {
+NSFont* OmniboxViewMac::GetFieldFont(int style) {
   // This value should be kept in sync with InstantPage::InitializeFonts.
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  return rb.GetFontList(ui::ResourceBundle::BaseFont).DeriveWithSizeDelta(1)
+  return rb.GetFontList(ui::ResourceBundle::BaseFont).Derive(1, style)
       .GetPrimaryFont().GetNativeFont();
 }
 

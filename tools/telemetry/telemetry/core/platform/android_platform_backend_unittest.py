@@ -2,26 +2,25 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import logging
-import os
 import unittest
 
 from telemetry import test
-from telemetry.core import bitmap
-from telemetry.core import util
 from telemetry.core.platform import android_platform_backend
 from telemetry.unittest import system_stub
 
 
 class MockAdbCommands(object):
-  def __init__(self, mock_content):
+  def __init__(self, mock_content, system_properties):
     self.mock_content = mock_content
+    self.system_properties = system_properties
+    if self.system_properties.get('ro.product.cpu.abi') == None:
+      self.system_properties['ro.product.cpu.abi'] = 'armeabi-v7a'
 
   def CanAccessProtectedFileContents(self):
     return True
 
   # pylint: disable=W0613
-  def GetProtectedFileContents(self, file_name, log_result):
+  def GetProtectedFileContents(self, file_name):
     return self.mock_content
 
   def PushIfNeeded(self, host_binary, device_path):
@@ -29,6 +28,11 @@ class MockAdbCommands(object):
 
   def RunShellCommand(self, command):
     return []
+
+
+class MockDevice(object):
+  def __init__(self, mock_adb_commands):
+    self.old_interface = mock_adb_commands
 
 
 class AndroidPlatformBackendTest(unittest.TestCase):
@@ -47,7 +51,7 @@ class AndroidPlatformBackendTest(unittest.TestCase):
         '4294967295 1074458624 1074463824 3197495984 3197494152 '
         '1074767676 0 4612 0 38136 4294967295 0 0 17 0 0 0 0 0 0 '
         '1074470376 1074470912 1102155776']
-    adb_valid_proc_content = MockAdbCommands(proc_stat_content)
+    adb_valid_proc_content = MockDevice(MockAdbCommands(proc_stat_content, {}))
     backend = android_platform_backend.AndroidPlatformBackend(
         adb_valid_proc_content, False)
     cpu_stats = backend.GetCpuStats('7702')
@@ -56,40 +60,9 @@ class AndroidPlatformBackendTest(unittest.TestCase):
   @test.Disabled('chromeos')
   def testGetCpuStatsInvalidPID(self):
     # Mock an empty /proc/pid/stat.
-    adb_empty_proc_stat = MockAdbCommands([])
+    adb_empty_proc_stat = MockDevice(MockAdbCommands([], {}))
     backend = android_platform_backend.AndroidPlatformBackend(
         adb_empty_proc_stat, False)
     cpu_stats = backend.GetCpuStats('7702')
     self.assertEquals(cpu_stats, {})
 
-  @test.Disabled
-  def testFramesFromMp4(self):
-    mock_adb = MockAdbCommands([])
-    backend = android_platform_backend.AndroidPlatformBackend(mock_adb, False)
-
-    try:
-      backend.InstallApplication('avconv')
-    finally:
-      if not backend.CanLaunchApplication('avconv'):
-        logging.warning('Test not supported on this platform')
-        return  # pylint: disable=W0150
-
-    vid = os.path.join(util.GetUnittestDataDir(), 'vid.mp4')
-    expected_timestamps = [
-      0,
-      763,
-      783,
-      940,
-      1715,
-      1732,
-      1842,
-      1926,
-      ]
-
-    # pylint: disable=W0212
-    for i, timestamp_bitmap in enumerate(backend._FramesFromMp4(vid)):
-      timestamp, bmp = timestamp_bitmap
-      self.assertEquals(timestamp, expected_timestamps[i])
-      expected_bitmap = bitmap.Bitmap.FromPngFile(os.path.join(
-          util.GetUnittestDataDir(), 'frame%d.png' % i))
-      self.assertTrue(expected_bitmap.IsEqual(bmp))

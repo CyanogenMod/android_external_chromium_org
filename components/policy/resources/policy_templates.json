@@ -118,7 +118,7 @@
 #   persistent IDs for all fields (but not for groups!) are needed. These are
 #   specified by the 'id' keys of each policy. NEVER CHANGE EXISTING IDs,
 #   because doing so would break the deployed wire format!
-#   For your editing convenience: highest ID currently used: 256
+#   For your editing convenience: highest ID currently used: 270
 #
 # Placeholders:
 #   The following placeholder strings are automatically substituted:
@@ -307,6 +307,25 @@
       If you enable or disable this setting, users cannot change or override this setting in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>.
 
       If this policy is left not set, this will be enabled but the user will be able to change it.''',
+    },
+    {
+      'name': 'WPADQuickCheckEnabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': [ 'chrome.*:35-', 'chrome_os:35-' ],
+      'features': {
+        'dynamic_refresh': False,
+        'per_profile': False,
+      },
+      'example_value': True,
+      'id': 261,
+      'caption': '''Enable WPAD optimization''',
+      'desc': '''Enables WPAD optimization in <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> and prevents users from changing this setting.
+
+      Setting this to enabled causes Chrome to wait for a shorter interval for DNS-based WPAD servers.
+
+      If this policy is left not set, this will be enabled and the user will not
+      be able to change it.''',
     },
     {
       'name': 'DisableSpdy',
@@ -523,7 +542,7 @@
           'example_value': False,
           'id': 95,
           'caption': '''Enable firewall traversal from remote access host''',
-          'desc': '''Enables usage of STUN and relay servers when remote clients are trying to establish a connection to this machine.
+          'desc': '''Enables usage of STUN servers when remote clients are trying to establish a connection to this machine.
 
           If this setting is enabled, then remote clients can discover and connect to this machines even if they are separated by a firewall.
 
@@ -622,6 +641,58 @@
           'desc': '''If this setting is enabled or not configured, then users can opt to pair clients and hosts at connection time, eliminating the need to enter a PIN every time.
 
           If this setting is disabled, then this feature will not be available.''',
+        },
+        {
+          'name': 'RemoteAccessHostAllowGnubbyAuth',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome.*:35-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': True,
+          'id': 257,
+          'caption': '''Allow gnubby authentication''',
+          'desc': '''If this setting is enabled, then gnubby authentication requests will be proxied across a remote host connection.
+
+          If this setting is disabled or not configured, gnubby authentication requests will not be proxied.''',
+        },
+        {
+          'name': 'RemoteAccessHostAllowRelayedConnection',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome.*:36-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': False,
+          'id': 263,
+          'caption': '''Enable the use of relay servers by the remote access host''',
+          'desc': '''Enables usage of relay servers when remote clients are trying to establish a connection to this machine.
+
+          If this setting is enabled, then remote clients can use relay servers to connect to this machine when a direct connection is not available (e.g. due to firewall restrictions).
+
+          Note that if the policy <ph name="REMOTEACCESSHOSTFIREWALLTRAVERSAL_POLICY_NAME">RemoteAccessHostFirewallTraversal</ph> is disabled, this policy will be ignored.
+
+          If this policy is left not set the setting will be enabled.''',
+        },
+        {
+          'name': 'RemoteAccessHostUdpPortRange',
+          'type': 'string',
+          'schema': { 'type': 'string' },
+          'supported_on': ['chrome.*:36-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': '12400-12409',
+          'id': 264,
+          'caption': '''Restrict the UDP port range used by the remote access host''',
+          'desc': '''Restricts the UDP port range used by the remote access host in this machine.
+
+          If this policy is left not set, or if it is set to an empty string, the remote access host will be allowed to use any available port, unless the policy <ph name="REMOTEACCESSHOSTFIREWALLTRAVERSAL_POLICY_NAME">RemoteAccessHostFirewallTraversal</ph> is disabled, in which case the remote access host will use UDP ports in the 12400-12409 range.''',
         },
       ],
     },
@@ -936,6 +1007,27 @@
       If you set this policy, you can configure if a user is allowed to sign in to <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> or not.''',
     },
     {
+      'name': 'EnableWebBasedSignin',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:35-'],
+      'features': {
+        'dynamic_refresh': False,
+        'per_profile': False,
+      },
+      'future': True,
+      'example_value': False,
+      'id': 265,
+      'caption': '''Enables the old web-based signin''',
+      'desc': '''Enables the old web-based signin flow.
+
+      This setting is useful for enterprise customers who are using SSO solutions that are not compatible with the new inline signin flow yet.
+      If you enable this setting, the old web-based signin flow would be used.
+      If you disable this setting or leave it not set, the new inline signin flow would be used by default. Users may still enable the old web-based signin flow through the command line flag --enable-web-based-signin.
+
+      The experimental setting will be removed in the future when the inline signin fully supports all SSO signin flows.''',
+    },
+    {
       'name': 'UserDataDir',
       'type': 'string',
       'schema': { 'type': 'string' },
@@ -1023,7 +1115,7 @@
       'name': 'DownloadDirectory',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:11-'],
+      'supported_on': ['chrome.*:11-', 'chrome_os:35-'],
       'features': {
         'can_be_recommended': True,
         'dynamic_refresh': True,
@@ -1455,7 +1547,7 @@
       'name': 'Extensions',
       'type': 'group',
       'caption': '''Extensions''',
-      'desc': '''Configures extension-related policies. The user is not allowed to install blacklisted extensions unless they are whitelisted. You can also force <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> to automatically install extensions by specifying them in <ph name="EXTENSIONINSTALLFORCELIST_POLICY_NAME">ExtensionInstallForcelist</ph>. The blacklist takes precedence over the list of forced extensions.''',
+      'desc': '''Configures extension-related policies. The user is not allowed to install blacklisted extensions unless they are whitelisted. You can also force <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> to automatically install extensions by specifying them in <ph name="EXTENSIONINSTALLFORCELIST_POLICY_NAME">ExtensionInstallForcelist</ph>. Force-installed extensions are installed regardless whether they are present in the blacklist.''',
       'policies': [
         {
           'name': 'ExtensionInstallBlacklist',
@@ -1518,11 +1610,11 @@
           'caption': '''Configure the list of force-installed extensions''',
           'desc': '''Allows you to specify a list of extensions that will be installed silently, without user interaction.
 
-          Each item of the list is a string that contains an extension ID and an update URL delimited by a semicolon (<ph name="SEMICOLON">;</ph>). The extension ID is the 32-letter string found e.g. on <ph name="CHROME_EXTENSIONS_LINK">chrome://extensions</ph> when in developer mode. The update URL should point to an Update Manifest XML document as described at <ph name="LINK_TO_EXTENSION_DOC1">http://code.google.com/chrome/extensions/autoupdate.html</ph>. Note that the update URL set in this policy is only used for the initial installation; subsequent updates of the extension will use the update URL indicated in the extension's manifest.
+          Each item of the list is a string that contains an extension ID and an update URL delimited by a semicolon (<ph name="SEMICOLON">;</ph>). The extension ID is the 32-letter string found e.g. on <ph name="CHROME_EXTENSIONS_LINK">chrome://extensions</ph> when in developer mode. The update URL should point to an Update Manifest XML document as described at <ph name="LINK_TO_EXTENSION_DOC1">https://developer.chrome.com/extensions/autoupdate</ph>. Note that the update URL set in this policy is only used for the initial installation; subsequent updates of the extension will use the update URL indicated in the extension's manifest.
 
           For each item, <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> will retrieve the extension specified by the extension ID from the update service at the specified update URL and silently install it.
 
-          For example, <ph name="EXTENSION_POLICY_EXAMPLE">lcncmkcnkcdbbanbjakcencbaoegdjlp;https://clients2.google.com/service/update2/crx</ph> installs the <ph name="EXTENSION_POLICY_EXAMPLE_EXTENSION_NAME">Google SSL Web Search</ph> extension from the standard Chrome Web Store update URL. For more information about hosting extensions, see: <ph name="LINK_TO_EXTENSION_DOC2">http://code.google.com/chrome/extensions/hosting.html</ph>.
+          For example, <ph name="EXTENSION_POLICY_EXAMPLE">lcncmkcnkcdbbanbjakcencbaoegdjlp;https://clients2.google.com/service/update2/crx</ph> installs the <ph name="EXTENSION_POLICY_EXAMPLE_EXTENSION_NAME">Google SSL Web Search</ph> extension from the standard Chrome Web Store update URL. For more information about hosting extensions, see: <ph name="LINK_TO_EXTENSION_DOC2">https://developer.chrome.com/extensions/hosting</ph>.
 
           Users will be unable to uninstall extensions that are specified by this policy. If you remove an extension from this list, then it will be automatically uninstalled by <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>. Extensions specified in this list are also automatically whitelisted for installation; the ExtensionsInstallBlacklist does not affect them.
 
@@ -1548,7 +1640,7 @@
 
           Starting in Chrome 21, it is more difficult to install extensions, apps, and user scripts from outside the Chrome Web Store. Previously, users could click on a link to a *.crx file, and Chrome would offer to install the file after a few warnings. After Chrome 21, such files must be downloaded and dragged onto the Chrome settings page. This setting allows specific URLs to have the old, easier installation flow.
 
-          Each item in this list is an extension-style match pattern (see http://code.google.com/chrome/extensions/match_patterns.html). Users will be able to easily install items from any URL that matches an item in this list. Both the location of the *.crx file and the page where the download is started from (i.e. the referrer) must be allowed by these patterns.
+          Each item in this list is an extension-style match pattern (see https://developer.chrome.com/extensions/match_patterns). Users will be able to easily install items from any URL that matches an item in this list. Both the location of the *.crx file and the page where the download is started from (i.e. the referrer) must be allowed by these patterns.
 
           ExtensionInstallBlacklist takes precedence over this policy. That is, an extension on the blacklist won't be installed, even if it happens from a site on this list.''',
           'label': '''URL patterns to allow extension, app, and user script installs from''',
@@ -2562,6 +2654,7 @@
             'chrome.*:11-',
             'chrome_os:11-',
             'ios:34-',
+            'android:34-',
           ],
           'features': {
             'dynamic_refresh': True,
@@ -2575,6 +2668,42 @@
           If this policy is left not set the global default value will be used for all sites either from the 'DefaultPopupsSetting' policy if it is set, or the user's personal configuration otherwise.''',
         },
         {
+          'name': 'RegisteredProtocolHandlers',
+          'type': 'dict',
+          'schema': {
+            'type': 'array',
+            'items': {
+              'type': 'object',
+              'properties': {
+                'default': {
+                  'description': 'A boolean flag indicating if the protocol handler should be set as the default.',
+                  'type': 'boolean'
+                },
+                'protocol': {
+                  'description': 'The protocol for the protocol handler.',
+                  'type': 'string'
+                },
+                'url': {
+                  'description': 'The URL of the protocol handler.',
+                  'type': 'string'
+                }
+              },
+              'required': ['protocol', 'url']
+            }
+          },
+          'supported_on': ['chrome.*:37-', 'chrome_os:37-'],
+          'features': {
+            'dynamic_refresh': False,
+            'per_profile': True,
+          },
+          'example_value': [{'protocol': 'mailto', 'url': 'https://mail.google.com/mail/?extsrc=mailto&url=%s', 'default': 'true'}],
+          'id': 268,
+          'caption': '''Register protocol handlers''',
+          'desc': '''Allows you to register a list of protocol handlers. This can only be a recommended policy. The property |protocol| should be set to the scheme such as 'mailto' and the property |url| should be set to the URL pattern of the application that handles the scheme. The pattern can include a '%s', which if present will be replaced by the handled URL.
+
+          The protocol handlers registered by policy are merged with the ones registered by the user and both are available for use. The user can override the protocol handlers installed by policy by installing a new default handler, but cannot remove a protocol handler registered by policy.''',
+        },
+        {
           'name': 'PopupsBlockedForUrls',
           'type': 'list',
           'schema': {
@@ -2585,6 +2714,7 @@
             'chrome.*:11-',
             'chrome_os:11-',
             'ios:34-',
+            'android:34-',
           ],
           'features': {
             'dynamic_refresh': True,
@@ -2950,12 +3080,12 @@
         {
           'name': 'MultiProfileUserBehaviorUnrestricted',
           'value': 'unrestricted',
-          'caption': '''Allow enterprise user to be both primary and secondary  (Default behavior)''',
+          'caption': '''Allow enterprise user to be both primary and secondary  (Default behavior for non-managed users)''',
         },
         {
           'name': 'MultiProfileUserBehaviorMustBePrimary',
           'value': 'primary-only',
-          'caption': '''Allow enterprise user to be primary multiprofile user only''',
+          'caption': '''Allow enterprise user to be primary multiprofile user only (Default behavior for enterprise-managed users)''',
         },
         {
           'name': 'MultiProfileUserBehaviorNotAllowed',
@@ -2983,7 +3113,7 @@
 
       If the setting is changed while the user is signed into a multiprofile session, all users in the session will be checked against their corresponding settings. The session will be closed if any one of the users is no longer allowed to be in the session.
 
-      If the policy is left not set, the default value 'MultiProfileUserBehaviorUnrestricted' will be used.''',
+      If the policy is left not set, the default value 'MultiProfileUserBehaviorMustBePrimary' applies for enterprise-managed users and 'MultiProfileUserBehaviorUnrestricted' will be used for non-managed users.''',
     },
     {
       'name': 'InstantEnabled',
@@ -3117,6 +3247,24 @@
       If you enable this setting, bookmarks can be added, removed or modified. This is the default also when this policy is not set.
 
       If you disable this setting, bookmarks can not be added, removed or modified. Existing bookmarks are still available.''',
+    },
+    {
+      'name': 'ShowAppsShortcutInBookmarkBar',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome.*:37-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': False,
+      'id': 267,
+      'caption': '''Show the apps shortcut in the bookmark bar''',
+      'desc': '''Enables or disables the apps shortcut in the bookmark bar.
+
+      If this policy is not set then the user can choose to show or hide the apps shortcut from the bookmark bar context menu.
+
+      If this policy is configured then the user can't change it, and the apps shortcut is always shown or never shown.''',
     },
     {
       'name': 'AllowFileSelectionDialogs',
@@ -3459,16 +3607,19 @@
       'name': 'EnableOriginBoundCerts',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:17-'],
+      'supported_on': ['chrome.*:17-35'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': False,
       },
+      'deprecated': True,
       'future': True,
       'example_value': True,
       'id': 114,
-      'caption': '''Enable TLS domain-bound certificates extension''',
-      'desc': '''Specifies whether the TLS domain-bound certificates extension should be enabled.
+      'caption': '''Enable TLS domain-bound certificates extension (deprecated)''',
+      'desc': '''This policy has been retired as of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 36.
+
+      Specifies whether the TLS domain-bound certificates extension should be enabled.
 
       This setting is used to enable the TLS domain-bound certificates extension for testing.  This experimental setting will be removed in the future.''',
     },
@@ -3476,18 +3627,21 @@
       'name': 'EnableMemoryInfo',
       'type': 'main',
       'schema': { 'type': 'boolean' },
-      'supported_on': ['chrome.*:17-', 'chrome_os:18-'],
+      'supported_on': ['chrome.*:17-34', 'chrome_os:18-34'],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
       },
+      'deprecated': True,
       'future': True,
       'example_value': False,
       'id': 115,
-      'caption': '''Enable reporting memory info (JS heap size) to page''',
-      'desc': '''Allows pages to access JavaScript memory usage statistics.
+      'caption': '''Enable reporting memory info (JS heap size) to page (deprecated)''',
+      'desc': '''This policy has been retired as of <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> version 35.
 
-      This settings makes the memory statistics from the Developer Tools Profiles panel available to the web page itself.''',
+      Memory info is anyway reported to page, regardless of the option value, but the sizes reported are
+      quantized and the rate of updates is limited for security reasons. To obtain real-time precise data,
+      please use tools like Telemetry.''',
     },
     {
       'name': 'DisablePrintPreview',
@@ -3620,16 +3774,19 @@
           'caption': '''Least recently used users who have not logged in within last 3 months are removed until there is enough free space''',
         },
       ],
-      'supported_on': ['chrome_os:32-'],
+      'supported_on': ['chrome_os:32-35'],
       'device_only': True,
       'features': {
         'dynamic_refresh': True,
         'per_profile': False,
       },
+      'deprecated': True,
       'example_value': 'remove-lru',
       'id': 246,
-      'caption': '''Selects the strategy used to free up disk space during automatic clean-up''',
-      'desc': '''Controls the automatic clean-up behavior on <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices. Automatic clean-up is triggered when the amount of free disk space reaches a critical level to recover some disk space.
+      'caption': '''Selects the strategy used to free up disk space during automatic clean-up (deprecated)''',
+      'desc': '''This policy is deprecated. <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will always use the 'RemoveLRU' clean-up strategy.
+
+      Controls the automatic clean-up behavior on <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> devices. Automatic clean-up is triggered when the amount of free disk space reaches a critical level to recover some disk space.
 
       If this policy is set to 'RemoveLRU', the automatic clean-up will keep removing users from the device in least-recently-logged-in order until there is enough free space.
 
@@ -3651,7 +3808,7 @@
       'caption': '''Report OS and firmware version''',
       'desc': '''Report OS and firmware version of enrolled devices.
 
-      If this setting is set to True, enrolled devices will report the OS and firmware version periodically. If this setting is not set or set to False, version info will not be reported.''',
+      If this setting is not set or set to True, enrolled devices will report the OS and firmware version periodically. If this setting is set to False, version info will not be reported.''',
     },
     {
       'name': 'ReportDeviceActivityTimes',
@@ -3667,7 +3824,7 @@
       'caption': '''Report device activity times''',
       'desc': '''Report device activity times.
 
-      If this setting is set to True, enrolled devices will report time periods when a user is active on the device. If this setting is not set or set to False, device activity times will not be recorded or reported.''',
+      If this setting is not set or set to True, enrolled devices will report time periods when a user is active on the device. If this setting is set to False, device activity times will not be recorded or reported.''',
     },
     {
       'name': 'ReportDeviceBootMode',
@@ -3683,7 +3840,7 @@
       'caption': '''Report device boot mode''',
       'desc': '''Report the state of the device's dev switch at boot.
 
-      If the policy is not set, or set to false, the state of the dev switch will not be reported.''',
+      If the policy is set to false, the state of the dev switch will not be reported.''',
     },
     {
       'name': 'ReportDeviceLocation',
@@ -3716,7 +3873,7 @@
       'caption': '''Report device network interfaces''',
       'desc': '''Report list of network interfaces with their types and hardware addresses to the server.
 
-      If the policy is not set, or set to false, the interface list will not be reported.''',
+      If the policy is set to false, the interface list will not be reported.''',
     },
     {
       'name': 'ReportDeviceUsers',
@@ -3732,7 +3889,7 @@
       'caption': '''Report device users''',
       'desc': '''Report list of device users that have recently logged in.
 
-      If the policy is not set, or set to false, the users will not be reported.''',
+      If the policy is set to false, the users will not be reported.''',
     },
     {
       'name': 'DeviceUserWhitelist',
@@ -4199,6 +4356,24 @@
       If this policy is set to False, an error message will be displayed instead of the network configuration prompt.'''
     },
     {
+      'name': 'DeviceBlockDevmode',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:37-'],
+      'device_only': True,
+      'features': {
+        'dynamic_refresh': True,
+      },
+      'example_value': True,
+      'id': 266,
+      'caption': '''Block developer mode''',
+      'desc': '''Block developer mode.
+
+      If this policy is set to True, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will prevent the device from booting into developer mode. The system will refuse to boot and show an error screen when the developer switch is turned on.
+
+      If this policy is unset or set to False, developer mode will remain available for the device.'''
+    },
+    {
       'name': 'BackgroundModeEnabled',
       'type': 'main',
       'schema': { 'type': 'boolean' },
@@ -4516,9 +4691,31 @@
 
       This policy configures the clock format to use on the login screen and as a default for user sessions. Users can still override the clock format for their account.
 
-      If the policy is not set to true, the device will use a 24 hour clock format. If the policy is set to false, the device will use 12 hour clock format.
+      If the policy is set to true, the device will use a 24 hour clock format. If the policy is set to false, the device will use 12 hour clock format.
 
       If this policy is not set, the device will default to a 24 hour clock format.''',
+    },
+    {
+      'name': 'TouchVirtualKeyboardEnabled',
+      'type': 'main',
+      'schema': { 'type': 'boolean' },
+      'supported_on': ['chrome_os:37-' ],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True
+      },
+      'example_value': False,
+      'id': 269,
+      'caption': '''Enable virtual keyboard''',
+      'desc': '''This policy configures enabling the virtual keyboard as an input device on ChromeOS. Users cannot override this policy.
+
+      If the policy is set to true, the on-screen virtual keyboard will always be enabled.
+
+      If set to false, the on-screen virtual keyboard will always be disabled.
+
+      If you set this policy, users cannot change or override it. However, users will still be able to enable/disable an accessibility on-screen keyboard which takes precedence over the virtual keyboard controlled by this policy. See the |VirtualKeyboardEnabled| policy for controlling the accessibility on-screen keyboard.
+
+      If this policy is left unset, the on-screen keyboard is disabled initially but can be enabled by the user anytime. Heuristic rules may also be used to decide when to display the keyboard.''',
     },
     {
       'name': 'ShowLogoutButtonInTray',
@@ -4683,6 +4880,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 420000,
           'id': 172,
           'caption': '''Screen dim delay when running on AC power''',
@@ -4708,6 +4906,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 480000,
           'id': 173,
           'caption': '''Screen off delay when running on AC power''',
@@ -4733,6 +4932,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 600000,
           'id': 174,
           'caption': '''Screen lock delay when running on AC power''',
@@ -4760,6 +4960,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 545000,
           'id': 197,
           'caption': '''Idle warning delay when running on AC power''',
@@ -4783,6 +4984,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 1800000,
           'id': 175,
           'caption': '''Idle delay when running on AC power''',
@@ -4806,6 +5008,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 300000,
           'id': 176,
           'caption': '''Screen dim delay when running on battery power''',
@@ -4831,6 +5034,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 360000,
           'id': 177,
           'caption': '''Screen off delay when running on battery power''',
@@ -4856,6 +5060,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 600000,
           'id': 178,
           'caption': '''Screen lock delay when running on battery power''',
@@ -4883,6 +5088,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 545000,
           'id': 198,
           'caption': '''Idle warning delay when running on battery power''',
@@ -4906,6 +5112,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 600000,
           'id': 179,
           'caption': '''Idle delay when running on battery power''',
@@ -4997,6 +5204,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 0,
           'id': 226,
           'caption': '''Action to take when the idle delay is reached while running on AC power''',
@@ -5042,6 +5250,7 @@
             'dynamic_refresh': True,
             'per_profile': False,
           },
+          'deprecated': True,
           'example_value': 0,
           'id': 222,
           'caption': '''Action to take when the idle delay is reached while running on battery power''',
@@ -5225,20 +5434,207 @@
 
           If this policy is set to False or left unset, power management delays and the session length limit start running immediately on session start.''',
         },
+        {
+          'name': 'PowerManagementIdleSettings',
+          'type': 'dict',
+          'schema': {
+            'type': 'object',
+            'properties': {
+              'AC': {
+                'description': 'Delays and actions to take when the device is idle and running on AC power',
+                'type': 'object',
+                'id': 'PowerManagementDelays',
+                'properties': {
+                  'Delays': {
+                    'type': 'object',
+                    'properties': {
+                      'ScreenDim': {
+                        'description': 'The length of time without user input after which the screen is dimmed, in milliseconds',
+                        'type': 'integer',
+                        'minimum': 0
+                      },
+                      'ScreenOff': {
+                        'description': 'The length of time without user input after which the screen is turned off, in milliseconds',
+                        'type': 'integer',
+                        'minimum': 0
+                      },
+                      'IdleWarning': {
+                        'description': 'The length of time without user input after which a warning dialog is shown, in milliseconds',
+                        'type': 'integer',
+                        'minimum': 0
+                      },
+                      'Idle': {
+                        'description': 'The length of time without user input after which the idle action is taken, in milliseconds',
+                        'type': 'integer',
+                        'minimum': 0
+                      }
+                    }
+                  },
+                  'IdleAction': {
+                    'description': 'Action to take when the idle delay is reached',
+                    'type': 'string',
+                    'enum': [ 'Suspend', 'Logout', 'Shutdown', 'DoNothing' ]
+                  }
+                }
+              },
+              'Battery': {
+                'description': 'Delays and actions to take when the device is idle and running on battery',
+                '$ref': 'PowerManagementDelays'
+              }
+            }
+          },
+          'supported_on': ['chrome_os:35-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': {
+            'AC': {
+              'IdleAction': 'DoNothing'
+            },
+            'Battery': {
+              'IdleAction': 'DoNothing'
+            }
+          },
+          'id': 258,
+          'caption': '''Power management settings when the user becomes idle''',
+          'desc': '''Configure power management settings when the user becomes idle.
+
+          This policy controls multiple settings for the power management strategy when the user becomes idle.
+
+          There are four types of action:
+          * The screen will be dimmed if the user remains idle for the time specified by |ScreenDim|.
+          * The screen will be turned off if the user remains idle for the time specified by |ScreenOff|.
+          * A warning dialog will be shown if the user remains idle for the time specified by |IdleWarning|, telling the user that the idle action is about to be taken.
+          * The action specified by |IdleAction| will be taken if the user remains idle for the time specified by |Idle|.
+
+          For each of above actions, the delay should be specified in milliseconds, and needs to be set to a value greater than zero to trigger the corresponding action. In case the delay is set to zero, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will not take the corresponding action.
+
+          For each of the above delays, when the length of time is unset, a default value will be used.
+
+          Note that |ScreenDim| values will be clamped to be less than or equal to |ScreenOff|, |ScreenOff| and |IdleWarning| will be clamped to be less than or equal to |Idle|.
+
+          |IdleAction| can be one of four possible actions:
+          * |Suspend|
+          * |Logout|
+          * |Shutdown|
+          * |DoNothing|
+
+          When the |IdleAction| is unset, the default action is taken, which is suspend.
+
+          There are also separate settings for AC power and battery.
+          '''
+        },
+        {
+          'name': 'ScreenLockDelays',
+          'type': 'dict',
+          'schema': {
+            'type': 'object',
+            'properties': {
+              'AC': {
+                'description': 'The length of time without user input after which the screen is locked when running on AC power, in milliseconds',
+                'type': 'integer',
+                'minimum': 0
+              },
+              'Battery': {
+                'description': 'The length of time without user input after which the screen is locked when running on battery, in milliseconds',
+                'type': 'integer',
+                'minimum': 0
+              }
+            }
+          },
+          'supported_on': ['chrome_os:35-'],
+          'features': {
+            'dynamic_refresh': True,
+            'per_profile': False,
+          },
+          'example_value': {
+            'AC': 600000,
+            'Battery': 300000
+          },
+          'id': 259,
+          'caption': '''Screen lock delays''',
+          'desc': '''Specifies the length of time without user input after which the screen is locked when running on AC power or battery.
+
+          When the length of time is set to a value greater than zero, it represents the length of time that the user must remain idle before <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> locks the screen.
+
+          When the length of time is set to zero, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> does not lock the screen when the user becomes idle.
+
+          When the length of time is unset, a default length of time is used.
+
+          The recommended way to lock the screen on idle is to enable screen locking on suspend and have <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> suspend after the idle delay. This policy should only be used when screen locking should occur a significant amount of time sooner than suspend or when suspend on idle is not desired at all.
+
+          The policy value should be specified in milliseconds. Values are clamped to be less than the idle delay.''',
+        },
       ],
     },
     {
-      # TODO(bartfab): Change the policy type to 'dict' once this is fully
-      # supported. http://crbug.com/258339
       'name': 'DeviceLoginScreenPowerManagement',
-      'type': 'string',
-      'schema': { 'type': 'string' },
+      'type': 'dict',
+      'schema': {
+        'type': 'object',
+        'properties': {
+          'AC': {
+            'description': 'Power management settings applicable only when running on AC power',
+            'type': 'object',
+            'id': 'DeviceLoginScreenPowerSettings',
+            'properties': {
+              'Delays': {
+                'type': 'object',
+                'properties': {
+                  'ScreenDim': {
+                    'description': 'The length of time without user input after which the screen is dimmed, in milliseconds',
+                    'type': 'integer',
+                    'minimum': 0
+                  },
+                  'ScreenOff': {
+                    'description': 'The length of time without user input after which the screen is turned off, in milliseconds',
+                    'type': 'integer',
+                    'minimum': 0
+                  },
+                  'Idle': {
+                    'description': 'The length of time without user input after which the idle action is taken, in milliseconds',
+                    'type': 'integer',
+                    'minimum': 0
+                  }
+                }
+              },
+              'IdleAction': {
+                'description': 'Action to take when the idle delay is reached',
+                'type': 'string',
+                'enum': [ 'Suspend', 'Shutdown', 'DoNothing' ]
+              }
+            }
+          },
+          'Battery': {
+            'description': 'Power management settings applicable only when running on battery power',
+            '$ref': 'DeviceLoginScreenPowerSettings'
+          },
+          'LidCloseAction': {
+            'description': 'Action to take when the lid is closed',
+            'type': 'string',
+            'enum': [ 'Suspend', 'Shutdown', 'DoNothing' ]
+          },
+          'UserActivityScreenDimDelayScale': {
+            'description': 'Percentage by which the screen dim delay is scaled when user activity is observed while the screen is dimmed or soon after the screen has been turned off',
+            'type': 'integer',
+            'minimum': 100
+          }
+        }
+      },
       'supported_on': ['chrome_os:30-'],
       'device_only': True,
       'features': {
         'dynamic_refresh': True,
       },
-      'example_value': '{ "AC": { "IdleAction": "DoNothing" }, "Battery": { "IdleAction": "DoNothing" } }',
+      'example_value': {
+        'AC': {
+          'IdleAction': 'DoNothing'
+        },
+        'Battery': {
+          'IdleAction': 'DoNothing'
+        }
+      },
       'id': 225,
       'caption': '''Power management on the login screen''',
       'desc': '''Configure power management on the login screen in <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph>.
@@ -5246,82 +5642,6 @@
       This policy lets you configure how <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> behaves when there is no user activity for some amount of time while the login screen is being shown. The policy controls multiple settings. For their individual semantics and value ranges, see the corresponding policies that control power management within a session. The only deviations from these policies are:
       * The actions to take on idle or lid close cannot be to end the session.
       * The default action taken on idle when running on AC power is to shut down.
-
-      The policy should be specified as a string that expresses the individual settings in JSON format, conforming to the following schema:
-      {
-        "type": "object",
-        "properties": {
-          "AC": {
-            "description": "Power management settings applicable only when running on AC power",
-            "type": "object",
-            "properties": {
-              "Delays": {
-                "type": "object",
-                "properties": {
-                  "ScreenDim": {
-                    "description": "The length of time without user input after which the screen is dimmed, in milliseconds",
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "ScreenOff": {
-                    "description": "The length of time without user input after which the screen is turned off, in milliseconds",
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "Idle": {
-                    "description": "The length of time without user input after which the idle action is taken, in milliseconds",
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
-              },
-              "IdleAction": {
-                "description": "Action to take when the idle delay is reached",
-                "enum": [ "Suspend", "Shutdown", "DoNothing" ]
-              }
-            }
-          },
-          "Battery": {
-            "description": "Power management settings applicable only when running on battery power",
-            "type": "object",
-            "properties": {
-              "Delays": {
-                "type": "object",
-                "properties": {
-                  "ScreenDim": {
-                    "description": "The length of time without user input after which the screen is dimmed, in milliseconds",
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "ScreenOff": {
-                    "description": "The length of time without user input after which the screen is turned off, in milliseconds",
-                    "type": "integer",
-                    "minimum": 0
-                  },
-                  "Idle": {
-                    "description": "The length of time without user input after which the idle action is taken, in milliseconds",
-                    "type": "integer",
-                    "minimum": 0
-                  }
-                }
-              },
-              "IdleAction": {
-                "description": "Action to take when the idle delay is reached",
-                "enum": [ "Suspend", "Shutdown", "DoNothing" ]
-              }
-            }
-          },
-          "LidCloseAction": {
-            "description": "Action to take when the lid is closed",
-            "enum": [ "Suspend", "Shutdown", "DoNothing" ]
-          },
-          "UserActivityScreenDimDelayScale": {
-            "description": "Percentage by which the screen dim delay is scaled when user activity is observed while the screen is dimmed or soon after the screen has been turned off",
-            "type": "integer",
-            "minimum": 100
-          }
-        }
-      }
 
       If a setting is left unspecified, a default value is used.
 
@@ -5485,6 +5805,25 @@
           If you set this policy, users cannot change or override it.
 
           If this policy is left unset, the on-screen keyboard is disabled initially but can be enabled by the user anytime.'''
+        },
+        {
+          'name': 'KeyboardDefaultToFunctionKeys',
+          'type': 'main',
+          'schema': { 'type': 'boolean' },
+          'supported_on': ['chrome_os:35-'],
+          'features': {
+            'can_be_recommended': True,
+            'dynamic_refresh': True,
+            'per_profile': True,
+          },
+          'example_value': True,
+          'id': 260,
+          'caption': '''Media keys default to function keys''',
+          'desc': '''Changes the default behaviour of the top row keys to function keys.
+
+          If this policy is set to true, the keyboard's top row of keys will produce function key commands per default. The search key has to be pressed to revert their behavior back to media keys.
+
+          If this policy is set to false or left unset, the keyboard will produce media key commands per default and function key commands when the search key is held.'''
         },
         {
           'name': 'ScreenMagnifierType',
@@ -5734,7 +6073,7 @@
       'name': 'VariationsRestrictParameter',
       'type': 'string',
       'schema': { 'type': 'string' },
-      'supported_on': ['chrome.*:27-', 'android:34-'],
+      'supported_on': ['chrome.*:27-', 'android:34-', 'ios:35-'],
       'features': {
         'dynamic_refresh': False,
         'per_profile': False,
@@ -5992,28 +6331,43 @@
         },
       ],
     },
-    # TODO(joaodasilva): replace the 'dict' type with a more generic
-    # 'json' type. The actual schema type for this should be 'array'.
     {
       'name': 'ManagedBookmarks',
       'type': 'dict',
       'schema': {
-        'type': 'object',
+        'type': 'array',
         'items': {
           'type': 'object',
+          'id': 'BookmarkType',
           'properties': {
             'name': { 'type': 'string' },
             'url': { 'type': 'string' },
+            'children': {
+              'type': 'array',
+              'items': { '$ref': 'BookmarkType' },
+            },
           },
         },
       },
-      'supported_on': ['android:30-'],
+      'supported_on': [
+        'android:30-',
+        'ios:35-',
+        'chrome.*:37-',
+        'chrome_os:37-',
+      ],
       'features': {
         'dynamic_refresh': True,
         'per_profile': True,
       },
-      'future': True,
-      'example_value': { "name": "Google", "url": "google.com" },
+      'example_value': [
+        {
+          "name": "Google",
+          "url": "google.com"
+        }, {
+          "name": "Youtube",
+          "url": "youtube.com"
+        }
+      ],
       'id': 227,
       'caption': '''Managed Bookmarks''',
       'desc': '''Configures a list of managed bookmarks.
@@ -6059,7 +6413,7 @@
         'dynamic_refresh': True,
         'per_profile': True,
       },
-      'example_value': { "url": "http://example.com/avatar.jpg", "hash": "deadbeefdeadbeefdeadbeefdeadbeef" },
+      'example_value': { "url": "http://example.com/avatar.jpg", "hash": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" },
       'max_size': 524288,
       'id': 249,
       'caption': '''User avatar image''',
@@ -6089,6 +6443,76 @@
       If you set this policy, users cannot change or override it.
 
       If the policy is left not set, the user can choose the avatar image representing him/her on the login screen.''',
+    },
+    {
+      'name': 'WallpaperImage',
+      'type': 'external',
+      'schema': {
+        'type': 'object',
+        'properties': {
+          'url': { "type": "string" },
+          'hash': { "type": "string" }
+        },
+      },
+      'supported_on': ['chrome_os:35-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': { "url": "http://example.com/wallpaper.jpg", "hash": "baddecafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecafbaddecaf" },
+      'max_size': 16777216,
+      'id': 262,
+      'caption': '''Wallpaper image''',
+      'desc': '''Configure wallpaper image.
+
+      This policy allows you to configure the wallpaper image that is shown on the desktop and on the login screen background for the user. The policy is set by specifying the URL from which <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> can download the wallpaper image and a cryptographic hash used to verify the integrity of the download. The image must be in JPEG format, its size must not exceed 16MB. The URL must be accessible without any authentication.
+
+      The wallpaper image is downloaded and cached. It will be re-downloaded whenever the URL or the hash changes.
+
+      The policy should be specified as a string that expresses the URL and hash in JSON format, conforming to the following schema:
+      {
+        "type": "object",
+        "properties": {
+          "url": {
+            "description": "The URL from which the wallpaper image can be downloaded.",
+            "type": "string"
+          },
+          "hash": {
+            "description": "The SHA-256 hash of the wallpaper image.",
+            "type": "string"
+          }
+        }
+      }
+
+      If this policy is set, <ph name="PRODUCT_OS_NAME">$2<ex>Google Chrome OS</ex></ph> will download and use the wallpaper image.
+
+      If you set this policy, users cannot change or override it.
+
+      If the policy is left not set, the user can choose an image to be shown on the desktop and on the login screen background.''',
+    },
+    {
+      'name': 'EnableDeprecatedWebPlatformFeatures',
+      'type': 'list',
+      'schema': {
+        'type': 'array',
+        'items': { 'type': 'string' },
+      },
+      'supported_on': ['chrome.*:37-', 'chrome_os:37-', 'android:37-'],
+      'features': {
+        'dynamic_refresh': True,
+        'per_profile': True,
+      },
+      'example_value': [],
+      'id': 270,
+      'caption': '''Enable deprecated web platform features''',
+      'desc': '''Specify a list of deprecated web platform features to re-enable.
+
+      This policy gives administrators the ability to re-enable deprecated web platform features for a limited time. Features are identified by a string tag and the features corresponding to the tags included in the list specified by this policy will get re-enabled.
+
+      The following tags are currently defined:
+      - ShowModalDialog_EffectiveUntil20150430
+
+      If this policy is left not set or the list is empty, all deprecated web platform features will remain disabled.''',
     },
   ],
   'messages': {
@@ -6139,17 +6563,23 @@
     },
     'doc_intro': {
       'desc': '''Introduction text for the generated policy documentation''',
-      'text': '''This is the list of policies that <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> respects.
+      'text': '''(This document may include policies that are targeted for later
+      <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> versions, those are
+      subject to change without notice. The list of supported policies is the
+      same for Chromium and Google Chrome.)
 
       You don't need to change these settings by hand!  You can download easy-to-use templates from
       <ph name="POLICY_TEMPLATE_DOWNLOAD_URL">http://www.chromium.org/administrators/policy-templates<ex>
       http://www.chromium.org/administrators/policy-templates</ex></ph>.
 
-      The list of supported policies is the same for Chromium and Google Chrome.
-
       These policies are strictly intended to be used to configure instances of Chrome internal to your organization. Use of these policies outside of your organization (for example, in a publicly distributed program) is considered malware and will likely be labeled as malware by Google and anti-virus vendors.
 
-      Note: starting with Chrome 28, policies are loaded directly from the Group Policy API on Windows. Policies manually written to the registry will be ignored. See http://crbug.com/259236 for details.'''
+      Note: Starting with <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph>
+      28, policies are loaded directly from the Group Policy API on
+      Windows. Policies manually written to the registry will be ignored. See
+      http://crbug.com/259236 for details.
+
+      Starting with <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> 35, policies are read directly from the registry if the workstation is joined to an Active Directory domain; otherwise the policies are read from GPO.'''
     },
     'doc_back_to_top': {
       'desc': '''Text of a link in the generated policy documentation, that takes the user to the top of the page''',

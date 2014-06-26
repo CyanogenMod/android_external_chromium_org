@@ -6,7 +6,6 @@
 #define MEDIA_FILTERS_VPX_VIDEO_DECODER_H_
 
 #include "base/callback.h"
-#include "base/memory/weak_ptr.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_decoder_config.h"
@@ -34,12 +33,13 @@ class MEDIA_EXPORT VpxVideoDecoder : public VideoDecoder {
 
   // VideoDecoder implementation.
   virtual void Initialize(const VideoDecoderConfig& config,
-                          const PipelineStatusCB& status_cb) OVERRIDE;
+                          bool low_delay,
+                          const PipelineStatusCB& status_cb,
+                          const OutputCB& output_cb) OVERRIDE;
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
-  virtual bool HasAlpha() const OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
  private:
   enum DecoderState {
@@ -60,26 +60,27 @@ class MEDIA_EXPORT VpxVideoDecoder : public VideoDecoder {
   bool VpxDecode(const scoped_refptr<DecoderBuffer>& buffer,
                  scoped_refptr<VideoFrame>* video_frame);
 
-  // Reset decoder and call |reset_cb_|.
-  void DoReset();
-
   void CopyVpxImageTo(const vpx_image* vpx_image,
                       const struct vpx_image* vpx_image_alpha,
                       scoped_refptr<VideoFrame>* video_frame);
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<VpxVideoDecoder> weak_factory_;
-  base::WeakPtr<VpxVideoDecoder> weak_this_;
 
   DecoderState state_;
 
+  OutputCB output_cb_;
+
+  // TODO(xhwang): Merge DecodeBuffer() into Decode() and remove this.
   DecodeCB decode_cb_;
-  base::Closure reset_cb_;
 
   VideoDecoderConfig config_;
 
   vpx_codec_ctx* vpx_codec_;
   vpx_codec_ctx* vpx_codec_alpha_;
+
+  // Memory pool used for VP9 decoding.
+  class MemoryPool;
+  scoped_refptr<MemoryPool> memory_pool_;
 
   VideoFramePool frame_pool_;
 

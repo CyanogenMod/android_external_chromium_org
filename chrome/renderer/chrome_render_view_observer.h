@@ -45,38 +45,21 @@ class ChromeRenderViewObserver : public content::RenderViewObserver {
   virtual ~ChromeRenderViewObserver();
 
  private:
-  // Holds the information received in OnWebUIJavaScript for later use
-  // to call EvaluateScript() to preload javascript for WebUI tests.
-  struct WebUIJavaScript {
-    base::string16 frame_xpath;
-    base::string16 jscript;
-    int id;
-    bool notify_result;
-  };
-
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   virtual void DidStartLoading() OVERRIDE;
   virtual void DidStopLoading() OVERRIDE;
-  virtual void DidCommitProvisionalLoad(blink::WebFrame* frame,
+  virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) OVERRIDE;
-  virtual void DetailedConsoleMessageAdded(const base::string16& message,
-                                           const base::string16& source,
-                                           const base::string16& stack_trace,
-                                           int32 line_number,
-                                           int32 severity_level) OVERRIDE;
   virtual void Navigate(const GURL& url) OVERRIDE;
 
-  void OnWebUIJavaScript(const base::string16& frame_xpath,
-                         const base::string16& jscript,
-                         int id,
-                         bool notify_result);
-  void OnJavaScriptStressTestControl(int cmd, int param);
-  void OnSetClientSidePhishingDetection(bool enable_phishing_detection);
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
+  void OnWebUIJavaScript(const base::string16& javascript);
+#endif
+#if defined(ENABLE_EXTENSIONS)
+  void OnSetName(const std::string& name);
   void OnSetVisuallyDeemphasized(bool deemphasized);
-  void OnRequestThumbnailForContextNode(int thumbnail_min_area_pixels,
-                                        gfx::Size thumbnail_max_size_pixels);
-  void OnGetFPS();
+#endif
 #if defined(OS_ANDROID)
   void OnUpdateTopControlsState(content::TopControlsState constraints,
                                 content::TopControlsState current,
@@ -85,6 +68,7 @@ class ChromeRenderViewObserver : public content::RenderViewObserver {
   void OnRetrieveMetaTagContent(const GURL& expected_url,
                                 const std::string tag_name);
 #endif
+  void OnSetClientSidePhishingDetection(bool enable_phishing_detection);
   void OnSetWindowFeatures(const blink::WebWindowFeatures& window_features);
 
   void CapturePageInfoLater(int page_id,
@@ -106,7 +90,7 @@ class ChromeRenderViewObserver : public content::RenderViewObserver {
   bool HasRefreshMetaTag(blink::WebFrame* frame);
 
   // Save the JavaScript to preload if a ViewMsg_WebUIJavaScript is received.
-  scoped_ptr<WebUIJavaScript> webui_javascript_;
+  std::vector<base::string16> webui_javascript_;
 
   // Owned by ChromeContentRendererClient and outlive us.
   ChromeRenderProcessObserver* chrome_render_process_observer_;

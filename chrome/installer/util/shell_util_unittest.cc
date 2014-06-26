@@ -45,16 +45,16 @@ class ShellUtilShortcutTest : public testing::Test {
 
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     chrome_exe_ = temp_dir_.path().Append(installer::kChromeExe);
-    EXPECT_EQ(0, file_util::WriteFile(chrome_exe_, "", 0));
+    EXPECT_EQ(0, base::WriteFile(chrome_exe_, "", 0));
 
     manganese_exe_ = temp_dir_.path().Append(kManganeseExe);
-    EXPECT_EQ(0, file_util::WriteFile(manganese_exe_, "", 0));
+    EXPECT_EQ(0, base::WriteFile(manganese_exe_, "", 0));
 
     iron_exe_ = temp_dir_.path().Append(kIronExe);
-    EXPECT_EQ(0, file_util::WriteFile(iron_exe_, "", 0));
+    EXPECT_EQ(0, base::WriteFile(iron_exe_, "", 0));
 
     other_ico_ = temp_dir_.path().Append(kOtherIco);
-    EXPECT_EQ(0, file_util::WriteFile(other_ico_, "", 0));
+    EXPECT_EQ(0, base::WriteFile(other_ico_, "", 0));
 
     ASSERT_TRUE(fake_user_desktop_.CreateUniqueTempDir());
     ASSERT_TRUE(fake_common_desktop_.CreateUniqueTempDir());
@@ -773,7 +773,7 @@ TEST_F(ShellUtilShortcutTest, DontRemoveChromeShortcutIfPointsToAnotherChrome) {
   ASSERT_TRUE(other_exe_dir.CreateUniqueTempDir());
   base::FilePath other_chrome_exe =
       other_exe_dir.path().Append(installer::kChromeExe);
-  EXPECT_EQ(0, file_util::WriteFile(other_chrome_exe, "", 0));
+  EXPECT_EQ(0, base::WriteFile(other_chrome_exe, "", 0));
 
   test_properties_.set_target(other_chrome_exe);
   ASSERT_TRUE(ShellUtil::CreateOrUpdateShortcut(
@@ -846,8 +846,8 @@ TEST(ShellUtilTest, GetUserSpecificRegistrySuffix) {
   ASSERT_TRUE(ShellUtil::GetUserSpecificRegistrySuffix(&suffix));
   ASSERT_TRUE(StartsWith(suffix, L".", true));
   ASSERT_EQ(27, suffix.length());
-  ASSERT_TRUE(ContainsOnlyChars(suffix.substr(1),
-                                L"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"));
+  ASSERT_TRUE(base::ContainsOnlyChars(suffix.substr(1),
+                                      L"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"));
 }
 
 TEST(ShellUtilTest, GetOldUserSpecificRegistrySuffix) {

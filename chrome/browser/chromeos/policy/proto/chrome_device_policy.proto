@@ -561,9 +561,16 @@ message LoginScreenPowerManagementProto {
 }
 
 message AutoCleanupSettigsProto {
-  // Configures strategy for automatic clean-up process that is run when device
-  // runs out of free disk space. One of "remove-lru", "remove-lru-if-dormant".
+  // Deprecated.  There is only one disk-full cleanup strategy: LRU.
   optional string clean_up_strategy = 1;
+}
+
+// Settings that control low-level functions of the system.
+message SystemSettingsProto {
+  // Whether developer mode is allowed on the device. If the device owner sets
+  // this flag to true, the system will refuse to boot and show an error screen
+  // when the developer switch is turned on.
+  optional bool block_devmode = 1;
 }
 
 message ChromeDeviceSettingsProto {
@@ -598,4 +605,5 @@ message ChromeDeviceSettingsProto {
   optional LoginScreenPowerManagementProto login_screen_power_management = 29;
   optional SystemUse24HourClockProto use_24hour_clock = 30;
   optional AutoCleanupSettigsProto auto_clean_up_settings = 31;
+  optional SystemSettingsProto system_settings = 32;
 }

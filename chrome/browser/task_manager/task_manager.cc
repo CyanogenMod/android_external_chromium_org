@@ -17,18 +17,21 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/task_manager/background_resource_provider.h"
+#include "chrome/browser/task_manager/background_information.h"
 #include "chrome/browser/task_manager/browser_process_resource_provider.h"
 #include "chrome/browser/task_manager/child_process_resource_provider.h"
-#include "chrome/browser/task_manager/extension_process_resource_provider.h"
-#include "chrome/browser/task_manager/guest_resource_provider.h"
-#include "chrome/browser/task_manager/panel_resource_provider.h"
+#include "chrome/browser/task_manager/extension_information.h"
+#include "chrome/browser/task_manager/guest_information.h"
+#include "chrome/browser/task_manager/panel_information.h"
+#include "chrome/browser/task_manager/printing_information.h"
 #include "chrome/browser/task_manager/resource_provider.h"
-#include "chrome/browser/task_manager/tab_contents_resource_provider.h"
+#include "chrome/browser/task_manager/tab_contents_information.h"
+#include "chrome/browser/task_manager/web_contents_resource_provider.h"
 #include "chrome/browser/task_manager/worker_resource_provider.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/nacl/browser/nacl_browser.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
@@ -45,10 +48,6 @@
 #include "ui/base/text/bytes_formatting.h"
 #include "ui/gfx/image/image_skia.h"
 
-#if !defined(OS_CHROMEOS)
-#include "chrome/browser/task_manager/notification_resource_provider.h"
-#endif
-
 #if defined(OS_MACOSX)
 #include "content/public/browser/browser_child_process_host.h"
 #endif
@@ -58,6 +57,7 @@ using content::ResourceRequestInfo;
 using content::WebContents;
 using task_manager::Resource;
 using task_manager::ResourceProvider;
+using task_manager::WebContentsInformation;
 
 class Profile;
 
@@ -192,9 +192,7 @@ class TaskManagerModelGpuDataManagerObserver
 };
 
 TaskManagerModel::PerResourceValues::PerResourceValues()
-    : is_nacl_debug_stub_port_valid(false),
-      nacl_debug_stub_port(0),
-      is_title_valid(false),
+    : is_title_valid(false),
       is_profile_name_valid(false),
       network_usage(0),
       is_process_id_valid(false),
@@ -202,8 +200,6 @@ TaskManagerModel::PerResourceValues::PerResourceValues()
       is_goats_teleported_valid(false),
       goats_teleported(0),
       is_webcore_stats_valid(false),
-      is_fps_valid(false),
-      fps(0),
       is_sqlite_memory_bytes_valid(false),
       sqlite_memory_bytes(0),
       is_v8_memory_valid(false),
@@ -230,7 +226,9 @@ TaskManagerModel::PerProcessValues::PerProcessValues()
       gdi_handles_peak(0),
       is_user_handles_valid(0),
       user_handles(0),
-      user_handles_peak(0) {}
+      user_handles_peak(0),
+      is_nacl_debug_stub_port_valid(false),
+      nacl_debug_stub_port(0) {}
 
 TaskManagerModel::PerProcessValues::~PerProcessValues() {}
 
@@ -243,27 +241,35 @@ TaskManagerModel::TaskManagerModel(TaskManager* task_manager)
       update_requests_(0),
       listen_requests_(0),
       update_state_(IDLE),
-      goat_salt_(base::RandUint64()),
-      last_unique_id_(0) {
+      goat_salt_(base::RandUint64()) {
   AddResourceProvider(
       new task_manager::BrowserProcessResourceProvider(task_manager));
-  AddResourceProvider(
-      new task_manager::BackgroundContentsResourceProvider(task_manager));
-  AddResourceProvider(
-      new task_manager::TabContentsResourceProvider(task_manager));
-  AddResourceProvider(new task_manager::PanelResourceProvider(task_manager));
+  AddResourceProvider(new task_manager::WebContentsResourceProvider(
+      task_manager,
+      scoped_ptr<WebContentsInformation>(
+          new task_manager::BackgroundInformation())));
+  AddResourceProvider(new task_manager::WebContentsResourceProvider(
+      task_manager,
+      scoped_ptr<WebContentsInformation>(
+          new task_manager::TabContentsInformation())));
+  AddResourceProvider(new task_manager::WebContentsResourceProvider(
+      task_manager,
+      scoped_ptr<WebContentsInformation>(
+          new task_manager::PrintingInformation())));
+  AddResourceProvider(new task_manager::WebContentsResourceProvider(
+      task_manager,
+      scoped_ptr<WebContentsInformation>(
+          new task_manager::PanelInformation())));
   AddResourceProvider(
       new task_manager::ChildProcessResourceProvider(task_manager));
-  AddResourceProvider(
-      new task_manager::ExtensionProcessResourceProvider(task_manager));
-  AddResourceProvider(new task_manager::GuestResourceProvider(task_manager));
-
-#if !defined(OS_CHROMEOS) && defined(ENABLE_NOTIFICATIONS)
-  ResourceProvider* provider =
-      task_manager::NotificationResourceProvider::Create(task_manager);
-  if (provider)
-    AddResourceProvider(provider);
-#endif
+  AddResourceProvider(new task_manager::WebContentsResourceProvider(
+      task_manager,
+      scoped_ptr<WebContentsInformation>(
+          new task_manager::ExtensionInformation())));
+  AddResourceProvider(new task_manager::WebContentsResourceProvider(
+      task_manager,
+      scoped_ptr<WebContentsInformation>(
+          new task_manager::GuestInformation())));
 
   AddResourceProvider(new task_manager::WorkerResourceProvider(task_manager));
 }
@@ -285,10 +291,10 @@ int TaskManagerModel::GroupCount() const {
 }
 
 int TaskManagerModel::GetNaClDebugStubPort(int index) const {
-  PerResourceValues& values(GetPerResourceValues(index));
+  base::ProcessHandle handle = GetResource(index)->GetProcess();
+  PerProcessValues& values(per_process_cache_[handle]);
   if (!values.is_nacl_debug_stub_port_valid) {
-    values.is_nacl_debug_stub_port_valid = true;
-    values.nacl_debug_stub_port = GetResource(index)->GetNaClDebugStubPort();
+    return nacl::kGdbDebugStubPortUnknown;
   }
   return values.nacl_debug_stub_port;
 }
@@ -316,19 +322,6 @@ base::ProcessId TaskManagerModel::GetProcessId(int index) const {
 
 base::ProcessHandle TaskManagerModel::GetProcess(int index) const {
   return GetResource(index)->GetProcess();
-}
-
-int TaskManagerModel::GetResourceUniqueId(int index) const {
-  return GetResource(index)->get_unique_id();
-}
-
-int TaskManagerModel::GetResourceIndexByUniqueId(const int unique_id) const {
-  for (int resource_index = 0; resource_index < ResourceCount();
-       ++resource_index) {
-    if (GetResourceUniqueId(resource_index) == unique_id)
-      return resource_index;
-  }
-  return -1;
 }
 
 base::string16 TaskManagerModel::GetResourceById(int index, int col_id) const {
@@ -381,9 +374,6 @@ base::string16 TaskManagerModel::GetResourceById(int index, int col_id) const {
     case IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN:
       return GetResourceWebCoreCSSCacheSize(index);
 
-    case IDS_TASK_MANAGER_FPS_COLUMN:
-      return GetResourceFPS(index);
-
     case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN:
       return GetResourceVideoMemory(index);
 
@@ -423,7 +413,9 @@ const base::string16& TaskManagerModel::GetResourceProfileName(
 
 base::string16 TaskManagerModel::GetResourceNaClDebugStubPort(int index) const {
   int port = GetNaClDebugStubPort(index);
-  if (port == 0) {
+  if (port == nacl::kGdbDebugStubPortUnknown) {
+    return base::ASCIIToUTF16("Unknown");
+  } else if (port == nacl::kGdbDebugStubPortUnused) {
     return base::ASCIIToUTF16("N/A");
   } else {
     return base::IntToString16(port);
@@ -522,14 +514,6 @@ base::string16 TaskManagerModel::GetResourceVideoMemory(int index) const {
     return GetMemCellText(video_memory) + base::ASCIIToUTF16("*");
   }
   return GetMemCellText(video_memory);
-}
-
-base::string16 TaskManagerModel::GetResourceFPS(
-    int index) const {
-  float fps = 0;
-  if (!GetFPS(index, &fps))
-    return l10n_util::GetStringUTF16(IDS_TASK_MANAGER_NA_CELL_TEXT);
-  return base::UTF8ToUTF16(base::StringPrintf("%.0f", fps));
 }
 
 base::string16 TaskManagerModel::GetResourceSqliteMemoryUsed(int index) const {
@@ -682,19 +666,6 @@ bool TaskManagerModel::GetVideoMemory(int index,
   return true;
 }
 
-bool TaskManagerModel::GetFPS(int index, float* result) const {
-  *result = 0;
-  PerResourceValues& values(GetPerResourceValues(index));
-  if (!values.is_fps_valid) {
-    if (!GetResource(index)->ReportsFPS())
-      return false;
-    values.is_fps_valid = true;
-    values.fps = GetResource(index)->GetFPS();
-  }
-  *result = values.fps;
-  return true;
-}
-
 bool TaskManagerModel::GetSqliteMemoryUsedBytes(
     int index,
     size_t* result) const {
@@ -754,20 +725,16 @@ bool TaskManagerModel::IsResourceFirstInGroup(int index) const {
   Resource* resource = GetResource(index);
   GroupMap::const_iterator iter = group_map_.find(resource->GetProcess());
   DCHECK(iter != group_map_.end());
-  const ResourceList* group = iter->second;
-  return ((*group)[0] == resource);
+  const ResourceList& group = iter->second;
+  return (group[0] == resource);
 }
 
 bool TaskManagerModel::IsResourceLastInGroup(int index) const {
   Resource* resource = GetResource(index);
   GroupMap::const_iterator iter = group_map_.find(resource->GetProcess());
   DCHECK(iter != group_map_.end());
-  const ResourceList* group = iter->second;
-  return (group->back() == resource);
-}
-
-bool TaskManagerModel::IsBackgroundResource(int index) const {
-  return GetResource(index)->IsBackground();
+  const ResourceList& group = iter->second;
+  return (group.back() == resource);
 }
 
 gfx::ImageSkia TaskManagerModel::GetResourceIcon(int index) const {
@@ -775,8 +742,9 @@ gfx::ImageSkia TaskManagerModel::GetResourceIcon(int index) const {
   if (!icon.isNull())
     return icon;
 
-  static gfx::ImageSkia* default_icon = ResourceBundle::GetSharedInstance().
-      GetImageSkiaNamed(IDR_DEFAULT_FAVICON);
+  static const gfx::ImageSkia* default_icon =
+      ResourceBundle::GetSharedInstance().
+      GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToImageSkia();
   return *default_icon;
 }
 
@@ -786,14 +754,13 @@ TaskManagerModel::GetGroupRangeForResource(int index) const {
   GroupMap::const_iterator group_iter =
       group_map_.find(resource->GetProcess());
   DCHECK(group_iter != group_map_.end());
-  ResourceList* group = group_iter->second;
-  DCHECK(group);
-  if (group->size() == 1) {
+  const ResourceList& group = group_iter->second;
+  if (group.size() == 1) {
     return std::make_pair(index, 1);
   } else {
     for (int i = index; i >= 0; --i) {
-      if (GetResource(i) == (*group)[0])
-        return std::make_pair(i, group->size());
+      if (GetResource(i) == group[0])
+        return std::make_pair(i, group.size());
     }
     NOTREACHED();
     return std::make_pair(-1, -1);
@@ -908,6 +875,10 @@ int TaskManagerModel::CompareValues(int row1, int row2, int col_id) const {
       return ValueCompare(current1, current2);
     }
 
+    case IDS_TASK_MANAGER_IDLE_WAKEUPS_COLUMN:
+      return ValueCompare(GetIdleWakeupsPerSecond(row1),
+                          GetIdleWakeupsPerSecond(row2));
+
     case IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN:
     case IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN:
     case IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN: {
@@ -933,10 +904,6 @@ int TaskManagerModel::CompareValues(int row1, int row2, int col_id) const {
       }
       return OrderUnavailableValue(row1_stats_valid, row2_stats_valid);
     }
-
-    case IDS_TASK_MANAGER_FPS_COLUMN:
-      return ValueCompareMember(
-          this, &TaskManagerModel::GetFPS, row1, row2);
 
     case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN: {
       size_t value1;
@@ -978,29 +945,19 @@ WebContents* TaskManagerModel::GetResourceWebContents(int index) const {
   return GetResource(index)->GetWebContents();
 }
 
-const extensions::Extension* TaskManagerModel::GetResourceExtension(
-    int index) const {
-  return GetResource(index)->GetExtension();
-}
-
 void TaskManagerModel::AddResource(Resource* resource) {
-  resource->unique_id_ = ++last_unique_id_;
-
   base::ProcessHandle process = resource->GetProcess();
 
-  ResourceList* group_entries = NULL;
-  GroupMap::const_iterator group_iter = group_map_.find(process);
+  GroupMap::iterator group_iter = group_map_.find(process);
   int new_entry_index = 0;
   if (group_iter == group_map_.end()) {
-    group_entries = new ResourceList();
-    group_map_[process] = group_entries;
-    group_entries->push_back(resource);
+    group_map_.insert(make_pair(process, ResourceList(1, resource)));
 
     // Not part of a group, just put at the end of the list.
     resources_.push_back(resource);
     new_entry_index = static_cast<int>(resources_.size() - 1);
   } else {
-    group_entries = group_iter->second;
+    ResourceList* group_entries = &(group_iter->second);
     group_entries->push_back(resource);
 
     // Insert the new entry right after the last entry of its group.
@@ -1037,19 +994,21 @@ void TaskManagerModel::RemoveResource(Resource* resource) {
   // Find the associated group.
   GroupMap::iterator group_iter = group_map_.find(process);
   DCHECK(group_iter != group_map_.end());
-  ResourceList* group_entries = group_iter->second;
+  if (group_iter == group_map_.end())
+    return;
+  ResourceList& group_entries = group_iter->second;
 
   // Remove the entry from the group map.
-  ResourceList::iterator iter = std::find(group_entries->begin(),
-                                          group_entries->end(),
+  ResourceList::iterator iter = std::find(group_entries.begin(),
+                                          group_entries.end(),
                                           resource);
-  DCHECK(iter != group_entries->end());
-  group_entries->erase(iter);
+  DCHECK(iter != group_entries.end());
+  if (iter != group_entries.end())
+    group_entries.erase(iter);
 
   // If there are no more entries for that process, do the clean-up.
-  if (group_entries->empty()) {
-    delete group_entries;
-    group_map_.erase(process);
+  if (group_entries.empty()) {
+    group_map_.erase(group_iter);
 
     // Nobody is using this process, we don't need the process metrics anymore.
     MetricsMap::iterator pm_iter = metrics_map_.find(process);
@@ -1060,27 +1019,26 @@ void TaskManagerModel::RemoveResource(Resource* resource) {
     }
   }
 
-  // Prepare to remove the entry from the model list.
+  // Remove the entry from the model list.
   iter = std::find(resources_.begin(), resources_.end(), resource);
   DCHECK(iter != resources_.end());
-  int index = static_cast<int>(iter - resources_.begin());
-
-  // Notify the observers that the contents will change.
-  FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
-                    OnItemsToBeRemoved(index, 1));
-
-  // Now actually remove the entry from the model list.
-  resources_.erase(iter);
+  if (iter != resources_.end()) {
+    int index = static_cast<int>(iter - resources_.begin());
+    // Notify the observers that the contents will change.
+    FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
+                      OnItemsToBeRemoved(index, 1));
+    // Now actually remove the entry from the model list.
+    resources_.erase(iter);
+    // Notify the table that the contents have changed.
+    FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
+                      OnItemsRemoved(index, 1));
+  }
 
   // Remove the entry from the network maps.
   ResourceValueMap::iterator net_iter =
       current_byte_count_map_.find(resource);
   if (net_iter != current_byte_count_map_.end())
     current_byte_count_map_.erase(net_iter);
-
-  // Notify the table that the contents have changed.
-  FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
-                    OnItemsRemoved(index, 1));
 }
 
 void TaskManagerModel::StartUpdating() {
@@ -1165,7 +1123,7 @@ void TaskManagerModel::Clear() {
     resources_.clear();
 
     // Clear the groups.
-    STLDeleteValues(&group_map_);
+    group_map_.clear();
 
     // Clear the process related info.
     STLDeleteValues(&metrics_map_);
@@ -1179,7 +1137,6 @@ void TaskManagerModel::Clear() {
     FOR_EACH_OBSERVER(TaskManagerModelObserver, observer_list_,
                       OnItemsRemoved(0, size));
   }
-  last_unique_id_ = 0;
 }
 
 void TaskManagerModel::ModelChanged() {
@@ -1193,7 +1150,12 @@ void TaskManagerModel::Refresh() {
   per_resource_cache_.clear();
   per_process_cache_.clear();
 
-  // Compute the CPU usage values.
+#if !defined(DISABLE_NACL)
+  nacl::NaClBrowser* nacl_browser = nacl::NaClBrowser::GetInstance();
+#endif  // !defined(DISABLE_NACL)
+
+  // Compute the CPU usage values and check if NaCl GDB debug stub port is
+  // known.
   // Note that we compute the CPU usage for all resources (instead of doing it
   // lazily) as process_util::GetCPUUsage() returns the CPU usage since the last
   // time it was called, and not calling it everytime would skew the value the
@@ -1203,6 +1165,16 @@ void TaskManagerModel::Refresh() {
        iter != resources_.end(); ++iter) {
     base::ProcessHandle process = (*iter)->GetProcess();
     PerProcessValues& values(per_process_cache_[process]);
+#if !defined(DISABLE_NACL)
+    // Debug stub port doesn't change once known.
+    if (!values.is_nacl_debug_stub_port_valid) {
+      values.nacl_debug_stub_port = nacl_browser->GetProcessGdbDebugStubPort(
+          (*iter)->GetUniqueChildProcessId());
+      if (values.nacl_debug_stub_port != nacl::kGdbDebugStubPortUnknown) {
+        values.is_nacl_debug_stub_port_valid = true;
+      }
+    }
+#endif  // !defined(DISABLE_NACL)
     if (values.is_cpu_usage_valid && values.is_idle_wakeups_valid)
       continue;
     MetricsMap::iterator metrics_iter = metrics_map_.find(process);
@@ -1258,18 +1230,6 @@ void TaskManagerModel::NotifyResourceTypeStats(
        it != resources_.end(); ++it) {
     if (base::GetProcId((*it)->GetProcess()) == renderer_id) {
       (*it)->NotifyResourceTypeStats(stats);
-    }
-  }
-}
-
-void TaskManagerModel::NotifyFPS(base::ProcessId renderer_id,
-                                 int routing_id,
-                                 float fps) {
-  for (ResourceList::iterator it = resources_.begin();
-       it != resources_.end(); ++it) {
-    if (base::GetProcId((*it)->GetProcess()) == renderer_id &&
-        (*it)->GetRoutingID() == routing_id) {
-      (*it)->NotifyFPS(fps);
     }
   }
 }

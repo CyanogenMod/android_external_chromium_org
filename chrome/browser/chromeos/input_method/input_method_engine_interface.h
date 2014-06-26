@@ -30,6 +30,7 @@ class InputMethodEngineInterface : public IMEEngineHandlerInterface {
     std::string type;
     std::string key;
     std::string code;
+    int key_code; // only used by on-screen keyboards.
     std::string extension_id;
     bool alt_key;
     bool ctrl_key;
@@ -174,9 +175,7 @@ class InputMethodEngineInterface : public IMEEngineHandlerInterface {
   virtual const input_method::InputMethodDescriptor& GetDescriptor() const = 0;
 
   // Called when the input metho initialization is done.
-  // This function is called from private API.
-  // TODO(nona): Remove this function.
-  virtual void StartIme() = 0;
+  virtual void NotifyImeReady() = 0;
 
   // Set the current composition and associated properties.
   virtual bool SetComposition(int context_id,

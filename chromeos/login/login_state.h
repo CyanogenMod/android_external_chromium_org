@@ -51,10 +51,19 @@ class CHROMEOS_EXPORT LoginState {
   void AddObserver(Observer* observer);
   void RemoveObserver(Observer* observer);
 
-  // Set the logged in state and user type.
+  // Sets the logged in state, user type, and primary user hash when the
+  // primary user initialy logs in. Also notifies observers.
+  void SetLoggedInStateAndPrimaryUser(
+      LoggedInState state,
+      LoggedInUserType type,
+      const std::string& primary_user_hash);
+
+  // Sets the logged in state and user type. Also notifies observers. Used
+  // in tests or situations where there is no primary user (e.g. from the
+  // login screen).
   void SetLoggedInState(LoggedInState state, LoggedInUserType type);
 
-  // Get the logged in user type.
+  // Gets the logged in user type.
   LoggedInUserType GetLoggedInUserType() const;
 
   // Returns true if a user is considered to be logged in.
@@ -67,6 +76,12 @@ class CHROMEOS_EXPORT LoginState {
   // Returns true if logged in and is a guest, retail, or public user.
   bool IsGuestUser() const;
 
+  // Returns true if logged in as a kiosk app.
+  bool IsKioskApp() const;
+
+  // Whether a network profile is created for the user.
+  bool UserHasNetworkProfile() const;
+
   // Returns true if the user is an authenticated user (i.e. non public account)
   bool IsUserAuthenticated() const;
 
@@ -78,6 +93,8 @@ class CHROMEOS_EXPORT LoginState {
     always_logged_in_ = always_logged_in;
   }
 
+  const std::string& primary_user_hash() const { return primary_user_hash_; }
+
  private:
   LoginState();
   virtual ~LoginState();
@@ -86,6 +103,7 @@ class CHROMEOS_EXPORT LoginState {
 
   LoggedInState logged_in_state_;
   LoggedInUserType logged_in_user_type_;
+  std::string primary_user_hash_;
   ObserverList<Observer> observer_list_;
 
   // If true, it always thinks the current status as logged in. Set to true by

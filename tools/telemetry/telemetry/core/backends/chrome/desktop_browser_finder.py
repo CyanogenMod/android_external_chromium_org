@@ -8,13 +8,12 @@ import os
 import subprocess
 import sys
 
-from telemetry import decorators
 from telemetry.core import browser
-from telemetry.core import platform as core_platform
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends.chrome import cros_interface
 from telemetry.core.backends.chrome import desktop_browser_backend
+from telemetry.core.platform import factory
 
 ALL_BROWSER_TYPES = [
     'exact',
@@ -36,7 +35,7 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
                is_content_shell, browser_directory, is_local_build=False):
     target_os = sys.platform.lower()
     super(PossibleDesktopBrowser, self).__init__(browser_type, target_os,
-        finder_options)
+        finder_options, not is_content_shell)
     assert browser_type in ALL_BROWSER_TYPES, \
         'Please add %s to ALL_BROWSER_TYPES' % browser_type
     self._local_executable = executable
@@ -50,11 +49,17 @@ class PossibleDesktopBrowser(possible_browser.PossibleBrowser):
         self.browser_type, self._local_executable)
 
   @property
-  @decorators.Cache
   def _platform_backend(self):
-    return core_platform.CreatePlatformBackendForCurrentOS()
+    return factory.GetPlatformBackendForCurrentOS()
 
   def Create(self):
+    if self._flash_path and not os.path.exists(self._flash_path):
+      logging.warning(
+          'Could not find Flash at %s. Continuing without Flash.\n'
+          'To run with Flash, check it out via http://go/read-src-internal',
+          self._flash_path)
+      self._flash_path = None
+
     backend = desktop_browser_backend.DesktopBrowserBackend(
         self.finder_options.browser_options, self._local_executable,
         self._flash_path, self._is_content_shell, self._browser_directory,
@@ -144,7 +149,7 @@ def FindAllAvailableBrowsers(finder_options):
                                              normalized_executable, flash_path,
                                              False, browser_directory))
     else:
-      logging.warning('%s specified by browser_executable does not exist',
+      raise Exception('%s specified by --browser-executable does not exist',
                       normalized_executable)
 
   def AddIfFound(browser_type, build_dir, type_dir, app_name, content_shell):
@@ -207,27 +212,27 @@ def FindAllAvailableBrowsers(finder_options):
                         os.getenv('PROGRAMFILES'),
                         os.getenv('LOCALAPPDATA')]
 
-    def AddIfFoundWin(browser_name, app_path):
-      browser_directory = os.path.join(path, app_path)
+    def AddIfFoundWin(browser_name, search_path, app_path):
+      browser_directory = os.path.join(search_path, app_path)
       for chromium_app_name in chromium_app_names:
         app = os.path.join(browser_directory, chromium_app_name)
         if IsExecutable(app):
           browsers.append(PossibleDesktopBrowser(browser_name, finder_options,
                                                  app, None, False,
                                                  browser_directory))
-        return True
+          return True
       return False
 
     for path in win_search_paths:
       if not path:
         continue
-      if AddIfFoundWin('canary', canary_path):
+      if AddIfFoundWin('canary', path, canary_path):
         break
 
     for path in win_search_paths:
       if not path:
         continue
-      if AddIfFoundWin('system', system_path):
+      if AddIfFoundWin('system', path, system_path):
         break
 
   if len(browsers) and not has_display:

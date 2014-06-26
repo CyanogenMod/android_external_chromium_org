@@ -43,15 +43,13 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   virtual ~DecryptingAudioDecoder();
 
   // AudioDecoder implementation.
-  virtual void Initialize(DemuxerStream* stream,
+  virtual void Initialize(const AudioDecoderConfig& config,
                           const PipelineStatusCB& status_cb,
-                          const StatisticsCB& statistics_cb) OVERRIDE;
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
+                          const OutputCB& output_cb) OVERRIDE;
+  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+                      const DecodeCB& decode_cb) OVERRIDE;
   virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop(const base::Closure& closure) OVERRIDE;
-  virtual int bits_per_channel() OVERRIDE;
-  virtual ChannelLayout channel_layout() OVERRIDE;
-  virtual int samples_per_second() OVERRIDE;
+  virtual void Stop() OVERRIDE;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -63,8 +61,6 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
     kDecryptorRequested,
     kPendingDecoderInit,
     kIdle,
-    kPendingConfigChange,
-    kPendingDemuxerRead,
     kPendingDecode,
     kWaitingForKey,
     kDecodeFinished,
@@ -74,16 +70,11 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // Callback for DecryptorHost::RequestDecryptor().
   void SetDecryptor(Decryptor* decryptor);
 
+  // Initializes the audio decoder on the |decryptor_| with |config_|.
+  void InitializeDecoder();
+
   // Callback for Decryptor::InitializeAudioDecoder() during initialization.
   void FinishInitialization(bool success);
-
-  // Callback for Decryptor::InitializeAudioDecoder() during config change.
-  void FinishConfigChange(bool success);
-
-  // Reads from the demuxer stream with corresponding callback method.
-  void ReadFromDemuxerStream();
-  void DecryptAndDecodeBuffer(DemuxerStream::Status status,
-                              const scoped_refptr<DecoderBuffer>& buffer);
 
   void DecodePendingBuffer();
 
@@ -99,35 +90,28 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // Resets decoder and calls |reset_cb_|.
   void DoReset();
 
-  // Updates audio configs from |demuxer_stream_| and resets
-  // |output_timestamp_base_| and |total_samples_decoded_|.
-  void UpdateDecoderConfig();
-
-  // Sets timestamp and duration for |queued_audio_frames_| to make sure the
-  // renderer always receives continuous frames without gaps and overlaps.
-  void EnqueueFrames(const Decryptor::AudioBuffers& frames);
+  // Sets timestamps for |frames| and then passes them to |output_cb_|.
+  void ProcessDecodedFrames(const Decryptor::AudioBuffers& frames);
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
-  base::WeakPtrFactory<DecryptingAudioDecoder> weak_factory_;
-  base::WeakPtr<DecryptingAudioDecoder> weak_this_;
 
   State state_;
 
   PipelineStatusCB init_cb_;
-  StatisticsCB statistics_cb_;
-  ReadCB read_cb_;
+  OutputCB output_cb_;
+  DecodeCB decode_cb_;
   base::Closure reset_cb_;
   base::Closure stop_cb_;
 
-  // Pointer to the demuxer stream that will feed us compressed buffers.
-  DemuxerStream* demuxer_stream_;
+  // The current decoder configuration.
+  AudioDecoderConfig config_;
 
   // Callback to request/cancel decryptor creation notification.
   SetDecryptorReadyCB set_decryptor_ready_cb_;
 
   Decryptor* decryptor_;
 
-  // The buffer returned by the demuxer that needs decrypting/decoding.
+  // The buffer that needs decrypting/decoding.
   scoped_refptr<media::DecoderBuffer> pending_buffer_to_decode_;
 
   // Indicates the situation where new key is added during pending decode
@@ -137,14 +121,11 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   // decryption key.
   bool key_added_while_decode_pending_;
 
-  Decryptor::AudioBuffers queued_audio_frames_;
-
-  // Decoded audio format.
-  int bits_per_channel_;
-  ChannelLayout channel_layout_;
-  int samples_per_second_;
-
   scoped_ptr<AudioTimestampHelper> timestamp_helper_;
+
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<DecryptingAudioDecoder> weak_factory_;
+  base::WeakPtr<DecryptingAudioDecoder> weak_this_;
 
   DISALLOW_COPY_AND_ASSIGN(DecryptingAudioDecoder);
 };

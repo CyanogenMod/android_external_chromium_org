@@ -4,12 +4,12 @@
 
 #include "chrome/browser/ui/translate/translate_bubble_model_impl.h"
 
-#include "chrome/browser/translate/translate_tab_helper.h"
-#include "chrome/browser/translate/translate_ui_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "components/translate/core/browser/language_state.h"
+#include "components/translate/core/browser/translate_ui_delegate.h"
 
 TranslateBubbleModelImpl::TranslateBubbleModelImpl(
-    TranslateTabHelper::TranslateStep step,
+    translate::TranslateStep step,
     scoped_ptr<TranslateUIDelegate> ui_delegate)
     : ui_delegate_(ui_delegate.Pass()),
       view_state_transition_(TranslateStepToViewState(step)) {}
@@ -20,15 +20,15 @@ TranslateBubbleModelImpl::~TranslateBubbleModelImpl() {
 // static
 TranslateBubbleModel::ViewState
 TranslateBubbleModelImpl::TranslateStepToViewState(
-    TranslateTabHelper::TranslateStep step) {
+    translate::TranslateStep step) {
   switch (step) {
-    case TranslateTabHelper::BEFORE_TRANSLATE:
+    case translate::TRANSLATE_STEP_BEFORE_TRANSLATE:
       return TranslateBubbleModel::VIEW_STATE_BEFORE_TRANSLATE;
-    case TranslateTabHelper::TRANSLATING:
+    case translate::TRANSLATE_STEP_TRANSLATING:
       return TranslateBubbleModel::VIEW_STATE_TRANSLATING;
-    case TranslateTabHelper::AFTER_TRANSLATE:
+    case translate::TRANSLATE_STEP_AFTER_TRANSLATE:
       return TranslateBubbleModel::VIEW_STATE_AFTER_TRANSLATE;
-    case TranslateTabHelper::TRANSLATE_ERROR:
+    case translate::TRANSLATE_STEP_TRANSLATE_ERROR:
       return TranslateBubbleModel::VIEW_STATE_ERROR;
   }
 
@@ -106,10 +106,7 @@ void TranslateBubbleModelImpl::TranslationDeclined(bool explicitly_closed) {
 }
 
 bool TranslateBubbleModelImpl::IsPageTranslatedInCurrentLanguages() const {
-  content::WebContents* web_contents = ui_delegate_->web_contents();
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(web_contents);
-  LanguageState& language_state = translate_tab_helper->GetLanguageState();
+  const LanguageState& language_state = ui_delegate_->GetLanguageState();
   return ui_delegate_->GetOriginalLanguageCode() ==
       language_state.original_language() &&
       ui_delegate_->GetTargetLanguageCode() ==

@@ -5,15 +5,20 @@
 #ifndef CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_SYNC_ENGINE_H_
 #define CHROME_BROWSER_SYNC_FILE_SYSTEM_DRIVE_BACKEND_SYNC_ENGINE_H_
 
+#include <set>
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/drive/drive_notification_observer.h"
 #include "chrome/browser/drive/drive_service_interface.h"
-#include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
+#include "chrome/browser/sync_file_system/drive_backend/callback_tracker.h"
 #include "chrome/browser/sync_file_system/local_change_processor.h"
 #include "chrome/browser/sync_file_system/remote_file_sync_service.h"
-#include "chrome/browser/sync_file_system/sync_task_manager.h"
+#include "chrome/browser/sync_file_system/sync_action.h"
+#include "chrome/browser/sync_file_system/sync_direction.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "net/base/network_change_notifier.h"
 
 class ExtensionServiceInterface;
@@ -26,38 +31,60 @@ class SequencedTaskRunner;
 namespace drive {
 class DriveServiceInterface;
 class DriveNotificationManager;
+class DriveUploaderInterface;
 }
 
 namespace leveldb {
 class Env;
 }
 
+namespace net {
+class URLRequestContextGetter;
+}
+
 namespace sync_file_system {
+
+class RemoteChangeProcessor;
+
 namespace drive_backend {
 
-class LocalToRemoteSyncer;
+class DriveServiceWrapper;
+class DriveUploaderWrapper;
 class MetadataDatabase;
-class RemoteToLocalSyncer;
-class SyncEngineInitializer;
+class RemoteChangeProcessorOnWorker;
+class RemoteChangeProcessorWrapper;
+class SyncTaskManager;
+class SyncWorkerInterface;
 
 class SyncEngine : public RemoteFileSyncService,
                    public LocalChangeProcessor,
-                   public SyncTaskManager::Client,
                    public drive::DriveNotificationObserver,
                    public drive::DriveServiceObserver,
                    public net::NetworkChangeNotifier::NetworkChangeObserver,
-                   public SyncEngineContext {
+                   public SigninManagerBase::Observer {
  public:
-  typedef Observer SyncServiceObserver;
+  typedef RemoteFileSyncService::Observer SyncServiceObserver;
 
   static scoped_ptr<SyncEngine> CreateForBrowserContext(
-      content::BrowserContext* context);
+      content::BrowserContext* context,
+      TaskLogger* task_logger);
   static void AppendDependsOnFactories(
       std::set<BrowserContextKeyedServiceFactory*>* factories);
 
   virtual ~SyncEngine();
+  void Reset();
 
+  // Can be called more than once.
   void Initialize();
+
+  void InitializeForTesting(
+      scoped_ptr<drive::DriveServiceInterface> drive_service,
+      scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
+      scoped_ptr<SyncWorkerInterface> sync_worker);
+  void InitializeInternal(
+      scoped_ptr<drive::DriveServiceInterface> drive_service,
+      scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
+      scoped_ptr<SyncWorkerInterface> sync_worker);
 
   // RemoteFileSyncService overrides.
   virtual void AddServiceObserver(SyncServiceObserver* observer) OVERRIDE;
@@ -79,22 +106,12 @@ class SyncEngine : public RemoteFileSyncService,
   virtual void SetRemoteChangeProcessor(
       RemoteChangeProcessor* processor) OVERRIDE;
   virtual LocalChangeProcessor* GetLocalChangeProcessor() OVERRIDE;
-  virtual bool IsConflicting(const fileapi::FileSystemURL& url) OVERRIDE;
   virtual RemoteServiceState GetCurrentState() const OVERRIDE;
-  virtual void GetOriginStatusMap(OriginStatusMap* status_map) OVERRIDE;
-  virtual scoped_ptr<base::ListValue> DumpFiles(const GURL& origin) OVERRIDE;
-  virtual scoped_ptr<base::ListValue> DumpDatabase() OVERRIDE;
+  virtual void GetOriginStatusMap(const StatusMapCallback& callback) OVERRIDE;
+  virtual void DumpFiles(const GURL& origin,
+                         const ListCallback& callback) OVERRIDE;
+  virtual void DumpDatabase(const ListCallback& callback) OVERRIDE;
   virtual void SetSyncEnabled(bool enabled) OVERRIDE;
-  virtual SyncStatusCode SetConflictResolutionPolicy(
-      ConflictResolutionPolicy policy) OVERRIDE;
-  virtual ConflictResolutionPolicy GetConflictResolutionPolicy() const OVERRIDE;
-  virtual void GetRemoteVersions(
-      const fileapi::FileSystemURL& url,
-      const RemoteVersionsCallback& callback) OVERRIDE;
-  virtual void DownloadRemoteVersion(
-      const fileapi::FileSystemURL& url,
-      const std::string& version_id,
-      const DownloadVersionCallback& callback) OVERRIDE;
   virtual void PromoteDemotedChanges() OVERRIDE;
 
   // LocalChangeProcessor overrides.
@@ -104,11 +121,6 @@ class SyncEngine : public RemoteFileSyncService,
       const SyncFileMetadata& local_metadata,
       const fileapi::FileSystemURL& url,
       const SyncStatusCallback& callback) OVERRIDE;
-
-  // SyncTaskManager::Client overrides.
-  virtual void MaybeScheduleNextTask() OVERRIDE;
-  virtual void NotifyLastOperationStatus(SyncStatusCode sync_status,
-                                         bool used_network) OVERRIDE;
 
   // drive::DriveNotificationObserver overrides.
   virtual void OnNotificationReceived() OVERRIDE;
@@ -122,88 +134,85 @@ class SyncEngine : public RemoteFileSyncService,
   virtual void OnNetworkChanged(
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
-  // SyncEngineContext overrides.
-  virtual drive::DriveServiceInterface* GetDriveService() OVERRIDE;
-  virtual drive::DriveUploaderInterface* GetDriveUploader() OVERRIDE;
-  virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE;
-  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() OVERRIDE;
-  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE;
+  // SigninManagerBase::Observer overrides.
+  virtual void GoogleSigninFailed(const GoogleServiceAuthError& error) OVERRIDE;
+  virtual void GoogleSigninSucceeded(const std::string& username,
+                                     const std::string& password) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
 
  private:
+  class WorkerObserver;
+
   friend class DriveBackendSyncTest;
   friend class SyncEngineTest;
 
-  SyncEngine(const base::FilePath& base_dir,
-             base::SequencedTaskRunner* task_runner,
-             scoped_ptr<drive::DriveServiceInterface> drive_service,
-             scoped_ptr<drive::DriveUploaderInterface> drive_uploader,
+  SyncEngine(base::SingleThreadTaskRunner* ui_task_runner,
+             base::SequencedTaskRunner* worker_task_runner,
+             base::SequencedTaskRunner* file_task_runner,
+             base::SequencedTaskRunner* drive_task_runner,
+             const base::FilePath& sync_file_system_dir,
+             TaskLogger* task_logger,
              drive::DriveNotificationManager* notification_manager,
              ExtensionServiceInterface* extension_service,
-             ProfileOAuth2TokenService* auth_token_service,
+             SigninManagerBase* signin_manager,
+             ProfileOAuth2TokenService* token_service,
+             net::URLRequestContextGetter* request_context,
              leveldb::Env* env_override);
 
-  void DoDisableApp(const std::string& app_id,
-                    const SyncStatusCallback& callback);
-  void DoEnableApp(const std::string& app_id,
-                   const SyncStatusCallback& callback);
-
-  void PostInitializeTask();
-  void DidInitialize(SyncEngineInitializer* initializer,
-                     SyncStatusCode status);
-  void DidProcessRemoteChange(RemoteToLocalSyncer* syncer,
-                              const SyncFileCallback& callback,
-                              SyncStatusCode status);
-  void DidApplyLocalChange(LocalToRemoteSyncer* syncer,
-                           const SyncStatusCallback& callback,
-                           SyncStatusCode status);
-
-  void MaybeStartFetchChanges();
-  void DidResolveConflict(SyncStatusCode status);
-  void DidFetchChanges(SyncStatusCode status);
-
-  void UpdateServiceStateFromSyncStatusCode(SyncStatusCode state,
-                                            bool used_network);
+  // Called by WorkerObserver.
+  void OnPendingFileListUpdated(int item_count);
+  void OnFileStatusChanged(const fileapi::FileSystemURL& url,
+                           SyncFileStatus file_status,
+                           SyncAction sync_action,
+                           SyncDirection direction);
   void UpdateServiceState(RemoteServiceState state,
                           const std::string& description);
-  void UpdateRegisteredApps();
 
-  base::FilePath base_dir_;
-  base::FilePath temporary_file_dir_;
+  SyncStatusCallback TrackCallback(const SyncStatusCallback& callback);
 
-  scoped_refptr<base::SequencedTaskRunner> task_runner_;
-  leveldb::Env* env_override_;
+  scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> worker_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> file_task_runner_;
+  scoped_refptr<base::SequencedTaskRunner> drive_task_runner_;
 
-  scoped_ptr<drive::DriveServiceInterface> drive_service_;
-  scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
-  scoped_ptr<MetadataDatabase> metadata_database_;
+  const base::FilePath sync_file_system_dir_;
+  TaskLogger* task_logger_;
 
   // These external services are not owned by SyncEngine.
   // The owner of the SyncEngine is responsible for their lifetime.
   // I.e. the owner should declare the dependency explicitly by calling
-  // BrowserContextKeyedService::DependsOn().
+  // KeyedService::DependsOn().
   drive::DriveNotificationManager* notification_manager_;
   ExtensionServiceInterface* extension_service_;
-  ProfileOAuth2TokenService* auth_token_service_;
+  SigninManagerBase* signin_manager_;
+  ProfileOAuth2TokenService* token_service_;
+
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
+
+  scoped_ptr<drive::DriveServiceInterface> drive_service_;
+  scoped_ptr<DriveServiceWrapper> drive_service_wrapper_;
+  scoped_ptr<drive::DriveUploaderInterface> drive_uploader_;
+  scoped_ptr<DriveUploaderWrapper> drive_uploader_wrapper_;
+
+  RemoteChangeProcessor* remote_change_processor_;  // Not owned.
+  scoped_ptr<RemoteChangeProcessorWrapper> remote_change_processor_wrapper_;
+  // Delete this on worker.
+  scoped_ptr<RemoteChangeProcessorOnWorker> remote_change_processor_on_worker_;
+
+  RemoteServiceState service_state_;
+  bool sync_enabled_;
+
+  // Delete them on worker.
+  scoped_ptr<WorkerObserver> worker_observer_;
+  scoped_ptr<SyncWorkerInterface> sync_worker_;
 
   ObserverList<SyncServiceObserver> service_observers_;
   ObserverList<FileStatusObserver> file_status_observers_;
-  RemoteChangeProcessor* remote_change_processor_;
+  leveldb::Env* env_override_;
 
-  RemoteServiceState service_state_;
-
-  bool should_check_conflict_;
-  bool should_check_remote_change_;
-  bool listing_remote_changes_;
-  base::TimeTicks time_to_check_changes_;
-
-  bool sync_enabled_;
-  ConflictResolutionPolicy conflict_resolution_policy_;
-  bool network_available_;
-
-  scoped_ptr<SyncTaskManager> task_manager_;
+  CallbackTracker callback_tracker_;
 
   base::WeakPtrFactory<SyncEngine> weak_ptr_factory_;
-
   DISALLOW_COPY_AND_ASSIGN(SyncEngine);
 };
 

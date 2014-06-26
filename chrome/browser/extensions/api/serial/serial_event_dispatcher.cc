@@ -9,7 +9,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
 
 namespace extensions {
 
@@ -25,25 +24,26 @@ bool ShouldPauseOnReceiveError(serial::ReceiveError error) {
 
 }  // namespace
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SerialEventDispatcher> >
+static base::LazyInstance<BrowserContextKeyedAPIFactory<SerialEventDispatcher> >
     g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SerialEventDispatcher>*
-    SerialEventDispatcher::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SerialEventDispatcher>*
+SerialEventDispatcher::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
 // static
-SerialEventDispatcher* SerialEventDispatcher::Get(Profile* profile) {
-  return ProfileKeyedAPIFactory<SerialEventDispatcher>::GetForProfile(profile);
+SerialEventDispatcher* SerialEventDispatcher::Get(
+    content::BrowserContext* context) {
+  return BrowserContextKeyedAPIFactory<SerialEventDispatcher>::Get(context);
 }
 
-SerialEventDispatcher::SerialEventDispatcher(Profile* profile)
+SerialEventDispatcher::SerialEventDispatcher(content::BrowserContext* context)
     : thread_id_(SerialConnection::kThreadId),
-      profile_(profile) {
+      profile_(Profile::FromBrowserContext(context)) {
   ApiResourceManager<SerialConnection>* manager =
-      ApiResourceManager<SerialConnection>::Get(profile);
+      ApiResourceManager<SerialConnection>::Get(profile_);
   DCHECK(manager) << "No serial connection manager.";
   connections_ = manager->data_;
 }
@@ -56,7 +56,7 @@ SerialEventDispatcher::ReceiveParams::~ReceiveParams() {}
 
 void SerialEventDispatcher::PollConnection(const std::string& extension_id,
                                            int connection_id) {
-  DCHECK(BrowserThread::CurrentlyOn(thread_id_));
+  DCHECK_CURRENTLY_ON(thread_id_);
 
   ReceiveParams params;
   params.thread_id = thread_id_;
@@ -70,7 +70,7 @@ void SerialEventDispatcher::PollConnection(const std::string& extension_id,
 
 // static
 void SerialEventDispatcher::StartReceive(const ReceiveParams& params) {
-  DCHECK(BrowserThread::CurrentlyOn(params.thread_id));
+  DCHECK_CURRENTLY_ON(params.thread_id);
 
   SerialConnection* connection =
       params.connections->Get(params.extension_id, params.connection_id);
@@ -88,7 +88,7 @@ void SerialEventDispatcher::StartReceive(const ReceiveParams& params) {
 void SerialEventDispatcher::ReceiveCallback(const ReceiveParams& params,
                                             const std::string& data,
                                             serial::ReceiveError error) {
-  DCHECK(BrowserThread::CurrentlyOn(params.thread_id));
+  DCHECK_CURRENTLY_ON(params.thread_id);
 
   // Note that an error (e.g. timeout) does not necessarily mean that no data
   // was read, so we may fire an onReceive regardless of any error code.
@@ -128,7 +128,7 @@ void SerialEventDispatcher::ReceiveCallback(const ReceiveParams& params,
 // static
 void SerialEventDispatcher::PostEvent(const ReceiveParams& params,
                                       scoped_ptr<extensions::Event> event) {
-  DCHECK(BrowserThread::CurrentlyOn(params.thread_id));
+  DCHECK_CURRENTLY_ON(params.thread_id);
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -142,13 +142,13 @@ void SerialEventDispatcher::PostEvent(const ReceiveParams& params,
 void SerialEventDispatcher::DispatchEvent(void* profile_id,
                                           const std::string& extension_id,
                                           scoped_ptr<extensions::Event> event) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   Profile* profile = reinterpret_cast<Profile*>(profile_id);
   if (!g_browser_process->profile_manager()->IsValidProfile(profile))
     return;
 
-  EventRouter* router = ExtensionSystem::Get(profile)->event_router();
+  EventRouter* router = EventRouter::Get(profile);
   if (router)
     router->DispatchEventToExtension(extension_id, event.Pass());
 }

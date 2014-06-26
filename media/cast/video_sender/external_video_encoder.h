@@ -10,7 +10,7 @@
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/video_sender/video_encoder.h"
-#include "media/filters/gpu_video_accelerator_factories.h"
+#include "media/video/video_encode_accelerator.h"
 
 namespace media {
 class VideoFrame;
@@ -28,7 +28,8 @@ class ExternalVideoEncoder : public VideoEncoder {
   ExternalVideoEncoder(
       scoped_refptr<CastEnvironment> cast_environment,
       const VideoSenderConfig& video_config,
-      scoped_refptr<GpuVideoAcceleratorFactories> gpu_factories);
+      const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
+      const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb);
 
   virtual ~ExternalVideoEncoder();
 
@@ -46,10 +47,14 @@ class ExternalVideoEncoder : public VideoEncoder {
 
   // The following functions are called from the main cast thread.
   virtual void SetBitRate(int new_bit_rate) OVERRIDE;
-  virtual void SkipNextFrame(bool skip_next_frame) OVERRIDE;
   virtual void GenerateKeyFrame() OVERRIDE;
   virtual void LatestFrameIdToReference(uint32 frame_id) OVERRIDE;
-  virtual int NumberOfSkippedFrames() const OVERRIDE;
+
+  // Called when a VEA is created.
+  void OnCreateVideoEncodeAccelerator(
+      const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb,
+      scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner,
+      scoped_ptr<media::VideoEncodeAccelerator> vea);
 
  protected:
   void EncoderInitialized();
@@ -58,19 +63,18 @@ class ExternalVideoEncoder : public VideoEncoder {
  private:
   friend class LocalVideoEncodeAcceleratorClient;
 
-  const VideoSenderConfig video_config_;
+  VideoSenderConfig video_config_;
   scoped_refptr<CastEnvironment> cast_environment_;
 
   bool encoder_active_;
   bool key_frame_requested_;
-  bool skip_next_frame_;
-  int skip_count_;
 
   scoped_refptr<LocalVideoEncodeAcceleratorClient> video_accelerator_client_;
   scoped_refptr<base::SingleThreadTaskRunner> encoder_task_runner_;
 
   // Weak pointer factory for posting back LocalVideoEncodeAcceleratorClient
   // notifications to ExternalVideoEncoder.
+  // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<ExternalVideoEncoder> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalVideoEncoder);

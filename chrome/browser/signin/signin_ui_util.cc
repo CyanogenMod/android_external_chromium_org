@@ -7,12 +7,16 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/signin/signin_global_error.h"
-#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/signin_global_error_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/sync_global_error.h"
+#include "chrome/browser/sync/sync_global_error_factory.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -36,23 +40,25 @@ GlobalError* GetSignedInServiceError(Profile* profile) {
 
 std::vector<GlobalError*> GetSignedInServiceErrors(Profile* profile) {
   std::vector<GlobalError*> errors;
-
+  // Chrome OS doesn't use SigninGlobalError or SyncGlobalError. Other platforms
+  // may use these services to show auth and sync errors in the toolbar menu.
+#if !defined(OS_CHROMEOS)
   // Auth errors have the highest priority - after that, individual service
   // errors.
-  SigninGlobalError* signin_error = SigninGlobalError::GetForProfile(profile);
-  if (signin_error && signin_error->HasMenuItem())
+  SigninGlobalError* signin_error =
+      SigninGlobalErrorFactory::GetForProfile(profile);
+  if (signin_error && signin_error->HasError())
     errors.push_back(signin_error);
 
   // No auth error - now try other services. Currently the list is just hard-
   // coded but in the future if we add more we can create some kind of
   // registration framework.
   if (profile->IsSyncAccessible()) {
-    ProfileSyncService* service =
-        ProfileSyncServiceFactory::GetForProfile(profile);
-    SyncGlobalError* error = service->sync_global_error();
+    SyncGlobalError* error = SyncGlobalErrorFactory::GetForProfile(profile);
     if (error && error->HasMenuItem())
       errors.push_back(error);
   }
+#endif
 
   return errors;
 }
@@ -75,10 +81,9 @@ base::string16 GetSigninMenuLabel(Profile* profile) {
     if (signin_manager)
       username = signin_manager->GetAuthenticatedUsername();
     if (!username.empty() && !signin_manager->AuthInProgress()) {
-      base::string16 elided_username = gfx::ElideEmail(
-          base::UTF8ToUTF16(username), gfx::FontList(), kUsernameMaxWidth);
-      return l10n_util::GetStringFUTF16(IDS_SYNC_MENU_SYNCED_LABEL,
-                                        elided_username);
+      const base::string16 elided = gfx::ElideText(base::UTF8ToUTF16(username),
+          gfx::FontList(), kUsernameMaxWidth, gfx::ELIDE_EMAIL);
+      return l10n_util::GetStringFUTF16(IDS_SYNC_MENU_SYNCED_LABEL, elided);
     }
   }
   return l10n_util::GetStringFUTF16(IDS_SYNC_MENU_PRE_SYNCED_LABEL,
@@ -98,7 +103,8 @@ void GetStatusLabelsForAuthError(Profile* profile,
     link_label->assign(l10n_util::GetStringUTF16(IDS_SYNC_RELOGIN_LINK_LABEL));
 
   const GoogleServiceAuthError::State state =
-      SigninGlobalError::GetForProfile(profile)->GetLastAuthError().state();
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile)->
+          signin_error_controller()->auth_error().state();
   switch (state) {
     case GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS:
     case GoogleServiceAuthError::SERVICE_ERROR:

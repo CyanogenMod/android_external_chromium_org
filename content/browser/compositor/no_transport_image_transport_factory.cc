@@ -11,64 +11,24 @@
 
 namespace content {
 
-namespace {
-
-class FakeTexture : public ui::Texture {
- public:
-  FakeTexture(scoped_refptr<cc::ContextProvider> context_provider,
-              float device_scale_factor)
-      : ui::Texture(false, gfx::Size(), device_scale_factor),
-        context_provider_(context_provider),
-        texture_(0u) {
-    context_provider_->ContextGL()->GenTextures(1, &texture_);
-  }
-
-  virtual unsigned int PrepareTexture() OVERRIDE { return texture_; }
-
-  virtual void Consume(const gpu::Mailbox& mailbox,
-                       const gfx::Size& new_size) OVERRIDE {
-    size_ = new_size;
-  }
-
- private:
-  virtual ~FakeTexture() {
-    context_provider_->ContextGL()->DeleteTextures(1, &texture_);
-  }
-
-  scoped_refptr<cc::ContextProvider> context_provider_;
-  unsigned texture_;
-  DISALLOW_COPY_AND_ASSIGN(FakeTexture);
-};
-
-}  // anonymous namespace
-
 NoTransportImageTransportFactory::NoTransportImageTransportFactory(
     scoped_ptr<ui::ContextFactory> context_factory)
     : context_factory_(context_factory.Pass()) {}
 
-NoTransportImageTransportFactory::~NoTransportImageTransportFactory() {}
+NoTransportImageTransportFactory::~NoTransportImageTransportFactory() {
+  scoped_ptr<GLHelper> lost_gl_helper = gl_helper_.Pass();
+  FOR_EACH_OBSERVER(ImageTransportFactoryObserver,
+                    observer_list_,
+                    OnLostResources());
+}
 
-ui::ContextFactory* NoTransportImageTransportFactory::AsContextFactory() {
+ui::ContextFactory* NoTransportImageTransportFactory::GetContextFactory() {
   return context_factory_.get();
 }
 
 gfx::GLSurfaceHandle
 NoTransportImageTransportFactory::GetSharedSurfaceHandle() {
   return gfx::GLSurfaceHandle();
-}
-
-scoped_refptr<ui::Texture>
-NoTransportImageTransportFactory::CreateTransportClient(
-    float device_scale_factor) {
-  return new FakeTexture(context_factory_->SharedMainThreadContextProvider(),
-                         device_scale_factor);
-}
-
-scoped_refptr<ui::Texture> NoTransportImageTransportFactory::CreateOwnedTexture(
-    const gfx::Size& size,
-    float device_scale_factor,
-    unsigned int texture_id) {
-  return NULL;
 }
 
 GLHelper* NoTransportImageTransportFactory::GetGLHelper() {
@@ -80,12 +40,14 @@ GLHelper* NoTransportImageTransportFactory::GetGLHelper() {
   return gl_helper_.get();
 }
 
-// We don't generate lost context events, so we don't need to keep track of
-// observers
 void NoTransportImageTransportFactory::AddObserver(
-    ImageTransportFactoryObserver* observer) {}
+    ImageTransportFactoryObserver* observer) {
+  observer_list_.AddObserver(observer);
+}
 
 void NoTransportImageTransportFactory::RemoveObserver(
-    ImageTransportFactoryObserver* observer) {}
+    ImageTransportFactoryObserver* observer) {
+  observer_list_.RemoveObserver(observer);
+}
 
 }  // namespace content

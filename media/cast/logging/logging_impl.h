@@ -10,46 +10,53 @@
 // 2. Tracing of raw events.
 
 #include "base/memory/ref_counted.h"
-#include "base/single_thread_task_runner.h"
+#include "base/threading/thread_checker.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/logging/logging_defines.h"
 #include "media/cast/logging/logging_raw.h"
-#include "media/cast/logging/logging_stats.h"
 
 namespace media {
 namespace cast {
 
-// Should only be called from the main thread.
-class LoggingImpl : public base::NonThreadSafe {
+class LoggingImpl {
  public:
-  LoggingImpl(scoped_refptr<base::SingleThreadTaskRunner> main_thread_proxy,
-              const CastLoggingConfig& config);
-
+  LoggingImpl();
   ~LoggingImpl();
 
-  void InsertFrameEvent(const base::TimeTicks& time_of_event,
-                        CastLoggingEvent event, uint32 rtp_timestamp,
-                        uint32 frame_id);
+  // Note: All methods below should be called from the same thread.
 
-  void InsertFrameEventWithSize(const base::TimeTicks& time_of_event,
-                                CastLoggingEvent event, uint32 rtp_timestamp,
-                                uint32 frame_id, int frame_size);
+  void InsertFrameEvent(const base::TimeTicks& time_of_event,
+                        CastLoggingEvent event, EventMediaType event_media_type,
+                        uint32 rtp_timestamp, uint32 frame_id);
+
+  void InsertEncodedFrameEvent(const base::TimeTicks& time_of_event,
+                               CastLoggingEvent event,
+                               EventMediaType event_media_type,
+                               uint32 rtp_timestamp, uint32 frame_id,
+                               int frame_size, bool key_frame,
+                               int target_bitrate);
 
   void InsertFrameEventWithDelay(const base::TimeTicks& time_of_event,
-                                 CastLoggingEvent event, uint32 rtp_timestamp,
-                                 uint32 frame_id, base::TimeDelta delay);
+                                 CastLoggingEvent event,
+                                 EventMediaType event_media_type,
+                                 uint32 rtp_timestamp, uint32 frame_id,
+                                 base::TimeDelta delay);
+
+  void InsertSinglePacketEvent(const base::TimeTicks& time_of_event,
+                               CastLoggingEvent event,
+                               EventMediaType event_media_type,
+                               const Packet& packet);
 
   void InsertPacketListEvent(const base::TimeTicks& time_of_event,
-                             CastLoggingEvent event, const PacketList& packets);
+                             CastLoggingEvent event,
+                             EventMediaType event_media_type,
+                             const PacketList& packets);
 
   void InsertPacketEvent(const base::TimeTicks& time_of_event,
-                         CastLoggingEvent event, uint32 rtp_timestamp,
+                         CastLoggingEvent event,
+                         EventMediaType event_media_type, uint32 rtp_timestamp,
                          uint32 frame_id, uint16 packet_id,
                          uint16 max_packet_id, size_t size);
-
-  void InsertGenericEvent(const base::TimeTicks& time_of_event,
-                          CastLoggingEvent event, int value);
-
 
   // Delegates to |LoggingRaw::AddRawEventSubscriber()|.
   void AddRawEventSubscriber(RawEventSubscriber* subscriber);
@@ -57,19 +64,9 @@ class LoggingImpl : public base::NonThreadSafe {
   // Delegates to |LoggingRaw::RemoveRawEventSubscriber()|.
   void RemoveRawEventSubscriber(RawEventSubscriber* subscriber);
 
-  // Get stats only.
-  FrameStatsMap GetFrameStatsData() const;
-  PacketStatsMap GetPacketStatsData() const;
-  GenericStatsMap GetGenericStatsData() const;
-
-  // Reset stats logging data.
-  void ResetStats();
-
  private:
-  scoped_refptr<base::SingleThreadTaskRunner> main_thread_proxy_;
-  const CastLoggingConfig config_;
+  base::ThreadChecker thread_checker_;
   LoggingRaw raw_;
-  LoggingStats stats_;
 
   DISALLOW_COPY_AND_ASSIGN(LoggingImpl);
 };

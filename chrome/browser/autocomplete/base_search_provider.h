@@ -14,18 +14,23 @@
 #include <utility>
 #include <vector>
 
+#include "base/memory/scoped_vector.h"
 #include "base/strings/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
 class AutocompleteProviderListener;
 class GURL;
 class Profile;
+class SuggestionDeletionHandler;
 class TemplateURL;
 
 namespace base {
+class DictionaryValue;
+class ListValue;
 class Value;
 }
 
@@ -35,6 +40,15 @@ class Value;
 class BaseSearchProvider : public AutocompleteProvider,
                            public net::URLFetcherDelegate {
  public:
+  // ID used in creating URLFetcher for default provider's suggest results.
+  static const int kDefaultProviderURLFetcherID;
+
+  // ID used in creating URLFetcher for keyword provider's suggest results.
+  static const int kKeywordProviderURLFetcherID;
+
+  // ID used in creating URLFetcher for deleting suggestion results.
+  static const int kDeletionURLFetcherID;
+
   BaseSearchProvider(AutocompleteProviderListener* listener,
                      Profile* profile,
                      AutocompleteProvider::Type type);
@@ -42,13 +56,27 @@ class BaseSearchProvider : public AutocompleteProvider,
   // Returns whether |match| is flagged as a query that should be prefetched.
   static bool ShouldPrefetch(const AutocompleteMatch& match);
 
+  // Returns a simpler AutocompleteMatch suitable for persistence like in
+  // ShortcutsDatabase.
+  // NOTE: Use with care. Most likely you want the other CreateSearchSuggestion
+  // with protected access.
+  static AutocompleteMatch CreateSearchSuggestion(
+      const base::string16& suggestion,
+      AutocompleteMatchType::Type type,
+      bool from_keyword_provider,
+      const TemplateURL* template_url,
+      const SearchTermsData& search_terms_data);
+
   // AutocompleteProvider:
   virtual void Stop(bool clear_cached_results) OVERRIDE;
+  virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
   virtual void AddProviderInfo(ProvidersInfo* provider_info) const OVERRIDE;
 
   bool field_trial_triggered_in_session() const {
     return field_trial_triggered_in_session_;
   }
+
+  void set_in_app_list() { in_app_list_ = true; }
 
  protected:
   // The following keys are used to record additional information on matches.
@@ -84,7 +112,9 @@ class BaseSearchProvider : public AutocompleteProvider,
    public:
     Result(bool from_keyword_provider,
            int relevance,
-           bool relevance_from_server);
+           bool relevance_from_server,
+           AutocompleteMatchType::Type type,
+           const std::string& deletion_url);
     virtual ~Result();
 
     bool from_keyword_provider() const { return from_keyword_provider_; }
@@ -94,6 +124,7 @@ class BaseSearchProvider : public AutocompleteProvider,
       return match_contents_class_;
     }
 
+    AutocompleteMatchType::Type type() const { return type_; }
     int relevance() const { return relevance_; }
     void set_relevance(int relevance) { relevance_ = relevance; }
 
@@ -101,6 +132,8 @@ class BaseSearchProvider : public AutocompleteProvider,
     void set_relevance_from_server(bool relevance_from_server) {
       relevance_from_server_ = relevance_from_server;
     }
+
+    const std::string& deletion_url() const { return deletion_url_; }
 
     // Returns if this result is inlineable against the current input |input|.
     // Non-inlineable results are stale.
@@ -121,6 +154,8 @@ class BaseSearchProvider : public AutocompleteProvider,
     // True if the result came from the keyword provider.
     bool from_keyword_provider_;
 
+    AutocompleteMatchType::Type type_;
+
     // The relevance score.
     int relevance_;
 
@@ -131,6 +166,11 @@ class BaseSearchProvider : public AutocompleteProvider,
     // SearchProvider::ConvertResultsToAutocompleteMatches(), see comments
     // there.
     bool relevance_from_server_;
+
+    // Optional deletion URL provided with suggestions. Fetching this URL
+    // should result in some reasonable deletion behaviour on the server,
+    // e.g. deleting this term out of a user's server-side search history.
+    std::string deletion_url_;
   };
 
   class SuggestResult : public Result {
@@ -138,7 +178,10 @@ class BaseSearchProvider : public AutocompleteProvider,
     SuggestResult(const base::string16& suggestion,
                   AutocompleteMatchType::Type type,
                   const base::string16& match_contents,
+                  const base::string16& match_contents_prefix,
                   const base::string16& annotation,
+                  const base::string16& answer_contents,
+                  const base::string16& answer_type,
                   const std::string& suggest_query_params,
                   const std::string& deletion_url,
                   bool from_keyword_provider,
@@ -149,12 +192,17 @@ class BaseSearchProvider : public AutocompleteProvider,
     virtual ~SuggestResult();
 
     const base::string16& suggestion() const { return suggestion_; }
-    AutocompleteMatchType::Type type() const { return type_; }
+    const base::string16& match_contents_prefix() const {
+      return match_contents_prefix_;
+    }
     const base::string16& annotation() const { return annotation_; }
     const std::string& suggest_query_params() const {
       return suggest_query_params_;
     }
-    const std::string& deletion_url() const { return deletion_url_; }
+
+    const base::string16& answer_contents() const { return answer_contents_; }
+    const base::string16& answer_type() const { return answer_type_; }
+
     bool should_prefetch() const { return should_prefetch_; }
 
     // Fills in |match_contents_class_| to reflect how |match_contents_| should
@@ -174,7 +222,11 @@ class BaseSearchProvider : public AutocompleteProvider,
     // The search terms to be used for this suggestion.
     base::string16 suggestion_;
 
-    AutocompleteMatchType::Type type_;
+    // The contents to be displayed as prefix of match contents.
+    // Used for postfix suggestions to display a leading ellipsis (or some
+    // equivalent character) to indicate omitted text.
+    // Only used to pass this information to about:omnibox's "Additional Info".
+    base::string16 match_contents_prefix_;
 
     // Optional annotation for the |match_contents_| for disambiguation.
     // This may be displayed in the autocomplete match contents, but is defined
@@ -184,10 +236,11 @@ class BaseSearchProvider : public AutocompleteProvider,
     // Optional additional parameters to be added to the search URL.
     std::string suggest_query_params_;
 
-    // Optional deletion URL provided with suggestions. Fetching this URL
-    // should result in some reasonable deletion behaviour on the server,
-    // e.g. deleting this term out of a user's server-side search history.
-    std::string deletion_url_;
+    // Optional formatted Answers result.
+    base::string16 answer_contents_;
+
+    // Type of optional formatted Answers result.
+    base::string16 answer_type_;
 
     // Should this result be prefetched?
     bool should_prefetch_;
@@ -195,11 +248,13 @@ class BaseSearchProvider : public AutocompleteProvider,
 
   class NavigationResult : public Result {
    public:
-    // |provider| is necessary to use StringForURLDisplay() in order to
-    // compute |formatted_url_|.
+    // |provider| and |profile| are both used to compute |formatted_url_|.
     NavigationResult(const AutocompleteProvider& provider,
+                     Profile* profile,
                      const GURL& url,
+                     AutocompleteMatchType::Type type,
                      const base::string16& description,
+                     const std::string& deletion_url,
                      bool from_keyword_provider,
                      int relevance,
                      bool relevance_from_server,
@@ -242,6 +297,7 @@ class BaseSearchProvider : public AutocompleteProvider,
   typedef std::vector<NavigationResult> NavigationResults;
   typedef std::pair<base::string16, std::string> MatchKey;
   typedef std::map<MatchKey, AutocompleteMatch> MatchMap;
+  typedef ScopedVector<SuggestionDeletionHandler> SuggestionDeletionHandlers;
 
   // A simple structure bundling most of the information (including
   // both SuggestResults and NavigationResults) returned by a call to
@@ -293,34 +349,48 @@ class BaseSearchProvider : public AutocompleteProvider,
   // |append_extra_query_params| should be set if |template_url| is the default
   // search engine, so the destination URL will contain any
   // command-line-specified query params.
+  // |from_app_list| should be set if the search was made from the app list.
   static AutocompleteMatch CreateSearchSuggestion(
       AutocompleteProvider* autocomplete_provider,
       const AutocompleteInput& input,
       const SuggestResult& suggestion,
       const TemplateURL* template_url,
+      const SearchTermsData& search_terms_data,
       int accepted_suggestion,
       int omnibox_start_margin,
-      bool append_extra_query_params);
+      bool append_extra_query_params,
+      bool from_app_list);
 
   // Parses JSON response received from the provider, stripping XSSI
   // protection if needed. Returns the parsed data if successful, NULL
   // otherwise.
   static scoped_ptr<base::Value> DeserializeJsonData(std::string json_data);
 
-  // Returns whether we can send the URL of the current page in any suggest
-  // requests.  Doing this requires that all the following hold:
+  // Returns whether the requirements for requesting zero suggest results
+  // are met. The requirements are
+  // * The user is enrolled in a zero suggest experiment.
+  // * The user is not on the NTP.
+  // * The suggest request is sent over HTTPS.  This avoids leaking the current
+  //   page URL or personal data in unencrypted network traffic.
   // * The user has suggest enabled in their settings and is not in incognito
   //   mode.  (Incognito disables suggest entirely.)
+  // * The user's suggest provider is Google.  We might want to allow other
+  //   providers to see this data someday, but for now this has only been
+  //   implemented for Google.
+  static bool ZeroSuggestEnabled(
+     const GURL& suggest_url,
+     const TemplateURL* template_url,
+     metrics::OmniboxEventProto::PageClassification page_classification,
+     Profile* profile);
+
+  // Returns whether we can send the URL of the current page in any suggest
+  // requests.  Doing this requires that all the following hold:
+  // * ZeroSuggestEnabled() is true, so we meet the requirements above.
   // * The current URL is HTTP, or HTTPS with the same domain as the suggest
   //   server.  Non-HTTP[S] URLs (e.g. FTP/file URLs) may contain sensitive
   //   information.  HTTPS URLs may also contain sensitive information, but if
   //   they're on the same domain as the suggest server, then the relevant
   //   entity could have already seen/logged this data.
-  // * The suggest request is sent over HTTPS.  This avoids leaking the current
-  //   page URL in world-readable network traffic.
-  // * The user's suggest provider is Google.  We might want to allow other
-  //   providers to see this data someday, but for now this has only been
-  //   implemented for Google.  Also see next bullet.
   // * The user is OK in principle with sending URLs of current pages to their
   //   provider.  Today, there is no explicit setting that controls this, but if
   //   the user has tab sync enabled and tab sync is unencrypted, then they're
@@ -333,27 +403,63 @@ class BaseSearchProvider : public AutocompleteProvider,
       const GURL& current_page_url,
       const GURL& suggest_url,
       const TemplateURL* template_url,
-      AutocompleteInput::PageClassification page_classification,
+      metrics::OmniboxEventProto::PageClassification page_classification,
       Profile* profile);
+
+  // net::URLFetcherDelegate:
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+
+  // If the |deletion_url| is valid, then set |match.deletable| to true and
+  // save the |deletion_url| into the |match|'s additional info under
+  // the key |kDeletionUrlKey|.
+  void SetDeletionURL(const std::string& deletion_url,
+                      AutocompleteMatch* match);
 
   // Creates an AutocompleteMatch from |result| to search for the query in
   // |result|. Adds the created match to |map|; if such a match
   // already exists, whichever one has lower relevance is eliminated.
   // |metadata| and |accepted_suggestion| are used for generating an
   // AutocompleteMatch.
+  // |mark_as_deletable| indicates whether the match should be marked deletable.
+  // NOTE: Any result containing a deletion URL is always marked deletable.
   void AddMatchToMap(const SuggestResult& result,
                      const std::string& metadata,
                      int accepted_suggestion,
+                     bool mark_as_deletable,
                      MatchMap* map);
 
-  // Returns the TemplateURL for the given |result|.
-  virtual const TemplateURL* GetTemplateURL(
-      const SuggestResult& result) const = 0;
+  // Parses results from the suggest server and updates the appropriate suggest
+  // and navigation result lists in |results|. |is_keyword_result| indicates
+  // whether the response was received from the keyword provider.
+  // Returns whether the appropriate result list members were updated.
+  bool ParseSuggestResults(const base::Value& root_val,
+                           bool is_keyword_result,
+                           Results* results);
 
-  // Returns the AutocompleteInput based on whether the |result| is from the
-  // default provider or from the keyword provider.
-  virtual const AutocompleteInput GetInput(
-      const SuggestResult& result) const = 0;
+  // Prefetches any images in Answers results.
+  void PrefetchAnswersImages(const base::DictionaryValue* answers_json);
+
+  // Called at the end of ParseSuggestResults to rank the |results|.
+  virtual void SortResults(bool is_keyword,
+                           const base::ListValue* relevances,
+                           Results* results);
+
+  // Optionally, cache the received |json_data| and return true if we want
+  // to stop processing results at this point. The |parsed_data| is the parsed
+  // version of |json_data| used to determine if we received an empty result.
+  virtual bool StoreSuggestionResponse(const std::string& json_data,
+                                       const base::Value& parsed_data);
+
+  // Returns the TemplateURL corresponding to the keyword or default
+  // provider based on the value of |is_keyword|.
+  virtual const TemplateURL* GetTemplateURL(bool is_keyword) const = 0;
+
+  // Returns the AutocompleteInput for keyword provider or default provider
+  // based on the value of |is_keyword|.
+  virtual const AutocompleteInput GetInput(bool is_keyword) const = 0;
+
+  // Returns a pointer to a Results object, which will hold suggest results.
+  virtual Results* GetResultsToFill(bool is_keyword) = 0;
 
   // Returns whether the destination URL corresponding to the given |result|
   // should contain command-line-specified query params.
@@ -366,6 +472,26 @@ class BaseSearchProvider : public AutocompleteProvider,
   // Clears the current results.
   virtual void ClearAllResults() = 0;
 
+  // Returns the relevance to use if it was not explicitly set by the server.
+  virtual int GetDefaultResultRelevance() const = 0;
+
+  // Records in UMA whether the deletion request resulted in success.
+  virtual void RecordDeletionResult(bool success) = 0;
+
+  // Records UMA statistics about a suggest server response.
+  virtual void LogFetchComplete(bool succeeded, bool is_keyword) = 0;
+
+  // Modify provider-specific UMA statistics.
+  virtual void ModifyProviderInfo(
+      metrics::OmniboxEventProto_ProviderInfo* provider_info) const;
+
+  // Returns whether the |fetcher| is for the keyword provider.
+  virtual bool IsKeywordFetcher(const net::URLFetcher* fetcher) const = 0;
+
+  // Updates |matches_| from the latest results; applies calculated relevances
+  // if suggested relevances cause undesriable behavior. Updates |done_|.
+  virtual void UpdateMatches() = 0;
+
   // Whether a field trial, if any, has triggered in the most recent
   // autocomplete query. This field is set to true only if the suggestion
   // provider has completed and the response contained
@@ -376,7 +502,33 @@ class BaseSearchProvider : public AutocompleteProvider,
   // session.
   bool field_trial_triggered_in_session_;
 
+  // The number of suggest results that haven't yet arrived. If it's greater
+  // than 0, it indicates that one of the URLFetchers is still running.
+  int suggest_results_pending_;
+
  private:
+  friend class SearchProviderTest;
+  FRIEND_TEST_ALL_PREFIXES(SearchProviderTest, TestDeleteMatch);
+
+  // Removes the deleted |match| from the list of |matches_|.
+  void DeleteMatchFromMatches(const AutocompleteMatch& match);
+
+  // This gets called when we have requested a suggestion deletion from the
+  // server to handle the results of the deletion. It will be called after the
+  // deletion request completes.
+  void OnDeletionComplete(bool success,
+                          SuggestionDeletionHandler* handler);
+
+  // Each deletion handler in this vector corresponds to an outstanding request
+  // that a server delete a personalized suggestion. Making this a ScopedVector
+  // causes us to auto-cancel all such requests on shutdown.
+  SuggestionDeletionHandlers deletion_handlers_;
+
+  // True if this provider's results are being displayed in the app list. By
+  // default this is false, meaning that the results will be shown in the
+  // omnibox.
+  bool in_app_list_;
+
   DISALLOW_COPY_AND_ASSIGN(BaseSearchProvider);
 };
 

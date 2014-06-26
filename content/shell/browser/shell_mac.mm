@@ -8,24 +8,14 @@
 
 #include "base/logging.h"
 #import "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/sys_string_conversions.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/shell/app/resource.h"
 #import "ui/base/cocoa/underlay_opengl_hosting_window.h"
 #include "url/gurl.h"
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-enum {
-  NSWindowCollectionBehaviorFullScreenPrimary = 1 << 7,
-  NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-};
-
-#endif // MAC_OS_X_VERSION_10_7
 
 // Receives notification that the window is closing so that it can start the
 // tear-down process. Is responsible for deleting itself when done.
@@ -243,7 +233,7 @@ void Shell::PlatformCreateWindow(int width, int height) {
 }
 
 void Shell::PlatformSetContents() {
-  NSView* web_view = web_contents_->GetView()->GetNativeView();
+  NSView* web_view = web_contents_->GetNativeView();
   [web_view setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
 
   if (headless_) {
@@ -262,10 +252,12 @@ void Shell::PlatformSetContents() {
 
 void Shell::SizeTo(const gfx::Size& content_size) {
   if (!headless_) {
-    NOTREACHED();
+    NSRect frame = NSMakeRect(
+        0, 0, content_size.width(), content_size.height() + kURLBarHeight);
+    [window().contentView setFrame:frame];
     return;
   }
-  NSView* web_view = web_contents_->GetView()->GetNativeView();
+  NSView* web_view = web_contents_->GetNativeView();
   NSRect frame = NSMakeRect(0, 0, content_size.width(), content_size.height());
   [web_view setFrame:frame];
 }
@@ -286,6 +278,16 @@ bool Shell::PlatformHandleContextMenu(
     const content::ContextMenuParams& params) {
   return false;
 }
+
+#if defined(TOOLKIT_VIEWS)
+void Shell::PlatformWebContentsFocused(WebContents* contents) {
+  if (headless_)
+    return;
+
+  NOTIMPLEMENTED();
+  return;
+}
+#endif
 
 void Shell::Close() {
   if (headless_)

@@ -10,14 +10,19 @@
 namespace cc {
 
 FakeContentLayerClient::FakeContentLayerClient()
-    : paint_all_opaque_(false) {
-}
+    : paint_all_opaque_(false), last_canvas_(NULL) {}
 
 FakeContentLayerClient::~FakeContentLayerClient() {
 }
 
-void FakeContentLayerClient::PaintContents(SkCanvas* canvas,
-    const gfx::Rect& paint_rect, gfx::RectF* opaque_rect) {
+void FakeContentLayerClient::PaintContents(
+    SkCanvas* canvas,
+    const gfx::Rect& paint_rect,
+    gfx::RectF* opaque_rect,
+    ContentLayerClient::GraphicsContextStatus gc_status) {
+  last_canvas_ = canvas;
+  last_context_status_ = gc_status;
+
   if (paint_all_opaque_)
     *opaque_rect = paint_rect;
 
@@ -38,5 +43,7 @@ void FakeContentLayerClient::PaintContents(SkCanvas* canvas,
     canvas->drawBitmap(it->bitmap, it->point.x(), it->point.y(), &it->paint);
   }
 }
+
+bool FakeContentLayerClient::FillsBoundsCompletely() const { return false; }
 
 }  // namespace cc

@@ -7,7 +7,9 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/storage_partition.h"
@@ -40,10 +42,14 @@
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/debug/leak_annotations.h"
-#include "base/platform_file.h"
 #include "components/breakpad/app/breakpad_linux.h"
 #include "components/breakpad/browser/crash_handler_host_linux.h"
 #include "content/public/common/content_descriptors.h"
+#endif
+
+#if defined(OS_WIN)
+#include "content/common/sandbox_win.h"
+#include "sandbox/win/src/sandbox.h"
 #endif
 
 namespace content {
@@ -154,10 +160,12 @@ void ShellContentBrowserClient::RenderProcessWillLaunch(
 
 net::URLRequestContextGetter* ShellContentBrowserClient::CreateRequestContext(
     BrowserContext* content_browser_context,
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    URLRequestInterceptorScopedVector request_interceptors) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
-  return shell_browser_context->CreateRequestContext(protocol_handlers);
+  return shell_browser_context->CreateRequestContext(
+      protocol_handlers, request_interceptors.Pass());
 }
 
 net::URLRequestContextGetter*
@@ -165,11 +173,15 @@ ShellContentBrowserClient::CreateRequestContextForStoragePartition(
     BrowserContext* content_browser_context,
     const base::FilePath& partition_path,
     bool in_memory,
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    URLRequestInterceptorScopedVector request_interceptors) {
   ShellBrowserContext* shell_browser_context =
       ShellBrowserContextForBrowserContext(content_browser_context);
   return shell_browser_context->CreateRequestContextForStoragePartition(
-      partition_path, in_memory, protocol_handlers);
+      partition_path,
+      in_memory,
+      protocol_handlers,
+      request_interceptors.Pass());
 }
 
 bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
@@ -179,12 +191,12 @@ bool ShellContentBrowserClient::IsHandledURL(const GURL& url) {
   // Keep in sync with ProtocolHandlers added by
   // ShellURLRequestContextGetter::GetURLRequestContext().
   static const char* const kProtocolList[] = {
-      chrome::kBlobScheme,
-      kFileSystemScheme,
+      url::kBlobScheme,
+      url::kFileSystemScheme,
       kChromeUIScheme,
       kChromeDevToolsScheme,
-      kDataScheme,
-      kFileScheme,
+      url::kDataScheme,
+      url::kFileScheme,
   };
   for (size_t i = 0; i < arraysize(kProtocolList); ++i) {
     if (url.scheme() == kProtocolList[i])
@@ -197,6 +209,9 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
     CommandLine* command_line, int child_process_id) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
     command_line->AppendSwitch(switches::kDumpRenderTree);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableFontAntialiasing))
+    command_line->AppendSwitch(switches::kEnableFontAntialiasing);
   if (CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kExposeInternalsForTesting))
     command_line->AppendSwitch(switches::kExposeInternalsForTesting);
@@ -215,6 +230,13 @@ void ShellContentBrowserClient::AppendExtraCommandLineSwitches(
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableLeakDetection))
     command_line->AppendSwitch(switches::kEnableLeakDetection);
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kRegisterFontFiles)) {
+    command_line->AppendSwitchASCII(
+        switches::kRegisterFontFiles,
+        CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+            switches::kRegisterFontFiles));
+  }
 }
 
 void ShellContentBrowserClient::OverrideWebkitPrefs(
@@ -235,12 +257,6 @@ void ShellContentBrowserClient::ResourceDispatcherHostCreated() {
 
 std::string ShellContentBrowserClient::GetDefaultDownloadName() {
   return "download";
-}
-
-bool ShellContentBrowserClient::SupportsBrowserPlugin(
-    content::BrowserContext* browser_context, const GURL& url) {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kEnableBrowserPluginForAllViewTypes);
 }
 
 WebContentsViewDelegate* ShellContentBrowserClient::GetWebContentsViewDelegate(
@@ -277,34 +293,33 @@ bool ShellContentBrowserClient::ShouldSwapProcessesForRedirect(
 void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
     const CommandLine& command_line,
     int child_process_id,
-    std::vector<content::FileDescriptorInfo>* mappings) {
+    std::vector<FileDescriptorInfo>* mappings) {
 #if defined(OS_ANDROID)
-  int flags = base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ;
+  int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
   base::FilePath pak_file;
   bool r = PathService::Get(base::DIR_ANDROID_APP_DATA, &pak_file);
   CHECK(r);
   pak_file = pak_file.Append(FILE_PATH_LITERAL("paks"));
   pak_file = pak_file.Append(FILE_PATH_LITERAL("content_shell.pak"));
 
-  base::PlatformFile f =
-      base::CreatePlatformFile(pak_file, flags, NULL, NULL);
-  if (f == base::kInvalidPlatformFileValue) {
+  base::File f(pak_file, flags);
+  if (!f.IsValid()) {
     NOTREACHED() << "Failed to open file when creating renderer process: "
                  << "content_shell.pak";
   }
   mappings->push_back(
-      content::FileDescriptorInfo(kShellPakDescriptor,
-                                  base::FileDescriptor(f, true)));
+      FileDescriptorInfo(kShellPakDescriptor, base::FileDescriptor(f.Pass())));
 
   if (breakpad::IsCrashReporterEnabled()) {
     f = breakpad::CrashDumpManager::GetInstance()->CreateMinidumpFile(
         child_process_id);
-    if (f == base::kInvalidPlatformFileValue) {
+    if (!f.IsValid()) {
       LOG(ERROR) << "Failed to create file for minidump, crash reporting will "
                  << "be disabled for this process.";
     } else {
-      mappings->push_back(FileDescriptorInfo(kAndroidMinidumpDescriptor,
-                                             base::FileDescriptor(f, true)));
+      mappings->push_back(
+          FileDescriptorInfo(kAndroidMinidumpDescriptor,
+                             base::FileDescriptor(f.Pass())));
     }
   }
 #else  // !defined(OS_ANDROID)
@@ -316,6 +331,22 @@ void ShellContentBrowserClient::GetAdditionalMappedFilesForChildProcess(
 #endif  // defined(OS_ANDROID)
 }
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
+
+#if defined(OS_WIN)
+void ShellContentBrowserClient::PreSpawnRenderer(sandbox::TargetPolicy* policy,
+                                                 bool* success) {
+  // Add sideloaded font files for testing. See also DIR_WINDOWS_FONTS
+  // addition in |StartSandboxedProcess|.
+  std::vector<std::string> font_files = GetSideloadFontFiles();
+  for (std::vector<std::string>::const_iterator i(font_files.begin());
+      i != font_files.end();
+      ++i) {
+    policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+        sandbox::TargetPolicy::FILES_ALLOW_READONLY,
+        base::UTF8ToWide(*i).c_str());
+  }
+}
+#endif  // OS_WIN
 
 ShellBrowserContext* ShellContentBrowserClient::browser_context() {
   return shell_browser_main_parts_->browser_context();

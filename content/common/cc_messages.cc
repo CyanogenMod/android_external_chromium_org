@@ -4,11 +4,9 @@
 
 #include "content/common/cc_messages.h"
 
-#include "base/command_line.h"
 #include "cc/output/compositor_frame.h"
 #include "cc/output/filter_operations.h"
 #include "content/public/common/common_param_traits.h"
-#include "content/public/common/content_switches.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkFlattenableSerialization.h"
 #include "ui/gfx/transform.h"
@@ -46,6 +44,9 @@ void ParamTraits<cc::FilterOperation>::Write(
       break;
     case cc::FilterOperation::REFERENCE:
       WriteParam(m, p.image_filter());
+      break;
+    case cc::FilterOperation::ALPHA_THRESHOLD:
+      NOTREACHED();
       break;
   }
 }
@@ -122,6 +123,8 @@ bool ParamTraits<cc::FilterOperation>::Read(
       success = true;
       break;
     }
+    case cc::FilterOperation::ALPHA_THRESHOLD:
+      break;
   }
   return success;
 }
@@ -167,6 +170,9 @@ void ParamTraits<cc::FilterOperation>::Log(
     case cc::FilterOperation::REFERENCE:
       LogParam(p.image_filter(), l);
       break;
+    case cc::FilterOperation::ALPHA_THRESHOLD:
+      NOTREACHED();
+      break;
   }
   l->append(")");
 }
@@ -208,8 +214,7 @@ void ParamTraits<cc::FilterOperations>::Log(
 void ParamTraits<skia::RefPtr<SkImageFilter> >::Write(
     Message* m, const param_type& p) {
   SkImageFilter* filter = p.get();
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (filter && !command_line.HasSwitch(switches::kDisableFiltersOverIPC)) {
+  if (filter) {
     skia::RefPtr<SkData> data =
         skia::AdoptRef(SkValidatingSerializeFlattenable(filter));
     m->WriteData(static_cast<const char*>(data->data()), data->size());
@@ -224,9 +229,7 @@ bool ParamTraits<skia::RefPtr<SkImageFilter> >::Read(
   int length = 0;
   if (!m->ReadData(iter, &data, &length))
     return false;
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if ((length > 0) &&
-      !command_line.HasSwitch(switches::kDisableFiltersOverIPC)) {
+  if (length > 0) {
     SkFlattenable* flattenable = SkValidatingDeserializeFlattenable(
         data, length, SkImageFilter::GetFlattenableType());
     *r = skia::AdoptRef(static_cast<SkImageFilter*>(flattenable));
@@ -402,7 +405,7 @@ bool ParamTraits<cc::RenderPass>::Read(
     const Message* m, PickleIterator* iter, param_type* p) {
   cc::RenderPass::Id id(-1, -1);
   gfx::Rect output_rect;
-  gfx::RectF damage_rect;
+  gfx::Rect damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
   size_t shared_quad_state_list_size;
@@ -496,10 +499,9 @@ bool ParamTraits<cc::RenderPass>::Read(
 
     // If the quad has a new shared quad state, read it in.
     if (last_shared_quad_state_index != shared_quad_state_index) {
-      scoped_ptr<cc::SharedQuadState> state(cc::SharedQuadState::Create());
-      if (!ReadParam(m, iter, state.get()))
+      cc::SharedQuadState* state = p->CreateAndAppendSharedQuadState();
+      if (!ReadParam(m, iter, state))
         return false;
-      p->shared_quad_state_list.push_back(state.Pass());
       last_shared_quad_state_index = shared_quad_state_index;
     }
 
@@ -708,13 +710,15 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
                                                 const param_type& p) {
   DCHECK_NE(0u, p.render_pass_list.size());
 
-  size_t to_reserve = p.resource_list.size() * sizeof(cc::TransferableResource);
+  size_t to_reserve = sizeof(p.device_scale_factor);
+  to_reserve += p.resource_list.size() * sizeof(cc::TransferableResource);
   for (size_t i = 0; i < p.render_pass_list.size(); ++i) {
     const cc::RenderPass* pass = p.render_pass_list[i];
     to_reserve += ReserveSizeForRenderPassWrite(*pass);
   }
   m->Reserve(to_reserve);
 
+  WriteParam(m, p.device_scale_factor);
   WriteParam(m, p.resource_list);
   WriteParam(m, p.render_pass_list.size());
   for (size_t i = 0; i < p.render_pass_list.size(); ++i)
@@ -724,6 +728,9 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
 bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
                                                PickleIterator* iter,
                                                param_type* p) {
+  if (!ReadParam(m, iter, &p->device_scale_factor))
+    return false;
+
   const static size_t kMaxRenderPasses = 10000;
 
   size_t num_render_passes;
@@ -743,6 +750,7 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
 void ParamTraits<cc::DelegatedFrameData>::Log(const param_type& p,
                                               std::string* l) {
   l->append("DelegatedFrameData(");
+  LogParam(p.device_scale_factor, l);
   LogParam(p.resource_list, l);
   l->append(", [");
   for (size_t i = 0; i < p.render_pass_list.size(); ++i) {
@@ -751,6 +759,45 @@ void ParamTraits<cc::DelegatedFrameData>::Log(const param_type& p,
     LogParam(*p.render_pass_list[i], l);
   }
   l->append("])");
+}
+
+void ParamTraits<cc::SoftwareFrameData>::Write(Message* m,
+                                               const param_type& p) {
+  DCHECK(cc::SharedBitmap::VerifySizeInBytes(p.size));
+
+  m->Reserve(sizeof(cc::SoftwareFrameData));
+  WriteParam(m, p.id);
+  WriteParam(m, p.size);
+  WriteParam(m, p.damage_rect);
+  WriteParam(m, p.bitmap_id);
+}
+
+bool ParamTraits<cc::SoftwareFrameData>::Read(const Message* m,
+                                              PickleIterator* iter,
+                                              param_type* p) {
+  if (!ReadParam(m, iter, &p->id))
+    return false;
+  if (!ReadParam(m, iter, &p->size) ||
+      !cc::SharedBitmap::VerifySizeInBytes(p->size))
+    return false;
+  if (!ReadParam(m, iter, &p->damage_rect))
+    return false;
+  if (!ReadParam(m, iter, &p->bitmap_id))
+    return false;
+  return true;
+}
+
+void ParamTraits<cc::SoftwareFrameData>::Log(const param_type& p,
+                                             std::string* l) {
+  l->append("SoftwareFrameData(");
+  LogParam(p.id, l);
+  l->append(", ");
+  LogParam(p.size, l);
+  l->append(", ");
+  LogParam(p.damage_rect, l);
+  l->append(", ");
+  LogParam(p.bitmap_id, l);
+  l->append(")");
 }
 
 }  // namespace IPC

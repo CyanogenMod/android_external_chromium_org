@@ -12,7 +12,6 @@
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
-#include "content/public/common/url_constants.h"
 #include "content/public/renderer/android_content_detection_prefixes.h"
 #include "content/public/renderer/document_state.h"
 #include "content/public/renderer/render_view.h"
@@ -24,13 +23,14 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHitTestResult.h"
 #include "third_party/WebKit/public/web/WebImageCache.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "url/url_canon.h"
+#include "url/url_constants.h"
 #include "url/url_util.h"
 
 namespace android_webview {
@@ -69,9 +69,10 @@ bool RemovePrefixAndAssignIfMatches(const base::StringPiece& prefix,
   const base::StringPiece spec(url.possibly_invalid_spec());
 
   if (spec.starts_with(prefix)) {
-    url_canon::RawCanonOutputW<1024> output;
-    url_util::DecodeURLEscapeSequences(spec.data() + prefix.length(),
-        spec.length() - prefix.length(), &output);
+    url::RawCanonOutputW<1024> output;
+    url::DecodeURLEscapeSequences(spec.data() + prefix.length(),
+                                  spec.length() - prefix.length(),
+                                  &output);
     std::string decoded_url = base::UTF16ToUTF8(
         base::string16(output.data(), output.length()));
     dest->assign(decoded_url.begin(), decoded_url.end());
@@ -116,7 +117,7 @@ void PopulateHitTestData(const GURL& absolute_link_url,
     data->img_src = absolute_image_url;
 
   const bool is_javascript_scheme =
-      absolute_link_url.SchemeIs(content::kJavaScriptScheme);
+      absolute_link_url.SchemeIs(url::kJavaScriptScheme);
   const bool has_link_url = !absolute_link_url.is_empty();
   const bool has_image_url = !absolute_image_url.is_empty();
 
@@ -178,16 +179,6 @@ void AwRenderViewExt::OnDocumentHasImagesRequest(int id) {
   }
   Send(new AwViewHostMsg_DocumentHasImagesResponse(routing_id(), id,
                                                    hasImages));
-}
-
-void AwRenderViewExt::DidCommitProvisionalLoad(blink::WebFrame* frame,
-                                               bool is_new_navigation) {
-  content::DocumentState* document_state =
-      content::DocumentState::FromDataSource(frame->dataSource());
-  if (document_state->can_load_local_resources()) {
-    blink::WebSecurityOrigin origin = frame->document().securityOrigin();
-    origin.grantLoadLocalResources();
-  }
 }
 
 void AwRenderViewExt::DidCommitCompositorFrame() {

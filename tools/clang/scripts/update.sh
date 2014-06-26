@@ -8,17 +8,30 @@
 # Do NOT CHANGE this if you don't know what you're doing -- see
 # https://code.google.com/p/chromium/wiki/UpdatingClang
 # Reverting problematic clang rolls is safe, though.
-CLANG_REVISION=198389
+CLANG_REVISION=209387
 
 THIS_DIR="$(dirname "${0}")"
 LLVM_DIR="${THIS_DIR}/../../../third_party/llvm"
 LLVM_BUILD_DIR="${LLVM_DIR}/../llvm-build"
 LLVM_BOOTSTRAP_DIR="${LLVM_DIR}/../llvm-bootstrap"
+LLVM_BOOTSTRAP_INSTALL_DIR="${LLVM_DIR}/../llvm-bootstrap-install"
 CLANG_DIR="${LLVM_DIR}/tools/clang"
 CLANG_TOOLS_EXTRA_DIR="${CLANG_DIR}/tools/extra"
 COMPILER_RT_DIR="${LLVM_DIR}/projects/compiler-rt"
+LIBCXX_DIR="${LLVM_DIR}/projects/libcxx"
+LIBCXXABI_DIR="${LLVM_DIR}/projects/libcxxabi"
 ANDROID_NDK_DIR="${LLVM_DIR}/../android_tools/ndk"
 STAMP_FILE="${LLVM_BUILD_DIR}/cr_build_revision"
+
+ABS_LIBCXX_DIR="${PWD}/${LIBCXX_DIR}"
+ABS_LIBCXXABI_DIR="${PWD}/${LIBCXXABI_DIR}"
+
+
+# Use both the clang revision and the plugin revisions to test for updates.
+BLINKGCPLUGIN_REVISION=\
+$(grep LIBRARYNAME "$THIS_DIR"/../blink_gc_plugin/Makefile \
+    | cut -d '_' -f 2)
+CLANG_AND_PLUGINS_REVISION="${CLANG_REVISION}-${BLINKGCPLUGIN_REVISION}"
 
 # ${A:-a} returns $A if it's set, a else.
 LLVM_REPO_URL=${LLVM_URL:-https://llvm.org/svn/llvm-project}
@@ -37,8 +50,8 @@ set -eu
 OS="$(uname -s)"
 
 # Parse command line options.
+if_needed=
 force_local_build=
-mac_only=
 run_tests=
 bootstrap=
 with_android=yes
@@ -59,11 +72,15 @@ while [[ $# > 0 ]]; do
     --bootstrap)
       bootstrap=yes
       ;;
+    --if-needed)
+      if_needed=yes
+      ;;
     --force-local-build)
       force_local_build=yes
       ;;
-    --mac-only)
-      mac_only=yes
+    --print-revision)
+      echo $CLANG_REVISION
+      exit 0
       ;;
     --run-tests)
       run_tests=yes
@@ -95,11 +112,12 @@ while [[ $# > 0 ]]; do
       ;;
 
     --help)
-      echo "usage: $0 [--force-local-build] [--mac-only] [--run-tests] "
+      echo "usage: $0 [--force-local-build] [--if-needed] [--run-tests] "
       echo "--bootstrap: First build clang with CC, then with itself."
       echo "--force-local-build: Don't try to download prebuilt binaries."
-      echo "--mac-only: Do initial download only on Mac systems."
+      echo "--if-needed: Download clang only if the script thinks it is needed."
       echo "--run-tests: Run tests after building. Only for local builds."
+      echo "--print-revision: Print current clang revision and exit."
       echo "--without-android: Don't build ASan Android runtime library."
       echo "--with-chrome-tools: Select which chrome tools to build." \
            "Defaults to plugins."
@@ -119,38 +137,26 @@ while [[ $# > 0 ]]; do
   shift
 done
 
-# --mac-only prevents the initial download on non-mac systems, but if clang has
-# already been downloaded in the past, this script keeps it up to date even if
-# --mac-only is passed in and the system isn't a mac. People who don't like this
-# can just delete their third_party/llvm-build directory.
-if [[ -n "$mac_only" ]] && [[ "${OS}" != "Darwin" ]] &&
-    [[ ! ( "$GYP_DEFINES" =~ .*(clang|tsan|asan|lsan|msan)=1.* ) ]] &&
-    ! [[ -d "${LLVM_BUILD_DIR}" ]]; then
-  exit 0
+# Remove clang on bots where it was autoinstalled in r262025.
+if [[ -f "${LLVM_BUILD_DIR}/autoinstall_stamp" ]]; then
+  echo Removing autoinstalled clang and clobbering
+  rm -rf "${LLVM_BUILD_DIR}"
 fi
 
-# Xcode and clang don't get along when predictive compilation is enabled.
-# http://crbug.com/96315
-if [[ "${OS}" = "Darwin" ]] && xcodebuild -version | grep -q 'Xcode 3.2' ; then
-  XCONF=com.apple.Xcode
-  if [[ "${GYP_GENERATORS}" != "make" ]] && \
-     [ "$(defaults read "${XCONF}" EnablePredictiveCompilation)" != "0" ]; then
-    echo
-    echo "          HEARKEN!"
-    echo "You're using Xcode3 and you have 'Predictive Compilation' enabled."
-    echo "This does not work well with clang (http://crbug.com/96315)."
-    echo "Disable it in Preferences->Building (lower right), or run"
-    echo "    defaults write ${XCONF} EnablePredictiveCompilation -boolean NO"
-    echo "while Xcode is not running."
-    echo
-  fi
-
-  SUB_VERSION=$(xcodebuild -version | sed -Ene 's/Xcode 3\.2\.([0-9]+)/\1/p')
-  if [[ "${SUB_VERSION}" < 6 ]]; then
-    echo
-    echo "          YOUR LD IS BUGGY!"
-    echo "Please upgrade Xcode to at least 3.2.6."
-    echo
+if [[ -n "$if_needed" ]]; then
+  if [[ "${OS}" == "Darwin" ]]; then
+    # clang is used on Mac.
+    true
+  elif [[ "$GYP_DEFINES" =~ .*(clang|tsan|asan|lsan|msan)=1.* ]]; then
+    # clang requested via $GYP_DEFINES.
+    true
+  elif [[ -d "${LLVM_BUILD_DIR}" ]]; then
+    # clang previously downloaded, remove third_party/llvm-build to prevent
+    # updating.
+    true
+  else
+    # clang wasn't needed, not doing anything.
+    exit 0
   fi
 fi
 
@@ -159,39 +165,15 @@ fi
 if [[ -f "${STAMP_FILE}" ]]; then
   PREVIOUSLY_BUILT_REVISON=$(cat "${STAMP_FILE}")
   if [[ -z "$force_local_build" ]] && \
-       [[ "${PREVIOUSLY_BUILT_REVISON}" = "${CLANG_REVISION}" ]]; then
-    echo "Clang already at ${CLANG_REVISION}"
+       [[ "${PREVIOUSLY_BUILT_REVISON}" = \
+          "${CLANG_AND_PLUGINS_REVISION}" ]]; then
+    echo "Clang already at ${CLANG_AND_PLUGINS_REVISION}"
     exit 0
   fi
 fi
 # To always force a new build if someone interrupts their build half way.
 rm -f "${STAMP_FILE}"
 
-
-# Clobber build files. PCH files only work with the compiler that created them.
-# We delete .o files to make sure all files are built with the new compiler.
-echo "Clobbering build files"
-MAKE_DIR="${THIS_DIR}/../../../out"
-XCODEBUILD_DIR="${THIS_DIR}/../../../xcodebuild"
-for DIR in "${XCODEBUILD_DIR}" "${MAKE_DIR}/Debug" "${MAKE_DIR}/Release"; do
-  if [[ -d "${DIR}" ]]; then
-    find "${DIR}" -name '*.o' -exec rm {} +
-    find "${DIR}" -name '*.o.d' -exec rm {} +
-    find "${DIR}" -name '*.gch' -exec rm {} +
-    find "${DIR}" -name '*.dylib' -exec rm -rf {} +
-    find "${DIR}" -name 'SharedPrecompiledHeaders' -exec rm -rf {} +
-  fi
-done
-
-# Clobber NaCl toolchain stamp files, see http://crbug.com/159793
-if [[ -d "${MAKE_DIR}" ]]; then
-  find "${MAKE_DIR}" -name 'stamp.untar' -exec rm {} +
-fi
-if [[ "${OS}" = "Darwin" ]]; then
-  if [[ -d "${XCODEBUILD_DIR}" ]]; then
-    find "${XCODEBUILD_DIR}" -name 'stamp.untar' -exec rm {} +
-  fi
-fi
 
 if [[ -z "$force_local_build" ]]; then
   # Check if there's a prebuilt binary and if so just fetch that. That's faster,
@@ -220,7 +202,7 @@ if [[ -z "$force_local_build" ]]; then
     mkdir -p "${LLVM_BUILD_DIR}/Release+Asserts"
     tar -xzf "${CDS_OUTPUT}" -C "${LLVM_BUILD_DIR}/Release+Asserts"
     echo clang "${CLANG_REVISION}" unpacked
-    echo "${CLANG_REVISION}" > "${STAMP_FILE}"
+    echo "${CLANG_AND_PLUGINS_REVISION}" > "${STAMP_FILE}"
     rm -rf "${CDS_OUT_DIR}"
     exit 0
   else
@@ -252,6 +234,40 @@ echo Getting compiler-rt r"${CLANG_REVISION}" in "${COMPILER_RT_DIR}"
 svn co --force "${LLVM_REPO_URL}/compiler-rt/trunk@${CLANG_REVISION}" \
                "${COMPILER_RT_DIR}"
 
+# clang needs a libc++ checkout, else -stdlib=libc++ won't find includes
+# (i.e. this is needed for bootstrap builds).
+if [ "${OS}" = "Darwin" ]; then
+  echo Getting libc++ r"${CLANG_REVISION}" in "${LIBCXX_DIR}"
+  svn co --force "${LLVM_REPO_URL}/libcxx/trunk@${CLANG_REVISION}" \
+                 "${LIBCXX_DIR}"
+fi
+
+# While we're bundling our own libc++ on OS X, we need to compile libc++abi
+# into it too (since OS X 10.6 doesn't have libc++abi.dylib either).
+if [ "${OS}" = "Darwin" ]; then
+  echo Getting libc++abi r"${CLANG_REVISION}" in "${LIBCXXABI_DIR}"
+  svn co --force "${LLVM_REPO_URL}/libcxxabi/trunk@${CLANG_REVISION}" \
+                 "${LIBCXXABI_DIR}"
+fi
+
+# Apply patch for test failing with --disable-pthreads (llvm.org/PR11974)
+pushd "${CLANG_DIR}"
+svn revert test/Index/crash-recovery-modules.m
+cat << 'EOF' |
+--- third_party/llvm/tools/clang/test/Index/crash-recovery-modules.m	(revision 202554)
++++ third_party/llvm/tools/clang/test/Index/crash-recovery-modules.m	(working copy)
+@@ -12,6 +12,8 @@
+ 
+ // REQUIRES: crash-recovery
+ // REQUIRES: shell
++// XFAIL: *
++//    (PR11974)
+ 
+ @import Crash;
+EOF
+patch -p4
+popd
+
 # Echo all commands.
 set -x
 
@@ -266,16 +282,34 @@ if [[ -n "${gcc_toolchain}" ]]; then
   # Use the specified gcc installation for building.
   export CC="$gcc_toolchain/bin/gcc"
   export CXX="$gcc_toolchain/bin/g++"
+  # Set LD_LIBRARY_PATH to make auxiliary targets (tablegen, bootstrap compiler,
+  # etc.) find the .so.
+  export LD_LIBRARY_PATH="$(dirname $(${CXX} -print-file-name=libstdc++.so.6))"
 fi
 
 export CFLAGS=""
 export CXXFLAGS=""
+# LLVM uses C++11 starting in llvm 3.5. On Linux, this means libstdc++4.7+ is
+# needed, on OS X it requires libc++. clang only automatically links to libc++
+# when targeting OS X 10.9+, so add stdlib=libc++ explicitly so clang can run on
+# OS X versions as old as 10.7.
+# TODO(thakis): Some bots are still on 10.6, so for now bundle libc++.dylib.
+# Remove this once all bots are on 10.7+, then use --enable-libcpp=yes and
+# change all MACOSX_DEPLOYMENT_TARGET values to 10.7.
+if [ "${OS}" = "Darwin" ]; then
+  # When building on 10.9, /usr/include usually doesn't exist, and while
+  # Xcode's clang automatically sets a sysroot, self-built clangs don't.
+  export CFLAGS="-isysroot $(xcrun --show-sdk-path)"
+  export CPPFLAGS="${CFLAGS}"
+  export CXXFLAGS="-stdlib=libc++ -nostdinc++ -I${ABS_LIBCXX_DIR}/include ${CFLAGS}"
+fi
 
 # Build bootstrap clang if requested.
 if [[ -n "${bootstrap}" ]]; then
+  ABS_INSTALL_DIR="${PWD}/${LLVM_BOOTSTRAP_INSTALL_DIR}"
   echo "Building bootstrap compiler"
   mkdir -p "${LLVM_BOOTSTRAP_DIR}"
-  cd "${LLVM_BOOTSTRAP_DIR}"
+  pushd "${LLVM_BOOTSTRAP_DIR}"
   if [[ ! -f ./config.status ]]; then
     # The bootstrap compiler only needs to be able to build the real compiler,
     # so it needs no cross-compiler output support. In general, the host
@@ -284,28 +318,30 @@ if [[ -n "${bootstrap}" ]]; then
     ../llvm/configure \
         --enable-optimized \
         --enable-targets=host-only \
+        --enable-libedit=no \
         --disable-threads \
         --disable-pthreads \
         --without-llvmgcc \
-        --without-llvmgxx
+        --without-llvmgxx \
+        --prefix="${ABS_INSTALL_DIR}"
   fi
 
-  if [[ -n "${gcc_toolchain}" ]]; then
-    # Copy that gcc's stdlibc++.so.6 to the build dir, so the bootstrap
-    # compiler can start.
-    mkdir -p Release+Asserts/lib
-    cp -v "$(${CXX} -print-file-name=libstdc++.so.6)" \
-      "Release+Asserts/lib/"
-  fi
-
-
-  MACOSX_DEPLOYMENT_TARGET=10.5 ${MAKE} -j"${NUM_JOBS}"
+  ${MAKE} -j"${NUM_JOBS}"
   if [[ -n "${run_tests}" ]]; then
     ${MAKE} check-all
   fi
-  cd -
-  export CC="${PWD}/${LLVM_BOOTSTRAP_DIR}/Release+Asserts/bin/clang"
-  export CXX="${PWD}/${LLVM_BOOTSTRAP_DIR}/Release+Asserts/bin/clang++"
+
+  ${MAKE} install
+  if [[ -n "${gcc_toolchain}" ]]; then
+    # Copy that gcc's stdlibc++.so.6 to the build dir, so the bootstrap
+    # compiler can start.
+    cp -v "$(${CXX} -print-file-name=libstdc++.so.6)" \
+      "${ABS_INSTALL_DIR}/lib/"
+  fi
+
+  popd
+  export CC="${ABS_INSTALL_DIR}/bin/clang"
+  export CXX="${ABS_INSTALL_DIR}/bin/clang++"
 
   if [[ -n "${gcc_toolchain}" ]]; then
     # Tell the bootstrap compiler to use a specific gcc prefix to search
@@ -321,10 +357,41 @@ fi
 # The clang bots have this path hardcoded in built/scripts/slave/compile.py,
 # so if you change it you also need to change these links.
 mkdir -p "${LLVM_BUILD_DIR}"
-cd "${LLVM_BUILD_DIR}"
+pushd "${LLVM_BUILD_DIR}"
+
+# Build libc++.dylib while some bots are still on OS X 10.6.
+if [ "${OS}" = "Darwin" ]; then
+  rm -rf libcxxbuild
+  LIBCXXFLAGS="-O3 -std=c++11 -fstrict-aliasing"
+
+  # libcxx and libcxxabi both have a file stdexcept.cpp, so put their .o files
+  # into different subdirectories.
+  mkdir -p libcxxbuild/libcxx
+  pushd libcxxbuild/libcxx
+  ${CXX:-c++} -c ${CXXFLAGS} ${LIBCXXFLAGS} "${ABS_LIBCXX_DIR}"/src/*.cpp
+  popd
+
+  mkdir -p libcxxbuild/libcxxabi
+  pushd libcxxbuild/libcxxabi
+  ${CXX:-c++} -c ${CXXFLAGS} ${LIBCXXFLAGS} "${ABS_LIBCXXABI_DIR}"/src/*.cpp -I"${ABS_LIBCXXABI_DIR}/include"
+  popd
+
+  pushd libcxxbuild
+  ${CC:-cc} libcxx/*.o libcxxabi/*.o -o libc++.1.dylib -dynamiclib \
+    -nodefaultlibs -current_version 1 -compatibility_version 1 \
+    -lSystem -install_name @executable_path/libc++.dylib \
+    -Wl,-unexported_symbols_list,${ABS_LIBCXX_DIR}/lib/libc++unexp.exp \
+    -Wl,-force_symbols_not_weak_list,${ABS_LIBCXX_DIR}/lib/notweak.exp \
+    -Wl,-force_symbols_weak_list,${ABS_LIBCXX_DIR}/lib/weak.exp
+  ln -sf libc++.1.dylib libc++.dylib
+  popd
+  export LDFLAGS+="-stdlib=libc++ -L${PWD}/libcxxbuild"
+fi
+
 if [[ ! -f ./config.status ]]; then
   ../llvm/configure \
       --enable-optimized \
+      --enable-libedit=no \
       --disable-threads \
       --disable-pthreads \
       --without-llvmgcc \
@@ -342,9 +409,11 @@ STRIP_FLAGS=
 if [ "${OS}" = "Darwin" ]; then
   # See http://crbug.com/256342
   STRIP_FLAGS=-x
+
+  cp libcxxbuild/libc++.1.dylib Release+Asserts/bin
 fi
 strip ${STRIP_FLAGS} Release+Asserts/bin/clang
-cd -
+popd
 
 if [[ -n "${with_android}" ]]; then
   # Make a standalone Android toolchain.
@@ -354,13 +423,17 @@ if [[ -n "${with_android}" ]]; then
       --system=linux-x86_64 \
       --stl=stlport
 
+  # Android NDK r9d copies a broken unwind.h into the toolchain, see
+  # http://crbug.com/357890
+  rm -v "${LLVM_BUILD_DIR}"/android-toolchain/include/c++/*/unwind.h
+
   # Build ASan runtime for Android.
   # Note: LLVM_ANDROID_TOOLCHAIN_DIR is not relative to PWD, but to where we
   # build the runtime, i.e. third_party/llvm/projects/compiler-rt.
-  cd "${LLVM_BUILD_DIR}"
+  pushd "${LLVM_BUILD_DIR}"
   ${MAKE} -C tools/clang/runtime/ \
     LLVM_ANDROID_TOOLCHAIN_DIR="../../../llvm-build/android-toolchain"
-  cd -
+  popd
 fi
 
 # Build Chrome-specific clang tools. Paths in this list should be relative to
@@ -387,10 +460,10 @@ if [[ -n "$run_tests" ]]; then
       "${TOOL_SRC_DIR}/tests/test.sh" "${LLVM_BUILD_DIR}/Release+Asserts"
     fi
   done
-  cd "${LLVM_BUILD_DIR}"
+  pushd "${LLVM_BUILD_DIR}"
   ${MAKE} check-all
-  cd -
+  popd
 fi
 
 # After everything is done, log success for this revision.
-echo "${CLANG_REVISION}" > "${STAMP_FILE}"
+echo "${CLANG_AND_PLUGINS_REVISION}" > "${STAMP_FILE}"

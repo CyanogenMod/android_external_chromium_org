@@ -12,6 +12,7 @@ class Profile;
 
 namespace extensions {
 
+class ContentVerifier;
 class ExtensionSystemSharedFactory;
 class ExtensionWarningBadgeService;
 class NavigationObserver;
@@ -19,15 +20,15 @@ class StandardManagementPolicyProvider;
 
 // The ExtensionSystem for ProfileImpl and OffTheRecordProfileImpl.
 // Implementation details: non-shared services are owned by
-// ExtensionSystemImpl, a BrowserContextKeyedService with separate incognito
-// instances. A private Shared class (also a BrowserContextKeyedService,
+// ExtensionSystemImpl, a KeyedService with separate incognito
+// instances. A private Shared class (also a KeyedService,
 // but with a shared instance for incognito) keeps the common services.
 class ExtensionSystemImpl : public ExtensionSystem {
  public:
   explicit ExtensionSystemImpl(Profile* profile);
   virtual ~ExtensionSystemImpl();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
   virtual void InitForRegularProfile(bool extensions_enabled) OVERRIDE;
@@ -57,13 +58,16 @@ class ExtensionSystemImpl : public ExtensionSystem {
       const UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
   virtual const OneShotEvent& ready() const OVERRIDE;
+  virtual ContentVerifier* content_verifier() OVERRIDE;  // shared
+  virtual scoped_ptr<ExtensionSet> GetDependentExtensions(
+      const Extension* extension) OVERRIDE;
 
  private:
   friend class ExtensionSystemSharedFactory;
 
   // Owns the Extension-related systems that have a single instance
   // shared between normal and incognito profiles.
-  class Shared : public BrowserContextKeyedService {
+  class Shared : public KeyedService {
    public:
     explicit Shared(Profile* profile);
     virtual ~Shared();
@@ -74,7 +78,7 @@ class ExtensionSystemImpl : public ExtensionSystem {
     void RegisterManagementPolicyProviders();
     void Init(bool extensions_enabled);
 
-    // BrowserContextKeyedService implementation.
+    // KeyedService implementation.
     virtual void Shutdown() OVERRIDE;
 
     StateStore* state_store();
@@ -92,6 +96,7 @@ class ExtensionSystemImpl : public ExtensionSystem {
     InstallVerifier* install_verifier();
     QuotaService* quota_service();
     const OneShotEvent& ready() const { return ready_; }
+    ContentVerifier* content_verifier();
 
    private:
     Profile* profile_;
@@ -121,6 +126,9 @@ class ExtensionSystemImpl : public ExtensionSystem {
     scoped_ptr<ErrorConsole> error_console_;
     scoped_ptr<InstallVerifier> install_verifier_;
     scoped_ptr<QuotaService> quota_service_;
+
+    // For verifying the contents of extensions read from disk.
+    scoped_refptr<ContentVerifier> content_verifier_;
 
 #if defined(OS_CHROMEOS)
     scoped_ptr<chromeos::DeviceLocalAccountManagementPolicyProvider>

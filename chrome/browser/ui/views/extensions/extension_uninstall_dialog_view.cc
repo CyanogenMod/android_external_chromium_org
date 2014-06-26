@@ -24,14 +24,10 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/dialog_delegate.h"
 
-#if defined(USE_ASH)
-#include "ash/shell.h"
-#endif
-
 namespace {
 
 const int kRightColumnWidth = 210;
-const int kIconSize = 69;
+const int kIconSize = 64;
 
 class ExtensionUninstallDialogDelegateView;
 
@@ -43,11 +39,13 @@ gfx::NativeWindow GetParent(Browser* browser) {
 }
 
 // Views implementation of the uninstall dialog.
-class ExtensionUninstallDialogViews : public ExtensionUninstallDialog {
+class ExtensionUninstallDialogViews
+    : public extensions::ExtensionUninstallDialog {
  public:
-  ExtensionUninstallDialogViews(Profile* profile,
-                                Browser* browser,
-                                ExtensionUninstallDialog::Delegate* delegate);
+  ExtensionUninstallDialogViews(
+      Profile* profile,
+      Browser* browser,
+      extensions::ExtensionUninstallDialog::Delegate* delegate);
   virtual ~ExtensionUninstallDialogViews();
 
   // Forwards the accept and cancels to the delegate.
@@ -71,6 +69,7 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
   ExtensionUninstallDialogDelegateView(
       ExtensionUninstallDialogViews* dialog_view,
       const extensions::Extension* extension,
+      const extensions::Extension* triggering_extension,
       gfx::ImageSkia* icon);
   virtual ~ExtensionUninstallDialogDelegateView();
 
@@ -83,7 +82,9 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
   virtual base::string16 GetDialogButtonLabel(
       ui::DialogButton button) const OVERRIDE;
   virtual int GetDefaultDialogButton() const OVERRIDE {
-    return ui::DIALOG_BUTTON_CANCEL;
+    // Default to accept when triggered via chrome://extensions page.
+    return triggered_by_extension_ ?
+        ui::DIALOG_BUTTON_CANCEL : ui::DIALOG_BUTTON_OK;
   }
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
@@ -95,7 +96,7 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
   virtual base::string16 GetWindowTitle() const OVERRIDE;
 
   // views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   virtual void Layout() OVERRIDE;
 
@@ -103,6 +104,7 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
 
   views::ImageView* icon_;
   views::Label* heading_;
+  bool triggered_by_extension_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionUninstallDialogDelegateView);
 };
@@ -110,8 +112,8 @@ class ExtensionUninstallDialogDelegateView : public views::DialogDelegateView {
 ExtensionUninstallDialogViews::ExtensionUninstallDialogViews(
     Profile* profile,
     Browser* browser,
-    ExtensionUninstallDialog::Delegate* delegate)
-    : ExtensionUninstallDialog(profile, browser, delegate),
+    extensions::ExtensionUninstallDialog::Delegate* delegate)
+    : extensions::ExtensionUninstallDialog(profile, browser, delegate),
       view_(NULL),
       show_in_app_list_(!browser) {
 }
@@ -135,7 +137,8 @@ void ExtensionUninstallDialogViews::Show() {
     return;
   }
 
-  view_ = new ExtensionUninstallDialogDelegateView(this, extension_, &icon_);
+  view_ = new ExtensionUninstallDialogDelegateView(
+      this, extension_, triggering_extension_, &icon_);
   CreateBrowserModalDialogViews(view_, parent)->Show();
 }
 
@@ -154,8 +157,10 @@ void ExtensionUninstallDialogViews::ExtensionUninstallCanceled() {
 ExtensionUninstallDialogDelegateView::ExtensionUninstallDialogDelegateView(
     ExtensionUninstallDialogViews* dialog_view,
     const extensions::Extension* extension,
+    const extensions::Extension* triggering_extension,
     gfx::ImageSkia* icon)
-    : dialog_(dialog_view) {
+    : dialog_(dialog_view),
+      triggered_by_extension_(triggering_extension != NULL) {
   // Scale down to icon size, but allow smaller icons (don't scale up).
   gfx::Size size(icon->width(), icon->height());
   if (size.width() > kIconSize || size.height() > kIconSize)
@@ -165,10 +170,9 @@ ExtensionUninstallDialogDelegateView::ExtensionUninstallDialogDelegateView(
   icon_->SetImage(*icon);
   AddChildView(icon_);
 
-  heading_ = new views::Label(
-      l10n_util::GetStringFUTF16(IDS_EXTENSION_UNINSTALL_PROMPT_HEADING,
-                                 base::UTF8ToUTF16(extension->name())));
+  heading_ = new views::Label(base::UTF8ToUTF16(dialog_->GetHeadingText()));
   heading_->SetMultiLine(true);
+  heading_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(heading_);
 }
 
@@ -197,7 +201,7 @@ base::string16 ExtensionUninstallDialogDelegateView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_EXTENSION_UNINSTALL_PROMPT_TITLE);
 }
 
-gfx::Size ExtensionUninstallDialogDelegateView::GetPreferredSize() {
+gfx::Size ExtensionUninstallDialogDelegateView::GetPreferredSize() const {
   int width = kRightColumnWidth;
   width += kIconSize;
   width += views::kButtonHEdgeMarginNew * 2;
@@ -239,9 +243,9 @@ void ExtensionUninstallDialogDelegateView::Layout() {
 }  // namespace
 
 // static
-ExtensionUninstallDialog* ExtensionUninstallDialog::Create(
-    Profile* profile,
-    Browser* browser,
-    Delegate* delegate) {
+extensions::ExtensionUninstallDialog*
+extensions::ExtensionUninstallDialog::Create(Profile* profile,
+                                             Browser* browser,
+                                             Delegate* delegate) {
   return new ExtensionUninstallDialogViews(profile, browser, delegate);
 }

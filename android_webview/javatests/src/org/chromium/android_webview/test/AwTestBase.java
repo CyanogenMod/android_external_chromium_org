@@ -15,7 +15,6 @@ import org.chromium.android_webview.AwBrowserContext;
 import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsClient;
-import org.chromium.android_webview.AwLayoutSizer;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.util.JSUtils;
 import org.chromium.base.test.util.InMemorySharedPreferences;
@@ -25,6 +24,7 @@ import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
@@ -35,8 +35,8 @@ import java.util.concurrent.atomic.AtomicReference;
  */
 public class AwTestBase
         extends ActivityInstrumentationTestCase2<AwTestRunnerActivity> {
-    protected static final long WAIT_TIMEOUT_MS = scaleTimeout(15000);
-    protected static final int CHECK_INTERVAL = 100;
+    public static final long WAIT_TIMEOUT_MS = scaleTimeout(15000);
+    public static final int CHECK_INTERVAL = 100;
     private static final String TAG = "AwTestBase";
 
     public AwTestBase() {
@@ -80,7 +80,7 @@ public class AwTestBase
         return task.get();
     }
 
-    protected void enableJavaScriptOnUiThread(final AwContents awContents) {
+    public void enableJavaScriptOnUiThread(final AwContents awContents) {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
@@ -89,7 +89,7 @@ public class AwTestBase
         });
     }
 
-    protected void setNetworkAvailableOnUiThread(final AwContents awContents,
+    public void setNetworkAvailableOnUiThread(final AwContents awContents,
             final boolean networkUp) {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
@@ -102,16 +102,23 @@ public class AwTestBase
     /**
      * Loads url on the UI thread and blocks until onPageFinished is called.
      */
-    protected void loadUrlSync(final AwContents awContents,
+    public void loadUrlSync(final AwContents awContents,
                                CallbackHelper onPageFinishedHelper,
                                final String url) throws Exception {
+        loadUrlSync(awContents, onPageFinishedHelper, url, null);
+    }
+
+    public void loadUrlSync(final AwContents awContents,
+                               CallbackHelper onPageFinishedHelper,
+                               final String url,
+                               final Map<String, String> extraHeaders) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
-        loadUrlAsync(awContents, url);
+        loadUrlAsync(awContents, url, extraHeaders);
         onPageFinishedHelper.waitForCallback(currentCallCount, 1, WAIT_TIMEOUT_MS,
                 TimeUnit.MILLISECONDS);
     }
 
-    protected void loadUrlSyncAndExpectError(final AwContents awContents,
+    public void loadUrlSyncAndExpectError(final AwContents awContents,
             CallbackHelper onPageFinishedHelper,
             CallbackHelper onReceivedErrorHelper,
             final String url) throws Exception {
@@ -127,12 +134,20 @@ public class AwTestBase
     /**
      * Loads url on the UI thread but does not block.
      */
-    protected void loadUrlAsync(final AwContents awContents,
+    public void loadUrlAsync(final AwContents awContents,
                                 final String url) throws Exception {
+        loadUrlAsync(awContents, url, null);
+    }
+
+    public void loadUrlAsync(final AwContents awContents,
+                                final String url,
+                                final Map<String, String> extraHeaders) {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                awContents.loadUrl(new LoadUrlParams(url));
+                LoadUrlParams params = new LoadUrlParams(url);
+                params.setExtraHeaders(extraHeaders);
+                awContents.loadUrl(params);
             }
         });
     }
@@ -140,7 +155,7 @@ public class AwTestBase
     /**
      * Posts url on the UI thread and blocks until onPageFinished is called.
      */
-    protected void postUrlSync(final AwContents awContents,
+    public void postUrlSync(final AwContents awContents,
             CallbackHelper onPageFinishedHelper, final String url,
             byte[] postData) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
@@ -152,7 +167,7 @@ public class AwTestBase
     /**
      * Loads url on the UI thread but does not block.
      */
-    protected void postUrlAsync(final AwContents awContents,
+    public void postUrlAsync(final AwContents awContents,
             final String url, byte[] postData) throws Exception {
         class PostUrl implements Runnable {
             byte[] mPostData;
@@ -171,7 +186,7 @@ public class AwTestBase
     /**
      * Loads data on the UI thread and blocks until onPageFinished is called.
      */
-    protected void loadDataSync(final AwContents awContents,
+    public void loadDataSync(final AwContents awContents,
                                 CallbackHelper onPageFinishedHelper,
                                 final String data, final String mimeType,
                                 final boolean isBase64Encoded) throws Exception {
@@ -181,7 +196,7 @@ public class AwTestBase
                 TimeUnit.MILLISECONDS);
     }
 
-    protected void loadDataSyncWithCharset(final AwContents awContents,
+    public void loadDataSyncWithCharset(final AwContents awContents,
                                            CallbackHelper onPageFinishedHelper,
                                            final String data, final String mimeType,
                                            final boolean isBase64Encoded, final String charset)
@@ -201,7 +216,7 @@ public class AwTestBase
     /**
      * Loads data on the UI thread but does not block.
      */
-    protected void loadDataAsync(final AwContents awContents, final String data,
+    public void loadDataAsync(final AwContents awContents, final String data,
                                  final String mimeType, final boolean isBase64Encoded)
             throws Exception {
         getInstrumentation().runOnMainSync(new Runnable() {
@@ -213,7 +228,7 @@ public class AwTestBase
         });
     }
 
-    protected void loadDataWithBaseUrlSync(final AwContents awContents,
+    public void loadDataWithBaseUrlSync(final AwContents awContents,
             CallbackHelper onPageFinishedHelper, final String data, final String mimeType,
             final boolean isBase64Encoded, final String baseUrl,
             final String historyUrl) throws Throwable {
@@ -223,7 +238,7 @@ public class AwTestBase
                 TimeUnit.MILLISECONDS);
     }
 
-    protected void loadDataWithBaseUrlAsync(final AwContents awContents,
+    public void loadDataWithBaseUrlAsync(final AwContents awContents,
             final String data, final String mimeType, final boolean isBase64Encoded,
             final String baseUrl, final String historyUrl) throws Throwable {
         runTestOnUiThread(new Runnable() {
@@ -238,7 +253,7 @@ public class AwTestBase
     /**
      * Reloads the current page synchronously.
      */
-    protected void reloadSync(final AwContents awContents,
+    public void reloadSync(final AwContents awContents,
                               CallbackHelper onPageFinishedHelper) throws Exception {
         int currentCallCount = onPageFinishedHelper.getCallCount();
         getInstrumentation().runOnMainSync(new Runnable() {
@@ -257,10 +272,7 @@ public class AwTestBase
      * Test cases can provide subclass instances to the createAwTest* methods in order to create an
      * AwContents instance with injected test dependencies.
      */
-    public static class TestDependencyFactory {
-        public AwLayoutSizer createLayoutSizer() {
-            return new AwLayoutSizer();
-        }
+    public static class TestDependencyFactory extends AwContents.DependencyFactory {
         public AwTestContainerView createAwTestContainerView(AwTestRunnerActivity activity) {
             return new AwTestContainerView(activity);
         }
@@ -273,12 +285,12 @@ public class AwTestBase
         return new TestDependencyFactory();
     }
 
-    protected AwTestContainerView createAwTestContainerView(
+    public AwTestContainerView createAwTestContainerView(
             final AwContentsClient awContentsClient) {
         return createAwTestContainerView(awContentsClient, false);
     }
 
-    protected AwTestContainerView createAwTestContainerView(
+    public AwTestContainerView createAwTestContainerView(
             final AwContentsClient awContentsClient, boolean supportsLegacyQuirks) {
         AwTestContainerView testContainerView =
                 createDetachedAwTestContainerView(awContentsClient, supportsLegacyQuirks);
@@ -291,12 +303,12 @@ public class AwTestBase
     private AwBrowserContext mBrowserContext =
             new AwBrowserContext(new InMemorySharedPreferences());
 
-    protected AwTestContainerView createDetachedAwTestContainerView(
+    public AwTestContainerView createDetachedAwTestContainerView(
             final AwContentsClient awContentsClient) {
         return createDetachedAwTestContainerView(awContentsClient, false);
     }
 
-    protected AwTestContainerView createDetachedAwTestContainerView(
+    public AwTestContainerView createDetachedAwTestContainerView(
             final AwContentsClient awContentsClient, boolean supportsLegacyQuirks) {
         final TestDependencyFactory testDependencyFactory = createTestDependencyFactory();
         final AwTestContainerView testContainerView =
@@ -304,18 +316,19 @@ public class AwTestBase
         AwSettings awSettings = testDependencyFactory.createAwSettings(getActivity(),
                 supportsLegacyQuirks);
         testContainerView.initialize(new AwContents(
-                mBrowserContext, testContainerView, testContainerView.getInternalAccessDelegate(),
-                awContentsClient, awSettings, testDependencyFactory.createLayoutSizer()));
-        AwContents.setShouldDownloadFavicons();
+                mBrowserContext, testContainerView, testContainerView.getContext(),
+                testContainerView.getInternalAccessDelegate(),
+                testContainerView.getNativeGLDelegate(), awContentsClient,
+                awSettings, testDependencyFactory));
         return testContainerView;
     }
 
-    protected AwTestContainerView createAwTestContainerViewOnMainSync(
+    public AwTestContainerView createAwTestContainerViewOnMainSync(
             final AwContentsClient client) throws Exception {
         return createAwTestContainerViewOnMainSync(client, false);
     }
 
-    protected AwTestContainerView createAwTestContainerViewOnMainSync(
+    public AwTestContainerView createAwTestContainerViewOnMainSync(
             final AwContentsClient client, final boolean supportsLegacyQuirks) throws Exception {
         final AtomicReference<AwTestContainerView> testContainerView =
                 new AtomicReference<AwTestContainerView>();
@@ -328,7 +341,7 @@ public class AwTestBase
         return testContainerView.get();
     }
 
-    protected void destroyAwContentsOnMainSync(final AwContents awContents) {
+    public void destroyAwContentsOnMainSync(final AwContents awContents) {
         if (awContents == null) return;
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
@@ -338,7 +351,7 @@ public class AwTestBase
         });
     }
 
-    protected String getTitleOnUiThread(final AwContents awContents) throws Exception {
+    public String getTitleOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<String>() {
             @Override
             public String call() throws Exception {
@@ -347,7 +360,7 @@ public class AwTestBase
         });
     }
 
-    protected ContentSettings getContentSettingsOnUiThread(
+    public ContentSettings getContentSettingsOnUiThread(
             final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<ContentSettings>() {
             @Override
@@ -357,7 +370,7 @@ public class AwTestBase
         });
     }
 
-    protected AwSettings getAwSettingsOnUiThread(
+    public AwSettings getAwSettingsOnUiThread(
             final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<AwSettings>() {
             @Override
@@ -371,7 +384,7 @@ public class AwTestBase
      * Executes the given snippet of JavaScript code within the given ContentView. Returns the
      * result of its execution in JSON format.
      */
-    protected String executeJavaScriptAndWaitForResult(final AwContents awContents,
+    public String executeJavaScriptAndWaitForResult(final AwContents awContents,
             TestAwContentsClient viewClient, final String code) throws Exception {
         return JSUtils.executeJavaScriptAndWaitForResult(this, awContents,
                 viewClient.getOnEvaluateJavaScriptResultHelper(),
@@ -382,7 +395,7 @@ public class AwTestBase
      * Wrapper around CriteriaHelper.pollForCriteria. This uses AwTestBase-specifc timeouts and
      * treats timeouts and exceptions as test failures automatically.
      */
-    protected static void poll(final Callable<Boolean> callable) throws Exception {
+    public static void poll(final Callable<Boolean> callable) throws Exception {
         assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
             public boolean isSatisfied() {
@@ -399,7 +412,7 @@ public class AwTestBase
     /**
      * Wrapper around {@link AwTestBase#poll()} but runs the callable on the UI thread.
      */
-    protected void pollOnUiThread(final Callable<Boolean> callable) throws Exception {
+    public void pollOnUiThread(final Callable<Boolean> callable) throws Exception {
         poll(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
@@ -412,7 +425,7 @@ public class AwTestBase
      * Clears the resource cache. Note that the cache is per-application, so this will clear the
      * cache for all WebViews used.
      */
-    protected void clearCacheOnUiThread(
+    public void clearCacheOnUiThread(
             final AwContents awContents,
             final boolean includeDiskFiles) throws Exception {
         getInstrumentation().runOnMainSync(new Runnable() {
@@ -426,7 +439,7 @@ public class AwTestBase
     /**
      * Returns pure page scale.
      */
-    protected float getScaleOnUiThread(final AwContents awContents) throws Exception {
+    public float getScaleOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Float>() {
             @Override
             public Float call() throws Exception {
@@ -438,7 +451,7 @@ public class AwTestBase
     /**
      * Returns page scale multiplied by the screen density.
      */
-    protected float getPixelScaleOnUiThread(final AwContents awContents) throws Exception {
+    public float getPixelScaleOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Float>() {
             @Override
             public Float call() throws Exception {
@@ -450,7 +463,7 @@ public class AwTestBase
     /**
      * Returns whether a user can zoom the page in.
      */
-    protected boolean canZoomInOnUiThread(final AwContents awContents) throws Exception {
+    public boolean canZoomInOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
@@ -462,7 +475,7 @@ public class AwTestBase
     /**
      * Returns whether a user can zoom the page out.
      */
-    protected boolean canZoomOutOnUiThread(final AwContents awContents) throws Exception {
+    public boolean canZoomOutOnUiThread(final AwContents awContents) throws Exception {
         return runTestOnUiThreadAndGetResult(new Callable<Boolean>() {
             @Override
             public Boolean call() throws Exception {
@@ -470,4 +483,5 @@ public class AwTestBase
             }
         });
     }
+
 }

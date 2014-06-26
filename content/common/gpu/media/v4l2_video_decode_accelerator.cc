@@ -5,7 +5,6 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <libdrm/drm_fourcc.h>
 #include <linux/videodev2.h>
 #include <poll.h>
 #include <sys/eventfd.h>
@@ -13,41 +12,46 @@
 #include <sys/mman.h>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/posix/eintr_wrapper.h"
+#include "base/numerics/safe_conversions.h"
 #include "content/common/gpu/media/v4l2_video_decode_accelerator.h"
+#include "media/base/media_switches.h"
 #include "media/filters/h264_parser.h"
 #include "ui/gl/scoped_binders.h"
 
+#define NOTIFY_ERROR(x)                            \
+  do {                                             \
+    SetDecoderState(kError);                       \
+    DLOG(ERROR) << "calling NotifyError(): " << x; \
+    NotifyError(x);                                \
+  } while (0)
+
+#define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value)              \
+  do {                                                             \
+    if (device_->Ioctl(type, arg) != 0) {                          \
+      DPLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type; \
+      NOTIFY_ERROR(PLATFORM_FAILURE);                              \
+      return value;                                                \
+    }                                                              \
+  } while (0)
+
+#define IOCTL_OR_ERROR_RETURN(type, arg) \
+  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, ((void)0))
+
+#define IOCTL_OR_ERROR_RETURN_FALSE(type, arg) \
+  IOCTL_OR_ERROR_RETURN_VALUE(type, arg, false)
+
+#define IOCTL_OR_LOG_ERROR(type, arg)                              \
+  do {                                                             \
+    if (device_->Ioctl(type, arg) != 0)                            \
+      DPLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type; \
+  } while (0)
+
 namespace content {
-
-#define NOTIFY_ERROR(x)                                               \
-  do {                                                                \
-    SetDecoderState(kError);                                          \
-    DLOG(ERROR) << "calling NotifyError(): " << x;                    \
-    NotifyError(x);                                                   \
-  } while (0)
-
-#define IOCTL_OR_ERROR_RETURN(type, arg)                           \
-  do {                                                             \
-    if (HANDLE_EINTR(device_->Ioctl(type, arg) != 0)) {            \
-      DPLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type; \
-      NOTIFY_ERROR(PLATFORM_FAILURE);                              \
-      return;                                                      \
-    }                                                              \
-  } while (0)
-
-#define IOCTL_OR_ERROR_RETURN_FALSE(type, arg)                     \
-  do {                                                             \
-    if (HANDLE_EINTR(device_->Ioctl(type, arg) != 0)) {            \
-      DPLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type; \
-      NOTIFY_ERROR(PLATFORM_FAILURE);                              \
-      return false;                                                \
-    }                                                              \
-  } while (0)
 
 namespace {
 
@@ -139,8 +143,6 @@ V4L2VideoDecodeAccelerator::OutputRecord::OutputRecord()
       egl_sync(EGL_NO_SYNC_KHR),
       picture_id(-1),
       cleared(false) {
-  for (size_t i = 0; i < arraysize(fds); ++i)
-    fds[i] = -1;
 }
 
 V4L2VideoDecodeAccelerator::OutputRecord::~OutputRecord() {}
@@ -154,16 +156,13 @@ V4L2VideoDecodeAccelerator::PictureRecord::~PictureRecord() {}
 
 V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
     EGLDisplay egl_display,
-    Client* client,
+    EGLContext egl_context,
     const base::WeakPtr<Client>& io_client,
     const base::Callback<bool(void)>& make_context_current,
     scoped_ptr<V4L2Device> device,
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy)
     : child_message_loop_proxy_(base::MessageLoopProxy::current()),
       io_message_loop_proxy_(io_message_loop_proxy),
-      weak_this_(base::AsWeakPtr(this)),
-      client_ptr_factory_(client),
-      client_(client_ptr_factory_.GetWeakPtr()),
       io_client_(io_client),
       decoder_thread_("V4L2DecoderThread"),
       decoder_state_(kUninitialized),
@@ -180,14 +179,18 @@ V4L2VideoDecodeAccelerator::V4L2VideoDecodeAccelerator(
       input_buffer_queued_count_(0),
       output_streamon_(false),
       output_buffer_queued_count_(0),
-      output_buffer_pixelformat_(0),
       output_dpb_size_(0),
+      output_planes_count_(0),
       picture_clearing_count_(0),
       pictures_assigned_(false, false),
       device_poll_thread_("V4L2DevicePollThread"),
       make_context_current_(make_context_current),
       egl_display_(egl_display),
-      video_profile_(media::VIDEO_CODEC_PROFILE_UNKNOWN) {}
+      egl_context_(egl_context),
+      video_profile_(media::VIDEO_CODEC_PROFILE_UNKNOWN),
+      weak_this_factory_(this) {
+  weak_this_ = weak_this_factory_.GetWeakPtr();
+}
 
 V4L2VideoDecodeAccelerator::~V4L2VideoDecodeAccelerator() {
   DCHECK(!decoder_thread_.IsRunning());
@@ -202,11 +205,14 @@ V4L2VideoDecodeAccelerator::~V4L2VideoDecodeAccelerator() {
   DCHECK(output_buffer_map_.empty());
 }
 
-bool V4L2VideoDecodeAccelerator::Initialize(
-    media::VideoCodecProfile profile) {
+bool V4L2VideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
+                                            Client* client) {
   DVLOG(3) << "Initialize()";
   DCHECK(child_message_loop_proxy_->BelongsToCurrentThread());
   DCHECK_EQ(decoder_state_, kUninitialized);
+
+  client_ptr_factory_.reset(new base::WeakPtrFactory<Client>(client));
+  client_ = client_ptr_factory_->GetWeakPtr();
 
   switch (profile) {
     case media::H264PROFILE_BASELINE:
@@ -267,7 +273,13 @@ bool V4L2VideoDecodeAccelerator::Initialize(
   struct v4l2_format format;
   memset(&format, 0, sizeof(format));
   format.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  format.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12M;
+  uint32 output_format_fourcc = device_->PreferredOutputFormat();
+  if (output_format_fourcc == 0) {
+    // TODO(posciak): We should enumerate available output formats, as well as
+    // take into account formats that the client is ready to accept.
+    return false;
+  }
+  format.fmt.pix_mp.pixelformat = output_format_fourcc;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
 
   // Subscribe to the resolution change event.
@@ -288,10 +300,14 @@ bool V4L2VideoDecodeAccelerator::Initialize(
     return false;
   }
 
-  SetDecoderState(kInitialized);
+  // StartDevicePoll will NOTIFY_ERROR on failure, so IgnoreResult is fine here.
+  decoder_thread_.message_loop()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          base::IgnoreResult(&V4L2VideoDecodeAccelerator::StartDevicePoll),
+          base::Unretained(this)));
 
-  child_message_loop_proxy_->PostTask(FROM_HERE, base::Bind(
-      &Client::NotifyInitializeDone, client_));
+  SetDecoderState(kInitialized);
   return true;
 }
 
@@ -327,15 +343,6 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffers(
   }
 
   gfx::ScopedTextureBinder bind_restore(GL_TEXTURE_EXTERNAL_OES, 0);
-  EGLint attrs[] = {
-      EGL_WIDTH,                     0, EGL_HEIGHT,                    0,
-      EGL_LINUX_DRM_FOURCC_EXT,      0, EGL_DMA_BUF_PLANE0_FD_EXT,     0,
-      EGL_DMA_BUF_PLANE0_OFFSET_EXT, 0, EGL_DMA_BUF_PLANE0_PITCH_EXT,  0,
-      EGL_DMA_BUF_PLANE1_FD_EXT,     0, EGL_DMA_BUF_PLANE1_OFFSET_EXT, 0,
-      EGL_DMA_BUF_PLANE1_PITCH_EXT,  0, EGL_NONE, };
-  attrs[1] = frame_buffer_size_.width();
-  attrs[3] = frame_buffer_size_.height();
-  attrs[5] = DRM_FORMAT_NV12;
 
   // It's safe to manipulate all the buffer state here, because the decoder
   // thread is waiting on pictures_assigned_.
@@ -351,15 +358,12 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffers(
     DCHECK_EQ(output_record.picture_id, -1);
     DCHECK_EQ(output_record.cleared, false);
 
-    attrs[7]  = output_record.fds[0];
-    attrs[9]  = 0;
-    attrs[11] = frame_buffer_size_.width();
-    attrs[13] = output_record.fds[1];
-    attrs[15] = 0;
-    attrs[17] = frame_buffer_size_.width();
-
-    EGLImageKHR egl_image = eglCreateImageKHR(
-        egl_display_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attrs);
+    EGLImageKHR egl_image = device_->CreateEGLImage(egl_display_,
+                                                    egl_context_,
+                                                    buffers[i].texture_id(),
+                                                    frame_buffer_size_,
+                                                    i,
+                                                    output_planes_count_);
     if (egl_image == EGL_NO_IMAGE_KHR) {
       DLOG(ERROR) << "AssignPictureBuffers(): could not create EGLImageKHR";
       // Ownership of EGLImages allocated in previous iterations of this loop
@@ -368,9 +372,6 @@ void V4L2VideoDecodeAccelerator::AssignPictureBuffers(
       NOTIFY_ERROR(PLATFORM_FAILURE);
       return;
     }
-
-    glBindTexture(GL_TEXTURE_EXTERNAL_OES, buffers[i].texture_id());
-    glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES, egl_image);
 
     output_record.egl_image = egl_image;
     output_record.picture_id = buffers[i].id();
@@ -427,7 +428,8 @@ void V4L2VideoDecodeAccelerator::Destroy() {
   DCHECK(child_message_loop_proxy_->BelongsToCurrentThread());
 
   // We're destroying; cancel all callbacks.
-  client_ptr_factory_.InvalidateWeakPtrs();
+  client_ptr_factory_.reset();
+  weak_this_factory_.InvalidateWeakPtrs();
 
   // If the decoder thread is running, destroy using posted task.
   if (decoder_thread_.IsRunning()) {
@@ -649,10 +651,17 @@ bool V4L2VideoDecodeAccelerator::AdvanceFrameFragment(
             break;
           }
           break;
+        case media::H264NALU::kSEIMessage:
         case media::H264NALU::kSPS:
         case media::H264NALU::kPPS:
+        case media::H264NALU::kAUD:
         case media::H264NALU::kEOSeq:
         case media::H264NALU::kEOStream:
+        case media::H264NALU::kReserved14:
+        case media::H264NALU::kReserved15:
+        case media::H264NALU::kReserved16:
+        case media::H264NALU::kReserved17:
+        case media::H264NALU::kReserved18:
           // These unconditionally signal a frame boundary.
           end_of_frame = true;
           break;
@@ -709,7 +718,6 @@ bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
   DCHECK_NE(decoder_state_, kUninitialized);
   DCHECK_NE(decoder_state_, kDecoding);
-  DCHECK(!device_poll_thread_.IsRunning());
   // Initial decode.  We haven't been able to get output stream format info yet.
   // Get it, and start decoding.
 
@@ -754,10 +762,6 @@ bool V4L2VideoDecodeAccelerator::DecodeBufferInitial(
   } else {
     *endpos = size;
   }
-
-  // StartDevicePoll will raise the error if there is one.
-  if (!StartDevicePoll())
-    return false;
 
   decoder_state_ = kDecoding;
   ScheduleDecodeBufferTaskIfNeeded();
@@ -885,8 +889,6 @@ void V4L2VideoDecodeAccelerator::ServiceDeviceTask(bool event_pending) {
   DVLOG(3) << "ServiceDeviceTask()";
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
   DCHECK_NE(decoder_state_, kUninitialized);
-  DCHECK_NE(decoder_state_, kInitialized);
-  DCHECK_NE(decoder_state_, kAfterReset);
   TRACE_EVENT0("Video Decoder", "V4L2VDA::ServiceDeviceTask");
 
   if (decoder_state_ == kResetting) {
@@ -1009,7 +1011,7 @@ void V4L2VideoDecodeAccelerator::DequeueEvents() {
     if (ev.type == V4L2_EVENT_RESOLUTION_CHANGE) {
       DVLOG(3) << "DequeueEvents(): got resolution change event.";
       DCHECK(!resolution_change_pending_);
-      resolution_change_pending_ = true;
+      resolution_change_pending_ = IsResolutionChangeNecessary();
     } else {
       DLOG(FATAL) << "DequeueEvents(): got an event (" << ev.type
                   << ") we haven't subscribed to.";
@@ -1025,10 +1027,10 @@ void V4L2VideoDecodeAccelerator::Dequeue() {
 
   // Dequeue completed input (VIDEO_OUTPUT) buffers, and recycle to the free
   // list.
-  struct v4l2_buffer dqbuf;
-  struct v4l2_plane planes[2];
   while (input_buffer_queued_count_ > 0) {
     DCHECK(input_streamon_);
+    struct v4l2_buffer dqbuf;
+    struct v4l2_plane planes[1];
     memset(&dqbuf, 0, sizeof(dqbuf));
     memset(planes, 0, sizeof(planes));
     dqbuf.type   = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
@@ -1057,12 +1059,15 @@ void V4L2VideoDecodeAccelerator::Dequeue() {
   // completed queue.
   while (output_buffer_queued_count_ > 0) {
     DCHECK(output_streamon_);
+    struct v4l2_buffer dqbuf;
+    scoped_ptr<struct v4l2_plane[]> planes(
+        new v4l2_plane[output_planes_count_]);
     memset(&dqbuf, 0, sizeof(dqbuf));
-    memset(planes, 0, sizeof(planes));
+    memset(planes.get(), 0, sizeof(struct v4l2_plane) * output_planes_count_);
     dqbuf.type   = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
     dqbuf.memory = V4L2_MEMORY_MMAP;
-    dqbuf.m.planes = planes;
-    dqbuf.length = 2;
+    dqbuf.m.planes = planes.get();
+    dqbuf.length = output_planes_count_;
     if (device_->Ioctl(VIDIOC_DQBUF, &dqbuf) != 0) {
       if (errno == EAGAIN) {
         // EAGAIN if we're just out of buffers to dequeue.
@@ -1158,14 +1163,16 @@ bool V4L2VideoDecodeAccelerator::EnqueueOutputRecord() {
     output_record.egl_sync = EGL_NO_SYNC_KHR;
   }
   struct v4l2_buffer qbuf;
-  struct v4l2_plane qbuf_planes[arraysize(output_record.fds)];
+  scoped_ptr<struct v4l2_plane[]> qbuf_planes(
+      new v4l2_plane[output_planes_count_]);
   memset(&qbuf, 0, sizeof(qbuf));
-  memset(qbuf_planes, 0, sizeof(qbuf_planes));
+  memset(
+      qbuf_planes.get(), 0, sizeof(struct v4l2_plane) * output_planes_count_);
   qbuf.index    = buffer;
   qbuf.type     = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
   qbuf.memory   = V4L2_MEMORY_MMAP;
-  qbuf.m.planes = qbuf_planes;
-  qbuf.length   = arraysize(output_record.fds);
+  qbuf.m.planes = qbuf_planes.get();
+  qbuf.length = output_planes_count_;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QBUF, &qbuf);
   free_output_buffers_.pop();
   output_record.at_device = true;
@@ -1353,6 +1360,9 @@ void V4L2VideoDecodeAccelerator::ResetDoneTask() {
     return;
   }
 
+  if (!StartDevicePoll())
+    return;
+
   // We might have received a resolution change event while we were waiting
   // for the reset to finish. The codec will not post another event if the
   // resolution after reset remains the same as the one to which were just
@@ -1407,8 +1417,8 @@ void V4L2VideoDecodeAccelerator::DestroyTask() {
 
 bool V4L2VideoDecodeAccelerator::StartDevicePoll() {
   DVLOG(3) << "StartDevicePoll()";
-  DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
   DCHECK(!device_poll_thread_.IsRunning());
+  DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
 
   // Start up the device poll thread and schedule its first DevicePollTask().
   if (!device_poll_thread_.Start()) {
@@ -1495,7 +1505,8 @@ bool V4L2VideoDecodeAccelerator::StopDevicePoll(bool keep_input_state) {
 
 void V4L2VideoDecodeAccelerator::StartResolutionChangeIfNeeded() {
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
-  DCHECK_EQ(decoder_state_, kDecoding);
+  DCHECK_NE(decoder_state_, kUninitialized);
+  DCHECK_NE(decoder_state_, kResetting);
 
   if (!resolution_change_pending_)
     return;
@@ -1587,7 +1598,7 @@ void V4L2VideoDecodeAccelerator::NotifyError(Error error) {
 
   if (client_) {
     client_->NotifyError(error);
-    client_ptr_factory_.InvalidateWeakPtrs();
+    client_ptr_factory_.reset();
   }
 }
 
@@ -1613,7 +1624,7 @@ bool V4L2VideoDecodeAccelerator::GetFormatInfo(struct v4l2_format* format,
   *again = false;
   memset(format, 0, sizeof(*format));
   format->type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-  if (HANDLE_EINTR(device_->Ioctl(VIDIOC_G_FMT, format)) != 0) {
+  if (device_->Ioctl(VIDIOC_G_FMT, format) != 0) {
     if (errno == EINVAL) {
       // EINVAL means we haven't seen sufficient stream to decode the format.
       *again = true;
@@ -1631,11 +1642,9 @@ bool V4L2VideoDecodeAccelerator::GetFormatInfo(struct v4l2_format* format,
 bool V4L2VideoDecodeAccelerator::CreateBuffersForFormat(
     const struct v4l2_format& format) {
   DCHECK_EQ(decoder_thread_.message_loop(), base::MessageLoop::current());
-  CHECK_EQ(format.fmt.pix_mp.num_planes, 2);
+  output_planes_count_ = format.fmt.pix_mp.num_planes;
   frame_buffer_size_.SetSize(
       format.fmt.pix_mp.width, format.fmt.pix_mp.height);
-  output_buffer_pixelformat_ = format.fmt.pix_mp.pixelformat;
-  DCHECK_EQ(output_buffer_pixelformat_, V4L2_PIX_FMT_NV12M);
   DVLOG(3) << "CreateBuffersForFormat(): new resolution: "
            << frame_buffer_size_.ToString();
 
@@ -1652,22 +1661,21 @@ bool V4L2VideoDecodeAccelerator::CreateInputBuffers() {
   DCHECK(!input_streamon_);
   DCHECK(input_buffer_map_.empty());
 
-  __u32 pixelformat = 0;
-  if (video_profile_ >= media::H264PROFILE_MIN &&
-      video_profile_ <= media::H264PROFILE_MAX) {
-    pixelformat = V4L2_PIX_FMT_H264;
-  } else if (video_profile_ >= media::VP8PROFILE_MIN &&
-             video_profile_ <= media::VP8PROFILE_MAX) {
-    pixelformat = V4L2_PIX_FMT_VP8;
-  } else {
+  __u32 pixelformat = V4L2Device::VideoCodecProfileToV4L2PixFmt(video_profile_);
+  if (!pixelformat) {
     NOTREACHED();
+    return false;
   }
 
   struct v4l2_format format;
   memset(&format, 0, sizeof(format));
   format.type                              = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
   format.fmt.pix_mp.pixelformat            = pixelformat;
-  format.fmt.pix_mp.plane_fmt[0].sizeimage = kInputBufferMaxSize;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kIgnoreResolutionLimitsForAcceleratedVideoDecode))
+    format.fmt.pix_mp.plane_fmt[0].sizeimage = kInputBufferMaxSizeFor4k;
+  else
+    format.fmt.pix_mp.plane_fmt[0].sizeimage = kInputBufferMaxSizeFor1080p;
   format.fmt.pix_mp.num_planes             = 1;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_S_FMT, &format);
 
@@ -1732,22 +1740,7 @@ bool V4L2VideoDecodeAccelerator::CreateOutputBuffers() {
   reqbufs.memory = V4L2_MEMORY_MMAP;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_REQBUFS, &reqbufs);
 
-  // Create DMABUFs from output buffers.
   output_buffer_map_.resize(reqbufs.count);
-  for (size_t i = 0; i < output_buffer_map_.size(); ++i) {
-    OutputRecord& output_record = output_buffer_map_[i];
-    for (size_t j = 0; j < arraysize(output_record.fds); ++j) {
-      // Export the DMABUF fd so we can export it as a texture.
-      struct v4l2_exportbuffer expbuf;
-      memset(&expbuf, 0, sizeof(expbuf));
-      expbuf.type  = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
-      expbuf.index = i;
-      expbuf.plane = j;
-      expbuf.flags = O_CLOEXEC;
-      IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_EXPBUF, &expbuf);
-      output_record.fds[j] = expbuf.fd;
-    }
-  }
 
   DVLOG(3) << "CreateOutputBuffers(): ProvidePictureBuffers(): "
            << "buffer_count=" << output_buffer_map_.size()
@@ -1758,7 +1751,7 @@ bool V4L2VideoDecodeAccelerator::CreateOutputBuffers() {
                                                  client_,
                                                  output_buffer_map_.size(),
                                                  frame_buffer_size_,
-                                                 GL_TEXTURE_EXTERNAL_OES));
+                                                 device_->GetTextureTarget()));
 
   // Wait for the client to call AssignPictureBuffers() on the Child thread.
   // We do this, because if we continue decoding without finishing buffer
@@ -1796,8 +1789,7 @@ void V4L2VideoDecodeAccelerator::DestroyInputBuffers() {
   reqbufs.count = 0;
   reqbufs.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
   reqbufs.memory = V4L2_MEMORY_MMAP;
-  if (device_->Ioctl(VIDIOC_REQBUFS, &reqbufs) != 0)
-    DPLOG(ERROR) << "DestroyInputBuffers(): ioctl() failed: VIDIOC_REQBUFS";
+  IOCTL_OR_LOG_ERROR(VIDIOC_REQBUFS, &reqbufs);
 
   input_buffer_map_.clear();
   free_input_buffers_.clear();
@@ -1811,18 +1803,11 @@ bool V4L2VideoDecodeAccelerator::DestroyOutputBuffers() {
 
   for (size_t i = 0; i < output_buffer_map_.size(); ++i) {
     OutputRecord& output_record = output_buffer_map_[i];
-    for (size_t j = 0; j < arraysize(output_record.fds); ++j) {
-      if (output_record.fds[j] != -1) {
-        if (close(output_record.fds[j])) {
-          DVPLOG(1) << __func__ << " close() on a dmabuf fd failed.";
-          success = false;
-        }
-      }
-    }
+
     if (output_record.egl_image != EGL_NO_IMAGE_KHR) {
-      if (eglDestroyImageKHR(egl_display_, output_record.egl_image) !=
+      if (device_->DestroyEGLImage(egl_display_, output_record.egl_image) !=
           EGL_TRUE) {
-        DVLOG(1) << __func__ << " eglDestroyImageKHR failed.";
+        DVLOG(1) << __func__ << " DestroyEGLImage failed.";
         success = false;
       }
     }
@@ -1923,6 +1908,34 @@ void V4L2VideoDecodeAccelerator::PictureCleared() {
   DCHECK_GT(picture_clearing_count_, 0);
   picture_clearing_count_--;
   SendPictureReady();
+}
+
+bool V4L2VideoDecodeAccelerator::IsResolutionChangeNecessary() {
+  DVLOG(3) << "IsResolutionChangeNecessary() ";
+
+  struct v4l2_control ctrl;
+  memset(&ctrl, 0, sizeof(ctrl));
+  ctrl.id = V4L2_CID_MIN_BUFFERS_FOR_CAPTURE;
+  IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_G_CTRL, &ctrl);
+  if (ctrl.value != output_dpb_size_) {
+    DVLOG(3)
+        << "IsResolutionChangeNecessary(): Returning true since DPB mismatch ";
+    return true;
+  }
+  struct v4l2_format format;
+  bool again = false;
+  bool ret = GetFormatInfo(&format, &again);
+  if (!ret || again) {
+    DVLOG(3) << "IsResolutionChangeNecessary(): GetFormatInfo() failed";
+    return false;
+  }
+  gfx::Size new_size(base::checked_cast<int>(format.fmt.pix_mp.width),
+                     base::checked_cast<int>(format.fmt.pix_mp.height));
+  if (frame_buffer_size_ != new_size) {
+    DVLOG(3) << "IsResolutionChangeNecessary(): Resolution change detected";
+    return true;
+  }
+  return false;
 }
 
 }  // namespace content

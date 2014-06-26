@@ -5,6 +5,7 @@
 #include "chrome/browser/extensions/api/commands/commands.h"
 
 #include "chrome/browser/extensions/api/commands/command_service.h"
+#include "chrome/browser/profiles/profile.h"
 
 namespace {
 
@@ -21,7 +22,7 @@ base::DictionaryValue* CreateCommandValue(
 
 }  // namespace
 
-bool GetAllCommandsFunction::RunImpl() {
+bool GetAllCommandsFunction::RunSync() {
   base::ListValue* command_list = new base::ListValue();
 
   extensions::CommandService* command_service =

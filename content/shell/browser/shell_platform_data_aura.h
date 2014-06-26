@@ -6,15 +6,14 @@
 #define CONTENT_SHELL_BROWSER_SHELL_PLATFORM_DATA_AURA_H_
 
 #include "base/memory/scoped_ptr.h"
+#include "ui/aura/window_tree_host.h"
 
 namespace aura {
 namespace client {
-class DefaultActivationClient;
 class DefaultCaptureClient;
 class FocusClient;
 class WindowTreeClient;
 }
-class RootWindow;
 }
 
 namespace gfx {
@@ -35,12 +34,11 @@ class ShellPlatformDataAura {
   void ShowWindow();
   void ResizeWindow(const gfx::Size& size);
 
-  aura::RootWindow* window() { return root_window_.get(); }
+  aura::WindowTreeHost* host() { return host_.get(); }
 
  private:
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<aura::WindowTreeHost> host_;
   scoped_ptr<aura::client::FocusClient> focus_client_;
-  scoped_ptr<aura::client::DefaultActivationClient> activation_client_;
   scoped_ptr<aura::client::DefaultCaptureClient> capture_client_;
   scoped_ptr<aura::client::WindowTreeClient> window_tree_client_;
   scoped_ptr<ui::EventHandler> ime_filter_;

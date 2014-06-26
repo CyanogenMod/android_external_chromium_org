@@ -5,42 +5,48 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_SIGNIN_INLINE_LOGIN_HANDLER_IMPL_H_
 #define CHROME_BROWSER_UI_WEBUI_SIGNIN_INLINE_LOGIN_HANDLER_IMPL_H_
 
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/sync/one_click_signin_sync_starter.h"
 #include "chrome/browser/ui/webui/signin/inline_login_handler.h"
-#include "google_apis/gaia/gaia_auth_consumer.h"
+#include "content/public/browser/web_contents_delegate.h"
 
 class GaiaAuthFetcher;
 
 // Implementation for the inline login WebUI handler on desktop Chrome. Once
 // CrOS migrates to the same webview approach as desktop Chrome, much of the
 // code in this class should move to its base class |InlineLoginHandler|.
-class InlineLoginHandlerImpl : public GaiaAuthConsumer,
-                               public InlineLoginHandler {
+class InlineLoginHandlerImpl : public InlineLoginHandler,
+                               public content::WebContentsDelegate {
  public:
   InlineLoginHandlerImpl();
   virtual ~InlineLoginHandlerImpl();
 
+  using InlineLoginHandler::web_ui;
+
+  base::WeakPtr<InlineLoginHandlerImpl> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
+  Browser* GetDesktopBrowser();
+  void SyncStarterCallback(OneClickSigninSyncStarter::SyncSetupResult result);
+  // Closes the current tab and shows the account management view of the avatar
+  // bubble if |show_account_management| is true.
+  void CloseTab(bool show_account_management);
+  void HandleLoginError(const std::string& error_msg);
+
  private:
   // InlineLoginHandler overrides:
-  virtual void RegisterMessages() OVERRIDE;
   virtual void SetExtraInitParams(base::DictionaryValue& params) OVERRIDE;
   virtual void CompleteLogin(const base::ListValue* args) OVERRIDE;
 
-  // GaiaAuthConsumer override.
-  virtual void OnClientOAuthCodeSuccess(const std::string& oauth_code) OVERRIDE;
-  virtual void OnClientOAuthCodeFailure(
-      const GoogleServiceAuthError& error) OVERRIDE;
-
-  // JS callback to switch the UI from a constrainted dialog to a full tab.
-  void HandleSwitchToFullTabMessage(const base::ListValue* args);
-  void HandleLoginError(const std::string& error_msg);
-  void SyncStarterCallback(OneClickSigninSyncStarter::SyncSetupResult result);
-  void CloseTab();
+  // Overridden from content::WebContentsDelegate.
+  virtual bool HandleContextMenu(
+      const content::ContextMenuParams& params) OVERRIDE;
 
   base::WeakPtrFactory<InlineLoginHandlerImpl> weak_factory_;
-  scoped_ptr<GaiaAuthFetcher> auth_fetcher_;
   std::string email_;
   std::string password_;
   std::string session_index_;

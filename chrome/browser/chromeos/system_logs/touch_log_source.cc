@@ -9,7 +9,7 @@
 #include "base/command_line.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/process/launch.h"
-#include "chrome/browser/feedback/feedback_util.h"
+#include "components/feedback/feedback_util.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -20,7 +20,7 @@ const char kHUDLogDataKey[] = "hud_log";
 
 void GetTouchLogs(system_logs::SystemLogsResponse* response) {
   scoped_ptr<base::DictionaryValue> dictionary =
-      ash::internal::TouchHudDebug::GetAllAsDictionary();
+      ash::TouchHudDebug::GetAllAsDictionary();
   if (!dictionary->empty()) {
     std::string touch_log;
     JSONStringValueSerializer json(&touch_log);
@@ -31,16 +31,16 @@ void GetTouchLogs(system_logs::SystemLogsResponse* response) {
 
   std::vector<std::pair<std::string, CommandLine> > commands;
   CommandLine command =
-    CommandLine(base::FilePath("/opt/google/touchpad/tpcontrol"));
-  command.AppendArg("status");
+    CommandLine(base::FilePath("/opt/google/input/inputcontrol"));
+  command.AppendArg("--status");
   commands.push_back(std::make_pair("hack-33025-touchpad", command));
 
   command =
-    CommandLine(base::FilePath("/opt/google/touchpad/generate_userfeedback"));
+    CommandLine(base::FilePath("/opt/google/input/cmt_feedback"));
   commands.push_back(std::make_pair("hack-33025-touchpad_activity", command));
 
   command = CommandLine(
-      base::FilePath("/opt/google/touchscreen/touchscreen_feedback"));
+      base::FilePath("/opt/google/input/evdev_feedback"));
   commands.push_back(
       std::make_pair("hack-33025-touchscreen_activity", command));
 

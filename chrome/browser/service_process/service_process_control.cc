@@ -18,17 +18,12 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/upgrade_detector.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/service_messages.h"
 #include "chrome/common/service_process_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/common/child_process_host.h"
-#include "google_apis/gaia/gaia_switches.h"
-#include "ui/base/ui_base_switches.h"
 
 using content::BrowserThread;
-using content::ChildProcessHost;
 
 // ServiceProcessControl implementation.
 ServiceProcessControl::ServiceProcessControl() {
@@ -50,15 +45,15 @@ void ServiceProcessControl::ConnectInternal() {
 
   // TODO(hclam): Handle error connecting to channel.
   const IPC::ChannelHandle channel_id = GetServiceProcessChannel();
-  SetChannel(new IPC::ChannelProxy(
+  SetChannel(IPC::ChannelProxy::Create(
       channel_id,
       IPC::Channel::MODE_NAMED_CLIENT,
       this,
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get()));
 }
 
-void ServiceProcessControl::SetChannel(IPC::ChannelProxy* channel) {
-  channel_.reset(channel);
+void ServiceProcessControl::SetChannel(scoped_ptr<IPC::ChannelProxy> channel) {
+  channel_ = channel.Pass();
 }
 
 void ServiceProcessControl::RunConnectDoneTasks() {
@@ -117,43 +112,9 @@ void ServiceProcessControl::Launch(const base::Closure& success_task,
   UMA_HISTOGRAM_ENUMERATION("CloudPrint.ServiceEvents", SERVICE_EVENT_LAUNCH,
                             SERVICE_EVENT_MAX);
 
-  // A service process should have a different mechanism for starting, but now
-  // we start it as if it is a child process.
-
-#if defined(OS_LINUX)
-  int flags = ChildProcessHost::CHILD_ALLOW_SELF;
-#else
-  int flags = ChildProcessHost::CHILD_NORMAL;
-#endif
-
-  base::FilePath exe_path = ChildProcessHost::GetChildPath(flags);
-  if (exe_path.empty())
-    NOTREACHED() << "Unable to get service process binary name.";
-
-  CommandLine* cmd_line = new CommandLine(exe_path);
-  cmd_line->AppendSwitchASCII(switches::kProcessType,
-                              switches::kServiceProcess);
-
-  static const char* const kSwitchesToCopy[] = {
-    switches::kCloudPrintServiceURL,
-    switches::kCloudPrintSetupProxy,
-    switches::kEnableLogging,
-    switches::kIgnoreUrlFetcherCertRequests,
-    switches::kLang,
-    switches::kLoggingLevel,
-    switches::kLsoUrl,
-    switches::kNoServiceAutorun,
-    switches::kUserDataDir,
-    switches::kV,
-    switches::kVModule,
-    switches::kWaitForDebugger,
-  };
-  cmd_line->CopySwitchesFrom(*CommandLine::ForCurrentProcess(),
-                             kSwitchesToCopy,
-                             arraysize(kSwitchesToCopy));
-
+  scoped_ptr<base::CommandLine> cmd_line(CreateServiceProcessCommandLine());
   // And then start the process asynchronously.
-  launcher_ = new Launcher(this, cmd_line);
+  launcher_ = new Launcher(this, cmd_line.Pass());
   launcher_->Run(base::Bind(&ServiceProcessControl::OnProcessLaunched,
                             base::Unretained(this)));
 }
@@ -189,6 +150,7 @@ bool ServiceProcessControl::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(ServiceHostMsg_CloudPrintProxy_Info,
                         OnCloudPrintProxyInfo)
     IPC_MESSAGE_HANDLER(ServiceHostMsg_Histograms, OnHistograms)
+    IPC_MESSAGE_HANDLER(ServiceHostMsg_Printers, OnPrinters)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -269,8 +231,20 @@ void ServiceProcessControl::RunHistogramsCallback() {
   histograms_timeout_callback_.Cancel();
 }
 
+void ServiceProcessControl::OnPrinters(
+    const std::vector<std::string>& printers) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  UMA_HISTOGRAM_ENUMERATION(
+      "CloudPrint.ServiceEvents", SERVICE_PRINTERS_REPLY, SERVICE_EVENT_MAX);
+  UMA_HISTOGRAM_COUNTS_10000("CloudPrint.AvailablePrinters", printers.size());
+  if (!printers_callback_.is_null()) {
+    printers_callback_.Run(printers);
+    printers_callback_.Reset();
+  }
+}
+
 bool ServiceProcessControl::GetCloudPrintProxyInfo(
-    const CloudPrintProxyInfoHandler& cloud_print_info_callback) {
+    const CloudPrintProxyInfoCallback& cloud_print_info_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!cloud_print_info_callback.is_null());
   cloud_print_info_callback_.Reset();
@@ -313,6 +287,19 @@ bool ServiceProcessControl::GetHistograms(
   return true;
 }
 
+bool ServiceProcessControl::GetPrinters(
+    const PrintersCallback& printers_callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!printers_callback.is_null());
+  printers_callback_.Reset();
+  UMA_HISTOGRAM_ENUMERATION(
+      "CloudPrint.ServiceEvents", SERVICE_PRINTERS_REQUEST, SERVICE_EVENT_MAX);
+  if (!Send(new ServiceMsg_GetPrinters()))
+    return false;
+  printers_callback_ = printers_callback;
+  return true;
+}
+
 bool ServiceProcessControl::Shutdown() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   bool ret = Send(new ServiceMsg_Shutdown());
@@ -325,10 +312,11 @@ ServiceProcessControl* ServiceProcessControl::GetInstance() {
   return Singleton<ServiceProcessControl>::get();
 }
 
-ServiceProcessControl::Launcher::Launcher(ServiceProcessControl* process,
-                                          CommandLine* cmd_line)
+ServiceProcessControl::Launcher::Launcher(
+    ServiceProcessControl* process,
+    scoped_ptr<base::CommandLine> cmd_line)
     : process_(process),
-      cmd_line_(cmd_line),
+      cmd_line_(cmd_line.Pass()),
       launched_(false),
       retry_count_(0),
       process_handle_(base::kNullProcessHandle) {

@@ -19,7 +19,7 @@ class IdleQueryStateFunction : public ChromeAsyncExtensionFunction {
   virtual ~IdleQueryStateFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void IdleStateCallback(IdleState state);
@@ -35,7 +35,7 @@ class IdleSetDetectionIntervalFunction : public ChromeSyncExtensionFunction {
   virtual ~IdleSetDetectionIntervalFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 }  // namespace extensions

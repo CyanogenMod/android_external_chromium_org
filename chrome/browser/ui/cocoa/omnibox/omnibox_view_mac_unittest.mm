@@ -13,6 +13,7 @@
 #include "chrome/test/base/testing_profile.h"
 #include "testing/platform_test.h"
 #include "ui/gfx/image/image.h"
+#include "ui/gfx/font.h"
 #include "ui/gfx/rect.h"
 
 namespace {
@@ -88,10 +89,14 @@ class TestingOmniboxEditController : public OmniboxEditController {
   }
   virtual ~TestingOmniboxEditController() {}
 
+ protected:
   // Overridden from OmniboxEditController:
   virtual void Update(const content::WebContents* contents) OVERRIDE {}
   virtual void OnChanged() OVERRIDE {}
   virtual void OnSetFocus() OVERRIDE {}
+  virtual void ShowURL() OVERRIDE {}
+  virtual void HideURL() OVERRIDE {}
+  virtual void EndOriginChipAnimations(bool cancel_fade) OVERRIDE {}
   virtual InstantController* GetInstant() OVERRIDE { return NULL; }
   virtual content::WebContents* GetWebContents() OVERRIDE { return NULL; }
   virtual ToolbarModel* GetToolbarModel() OVERRIDE { return toolbar_model_; }
@@ -115,7 +120,7 @@ class OmniboxViewMacTest : public CocoaProfileTest {
 };
 
 TEST_F(OmniboxViewMacTest, GetFieldFont) {
-  EXPECT_TRUE(OmniboxViewMac::GetFieldFont());
+  EXPECT_TRUE(OmniboxViewMac::GetFieldFont(gfx::Font::NORMAL));
 }
 
 TEST_F(OmniboxViewMacTest, TabToAutocomplete) {

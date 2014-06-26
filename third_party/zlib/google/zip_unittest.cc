@@ -7,11 +7,13 @@
 #include <vector>
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "third_party/zlib/google/zip.h"
@@ -138,7 +140,7 @@ class ZipTest : public PlatformTest {
     now_parts.millisecond = 0;
     base::Time now_time = base::Time::FromLocalExploded(now_parts);
 
-    EXPECT_EQ(1, file_util::WriteFile(src_file, "1", 1));
+    EXPECT_EQ(1, base::WriteFile(src_file, "1", 1));
     EXPECT_TRUE(base::TouchFile(src_file, base::Time::Now(), test_mtime));
 
     EXPECT_TRUE(zip::Zip(src_dir, zip_file, true));
@@ -280,17 +282,17 @@ TEST_F(ZipTest, ZipFiles) {
 
   base::ScopedTempDir temp_dir;
   ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
-  base::FilePath zip_file = temp_dir.path().AppendASCII("out.zip");
+  base::FilePath zip_name = temp_dir.path().AppendASCII("out.zip");
 
-  const int flags = base::PLATFORM_FILE_CREATE | base::PLATFORM_FILE_WRITE;
-  const base::PlatformFile zip_fd =
-      base::CreatePlatformFile(zip_file, flags, NULL, NULL);
-  ASSERT_LE(0, zip_fd);
-  EXPECT_TRUE(zip::ZipFiles(src_dir, zip_file_list_, zip_fd));
-  base::ClosePlatformFile(zip_fd);
+  base::File zip_file(zip_name,
+                      base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+  ASSERT_TRUE(zip_file.IsValid());
+  EXPECT_TRUE(zip::ZipFiles(src_dir, zip_file_list_,
+                            zip_file.GetPlatformFile()));
+  zip_file.Close();
 
   zip::ZipReader reader;
-  EXPECT_TRUE(reader.Open(zip_file));
+  EXPECT_TRUE(reader.Open(zip_name));
   EXPECT_EQ(zip_file_list_.size(), static_cast<size_t>(reader.num_entries()));
   for (size_t i = 0; i < zip_file_list_.size(); ++i) {
     EXPECT_TRUE(reader.LocateAndOpenEntry(zip_file_list_[i]));
@@ -301,5 +303,32 @@ TEST_F(ZipTest, ZipFiles) {
 }
 #endif  // defined(OS_POSIX)
 
-}  // namespace
+TEST_F(ZipTest, UnzipFilesWithIncorrectSize) {
+  base::FilePath test_data_folder;
+  ASSERT_TRUE(GetTestDataDirectory(&test_data_folder));
 
+  // test_mismatch_size.zip contains files with names from 0.txt to 7.txt with
+  // sizes from 0 to 7 bytes respectively, but the metadata in the zip file says
+  // the uncompressed size is 3 bytes. The ZipReader and minizip code needs to
+  // be clever enough to get all the data out.
+  base::FilePath test_zip_file =
+      test_data_folder.AppendASCII("test_mismatch_size.zip");
+
+  base::ScopedTempDir scoped_temp_dir;
+  ASSERT_TRUE(scoped_temp_dir.CreateUniqueTempDir());
+  const base::FilePath& temp_dir = scoped_temp_dir.path();
+
+  ASSERT_TRUE(zip::Unzip(test_zip_file, temp_dir));
+  EXPECT_TRUE(base::DirectoryExists(temp_dir.AppendASCII("d")));
+
+  for (int i = 0; i < 8; i++) {
+    SCOPED_TRACE(base::StringPrintf("Processing %d.txt", i));
+    base::FilePath file_path = temp_dir.AppendASCII(
+        base::StringPrintf("%d.txt", i));
+    int64 file_size = -1;
+    EXPECT_TRUE(base::GetFileSize(file_path, &file_size));
+    EXPECT_EQ(static_cast<int64>(i), file_size);
+  }
+}
+
+}  // namespace

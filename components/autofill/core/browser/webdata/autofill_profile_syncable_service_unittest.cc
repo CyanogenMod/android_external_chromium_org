@@ -8,7 +8,6 @@
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_profile_syncable_service.h"
-#include "content/public/test/test_browser_thread.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_error_factory_mock.h"
 #include "sync/protocol/sync.pb.h"
@@ -23,7 +22,6 @@ using ::testing::Eq;
 using ::testing::Return;
 using ::testing::Property;
 using base::ASCIIToUTF16;
-using content::BrowserThread;
 
 namespace {
 
@@ -136,8 +134,8 @@ scoped_ptr<AutofillProfile> ConstructCompleteProfile() {
       new AutofillProfile(kGuid1, kHttpsOrigin));
 
   std::vector<base::string16> names;
-  names.push_back(ASCIIToUTF16("John K. Doe"));
-  names.push_back(ASCIIToUTF16("Jane Luise Smith"));
+  names.push_back(ASCIIToUTF16("John K. Doe, Jr."));
+  names.push_back(ASCIIToUTF16("Jane Luise Smith MD"));
   profile->SetRawMultiInfo(NAME_FULL, names);
 
   std::vector<base::string16> emails;
@@ -165,6 +163,7 @@ scoped_ptr<AutofillProfile> ConstructCompleteProfile() {
   profile->SetRawInfo(ADDRESS_HOME_SORTING_CODE, ASCIIToUTF16("CEDEX"));
   profile->SetRawInfo(ADDRESS_HOME_DEPENDENT_LOCALITY,
                       ASCIIToUTF16("Santa Clara"));
+  profile->set_language_code("en");
   return profile.Pass();
 }
 
@@ -181,10 +180,12 @@ syncer::SyncData ConstructCompleteSyncData() {
   specifics->add_name_first("John");
   specifics->add_name_middle("K.");
   specifics->add_name_last("Doe");
+  specifics->add_name_full("John K. Doe, Jr.");
 
   specifics->add_name_first("Jane");
   specifics->add_name_middle("Luise");
   specifics->add_name_last("Smith");
+  specifics->add_name_full("Jane Luise Smith MD");
 
   specifics->add_email_address("user@example.com");
   specifics->add_email_address("superuser@example.org");
@@ -204,6 +205,7 @@ syncer::SyncData ConstructCompleteSyncData() {
   specifics->set_address_home_country("US");
   specifics->set_address_home_sorting_code("CEDEX");
   specifics->set_address_home_dependent_locality("Santa Clara");
+  specifics->set_address_home_language_code("en");
 
   return syncer::SyncData::CreateLocalData(kGuid1, kGuid1, entity_specifics);
 }
@@ -212,9 +214,7 @@ syncer::SyncData ConstructCompleteSyncData() {
 
 class AutofillProfileSyncableServiceTest : public testing::Test {
  public:
-  AutofillProfileSyncableServiceTest()
-    : ui_thread_(BrowserThread::UI, &message_loop_),
-      db_thread_(BrowserThread::DB, &message_loop_) {}
+  AutofillProfileSyncableServiceTest() {}
 
   virtual void SetUp() OVERRIDE {
     sync_processor_.reset(new MockSyncChangeProcessor);
@@ -255,8 +255,6 @@ class AutofillProfileSyncableServiceTest : public testing::Test {
 
  protected:
   base::MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread db_thread_;
   MockAutofillProfileSyncableService autofill_syncable_service_;
   scoped_ptr<MockSyncChangeProcessor> sync_processor_;
 };
@@ -450,6 +448,7 @@ TEST_F(AutofillProfileSyncableServiceTest, MergeDataEmptyOrigins) {
   autofill_specifics->add_name_first("John");
   autofill_specifics->add_name_middle(std::string());
   autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full("John");
   autofill_specifics->add_email_address(std::string());
   autofill_specifics->add_phone_home_whole_number(std::string());
   autofill_specifics->set_address_home_line1("1 1st st");
@@ -664,6 +663,8 @@ TEST_F(AutofillProfileSyncableServiceTest, MergeProfile) {
   values.push_back(ASCIIToUTF16("650234567"));
   profile2.SetRawMultiInfo(PHONE_HOME_WHOLE_NUMBER, values);
 
+  profile1.set_language_code("en");
+
   EXPECT_FALSE(AutofillProfileSyncableService::MergeProfile(profile2,
                                                             &profile1,
                                                             "en-US"));
@@ -856,6 +857,7 @@ TEST_F(AutofillProfileSyncableServiceTest, MergeDataEmptyStreetAddress) {
   autofill_specifics->add_name_first(std::string());
   autofill_specifics->add_name_middle(std::string());
   autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full(std::string());
   autofill_specifics->add_email_address(std::string());
   autofill_specifics->add_phone_home_whole_number(std::string());
   autofill_specifics->set_address_home_line1("123 Example St.");
@@ -871,6 +873,307 @@ TEST_F(AutofillProfileSyncableServiceTest, MergeDataEmptyStreetAddress) {
   syncer::SyncChangeList expected_change_list;
   MergeDataAndStartSyncing(
       profiles_from_web_db, data_list, expected_bundle, expected_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+// Sync data without origin should not overwrite existing origin in local
+// autofill profile.
+TEST_F(AutofillProfileSyncableServiceTest, EmptySyncPreservesOrigin) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has an origin.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data does not have an origin value.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->add_name_first("John");
+  autofill_specifics->add_name_middle(std::string());
+  autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full("John");
+  autofill_specifics->add_email_address(std::string());
+  autofill_specifics->add_phone_home_whole_number(std::string());
+  EXPECT_FALSE(autofill_specifics->has_origin());
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect the local autofill profile to still have an origin after sync.
+  MockAutofillProfileSyncableService::DataBundle expected_bundle;
+  AutofillProfile expected_profile(profile.guid(), profile.origin());
+  expected_profile.SetRawInfo(NAME_FIRST, ASCIIToUTF16("John"));
+  expected_bundle.profiles_to_update.push_back(&expected_profile);
+
+  // Expect no sync events to add origin to the remote data.
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_bundle, expected_empty_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+// Missing language code field should not generate sync events.
+TEST_F(AutofillProfileSyncableServiceTest, NoLanguageCodeNoSync) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has an empty language code.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  EXPECT_TRUE(profile.language_code().empty());
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data does not have a language code value.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->set_origin(profile.origin());
+  autofill_specifics->add_name_first(std::string());
+  autofill_specifics->add_name_middle(std::string());
+  autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full(std::string());
+  autofill_specifics->add_email_address(std::string());
+  autofill_specifics->add_phone_home_whole_number(std::string());
+  EXPECT_FALSE(autofill_specifics->has_address_home_language_code());
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect no changes to local and remote data.
+  MockAutofillProfileSyncableService::DataBundle expected_empty_bundle;
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_empty_bundle, expected_empty_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+// Empty language code should be overwritten by sync.
+TEST_F(AutofillProfileSyncableServiceTest, SyncUpdatesEmptyLanguageCode) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has an empty language code.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  EXPECT_TRUE(profile.language_code().empty());
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data has "en" language code.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->set_origin(profile.origin());
+  autofill_specifics->add_name_first(std::string());
+  autofill_specifics->add_name_middle(std::string());
+  autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full(std::string());
+  autofill_specifics->add_email_address(std::string());
+  autofill_specifics->add_phone_home_whole_number(std::string());
+  autofill_specifics->set_address_home_language_code("en");
+  EXPECT_TRUE(autofill_specifics->has_address_home_language_code());
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect the local autofill profile to have "en" language code after sync.
+  MockAutofillProfileSyncableService::DataBundle expected_bundle;
+  AutofillProfile expected_profile(kGuid1, kHttpsOrigin);
+  expected_profile.set_language_code("en");
+  expected_bundle.profiles_to_update.push_back(&expected_profile);
+
+  // Expect not changes to remote data.
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_bundle, expected_empty_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+// Incorrect language code should be overwritten by sync.
+TEST_F(AutofillProfileSyncableServiceTest, SyncUpdatesIncorrectLanguageCode) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has "de" language code.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  profile.set_language_code("de");
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data has "en" language code.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->set_origin(profile.origin());
+  autofill_specifics->add_name_first(std::string());
+  autofill_specifics->add_name_middle(std::string());
+  autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full(std::string());
+  autofill_specifics->add_email_address(std::string());
+  autofill_specifics->add_phone_home_whole_number(std::string());
+  autofill_specifics->set_address_home_language_code("en");
+  EXPECT_TRUE(autofill_specifics->has_address_home_language_code());
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect the local autofill profile to have "en" language code after sync.
+  MockAutofillProfileSyncableService::DataBundle expected_bundle;
+  AutofillProfile expected_profile(kGuid1, kHttpsOrigin);
+  expected_profile.set_language_code("en");
+  expected_bundle.profiles_to_update.push_back(&expected_profile);
+
+  // Expect no changes to remote data.
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_bundle, expected_empty_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+// Sync data without language code should not overwrite existing language code
+// in local autofill profile.
+TEST_F(AutofillProfileSyncableServiceTest, EmptySyncPreservesLanguageCode) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has "en" language code.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  profile.set_language_code("en");
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data does not have a language code value.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->set_origin(profile.origin());
+  autofill_specifics->add_name_first("John");
+  autofill_specifics->add_name_middle(std::string());
+  autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_name_full("John");
+  autofill_specifics->add_email_address(std::string());
+  autofill_specifics->add_phone_home_whole_number(std::string());
+  EXPECT_FALSE(autofill_specifics->has_address_home_language_code());
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect local autofill profile to still have "en" language code after sync.
+  MockAutofillProfileSyncableService::DataBundle expected_bundle;
+  AutofillProfile expected_profile(profile.guid(), profile.origin());
+  expected_profile.set_language_code("en");
+  expected_profile.SetRawInfo(NAME_FIRST, ASCIIToUTF16("John"));
+  expected_bundle.profiles_to_update.push_back(&expected_profile);
+
+  // Expect no changes to remote data.
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_bundle, expected_empty_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+// Language code in autofill profiles should be synced to the server.
+TEST_F(AutofillProfileSyncableServiceTest, LanguageCodePropagates) {
+  TestSyncChangeProcessor* sync_change_processor = new TestSyncChangeProcessor;
+  autofill_syncable_service_.set_sync_processor(sync_change_processor);
+
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  profile.set_language_code("en");
+  AutofillProfileChange change(AutofillProfileChange::ADD, kGuid1, &profile);
+  autofill_syncable_service_.AutofillProfileChanged(change);
+
+  ASSERT_EQ(1U, sync_change_processor->changes().size());
+  syncer::SyncChange result = sync_change_processor->changes()[0];
+  EXPECT_EQ(syncer::SyncChange::ACTION_ADD, result.change_type());
+
+  sync_pb::AutofillProfileSpecifics specifics =
+      result.sync_data().GetSpecifics().autofill_profile();
+  EXPECT_EQ(kGuid1, specifics.guid());
+  EXPECT_EQ(kHttpsOrigin, specifics.origin());
+  EXPECT_EQ("en", specifics.address_home_language_code());
+}
+
+// Missing full name field should not generate sync events.
+TEST_F(AutofillProfileSyncableServiceTest, NoFullNameNoSync) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has an empty full name.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  profile.SetRawInfo(NAME_FIRST, ASCIIToUTF16("John"));
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data does not have a full name.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->set_origin(profile.origin());
+  autofill_specifics->add_name_first(std::string("John"));
+  autofill_specifics->add_name_middle(std::string());
+  autofill_specifics->add_name_last(std::string());
+  autofill_specifics->add_email_address(std::string());
+  autofill_specifics->add_phone_home_whole_number(std::string());
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect no changes to local and remote data.
+  MockAutofillProfileSyncableService::DataBundle expected_empty_bundle;
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_empty_bundle, expected_empty_change_list);
+  autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
+}
+
+TEST_F(AutofillProfileSyncableServiceTest, EmptySyncPreservesFullName) {
+  std::vector<AutofillProfile*> profiles_from_web_db;
+
+  // Local autofill profile has a full name.
+  AutofillProfile profile(kGuid1, kHttpsOrigin);
+  profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("John Jacob Smith, Jr"));
+  profiles_from_web_db.push_back(new AutofillProfile(profile));
+
+  // Remote data does not have a full name value.
+  sync_pb::EntitySpecifics specifics;
+  sync_pb::AutofillProfileSpecifics* autofill_specifics =
+      specifics.mutable_autofill_profile();
+  autofill_specifics->set_guid(profile.guid());
+  autofill_specifics->set_origin(profile.origin());
+  autofill_specifics->add_name_first(std::string("John"));
+  autofill_specifics->add_name_middle(std::string("Jacob"));
+  autofill_specifics->add_name_last(std::string("Smith"));
+
+  syncer::SyncDataList data_list;
+  data_list.push_back(
+      syncer::SyncData::CreateLocalData(
+          profile.guid(), profile.guid(), specifics));
+
+  // Expect local autofill profile to still have the same full name after sync.
+  MockAutofillProfileSyncableService::DataBundle expected_bundle;
+  AutofillProfile expected_profile(profile.guid(), profile.origin());
+  expected_profile.SetRawInfo(NAME_FULL, ASCIIToUTF16("John Jacob Smith, Jr"));
+  expected_bundle.profiles_to_update.push_back(&expected_profile);
+
+  // Expect no changes to remote data.
+  syncer::SyncChangeList expected_empty_change_list;
+
+  MergeDataAndStartSyncing(profiles_from_web_db, data_list,
+                           expected_bundle, expected_empty_change_list);
   autofill_syncable_service_.StopSyncing(syncer::AUTOFILL_PROFILE);
 }
 

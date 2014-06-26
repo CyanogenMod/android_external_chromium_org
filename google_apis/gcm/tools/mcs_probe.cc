@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
@@ -22,12 +23,15 @@
 #include "base/threading/worker_pool.h"
 #include "base/time/default_clock.h"
 #include "base/values.h"
+#include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
 #include "google_apis/gcm/base/mcs_util.h"
 #include "google_apis/gcm/engine/checkin_request.h"
 #include "google_apis/gcm/engine/connection_factory_impl.h"
 #include "google_apis/gcm/engine/gcm_store_impl.h"
+#include "google_apis/gcm/engine/gservices_settings.h"
 #include "google_apis/gcm/engine/mcs_client.h"
+#include "google_apis/gcm/monitoring/fake_gcm_stats_recorder.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/net_log_logger.h"
 #include "net/cert/cert_verifier.h"
@@ -209,7 +213,8 @@ class MCSProbe {
   void LoadCallback(scoped_ptr<GCMStore::LoadResult> load_result);
   void UpdateCallback(bool success);
   void ErrorCallback();
-  void OnCheckInCompleted(uint64 android_id, uint64 secret);
+  void OnCheckInCompleted(
+      const checkin_proto::AndroidCheckinResponse& checkin_response);
   void StartMCSLogin();
 
   base::DefaultClock clock_;
@@ -238,6 +243,7 @@ class MCSProbe {
   scoped_refptr<net::HttpNetworkSession> network_session_;
   scoped_ptr<net::ProxyService> proxy_service_;
 
+  FakeGCMStatsRecorder recorder_;
   scoped_ptr<GCMStore> gcm_store_;
   scoped_ptr<MCSClient> mcs_client_;
   scoped_ptr<CheckinRequest> checkin_request_;
@@ -289,19 +295,25 @@ void MCSProbe::Start() {
   file_thread_.Start();
   InitializeNetworkState();
   BuildNetworkSession();
+  std::vector<GURL> endpoints(1,
+                              GURL("https://" +
+                                   net::HostPortPair(server_host_,
+                                                     server_port_).ToString()));
   connection_factory_.reset(
-      new ConnectionFactoryImpl(GURL("https://" + net::HostPortPair(
-                                    server_host_, server_port_).ToString()),
+      new ConnectionFactoryImpl(endpoints,
                                 kDefaultBackoffPolicy,
                                 network_session_,
-                                &net_log_));
+                                &net_log_,
+                                &recorder_));
   gcm_store_.reset(
-      new GCMStoreImpl(true,
-                       gcm_store_path_,
-                       file_thread_.message_loop_proxy()));
-  mcs_client_.reset(new MCSClient(&clock_,
+      new GCMStoreImpl(gcm_store_path_,
+                       file_thread_.message_loop_proxy(),
+                       make_scoped_ptr<Encryptor>(new FakeEncryptor)));
+  mcs_client_.reset(new MCSClient("probe",
+                                  &clock_,
                                   connection_factory_.get(),
-                                  gcm_store_.get()));
+                                  gcm_store_.get(),
+                                  &recorder_));
   run_loop_.reset(new base::RunLoop());
   gcm_store_->Load(base::Bind(&MCSProbe::LoadCallback,
                               base::Unretained(this)));
@@ -398,7 +410,6 @@ void MCSProbe::BuildNetworkSession() {
   session_params.network_delegate = NULL;  // TODO(zea): implement?
   session_params.host_mapping_rules = host_mapping_rules_.get();
   session_params.ignore_certificate_errors = true;
-  session_params.http_pipelining_enabled = false;
   session_params.testing_fixed_http_port = 0;
   session_params.testing_fixed_https_port = 0;
   session_params.net_log = &net_log_;
@@ -419,23 +430,34 @@ void MCSProbe::CheckIn() {
   chrome_build_proto.set_channel(
       checkin_proto::ChromeBuildProto::CHANNEL_CANARY);
   chrome_build_proto.set_chrome_version(kChromeVersion);
+
+  CheckinRequest::RequestInfo request_info(
+      0, 0, std::string(), chrome_build_proto);
+
   checkin_request_.reset(new CheckinRequest(
-      base::Bind(&MCSProbe::OnCheckInCompleted, base::Unretained(this)),
+      GServicesSettings::DefaultCheckinURL(),
+      request_info,
       kDefaultBackoffPolicy,
-      chrome_build_proto,
-      0,
-      0,
-      url_request_context_getter_.get()));
+      base::Bind(&MCSProbe::OnCheckInCompleted, base::Unretained(this)),
+      url_request_context_getter_.get(),
+      &recorder_));
   checkin_request_->Start();
 }
 
-void MCSProbe::OnCheckInCompleted(uint64 android_id, uint64 secret) {
+void MCSProbe::OnCheckInCompleted(
+    const checkin_proto::AndroidCheckinResponse& checkin_response) {
+  bool success = checkin_response.has_android_id() &&
+                 checkin_response.android_id() != 0UL &&
+                 checkin_response.has_security_token() &&
+                 checkin_response.security_token() != 0UL;
   LOG(INFO) << "Check-in request completion "
-            << (android_id ? "success!" : "failure!");
-  if (!android_id || !secret)
+            << (success ? "success!" : "failure!");
+
+  if (!success)
     return;
-  android_id_ = android_id;
-  secret_ = secret;
+
+  android_id_ = checkin_response.android_id();
+  secret_ = checkin_response.security_token();
 
   gcm_store_->SetDeviceCredentials(android_id_,
                                    secret_,

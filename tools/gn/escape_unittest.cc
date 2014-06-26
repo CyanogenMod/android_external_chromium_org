@@ -5,42 +5,48 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "tools/gn/escape.h"
 
-TEST(Escape, UsedQuotes) {
-  EscapeOptions shell_options;
-  shell_options.mode = ESCAPE_SHELL;
+TEST(Escape, Ninja) {
+  EscapeOptions opts;
+  opts.mode = ESCAPE_NINJA;
+  std::string result = EscapeString("asdf: \"$\\bar", opts, NULL);
+  EXPECT_EQ("asdf$:$ \"$$\\bar", result);
+}
 
-  EscapeOptions ninja_options;
-  ninja_options.mode = ESCAPE_NINJA;
+TEST(Escape, WindowsCommand) {
+  EscapeOptions opts;
+  opts.mode = ESCAPE_NINJA_COMMAND;
+  opts.platform = ESCAPE_PLATFORM_WIN;
 
-  EscapeOptions ninja_shell_options;
-  ninja_shell_options.mode = ESCAPE_NINJA_SHELL;
+  // Regular string is passed, even if it has backslashes.
+  EXPECT_EQ("foo\\bar", EscapeString("foo\\bar", opts, NULL));
 
-  // Shell escaping with quoting inhibited.
-  bool used_quotes = false;
-  shell_options.inhibit_quoting = true;
-  EXPECT_EQ("foo bar", EscapeString("foo bar", shell_options, &used_quotes));
-  EXPECT_TRUE(used_quotes);
+  // Spaces means the string is quoted, normal backslahes untouched.
+  bool needs_quoting = false;
+  EXPECT_EQ("\"foo\\$ bar\"", EscapeString("foo\\ bar", opts, &needs_quoting));
+  EXPECT_TRUE(needs_quoting);
 
-  // Shell escaping with regular quoting.
-  used_quotes = false;
-  shell_options.inhibit_quoting = false;
-  EXPECT_EQ("\"foo bar\"",
-            EscapeString("foo bar", shell_options, &used_quotes));
-  EXPECT_TRUE(used_quotes);
+  // Inhibit quoting.
+  needs_quoting = false;
+  opts.inhibit_quoting = true;
+  EXPECT_EQ("foo\\$ bar", EscapeString("foo\\ bar", opts, &needs_quoting));
+  EXPECT_TRUE(needs_quoting);
+  opts.inhibit_quoting = false;
 
-  // Ninja shell escaping should be the same.
-  used_quotes = false;
-  EXPECT_EQ("\"foo$ bar\"",
-            EscapeString("foo bar", ninja_shell_options, &used_quotes));
-  EXPECT_TRUE(used_quotes);
+  // Backslashes at the end of the string get escaped.
+  EXPECT_EQ("\"foo$ bar\\\\\\\\\"", EscapeString("foo bar\\\\", opts, NULL));
 
-  // Ninja escaping shouldn't use quoting.
-  used_quotes = false;
-  EXPECT_EQ("foo$ bar", EscapeString("foo bar", ninja_options, &used_quotes));
-  EXPECT_FALSE(used_quotes);
+  // Backslashes preceeding quotes are escaped, and the quote is escaped.
+  EXPECT_EQ("\"foo\\\\\\\"$ bar\"", EscapeString("foo\\\" bar", opts, NULL));
+}
 
-  // Used quotes not reset if it's already true.
-  used_quotes = true;
-  EscapeString("foo", ninja_options, &used_quotes);
-  EXPECT_TRUE(used_quotes);
+TEST(Escape, PosixCommand) {
+  EscapeOptions opts;
+  opts.mode = ESCAPE_NINJA_COMMAND;
+  opts.platform = ESCAPE_PLATFORM_POSIX;
+
+  // : and $ ninja escaped with $. Then Shell-escape backslashes and quotes.
+  EXPECT_EQ("a$:\\$ \\\"\\$$\\\\b", EscapeString("a: \"$\\b", opts, NULL));
+
+  // Some more generic shell chars.
+  EXPECT_EQ("a_\\;\\<\\*b", EscapeString("a_;<*b", opts, NULL));
 }

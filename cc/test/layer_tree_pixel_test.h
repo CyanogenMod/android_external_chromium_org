@@ -2,6 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifndef CC_TEST_LAYER_TREE_PIXEL_TEST_H_
+#define CC_TEST_LAYER_TREE_PIXEL_TEST_H_
+
 #include <vector>
 
 #include "base/files/file_path.h"
@@ -9,9 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/resources/single_release_callback.h"
 #include "cc/test/layer_tree_test.h"
-
-#ifndef CC_TEST_LAYER_TREE_PIXEL_TEST_H_
-#define CC_TEST_LAYER_TREE_PIXEL_TEST_H_
+#include "ui/gl/gl_implementation.h"
 
 class SkBitmap;
 
@@ -34,7 +35,6 @@ class LayerTreePixelTest : public LayerTreeTest {
   virtual ~LayerTreePixelTest();
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
   virtual void CommitCompleteOnThread(LayerTreeHostImpl* impl) OVERRIDE;
 
   virtual scoped_ptr<CopyOutputRequest> CreateCopyOutputRequest();
@@ -95,6 +95,7 @@ class LayerTreePixelTest : public LayerTreeTest {
     kCSSGreen = 0xff008000,
   };
 
+  gfx::DisableNullDrawGLBindings enable_pixel_output_;
   scoped_ptr<PixelComparator> pixel_comparator_;
   PixelTestType test_type_;
   scoped_refptr<Layer> content_root_;

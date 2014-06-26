@@ -5,6 +5,8 @@
 #ifndef MEDIA_CAST_CAST_DEFINES_H_
 #define MEDIA_CAST_CAST_DEFINES_H_
 
+#include <stdint.h>
+
 #include <map>
 #include <set>
 
@@ -12,6 +14,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "media/cast/transport/cast_transport_config.h"
 
 namespace media {
 namespace cast {
@@ -19,15 +22,32 @@ namespace cast {
 const int64 kDontShowTimeoutMs = 33;
 const float kDefaultCongestionControlBackOff = 0.875f;
 const uint32 kVideoFrequency = 90000;
-const int64 kSkippedFramesCheckPeriodkMs = 10000;
-const uint32 kStartFrameId = GG_UINT32_C(0xffffffff);
+const uint32 kStartFrameId = UINT32_C(0xffffffff);
 
-// Number of skipped frames threshold in fps (as configured) per period above.
-const int kSkippedFramesThreshold = 3;
+// This is an important system-wide constant.  This limits how much history the
+// implementation must retain in order to process the acknowledgements of past
+// frames.
+const int kMaxUnackedFrames = 255;
+
 const size_t kMaxIpPacketSize = 1500;
 const int kStartRttMs = 20;
 const int64 kCastMessageUpdateIntervalMs = 33;
 const int64 kNackRepeatIntervalMs = 30;
+
+enum CastInitializationStatus {
+  STATUS_AUDIO_UNINITIALIZED,
+  STATUS_VIDEO_UNINITIALIZED,
+  STATUS_AUDIO_INITIALIZED,
+  STATUS_VIDEO_INITIALIZED,
+  STATUS_INVALID_CAST_ENVIRONMENT,
+  STATUS_INVALID_CRYPTO_CONFIGURATION,
+  STATUS_UNSUPPORTED_AUDIO_CODEC,
+  STATUS_UNSUPPORTED_VIDEO_CODEC,
+  STATUS_INVALID_AUDIO_CONFIGURATION,
+  STATUS_INVALID_VIDEO_CONFIGURATION,
+  STATUS_GPU_ACCELERATION_NOT_SUPPORTED,
+  STATUS_GPU_ACCELERATION_ERROR,
+};
 
 enum DefaultSettings {
   kDefaultAudioEncoderBitrate = 0,  // This means "auto," and may mean VBR.
@@ -48,7 +68,14 @@ enum PacketType {
   kTooOldPacket,
 };
 
+// kRtcpCastAllPacketsLost is used in PacketIDSet and
+// on the wire to mean that ALL packets for a particular
+// frame are lost.
 const uint16 kRtcpCastAllPacketsLost = 0xffff;
+
+// kRtcpCastLastPacket is used in PacketIDSet to ask for
+// the last packet of a frame to be retransmitted.
+const uint16 kRtcpCastLastPacket = 0xfffe;
 
 const size_t kMinLengthOfRtcp = 8;
 
@@ -56,6 +83,7 @@ const size_t kMinLengthOfRtcp = 8;
 const size_t kMinLengthOfRtp = 12 + 6;
 
 // Each uint16 represents one packet id within a cast frame.
+// Can also contain kRtcpCastAllPacketsLost and kRtcpCastLastPacket.
 typedef std::set<uint16> PacketIdSet;
 // Each uint8 represents one cast frame.
 typedef std::map<uint8, PacketIdSet> MissingFramesAndPacketsMap;
@@ -66,11 +94,17 @@ typedef std::map<uint8, PacketIdSet> MissingFramesAndPacketsMap;
 // January 1970, in NTP seconds.
 // Network Time Protocol (NTP), which is in seconds relative to 0h UTC on
 // 1 January 1900.
-static const int64 kUnixEpochInNtpSeconds = GG_INT64_C(2208988800);
+static const int64 kUnixEpochInNtpSeconds = INT64_C(2208988800);
 
 // Magic fractional unit. Used to convert time (in microseconds) to/from
 // fractional NTP seconds.
 static const double kMagicFractionalUnit = 4.294967296E3;
+
+// The maximum number of Cast receiver events to keep in history for the
+// purpose of sending the events through RTCP.
+// The number chosen should be more than the number of events that can be
+// stored in a RTCP packet.
+static const size_t kReceiverRtcpEventHistorySize = 512;
 
 inline bool IsNewerFrameId(uint32 frame_id, uint32 prev_frame_id) {
   return (frame_id != prev_frame_id) &&
@@ -111,13 +145,22 @@ inline base::TimeDelta ConvertFromNtpDiff(uint32 ntp_delay) {
   return base::TimeDelta::FromMilliseconds(delay_ms);
 }
 
-inline void ConvertTimeToFractions(int64 time_us,
+inline void ConvertTimeToFractions(int64 ntp_time_us,
                                    uint32* seconds,
                                    uint32* fractions) {
-  DCHECK_GE(time_us, 0) << "Time must NOT be negative";
-  *seconds = static_cast<uint32>(time_us / base::Time::kMicrosecondsPerSecond);
+  DCHECK_GE(ntp_time_us, 0) << "Time must NOT be negative";
+  const int64 seconds_component =
+      ntp_time_us / base::Time::kMicrosecondsPerSecond;
+  // NTP time will overflow in the year 2036.  Also, make sure unit tests don't
+  // regress and use an origin past the year 2036.  If this overflows here, the
+  // inverse calculation fails to compute the correct TimeTicks value, throwing
+  // off the entire system.
+  DCHECK_LT(seconds_component, INT64_C(4263431296))
+      << "One year left to fix the NTP year 2036 wrap-around issue!";
+  *seconds = static_cast<uint32>(seconds_component);
   *fractions = static_cast<uint32>(
-      (time_us % base::Time::kMicrosecondsPerSecond) * kMagicFractionalUnit);
+      (ntp_time_us % base::Time::kMicrosecondsPerSecond) *
+          kMagicFractionalUnit);
 }
 
 inline void ConvertTimeTicksToNtp(const base::TimeTicks& time,
@@ -143,6 +186,11 @@ inline base::TimeTicks ConvertNtpToTimeTicks(uint32 ntp_seconds,
       ntp_time_us -
       (kUnixEpochInNtpSeconds * base::Time::kMicrosecondsPerSecond));
   return base::TimeTicks::UnixEpoch() + elapsed_since_unix_epoch;
+}
+
+inline base::TimeDelta RtpDeltaToTimeDelta(int64 rtp_delta, int rtp_timebase) {
+  DCHECK_GT(rtp_timebase, 0);
+  return rtp_delta * base::TimeDelta::FromSeconds(1) / rtp_timebase;
 }
 
 inline uint32 GetVideoRtpTimestamp(const base::TimeTicks& time_ticks) {

@@ -7,7 +7,7 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #include "chrome/browser/ui/android/infobars/infobar_android.h"
 
 class TranslateInfoBarDelegate;
@@ -35,7 +35,7 @@ class TranslateInfoBar : public InfoBarAndroid {
   virtual void PassJavaInfoBar(InfoBarAndroid* source) OVERRIDE;
 
   void TransferOwnership(TranslateInfoBar* destination,
-                         TranslateTabHelper::TranslateStep new_type);
+                         translate::TranslateStep new_type);
   void SetJavaDelegate(jobject delegate);
   bool ShouldDisplayNeverTranslateInfoBarOnCancel();
 

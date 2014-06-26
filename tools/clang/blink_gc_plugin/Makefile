@@ -7,7 +7,9 @@
 #   make
 
 CLANG_LEVEL := ../..
-LIBRARYNAME = BlinkGCPlugin
+
+# This line is read by update.sh and other scripts in tools/clang/scripts
+LIBRARYNAME = BlinkGCPlugin_8
 
 LINK_LIBS_IN_SHARED = 0
 SHARED_LIBRARY = 1
@@ -15,5 +17,5 @@ SHARED_LIBRARY = 1
 include $(CLANG_LEVEL)/Makefile
 
 ifeq ($(OS),Darwin)
-  LDFLAGS=-Wl,-undefined,dynamic_lookup
+  LDFLAGS+=-Wl,-undefined,dynamic_lookup
 endif

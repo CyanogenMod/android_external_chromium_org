@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "chromeos/dbus/fake_power_manager_client.h"
+
+#include "base/time/time.h"
 #include "chromeos/dbus/power_manager/policy.pb.h"
 
 namespace chromeos {
@@ -92,19 +94,8 @@ void FakePowerManagerClient::SendSuspendImminent() {
   FOR_EACH_OBSERVER(Observer, observers_, SuspendImminent());
 }
 
-void FakePowerManagerClient::SendSuspendStateChanged(
-    const power_manager::SuspendState& suspend_state) {
-  base::Time wall_time =
-      base::Time::FromInternalValue(suspend_state.wall_time());
-  switch (suspend_state.type()) {
-    case power_manager::SuspendState_Type_SUSPEND_TO_MEMORY:
-      last_suspend_wall_time_ = wall_time;
-      break;
-    case power_manager::SuspendState_Type_RESUME:
-      FOR_EACH_OBSERVER(Observer, observers_,
-                        SystemResumed(wall_time - last_suspend_wall_time_));
-      break;
-  }
+void FakePowerManagerClient::SendSuspendDone() {
+  FOR_EACH_OBSERVER(Observer, observers_, SuspendDone(base::TimeDelta()));
 }
 
 } // namespace chromeos

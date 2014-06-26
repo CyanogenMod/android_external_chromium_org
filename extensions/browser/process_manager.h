@@ -13,6 +13,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "base/time/time.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -32,6 +33,7 @@ namespace extensions {
 
 class Extension;
 class ExtensionHost;
+class ProcessManagerObserver;
 
 // Manages dynamic state of running Chromium extensions. There is one instance
 // of this class per Profile. OTR Profiles have a separate instance that keeps
@@ -51,10 +53,16 @@ class ProcessManager : public content::NotificationObserver {
   typedef std::set<content::RenderViewHost*> ViewSet;
   const ViewSet GetAllViews() const;
 
+  // The typical observer interface.
+  void AddObserver(ProcessManagerObserver* observer);
+  void RemoveObserver(ProcessManagerObserver* observer);
+
   // Creates a new UI-less extension instance.  Like CreateViewHost, but not
-  // displayed anywhere.
-  virtual ExtensionHost* CreateBackgroundHost(const Extension* extension,
-                                              const GURL& url);
+  // displayed anywhere.  Returns false if no background host can be created,
+  // for example for hosted apps and extensions that aren't enabled in
+  // Incognito.
+  virtual bool CreateBackgroundHost(const Extension* extension,
+                                    const GURL& url);
 
   // Gets the ExtensionHost for the background page for an extension, or NULL if
   // the extension isn't running or doesn't have a background page.
@@ -128,6 +136,13 @@ class ProcessManager : public content::NotificationObserver {
       const ImpulseCallbackForTesting& callback);
   void SetKeepaliveImpulseDecrementCallbackForTesting(
       const ImpulseCallbackForTesting& callback);
+
+  // Creates an incognito-context instance for tests. Tests for non-incognito
+  // contexts can just use Create() above.
+  static ProcessManager* CreateIncognitoForTesting(
+      content::BrowserContext* incognito_context,
+      content::BrowserContext* original_context,
+      ProcessManager* original_manager);
 
  protected:
   // If |context| is incognito pass the master context as |original_context|.
@@ -228,6 +243,8 @@ class ProcessManager : public content::NotificationObserver {
 
   ImpulseCallbackForTesting keepalive_impulse_callback_for_testing_;
   ImpulseCallbackForTesting keepalive_impulse_decrement_callback_for_testing_;
+
+  ObserverList<ProcessManagerObserver> observer_list_;
 
   base::WeakPtrFactory<ProcessManager> weak_ptr_factory_;
 

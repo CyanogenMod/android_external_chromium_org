@@ -6,7 +6,7 @@
 #include "apps/app_window_registry.h"
 #include "apps/apps_client.h"
 #include "apps/ui/native_app_window.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_manager.h"
@@ -35,7 +35,7 @@ std::string GetWindowKeyForRenderViewHost(
   if (app_window->window_key().empty())
     return app_window->web_contents()->GetURL().possibly_invalid_spec();
 
-  std::string key = app_window->extension()->id();
+  std::string key = app_window->extension_id();
   key += ':';
   key += app_window->window_key();
   return key;
@@ -44,6 +44,25 @@ std::string GetWindowKeyForRenderViewHost(
 }  // namespace
 
 namespace apps {
+
+void AppWindowRegistry::Observer::OnAppWindowAdded(AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowIconChanged(
+    AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowRemoved(AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowHidden(AppWindow* app_window) {
+}
+
+void AppWindowRegistry::Observer::OnAppWindowShown(AppWindow* app_window) {
+}
+
+AppWindowRegistry::Observer::~Observer() {
+}
 
 AppWindowRegistry::AppWindowRegistry(content::BrowserContext* context)
     : context_(context),
@@ -77,6 +96,14 @@ void AppWindowRegistry::AppWindowActivated(AppWindow* app_window) {
   BringToFront(app_window);
 }
 
+void AppWindowRegistry::AppWindowHidden(AppWindow* app_window) {
+  FOR_EACH_OBSERVER(Observer, observers_, OnAppWindowHidden(app_window));
+}
+
+void AppWindowRegistry::AppWindowShown(AppWindow* app_window) {
+  FOR_EACH_OBSERVER(Observer, observers_, OnAppWindowShown(app_window));
+}
+
 void AppWindowRegistry::RemoveAppWindow(AppWindow* app_window) {
   const AppWindowList::iterator it =
       std::find(app_windows_.begin(), app_windows_.end(), app_window);
@@ -106,11 +133,11 @@ AppWindowRegistry::AppWindowList AppWindowRegistry::GetAppWindowsForApp(
 }
 
 void AppWindowRegistry::CloseAllAppWindowsForApp(const std::string& app_id) {
-  for (AppWindowList::const_iterator i = app_windows_.begin();
-       i != app_windows_.end();) {
-    AppWindow* app_window = *(i++);
-    if (app_window->extension_id() == app_id)
-      app_window->GetBaseWindow()->Close();
+  const AppWindowList windows = GetAppWindowsForApp(app_id);
+  for (AppWindowRegistry::const_iterator it = windows.begin();
+       it != windows.end();
+       ++it) {
+    (*it)->GetBaseWindow()->Close();
   }
 }
 
@@ -144,7 +171,7 @@ AppWindow* AppWindowRegistry::GetCurrentAppWindowForApp(
   for (AppWindowList::const_iterator i = app_windows_.begin();
        i != app_windows_.end();
        ++i) {
-    if ((*i)->extension()->id() == app_id) {
+    if ((*i)->extension_id() == app_id) {
       result = *i;
       if (result->GetBaseWindow()->IsActive())
         return result;
@@ -161,7 +188,7 @@ AppWindow* AppWindowRegistry::GetAppWindowForAppAndKey(
   for (AppWindowList::const_iterator i = app_windows_.begin();
        i != app_windows_.end();
        ++i) {
-    if ((*i)->extension()->id() == app_id && (*i)->window_key() == window_key) {
+    if ((*i)->extension_id() == app_id && (*i)->window_key() == window_key) {
       result = *i;
       if (result->GetBaseWindow()->IsActive())
         return result;
@@ -228,6 +255,24 @@ bool AppWindowRegistry::IsAppWindowRegisteredInAnyProfile(
   return false;
 }
 
+// static
+void AppWindowRegistry::CloseAllAppWindows() {
+  std::vector<content::BrowserContext*> contexts =
+      AppsClient::Get()->GetLoadedBrowserContexts();
+  for (std::vector<content::BrowserContext*>::const_iterator i =
+           contexts.begin();
+       i != contexts.end();
+       ++i) {
+    AppWindowRegistry* registry =
+        Factory::GetForBrowserContext(*i, false /* create */);
+    if (!registry)
+      continue;
+
+    while (!registry->app_windows().empty())
+      registry->app_windows().front()->GetBaseWindow()->Close();
+  }
+}
+
 void AppWindowRegistry::OnDevToolsStateChanged(
     content::DevToolsAgentHost* agent_host,
     bool attached) {
@@ -285,7 +330,7 @@ AppWindowRegistry::Factory::Factory()
 
 AppWindowRegistry::Factory::~Factory() {}
 
-BrowserContextKeyedService* AppWindowRegistry::Factory::BuildServiceInstanceFor(
+KeyedService* AppWindowRegistry::Factory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   return new AppWindowRegistry(context);
 }
@@ -304,4 +349,4 @@ content::BrowserContext* AppWindowRegistry::Factory::GetBrowserContextToUse(
       context);
 }
 
-}  // namespace extensions
+}  // namespace apps

@@ -153,11 +153,11 @@ AlsaPcmOutputStream::AlsaPcmOutputStream(const std::string& device_name,
       message_loop_(base::MessageLoop::current()),
       playback_handle_(NULL),
       frames_per_packet_(packet_size_ / bytes_per_frame_),
-      weak_factory_(this),
       state_(kCreated),
       volume_(1.0f),
       source_callback_(NULL),
-      audio_bus_(AudioBus::Create(params)) {
+      audio_bus_(AudioBus::Create(params)),
+      weak_factory_(this) {
   DCHECK(manager_->GetTaskRunner()->BelongsToCurrentThread());
   DCHECK_EQ(audio_bus_->frames() * bytes_per_frame_, packet_size_);
 
@@ -535,13 +535,13 @@ std::string AlsaPcmOutputStream::FindDeviceForChannels(uint32 channels) {
     for (void** hint_iter = hints; *hint_iter != NULL; hint_iter++) {
       // Only examine devices that are output capable..  Valid values are
       // "Input", "Output", and NULL which means both input and output.
-      scoped_ptr_malloc<char> io(
+      scoped_ptr<char, base::FreeDeleter> io(
           wrapper_->DeviceNameGetHint(*hint_iter, kIoHintName));
       if (io != NULL && strcmp(io.get(), "Input") == 0)
         continue;
 
       // Attempt to select the closest device for number of channels.
-      scoped_ptr_malloc<char> name(
+      scoped_ptr<char, base::FreeDeleter> name(
           wrapper_->DeviceNameGetHint(*hint_iter, kNameHintName));
       if (strncmp(wanted_device, name.get(), strlen(wanted_device)) == 0) {
         guessed_device = name.get();

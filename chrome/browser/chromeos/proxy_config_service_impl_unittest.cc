@@ -242,6 +242,8 @@ class ProxyConfigServiceImplTest : public testing::Test {
     ShillServiceClient::TestInterface* service_test =
         DBusThreadManager::Get()->GetShillServiceClient()->GetTestInterface();
 
+    // Process any pending notifications before clearing services.
+    loop_.RunUntilIdle();
     service_test->ClearServices();
 
     // Sends a notification about the added profile.
@@ -249,7 +251,7 @@ class ProxyConfigServiceImplTest : public testing::Test {
 
     service_test->AddService("stub_wifi2", "wifi2_PSK",
                              shill::kTypeWifi, shill::kStateOnline,
-                             true /* visible */, true /* watch */);
+                             true /* visible */);
     service_test->SetServiceProperty("stub_wifi2",
                                      shill::kGuidProperty,
                                      base::StringValue("stub_wifi2"));

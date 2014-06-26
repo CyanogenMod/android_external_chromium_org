@@ -65,35 +65,26 @@ testing::AssertionResult ComponentsAreValid(
   return testing::AssertionSuccess();
 }
 
-// Tests for address UI functions.
-class AddressUiTest : public testing::TestWithParam<std::string> {};
-
-// Verifies that a region code consists of two characters, for example "TW".
-TEST_P(AddressUiTest, RegionCodeHasTwoCharacters) {
-  EXPECT_EQ(2, GetParam().size());
+// 1) Verifies that a region code consists of two characters, for example "TW".
+// 2) Verifies that BuildComponents() returns valid UI components for a region
+//    code.
+// 3) Verifies that BuildComponents() returns a non-empty vector for a region
+//    code.
+TEST(AddressUiTest, RegionsAndComponentsAreValid) {
+  const std::vector<std::string>& region_codes = GetRegionCodes();
+  for (size_t i = 0; i < region_codes.size(); ++i) {
+    SCOPED_TRACE("Region code: " + region_codes[i]);
+    EXPECT_EQ(2U, region_codes[i].size());
+    EXPECT_TRUE(ComponentsAreValid(
+        BuildComponents(region_codes[i], std::string(), NULL)));
+  }
 }
 
-// Verifies that BuildComponents() returns valid UI components for a region
-// code.
-TEST_P(AddressUiTest, ComponentsAreValid) {
-  EXPECT_TRUE(ComponentsAreValid(BuildComponents(GetParam())));
-}
-
-// Verifies that BuildComponents() returns a non-empty vector for a region code.
-TEST_P(AddressUiTest, RequiredFieldsExist) {
-  EXPECT_FALSE(GetRequiredFields(GetParam()).empty());
-}
-
-// Test all regions codes.
-INSTANTIATE_TEST_CASE_P(
-    AllRegions, AddressUiTest,
-    testing::ValuesIn(GetRegionCodes()));
-
-// Verifies that BuildComponents() and GetRequiredFields() return an empty
+// Verifies that BuildComponents() returns an empty
 // vector for an invalid region code.
-TEST_F(AddressUiTest, InvalidRegionCodeReturnsEmptyVector) {
-  EXPECT_TRUE(BuildComponents("INVALID-REGION-CODE").empty());
-  EXPECT_TRUE(GetRequiredFields("INVALID-REGION-CODE").empty());
+TEST(AddressUiTest, InvalidRegionCodeReturnsEmptyVector) {
+  EXPECT_TRUE(
+      BuildComponents("INVALID-REGION-CODE", std::string(), NULL).empty());
 }
 
 struct SeparatorData {
@@ -128,6 +119,56 @@ INSTANTIATE_TEST_CASE_P(
         SeparatorData("th", " "),
         SeparatorData("en", ", ")));
 
+TEST(AddressUiTest, ComponentLanguageCodeTest) {
+  static const struct LanguageCodeData {
+    const char* region_code;
+    const char* ui_language_code;
+    const char* components_language_code;
+  } kLangugeCodes[] = {
+    {"AM", "", "hy"},
+    {"AM", "hy", "hy"},
+    {"AM", "en", "hy-latn"},
+    {"CN", "zh-hans", "zh-hans"},
+    {"CN", "zh-hant", "zh-hant"},
+    {"CN", "zh", "zh"},
+    {"CN", "zh-latn", "zh-latn"},
+    {"CN", "zh-Latn", "zh-latn"},
+    {"CN", "zh-latn-US", "zh-latn"},
+    {"CN", "zh-Latn-US", "zh-latn"},
+    {"CN", "en", "zh-latn"},
+    {"CN", "ja", "zh-latn"},
+    {"CN", "ko", "zh-latn"},
+    {"HK", "zh", "zh"},
+    {"HK", "zh-hans", "zh-hans"},
+    {"HK", "zh-hant", "zh-hant"},
+    {"HK", "zh-latn", "zh-latn"},
+    {"HK", "en", "en"},
+    {"HK", "fr", "zh-latn"},
+    {"HK", "ja", "zh-latn"},
+    {"HK", "ko", "zh-latn"},
+    {"MO", "zh", "zh"},
+    {"MO", "pt", "pt"},
+    {"MO", "en", "zh-latn"},
+    {"AQ", "en", "en"},
+    {"AQ", "fr", "fr"},
+    {"AQ", "es", "es"},
+    {"AQ", "zh", "zh"}
+  };
+  static const size_t kArraySize =
+      sizeof kLangugeCodes / sizeof (LanguageCodeData);
+  for (size_t i = 0; i < kArraySize; ++i) {
+    SCOPED_TRACE(std::string("region code = ") +
+        kLangugeCodes[i].region_code + ", ui language code = " +
+        kLangugeCodes[i].ui_language_code + ", components language code = " +
+        kLangugeCodes[i].components_language_code);
+    std::string components_language_code;
+    EXPECT_FALSE(BuildComponents(kLangugeCodes[i].region_code,
+                                 kLangugeCodes[i].ui_language_code,
+                                 &components_language_code).empty());
+    EXPECT_EQ(
+        kLangugeCodes[i].components_language_code, components_language_code);
+  }
+}
 
 }  // namespace
 

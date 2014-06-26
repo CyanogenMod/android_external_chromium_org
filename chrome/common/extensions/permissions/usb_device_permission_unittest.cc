@@ -9,10 +9,10 @@
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/extensions/permissions/usb_device_permission.h"
-#include "chrome/common/extensions/permissions/usb_device_permission_data.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permissions_info.h"
+#include "extensions/common/permissions/usb_device_permission.h"
+#include "extensions/common/permissions/usb_device_permission_data.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -35,9 +35,9 @@ TEST(USBDevicePermissionTest, PermissionDataOrder) {
 
 TEST(USBDevicePermissionTest, MAYBE_PermissionMessage) {
   const char* const kMessages[] = {
-      "Access the USB device PVR Mass Storage from HUMAX Co., Ltd..",
-      "Access the USB device from HUMAX Co., Ltd..",
-      "Access the USB device.",
+      "Access the USB device PVR Mass Storage from HUMAX Co., Ltd.",
+      "Access the USB device from HUMAX Co., Ltd.",
+      "Access the USB device",
   };
 
   // Prepare data set
@@ -51,7 +51,7 @@ TEST(USBDevicePermissionTest, MAYBE_PermissionMessage) {
 
   UsbDevicePermission permission(
       PermissionsInfo::GetInstance()->GetByID(APIPermission::kUsbDevice));
-  ASSERT_TRUE(permission.FromValue(permission_list.get(), NULL));
+  ASSERT_TRUE(permission.FromValue(permission_list.get(), NULL, NULL));
 
   PermissionMessages messages = permission.GetMessages();
   ASSERT_EQ(3U, messages.size());

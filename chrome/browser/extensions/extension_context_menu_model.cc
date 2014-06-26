@@ -20,6 +20,7 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
 #include "extensions/common/extension.h"
@@ -116,16 +117,14 @@ void ExtensionContextMenuModel::ExecuteCommand(int command_id,
       break;
     case HIDE: {
       extensions::ExtensionActionAPI::SetBrowserActionVisibility(
-          extensions::ExtensionSystem::Get(profile_)->
-              extension_service()->extension_prefs(),
-          extension->id(),
-          false);
+          extensions::ExtensionPrefs::Get(profile_), extension->id(), false);
       break;
     }
     case UNINSTALL: {
       AddRef();  // Balanced in Accepted() and Canceled()
       extension_uninstall_dialog_.reset(
-          ExtensionUninstallDialog::Create(profile_, browser_, this));
+          extensions::ExtensionUninstallDialog::Create(
+              profile_, browser_, this));
       extension_uninstall_dialog_->ConfirmUninstall(extension);
       break;
     }

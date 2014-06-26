@@ -11,7 +11,6 @@
 #include "ui/views/controls/button/image_button.h"
 
 namespace ash {
-namespace internal {
 
 // A ToggleImageButton with fixed size, paddings and hover effects. These
 // buttons are used in the header.
@@ -30,7 +29,7 @@ class ASH_EXPORT TrayPopupHeaderButton : public views::ToggleImageButton {
  private:
   // Overridden from views::View:
   virtual const char* GetClassName() const OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual void OnPaintBorder(gfx::Canvas* canvas) OVERRIDE;
 
   // Overridden from views::CustomButton:
@@ -39,7 +38,6 @@ class ASH_EXPORT TrayPopupHeaderButton : public views::ToggleImageButton {
   DISALLOW_COPY_AND_ASSIGN(TrayPopupHeaderButton);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_POPUP_HEADER_BUTTON_H_

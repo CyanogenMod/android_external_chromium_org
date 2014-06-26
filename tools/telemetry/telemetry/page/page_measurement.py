@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,7 +8,6 @@ from telemetry.page import page_test
 class MeasurementFailure(page_test.Failure):
   """Exception that can be thrown from MeasurePage to indicate an undesired but
   designed-for problem."""
-  pass
 
 
 class PageMeasurement(page_test.PageTest):
@@ -29,27 +28,33 @@ class PageMeasurement(page_test.PageTest):
   To add test-specific options:
 
      class BodyChildElementMeasurement(PageMeasurement):
-        def AddCommandLineOptions(parser):
+        def AddCommandLineArgs(parser):
            parser.add_option('--element', action='store', default='body')
 
         def MeasurePage(self, page, tab, results):
            body_child_count = tab.EvaluateJavaScript(
               'document.querySelector('%s').children.length')
            results.Add('children', 'count', child_count)
+
+  is_action_name_to_run_optional determines what to do if action_name_to_run is
+  not empty but the page doesn't have that action. The page will run (without
+  any action) if is_action_name_to_run_optional is True, otherwise the page will
+  fail.
   """
   def __init__(self,
                action_name_to_run='',
-               needs_browser_restart_after_each_run=False,
+               needs_browser_restart_after_each_page=False,
                discard_first_result=False,
-               clear_cache_before_each_run=False):
+               clear_cache_before_each_run=False,
+               is_action_name_to_run_optional=False):
     super(PageMeasurement, self).__init__(
-      '_RunTest',
       action_name_to_run,
-      needs_browser_restart_after_each_run,
+      needs_browser_restart_after_each_page,
       discard_first_result,
-      clear_cache_before_each_run)
+      clear_cache_before_each_run,
+      is_action_name_to_run_optional=is_action_name_to_run_optional)
 
-  def _RunTest(self, page, tab, results):
+  def ValidatePage(self, page, tab, results):
     results.WillMeasurePage(page)
     try:
       self.MeasurePage(page, tab, results)

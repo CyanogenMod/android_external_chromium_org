@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_FEEDBACK_PRIVATE_FEEDBACK_PRIVATE_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_FEEDBACK_PRIVATE_FEEDBACK_PRIVATE_API_H_
 
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/feedback_private.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "ui/gfx/rect.h"
 
 namespace extensions {
@@ -18,9 +18,9 @@ class FeedbackService;
 
 using extensions::api::feedback_private::SystemInformation;
 
-class FeedbackPrivateAPI : public ProfileKeyedAPI {
+class FeedbackPrivateAPI : public BrowserContextKeyedAPI {
  public:
-  explicit FeedbackPrivateAPI(Profile* profile);
+  explicit FeedbackPrivateAPI(content::BrowserContext* context);
   virtual ~FeedbackPrivateAPI();
 
   FeedbackService* GetService() const;
@@ -28,20 +28,21 @@ class FeedbackPrivateAPI : public ProfileKeyedAPI {
                        const std::string& category_tag,
                        const GURL& page_url);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<FeedbackPrivateAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<FeedbackPrivateAPI>*
+      GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<FeedbackPrivateAPI>;
+  friend class BrowserContextKeyedAPIFactory<FeedbackPrivateAPI>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "FeedbackPrivateAPI";
   }
 
   static const bool kServiceHasOwnInstanceInIncognito = true;
 
-  Profile* const profile_;
+  content::BrowserContext* const browser_context_;
   FeedbackService* service_;
 };
 
@@ -60,7 +61,7 @@ class FeedbackPrivateGetStringsFunction : public ChromeSyncExtensionFunction {
   virtual ~FeedbackPrivateGetStringsFunction() {}
 
   // SyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
  private:
   static base::Closure* test_callback_;
@@ -73,7 +74,7 @@ class FeedbackPrivateGetUserEmailFunction : public ChromeSyncExtensionFunction {
 
  protected:
   virtual ~FeedbackPrivateGetUserEmailFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FeedbackPrivateGetSystemInformationFunction
@@ -84,7 +85,7 @@ class FeedbackPrivateGetSystemInformationFunction
 
  protected:
   virtual ~FeedbackPrivateGetSystemInformationFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void OnCompleted(
@@ -99,7 +100,7 @@ class FeedbackPrivateSendFeedbackFunction
 
  protected:
   virtual ~FeedbackPrivateSendFeedbackFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void OnCompleted(bool success);

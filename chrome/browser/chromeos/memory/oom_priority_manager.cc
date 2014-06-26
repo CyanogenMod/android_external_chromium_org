@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "ash/multi_profile_uma.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -27,6 +27,7 @@
 #include "build/build_config.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
+#include "chrome/browser/chromeos/memory/low_memory_observer.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
@@ -38,7 +39,6 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
-#include "chromeos/memory/low_memory_listener.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -137,7 +137,7 @@ void OomMemoryDetails::OnDetailsAvailable() {
   base::SystemMemoryInfoKB memory;
   if (base::GetSystemMemoryInfo(&memory) && memory.gem_size != -1) {
     log_string += "Graphics ";
-    log_string += UTF16ToASCII(ui::FormatBytes(memory.gem_size));
+    log_string += base::UTF16ToASCII(ui::FormatBytes(memory.gem_size));
   }
   LOG(WARNING) << "OOM details (" << delta.InMilliseconds() << " ms):\n"
       << log_string;
@@ -172,7 +172,7 @@ OomPriorityManager::TabStats::~TabStats() {
 
 OomPriorityManager::OomPriorityManager()
     : focused_tab_pid_(0),
-      low_memory_listener_(new LowMemoryListener(this)),
+      low_memory_observer_(new LowMemoryObserver),
       discard_count_(0),
       recent_tab_discard_(false) {
   registrar_.Add(this,
@@ -204,16 +204,16 @@ void OomPriorityManager::Start() {
         this,
         &OomPriorityManager::RecordRecentTabDiscard);
   }
-  if (low_memory_listener_.get())
-    low_memory_listener_->Start();
+  if (low_memory_observer_.get())
+    low_memory_observer_->Start();
   start_time_ = TimeTicks::Now();
 }
 
 void OomPriorityManager::Stop() {
   timer_.Stop();
   recent_tab_discard_timer_.Stop();
-  if (low_memory_listener_.get())
-    low_memory_listener_->Stop();
+  if (low_memory_observer_.get())
+    low_memory_observer_->Stop();
 }
 
 std::vector<base::string16> OomPriorityManager::GetTabTitles() {
@@ -594,10 +594,39 @@ OomPriorityManager::TabStatsList OomPriorityManager::GetTabStatsOnUIThread() {
   return stats_list;
 }
 
+// static
+std::vector<base::ProcessHandle> OomPriorityManager::GetProcessHandles(
+    const TabStatsList& stats_list) {
+  std::vector<base::ProcessHandle> process_handles;
+  std::set<base::ProcessHandle> already_seen;
+  for (TabStatsList::const_iterator iterator = stats_list.begin();
+       iterator != stats_list.end(); ++iterator) {
+    // stats_list contains entries for already-discarded tabs. If the PID
+    // (renderer_handle) is zero, we don't need to adjust the oom_score.
+    if (iterator->renderer_handle == 0)
+      continue;
+
+    bool inserted = already_seen.insert(iterator->renderer_handle).second;
+    if (!inserted) {
+      // We've already seen this process handle.
+      continue;
+    }
+
+    process_handles.push_back(iterator->renderer_handle);
+  }
+  return process_handles;
+}
+
 void OomPriorityManager::AdjustOomPrioritiesOnFileThread(
     TabStatsList stats_list) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
   base::AutoLock pid_to_oom_score_autolock(pid_to_oom_score_lock_);
+
+  // Remove any duplicate PIDs. Order of the list is maintained, so each
+  // renderer process will take on the oom_score_adj of the most important
+  // (least likely to be killed) tab.
+  std::vector<base::ProcessHandle> process_handles =
+      GetProcessHandles(stats_list);
 
   // Now we assign priorities based on the sorted list.  We're
   // assigning priorities in the range of kLowestRendererOomScore to
@@ -609,26 +638,6 @@ void OomPriorityManager::AdjustOomPrioritiesOnFileThread(
   // some variation in priority without taking up the whole range.  In
   // the end, however, it's a pretty arbitrary range to use.  Higher
   // values are more likely to be killed by the OOM killer.
-  //
-  // We also remove any duplicate PIDs, leaving the most important
-  // (least likely to be killed) of the duplicates, so that a
-  // particular renderer process takes on the oom_score_adj of the
-  // least likely tab to be killed.
-  std::set<base::ProcessHandle> already_seen;
-  std::vector<base::ProcessHandle> process_handles;
-  for (TabStatsList::iterator iterator = stats_list.begin();
-       iterator != stats_list.end(); ++iterator) {
-    // stats_list also contains discarded tab stat. If renderer_handler is zero,
-    // we don't need to adjust oom_score.
-    if (iterator->renderer_handle == 0)
-      continue;
-
-    if (already_seen.insert(iterator->renderer_handle).second)
-      continue;
-
-    process_handles.push_back(iterator->renderer_handle);
-  }
-
   float priority = chrome::kLowestRendererOomScore;
   const int kPriorityRange = chrome::kHighestRendererOomScore -
                              chrome::kLowestRendererOomScore;
@@ -648,11 +657,6 @@ void OomPriorityManager::AdjustOomPrioritiesOnFileThread(
     }
     priority += priority_increment;
   }
-}
-
-void OomPriorityManager::OnMemoryLow() {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  LogMemoryAndDiscardTab();
 }
 
 }  // namespace chromeos

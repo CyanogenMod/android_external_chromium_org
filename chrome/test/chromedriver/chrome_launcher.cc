@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/format_macros.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -28,8 +29,8 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/test/chromedriver/chrome/chrome_android_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_desktop_impl.h"
-#include "chrome/test/chromedriver/chrome/chrome_existing_impl.h"
 #include "chrome/test/chromedriver/chrome/chrome_finder.h"
+#include "chrome/test/chromedriver/chrome/chrome_remote_impl.h"
 #include "chrome/test/chromedriver/chrome/device_manager.h"
 #include "chrome/test/chromedriver/chrome/devtools_http_client.h"
 #include "chrome/test/chromedriver/chrome/embedded_automation_extension.h"
@@ -37,10 +38,11 @@
 #include "chrome/test/chromedriver/chrome/user_data_dir.h"
 #include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
-#include "chrome/test/chromedriver/chrome/zip.h"
 #include "chrome/test/chromedriver/net/port_server.h"
 #include "chrome/test/chromedriver/net/url_request_context_getter.h"
+#include "crypto/rsa_private_key.h"
 #include "crypto/sha2.h"
+#include "third_party/zlib/google/zip.h"
 
 #if defined(OS_POSIX)
 #include <fcntl.h>
@@ -65,7 +67,7 @@ Status UnpackAutomationExtension(const base::FilePath& temp_dir,
 
   base::FilePath extension_zip = temp_dir.AppendASCII("internal.zip");
   int size = static_cast<int>(decoded_extension.length());
-  if (file_util::WriteFile(extension_zip, decoded_extension.c_str(), size)
+  if (base::WriteFile(extension_zip, decoded_extension.c_str(), size)
       != size) {
     return Status(kUnknownError, "failed to write automation extension zip");
   }
@@ -101,7 +103,6 @@ Status PrepareCommandLine(int port,
   switches.SetSwitch("disable-hang-monitor");
   switches.SetSwitch("disable-prompt-on-repost");
   switches.SetSwitch("disable-sync");
-  switches.SetSwitch("full-memory-crash-report");
   switches.SetSwitch("no-first-run");
   switches.SetSwitch("disable-background-networking");
   switches.SetSwitch("disable-web-resources");
@@ -111,10 +112,11 @@ Status PrepareCommandLine(int port,
   switches.SetSwitch("disable-component-update");
   switches.SetSwitch("disable-default-apps");
   switches.SetSwitch("enable-logging");
-  switches.SetSwitch("logging-level", "1");
+  switches.SetSwitch("log-level", "0");
   switches.SetSwitch("password-store", "basic");
   switches.SetSwitch("use-mock-keychain");
   switches.SetSwitch("remote-debugging-port", base::IntToString(port));
+  switches.SetSwitch("test-type", "webdriver");
 
   for (std::set<std::string>::const_iterator iter =
            capabilities.exclude_switches.begin();
@@ -156,15 +158,20 @@ Status WaitForDevToolsAndCheckVersion(
     const NetAddress& address,
     URLRequestContextGetter* context_getter,
     const SyncWebSocketFactory& socket_factory,
+    const Capabilities* capabilities,
     scoped_ptr<DevToolsHttpClient>* user_client) {
+  scoped_ptr<DeviceMetrics> device_metrics;
+  if (capabilities && capabilities->device_metrics)
+    device_metrics.reset(new DeviceMetrics(*capabilities->device_metrics));
+
   scoped_ptr<DevToolsHttpClient> client(new DevToolsHttpClient(
-      address, context_getter, socket_factory));
+      address, context_getter, socket_factory, device_metrics.Pass()));
   base::TimeTicks deadline =
       base::TimeTicks::Now() + base::TimeDelta::FromSeconds(60);
   Status status = client->Init(deadline - base::TimeTicks::Now());
   if (status.IsError())
     return status;
-  if (client->build_no() < kMinimumSupportedChromeBuildNo) {
+  if (client->browser_info()->build_no < kMinimumSupportedChromeBuildNo) {
     return Status(kUnknownError, "Chrome version must be >= " +
         GetMinimumSupportedChromeVersion());
   }
@@ -183,7 +190,7 @@ Status WaitForDevToolsAndCheckVersion(
   return Status(kUnknownError, "unable to discover open pages");
 }
 
-Status LaunchExistingChromeSession(
+Status LaunchRemoteChromeSession(
     URLRequestContextGetter* context_getter,
     const SyncWebSocketFactory& socket_factory,
     const Capabilities& capabilities,
@@ -193,14 +200,14 @@ Status LaunchExistingChromeSession(
   scoped_ptr<DevToolsHttpClient> devtools_client;
   status = WaitForDevToolsAndCheckVersion(
       capabilities.debugger_address, context_getter, socket_factory,
-      &devtools_client);
+      NULL, &devtools_client);
   if (status.IsError()) {
     return Status(kUnknownError, "cannot connect to chrome at " +
                       capabilities.debugger_address.ToString(),
                   status);
   }
-  chrome->reset(new ChromeExistingImpl(devtools_client.Pass(),
-                                       devtools_event_listeners));
+  chrome->reset(new ChromeRemoteImpl(devtools_client.Pass(),
+                                     devtools_event_listeners));
   return Status(kOk);
 }
 
@@ -239,6 +246,9 @@ Status LaunchDesktopChrome(
     if (!command.HasSwitch(kEnableCrashReport))
       command.AppendSwitch(kEnableCrashReport);
   }
+
+  // We need to allow new privileges so that chrome's setuid sandbox can run.
+  options.allow_new_privs = true;
 #endif
 
 #if !defined(OS_WIN)
@@ -250,15 +260,14 @@ Status LaunchDesktopChrome(
 
 #if defined(OS_POSIX)
   base::FileHandleMappingVector no_stderr;
-  int devnull = -1;
-  file_util::ScopedFD scoped_devnull(&devnull);
+  base::ScopedFD devnull;
   if (!CommandLine::ForCurrentProcess()->HasSwitch("verbose")) {
     // Redirect stderr to /dev/null, so that Chrome log spew doesn't confuse
     // users.
-    devnull = open("/dev/null", O_WRONLY);
-    if (devnull == -1)
+    devnull.reset(HANDLE_EINTR(open("/dev/null", O_WRONLY)));
+    if (!devnull.is_valid())
       return Status(kUnknownError, "couldn't open /dev/null");
-    no_stderr.push_back(std::make_pair(devnull, STDERR_FILENO));
+    no_stderr.push_back(std::make_pair(devnull.get(), STDERR_FILENO));
     options.fds_to_remap = &no_stderr;
   }
 #endif
@@ -275,7 +284,8 @@ Status LaunchDesktopChrome(
 
   scoped_ptr<DevToolsHttpClient> devtools_client;
   status = WaitForDevToolsAndCheckVersion(
-      NetAddress(port), context_getter, socket_factory, &devtools_client);
+      NetAddress(port), context_getter, socket_factory, &capabilities,
+      &devtools_client);
 
   if (status.IsError()) {
     int exit_code;
@@ -375,6 +385,7 @@ Status LaunchAndroidChrome(
   status = WaitForDevToolsAndCheckVersion(NetAddress(port),
                                           context_getter,
                                           socket_factory,
+                                          &capabilities,
                                           &devtools_client);
   if (status.IsError()) {
     device->TearDown();
@@ -399,8 +410,8 @@ Status LaunchChrome(
     const Capabilities& capabilities,
     ScopedVector<DevToolsEventListener>& devtools_event_listeners,
     scoped_ptr<Chrome>* chrome) {
-  if (capabilities.IsExistingBrowser()) {
-    return LaunchExistingChromeSession(
+  if (capabilities.IsRemoteBrowser()) {
+    return LaunchRemoteChromeSession(
         context_getter, socket_factory,
         capabilities, devtools_event_listeners, chrome);
   }
@@ -494,15 +505,37 @@ Status ProcessExtension(const std::string& extension,
   if (!base::Base64Decode(extension_base64, &decoded_extension))
     return Status(kUnknownError, "cannot base64 decode");
 
-  // Get extension's ID from public key in crx file.
-  // Assumes crx v2. See http://developer.chrome.com/extensions/crx.html.
-  std::string key_len_str = decoded_extension.substr(8, 4);
-  if (key_len_str.size() != 4)
-    return Status(kUnknownError, "cannot extract public key length");
-  uint32 key_len = *reinterpret_cast<const uint32*>(key_len_str.c_str());
-  std::string public_key = decoded_extension.substr(16, key_len);
-  if (key_len != public_key.size())
-    return Status(kUnknownError, "invalid public key length");
+  // If the file is a crx file, extract the extension's ID from its public key.
+  // Otherwise generate a random public key and use its derived extension ID.
+  std::string public_key;
+  std::string magic_header = decoded_extension.substr(0, 4);
+  if (magic_header.size() != 4)
+    return Status(kUnknownError, "cannot extract magic number");
+
+  const bool is_crx_file = magic_header == "Cr24";
+
+  if (is_crx_file) {
+    // Assume a CRX v2 file - see https://developer.chrome.com/extensions/crx.
+    std::string key_len_str = decoded_extension.substr(8, 4);
+    if (key_len_str.size() != 4)
+      return Status(kUnknownError, "cannot extract public key length");
+    uint32 key_len = *reinterpret_cast<const uint32*>(key_len_str.c_str());
+    public_key = decoded_extension.substr(16, key_len);
+    if (key_len != public_key.size())
+      return Status(kUnknownError, "invalid public key length");
+  } else {
+    // Not a CRX file. Generate RSA keypair to get a valid extension id.
+    scoped_ptr<crypto::RSAPrivateKey> key_pair(
+        crypto::RSAPrivateKey::Create(2048));
+    if (!key_pair)
+      return Status(kUnknownError, "cannot generate RSA key pair");
+    std::vector<uint8> public_key_vector;
+    if (!key_pair->ExportPublicKey(&public_key_vector))
+      return Status(kUnknownError, "cannot extract public key");
+    public_key =
+        std::string(reinterpret_cast<char*>(&public_key_vector.front()),
+                    public_key_vector.size());
+  }
   std::string public_key_base64;
   base::Base64Encode(public_key, &public_key_base64);
   std::string id = GenerateExtensionId(public_key);
@@ -513,7 +546,7 @@ Status ProcessExtension(const std::string& extension,
     return Status(kUnknownError, "cannot create temp dir");
   base::FilePath extension_crx = temp_crx_dir.path().AppendASCII("temp.crx");
   int size = static_cast<int>(decoded_extension.length());
-  if (file_util::WriteFile(extension_crx, decoded_extension.c_str(), size) !=
+  if (base::WriteFile(extension_crx, decoded_extension.c_str(), size) !=
       size) {
     return Status(kUnknownError, "cannot write file");
   }
@@ -541,19 +574,21 @@ Status ProcessExtension(const std::string& extension,
       return Status(kUnknownError, "'key' in manifest is not base64 encoded");
     std::string manifest_id = GenerateExtensionId(manifest_key);
     if (id != manifest_id) {
-      LOG(WARNING)
-          << "Public key in crx header is different from key in manifest"
-          << std::endl << "key from header:   " << public_key_base64
-          << std::endl << "key from manifest: " << manifest_key_base64
-          << std::endl << "generated extension id from header key:   " << id
-          << std::endl << "generated extension id from manifest key: "
-          << manifest_id;
+      if (is_crx_file) {
+        LOG(WARNING)
+            << "Public key in crx header is different from key in manifest"
+            << std::endl << "key from header:   " << public_key_base64
+            << std::endl << "key from manifest: " << manifest_key_base64
+            << std::endl << "generated extension id from header key:   " << id
+            << std::endl << "generated extension id from manifest key: "
+            << manifest_id;
+      }
       id = manifest_id;
     }
   } else {
     manifest->SetString("key", public_key_base64);
     base::JSONWriter::Write(manifest, &manifest_data);
-    if (file_util::WriteFile(
+    if (base::WriteFile(
             manifest_path, manifest_data.c_str(), manifest_data.size()) !=
         static_cast<int>(manifest_data.size())) {
       return Status(kUnknownError, "cannot add 'key' to manifest");
@@ -651,7 +686,7 @@ Status WritePrefsFile(
   base::JSONWriter::Write(prefs, &prefs_str);
   VLOG(0) << "Populating " << path.BaseName().value()
           << " file: " << PrettyPrintValue(*prefs);
-  if (static_cast<int>(prefs_str.length()) != file_util::WriteFile(
+  if (static_cast<int>(prefs_str.length()) != base::WriteFile(
           path, prefs_str.c_str(), prefs_str.length())) {
     return Status(kUnknownError, "failed to write prefs file");
   }
@@ -682,7 +717,7 @@ Status PrepareUserDataDir(
 
   // Write empty "First Run" file, otherwise Chrome will wipe the default
   // profile that was written.
-  if (file_util::WriteFile(
+  if (base::WriteFile(
           user_data_dir.Append(chrome::kFirstRunSentinel), "", 0) != 0) {
     return Status(kUnknownError, "failed to write first run file");
   }

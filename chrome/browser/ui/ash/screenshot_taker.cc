@@ -8,6 +8,7 @@
 #include <string>
 
 #include "ash/shell.h"
+#include "ash/shell_delegate.h"
 #include "ash/system/system_notifier.h"
 #include "base/base64.h"
 #include "base/bind.h"
@@ -31,8 +32,8 @@
 #include "grit/ash_strings.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -40,16 +41,11 @@
 #include "ui/gfx/image/image.h"
 #include "ui/snapshot/snapshot.h"
 
-#if defined(USE_ASH)
-#include "ash/shell.h"
-#include "ash/shell_delegate.h"
-#endif
-
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/file_manager/open_util.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
 #include "chromeos/login/login_state.h"
@@ -62,13 +58,15 @@ const int kScreenshotMinimumIntervalInMS = 1000;
 
 const char kNotificationId[] = "screenshot";
 
+#if defined(OS_CHROMEOS)
 const char kNotificationOriginUrl[] = "chrome://screenshot";
+#endif
 
 const char kImageClipboardFormatPrefix[] = "<img src='data:image/png;base64,";
 const char kImageClipboardFormatSuffix[] = "'>";
 
 void CopyScreenshotToClipboard(scoped_refptr<base::RefCountedString> png_data) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   std::string encoded;
   base::Base64Encode(png_data->data(), &encoded);
@@ -166,7 +164,7 @@ class ScreenshotTakerNotificationDelegate : public NotificationDelegate {
   virtual std::string id() const OVERRIDE {
     return std::string(kNotificationId);
   }
-  virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE {
+  virtual content::WebContents* GetWebContents() const OVERRIDE {
     return NULL;
   }
 
@@ -192,7 +190,7 @@ void SaveScreenshotInternal(const ShowNotificationCallback& callback,
   DCHECK(!local_path.empty());
   ScreenshotTakerObserver::Result result =
       ScreenshotTakerObserver::SCREENSHOT_SUCCESS;
-  if (static_cast<size_t>(file_util::WriteFile(
+  if (static_cast<size_t>(base::WriteFile(
           local_path,
           reinterpret_cast<char*>(&(png_data->data()[0])),
           png_data->size())) != png_data->size()) {
@@ -363,6 +361,7 @@ bool GetScreenshotDirectory(base::FilePath* directory) {
   return true;
 }
 
+#if defined(OS_CHROMEOS)
 const int GetScreenshotNotificationTitle(
     ScreenshotTakerObserver::Result screenshot_result) {
   switch (screenshot_result) {
@@ -386,6 +385,7 @@ const int GetScreenshotNotificationText(
       return IDS_ASH_SCREENSHOT_NOTIFICATION_TEXT_FAIL;
   }
 }
+#endif
 
 }  // namespace
 
@@ -445,7 +445,7 @@ void ScreenshotTaker::HandleTakePartialScreenshot(
                      base::FilePath());
     return;
   }
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   base::FilePath screenshot_directory;
   if (!screenshot_directory_for_test_.empty()) {
@@ -471,6 +471,7 @@ bool ScreenshotTaker::CanTakeScreenshot() {
           kScreenshotMinimumIntervalInMS);
 }
 
+#if defined(OS_CHROMEOS)
 Notification* ScreenshotTaker::CreateNotification(
     ScreenshotTakerObserver::Result screenshot_result,
     const base::FilePath& screenshot_path) {
@@ -506,11 +507,12 @@ Notification* ScreenshotTaker::CreateNotification(
       new ScreenshotTakerNotificationDelegate(
           success, GetProfile(), screenshot_path));
 }
+#endif
 
 void ScreenshotTaker::ShowNotification(
     ScreenshotTakerObserver::Result screenshot_result,
     const base::FilePath& screenshot_path) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 #if defined(OS_CHROMEOS)
   // Do not show a notification that a screenshot was taken while no user is
   // logged in, since it is confusing for the user to get a message about it

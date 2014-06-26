@@ -10,9 +10,10 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebDOMMouseEvent.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebTextAreaElement.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 using blink::WebDOMEvent;
@@ -25,6 +26,7 @@ using blink::WebInputEvent;
 using blink::WebMouseEvent;
 using blink::WebNode;
 using blink::WebString;
+using blink::WebTextAreaElement;
 using blink::WebView;
 
 namespace {
@@ -35,7 +37,7 @@ const WebInputElement GetTextWebInputElement(const WebNode& node) {
   if (!node.isElementNode())
     return WebInputElement();
   const WebElement element = node.toConst<WebElement>();
-  if (!element.hasTagName("input"))
+  if (!element.hasHTMLTagName("input"))
     return WebInputElement();
   const WebInputElement* input = blink::toWebInputElement(&element);
   if (!autofill::IsTextInput(input))
@@ -43,15 +45,30 @@ const WebInputElement GetTextWebInputElement(const WebNode& node) {
   return *input;
 }
 
+// Casts |node| to a WebTextAreaElement.
+// Returns an empty (isNull()) WebTextAreaElement if |node| is not a
+// textarea field.
+const WebTextAreaElement GetWebTextAreaElement(const WebNode& node) {
+  if (!node.isElementNode())
+    return WebTextAreaElement();
+  const WebElement element = node.toConst<WebElement>();
+  if (!element.hasHTMLTagName("textarea"))
+    return WebTextAreaElement();
+  return element.toConst<WebTextAreaElement>();
+}
+
 // Checks to see if a text field was the previously selected node and is now
 // losing its focus.
 bool DidSelectedTextFieldLoseFocus(const WebNode& newly_clicked_node) {
-  blink::WebNode focused_node = newly_clicked_node.document().focusedNode();
+  blink::WebElement focused_element =
+    newly_clicked_node.document().focusedElement();
 
-  if (focused_node.isNull() || GetTextWebInputElement(focused_node).isNull())
+  if (focused_element.isNull() ||
+      (GetTextWebInputElement(focused_element).isNull() &&
+       GetWebTextAreaElement(focused_element).isNull()))
     return false;
 
-  return focused_node != newly_clicked_node;
+  return focused_element != newly_clicked_node;
 }
 
 }  // namespace
@@ -80,17 +97,21 @@ void PageClickTracker::DidHandleMouseEvent(const WebMouseEvent& event) {
     return;
   }
 
-  // We are only interested in text field clicks.
+  // We are only interested in text field and textarea field clicks.
   const WebInputElement input_element =
       GetTextWebInputElement(last_node_clicked_);
-  if (input_element.isNull())
+  const WebTextAreaElement textarea_element =
+      GetWebTextAreaElement(last_node_clicked_);
+  if (input_element.isNull() && textarea_element.isNull())
     return;
 
-  bool is_focused = (last_node_clicked_ == render_view()->GetFocusedNode());
-  listener_->InputElementClicked(input_element, was_focused_, is_focused);
+  if (!input_element.isNull())
+    listener_->FormControlElementClicked(input_element, was_focused_);
+  else if (!textarea_element.isNull())
+    listener_->FormControlElementClicked(textarea_element, was_focused_);
 }
 
-void PageClickTracker::DidFinishDocumentLoad(blink::WebFrame* frame) {
+void PageClickTracker::DidFinishDocumentLoad(blink::WebLocalFrame* frame) {
   tracked_frames_.push_back(frame);
   frame->document().addEventListener("mousedown", this, false);
 }
@@ -130,17 +151,18 @@ void PageClickTracker::handleEvent(const WebDOMEvent& event) {
   HandleTextFieldMaybeLosingFocus(node);
 
   // We are only interested in text field clicks.
-  if (GetTextWebInputElement(node).isNull())
+  if (GetTextWebInputElement(node).isNull() &&
+      GetWebTextAreaElement(node).isNull())
     return;
 
   last_node_clicked_ = node;
-  was_focused_ = (node.document().focusedNode() == last_node_clicked_);
+  was_focused_ = (node.document().focusedElement() == last_node_clicked_);
 }
 
 void PageClickTracker::HandleTextFieldMaybeLosingFocus(
     const WebNode& newly_clicked_node) {
   if (DidSelectedTextFieldLoseFocus(newly_clicked_node))
-    listener_->InputElementLostFocus();
+    listener_->FormControlElementLostFocus();
 }
 
 }  // namespace autofill

@@ -6,8 +6,7 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/browser/drive/drive_notification_observer.h"
-#include "chrome/browser/invalidation/invalidation_service.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "components/invalidation/invalidation_service.h"
 #include "google/cacheinvalidation/types.pb.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 
@@ -82,6 +81,8 @@ void DriveNotificationManager::OnIncomingInvalidation(
   invalidation_map.AcknowledgeAll();
   NotifyObserversToUpdate(NOTIFICATION_XMPP);
 }
+
+std::string DriveNotificationManager::GetOwnerName() const { return "Drive"; }
 
 void DriveNotificationManager::AddObserver(
     DriveNotificationObserver* observer) {

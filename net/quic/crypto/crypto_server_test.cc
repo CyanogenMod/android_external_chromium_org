@@ -2,12 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <ostream>
+#include <vector>
+
 #include "base/basictypes.h"
 #include "base/strings/string_number_conversions.h"
 #include "crypto/secure_hash.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
 #include "net/quic/crypto/quic_random.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_socket_address_coder.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
@@ -18,7 +22,9 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::StringPiece;
+using std::ostream;
 using std::string;
+using std::vector;
 
 namespace net {
 namespace test {
@@ -36,7 +42,40 @@ class QuicCryptoServerConfigPeer {
   QuicCryptoServerConfig* server_config_;
 };
 
-class CryptoServerTest : public ::testing::Test {
+// Run tests with combinations of
+// {FLAGS_use_early_return_when_verifying_chlo,
+//  FLAGS_send_quic_crypto_reject_reason}.
+struct TestParams {
+  TestParams(bool use_early_return_when_verifying_chlo,
+             bool send_quic_crypto_reject_reason)
+      : use_early_return_when_verifying_chlo(
+            use_early_return_when_verifying_chlo),
+        send_quic_crypto_reject_reason(send_quic_crypto_reject_reason) {
+  }
+
+  friend ostream& operator<<(ostream& os, const TestParams& p) {
+    os << "{ use_early_return_when_verifying_chlo: "
+       << p.use_early_return_when_verifying_chlo
+       << " send_quic_crypto_reject_reason: "
+       << p.send_quic_crypto_reject_reason << " }";
+    return os;
+  }
+
+  bool use_early_return_when_verifying_chlo;
+  bool send_quic_crypto_reject_reason;
+};
+
+// Constructs various test permutations.
+vector<TestParams> GetTestParams() {
+  vector<TestParams> params;
+  params.push_back(TestParams(false, false));
+  params.push_back(TestParams(false, true));
+  params.push_back(TestParams(true, false));
+  params.push_back(TestParams(true, true));
+  return params;
+}
+
+class CryptoServerTest : public ::testing::TestWithParam<TestParams> {
  public:
   CryptoServerTest()
       : rand_(QuicRandom::GetInstance()),
@@ -44,6 +83,13 @@ class CryptoServerTest : public ::testing::Test {
         config_(QuicCryptoServerConfig::TESTING, rand_) {
     config_.SetProofSource(CryptoTestUtils::ProofSourceForTesting());
     supported_versions_ = QuicSupportedVersions();
+    client_version_ = QuicUtils::TagToString(
+        QuicVersionToQuicTag(supported_versions_.front()));
+
+    FLAGS_use_early_return_when_verifying_chlo =
+        GetParam().use_early_return_when_verifying_chlo;
+    FLAGS_send_quic_crypto_reject_reason =
+        GetParam().send_quic_crypto_reject_reason;
   }
 
   virtual void SetUp() {
@@ -69,12 +115,17 @@ class CryptoServerTest : public ::testing::Test {
         "KEXS", "C255",
         "PUBS", pub_hex_.c_str(),
         "NONC", nonce_hex_.c_str(),
+        "VER\0", client_version_.data(),
         "$padding", static_cast<int>(kClientHelloMinimumSize),
         NULL);
     ShouldSucceed(client_hello);
     // The message should be rejected because the source-address token is
     // missing.
     ASSERT_EQ(kREJ, out_.tag());
+    const HandshakeFailureReason kRejectReasons[] = {
+      SERVER_CONFIG_INCHOATE_HELLO_FAILURE
+    };
+    CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
 
     StringPiece srct;
     ASSERT_TRUE(out_.GetStringPiece(kSourceAddressTokenTag, &srct));
@@ -178,7 +229,7 @@ class CryptoServerTest : public ::testing::Test {
                                const char* error_substr) {
     string error_details;
     QuicErrorCode error = config_.ProcessClientHello(
-        result, 1 /* GUID */, client_address_,
+        result, 1 /* ConnectionId */, client_address_,
         supported_versions_.front(), supported_versions_, &clock_, rand_,
         &params_, &out_, &error_details);
 
@@ -216,11 +267,36 @@ class CryptoServerTest : public ::testing::Test {
     return nonce;
   }
 
+  void CheckRejectReasons(
+      const HandshakeFailureReason* expected_handshake_failures,
+      size_t expected_count) {
+    const uint32* reject_reasons;
+    size_t num_reject_reasons;
+    COMPILE_ASSERT(sizeof(QuicTag) == sizeof(uint32), header_out_of_sync);
+    QuicErrorCode error_code = out_.GetTaglist(kRREJ, &reject_reasons,
+                                               &num_reject_reasons);
+    if (!FLAGS_send_quic_crypto_reject_reason) {
+      ASSERT_EQ(QUIC_CRYPTO_MESSAGE_PARAMETER_NOT_FOUND, error_code);
+      return;
+    }
+    ASSERT_EQ(QUIC_NO_ERROR, error_code);
+
+    if (FLAGS_use_early_return_when_verifying_chlo) {
+      EXPECT_EQ(1u, num_reject_reasons);
+    } else {
+      EXPECT_EQ(expected_count, num_reject_reasons);
+    }
+    for (size_t i = 0; i < num_reject_reasons; ++i) {
+      EXPECT_EQ(expected_handshake_failures[i], reject_reasons[i]);
+    }
+  }
+
  protected:
   QuicRandom* const rand_;
   MockClock clock_;
   const IPEndPoint client_address_;
   QuicVersionVector supported_versions_;
+  string client_version_;
   QuicCryptoServerConfig config_;
   QuicCryptoServerConfig::ConfigOptions config_options_;
   QuicCryptoNegotiatedParameters params_;
@@ -233,7 +309,14 @@ class CryptoServerTest : public ::testing::Test {
   scoped_ptr<CryptoHandshakeMessage> server_config_;
 };
 
-TEST_F(CryptoServerTest, BadSNI) {
+// Run all CryptoServerTest with all combinations of
+// FLAGS_use_early_return_when_verifying_chlo and
+// FLAGS_send_quic_crypto_reject_reason.
+INSTANTIATE_TEST_CASE_P(CryptoServerTests,
+                        CryptoServerTest,
+                        ::testing::ValuesIn(GetTestParams()));
+
+TEST_P(CryptoServerTest, BadSNI) {
   static const char* kBadSNIs[] = {
     "",
     "foo",
@@ -243,11 +326,19 @@ TEST_F(CryptoServerTest, BadSNI) {
     "ffee::1",
   };
 
+  string client_version = QuicUtils::TagToString(
+      QuicVersionToQuicTag(supported_versions_.front()));
+
   for (size_t i = 0; i < arraysize(kBadSNIs); i++) {
     ShouldFailMentioning("SNI", InchoateClientHello(
         "CHLO",
         "SNI", kBadSNIs[i],
+        "VER\0", client_version.data(),
         NULL));
+    const HandshakeFailureReason kRejectReasons[] = {
+      SERVER_CONFIG_INCHOATE_HELLO_FAILURE
+    };
+    CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
   }
 }
 
@@ -265,6 +356,7 @@ TEST_F(CryptoServerTest, DISABLED_DefaultCert) {
       "NONC", nonce_hex_.c_str(),
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       "PDMD", "X509",
+      "VER\0", client_version_.data(),
       NULL));
 
   StringPiece cert, proof;
@@ -272,15 +364,24 @@ TEST_F(CryptoServerTest, DISABLED_DefaultCert) {
   EXPECT_TRUE(out_.GetStringPiece(kPROF, &proof));
   EXPECT_NE(0u, cert.size());
   EXPECT_NE(0u, proof.size());
+  const HandshakeFailureReason kRejectReasons[] = {
+    CLIENT_NONCE_UNKNOWN_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
 }
 
-TEST_F(CryptoServerTest, TooSmall) {
+TEST_P(CryptoServerTest, TooSmall) {
   ShouldFailMentioning("too small", CryptoTestUtils::Message(
         "CHLO",
+        "VER\0", client_version_.data(),
         NULL));
+  const HandshakeFailureReason kRejectReasons[] = {
+    SERVER_CONFIG_INCHOATE_HELLO_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
 }
 
-TEST_F(CryptoServerTest, BadSourceAddressToken) {
+TEST_P(CryptoServerTest, BadSourceAddressToken) {
   // Invalid source-address tokens should be ignored.
   static const char* kBadSourceAddressTokens[] = {
     "",
@@ -293,11 +394,16 @@ TEST_F(CryptoServerTest, BadSourceAddressToken) {
     ShouldSucceed(InchoateClientHello(
         "CHLO",
         "STK", kBadSourceAddressTokens[i],
+        "VER\0", client_version_.data(),
         NULL));
+    const HandshakeFailureReason kRejectReasons[] = {
+      SERVER_CONFIG_INCHOATE_HELLO_FAILURE
+    };
+    CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
   }
 }
 
-TEST_F(CryptoServerTest, BadClientNonce) {
+TEST_P(CryptoServerTest, BadClientNonce) {
   // Invalid nonces should be ignored.
   static const char* kBadNonces[] = {
     "",
@@ -309,27 +415,124 @@ TEST_F(CryptoServerTest, BadClientNonce) {
     ShouldSucceed(InchoateClientHello(
         "CHLO",
         "NONC", kBadNonces[i],
+        "VER\0", client_version_.data(),
         NULL));
+    const HandshakeFailureReason kRejectReasons[] = {
+      SERVER_CONFIG_INCHOATE_HELLO_FAILURE
+    };
+    CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
   }
 }
 
-TEST_F(CryptoServerTest, DowngradeAttack) {
+TEST_P(CryptoServerTest, DowngradeAttack) {
   if (supported_versions_.size() == 1) {
     // No downgrade attack is possible if the server only supports one version.
     return;
   }
   // Set the client's preferred version to a supported version that
   // is not the "current" version (supported_versions_.front()).
-  string client_version = QuicUtils::TagToString(
+  string bad_version = QuicUtils::TagToString(
       QuicVersionToQuicTag(supported_versions_.back()));
 
   ShouldFailMentioning("Downgrade", InchoateClientHello(
       "CHLO",
-      "VER\0", client_version.data(),
+      "VER\0", bad_version.data(),
       NULL));
+  const HandshakeFailureReason kRejectReasons[] = {
+    SERVER_CONFIG_INCHOATE_HELLO_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
 }
 
-TEST_F(CryptoServerTest, ReplayProtection) {
+TEST_P(CryptoServerTest, CorruptServerConfig) {
+  // This tests corrupted server config.
+  CryptoHandshakeMessage msg = CryptoTestUtils::Message(
+      "CHLO",
+      "AEAD", "AESG",
+      "KEXS", "C255",
+      "SCID", (string(1, 'X') + scid_hex_).c_str(),
+      "#004b5453", srct_hex_.c_str(),
+      "PUBS", pub_hex_.c_str(),
+      "NONC", nonce_hex_.c_str(),
+      "VER\0", client_version_.data(),
+      "$padding", static_cast<int>(kClientHelloMinimumSize),
+      NULL);
+  ShouldSucceed(msg);
+  ASSERT_EQ(kREJ, out_.tag());
+  const HandshakeFailureReason kRejectReasons[] = {
+    SERVER_CONFIG_UNKNOWN_CONFIG_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
+}
+
+TEST_P(CryptoServerTest, CorruptSourceAddressToken) {
+  // This tests corrupted source address token.
+  CryptoHandshakeMessage msg = CryptoTestUtils::Message(
+      "CHLO",
+      "AEAD", "AESG",
+      "KEXS", "C255",
+      "SCID", scid_hex_.c_str(),
+      "#004b5453", (string(1, 'X') + srct_hex_).c_str(),
+      "PUBS", pub_hex_.c_str(),
+      "NONC", nonce_hex_.c_str(),
+      "VER\0", client_version_.data(),
+      "$padding", static_cast<int>(kClientHelloMinimumSize),
+      NULL);
+  ShouldSucceed(msg);
+  ASSERT_EQ(kREJ, out_.tag());
+  const HandshakeFailureReason kRejectReasons[] = {
+    SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
+}
+
+TEST_P(CryptoServerTest, CorruptClientNonceAndSourceAddressToken) {
+  // This test corrupts client nonce and source address token.
+  CryptoHandshakeMessage msg = CryptoTestUtils::Message(
+      "CHLO",
+      "AEAD", "AESG",
+      "KEXS", "C255",
+      "SCID", scid_hex_.c_str(),
+      "#004b5453", (string(1, 'X') + srct_hex_).c_str(),
+      "PUBS", pub_hex_.c_str(),
+      "NONC", (string(1, 'X') + nonce_hex_).c_str(),
+      "VER\0", client_version_.data(),
+      "$padding", static_cast<int>(kClientHelloMinimumSize),
+      NULL);
+  ShouldSucceed(msg);
+  ASSERT_EQ(kREJ, out_.tag());
+  const HandshakeFailureReason kRejectReasons[] = {
+    SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+    CLIENT_NONCE_INVALID_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
+}
+
+TEST_P(CryptoServerTest, CorruptMultipleTags) {
+  // This test corrupts client nonce, server nonce and source address token.
+  CryptoHandshakeMessage msg = CryptoTestUtils::Message(
+      "CHLO",
+      "AEAD", "AESG",
+      "KEXS", "C255",
+      "SCID", scid_hex_.c_str(),
+      "#004b5453", (string(1, 'X') + srct_hex_).c_str(),
+      "PUBS", pub_hex_.c_str(),
+      "NONC", (string(1, 'X') + nonce_hex_).c_str(),
+      "SNO\0", (string(1, 'X') + nonce_hex_).c_str(),
+      "VER\0", client_version_.data(),
+      "$padding", static_cast<int>(kClientHelloMinimumSize),
+      NULL);
+  ShouldSucceed(msg);
+  ASSERT_EQ(kREJ, out_.tag());
+  const HandshakeFailureReason kRejectReasons[] = {
+    SOURCE_ADDRESS_TOKEN_DECRYPTION_FAILURE,
+    CLIENT_NONCE_INVALID_FAILURE,
+    SERVER_NONCE_DECRYPTION_FAILURE,
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
+}
+
+TEST_P(CryptoServerTest, ReplayProtection) {
   // This tests that disabling replay protection works.
   CryptoHandshakeMessage msg = CryptoTestUtils::Message(
       "CHLO",
@@ -339,12 +542,18 @@ TEST_F(CryptoServerTest, ReplayProtection) {
       "#004b5453", srct_hex_.c_str(),
       "PUBS", pub_hex_.c_str(),
       "NONC", nonce_hex_.c_str(),
+      "VER\0", client_version_.data(),
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       NULL);
   ShouldSucceed(msg);
   // The message should be rejected because the strike-register is still
   // quiescent.
   ASSERT_EQ(kREJ, out_.tag());
+
+  const HandshakeFailureReason kRejectReasons[] = {
+    CLIENT_NONCE_UNKNOWN_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
 
   config_.set_replay_protection(false);
 
@@ -426,7 +635,7 @@ TEST(CryptoServerConfigGenerationTest, SCIDIsHashOfServerConfig) {
   hash->Finish(digest, sizeof(digest));
 
   ASSERT_EQ(scid.size(), sizeof(digest));
-  EXPECT_TRUE(0 == memcmp(digest, scid_str.data(), sizeof(digest)));
+  EXPECT_EQ(0, memcmp(digest, scid_str.data(), sizeof(digest)));
 }
 
 class CryptoServerTestNoConfig : public CryptoServerTest {
@@ -436,10 +645,16 @@ class CryptoServerTestNoConfig : public CryptoServerTest {
   }
 };
 
-TEST_F(CryptoServerTestNoConfig, DontCrash) {
-    ShouldFailMentioning("No config", InchoateClientHello(
-        "CHLO",
-        NULL));
+TEST_P(CryptoServerTestNoConfig, DontCrash) {
+  ShouldFailMentioning("No config", InchoateClientHello(
+      "CHLO",
+      "VER\0", client_version_.data(),
+      NULL));
+
+  const HandshakeFailureReason kRejectReasons[] = {
+    CLIENT_NONCE_UNKNOWN_FAILURE
+  };
+  CheckRejectReasons(kRejectReasons, arraysize(kRejectReasons));
 }
 
 class AsyncStrikeServerVerificationTest : public CryptoServerTest {
@@ -464,7 +679,7 @@ class AsyncStrikeServerVerificationTest : public CryptoServerTest {
   DelayedVerifyStrikeRegisterClient* strike_register_client_;
 };
 
-TEST_F(AsyncStrikeServerVerificationTest, AsyncReplayProtection) {
+TEST_P(AsyncStrikeServerVerificationTest, AsyncReplayProtection) {
   // This tests async validation with a strike register works.
   CryptoHandshakeMessage msg = CryptoTestUtils::Message(
       "CHLO",
@@ -474,6 +689,7 @@ TEST_F(AsyncStrikeServerVerificationTest, AsyncReplayProtection) {
       "#004b5453", srct_hex_.c_str(),
       "PUBS", pub_hex_.c_str(),
       "NONC", nonce_hex_.c_str(),
+      "VER\0", client_version_.data(),
       "$padding", static_cast<int>(kClientHelloMinimumSize),
       NULL);
 

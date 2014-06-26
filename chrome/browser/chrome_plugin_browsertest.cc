@@ -31,12 +31,11 @@
 #include "content/public/common/webplugininfo.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 
 #if defined(OS_WIN)
-#include "content/public/browser/web_contents_view.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #endif
 
 using content::BrowserThread;
@@ -246,11 +245,9 @@ IN_PROC_BROWSER_TEST_F(ChromePluginTest, DISABLED_Flash) {
   EnsureFlashProcessCount(1);
 }
 
+#if defined(OFFICIAL_BUILD)
 // Verify that the official builds have the known set of plugins.
 IN_PROC_BROWSER_TEST_F(ChromePluginTest, InstalledPlugins) {
-#if !defined(OFFICIAL_BUILD)
-  return;
-#endif
   const char* expected[] = {
     "Chrome PDF Viewer",
     "Shockwave Flash",
@@ -273,6 +270,7 @@ IN_PROC_BROWSER_TEST_F(ChromePluginTest, InstalledPlugins) {
     ASSERT_TRUE(j != plugins.size()) << "Didn't find " << expected[i];
   }
 }
+#endif
 
 #if defined(OS_WIN)
 
@@ -286,7 +284,7 @@ BOOL CALLBACK EnumerateChildren(HWND hwnd, LPARAM l_param) {
   return FALSE;
 }
 
-}
+}  // namespace
 
 // Test that if a background tab loads an NPAPI plugin, they are displayed after
 // switching to that page.  http://crbug.com/335900
@@ -327,8 +325,7 @@ IN_PROC_BROWSER_TEST_F(ChromePluginTest, WindowedNPAPIPluginHidden) {
   EXPECT_EQ(expected_title2, title_watcher2.WaitAndGetTitle());
 
   HWND child = NULL;
-  HWND hwnd = tab->GetView()->GetNativeView()->GetDispatcher()->host()->
-      GetAcceleratedWidget();
+  HWND hwnd = tab->GetNativeView()->GetHost()->GetAcceleratedWidget();
   EnumChildWindows(hwnd, EnumerateChildren,reinterpret_cast<LPARAM>(&child));
 
   RECT region;

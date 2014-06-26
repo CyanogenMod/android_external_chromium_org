@@ -13,12 +13,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
 #include "base/strings/sys_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node_data.h"
 #include "grit/ui_resources.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -139,7 +139,7 @@ void DragBookmarks(Profile* profile,
   base::MessageLoop::current()->SetNestableTasksAllowed(true);
 
   BookmarkNodeData drag_data(nodes);
-  drag_data.SetOriginatingProfile(profile);
+  drag_data.SetOriginatingProfilePath(profile->GetPath());
   drag_data.WriteToClipboard(ui::CLIPBOARD_TYPE_DRAG);
 
   // Synthesize an event for dragging, since we can't be sure that

@@ -6,10 +6,11 @@
 
 #include "base/task_runner_util.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_test_base.h"
-#include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
+#include "chrome/browser/chromeos/drive/resource_metadata.h"
 #include "chrome/browser/drive/fake_drive_service.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
+#include "google_apis/drive/drive_api_parser.h"
 #include "google_apis/drive/test_util.h"
 
 namespace drive {
@@ -48,14 +49,14 @@ TEST_F(RemovePerformerTest, RemoveFile) {
 
   // Verify the file is indeed removed in the server.
   google_apis::GDataErrorCode gdata_error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> gdata_entry;
-  fake_service()->GetResourceEntry(
+  scoped_ptr<google_apis::FileResource> gdata_entry;
+  fake_service()->GetFileResource(
       resource_id,
       google_apis::test_util::CreateCopyResultCallback(&gdata_error,
                                                        &gdata_entry));
   test_util::RunBlockingPoolTask();
   ASSERT_EQ(google_apis::HTTP_SUCCESS, gdata_error);
-  EXPECT_TRUE(gdata_entry->deleted());
+  EXPECT_TRUE(gdata_entry->labels().is_trashed());
 
   // Try removing non-existing file.
   error = FILE_ERROR_FAILED;
@@ -77,7 +78,7 @@ TEST_F(RemovePerformerTest, RemoveShared) {
 
   // Prepare a shared file to the root folder.
   google_apis::GDataErrorCode gdata_error = google_apis::GDATA_OTHER_ERROR;
-  scoped_ptr<google_apis::ResourceEntry> gdata_entry;
+  scoped_ptr<google_apis::FileResource> gdata_entry;
   fake_service()->AddNewFile(
       "text/plain",
       "dummy content",
@@ -105,15 +106,15 @@ TEST_F(RemovePerformerTest, RemoveShared) {
 
   // Remotely, the entry should have lost its parent.
   gdata_error = google_apis::GDATA_OTHER_ERROR;
-  const std::string resource_id = gdata_entry->resource_id();
-  fake_service()->GetResourceEntry(
+  const std::string resource_id = gdata_entry->file_id();
+  fake_service()->GetFileResource(
       resource_id,
       google_apis::test_util::CreateCopyResultCallback(&gdata_error,
                                                        &gdata_entry));
   test_util::RunBlockingPoolTask();
   ASSERT_EQ(google_apis::HTTP_SUCCESS, gdata_error);
-  EXPECT_FALSE(gdata_entry->deleted());  // It's not deleted.
-  EXPECT_FALSE(gdata_entry->GetLinkByType(google_apis::Link::LINK_PARENT));
+  EXPECT_FALSE(gdata_entry->labels().is_trashed());  // It's not deleted.
+  EXPECT_TRUE(gdata_entry->parents().empty());
 }
 
 TEST_F(RemovePerformerTest, RemoveLocallyCreatedFile) {

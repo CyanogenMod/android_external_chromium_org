@@ -6,9 +6,8 @@
 
 #include "chrome/browser/content_settings/permission_queue_controller.h"
 #include "chrome/browser/content_settings/permission_request_id.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "content/public/browser/navigation_details.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
@@ -18,7 +17,7 @@
 #include "ui/base/l10n/l10n_util.h"
 
 // static
-InfoBar* MidiPermissionInfoBarDelegate::Create(
+infobars::InfoBar* MidiPermissionInfoBarDelegate::Create(
     InfoBarService* infobar_service,
     PermissionQueueController* controller,
     const PermissionRequestID& id,
@@ -55,22 +54,20 @@ void MidiPermissionInfoBarDelegate::InfoBarDismissed() {
 }
 
 int MidiPermissionInfoBarDelegate::GetIconID() const {
-  return IDR_INFOBAR_MIDI_SYSEX;
+  return IDR_INFOBAR_MIDI;
 }
 
-InfoBarDelegate::Type MidiPermissionInfoBarDelegate::GetInfoBarType() const {
+infobars::InfoBarDelegate::Type MidiPermissionInfoBarDelegate::GetInfoBarType()
+    const {
   return PAGE_ACTION_TYPE;
 }
 
 bool MidiPermissionInfoBarDelegate::ShouldExpireInternal(
-    const content::LoadCommittedDetails& details) const {
+    const NavigationDetails& details) const {
   // This implementation matches InfoBarDelegate::ShouldExpireInternal(), but
   // uses the unique ID we set in the constructor instead of that stored in the
   // base class.
-  return (contents_unique_id_ != details.entry->GetUniqueID()) ||
-      (content::PageTransitionStripQualifier(
-          details.entry->GetTransitionType()) ==
-              content::PAGE_TRANSITION_RELOAD);
+  return (contents_unique_id_ != details.entry_id) || details.is_reload;
 }
 
 base::string16 MidiPermissionInfoBarDelegate::GetMessageText() const {
@@ -97,6 +94,8 @@ bool MidiPermissionInfoBarDelegate::Cancel() {
 
 void MidiPermissionInfoBarDelegate::SetPermission(bool update_content_setting,
                                                   bool allowed) {
-  controller_->OnPermissionSet(id_, requesting_frame_, web_contents()->GetURL(),
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
+  controller_->OnPermissionSet(id_, requesting_frame_, web_contents->GetURL(),
                                update_content_setting, allowed);
 }

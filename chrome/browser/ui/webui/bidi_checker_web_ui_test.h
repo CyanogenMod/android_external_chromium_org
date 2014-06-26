@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_BIDI_CHECKER_WEB_UI_TEST_H_
 
 #include "base/command_line.h"
-#include "chrome/test/base/web_ui_browsertest.h"
+#include "chrome/test/base/web_ui_browser_test.h"
 
 namespace base {
 class WaitableEvent;
@@ -34,7 +34,7 @@ class WebUIBidiCheckerBrowserTest : public WebUIBrowserTest {
 
  private:
   // The command line args used to run the test before being changed in SetUp().
-  CommandLine::StringVector argv_;
+  base::CommandLine::StringVector argv_;
 };
 
 // Base class for BidiChecker-based tests that run with an LTR UI.

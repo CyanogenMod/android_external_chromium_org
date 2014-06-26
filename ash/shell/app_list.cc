@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell/example_factory.h"
 #include "ash/shell/toplevel_window.h"
@@ -53,7 +53,7 @@ class WindowTypeShelfItem : public app_list::AppListItem {
         type_(type) {
     std::string title(GetTitle(type));
     SetIcon(GetIcon(type), false);
-    SetTitleAndFullName(title, title);
+    SetName(title);
   }
 
   static gfx::ImageSkia GetIcon(Type type) {
@@ -248,11 +248,11 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     return users_;
   }
 
-  virtual app_list::AppListModel* GetModel() OVERRIDE { return model_.get(); }
-
-  virtual app_list::SigninDelegate* GetSigninDelegate() OVERRIDE {
-    return NULL;
+  virtual bool ShouldCenterWindow() const OVERRIDE {
+    return false;
   }
+
+  virtual app_list::AppListModel* GetModel() OVERRIDE { return model_.get(); }
 
   virtual app_list::SpeechUIModel* GetSpeechUI() OVERRIDE {
     return &speech_ui_;
@@ -287,7 +287,7 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
 
   virtual void StartSearch() OVERRIDE {
     base::string16 query;
-    TrimWhitespace(model_->search_box()->text(), TRIM_ALL, &query);
+    base::TrimWhitespace(model_->search_box()->text(), base::TRIM_ALL, &query);
     query = base::i18n::ToLower(query);
 
     model_->results()->DeleteAll();
@@ -350,12 +350,16 @@ class ExampleAppListViewDelegate : public app_list::AppListViewDelegate {
     // Nothing needs to be done.
   }
 
-  virtual content::WebContents* GetStartPageContents() OVERRIDE {
+  virtual views::View* CreateStartPageWebView(const gfx::Size& size) OVERRIDE {
     return NULL;
   }
 
-  virtual content::WebContents* GetSpeechRecognitionContents() OVERRIDE {
+  virtual views::View* CreateCustomPageWebView(const gfx::Size& size) OVERRIDE {
     return NULL;
+  }
+
+  virtual bool IsSpeechRecognitionEnabled() OVERRIDE {
+    return false;
   }
 
   scoped_ptr<app_list::AppListModel> model_;

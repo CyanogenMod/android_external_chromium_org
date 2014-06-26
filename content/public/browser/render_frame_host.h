@@ -5,16 +5,24 @@
 #ifndef CONTENT_PUBLIC_BROWSER_RENDER_FRAME_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_RENDER_FRAME_HOST_H_
 
+#include <string>
+
+#include "base/callback_forward.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "ui/gfx/native_widget_types.h"
+#include "url/gurl.h"
+
+namespace base {
+class Value;
+}
 
 namespace content {
 class RenderProcessHost;
 class RenderViewHost;
+class ServiceRegistry;
 class SiteInstance;
-struct CustomContextMenuContext;
 
 // The interface provides a communication conduit with a frame in the renderer.
 class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
@@ -26,27 +34,49 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
 
   virtual ~RenderFrameHost() {}
 
+  // Returns the route id for this frame.
+  virtual int GetRoutingID() = 0;
+
+  // Returns the SiteInstance grouping all RenderFrameHosts that have script
+  // access to this RenderFrameHost, and must therefore live in the same
+  // process.
   virtual SiteInstance* GetSiteInstance() = 0;
 
   // Returns the process for this frame.
   virtual RenderProcessHost* GetProcess() = 0;
 
-  // Returns the route id for this frame.
-  virtual int GetRoutingID() = 0;
+  // Returns the current RenderFrameHost of the parent frame, or NULL if there
+  // is no parent. The result may be in a different process than the current
+  // RenderFrameHost.
+  virtual RenderFrameHost* GetParent() = 0;
+
+  // Returns the assigned name of the frame, the name of the iframe tag
+  // declaring it. For example, <iframe name="framename">[...]</iframe>. It is
+  // quite possible for a frame to have no name, in which case GetFrameName will
+  // return an empty string.
+  virtual const std::string& GetFrameName() = 0;
+
+  // Returns true if the frame is out of process.
+  virtual bool IsCrossProcessSubframe() = 0;
+
+  // Returns the last committed URL of the frame.
+  virtual GURL GetLastCommittedURL() = 0;
 
   // Returns the associated widget's native view.
   virtual gfx::NativeView GetNativeView() = 0;
 
-  // Let the renderer know that the menu has been closed.
-  virtual void NotifyContextMenuClosed(
-      const CustomContextMenuContext& context) = 0;
-
-  // Executes custom context menu action that was provided from Blink.
-  virtual void ExecuteCustomContextMenuCommand(
-      int action, const CustomContextMenuContext& context) = 0;
+  // Runs some JavaScript in this frame's context. If a callback is provided, it
+  // will be used to return the result, when the result is available.
+  typedef base::Callback<void(const base::Value*)> JavaScriptResultCallback;
+  virtual void ExecuteJavaScript(const base::string16& javascript) = 0;
+  virtual void ExecuteJavaScript(const base::string16& javascript,
+                                 const JavaScriptResultCallback& callback) = 0;
 
   // Temporary until we get rid of RenderViewHost.
   virtual RenderViewHost* GetRenderViewHost() = 0;
+
+  // Returns the ServiceRegistry for this frame.
+  virtual ServiceRegistry* GetServiceRegistry() = 0;
 
  private:
   // This interface should only be implemented inside content.

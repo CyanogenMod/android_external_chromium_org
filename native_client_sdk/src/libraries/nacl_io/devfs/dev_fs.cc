@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "nacl_io/devfs/jspipe_node.h"
@@ -111,6 +112,19 @@ class UrandomNode : public Node {
 #endif
 };
 
+class FsNode : public Node {
+ public:
+  FsNode(Filesystem* filesystem, Filesystem* other_fs);
+
+  virtual Error VIoctl(int request, va_list args);
+
+ private:
+  // Don't addref the filesystem. We are relying on the fact that the
+  // KernelObject will keep the filsystem around as long as we need it, and
+  // this node will be destroyed when the filesystem is destroyed.
+  Filesystem* other_fs_;
+};
+
 RealNode::RealNode(Filesystem* filesystem, int fd) : Node(filesystem), fd_(fd) {
   SetType(S_IFCHR);
 }
@@ -145,7 +159,9 @@ Error RealNode::Write(const HandleAttr& attr,
   return 0;
 }
 
-Error RealNode::GetStat(struct stat* stat) { return _real_fstat(fd_, stat); }
+Error RealNode::GetStat(struct stat* stat) {
+  return _real_fstat(fd_, stat);
+}
 
 Error NullNode::Read(const HandleAttr& attr,
                      void* buf,
@@ -164,7 +180,8 @@ Error NullNode::Write(const HandleAttr& attr,
 }
 
 ConsoleNode::ConsoleNode(Filesystem* filesystem, PP_LogLevel level)
-    : CharNode(filesystem), level_(level) {}
+    : CharNode(filesystem), level_(level) {
+}
 
 Error ConsoleNode::Write(const HandleAttr& attr,
                          const void* buf,
@@ -172,16 +189,21 @@ Error ConsoleNode::Write(const HandleAttr& attr,
                          int* out_bytes) {
   *out_bytes = 0;
 
-  ConsoleInterface* con_intr = filesystem_->ppapi()->GetConsoleInterface();
-  VarInterface* var_intr = filesystem_->ppapi()->GetVarInterface();
+  ConsoleInterface* con_iface = filesystem_->ppapi()->GetConsoleInterface();
+  VarInterface* var_iface = filesystem_->ppapi()->GetVarInterface();
 
-  if (!(var_intr && con_intr))
+  if (!(var_iface && con_iface)) {
+    LOG_ERROR("Got NULL interface(s): %s%s",
+              con_iface ? "" : "Console ",
+              var_iface ? "" : "Var");
     return ENOSYS;
+  }
 
   const char* var_data = static_cast<const char*>(buf);
   uint32_t len = static_cast<uint32_t>(count);
-  struct PP_Var val = var_intr->VarFromUtf8(var_data, len);
-  con_intr->Log(filesystem_->ppapi()->GetInstance(), level_, val);
+  struct PP_Var val = var_iface->VarFromUtf8(var_data, len);
+  con_iface->Log(filesystem_->ppapi()->GetInstance(), level_, val);
+  var_iface->Release(val);
 
   *out_bytes = count;
   return 0;
@@ -224,8 +246,10 @@ Error UrandomNode::Read(const HandleAttr& attr,
   *out_bytes = 0;
 
 #if defined(__native_client__)
-  if (!interface_ok_)
+  if (!interface_ok_) {
+    LOG_ERROR("NACL_IRT_RANDOM_v0_1 interface not avaiable.");
     return EBADF;
+  }
 
   size_t nread;
   int error = (*random_interface_.get_random_bytes)(buf, count, &nread);
@@ -261,6 +285,14 @@ Error UrandomNode::Write(const HandleAttr& attr,
   return 0;
 }
 
+FsNode::FsNode(Filesystem* filesystem, Filesystem* other_fs)
+    : Node(filesystem), other_fs_(other_fs) {
+}
+
+Error FsNode::VIoctl(int request, va_list args) {
+  return other_fs_->Filesystem_VIoctl(request, args);
+}
+
 }  // namespace
 
 Error DevFs::Access(const Path& path, int a_mode) {
@@ -270,33 +302,79 @@ Error DevFs::Access(const Path& path, int a_mode) {
     return error;
 
   // Don't allow execute access.
-  if (a_mode & X_OK)
+  if (a_mode & X_OK) {
+    LOG_TRACE("Executing devfs nodes is not allowed.");
     return EACCES;
+  }
 
   return 0;
 }
 
 Error DevFs::Open(const Path& path, int open_flags, ScopedNode* out_node) {
   out_node->reset(NULL);
-  int error = root_->FindChild(path.Join(), out_node);
+  int error;
+  if (path.Part(1) == "fs") {
+    if (path.Size() == 3) {
+      error = fs_dir_->FindChild(path.Part(2), out_node);
+    } else {
+      LOG_TRACE("Bad devfs path: %s", path.Join().c_str());
+      error = ENOENT;
+    }
+  } else {
+    error = root_->FindChild(path.Join(), out_node);
+  }
+
   // Only return EACCES when trying to create a node that does not exist.
-  if ((error == ENOENT) && (open_flags & O_CREAT))
+  if ((error == ENOENT) && (open_flags & O_CREAT)) {
+    LOG_TRACE("Cannot create devfs node: %s", path.Join().c_str());
     return EACCES;
+  }
 
   return error;
 }
 
-Error DevFs::Unlink(const Path& path) { return EPERM; }
+Error DevFs::Unlink(const Path& path) {
+  LOG_ERROR("unlink not supported.");
+  return EPERM;
+}
 
-Error DevFs::Mkdir(const Path& path, int permissions) { return EPERM; }
+Error DevFs::Mkdir(const Path& path, int permissions) {
+  LOG_ERROR("mkdir not supported.");
+  return EPERM;
+}
 
-Error DevFs::Rmdir(const Path& path) { return EPERM; }
+Error DevFs::Rmdir(const Path& path) {
+  LOG_ERROR("rmdir not supported.");
+  return EPERM;
+}
 
-Error DevFs::Remove(const Path& path) { return EPERM; }
+Error DevFs::Remove(const Path& path) {
+  LOG_ERROR("remove not supported.");
+  return EPERM;
+}
 
-Error DevFs::Rename(const Path& path, const Path& newpath) { return EPERM; }
+Error DevFs::Rename(const Path& path, const Path& newpath) {
+  LOG_ERROR("rename not supported.");
+  return EPERM;
+}
 
-DevFs::DevFs() {}
+Error DevFs::CreateFsNode(Filesystem* other_fs) {
+  int dev = other_fs->dev();
+  char path[32];
+  snprintf(path, 32, "%d", dev);
+  ScopedNode new_node(new FsNode(this, other_fs));
+  return fs_dir_->AddChild(path, new_node);
+}
+
+Error DevFs::DestroyFsNode(Filesystem* other_fs) {
+  int dev = other_fs->dev();
+  char path[32];
+  snprintf(path, 32, "%d", dev);
+  return fs_dir_->RemoveChild(path);
+}
+
+DevFs::DevFs() {
+}
 
 #define INITIALIZE_DEV_NODE(path, klass)   \
   new_node = ScopedNode(new klass(this));  \
@@ -330,11 +408,17 @@ Error DevFs::Init(const FsInitArgs& args) {
   INITIALIZE_DEV_NODE_1("/stdout", RealNode, 1);
   INITIALIZE_DEV_NODE_1("/stderr", RealNode, 2);
   INITIALIZE_DEV_NODE("/jspipe1", JSPipeNode);
-  new_node->Ioctl(TIOCNACLPIPENAME, "jspipe1");
+  new_node->Ioctl(NACL_IOC_PIPE_SETNAME, "jspipe1");
   INITIALIZE_DEV_NODE("/jspipe2", JSPipeNode);
-  new_node->Ioctl(TIOCNACLPIPENAME, "jspipe2");
+  new_node->Ioctl(NACL_IOC_PIPE_SETNAME, "jspipe2");
   INITIALIZE_DEV_NODE("/jspipe3", JSPipeNode);
-  new_node->Ioctl(TIOCNACLPIPENAME, "jspipe3");
+  new_node->Ioctl(NACL_IOC_PIPE_SETNAME, "jspipe3");
+
+  // Add a directory for "fs" nodes; they represent all currently-mounted
+  // filesystems. We can ioctl these nodes to make changes or provide input to
+  // a mounted filesystem.
+  INITIALIZE_DEV_NODE("/fs", DirNode);
+  fs_dir_ = new_node;
 
   return 0;
 }

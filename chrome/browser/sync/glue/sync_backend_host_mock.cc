@@ -69,6 +69,11 @@ syncer::UserShare* SyncBackendHostMock::GetUserShare() const {
   return NULL;
 }
 
+scoped_ptr<syncer::SyncContextProxy>
+SyncBackendHostMock::GetSyncContextProxy() {
+  return scoped_ptr<syncer::SyncContextProxy>();
+}
+
 SyncBackendHost::Status SyncBackendHostMock::GetDetailedStatus() {
   return SyncBackendHost::Status();
 }
@@ -109,6 +114,19 @@ SyncedDeviceTracker* SyncBackendHostMock::GetSyncedDeviceTracker() const {
 base::MessageLoop* SyncBackendHostMock::GetSyncLoopForTesting() {
   return NULL;
 }
+
+void SyncBackendHostMock::RequestBufferedProtocolEventsAndEnableForwarding() {}
+
+void SyncBackendHostMock::DisableProtocolEventForwarding() {}
+
+void SyncBackendHostMock::EnableDirectoryTypeDebugInfoForwarding() {}
+
+void SyncBackendHostMock::DisableDirectoryTypeDebugInfoForwarding() {}
+
+void SyncBackendHostMock::GetAllNodesForTypes(
+    syncer::ModelTypeSet types,
+    base::Callback<void(const std::vector<syncer::ModelType>& type,
+                        ScopedVector<base::ListValue>) > callback) {}
 
 void SyncBackendHostMock::set_fail_initial_download(bool should_fail) {
   fail_initial_download_ = should_fail;

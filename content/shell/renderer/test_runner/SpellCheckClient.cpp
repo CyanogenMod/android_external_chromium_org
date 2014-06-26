@@ -4,16 +4,16 @@
 
 #include "content/shell/renderer/test_runner/SpellCheckClient.h"
 
-#include "content/shell/renderer/test_runner/MockGrammarCheck.h"
 #include "content/shell/renderer/test_runner/WebTestDelegate.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
+#include "content/shell/renderer/test_runner/mock_grammar_check.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "third_party/WebKit/public/web/WebTextCheckingCompletion.h"
 #include "third_party/WebKit/public/web/WebTextCheckingResult.h"
 
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -31,7 +31,7 @@ private:
     CallbackMethodType m_callback;
 };
 
-}
+}  // namespace
 
 SpellCheckClient::SpellCheckClient(WebTestProxyBase* webTestProxy)
     : m_lastRequestedTextCheckingCompletion(0)
@@ -76,7 +76,7 @@ void SpellCheckClient::checkTextOfParagraph(const WebString& text, WebTextChecki
         }
     }
     if (mask & WebTextCheckingTypeGrammar)
-        MockGrammarCheck::checkGrammarOfString(text, &results);
+        MockGrammarCheck::CheckGrammarOfString(text, &results);
     webResults->assign(results);
 }
 
@@ -123,12 +123,12 @@ void SpellCheckClient::finishLastTextCheck()
             text = text.substr(misspelledPosition + misspelledLength);
             offset += misspelledPosition + misspelledLength;
         }
-        MockGrammarCheck::checkGrammarOfString(m_lastRequestedTextCheckString, &results);
+        MockGrammarCheck::CheckGrammarOfString(m_lastRequestedTextCheckString, &results);
     }
     m_lastRequestedTextCheckingCompletion->didFinishCheckingText(results);
     m_lastRequestedTextCheckingCompletion = 0;
 
-    m_webTestProxy->postSpellCheckEvent(WebString("finishLastTextCheck"));
+    m_webTestProxy->PostSpellCheckEvent(WebString("finishLastTextCheck"));
 }
 
 WebString SpellCheckClient::autoCorrectWord(const WebString&)
@@ -140,4 +140,4 @@ WebString SpellCheckClient::autoCorrectWord(const WebString&)
     return WebString();
 }
 
-}
+}  // namespace content

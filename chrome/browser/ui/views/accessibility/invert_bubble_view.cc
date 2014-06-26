@@ -7,6 +7,8 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/views/frame/browser_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/page_navigator.h"
 #include "grit/generated_resources.h"
@@ -30,7 +32,6 @@ const char kDarkThemeSearchUrl[] =
     "https://chrome.google.com/webstore/search-themes/dark";
 const char kLearnMoreUrl[] =
     "https://groups.google.com/a/googleproductforums.com/d/topic/chrome/Xrco2HsXS-8/discussion";
-const int kBubbleWidth = 500;
 
 class InvertBubbleView : public views::BubbleDelegateView,
                          public views::LinkListener {
@@ -41,7 +42,6 @@ class InvertBubbleView : public views::BubbleDelegateView,
  private:
   // Overridden from views::BubbleDelegateView:
   virtual void Init() OVERRIDE;
-  virtual gfx::Rect GetAnchorRect() OVERRIDE;
 
   // Overridden from views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
@@ -58,7 +58,7 @@ class InvertBubbleView : public views::BubbleDelegateView,
 };
 
 InvertBubbleView::InvertBubbleView(Browser* browser, views::View* anchor_view)
-    : views::BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT),
+    : views::BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_RIGHT),
       browser_(browser),
       high_contrast_(NULL),
       dark_theme_(NULL),
@@ -75,10 +75,8 @@ void InvertBubbleView::Init() {
       rb.GetFontList(ui::ResourceBundle::MediumFont);
 
   views::Label* title = new views::Label(
-      l10n_util::GetStringUTF16(IDS_HIGH_CONTRAST_NOTIFICATION),
-      original_font_list.Derive(2, gfx::Font::BOLD));
+      base::string16(), original_font_list.Derive(2, gfx::Font::BOLD));
   title->SetMultiLine(true);
-  title->SizeToFit(kBubbleWidth);
 
   learn_more_ = new views::Link(l10n_util::GetStringUTF16(IDS_LEARN_MORE));
   learn_more_->SetFontList(original_font_list);
@@ -89,8 +87,7 @@ void InvertBubbleView::Init() {
   high_contrast_->SetFontList(original_font_list);
   high_contrast_->set_listener(this);
 
-  dark_theme_ =
-      new views::Link(l10n_util::GetStringUTF16(IDS_DARK_THEME));
+  dark_theme_ = new views::Link(l10n_util::GetStringUTF16(IDS_DARK_THEME));
   dark_theme_->SetFontList(original_font_list);
   dark_theme_->set_listener(this);
 
@@ -117,21 +114,17 @@ void InvertBubbleView::Init() {
   layout->AddView(learn_more_);
   layout->AddView(close_);
 
+  // Fit the message to the width of the links in the bubble.
+  const gfx::Size size(GetPreferredSize());
+  title->SetText(l10n_util::GetStringUTF16(IDS_HIGH_CONTRAST_NOTIFICATION));
+  title->SizeToFit(size.width());
+
   // Switching to high-contrast mode has a nasty habit of causing Chrome
   // top-level windows to lose focus, so closing the bubble on deactivate
   // makes it disappear before the user has even seen it. This forces the
   // user to close it explicitly, which should be okay because it affects
   // a small minority of users, and only once.
   set_close_on_deactivate(false);
-  set_move_with_anchor(true);
-}
-
-gfx::Rect InvertBubbleView::GetAnchorRect() {
-  // Set the height to 0 so we display the bubble at the top of the
-  // anchor rect.
-  gfx::Rect rect(BubbleDelegateView::GetAnchorRect());
-  rect.set_height(0);
-  return rect;
 }
 
 void InvertBubbleView::LinkClicked(views::Link* source, int event_flags) {
@@ -161,14 +154,15 @@ void InvertBubbleView::OpenLink(const std::string& url, int event_flags) {
 
 namespace chrome {
 
-void MaybeShowInvertBubbleView(Browser* browser, views::View* anchor_view) {
+void MaybeShowInvertBubbleView(BrowserView* browser_view) {
+  Browser* browser = browser_view->browser();
   PrefService* pref_service = browser->profile()->GetPrefs();
-  if (gfx::IsInvertedColorScheme() &&
+  views::View* anchor = browser_view->toolbar()->app_menu();
+  if (gfx::IsInvertedColorScheme() && anchor && anchor->GetWidget() &&
       !pref_service->GetBoolean(prefs::kInvertNotificationShown)) {
     pref_service->SetBoolean(prefs::kInvertNotificationShown, true);
-    InvertBubbleView* delegate = new InvertBubbleView(browser, anchor_view);
-    views::BubbleDelegateView::CreateBubble(delegate);
-    delegate->StartFade(true);
+    InvertBubbleView* delegate = new InvertBubbleView(browser, anchor);
+    views::BubbleDelegateView::CreateBubble(delegate)->Show();
   }
 }
 

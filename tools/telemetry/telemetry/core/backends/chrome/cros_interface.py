@@ -5,6 +5,7 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,12 @@ import tempfile
 # for each operation. It really could get away with a single ssh session built
 # around pexpect, I suspect, if we wanted it to be faster. But, this was
 # convenient.
+
+# Some developers' workflow includes running the Chrome process from
+# /usr/local/... instead of the default location. We have to check for both
+# paths in order to support this workflow.
+_CHROME_PATHS = ['/opt/google/chrome/chrome ',
+                '/usr/local/opt/google/chrome/chrome ']
 
 def IsRunningOnCrosDevice():
   """Returns True if we're on a ChromeOS device."""
@@ -189,7 +196,7 @@ class CrOSInterface(object):
       if "Connection timed out" in stderr:
         raise OSError('Machine wasn\'t responding to ssh: %s' %
                       stderr)
-      raise OSError('Unepected error: %s' % stderr)
+      raise OSError('Unexpected error: %s' % stderr)
     exists = stdout == '1\n'
     logging.debug("FileExistsOnDevice(<text>, %s)->%s" % (file_name, exists))
     return exists
@@ -221,26 +228,52 @@ class CrOSInterface(object):
       f.flush()
       self.PushFile(f.name, remote_filename)
 
+  def GetFile(self, filename, destfile=None):
+    """Copies a local file |filename| to |destfile| on the device.
+
+    Args:
+      filename: The name of the local source file.
+      destfile: The name of the file to copy to, and if it is not specified
+        then it is the basename of the source file.
+
+    """
+    logging.debug("GetFile(%s, %s)" % (filename, destfile))
+    if self.local:
+      if destfile is not None and destfile != filename:
+        shutil.copyfile(filename, destfile)
+      return
+
+    if destfile is None:
+      destfile = os.path.basename(filename)
+    args = ['scp'] + self._ssh_args
+    if self._ssh_identity:
+      args.extend(['-i', self._ssh_identity])
+
+    args.extend(['root@%s:%s' % (self._hostname, filename),
+                 os.path.abspath(destfile)])
+    stdout, stderr = GetAllCmdOutput(args, quiet=True)
+    stderr = self._RemoveSSHWarnings(stderr)
+    if stderr != '':
+      raise OSError('No such file or directory %s' % stderr)
+
   def GetFileContents(self, filename):
+    """Get the contents of a file on the device.
+
+    Args:
+      filename: The name of the file on the device.
+
+    Returns:
+      A string containing the contents of the file.
+    """
+    # TODO: handle the self.local case
     assert not self.local
-    with tempfile.NamedTemporaryFile() as f:
-      args = ['scp'] + self._ssh_args
-      if self._ssh_identity:
-        args.extend(['-i', self._ssh_identity])
-
-      args.extend(['root@%s:%s' % (self._hostname, filename),
-                   os.path.abspath(f.name)])
-
-      stdout, stderr = GetAllCmdOutput(args, quiet=True)
-      stderr = self._RemoveSSHWarnings(stderr)
-
-      if stderr != '':
-        raise OSError('No such file or directory %s' % stderr)
-
-      with open(f.name, 'r') as f2:
-        res = f2.read()
-        logging.debug("GetFileContents(%s)->%s" % (filename, res))
-        return res
+    t = tempfile.NamedTemporaryFile()
+    self.GetFile(filename, t.name)
+    with open(t.name, 'r') as f2:
+      res = f2.read()
+      logging.debug("GetFileContents(%s)->%s" % (filename, res))
+      f2.close()
+      return res
 
   def ListProcesses(self):
     """Returns (pid, cmd, ppid, state) of all processes on the device."""
@@ -259,6 +292,48 @@ class CrOSInterface(object):
                     int(m.group(2)), m.group(4)))
     logging.debug("ListProcesses(<predicate>)->[%i processes]" % len(procs))
     return procs
+
+  def _GetSessionManagerPid(self, procs):
+    """Returns the pid of the session_manager process, given the list of
+    processes."""
+    for pid, process, _, _ in procs:
+      argv = process.split()
+      if argv and os.path.basename(argv[0]) == 'session_manager':
+        return pid
+    return None
+
+  def GetChromeProcess(self):
+    """Locates the the main chrome browser process.
+
+    Chrome on cros is usually in /opt/google/chrome, but could be in
+    /usr/local/ for developer workflows - debug chrome is too large to fit on
+    rootfs.
+
+    Chrome spawns multiple processes for renderers. pids wrap around after they
+    are exhausted so looking for the smallest pid is not always correct. We
+    locate the session_manager's pid, and look for the chrome process that's an
+    immediate child. This is the main browser process.
+    """
+    procs = self.ListProcesses()
+    session_manager_pid = self._GetSessionManagerPid(procs)
+    if not session_manager_pid:
+      return None
+
+    # Find the chrome process that is the child of the session_manager.
+    for pid, process, ppid, _ in procs:
+      if ppid != session_manager_pid:
+        continue
+      for path in _CHROME_PATHS:
+        if process.startswith(path):
+          return {'pid': pid, 'path': path, 'args': process}
+    return None
+
+  def GetChromePid(self):
+    """Returns pid of main chrome browser process."""
+    result = self.GetChromeProcess()
+    if result and 'pid' in result:
+      return result['pid']
+    return None
 
   def RmRF(self, filename):
     logging.debug("rm -rf %s" % filename)
@@ -325,6 +400,21 @@ class CrOSInterface(object):
         return line_ary[0]
     return None
 
+  def CryptohomePath(self, user):
+    """Returns the cryptohome mount point for |user|."""
+    stdout, stderr = self.RunCmdOnDevice(
+        ['cryptohome-path', 'user', "'%s'" % user])
+    if stderr != '':
+      raise OSError('cryptohome-path failed: %s' % stderr)
+    return stdout.rstrip()
+
+  def IsCryptohomeMounted(self, username, is_guest):
+    """Returns True iff |user|'s cryptohome is mounted."""
+    profile_path = self.CryptohomePath(username)
+    mount = self.FilesystemMountedAt(profile_path)
+    mount_prefix = 'guestfs' if is_guest else '/home/.shadow/'
+    return mount and mount.startswith(mount_prefix)
+
   def TakeScreenShot(self, screenshot_prefix):
     """Takes a screenshot, useful for debugging failures."""
     # TODO(achuith): Find a better location for screenshots. Cros autotests
@@ -345,3 +435,15 @@ class CrOSInterface(object):
             screenshot_file])
         return
     logging.warning('screenshot directory full.')
+
+  def RestartUI(self, clear_enterprise_policy):
+    logging.info('(Re)starting the ui (logs the user out)')
+    if clear_enterprise_policy:
+      self.RunCmdOnDevice(['stop', 'ui'])
+      self.RmRF('/var/lib/whitelist/*')
+      self.RmRF('/home/chronos/Local\ State')
+
+    if self.IsServiceRunning('ui'):
+      self.RunCmdOnDevice(['restart', 'ui'])
+    else:
+      self.RunCmdOnDevice(['start', 'ui'])

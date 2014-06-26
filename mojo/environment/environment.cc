@@ -2,19 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "mojo/public/environment/environment.h"
+#include "mojo/public/cpp/environment/environment.h"
+
+#include "mojo/environment/default_async_waiter_impl.h"
+#include "mojo/environment/default_logger_impl.h"
 
 namespace mojo {
 
-// These methods do nothing as we rely on LazyInstance<T> to instantiate all of
-// our global state in this implementation of the environment library.
-
+// These methods are intentionally not implemented so that there is a link
+// error if someone uses them in a Chromium-environment.
+#if 0
 Environment::Environment() {
-  // no-op
+}
+
+Environment::Environment(const MojoAsyncWaiter* default_async_waiter,
+                         const MojoLogger* default_logger) {
 }
 
 Environment::~Environment() {
-  // no-op
+}
+#endif
+
+// static
+const MojoAsyncWaiter* Environment::GetDefaultAsyncWaiter() {
+  return internal::GetDefaultAsyncWaiterImpl();
+}
+
+// static
+const MojoLogger* Environment::GetDefaultLogger() {
+  return internal::GetDefaultLoggerImpl();
 }
 
 }  // namespace mojo

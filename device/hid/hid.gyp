@@ -13,14 +13,9 @@
       'include_dirs': [
         '../..',
       ],
-      'conditions': [
-        ['OS=="linux"', {
-          'dependencies': [
-            '../../build/linux/system.gyp:udev',
-          ],
-        }],
-      ],
       'sources': [
+        'device_monitor_linux.cc',
+        'device_monitor_linux.h',
         'hid_connection.cc',
         'hid_connection.h',
         'hid_connection_linux.cc',
@@ -31,6 +26,10 @@
         'hid_connection_win.h',
         'hid_device_info.cc',
         'hid_device_info.h',
+        'hid_report_descriptor.cc',
+        'hid_report_descriptor.h',
+        'hid_report_descriptor_item.cc',
+        'hid_report_descriptor_item.h',
         'hid_service.cc',
         'hid_service.h',
         'hid_service_linux.cc',
@@ -39,8 +38,29 @@
         'hid_service_mac.h',
         'hid_service_win.cc',
         'hid_service_win.h',
+        'hid_usage_and_page.cc',
+        'hid_usage_and_page.h',
         'hid_utils_mac.cc',
         'hid_utils_mac.h',
+        'input_service_linux.cc',
+        'input_service_linux.h',
+      ],
+      'conditions': [
+        ['use_udev==1', {
+          'dependencies': [
+            '../udev_linux/udev.gyp:udev_linux',
+          ],
+        }, {  # use_udev==0
+          # The Linux implementation is based on Udev.
+          'sources!': [
+            'device_monitor_linux.cc',
+            'device_monitor_linux.h',
+            'hid_service_linux.cc',
+            'hid_service_linux.h',
+            'input_service_linux.cc',
+            'input_service_linux.h',
+          ],
+        }],
       ],
     },
   ],

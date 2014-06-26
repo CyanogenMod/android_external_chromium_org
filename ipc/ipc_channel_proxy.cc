@@ -2,130 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ipc/ipc_channel_proxy.h"
+
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/debug/trace_event.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_macros.h"
-#include "ipc/ipc_message_start.h"
-#include "ipc/ipc_message_utils.h"
+#include "ipc/message_filter.h"
+#include "ipc/message_filter_router.h"
 
 namespace IPC {
-
-//------------------------------------------------------------------------------
-
-class ChannelProxy::Context::MessageFilterRouter {
- public:
-  typedef std::vector<MessageFilter*> MessageFilters;
-
-  MessageFilterRouter() {}
-  ~MessageFilterRouter() {}
-
-  void AddFilter(MessageFilter* filter) {
-    // Determine if the filter should be applied to all messages, or only
-    // messages of a certain class.
-    std::vector<uint32> supported_message_classes;
-    if (filter->GetSupportedMessageClasses(&supported_message_classes)) {
-      DCHECK(!supported_message_classes.empty());
-      for (size_t i = 0; i < supported_message_classes.size(); ++i) {
-        DCHECK(ValidMessageClass(supported_message_classes[i]));
-        message_class_filters_[supported_message_classes[i]].push_back(filter);
-      }
-    } else {
-      global_filters_.push_back(filter);
-    }
-  }
-
-  void RemoveFilter(MessageFilter* filter) {
-    if (RemoveFilter(global_filters_, filter))
-      return;
-
-    for (size_t i = 0; i < arraysize(message_class_filters_); ++i)
-      RemoveFilter(message_class_filters_[i], filter);
-  }
-
-  bool TryFilters(const Message& message) {
-    if (TryFilters(global_filters_, message))
-      return true;
-
-    const int message_class = IPC_MESSAGE_CLASS(message);
-    if (!ValidMessageClass(message_class))
-      return false;
-
-    return TryFilters(message_class_filters_[message_class], message);
-  }
-
-  void Clear() {
-    global_filters_.clear();
-    for (size_t i = 0; i < arraysize(message_class_filters_); ++i)
-      message_class_filters_[i].clear();
-  }
-
- private:
-  static bool TryFilters(MessageFilters& filters, const IPC::Message& message) {
-    for (size_t i = 0; i < filters.size(); ++i) {
-      if (filters[i]->OnMessageReceived(message)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  static bool RemoveFilter(MessageFilters& filters, MessageFilter* filter) {
-    MessageFilters::iterator it =
-        std::find(filters.begin(), filters.end(), filter);
-    if (it == filters.end())
-      return false;
-
-    filters.erase(it);
-    return true;
-  }
-
-  static bool ValidMessageClass(int message_class) {
-    return message_class >= 0 && message_class < LastIPCMsgStart;
-  }
-
-  // List of global and selective filters; a given filter will exist in either
-  // |message_global_filters_| OR |message_class_filters_|, but not both.
-  // Note that |message_global_filters_| will be given first offering of any
-  // given message.  It's the filter implementer and installer's
-  // responsibility to ensure that a filter is either global or selective to
-  // ensure proper message filtering order.
-  MessageFilters global_filters_;
-  MessageFilters message_class_filters_[LastIPCMsgStart];
-};
-
-//------------------------------------------------------------------------------
-
-ChannelProxy::MessageFilter::MessageFilter() {}
-
-void ChannelProxy::MessageFilter::OnFilterAdded(Channel* channel) {}
-
-void ChannelProxy::MessageFilter::OnFilterRemoved() {}
-
-void ChannelProxy::MessageFilter::OnChannelConnected(int32 peer_pid) {}
-
-void ChannelProxy::MessageFilter::OnChannelError() {}
-
-void ChannelProxy::MessageFilter::OnChannelClosing() {}
-
-bool ChannelProxy::MessageFilter::OnMessageReceived(const Message& message) {
-  return false;
-}
-
-bool ChannelProxy::MessageFilter::GetSupportedMessageClasses(
-    std::vector<uint32>* /*supported_message_classes*/) const {
-  return false;
-}
-
-ChannelProxy::MessageFilter::~MessageFilter() {}
 
 //------------------------------------------------------------------------------
 
@@ -138,6 +30,15 @@ ChannelProxy::Context::Context(Listener* listener,
       message_filter_router_(new MessageFilterRouter()),
       peer_pid_(base::kNullProcessId) {
   DCHECK(ipc_task_runner_.get());
+  // The Listener thread where Messages are handled must be a separate thread
+  // to avoid oversubscribing the IO thread. If you trigger this error, you
+  // need to either:
+  // 1) Create the ChannelProxy on a different thread, or
+  // 2) Just use Channel
+  // Note, we currently make an exception for a NULL listener. That usage
+  // basically works, but is outside the intent of ChannelProxy. This support
+  // will disappear, so please don't rely on it. See crbug.com/364241
+  DCHECK(!listener || (ipc_task_runner_.get() != listener_task_runner_.get()));
 }
 
 ChannelProxy::Context::~Context() {
@@ -149,9 +50,9 @@ void ChannelProxy::Context::ClearIPCTaskRunner() {
 
 void ChannelProxy::Context::CreateChannel(const IPC::ChannelHandle& handle,
                                           const Channel::Mode& mode) {
-  DCHECK(channel_.get() == NULL);
+  DCHECK(!channel_);
   channel_id_ = handle.name;
-  channel_.reset(new Channel(handle, mode, this));
+  channel_ = Channel::Create(handle, mode, this);
 }
 
 bool ChannelProxy::Context::TryFilters(const Message& message) {
@@ -163,6 +64,10 @@ bool ChannelProxy::Context::TryFilters(const Message& message) {
 #endif
 
   if (message_filter_router_->TryFilters(message)) {
+    if (message.dispatch_error()) {
+      listener_task_runner_->PostTask(
+          FROM_HERE, base::Bind(&Context::OnDispatchBadMessage, this, message));
+    }
 #ifdef IPC_MESSAGE_LOG_ENABLED
     if (logger->Enabled())
       logger->OnPostDispatchMessage(message, channel_id_);
@@ -189,16 +94,14 @@ bool ChannelProxy::Context::OnMessageReceivedNoFilter(const Message& message) {
 
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnChannelConnected(int32 peer_pid) {
+  // We cache off the peer_pid so it can be safely accessed from both threads.
+  peer_pid_ = channel_->GetPeerPID();
+
   // Add any pending filters.  This avoids a race condition where someone
   // creates a ChannelProxy, calls AddFilter, and then right after starts the
   // peer process.  The IO thread could receive a message before the task to add
   // the filter is run on the IO thread.
   OnAddFilter();
-
-  // We cache off the peer_pid so it can be safely accessed from both threads.
-  peer_pid_ = channel_->peer_pid();
-  for (size_t i = 0; i < filters_.size(); ++i)
-    filters_[i]->OnChannelConnected(peer_pid);
 
   // See above comment about using listener_task_runner_ here.
   listener_task_runner_->PostTask(
@@ -236,7 +139,7 @@ void ChannelProxy::Context::OnChannelOpened() {
 void ChannelProxy::Context::OnChannelClosed() {
   // It's okay for IPC::ChannelProxy::Close to be called more than once, which
   // would result in this branch being taken.
-  if (!channel_.get())
+  if (!channel_)
     return;
 
   for (size_t i = 0; i < filters_.size(); ++i) {
@@ -245,8 +148,11 @@ void ChannelProxy::Context::OnChannelClosed() {
   }
 
   // We don't need the filters anymore.
-  filters_.clear();
   message_filter_router_->Clear();
+  filters_.clear();
+  // We don't need the lock, because at this point, the listener thread can't
+  // access it any more.
+  pending_filters_.clear();
 
   channel_.reset();
 
@@ -261,16 +167,24 @@ void ChannelProxy::Context::Clear() {
 
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnSendMessage(scoped_ptr<Message> message) {
-  if (!channel_.get()) {
+  if (!channel_) {
     OnChannelClosed();
     return;
   }
+
   if (!channel_->Send(message.release()))
     OnChannelError();
 }
 
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnAddFilter() {
+  // Our OnChannelConnected method has not yet been called, so we can't be
+  // sure that channel_ is valid yet. When OnChannelConnected *is* called,
+  // it invokes OnAddFilter, so any pending filter(s) will be added at that
+  // time.
+  if (peer_pid_ == base::kNullProcessId)
+    return;
+
   std::vector<scoped_refptr<MessageFilter> > new_filters;
   {
     base::AutoLock auto_lock(pending_filters_lock_);
@@ -282,19 +196,28 @@ void ChannelProxy::Context::OnAddFilter() {
 
     message_filter_router_->AddFilter(new_filters[i].get());
 
-    // If the channel has already been created, then we need to send this
-    // message so that the filter gets access to the Channel.
-    if (channel_.get())
-      new_filters[i]->OnFilterAdded(channel_.get());
-    // Ditto for if the channel has been connected.
-    if (peer_pid_)
-      new_filters[i]->OnChannelConnected(peer_pid_);
+    // The channel has already been created and connected, so we need to
+    // inform the filters right now.
+    new_filters[i]->OnFilterAdded(channel_.get());
+    new_filters[i]->OnChannelConnected(peer_pid_);
   }
 }
 
 // Called on the IPC::Channel thread
 void ChannelProxy::Context::OnRemoveFilter(MessageFilter* filter) {
-  if (!channel_.get())
+  if (peer_pid_ == base::kNullProcessId) {
+    // The channel is not yet connected, so any filters are still pending.
+    base::AutoLock auto_lock(pending_filters_lock_);
+    for (size_t i = 0; i < pending_filters_.size(); ++i) {
+      if (pending_filters_[i].get() == filter) {
+        filter->OnFilterRemoved();
+        pending_filters_.erase(pending_filters_.begin() + i);
+        return;
+      }
+    }
+    return;
+  }
+  if (!channel_)
     return;  // The filters have already been deleted.
 
   message_filter_router_->RemoveFilter(filter);
@@ -324,10 +247,10 @@ void ChannelProxy::Context::OnDispatchMessage(const Message& message) {
   Logging* logger = Logging::GetInstance();
   std::string name;
   logger->GetMessageText(message.type(), &name, &message, NULL);
-  TRACE_EVENT1("toplevel", "ChannelProxy::Context::OnDispatchMessage",
+  TRACE_EVENT1("ipc", "ChannelProxy::Context::OnDispatchMessage",
                "name", name);
 #else
-  TRACE_EVENT2("toplevel", "ChannelProxy::Context::OnDispatchMessage",
+  TRACE_EVENT2("ipc", "ChannelProxy::Context::OnDispatchMessage",
                "class", IPC_MESSAGE_ID_CLASS(message.type()),
                "line", IPC_MESSAGE_ID_LINE(message.type()));
 #endif
@@ -348,6 +271,8 @@ void ChannelProxy::Context::OnDispatchMessage(const Message& message) {
 #endif
 
   listener_->OnMessageReceived(message);
+  if (message.dispatch_error())
+    listener_->OnBadMessageReceived(message);
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
   if (logger->Enabled())
@@ -371,20 +296,33 @@ void ChannelProxy::Context::OnDispatchError() {
     listener_->OnChannelError();
 }
 
+// Called on the listener's thread
+void ChannelProxy::Context::OnDispatchBadMessage(const Message& message) {
+  if (listener_)
+    listener_->OnBadMessageReceived(message);
+}
+
 //-----------------------------------------------------------------------------
 
-ChannelProxy::ChannelProxy(const IPC::ChannelHandle& channel_handle,
-                           Channel::Mode mode,
-                           Listener* listener,
-                           base::SingleThreadTaskRunner* ipc_task_runner)
-    : context_(new Context(listener, ipc_task_runner)),
-      did_init_(false) {
-  Init(channel_handle, mode, true);
+// static
+scoped_ptr<ChannelProxy> ChannelProxy::Create(
+    const IPC::ChannelHandle& channel_handle,
+    Channel::Mode mode,
+    Listener* listener,
+    base::SingleThreadTaskRunner* ipc_task_runner) {
+  scoped_ptr<ChannelProxy> channel(new ChannelProxy(listener, ipc_task_runner));
+  channel->Init(channel_handle, mode, true);
+  return channel.Pass();
 }
 
 ChannelProxy::ChannelProxy(Context* context)
     : context_(context),
       did_init_(false) {
+}
+
+ChannelProxy::ChannelProxy(Listener* listener,
+                           base::SingleThreadTaskRunner* ipc_task_runner)
+    : context_(new Context(listener, ipc_task_runner)), did_init_(false) {
 }
 
 ChannelProxy::~ChannelProxy() {
@@ -497,15 +435,6 @@ int ChannelProxy::TakeClientFileDescriptor() {
   // Channel must have been created first.
   DCHECK(channel) << context_.get()->channel_id_;
   return channel->TakeClientFileDescriptor();
-}
-
-bool ChannelProxy::GetPeerEuid(uid_t* peer_euid) const {
-  DCHECK(CalledOnValidThread());
-
-  Channel* channel = context_.get()->channel_.get();
-  // Channel must have been created first.
-  DCHECK(channel) << context_.get()->channel_id_;
-  return channel->GetPeerEuid(peer_euid);
 }
 #endif
 

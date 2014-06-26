@@ -41,11 +41,6 @@ class MockBrowserViewLayoutDelegate : public BrowserViewLayoutDelegate {
   virtual views::View* GetContentsWebView() const OVERRIDE {
     return contents_web_view_;
   }
-  virtual views::View* GetWindowSwitcherButton() const OVERRIDE {
-    // TODO(jamescook): Add a test for Windows that exercises the layout for
-    // this button.
-    return NULL;
-  }
   virtual bool IsTabStripVisible() const OVERRIDE {
     return tab_strip_visible_;
   }
@@ -94,7 +89,7 @@ class MockView : public views::View {
   virtual ~MockView() {}
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return size_;
   }
 

@@ -14,13 +14,13 @@ class Browser;
 @class BrowserActionButton;
 @class BrowserActionsContainerView;
 @class ExtensionPopupController;
-class ExtensionToolbarModel;
 class ExtensionServiceObserverBridge;
 @class MenuButton;
 class Profile;
 
 namespace extensions {
 class Extension;
+class ExtensionToolbarModel;
 }
 
 // Sent when the visibility of the Browser Actions changes.
@@ -40,7 +40,7 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
   Profile* profile_;
 
   // The model that tracks the order of the toolbar icons. Weak.
-  ExtensionToolbarModel* toolbarModel_;
+  extensions::ExtensionToolbarModel* toolbarModel_;
 
   // The observer for the ExtensionService we're getting events from.
   scoped_ptr<ExtensionServiceObserverBridge> observer_;
@@ -103,6 +103,9 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
 // being hidden (fading out). Will return NO if it is not hidden or is in the
 // process of fading in.
 - (BOOL)chevronIsHidden;
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id;
 
 @end  // @interface BrowserActionsController
 

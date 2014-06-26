@@ -30,7 +30,7 @@ class VerticalCandidateLabel : public views::Label {
 
   // Returns the preferred size, but guarantees that the width has at
   // least kMinCandidateLabelWidth pixels.
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     gfx::Size size = Label::GetPreferredSize();
     size.SetToMax(gfx::Size(kMinCandidateLabelWidth, 0));
     size.SetToMin(gfx::Size(kMaxCandidateLabelWidth, size.height()));
@@ -140,7 +140,10 @@ CandidateView::CandidateView(
       shortcut_label_(NULL),
       candidate_label_(NULL),
       annotation_label_(NULL),
-      infolist_icon_(NULL) {
+      infolist_icon_(NULL),
+      shortcut_width_(0),
+      candidate_width_(0),
+      highlighted_(false) {
   SetBorder(views::Border::CreateEmptyBorder(1, 1, 1, 1));
 
   const ui::NativeTheme& theme = *GetNativeTheme();
@@ -188,9 +191,12 @@ void CandidateView::SetInfolistIcon(bool enable) {
   SchedulePaint();
 }
 
-void CandidateView::StateChanged() {
-  shortcut_label_->SetEnabled(state() != STATE_DISABLED);
-  if (state() == STATE_PRESSED) {
+void CandidateView::SetHighlighted(bool highlighted) {
+  if (highlighted_ == highlighted)
+    return;
+
+  highlighted_ = highlighted;
+  if (highlighted) {
     ui::NativeTheme* theme = GetNativeTheme();
     set_background(
         views::Background::CreateSolidBackground(theme->GetSystemColor(
@@ -203,13 +209,20 @@ void CandidateView::StateChanged() {
     for (int i = 0; i < parent()->child_count(); ++i) {
       CandidateView* view =
           static_cast<CandidateView*>((parent()->child_at(i)));
-      if (view != this && view->state() == STATE_PRESSED)
-        view->SetState(STATE_NORMAL);
+      if (view != this)
+        view->SetHighlighted(false);
     }
   } else {
     set_background(NULL);
     SetBorder(views::Border::CreateEmptyBorder(1, 1, 1, 1));
   }
+  SchedulePaint();
+}
+
+void CandidateView::StateChanged() {
+  shortcut_label_->SetEnabled(state() != STATE_DISABLED);
+  if (state() == STATE_PRESSED)
+    SetHighlighted(true);
 }
 
 bool CandidateView::OnMouseDragged(const ui::MouseEvent& event) {
@@ -218,14 +231,16 @@ bool CandidateView::OnMouseDragged(const ui::MouseEvent& event) {
     gfx::Point location_in_widget(event.location());
     ConvertPointToWidget(this, &location_in_widget);
     for (int i = 0; i < parent()->child_count(); ++i) {
-      views::View* sibling = parent()->child_at(i);
+      CandidateView* sibling =
+          static_cast<CandidateView*>(parent()->child_at(i));
       if (sibling == this)
         continue;
       gfx::Point location_in_sibling(location_in_widget);
       ConvertPointFromWidget(sibling, &location_in_sibling);
       if (sibling->HitTestPoint(location_in_sibling)) {
         GetWidget()->GetRootView()->SetMouseHandler(sibling);
-        return sibling->OnMouseDragged(event);
+        sibling->SetHighlighted(true);
+        return sibling->OnMouseDragged(ui::MouseEvent(event, this, sibling));
       }
     }
 
@@ -257,7 +272,7 @@ void CandidateView::Layout() {
   annotation_label_->SetBounds(x, 0, right - x, height());
 }
 
-gfx::Size CandidateView::GetPreferredSize() {
+gfx::Size CandidateView::GetPreferredSize() const {
   const int padding_width =
       orientation_ == ui::CandidateWindow::VERTICAL ? 4 : 6;
   gfx::Size size;

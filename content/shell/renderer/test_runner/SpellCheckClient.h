@@ -10,7 +10,7 @@
 #include "content/shell/renderer/test_runner/WebTask.h"
 #include "third_party/WebKit/public/web/WebSpellCheckClient.h"
 
-namespace WebTestRunner {
+namespace content {
 
 class WebTestDelegate;
 class WebTestProxyBase;
@@ -22,7 +22,7 @@ public:
 
     void setDelegate(WebTestDelegate*);
 
-    WebTaskList* taskList() { return &m_taskList; }
+    WebTaskList* mutable_task_list() { return &m_taskList; }
     MockSpellCheck* mockSpellCheck() { return &m_spellcheck; }
 
     // blink::WebSpellCheckClient implementation.
@@ -52,6 +52,6 @@ private:
     DISALLOW_COPY_AND_ASSIGN(SpellCheckClient);
 };
 
-}
+}  // namespace content
 
 #endif  // CONTENT_SHELL_RENDERER_TEST_RUNNER_SPELLCHECKCLIENT_H_

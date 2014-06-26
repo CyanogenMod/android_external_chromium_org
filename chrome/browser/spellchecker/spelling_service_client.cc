@@ -4,7 +4,6 @@
 
 #include "chrome/browser/spellchecker/spelling_service_client.h"
 
-#include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/json/string_escape.h"
 #include "base/logging.h"
@@ -14,7 +13,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/common/spellcheck_result.h"
@@ -119,12 +117,6 @@ bool SpellingServiceClient::IsAvailable(
   std::string locale = pref->GetString(prefs::kSpellCheckDictionary);
   if (locale.empty())
     return false;
-
-  // If we do not have the spelling service enabled, then we are only available
-  // for SUGGEST.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kUseSpellingSuggestions))
-    return type == SUGGEST;
 
   // Finally, if all options are available, we only enable only SUGGEST
   // if SPELLCHECK is not available for our language because SPELLCHECK results
@@ -254,8 +246,11 @@ void SpellingServiceClient::OnURLFetchComplete(
     fetcher->GetResponseAsString(&data);
     success = ParseResponse(data, &results);
   }
-  callback_data->callback.Run(success, callback_data->text, results);
   spellcheck_fetchers_.erase(fetcher.get());
+
+  // The callback may release the last (transitive) dependency on |this|. It
+  // MUST be the last function called.
+  callback_data->callback.Run(success, callback_data->text, results);
 }
 
 net::URLFetcher* SpellingServiceClient::CreateURLFetcher(const GURL& url) {

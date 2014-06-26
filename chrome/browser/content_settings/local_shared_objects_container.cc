@@ -99,8 +99,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
       // The |domain_url| is only created in order to use the
       // SameDomainOrHost method below. It does not matter which scheme is
       // used as the scheme is ignored by the SameDomainOrHost method.
-      GURL domain_url(std::string(content::kHttpScheme) +
-                      content::kStandardSchemeSeparator + cookie_domain);
+      GURL domain_url(std::string(url::kHttpScheme) +
+                      url::kStandardSchemeSeparator + cookie_domain);
       if (SameDomainOrHost(origin, domain_url))
         ++count;
     }
@@ -168,8 +168,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
   for (OriginAppCacheInfoMap::const_iterator it = map.begin();
        it != map.end();
        ++it) {
-    const appcache::AppCacheInfoVector& info_vector = it->second;
-    for (appcache::AppCacheInfoVector::const_iterator info =
+    const content::AppCacheInfoVector& info_vector = it->second;
+    for (content::AppCacheInfoVector::const_iterator info =
              info_vector.begin();
          info != info_vector.end();
          ++info) {

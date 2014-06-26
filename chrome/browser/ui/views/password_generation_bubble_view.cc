@@ -5,14 +5,13 @@
 #include "chrome/browser/ui/views/password_generation_bubble_view.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/url_constants.h"
 #include "components/autofill/content/common/autofill_messages.h"
 #include "components/autofill/core/browser/password_generator.h"
 #include "components/autofill/core/common/password_generation_util.h"
-#include "content/public/browser/page_navigator.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/render_view_host.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -55,7 +54,7 @@ class TextfieldWrapper : public views::View {
   virtual ~TextfieldWrapper();
 
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  private:
   gfx::Size GetImageSize() const;
@@ -97,7 +96,7 @@ void TextfieldWrapper::Layout() {
   image_button_->SetSize(GetImageSize());
 }
 
-gfx::Size TextfieldWrapper::GetPreferredSize() {
+gfx::Size TextfieldWrapper::GetPreferredSize() const {
   int width = (textfield_->GetPreferredSize().width() +
                GetImageSize().width() +
                kTextfieldHorizontalPadding * 3);
@@ -121,9 +120,8 @@ PasswordGenerationBubbleView::PasswordGenerationBubbleView(
     const gfx::Rect& anchor_rect,
     views::View* anchor_view,
     content::RenderViewHost* render_view_host,
-    PasswordManager* password_manager,
+    password_manager::PasswordManager* password_manager,
     autofill::PasswordGenerator* password_generator,
-    content::PageNavigator* navigator,
     ui::ThemeProvider* theme_provider)
     : BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT),
       title_label_(NULL),
@@ -136,7 +134,6 @@ PasswordGenerationBubbleView::PasswordGenerationBubbleView(
       render_view_host_(render_view_host),
       password_manager_(password_manager),
       password_generator_(password_generator),
-      navigator_(navigator),
       theme_provider_(theme_provider) {}
 
 PasswordGenerationBubbleView::~PasswordGenerationBubbleView() {}
@@ -199,7 +196,7 @@ void PasswordGenerationBubbleView::Layout() {
       textfield_wrapper_->GetPreferredSize().height() + kWrapperBorderSize * 2);
 }
 
-gfx::Size PasswordGenerationBubbleView::GetPreferredSize() {
+gfx::Size PasswordGenerationBubbleView::GetPreferredSize() const {
   int width = (textfield_wrapper_->GetPreferredSize().width() +
                kButtonHorizontalSpacing +
                kButtonWidth - 1);
@@ -209,7 +206,7 @@ gfx::Size PasswordGenerationBubbleView::GetPreferredSize() {
   return gfx::Size(width, height);
 }
 
-gfx::Rect PasswordGenerationBubbleView::GetAnchorRect() {
+gfx::Rect PasswordGenerationBubbleView::GetAnchorRect() const {
   return anchor_rect_;
 }
 
@@ -220,7 +217,7 @@ void PasswordGenerationBubbleView::ButtonPressed(views::Button* sender,
         render_view_host_->GetRoutingID(), textfield_->text()));
     password_manager_->SetFormHasGeneratedPassword(form_);
     actions_.password_accepted = true;
-    StartFade(false);
+    GetWidget()->Close();
   }
   if (sender == regenerate_button_) {
     textfield_->SetText(

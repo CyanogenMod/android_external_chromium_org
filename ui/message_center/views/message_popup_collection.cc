@@ -13,14 +13,13 @@
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
-#include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification.h"
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/views/message_view_context_menu_controller.h"
@@ -65,6 +64,8 @@ MessagePopupCollection::MessagePopupCollection(gfx::NativeView parent,
     : parent_(parent),
       message_center_(message_center),
       tray_(tray),
+      display_id_(gfx::Display::kInvalidDisplayID),
+      screen_(NULL),
       defer_counter_(0),
       latest_toast_entered_(NULL),
       user_is_closing_toasts_by_clicking_(false),
@@ -74,34 +75,13 @@ MessagePopupCollection::MessagePopupCollection(gfx::NativeView parent,
   DCHECK(message_center_);
   defer_timer_.reset(new base::OneShotTimer<MessagePopupCollection>);
   message_center_->AddObserver(this);
-  gfx::Screen* screen = NULL;
-  gfx::Display display;
-  if (!parent_) {
-    // On Win+Aura, we don't have a parent since the popups currently show up
-    // on the Windows desktop, not in the Aura/Ash desktop.  This code will
-    // display the popups on the primary display.
-    screen = gfx::Screen::GetNativeScreen();
-    display = screen->GetPrimaryDisplay();
-  } else {
-    screen = gfx::Screen::GetScreenFor(parent_);
-    display = screen->GetDisplayNearestWindow(parent_);
-  }
-  screen->AddObserver(this);
-
-  display_id_ = display.id();
-  work_area_ = display.work_area();
-  ComputePopupAlignment(work_area_, display.bounds());
-
-  // We should not update before work area and popup alignment are computed.
-  DoUpdateIfPossible();
 }
 
 MessagePopupCollection::~MessagePopupCollection() {
   weak_factory_.InvalidateWeakPtrs();
 
-  gfx::Screen* screen = parent_ ?
-      gfx::Screen::GetScreenFor(parent_) : gfx::Screen::GetNativeScreen();
-  screen->RemoveObserver(this);
+  if (screen_)
+    screen_->RemoveObserver(this);
   message_center_->RemoveObserver(this);
 
   CloseAllWidgets();
@@ -203,10 +183,11 @@ void MessagePopupCollection::UpdateWidgets() {
 
     if (views::ViewsDelegate::views_delegate) {
       views::ViewsDelegate::views_delegate->NotifyAccessibilityEvent(
-          toast, ui::AccessibilityTypes::EVENT_ALERT);
+          toast, ui::AX_EVENT_ALERT);
     }
 
-    message_center_->DisplayedNotification((*iter)->id());
+    message_center_->DisplayedNotification(
+        (*iter)->id(), message_center::DISPLAY_SOURCE_POPUP);
   }
 }
 
@@ -469,20 +450,22 @@ void MessagePopupCollection::OnNotificationUpdated(
 
   for (NotificationList::PopupNotifications::iterator iter =
            notifications.begin(); iter != notifications.end(); ++iter) {
-    if ((*iter)->id() != notification_id)
+    Notification* notification = *iter;
+    DCHECK(notification);
+    ToastContentsView* toast_contents_view = *toast_iter;
+    DCHECK(toast_contents_view);
+
+    if (notification->id() != notification_id)
       continue;
 
     const RichNotificationData& optional_fields =
-        (*iter)->rich_notification_data();
+        notification->rich_notification_data();
     bool a11y_feedback_for_updates =
         optional_fields.should_make_spoken_feedback_for_popup_updates;
 
-    NotificationView* view =
-        NotificationView::Create(*toast_iter,
-                                 *(*iter),
-                                 true); // Create top-level notification.
-    view->set_context_menu_controller(context_menu_controller_.get());
-    (*toast_iter)->SetContents(view, a11y_feedback_for_updates);
+    toast_contents_view->UpdateContents(*notification,
+                                        a11y_feedback_for_updates);
+
     updated = true;
   }
 
@@ -525,6 +508,28 @@ void MessagePopupCollection::DecrementDeferCounter() {
 // deferred tasks are even able to run)
 // Then, see if there is vacant space for new toasts.
 void MessagePopupCollection::DoUpdateIfPossible() {
+  if (!screen_) {
+    gfx::Display display;
+    if (!parent_) {
+      // On Win+Aura, we don't have a parent since the popups currently show up
+      // on the Windows desktop, not in the Aura/Ash desktop.  This code will
+      // display the popups on the primary display.
+      screen_ = gfx::Screen::GetNativeScreen();
+      display = screen_->GetPrimaryDisplay();
+    } else {
+      screen_ = gfx::Screen::GetScreenFor(parent_);
+      display = screen_->GetDisplayNearestWindow(parent_);
+    }
+    screen_->AddObserver(this);
+
+    display_id_ = display.id();
+    // |work_area_| can be set already and it should not be overwritten here.
+    if (work_area_.IsEmpty()) {
+      work_area_ = display.work_area();
+      ComputePopupAlignment(work_area_, display.bounds());
+    }
+  }
+
   if (defer_counter_ > 0)
     return;
 
@@ -556,18 +561,24 @@ void MessagePopupCollection::SetDisplayInfo(const gfx::Rect& work_area,
   RepositionWidgets();
 }
 
-void MessagePopupCollection::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-  if (display.id() != display_id_)
-    return;
-
-  SetDisplayInfo(display.work_area(), display.bounds());
-}
-
 void MessagePopupCollection::OnDisplayAdded(const gfx::Display& new_display) {
 }
 
 void MessagePopupCollection::OnDisplayRemoved(const gfx::Display& old_display) {
+  if (display_id_ == old_display.id() && !parent_) {
+    gfx::Display display = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay();
+    display_id_ = display.id();
+    SetDisplayInfo(display.work_area(), display.bounds());
+  }
+}
+
+void MessagePopupCollection::OnDisplayMetricsChanged(
+    const gfx::Display& display, uint32_t metrics) {
+  if (display.id() != display_id_)
+    return;
+
+  if (metrics & DISPLAY_METRIC_BOUNDS || metrics & DISPLAY_METRIC_WORK_AREA)
+    SetDisplayInfo(display.work_area(), display.bounds());
 }
 
 views::Widget* MessagePopupCollection::GetWidgetForTest(const std::string& id)

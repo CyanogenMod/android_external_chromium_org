@@ -301,13 +301,25 @@ void AudioManagerWin::GetAudioOutputDeviceNames(
 
 AudioParameters AudioManagerWin::GetInputStreamParameters(
     const std::string& device_id) {
+  AudioParameters parameters;
   if (!core_audio_supported()) {
-    return AudioParameters(
+    // Windows Wave implementation is being used.
+    parameters = AudioParameters(
         AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO, 0, 48000,
         16, kFallbackBufferSize, AudioParameters::NO_EFFECTS);
+  } else  {
+    parameters = WASAPIAudioInputStream::GetInputStreamParameters(device_id);
   }
 
-  return WASAPIAudioInputStream::GetInputStreamParameters(device_id);
+  int user_buffer_size = GetUserBufferSize();
+  if (user_buffer_size) {
+    parameters.Reset(parameters.format(), parameters.channel_layout(),
+                     parameters.channels(), parameters.input_channels(),
+                     parameters.sample_rate(), parameters.bits_per_sample(),
+                     user_buffer_size);
+  }
+
+  return parameters;
 }
 
 std::string AudioManagerWin::GetAssociatedOutputDeviceID(
@@ -363,7 +375,8 @@ AudioOutputStream* AudioManagerWin::MakeLowLatencyOutputStream(
   return new WASAPIAudioOutputStream(this,
       device_id == AudioManagerBase::kDefaultDeviceId ?
           std::string() : device_id,
-      params, eConsole);
+      params,
+      params.effects() & AudioParameters::DUCKING ? eCommunications : eConsole);
 }
 
 // Factory for the implementations of AudioInputStream for AUDIO_PCM_LINEAR
@@ -410,6 +423,7 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
   int buffer_size = kFallbackBufferSize;
   int bits_per_sample = 16;
   int input_channels = 0;
+  int effects = AudioParameters::NO_EFFECTS;
   bool use_input_params = !core_audio_supported();
   if (core_audio_supported()) {
     if (cmd_line->HasSwitch(switches::kEnableExclusiveAudio)) {
@@ -433,7 +447,13 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
         buffer_size = params.frames_per_buffer();
         channel_layout = params.channel_layout();
         sample_rate = params.sample_rate();
+        effects = params.effects();
       } else {
+        // TODO(tommi): This should never happen really and I'm not sure that
+        // setting use_input_params is the right thing to do since WASAPI i
+        // definitely supported (see  core_audio_supported() above) and
+        // |use_input_params| is only for cases when it isn't supported.
+        DLOG(ERROR) << "GetPreferredAudioParameters failed: " << std::hex << hr;
         use_input_params = true;
       }
     }
@@ -468,6 +488,7 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
       }
     }
     input_channels = input_params.input_channels();
+    effects |= input_params.effects();
     if (use_input_params) {
       // If WASAPI isn't supported we'll fallback to WaveOut, which will take
       // care of resampling and bits per sample changes.  By setting these
@@ -487,7 +508,7 @@ AudioParameters AudioManagerWin::GetPreferredOutputStreamParameters(
 
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
-      sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
+      sample_rate, bits_per_sample, buffer_size, effects);
 }
 
 AudioInputStream* AudioManagerWin::CreatePCMWaveInAudioInputStream(

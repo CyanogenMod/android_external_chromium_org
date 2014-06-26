@@ -23,6 +23,10 @@ class ConfigurationPolicyProvider;
 // implementations and Android.
 class ChromeBrowserPolicyConnector : public BrowserPolicyConnector {
  public:
+  // Service initialization delay time in millisecond on startup. (So that
+  // displaying Chrome's GUI does not get delayed.)
+  static const int64 kServiceInitializationStartupDelay = 5000;
+
   // Builds an uninitialized ChromeBrowserPolicyConnector, suitable for testing.
   // Init() should be called to create and start the policy machinery.
   ChromeBrowserPolicyConnector();
@@ -35,6 +39,12 @@ class ChromeBrowserPolicyConnector : public BrowserPolicyConnector {
 
  private:
   ConfigurationPolicyProvider* CreatePlatformProvider();
+
+  // Appends the --enable-web-based-signin flag if the
+  // enable-web-based-signin policy is enabled.
+  // TODO(guohui): Needs to move this to a more proper place and also to handle
+  // dynamic refresh.
+ void AppendExtraFlagPerPolicy();
 
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserPolicyConnector);
 };

@@ -9,24 +9,39 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "extensions/browser/extension_prefs_observer.h"
 
-class CommandLine;
+class ExtensionFunctionRegistry;
 class PrefService;
+
+namespace base {
+class CommandLine;
+class FilePath;
+}
 
 namespace content {
 class BrowserContext;
-class JavaScriptDialogManager;
 class WebContents;
+}
+
+namespace net {
+class NetworkDelegate;
+class URLRequest;
+class URLRequestJob;
 }
 
 namespace extensions {
 
 class ApiActivityMonitor;
 class AppSorting;
+class ComponentExtensionResourceManager;
 class Extension;
-class ExtensionHost;
+class ExtensionHostDelegate;
+class ExtensionPrefsObserver;
 class ExtensionSystem;
 class ExtensionSystemProvider;
+class InfoMap;
+class RuntimeAPIDelegate;
 
 // Interface to allow the extensions module to make browser-process-specific
 // queries of the embedder. Should be Set() once in the browser process.
@@ -43,7 +58,7 @@ class ExtensionsBrowserClient {
 
   // Returns true if extensions have been disabled (e.g. via a command-line flag
   // or preference).
-  virtual bool AreExtensionsDisabled(const CommandLine& command_line,
+  virtual bool AreExtensionsDisabled(const base::CommandLine& command_line,
                                      content::BrowserContext* context) = 0;
 
   // Returns true if the |context| is known to the embedder.
@@ -70,7 +85,7 @@ class ExtensionsBrowserClient {
       content::BrowserContext* context) = 0;
 
   // Returns true if |context| corresponds to a guest session.
-  virtual bool IsGuestSession(content::BrowserContext* context) = 0;
+  virtual bool IsGuestSession(content::BrowserContext* context) const = 0;
 
   // Returns true if |extension_id| can run in an incognito window.
   virtual bool IsExtensionIncognitoEnabled(
@@ -83,9 +98,40 @@ class ExtensionsBrowserClient {
       const extensions::Extension* extension,
       content::BrowserContext* context) const = 0;
 
+  // Returns true if |request| corresponds to a resource request from a
+  // <webview>.
+  virtual bool IsWebViewRequest(net::URLRequest* request) const = 0;
+
+  // Returns an URLRequestJob to load an extension resource from the embedder's
+  // resource bundle (.pak) files. Returns NULL if the request is not for a
+  // resource bundle resource or if the embedder does not support this feature.
+  // Used for component extensions. Called on the IO thread.
+  virtual net::URLRequestJob* MaybeCreateResourceBundleRequestJob(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const base::FilePath& directory_path,
+      const std::string& content_security_policy,
+      bool send_cors_header) = 0;
+
+  // Returns true if the embedder wants to allow a chrome-extension:// resource
+  // request coming from renderer A to access a resource in an extension running
+  // in renderer B. For example, Chrome overrides this to provide support for
+  // webview and dev tools. Called on the IO thread.
+  virtual bool AllowCrossRendererResourceLoad(net::URLRequest* request,
+                                              bool is_incognito,
+                                              const Extension* extension,
+                                              InfoMap* extension_info_map) = 0;
+
   // Returns the PrefService associated with |context|.
   virtual PrefService* GetPrefServiceForContext(
       content::BrowserContext* context) = 0;
+
+  // Populates a list of ExtensionPrefs observers to be attached to each
+  // BrowserContext's ExtensionPrefs upon construction. These observers
+  // are not owned by ExtensionPrefs.
+  virtual void GetEarlyExtensionPrefsObservers(
+      content::BrowserContext* context,
+      std::vector<ExtensionPrefsObserver*>* observers) const = 0;
 
   // Returns true if loading background pages should be deferred.
   virtual bool DeferLoadingBackgroundHosts(
@@ -94,12 +140,8 @@ class ExtensionsBrowserClient {
   virtual bool IsBackgroundPageAllowed(
       content::BrowserContext* context) const = 0;
 
-  // Called after the hosting |web_contents| for an extension is created. The
-  // implementation may wish to add preference observers to |web_contents|.
-  virtual void OnExtensionHostCreated(content::WebContents* web_contents) = 0;
-
-  // Called after |host| creates a RenderView for an extension.
-  virtual void OnRenderViewCreatedForBackgroundPage(ExtensionHost* host) = 0;
+  // Creates a new ExtensionHostDelegate instance.
+  virtual scoped_ptr<ExtensionHostDelegate> CreateExtensionHostDelegate() = 0;
 
   // Returns true if the client version has updated since the last run. Called
   // once each time the extensions system is loaded per browser_context. The
@@ -113,10 +155,6 @@ class ExtensionsBrowserClient {
   // Return true if the system is run in forced app mode.
   virtual bool IsRunningInForcedAppMode() = 0;
 
-  // Returns the embedder's JavaScriptDialogManager or NULL if the embedder
-  // does not support JavaScript dialogs.
-  virtual content::JavaScriptDialogManager* GetJavaScriptDialogManager() = 0;
-
   // Returns the embedder's ApiActivityMonitor for |context|. Returns NULL if
   // the embedder does not monitor extension API activity.
   virtual ApiActivityMonitor* GetApiActivityMonitor(
@@ -125,6 +163,21 @@ class ExtensionsBrowserClient {
   // Returns the factory that provides an ExtensionSystem to be returned from
   // ExtensionSystem::Get.
   virtual ExtensionSystemProvider* GetExtensionSystemFactory() = 0;
+
+  // Registers extension functions not belonging to the core extensions APIs.
+  virtual void RegisterExtensionFunctions(
+      ExtensionFunctionRegistry* registry) const = 0;
+
+  // Creates a RuntimeAPIDelegate responsible for handling extensions
+  // management-related events such as update and installation on behalf of the
+  // core runtime API implementation.
+  virtual scoped_ptr<RuntimeAPIDelegate> CreateRuntimeAPIDelegate(
+      content::BrowserContext* context) const = 0;
+
+  // Returns the manager of resource bundles used in extensions. Returns NULL if
+  // the manager doesn't exist.
+  virtual ComponentExtensionResourceManager*
+  GetComponentExtensionResourceManager() = 0;
 
   // Returns the single instance of |this|.
   static ExtensionsBrowserClient* Get();

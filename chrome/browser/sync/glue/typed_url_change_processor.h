@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_SYNC_GLUE_TYPED_URL_CHANGE_PROCESSOR_H_
 #define CHROME_BROWSER_SYNC_GLUE_TYPED_URL_CHANGE_PROCESSOR_H_
 
-#include "chrome/browser/sync/glue/change_processor.h"
+#include "components/sync_driver/change_processor.h"
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -71,7 +71,7 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   void Disconnect();
 
  protected:
-  virtual void StartImpl(Profile* profile) OVERRIDE;
+  virtual void StartImpl() OVERRIDE;
 
  private:
   friend class ScopedStopObserving<TypedUrlChangeProcessor>;
@@ -113,7 +113,7 @@ class TypedUrlChangeProcessor : public ChangeProcessor,
   // The set of pending changes that will be written out on the next
   // CommitChangesFromSyncModel() call.
   history::URLRows pending_new_urls_;
-  TypedUrlModelAssociator::TypedUrlUpdateVector pending_updated_urls_;
+  history::URLRows pending_updated_urls_;
   std::vector<GURL> pending_deleted_urls_;
   TypedUrlModelAssociator::TypedUrlVisitVector pending_new_visits_;
   history::VisitVector pending_deleted_visits_;

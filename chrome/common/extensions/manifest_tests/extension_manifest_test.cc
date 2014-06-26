@@ -10,7 +10,8 @@
 #include "base/path_service.h"
 #include "base/values.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_l10n_util.h"
+#include "extensions/common/extension_l10n_util.h"
+#include "extensions/common/test_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using extensions::Extension;
@@ -38,8 +39,7 @@ base::DictionaryValue* LoadManifestFile(const base::FilePath& filename_path,
   // Most unit tests don't need localization, and they'll fail if we try to
   // localize them, since their manifests don't have a default_locale key.
   // Only localize manifests that indicate they want to be localized.
-  // Calling LocalizeExtension at this point mirrors
-  // extension_file_util::LoadExtension.
+  // Calling LocalizeExtension at this point mirrors file_util::LoadExtension.
   if (manifest &&
       filename_path.value().find(FILE_PATH_LITERAL("localized")) !=
       std::string::npos)
@@ -64,6 +64,12 @@ ExtensionManifestTest::Manifest::Manifest(const char* name)
 ExtensionManifestTest::Manifest::Manifest(base::DictionaryValue* manifest,
                                           const char* name)
     : name_(name), manifest_(manifest) {
+  CHECK(manifest_) << "Manifest NULL";
+}
+
+ExtensionManifestTest::Manifest::Manifest(
+    scoped_ptr<base::DictionaryValue> manifest)
+    : manifest_(manifest.get()), manifest_holder_(manifest.Pass()) {
   CHECK(manifest_) << "Manifest NULL";
 }
 
@@ -134,6 +140,13 @@ scoped_refptr<Extension> ExtensionManifestTest::LoadAndExpectSuccess(
   return LoadAndExpectSuccess(Manifest(manifest_name), location, flags);
 }
 
+scoped_refptr<Extension> ExtensionManifestTest::LoadFromStringAndExpectSuccess(
+    char const* manifest_json) {
+  return LoadAndExpectSuccess(
+      Manifest(extensions::test_util::ParseJsonDictionaryWithSingleQuotes(
+          manifest_json)));
+}
+
 scoped_refptr<Extension> ExtensionManifestTest::LoadAndExpectWarning(
     const Manifest& manifest,
     const std::string& expected_warning,
@@ -189,6 +202,15 @@ void ExtensionManifestTest::LoadAndExpectError(
     int flags) {
   return LoadAndExpectError(
       Manifest(manifest_name), expected_error, location, flags);
+}
+
+void ExtensionManifestTest::LoadFromStringAndExpectError(
+    char const* manifest_json,
+    const std::string& expected_error) {
+  return LoadAndExpectError(
+      Manifest(extensions::test_util::ParseJsonDictionaryWithSingleQuotes(
+          manifest_json)),
+      expected_error);
 }
 
 void ExtensionManifestTest::AddPattern(extensions::URLPatternSet* extent,

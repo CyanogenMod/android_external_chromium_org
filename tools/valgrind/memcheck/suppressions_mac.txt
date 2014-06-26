@@ -99,6 +99,19 @@
    fun:-[NSBitmapImageRep(NSBitmapImageFileTypeExtensions) representationUsingType:properties:]
    fun:_ZN3gfx8internal24Get1xPNGBytesFromNSImageEP7NSImage
 }
+{
+   # See http://crbug.com/385604
+   bug_385604_a
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZNK11AEEventImpl9duplicateEv
+   fun:AESendMessage
+   fun:_ZL35HIToolboxLSNotificationCallbackFunc18LSNotificationCodedPKvPK7__LSASNS1_11LSSessionIDS1_
+   fun:_ZL48LSScheduleNotificationReceiveMessageCallbackFuncP12__CFMachPortPvlS1_
+   fun:__CFMachPortPerform
+   fun:__CFRunLoopRun
+   ...
+}
 # Intentional leaks in AppKit, for an OS-level cache. Only appear on the first
 # run of each reboot.  See also issues 105525, 257276, 340847.
 {
@@ -112,14 +125,7 @@
    bug_257276_b
    Memcheck:Leak
    fun:malloc_zone_malloc
-   fun:_CFRuntimeCreateInstance
-   fun:CFNumberCreate
-   fun:get_colorspace
-   fun:initImagePng
-   fun:_CGImagePluginInitPNG
-   fun:makeImagePlus
-   fun:CGImageSourceCreateImageAtIndex
-   fun:CGImageCreateWithPNGDataProvider
+   ...
    fun:setCursorFromBundle
    fun:CoreCursorSet
    fun:-[NSCursor set]
@@ -152,6 +158,7 @@
    bug_264886
    Memcheck:Leak
    fun:_Znw*
+   ...
    fun:_ZN4base26MessagePumpInstrumentation6CreateERKNS_9TimeDeltaES3_
    fun:_ZN4base24MessagePumpCFRunLoopBase21EnableInstrumentationEv
    fun:_ZN4base24MessagePumpNSApplicationC2Ev
@@ -1731,13 +1738,6 @@
    fun:CGFontGetVTable
    fun:CGFontCreateFontsWithPath
    fun:CGFontCreateFontsWithURL
-   fun:_Z18CreateFontsFromURLPK7__CFURL
-   fun:_ZNK21TLocalFontRegistryImp12RegisterFontEPK7__CFURLPK14__CFDictionaryjj
-   fun:_ZNK21TLocalFontRegistryImp13RegisterFontsEPK9__CFArrayPK14__CFDictionaryjjPS2_
-   fun:_ZNK18TLocalFontRegistry13RegisterFontsEPK9__CFArrayPK14__CFDictionaryjjPS2_
-   fun:XTRegisterFonts
-   fun:XTRegisterFont
-   fun:SendActivateFontsMessage
 }
 {
    bug_105580
@@ -2008,15 +2008,6 @@
    fun:memcpy
    ...
    fun:_ZN2v88internal18GvnBasicBlockState32*
-}
-{
-   bug_148865
-   Memcheck:Leak
-   fun:_Znw*
-   fun:_ZN7content16RenderThreadImpl4InitEv
-   fun:_ZN7content16RenderThreadImplC2ERKSs
-   fun:_ZN7content16RenderThreadImplC1ERKSs
-   fun:_ZN7content21WebRTCAudioDeviceTest5SetUpEv
 }
 {
    bug_159190
@@ -2377,6 +2368,7 @@
    bug_340957
    Memcheck:Leak
    fun:_Znw*
+   ...
    fun:_ZN7WebCore7RuleSet18ensurePendingRulesEv
    fun:_ZN7WebCore7RuleSet21findBestRuleSetAndAdd*
    fun:_ZN7WebCore7RuleSet7addRule*
@@ -2386,4 +2378,116 @@
    fun:_ZN7WebCore21CSSDefaultStyleSheets*
    ...
    fun:_ZN7WebCore13StyleResolver*
+}
+{
+   bug_346072
+   Memcheck:Leak
+   fun:_Znw*
+   fun:_ZN4base17LoadNativeLibraryERKNS_8FilePathEPSs
+   fun:_ZN3gfx26InitializeStaticGLBindingsENS_16GLImplementationE
+   fun:_ZN3gfx9GLSurface30InitializeOneOffImplementationENS_16GLImplementationEbbb
+   fun:_ZN3gfx9GLSurface24InitializeOneOffForTestsEb
+   fun:_ZN7content16ContentTestSuite10InitializeEv
+   fun:_ZN4base9TestSuite3RunEv
+   fun:_ZN7content17UnitTestTestSuite3RunEv
+}
+{
+   bug_369597
+   Memcheck:Leak
+   fun:malloc_zone_malloc
+   ...
+   fun:ImageProviderCopyImageBlockSetCallback
+   fun:CGImageProviderCopyImageBlockSet
+   fun:img_blocks_create
+   fun:img_data_lock
+   fun:CGSImageDataLock
+   fun:ripc_AcquireImage
+   fun:ripc_DrawImage
+   fun:CGContextDrawImage
+   ...
+   fun:_ZN12_GLOBAL__N_143NSImageOrNSImageRepToSkBitmapWithColorSpaceEP7NSImageP10NSImageRep7_NSSizebP12CGColorSpace
+   fun:_ZN3gfx31NSImageToSkBitmapWithColorSpaceEP7NSImagebP12CGColorSpace
+   fun:_ZNK2ui9Clipboard9ReadImageENS_13ClipboardTypeE
+}
+{
+   bug_375391_a
+   Memcheck:Leak
+   fun:calloc
+   fun:_internal_class_createInstanceFromZone
+   fun:_internal_class_createInstance
+   fun:NSAllocateObject
+   fun:+[NSData(NSData) dataWithBytesNoCopy:length:]
+   fun:-[NSFileManager fileSystemRepresentationWithPath:]
+   fun:-[NSString(NSPathUtilities) fileSystemRepresentation]
+   fun:_ZN4base3mac18NSStringToFilePathEP8NSString
+   fun:_ZN4base10GetTempDirEPNS_8FilePathE
+   fun:_ZN4base22CreateNewTempDirectoryERKSsPNS_8FilePathE
+   fun:_ZN4base13ScopedTempDir19CreateUniqueTempDirEv
+   fun:_ZN7content25TestWebKitPlatformSupportC2Ev
+   fun:_ZN7content25TestWebKitPlatformSupportC1Ev
+   fun:_ZN7content17UnitTestTestSuiteC2EPN4base9TestSuiteE
+   fun:_ZN7content17UnitTestTestSuiteC1EPN4base9TestSuiteE
+}
+{
+   bug_375391_b
+   Memcheck:Leak
+   fun:malloc_zone_malloc
+   fun:_CFRuntimeCreateInstance
+   fun:__CFStringCreateImmutableFunnel3
+   fun:CFStringCreateWithBytes
+   fun:-[NSPlaceholderString initWithBytes:length:encoding:]
+   fun:-[NSString initWithUTF8String:]
+   fun:NSTemporaryDirectory
+   fun:_ZN4base10GetTempDirEPNS_8FilePathE
+   fun:_ZN4base22CreateNewTempDirectoryERKSsPNS_8FilePathE
+   fun:_ZN4base13ScopedTempDir19CreateUniqueTempDirEv
+   fun:_ZN7content25TestWebKitPlatformSupportC2Ev
+   fun:_ZN7content25TestWebKitPlatformSupportC1Ev
+   fun:_ZN7content17UnitTestTestSuiteC2EPN4base9TestSuiteE
+   fun:_ZN7content17UnitTestTestSuiteC1EPN4base9TestSuiteE
+}
+{
+   bug_375391_c
+   Memcheck:Leak
+   fun:calloc
+   fun:_internal_class_createInstanceFromZone
+   fun:_internal_class_createInstance
+   fun:NSAllocateObject
+   fun:+[NSPathStore2 pathStoreWithCharacters:length:]
+   fun:-[NSString(NSPathUtilities) _stringByStandardizingPathUsingCache:]
+   fun:-[NSBundle _initInfoDictionary]
+   fun:+[NSBundle mainBundle]
+   fun:_ZN4base3mac11OuterBundleEv
+   fun:_ZN4base3mac12_GLOBAL__N_118UncachedAmIBundledEv
+   fun:_ZN4base3mac10AmIBundledEv
+   fun:_ZN7content25TestWebKitPlatformSupportC2Ev
+   fun:_ZN7content25TestWebKitPlatformSupportC1Ev
+   fun:_ZN7content17UnitTestTestSuiteC2EPN4base9TestSuiteE
+   fun:_ZN7content17UnitTestTestSuiteC1EPN4base9TestSuiteE
+}
+{
+   bug_380568
+   Memcheck:Leak
+   fun:calloc
+   fun:_internal_class_createInstanceFromZone
+   fun:_internal_class_createInstance
+   fun:NSAllocateObject
+   fun:+[NSObject(NSObject) alloc]
+   fun:-[VideoCaptureDeviceQTKit initWithFrameReceiver:]
+   fun:_ZN5media21VideoCaptureDeviceMac4InitENS_18VideoCaptureDevice4Name14CaptureApiTypeE
+   fun:_ZN5media28VideoCaptureDeviceFactoryMac6CreateERKNS_18VideoCaptureDevice4NameE
+   fun:_ZN5media45VideoCaptureDeviceTest_OpenInvalidDevice_Test8TestBodyEv
+}
+{
+   bug_385604_b
+   Memcheck:Leak
+   fun:calloc
+   fun:_ZN18hb_object_header_t6createEj
+   fun:_ZL16hb_object_createI9hb_face_tEPT_v
+   fun:hb_face_create_for_tables
+   fun:_ZN3gfx12_GLOBAL__N_118CreateHarfBuzzFaceEP10SkTypeface
+   fun:_ZN3gfx12_GLOBAL__N_118CreateHarfBuzzFontEP10SkTypefacei
+   fun:_ZN3gfx18RenderTextHarfBuzz8ShapeRunEPNS_8internal15TextRunHarfBuzzE
+   fun:_ZN3gfx18RenderTextHarfBuzz12EnsureLayoutEv
+   fun:_ZN3gfx41RenderTextTest_HarfBuzz_RunDirection_Test8TestBodyEv
 }

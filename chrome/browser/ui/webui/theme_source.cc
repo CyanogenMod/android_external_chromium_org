@@ -62,7 +62,7 @@ void ThemeSource::StartDataRequest(
     int render_frame_id,
     const content::URLDataSource::GotDataCallback& callback) {
   // Default scale factor if not specified.
-  ui::ScaleFactor scale_factor;
+  float scale_factor = 1.0f;
   std::string uncached_path;
   webui::ParsePathAndScale(GURL(GetThemePath() + path),
                            &uncached_path,
@@ -70,7 +70,7 @@ void ThemeSource::StartDataRequest(
 
   if (uncached_path == kNewTabCSSPath ||
       uncached_path == kNewIncognitoTabCSSPath) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
     callback.Run(css_bytes_.get());
     return;
@@ -137,18 +137,21 @@ bool ThemeSource::ShouldServiceRequest(const net::URLRequest* request) const {
 void ThemeSource::SendThemeBitmap(
     const content::URLDataSource::GotDataCallback& callback,
     int resource_id,
-    ui::ScaleFactor scale_factor) {
+    float scale_factor) {
+  ui::ScaleFactor resource_scale_factor =
+      ui::GetSupportedScaleFactor(scale_factor);
   if (ThemeProperties::IsThemeableImage(resource_id)) {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(BrowserThread::UI);
     ui::ThemeProvider* tp = ThemeServiceFactory::GetForProfile(profile_);
     DCHECK(tp);
 
-    scoped_refptr<base::RefCountedMemory> image_data(tp->GetRawData(
-        resource_id, scale_factor));
+    scoped_refptr<base::RefCountedMemory> image_data(
+        tp->GetRawData(resource_id, resource_scale_factor));
     callback.Run(image_data.get());
   } else {
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+    DCHECK_CURRENTLY_ON(BrowserThread::IO);
     const ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    callback.Run(rb.LoadDataResourceBytesForScale(resource_id, scale_factor));
+    callback.Run(
+        rb.LoadDataResourceBytesForScale(resource_id, resource_scale_factor));
   }
 }

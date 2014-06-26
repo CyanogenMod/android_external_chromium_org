@@ -4,23 +4,23 @@
 
 package org.chromium.chrome.browser;
 
+import android.annotation.SuppressLint;
 import android.app.SearchManager;
 import android.content.ContentProvider;
 import android.content.ContentUris;
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.UriMatcher;
 import android.database.Cursor;
 import android.database.MatrixCursor;
-import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcel;
 import android.os.Parcelable;
+import android.os.UserHandle;
 import android.preference.PreferenceManager;
 import android.provider.BaseColumns;
 import android.provider.Browser;
@@ -45,9 +45,8 @@ import java.util.Vector;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * This class provides various information of Chrome, like bookmarks, most
- * visited page etc. It is used to support android.provider.Browser.
- *
+ * This class provides access to user data stored in Chrome, such as bookmarks, most visited pages,
+ * etc. It is used to support android.provider.Browser.
  */
 public class ChromeBrowserProvider extends ContentProvider {
     private static final String TAG = "ChromeBrowserProvider";
@@ -60,14 +59,15 @@ public class ChromeBrowserProvider extends ContentProvider {
     // Defines the API methods that the Client can call by name.
     static final String CLIENT_API_BOOKMARK_NODE_EXISTS = "BOOKMARK_NODE_EXISTS";
     static final String CLIENT_API_CREATE_BOOKMARKS_FOLDER_ONCE = "CREATE_BOOKMARKS_FOLDER_ONCE";
-    static final String CLIENT_API_GET_BOOKMARK_FOLDER_HIERARCHY = "GET_BOOKMARK_FOLDER_HIERARCHY";
+    static final String CLIENT_API_GET_EDITABLE_BOOKMARK_FOLDER_HIERARCHY =
+            "GET_EDITABLE_BOOKMARK_FOLDER_HIERARCHY";
     static final String CLIENT_API_GET_BOOKMARK_NODE = "GET_BOOKMARK_NODE";
     static final String CLIENT_API_GET_DEFAULT_BOOKMARK_FOLDER = "GET_DEFAULT_BOOKMARK_FOLDER";
     static final String CLIENT_API_GET_MOBILE_BOOKMARKS_FOLDER_ID =
             "GET_MOBILE_BOOKMARKS_FOLDER_ID";
     static final String CLIENT_API_IS_BOOKMARK_IN_MOBILE_BOOKMARKS_BRANCH =
             "IS_BOOKMARK_IN_MOBILE_BOOKMARKS_BRANCH";
-    static final String CLIENT_API_DELETE_ALL_BOOKMARKS = "DELETE_ALL_BOOKMARKS";
+    static final String CLIENT_API_DELETE_ALL_USER_BOOKMARKS = "DELETE_ALL_USER_BOOKMARKS";
     static final String CLIENT_API_RESULT_KEY = "result";
 
 
@@ -114,7 +114,11 @@ public class ChromeBrowserProvider extends ContentProvider {
     /** The parameter used to specify whether this is a bookmark folder. */
     public static final String BOOKMARK_IS_FOLDER_PARAM = "isFolder";
 
-    /** Invalid id value for the Android ContentProvider API calls. */
+    /**
+     * Invalid ID value for the Android ContentProvider API calls.
+     * The value 0 is intentional: if the ID represents a bookmark node then it's the root node
+     * and not accessible. Otherwise it represents a SQLite row id, so 0 is also invalid.
+     */
     public static final long INVALID_CONTENT_PROVIDER_ID = 0;
 
     // ID used to indicate an invalid id for bookmark nodes.
@@ -302,20 +306,28 @@ public class ChromeBrowserProvider extends ContentProvider {
         return new ChromeBrowserProviderSuggestionsCursor(cursor);
     }
 
+    /**
+     * @see android.content.ContentUris#parseId(Uri)
+     * @return The id from a content URI or -1 if the URI has no id or is malformed.
+     */
+    private static long getContentUriId(Uri uri) {
+        try {
+            return ContentUris.parseId(uri);
+        } catch (UnsupportedOperationException e) {
+            return -1;
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
     @Override
     public Cursor query(Uri uri, String[] projection, String selection, String[] selectionArgs,
             String sortOrder) {
         if (!canHandleContentProviderApiCall()) return null;
 
         // Check for invalid id values if provided.
-        // If it represents a bookmark node then it's the root node. Don't provide access here.
-        // Otherwise it represents a SQLite row id, so 0 is invalid.
-        long bookmarkId = INVALID_CONTENT_PROVIDER_ID;
-        try {
-            bookmarkId = ContentUris.parseId(uri);
-            if (bookmarkId == INVALID_CONTENT_PROVIDER_ID) return null;
-        } catch (Exception e) {
-        }
+        long bookmarkId = getContentUriId(uri);
+        if (bookmarkId == INVALID_CONTENT_PROVIDER_ID) return null;
 
         int match = mUriMatcher.match(uri);
         Cursor cursor = null;
@@ -395,7 +407,7 @@ public class ChromeBrowserProvider extends ContentProvider {
         }
 
         res = ContentUris.withAppendedId(uri, id);
-        getContext().getContentResolver().notifyChange(res, null);
+        notifyChange(res);
         return res;
     }
 
@@ -404,14 +416,8 @@ public class ChromeBrowserProvider extends ContentProvider {
         if (!canHandleContentProviderApiCall()) return 0;
 
         // Check for invalid id values if provided.
-        // If it represents a bookmark node then it's the root node and not mutable.
-        // Otherwise it represents a SQLite row id, so 0 is invalid.
-        long bookmarkId = INVALID_CONTENT_PROVIDER_ID;
-        try {
-            bookmarkId = ContentUris.parseId(uri);
-            if (bookmarkId == INVALID_CONTENT_PROVIDER_ID) return 0;
-        } catch (Exception e) {
-        }
+        long bookmarkId = getContentUriId(uri);
+        if (bookmarkId == INVALID_CONTENT_PROVIDER_ID) return 0;
 
         int match = mUriMatcher.match(uri);
         int result;
@@ -450,9 +456,7 @@ public class ChromeBrowserProvider extends ContentProvider {
             default:
                 throw new IllegalArgumentException(TAG + ": delete - unknown URL " + uri);
         }
-        if (result != 0) {
-            getContext().getContentResolver().notifyChange(uri, null);
-        }
+        if (result != 0) notifyChange(uri);
         return result;
     }
 
@@ -461,14 +465,8 @@ public class ChromeBrowserProvider extends ContentProvider {
         if (!canHandleContentProviderApiCall()) return 0;
 
         // Check for invalid id values if provided.
-        // If it represents a bookmark node then it's the root node and not mutable.
-        // Otherwise it represents a SQLite row id, so 0 is invalid.
-        long bookmarkId = INVALID_CONTENT_PROVIDER_ID;
-        try {
-            bookmarkId = ContentUris.parseId(uri);
-            if (bookmarkId == INVALID_CONTENT_PROVIDER_ID) return 0;
-        } catch (Exception e) {
-        }
+        long bookmarkId = getContentUriId(uri);
+        if (bookmarkId == INVALID_CONTENT_PROVIDER_ID) return 0;
 
         int match = mUriMatcher.match(uri);
         int result;
@@ -520,9 +518,7 @@ public class ChromeBrowserProvider extends ContentProvider {
             default:
                 throw new IllegalArgumentException(TAG + ": update - unknown URL " + uri);
         }
-        if (result != 0) {
-            getContext().getContentResolver().notifyChange(uri, null);
-        }
+        if (result != 0) notifyChange(uri);
         return result;
     }
 
@@ -616,8 +612,8 @@ public class ChromeBrowserProvider extends ContentProvider {
         return nativeCreateBookmarksFolderOnce(mNativeChromeBrowserProvider, title, parentId);
     }
 
-    private BookmarkNode getBookmarkFolderHierarchy() {
-        return nativeGetAllBookmarkFolders(mNativeChromeBrowserProvider);
+    private BookmarkNode getEditableBookmarkFolderHierarchy() {
+        return nativeGetEditableBookmarkFolders(mNativeChromeBrowserProvider);
     }
 
     protected BookmarkNode getBookmarkNode(long nodeId, boolean getParent, boolean getChildren,
@@ -648,7 +644,7 @@ public class ChromeBrowserProvider extends ContentProvider {
         // then use the synced node (Mobile Bookmarks).
         BookmarkNode lastModified = getBookmarkNode(getLastModifiedBookmarkFolderId(), false, false,
                 false, false);
-        if (lastModified == null) {
+        if (lastModified == null || lastModified.isUrl()) {
             lastModified = getMobileBookmarksFolder();
             mLastModifiedBookmarkFolderId = lastModified != null ? lastModified.id() :
                     INVALID_BOOKMARK_ID;
@@ -706,8 +702,8 @@ public class ChromeBrowserProvider extends ContentProvider {
             result.putLong(CLIENT_API_RESULT_KEY,
                     createBookmarksFolderOnce(extras.getString(argKey(0)),
                                               extras.getLong(argKey(1))));
-        } else if (CLIENT_API_GET_BOOKMARK_FOLDER_HIERARCHY.equals(method)) {
-            result.putParcelable(CLIENT_API_RESULT_KEY, getBookmarkFolderHierarchy());
+        } else if (CLIENT_API_GET_EDITABLE_BOOKMARK_FOLDER_HIERARCHY.equals(method)) {
+            result.putParcelable(CLIENT_API_RESULT_KEY, getEditableBookmarkFolderHierarchy());
         } else if (CLIENT_API_GET_BOOKMARK_NODE.equals(method)) {
             result.putParcelable(CLIENT_API_RESULT_KEY,
                     getBookmarkNode(extras.getLong(argKey(0)),
@@ -722,8 +718,8 @@ public class ChromeBrowserProvider extends ContentProvider {
         } else if (CLIENT_API_IS_BOOKMARK_IN_MOBILE_BOOKMARKS_BRANCH.equals(method)) {
             result.putBoolean(CLIENT_API_RESULT_KEY,
                     isBookmarkInMobileBookmarksBranch(extras.getLong(argKey(0))));
-        } else if (CLIENT_API_DELETE_ALL_BOOKMARKS.equals(method)) {
-            nativeRemoveAllBookmarks(mNativeChromeBrowserProvider);
+        } else if (CLIENT_API_DELETE_ALL_USER_BOOKMARKS.equals(method)) {
+            nativeRemoveAllUserBookmarks(mNativeChromeBrowserProvider);
         } else {
             Log.w(TAG, "Received invalid method " + method);
             return null;
@@ -1046,14 +1042,12 @@ public class ChromeBrowserProvider extends ContentProvider {
 
     @CalledByNative
     private void onBookmarkChanged() {
-        getContext().getContentResolver().notifyChange(
-                buildAPIContentUri(getContext(), BOOKMARKS_PATH), null);
+        notifyChange(buildAPIContentUri(getContext(), BOOKMARKS_PATH));
     }
 
     @CalledByNative
     private void onSearchTermChanged() {
-        getContext().getContentResolver().notifyChange(
-                buildAPIContentUri(getContext(), SEARCHES_PATH), null);
+        notifyChange(buildAPIContentUri(getContext(), SEARCHES_PATH));
     }
 
     private long addSearchTermFromAPI(ContentValues values) {
@@ -1276,13 +1270,28 @@ public class ChromeBrowserProvider extends ContentProvider {
         }
     }
 
-    /**
-     * Call to get the intent to create a bookmark shortcut on homescreen.
-     */
-    public static Intent getShortcutToBookmark(String url, String title, Bitmap favicon, int rValue,
-            int gValue, int bValue, Context context) {
-        return BookmarkUtils.createAddToHomeIntent(
-                context, url, title, favicon, rValue, gValue, bValue);
+    @SuppressLint("NewApi")
+    private void notifyChange(final Uri uri) {
+        // If the calling user is different than current one, we need to post a
+        // task to notify change, otherwise, a system level hidden permission
+        // INTERACT_ACROSS_USERS_FULL is needed.
+        // The related APIs were added in API 17, it should be safe to fallback to
+        // normal way for notifying change, because caller can't be other users in
+        // devices whose API level is less than API 17.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            UserHandle callingUserHandle = Binder.getCallingUserHandle();
+            if (callingUserHandle != null &&
+                    !callingUserHandle.equals(android.os.Process.myUserHandle())) {
+                ThreadUtils.postOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        getContext().getContentResolver().notifyChange(uri, null);
+                    }
+                });
+                return;
+            }
+        }
+        getContext().getContentResolver().notifyChange(uri, null);
     }
 
     private native long nativeInit();
@@ -1332,9 +1341,9 @@ public class ChromeBrowserProvider extends ContentProvider {
     private native long nativeCreateBookmarksFolderOnce(long nativeChromeBrowserProvider,
             String title, long parentId);
 
-    private native BookmarkNode nativeGetAllBookmarkFolders(long nativeChromeBrowserProvider);
+    private native BookmarkNode nativeGetEditableBookmarkFolders(long nativeChromeBrowserProvider);
 
-    private native void nativeRemoveAllBookmarks(long nativeChromeBrowserProvider);
+    private native void nativeRemoveAllUserBookmarks(long nativeChromeBrowserProvider);
 
     private native BookmarkNode nativeGetBookmarkNode(long nativeChromeBrowserProvider,
             long id, boolean getParent, boolean getChildren);

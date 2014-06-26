@@ -38,23 +38,20 @@ class MessagePopupCollection;
 }
 
 namespace ash {
-namespace internal {
 class StatusAreaWidget;
 class WebNotificationBubbleWrapper;
 class WebNotificationButton;
 class WorkAreaObserver;
-}
 
 class ASH_EXPORT WebNotificationTray
-    : public internal::TrayBackgroundView,
+    : public TrayBackgroundView,
       public views::TrayBubbleView::Delegate,
       public message_center::MessageCenterTrayDelegate,
       public views::ButtonListener,
       public base::SupportsWeakPtr<WebNotificationTray>,
       public ui::SimpleMenuModel::Delegate {
  public:
-  explicit WebNotificationTray(
-      internal::StatusAreaWidget* status_area_widget);
+  explicit WebNotificationTray(StatusAreaWidget* status_area_widget);
   virtual ~WebNotificationTray();
 
   // Sets the height of the system tray from the edge of the work area so that
@@ -85,7 +82,7 @@ class ASH_EXPORT WebNotificationTray
       const views::TrayBubbleView* bubble_view) OVERRIDE;
   virtual bool ClickedOutsideBubble() OVERRIDE;
 
-  // Overridden from internal::ActionableView.
+  // Overridden from ActionableView.
   virtual bool PerformAction(const ui::Event& event) OVERRIDE;
 
   // Overridden from views::TrayBubbleView::Delegate.
@@ -93,9 +90,10 @@ class ASH_EXPORT WebNotificationTray
   virtual void OnMouseEnteredView() OVERRIDE;
   virtual void OnMouseExitedView() OVERRIDE;
   virtual base::string16 GetAccessibleNameForBubble() OVERRIDE;
-  virtual gfx::Rect GetAnchorRect(views::Widget* anchor_widget,
-                                  AnchorType anchor_type,
-                                  AnchorAlignment anchor_alignment) OVERRIDE;
+  virtual gfx::Rect GetAnchorRect(
+      views::Widget* anchor_widget,
+      AnchorType anchor_type,
+      AnchorAlignment anchor_alignment) const OVERRIDE;
   virtual void HideBubble(const views::TrayBubbleView* bubble_view) OVERRIDE;
 
   // Overridden from ButtonListener.
@@ -154,7 +152,7 @@ class ASH_EXPORT WebNotificationTray
   // Creates the menu model for quiet mode and returns it.
   ui::MenuModel* CreateQuietModeMenu();
 
-  internal::WebNotificationBubbleWrapper* message_center_bubble() const {
+  WebNotificationBubbleWrapper* message_center_bubble() const {
     return message_center_bubble_.get();
   }
 
@@ -163,9 +161,9 @@ class ASH_EXPORT WebNotificationTray
   message_center::MessageCenterBubble* GetMessageCenterBubbleForTest();
 
   scoped_ptr<message_center::MessageCenterTray> message_center_tray_;
-  scoped_ptr<internal::WebNotificationBubbleWrapper> message_center_bubble_;
+  scoped_ptr<WebNotificationBubbleWrapper> message_center_bubble_;
   scoped_ptr<message_center::MessagePopupCollection> popup_collection_;
-  internal::WebNotificationButton* button_;
+  WebNotificationButton* button_;
 
   bool show_message_center_on_unlock_;
 
@@ -178,7 +176,7 @@ class ASH_EXPORT WebNotificationTray
   bool should_block_shelf_auto_hide_;
 
   // Observes the work area for |popup_collection_| and notifies to it.
-  scoped_ptr<internal::WorkAreaObserver> work_area_observer_;
+  scoped_ptr<WorkAreaObserver> work_area_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(WebNotificationTray);
 };

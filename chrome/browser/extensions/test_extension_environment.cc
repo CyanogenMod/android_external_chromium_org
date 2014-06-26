@@ -32,7 +32,7 @@ TestExtensionEnvironment::TestExtensionEnvironment()
       extension_service_(NULL),
       extension_prefs_(NULL) {
 #if defined(USE_AURA)
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
 #endif
 }
 
@@ -47,7 +47,7 @@ TestingProfile* TestExtensionEnvironment::profile() const {
 }
 
 TestExtensionSystem* TestExtensionEnvironment::GetExtensionSystem() {
-  return static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile()));;
+  return static_cast<TestExtensionSystem*>(ExtensionSystem::Get(profile()));
 }
 
 ExtensionService* TestExtensionEnvironment::GetExtensionService() {

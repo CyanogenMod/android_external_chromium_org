@@ -89,9 +89,6 @@ _REVISION_NEGATIVE_FILTER['HEAD'] = [
     'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistoryInPresenceOfIframes',
     'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistory',
 ]
-_REVISION_NEGATIVE_FILTER['31'] = _REVISION_NEGATIVE_FILTER['HEAD'] + [
-    'I18nTest.*',  # This was fixed in a later version of 31 than we use.
-]
 
 
 _OS_NEGATIVE_FILTER = {}
@@ -115,6 +112,8 @@ _OS_NEGATIVE_FILTER['mac'] = [
     'AlertsTest.testShouldAllowUsersToAcceptAnAlertInAFrame',
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=375
     'PageLoadingTest.testShouldBeAbleToNavigateBackInTheBrowserHistoryInPresenceOfIframes',
+    # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=416
+    'TakesScreenshotTest.testShouldCaptureScreenshotAtFramePage',
 ]
 _OS_NEGATIVE_FILTER['android:chrome'] = [
     'ChromeOptionsFunctionalTest.canStartChromeWithCustomOptions',
@@ -162,7 +161,7 @@ _OS_NEGATIVE_FILTER['android:chrome'] = [
     "SessionHandlingTest.callingQuitMoreThanOnceOnASessionIsANoOp",
     # Test is written using local files; doesn't work on Android.
     'UploadTest.testFileUploading',
-    # Not applicable on Chromium Test Shell (doesn't support tabs).
+    # Not applicable on ChromeShell (doesn't support tabs).
     'WindowSwitchingTest.*',
 
     # Flaky: https://code.google.com/p/chromedriver/issues/detail?id=441
@@ -185,7 +184,7 @@ _OS_NEGATIVE_FILTER['android:chrome_stable'] = (
     _OS_NEGATIVE_FILTER['android:chrome'])
 _OS_NEGATIVE_FILTER['android:chrome_beta'] = (
     _OS_NEGATIVE_FILTER['android:chrome'])
-_OS_NEGATIVE_FILTER['android:chromium_test_shell'] = (
+_OS_NEGATIVE_FILTER['android:chrome_shell'] = (
     _OS_NEGATIVE_FILTER['android:chrome'])
 _OS_NEGATIVE_FILTER['android:chromedriver_webview_shell'] = (
     _OS_NEGATIVE_FILTER['android:chrome'] + [

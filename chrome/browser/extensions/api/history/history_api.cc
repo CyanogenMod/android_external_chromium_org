@@ -30,7 +30,8 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
@@ -191,51 +192,47 @@ void HistoryEventRouter::DispatchEvent(
     Profile* profile,
     const std::string& event_name,
     scoped_ptr<base::ListValue> event_args) {
-  if (profile && extensions::ExtensionSystem::Get(profile)->event_router()) {
+  if (profile && extensions::EventRouter::Get(profile)) {
     scoped_ptr<extensions::Event> event(new extensions::Event(
         event_name, event_args.Pass()));
     event->restrict_to_browser_context = profile;
-    extensions::ExtensionSystem::Get(profile)->event_router()->
-        BroadcastEvent(event.Pass());
+    extensions::EventRouter::Get(profile)->BroadcastEvent(event.Pass());
   }
 }
 
-HistoryAPI::HistoryAPI(Profile* profile) : profile_(profile) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, api::history::OnVisited::kEventName);
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      this, api::history::OnVisitRemoved::kEventName);
+HistoryAPI::HistoryAPI(content::BrowserContext* context)
+    : browser_context_(context) {
+  EventRouter* event_router = EventRouter::Get(browser_context_);
+  event_router->RegisterObserver(this, api::history::OnVisited::kEventName);
+  event_router->RegisterObserver(this,
+                                 api::history::OnVisitRemoved::kEventName);
 }
 
 HistoryAPI::~HistoryAPI() {
 }
 
 void HistoryAPI::Shutdown() {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<HistoryAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<HistoryAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<HistoryAPI>* HistoryAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<HistoryAPI>* HistoryAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-template<>
-void ProfileKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies() {
-  DependsOn(ActivityLogFactory::GetInstance());
+template <>
+void BrowserContextKeyedAPIFactory<HistoryAPI>::DeclareFactoryDependencies() {
+  DependsOn(ActivityLog::GetFactoryInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 void HistoryAPI::OnListenerAdded(const EventListenerInfo& details) {
-  history_event_router_.reset(new HistoryEventRouter(profile_));
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(this);
-}
-
-void HistoryFunction::Run() {
-  if (!RunImpl()) {
-    SendResponse(false);
-  }
+  history_event_router_.reset(
+      new HistoryEventRouter(Profile::FromBrowserContext(browser_context_)));
+  EventRouter::Get(browser_context_)->UnregisterObserver(this);
 }
 
 bool HistoryFunction::ValidateUrl(const std::string& url_string, GURL* url) {
@@ -273,7 +270,7 @@ HistoryFunctionWithCallback::HistoryFunctionWithCallback() {
 HistoryFunctionWithCallback::~HistoryFunctionWithCallback() {
 }
 
-bool HistoryFunctionWithCallback::RunImpl() {
+bool HistoryFunctionWithCallback::RunAsync() {
   AddRef();  // Balanced in SendAysncRepose() and below.
   bool retval = RunAsyncImpl();
   if (false == retval)
@@ -289,7 +286,7 @@ void HistoryFunctionWithCallback::SendAsyncResponse() {
 
 void HistoryFunctionWithCallback::SendResponseToCallback() {
   SendResponse(true);
-  Release();  // Balanced in RunImpl().
+  Release();  // Balanced in RunAsync().
 }
 
 bool HistoryGetVisitsFunction::RunAsyncImpl() {
@@ -304,22 +301,20 @@ bool HistoryGetVisitsFunction::RunAsyncImpl() {
       GetProfile(), Profile::EXPLICIT_ACCESS);
   hs->QueryURL(url,
                true,  // Retrieve full history of a URL.
-               &cancelable_consumer_,
                base::Bind(&HistoryGetVisitsFunction::QueryComplete,
-                          base::Unretained(this)));
-
+                          base::Unretained(this)),
+               &task_tracker_);
   return true;
 }
 
 void HistoryGetVisitsFunction::QueryComplete(
-    HistoryService::Handle request_service,
     bool success,
-    const history::URLRow* url_row,
-    history::VisitVector* visits) {
+    const history::URLRow& url_row,
+    const history::VisitVector& visits) {
   VisitItemList visit_item_vec;
-  if (visits && !visits->empty()) {
-    for (history::VisitVector::iterator iterator = visits->begin();
-         iterator != visits->end();
+  if (success && !visits.empty()) {
+    for (history::VisitVector::const_iterator iterator = visits.begin();
+         iterator != visits.end();
          ++iterator) {
       visit_item_vec.push_back(make_linked_ptr(
           GetVisitItem(*iterator).release()));
@@ -349,16 +344,16 @@ bool HistorySearchFunction::RunAsyncImpl() {
 
   HistoryService* hs = HistoryServiceFactory::GetForProfile(
       GetProfile(), Profile::EXPLICIT_ACCESS);
-  hs->QueryHistory(search_text, options, &cancelable_consumer_,
+  hs->QueryHistory(search_text,
+                   options,
                    base::Bind(&HistorySearchFunction::SearchComplete,
-                              base::Unretained(this)));
+                              base::Unretained(this)),
+                   &task_tracker_);
 
   return true;
 }
 
-void HistorySearchFunction::SearchComplete(
-    HistoryService::Handle request_handle,
-    history::QueryResults* results) {
+void HistorySearchFunction::SearchComplete(history::QueryResults* results) {
   HistoryItemList history_item_vec;
   if (results && !results->empty()) {
     for (history::QueryResults::URLResultVector::const_iterator iterator =
@@ -373,7 +368,7 @@ void HistorySearchFunction::SearchComplete(
   SendAsyncResponse();
 }
 
-bool HistoryAddUrlFunction::RunImpl() {
+bool HistoryAddUrlFunction::RunAsync() {
   scoped_ptr<AddUrl::Params> params(AddUrl::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
@@ -389,7 +384,7 @@ bool HistoryAddUrlFunction::RunImpl() {
   return true;
 }
 
-bool HistoryDeleteUrlFunction::RunImpl() {
+bool HistoryDeleteUrlFunction::RunAsync() {
   scoped_ptr<DeleteUrl::Params> params(DeleteUrl::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
 

@@ -41,6 +41,8 @@ namespace {
 const int kHTTPOk = 200;
 const int kHTTPNotFound = 404;
 
+const char kResponseHeaderViaShouldInterceptRequest[] =
+    "Client-Via: shouldInterceptRequest";
 const char kHTTPOkText[] = "OK";
 const char kHTTPNotFoundText[] = "Not Found";
 
@@ -321,6 +323,13 @@ void AndroidStreamReaderURLRequestJob::HeadersComplete(
       headers->AddHeader(content_type_header);
     }
   }
+
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  delegate_->AppendResponseHeaders(env, headers);
+
+  // Indicate that the response had been obtained via shouldInterceptRequest.
+  headers->AddHeader(kResponseHeaderViaShouldInterceptRequest);
 
   response_info_.reset(new net::HttpResponseInfo());
   response_info_->headers = headers;

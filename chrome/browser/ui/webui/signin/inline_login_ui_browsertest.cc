@@ -1,4 +1,4 @@
-// Copyright 2014 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -18,6 +18,9 @@
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/test_navigation_observer.h"
+#include "net/base/url_util.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -123,6 +126,27 @@ class InlineLoginUISafeIframeBrowserTest : public InProcessBrowserTest {
  public:
   FooWebUIProvider& foo_provider() { return foo_provider_; }
 
+  void WaitUntilUIReady() {
+    content::DOMMessageQueue message_queue;
+    ASSERT_TRUE(content::ExecuteScript(
+        browser()->tab_strip_model()->GetActiveWebContents(),
+        "if (!inline.login.getAuthExtHost())"
+        "  inline.login.initialize();"
+        "var handler = function() {"
+        "  window.domAutomationController.setAutomationId(0);"
+        "  window.domAutomationController.send('ready');"
+        "};"
+        "if (inline.login.isAuthReady())"
+        "  handler();"
+        "else"
+        "  inline.login.getAuthExtHost().addEventListener('ready', handler);"));
+
+    std::string message;
+    do {
+      ASSERT_TRUE(message_queue.WaitForMessage(&message));
+    } while (message != "\"ready\"");
+  }
+
  private:
   virtual void SetUpOnMainThread() OVERRIDE {
     content::WebUIControllerFactory::UnregisterFactoryForTesting(
@@ -160,4 +184,58 @@ IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest, NoWebUIInIframe) {
       Resolve("?source=0&frameUrl=chrome://foo");
   EXPECT_CALL(foo_provider(), NewWebUI(_, _)).Times(0);
   ui_test_utils::NavigateToURL(browser(), url);
+}
+
+// Flaky on CrOS, http://crbug.com/364759.
+#if defined(OS_CHROMEOS)
+#define MAYBE_TopFrameNavigationDisallowed DISABLED_TopFrameNavigationDisallowed
+#else
+#define MAYBE_TopFrameNavigationDisallowed TopFrameNavigationDisallowed
+#endif
+
+// Make sure that the gaia iframe cannot trigger top-frame navigation.
+// TODO(guohui): flaky on trybot crbug/364759.
+IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
+    MAYBE_TopFrameNavigationDisallowed) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  // Loads into gaia iframe a web page that attempts to deframe on load.
+  GURL deframe_url(embedded_test_server()->GetURL("/login/deframe.html"));
+  GURL url(net::AppendOrReplaceQueryParameter(
+      signin::GetPromoURL(signin::SOURCE_START_PAGE, false),
+      "frameUrl", deframe_url.spec()));
+  ui_test_utils::NavigateToURL(browser(), url);
+  WaitUntilUIReady();
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_EQ(url, contents->GetVisibleURL());
+
+  content::NavigationController& controller = contents->GetController();
+  EXPECT_TRUE(controller.GetPendingEntry() == NULL);
+}
+
+// Flaky on CrOS, http://crbug.com/364759.
+#if defined(OS_CHROMEOS)
+#define MAYBE_NavigationToOtherChromeURLDisallowed \
+    DISABLED_NavigationToOtherChromeURLDisallowed
+#else
+#define MAYBE_NavigationToOtherChromeURLDisallowed \
+    NavigationToOtherChromeURLDisallowed
+#endif
+
+IN_PROC_BROWSER_TEST_F(InlineLoginUISafeIframeBrowserTest,
+    MAYBE_NavigationToOtherChromeURLDisallowed) {
+  ui_test_utils::NavigateToURL(
+      browser(), signin::GetPromoURL(signin::SOURCE_START_PAGE, false));
+  WaitUntilUIReady();
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(content::ExecuteScript(
+      contents, "window.location.href = 'chrome://foo'"));
+
+  content::TestNavigationObserver navigation_observer(contents, 1);
+  navigation_observer.Wait();
+
+  EXPECT_EQ(GURL("about:blank"), contents->GetVisibleURL());
 }

@@ -6,24 +6,27 @@
 #define CONTENT_CHILD_INDEXED_DB_INDEXED_DB_DISPATCHER_H_
 
 #include <map>
+#include <string>
 #include <vector>
 
 #include "base/gtest_prod_util.h"
 #include "base/id_map.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/nullable_string16.h"
+#include "content/child/worker_task_runner.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
-#include "third_party/WebKit/public/platform/WebIDBCursor.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
-#include "webkit/child/worker_task_runner.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
 struct IndexedDBMsg_CallbacksSuccessCursorPrefetch_Params;
 struct IndexedDBMsg_CallbacksSuccessIDBCursor_Params;
+struct IndexedDBMsg_CallbacksSuccessValue_Params;
+struct IndexedDBMsg_CallbacksSuccessValueWithKey_Params;
 struct IndexedDBMsg_CallbacksUpgradeNeeded_Params;
 
 namespace blink {
@@ -42,8 +45,7 @@ CONTENT_EXPORT extern const size_t kMaxIDBValueSizeInBytes;
 
 // Handle the indexed db related communication for this context thread - the
 // main thread and each worker thread have their own copies.
-class CONTENT_EXPORT IndexedDBDispatcher
-    : public webkit_glue::WorkerTaskRunner::Observer {
+class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
  public:
   // Constructor made public to allow RenderThreadImpl to own a copy without
   // failing a NOTREACHED in ThreadSpecificInstance in tests that instantiate
@@ -57,7 +59,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
   static IndexedDBDispatcher* ThreadSpecificInstance(
       ThreadSafeSender* thread_safe_sender);
 
-  // webkit_glue::WorkerTaskRunner::Observer implementation.
+  // WorkerTaskRunner::Observer implementation.
   virtual void OnWorkerRunLoopStopped() OVERRIDE;
 
   static blink::WebIDBMetadata ConvertMetadata(
@@ -115,7 +117,7 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 transaction_id,
       blink::WebIDBDatabaseCallbacks* database_callbacks_ptr,
       blink::WebVector<long long> object_store_ids,
-      blink::WebIDBDatabase::TransactionMode mode);
+      blink::WebIDBTransactionMode mode);
 
   void RequestIDBDatabaseGet(int32 ipc_database_id,
                              int64 transaction_id,
@@ -130,21 +132,21 @@ class CONTENT_EXPORT IndexedDBDispatcher
       int64 transaction_id,
       int64 object_store_id,
       const blink::WebData& value,
+      const blink::WebVector<blink::WebBlobInfo>& web_blob_info,
       const IndexedDBKey& key,
-      blink::WebIDBDatabase::PutMode put_mode,
+      blink::WebIDBPutMode put_mode,
       blink::WebIDBCallbacks* callbacks,
       const blink::WebVector<long long>& index_ids,
-      const blink::WebVector<blink::WebVector<blink::WebIDBKey> >&
-          index_keys);
+      const blink::WebVector<blink::WebVector<blink::WebIDBKey> >& index_keys);
 
   void RequestIDBDatabaseOpenCursor(int32 ipc_database_id,
                                     int64 transaction_id,
                                     int64 object_store_id,
                                     int64 index_id,
                                     const IndexedDBKeyRange& key_range,
-                                    blink::WebIDBCursor::Direction direction,
+                                    blink::WebIDBCursorDirection direction,
                                     bool key_only,
-                                    blink::WebIDBDatabase::TaskType task_type,
+                                    blink::WebIDBTaskType task_type,
                                     blink::WebIDBCallbacks* callbacks);
 
   void RequestIDBDatabaseCount(int32 ipc_database_id,
@@ -176,14 +178,14 @@ class CONTENT_EXPORT IndexedDBDispatcher
   enum { kAllCursors = -1 };
 
   static int32 CurrentWorkerId() {
-    return webkit_glue::WorkerTaskRunner::Instance()->CurrentWorkerId();
+    return WorkerTaskRunner::Instance()->CurrentWorkerId();
   }
 
   template <typename T>
-  void init_params(T& params, blink::WebIDBCallbacks* callbacks_ptr) {
+  void init_params(T* params, blink::WebIDBCallbacks* callbacks_ptr) {
     scoped_ptr<blink::WebIDBCallbacks> callbacks(callbacks_ptr);
-    params.ipc_thread_id = CurrentWorkerId();
-    params.ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
+    params->ipc_thread_id = CurrentWorkerId();
+    params->ipc_callbacks_id = pending_callbacks_.Add(callbacks.release());
   }
 
   // IDBCallback message handlers.
@@ -205,14 +207,9 @@ class CONTENT_EXPORT IndexedDBDispatcher
   void OnSuccessStringList(int32 ipc_thread_id,
                            int32 ipc_callbacks_id,
                            const std::vector<base::string16>& value);
-  void OnSuccessValue(int32 ipc_thread_id,
-                      int32 ipc_callbacks_id,
-                      const std::string& value);
-  void OnSuccessValueWithKey(int32 ipc_thread_id,
-                             int32 ipc_callbacks_id,
-                             const std::string& value,
-                             const IndexedDBKey& primary_key,
-                             const IndexedDBKeyPath& key_path);
+  void OnSuccessValue(const IndexedDBMsg_CallbacksSuccessValue_Params& p);
+  void OnSuccessValueWithKey(
+      const IndexedDBMsg_CallbacksSuccessValueWithKey_Params& p);
   void OnSuccessInteger(int32 ipc_thread_id,
                         int32 ipc_callbacks_id,
                         int64 value);

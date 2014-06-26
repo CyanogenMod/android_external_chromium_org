@@ -59,7 +59,8 @@ class DummyPrerenderContents : public PrerenderContents {
   virtual void StartPrerendering(
       int ALLOW_UNUSED creator_child_id,
       const gfx::Size& ALLOW_UNUSED size,
-      content::SessionStorageNamespace* session_storage_namespace) OVERRIDE;
+      content::SessionStorageNamespace* session_storage_namespace,
+      net::URLRequestContextGetter* request_context) OVERRIDE;
   virtual bool GetChildId(int* child_id) const OVERRIDE;
   virtual bool GetRouteId(int* route_id) const OVERRIDE;
 
@@ -115,7 +116,8 @@ DummyPrerenderContents::DummyPrerenderContents(
 void DummyPrerenderContents::StartPrerendering(
     int ALLOW_UNUSED creator_child_id,
     const gfx::Size& ALLOW_UNUSED size,
-    content::SessionStorageNamespace* session_storage_namespace) {
+    content::SessionStorageNamespace* session_storage_namespace,
+    net::URLRequestContextGetter* request_context) {
   prerender_contents_.reset(content::WebContents::CreateWithSessionStorage(
       content::WebContents::CreateParams(profile_),
       session_storage_namespace_map_));
@@ -171,7 +173,7 @@ class InstantSearchPrerendererTest : public InstantUnitTestBase {
 
   void Init(bool prerender_search_results_base_page,
             bool call_did_finish_load) {
-    AddTab(browser(), GURL(content::kAboutBlankURL));
+    AddTab(browser(), GURL(url::kAboutBlankURL));
 
     content::SessionStorageNamespaceMap session_storage_namespace_map;
     session_storage_namespace_map[std::string()] =
@@ -181,7 +183,8 @@ class InstantSearchPrerendererTest : public InstantUnitTestBase {
         SetPrerenderContentsFactory(
             new DummyPrerenderContentsFactory(call_did_finish_load,
                                               session_storage_namespace_map));
-
+    PrerenderManagerFactory::GetForProfile(browser()->profile())->
+        OnCookieStoreLoaded();
     if (prerender_search_results_base_page) {
       InstantSearchPrerenderer* prerenderer = GetInstantSearchPrerenderer();
       prerenderer->Init(session_storage_namespace_map, gfx::Size(640, 480));
@@ -237,15 +240,17 @@ TEST_F(InstantSearchPrerendererTest, GetSearchTermsFromPrerenderedPage) {
   GURL url(GetPrerenderURL());
   EXPECT_EQ(GURL("https://www.google.com/instant?ion=1&foo=foo#foo=foo&strk"),
             url);
-  EXPECT_EQ(UTF16ToASCII(prerenderer->get_last_query()),
-            UTF16ToASCII(chrome::ExtractSearchTermsFromURL(profile(), url)));
+  EXPECT_EQ(base::UTF16ToASCII(prerenderer->get_last_query()),
+            base::UTF16ToASCII(
+                chrome::ExtractSearchTermsFromURL(profile(), url)));
 
   // Assume the prerendered page prefetched search results for the query
   // "flowers".
   SetLastQuery(ASCIIToUTF16("flowers"));
-  EXPECT_EQ("flowers", UTF16ToASCII(prerenderer->get_last_query()));
-  EXPECT_EQ(UTF16ToASCII(prerenderer->get_last_query()),
-            UTF16ToASCII(chrome::ExtractSearchTermsFromURL(profile(), url)));
+  EXPECT_EQ("flowers", base::UTF16ToASCII(prerenderer->get_last_query()));
+  EXPECT_EQ(base::UTF16ToASCII(prerenderer->get_last_query()),
+            base::UTF16ToASCII(
+                chrome::ExtractSearchTermsFromURL(profile(), url)));
 }
 
 TEST_F(InstantSearchPrerendererTest, PrefetchSearchResults) {
@@ -254,7 +259,7 @@ TEST_F(InstantSearchPrerendererTest, PrefetchSearchResults) {
   InstantSearchPrerenderer* prerenderer = GetInstantSearchPrerenderer();
   prerenderer->Prerender(
       InstantSuggestion(ASCIIToUTF16("flowers"), std::string()));
-  EXPECT_EQ("flowers", UTF16ToASCII(prerenderer->get_last_query()));
+  EXPECT_EQ("flowers", base::UTF16ToASCII(prerenderer->get_last_query()));
   EXPECT_TRUE(MessageWasSent(
       ChromeViewMsg_SearchBoxSetSuggestionToPrefetch::ID));
 }
@@ -266,7 +271,7 @@ TEST_F(InstantSearchPrerendererTest, DoNotPrefetchSearchResults) {
   InstantSearchPrerenderer* prerenderer = GetInstantSearchPrerenderer();
   prerenderer->Prerender(
       InstantSuggestion(ASCIIToUTF16("flowers"), std::string()));
-  EXPECT_EQ("", UTF16ToASCII(prerenderer->get_last_query()));
+  EXPECT_EQ("", base::UTF16ToASCII(prerenderer->get_last_query()));
   EXPECT_FALSE(MessageWasSent(
       ChromeViewMsg_SearchBoxSetSuggestionToPrefetch::ID));
 }
@@ -299,7 +304,7 @@ TEST_F(InstantSearchPrerendererTest, CancelPrerenderRequestOnTabChangeEvent) {
   EXPECT_NE(static_cast<PrerenderHandle*>(NULL), prerender_handle());
 
   // Add a new tab to deactivate the current tab.
-  AddTab(browser(), GURL(content::kAboutBlankURL));
+  AddTab(browser(), GURL(url::kAboutBlankURL));
   EXPECT_EQ(2, browser()->tab_strip_model()->count());
 
   // Make sure the pending prerender request is cancelled.
@@ -319,7 +324,7 @@ TEST_F(InstantSearchPrerendererTest, PrerenderingAllowed) {
   Init(true, true);
   InstantSearchPrerenderer* prerenderer = GetInstantSearchPrerenderer();
   content::WebContents* active_tab = GetActiveWebContents();
-  EXPECT_EQ(GURL(content::kAboutBlankURL), active_tab->GetURL());
+  EXPECT_EQ(GURL(url::kAboutBlankURL), active_tab->GetURL());
 
   // Allow prerendering only for search type AutocompleteMatch suggestions.
   AutocompleteMatch search_type_match(NULL, 1100, false,

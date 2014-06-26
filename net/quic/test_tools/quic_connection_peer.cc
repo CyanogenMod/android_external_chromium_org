@@ -11,6 +11,7 @@
 #include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_received_packet_manager.h"
 #include "net/quic/test_tools/quic_framer_peer.h"
+#include "net/quic/test_tools/quic_packet_generator_peer.h"
 #include "net/quic/test_tools/quic_sent_packet_manager_peer.h"
 
 namespace net {
@@ -50,7 +51,14 @@ QuicConnectionVisitorInterface* QuicConnectionPeer::GetVisitor(
 // static
 QuicPacketCreator* QuicConnectionPeer::GetPacketCreator(
     QuicConnection* connection) {
-  return &connection->packet_creator_;
+  return QuicPacketGeneratorPeer::GetPacketCreator(
+      &connection->packet_generator_);
+}
+
+// static
+QuicPacketGenerator* QuicConnectionPeer::GetPacketGenerator(
+    QuicConnection* connection) {
+  return &connection->packet_generator_;
 }
 
 // static
@@ -141,7 +149,7 @@ void QuicConnectionPeer::SetPeerAddress(QuicConnection* connection,
 // static
 void QuicConnectionPeer::SwapCrypters(QuicConnection* connection,
                                       QuicFramer* framer) {
-  framer->SwapCryptersForTest(&connection->framer_);
+  QuicFramerPeer::SwapCrypters(framer, &connection->framer_);
 }
 
 // static
@@ -167,6 +175,17 @@ QuicAlarm* QuicConnectionPeer::GetAckAlarm(QuicConnection* connection) {
 }
 
 // static
+QuicAlarm* QuicConnectionPeer::GetPingAlarm(QuicConnection* connection) {
+  return connection->ping_alarm_.get();
+}
+
+// static
+QuicAlarm* QuicConnectionPeer::GetResumeWritesAlarm(
+    QuicConnection* connection) {
+  return connection->resume_writes_alarm_.get();
+}
+
+// static
 QuicAlarm* QuicConnectionPeer::GetRetransmissionAlarm(
     QuicConnection* connection) {
   return connection->retransmission_alarm_.get();
@@ -175,12 +194,6 @@ QuicAlarm* QuicConnectionPeer::GetRetransmissionAlarm(
 // static
 QuicAlarm* QuicConnectionPeer::GetSendAlarm(QuicConnection* connection) {
   return connection->send_alarm_.get();
-}
-
-// static
-QuicAlarm* QuicConnectionPeer::GetResumeWritesAlarm(
-    QuicConnection* connection) {
-  return connection->resume_writes_alarm_.get();
 }
 
 // static
@@ -208,6 +221,12 @@ void QuicConnectionPeer::CloseConnection(QuicConnection* connection) {
 QuicEncryptedPacket* QuicConnectionPeer::GetConnectionClosePacket(
     QuicConnection* connection) {
   return connection->connection_close_packet_.get();
+}
+
+// static
+void QuicConnectionPeer::SetSupportedVersions(QuicConnection* connection,
+                                              QuicVersionVector versions) {
+  connection->framer_.SetSupportedVersions(versions);
 }
 
 }  // namespace test

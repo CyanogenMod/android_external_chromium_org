@@ -10,11 +10,11 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
-#include "chrome/browser/sync/glue/data_type_manager_impl.h"
 #include "chrome/browser/sync/glue/sync_backend_host_impl.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/sync/sync_prefs.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/sync_driver/data_type_manager_impl.h"
+#include "components/sync_driver/sync_prefs.h"
 #include "sync/test/engine/test_id_factory.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -24,7 +24,8 @@ class ProfileSyncComponentsFactory;
 class ProfileSyncComponentsFactoryMock;
 
 ACTION(ReturnNewDataTypeManager) {
-  return new browser_sync::DataTypeManagerImpl(arg0,
+  return new browser_sync::DataTypeManagerImpl(base::Closure(),
+                                               arg0,
                                                arg1,
                                                arg2,
                                                arg3,
@@ -38,7 +39,8 @@ class SyncBackendHostForProfileSyncTest : public SyncBackendHostImpl {
  public:
   SyncBackendHostForProfileSyncTest(
       Profile* profile,
-      const base::WeakPtr<SyncPrefs>& sync_prefs,
+      invalidation::InvalidationService* invalidator,
+      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
       base::Closure callback);
   virtual ~SyncBackendHostForProfileSyncTest();
 
@@ -75,7 +77,7 @@ class TestProfileSyncService : public ProfileSyncService {
       Profile* profile,
       SigninManagerBase* signin,
       ProfileOAuth2TokenService* oauth2_token_service,
-      ProfileSyncService::StartBehavior behavior);
+      browser_sync::ProfileSyncServiceStartBehavior behavior);
 
   virtual ~TestProfileSyncService();
 
@@ -92,9 +94,11 @@ class TestProfileSyncService : public ProfileSyncService {
 
   syncer::TestIdFactory* id_factory();
 
+  // Raise visibility to ease testing.
+  using ProfileSyncService::NotifyObservers;
+
  protected:
-  static BrowserContextKeyedService* TestFactoryFunction(
-      content::BrowserContext* profile);
+  static KeyedService* TestFactoryFunction(content::BrowserContext* profile);
 
   // Return NULL handle to use in backend initialization to avoid receiving
   // js messages on UI loop when it's being destroyed, which are not deleted

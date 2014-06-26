@@ -5,10 +5,11 @@
 #include "ash/wm/lock_state_controller.h"
 
 #include "ash/ash_switches.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/test_lock_state_controller_delegate.h"
 #include "ash/test/test_shell_delegate.h"
 #include "ash/wm/power_button_controller.h"
 #include "ash/wm/session_state_animator.h"
@@ -16,25 +17,27 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer_animator.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
+#if defined(OS_CHROMEOS)
+#include "ui/display/chromeos/display_configurator.h"
+#include "ui/display/chromeos/test/test_display_snapshot.h"
+#include "ui/display/types/display_constants.h"
+#endif
+
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
 #endif
 
 namespace ash {
-
-using internal::SessionStateAnimator;
-
 namespace test {
-
 namespace {
 
 bool cursor_visible() {
@@ -52,45 +55,19 @@ aura::Window* GetContainer(int container ) {
 }
 
 bool IsBackgroundHidden() {
-  return !GetContainer(internal::kShellWindowId_DesktopBackgroundContainer)->
-              IsVisible();
+  return !GetContainer(kShellWindowId_DesktopBackgroundContainer)->IsVisible();
 }
 
 void HideBackground() {
   ui::ScopedLayerAnimationSettings settings(
-      GetContainer(internal::kShellWindowId_DesktopBackgroundContainer)->
-          layer()->GetAnimator());
+      GetContainer(kShellWindowId_DesktopBackgroundContainer)
+          ->layer()
+          ->GetAnimator());
   settings.SetTransitionDuration(base::TimeDelta());
-  GetContainer(internal::kShellWindowId_DesktopBackgroundContainer)->Hide();
+  GetContainer(kShellWindowId_DesktopBackgroundContainer)->Hide();
 }
 
 } // namespace
-
-// Fake implementation of PowerButtonControllerDelegate that just logs requests
-// to lock the screen and shut down the device.
-class TestLockStateControllerDelegate : public LockStateControllerDelegate {
- public:
-  TestLockStateControllerDelegate()
-      : num_lock_requests_(0),
-        num_shutdown_requests_(0) {}
-
-  int num_lock_requests() const { return num_lock_requests_; }
-  int num_shutdown_requests() const { return num_shutdown_requests_; }
-
-  // LockStateControllerDelegate implementation.
-  virtual void RequestLockScreen() OVERRIDE {
-    num_lock_requests_++;
-  }
-  virtual void RequestShutdown() OVERRIDE {
-    num_shutdown_requests_++;
-  }
-
- private:
-  int num_lock_requests_;
-  int num_shutdown_requests_;
-
-  DISALLOW_COPY_AND_ASSIGN(TestLockStateControllerDelegate);
-};
 
 class LockStateControllerTest : public AshTestBase {
  public:
@@ -390,8 +367,8 @@ class LockStateControllerTest : public AshTestBase {
     window_->SetType(ui::wm::WINDOW_TYPE_NORMAL);
     window_->Init(aura::WINDOW_LAYER_TEXTURED);
     window_->SetName("WINDOW");
-    aura::Window* container = Shell::GetContainer(Shell::GetPrimaryRootWindow(),
-        internal::kShellWindowId_LockScreenContainer);
+    aura::Window* container = Shell::GetContainer(
+        Shell::GetPrimaryRootWindow(), kShellWindowId_LockScreenContainer);
     ASSERT_TRUE(container);
     container->AddChild(window_.get());
     window_->Show();
@@ -611,8 +588,7 @@ TEST_F(LockStateControllerTest, DISABLED_LockAndCancel) {
   AdvancePartially(SessionStateAnimator::ANIMATION_SPEED_UNDOABLE, 0.5f);
 
   gfx::Transform transform_before_button_released =
-      GetContainer(internal::kShellWindowId_DefaultContainer)->
-          layer()->transform();
+      GetContainer(kShellWindowId_DefaultContainer)->layer()->transform();
 
   // Release the button before the lock timer fires.
   ReleasePowerButton();
@@ -620,8 +596,7 @@ TEST_F(LockStateControllerTest, DISABLED_LockAndCancel) {
   ExpectPreLockAnimationCancel();
 
   gfx::Transform transform_after_button_released =
-      GetContainer(internal::kShellWindowId_DefaultContainer)->
-          layer()->transform();
+      GetContainer(kShellWindowId_DefaultContainer)->layer()->transform();
   // Expect no flickering, animation should proceed from mid-state.
   EXPECT_EQ(transform_before_button_released, transform_after_button_released);
 
@@ -979,7 +954,6 @@ TEST_F(LockStateControllerTest, IgnorePowerButtonIfScreenIsOff) {
   // When the screen brightness is at 0%, we shouldn't do anything in response
   // to power button presses.
   controller_->OnScreenBrightnessChanged(0.0);
-
   PressPowerButton();
   EXPECT_FALSE(test_api_->is_animating_lock());
   ReleasePowerButton();
@@ -987,10 +961,55 @@ TEST_F(LockStateControllerTest, IgnorePowerButtonIfScreenIsOff) {
   // After increasing the brightness to 10%, we should start the timer like
   // usual.
   controller_->OnScreenBrightnessChanged(10.0);
-
   PressPowerButton();
   EXPECT_TRUE(test_api_->is_animating_lock());
+  ReleasePowerButton();
 }
+
+#if defined(OS_CHROMEOS) && defined(USE_X11)
+TEST_F(LockStateControllerTest, HonorPowerButtonInDockedMode) {
+  ScopedVector<const ui::DisplayMode> modes;
+  modes.push_back(new ui::DisplayMode(gfx::Size(1, 1), false, 60.0f));
+
+  // Create two outputs, the first internal and the second external.
+  ui::DisplayConfigurator::DisplayStateList outputs;
+  ui::DisplayConfigurator::DisplayState internal_output;
+  ui::TestDisplaySnapshot internal_display;
+  internal_display.set_type(ui::DISPLAY_CONNECTION_TYPE_INTERNAL);
+  internal_display.set_modes(modes.get());
+  internal_output.display = &internal_display;
+  outputs.push_back(internal_output);
+
+  ui::DisplayConfigurator::DisplayState external_output;
+  ui::TestDisplaySnapshot external_display;
+  external_display.set_type(ui::DISPLAY_CONNECTION_TYPE_HDMI);
+  external_display.set_modes(modes.get());
+  external_output.display = &external_display;
+  outputs.push_back(external_output);
+
+  // When all of the displays are turned off (e.g. due to user inactivity), the
+  // power button should be ignored.
+  controller_->OnScreenBrightnessChanged(0.0);
+  static_cast<ui::TestDisplaySnapshot*>(outputs[0].display)
+      ->set_current_mode(NULL);
+  static_cast<ui::TestDisplaySnapshot*>(outputs[1].display)
+      ->set_current_mode(NULL);
+  controller_->OnDisplayModeChanged(outputs);
+  PressPowerButton();
+  EXPECT_FALSE(test_api_->is_animating_lock());
+  ReleasePowerButton();
+
+  // When the screen brightness is 0% but the external display is still turned
+  // on (indicating either docked mode or the user having manually decreased the
+  // brightness to 0%), the power button should still be handled.
+  static_cast<ui::TestDisplaySnapshot*>(outputs[1].display)
+      ->set_current_mode(modes[0]);
+  controller_->OnDisplayModeChanged(outputs);
+  PressPowerButton();
+  EXPECT_TRUE(test_api_->is_animating_lock());
+  ReleasePowerButton();
+}
+#endif
 
 // Test that hidden background appears and revers correctly on lock/cancel.
 // TODO(antrim): Reenable this: http://crbug.com/167048

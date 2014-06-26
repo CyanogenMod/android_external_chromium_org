@@ -24,9 +24,8 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_properties.h"
 #include "grit/ash_resources.h"
-#include "ui/aura/client/activation_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/compositor/layer.h"
@@ -37,6 +36,7 @@
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
 
@@ -49,7 +49,7 @@ Shelf::Shelf(ShelfModel* shelf_model,
       alignment_(shelf_widget->GetAlignment()),
       delegate_(shelf_delegate),
       shelf_widget_(shelf_widget) {
-  shelf_view_ = new internal::ShelfView(
+  shelf_view_ = new ShelfView(
       shelf_model, delegate_, shelf_widget_->shelf_layout_manager());
   shelf_view_->Init();
   shelf_widget_->GetContentsView()->AddChildView(shelf_view_);
@@ -63,15 +63,14 @@ Shelf::~Shelf() {
 
 // static
 Shelf* Shelf::ForPrimaryDisplay() {
-  ShelfWidget* shelf_widget = internal::RootWindowController::ForShelf(
-      Shell::GetPrimaryRootWindow())->shelf();
+  ShelfWidget* shelf_widget =
+      RootWindowController::ForShelf(Shell::GetPrimaryRootWindow())->shelf();
   return shelf_widget ? shelf_widget->shelf() : NULL;
 }
 
 // static
 Shelf* Shelf::ForWindow(aura::Window* window) {
-  ShelfWidget* shelf_widget =
-      internal::RootWindowController::ForShelf(window)->shelf();
+  ShelfWidget* shelf_widget = RootWindowController::ForShelf(window)->shelf();
   return shelf_widget ? shelf_widget->shelf() : NULL;
 }
 
@@ -81,7 +80,8 @@ void Shelf::SetAlignment(ShelfAlignment alignment) {
   // ShelfLayoutManager will resize the shelf.
 }
 
-gfx::Rect Shelf::GetScreenBoundsOfItemIconForWindow(aura::Window* window) {
+gfx::Rect Shelf::GetScreenBoundsOfItemIconForWindow(
+    const aura::Window* window) {
   ShelfID id = GetShelfIDForWindow(window);
   gfx::Rect bounds(shelf_view_->GetIdealBoundsOfItemIcon(id));
   gfx::Point screen_origin;

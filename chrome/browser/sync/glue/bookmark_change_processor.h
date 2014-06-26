@@ -8,11 +8,14 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/bookmarks/bookmark_model_observer.h"
 #include "chrome/browser/sync/glue/bookmark_model_associator.h"
-#include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/sync_backend_host.h"
+#include "components/bookmarks/browser/bookmark_model_observer.h"
+#include "components/bookmarks/browser/bookmark_node.h"
+#include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/data_type_error_handler.h"
+
+class Profile;
 
 namespace base {
 class RefCountedMemory;
@@ -32,7 +35,8 @@ namespace browser_sync {
 class BookmarkChangeProcessor : public BookmarkModelObserver,
                                 public ChangeProcessor {
  public:
-  BookmarkChangeProcessor(BookmarkModelAssociator* model_associator,
+  BookmarkChangeProcessor(Profile* profile,
+                          BookmarkModelAssociator* model_associator,
                           DataTypeErrorHandler* error_handler);
   virtual ~BookmarkChangeProcessor();
 
@@ -52,8 +56,11 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
   virtual void BookmarkNodeRemoved(BookmarkModel* model,
                                    const BookmarkNode* parent,
                                    int index,
-                                   const BookmarkNode* node) OVERRIDE;
-  virtual void BookmarkAllNodesRemoved(BookmarkModel* model) OVERRIDE;
+                                   const BookmarkNode* node,
+                                   const std::set<GURL>& removed_urls) OVERRIDE;
+  virtual void BookmarkAllUserNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkMetaInfoChanged(BookmarkModel* model,
@@ -126,6 +133,13 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
                               BookmarkModelAssociator* associator,
                               DataTypeErrorHandler* error_handler);
 
+  // Update |bookmark_node|'s sync node.
+  static int64 UpdateSyncNode(const BookmarkNode* bookmark_node,
+                              BookmarkModel* model,
+                              syncer::WriteTransaction* trans,
+                              BookmarkModelAssociator* associator,
+                              DataTypeErrorHandler* error_handler);
+
   // Update transaction version of |model| and |nodes| to |new_version| if
   // it's valid.
   static void UpdateTransactionVersion(
@@ -134,7 +148,7 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
       const std::vector<const BookmarkNode*>& nodes);
 
  protected:
-  virtual void StartImpl(Profile* profile) OVERRIDE;
+  virtual void StartImpl() OVERRIDE;
 
  private:
   enum MoveOrCreate {
@@ -142,10 +156,9 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
     CREATE,
   };
 
-  // Sets the meta info of the given bookmark node from the given sync node.
-  static void SetBookmarkMetaInfo(const syncer::BaseNode* sync_node,
-                                  const BookmarkNode* bookmark_node,
-                                  BookmarkModel* bookmark_model);
+  // Retrieves the meta info from the given sync node.
+  static scoped_ptr<BookmarkNode::MetaInfoMap> GetBookmarkMetaInfo(
+      const syncer::BaseNode* sync_node);
 
   // Sets the meta info of the given sync node from the given bookmark node.
   static void SetSyncNodeMetaInfo(const BookmarkNode* node,
@@ -189,6 +202,9 @@ class BookmarkChangeProcessor : public BookmarkModelObserver,
 
   // Remove all the sync nodes associated with |node| and its children.
   void RemoveSyncNodeHierarchy(const BookmarkNode* node);
+
+  // Creates or updates a sync node associated with |node|.
+  void CreateOrUpdateSyncNode(const BookmarkNode* node);
 
   // The bookmark model we are processing changes from.  Non-NULL when
   // |running_| is true.

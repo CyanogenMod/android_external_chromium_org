@@ -24,7 +24,6 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class CommandLine;
 class NewProfileLauncher;
 class ProfileInfoCache;
 
@@ -87,14 +86,14 @@ class ProfileManager : public base::NonThreadSafe,
                           const CreateCallback& callback,
                           const base::string16& name,
                           const base::string16& icon_url,
-                          const std::string& managed_user_id);
+                          const std::string& supervised_user_id);
 
   // Returns true if the profile pointer is known to point to an existing
   // profile.
   bool IsValidProfile(Profile* profile);
 
   // Returns the directory where the first created profile is stored,
-  // relative to the user data directory currently in use..
+  // relative to the user data directory currently in use.
   base::FilePath GetInitialProfileDir();
 
   // Get the Profile last used (the Profile to which owns the most recently
@@ -135,7 +134,7 @@ class ProfileManager : public base::NonThreadSafe,
       const base::string16& name,
       const base::string16& icon_url,
       const CreateCallback& callback,
-      const std::string& managed_user_id);
+      const std::string& supervised_user_id);
 
   // Returns the full path to be used for guest profiles.
   static base::FilePath GetGuestProfilePath();
@@ -299,10 +298,11 @@ class ProfileManager : public base::NonThreadSafe,
   // If the |loaded_profile| has been loaded successfully (according to
   // |status|) and isn't already scheduled for deletion, then finishes adding
   // |profile_to_delete_dir| to the queue of profiles to be deleted, and updates
-  // the kProfileLastUsed preference based on |last_non_managed_profile_path|.
+  // the kProfileLastUsed preference based on
+  // |last_non_supervised_profile_path|.
   void OnNewActiveProfileLoaded(
       const base::FilePath& profile_to_delete_path,
-      const base::FilePath& last_non_managed_profile_path,
+      const base::FilePath& last_non_supervised_profile_path,
       const CreateCallback& original_callback,
       Profile* loaded_profile,
       Profile::CreateStatus status);

@@ -7,6 +7,7 @@
 // This file requires the functions defined in test_functions.js.
 
 var gFingerprints = [];
+var gDetectorInterval = null;
 
 // Public interface.
 
@@ -28,11 +29,15 @@ function startDetection(videoElementId, width, height) {
   if (!video)
     throw failTest('Could not find video element with id ' + videoElementId);
 
+  if (gDetectorInterval)
+    throw failTest('Detector is already running.');
+
   var NUM_FINGERPRINTS_TO_SAVE = 5;
   var canvas = document.createElement('canvas');
   canvas.style.display = 'none';
 
-  setInterval(function() {
+  gFingerprints = [];
+  gDetectorInterval = setInterval(function() {
     var context = canvas.getContext('2d');
     if (video.videoWidth == 0)
       return;  // The video element isn't playing anything.
@@ -61,6 +66,8 @@ function isVideoPlaying() {
   try {
     if (gFingerprints.length > 1) {
       if (!allElementsRoughlyEqualTo_(gFingerprints, gFingerprints[0])) {
+        clearInterval(gDetectorInterval);
+        gDetectorInterval = null;
         returnToTest('video-playing');
         return;
       }
@@ -69,6 +76,21 @@ function isVideoPlaying() {
     throw failTest('Failed to detect video: ' + exception.message);
   }
   returnToTest('video-not-playing');
+}
+
+/**
+ * Queries for the stream size (not necessarily the size at which the video tag
+ * is rendered).
+ *
+ * @param videoElementId The video element to check.
+ * @return {string} ok-<width>x<height>, e.g. ok-640x480 for VGA.
+ */
+function getStreamSize(videoElementId) {
+  var video = document.getElementById(videoElementId);
+  if (!video)
+    throw failTest('Could not find video element with id ' + videoElementId);
+
+  returnToTest('ok-' + video.videoWidth + 'x' + video.videoHeight);
 }
 
 // Internals.

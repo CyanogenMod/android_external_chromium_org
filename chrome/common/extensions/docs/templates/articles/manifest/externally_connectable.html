@@ -1,11 +1,11 @@
 <h1>externally_connectable</h1>
 
 <p>
-The <code>externally_connectable</code> manifest property declares which extensions, apps, and web pages can connect to your {{platform}} via <a href="../runtime.html#method-connect">runtime.connect</a> and <a href="../runtime.html#method-sendMessage">runtime.sendMessage</a>.
+The <code>externally_connectable</code> manifest property declares which extensions, apps, and web pages can connect to your {{platform}} via <a href="../runtime#method-connect">runtime.connect</a> and <a href="../runtime#method-sendMessage">runtime.sendMessage</a>.
 </p>
 
 <p>
-For a tutorial on message passing see <a href="../messaging.html#external">cross-extension and app messaging</a> and <a href="../messaging.html#external-webpage">sending messages from web pages</a>.
+For a tutorial on message passing see <a href="../messaging#external">cross-extension and app messaging</a> and <a href="../messaging#external-webpage">sending messages from web pages</a>.
 </p>
 
 <h2 id="without-externally-connectable">Connecting without externally_connectable</h2>
@@ -31,15 +31,15 @@ If <code>externally_connectable</code> is not declared in your {{platform}}'s ma
     // Match patterns for web pages. Does not affect content scripts. If this
     // field is not specified, no webpages can connect.
     "matches": [
-      "https://*.google.com",
-      "*://*.chromium.org",
+      "https://*.google.com/*",
+      "*://*.chromium.org/*",
       ...
     ],
     // Indicates that the extension would like to make use of the TLS channel
     // ID of the web page connecting to it. The web page must also opt to send
     // the TLS channel ID to the extension via setting
     // <code>includeTlsChannelId</code> to <code>true</code> in
-    // $ref:runtime.connect's connectInfo or $ref:runtime.sendMessage's options.
+    // $(ref:runtime.connect)'s connectInfo or $(ref:runtime.sendMessage)'s options.
     "accepts_tls_channel_id": false
   },
   ...
@@ -48,5 +48,5 @@ If <code>externally_connectable</code> is not declared in your {{platform}}'s ma
 
 <h2 id="reference">Reference</h2>
 <p class="api_reference">
-{{+partials.type type:apis.manifestTypes.byName.ExternallyConnectable/}}
+{{+partials.type type:data/}}
 </p>

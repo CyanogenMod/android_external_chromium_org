@@ -14,6 +14,7 @@
 #include "base/memory/scoped_vector.h"
 #include "base/time/time.h"
 #include "chrome/test/chromedriver/basic_types.h"
+#include "chrome/test/chromedriver/chrome/device_metrics.h"
 #include "chrome/test/chromedriver/chrome/geoposition.h"
 
 namespace base {
@@ -45,6 +46,7 @@ struct Session {
   Status GetTargetWindow(WebView** web_view);
 
   void SwitchToTopFrame();
+  void SwitchToParentFrame();
   void SwitchToSubFrame(const std::string& frame_id,
                         const std::string& chromedriver_frame_id);
   std::string GetCurrentFrameId() const;
@@ -68,6 +70,7 @@ struct Session {
   base::TimeDelta script_timeout;
   scoped_ptr<std::string> prompt_text;
   scoped_ptr<Geoposition> overridden_geoposition;
+  scoped_ptr<DeviceMetrics> overridden_device_metrics;
   // Logs that populate from DevTools events.
   ScopedVector<WebDriverLog> devtools_logs;
   scoped_ptr<WebDriverLog> driver_log;

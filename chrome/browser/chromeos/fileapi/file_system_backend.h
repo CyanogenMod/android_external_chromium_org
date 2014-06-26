@@ -5,26 +5,21 @@
 #ifndef CHROME_BROWSER_CHROMEOS_FILEAPI_FILE_SYSTEM_BACKEND_H_
 #define CHROME_BROWSER_CHROMEOS_FILEAPI_FILE_SYSTEM_BACKEND_H_
 
-#include <map>
 #include <string>
 #include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/quota/special_storage_policy.h"
-#include "webkit/browser/webkit_storage_browser_export.h"
 #include "webkit/common/fileapi/file_system_types.h"
 
 namespace fileapi {
 class CopyOrMoveFileValidatorFactory;
 class ExternalMountPoints;
-class FileSystemFileUtil;
 class FileSystemURL;
-class IsolatedContext;
-}
+}  // namespace fileapi
 
 namespace chromeos {
 
@@ -70,9 +65,12 @@ class FileSystemBackend : public fileapi::ExternalFileSystemBackend {
   // FileSystemBackend will take an ownership of a |mount_points|
   // reference. On the other hand, |system_mount_points| will be kept as a raw
   // pointer and it should outlive FileSystemBackend instance.
-  // The ownership of |drive_delegate| is also taken.
+  // The ownerships of |drive_delegate| and |file_system_provider_delegate| are
+  // also taken.
   FileSystemBackend(
       FileSystemBackendDelegate* drive_delegate,
+      FileSystemBackendDelegate* file_system_provider_delegate,
+      FileSystemBackendDelegate* mtp_delegate,
       scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy,
       scoped_refptr<fileapi::ExternalMountPoints> mount_points,
       fileapi::ExternalMountPoints* system_mount_points);
@@ -90,11 +88,9 @@ class FileSystemBackend : public fileapi::ExternalFileSystemBackend {
   // fileapi::FileSystemBackend overrides.
   virtual bool CanHandleType(fileapi::FileSystemType type) const OVERRIDE;
   virtual void Initialize(fileapi::FileSystemContext* context) OVERRIDE;
-  virtual void OpenFileSystem(
-      const GURL& origin_url,
-      fileapi::FileSystemType type,
-      fileapi::OpenFileSystemMode mode,
-      const OpenFileSystemCallback& callback) OVERRIDE;
+  virtual void ResolveURL(const fileapi::FileSystemURL& url,
+                          fileapi::OpenFileSystemMode mode,
+                          const OpenFileSystemCallback& callback) OVERRIDE;
   virtual fileapi::AsyncFileUtil* GetAsyncFileUtil(
       fileapi::FileSystemType type) OVERRIDE;
   virtual fileapi::CopyOrMoveFileValidatorFactory*
@@ -105,6 +101,8 @@ class FileSystemBackend : public fileapi::ExternalFileSystemBackend {
       const fileapi::FileSystemURL& url,
       fileapi::FileSystemContext* context,
       base::File::Error* error_code) const OVERRIDE;
+  virtual bool SupportsStreaming(
+      const fileapi::FileSystemURL& url) const OVERRIDE;
   virtual scoped_ptr<webkit_blob::FileStreamReader> CreateFileStreamReader(
       const fileapi::FileSystemURL& path,
       int64 offset,
@@ -135,8 +133,14 @@ class FileSystemBackend : public fileapi::ExternalFileSystemBackend {
   scoped_ptr<FileAccessPermissions> file_access_permissions_;
   scoped_ptr<fileapi::AsyncFileUtil> local_file_util_;
 
-  // The Delegate instance for the drive file system related operation.
+  // The delegate instance for the drive file system related operations.
   scoped_ptr<FileSystemBackendDelegate> drive_delegate_;
+
+  // The delegate instance for the provided file system related operations.
+  scoped_ptr<FileSystemBackendDelegate> file_system_provider_delegate_;
+
+  // The delegate instance for the MTP file system related operations.
+  scoped_ptr<FileSystemBackendDelegate> mtp_delegate_;
 
   // Mount points specific to the owning context (i.e. per-profile mount
   // points).

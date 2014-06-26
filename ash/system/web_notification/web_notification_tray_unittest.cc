@@ -15,6 +15,7 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/status_area_widget_test_helper.h"
 #include "ash/test/test_system_tray_delegate.h"
 #include "ash/wm/window_state.h"
 #include "base/strings/stringprintf.h"
@@ -26,7 +27,6 @@
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/message_center_tray.h"
-#include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification_list.h"
 #include "ui/message_center/notification_types.h"
 #include "ui/message_center/views/message_center_bubble.h"
@@ -41,22 +41,15 @@ namespace ash {
 namespace {
 
 WebNotificationTray* GetTray() {
-  return Shell::GetPrimaryRootWindowController()->shelf()->
-      status_area_widget()->web_notification_tray();
+  return StatusAreaWidgetTestHelper::GetStatusAreaWidget()->
+      web_notification_tray();
 }
 
 WebNotificationTray* GetSecondaryTray() {
-  internal::RootWindowController* primary_controller =
-      Shell::GetPrimaryRootWindowController();
-  Shell::RootWindowControllerList controllers =
-      Shell::GetAllRootWindowControllers();
-  for (size_t i = 0; i < controllers.size(); ++i) {
-    if (controllers[i] != primary_controller) {
-      return controllers[i]->shelf()->
-          status_area_widget()->web_notification_tray();
-    }
-  }
-
+  StatusAreaWidget* status_area_widget =
+      StatusAreaWidgetTestHelper::GetSecondaryStatusAreaWidget();
+  if (status_area_widget)
+    return status_area_widget->web_notification_tray();
   return NULL;
 }
 
@@ -65,8 +58,7 @@ message_center::MessageCenter* GetMessageCenter() {
 }
 
 SystemTray* GetSystemTray() {
-  return Shell::GetPrimaryRootWindowController()->shelf()->
-      status_area_widget()->system_tray();
+  return StatusAreaWidgetTestHelper::GetStatusAreaWidget()->system_tray();
 }
 
 // Trivial item implementation for testing PopupAndSystemTray test case.
@@ -165,27 +157,27 @@ TEST_F(WebNotificationTrayTest, WebNotifications) {
   // Add a notification.
   AddNotification("test_id1");
   EXPECT_EQ(1u, GetMessageCenter()->NotificationCount());
-  EXPECT_TRUE(GetMessageCenter()->HasNotification("test_id1"));
+  EXPECT_TRUE(GetMessageCenter()->FindVisibleNotificationById("test_id1"));
   AddNotification("test_id2");
   AddNotification("test_id2");
   EXPECT_EQ(2u, GetMessageCenter()->NotificationCount());
-  EXPECT_TRUE(GetMessageCenter()->HasNotification("test_id2"));
+  EXPECT_TRUE(GetMessageCenter()->FindVisibleNotificationById("test_id2"));
 
   // Ensure that updating a notification does not affect the count.
   UpdateNotification("test_id2", "test_id3");
   UpdateNotification("test_id3", "test_id3");
   EXPECT_EQ(2u, GetMessageCenter()->NotificationCount());
-  EXPECT_FALSE(GetMessageCenter()->HasNotification("test_id2"));
+  EXPECT_FALSE(GetMessageCenter()->FindVisibleNotificationById("test_id2"));
 
   // Ensure that Removing the first notification removes it from the tray.
   RemoveNotification("test_id1");
-  EXPECT_FALSE(GetMessageCenter()->HasNotification("test_id1"));
+  EXPECT_FALSE(GetMessageCenter()->FindVisibleNotificationById("test_id1"));
   EXPECT_EQ(1u, GetMessageCenter()->NotificationCount());
 
   // Remove the remianing notification.
   RemoveNotification("test_id3");
   EXPECT_EQ(0u, GetMessageCenter()->NotificationCount());
-  EXPECT_FALSE(GetMessageCenter()->HasNotification("test_id3"));
+  EXPECT_FALSE(GetMessageCenter()->FindVisibleNotificationById("test_id3"));
 }
 
 TEST_F(WebNotificationTrayTest, WebNotificationPopupBubble) {
@@ -293,15 +285,14 @@ TEST_F(WebNotificationTrayTest, MAYBE_PopupShownOnBothDisplays) {
   // root window controller and shelf with having notifications. This code
   // verifies it doesn't cause crash and popups are still visible. See
   // http://crbug.com/263664
-  internal::DisplayManager* display_manager =
-      Shell::GetInstance()->display_manager();
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
 
-  display_manager->SetSecondDisplayMode(internal::DisplayManager::MIRRORING);
+  display_manager->SetSecondDisplayMode(DisplayManager::MIRRORING);
   UpdateDisplay("400x400,200x200");
   EXPECT_TRUE(GetTray()->IsPopupVisible());
   EXPECT_FALSE(GetSecondaryTray());
 
-  display_manager->SetSecondDisplayMode(internal::DisplayManager::EXTENDED);
+  display_manager->SetSecondDisplayMode(DisplayManager::EXTENDED);
   UpdateDisplay("400x400,200x200");
   EXPECT_TRUE(GetTray()->IsPopupVisible());
   secondary_tray = GetSecondaryTray();
@@ -341,11 +332,11 @@ TEST_F(WebNotificationTrayTest, MAYBE_PopupAndSystemTray) {
   // even more, but still visible.
   GetSystemTray()->ShowNotificationView(test_item);
   EXPECT_TRUE(GetTray()->IsPopupVisible());
-  gfx::Rect work_area_with_tray_notificaiton = GetPopupWorkArea();
+  gfx::Rect work_area_with_tray_notification = GetPopupWorkArea();
   EXPECT_GT(work_area.size().GetArea(),
-            work_area_with_tray_notificaiton.size().GetArea());
+            work_area_with_tray_notification.size().GetArea());
   EXPECT_GT(work_area_with_tray.size().GetArea(),
-            work_area_with_tray_notificaiton.size().GetArea());
+            work_area_with_tray_notification.size().GetArea());
 
   // Close system tray, only system tray notifications.
   GetSystemTray()->ClickedOutsideBubble();
@@ -353,7 +344,7 @@ TEST_F(WebNotificationTrayTest, MAYBE_PopupAndSystemTray) {
   gfx::Rect work_area_with_notification = GetPopupWorkArea();
   EXPECT_GT(work_area.size().GetArea(),
             work_area_with_notification.size().GetArea());
-  EXPECT_LT(work_area_with_tray_notificaiton.size().GetArea(),
+  EXPECT_LT(work_area_with_tray_notification.size().GetArea(),
             work_area_with_notification.size().GetArea());
 
   // Close the system tray notifications.
@@ -370,7 +361,7 @@ TEST_F(WebNotificationTrayTest, MAYBE_PopupAndAutoHideShelf) {
   // Shelf's auto-hide state won't be HIDDEN unless window exists.
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(1, 2, 3, 4)));
-  internal::ShelfLayoutManager* shelf =
+  ShelfLayoutManager* shelf =
       Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
 
@@ -432,7 +423,7 @@ TEST_F(WebNotificationTrayTest, MAYBE_PopupAndFullscreen) {
   // Checks the work area for normal auto-hidden state.
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(1, 2, 3, 4)));
-  internal::ShelfLayoutManager* shelf =
+  ShelfLayoutManager* shelf =
       Shell::GetPrimaryRootWindowController()->GetShelfLayoutManager();
   shelf->SetAutoHideBehavior(SHELF_AUTO_HIDE_BEHAVIOR_ALWAYS);
   EXPECT_EQ(SHELF_AUTO_HIDE_HIDDEN, shelf->auto_hide_state());

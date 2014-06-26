@@ -5,9 +5,9 @@
 #include "chrome/browser/profiles/profile_list_desktop.h"
 
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
-#include "chrome/browser/profiles/profile_info_util.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -43,28 +43,20 @@ void ProfileListDesktop::RebuildMenu() {
       omitted_item_count_++;
       continue;
     }
-    bool is_gaia_picture =
-        profile_info_->IsUsingGAIAPictureOfProfileAtIndex(i) &&
-        profile_info_->GetGAIAPictureOfProfileAtIndex(i);
 
     gfx::Image icon = profile_info_->GetAvatarIconOfProfileAtIndex(i);
-    if (!switches::IsNewProfileManagement()) {
-      // The old avatar menu uses resized-small images.
-      icon = profiles::GetAvatarIconForMenu(icon, is_gaia_picture);
-    }
-
     AvatarMenu::Item* item = new AvatarMenu::Item(i - omitted_item_count_,
                                                   i,
                                                   icon);
     item->name = profile_info_->GetNameOfProfileAtIndex(i);
     item->sync_state = profile_info_->GetUserNameOfProfileAtIndex(i);
     item->profile_path = profile_info_->GetPathOfProfileAtIndex(i);
-    item->managed = profile_info_->ProfileIsManagedAtIndex(i);
+    item->supervised = profile_info_->ProfileIsSupervisedAtIndex(i);
     item->signed_in = !item->sync_state.empty();
     if (!item->signed_in) {
       item->sync_state = l10n_util::GetStringUTF16(
-          item->managed ? IDS_MANAGED_USER_AVATAR_LABEL :
-                          IDS_PROFILES_LOCAL_PROFILE_STATE);
+          item->supervised ? IDS_SUPERVISED_USER_AVATAR_LABEL :
+                             IDS_PROFILES_LOCAL_PROFILE_STATE);
     }
     item->active = profile_info_->GetPathOfProfileAtIndex(i) ==
         active_profile_path_;

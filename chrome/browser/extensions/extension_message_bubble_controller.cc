@@ -8,13 +8,12 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_message_bubble.h"
-#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/user_metrics.h"
-#include "extensions/browser/extension_prefs.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -30,13 +29,17 @@ ExtensionMessageBubbleController::Delegate::Delegate() {
 ExtensionMessageBubbleController::Delegate::~Delegate() {
 }
 
+void ExtensionMessageBubbleController::Delegate::RestrictToSingleExtension(
+    const std::string& extension_id) {
+  NOTIMPLEMENTED();  // Derived classes that need this should implement.
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ExtensionMessageBubbleController
 
 ExtensionMessageBubbleController::ExtensionMessageBubbleController(
     Delegate* delegate, Profile* profile)
-    : service_(extensions::ExtensionSystem::Get(profile)->extension_service()),
-      profile_(profile),
+    : profile_(profile),
       user_action_(ACTION_BOUNDARY),
       delegate_(delegate),
       initialized_(false) {
@@ -51,10 +54,12 @@ ExtensionMessageBubbleController::GetExtensionList() {
   if (list->empty())
     return std::vector<base::string16>();
 
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
   std::vector<base::string16> return_value;
   for (ExtensionIdList::const_iterator it = list->begin();
        it != list->end(); ++it) {
-    const Extension* extension = service_->GetInstalledExtension(*it);
+    const Extension* extension =
+        registry->GetExtensionById(*it, ExtensionRegistry::EVERYTHING);
     if (extension) {
       return_value.push_back(base::UTF8ToUTF16(extension->name()));
     } else {
@@ -69,6 +74,8 @@ ExtensionMessageBubbleController::GetExtensionList() {
 const ExtensionIdList& ExtensionMessageBubbleController::GetExtensionIdList() {
   return *GetOrCreateExtensionList();
 }
+
+bool ExtensionMessageBubbleController::CloseOnDeactivate() { return false; }
 
 void ExtensionMessageBubbleController::Show(ExtensionMessageBubble* bubble) {
   // Wire up all the callbacks, to get notified what actions the user took.
@@ -95,14 +102,23 @@ void ExtensionMessageBubbleController::OnBubbleAction() {
   delegate_->LogAction(ACTION_EXECUTE);
   delegate_->PerformAction(*GetOrCreateExtensionList());
   AcknowledgeExtensions();
+  delegate_->OnClose();
 }
 
 void ExtensionMessageBubbleController::OnBubbleDismiss() {
-  DCHECK_EQ(ACTION_BOUNDARY, user_action_);
+  // OnBubbleDismiss() can be called twice when we receive multiple
+  // "OnWidgetDestroying" notifications (this can at least happen when we close
+  // a window with a notification open). Handle this gracefully.
+  if (user_action_ != ACTION_BOUNDARY) {
+    DCHECK(user_action_ == ACTION_DISMISS);
+    return;
+  }
+
   user_action_ = ACTION_DISMISS;
 
   delegate_->LogAction(ACTION_DISMISS);
   AcknowledgeExtensions();
+  delegate_->OnClose();
 }
 
 void ExtensionMessageBubbleController::OnLinkClicked() {
@@ -121,6 +137,7 @@ void ExtensionMessageBubbleController::OnLinkClicked() {
                                false));
   }
   AcknowledgeExtensions();
+  delegate_->OnClose();
 }
 
 void ExtensionMessageBubbleController::AcknowledgeExtensions() {
@@ -131,12 +148,9 @@ void ExtensionMessageBubbleController::AcknowledgeExtensions() {
 }
 
 ExtensionIdList* ExtensionMessageBubbleController::GetOrCreateExtensionList() {
-  if (!service_)
-    return &extension_list_;  // Can occur during testing.
-
   if (!initialized_) {
     scoped_ptr<const ExtensionSet> extension_set(
-        service_->GenerateInstalledExtensionsSet());
+        ExtensionRegistry::Get(profile_)->GenerateInstalledExtensionsSet());
     for (ExtensionSet::const_iterator it = extension_set->begin();
          it != extension_set->end(); ++it) {
       std::string id = (*it)->id();

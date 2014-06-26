@@ -46,10 +46,11 @@ class VariationsHttpHeaderProvider : base::FieldTrialList::Observer {
                      bool uma_enabled,
                      net::HttpRequestHeaders* headers);
 
-  // Sets *additional* variation ids to be encoded in the X-Client-Data
-  // request header.  This is intended for development use to force a server
-  // side experiment id.  |variation_ids| should be a comma-separated string of
-  // numeric experiment ids.
+  // Sets *additional* variation ids and trigger variation ids to be encoded in
+  // the X-Client-Data request header.  This is intended for development use to
+  // force a server side experiment id.  |variation_ids| should be a
+  // comma-separated string of numeric experiment ids.  If an id is prefixed
+  // with "t" it will be treated as a trigger experiment id.
   bool SetDefaultVariationIds(const std::string& variation_ids);
 
  private:
@@ -61,6 +62,8 @@ class VariationsHttpHeaderProvider : base::FieldTrialList::Observer {
                            SetDefaultVariationIds_Valid);
   FRIEND_TEST_ALL_PREFIXES(VariationsHttpHeaderProviderTest,
                            SetDefaultVariationIds_Invalid);
+  FRIEND_TEST_ALL_PREFIXES(VariationsHttpHeaderProviderTest,
+                           OnFieldTrialGroupFinalized);
 
   VariationsHttpHeaderProvider();
   virtual ~VariationsHttpHeaderProvider();
@@ -96,9 +99,12 @@ class VariationsHttpHeaderProvider : base::FieldTrialList::Observer {
   // Keep a cache of variation IDs that are transmitted in headers to Google.
   // This consists of a list of valid IDs, and the actual transmitted header.
   std::set<chrome_variations::VariationID> variation_ids_set_;
+  std::set<chrome_variations::VariationID> variation_trigger_ids_set_;
 
   // Provides the google experiment ids forced from command line.
   std::set<chrome_variations::VariationID> default_variation_ids_set_;
+  std::set<chrome_variations::VariationID> default_trigger_id_set_;
+
   std::string variation_ids_header_;
 
   DISALLOW_COPY_AND_ASSIGN(VariationsHttpHeaderProvider);

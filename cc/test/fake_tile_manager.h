@@ -15,14 +15,7 @@ namespace cc {
 class FakeTileManager : public TileManager {
  public:
   explicit FakeTileManager(TileManagerClient* client);
-  FakeTileManager(TileManagerClient* client,
-                  ResourceProvider* resource_provider);
-  FakeTileManager(TileManagerClient* client,
-                  ResourceProvider* resource_provider,
-                  bool allow_on_demand_raster);
-  FakeTileManager(TileManagerClient* client,
-                  ResourceProvider* resource_provider,
-                  size_t raster_task_limit_bytes);
+  FakeTileManager(TileManagerClient* client, ResourcePool* resource_pool);
   virtual ~FakeTileManager();
 
   bool HasBeenAssignedMemory(Tile* tile);

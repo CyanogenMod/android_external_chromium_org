@@ -24,6 +24,11 @@ extern const char kArgs_HelpShort[];
 extern const char kArgs_Help[];
 int RunArgs(const std::vector<std::string>& args);
 
+extern const char kCheck[];
+extern const char kCheck_HelpShort[];
+extern const char kCheck_Help[];
+int RunCheck(const std::vector<std::string>& args);
+
 extern const char kDesc[];
 extern const char kDesc_HelpShort[];
 extern const char kDesc_Help[];
@@ -33,11 +38,6 @@ extern const char kGen[];
 extern const char kGen_HelpShort[];
 extern const char kGen_Help[];
 int RunGen(const std::vector<std::string>& args);
-
-extern const char kGyp[];
-extern const char kGyp_HelpShort[];
-extern const char kGyp_Help[];
-int RunGyp(const std::vector<std::string>& args);
 
 extern const char kHelp[];
 extern const char kHelp_HelpShort[];

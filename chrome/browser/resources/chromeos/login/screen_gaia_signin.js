@@ -18,10 +18,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
   /** @const */ var HELP_TOPIC_ENTERPRISE_REPORTING = 2535613;
 
-  /** @const */ var NET_ERROR_ABORTED = 3;
-
-  /** @const */ var NET_ERROR_DISALLOWED_URL_SCHEME = 301;
-
   return {
     EXTERNAL_API: [
       'loadAuthExtension',
@@ -97,6 +93,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
           this.onAuthConfirmPassword_.bind(this);
       this.gaiaAuthHost_.noPasswordCallback =
           this.onAuthNoPassword_.bind(this);
+      this.gaiaAuthHost_.insecureContentBlockedCallback =
+          this.onInsecureContentBlocked_.bind(this);
       this.gaiaAuthHost_.addEventListener('authFlowChange',
           this.onAuthFlowChange_.bind(this));
 
@@ -220,10 +218,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
         chrome.send('loginVisible', ['gaia-loading']);
       });
 
-      // Announce the name of the screen, if accessibility is on.
-      $('gaia-signin-aria-label').setAttribute(
-          'aria-label', loadTimeData.getString('signinScreenTitle'));
-
       // Button header is always visible when sign in is presented.
       // Header is hidden once GAIA reports on successful sign in.
       Oobe.getInstance().headerHidden = false;
@@ -262,12 +256,20 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       if (data.localizedStrings)
         params.localizedStrings = data.localizedStrings;
 
+      if (data.useEmbedded)
+        params.gaiaPath = 'EmbeddedSignIn';
+
       if (data.forceReload ||
           JSON.stringify(this.gaiaAuthParams_) != JSON.stringify(params)) {
         this.error_ = 0;
-        this.gaiaAuthHost_.load(data.useOffline ?
-                                    cr.login.GaiaAuthHost.AuthMode.OFFLINE :
-                                    cr.login.GaiaAuthHost.AuthMode.DEFAULT,
+
+        var authMode = cr.login.GaiaAuthHost.AuthMode.DEFAULT;
+        if (data.useOffline)
+          authMode = cr.login.GaiaAuthHost.AuthMode.OFFLINE;
+        else if (data.useEmbedded)
+          authMode = cr.login.GaiaAuthHost.AuthMode.DESKTOP;
+
+        this.gaiaAuthHost_.load(authMode,
                                 params,
                                 this.onAuthCompleted_.bind(this));
         this.gaiaAuthParams_ = params;
@@ -325,7 +327,12 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} email The authenticated user's e-mail address.
      */
     setAuthenticatedUserEmail: function(attemptToken, email) {
-      this.gaiaAuthHost_.setAuthenticatedUserEmail(attemptToken, email);
+      if (!email) {
+        this.showFatalAuthError(
+            loadTimeData.getString('fatalErrorMessageNoEmail'));
+      } else {
+        this.gaiaAuthHost_.setAuthenticatedUserEmail(attemptToken, email);
+      }
     },
 
     /**
@@ -429,7 +436,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
             this.onConfirmPasswordCollected_.bind(this));
       } else {
         chrome.send('scrapedPasswordVerificationFailed');
-        this.showFatalAuthError();
+        this.showFatalAuthError(
+            loadTimeData.getString('fatalErrorMessageVerificationFailed'));
       }
     },
 
@@ -451,15 +459,30 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} email The authenticated user's e-mail.
      */
     onAuthNoPassword_: function(email) {
-      this.showFatalAuthError();
+      this.showFatalAuthError(loadTimeData.getString(
+          'fatalErrorMessageNoPassword'));
       chrome.send('scrapedPasswordCount', [0]);
     },
 
     /**
-     * Shows the fatal auth error.
+     * Invoked when the authentication flow had to be aborted because content
+     * served over an unencrypted connection was detected. Shows a fatal error.
+     * This method is only called on Chrome OS, where the entire authentication
+     * flow is required to be encrypted.
+     * @param {string} url The URL that was blocked.
      */
-    showFatalAuthError: function() {
-      login.FatalErrorScreen.show(Oobe.showSigninUI);
+    onInsecureContentBlocked_: function(url) {
+      this.showFatalAuthError(loadTimeData.getStringF(
+          'fatalErrorMessageInsecureURL',
+          url));
+    },
+
+    /**
+     * Shows the fatal auth error.
+     * @param {string} message The error message to show.
+     */
+    showFatalAuthError: function(message) {
+      login.FatalErrorScreen.show(message, Oobe.showSigninUI);
     },
 
     /**
@@ -607,19 +630,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      * @param {string} url The URL that failed to load.
      */
     onFrameError: function(error, url) {
-      // Chrome OS requires that the entire authentication flow use https. If
-      // GAIA attempts to redirect to an http URL, the load will be blocked by
-      // CSP. Show a fatal error in this case.
-      // Some tests deviate from the above by disabling the CSP and using a
-      // mock GAIA implementation served over http. If an http URL fails to load
-      // in such a test, it has nothing to do with CSP and should not cause a
-      // fatal error to be shown.
-      if (error == NET_ERROR_ABORTED &&
-          url.indexOf('http://') == 0 &&
-          this.gaiaAuthParams_.gaiaUrl.indexOf('https://') == 0) {
-        error = NET_ERROR_DISALLOWED_URL_SCHEME;
-        this.showFatalAuthError();
-      }
       this.error_ = error;
       chrome.send('frameLoadingCompleted', [this.error_]);
     },

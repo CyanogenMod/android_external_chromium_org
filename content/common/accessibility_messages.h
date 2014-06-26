@@ -15,20 +15,22 @@
 #include "ipc/param_traits_macros.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
 #include "ui/accessibility/ax_node_data.h"
+#include "ui/accessibility/ax_tree_update.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
 #define IPC_MESSAGE_START AccessibilityMsgStart
 
-IPC_ENUM_TRAITS(ui::AXEvent)
-IPC_ENUM_TRAITS(ui::AXRole)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXEvent, ui::AX_EVENT_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXRole, ui::AX_ROLE_LAST)
 
-IPC_ENUM_TRAITS(ui::AXBoolAttribute)
-IPC_ENUM_TRAITS(ui::AXFloatAttribute)
-IPC_ENUM_TRAITS(ui::AXIntAttribute)
-IPC_ENUM_TRAITS(ui::AXIntListAttribute)
-IPC_ENUM_TRAITS(ui::AXStringAttribute)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXBoolAttribute, ui::AX_BOOL_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXFloatAttribute, ui::AX_FLOAT_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntAttribute, ui::AX_INT_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXIntListAttribute,
+                          ui::AX_INT_LIST_ATTRIBUTE_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(ui::AXStringAttribute, ui::AX_STRING_ATTRIBUTE_LAST)
 
 IPC_STRUCT_TRAITS_BEGIN(ui::AXNodeData)
   IPC_STRUCT_TRAITS_MEMBER(id)
@@ -44,10 +46,14 @@ IPC_STRUCT_TRAITS_BEGIN(ui::AXNodeData)
   IPC_STRUCT_TRAITS_MEMBER(child_ids)
 IPC_STRUCT_TRAITS_END()
 
+IPC_STRUCT_TRAITS_BEGIN(ui::AXTreeUpdate)
+  IPC_STRUCT_TRAITS_MEMBER(node_id_to_clear)
+  IPC_STRUCT_TRAITS_MEMBER(nodes)
+IPC_STRUCT_TRAITS_END()
+
 IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
-  // Vector of nodes in the tree that need to be updated before
-  // sending the event.
-  IPC_STRUCT_MEMBER(std::vector<ui::AXNodeData>, nodes)
+  // The tree update.
+  IPC_STRUCT_MEMBER(ui::AXTreeUpdate, update)
 
   // Type of event.
   IPC_STRUCT_MEMBER(ui::AXEvent, event_type)
@@ -99,10 +105,14 @@ IPC_MESSAGE_ROUTED3(AccessibilityMsg_SetTextSelection,
                     int /* New start offset */,
                     int /* New end offset */)
 
+// Determine the accessibility object under a given point and reply with
+// a AccessibilityHostMsg_HitTestResult with the same id.
+IPC_MESSAGE_ROUTED1(AccessibilityMsg_HitTest,
+                    gfx::Point /* location to test */)
+
 // Tells the render view that a AccessibilityHostMsg_Events
 // message was processed and it can send addition events.
 IPC_MESSAGE_ROUTED0(AccessibilityMsg_Events_ACK)
-
 
 // Kill the renderer because we got a fatal error in the accessibility tree.
 IPC_MESSAGE_ROUTED0(AccessibilityMsg_FatalError)

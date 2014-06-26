@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class Profile;
 
@@ -24,6 +24,9 @@ class AppListSyncableServiceFactory : public BrowserContextKeyedServiceFactory {
 
   static AppListSyncableServiceFactory* GetInstance();
 
+  static KeyedService* BuildInstanceFor(
+      content::BrowserContext* browser_context);
+
  private:
   friend struct DefaultSingletonTraits<AppListSyncableServiceFactory>;
 
@@ -31,12 +34,14 @@ class AppListSyncableServiceFactory : public BrowserContextKeyedServiceFactory {
   virtual ~AppListSyncableServiceFactory();
 
   // BrowserContextKeyedServiceFactory:
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* profile) const OVERRIDE;
   virtual void RegisterProfilePrefs(
       user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
   virtual content::BrowserContext* GetBrowserContextToUse(
       content::BrowserContext* context) const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
+  virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AppListSyncableServiceFactory);
 };

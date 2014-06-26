@@ -334,6 +334,7 @@ struct SSLSocketDataProvider {
   scoped_refptr<X509Certificate> cert;
   bool channel_id_sent;
   ServerBoundCertService* server_bound_cert_service;
+  int connection_status;
 };
 
 // A DataProvider where the client must write a request before the reads (e.g.
@@ -675,8 +676,8 @@ class MockClientSocket : public SSLClientSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) = 0;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // StreamSocket implementation.
   virtual int Connect(const CompletionCallback& callback) = 0;
@@ -706,6 +707,10 @@ class MockClientSocket : public SSLClientSocket {
   virtual ~MockClientSocket();
   void RunCallbackAsync(const CompletionCallback& callback, int result);
   void RunCallback(const CompletionCallback& callback, int result);
+
+  // SSLClientSocket implementation.
+  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const OVERRIDE;
 
   // True if Connect completed successfully and Disconnect hasn't been called.
   bool connected_;
@@ -846,8 +851,8 @@ class DeterministicMockUDPClientSocket
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // DatagramSocket implementation.
   virtual void Close() OVERRIDE;
@@ -988,8 +993,8 @@ class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
 
   // DatagramSocket implementation.
   virtual void Close() OVERRIDE;

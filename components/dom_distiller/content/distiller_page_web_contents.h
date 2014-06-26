@@ -21,7 +21,18 @@ using content::RenderViewHost;
 
 namespace dom_distiller {
 
-class DistillerContext;
+class SourcePageHandleWebContents : public SourcePageHandle {
+ public:
+  explicit SourcePageHandleWebContents(
+      scoped_ptr<content::WebContents> web_contents);
+  virtual ~SourcePageHandleWebContents();
+
+  scoped_ptr<content::WebContents> GetWebContents();
+
+ private:
+  // The WebContents this class owns.
+  scoped_ptr<content::WebContents> web_contents_;
+};
 
 class DistillerPageWebContentsFactory : public DistillerPageFactory {
  public:
@@ -30,26 +41,25 @@ class DistillerPageWebContentsFactory : public DistillerPageFactory {
       : DistillerPageFactory(), browser_context_(browser_context) {}
   virtual ~DistillerPageWebContentsFactory() {}
 
-  virtual scoped_ptr<DistillerPage> CreateDistillerPage(
-      DistillerPage::Delegate* delegate) const OVERRIDE;
+  virtual scoped_ptr<DistillerPage> CreateDistillerPage() const OVERRIDE;
+  virtual scoped_ptr<DistillerPage> CreateDistillerPageWithHandle(
+      scoped_ptr<SourcePageHandle> handle) const OVERRIDE;
 
  private:
   content::BrowserContext* browser_context_;
 };
 
-
 class DistillerPageWebContents : public DistillerPage,
                                  public content::WebContentsObserver {
  public:
-  DistillerPageWebContents(DistillerPage::Delegate* delegate,
-                           content::BrowserContext* browser_context);
+  DistillerPageWebContents(
+      content::BrowserContext* browser_context,
+      scoped_ptr<SourcePageHandleWebContents> optional_web_contents_handle);
   virtual ~DistillerPageWebContents();
 
   // content::WebContentsObserver implementation.
-  virtual void DidFinishLoad(int64 frame_id,
-                             const GURL& validated_url,
-                             bool is_main_frame,
-                             RenderViewHost* render_view_host) OVERRIDE;
+  virtual void DocumentLoadedInFrame(int64 frame_id,
+                                     RenderViewHost* render_view_host) OVERRIDE;
 
   virtual void DidFailLoad(int64 frame_id,
                            const GURL& validated_url,
@@ -59,11 +69,42 @@ class DistillerPageWebContents : public DistillerPage,
                            RenderViewHost* render_view_host) OVERRIDE;
 
  protected:
-  virtual void InitImpl() OVERRIDE;
-  virtual void LoadURLImpl(const GURL& gurl) OVERRIDE;
-  virtual void ExecuteJavaScriptImpl(const std::string& script) OVERRIDE;
+  virtual void DistillPageImpl(const GURL& url,
+                               const std::string& script) OVERRIDE;
 
  private:
+  friend class TestDistillerPageWebContents;
+
+  enum State {
+    // The page distiller is idle.
+    IDLE,
+    // A page is currently loading.
+    LOADING_PAGE,
+    // There was an error processing the page.
+    PAGELOAD_FAILED,
+    // JavaScript is executing within the context of the page. When the
+    // JavaScript completes, the state will be returned to |IDLE|.
+    EXECUTING_JAVASCRIPT
+  };
+
+  // Creates a new WebContents, adds |this| as an observer, and loads the
+  // |url|.
+  virtual void CreateNewWebContents(const GURL& url);
+
+  // Injects and executes JavaScript in the context of a loaded page. This
+  // must only be called after the page has successfully loaded.
+  void ExecuteJavaScript();
+
+  // Called when the distillation is done or if the page load failed.
+  void OnWebContentsDistillationDone(const GURL& page_url,
+                                     const base::Value* value);
+
+  // The current state of the |DistillerPage|, initially |IDLE|.
+  State state_;
+
+  // The JavaScript to inject to extract content.
+  std::string script_;
+
   scoped_ptr<content::WebContents> web_contents_;
   content::BrowserContext* browser_context_;
   DISALLOW_COPY_AND_ASSIGN(DistillerPageWebContents);

@@ -12,18 +12,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/timer/timer.h"
 #include "remoting/jingle_glue/signal_strategy.h"
 #include "remoting/proto/internal.pb.h"
 #include "remoting/protocol/clipboard_filter.h"
 #include "remoting/protocol/errors.h"
 #include "remoting/protocol/input_filter.h"
 #include "remoting/protocol/message_reader.h"
+#include "remoting/protocol/monitored_video_stub.h"
 #include "remoting/protocol/session.h"
 #include "remoting/protocol/session_manager.h"
-
-namespace pp {
-class Instance;
-}  // namespace pp
 
 namespace remoting {
 
@@ -52,8 +50,7 @@ class ConnectionToHost : public SignalStrategy::Listener,
                          public base::NonThreadSafe {
  public:
   // The UI implementations maintain corresponding definitions of this
-  // enumeration in webapp/client_session.js,
-  // android/java/res/values/strings.xml and
+  // enumeration in webapp/client_session.js and
   // android/java/src/org/chromium/chromoting/jni/JniInterface.java. Be sure to
   // update these locations if you make any changes to the ordering.
   enum State {
@@ -86,23 +83,35 @@ class ConnectionToHost : public SignalStrategy::Listener,
   ConnectionToHost(bool allow_nat_traversal);
   virtual ~ConnectionToHost();
 
-  // |signal_strategy| must outlive connection. |audio_stub| may be
-  // null, in which case audio will not be requested.
+  // Set the stubs which will handle messages from the host.
+  // The caller must ensure that stubs out-live the connection.
+  // Unless otherwise specified, all stubs must be set before Connect()
+  // is called.
+  void set_client_stub(ClientStub* client_stub);
+  void set_clipboard_stub(ClipboardStub* clipboard_stub);
+  void set_video_stub(VideoStub* video_stub);
+  // If no audio stub is specified then audio will not be requested.
+  void set_audio_stub(AudioStub* audio_stub);
+
+  // Initiates a connection to the host specified by |host_jid|.
+  // |signal_strategy| is used to signal to the host, and must outlive the
+  // connection. Data channels will be negotiated over |transport_factory|.
+  // |authenticator| will be used to authenticate the session and data channels.
+  // |event_callback| will be notified of changes in the state of the connection
+  // and must outlive the ConnectionToHost.
+  // Caller must set stubs (see below) before calling Connect.
   virtual void Connect(SignalStrategy* signal_strategy,
-                       const std::string& host_jid,
-                       const std::string& host_public_key,
                        scoped_ptr<TransportFactory> transport_factory,
                        scoped_ptr<Authenticator> authenticator,
-                       HostEventCallback* event_callback,
-                       ClientStub* client_stub,
-                       ClipboardStub* clipboard_stub,
-                       VideoStub* video_stub,
-                       AudioStub* audio_stub);
+                       const std::string& host_jid,
+                       const std::string& host_public_key,
+                       HostEventCallback* event_callback);
 
+  // Returns the session configuration that was negotiated with the host.
   virtual const SessionConfig& config();
 
   // Stubs for sending data to the host.
-  virtual ClipboardStub* clipboard_stub();
+  virtual ClipboardStub* clipboard_forwarder();
   virtual HostStub* host_stub();
   virtual InputStub* input_stub();
 
@@ -122,8 +131,9 @@ class ConnectionToHost : public SignalStrategy::Listener,
   virtual void OnSessionStateChange(Session::State state) OVERRIDE;
   virtual void OnSessionRouteChange(const std::string& channel_name,
                                     const TransportRoute& route) OVERRIDE;
-  virtual void OnSessionChannelReady(const std::string& channel_name,
-                                     bool ready) OVERRIDE;
+
+  // MonitoredVideoStub::EventHandler interface.
+  virtual void OnVideoChannelStatus(bool active);
 
   // Return the current state of ConnectionToHost.
   State state() const;
@@ -152,12 +162,12 @@ class ConnectionToHost : public SignalStrategy::Listener,
   // Stub for incoming messages.
   ClientStub* client_stub_;
   ClipboardStub* clipboard_stub_;
-  VideoStub* video_stub_;
   AudioStub* audio_stub_;
 
   SignalStrategy* signal_strategy_;
   scoped_ptr<SessionManager> session_manager_;
   scoped_ptr<Session> session_;
+  scoped_ptr<MonitoredVideoStub> monitored_video_stub_;
 
   scoped_ptr<VideoReader> video_reader_;
   scoped_ptr<AudioReader> audio_reader_;
@@ -169,9 +179,6 @@ class ConnectionToHost : public SignalStrategy::Listener,
   // Internal state of the connection.
   State state_;
   ErrorCode error_;
-
-  // List of channels that are not currently ready.
-  std::set<std::string> not_ready_channels_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ConnectionToHost);

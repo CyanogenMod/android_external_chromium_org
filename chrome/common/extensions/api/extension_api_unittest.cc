@@ -17,11 +17,11 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/features/api_feature.h"
-#include "chrome/common/extensions/features/base_feature_provider.h"
-#include "chrome/common/extensions/features/simple_feature.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
+#include "extensions/common/features/api_feature.h"
+#include "extensions/common/features/base_feature_provider.h"
+#include "extensions/common/features/simple_feature.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/test_util.h"
@@ -68,20 +68,18 @@ TEST(ExtensionAPITest, SplitDependencyName) {
     std::string input;
     std::string expected_feature_type;
     std::string expected_feature_name;
-  } test_data[] = {
-    { "", "api", "" },  // assumes "api" when no type is present
-    { "foo", "api", "foo" },
-    { "foo:", "foo", "" },
-    { ":foo", "", "foo" },
-    { "foo:bar", "foo", "bar" },
-    { "foo:bar.baz", "foo", "bar.baz" }
-  };
+  } test_data[] = {{"", "api", ""},  // assumes "api" when no type is present
+                   {"foo", "api", "foo"},
+                   {"foo:", "foo", ""},
+                   {":foo", "", "foo"},
+                   {"foo:bar", "foo", "bar"},
+                   {"foo:bar.baz", "foo", "bar.baz"}};
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_data); ++i) {
     std::string feature_type;
     std::string feature_name;
-    ExtensionAPI::SplitDependencyName(test_data[i].input, &feature_type,
-                                      &feature_name);
+    ExtensionAPI::SplitDependencyName(
+        test_data[i].input, &feature_type, &feature_name);
     EXPECT_EQ(test_data[i].expected_feature_type, feature_type) << i;
     EXPECT_EQ(test_data[i].expected_feature_name, feature_name) << i;
   }
@@ -244,11 +242,19 @@ TEST(ExtensionAPITest, APIFeatures) {
         api.RegisterSchemaResource(iter.key(), 0);
     }
 
-    EXPECT_EQ(test_data[i].expect_is_available,
-              api.IsAvailable(test_data[i].api_full_name,
-                              NULL,
-                              test_data[i].context,
-                              test_data[i].url).is_available()) << i;
+    ExtensionAPI::OverrideSharedInstanceForTest scope(&api);
+    bool expected = test_data[i].expect_is_available;
+    Feature::Availability availability =
+        api.IsAvailable(test_data[i].api_full_name,
+                        NULL,
+                        test_data[i].context,
+                        test_data[i].url);
+    EXPECT_EQ(expected, availability.is_available())
+        << base::StringPrintf("Test %d: Feature '%s' was %s: %s",
+                              static_cast<int>(i),
+                              test_data[i].api_full_name.c_str(),
+                              expected ? "not available" : "available",
+                              availability.message().c_str());
   }
 }
 
@@ -706,7 +712,7 @@ TEST(ExtensionAPITest, DefaultConfigurationFeatures) {
     EXPECT_TRUE(feature->GetContexts()->count(
         Feature::BLESSED_EXTENSION_CONTEXT));
 
-    EXPECT_EQ(Feature::UNSPECIFIED_LOCATION, feature->location());
+    EXPECT_EQ(SimpleFeature::UNSPECIFIED_LOCATION, feature->location());
     EXPECT_TRUE(feature->platforms()->empty());
     EXPECT_EQ(0, feature->min_manifest_version());
     EXPECT_EQ(0, feature->max_manifest_version());

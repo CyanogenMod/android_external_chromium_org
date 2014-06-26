@@ -26,7 +26,7 @@ base::LazyInstance<WidgetHelperMap> g_widget_helpers =
 
 void AddWidgetHelper(int render_process_id,
                      const scoped_refptr<RenderWidgetHelper>& widget_helper) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // We don't care if RenderWidgetHelpers overwrite an existing process_id. Just
   // want this to be up to date.
   g_widget_helpers.Get()[render_process_id] = widget_helper.get();
@@ -85,7 +85,7 @@ RenderWidgetHelper::RenderWidgetHelper()
 }
 
 RenderWidgetHelper::~RenderWidgetHelper() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Delete this RWH from the map if it is found.
   WidgetHelperMap& widget_map = g_widget_helpers.Get();
@@ -97,7 +97,7 @@ RenderWidgetHelper::~RenderWidgetHelper() {
   // object, so we should not be destroyed unless pending_paints_ is empty!
   DCHECK(pending_paints_.empty());
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
   ClearAllocatedDIBs();
 #endif
 }
@@ -121,7 +121,7 @@ int RenderWidgetHelper::GetNextRoutingID() {
 // static
 RenderWidgetHelper* RenderWidgetHelper::FromProcessHostID(
     int render_process_host_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   WidgetHelperMap::const_iterator ci = g_widget_helpers.Get().find(
       render_process_host_id);
   return (ci == g_widget_helpers.Get().end())? NULL : ci->second;
@@ -132,6 +132,16 @@ void RenderWidgetHelper::ResumeDeferredNavigation(
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&RenderWidgetHelper::OnResumeDeferredNavigation,
+                 this,
+                 request_id));
+}
+
+void RenderWidgetHelper::ResumeResponseDeferredAtStart(
+    const GlobalRequestID& request_id) {
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&RenderWidgetHelper::OnResumeResponseDeferredAtStart,
                  this,
                  request_id));
 }
@@ -245,6 +255,11 @@ void RenderWidgetHelper::OnResumeDeferredNavigation(
   resource_dispatcher_host_->ResumeDeferredNavigation(request_id);
 }
 
+void RenderWidgetHelper::OnResumeResponseDeferredAtStart(
+    const GlobalRequestID& request_id) {
+  resource_dispatcher_host_->ResumeResponseDeferredAtStart(request_id);
+}
+
 void RenderWidgetHelper::CreateNewWindow(
     const ViewHostMsg_CreateWindow_Params& params,
     bool no_javascript_access,
@@ -342,19 +357,7 @@ void RenderWidgetHelper::OnCreateFullscreenWidgetOnUI(int opener_id,
     host->CreateNewFullscreenWidget(route_id);
 }
 
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
-TransportDIB* RenderWidgetHelper::MapTransportDIB(TransportDIB::Id dib_id) {
-  base::AutoLock locked(allocated_dibs_lock_);
-
-  const std::map<TransportDIB::Id, int>::iterator
-      i = allocated_dibs_.find(dib_id);
-  if (i == allocated_dibs_.end())
-    return NULL;
-
-  base::FileDescriptor fd(dup(i->second), true);
-  return TransportDIB::Map(fd);
-}
-
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
 void RenderWidgetHelper::AllocTransportDIB(uint32 size,
                                            bool cache_in_browser,
                                            TransportDIB::Handle* result) {

@@ -15,16 +15,20 @@
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
+#include "chrome/browser/autocomplete/autocomplete_result.h"
 #include "chrome/browser/autocomplete/history_quick_provider.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/url_database.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
+#include "components/search_engines/template_url.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -163,7 +167,7 @@ class HistoryURLProviderTest : public testing::Test,
   virtual void OnProviderUpdate(bool updated_matches) OVERRIDE;
 
  protected:
-  static BrowserContextKeyedService* CreateTemplateURLService(
+  static KeyedService* CreateTemplateURLService(
       content::BrowserContext* profile) {
     return new TemplateURLService(static_cast<Profile*>(profile));
   }
@@ -188,7 +192,7 @@ class HistoryURLProviderTest : public testing::Test,
                bool prevent_inline_autocomplete,
                const UrlAndLegalDefault* expected_urls,
                size_t num_results,
-               AutocompleteInput::Type* identified_input_type);
+               metrics::OmniboxInputType::Type* identified_input_type);
 
   // A version of the above without the final |type| output parameter.
   void RunTest(const base::string16 text,
@@ -196,7 +200,7 @@ class HistoryURLProviderTest : public testing::Test,
                bool prevent_inline_autocomplete,
                const UrlAndLegalDefault* expected_urls,
                size_t num_results) {
-    AutocompleteInput::Type type;
+    metrics::OmniboxInputType::Type type;
     return RunTest(text, desired_tld, prevent_inline_autocomplete,
                    expected_urls, num_results, &type);
   }
@@ -248,8 +252,8 @@ void HistoryURLProviderTest::TearDown() {
 void HistoryURLProviderTest::FillData() {
   // Most visits are a long time ago (some tests require this since we do some
   // special logic for things visited very recently). Note that this time must
-  // be more recent than the "archived history" threshold for the data to go
-  // into the main database.
+  // be more recent than the "expire history" threshold for the data to be kept
+  // in the main database.
   //
   // TODO(brettw) It would be nice if we could test this behavior, in which
   // case the time would be specifed in the test_db structure.
@@ -277,11 +281,11 @@ void HistoryURLProviderTest::RunTest(
     bool prevent_inline_autocomplete,
     const UrlAndLegalDefault* expected_urls,
     size_t num_results,
-    AutocompleteInput::Type* identified_input_type) {
+    metrics::OmniboxInputType::Type* identified_input_type) {
   AutocompleteInput input(text, base::string16::npos, desired_tld, GURL(),
-                          AutocompleteInput::INVALID_SPEC,
-                          prevent_inline_autocomplete, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+                          metrics::OmniboxEventProto::INVALID_SPEC,
+                          prevent_inline_autocomplete, false, true, true,
+                          profile_.get());
   *identified_input_type = input.type();
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
@@ -291,11 +295,8 @@ void HistoryURLProviderTest::RunTest(
   if (sort_matches_) {
     for (ACMatches::iterator i = matches_.begin(); i != matches_.end(); ++i)
       i->ComputeStrippedDestinationURL(profile_.get());
-    std::sort(matches_.begin(), matches_.end(),
-              &AutocompleteMatch::DestinationSortFunc);
-    matches_.erase(std::unique(matches_.begin(), matches_.end(),
-                               &AutocompleteMatch::DestinationsEqual),
-                   matches_.end());
+    AutocompleteResult::DedupMatchesByDestination(
+        input.current_page_classification(), false, &matches_);
     std::sort(matches_.begin(), matches_.end(),
               &AutocompleteMatch::MoreRelevant);
   }
@@ -562,8 +563,8 @@ TEST_F(HistoryURLProviderTest, EmptyVisits) {
 
   AutocompleteInput input(ASCIIToUTF16("p"), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+                          metrics::OmniboxEventProto::INVALID_SPEC, false,
+                          false, true, true, profile_.get());
   autocomplete_->Start(input, false);
   // HistoryURLProvider shouldn't be done (waiting on async results).
   EXPECT_FALSE(autocomplete_->done());
@@ -604,8 +605,8 @@ TEST_F(HistoryURLProviderTestNoDB, NavigateWithoutDB) {
 TEST_F(HistoryURLProviderTest, DontAutocompleteOnTrailingWhitespace) {
   AutocompleteInput input(ASCIIToUTF16("slash "), base::string16::npos,
                           base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC, false, false,
-                          true, AutocompleteInput::ALL_MATCHES);
+                          metrics::OmniboxEventProto::INVALID_SPEC, false,
+                          false, true, true, profile_.get());
   autocomplete_->Start(input, false);
   if (!autocomplete_->done())
     base::MessageLoop::current()->Run();
@@ -653,9 +654,8 @@ TEST_F(HistoryURLProviderTest, IntranetURLsWithPaths) {
               NULL, 0);
     } else {
       const UrlAndLegalDefault output[] = {
-        { URLFixerUpper::FixupURL(test_cases[i].input, std::string()).spec(),
-          true }
-      };
+          {url_fixer::FixupURL(test_cases[i].input, std::string()).spec(),
+           true}};
       ASSERT_NO_FATAL_FAILURE(RunTest(ASCIIToUTF16(test_cases[i].input),
                               base::string16(), false,
                               output, arraysize(output)));
@@ -671,24 +671,22 @@ TEST_F(HistoryURLProviderTest, IntranetURLsWithRefs) {
   struct TestCase {
     const char* input;
     int relevance;
-    AutocompleteInput::Type type;
+    metrics::OmniboxInputType::Type type;
   } test_cases[] = {
-    { "gooey", 1410, AutocompleteInput::UNKNOWN },
-    { "gooey/", 1410, AutocompleteInput::URL },
-    { "gooey#", 1200, AutocompleteInput::UNKNOWN },
-    { "gooey/#", 1200, AutocompleteInput::URL },
-    { "gooey#foo", 1200, AutocompleteInput::UNKNOWN },
-    { "gooey/#foo", 1200, AutocompleteInput::URL },
-    { "gooey# foo", 1200, AutocompleteInput::UNKNOWN },
-    { "gooey/# foo", 1200, AutocompleteInput::URL },
+    { "gooey", 1410, metrics::OmniboxInputType::UNKNOWN },
+    { "gooey/", 1410, metrics::OmniboxInputType::URL },
+    { "gooey#", 1200, metrics::OmniboxInputType::UNKNOWN },
+    { "gooey/#", 1200, metrics::OmniboxInputType::URL },
+    { "gooey#foo", 1200, metrics::OmniboxInputType::UNKNOWN },
+    { "gooey/#foo", 1200, metrics::OmniboxInputType::URL },
+    { "gooey# foo", 1200, metrics::OmniboxInputType::UNKNOWN },
+    { "gooey/# foo", 1200, metrics::OmniboxInputType::URL },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
     SCOPED_TRACE(test_cases[i].input);
     const UrlAndLegalDefault output[] = {
-      { URLFixerUpper::FixupURL(test_cases[i].input, std::string()).spec(),
-        true }
-    };
-    AutocompleteInput::Type type;
+        {url_fixer::FixupURL(test_cases[i].input, std::string()).spec(), true}};
+    metrics::OmniboxInputType::Type type;
     ASSERT_NO_FATAL_FAILURE(
         RunTest(ASCIIToUTF16(test_cases[i].input),
                 base::string16(), false, output, arraysize(output), &type));
@@ -783,8 +781,8 @@ TEST_F(HistoryURLProviderTest, CrashDueToFixup) {
   for (size_t i = 0; i < arraysize(test_cases); ++i) {
     AutocompleteInput input(ASCIIToUTF16(test_cases[i]), base::string16::npos,
                             base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC,
-                            false, false, true, AutocompleteInput::ALL_MATCHES);
+                            metrics::OmniboxEventProto::INVALID_SPEC,
+                            false, false, true, true, profile_.get());
     autocomplete_->Start(input, false);
     if (!autocomplete_->done())
       base::MessageLoop::current()->Run();
@@ -798,9 +796,9 @@ TEST_F(HistoryURLProviderTest, CullSearchResults) {
   data.SetURL("http://testsearch.com/?q={searchTerms}");
   TemplateURLService* template_url_service =
       TemplateURLServiceFactory::GetForProfile(profile_.get());
-  TemplateURL* template_url = new TemplateURL(profile_.get(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   template_url_service->Add(template_url);
-  template_url_service->SetDefaultSearchProvider(template_url);
+  template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
   template_url_service->Load();
 
   // URLs we will be using, plus the visit counts they will initially get
@@ -901,8 +899,8 @@ TEST_F(HistoryURLProviderTest, SuggestExactInput) {
     AutocompleteInput input(ASCIIToUTF16(test_cases[i].input),
                             base::string16::npos, base::string16(),
                             GURL("about:blank"),
-                            AutocompleteInput::INVALID_SPEC, false, false, true,
-                            AutocompleteInput::ALL_MATCHES);
+                            metrics::OmniboxEventProto::INVALID_SPEC, false,
+                            false, true, true, profile_.get());
     AutocompleteMatch match(autocomplete_->SuggestExactInput(
         input.text(), input.canonicalized_url(), test_cases[i].trim_http));
     EXPECT_EQ(ASCIIToUTF16(test_cases[i].contents), match.contents);
@@ -996,8 +994,9 @@ TEST_F(HistoryURLProviderTest, HUPScoringExperiment) {
     for (max_matches = 0; max_matches < kMaxMatches; ++max_matches) {
       if (test_cases[i].matches[max_matches].url == NULL)
         break;
-      output[max_matches].url = URLFixerUpper::FixupURL(
-          test_cases[i].matches[max_matches].url, std::string()).spec();
+      output[max_matches].url =
+          url_fixer::FixupURL(test_cases[i].matches[max_matches].url,
+                              std::string()).spec();
       output[max_matches].allowed_to_be_default_match = true;
     }
     autocomplete_->scoring_params_ = test_cases[i].scoring_params;

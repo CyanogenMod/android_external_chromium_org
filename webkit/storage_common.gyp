@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //webkit/common:storage
       'target_name': 'webkit_storage_common',
       'type': '<(component)',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -21,8 +22,6 @@
       'defines': ['WEBKIT_STORAGE_COMMON_IMPLEMENTATION'],
       'sources': [
         'common/webkit_storage_common_export.h',
-        'common/appcache/appcache_interfaces.cc',
-        'common/appcache/appcache_interfaces.h',
         'common/blob/blob_data.cc',
         'common/blob/blob_data.h',
         'common/blob/scoped_file.cc',
@@ -32,7 +31,7 @@
         'common/database/database_connections.cc',
         'common/database/database_connections.h',
         'common/database/database_identifier.cc',
-        'common/database/database_identifier.cc',
+        'common/database/database_identifier.h',
         'common/fileapi/directory_entry.cc',
         'common/fileapi/directory_entry.h',
         'common/fileapi/file_system_info.cc',

@@ -149,4 +149,19 @@ void InitializeNullDrawGLBindings() {
   InitializeNullDrawGLBindingsGL();
 }
 
+bool HasInitializedNullDrawGLBindings() {
+  return HasInitializedNullDrawGLBindingsGL();
+}
+
+DisableNullDrawGLBindings::DisableNullDrawGLBindings() {
+  initial_enabled_ = SetNullDrawGLBindingsEnabledGL(false);
+}
+
+DisableNullDrawGLBindings::~DisableNullDrawGLBindings() {
+  SetNullDrawGLBindingsEnabledGL(initial_enabled_);
+}
+
+GLWindowSystemBindingInfo::GLWindowSystemBindingInfo()
+    : direct_rendering(true) {}
+
 }  // namespace gfx

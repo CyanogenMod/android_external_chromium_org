@@ -14,7 +14,7 @@ from appengine_url_fetcher import AppEngineUrlFetcher
 from appengine_wrappers import urlfetch
 from docs_server_utils import StringIdentity
 from file_system import FileNotFoundError, FileSystem, FileSystemError, StatInfo
-from future import Future, Gettable
+from future import Future
 from object_store_creator import ObjectStoreCreator
 from path_util import AssertIsDirectory, IsDirectory
 import url_constants
@@ -194,7 +194,7 @@ class GithubFileSystem(FileSystem):
         self._up_to_date_cache.Set(repo_key, True)
         self._stat_cache.Set(repo_key, version)
         return repo_zip
-      return Future(delegate=Gettable(resolve))
+      return Future(callback=resolve)
 
     # To decide whether we need to re-stat, and from there whether to re-fetch,
     # make use of ObjectStore's start-empty configuration. If
@@ -240,7 +240,7 @@ class GithubFileSystem(FileSystem):
   def Refresh(self):
     return self.ReadSingle('')
 
-  def Read(self, paths):
+  def Read(self, paths, skip_not_found=False):
     '''Returns a directory mapping |paths| to the contents of the file at each
     path. If path ends with a '/', it is treated as a directory and is mapped to
     a list of filenames in that directory.
@@ -257,7 +257,7 @@ class GithubFileSystem(FileSystem):
         else:
           reads[path] = repo_zip.Read(path)
       return reads
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def Stat(self, path):
     '''Stats |path| returning its version as as StatInfo object. If |path| ends

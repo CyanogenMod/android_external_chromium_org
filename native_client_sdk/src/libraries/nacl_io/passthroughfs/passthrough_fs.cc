@@ -33,7 +33,7 @@ class PassthroughFsNode : public Node {
                      int* out_bytes) {
     *out_bytes = 0;
 
-    off_t new_offset;
+    int64_t new_offset;
     int err = _real_lseek(real_fd_, attr.offs, 0, &new_offset);
     if (err)
       return err;
@@ -53,7 +53,7 @@ class PassthroughFsNode : public Node {
                       int* out_bytes) {
     *out_bytes = 0;
 
-    off_t new_offset;
+    int64_t new_offset;
     int err = _real_lseek(real_fd_, attr.offs, 0, &new_offset);
     if (err)
       return err;
@@ -90,6 +90,19 @@ class PassthroughFsNode : public Node {
     return 0;
   }
 
+  virtual Error Isatty() {
+#ifdef __GLIBC__
+    // isatty is not yet hooked up to the IRT interface under glibc.
+    return ENOTTY;
+#else
+    int result = 0;
+    int err = _real_isatty(real_fd_, &result);
+    if (err)
+      return err;
+    return 0;
+#endif
+  }
+
   Error MMap(void* addr,
              size_t length,
              int prot,
@@ -109,13 +122,15 @@ class PassthroughFsNode : public Node {
   int real_fd_;
 };
 
-PassthroughFs::PassthroughFs() {}
+PassthroughFs::PassthroughFs() {
+}
 
 Error PassthroughFs::Init(const FsInitArgs& args) {
   return Filesystem::Init(args);
 }
 
-void PassthroughFs::Destroy() {}
+void PassthroughFs::Destroy() {
+}
 
 Error PassthroughFs::Access(const Path& path, int a_mode) {
   // There is no underlying 'access' syscall in NaCl. It just returns ENOSYS.

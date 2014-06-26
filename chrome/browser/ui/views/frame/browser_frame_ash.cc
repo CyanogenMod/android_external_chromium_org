@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/frame/browser_frame_ash.h"
 
+#include "ash/wm/window_properties.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_state_delegate.h"
 #include "ash/wm/window_util.h"
@@ -70,15 +71,6 @@ BrowserFrameAsh::BrowserFrameAsh(BrowserFrame* browser_frame,
   if (!browser->bounds_overridden() && !browser->is_session_restore())
     SetWindowAutoManaged();
 #if defined(OS_CHROMEOS)
-  if (browser->is_type_tabbed()) {
-    // Animating to immersive fullscreen does not look good. Immersive
-    // fullscreen is the default fullscreen type on ChromeOS for tabbed browser
-    // windows. The WindowState constructor disables animating to fullscreen
-    // completely when switches::UseImmersiveFullscreenForAllWindows() returns
-    // true.
-    window_state->set_animate_to_fullscreen(false);
-  }
-
   // For legacy reasons v1 apps (like Secure Shell) are allowed to consume keys
   // like brightness, volume, etc. Otherwise these keys are handled by the
   // Ash window manager.
@@ -89,12 +81,12 @@ BrowserFrameAsh::BrowserFrameAsh(BrowserFrame* browser_frame,
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserFrameAsh, views::NativeWidgetAura overrides:
 
-void BrowserFrameAsh::OnWindowDestroying() {
+void BrowserFrameAsh::OnWindowDestroying(aura::Window* window) {
   // Destroy any remaining WebContents early on. Doing so may result in
   // calling back to one of the Views/LayoutManagers or supporting classes of
   // BrowserView. By destroying here we ensure all said classes are valid.
   DestroyBrowserWebContents(browser_view_->browser());
-  NativeWidgetAura::OnWindowDestroying();
+  NativeWidgetAura::OnWindowDestroying(window);
 }
 
 void BrowserFrameAsh::OnWindowTargetVisibilityChanged(bool visible) {
@@ -104,6 +96,27 @@ void BrowserFrameAsh::OnWindowTargetVisibilityChanged(bool visible) {
     SetWindowAutoManaged();
   }
   views::NativeWidgetAura::OnWindowTargetVisibilityChanged(visible);
+}
+
+bool BrowserFrameAsh::ShouldSaveWindowPlacement() const {
+  return NULL == GetWidget()->GetNativeWindow()->GetProperty(
+                     ash::kRestoreBoundsOverrideKey);
+}
+
+void BrowserFrameAsh::GetWindowPlacement(
+    gfx::Rect* bounds,
+    ui::WindowShowState* show_state) const {
+  gfx::Rect* override_bounds = GetWidget()->GetNativeWindow()->GetProperty(
+                                   ash::kRestoreBoundsOverrideKey);
+  if (override_bounds && !override_bounds->IsEmpty()) {
+    *bounds = *override_bounds;
+    *show_state = GetWidget()->GetNativeWindow()->GetProperty(
+                      ash::kRestoreShowStateOverrideKey);
+  } else {
+    *bounds = GetWidget()->GetRestoredBounds();
+    *show_state = GetWidget()->GetNativeWindow()->GetProperty(
+                      aura::client::kShowStateKey);
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -132,7 +145,7 @@ BrowserFrameAsh::~BrowserFrameAsh() {
 // BrowserFrameAsh, private:
 
 void BrowserFrameAsh::SetWindowAutoManaged() {
-  if (browser_view_->browser()->type() != Browser::TYPE_POPUP ||
+  if (!browser_view_->browser()->is_type_popup() ||
       browser_view_->browser()->is_app()) {
     ash::wm::GetWindowState(GetNativeWindow())->
         set_window_position_managed(true);

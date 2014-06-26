@@ -6,7 +6,6 @@
 
 #include <set>
 
-#include "base/containers/hash_tables.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -192,6 +191,9 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_TITLE_UI_ELEMENT:
         result += " title_elem=" + value;
         break;
+      case AX_ATTR_ACTIVEDESCENDANT_ID:
+        result += " activedescendant=" + value;
+        break;
       case AX_ATTR_COLOR_VALUE_RED:
         result += " color_value_red=" + value;
         break;
@@ -351,6 +353,21 @@ std::string AXNodeData::ToString() const {
     switch (intlist_attributes[i].first) {
       case AX_ATTR_INDIRECT_CHILD_IDS:
         result += " indirect_child_ids=" + IntVectorToString(values);
+        break;
+      case AX_ATTR_CONTROLS_IDS:
+        result += " controls_ids=" + IntVectorToString(values);
+        break;
+      case AX_ATTR_DESCRIBEDBY_IDS:
+        result += " describedby_ids=" + IntVectorToString(values);
+        break;
+      case AX_ATTR_FLOWTO_IDS:
+        result += " flowto_ids=" + IntVectorToString(values);
+        break;
+      case AX_ATTR_LABELLEDBY_IDS:
+        result += " labelledby_ids=" + IntVectorToString(values);
+        break;
+      case AX_ATTR_OWNS_IDS:
+        result += " owns_ids=" + IntVectorToString(values);
         break;
       case AX_ATTR_LINE_BREAKS:
         result += " line_breaks=" + IntVectorToString(values);

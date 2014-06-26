@@ -20,12 +20,15 @@ class MockContentLayerClient : public ContentLayerClient {
   explicit MockContentLayerClient(const gfx::Rect& opaque_layer_rect)
       : opaque_layer_rect_(opaque_layer_rect) {}
 
-  virtual void PaintContents(SkCanvas* canvas,
-                             const gfx::Rect& clip,
-                             gfx::RectF* opaque) OVERRIDE {
+  virtual void PaintContents(
+      SkCanvas* canvas,
+      const gfx::Rect& clip,
+      gfx::RectF* opaque,
+      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
     *opaque = gfx::RectF(opaque_layer_rect_);
   }
   virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
+  virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
 
  private:
   gfx::Rect opaque_layer_rect_;

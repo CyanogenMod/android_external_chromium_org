@@ -11,11 +11,11 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "components/policy/core/common/cloud/cloud_policy_client_registration_helper.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -89,7 +89,6 @@ void UserPolicySigninService::RegisterForPolicy(
   // this user).
   registration_helper_.reset(new CloudPolicyClientRegistrationHelper(
       policy_client.get(),
-      ShouldForceLoadPolicy(),
       enterprise_management::DeviceRegisterRequest::BROWSER));
   registration_helper_->StartRegistrationWithLoginToken(
       oauth2_refresh_token,
@@ -176,7 +175,6 @@ void UserPolicySigninService::RegisterCloudPolicyService() {
   // policy fetch will automatically happen.
   registration_helper_.reset(new CloudPolicyClientRegistrationHelper(
       policy_manager()->core()->client(),
-      ShouldForceLoadPolicy(),
       enterprise_management::DeviceRegisterRequest::BROWSER));
   registration_helper_->StartRegistration(
       oauth2_token_service_,

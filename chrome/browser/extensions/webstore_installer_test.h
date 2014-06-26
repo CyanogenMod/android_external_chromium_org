@@ -7,14 +7,15 @@
 
 #include <string>
 
-#include "chrome/test/base/in_process_browser_test.h"
+#include "base/files/scoped_temp_dir.h"
+#include "chrome/browser/extensions/extension_browsertest.h"
 #include "url/gurl.h"
 
 namespace base {
 class CommandLine;
 }  // namespace base
 
-class WebstoreInstallerTest : public InProcessBrowserTest {
+class WebstoreInstallerTest : public ExtensionBrowserTest {
  public:
   WebstoreInstallerTest(const std::string& webstore_domain,
                         const std::string& test_data_path,
@@ -23,8 +24,9 @@ class WebstoreInstallerTest : public InProcessBrowserTest {
                         const std::string& unverified_domain);
   virtual ~WebstoreInstallerTest();
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE;
+  virtual void SetUpOnMainThread() OVERRIDE;
 
  protected:
   GURL GenerateTestServerUrl(const std::string& domain,
@@ -43,12 +45,22 @@ class WebstoreInstallerTest : public InProcessBrowserTest {
   // Runs a test without waiting for any results from the renderer.
   void RunTestAsync(const std::string& test_function_name);
 
+  // Configures command line switches to simulate a user accepting the install
+  // prompt.
+  void AutoAcceptInstall();
+
+  // Configures command line switches to simulate a user cancelling the install
+  // prompt.
+  void AutoCancelInstall();
+
   std::string webstore_domain_;
   std::string test_data_path_;
   std::string crx_filename_;
   std::string verified_domain_;
   std::string unverified_domain_;
   std::string test_gallery_url_;
+
+  base::ScopedTempDir download_directory_;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_WEBSTORE_INSTALLER_TEST_H_

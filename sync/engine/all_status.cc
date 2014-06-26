@@ -32,7 +32,6 @@ SyncStatus AllStatus::CreateBlankStatus() const {
   status.hierarchy_conflicts = 0;
   status.server_conflicts = 0;
   status.committed_count = 0;
-  status.updates_available = 0;
   return status;
 }
 
@@ -50,8 +49,6 @@ SyncStatus AllStatus::CalcSyncing(const SyncCycleEvent &event) const {
   } else if (event.what_happened == SyncCycleEvent::SYNC_CYCLE_ENDED) {
     status.syncing = false;
   }
-
-  status.updates_available += snapshot.num_server_changes_remaining();
 
   status.num_entries_by_type = snapshot.num_entries_by_type();
   status.num_to_delete_entries_by_type =
@@ -71,22 +68,6 @@ SyncStatus AllStatus::CalcSyncing(const SyncCycleEvent &event) const {
         snapshot.model_neutral_state().num_local_overwrites;
     status.num_server_overwrites_total +=
         snapshot.model_neutral_state().num_server_overwrites;
-    if (snapshot.model_neutral_state().num_updates_downloaded_total == 0) {
-      ++status.empty_get_updates;
-    } else {
-      ++status.nonempty_get_updates;
-    }
-    if (snapshot.model_neutral_state().num_successful_commits == 0) {
-      ++status.sync_cycles_without_commits;
-    } else {
-      ++status.sync_cycles_with_commits;
-    }
-    if (snapshot.model_neutral_state().num_successful_commits == 0 &&
-        snapshot.model_neutral_state().num_updates_downloaded_total == 0) {
-      ++status.useless_sync_cycles;
-    } else {
-      ++status.useful_sync_cycles;
-    }
   }
   return status;
 }
@@ -123,6 +104,8 @@ void AllStatus::OnThrottledTypesChanged(ModelTypeSet throttled_types) {
 }
 
 void AllStatus::OnMigrationRequested(ModelTypeSet) {}
+
+void AllStatus::OnProtocolEvent(const ProtocolEvent&) {}
 
 SyncStatus AllStatus::status() const {
   base::AutoLock lock(mutex_);

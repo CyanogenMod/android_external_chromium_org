@@ -4,7 +4,6 @@
 
 #include "chrome/browser/task_manager/task_manager.h"
 
-#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/metrics/stats_table.h"
 #include "base/prefs/pref_service.h"
@@ -12,13 +11,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/memory_purger.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/views/browser_dialogs.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -44,8 +41,8 @@
 #include "ui/views/window/dialog_delegate.h"
 
 #if defined(USE_ASH)
+#include "ash/shelf/shelf_util.h"
 #include "ash/wm/window_util.h"
-#include "chrome/browser/ui/ash/launcher/launcher_item_util.h"
 #include "grit/ash_resources.h"
 #endif
 
@@ -53,7 +50,6 @@
 #include "chrome/browser/shell_integration.h"
 #include "ui/base/win/shell.h"
 #include "ui/views/win/hwnd_util.h"
-#include "win8/util/win8_util.h"
 #endif
 
 namespace {
@@ -165,7 +161,7 @@ class TaskManagerView : public views::ButtonListener,
 
   // views::View:
   virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual void ViewHierarchyChanged(
       const ViewHierarchyChangedDetails& details) OVERRIDE;
@@ -222,7 +218,6 @@ class TaskManagerView : public views::ButtonListener,
   // Restores saved always on top state from a previous session.
   bool GetSavedAlwaysOnTopState(bool* always_on_top) const;
 
-  views::LabelButton* purge_memory_button_;
   views::LabelButton* kill_button_;
   views::Link* about_memory_link_;
   views::TableView* tab_table_;
@@ -260,8 +255,7 @@ TaskManagerView* TaskManagerView::instance_ = NULL;
 
 
 TaskManagerView::TaskManagerView(chrome::HostDesktopType desktop_type)
-    : purge_memory_button_(NULL),
-      kill_button_(NULL),
+    : kill_button_(NULL),
       about_memory_link_(NULL),
       tab_table_(NULL),
       tab_table_parent_(NULL),
@@ -324,9 +318,6 @@ void TaskManagerView::Init() {
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
-  columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_FPS_COLUMN,
-                                     ui::TableColumn::RIGHT, -1, 0));
-  columns_.back().sortable = true;
   columns_.push_back(ui::TableColumn(IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN,
                                      ui::TableColumn::RIGHT, -1, 0));
   columns_.back().sortable = true;
@@ -371,13 +362,6 @@ void TaskManagerView::Init() {
   tab_table_->SetObserver(this);
   tab_table_->set_context_menu_controller(this);
   set_context_menu_controller(this);
-  // If we're running with --purge-memory-button, add a "Purge memory" button.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kPurgeMemoryButton)) {
-    purge_memory_button_ = new views::LabelButton(this,
-        l10n_util::GetStringUTF16(IDS_TASK_MANAGER_PURGE_MEMORY));
-    purge_memory_button_->SetStyle(views::Button::STYLE_BUTTON);
-  }
   kill_button_ = new views::LabelButton(this,
       l10n_util::GetStringUTF16(IDS_TASK_MANAGER_KILL));
   kill_button_->SetStyle(views::Button::STYLE_BUTTON);
@@ -428,15 +412,11 @@ void TaskManagerView::ViewHierarchyChanged(
   if (details.child == this) {
     if (details.is_add) {
       details.parent->AddChildView(about_memory_link_);
-      if (purge_memory_button_)
-        details.parent->AddChildView(purge_memory_button_);
       details.parent->AddChildView(kill_button_);
       tab_table_parent_ = tab_table_->CreateParentIfNecessary();
       AddChildView(tab_table_parent_);
     } else {
       details.parent->RemoveChildView(kill_button_);
-      if (purge_memory_button_)
-        details.parent->RemoveChildView(purge_memory_button_);
       details.parent->RemoveChildView(about_memory_link_);
     }
   }
@@ -451,14 +431,6 @@ void TaskManagerView::Layout() {
   int y_buttons = parent_bounds.bottom() - size.height() - vertical_margin;
   kill_button_->SetBounds(x, y_buttons, size.width(), size.height());
 
-  if (purge_memory_button_) {
-    size = purge_memory_button_->GetPreferredSize();
-    purge_memory_button_->SetBounds(
-        kill_button_->x() - size.width() -
-            views::kUnrelatedControlHorizontalSpacing,
-        y_buttons, size.width(), size.height());
-  }
-
   size = about_memory_link_->GetPreferredSize();
   about_memory_link_->SetBounds(
       horizontal_margin,
@@ -472,7 +444,7 @@ void TaskManagerView::Layout() {
   tab_table_parent_->SetBoundsRect(rect);
 }
 
-gfx::Size TaskManagerView::GetPreferredSize() {
+gfx::Size TaskManagerView::GetPreferredSize() const {
   return gfx::Size(460, 270);
 }
 
@@ -485,10 +457,6 @@ bool TaskManagerView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 
 // static
 void TaskManagerView::Show(Browser* browser) {
-#if defined(OS_WIN)
-  // In Windows Metro it's not good to open this native window.
-  DCHECK(!win8::IsSingleWindowMetroMode());
-#endif
   // In ash we can come here through the ChromeShellDelegate. If there is no
   // browser window at that time of the call, browser could be passed as NULL.
   const chrome::HostDesktopType desktop_type =
@@ -528,8 +496,9 @@ void TaskManagerView::Show(Browser* browser) {
     focus_manager->SetFocusedView(instance_->tab_table_);
 
 #if defined(USE_ASH)
-  CreateShelfItemForDialog(IDR_AURA_LAUNCHER_ICON_TASK_MANAGER,
-                           instance_->GetWidget()->GetNativeWindow());
+  ash::SetShelfItemDetailsForDialogWindow(
+      instance_->GetWidget()->GetNativeWindow(),
+      IDR_ASH_SHELF_ICON_TASK_MANAGER);
 #endif
 }
 
@@ -537,16 +506,12 @@ void TaskManagerView::Show(Browser* browser) {
 void TaskManagerView::ButtonPressed(
     views::Button* sender,
     const ui::Event& event) {
-  if (purge_memory_button_ && (sender == purge_memory_button_)) {
-    MemoryPurger::PurgeAll();
-  } else {
-    typedef ui::ListSelectionModel::SelectedIndices SelectedIndices;
-    DCHECK_EQ(kill_button_, sender);
-    SelectedIndices selection(tab_table_->selection_model().selected_indices());
-    for (SelectedIndices::const_reverse_iterator i = selection.rbegin();
-         i != selection.rend(); ++i) {
-      task_manager_->KillProcess(*i);
-    }
+  typedef ui::ListSelectionModel::SelectedIndices SelectedIndices;
+  DCHECK_EQ(kill_button_, sender);
+  SelectedIndices selection(tab_table_->selection_model().selected_indices());
+  for (SelectedIndices::const_reverse_iterator i = selection.rbegin();
+        i != selection.rend(); ++i) {
+    task_manager_->KillProcess(*i);
   }
 }
 
@@ -627,11 +592,15 @@ void TaskManagerView::ShowContextMenuForView(views::View* source,
     menu_model.AddCheckItem(i->id, l10n_util::GetStringUTF16(i->id));
   }
   menu_runner_.reset(new views::MenuRunner(&menu_model));
-  if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(point, gfx::Size()),
-                              views::MenuItemView::TOPLEFT, source_type,
+  if (menu_runner_->RunMenuAt(GetWidget(),
+                              NULL,
+                              gfx::Rect(point, gfx::Size()),
+                              views::MENU_ANCHOR_TOPLEFT,
+                              source_type,
                               views::MenuRunner::CONTEXT_MENU) ==
-      views::MenuRunner::MENU_DELETED)
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 bool TaskManagerView::IsCommandIdChecked(int id) const {

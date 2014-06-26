@@ -34,13 +34,12 @@ bool TestAutofillDriver::RendererIsAvailable() {
   return true;
 }
 
-void TestAutofillDriver::SetRendererActionOnFormDataReception(
-    RendererFormDataAction action) {
-}
-
 void TestAutofillDriver::SendFormDataToRenderer(int query_id,
+                                                RendererFormDataAction action,
                                                 const FormData& form_data) {
 }
+
+void TestAutofillDriver::PingRenderer() {}
 
 void TestAutofillDriver::SendAutofillTypePredictionsToRenderer(
     const std::vector<FormStructure*>& forms) {
@@ -48,10 +47,6 @@ void TestAutofillDriver::SendAutofillTypePredictionsToRenderer(
 
 void TestAutofillDriver::RendererShouldAcceptDataListSuggestion(
     const base::string16& value) {
-}
-
-void TestAutofillDriver::RendererShouldAcceptPasswordAutofillSuggestion(
-    const base::string16& username) {
 }
 
 void TestAutofillDriver::RendererShouldClearFilledForm() {
@@ -65,7 +60,11 @@ void TestAutofillDriver::SetURLRequestContext(
   url_request_context_ = url_request_context;
 }
 
-void TestAutofillDriver::RendererShouldSetNodeText(
+void TestAutofillDriver::RendererShouldFillFieldWithValue(
+    const base::string16& value) {
+}
+
+void TestAutofillDriver::RendererShouldPreviewFieldWithValue(
     const base::string16& value) {
 }
 

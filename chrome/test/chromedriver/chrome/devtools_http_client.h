@@ -10,12 +10,14 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/net/sync_websocket_factory.h"
 
 namespace base {
 class TimeDelta;
 }
 
+struct DeviceMetrics;
 class DevToolsClient;
 class NetAddress;
 class Status;
@@ -63,7 +65,8 @@ class DevToolsHttpClient {
   DevToolsHttpClient(
       const NetAddress& address,
       scoped_refptr<URLRequestContextGetter> context_getter,
-      const SyncWebSocketFactory& socket_factory);
+      const SyncWebSocketFactory& socket_factory,
+      scoped_ptr<DeviceMetrics> device_metrics);
   ~DevToolsHttpClient();
 
   Status Init(const base::TimeDelta& timeout);
@@ -76,11 +79,11 @@ class DevToolsHttpClient {
 
   Status ActivateWebView(const std::string& id);
 
-  const std::string& version() const;
-  int build_no() const;
+  const BrowserInfo* browser_info();
+  const DeviceMetrics* device_metrics();
 
  private:
-  Status GetVersion(std::string* version);
+  Status GetVersion(std::string* browser_version, std::string* blink_version);
   Status CloseFrontends(const std::string& for_client_id);
   bool FetchUrlAndLog(const std::string& url,
                       URLRequestContextGetter* getter,
@@ -90,8 +93,8 @@ class DevToolsHttpClient {
   SyncWebSocketFactory socket_factory_;
   std::string server_url_;
   std::string web_socket_url_prefix_;
-  std::string version_;
-  int build_no_;
+  BrowserInfo browser_info_;
+  scoped_ptr<DeviceMetrics> device_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(DevToolsHttpClient);
 };
@@ -100,7 +103,8 @@ namespace internal {
 Status ParseWebViewsInfo(const std::string& data,
                          WebViewsInfo* views_info);
 Status ParseVersionInfo(const std::string& data,
-                        std::string* version);
+                        std::string* browser_version,
+                        std::string* blink_version);
 }  // namespace internal
 
 #endif  // CHROME_TEST_CHROMEDRIVER_CHROME_DEVTOOLS_HTTP_CLIENT_H_

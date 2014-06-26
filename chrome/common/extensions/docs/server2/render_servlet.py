@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import hashlib
 import logging
 import posixpath
 import traceback
@@ -15,12 +16,16 @@ from special_paths import SITE_VERIFICATION_FILE
 from third_party.handlebar import Handlebar
 
 
-def _MakeHeaders(content_type):
-  return {
-    'X-Frame-Options': 'sameorigin',
+def _MakeHeaders(content_type, etag=None):
+  headers = {
+    # See http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.9.1.
+    'Cache-Control': 'public, max-age=0, no-cache',
     'Content-Type': content_type,
-    'Cache-Control': 'max-age=300',
+    'X-Frame-Options': 'sameorigin',
   }
+  if etag is not None:
+    headers['ETag'] = etag
+  return headers
 
 
 class RenderServlet(Servlet):
@@ -70,26 +75,36 @@ class RenderServlet(Servlet):
       logging.warning('No 404.html found in %s' % path)
       return Response.NotFound('Not Found', headers=_MakeHeaders('text/plain'))
 
-  def _GetSuccessResponse(self, path, server_instance):
+  def _GetSuccessResponse(self, request_path, server_instance):
     '''Returns the Response from trying to render |path| with
     |server_instance|.  If |path| isn't found then a FileNotFoundError will be
     raised, such that the only responses that will be returned from this method
     are Ok and Redirect.
     '''
     content_provider, serve_from, path = (
-        server_instance.content_providers.GetByServeFrom(path))
+        server_instance.content_providers.GetByServeFrom(request_path))
     assert content_provider, 'No ContentProvider found for %s' % path
 
     redirect = Redirector(
         server_instance.compiled_fs_factory,
         content_provider.file_system).Redirect(self._request.host, path)
     if redirect is not None:
+      # Absolute redirects stay absolute, relative redirects are relative to
+      # |serve_from|; all redirects eventually need to be *served* as absolute.
+      if not redirect.startswith(('/', 'http://', 'https://')):
+        redirect = '/' + posixpath.join(serve_from, redirect)
       return Response.Redirect(redirect, permanent=False)
 
     canonical_path = content_provider.GetCanonicalPath(path)
     if canonical_path != path:
       redirect_path = posixpath.join(serve_from, canonical_path)
       return Response.Redirect('/' + redirect_path, permanent=False)
+
+    if request_path.endswith('/'):
+      # Directory request hasn't been redirected by now. Default behaviour is
+      # to redirect as though it were a file.
+      return Response.Redirect('/' + request_path.rstrip('/'),
+                               permanent=False)
 
     content_and_type = content_provider.GetContentAndType(path).Get()
     if not content_and_type.content:
@@ -108,10 +123,29 @@ class RenderServlet(Servlet):
       if warnings:
         sep = '\n - '
         logging.warning('Rendering %s:%s%s' % (path, sep, sep.join(warnings)))
+      # Content was dynamic. The new etag is a hash of the content.
+      etag = None
+    elif content_and_type.version is not None:
+      # Content was static. The new etag is the version of the content. Hash it
+      # to make sure it's valid.
+      etag = '"%s"' % hashlib.md5(str(content_and_type.version)).hexdigest()
+    else:
+      # Sometimes non-dynamic content does not have a version, for example
+      # .zip files. The new etag is a hash of the content.
+      etag = None
 
     content_type = content_and_type.content_type
     if isinstance(content, unicode):
       content = content.encode('utf-8')
       content_type += '; charset=utf-8'
 
-    return Response.Ok(content, headers=_MakeHeaders(content_type))
+    if etag is None:
+      # Note: we're using md5 as a convenient and fast-enough way to identify
+      # content. It's not intended to be cryptographic in any way, and this
+      # is *not* what etags is for. That's what SSL is for, this is unrelated.
+      etag = '"%s"' % hashlib.md5(content).hexdigest()
+
+    headers = _MakeHeaders(content_type, etag=etag)
+    if etag == self._request.headers.get('If-None-Match'):
+      return Response.NotModified('Not Modified', headers=headers)
+    return Response.Ok(content, headers=headers)

@@ -157,10 +157,11 @@ socklen_t SocketNode::ResourceToSockAddr(PP_Resource addr,
     addr4.sin_family = AF_INET;
     addr4.sin_port = ipv4.port;
     memcpy(&addr4.sin_addr, ipv4.addr, sizeof(ipv4.addr));
-    memcpy(out_addr, &addr4, len);
+    memcpy(out_addr, &addr4,
+           std::min(len, static_cast<socklen_t>(sizeof(addr4))));
 
     // Returns required size not copied size like getpeername/getsockname.
-    return sizeof(sockaddr_in);
+    return sizeof(addr4);
   }
 
   if (PP_TRUE == NetInterface()->DescribeAsIPv6Address(addr, &ipv6)) {
@@ -168,10 +169,11 @@ socklen_t SocketNode::ResourceToSockAddr(PP_Resource addr,
     addr6.sin6_family = AF_INET6;
     addr6.sin6_port = ipv6.port;
     memcpy(&addr6.sin6_addr, ipv6.addr, sizeof(ipv6.addr));
-    memcpy(out_addr, &addr6, len);
+    memcpy(out_addr, &addr6,
+           std::min(len, static_cast<socklen_t>(sizeof(addr6))));
 
     // Returns required size not copied size like getpeername/getsockname.
-    return sizeof(sockaddr_in6);
+    return sizeof(addr6);
   }
 
   return 0;
@@ -215,7 +217,9 @@ Error SocketNode::Connect(const HandleAttr& attr,
   return EOPNOTSUPP;
 }
 
-Error SocketNode::Listen(int backlog) { return EOPNOTSUPP; }
+Error SocketNode::Listen(int backlog) {
+  return EOPNOTSUPP;
+}
 
 Error SocketNode::GetSockOpt(int lvl,
                              int optname,
@@ -266,6 +270,8 @@ Error SocketNode::SetSockOpt(int lvl,
                              int optname,
                              const void* optval,
                              socklen_t len) {
+  size_t buflen = static_cast<size_t>(len);
+
   if (lvl != SOL_SOCKET)
     return ENOPROTOOPT;
 
@@ -276,14 +282,14 @@ Error SocketNode::SetSockOpt(int lvl,
       // SO_REUSEADDR is effectivly always on since we can't
       // disable it with PPAPI sockets. Just return success
       // here regardless.
-      if (len < sizeof(int))
+      if (buflen < sizeof(int))
         return EINVAL;
       return 0;
     }
     case SO_LINGER: {
       // Not supported by the PPAPI interface but we preserve
       // the settings and pretend to support it.
-      if (len < sizeof(struct linger))
+      if (buflen < sizeof(struct linger))
         return EINVAL;
       struct linger new_linger = *static_cast<const linger*>(optval);
       // Don't allow setting linger to be enabled until we
@@ -298,7 +304,7 @@ Error SocketNode::SetSockOpt(int lvl,
     case SO_KEEPALIVE: {
       // Not supported by the PPAPI interface but we preserve
       // the flag and pretend to support it.
-      if (len < sizeof(int))
+      if (buflen < sizeof(int))
         return EINVAL;
       int value = *static_cast<const int*>(optval);
       keep_alive_ = value != 0;
@@ -440,7 +446,9 @@ void SocketNode::SetError_Locked(int pp_error_num) {
   last_errno_ = PPErrorToErrno(pp_error_num);
 }
 
-Error SocketNode::Shutdown(int how) { return EOPNOTSUPP; }
+Error SocketNode::Shutdown(int how) {
+  return EOPNOTSUPP;
+}
 
 Error SocketNode::GetPeerName(struct sockaddr* addr, socklen_t* len) {
   if (NULL == addr || NULL == len)

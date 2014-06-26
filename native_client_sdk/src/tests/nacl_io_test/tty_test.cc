@@ -24,36 +24,68 @@ using namespace nacl_io;
 
 namespace {
 
-class TtyTest : public ::testing::Test {
+static int ki_ioctl_wrapper(int fd, int request, ...) {
+  va_list ap;
+  va_start(ap, request);
+  int rtn = ki_ioctl(fd, request, ap);
+  va_end(ap);
+  return rtn;
+}
+
+class TtyNodeTest : public ::testing::Test {
  public:
+  TtyNodeTest() : fs_(&ppapi_) {}
+
   void SetUp() {
-    ki_init(&kp_);
     ASSERT_EQ(0, fs_.Access(Path("/tty"), R_OK | W_OK));
     ASSERT_EQ(EACCES, fs_.Access(Path("/tty"), X_OK));
     ASSERT_EQ(0, fs_.Open(Path("/tty"), O_RDWR, &dev_tty_));
     ASSERT_NE(NULL_NODE, dev_tty_.get());
   }
 
-  void TearDown() { ki_uninit(); }
-
  protected:
-  KernelProxy kp_;
+  FakePepperInterface ppapi_;
   DevFsForTesting fs_;
   ScopedNode dev_tty_;
 };
 
-TEST_F(TtyTest, InvalidIoctl) {
+class TtyTest : public ::testing::Test {
+ public:
+  void SetUp() {
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init_interface(&kp_, &ppapi_));
+
+    var_iface_ = ppapi_.GetVarInterface();
+  }
+
+  void TearDown() {
+    ki_uninit();
+  }
+
+  int TtyWrite(int fd, const char* string) {
+    PP_Var message_var = var_iface_->VarFromUtf8(string, strlen(string));
+    int result = ki_ioctl_wrapper(fd, NACL_IOC_HANDLEMESSAGE, &message_var);
+    var_iface_->Release(message_var);
+    return result;
+  }
+
+ protected:
+  FakePepperInterface ppapi_;
+  KernelProxy kp_;
+  VarInterface* var_iface_;
+};
+
+TEST_F(TtyNodeTest, InvalidIoctl) {
   // 123 is not a valid ioctl request.
   EXPECT_EQ(EINVAL, dev_tty_->Ioctl(123));
 }
 
-TEST_F(TtyTest, TtyInput) {
+TEST_F(TtyNodeTest, TtyInput) {
   // Now let's try sending some data over.
   // First we create the message.
   std::string message("hello, how are you?\n");
-  struct tioc_nacl_input_string packaged_message;
-  packaged_message.length = message.size();
-  packaged_message.buffer = message.data();
+  VarInterface* var_iface = ppapi_.GetVarInterface();
+  PP_Var message_var = var_iface->VarFromUtf8(message.data(), message.size());
 
   // Now we make buffer we'll read into.
   // We fill the buffer and a backup buffer with arbitrary data
@@ -66,7 +98,9 @@ TEST_F(TtyTest, TtyInput) {
   memset(backup_buffer, 'a', 100);
 
   // Now we actually send the data
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCNACLINPUT, &packaged_message));
+  EXPECT_EQ(0, dev_tty_->Ioctl(NACL_IOC_HANDLEMESSAGE, &message_var));
+
+  var_iface->Release(message_var);
 
   // We read a small chunk first to ensure it doesn't give us
   // more than we ask for.
@@ -98,7 +132,7 @@ static ssize_t output_handler(const char* buf, size_t count, void* data) {
   return count;
 }
 
-TEST_F(TtyTest, TtyOutput) {
+TEST_F(TtyNodeTest, TtyOutput) {
   // When no handler is registered then all writes should return EIO
   int bytes_written = 10;
   const char* message = "hello\n";
@@ -121,21 +155,6 @@ TEST_F(TtyTest, TtyOutput) {
   EXPECT_EQ(message_len, bytes_written);
   EXPECT_EQ(message_len, user_data.output_count);
   EXPECT_EQ(0, strncmp(user_data.output_buf, message, message_len));
-}
-
-static int ki_ioctl_wrapper(int fd, int request, ...) {
-  va_list ap;
-  va_start(ap, request);
-  int rtn = ki_ioctl(fd, request, ap);
-  va_end(ap);
-  return rtn;
-}
-
-static int TtyWrite(int fd, const char* string) {
-  struct tioc_nacl_input_string input;
-  input.buffer = string;
-  input.length = strlen(input.buffer);
-  return ki_ioctl_wrapper(fd, TIOCNACLINPUT, &input);
 }
 
 // Returns:
@@ -237,28 +256,29 @@ TEST_F(TtyTest, TtyICANON) {
   ASSERT_EQ(0, IsReadable(tty_fd));
 }
 
-static int g_recieved_signal;
+static int g_received_signal;
 
-static void sighandler(int sig) { g_recieved_signal = sig; }
+static void sighandler(int sig) { g_received_signal = sig; }
 
 TEST_F(TtyTest, WindowSize) {
   // Get current window size
   struct winsize old_winsize = {0};
-  ASSERT_EQ(0, dev_tty_->Ioctl(TIOCGWINSZ, &old_winsize));
+  int tty_fd = ki_open("/dev/tty", O_RDONLY);
+  ASSERT_EQ(0, ki_ioctl_wrapper(tty_fd, TIOCGWINSZ, &old_winsize));
 
   // Install signal handler
   sighandler_t new_handler = sighandler;
   sighandler_t old_handler = ki_signal(SIGWINCH, new_handler);
   ASSERT_NE(SIG_ERR, old_handler) << "signal return error: " << errno;
 
-  g_recieved_signal = 0;
+  g_received_signal = 0;
 
   // Set a new windows size
   struct winsize winsize;
   winsize.ws_col = 100;
   winsize.ws_row = 200;
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCSWINSZ, &winsize));
-  EXPECT_EQ(SIGWINCH, g_recieved_signal);
+  EXPECT_EQ(0, ki_ioctl_wrapper(tty_fd, TIOCSWINSZ, &winsize));
+  EXPECT_EQ(SIGWINCH, g_received_signal);
 
   // Restore old signal handler
   EXPECT_EQ(new_handler, ki_signal(SIGWINCH, old_handler));
@@ -266,12 +286,12 @@ TEST_F(TtyTest, WindowSize) {
   // Verify new window size can be queried correctly.
   winsize.ws_col = 0;
   winsize.ws_row = 0;
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCGWINSZ, &winsize));
+  EXPECT_EQ(0, ki_ioctl_wrapper(tty_fd, TIOCGWINSZ, &winsize));
   EXPECT_EQ(100, winsize.ws_col);
   EXPECT_EQ(200, winsize.ws_row);
 
   // Restore original windows size.
-  EXPECT_EQ(0, dev_tty_->Ioctl(TIOCSWINSZ, &old_winsize));
+  EXPECT_EQ(0, ki_ioctl_wrapper(tty_fd, TIOCSWINSZ, &old_winsize));
 }
 
 /*
@@ -322,10 +342,12 @@ TEST_F(TtyTest, ResizeDuringSelect) {
  * Sleep for 50ms then send some input to the /dev/tty.
  */
 static void* input_thread_main(void* arg) {
+  TtyTest* thiz = static_cast<TtyTest*>(arg);
+
   usleep(50 * 1000);
 
   int fd = ki_open("/dev/tty", O_RDONLY);
-  TtyWrite(fd, "test\n");
+  thiz->TtyWrite(fd, "test\n");
   return NULL;
 }
 
@@ -342,7 +364,7 @@ TEST_F(TtyTest, InputDuringSelect) {
   FD_SET(tty_fd, &errorfds);
 
   pthread_t resize_thread;
-  pthread_create(&resize_thread, NULL, input_thread_main, &dev_tty_);
+  pthread_create(&resize_thread, NULL, input_thread_main, this);
 
   struct timeval timeout;
   timeout.tv_sec = 20;
@@ -353,4 +375,5 @@ TEST_F(TtyTest, InputDuringSelect) {
 
   ASSERT_EQ(1, rtn);
 }
-}
+
+}  // namespace

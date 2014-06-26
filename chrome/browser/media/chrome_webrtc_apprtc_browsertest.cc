@@ -3,11 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
+#include "base/files/file_enumerator.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/win/windows_version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/media/webrtc_browsertest_base.h"
 #include "chrome/browser/media/webrtc_browsertest_common.h"
@@ -16,7 +16,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/ui/ui_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "media/base/media_switches.h"
 #include "net/test/python_utils.h"
@@ -38,7 +37,7 @@ const char kTitlePageOfAppEngineAdminPage[] = "Instances";
 // on the running system. This test is not meant to run in the main browser
 // test suite since normal tester machines do not have webcams. Chrome will use
 // its fake camera for both tests, but Firefox will use the real webcam in the
-// Firefox interop test.
+// Firefox interop test. Thus, this test must on a machine with a real webcam.
 //
 // This test will bring up a AppRTC instance on localhost and verify that the
 // call gets up when connecting to the same room from two tabs in a browser.
@@ -54,24 +53,19 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
 
     // The video playback will not work without a GPU, so force its use here.
     command_line->AppendSwitch(switches::kUseGpuInTests);
-
-#if defined(OS_MACOSX)
-    // TODO(mcasas): Remove this switch when ManyCam virtual video capture
-    // device starts supporting AVFoundation, see http://crbug.com/327618.
-    command_line->AppendSwitch(switches::kDisableAVFoundation);
-#endif
-
     CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kUseFakeDeviceForMediaStream);
   }
 
   virtual void TearDown() OVERRIDE {
     // Kill any processes we may have brought up.
+    LOG(INFO) << "Entering TearDown";
     if (dev_appserver_ != base::kNullProcessHandle)
       base::KillProcess(dev_appserver_, 0, false);
     // TODO(phoglund): Find some way to shut down Firefox cleanly on Windows.
     if (firefox_ != base::kNullProcessHandle)
       base::KillProcess(firefox_, 0, false);
+    LOG(INFO) << "Exiting TearDown";
   }
 
  protected:
@@ -126,7 +120,14 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
     // Apprtc will set remoteVideo.style.opacity to 1 when the call comes up.
     std::string javascript =
         "window.domAutomationController.send(remoteVideo.style.opacity)";
-    return PollingWaitUntil(javascript, "1", tab_contents);
+    return test::PollingWaitUntil(javascript, "1", tab_contents);
+  }
+
+  bool WaitForCallToHangUp(content::WebContents* tab_contents) {
+    // Apprtc will set remoteVideo.style.opacity to 1 when the call comes up.
+    std::string javascript =
+        "window.domAutomationController.send(remoteVideo.style.opacity)";
+    return test::PollingWaitUntil(javascript, "0", tab_contents);
   }
 
   bool EvalInJavascriptFile(content::WebContents* tab_contents,
@@ -157,6 +158,11 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
     StartDetectingVideo(tab_contents, "remoteVideo");
     WaitForVideoToPlay(tab_contents);
     return true;
+  }
+
+  bool HangUpApprtcCall(content::WebContents* tab_contents) {
+    // This is the same as clicking the Hangup button in the AppRTC call.
+    return content::ExecuteScript(tab_contents, "onHangup()");
   }
 
   base::FilePath GetSourceDir() {
@@ -190,8 +196,22 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
     VLOG(1) << "Running " << command_line.GetCommandLineString();
     return base::LaunchProcess(command_line, base::LaunchOptions(),
                                &firefox_);
+  }
 
-    return true;
+  bool HasWebcamOnSystem() {
+#if defined(OS_LINUX)
+    // Implementation note: normally we would be able to figure this out with
+    // MediaStreamTrack.getSources, but we can't ask Chrome since it runs in
+    // fake device mode where it will not enumerate webcams on the system.
+    // Therefore, look for /dev/video* entries directly since this test only
+    // runs on Linux for now anyway.
+    base::FileEnumerator dev_video(base::FilePath(FILE_PATH_LITERAL("/dev")),
+                                   false, base::FileEnumerator::FILES,
+                                   FILE_PATH_LITERAL("video*"));
+    return !dev_video.Next().empty();
+#endif
+    NOTREACHED();
+    return false;
   }
 
  private:
@@ -200,12 +220,10 @@ class WebRtcApprtcBrowserTest : public WebRtcTestBase {
 };
 
 IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
-  // TODO(mcasas): Remove Win version filtering when this bug gets fixed:
-  // http://code.google.com/p/webrtc/issues/detail?id=2703
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+  // Disabled on Win XP: http://code.google.com/p/webrtc/issues/detail?id=2703.
+  if (OnWinXp())
     return;
-#endif
+
   DetectErrorsInJavaScript();
   ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());
   while (!LocalApprtcInstanceIsUp())
@@ -216,6 +234,7 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
 
   chrome::AddTabAt(browser(), GURL(), -1, true);
   content::WebContents* left_tab = OpenPageAndAcceptUserMedia(room_url);
+
   chrome::AddTabAt(browser(), GURL(), -1, true);
   content::WebContents* right_tab = OpenPageAndAcceptUserMedia(room_url);
 
@@ -224,6 +243,14 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
 
   ASSERT_TRUE(DetectRemoteVideoPlaying(left_tab));
   ASSERT_TRUE(DetectRemoteVideoPlaying(right_tab));
+
+  ASSERT_TRUE(HangUpApprtcCall(left_tab));
+
+  ASSERT_TRUE(WaitForCallToHangUp(left_tab));
+  ASSERT_TRUE(WaitForCallToHangUp(right_tab));
+
+  chrome::CloseWebContents(browser(), left_tab, false);
+  chrome::CloseWebContents(browser(), right_tab, false);
 }
 
 #if defined(OS_LINUX)
@@ -236,10 +263,15 @@ IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest, MANUAL_WorksOnApprtc) {
 IN_PROC_BROWSER_TEST_F(WebRtcApprtcBrowserTest,
                        MAYBE_MANUAL_FirefoxApprtcInteropTest) {
   // Disabled on Win XP: http://code.google.com/p/webrtc/issues/detail?id=2703.
-#if defined(OS_WIN)
-  if (base::win::GetVersion() < base::win::VERSION_VISTA)
+  if (OnWinXp())
     return;
-#endif
+
+  if (!HasWebcamOnSystem()) {
+    LOG(INFO)
+        << "Didn't find a webcam on the system; skipping test since Firefox "
+        << "needs to be able to acquire a webcam.";
+    return;
+  }
 
   DetectErrorsInJavaScript();
   ASSERT_TRUE(LaunchApprtcInstanceOnLocalhost());

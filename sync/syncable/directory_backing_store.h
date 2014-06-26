@@ -88,6 +88,7 @@ class SYNC_EXPORT_PRIVATE DirectoryBackingStore : public base::NonThreadSafe {
   bool CreateModelsTable();
   bool CreateV71ModelsTable();
   bool CreateV75ModelsTable();
+  bool CreateV81ModelsTable();
 
   // We don't need to load any synced and applied deleted entries, we can
   // in fact just purge them forever on startup.
@@ -170,6 +171,8 @@ class SYNC_EXPORT_PRIVATE DirectoryBackingStore : public base::NonThreadSafe {
   bool MigrateVersion83To84();
   bool MigrateVersion84To85();
   bool MigrateVersion85To86();
+  bool MigrateVersion86To87();
+  bool MigrateVersion87To88();
 
   scoped_ptr<sql::Connection> db_;
   sql::Statement save_meta_statment_;

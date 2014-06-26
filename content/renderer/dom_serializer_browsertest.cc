@@ -13,12 +13,12 @@
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/render_view_observer.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "content/renderer/savable_resources.h"
 #include "content/shell/browser/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/url_request/url_request_context.h"
 #include "third_party/WebKit/public/platform/WebCString.h"
 #include "third_party/WebKit/public/platform/WebData.h"
@@ -28,7 +28,7 @@
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebPageSerializer.h"
@@ -41,6 +41,7 @@ using blink::WebDocument;
 using blink::WebElement;
 using blink::WebElementCollection;
 using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebNode;
 using blink::WebNodeList;
 using blink::WebPageSerializer;
@@ -76,9 +77,9 @@ WebFrame* FindSubFrameByURL(WebView* web_view, const GURL& url) {
     for (WebElement element = all.firstItem();
          !element.isNull(); element = all.nextItem()) {
       // Check frame tag and iframe tag
-      if (!element.hasTagName("frame") && !element.hasTagName("iframe"))
+      if (!element.hasHTMLTagName("frame") && !element.hasHTMLTagName("iframe"))
         continue;
-      WebFrame* sub_frame = WebFrame::fromFrameOwnerElement(element);
+      WebFrame* sub_frame = WebLocalFrame::fromFrameOwnerElement(element);
       if (sub_frame)
         stack.push_back(sub_frame);
     }
@@ -102,7 +103,7 @@ bool IsMetaElement(const WebNode& node, std::string& charset_info) {
   if (!node.isElementNode())
     return false;
   const WebElement meta = node.toConst<WebElement>();
-  if (!meta.hasTagName("meta"))
+  if (!meta.hasHTMLTagName("meta"))
     return false;
   charset_info.erase(0, charset_info.length());
   // Check the META charset declaration.
@@ -153,7 +154,7 @@ class LoadObserver : public RenderViewObserver {
       : RenderViewObserver(render_view),
         quit_closure_(quit_closure) {}
 
-  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE {
+  virtual void DidFinishLoad(blink::WebLocalFrame* frame) OVERRIDE {
     if (frame == render_view()->GetWebView()->mainFrame())
       quit_closure_.Run();
   }
@@ -173,7 +174,7 @@ class DomSerializerTests : public ContentBrowserTest,
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
+    command_line->AppendSwitch(switches::kDisableGpu);
 #endif
   }
 
@@ -279,7 +280,7 @@ class DomSerializerTests : public ContentBrowserTest,
     WebVector<WebString> local_paths;
     local_paths.assign(&file_path, 1);
     // Start serializing DOM.
-    bool result = WebPageSerializer::serialize(web_frame,
+    bool result = WebPageSerializer::serialize(web_frame->toWebLocalFrame(),
        recursive_serialization,
        static_cast<WebPageSerializerClient*>(this),
        links,
@@ -614,12 +615,12 @@ class DomSerializerTests : public ContentBrowserTest,
     int original_base_tag_count = 0;
     for (WebElement element = all.firstItem(); !element.isNull();
          element = all.nextItem()) {
-      if (element.hasTagName("base")) {
+      if (element.hasHTMLTagName("base")) {
         original_base_tag_count++;
       } else {
         // Get link.
         WebString value = GetSubResourceLinkFromElement(element);
-        if (value.isNull() && element.hasTagName("a")) {
+        if (value.isNull() && element.hasHTMLTagName("a")) {
           value = element.getAttribute("href");
           if (value.isEmpty())
             value = WebString();
@@ -662,12 +663,12 @@ class DomSerializerTests : public ContentBrowserTest,
       if (!node.isElementNode())
         continue;
       WebElement element = node.to<WebElement>();
-      if (element.hasTagName("base")) {
+      if (element.hasHTMLTagName("base")) {
         new_base_tag_count++;
       } else {
         // Get link.
         WebString value = GetSubResourceLinkFromElement(element);
-        if (value.isNull() && element.hasTagName("a")) {
+        if (value.isNull() && element.hasHTMLTagName("a")) {
           value = element.getAttribute("href");
           if (value.isEmpty())
             value = WebString();

@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/management_policy.h"
@@ -26,6 +27,10 @@
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_switches.h"
+
+#if defined(ENABLE_RLZ)
+#include "chrome/browser/rlz/rlz.h"
+#endif
 
 using extensions::ExtensionRegistry;
 
@@ -50,8 +55,14 @@ bool AppListControllerDelegate::ForceNativeDesktop() const {
 
 void AppListControllerDelegate::ViewClosing() {}
 
-void AppListControllerDelegate::OnShowExtensionPrompt() {}
-void AppListControllerDelegate::OnCloseExtensionPrompt() {}
+gfx::Rect AppListControllerDelegate::GetAppListBounds() {
+  return gfx::Rect();
+}
+
+void AppListControllerDelegate::OnShowChildDialog() {
+}
+void AppListControllerDelegate::OnCloseChildDialog() {
+}
 
 std::string AppListControllerDelegate::AppListSourceToString(
     AppListSource source) {
@@ -90,15 +101,11 @@ void AppListControllerDelegate::DoShowAppInfoFlow(
       extension_id);
   DCHECK(extension);
 
-  gfx::NativeWindow parent_window = GetAppListWindow();
-  if (!parent_window)
-    return;
+  OnShowChildDialog();
 
-  OnShowExtensionPrompt();
-  ShowChromeAppInfoDialog(
-      parent_window, profile, extension,
-      base::Bind(&AppListControllerDelegate::OnCloseExtensionPrompt,
-                 base::Unretained(this)));
+  // Since the AppListControllerDelegate is a leaky singleton, passing its
+  // raw pointer around is OK.
+  ShowAppInfoDialog(this, profile, extension);
 }
 
 void AppListControllerDelegate::UninstallApp(Profile* profile,
@@ -107,22 +114,6 @@ void AppListControllerDelegate::UninstallApp(Profile* profile,
   ExtensionUninstaller* uninstaller =
       new ExtensionUninstaller(profile, app_id, this);
   uninstaller->Run();
-}
-
-void AppListControllerDelegate::RemoveAppFromFolder(Profile* profile,
-                                                    const std::string& app_id) {
-  app_list::AppListModel* model =
-      app_list::AppListSyncableServiceFactory::GetForProfile(
-          profile)->model();
-  app_list::AppListItem* item = model->FindItem(app_id);
-  DCHECK(item) << "App not found in model: " << app_id;
-  syncer::StringOrdinal position;
-  app_list::AppListFolderItem* folder_item =
-      model->FindFolderItem(item->folder_id());
-  DCHECK(folder_item) << "No folder for item: " << item->ToDebugString();
-  // Position the item just after the folder.
-  position = folder_item->position().CreateAfter();
-  model->MoveItemToFolderAt(item, "", position);
 }
 
 bool AppListControllerDelegate::IsAppFromWebStore(
@@ -182,9 +173,7 @@ void AppListControllerDelegate::ShowOptionsPage(
 extensions::LaunchType AppListControllerDelegate::GetExtensionLaunchType(
     Profile* profile,
     const std::string& app_id) {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
-  return extensions::GetLaunchType(service->extension_prefs(),
+  return extensions::GetLaunchType(extensions::ExtensionPrefs::Get(profile),
                                    GetExtension(profile, app_id));
 }
 
@@ -217,4 +206,10 @@ void AppListControllerDelegate::GetApps(Profile* profile,
   out_apps->InsertAll(registry->enabled_extensions());
   out_apps->InsertAll(registry->disabled_extensions());
   out_apps->InsertAll(registry->terminated_extensions());
+}
+
+void AppListControllerDelegate::OnSearchStarted() {
+#if defined(ENABLE_RLZ)
+  RLZTracker::RecordAppListSearch();
+#endif
 }

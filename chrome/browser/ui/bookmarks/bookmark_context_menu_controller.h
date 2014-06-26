@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
+#include "components/bookmarks/browser/base_bookmark_model_observer.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -64,6 +64,7 @@ class BookmarkContextMenuController : public BaseBookmarkModelObserver,
   // ui::SimpleMenuModel::Delegate implementation:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
+  virtual bool IsCommandIdVisible(int command_id) const OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
@@ -76,15 +77,6 @@ class BookmarkContextMenuController : public BaseBookmarkModelObserver,
   }
 
  private:
-  // A hook so that platform-specific implementations can report which commands
-  // are enabled. Returns true if |enabled| was set by the platform-specific
-  // implementation.
-  bool IsPlatformCommandIdEnabled(int command_id, bool* enabled) const;
-
-  // A hook to execute platform-specific commands. Returns true if the command
-  // has been handled and should no longer be processed.
-  bool ExecutePlatformCommand(int command_id, int event_flags);
-
   void BuildMenu();
 
   // Adds a IDC_* style command to the menu with a localized string.

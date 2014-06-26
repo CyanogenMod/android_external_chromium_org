@@ -7,12 +7,12 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/user_metrics.h"
@@ -132,10 +132,11 @@ base::string16 PepperBrokerInfoBarDelegate::GetLinkText() const {
 bool PepperBrokerInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   GURL learn_more_url("https://support.google.com/chrome/?p=ib_pepper_broker");
-  web_contents()->OpenURL(content::OpenURLParams(
-      learn_more_url, content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          learn_more_url, content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 

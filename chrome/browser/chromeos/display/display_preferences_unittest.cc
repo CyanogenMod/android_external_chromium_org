@@ -4,6 +4,9 @@
 
 #include "chrome/browser/chromeos/display/display_preferences.h"
 
+#include <string>
+#include <vector>
+
 #include "ash/display/display_controller.h"
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
@@ -11,19 +14,22 @@
 #include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
+#include "ash/test/display_manager_test_api.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/display/display_configuration_observer.h"
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chromeos/display/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
+#include "ui/gfx/vector3d_f.h"
 #include "ui/message_center/message_center.h"
 
-using ash::internal::ResolutionNotificationController;
+using ash::ResolutionNotificationController;
 
 namespace chromeos {
 namespace {
@@ -126,6 +132,16 @@ class DisplayPreferencesTest : public ash::test::AshTestBase {
     pref_data->Set(name, insets_value);
   }
 
+  void StoreColorProfile(int64 id, const std::string& profile) {
+    DictionaryPrefUpdate update(&local_state_, prefs::kDisplayProperties);
+    const std::string name = base::Int64ToString(id);
+
+    base::DictionaryValue* pref_data = update.Get();
+    base::DictionaryValue* property = new base::DictionaryValue();
+    property->SetString("color_profile_name", profile);
+    pref_data->Set(name, property);
+  }
+
   std::string GetRegisteredDisplayLayoutStr(int64 id1, int64 id2) {
     ash::DisplayIdPair pair;
     pair.first = id1;
@@ -164,7 +180,7 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
   LoadDisplayPreferences(true);
   // DisplayPowerState should be ignored at boot.
   EXPECT_EQ(chromeos::DISPLAY_POWER_ALL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
 
   shell->display_manager()->UpdateDisplays();
   // Check if the layout settings are notified to the system properly.
@@ -180,7 +196,7 @@ TEST_F(DisplayPreferencesTest, PairedLayoutOverrides) {
 TEST_F(DisplayPreferencesTest, BasicStores) {
   ash::DisplayController* display_controller =
       ash::Shell::GetInstance()->display_controller();
-  ash::internal::DisplayManager* display_manager =
+  ash::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
   UpdateDisplay("200x200*2, 400x300#400x400|300x200");
@@ -189,6 +205,16 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   int64 id2 = ash::ScreenUtil::GetSecondaryDisplay().id();
   int64 dummy_id = id2 + 1;
   ASSERT_NE(id1, dummy_id);
+  std::vector<ui::ColorCalibrationProfile> profiles;
+  profiles.push_back(ui::COLOR_PROFILE_STANDARD);
+  profiles.push_back(ui::COLOR_PROFILE_DYNAMIC);
+  profiles.push_back(ui::COLOR_PROFILE_MOVIE);
+  profiles.push_back(ui::COLOR_PROFILE_READING);
+  ash::test::DisplayManagerTestApi test_api(display_manager);
+  // Allows only |id1|.
+  test_api.SetAvailableColorProfiles(id1, profiles);
+  display_manager->SetColorCalibrationProfile(id1, ui::COLOR_PROFILE_DYNAMIC);
+  display_manager->SetColorCalibrationProfile(id2, ui::COLOR_PROFILE_DYNAMIC);
 
   LoggedInAsUser();
   ash::DisplayLayout layout(ash::DisplayLayout::TOP, 10);
@@ -246,6 +272,10 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_EQ(12, bottom);
   EXPECT_EQ(13, right);
 
+  std::string color_profile;
+  EXPECT_TRUE(property->GetString("color_profile_name", &color_profile));
+  EXPECT_EQ("dynamic", color_profile);
+
   EXPECT_TRUE(properties->GetDictionary(base::Int64ToString(id2), &property));
   EXPECT_TRUE(property->GetInteger("rotation", &rotation));
   EXPECT_TRUE(property->GetInteger("ui-scale", &ui_scale));
@@ -256,6 +286,10 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
   EXPECT_FALSE(property->GetInteger("insets_left", &left));
   EXPECT_FALSE(property->GetInteger("insets_bottom", &bottom));
   EXPECT_FALSE(property->GetInteger("insets_right", &right));
+
+  // |id2| doesn't have the color_profile because it doesn't have 'dynamic' in
+  // its available list.
+  EXPECT_FALSE(property->GetString("color_profile_name", &color_profile));
 
   // Resolution is saved only when the resolution is set
   // by DisplayManager::SetDisplayResolution
@@ -330,7 +364,8 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
 
   // Set new display's selected resolution.
   display_manager->RegisterDisplayProperty(
-      id2 + 1, gfx::Display::ROTATE_0, 1.0f, NULL, gfx::Size(500, 400));
+      id2 + 1, gfx::Display::ROTATE_0, 1.0f, NULL, gfx::Size(500, 400),
+      ui::COLOR_PROFILE_STANDARD);
 
   UpdateDisplay("200x200*2, 600x500#600x500|500x400");
 
@@ -355,7 +390,8 @@ TEST_F(DisplayPreferencesTest, BasicStores) {
 
   // Set yet another new display's selected resolution.
   display_manager->RegisterDisplayProperty(
-      id2 + 1, gfx::Display::ROTATE_0, 1.0f, NULL, gfx::Size(500, 400));
+      id2 + 1, gfx::Display::ROTATE_0, 1.0f, NULL, gfx::Size(500, 400),
+      ui::COLOR_PROFILE_STANDARD);
   // Disconnect 2nd display first to generate new id for external display.
   UpdateDisplay("200x200*2");
   UpdateDisplay("200x200*2, 500x400#600x500|500x400%60.0f");
@@ -405,8 +441,9 @@ TEST_F(DisplayPreferencesTest, PreventStore) {
   message_center::MessageCenter::Get()->ClickOnNotificationButton(
       ResolutionNotificationController::kNotificationId, 1);
   RunAllPendingInMessageLoop();
-  EXPECT_FALSE(message_center::MessageCenter::Get()->HasNotification(
-      ResolutionNotificationController::kNotificationId));
+  EXPECT_FALSE(
+      message_center::MessageCenter::Get()->FindVisibleNotificationById(
+          ResolutionNotificationController::kNotificationId));
 
   // Once the notification is removed, the specified resolution will be stored
   // by SetDisplayResolution.
@@ -457,10 +494,40 @@ TEST_F(DisplayPreferencesTest, StoreForSwappedDisplay) {
   EXPECT_EQ(id1, stored_layout.primary_id);
 }
 
+TEST_F(DisplayPreferencesTest, RestoreColorProfiles) {
+  ash::DisplayManager* display_manager =
+      ash::Shell::GetInstance()->display_manager();
+
+  int64 id1 = gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id();
+
+  StoreColorProfile(id1, "dynamic");
+
+  LoggedInAsUser();
+  LoadDisplayPreferences(false);
+
+  // id1's available color profiles list is empty, means somehow the color
+  // profile suport is temporary in trouble.
+  EXPECT_NE(ui::COLOR_PROFILE_DYNAMIC,
+            display_manager->GetDisplayInfo(id1).color_profile());
+
+  // Once the profile is supported, the color profile should be restored.
+  std::vector<ui::ColorCalibrationProfile> profiles;
+  profiles.push_back(ui::COLOR_PROFILE_STANDARD);
+  profiles.push_back(ui::COLOR_PROFILE_DYNAMIC);
+  profiles.push_back(ui::COLOR_PROFILE_MOVIE);
+  profiles.push_back(ui::COLOR_PROFILE_READING);
+  ash::test::DisplayManagerTestApi test_api(display_manager);
+  test_api.SetAvailableColorProfiles(id1, profiles);
+
+  LoadDisplayPreferences(false);
+  EXPECT_EQ(ui::COLOR_PROFILE_DYNAMIC,
+            display_manager->GetDisplayInfo(id1).color_profile());
+}
+
 TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   ash::DisplayController* display_controller =
       ash::Shell::GetInstance()->display_controller();
-  ash::internal::DisplayManager* display_manager =
+  ash::DisplayManager* display_manager =
       ash::Shell::GetInstance()->display_manager();
 
   UpdateDisplay("200x200*2,200x200");
@@ -495,11 +562,10 @@ TEST_F(DisplayPreferencesTest, DontStoreInGuestMode) {
   EXPECT_EQ("178x176", primary_display.bounds().size().ToString());
   EXPECT_EQ(gfx::Display::ROTATE_90, primary_display.rotation());
 
-  const ash::internal::DisplayInfo& info1 =
-      display_manager->GetDisplayInfo(id1);
+  const ash::DisplayInfo& info1 = display_manager->GetDisplayInfo(id1);
   EXPECT_EQ(1.25f, info1.configured_ui_scale());
 
-  const ash::internal::DisplayInfo& info_primary =
+  const ash::DisplayInfo& info_primary =
       display_manager->GetDisplayInfo(new_primary);
   EXPECT_EQ(gfx::Display::ROTATE_90, info_primary.rotation());
   EXPECT_EQ(1.0f, info_primary.configured_ui_scale());
@@ -533,9 +599,8 @@ TEST_F(DisplayPreferencesTest, DisplayPowerStateAfterRestart) {
   StoreDisplayPowerStateForTest(
       chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON);
   LoadDisplayPreferences(false);
-  EXPECT_EQ(
-      chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-      ash::Shell::GetInstance()->output_configurator()->power_state());
+  EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
+            ash::Shell::GetInstance()->display_configurator()->power_state());
 }
 
 TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
@@ -545,12 +610,12 @@ TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
   LoadDisplayPreferences(false);
   // DisplayPowerState should be ignored at boot.
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
 
   StoreDisplayPowerStateForTest(
       chromeos::DISPLAY_POWER_ALL_OFF);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
   EXPECT_EQ("internal_off_external_on",
             local_state()->GetString(prefs::kDisplayPowerState));
 
@@ -558,7 +623,44 @@ TEST_F(DisplayPreferencesTest, DontSaveAndRestoreAllOff) {
   local_state()->SetString(prefs::kDisplayPowerState, "all_off");
   LoadDisplayPreferences(false);
   EXPECT_EQ(chromeos::DISPLAY_POWER_INTERNAL_OFF_EXTERNAL_ON,
-            shell->output_configurator()->power_state());
+            shell->display_configurator()->power_state());
+}
+
+// Tests that display configuration changes caused by MaximizeModeController
+// are not saved.
+TEST_F(DisplayPreferencesTest, DontSaveMaximizeModeControllerRotations) {
+  ash::Shell* shell = ash::Shell::GetInstance();
+  ash::MaximizeModeController* controller = shell->maximize_mode_controller();
+  gfx::Display::SetInternalDisplayId(
+      gfx::Screen::GetNativeScreen()->GetPrimaryDisplay().id());
+  ash::DisplayManager* display_manager = shell->display_manager();
+  LoggedInAsUser();
+  // Populate the properties.
+  display_manager->SetDisplayRotation(gfx::Display::InternalDisplayId(),
+                                      gfx::Display::ROTATE_180);
+  // Reset property to avoid rotation lock
+  display_manager->SetDisplayRotation(gfx::Display::InternalDisplayId(),
+                                      gfx::Display::ROTATE_0);
+
+  // Open up 270 degrees to trigger maximize mode
+  controller->OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 0.0f, -1.0f),
+                                     gfx::Vector3dF(-1.0f, 0.0f, 0.0f));
+  EXPECT_TRUE(controller->IsMaximizeModeWindowManagerEnabled());
+
+  // Trigger 90 degree rotation
+  controller->OnAccelerometerUpdated(gfx::Vector3dF(0.0f, 1.0f, 0.0f),
+                                     gfx::Vector3dF(0.0f, 1.0f, 0.0f));
+  EXPECT_EQ(gfx::Display::ROTATE_90, display_manager->
+                GetDisplayInfo(gfx::Display::InternalDisplayId()).rotation());
+
+  const base::DictionaryValue* properties =
+      local_state()->GetDictionary(prefs::kDisplayProperties);
+  const base::DictionaryValue* property = NULL;
+  EXPECT_TRUE(properties->GetDictionary(
+      base::Int64ToString(gfx::Display::InternalDisplayId()), &property));
+  int rotation = -1;
+  EXPECT_TRUE(property->GetInteger("rotation", &rotation));
+  EXPECT_EQ(gfx::Display::ROTATE_0, rotation);
 }
 
 }  // namespace chromeos

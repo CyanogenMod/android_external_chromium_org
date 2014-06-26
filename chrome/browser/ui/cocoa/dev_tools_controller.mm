@@ -15,9 +15,9 @@
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ui/base/cocoa/base_view.h"
 #include "ui/base/cocoa/focus_tracker.h"
+#include "ui/gfx/mac/scoped_ns_disable_screen_updates.h"
 #include "ui/gfx/size_conversions.h"
 
 using content::WebContents;
@@ -78,6 +78,7 @@ using content::WebContents;
   }
 
   DCHECK_EQ(2u, [[self subviews] count]);
+
   gfx::Rect new_devtools_bounds;
   gfx::Rect new_contents_bounds;
   ApplyDevToolsContentsResizingStrategy(
@@ -115,21 +116,22 @@ using content::WebContents;
 
 - (void)updateDevToolsForWebContents:(WebContents*)contents
                          withProfile:(Profile*)profile {
-  DevToolsWindow* newDevToolsWindow = contents ?
-      DevToolsWindow::GetDockedInstanceForInspectedTab(contents) : NULL;
+  DevToolsContentsResizingStrategy strategy;
+  WebContents* devTools = DevToolsWindow::GetInTabWebContents(
+      contents, &strategy);
 
-  bool shouldHide = devToolsWindow_ && devToolsWindow_ != newDevToolsWindow;
-  bool shouldShow = newDevToolsWindow && devToolsWindow_ != newDevToolsWindow;
+  // Make sure we do not draw any transient arrangements of views.
+  gfx::ScopedNSDisableScreenUpdates disabler;
+  bool shouldHide = devTools_ && devTools_ != devTools;
+  bool shouldShow = devTools && devTools_ != devTools;
 
   if (shouldHide)
     [self hideDevToolsView];
 
-  devToolsWindow_ = newDevToolsWindow;
-  if (devToolsWindow_) {
-    const DevToolsContentsResizingStrategy& strategy =
-        devToolsWindow_->GetContentsResizingStrategy();
-    devToolsWindow_->web_contents()->GetView()->SetOverlayView(
-        contents->GetView(),
+  devTools_ = devTools;
+  if (devTools_) {
+    devTools_->SetOverlayView(
+        contents,
         gfx::Point(strategy.insets().left(), strategy.insets().top()));
     [devToolsContainerView_ setContentsResizingStrategy:strategy];
   } else {
@@ -141,8 +143,6 @@ using content::WebContents;
     [self showDevToolsView];
 
   [devToolsContainerView_ adjustSubviews];
-  if (shouldHide || shouldShow)
-    [[devToolsContainerView_ window] disableScreenUpdatesUntilFlush];
 }
 
 - (void)showDevToolsView {
@@ -152,15 +152,14 @@ using content::WebContents;
   // |devToolsView| is a WebContentsViewCocoa object, whose ViewID was
   // set to VIEW_ID_TAB_CONTAINER initially, so we need to change it to
   // VIEW_ID_DEV_TOOLS_DOCKED here.
-  NSView* devToolsView =
-      devToolsWindow_->web_contents()->GetView()->GetNativeView();
+  NSView* devToolsView = devTools_->GetNativeView();
   view_id_util::SetID(devToolsView, VIEW_ID_DEV_TOOLS_DOCKED);
 
   [devToolsContainerView_ showDevTools:devToolsView];
 }
 
 - (void)hideDevToolsView {
-  devToolsWindow_->web_contents()->GetView()->RemoveOverlayView();
+  devTools_->RemoveOverlayView();
   [devToolsContainerView_ hideDevTools];
   [focusTracker_ restoreFocusInWindow:[devToolsContainerView_ window]];
   focusTracker_.reset();

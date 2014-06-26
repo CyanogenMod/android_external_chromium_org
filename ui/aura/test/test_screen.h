@@ -16,19 +16,21 @@ class Transform;
 }
 
 namespace aura {
-class RootWindow;
 class Window;
+class WindowTreeHost;
 
 // A minimal, testing Aura implementation of gfx::Screen.
 class TestScreen : public gfx::Screen,
                    public WindowObserver {
  public:
-  static TestScreen* Create();
+  // Creates a gfx::Screen of the specified size. If no size is specified, then
+  // creates a 800x600 screen. |size| is in physical pixels.
+  static TestScreen* Create(const gfx::Size& size);
   // Creates a TestScreen that uses fullscreen for the display.
   static TestScreen* CreateFullscreen();
   virtual ~TestScreen();
 
-  RootWindow* CreateRootWindowForPrimaryDisplay();
+  WindowTreeHost* CreateHostForPrimaryDisplay();
 
   void SetDeviceScaleFactor(float device_scale_fator);
   void SetDisplayRotation(gfx::Display::Rotation rotation);
@@ -65,7 +67,7 @@ class TestScreen : public gfx::Screen,
  private:
   explicit TestScreen(const gfx::Rect& screen_bounds);
 
-  aura::RootWindow* root_window_;
+  aura::WindowTreeHost* host_;
 
   gfx::Display display_;
 

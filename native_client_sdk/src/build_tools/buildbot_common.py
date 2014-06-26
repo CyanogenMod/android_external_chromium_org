@@ -16,6 +16,10 @@ sys.path.append(os.path.join(SDK_SRC_DIR, 'tools'))
 import oshelpers
 import getos
 
+
+verbose = True
+
+
 def IsSDKBuilder():
   """Returns True if this script is running on an SDK builder.
 
@@ -28,19 +32,9 @@ def IsSDKBuilder():
     (win|mac|linux)_nacl_sdk_build
 
   Builder names:
-    (windows|mac|linux)-sdk-multi(rel)?"""
-  return '-sdk-multi' in os.getenv('BUILDBOT_BUILDERNAME', '')
-
-
-def IsBuildOnlyBot():
-  """Returns True if this script is running on a build-only bot.
-
-  Build only bots are designed to be fast and non-flaky.  Currently
-  this means they don't build chrome, and don't run any browser-based
-  tests.  Currently the only build-only bots are trybots.
-
-  See IsSDKBuilder above for trybot/buildbot names."""
-  return os.getenv('BUILDBOT_BUILDERNAME', '').endswith('build')
+    (windows|mac|linux)-sdk-multi(bionic)(rel)?"""
+  bot =  os.getenv('BUILDBOT_BUILDERNAME', '')
+  return '-sdk-multi' in bot or '-sdk-bionic-multi' in bot
 
 
 def IsSDKTrybot():
@@ -56,6 +50,11 @@ def ErrorExit(msg):
   """Write and error to stderr, then exit with 1 signaling failure."""
   sys.stderr.write(str(msg) + '\n')
   sys.exit(1)
+
+
+def Trace(msg):
+  if verbose:
+    sys.stderr.write(str(msg) + '\n')
 
 
 def GetWindowsEnvironment():
@@ -103,8 +102,7 @@ def GetWindowsEnvironment():
 def BuildStep(name):
   """Annotate a buildbot build step."""
   sys.stdout.flush()
-  print '\n@@@BUILD_STEP %s@@@' % name
-  sys.stdout.flush()
+  sys.stderr.write('\n@@@BUILD_STEP %s@@@\n' % name)
 
 
 def Run(args, cwd=None, env=None, shell=False):
@@ -119,7 +117,7 @@ def Run(args, cwd=None, env=None, shell=False):
   if not env and getos.GetPlatform() == 'win':
     env = GetWindowsEnvironment()
 
-  print 'Running: ' + ' '.join(args)
+  Trace('Running: ' + ' '.join(args))
   sys.stdout.flush()
   sys.stderr.flush()
   try:
@@ -138,14 +136,14 @@ def CopyDir(src, dst, excludes=('.svn', '*/.svn')):
   args = ['-r', src, dst]
   for exc in excludes:
     args.append('--exclude=' + exc)
-  print 'cp -r %s %s' % (src, dst)
+  Trace('cp -r %s %s' % (src, dst))
   if os.path.abspath(src) == os.path.abspath(dst):
     ErrorExit('ERROR: Copying directory onto itself: ' + src)
   oshelpers.Copy(args)
 
 
 def CopyFile(src, dst):
-  print 'cp %s %s' % (src, dst)
+  Trace('cp %s %s' % (src, dst))
   if os.path.abspath(src) == os.path.abspath(dst):
     ErrorExit('ERROR: Copying file onto itself: ' + src)
   args = [src, dst]
@@ -154,25 +152,25 @@ def CopyFile(src, dst):
 
 def RemoveDir(dst):
   """Remove the provided path."""
-  print 'rm -fr ' + dst
+  Trace('rm -fr ' + dst)
   oshelpers.Remove(['-fr', dst])
 
 
 def MakeDir(dst):
   """Create the path including all parent directories as needed."""
-  print 'mkdir -p ' + dst
+  Trace('mkdir -p ' + dst)
   oshelpers.Mkdir(['-p', dst])
 
 
 def Move(src, dst):
   """Move the path src to dst."""
-  print 'mv -f %s %s' % (src, dst)
+  Trace('mv -f %s %s' % (src, dst))
   oshelpers.Move(['-f', src, dst])
 
 
 def RemoveFile(dst):
   """Remove the provided file."""
-  print 'rm ' + dst
+  Trace('rm ' + dst)
   oshelpers.Remove(['-f', dst])
 
 
@@ -207,5 +205,5 @@ def Archive(filename, bucket_path, cwd=None, step_link=True):
   Run(cmd, shell=shell, cwd=cwd)
   url = 'https://storage.googleapis.com/%s/%s' % (bucket_path, filename)
   if step_link:
-    print '@@@STEP_LINK@download@%s@@@' % url
     sys.stdout.flush()
+    sys.stderr.write('@@@STEP_LINK@download@%s@@@\n' % url)

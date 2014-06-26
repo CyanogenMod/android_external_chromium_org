@@ -6,39 +6,46 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_WEB_UI_OVERRIDE_REGISTRAR_H_
 
 #include "base/basictypes.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "base/scoped_observer.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
+class ExtensionRegistry;
 
-class ExtensionWebUIOverrideRegistrar : public ProfileKeyedAPI,
-                             public content::NotificationObserver {
+class ExtensionWebUIOverrideRegistrar : public BrowserContextKeyedAPI,
+                                        public ExtensionRegistryObserver {
  public:
-  explicit ExtensionWebUIOverrideRegistrar(Profile* profile);
+  explicit ExtensionWebUIOverrideRegistrar(content::BrowserContext* context);
   virtual ~ExtensionWebUIOverrideRegistrar();
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<ExtensionWebUIOverrideRegistrar>*
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<ExtensionWebUIOverrideRegistrar>*
       GetFactoryInstance();
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
  private:
-  friend class ProfileKeyedAPIFactory<ExtensionWebUIOverrideRegistrar>;
+  friend class BrowserContextKeyedAPIFactory<ExtensionWebUIOverrideRegistrar>;
 
-  // ProfileKeyedAPI implementation.
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "ExtensionWebUIOverrideRegistrar";
   }
 
-  Profile* const profile_;
-  content::NotificationRegistrar registrar_;
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionWebUIOverrideRegistrar);
 };

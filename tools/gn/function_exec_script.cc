@@ -187,13 +187,13 @@ bool ExecProcess(const CommandLine& cmdline,
         // Adding another element here? Remeber to increase the argument to
         // reserve(), above.
 
-        std::copy(fd_shuffle1.begin(), fd_shuffle1.end(),
-                  std::back_inserter(fd_shuffle2));
+        for (size_t i = 0; i < fd_shuffle1.size(); ++i)
+          fd_shuffle2.push_back(fd_shuffle1[i]);
 
         if (!ShuffleFileDescriptors(&fd_shuffle1))
           _exit(127);
 
-        file_util::SetCurrentDirectory(startup_dir);
+        base::SetCurrentDirectory(startup_dir);
 
         // TODO(brettw) the base version GetAppOutput does a
         // CloseSuperfluousFds call here. Do we need this?
@@ -233,6 +233,8 @@ bool ExecProcess(const CommandLine& cmdline,
 }  // namespace
 
 const char kExecScript[] = "exec_script";
+const char kExecScript_HelpShort[] =
+    "exec_script: Synchronously run a script and return the output.";
 const char kExecScript_Help[] =
     "exec_script: Synchronously run a script and return the output.\n"
     "\n"
@@ -278,9 +280,9 @@ const char kExecScript_Help[] =
     "\n"
     "Example:\n"
     "\n"
-    "  all_lines = exec_script(\"myscript.py\", [some_input], \"list lines\",\n"
-    "                          [ rebase_path(\"data_file.txt\", \".\","
-    "                                        root_build_dir) ])\n"
+    "  all_lines = exec_script(\n"
+    "      \"myscript.py\", [some_input], \"list lines\",\n"
+    "      [ rebase_path(\"data_file.txt\", root_build_dir) ])\n"
     "\n"
     "  # This example just calls the script with no arguments and discards\n"
     "  # the result.\n"
@@ -408,7 +410,7 @@ Value RunExecScript(Scope* scope,
   }
 
   // Default to None value for the input conversion if unspecified.
-  return ConvertInputToValue(output, function,
+  return ConvertInputToValue(scope->settings(), output, function,
                              args.size() >= 3 ? args[2] : Value(), err);
 }
 

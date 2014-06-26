@@ -17,6 +17,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
@@ -84,8 +85,7 @@ void ExtensionIndicatorIcon::OnStatusIconClicked() {
   scoped_ptr<base::ListValue> params(
       api::system_indicator::OnClicked::Create());
 
-  EventRouter* event_router =
-      ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(profile_);
   scoped_ptr<Event> event(new Event(
       system_indicator::OnClicked::kEventName,
       params.Pass(),
@@ -122,9 +122,11 @@ ExtensionIndicatorIcon::ExtensionIndicatorIcon(const Extension* extension,
 
 SystemIndicatorManager::SystemIndicatorManager(Profile* profile,
                                                StatusTray* status_tray)
-    : profile_(profile), status_tray_(status_tray) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile_->GetOriginalProfile()));
+    : profile_(profile),
+      status_tray_(status_tray),
+      extension_registry_observer_(this) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
+
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
 }
@@ -137,25 +139,21 @@ void SystemIndicatorManager::Shutdown() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
+void SystemIndicatorManager::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  RemoveIndicator(extension->id());
+}
+
 void SystemIndicatorManager::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED);
 
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
-      RemoveIndicator(
-          content::Details<UnloadedExtensionInfo>(details)->extension->id());
-      break;
-    case chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED:
-      OnSystemIndicatorChanged(
-          content::Details<ExtensionAction>(details).ptr());
-      break;
-    default:
-      NOTREACHED();
-      break;
-  }
+  OnSystemIndicatorChanged(content::Details<ExtensionAction>(details).ptr());
 }
 
 void SystemIndicatorManager::OnSystemIndicatorChanged(

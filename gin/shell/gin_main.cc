@@ -33,7 +33,7 @@ void Run(base::WeakPtr<Runner> runner, const base::FilePath& path) {
 
 std::vector<base::FilePath> GetModuleSearchPaths() {
   std::vector<base::FilePath> module_base(1);
-  CHECK(file_util::GetCurrentDirectory(&module_base[0]));
+  CHECK(base::GetCurrentDirectory(&module_base[0]));
   return module_base;
 }
 
@@ -43,7 +43,7 @@ class ShellRunnerDelegate : public ModuleRunnerDelegate {
     AddBuiltinModule(Console::kModuleName, Console::GetModule);
   }
 
-  virtual void UnhandledException(Runner* runner,
+  virtual void UnhandledException(ShellRunner* runner,
                                   TryCatch& try_catch) OVERRIDE {
     ModuleRunnerDelegate::UnhandledException(runner, try_catch);
     LOG(ERROR) << try_catch.GetStackTrace();
@@ -61,12 +61,12 @@ int main(int argc, char** argv) {
   CommandLine::Init(argc, argv);
   base::i18n::InitializeICU();
 
-  gin::IsolateHolder instance;
+  gin::IsolateHolder instance(gin::IsolateHolder::kStrictMode);
 
   base::MessageLoop message_loop;
 
   gin::ShellRunnerDelegate delegate;
-  gin::Runner runner(&delegate, instance.isolate());
+  gin::ShellRunner runner(&delegate, instance.isolate());
 
   {
     gin::Runner::Scope scope(&runner);

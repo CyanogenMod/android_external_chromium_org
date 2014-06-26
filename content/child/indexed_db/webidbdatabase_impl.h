@@ -2,15 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_
-#define CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_
+#ifndef CONTENT_CHILD_INDEXED_DB_WEBIDBDATABASE_IMPL_H_
+#define CONTENT_CHILD_INDEXED_DB_WEBIDBDATABASE_IMPL_H_
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "third_party/WebKit/public/platform/WebIDBCursor.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabase.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace blink {
+class WebBlobInfo;
 class WebIDBCallbacks;
 class WebIDBDatabaseCallbacks;
 class WebString;
@@ -37,7 +39,7 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
   virtual void createTransaction(long long transaction_id,
                                  blink::WebIDBDatabaseCallbacks* callbacks,
                                  const blink::WebVector<long long>& scope,
-                                 blink::WebIDBDatabase::TransactionMode mode);
+                                 blink::WebIDBTransactionMode mode);
   virtual void close();
   virtual void get(long long transactionId,
                    long long objectStoreId,
@@ -48,8 +50,9 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
   virtual void put(long long transactionId,
                    long long objectStoreId,
                    const blink::WebData& value,
+                   const blink::WebVector<blink::WebBlobInfo>& webBlobInfo,
                    const blink::WebIDBKey&,
-                   PutMode,
+                   blink::WebIDBPutMode,
                    blink::WebIDBCallbacks*,
                    const blink::WebVector<long long>& indexIds,
                    const blink::WebVector<WebIndexKeys>&);
@@ -65,9 +68,9 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
                           long long objectStoreId,
                           long long indexId,
                           const blink::WebIDBKeyRange&,
-                          blink::WebIDBCursor::Direction direction,
+                          blink::WebIDBCursorDirection direction,
                           bool keyOnly,
-                          TaskType,
+                          blink::WebIDBTaskType,
                           blink::WebIDBCallbacks*);
   virtual void count(long long transactionId,
                      long long objectStoreId,
@@ -93,6 +96,8 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
                            long long indexId);
   virtual void abort(long long transaction_id);
   virtual void commit(long long transaction_id);
+  virtual void ackReceivedBlobs(
+      const blink::WebVector<blink::WebString>& uuids);
 
  private:
   int32 ipc_database_id_;
@@ -102,4 +107,4 @@ class WebIDBDatabaseImpl : public blink::WebIDBDatabase {
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_INDEXED_DB_PROXY_WEBIDBDATABASE_IMPL_H_
+#endif  // CONTENT_CHILD_INDEXED_DB_WEBIDBDATABASE_IMPL_H_

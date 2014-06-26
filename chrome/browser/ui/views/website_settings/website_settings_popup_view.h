@@ -53,6 +53,8 @@ class WebsiteSettingsPopupView
                         const content::SSLStatus& ssl,
                         Browser* browser);
 
+  static bool IsPopupShowing();
+
  private:
   WebsiteSettingsPopupView(views::View* anchor_view,
                            Profile* profile,
@@ -63,9 +65,9 @@ class WebsiteSettingsPopupView
 
   // PermissionSelectorViewObserver implementation.
   virtual void OnPermissionChanged(
-      PermissionSelectorView* selector) OVERRIDE;
+      const WebsiteSettingsUI::PermissionInfo& permission) OVERRIDE;
 
-  // views::BubbleDelegate implementation.
+  // views::BubbleDelegateView implementation.
   virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // views::ButtonListener implementation.
@@ -79,7 +81,7 @@ class WebsiteSettingsPopupView
   virtual void TabSelectedAt(int index) OVERRIDE;
 
   // views::View implementation.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // WebsiteSettingsUI implementations.
   virtual void SetCookieInfo(const CookieInfoList& cookie_info_list) OVERRIDE;

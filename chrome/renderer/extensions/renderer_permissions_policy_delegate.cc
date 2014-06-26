@@ -7,10 +7,10 @@
 #include "base/command_line.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/renderer/extensions/dispatcher.h"
 #include "extensions/common/extensions_client.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/switches.h"
+#include "extensions/renderer/dispatcher.h"
 
 namespace extensions {
 
@@ -29,7 +29,6 @@ bool RendererPermissionsPolicyDelegate::CanExecuteScriptOnPage(
     const GURL& document_url,
     const GURL& top_document_url,
     int tab_id,
-    const UserScript* script,
     int process_id,
     std::string* error) {
   const ExtensionsClient::ScriptingWhitelist& whitelist =
@@ -46,8 +45,7 @@ bool RendererPermissionsPolicyDelegate::CanExecuteScriptOnPage(
     return false;
   }
 
-  if (dispatcher_->IsExtensionActive(extension_misc::kWebStoreAppId) &&
-      !command_line->HasSwitch(switches::kAllowScriptingGallery)) {
+  if (dispatcher_->IsExtensionActive(extension_misc::kWebStoreAppId)) {
     if (error)
       *error = errors::kCannotScriptGallery;
     return false;

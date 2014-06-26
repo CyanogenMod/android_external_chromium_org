@@ -5,7 +5,7 @@
 #include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
 
 #include "base/stl_util.h"
-#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/file_change.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
@@ -18,7 +18,8 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/storage_partition.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension_set.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
@@ -206,10 +207,9 @@ void LocalFileSyncService::PrepareForProcessRemoteChange(
     // been initialized in this service.
     DCHECK(profile_);
     // The given url.origin() must be for valid installed app.
-    ExtensionService* extension_service =
-        extensions::ExtensionSystem::Get(profile_)->extension_service();
-    const extensions::Extension* extension = extension_service->GetInstalledApp(
-        url.origin());
+    const extensions::Extension* extension =
+        extensions::ExtensionRegistry::Get(profile_)
+            ->enabled_extensions().GetAppByURL(url.origin());
     if (!extension) {
       util::Log(
           logging::LOG_WARNING,
@@ -223,7 +223,8 @@ void LocalFileSyncService::PrepareForProcessRemoteChange(
                    SyncFileMetadata(), FileChangeList());
       return;
     }
-    GURL site_url = extension_service->GetSiteForExtensionId(extension->id());
+    GURL site_url =
+        extensions::util::GetSiteForExtensionId(extension->id(), profile_);
     DCHECK(!site_url.is_empty());
     scoped_refptr<fileapi::FileSystemContext> file_system_context =
         content::BrowserContext::GetStoragePartitionForSite(

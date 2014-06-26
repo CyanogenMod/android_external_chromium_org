@@ -65,7 +65,9 @@ DSC_FORMAT = {
     'GROUP': (str, '', False),
     'EXPERIMENTAL': (bool, [True, False], False),
     'PERMISSIONS': (list, '', False),
-    'SOCKET_PERMISSIONS': (list, '', False)
+    'SOCKET_PERMISSIONS': (list, '', False),
+    'MULTI_PLATFORM': (bool, [True, False], False),
+    'MIN_CHROME_VERSION': (str, '', False),
 }
 
 

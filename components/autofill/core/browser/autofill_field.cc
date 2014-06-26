@@ -14,7 +14,7 @@
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/phone_number.h"
 #include "components/autofill/core/browser/state_names.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using base::ASCIIToUTF16;
@@ -224,7 +224,7 @@ void FillPhoneNumberField(const AutofillField& field,
 
 // Fills in the select control |field| with |value|.  If an exact match is not
 // found, falls back to alternate filling strategies based on the |type|.
-void FillSelectControl(const AutofillType& type,
+bool FillSelectControl(const AutofillType& type,
                        const base::string16& value,
                        const std::string& app_locale,
                        FormFieldData* field) {
@@ -232,29 +232,31 @@ void FillSelectControl(const AutofillType& type,
 
   // Guard against corrupted values passed over IPC.
   if (field->option_values.size() != field->option_contents.size())
-    return;
+    return false;
 
   if (value.empty())
-    return;
+    return false;
 
   // First, search for exact matches.
   if (SetSelectControlValue(value, field))
-    return;
+    return true;
 
   // If that fails, try specific fallbacks based on the field type.
   ServerFieldType storable_type = type.GetStorableType();
   if (storable_type == ADDRESS_HOME_STATE) {
-    FillStateSelectControl(value, field);
+    return FillStateSelectControl(value, field);
   } else if (storable_type == ADDRESS_HOME_COUNTRY) {
-    FillCountrySelectControl(value, app_locale, field);
+    return FillCountrySelectControl(value, app_locale, field);
   } else if (storable_type == CREDIT_CARD_EXP_MONTH) {
-    FillExpirationMonthSelectControl(value, field);
+    return FillExpirationMonthSelectControl(value, field);
   } else if (storable_type == CREDIT_CARD_EXP_2_DIGIT_YEAR ||
              storable_type == CREDIT_CARD_EXP_4_DIGIT_YEAR) {
-    FillYearSelectControl(value, field);
+    return FillYearSelectControl(value, field);
   } else if (storable_type == CREDIT_CARD_TYPE) {
-    FillCreditCardTypeSelectControl(value, field);
+    return FillCreditCardTypeSelectControl(value, field);
   }
+
+  return false;
 }
 
 // Fills in the month control |field| with |value|.  |value| should be a date
@@ -289,12 +291,9 @@ void FillStreetAddress(const base::string16& value,
     return;
   }
 
-  base::string16 one_line_value;
-  const base::char16 kNewline[] = { '\n', 0 };
-  const base::string16 separator =
+  const base::string16& separator =
       l10n_util::GetStringUTF16(IDS_AUTOFILL_ADDRESS_LINE_SEPARATOR);
-  base::ReplaceChars(value, kNewline, separator, &one_line_value);
-  field->value = one_line_value;
+  base::ReplaceChars(value, base::ASCIIToUTF16("\n"), separator, &field->value);
 }
 
 std::string Hash32Bit(const std::string& str) {
@@ -385,26 +384,30 @@ std::string AutofillField::FieldSignature() const {
 }
 
 bool AutofillField::IsFieldFillable() const {
-  return !Type().IsUnknown();
+  return should_autocomplete && !Type().IsUnknown();
 }
 
 // static
-void AutofillField::FillFormField(const AutofillField& field,
+bool AutofillField::FillFormField(const AutofillField& field,
                                   const base::string16& value,
                                   const std::string& app_locale,
                                   FormFieldData* field_data) {
   AutofillType type = field.Type();
 
-  if (type.GetStorableType() == PHONE_HOME_NUMBER)
+  if (type.GetStorableType() == PHONE_HOME_NUMBER) {
     FillPhoneNumberField(field, value, field_data);
-  else if (field_data->form_control_type == "select-one")
-    FillSelectControl(type, value, app_locale, field_data);
-  else if (field_data->form_control_type == "month")
-    FillMonthControl(value, field_data);
-  else if (type.GetStorableType() == ADDRESS_HOME_STREET_ADDRESS)
+    return true;
+  } else if (field_data->form_control_type == "select-one") {
+    return FillSelectControl(type, value, app_locale, field_data);
+  } else if (field_data->form_control_type == "month") {
+    return FillMonthControl(value, field_data);
+  } else if (type.GetStorableType() == ADDRESS_HOME_STREET_ADDRESS) {
     FillStreetAddress(value, field_data);
-  else
-    field_data->value = value;
+    return true;
+  }
+
+  field_data->value = value;
+  return true;
 }
 
 }  // namespace autofill

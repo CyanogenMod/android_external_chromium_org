@@ -25,6 +25,7 @@
 #include "webkit/browser/quota/quota_database.h"
 #include "webkit/browser/quota/quota_task.h"
 #include "webkit/browser/quota/special_storage_policy.h"
+#include "webkit/browser/quota/storage_observer.h"
 #include "webkit/browser/webkit_storage_browser_export.h"
 
 namespace base {
@@ -37,12 +38,20 @@ namespace quota_internals {
 class QuotaInternalsProxy;
 }
 
+namespace content {
+class MockQuotaManager;
+class MockStorageClient;
+class QuotaManagerTest;
+class StorageMonitorTest;
+
+}
+
 namespace quota {
 
-class MockQuotaManager;
 class QuotaDatabase;
 class QuotaManagerProxy;
 class QuotaTemporaryStorageEvictor;
+class StorageMonitor;
 class UsageTracker;
 
 struct QuotaManagerDeleter;
@@ -225,6 +234,13 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
 
   bool ResetUsageTracker(StorageType type);
 
+  // Used to register/deregister observers that wish to monitor storage events.
+  void AddStorageObserver(StorageObserver* observer,
+                          const StorageObserver::MonitorParams& params);
+  void RemoveStorageObserver(StorageObserver* observer);
+  void RemoveStorageObserverForFilter(StorageObserver* observer,
+                                      const StorageObserver::Filter& filter);
+
   // Determines the portion of the temp pool that can be
   // utilized by a single host (ie. 5 for 20%).
   static const int kPerHostTemporaryPortion;
@@ -233,15 +249,14 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
 
   static const char kDatabaseName[];
 
-  static const int64 kMinimumPreserveForSystem;
-
   static const int kThresholdOfErrorsToBeBlacklisted;
 
   static const int kEvictionIntervalInMilliSeconds;
 
-  // This is kept non-const so that test code can change the value.
+  // These are kept non-const so that test code can change the value.
   // TODO(kinuko): Make this a real const value and add a proper way to set
   // the quota for syncable storage. (http://crbug.com/155488)
+  static int64 kMinimumPreserveForSystem;
   static int64 kSyncableStorageDefaultHostQuota;
 
  protected:
@@ -250,11 +265,12 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
  private:
   friend class base::DeleteHelper<QuotaManager>;
   friend class base::RefCountedThreadSafe<QuotaManager, QuotaManagerDeleter>;
-  friend class MockQuotaManager;
-  friend class MockStorageClient;
+  friend class content::QuotaManagerTest;
+  friend class content::StorageMonitorTest;
+  friend class content::MockQuotaManager;
+  friend class content::MockStorageClient;
   friend class quota_internals::QuotaInternalsProxy;
   friend class QuotaManagerProxy;
-  friend class QuotaManagerTest;
   friend class QuotaTemporaryStorageEvictor;
   friend struct QuotaManagerDeleter;
 
@@ -424,6 +440,8 @@ class WEBKIT_STORAGE_BROWSER_EXPORT QuotaManager
   // overwritten by QuotaManagerTest in order to attain a deterministic reported
   // value. The default value points to base::SysInfo::AmountOfFreeDiskSpace.
   GetAvailableDiskSpaceFn get_disk_space_fn_;
+
+  scoped_ptr<StorageMonitor> storage_monitor_;
 
   base::WeakPtrFactory<QuotaManager> weak_factory_;
 

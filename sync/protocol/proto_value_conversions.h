@@ -20,7 +20,7 @@ class AppNotificationSettings;
 class AppSettingSpecifics;
 class AppSpecifics;
 class ArticleSpecifics;
-class AttachmentId;
+class AttachmentIdProto;
 class AutofillProfileSpecifics;
 class AutofillSpecifics;
 class BookmarkSpecifics;
@@ -50,6 +50,7 @@ class Media;
 class ManagedUserSettingSpecifics;
 class ManagedUserSharedSettingSpecifics;
 class ManagedUserSpecifics;
+class NavigationRedirect;
 class NigoriSpecifics;
 class PasswordSpecifics;
 class PasswordSpecificsData;
@@ -62,6 +63,7 @@ class SessionTab;
 class SessionWindow;
 class SimpleCollapsedLayout;
 class SyncCycleCompletedEventInfo;
+class SyncEntity;
 class SyncedNotification;
 class SyncedNotificationAction;
 class SyncedNotificationAppInfo;
@@ -117,6 +119,9 @@ SYNC_EXPORT_PRIVATE base::DictionaryValue* SessionWindowToValue(
 
 SYNC_EXPORT_PRIVATE base::DictionaryValue* TabNavigationToValue(
     const sync_pb::TabNavigation& tab_navigation);
+
+SYNC_EXPORT_PRIVATE base::DictionaryValue* NavigationRedirectToValue(
+    const sync_pb::NavigationRedirect& navigation_redirect);
 
 // Sub-protocol of PasswordSpecifics.
 
@@ -274,6 +279,10 @@ SYNC_EXPORT_PRIVATE base::DictionaryValue* TypedUrlSpecificsToValue(
 SYNC_EXPORT_PRIVATE base::DictionaryValue* EntitySpecificsToValue(
     const sync_pb::EntitySpecifics& specifics);
 
+SYNC_EXPORT_PRIVATE base::DictionaryValue* SyncEntityToValue(
+    const sync_pb::SyncEntity& entity,
+    bool include_specifics);
+
 SYNC_EXPORT_PRIVATE base::DictionaryValue* ClientToServerMessageToValue(
     const sync_pb::ClientToServerMessage& proto,
     bool include_specifics);
@@ -297,8 +306,8 @@ base::DictionaryValue* SyncCycleCompletedEventInfoToValue(
 base::DictionaryValue* ClientConfigParamsToValue(
     const sync_pb::ClientConfigParams& proto);
 
-SYNC_EXPORT_PRIVATE base::DictionaryValue* AttachmentIdToValue(
-    const sync_pb::AttachmentId& proto);
+SYNC_EXPORT_PRIVATE base::DictionaryValue* AttachmentIdProtoToValue(
+    const sync_pb::AttachmentIdProto& proto);
 
 }  // namespace syncer
 

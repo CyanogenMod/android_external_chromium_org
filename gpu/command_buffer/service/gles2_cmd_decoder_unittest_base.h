@@ -12,6 +12,7 @@
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/query_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
@@ -24,14 +25,16 @@
 #include "ui/gl/gl_surface_stub.h"
 #include "ui/gl/gl_mock.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace gpu {
 namespace gles2 {
 
 class MemoryTracker;
 
-class GLES2DecoderTestBase : public testing::Test {
+class GLES2DecoderTestBase : public ::testing::TestWithParam<bool> {
  public:
   GLES2DecoderTestBase();
   virtual ~GLES2DecoderTestBase();
@@ -148,28 +151,27 @@ class GLES2DecoderTestBase : public testing::Test {
     memory_tracker_ = memory_tracker;
   }
 
-  void InitDecoder(
-      const char* extensions,
-      const char* gl_version,
-      bool has_alpha,
-      bool has_depth,
-      bool has_stencil,
-      bool request_alpha,
-      bool request_depth,
-      bool request_stencil,
-      bool bind_generates_resource);
+  struct InitState {
+    InitState();
 
-  void InitDecoderWithCommandLine(
-      const char* extensions,
-      const char* gl_version,
-      bool has_alpha,
-      bool has_depth,
-      bool has_stencil,
-      bool request_alpha,
-      bool request_depth,
-      bool request_stencil,
-      bool bind_generates_resource,
-      const CommandLine* command_line);
+    std::string extensions;
+    std::string gl_version;
+    bool has_alpha;
+    bool has_depth;
+    bool has_stencil;
+    bool request_alpha;
+    bool request_depth;
+    bool request_stencil;
+    bool bind_generates_resource;
+    bool lose_context_when_out_of_memory;
+    bool use_native_vao;  // default is true.
+  };
+
+  void InitDecoder(const InitState& init);
+  void InitDecoderWithCommandLine(const InitState& init,
+                                  const base::CommandLine* command_line);
+
+  void ResetDecoder();
 
   const ContextGroup& group() const {
     return *group_.get();
@@ -268,6 +270,8 @@ class GLES2DecoderTestBase : public testing::Test {
       GLuint index, GLint size, GLenum type, GLsizei stride, GLuint offset);
   void DoVertexAttribDivisorANGLE(GLuint index, GLuint divisor);
 
+  void DoEnableDisable(GLenum cap, bool enable);
+
   void DoEnableVertexAttribArray(GLint index);
 
   void DoBufferData(GLenum target, GLsizei size);
@@ -284,12 +288,13 @@ class GLES2DecoderTestBase : public testing::Test {
 
   void DeleteIndexBuffer();
 
-  void SetupClearTextureExpections(
+  void SetupClearTextureExpectations(
       GLuint service_id,
       GLuint old_service_id,
       GLenum bind_target,
       GLenum target,
       GLint level,
+      GLenum internal_format,
       GLenum format,
       GLenum type,
       GLsizei width,
@@ -328,6 +333,15 @@ class GLES2DecoderTestBase : public testing::Test {
       GLclampf restore_depth,
       bool restore_scissor_test);
 
+  void SetupExpectationsForDepthMask(bool mask);
+  void SetupExpectationsForEnableDisable(GLenum cap, bool enable);
+  void SetupExpectationsForColorMask(bool red,
+                                     bool green,
+                                     bool blue,
+                                     bool alpha);
+  void SetupExpectationsForStencilMask(uint32 front_mask,
+                                       uint32 back_mask);
+
   void SetupExpectationsForApplyingDirtyState(
       bool framebuffer_is_rgb,
       bool framebuffer_has_depth,
@@ -337,10 +351,7 @@ class GLES2DecoderTestBase : public testing::Test {
       bool depth_enabled,
       GLuint front_stencil_mask,
       GLuint back_stencil_mask,
-      bool stencil_enabled,
-      bool cull_face_enabled,
-      bool scissor_test_enabled,
-      bool blend_enabled);
+      bool stencil_enabled);
 
   void SetupExpectationsForApplyingDefaultDirtyState();
 
@@ -352,6 +363,7 @@ class GLES2DecoderTestBase : public testing::Test {
 
   void AddExpectationsForGenVertexArraysOES();
   void AddExpectationsForDeleteVertexArraysOES();
+  void AddExpectationsForDeleteBoundVertexArraysOES();
   void AddExpectationsForBindVertexArrayOES();
   void AddExpectationsForRestoreAttribState(GLuint attrib);
 
@@ -484,7 +496,7 @@ class GLES2DecoderTestBase : public testing::Test {
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
   scoped_refptr<gfx::GLSurfaceStub> surface_;
   scoped_refptr<gfx::GLContextStubWithExtensions> context_;
-  scoped_ptr<GLES2Decoder> mock_decoder_;
+  scoped_ptr<MockGLES2Decoder> mock_decoder_;
   scoped_ptr<GLES2Decoder> decoder_;
   MemoryTracker* memory_tracker_;
 
@@ -507,6 +519,30 @@ class GLES2DecoderTestBase : public testing::Test {
 
   int8 immediate_buffer_[256];
 
+  const bool ignore_cached_state_for_test_;
+  bool cached_color_mask_red_;
+  bool cached_color_mask_green_;
+  bool cached_color_mask_blue_;
+  bool cached_color_mask_alpha_;
+  bool cached_depth_mask_;
+  uint32 cached_stencil_front_mask_;
+  uint32 cached_stencil_back_mask_;
+
+  struct EnableFlags {
+    EnableFlags();
+    bool cached_blend;
+    bool cached_cull_face;
+    bool cached_depth_test;
+    bool cached_dither;
+    bool cached_polygon_offset_fill;
+    bool cached_sample_alpha_to_coverage;
+    bool cached_sample_coverage;
+    bool cached_scissor_test;
+    bool cached_stencil_test;
+  };
+
+  EnableFlags enable_flags_;
+
  private:
   class MockCommandBufferEngine : public CommandBufferEngine {
    public:
@@ -514,10 +550,11 @@ class GLES2DecoderTestBase : public testing::Test {
 
     virtual ~MockCommandBufferEngine();
 
-    virtual gpu::Buffer GetSharedMemoryBuffer(int32 shm_id) OVERRIDE;
+    virtual scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(int32 shm_id)
+        OVERRIDE;
 
     void ClearSharedMemory() {
-      memset(data_.get(), kInitialMemoryValue, kSharedBufferSize);
+      memset(valid_buffer_->memory(), kInitialMemoryValue, kSharedBufferSize);
     }
 
     virtual void set_token(int32 token) OVERRIDE;
@@ -531,15 +568,51 @@ class GLES2DecoderTestBase : public testing::Test {
     virtual int32 GetGetOffset() OVERRIDE;
 
    private:
-    scoped_ptr<int8[]> data_;
-    gpu::Buffer valid_buffer_;
-    gpu::Buffer invalid_buffer_;
+    scoped_refptr<gpu::Buffer> valid_buffer_;
+    scoped_refptr<gpu::Buffer> invalid_buffer_;
   };
 
+  // MockGLStates is used to track GL states and emulate driver
+  // behaviors on top of MockGLInterface.
+  class MockGLStates {
+   public:
+    MockGLStates()
+        : bound_array_buffer_object_(0),
+          bound_vertex_array_object_(0) {
+    }
+
+    ~MockGLStates() {
+    }
+
+    void OnBindArrayBuffer(GLuint id) {
+      bound_array_buffer_object_ = id;
+    }
+
+    void OnBindVertexArrayOES(GLuint id) {
+      bound_vertex_array_object_ = id;
+    }
+
+    void OnVertexAttribNullPointer() {
+      // When a vertex array object is bound, some drivers (AMD Linux,
+      // Qualcomm, etc.) have a bug where it incorrectly generates an
+      // GL_INVALID_OPERATION on glVertexAttribPointer() if pointer
+      // is NULL, no buffer is bound on GL_ARRAY_BUFFER.
+      // Make sure we don't trigger this bug.
+      if (bound_vertex_array_object_ != 0)
+        EXPECT_TRUE(bound_array_buffer_object_ != 0);
+    }
+
+   private:
+    GLuint bound_array_buffer_object_;
+    GLuint bound_vertex_array_object_;
+  };  // class MockGLStates
+
   void AddExpectationsForVertexAttribManager();
+  void SetupMockGLBehaviors();
 
   scoped_ptr< ::testing::StrictMock<MockCommandBufferEngine> > engine_;
   scoped_refptr<ContextGroup> group_;
+  MockGLStates gl_states_;
 };
 
 class GLES2DecoderWithShaderTestBase : public GLES2DecoderTestBase {
@@ -553,6 +626,10 @@ class GLES2DecoderWithShaderTestBase : public GLES2DecoderTestBase {
   virtual void TearDown() OVERRIDE;
 
 };
+
+// SpecializedSetup specializations that are needed in multiple unittest files.
+template <>
+void GLES2DecoderTestBase::SpecializedSetup<cmds::LinkProgram, 0>(bool valid);
 
 }  // namespace gles2
 }  // namespace gpu

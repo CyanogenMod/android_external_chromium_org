@@ -24,6 +24,7 @@ class ScreenObserver {
   enum ExitCodes {
     // "Continue" was pressed on network screen and network is online.
     NETWORK_CONNECTED,
+    HID_DETECTION_COMPLETED,
     // Connection failed while trying to load a WebPageScreen.
     CONNECTION_FAILED,
     UPDATE_INSTALLED,
@@ -33,6 +34,7 @@ class ScreenObserver {
     USER_IMAGE_SELECTED,
     EULA_ACCEPTED,
     EULA_BACK,
+    ENTERPRISE_AUTO_ENROLLMENT_CHECK_COMPLETED,
     ENTERPRISE_ENROLLMENT_COMPLETED,
     ENTERPRISE_AUTO_MAGIC_ENROLLMENT_COMPLETED,
     ENTERPRISE_ENROLLMENT_BACK,

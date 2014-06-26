@@ -30,7 +30,7 @@
 
 namespace {
 
-const char kDateFormat[] = "dd MMM yyyy HH:mm:ss zzz";
+const char kDateFormat[] = "dd MMM yyyy HH:mm:ss zzzz";
 
 bool YearFromNow(double* date_epoch, std::string* date_string) {
   *date_epoch = (base::Time::Now() + base::TimeDelta::FromDays(365)).ToTimeT();
@@ -529,7 +529,7 @@ TEST_F(PromoResourceServiceTest, PromoServerURLTest) {
   GURL promo_server_url = NotificationPromo::PromoServerURL();
   EXPECT_FALSE(promo_server_url.is_empty());
   EXPECT_TRUE(promo_server_url.is_valid());
-  EXPECT_TRUE(promo_server_url.SchemeIs(content::kHttpsScheme));
+  EXPECT_TRUE(promo_server_url.SchemeIs(url::kHttpsScheme));
   // TODO(achuith): Test this better.
 }
 

@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <sys/xattr.h>
 
+#include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/mac/foundation_util.h"
@@ -16,6 +17,7 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/chrome_switches.h"
 #import "chrome/common/mac/app_mode_common.h"
 #include "grit/theme_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -35,11 +37,17 @@ const char kFakeChromeBundleId[] = "fake.cfbundleidentifier";
 
 class WebAppShortcutCreatorMock : public web_app::WebAppShortcutCreator {
  public:
-  explicit WebAppShortcutCreatorMock(
-      const base::FilePath& app_data_dir,
-      const ShellIntegration::ShortcutInfo& shortcut_info)
+  WebAppShortcutCreatorMock(const base::FilePath& app_data_dir,
+                            const web_app::ShortcutInfo& shortcut_info)
       : WebAppShortcutCreator(app_data_dir,
-                              shortcut_info) {
+                              shortcut_info,
+                              extensions::FileHandlersInfo()) {}
+
+  WebAppShortcutCreatorMock(
+      const base::FilePath& app_data_dir,
+      const web_app::ShortcutInfo& shortcut_info,
+      const extensions::FileHandlersInfo& file_handlers_info)
+      : WebAppShortcutCreator(app_data_dir, shortcut_info, file_handlers_info) {
   }
 
   MOCK_CONST_METHOD0(GetApplicationsDirname, base::FilePath());
@@ -51,8 +59,8 @@ class WebAppShortcutCreatorMock : public web_app::WebAppShortcutCreator {
   DISALLOW_COPY_AND_ASSIGN(WebAppShortcutCreatorMock);
 };
 
-ShellIntegration::ShortcutInfo GetShortcutInfo() {
-  ShellIntegration::ShortcutInfo info;
+web_app::ShortcutInfo GetShortcutInfo() {
+  web_app::ShortcutInfo info;
   info.extension_id = "extensionid";
   info.extension_path = base::FilePath("/fake/extension/path");
   info.title = base::ASCIIToUTF16("Shortcut Title");
@@ -87,7 +95,7 @@ class WebAppShortcutCreatorTest : public testing::Test {
   base::FilePath app_data_dir_;
   base::FilePath destination_dir_;
 
-  ShellIntegration::ShortcutInfo info_;
+  web_app::ShortcutInfo info_;
   base::FilePath shim_base_name_;
   base::FilePath internal_shim_path_;
   base::FilePath shim_path_;
@@ -107,7 +115,7 @@ TEST_F(WebAppShortcutCreatorTest, CreateShortcuts) {
       .WillRepeatedly(Return(destination_dir_));
 
   EXPECT_TRUE(shortcut_creator.CreateShortcuts(
-      SHORTCUT_CREATION_AUTOMATED, ShellIntegration::ShortcutLocations()));
+      SHORTCUT_CREATION_AUTOMATED, web_app::ShortcutLocations()));
   EXPECT_TRUE(base::PathExists(shim_path_));
   EXPECT_TRUE(base::PathExists(destination_dir_));
   EXPECT_EQ(shim_base_name_, shortcut_creator.GetShortcutBasename());
@@ -191,7 +199,7 @@ TEST_F(WebAppShortcutCreatorTest, DeleteShortcuts) {
       .WillOnce(Return(other_shim_path));
 
   EXPECT_TRUE(shortcut_creator.CreateShortcuts(
-      SHORTCUT_CREATION_AUTOMATED, ShellIntegration::ShortcutLocations()));
+      SHORTCUT_CREATION_AUTOMATED, web_app::ShortcutLocations()));
   EXPECT_TRUE(base::PathExists(internal_shim_path_));
   EXPECT_TRUE(base::PathExists(shim_path_));
 
@@ -237,7 +245,7 @@ TEST_F(WebAppShortcutCreatorTest, RunShortcut) {
       .WillRepeatedly(Return(destination_dir_));
 
   EXPECT_TRUE(shortcut_creator.CreateShortcuts(
-      SHORTCUT_CREATION_AUTOMATED, ShellIntegration::ShortcutLocations()));
+      SHORTCUT_CREATION_AUTOMATED, web_app::ShortcutLocations()));
   EXPECT_TRUE(base::PathExists(shim_path_));
 
   ssize_t status = getxattr(
@@ -254,7 +262,7 @@ TEST_F(WebAppShortcutCreatorTest, CreateFailure) {
   EXPECT_CALL(shortcut_creator, GetApplicationsDirname())
       .WillRepeatedly(Return(non_existent_path));
   EXPECT_FALSE(shortcut_creator.CreateShortcuts(
-      SHORTCUT_CREATION_AUTOMATED, ShellIntegration::ShortcutLocations()));
+      SHORTCUT_CREATION_AUTOMATED, web_app::ShortcutLocations()));
 }
 
 TEST_F(WebAppShortcutCreatorTest, UpdateIcon) {
@@ -283,11 +291,63 @@ TEST_F(WebAppShortcutCreatorTest, RevealAppShimInFinder) {
   EXPECT_CALL(shortcut_creator, RevealAppShimInFinder())
       .Times(0);
   EXPECT_TRUE(shortcut_creator.CreateShortcuts(
-      SHORTCUT_CREATION_AUTOMATED, ShellIntegration::ShortcutLocations()));
+      SHORTCUT_CREATION_AUTOMATED, web_app::ShortcutLocations()));
 
   EXPECT_CALL(shortcut_creator, RevealAppShimInFinder());
   EXPECT_TRUE(shortcut_creator.CreateShortcuts(
-      SHORTCUT_CREATION_BY_USER, ShellIntegration::ShortcutLocations()));
+      SHORTCUT_CREATION_BY_USER, web_app::ShortcutLocations()));
+}
+
+TEST_F(WebAppShortcutCreatorTest, FileHandlers) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableAppsFileAssociations);
+  extensions::FileHandlersInfo file_handlers_info;
+  extensions::FileHandlerInfo handler_0;
+  handler_0.extensions.insert("ext0");
+  handler_0.extensions.insert("ext1");
+  handler_0.types.insert("type0");
+  handler_0.types.insert("type1");
+  file_handlers_info.push_back(handler_0);
+  extensions::FileHandlerInfo handler_1;
+  handler_1.extensions.insert("ext2");
+  handler_1.types.insert("type2");
+  file_handlers_info.push_back(handler_1);
+
+  NiceMock<WebAppShortcutCreatorMock> shortcut_creator(
+      app_data_dir_, info_, file_handlers_info);
+  EXPECT_CALL(shortcut_creator, GetApplicationsDirname())
+      .WillRepeatedly(Return(destination_dir_));
+  EXPECT_TRUE(shortcut_creator.CreateShortcuts(
+      SHORTCUT_CREATION_AUTOMATED, web_app::ShortcutLocations()));
+
+  base::FilePath plist_path =
+      shim_path_.Append("Contents").Append("Info.plist");
+  NSDictionary* plist = [NSDictionary
+      dictionaryWithContentsOfFile:base::mac::FilePathToNSString(plist_path)];
+  NSArray* file_handlers =
+      [plist objectForKey:app_mode::kCFBundleDocumentTypesKey];
+
+  NSDictionary* file_handler_0 = [file_handlers objectAtIndex:0];
+  EXPECT_NSEQ(app_mode::kBundleTypeRoleViewer,
+              [file_handler_0 objectForKey:app_mode::kCFBundleTypeRoleKey]);
+  NSArray* file_handler_0_extensions =
+      [file_handler_0 objectForKey:app_mode::kCFBundleTypeExtensionsKey];
+  EXPECT_TRUE([file_handler_0_extensions containsObject:@"ext0"]);
+  EXPECT_TRUE([file_handler_0_extensions containsObject:@"ext1"]);
+  NSArray* file_handler_0_types =
+      [file_handler_0 objectForKey:app_mode::kCFBundleTypeMIMETypesKey];
+  EXPECT_TRUE([file_handler_0_types containsObject:@"type0"]);
+  EXPECT_TRUE([file_handler_0_types containsObject:@"type1"]);
+
+  NSDictionary* file_handler_1 = [file_handlers objectAtIndex:1];
+  EXPECT_NSEQ(app_mode::kBundleTypeRoleViewer,
+              [file_handler_1 objectForKey:app_mode::kCFBundleTypeRoleKey]);
+  NSArray* file_handler_1_extensions =
+      [file_handler_1 objectForKey:app_mode::kCFBundleTypeExtensionsKey];
+  EXPECT_TRUE([file_handler_1_extensions containsObject:@"ext2"]);
+  NSArray* file_handler_1_types =
+      [file_handler_1 objectForKey:app_mode::kCFBundleTypeMIMETypesKey];
+  EXPECT_TRUE([file_handler_1_types containsObject:@"type2"]);
 }
 
 }  // namespace web_app

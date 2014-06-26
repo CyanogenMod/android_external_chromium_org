@@ -6,16 +6,17 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_util.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/common/extensions/message_bundle.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_messages.h"
+#include "extensions/common/message_bundle.h"
 #include "grit/generated_resources.h"
+#include "ipc/ipc_sender.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 
 ExtensionLocalizationPeer::ExtensionLocalizationPeer(
-    webkit_glue::ResourceLoaderBridge::Peer* peer,
+    content::RequestPeer* peer,
     IPC::Sender* message_sender,
     const GURL& request_url)
     : original_peer_(peer),
@@ -29,7 +30,7 @@ ExtensionLocalizationPeer::~ExtensionLocalizationPeer() {
 // static
 ExtensionLocalizationPeer*
 ExtensionLocalizationPeer::CreateExtensionLocalizationPeer(
-    webkit_glue::ResourceLoaderBridge::Peer* peer,
+    content::RequestPeer* peer,
     IPC::Sender* message_sender,
     const std::string& mime_type,
     const GURL& request_url) {
@@ -47,15 +48,14 @@ void ExtensionLocalizationPeer::OnUploadProgress(
 
 bool ExtensionLocalizationPeer::OnReceivedRedirect(
     const GURL& new_url,
-    const webkit_glue::ResourceResponseInfo& info,
-    bool* has_new_first_party_for_cookies,
-    GURL* new_first_party_for_cookies) {
+    const GURL& new_first_party_for_cookies,
+    const content::ResourceResponseInfo& info) {
   NOTREACHED();
   return false;
 }
 
 void ExtensionLocalizationPeer::OnReceivedResponse(
-    const webkit_glue::ResourceResponseInfo& info) {
+    const content::ResourceResponseInfo& info) {
   response_info_ = info;
 }
 

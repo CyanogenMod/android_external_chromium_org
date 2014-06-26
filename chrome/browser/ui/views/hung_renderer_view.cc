@@ -21,11 +21,11 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/result_codes.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -38,14 +38,11 @@
 #include "ui/views/window/client_view.h"
 
 #if defined(OS_WIN)
+#include "chrome/browser/hang_monitor/hang_crash_dump_win.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
 #include "ui/base/win/shell.h"
 #include "ui/views/win/hwnd_util.h"
-#endif
-
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
 #endif
 
 #if defined(OS_WIN)
@@ -53,21 +50,6 @@
 #endif
 
 using content::WebContents;
-
-// These functions allow certain chrome platforms to override the default hung
-// renderer dialog. For e.g. Chrome on Windows 8 metro
-bool PlatformShowCustomHungRendererDialog(WebContents* contents);
-bool PlatformHideCustomHungRendererDialog(WebContents* contents);
-
-#if !defined(OS_WIN)
-bool PlatformShowCustomHungRendererDialog(WebContents* contents) {
-  return false;
-}
-
-bool PlatformHideCustomHungRendererDialog(WebContents* contents) {
-  return false;
-}
-#endif  // OS_WIN
 
 HungRendererDialogView* HungRendererDialogView::g_instance_ = NULL;
 
@@ -173,8 +155,7 @@ void HungPagesTableModel::WebContentsObserverImpl::RenderProcessGone(
   model_->TabDestroyed(this);
 }
 
-void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed(
-    WebContents* tab) {
+void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed() {
   model_->TabDestroyed(this);
 }
 
@@ -214,17 +195,20 @@ HungRendererDialogView* HungRendererDialogView::GetInstance() {
 // static
 bool HungRendererDialogView::IsFrameActive(WebContents* contents) {
   gfx::NativeView frame_view =
-      platform_util::GetTopLevel(contents->GetView()->GetNativeView());
+      platform_util::GetTopLevel(contents->GetNativeView());
   return platform_util::IsWindowActive(frame_view);
 }
 
-#if !defined(OS_WIN)
 // static
 void HungRendererDialogView::KillRendererProcess(
     base::ProcessHandle process_handle) {
+#if defined(OS_WIN)
+  // Try to generate a crash report for the hung process.
+  CrashDumpAndTerminateHungChildProcess(process_handle);
+#else
   base::KillProcess(process_handle, content::RESULT_CODE_HUNG, false);
+#endif
 }
-#endif  // OS_WIN
 
 
 HungRendererDialogView::HungRendererDialogView()
@@ -258,7 +242,7 @@ void HungRendererDialogView::ShowForWebContents(WebContents* contents) {
     }
 
     gfx::NativeView frame_view =
-        platform_util::GetTopLevel(contents->GetView()->GetNativeView());
+        platform_util::GetTopLevel(contents->GetNativeView());
     views::Widget* insert_after =
         views::Widget::GetWidgetForNativeView(frame_view);
     if (insert_after)
@@ -351,8 +335,9 @@ bool HungRendererDialogView::UseNewStyleForThisDialog() const {
   // Use the old dialog style without Aero glass, otherwise the dialog will be
   // visually constrained to browser window bounds. See http://crbug.com/323278
   return ui::win::IsAeroGlassEnabled();
-#endif
+#else
   return views::DialogDelegateView::UseNewStyleForThisDialog();
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -450,27 +435,22 @@ void HungRendererDialogView::InitClass() {
 namespace chrome {
 
 void ShowHungRendererDialog(WebContents* contents) {
-  if (!logging::DialogsAreSuppressed() &&
-      !PlatformShowCustomHungRendererDialog(contents)) {
-    gfx::NativeView toplevel_view =
-        platform_util::GetTopLevel(contents->GetView()->GetNativeView());
-#if defined(USE_AURA)
-    // Don't show the dialog if there is no root window for the renderer,
-    // because it's invisible to the user (happens when the renderer is for
-    // prerendering for example).
-    if (!toplevel_view->GetRootWindow())
-      return;
-#endif
-    HungRendererDialogView* view = HungRendererDialogView::Create(
-        toplevel_view);
-    view->ShowForWebContents(contents);
-  }
+  if (logging::DialogsAreSuppressed())
+    return;
+
+  gfx::NativeView toplevel_view =
+      platform_util::GetTopLevel(contents->GetNativeView());
+  // Don't show the dialog if there is no root window for the renderer, because
+  // it's invisible to the user (happens when the renderer is for prerendering
+  // for example).
+  if (!toplevel_view->GetRootWindow())
+    return;
+  HungRendererDialogView* view = HungRendererDialogView::Create(toplevel_view);
+  view->ShowForWebContents(contents);
 }
 
 void HideHungRendererDialog(WebContents* contents) {
-  if (!logging::DialogsAreSuppressed() &&
-      !PlatformHideCustomHungRendererDialog(contents) &&
-      HungRendererDialogView::GetInstance())
+  if (!logging::DialogsAreSuppressed() && HungRendererDialogView::GetInstance())
     HungRendererDialogView::GetInstance()->EndForWebContents(contents);
 }
 

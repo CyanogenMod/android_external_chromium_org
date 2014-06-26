@@ -73,6 +73,23 @@ TEST(FilesystemUtils, FindDir) {
   EXPECT_EQ("foo/bar/", FindDir(&input));
 }
 
+TEST(FilesystemUtils, FindLastDirComponent) {
+  SourceDir empty;
+  EXPECT_EQ("", FindLastDirComponent(empty));
+
+  SourceDir root("/");
+  EXPECT_EQ("", FindLastDirComponent(root));
+
+  SourceDir srcroot("//");
+  EXPECT_EQ("", FindLastDirComponent(srcroot));
+
+  SourceDir regular1("//foo/");
+  EXPECT_EQ("foo", FindLastDirComponent(regular1));
+
+  SourceDir regular2("//foo/bar/");
+  EXPECT_EQ("bar", FindLastDirComponent(regular2));
+}
+
 TEST(FilesystemUtils, IsPathAbsolute) {
   EXPECT_TRUE(IsPathAbsolute("/foo/bar"));
   EXPECT_TRUE(IsPathAbsolute("/"));
@@ -130,6 +147,7 @@ TEST(FilesystemUtils, InvertDir) {
   EXPECT_TRUE(InvertDir(SourceDir("//")) == "");
 
   EXPECT_TRUE(InvertDir(SourceDir("//foo/bar")) == "../../");
+  EXPECT_TRUE(InvertDir(SourceDir("//foo\\bar")) == "../../");
   EXPECT_TRUE(InvertDir(SourceDir("/foo/bar/")) == "../../");
 }
 
@@ -171,7 +189,7 @@ TEST(FilesystemUtils, NormalizePath) {
   NormalizePath(&input);
   EXPECT_EQ("/foo", input);
 
-  input = "//../foo";  // Don't go aboe the root dir.
+  input = "//../foo";  // Don't go above the root dir.
   NormalizePath(&input);
   EXPECT_EQ("//foo", input);
 
@@ -194,6 +212,11 @@ TEST(FilesystemUtils, NormalizePath) {
   input = "../";
   NormalizePath(&input);
   EXPECT_EQ("../", input);
+
+  // Backslash normalization.
+  input = "foo\\..\\..\\bar";
+  NormalizePath(&input);
+  EXPECT_EQ("../bar", input);
 }
 
 TEST(FilesystemUtils, RebaseSourceAbsolutePath) {
@@ -254,6 +277,55 @@ TEST(FilesystemUtils, DirectoryWithNoLastSlash) {
   EXPECT_EQ("/bar", DirectoryWithNoLastSlash(SourceDir("/bar/")));
 }
 
+TEST(FilesystemUtils, SourceDirForPath) {
+#if defined(OS_WIN)
+  base::FilePath root(L"C:\\source\\foo\\");
+  EXPECT_EQ("/C:/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"C:\\foo\\bar")).value());
+  EXPECT_EQ("/", SourceDirForPath(root,
+            base::FilePath(L"/")).value());
+  EXPECT_EQ("//", SourceDirForPath(root,
+            base::FilePath(L"C:\\source\\foo")).value());
+  EXPECT_EQ("//bar/", SourceDirForPath(root,
+            base::FilePath(L"C:\\source\\foo\\bar\\")). value());
+  EXPECT_EQ("//bar/baz/", SourceDirForPath(root,
+            base::FilePath(L"C:\\source\\foo\\bar\\baz")).value());
+
+  // Should be case-and-slash-insensitive.
+  EXPECT_EQ("//baR/", SourceDirForPath(root,
+            base::FilePath(L"c:/SOURCE\\Foo/baR/")).value());
+
+  // Some "weird" Windows paths.
+  EXPECT_EQ("/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"/foo/bar/")).value());
+  EXPECT_EQ("/C:/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"C:foo/bar/")).value());
+
+  // Also allow absolute GN-style Windows paths.
+  EXPECT_EQ("/C:/foo/bar/", SourceDirForPath(root,
+            base::FilePath(L"/C:/foo/bar")).value());
+  EXPECT_EQ("//bar/", SourceDirForPath(root,
+            base::FilePath(L"/C:/source/foo/bar")).value());
+
+#else
+  base::FilePath root("/source/foo/");
+  EXPECT_EQ("/foo/bar/", SourceDirForPath(root,
+            base::FilePath("/foo/bar/")).value());
+  EXPECT_EQ("/", SourceDirForPath(root,
+            base::FilePath("/")).value());
+  EXPECT_EQ("//", SourceDirForPath(root,
+            base::FilePath("/source/foo")).value());
+  EXPECT_EQ("//bar/", SourceDirForPath(root,
+            base::FilePath("/source/foo/bar/")).value());
+  EXPECT_EQ("//bar/baz/", SourceDirForPath(root,
+            base::FilePath("/source/foo/bar/baz/")).value());
+
+  // Should be case-sensitive.
+  EXPECT_EQ("/SOURCE/foo/bar/", SourceDirForPath(root,
+            base::FilePath("/SOURCE/foo/bar/")).value());
+#endif
+}
+
 TEST(FilesystemUtils, GetToolchainDirs) {
   BuildSettings build_settings;
   build_settings.SetBuildDir(SourceDir("//out/Debug/"));
@@ -264,7 +336,7 @@ TEST(FilesystemUtils, GetToolchainDirs) {
   EXPECT_EQ("//out/Debug/gen/",
             GetToolchainGenDir(&default_settings).value());
 
-  Settings other_settings(&build_settings, "two");
+  Settings other_settings(&build_settings, "two/");
   EXPECT_EQ("//out/Debug/two/",
             GetToolchainOutputDir(&other_settings).value());
   EXPECT_EQ("//out/Debug/two/gen/",
@@ -285,7 +357,7 @@ TEST(FilesystemUtils, GetOutDirForSourceDir) {
                                      SourceDir("//foo/bar/")).value());
 
   // Secondary toolchain.
-  Settings other_settings(&build_settings, "two");
+  Settings other_settings(&build_settings, "two/");
   EXPECT_EQ("//out/Debug/two/obj/",
             GetOutputDirForSourceDir(&other_settings, SourceDir("//")).value());
   EXPECT_EQ("//out/Debug/two/obj/foo/bar/",
@@ -306,7 +378,7 @@ TEST(FilesystemUtils, GetGenDirForSourceDir) {
                                   SourceDir("//foo/bar/")).value());
 
   // Secondary toolchain.
-  Settings other_settings(&build_settings, "two");
+  Settings other_settings(&build_settings, "two/");
   EXPECT_EQ("//out/Debug/two/gen/",
             GetGenDirForSourceDir(&other_settings, SourceDir("//")).value());
   EXPECT_EQ("//out/Debug/two/gen/foo/bar/",

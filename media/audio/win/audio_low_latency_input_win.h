@@ -75,6 +75,7 @@
 
 namespace media {
 
+class AudioBus;
 class AudioManagerWin;
 
 // AudioInputStream implementation using Windows Core Audio APIs.
@@ -123,8 +124,11 @@ class MEDIA_EXPORT WASAPIAudioInputStream
 
   // Retrieves the stream format that the audio engine uses for its internal
   // processing/mixing of shared-mode streams.
+  // |effects| is a an AudioParameters::effects() flag that will have the
+  // DUCKING flag raised for only the default communication device.
   static HRESULT GetMixFormat(const std::string& device_id,
-                              WAVEFORMATEX** device_format);
+                              WAVEFORMATEX** device_format,
+                              int* effects);
 
   // Our creator, the audio manager needs to be notified when we close.
   AudioManagerWin* manager_;
@@ -207,6 +211,10 @@ class MEDIA_EXPORT WASAPIAudioInputStream
 
   // This event will be signaled when capturing shall stop.
   base::win::ScopedHandle stop_capture_event_;
+
+  // Extra audio bus used for storage of deinterleaved data for the OnData
+  // callback.
+  scoped_ptr<media::AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(WASAPIAudioInputStream);
 };

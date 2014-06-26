@@ -43,6 +43,7 @@ bool ShouldRequestEarlyExit(const SyncProtocolError& error) {
     case NOT_MY_BIRTHDAY:
     case CLEAR_PENDING:
     case DISABLED_BY_ADMIN:
+    case USER_ROLLBACK:
       // If we send terminate sync early then |sync_cycle_ended| notification
       // would not be sent. If there were no actions then |ACTIONABLE_ERROR|
       // notification wouldnt be sent either. Then the UI layer would be left
@@ -238,15 +239,14 @@ void SyncSchedulerImpl::Start(Mode mode) {
 
     // Update our current time before checking IsRetryRequired().
     nudge_tracker_.SetSyncCycleStartTime(base::TimeTicks::Now());
-    if ((nudge_tracker_.IsSyncRequired() || nudge_tracker_.IsRetryRequired()) &&
-        CanRunNudgeJobNow(NORMAL_PRIORITY)) {
+    if (nudge_tracker_.IsSyncRequired() && CanRunNudgeJobNow(NORMAL_PRIORITY)) {
       TrySyncSessionJob();
     }
   }
 }
 
 ModelTypeSet SyncSchedulerImpl::GetEnabledAndUnthrottledTypes() {
-  ModelTypeSet enabled_types = session_context_->enabled_types();
+  ModelTypeSet enabled_types = session_context_->GetEnabledTypes();
   ModelTypeSet enabled_protocol_types =
       Intersection(ProtocolTypes(), enabled_types);
   ModelTypeSet throttled_types = nudge_tracker_.GetThrottledTypes();
@@ -342,7 +342,7 @@ bool SyncSchedulerImpl::CanRunNudgeJobNow(JobPriority priority) {
     return false;
   }
 
-  const ModelTypeSet enabled_types = session_context_->enabled_types();
+  const ModelTypeSet enabled_types = session_context_->GetEnabledTypes();
   if (nudge_tracker_.GetThrottledTypes().HasAll(enabled_types)) {
     SDVLOG(1) << "Not running a nudge because we're fully type throttled.";
     return false;
@@ -459,7 +459,7 @@ void SyncSchedulerImpl::DoNudgeSyncSessionJob(JobPriority priority) {
   DCHECK(CanRunNudgeJobNow(priority));
 
   DVLOG(2) << "Will run normal mode sync cycle with types "
-           << ModelTypeSetToString(session_context_->enabled_types());
+           << ModelTypeSetToString(session_context_->GetEnabledTypes());
   scoped_ptr<SyncSession> session(SyncSession::Build(session_context_, this));
   bool premature_exit = !syncer_->NormalSyncShare(
       GetEnabledAndUnthrottledTypes(),
@@ -502,10 +502,10 @@ void SyncSchedulerImpl::DoConfigurationSyncSessionJob(JobPriority priority) {
   }
 
   SDVLOG(2) << "Will run configure SyncShare with types "
-            << ModelTypeSetToString(session_context_->enabled_types());
+            << ModelTypeSetToString(session_context_->GetEnabledTypes());
   scoped_ptr<SyncSession> session(SyncSession::Build(session_context_, this));
   bool premature_exit = !syncer_->ConfigureSyncShare(
-      session_context_->enabled_types(),
+      pending_configure_params_->types_to_download,
       pending_configure_params_->source,
       session.get());
   AdjustPolling(FORCE_RESET);
@@ -569,25 +569,6 @@ void SyncSchedulerImpl::DoPollSyncSessionJob() {
     // The OnSilencedUntil() call set up the WaitInterval for us.  All we need
     // to do is start the timer.
     RestartWaiting();
-  }
-}
-
-void SyncSchedulerImpl::DoRetrySyncSessionJob() {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(mode_, NORMAL_MODE);
-
-  base::AutoReset<bool> protector(&no_scheduling_allowed_, true);
-
-  SDVLOG(2) << "Retrying with types "
-            << ModelTypeSetToString(GetEnabledAndUnthrottledTypes());
-  scoped_ptr<SyncSession> session(SyncSession::Build(session_context_, this));
-  if (syncer_->RetrySyncShare(GetEnabledAndUnthrottledTypes(),
-                              session.get()) &&
-      !sessions::HasSyncerError(
-          session->status_controller().model_neutral_state())) {
-    nudge_tracker_.RecordSuccessfulSyncCycle();
-  } else {
-    HandleFailure(session->status_controller().model_neutral_state());
   }
 }
 
@@ -704,8 +685,6 @@ void SyncSchedulerImpl::TrySyncSessionJobImpl() {
     if (nudge_tracker_.IsSyncRequired()) {
       SDVLOG(2) << "Found pending nudge job";
       DoNudgeSyncSessionJob(priority);
-    } else if (nudge_tracker_.IsRetryRequired()) {
-      DoRetrySyncSessionJob();
     } else if (do_poll_after_credentials_updated_ ||
         ((base::TimeTicks::Now() - last_poll_reset_) >= GetPollInterval())) {
       DoPollSyncSessionJob();
@@ -766,6 +745,7 @@ void SyncSchedulerImpl::Unthrottle() {
   // We're no longer throttled, so clear the wait interval.
   wait_interval_.reset();
   NotifyRetryTime(base::Time());
+  NotifyThrottledTypesChanged(nudge_tracker_.GetThrottledTypes());
 
   // We treat this as a 'canary' in the sense that it was originally scheduled
   // to run some time ago, failed, and we now want to retry, versus a job that
@@ -837,6 +817,7 @@ void SyncSchedulerImpl::OnThrottled(const base::TimeDelta& throttle_duration) {
   wait_interval_.reset(new WaitInterval(WaitInterval::THROTTLED,
                                         throttle_duration));
   NotifyRetryTime(base::Time::Now() + wait_interval_->length);
+  NotifyThrottledTypesChanged(ModelTypeSet::All());
 }
 
 void SyncSchedulerImpl::OnTypesThrottled(

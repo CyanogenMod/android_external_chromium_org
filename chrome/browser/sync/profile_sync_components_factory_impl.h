@@ -9,12 +9,16 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
+#include "google_apis/gaia/oauth2_token_service.h"
 
-
-class CommandLine;
 class Profile;
+
+namespace base {
+class CommandLine;
+}
 
 namespace extensions {
 class ExtensionSystem;
@@ -22,8 +26,26 @@ class ExtensionSystem;
 
 class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
  public:
-  ProfileSyncComponentsFactoryImpl(Profile* profile,
-                                   CommandLine* command_line);
+  // Constructs a ProfileSyncComponentsFactoryImpl.
+  //
+  // |sync_service_url| is the base URL of the sync server.
+  //
+  // |account_id| is the sync user's account id.
+  //
+  // |scope_set| is the set of scopes to use for sync.
+  //
+  // |token_service| must outlive the ProfileSyncComponentsFactoryImpl.
+  //
+  // |url_request_context_getter| must outlive the
+  // ProfileSyncComponentsFactoryImpl.
+  ProfileSyncComponentsFactoryImpl(
+      Profile* profile,
+      base::CommandLine* command_line,
+      const GURL& sync_service_url,
+      const std::string& account_id,
+      const OAuth2TokenService::ScopeSet& scope_set,
+      OAuth2TokenService* token_service,
+      net::URLRequestContextGetter* url_request_context_getter);
   virtual ~ProfileSyncComponentsFactoryImpl();
 
   virtual void RegisterDataTypes(ProfileSyncService* pss) OVERRIDE;
@@ -41,49 +63,60 @@ class ProfileSyncComponentsFactoryImpl : public ProfileSyncComponentsFactory {
   virtual browser_sync::SyncBackendHost* CreateSyncBackendHost(
       const std::string& name,
       Profile* profile,
-      const base::WeakPtr<browser_sync::SyncPrefs>& sync_prefs) OVERRIDE;
-
-  virtual browser_sync::GenericChangeProcessor* CreateGenericChangeProcessor(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::DataTypeErrorHandler* error_handler,
-      const base::WeakPtr<syncer::SyncableService>& local_service,
-      const base::WeakPtr<syncer::SyncMergeResult>& merge_result) OVERRIDE;
-
-  virtual browser_sync::SharedChangeProcessor*
-      CreateSharedChangeProcessor() OVERRIDE;
+      invalidation::InvalidationService* invalidator,
+      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+      const base::FilePath& sync_folder) OVERRIDE;
 
   virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
       syncer::ModelType type) OVERRIDE;
+  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      syncer::AttachmentService::Delegate* delegate) OVERRIDE;
 
   // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(
       ProfileSyncService* profile_sync_service,
       browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
-  virtual SyncComponents CreatePasswordSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      PasswordStore* password_store,
-      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
   virtual SyncComponents CreateTypedUrlSyncComponents(
       ProfileSyncService* profile_sync_service,
       history::HistoryBackend* history_backend,
       browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
-  virtual SyncComponents CreateSessionSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::DataTypeErrorHandler* error_handler) OVERRIDE;
 
  private:
   // Register data types which are enabled on desktop platforms only.
-  void RegisterDesktopDataTypes(ProfileSyncService* pss);
+  // |disabled_types| and |enabled_types| correspond only to those types
+  // being explicitly enabled/disabled by the command line.
+  void RegisterDesktopDataTypes(syncer::ModelTypeSet disabled_types,
+                                syncer::ModelTypeSet enabled_types,
+                                ProfileSyncService* pss);
   // Register data types which are enabled on both desktop and mobile.
-  void RegisterCommonDataTypes(ProfileSyncService* pss);
+  // |disabled_types| and |enabled_types| correspond only to those types
+  // being explicitly enabled/disabled by the command line.
+  void RegisterCommonDataTypes(syncer::ModelTypeSet disabled_types,
+                               syncer::ModelTypeSet enabled_types,
+                               ProfileSyncService* pss);
+  // Used to bind a callback to give to DataTypeControllers to disable
+  // data types.
+  browser_sync::DataTypeController::DisableTypeCallback
+      MakeDisableCallbackFor(syncer::ModelType type);
+  void DisableBrokenType(syncer::ModelType type,
+                         const tracked_objects::Location& from_here,
+                         const std::string& message);
 
   Profile* profile_;
-  CommandLine* command_line_;
+  base::CommandLine* command_line_;
   // Set on the UI thread (since extensions::ExtensionSystemFactory is
   // non-threadsafe); accessed on both the UI and FILE threads in
   // GetSyncableServiceForType.
   extensions::ExtensionSystem* extension_system_;
   scoped_refptr<autofill::AutofillWebDataService> web_data_service_;
+
+  const GURL sync_service_url_;
+  const std::string account_id_;
+  const OAuth2TokenService::ScopeSet scope_set_;
+  OAuth2TokenService* const token_service_;
+  net::URLRequestContextGetter* const url_request_context_getter_;
+
+  base::WeakPtrFactory<ProfileSyncComponentsFactoryImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileSyncComponentsFactoryImpl);
 };

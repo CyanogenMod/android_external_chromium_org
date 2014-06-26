@@ -27,12 +27,8 @@ class BubbleDelegateView;
 }
 
 namespace ash {
-
-class SystemTrayItem;
-
-namespace internal {
-
 class HoverHighlightView;
+class SystemTrayItem;
 class TrayPopupLabelButton;
 
 namespace tray {
@@ -48,7 +44,6 @@ class NetworkStateListDetailedView
  public:
   enum ListType {
     LIST_TYPE_NETWORK,
-    LIST_TYPE_DEBUG_PREFERRED,
     LIST_TYPE_VPN
   };
 
@@ -94,8 +89,6 @@ class NetworkStateListDetailedView
 
   void UpdateNetworks(
       const chromeos::NetworkStateHandler::NetworkStateList& networks);
-  void UpdatePreferred(
-      const chromeos::NetworkStateHandler::FavoriteStateList& favorites);
   void UpdateNetworkList();
   bool CreateOrUpdateInfoLabel(
       int index, const base::string16& text, views::Label** label);
@@ -143,7 +136,6 @@ class NetworkStateListDetailedView
   TrayPopupLabelButton* turn_on_wifi_;
   TrayPopupLabelButton* other_mobile_;
   TrayPopupLabelButton* other_vpn_;
-  TrayPopupLabelButton* toggle_debug_preferred_networks_;
   TrayPopupLabelButton* settings_;
   TrayPopupLabelButton* proxy_settings_;
   views::Label* scanning_view_;
@@ -157,7 +149,6 @@ class NetworkStateListDetailedView
 };
 
 }  // namespace tray
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_CHROMEOS_NETWORK_NETWORK_STATE_LIST_DETAILED_VIEW

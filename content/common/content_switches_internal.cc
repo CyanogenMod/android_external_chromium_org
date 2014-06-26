@@ -13,17 +13,6 @@
 
 namespace content {
 
-bool IsOverlayScrollbarEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  if (command_line.HasSwitch(switches::kDisableOverlayScrollbar))
-    return false;
-  else if (command_line.HasSwitch(switches::kEnableOverlayScrollbar))
-    return true;
-
-  return false;
-}
-
 bool IsPinchToZoomEnabled() {
   const CommandLine& command_line = *CommandLine::ForCurrentProcess();
 
@@ -35,10 +24,10 @@ bool IsPinchToZoomEnabled() {
   return base::win::GetVersion() >= base::win::VERSION_WIN8;
 #elif defined(OS_CHROMEOS)
   return true;
-#endif
-
+#else
   return command_line.HasSwitch(switches::kEnableViewport) ||
       command_line.HasSwitch(switches::kEnablePinch);
+#endif
 }
 
 } // namespace content

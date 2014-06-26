@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
 #include "chrome/browser/ui/cocoa/infobars/after_translate_infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
@@ -17,7 +17,8 @@
 #import "chrome/browser/ui/cocoa/infobars/infobar_gradient_view.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_utilities.h"
 #include "chrome/browser/ui/cocoa/infobars/translate_message_infobar_controller.h"
-#include "grit/generated_resources.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
+#include "grit/components_strings.h"
 #include "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -27,23 +28,22 @@ using InfoBarUtilities::VerifyControlOrderAndSpacing;
 using InfoBarUtilities::CreateLabel;
 using InfoBarUtilities::AddMenuItem;
 
-// static
-scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
-    scoped_ptr<TranslateInfoBarDelegate> delegate) {
+scoped_ptr<infobars::InfoBar> ChromeTranslateClient::CreateInfoBar(
+    scoped_ptr<TranslateInfoBarDelegate> delegate) const {
   scoped_ptr<InfoBarCocoa> infobar(
-      new InfoBarCocoa(delegate.PassAs<InfoBarDelegate>()));
+      new InfoBarCocoa(delegate.PassAs<infobars::InfoBarDelegate>()));
   base::scoped_nsobject<TranslateInfoBarControllerBase> infobar_controller;
   switch (infobar->delegate()->AsTranslateInfoBarDelegate()->translate_step()) {
-    case TranslateTabHelper::BEFORE_TRANSLATE:
+    case translate::TRANSLATE_STEP_BEFORE_TRANSLATE:
       infobar_controller.reset([[BeforeTranslateInfobarController alloc]
           initWithInfoBar:infobar.get()]);
       break;
-    case TranslateTabHelper::AFTER_TRANSLATE:
+    case translate::TRANSLATE_STEP_AFTER_TRANSLATE:
       infobar_controller.reset([[AfterTranslateInfobarController alloc]
           initWithInfoBar:infobar.get()]);
       break;
-    case TranslateTabHelper::TRANSLATING:
-    case TranslateTabHelper::TRANSLATE_ERROR:
+    case translate::TRANSLATE_STEP_TRANSLATING:
+    case translate::TRANSLATE_STEP_TRANSLATE_ERROR:
       infobar_controller.reset([[TranslateMessageInfobarController alloc]
           initWithInfoBar:infobar.get()]);
       break;
@@ -51,7 +51,7 @@ scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
       NOTREACHED();
   }
   infobar->set_controller(infobar_controller);
-  return infobar.PassAs<InfoBar>();
+  return infobar.PassAs<infobars::InfoBar>();
 }
 
 @implementation TranslateInfoBarControllerBase (FrameChangeObserver)
@@ -128,7 +128,8 @@ scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
   if (newLanguageIdxSizeT == [self delegate]->original_language_index())
     return;
   [self delegate]->UpdateOriginalLanguageIndex(newLanguageIdxSizeT);
-  if ([self delegate]->translate_step() == TranslateTabHelper::AFTER_TRANSLATE)
+  if ([self delegate]->translate_step() ==
+      translate::TRANSLATE_STEP_AFTER_TRANSLATE)
     [self delegate]->Translate();
   int commandId = IDC_TRANSLATE_ORIGINAL_LANGUAGE_BASE + newLanguageIdx;
   int newMenuIdx = [fromLanguagePopUp_ indexOfItemWithTag:commandId];
@@ -141,7 +142,8 @@ scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
   if (newLanguageIdxSizeT == [self delegate]->target_language_index())
     return;
   [self delegate]->UpdateTargetLanguageIndex(newLanguageIdxSizeT);
-  if ([self delegate]->translate_step() == TranslateTabHelper::AFTER_TRANSLATE)
+  if ([self delegate]->translate_step() ==
+      translate::TRANSLATE_STEP_AFTER_TRANSLATE)
     [self delegate]->Translate();
   int commandId = IDC_TRANSLATE_TARGET_LANGUAGE_BASE + newLanguageIdx;
   int newMenuIdx = [toLanguagePopUp_ indexOfItemWithTag:commandId];
@@ -399,9 +401,9 @@ scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
   if (![self isOwned])
     return;
   TranslateInfoBarDelegate* delegate = [self delegate];
-  TranslateTabHelper::TranslateStep state = delegate->translate_step();
-  DCHECK(state == TranslateTabHelper::BEFORE_TRANSLATE ||
-         state == TranslateTabHelper::TRANSLATE_ERROR);
+  translate::TranslateStep state = delegate->translate_step();
+  DCHECK(state == translate::TRANSLATE_STEP_BEFORE_TRANSLATE ||
+         state == translate::TRANSLATE_STEP_TRANSLATE_ERROR);
   delegate->Translate();
 }
 
@@ -410,7 +412,8 @@ scoped_ptr<InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
   if (![self isOwned])
     return;
   TranslateInfoBarDelegate* delegate = [self delegate];
-  DCHECK_EQ(TranslateTabHelper::BEFORE_TRANSLATE, delegate->translate_step());
+  DCHECK_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
+            delegate->translate_step());
   delegate->TranslationDeclined();
   [super removeSelf];
 }

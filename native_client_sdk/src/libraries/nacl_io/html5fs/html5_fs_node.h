@@ -5,12 +5,16 @@
 #ifndef LIBRARIES_NACL_IO_HTML5FS_HTML5_FS_NODE_H_
 #define LIBRARIES_NACL_IO_HTML5FS_HTML5_FS_NODE_H_
 
+#include <ppapi/c/pp_instance.h>
 #include <ppapi/c/pp_resource.h>
 #include "nacl_io/node.h"
 
 namespace nacl_io {
 
 class Html5Fs;
+class FileIoInterface;
+class FileRefInterface;
+class VarInterface;
 
 class Html5FsNode : public Node {
  public:
@@ -34,9 +38,7 @@ class Html5FsNode : public Node {
                       int* out_bytes);
 
   virtual int GetType();
-  virtual Error GetSize(size_t* out_size);
-  virtual bool IsaDir();
-  virtual bool IsaFile();
+  virtual Error GetSize(off_t* out_size);
 
  protected:
   Html5FsNode(Filesystem* filesystem, PP_Resource fileref);
@@ -46,6 +48,9 @@ class Html5FsNode : public Node {
   virtual void Destroy();
 
  private:
+  FileIoInterface* file_io_iface_;
+  FileRefInterface* file_ref_iface_;
+  VarInterface* var_iface_;
   PP_Resource fileref_resource_;
   PP_Resource fileio_resource_;  // 0 if the file is a directory.
 

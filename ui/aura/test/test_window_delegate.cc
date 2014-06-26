@@ -78,10 +78,10 @@ void TestWindowDelegate::OnDeviceScaleFactorChanged(
     float device_scale_factor) {
 }
 
-void TestWindowDelegate::OnWindowDestroying() {
+void TestWindowDelegate::OnWindowDestroying(Window* window) {
 }
 
-void TestWindowDelegate::OnWindowDestroyed() {
+void TestWindowDelegate::OnWindowDestroyed(Window* window) {
   if (delete_on_destroyed_)
     delete this;
 }
@@ -94,10 +94,6 @@ bool TestWindowDelegate::HasHitTestMask() const {
 }
 
 void TestWindowDelegate::GetHitTestMask(gfx::Path* mask) const {
-}
-
-void TestWindowDelegate::DidRecreateLayer(ui::Layer *old_layer,
-                                          ui::Layer *new_layer) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -116,7 +112,7 @@ void ColorTestWindowDelegate::OnKeyEvent(ui::KeyEvent* event) {
   event->SetHandled();
 }
 
-void ColorTestWindowDelegate::OnWindowDestroyed() {
+void ColorTestWindowDelegate::OnWindowDestroyed(Window* window) {
   delete this;
 }
 

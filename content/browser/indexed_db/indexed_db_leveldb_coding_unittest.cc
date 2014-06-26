@@ -296,7 +296,7 @@ TEST(IndexedDBLevelDBCodingTest, DecodeVarInt) {
     slice = StringPiece(&*v.begin(), v.size() - 1);
     EXPECT_FALSE(DecodeVarInt(&slice, &res));
 
-    slice = StringPiece(&*v.begin(), 0u);
+    slice = StringPiece(&*v.begin(), static_cast<size_t>(0));
     EXPECT_FALSE(DecodeVarInt(&slice, &res));
 
     // Verify decoding at an offset, to detect unaligned memory access.
@@ -408,7 +408,7 @@ TEST(IndexedDBLevelDBCodingTest, DecodeStringWithLength) {
     slice = StringPiece(&*v.begin(), v.size() - 1);
     EXPECT_FALSE(DecodeStringWithLength(&slice, &res));
 
-    slice = StringPiece(&*v.begin(), 0u);
+    slice = StringPiece(&*v.begin(), static_cast<size_t>(0));
     EXPECT_FALSE(DecodeStringWithLength(&slice, &res));
 
     // Verify decoding at an offset, to detect unaligned memory access.
@@ -516,7 +516,7 @@ TEST(IndexedDBLevelDBCodingTest, DecodeBinary) {
     slice = StringPiece(&*v.begin(), v.size() - 1);
     EXPECT_FALSE(DecodeBinary(&slice, &result));
 
-    slice = StringPiece(&*v.begin(), 0u);
+    slice = StringPiece(&*v.begin(), static_cast<size_t>(0));
     EXPECT_FALSE(DecodeBinary(&slice, &result));
 
     // Verify decoding at an offset, to detect unaligned memory access.
@@ -557,7 +557,7 @@ TEST(IndexedDBLevelDBCodingTest, DecodeDouble) {
     slice = StringPiece(&*v.begin(), v.size() - 1);
     EXPECT_FALSE(DecodeDouble(&slice, &result));
 
-    slice = StringPiece(&*v.begin(), 0u);
+    slice = StringPiece(&*v.begin(), static_cast<size_t>(0));
     EXPECT_FALSE(DecodeDouble(&slice, &result));
 
     // Verify decoding at an offset, to detect unaligned memory access.
@@ -596,13 +596,13 @@ TEST(IndexedDBLevelDBCodingTest, EncodeDecodeIDBKey) {
     EncodeIDBKey(expected_key, &v);
     slice = StringPiece(&*v.begin(), v.size());
     EXPECT_TRUE(DecodeIDBKey(&slice, &decoded_key));
-    EXPECT_TRUE(decoded_key->IsEqual(expected_key));
+    EXPECT_TRUE(decoded_key->Equals(expected_key));
     EXPECT_TRUE(slice.empty());
 
     slice = StringPiece(&*v.begin(), v.size() - 1);
     EXPECT_FALSE(DecodeIDBKey(&slice, &decoded_key));
 
-    slice = StringPiece(&*v.begin(), 0u);
+    slice = StringPiece(&*v.begin(), static_cast<size_t>(0));
     EXPECT_FALSE(DecodeIDBKey(&slice, &decoded_key));
   }
 }
@@ -688,6 +688,76 @@ TEST(IndexedDBLevelDBCodingTest, EncodeDecodeIDBKeyPath) {
     EXPECT_TRUE(DecodeIDBKeyPath(&slice, &decoded));
     EXPECT_EQ(key_path, decoded);
     EXPECT_TRUE(slice.empty());
+  }
+}
+
+TEST(IndexedDBLevelDBCodingTest, EncodeDecodeBlobJournal) {
+  std::vector<IndexedDBKeyPath> key_paths;
+  std::vector<std::string> encoded_paths;
+
+  std::vector<BlobJournalType> journals;
+
+  {  // Empty journal
+    BlobJournalType journal;
+    journals.push_back(journal);
+  }
+
+  {  // One item
+    BlobJournalType journal;
+    journal.push_back(std::make_pair(4, 7));
+    journals.push_back(journal);
+  }
+
+  {  // kAllBlobsKey
+    BlobJournalType journal;
+    journal.push_back(std::make_pair(5, DatabaseMetaDataKey::kAllBlobsKey));
+    journals.push_back(journal);
+  }
+
+  {  // A bunch of items
+    BlobJournalType journal;
+    journal.push_back(std::make_pair(4, 7));
+    journal.push_back(std::make_pair(5, 6));
+    journal.push_back(std::make_pair(4, 5));
+    journal.push_back(std::make_pair(4, 4));
+    journal.push_back(std::make_pair(1, 12));
+    journal.push_back(std::make_pair(4, 3));
+    journal.push_back(std::make_pair(15, 14));
+    journals.push_back(journal);
+  }
+
+  std::vector<BlobJournalType>::const_iterator journal_iter;
+  for (journal_iter = journals.begin(); journal_iter != journals.end();
+       ++journal_iter) {
+    std::string encoding;
+    EncodeBlobJournal(*journal_iter, &encoding);
+    StringPiece slice(encoding);
+    BlobJournalType journal_out;
+    EXPECT_TRUE(DecodeBlobJournal(&slice, &journal_out));
+    EXPECT_EQ(*journal_iter, journal_out);
+  }
+
+  journals.clear();
+
+  {  // Illegal database id
+    BlobJournalType journal;
+    journal.push_back(std::make_pair(0, 3));
+    journals.push_back(journal);
+  }
+
+  {  // Illegal blob id
+    BlobJournalType journal;
+    journal.push_back(std::make_pair(4, 0));
+    journals.push_back(journal);
+  }
+
+  for (journal_iter = journals.begin(); journal_iter != journals.end();
+       ++journal_iter) {
+    std::string encoding;
+    EncodeBlobJournal(*journal_iter, &encoding);
+    StringPiece slice(encoding);
+    BlobJournalType journal_out;
+    EXPECT_FALSE(DecodeBlobJournal(&slice, &journal_out));
   }
 }
 

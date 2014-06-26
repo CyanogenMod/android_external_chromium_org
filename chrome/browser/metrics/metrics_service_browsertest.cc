@@ -5,6 +5,8 @@
 // Tests the MetricsService stat recording to make sure that the numbers are
 // what we expect.
 
+#include "components/metrics/metrics_service.h"
+
 #include <string>
 
 #include "base/command_line.h"
@@ -12,7 +14,6 @@
 #include "base/path_service.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/metrics/metrics_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
@@ -22,7 +23,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/test/browser_test_utils.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
@@ -58,23 +59,16 @@ class MetricsServiceBrowserTest : public InProcessBrowserTest {
   }
 };
 
-class MetricsServiceReportingTest : public InProcessBrowserTest {
- public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // Enable the metrics service for testing (in the full mode).
-    command_line->AppendSwitch(switches::kEnableMetricsReportingForTesting);
-  }
-};
-
 IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, CloseRenderersNormally) {
   OpenTabs();
 
   // Verify that the expected stability metrics were recorded.
   const PrefService* prefs = g_browser_process->local_state();
-  EXPECT_EQ(1, prefs->GetInteger(prefs::kStabilityLaunchCount));
+  EXPECT_EQ(1, prefs->GetInteger(metrics::prefs::kStabilityLaunchCount));
   EXPECT_EQ(3, prefs->GetInteger(prefs::kStabilityPageLoadCount));
   EXPECT_EQ(0, prefs->GetInteger(prefs::kStabilityRendererCrashCount));
-  // TODO(isherman): We should also verify that prefs::kStabilityExitedCleanly
+  // TODO(isherman): We should also verify that
+  // metrics::prefs::kStabilityExitedCleanly
   // is set to true, but this preference isn't set until the browser
   // exits... it's not clear to me how to test that.
 }
@@ -107,28 +101,12 @@ IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, MAYBE_CrashRenderers) {
   }
 
   // Verify that the expected stability metrics were recorded.
-  EXPECT_EQ(1, prefs->GetInteger(prefs::kStabilityLaunchCount));
+  EXPECT_EQ(1, prefs->GetInteger(metrics::prefs::kStabilityLaunchCount));
   EXPECT_EQ(4, prefs->GetInteger(prefs::kStabilityPageLoadCount));
   EXPECT_EQ(1, prefs->GetInteger(prefs::kStabilityRendererCrashCount));
-  // TODO(isherman): We should also verify that prefs::kStabilityExitedCleanly
+  // TODO(isherman): We should also verify that
+  // metrics::prefs::kStabilityExitedCleanly
   // is set to true, but this preference isn't set until the browser
   // exits... it's not clear to me how to test that.
 }
 
-IN_PROC_BROWSER_TEST_F(MetricsServiceBrowserTest, CheckLowEntropySourceUsed) {
-  // Since MetricsService is only in recording mode, and is not reporting,
-  // check that the low entropy source is returned at some point.
-  ASSERT_TRUE(g_browser_process->metrics_service());
-  EXPECT_EQ(MetricsService::LAST_ENTROPY_LOW,
-            g_browser_process->metrics_service()->entropy_source_returned());
-}
-
-IN_PROC_BROWSER_TEST_F(MetricsServiceReportingTest,
-                       CheckHighEntropySourceUsed) {
-  // Since the full metrics service runs in this test, we expect that
-  // MetricsService returns the full entropy source at some point during
-  // BrowserMain startup.
-  ASSERT_TRUE(g_browser_process->metrics_service());
-  EXPECT_EQ(MetricsService::LAST_ENTROPY_HIGH,
-            g_browser_process->metrics_service()->entropy_source_returned());
-}

@@ -26,10 +26,10 @@ class NET_EXPORT_PRIVATE QuicDefaultPacketWriter : public QuicPacketWriter {
   virtual ~QuicDefaultPacketWriter();
 
   // QuicPacketWriter
-  virtual WriteResult WritePacket(
-      const char* buffer, size_t buf_len,
-      const net::IPAddressNumber& self_address,
-      const net::IPEndPoint& peer_address) OVERRIDE;
+  virtual WriteResult WritePacket(const char* buffer,
+                                  size_t buf_len,
+                                  const IPAddressNumber& self_address,
+                                  const IPEndPoint& peer_address) OVERRIDE;
   virtual bool IsWriteBlockedDataBuffered() const OVERRIDE;
   virtual bool IsWriteBlocked() const OVERRIDE;
   virtual void SetWritable() OVERRIDE;
@@ -39,11 +39,20 @@ class NET_EXPORT_PRIVATE QuicDefaultPacketWriter : public QuicPacketWriter {
     connection_ = connection;
   }
 
+ protected:
+  void set_write_blocked(bool is_blocked) {
+    write_blocked_ = is_blocked;
+  }
+
  private:
   base::WeakPtrFactory<QuicDefaultPacketWriter> weak_factory_;
   DatagramClientSocket* socket_;
   QuicConnection* connection_;
+
+  // Whether a write is currently in flight.
   bool write_blocked_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicDefaultPacketWriter);
 };
 
 }  // namespace net

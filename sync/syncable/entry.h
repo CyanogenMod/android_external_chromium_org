@@ -35,7 +35,12 @@ enum GetByClientTag {
 };
 
 enum GetByServerTag {
+  // Server tagged items are deprecated for all types but bookmarks.
   GET_BY_SERVER_TAG
+};
+
+enum GetTypeRoot {
+  GET_TYPE_ROOT
 };
 
 enum GetByHandle {
@@ -48,8 +53,12 @@ class SYNC_EXPORT Entry {
   // succeeded.
   Entry(BaseTransaction* trans, GetByHandle, int64 handle);
   Entry(BaseTransaction* trans, GetById, const Id& id);
-  Entry(BaseTransaction* trans, GetByServerTag, const std::string& tag);
+  Entry(BaseTransaction* trans, GetTypeRoot, ModelType type);
   Entry(BaseTransaction* trans, GetByClientTag, const std::string& tag);
+
+  // This lookup function is deprecated.  All types except bookmarks can use
+  // the GetTypeRoot variant instead.
+  Entry(BaseTransaction* trans, GetByServerTag, const std::string& tag);
 
   bool good() const { return 0 != kernel_; }
 
@@ -194,6 +203,11 @@ class SYNC_EXPORT Entry {
   const UniquePosition& GetUniquePosition() const {
     DCHECK(kernel_);
     return kernel_->ref(UNIQUE_POSITION);
+  }
+
+  const sync_pb::AttachmentMetadata& GetAttachmentMetadata() const {
+    DCHECK(kernel_);
+    return kernel_->ref(ATTACHMENT_METADATA);
   }
 
   bool GetSyncing() const {

@@ -8,7 +8,7 @@
 #include <jni.h>
 
 #include "android_webview/browser/renderer_host/print_manager.h"
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
@@ -24,13 +24,10 @@ class PrintSettings;
 
 namespace android_webview {
 
-class BrowserViewRenderer;
-
 class AwPdfExporter : public PrintManagerDelegate {
  public:
   AwPdfExporter(JNIEnv* env,
                 jobject obj,
-                BrowserViewRenderer* view_renderer,
                 content::WebContents* web_contents);
 
   virtual ~AwPdfExporter();
@@ -48,7 +45,6 @@ class AwPdfExporter : public PrintManagerDelegate {
   void CreatePdfSettings(JNIEnv* env, jobject obj);
 
   JavaObjectWeakGlobalRef java_ref_;
-  BrowserViewRenderer* view_renderer_;
   content::WebContents* web_contents_;
 
   scoped_ptr<PrintManager> print_manager_;

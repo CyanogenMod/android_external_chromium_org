@@ -10,7 +10,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler_delegate.h"
-#include "chrome/browser/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidation_service.h"
 #include "extensions/common/extension.h"
 #include "google/cacheinvalidation/types.pb.h"
 #include "sync/notifier/object_id_invalidation_map.h"
@@ -158,7 +158,7 @@ void PushMessagingInvalidationHandler::OnIncomingInvalidation(
 
       // We always forward unknown version invalidation when we receive one.
       if (invalidation_list.StartsWithUnknownVersion()) {
-        DVLOG(2) << "Sending push message to reciever, extension is "
+        DVLOG(2) << "Sending push message to receiver, extension is "
             << extension_id << ", subchannel is " << subchannel
             << "and payload was lost";
         delegate_->OnMessage(extension_id, subchannel, std::string());
@@ -169,7 +169,7 @@ void PushMessagingInvalidationHandler::OnIncomingInvalidation(
       if (!max_invalidation.is_unknown_version() &&
           max_invalidation.version() > max_object_version_map_[*it]) {
         max_object_version_map_[*it] = max_invalidation.version();
-        DVLOG(2) << "Sending push message to reciever, extension is "
+        DVLOG(2) << "Sending push message to receiver, extension is "
             << extension_id << ", subchannel is " << subchannel
             << ", and payload is " << max_invalidation.payload();
         delegate_->OnMessage(extension_id,
@@ -178,6 +178,10 @@ void PushMessagingInvalidationHandler::OnIncomingInvalidation(
       }
     }
   }
+}
+
+std::string PushMessagingInvalidationHandler::GetOwnerName() const {
+  return "PushMessagingApi";
 }
 
 void PushMessagingInvalidationHandler::UpdateRegistrations() {

@@ -22,6 +22,8 @@
 #include "chrome/browser/sync_file_system/drive_backend/remote_to_local_syncer.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_token.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
@@ -43,10 +45,11 @@ fileapi::FileSystemURL URL(const GURL& origin,
       origin, base::FilePath::FromUTF8Unsafe(path));
 }
 
+const int kRetryLimit = 100;
+
 }  // namespace
 
-class LocalToRemoteSyncerTest : public testing::Test,
-                                public SyncEngineContext {
+class LocalToRemoteSyncerTest : public testing::Test {
  public:
   LocalToRemoteSyncerTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP) {}
@@ -56,72 +59,78 @@ class LocalToRemoteSyncerTest : public testing::Test,
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
-    fake_drive_service_.reset(new FakeDriveServiceWrapper);
-    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
-        "sync_file_system/account_metadata.json"));
-    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
-        "gdata/empty_feed.json"));
-
-    drive_uploader_.reset(new FakeDriveUploader(fake_drive_service_.get()));
+    scoped_ptr<FakeDriveServiceWrapper>
+        fake_drive_service(new FakeDriveServiceWrapper);
+    scoped_ptr<drive::DriveUploaderInterface>
+        drive_uploader(new FakeDriveUploader(fake_drive_service.get()));
     fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_.get(), drive_uploader_.get(),
+        fake_drive_service.get(),
+        drive_uploader.get(),
         kSyncRootFolderTitle));
-    fake_remote_change_processor_.reset(new FakeRemoteChangeProcessor);
+    remote_change_processor_.reset(new FakeRemoteChangeProcessor);
+
+    context_.reset(new SyncEngineContext(
+        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
+        drive_uploader.Pass(),
+        NULL,
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current()));
+    context_->SetRemoteChangeProcessor(remote_change_processor_.get());
 
     RegisterSyncableFileSystem();
+
+    sync_task_manager_.reset(new SyncTaskManager(
+        base::WeakPtr<SyncTaskManager::Client>(),
+        10 /* maximum_background_task */,
+        base::MessageLoopProxy::current()));
+    sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
   virtual void TearDown() OVERRIDE {
+    sync_task_manager_.reset();
     RevokeSyncableFileSystem();
-
-    fake_remote_change_processor_.reset();
-    metadata_database_.reset();
     fake_drive_helper_.reset();
-    drive_uploader_.reset();
-    fake_drive_service_.reset();
+    context_.reset();
     base::RunLoop().RunUntilIdle();
   }
 
   void InitializeMetadataDatabase() {
-    SyncEngineInitializer initializer(this,
-                                      base::MessageLoopProxy::current(),
-                                      fake_drive_service_.get(),
-                                      database_dir_.path(),
-                                      in_memory_env_.get());
+    SyncEngineInitializer* initializer =
+        new SyncEngineInitializer(context_.get(),
+                                  database_dir_.path(),
+                                  in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    initializer.Run(CreateResultReceiver(&status));
+
+    sync_task_manager_->ScheduleSyncTask(
+        FROM_HERE,
+        scoped_ptr<SyncTask>(initializer),
+        SyncTaskManager::PRIORITY_MED,
+        base::Bind(&LocalToRemoteSyncerTest::DidInitializeMetadataDatabase,
+                   base::Unretained(this), initializer, &status));
+
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
-    metadata_database_ = initializer.PassMetadataDatabase();
+  }
+
+  void DidInitializeMetadataDatabase(SyncEngineInitializer* initializer,
+                                     SyncStatusCode* status_out,
+                                     SyncStatusCode status) {
+    *status_out = status;
+    context_->SetMetadataDatabase(initializer->PassMetadataDatabase());
   }
 
   void RegisterApp(const std::string& app_id,
                    const std::string& app_root_folder_id) {
     SyncStatusCode status = SYNC_STATUS_FAILED;
-    metadata_database_->RegisterApp(app_id, app_root_folder_id,
-                                    CreateResultReceiver(&status));
+    context_->GetMetadataDatabase()->RegisterApp(
+        app_id, app_root_folder_id, CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
   }
 
-  virtual drive::DriveServiceInterface* GetDriveService() OVERRIDE {
-    return fake_drive_service_.get();
-  }
-
-  virtual drive::DriveUploaderInterface* GetDriveUploader() OVERRIDE {
-    return drive_uploader_.get();
-  }
-
-  virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE {
-    return metadata_database_.get();
-  }
-
-  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() OVERRIDE {
-    return fake_remote_change_processor_.get();
-  }
-
-  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE {
-    return base::MessageLoopProxy::current().get();
+  MetadataDatabase* GetMetadataDatabase() {
+    return context_->GetMetadataDatabase();
   }
 
  protected:
@@ -162,25 +171,31 @@ class LocalToRemoteSyncerTest : public testing::Test,
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
     base::FilePath local_path = base::FilePath::FromUTF8Unsafe("dummy");
     scoped_ptr<LocalToRemoteSyncer> syncer(new LocalToRemoteSyncer(
-        this, SyncFileMetadata(file_change.file_type(), 0, base::Time()),
+        context_.get(),
+        SyncFileMetadata(file_change.file_type(), 0, base::Time()),
         file_change, local_path, url));
-    syncer->Run(CreateResultReceiver(&status));
+    syncer->RunPreflight(SyncTaskToken::CreateForTesting(
+        CreateResultReceiver(&status)));
     base::RunLoop().RunUntilIdle();
     return status;
   }
 
   SyncStatusCode ListChanges() {
-    ListChangesTask list_changes(this);
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    list_changes.Run(CreateResultReceiver(&status));
+    sync_task_manager_->ScheduleSyncTask(
+        FROM_HERE,
+        scoped_ptr<SyncTask>(new ListChangesTask(context_.get())),
+        SyncTaskManager::PRIORITY_MED,
+        CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
 
   SyncStatusCode RunRemoteToLocalSyncer() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    scoped_ptr<RemoteToLocalSyncer> syncer(new RemoteToLocalSyncer(this));
-    syncer->Run(CreateResultReceiver(&status));
+    scoped_ptr<RemoteToLocalSyncer>
+        syncer(new RemoteToLocalSyncer(context_.get()));
+    syncer->RunExclusive(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -229,11 +244,11 @@ class LocalToRemoteSyncerTest : public testing::Test,
   base::ScopedTempDir database_dir_;
   scoped_ptr<leveldb::Env> in_memory_env_;
 
-  scoped_ptr<FakeDriveServiceWrapper> fake_drive_service_;
-  scoped_ptr<FakeDriveUploader> drive_uploader_;
+  scoped_ptr<SyncEngineContext> context_;
   scoped_ptr<FakeDriveServiceHelper> fake_drive_helper_;
+  scoped_ptr<FakeRemoteChangeProcessor> remote_change_processor_;
   scoped_ptr<MetadataDatabase> metadata_database_;
-  scoped_ptr<FakeRemoteChangeProcessor> fake_remote_change_processor_;
+  scoped_ptr<SyncTaskManager> sync_task_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(LocalToRemoteSyncerTest);
 };
@@ -408,12 +423,14 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_UpdateDeleteOnFile) {
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
 
   SyncStatusCode status;
+  int retry_count = 0;
   do {
+    if (retry_count++ > kRetryLimit)
+      break;
     status = RunRemoteToLocalSyncer();
-    EXPECT_TRUE(status == SYNC_STATUS_OK ||
-                status == SYNC_STATUS_RETRY ||
-                status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
-  } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+  } while (status == SYNC_STATUS_OK ||
+           status == SYNC_STATUS_RETRY);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
 
   DeleteResource(file_id);
 
@@ -444,12 +461,14 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateDeleteOnFile) {
   const std::string file_id = CreateRemoteFile(app_root, "foo", "data");
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   SyncStatusCode status;
+  int retry_count = 0;
   do {
+    if (retry_count++ > kRetryLimit)
+      break;
     status = RunRemoteToLocalSyncer();
-    EXPECT_TRUE(status == SYNC_STATUS_OK ||
-                status == SYNC_STATUS_RETRY ||
-                status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
-  } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+  } while (status == SYNC_STATUS_OK ||
+           status == SYNC_STATUS_RETRY);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
 
   DeleteResource(file_id);
 
@@ -492,7 +511,7 @@ TEST_F(LocalToRemoteSyncerTest, Conflict_CreateFolderOnFolder) {
   EXPECT_TRUE(folder_id == entries[0]->resource_id() ||
               folder_id == entries[1]->resource_id());
 
-  TrackerSet trackers;
+  TrackerIDSet trackers;
   EXPECT_TRUE(GetMetadataDatabase()->FindTrackersByFileID(
       folder_id, &trackers));
   EXPECT_EQ(1u, trackers.size());
@@ -509,12 +528,14 @@ TEST_F(LocalToRemoteSyncerTest, AppRootDeletion) {
   DeleteResource(app_root);
   EXPECT_EQ(SYNC_STATUS_OK, ListChanges());
   SyncStatusCode status;
+  int retry_count = 0;
   do {
+    if (retry_count++ > kRetryLimit)
+      break;
     status = RunRemoteToLocalSyncer();
-    EXPECT_TRUE(status == SYNC_STATUS_OK ||
-                status == SYNC_STATUS_RETRY ||
-                status == SYNC_STATUS_NO_CHANGE_TO_SYNC);
-  } while (status != SYNC_STATUS_NO_CHANGE_TO_SYNC);
+  } while (status == SYNC_STATUS_OK ||
+           status == SYNC_STATUS_RETRY);
+  EXPECT_EQ(SYNC_STATUS_NO_CHANGE_TO_SYNC, status);
 
   EXPECT_EQ(SYNC_STATUS_UNKNOWN_ORIGIN, RunLocalToRemoteSyncer(
       FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,

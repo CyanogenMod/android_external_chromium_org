@@ -4,6 +4,8 @@
 
 #include "media/audio/cras/audio_manager_cras.h"
 
+#include <algorithm>
+
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/logging.h"
@@ -12,6 +14,11 @@
 #include "media/audio/cras/cras_input.h"
 #include "media/audio/cras/cras_unified.h"
 #include "media/base/channel_layout.h"
+
+// cras_util.h headers pull in min/max macros...
+// TODO(dgreid): Fix headers such that these aren't imported.
+#undef min
+#undef max
 
 namespace media {
 
@@ -29,6 +36,13 @@ static const int kMaxOutputStreams = 50;
 
 // Default sample rate for input and output streams.
 static const int kDefaultSampleRate = 48000;
+
+// Define bounds for the output buffer size.
+static const int kMinimumOutputBufferSize = 512;
+static const int kMaximumOutputBufferSize = 8192;
+
+// Default input buffer size.
+static const int kDefaultInputBufferSize = 1024;
 
 bool AudioManagerCras::HasAudioOutputDevices() {
   return true;
@@ -63,12 +77,15 @@ void AudioManagerCras::GetAudioOutputDeviceNames(
 
 AudioParameters AudioManagerCras::GetInputStreamParameters(
     const std::string& device_id) {
-  static const int kDefaultInputBufferSize = 1024;
+  int user_buffer_size = GetUserBufferSize();
+  int buffer_size = user_buffer_size ?
+      user_buffer_size : kDefaultInputBufferSize;
+
   // TODO(hshi): Fine-tune audio parameters based on |device_id|. The optimal
   // parameters for the loopback stream may differ from the default.
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
-      kDefaultSampleRate, 16, kDefaultInputBufferSize);
+      kDefaultSampleRate, 16, buffer_size);
 }
 
 AudioOutputStream* AudioManagerCras::MakeLinearOutputStream(
@@ -103,11 +120,9 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
     const AudioParameters& input_params) {
   // TODO(tommi): Support |output_device_id|.
   DLOG_IF(ERROR, !output_device_id.empty()) << "Not implemented!";
-  static const int kDefaultOutputBufferSize = 512;
-
   ChannelLayout channel_layout = CHANNEL_LAYOUT_STEREO;
   int sample_rate = kDefaultSampleRate;
-  int buffer_size = kDefaultOutputBufferSize;
+  int buffer_size = kMinimumOutputBufferSize;
   int bits_per_sample = 16;
   int input_channels = 0;
   if (input_params.IsValid()) {
@@ -115,7 +130,9 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
     bits_per_sample = input_params.bits_per_sample();
     channel_layout = input_params.channel_layout();
     input_channels = input_params.input_channels();
-    buffer_size = input_params.frames_per_buffer();
+    buffer_size =
+        std::min(kMaximumOutputBufferSize,
+                 std::max(buffer_size, input_params.frames_per_buffer()));
   }
 
   int user_buffer_size = GetUserBufferSize();

@@ -6,6 +6,7 @@
 
 #include <string.h>
 
+#include <string>
 #include <vector>
 
 #include "base/base_paths.h"
@@ -34,7 +35,7 @@
 #include "media/cdm/ppapi/supported_cdm_versions.h"
 #include "third_party/widevine/cdm/widevine_cdm_common.h"
 
-#include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR.
+#include "widevine_cdm_version.h"  // In SHARED_INTERMEDIATE_DIR. NOLINT
 
 using content::BrowserThread;
 using content::PluginService;
@@ -46,10 +47,10 @@ namespace component_updater {
 namespace {
 
 // CRX hash. The extension id is: oimompecagnajdejgnnjijobebaeigek.
-const uint8 kSha2Hash[] = { 0xe8, 0xce, 0xcf, 0x42, 0x06, 0xd0, 0x93, 0x49,
-                            0x6d, 0xd9, 0x89, 0xe1, 0x41, 0x04, 0x86, 0x4a,
-                            0x8f, 0xbd, 0x86, 0x12, 0xb9, 0x58, 0x9b, 0xfb,
-                            0x4f, 0xbb, 0x1b, 0xa9, 0xd3, 0x85, 0x37, 0xef };
+const uint8 kSha2Hash[] = {0xe8, 0xce, 0xcf, 0x42, 0x06, 0xd0, 0x93, 0x49,
+                           0x6d, 0xd9, 0x89, 0xe1, 0x41, 0x04, 0x86, 0x4a,
+                           0x8f, 0xbd, 0x86, 0x12, 0xb9, 0x58, 0x9b, 0xfb,
+                           0x4f, 0xbb, 0x1b, 0xa9, 0xd3, 0x85, 0x37, 0xef};
 
 // File name of the Widevine CDM component manifest on different platforms.
 const char kWidevineCdmManifestName[] = "WidevineCdm";
@@ -148,24 +149,14 @@ bool CheckForCompatibleVersion(const base::DictionaryValue& manifest,
                                VersionCheckFunc version_check_func) {
   std::string versions_string;
   if (!manifest.GetString(version_name, &versions_string)) {
-    DLOG(WARNING)
-        << "Widevine CDM component manifest is missing " << version_name;
-    // TODO(ddorwin): Remove this once all users have been updated.
-    // The original manifests did not include this string, so add its version.
-    if (version_name == kCdmModuleVersionsName)
-      versions_string = "4";
-    else if (version_name == kCdmInterfaceVersionsName)
-      versions_string = "1";
-    else if (version_name == kCdmHostVersionsName)
-      versions_string = "1";
+    DLOG(WARNING) << "Widevine CDM component manifest missing " << version_name;
+    return false;
   }
   DLOG_IF(WARNING, versions_string.empty())
       << "Widevine CDM component manifest has empty " << version_name;
 
   std::vector<std::string> versions;
-  base::SplitString(versions_string,
-                    kCdmValueDelimiter,
-                    &versions);
+  base::SplitString(versions_string, kCdmValueDelimiter, &versions);
 
   for (size_t i = 0; i < versions.size(); ++i) {
     int version = 0;
@@ -185,16 +176,15 @@ bool CheckForCompatibleVersion(const base::DictionaryValue& manifest,
 // This should never fail except in rare cases where the component has not been
 // updated recently or the user downgrades Chrome.
 bool IsCompatibleWithChrome(const base::DictionaryValue& manifest) {
-  return
-      CheckForCompatibleVersion(manifest,
-                                kCdmModuleVersionsName,
-                                media::IsSupportedCdmModuleVersion) &&
-      CheckForCompatibleVersion(manifest,
-                                kCdmInterfaceVersionsName,
-                                media::IsSupportedCdmInterfaceVersion) &&
-      CheckForCompatibleVersion(manifest,
-                                kCdmHostVersionsName,
-                                media::IsSupportedCdmHostVersion);
+  return CheckForCompatibleVersion(manifest,
+                                   kCdmModuleVersionsName,
+                                   media::IsSupportedCdmModuleVersion) &&
+         CheckForCompatibleVersion(manifest,
+                                   kCdmInterfaceVersionsName,
+                                   media::IsSupportedCdmInterfaceVersion) &&
+         CheckForCompatibleVersion(manifest,
+                                   kCdmHostVersionsName,
+                                   media::IsSupportedCdmHostVersion);
 }
 
 void GetAdditionalParams(const base::DictionaryValue& manifest,
@@ -209,11 +199,6 @@ void GetAdditionalParams(const base::DictionaryValue& manifest,
     additional_param_values->push_back(codecs);
   } else {
     DLOG(WARNING) << "Widevine CDM component manifest is missing codecs";
-    // TODO(ddorwin): Remove this once all users have been updated.
-    // The original manifests did not include this string, so add the base set.
-    additional_param_names->push_back(
-        base::ASCIIToUTF16(kCdmSupportedCodecsParamName));
-    additional_param_values->push_back(base::ASCIIToUTF16("vp8,vorbis"));
   }
 }
 
@@ -301,7 +286,9 @@ void WidevineCdmComponentInstallerTraits::ComponentReady(
       FROM_HERE,
       base::Bind(&WidevineCdmComponentInstallerTraits::UpdateCdmAdapter,
                  base::Unretained(this),
-                 version, path, base::Passed(&manifest)));
+                 version,
+                 path,
+                 base::Passed(&manifest)));
 }
 
 bool WidevineCdmComponentInstallerTraits::VerifyInstallation(
@@ -343,7 +330,7 @@ void WidevineCdmComponentInstallerTraits::UpdateCdmAdapter(
   if (!base::ReadFileToString(adapter_version_path, &adapter_version) ||
       adapter_version != chrome_version ||
       !base::PathExists(adapter_install_path)) {
-    int bytes_written = file_util::WriteFile(
+    int bytes_written = base::WriteFile(
         adapter_version_path, chrome_version.data(), chrome_version.size());
     if (bytes_written < 0 ||
         static_cast<size_t>(bytes_written) != chrome_version.size()) {
@@ -378,8 +365,8 @@ void RegisterWidevineCdmComponent(ComponentUpdateService* cus) {
   scoped_ptr<ComponentInstallerTraits> traits(
       new WidevineCdmComponentInstallerTraits);
   // |cus| will take ownership of |installer| during installer->Register(cus).
-  DefaultComponentInstaller* installer
-      = new DefaultComponentInstaller(traits.Pass());
+  DefaultComponentInstaller* installer =
+      new DefaultComponentInstaller(traits.Pass());
   installer->Register(cus);
 #else
   return;
@@ -387,4 +374,3 @@ void RegisterWidevineCdmComponent(ComponentUpdateService* cus) {
 }
 
 }  // namespace component_updater
-

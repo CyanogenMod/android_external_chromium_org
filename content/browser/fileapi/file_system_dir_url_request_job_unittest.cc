@@ -6,15 +6,18 @@
 
 #include <string>
 
+#include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/format_macros.h"
+#include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/run_loop.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/test/mock_special_storage_policy.h"
+#include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
@@ -25,11 +28,11 @@
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/icu/source/i18n/unicode/regex.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_file_util.h"
 #include "webkit/browser/fileapi/file_system_operation_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 using fileapi::FileSystemContext;
 using fileapi::FileSystemOperationContext;
@@ -39,8 +42,67 @@ namespace content {
 namespace {
 
 // We always use the TEMPORARY FileSystem in this test.
-static const char kFileSystemURLPrefix[] =
-    "filesystem:http://remote/temporary/";
+const char kFileSystemURLPrefix[] = "filesystem:http://remote/temporary/";
+
+const char kValidExternalMountPoint[] = "mnt_name";
+
+// An auto mounter that will try to mount anything for |storage_domain| =
+// "automount", but will only succeed for the mount point "mnt_name".
+bool TestAutoMountForURLRequest(
+    const net::URLRequest* /*url_request*/,
+    const fileapi::FileSystemURL& filesystem_url,
+    const std::string& storage_domain,
+    const base::Callback<void(base::File::Error result)>& callback) {
+  if (storage_domain != "automount")
+    return false;
+
+  std::vector<base::FilePath::StringType> components;
+  filesystem_url.path().GetComponents(&components);
+  std::string mount_point = base::FilePath(components[0]).AsUTF8Unsafe();
+
+  if (mount_point == kValidExternalMountPoint) {
+    fileapi::ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
+        kValidExternalMountPoint, fileapi::kFileSystemTypeTest,
+        fileapi::FileSystemMountOption(), base::FilePath());
+    callback.Run(base::File::FILE_OK);
+  } else {
+    callback.Run(base::File::FILE_ERROR_NOT_FOUND);
+  }
+  return true;
+}
+
+class FileSystemDirURLRequestJobFactory : public net::URLRequestJobFactory {
+ public:
+  FileSystemDirURLRequestJobFactory(const std::string& storage_domain,
+                                    FileSystemContext* context)
+      : storage_domain_(storage_domain), file_system_context_(context) {
+  }
+
+  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+      const std::string& scheme,
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE {
+    return new fileapi::FileSystemDirURLRequestJob(
+        request, network_delegate, storage_domain_, file_system_context_);
+  }
+
+  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+    return true;
+  }
+
+  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+    return true;
+  }
+
+  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+    return false;
+  }
+
+ private:
+  std::string storage_domain_;
+  FileSystemContext* file_system_context_;
+};
+
 
 }  // namespace
 
@@ -53,7 +115,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    special_storage_policy_ = new quota::MockSpecialStoragePolicy;
+    special_storage_policy_ = new MockSpecialStoragePolicy;
     file_system_context_ = CreateFileSystemContextForTesting(
         NULL, temp_dir_.path());
 
@@ -63,18 +125,27 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
         base::Bind(&FileSystemDirURLRequestJobTest::OnOpenFileSystem,
                    weak_factory_.GetWeakPtr()));
     base::RunLoop().RunUntilIdle();
-
-    net::URLRequest::Deprecated::RegisterProtocolFactory(
-        "filesystem", &FileSystemDirURLRequestJobFactory);
   }
 
   virtual void TearDown() OVERRIDE {
     // NOTE: order matters, request must die before delegate
     request_.reset(NULL);
     delegate_.reset(NULL);
+  }
 
-    net::URLRequest::Deprecated::RegisterProtocolFactory("filesystem", NULL);
-    ClearUnusedJob();
+  void SetUpAutoMountContext(base::FilePath* mnt_point) {
+    *mnt_point = temp_dir_.path().AppendASCII("auto_mount_dir");
+    ASSERT_TRUE(base::CreateDirectory(*mnt_point));
+
+    ScopedVector<fileapi::FileSystemBackend> additional_providers;
+    additional_providers.push_back(new TestFileSystemBackend(
+        base::MessageLoopProxy::current().get(), *mnt_point));
+
+    std::vector<fileapi::URLRequestAutoMountHandler> handlers;
+    handlers.push_back(base::Bind(&TestAutoMountForURLRequest));
+
+    file_system_context_ = CreateFileSystemContextWithAutoMountersForTesting(
+        NULL, additional_providers.Pass(), handlers, temp_dir_.path());
   }
 
   void OnOpenFileSystem(const GURL& root_url,
@@ -87,11 +158,12 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
                          FileSystemContext* file_system_context) {
     delegate_.reset(new net::TestDelegate());
     delegate_->set_quit_on_redirect(true);
-    request_ = empty_context_.CreateRequest(
-        url, net::DEFAULT_PRIORITY, delegate_.get());
-    job_ = new fileapi::FileSystemDirURLRequestJob(
-        request_.get(), NULL, file_system_context);
+    job_factory_.reset(new FileSystemDirURLRequestJobFactory(
+        url.GetOrigin().host(), file_system_context));
+    empty_context_.set_job_factory(job_factory_.get());
 
+    request_ = empty_context_.CreateRequest(
+        url, net::DEFAULT_PRIORITY, delegate_.get(), NULL);
     request_->Start();
     ASSERT_TRUE(request_->is_pending());  // verify that we're starting async
     if (run_to_completion)
@@ -158,6 +230,7 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
                                     file_info, platform_file_path);
   }
 
+  // If |size| is negative, the reported size is ignored.
   void VerifyListingEntry(const std::string& entry_line,
                           const std::string& name,
                           const std::string& url,
@@ -178,8 +251,10 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
     EXPECT_EQ(icu::UnicodeString(url.c_str()), match.group(2, status));
     EXPECT_EQ(icu::UnicodeString(is_directory ? "1" : "0"),
               match.group(3, status));
-    icu::UnicodeString size_string(FormatBytesUnlocalized(size).c_str());
-    EXPECT_EQ(size_string, match.group(4, status));
+    if (size >= 0) {
+      icu::UnicodeString size_string(FormatBytesUnlocalized(size).c_str());
+      EXPECT_EQ(size_string, match.group(4, status));
+    }
 
     base::Time date;
     icu::UnicodeString date_ustr(match.group(5, status));
@@ -191,23 +266,6 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
 
   GURL CreateFileSystemURL(const std::string path) {
     return GURL(kFileSystemURLPrefix + path);
-  }
-
-  static net::URLRequestJob* FileSystemDirURLRequestJobFactory(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate,
-      const std::string& scheme) {
-    DCHECK(job_);
-    net::URLRequestJob* temp = job_;
-    job_ = NULL;
-    return temp;
-  }
-
-  static void ClearUnusedJob() {
-    if (job_) {
-      scoped_refptr<net::URLRequestJob> deleter = job_;
-      job_ = NULL;
-    }
   }
 
   fileapi::FileSystemFileUtil* file_util() {
@@ -223,15 +281,11 @@ class FileSystemDirURLRequestJobTest : public testing::Test {
   net::URLRequestContext empty_context_;
   scoped_ptr<net::TestDelegate> delegate_;
   scoped_ptr<net::URLRequest> request_;
-  scoped_refptr<quota::MockSpecialStoragePolicy> special_storage_policy_;
+  scoped_ptr<FileSystemDirURLRequestJobFactory> job_factory_;
+  scoped_refptr<MockSpecialStoragePolicy> special_storage_policy_;
   scoped_refptr<FileSystemContext> file_system_context_;
   base::WeakPtrFactory<FileSystemDirURLRequestJobTest> weak_factory_;
-
-  static net::URLRequestJob* job_;
 };
-
-// static
-net::URLRequestJob* FileSystemDirURLRequestJobTest::job_ = NULL;
 
 namespace {
 
@@ -265,6 +319,7 @@ TEST_F(FileSystemDirURLRequestJobTest, DirectoryListing) {
 
   EXPECT_TRUE(!!std::getline(in, line));
   VerifyListingEntry(line, "baz", "baz", true, 0);
+  EXPECT_FALSE(!!std::getline(in, line));
 }
 
 TEST_F(FileSystemDirURLRequestJobTest, InvalidURL) {
@@ -319,6 +374,68 @@ TEST_F(FileSystemDirURLRequestJobTest, Incognito) {
   ASSERT_FALSE(request_->is_pending());
   ASSERT_FALSE(request_->status().is_success());
   EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().error());
+}
+
+TEST_F(FileSystemDirURLRequestJobTest, AutoMountDirectoryListing) {
+  base::FilePath mnt_point;
+  SetUpAutoMountContext(&mnt_point);
+  ASSERT_TRUE(base::CreateDirectory(mnt_point));
+  ASSERT_TRUE(base::CreateDirectory(mnt_point.AppendASCII("foo")));
+  ASSERT_EQ(10,
+            base::WriteFile(mnt_point.AppendASCII("bar"), "1234567890", 10));
+
+  TestRequest(GURL("filesystem:http://automount/external/mnt_name"));
+
+  ASSERT_FALSE(request_->is_pending());
+  EXPECT_EQ(1, delegate_->response_started_count());
+  EXPECT_FALSE(delegate_->received_data_before_response());
+  EXPECT_GT(delegate_->bytes_received(), 0);
+
+  std::istringstream in(delegate_->data_received());
+  std::string line;
+  EXPECT_TRUE(!!std::getline(in, line));  // |line| contains the temp dir path.
+
+  // Result order is not guaranteed, so sort the results.
+  std::vector<std::string> listing_entries;
+  while (!!std::getline(in, line))
+    listing_entries.push_back(line);
+
+  ASSERT_EQ(2U, listing_entries.size());
+  std::sort(listing_entries.begin(), listing_entries.end());
+  VerifyListingEntry(listing_entries[0], "bar", "bar", false, 10);
+  VerifyListingEntry(listing_entries[1], "foo", "foo", true, -1);
+
+  ASSERT_TRUE(
+      fileapi::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+          kValidExternalMountPoint));
+}
+
+TEST_F(FileSystemDirURLRequestJobTest, AutoMountInvalidRoot) {
+  base::FilePath mnt_point;
+  SetUpAutoMountContext(&mnt_point);
+  TestRequest(GURL("filesystem:http://automount/external/invalid"));
+
+  ASSERT_FALSE(request_->is_pending());
+  ASSERT_FALSE(request_->status().is_success());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().error());
+
+  ASSERT_FALSE(
+      fileapi::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+          "invalid"));
+}
+
+TEST_F(FileSystemDirURLRequestJobTest, AutoMountNoHandler) {
+  base::FilePath mnt_point;
+  SetUpAutoMountContext(&mnt_point);
+  TestRequest(GURL("filesystem:http://noauto/external/mnt_name"));
+
+  ASSERT_FALSE(request_->is_pending());
+  ASSERT_FALSE(request_->status().is_success());
+  EXPECT_EQ(net::ERR_FILE_NOT_FOUND, request_->status().error());
+
+  ASSERT_FALSE(
+      fileapi::ExternalMountPoints::GetSystemInstance()->RevokeFileSystem(
+          kValidExternalMountPoint));
 }
 
 }  // namespace (anonymous)

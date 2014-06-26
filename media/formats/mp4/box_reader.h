@@ -29,7 +29,10 @@ struct MEDIA_EXPORT Box {
 class MEDIA_EXPORT BufferReader {
  public:
   BufferReader(const uint8* buf, const int size)
-    : buf_(buf), size_(size), pos_(0) {}
+      : buf_(buf), size_(size), pos_(0) {
+    CHECK(buf);
+    CHECK_GE(size, 0);
+  }
 
   bool HasBytes(int count) { return (pos() + count <= size()); }
 
@@ -105,6 +108,9 @@ class MEDIA_EXPORT BoxReader : public BufferReader {
   // buffer position. Must be called before any of the *Child functions work.
   bool ScanChildren() WARN_UNUSED_RESULT;
 
+  // Return true if child with type |child.BoxType()| exists.
+  bool HasChild(Box* child) WARN_UNUSED_RESULT;
+
   // Read exactly one child box from the set of children. The type of the child
   // will be determined by the BoxType() method of |child|.
   bool ReadChild(Box* child) WARN_UNUSED_RESULT;
@@ -135,6 +141,8 @@ class MEDIA_EXPORT BoxReader : public BufferReader {
   FourCC type() const   { return type_; }
   uint8 version() const { return version_; }
   uint32 flags() const  { return flags_; }
+
+  const LogCB& log_cb() const { return log_cb_; }
 
  private:
   BoxReader(const uint8* buf, const int size, const LogCB& log_cb);

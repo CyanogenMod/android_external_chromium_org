@@ -11,10 +11,12 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_signal.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_signal_registrar.h"
 #include "chrome/browser/ui/libgtk2ui/libgtk2ui_export.h"
 #include "chrome/browser/ui/libgtk2ui/owned_widget_gtk2.h"
+#include "ui/events/linux/text_edit_key_bindings_delegate_auralinux.h"
 #include "ui/gfx/color_utils.h"
-#include "ui/gfx/geometry/insets.h"
 #include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/window/frame_buttons.h"
 
@@ -31,7 +33,9 @@ class Image;
 
 namespace libgtk2ui {
 class Gtk2Border;
-class GConfTitlebarListener;
+class Gtk2KeyBindingsHandler;
+class Gtk2SignalRegistrar;
+class GConfListener;
 
 // Interface to GTK2 desktop features.
 //
@@ -40,23 +44,21 @@ class Gtk2UI : public views::LinuxUI {
   Gtk2UI();
   virtual ~Gtk2UI();
 
+  typedef base::Callback<ui::NativeTheme*(aura::Window* window)>
+      NativeThemeGetter;
+
+  // Setters used by GConfListener:
   void SetWindowButtonOrdering(
-    const std::vector<views::FrameButton>& leading_buttons,
-    const std::vector<views::FrameButton>& trailing_buttons);
+      const std::vector<views::FrameButton>& leading_buttons,
+      const std::vector<views::FrameButton>& trailing_buttons);
+  void SetNonClientMiddleClickAction(NonClientMiddleClickAction action);
 
   // Draws the GTK button border for state |gtk_state| onto a bitmap.
   SkBitmap DrawGtkButtonBorder(int gtk_state,
                                bool focused,
+                               bool call_to_action,
                                int width,
                                int height) const;
-
-  // Returns the current insets for a button.
-  gfx::Insets GetButtonInsets() const;
-
-  // We keep track of live Gtk2Border objects since we must alert them to theme
-  // changes.
-  void AddGtkBorder(Gtk2Border* border);
-  void RemoveGtkBorder(Gtk2Border* border);
 
   // ui::LinuxInputMethodContextFactory:
   virtual scoped_ptr<ui::LinuxInputMethodContext> CreateInputMethodContext(
@@ -88,9 +90,9 @@ class Gtk2UI : public views::LinuxUI {
   virtual SkColor GetInactiveSelectionBgColor() const OVERRIDE;
   virtual SkColor GetInactiveSelectionFgColor() const OVERRIDE;
   virtual double GetCursorBlinkInterval() const OVERRIDE;
-  virtual ui::NativeTheme* GetNativeTheme() const OVERRIDE;
-  virtual void SetUseSystemTheme(bool use_system_theme) OVERRIDE;
-  virtual bool GetUseSystemTheme() const OVERRIDE;
+  virtual ui::NativeTheme* GetNativeTheme(aura::Window* window) const OVERRIDE;
+  virtual void SetNativeThemeOverride(const NativeThemeGetter& callback)
+      OVERRIDE;
   virtual bool GetDefaultUsesSystemTheme() const OVERRIDE;
   virtual void SetDownloadCount(int count) const OVERRIDE;
   virtual void SetProgressFraction(float percentage) const OVERRIDE;
@@ -102,13 +104,19 @@ class Gtk2UI : public views::LinuxUI {
       const std::string& content_type, int size) const OVERRIDE;
   virtual scoped_ptr<views::Border> CreateNativeBorder(
       views::LabelButton* owning_button,
-      scoped_ptr<views::Border> border) OVERRIDE;
+      scoped_ptr<views::LabelButtonBorder> border) OVERRIDE;
   virtual void AddWindowButtonOrderObserver(
       views::WindowButtonOrderObserver* observer) OVERRIDE;
   virtual void RemoveWindowButtonOrderObserver(
       views::WindowButtonOrderObserver* observer) OVERRIDE;
   virtual bool UnityIsRunning() OVERRIDE;
+  virtual NonClientMiddleClickAction GetNonClientMiddleClickAction() OVERRIDE;
   virtual void NotifyWindowManagerStartupComplete() OVERRIDE;
+
+  // ui::TextEditKeybindingDelegate:
+  virtual bool MatchEvent(
+      const ui::Event& event,
+      std::vector<ui::TextEditCommandAuraLinux>* commands) OVERRIDE;
 
  private:
   typedef std::map<int, SkColor> ColorMap;
@@ -121,10 +129,6 @@ class Gtk2UI : public views::LinuxUI {
   void GetScrollbarColors(GdkColor* thumb_active_color,
                           GdkColor* thumb_inactive_color,
                           GdkColor* track_color);
-
-  // Gets the name of the current icon theme and passes it to our low level XDG
-  // integration.
-  void SetXDGIconTheme();
 
   // Extracts colors and tints from the GTK theme, both for the
   // ThemeService interface and the colors we send to webkit.
@@ -183,17 +187,22 @@ class Gtk2UI : public views::LinuxUI {
   // entry.
   void GetSelectedEntryForegroundHSL(color_utils::HSL* tint) const;
 
-  // Create a GTK window and button and queries what "default-border" is, which
-  // corresponds with our insets.
-  void UpdateButtonInsets();
+  // Gets a color for the background of the call to action button.
+  SkColor CallToActionBgColor(int gtk_state) const;
 
   // Frees all calculated images and color data.
   void ClearAllThemeData();
+
+  // Handles signal from GTK that our theme has been changed.
+  CHROMEGTK_CALLBACK_1(Gtk2UI, void, OnStyleSet, GtkStyle*);
 
   GtkWidget* fake_window_;
   GtkWidget* fake_frame_;
   OwnedWidgetGtk fake_label_;
   OwnedWidgetGtk fake_entry_;
+
+  // Tracks all the signals we have connected to on various widgets.
+  scoped_ptr<Gtk2SignalRegistrar> signals_;
 
   // Tints and colors calculated by LoadGtkValues() that are given to the
   // caller while |use_gtk_| is true.
@@ -216,12 +225,10 @@ class Gtk2UI : public views::LinuxUI {
   SkColor inactive_selection_bg_color_;
   SkColor inactive_selection_fg_color_;
 
-  gfx::Insets button_insets_;
-
 #if defined(USE_GCONF)
   // Currently, the only source of window button configuration. This will
   // change if we ever have to support XFCE's configuration system or KDE's.
-  scoped_ptr<GConfTitlebarListener> titlebar_listener_;
+  scoped_ptr<GConfListener> gconf_listener_;
 #endif  // defined(USE_GCONF)
 
   // If either of these vectors are non-empty, they represent the current
@@ -229,17 +236,22 @@ class Gtk2UI : public views::LinuxUI {
   std::vector<views::FrameButton> leading_buttons_;
   std::vector<views::FrameButton> trailing_buttons_;
 
+  scoped_ptr<Gtk2KeyBindingsHandler> key_bindings_handler_;
+
   // Objects to notify when the window frame button order changes.
   ObserverList<views::WindowButtonOrderObserver> observer_list_;
 
-  // Borders to notify when the theme state changes.
-  ObserverList<Gtk2Border> border_list_;
+  // Whether we should lower the window on a middle click to the non client
+  // area.
+  NonClientMiddleClickAction middle_click_action_;
 
   // Image cache of lazily created images.
   mutable ImageCache gtk_images_;
 
-  // Whether to use the Gtk2 version of the native theme.
-  bool use_gtk_;
+  // Used to override the native theme for a window. If no override is provided
+  // or the callback returns NULL, Gtk2UI will default to a NativeThemeGtk2
+  // instance.
+  NativeThemeGetter native_theme_overrider_;
 
   DISALLOW_COPY_AND_ASSIGN(Gtk2UI);
 };

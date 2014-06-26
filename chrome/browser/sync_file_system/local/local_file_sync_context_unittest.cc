@@ -11,7 +11,6 @@
 #include "base/file_util.h"
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
 #include "base/stl_util.h"
 #include "chrome/browser/sync_file_system/local/canned_syncable_file_system.h"
 #include "chrome/browser/sync_file_system/local/local_file_change_tracker.h"
@@ -801,11 +800,11 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate) {
   const base::FilePath kFilePath2(temp_dir.path().Append(FPL("file2")));
 
   ASSERT_EQ(static_cast<int>(arraysize(kTestFileData1) - 1),
-            file_util::WriteFile(kFilePath1, kTestFileData1,
-                                 arraysize(kTestFileData1) - 1));
+            base::WriteFile(kFilePath1, kTestFileData1,
+                            arraysize(kTestFileData1) - 1));
   ASSERT_EQ(static_cast<int>(arraysize(kTestFileData2) - 1),
-            file_util::WriteFile(kFilePath2, kTestFileData2,
-                                 arraysize(kTestFileData2) - 1));
+            base::WriteFile(kFilePath2, kTestFileData2,
+                            arraysize(kTestFileData2) - 1));
 
   // Record the usage.
   int64 usage = -1, new_usage = -1;
@@ -932,8 +931,8 @@ TEST_F(LocalFileSyncContextTest, ApplyRemoteChangeForAddOrUpdate_NoParent) {
   // Prepare a temporary file which represents remote file data.
   const base::FilePath kFilePath(temp_dir.path().Append(FPL("file")));
   ASSERT_EQ(static_cast<int>(arraysize(kTestFileData) - 1),
-            file_util::WriteFile(kFilePath, kTestFileData,
-                                 arraysize(kTestFileData) - 1));
+            base::WriteFile(kFilePath, kTestFileData,
+                            arraysize(kTestFileData) - 1));
 
   // Calling ApplyChange's with kFilePath should create
   // kFile along with kDir.

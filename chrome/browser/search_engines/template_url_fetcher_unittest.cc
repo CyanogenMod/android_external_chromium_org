@@ -7,7 +7,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_fetcher.h"
 #include "chrome/browser/search_engines/template_url_fetcher_callbacks.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
@@ -15,6 +14,7 @@
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/search_engines/template_url.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
@@ -182,7 +182,8 @@ TEST_F(TemplateURLFetcherTest, BasicAutodetectedTest) {
       keyword);
   ASSERT_TRUE(t_url);
   EXPECT_EQ(ASCIIToUTF16("http://example.com/%s/other_stuff"),
-            t_url->url_ref().DisplayURL());
+            t_url->url_ref().DisplayURL(
+                test_util_.model()->search_terms_data()));
   EXPECT_TRUE(t_url->safe_for_autoreplace());
 }
 
@@ -248,7 +249,8 @@ TEST_F(TemplateURLFetcherTest, BasicExplicitTest) {
 
   ASSERT_TRUE(last_callback_template_url_.get());
   EXPECT_EQ(ASCIIToUTF16("http://example.com/%s/other_stuff"),
-            last_callback_template_url_->url_ref().DisplayURL());
+            last_callback_template_url_->url_ref().DisplayURL(
+                test_util_.model()->search_terms_data()));
   EXPECT_EQ(ASCIIToUTF16("example.com"),
             last_callback_template_url_->keyword());
   EXPECT_FALSE(last_callback_template_url_->safe_for_autoreplace());
@@ -281,7 +283,8 @@ TEST_F(TemplateURLFetcherTest, ExplicitBeforeLoadTest) {
 
   ASSERT_TRUE(last_callback_template_url_.get());
   EXPECT_EQ(ASCIIToUTF16("http://example.com/%s/other_stuff"),
-            last_callback_template_url_->url_ref().DisplayURL());
+            last_callback_template_url_->url_ref().DisplayURL(
+                test_util_.model()->search_terms_data()));
   EXPECT_EQ(ASCIIToUTF16("example.com"),
             last_callback_template_url_->keyword());
   EXPECT_FALSE(last_callback_template_url_->safe_for_autoreplace());
@@ -293,7 +296,7 @@ TEST_F(TemplateURLFetcherTest, DuplicateKeywordsTest) {
   data.short_name = keyword;
   data.SetKeyword(keyword);
   data.SetURL("http://example.com/");
-  test_util_.model()->Add(new TemplateURL(test_util_.profile(), data));
+  test_util_.model()->Add(new TemplateURL(data));
   test_util_.ChangeModelToLoadState();
 
   ASSERT_TRUE(test_util_.model()->GetTemplateURLForKeyword(keyword));

@@ -17,7 +17,7 @@
 #define DEPS_VARS \
     "  Deps: data, datadeps, deps, forward_dependent_configs_from, hard_dep\n"
 #define GENERAL_TARGET_VARS \
-    "  General: configs, external, source_prereqs, sources\n"
+    "  General: configs, inputs, sources\n"
 
 namespace functions {
 
@@ -52,9 +52,190 @@ Value ExecuteGenericTarget(const char* target_type,
 
 }  // namespace
 
+// action ----------------------------------------------------------------------
+
+// Common help paragraph on script runtime execution directories.
+#define SCRIPT_EXECUTION_CONTEXT \
+    "  The script will be executed with the given arguments with the current\n"\
+    "  directory being that of the root build directory. If you pass files\n"\
+    "  to your script, see \"gn help rebase_path\" for how to convert\n" \
+    "  file names to be relative to the build directory (file names in the\n" \
+    "  sources, outputs, and inputs will be all treated as relative to the\n" \
+    "  current build file and converted as needed automatically).\n"
+
+// Common help paragraph on script output directories.
+#define SCRIPT_EXECUTION_OUTPUTS \
+    "  All output files must be inside the output directory of the build.\n" \
+    "  You would generally use |$target_out_dir| or |$target_gen_dir| to\n" \
+    "  reference the output or generated intermediate file directories,\n" \
+    "  respectively.\n"
+
+#define ACTION_DEPS \
+    "  The \"deps\" for an action will always be completed before any part\n" \
+    "  of the action is run so it can depend on the output of previous\n" \
+    "  steps. The \"datadeps\" will be built if the action is built, but\n" \
+    "  may not have completed before all steps of the action are started.\n" \
+    "  This can give additional parallelism in the build for runtime-only\n" \
+    "  dependencies.\n"
+
+const char kAction[] = "action";
+const char kAction_HelpShort[] =
+    "action: Declare a target that runs a script a single time.";
+const char kAction_Help[] =
+    "action: Declare a target that runs a script a single time.\n"
+    "\n"
+    "  This target type allows you to run a script a single time to produce\n"
+    "  or more output files. If you want to run a script once for each of a\n"
+    "  set of input files, see \"gn help action_foreach\".\n"
+    "\n"
+    "Inputs\n"
+    "\n"
+    "  In an action the \"sources\" and \"inputs\" are treated the same:\n"
+    "  they're both input dependencies on script execution with no special\n"
+    "  handling. If you want to pass the sources to your script, you must do\n"
+    "  so explicitly by including them in the \"args\". Note also that this\n"
+    "  means there is no special handling of paths since GN doesn't know\n"
+    "  which of the args are paths and not. You will want to use\n"
+    "  rebase_path() to convert paths to be relative to the root_build_dir.\n"
+    "\n"
+    "  You can dynamically write input dependencies (for incremental rebuilds\n"
+    "  if an input file changes) by writing a depfile when the script is run\n"
+    "  (see \"gn help depfile\"). This is more flexible than \"inputs\".\n"
+    "\n"
+    "  It is recommended you put inputs to your script in the \"sources\"\n"
+    "  variable, and stuff like other Python files required to run your\n"
+    "  script in the \"inputs\" variable.\n"
+    "\n"
+    ACTION_DEPS
+    "\n"
+    "Outputs\n"
+    "\n"
+    "  You should specify files created by your script by specifying them in\n"
+    "  the \"outputs\".\n"
+    "\n"
+    SCRIPT_EXECUTION_CONTEXT
+    "\n"
+    "File name handling\n"
+    "\n"
+    SCRIPT_EXECUTION_OUTPUTS
+    "\n"
+    "Variables\n"
+    "\n"
+    "  args, data, datadeps, depfile, deps, outputs*, script*,\n"
+    "  inputs, sources\n"
+    "  * = required\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  action(\"run_this_guy_once\") {\n"
+    "    script = \"doprocessing.py\"\n"
+    "    sources = [ \"my_configuration.txt\" ]\n"
+    "    outputs = [ \"$target_gen_dir/insightful_output.txt\" ]\n"
+    "\n"
+    "    # Our script imports this Python file so we want to rebuild if it\n"
+    "    # changes.\n"
+    "    inputs = [ \"helper_library.py\" ]\n"
+    "\n"
+    "    # Note that we have to manually pass the sources to our script if\n"
+    "    # the script needs them as inputs.\n"
+    "    args = [ \"--out\", rebase_path(target_gen_dir, root_build_dir) ] +\n"
+    "           rebase_path(sources, root_build_dir)\n"
+    "  }\n";
+
+Value RunAction(Scope* scope,
+                const FunctionCallNode* function,
+                const std::vector<Value>& args,
+                BlockNode* block,
+                Err* err) {
+  return ExecuteGenericTarget(functions::kAction, scope, function, args,
+                              block, err);
+}
+
+// action_foreach --------------------------------------------------------------
+
+const char kActionForEach[] = "action_foreach";
+const char kActionForEach_HelpShort[] =
+    "action_foreach: Declare a target that runs a script over a set of files.";
+const char kActionForEach_Help[] =
+    "action_foreach: Declare a target that runs a script over a set of files.\n"
+    "\n"
+    "  This target type allows you to run a script once-per-file over a set\n"
+    "  of sources. If you want to run a script once that takes many files as\n"
+    "  input, see \"gn help action\".\n"
+    "\n"
+    "Inputs\n"
+    "\n"
+    "  The script will be run once per file in the \"sources\" variable. The\n"
+    "  \"outputs\" variable should specify one or more files with a source\n"
+    "  expansion pattern in it (see \"gn help source_expansion\"). The output\n"
+    "  file(s) for each script invocation should be unique. Normally you\n"
+    "  use \"{{source_name_part}}\" in each output file.\n"
+    "\n"
+    "  If your script takes additional data as input, such as a shared\n"
+    "  configuration file or a Python module it uses, those files should be\n"
+    "  listed in the \"inputs\" variable. These files are treated as\n"
+    "  dependencies of each script invocation.\n"
+    "\n"
+    "  You can dynamically write input dependencies (for incremental rebuilds\n"
+    "  if an input file changes) by writing a depfile when the script is run\n"
+    "  (see \"gn help depfile\"). This is more flexible than \"inputs\".\n"
+    "\n"
+    ACTION_DEPS
+    "\n"
+    "Outputs\n"
+    "\n"
+    SCRIPT_EXECUTION_CONTEXT
+    "\n"
+    "File name handling\n"
+    "\n"
+    SCRIPT_EXECUTION_OUTPUTS
+    "\n"
+    "Variables\n"
+    "\n"
+    "  args, data, datadeps, depfile, deps, outputs*, script*,\n"
+    "  inputs, sources*\n"
+    "  * = required\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  # Runs the script over each IDL file. The IDL script will generate\n"
+    "  # both a .cc and a .h file for each input.\n"
+    "  action_foreach(\"my_idl\") {\n"
+    "    script = \"idl_processor.py\"\n"
+    "    sources = [ \"foo.idl\", \"bar.idl\" ]\n"
+    "\n"
+    "    # Our script reads this file each time, so we need to list is as a\n"
+    "    # dependency so we can rebuild if it changes.\n"
+    "    inputs = [ \"my_configuration.txt\" ]\n"
+    "\n"
+    "    # Transformation from source file name to output file names.\n"
+    "    outputs = [ \"$target_gen_dir/{{source_name_part}}.h\",\n"
+    "                \"$target_gen_dir/{{source_name_part}}.cc\" ]\n"
+    "\n"
+    "    # Note that since \"args\" is opaque to GN, if you specify paths\n"
+    "    # here, you will need to convert it to be relative to the build\n"
+    "    # directory using \"rebase_path()\".\n"
+    "    args = [\n"
+    "      \"{{source}}\",\n"
+    "      \"-o\",\n"
+    "      rebase_path(relative_target_gen_dir, root_build_dir) +\n"
+    "        \"/{{source_name_part}}.h\" ]\n"
+    "  }\n"
+    "\n";
+Value RunActionForEach(Scope* scope,
+                       const FunctionCallNode* function,
+                       const std::vector<Value>& args,
+                       BlockNode* block,
+                       Err* err) {
+  return ExecuteGenericTarget(functions::kActionForEach, scope, function, args,
+                              block, err);
+}
+
 // component -------------------------------------------------------------------
 
 const char kComponent[] = "component";
+const char kComponent_HelpShort[] =
+    "component: Declare a component target.";
 const char kComponent_Help[] =
     "component: Declare a component target.\n"
     "\n"
@@ -117,6 +298,8 @@ Value RunComponent(Scope* scope,
 // copy ------------------------------------------------------------------------
 
 const char kCopy[] = "copy";
+const char kCopy_HelpShort[] =
+    "copy: Declare a target that copies files.";
 const char kCopy_Help[] =
     "copy: Declare a target that copies files.\n"
     "\n"
@@ -167,94 +350,11 @@ Value RunCopy(const FunctionCallNode* function,
   return Value();
 }
 
-// custom ----------------------------------------------------------------------
-
-const char kCustom[] = "custom";
-const char kCustom_Help[] =
-    "custom: Declare a script-generated target.\n"
-    "\n"
-    "  This target type allows you to run a script over a set of source\n"
-    "  files and generate a set of output files.\n"
-    "\n"
-    "  The script will be executed with the given arguments with the current\n"
-    "  directory being that of the root build directory. If you pass files\n"
-    "  to your script, see \"gn help to_build_path\" for how to convert\n"
-    "  file names to be relative to the build directory (file names in the\n"
-    "  sources, outputs, and source_prereqs will be all treated as relative\n"
-    "  to the current build file and converted as needed automatically).\n"
-    "\n"
-    "  There are two modes. The first mode is the \"per-file\" mode where you\n"
-    "  specify a list of sources and the script is run once for each one as a\n"
-    "  build rule. In this case, each file specified in the |outputs|\n"
-    "  variable must be unique when applied to each source file (normally you\n"
-    "  would reference |{{source_name_part}}| from within each one) or the\n"
-    "  build system will get confused about how to build those files. You\n"
-    "  should use the |source_prereqs| variable to list all additional\n"
-    "  dependencies of your script: these will be added as dependencies for\n"
-    "  each build step.\n"
-    "\n"
-    "  The second mode is when you just want to run a script once rather than\n"
-    "  as a general rule over a set of files. In this case you don't list any\n"
-    "  sources. Dependencies of your script are specified only in the\n"
-    "  |source_prereqs| variable and your |outputs| variable should just list\n"
-    "  all outputs.\n"
-    "\n"
-    "File name handling\n"
-    "\n"
-    "  All output files must be inside the output directory of the build.\n"
-    "  You would generally use |$target_out_dir| or |$target_gen_dir| to\n"
-    "  reference the output or generated intermediate file directories,\n"
-    "  respectively.\n"
-    "\n"
-    "  You can specify a mapping from source files to output files using\n"
-    "  source expansion (see \"gn help source_expansion\"). The placeholders\n"
-    "  will look like \"{{source}}\", for example, and can appear in\n"
-    "  either the outputs or the args lists.\n"
-    "\n"
-    "Variables\n"
-    "\n"
-    "  args, deps, outputs, script*, source_prereqs, sources\n"
-    "  * = required\n"
-    "\n"
-    "Examples\n"
-    "\n"
-    "  # Runs the script over each IDL file. The IDL script will generate\n"
-    "  # both a .cc and a .h file for each input.\n"
-    "  custom(\"general_rule\") {\n"
-    "    script = \"idl_processor.py\"\n"
-    "    sources = [ \"foo.idl\", \"bar.idl\" ]\n"
-    "    source_prereqs = [ \"my_configuration.txt\" ]\n"
-    "    outputs = [ \"$target_gen_dir/{{source_name_part}}.h\",\n"
-    "                \"$target_gen_dir/{{source_name_part}}.cc\" ]\n"
-    "\n"
-    "    # Note that since \"args\" is opaque to GN, if you specify paths\n"
-    "    # here, you will need to convert it to be relative to the build\n"
-    "    # directory using \"to_build_path()\".\n"
-    "    args = [ \"{{source}}\",\n"
-    "             \"-o\",\n"
-    "             to_build_path(relative_target_gen_dir) + \"/\" +\n"
-    "                 {{source_name_part}}.h\" ]\n"
-    "  }\n"
-    "\n"
-    "  custom(\"just_run_this_guy_once\") {\n"
-    "    script = \"doprocessing.py\"\n"
-    "    source_prereqs = [ \"my_configuration.txt\" ]\n"
-    "    outputs = [ \"$target_gen_dir/insightful_output.txt\" ]\n"
-    "    args = [ \"--output_dir\", to_build_path(target_gen_dir) ]\n"
-    "  }\n";
-
-Value RunCustom(Scope* scope,
-                const FunctionCallNode* function,
-                const std::vector<Value>& args,
-                BlockNode* block,
-                Err* err) {
-  return ExecuteGenericTarget(functions::kCustom, scope, function, args,
-                              block, err);
-}
-
 // executable ------------------------------------------------------------------
 
 const char kExecutable[] = "executable";
+const char kExecutable_HelpShort[] =
+    "executable: Declare an executable target.";
 const char kExecutable_Help[] =
     "executable: Declare an executable target.\n"
     "\n"
@@ -277,6 +377,8 @@ Value RunExecutable(Scope* scope,
 // group -----------------------------------------------------------------------
 
 const char kGroup[] = "group";
+const char kGroup_HelpShort[] =
+    "group: Declare a named group of targets.";
 const char kGroup_Help[] =
     "group: Declare a named group of targets.\n"
     "\n"
@@ -293,7 +395,6 @@ const char kGroup_Help[] =
     "\n"
     DEPS_VARS
     DEPENDENT_CONFIG_VARS
-    "  Other variables: external\n"
     "\n"
     "Example\n"
     "\n"
@@ -316,6 +417,8 @@ Value RunGroup(Scope* scope,
 // shared_library --------------------------------------------------------------
 
 const char kSharedLibrary[] = "shared_library";
+const char kSharedLibrary_HelpShort[] =
+    "shared_library: Declare a shared library target.";
 const char kSharedLibrary_Help[] =
     "shared_library: Declare a shared library target.\n"
     "\n"
@@ -343,6 +446,8 @@ Value RunSharedLibrary(Scope* scope,
 // source_set ------------------------------------------------------------------
 
 extern const char kSourceSet[] = "source_set";
+extern const char kSourceSet_HelpShort[] =
+    "source_set: Declare a source set target.";
 extern const char kSourceSet_Help[] =
     "source_set: Declare a source set target.\n"
     "\n"
@@ -388,6 +493,8 @@ Value RunSourceSet(Scope* scope,
 // static_library --------------------------------------------------------------
 
 const char kStaticLibrary[] = "static_library";
+const char kStaticLibrary_HelpShort[] =
+    "static_library: Declare a static library target.";
 const char kStaticLibrary_Help[] =
     "static_library: Declare a static library target.\n"
     "\n"
@@ -416,6 +523,8 @@ Value RunStaticLibrary(Scope* scope,
 // test ------------------------------------------------------------------------
 
 const char kTest[] = "test";
+const char kTest_HelpShort[] =
+    "test: Declares a test target.";
 const char kTest_Help[] =
     "test: Declares a test target.\n"
     "\n"

@@ -7,11 +7,11 @@
 #include "base/base64.h"
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/common/constants.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
 
@@ -32,7 +32,7 @@ bool CaptureWebContentsFunction::HasPermission() {
   return true;
 }
 
-bool CaptureWebContentsFunction::RunImpl() {
+bool CaptureWebContentsFunction::RunAsync() {
   EXTENSION_FUNCTION_VALIDATE(args_);
 
   context_id_ = extension_misc::kCurrentWindowId;
@@ -76,7 +76,8 @@ bool CaptureWebContentsFunction::RunImpl() {
       gfx::Rect(),
       view->GetViewBounds().size(),
       base::Bind(&CaptureWebContentsFunction::CopyFromBackingStoreComplete,
-                 this));
+                 this),
+      SkBitmap::kARGB_8888_Config);
   return true;
 }
 
@@ -87,28 +88,7 @@ void CaptureWebContentsFunction::CopyFromBackingStoreComplete(
     OnCaptureSuccess(bitmap);
     return;
   }
-
-  WebContents* contents = GetWebContentsForID(context_id_);
-  if (!contents) {
-    OnCaptureFailure(FAILURE_REASON_CONTENT_NOT_FOUND);
-    return;
-  }
-
-  // Ask the renderer for a snapshot of the page.
-  RenderWidgetHost* render_widget_host = contents->GetRenderViewHost();
-  render_widget_host->GetSnapshotFromRenderer(
-      gfx::Rect(),
-      base::Bind(&CaptureWebContentsFunction::GetSnapshotFromRendererComplete,
-                 this));
-}
-
-void CaptureWebContentsFunction::GetSnapshotFromRendererComplete(
-    bool succeeded,
-    const SkBitmap& bitmap) {
-  if (succeeded)
-    OnCaptureSuccess(bitmap);
-  else
-    OnCaptureFailure(FAILURE_REASON_UNKNOWN);
+  OnCaptureFailure(FAILURE_REASON_UNKNOWN);
 }
 
 void CaptureWebContentsFunction::OnCaptureSuccess(const SkBitmap& bitmap) {

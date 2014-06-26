@@ -29,19 +29,21 @@ class TransportEncryptionHandler : public base::NonThreadSafe {
 
   bool Initialize(std::string aes_key, std::string aes_iv_mask);
 
-  bool Encrypt(uint32 frame_id, std::string data, std::string* encrypted_data);
+  bool Encrypt(uint32 frame_id,
+               const base::StringPiece& data,
+               std::string* encrypted_data);
 
   bool Decrypt(uint32 frame_id,
                const base::StringPiece& ciphertext,
                std::string* plaintext);
 
-  bool initialized() const { return initialized_; }
+  bool is_activated() const { return is_activated_; }
 
  private:
   scoped_ptr<crypto::SymmetricKey> key_;
   scoped_ptr<crypto::Encryptor> encryptor_;
   std::string iv_mask_;
-  bool initialized_;
+  bool is_activated_;
 
   DISALLOW_COPY_AND_ASSIGN(TransportEncryptionHandler);
 };

@@ -7,5 +7,5 @@
       "scripts": ["background.js"]
     }
   },
-  "permissions": ["alwaysOnTopWindows"]
+  "permissions": ["app.window.alwaysOnTop"]
 }

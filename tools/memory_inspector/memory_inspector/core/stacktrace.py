@@ -11,21 +11,21 @@ class Stacktrace(object):
   """Models a stack-trace, which is a sequence of stack |Frame|s."""
 
   def __init__(self):
-    self._frames = []
+    self.frames = []
 
   def Add(self, frame):
     assert(isinstance(frame, Frame))
-    self._frames += [frame]
+    self.frames += [frame]
 
   @property
   def depth(self):
-    return len(self._frames)
+    return len(self.frames)
 
   def __getitem__(self, index):
-    return self._frames[index]
+    return self.frames[index]
 
   def __str__(self):
-    return ', '.join([str(x) for x in self._frames])
+    return ', '.join([str(x) for x in self.frames])
 
 
 class Frame(object):
@@ -69,10 +69,15 @@ class Frame(object):
     """Returns the file name (stripped of the path) of the executable."""
     return os.path.basename(self.exec_file_rel_path)
 
+  @property
+  def raw_address(self):
+    if self.exec_file_rel_path:
+      return '%s +0x%x' % (self.exec_file_name, self.offset)
+    else:
+      return '0x%x' % self.address
+
   def __str__(self):
     if self.symbol:
       return str(self.symbol)
     elif self.exec_file_rel_path:
-      return '%s +0x%x' % (self.exec_file_name, self.offset)
-    else:
-      return '0x%x' % self.address
+      return self.raw_address

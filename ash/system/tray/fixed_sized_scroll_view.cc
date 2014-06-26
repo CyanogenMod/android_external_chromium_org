@@ -5,7 +5,6 @@
 #include "ash/system/tray/fixed_sized_scroll_view.h"
 
 namespace ash {
-namespace internal {
 
 FixedSizedScrollView::FixedSizedScrollView() {
   set_notify_enter_exit_on_child(true);
@@ -26,7 +25,7 @@ void FixedSizedScrollView::SetFixedSize(const gfx::Size& size) {
   PreferredSizeChanged();
 }
 
-gfx::Size FixedSizedScrollView::GetPreferredSize() {
+gfx::Size FixedSizedScrollView::GetPreferredSize() const {
   gfx::Size size = fixed_size_.IsEmpty() ?
       contents()->GetPreferredSize() : fixed_size_;
   gfx::Insets insets = GetInsets();
@@ -53,5 +52,4 @@ void FixedSizedScrollView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   contents()->SetBoundsRect(bounds);
 }
 
-}  // namespace internal
 }  // namespace ash

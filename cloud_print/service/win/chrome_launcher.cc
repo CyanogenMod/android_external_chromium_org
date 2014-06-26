@@ -23,6 +23,7 @@
 #include "cloud_print/common/win/cloud_print_utils.h"
 #include "cloud_print/service/service_constants.h"
 #include "cloud_print/service/win/service_utils.h"
+#include "components/cloud_devices/common/cloud_devices_urls.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/base/url_util.h"
 #include "url/gurl.h"
@@ -89,27 +90,6 @@ bool LaunchProcess(const CommandLine& cmdline,
     *thread_id = process_info.thread_id();
 
   return true;
-}
-
-GURL GetCloudPrintServiceEnableURL(const std::string& proxy_id) {
-  GURL url(
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kCloudPrintServiceURL));
-  if (url.is_empty())
-    url = GURL("https://www.google.com/cloudprint");
-  url = net::AppendQueryParameter(url, "proxy", proxy_id);
-  std::string url_path(url.path() + "/enable_chrome_connector/enable.html");
-  GURL::Replacements replacements;
-  replacements.SetPathStr(url_path);
-  return url.ReplaceComponents(replacements);
-}
-
-GURL GetCloudPrintServiceEnableURLWithSignin(const std::string& proxy_id) {
-  GURL url(GaiaUrls::GetInstance()->service_login_url());
-  url = net::AppendQueryParameter(url, "service", "cloudprint");
-  url = net::AppendQueryParameter(url, "sarp", "1");
-  return net::AppendQueryParameter(
-      url, "continue", GetCloudPrintServiceEnableURL(proxy_id).spec());
 }
 
 std::string ReadAndUpdateServiceState(const base::FilePath& directory,
@@ -229,7 +209,6 @@ void ChromeLauncher::Run() {
 
       // Optional.
       cmd.AppendSwitch(switches::kAutoLaunchAtStartup);
-      cmd.AppendSwitch(switches::kDisableBackgroundMode);
       cmd.AppendSwitch(switches::kDisableDefaultApps);
       cmd.AppendSwitch(switches::kDisableExtensions);
       cmd.AppendSwitch(switches::kDisableGpu);
@@ -271,19 +250,16 @@ void ChromeLauncher::Run() {
 std::string ChromeLauncher::CreateServiceStateFile(
     const std::string& proxy_id,
     const std::vector<std::string>& printers) {
-  std::string result;
-
   base::ScopedTempDir temp_user_data;
   if (!temp_user_data.CreateUniqueTempDir()) {
     LOG(ERROR) << "Can't create temp dir.";
-    return result;
+    return std::string();
   }
 
   base::FilePath chrome_path = chrome_launcher_support::GetAnyChromePath();
-
   if (chrome_path.empty()) {
     LOG(ERROR) << "Can't find Chrome.";
-    return result;
+    return std::string();
   }
 
   base::FilePath printers_file = temp_user_data.path().Append(L"printers.json");
@@ -292,12 +268,12 @@ std::string ChromeLauncher::CreateServiceStateFile(
   printer_list.AppendStrings(printers);
   std::string printers_json;
   base::JSONWriter::Write(&printer_list, &printers_json);
-  size_t written = file_util::WriteFile(printers_file,
-                                        printers_json.c_str(),
-                                        printers_json.size());
+  size_t written = base::WriteFile(printers_file,
+                                   printers_json.c_str(),
+                                   printers_json.size());
   if (written != printers_json.size()) {
     LOG(ERROR) << "Can't write file.";
-    return result;
+    return std::string();
   }
 
   CommandLine cmd(chrome_path);
@@ -307,20 +283,20 @@ std::string ChromeLauncher::CreateServiceStateFile(
   cmd.AppendSwitch(switches::kNoServiceAutorun);
 
   // Optional.
-  cmd.AppendSwitch(switches::kDisableBackgroundMode);
   cmd.AppendSwitch(switches::kDisableDefaultApps);
   cmd.AppendSwitch(switches::kDisableExtensions);
   cmd.AppendSwitch(switches::kDisableSync);
   cmd.AppendSwitch(switches::kNoDefaultBrowserCheck);
   cmd.AppendSwitch(switches::kNoFirstRun);
 
-  cmd.AppendArg(GetCloudPrintServiceEnableURLWithSignin(proxy_id).spec());
+  cmd.AppendArg(
+      cloud_devices::GetCloudPrintEnableWithSigninURL(proxy_id).spec());
 
   base::win::ScopedHandle chrome_handle;
   DWORD thread_id = 0;
   if (!LaunchProcess(cmd, &chrome_handle, &thread_id)) {
     LOG(ERROR) << "Unable to launch Chrome.";
-    return result;
+    return std::string();
   }
 
   for (;;) {
@@ -330,18 +306,15 @@ std::string ChromeLauncher::CreateServiceStateFile(
     if (wait_result == WAIT_OBJECT_0) {
       // Return what we have because browser is closed.
       return json;
-    } else if (wait_result == WAIT_TIMEOUT) {
-      if (!json.empty()) {
-        // Close chrome because Service State is ready.
-        CloseChrome(chrome_handle, thread_id);
-        return json;
-      }
-    } else {
+    }
+    if (wait_result != WAIT_TIMEOUT) {
       LOG(ERROR) << "Chrome launch failed.";
-      return result;
+      return std::string();
+    }
+    if (!json.empty()) {
+      // Close chrome because Service State is ready.
+      CloseChrome(chrome_handle, thread_id);
+      return json;
     }
   }
-  NOTREACHED();
-  return std::string();
 }
-

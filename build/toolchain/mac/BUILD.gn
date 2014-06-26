@@ -15,32 +15,10 @@ import("//build/toolchain/clang.gni")
 import("//build/toolchain/goma.gni")
 
 if (is_clang) {
-  cc = rebase_path("//third_party/llvm-build/Release+Asserts/bin/clang", ".", root_build_dir)
-  cxx = rebase_path("//third_party/llvm-build/Release+Asserts/bin/clang++", ".", root_build_dir)
-
-  # Set the GYP header for all toolchains when running under Clang.
-  if (is_gyp) {
-    make_global_settings = make_clang_global_settings
-
-    if (use_goma) {
-      # There is a TODO(yyanagisawa) in common.gypi about the make generator not
-      # supporting CC_wrapper without CC. As a result, we must add a condition
-      # when on the generator when we're not explicitly setting the variables
-      # above (which happens when gyp_header is empty at this point).
-      #
-      # GYP will interpret the file once for each generator, so we have to write
-      # this condition into the GYP file since the user could have more than one
-      # generator set.
-      gyp_header =
-        "'conditions':" +
-        "[['\"<(GENERATOR)\"==\"ninja\"', { 'make_global_settings': [" +
-        make_global_settings +
-        make_goma_global_settings +
-        "]}]],"
-    } else {
-      gyp_header = "'make_global_settings': [" + make_global_settings + "],"
-    }
-  }
+  cc = rebase_path("//third_party/llvm-build/Release+Asserts/bin/clang",
+                   root_build_dir)
+  cxx = rebase_path("//third_party/llvm-build/Release+Asserts/bin/clang++",
+                    root_build_dir)
 } else {
   cc = "gcc"
   cxx = "g++"
@@ -50,13 +28,29 @@ ld = cxx
 # This will copy the gyp-mac-tool to the build directory. We pass in the source
 # file of the win tool.
 gyp_mac_tool_source =
-  rebase_path("//tools/gyp/pylib/gyp/mac_tool.py", ".", root_build_dir)
+  rebase_path("//tools/gyp/pylib/gyp/mac_tool.py", root_build_dir)
 exec_script("setup_toolchain.py", [ gyp_mac_tool_source ], "value")
 
 # Shared toolchain definition. Invocations should set toolchain_os to set the
 # build args in this definition.
 template("mac_clang_toolchain") {
   toolchain(target_name) {
+    assert(defined(invoker.cc),
+           "mac_clang_toolchain() must specify a \"cc\" value")
+    assert(defined(invoker.cxx),
+           "mac_clang_toolchain() must specify a \"cxx\" value")
+    assert(defined(invoker.ld),
+           "mac_clang_toolchain() must specify a \"ld\" value")
+    assert(defined(invoker.toolchain_os),
+           "mac_clang_toolchain() must specify a \"toolchain_os\"")
+
+    # We can't do string interpolation ($ in strings) on things with dots in
+    # them. To allow us to use $cc below, for example, we create copies of
+    # these values in our scope.
+    cc = invoker.cc
+    cxx = invoker.cxx
+    ld = invoker.ld
+
     # Make these apply to all tools below.
     lib_prefix = "-l"
     lib_dir_prefix="-L"
@@ -87,17 +81,21 @@ template("mac_clang_toolchain") {
     }
     tool("alink") {
       command = "rm -f \$out && ./gyp-mac-tool filter-libtool libtool \$libtool_flags -static -o \$out \$in \$postbuilds"
-      description = "LIBTOOL-STATIC \$out, POSTBUILDS"
+      description = "LIBTOOL-STATIC \$out"
     }
     tool("solink") {
-      command = "if [ ! -e \$lib -o ! -e \${lib}.TOC ] || otool -l \$lib | grep -q LC_REEXPORT_DYLIB ; then $ld -shared \$ldflags -o \$lib \$in \$solibs \$libs \$postbuilds && { otool -l \$lib | grep LC_ID_DYLIB -A 5; nm -gP \$lib | cut -f1-2 -d' ' | grep -v U\$\$; true; } > \${lib}.TOC; else $ld -shared \$ldflags -o \$lib \$in \$solibs \$libs \$postbuilds && { otool -l \$lib | grep LC_ID_DYLIB -A 5; nm -gP \$lib | cut -f1-2 -d' ' | grep -v U\$\$; true; } > \${lib}.tmp && if ! cmp -s \${lib}.tmp \${lib}.TOC; then mv \${lib}.tmp \${lib}.TOC ; fi; fi"
-      description = "SOLINK \$lib, POSTBUILDS"
+      command = "if [ ! -e \$lib -o ! -e \${lib}.TOC ] || otool -l \$lib | grep -q LC_REEXPORT_DYLIB ; then $ld -shared \$ldflags -o \$lib -Wl,-filelist,\$rspfile \$solibs \$libs \$postbuilds && { otool -l \$lib | grep LC_ID_DYLIB -A 5; nm -gP \$lib | cut -f1-2 -d' ' | grep -v U\$\$; true; } > \${lib}.TOC; else $ld -shared \$ldflags -o \$lib \$in \$solibs \$libs \$postbuilds && { otool -l \$lib | grep LC_ID_DYLIB -A 5; nm -gP \$lib | cut -f1-2 -d' ' | grep -v U\$\$; true; } > \${lib}.tmp && if ! cmp -s \${lib}.tmp \${lib}.TOC; then mv \${lib}.tmp \${lib}.TOC ; fi; fi"
+      description = "SOLINK \$lib"
+      rspfile = "\$out.rsp"
+      rspfile_content = "\$in_newline"
       #pool = "link_pool"
       restat = "1"
     }
     tool("link") {
-      command = "$ld \$ldflags -o \$out \$in \$solibs \$libs \$postbuilds"
-      description = "LINK \$out, POSTBUILDS"
+      command = "$ld \$ldflags -o \$out -Wl,-filelist,\$rspfile \$solibs \$libs \$postbuilds"
+      description = "LINK \$out"
+      rspfile = "\$out.rsp"
+      rspfile_content = "\$in_newline"
       #pool = "link_pool"
     }
     #tool("infoplist") {
@@ -122,7 +120,7 @@ template("mac_clang_toolchain") {
     }
 
     toolchain_args() {
-      os = toolchain_os
+      os = invoker.toolchain_os
     }
   }
 }

@@ -36,12 +36,12 @@
 #include "chrome/common/importer/importer_data_types.h"
 #include "chrome/common/importer/importer_url_row.h"
 #include "chrome/common/importer/pstore_declarations.h"
-#include "chrome/common/url_constants.h"
 #include "chrome/utility/importer/favicon_reencode.h"
 #include "components/autofill/core/common/password_form.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
+#include "url/url_constants.h"
 
 namespace {
 
@@ -468,10 +468,10 @@ void IEImporter::ImportFavorites() {
 }
 
 void IEImporter::ImportHistory() {
-  const std::string kSchemes[] = {content::kHttpScheme,
-                                  content::kHttpsScheme,
-                                  content::kFtpScheme,
-                                  content::kFileScheme};
+  const std::string kSchemes[] = {url::kHttpScheme,
+                                  url::kHttpsScheme,
+                                  url::kFtpScheme,
+                                  url::kFileScheme};
   int total_schemes = arraysize(kSchemes);
 
   base::win::ScopedComPtr<IUrlHistoryStg2> url_history_stg2;
@@ -602,8 +602,8 @@ void IEImporter::ImportPasswordsIE6() {
       continue;
 
     GURL url(ac_list[i].key.c_str());
-    if (!(LowerCaseEqualsASCII(url.scheme(), content::kHttpScheme) ||
-        LowerCaseEqualsASCII(url.scheme(), content::kHttpsScheme))) {
+    if (!(LowerCaseEqualsASCII(url.scheme(), url::kHttpScheme) ||
+          LowerCaseEqualsASCII(url.scheme(), url::kHttpsScheme))) {
       continue;
     }
 

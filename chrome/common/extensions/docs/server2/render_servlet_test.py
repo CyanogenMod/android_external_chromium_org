@@ -19,8 +19,8 @@ class _RenderServletDelegate(RenderServlet.Delegate):
 
 
 class RenderServletTest(unittest.TestCase):
-  def _Render(self, path):
-    return RenderServlet(Request.ForTest(path),
+  def _Render(self, path, headers=None, host=None):
+    return RenderServlet(Request.ForTest(path, headers=headers, host=host),
                          _RenderServletDelegate()).Get()
 
   def testExtensionAppRedirect(self):
@@ -33,6 +33,16 @@ class RenderServletTest(unittest.TestCase):
       self.assertEqual(
           Response.Redirect('/extensions/storage', permanent=True),
           self._Render('%s/extensions/storage' % channel))
+
+  def testOldHostsRedirect(self):
+    self.assertEqual(
+        Response.Redirect('https://developer.chrome.com/extensions',
+            permanent=False),
+        self._Render('/chrome/extensions', host='http://code.google.com'))
+    self.assertEqual(
+        Response.Redirect('https://developer.chrome.com/extensions',
+            permanent=False),
+        self._Render('/chrome/extensions', host='https://code.google.com'))
 
   def testNotFound(self):
     def create_404_response(real_path):
@@ -95,23 +105,50 @@ class RenderServletTest(unittest.TestCase):
     self.assertTrue(len(response.content) >
                     len(ReadFile('%s%s.html' % (PUBLIC_TEMPLATES, html_file))))
 
-  def testDevelopersGoogleComRedirect(self):
-    def assert_redirect(request_path):
-      response = self._Render(request_path)
-      self.assertEqual(('//developers.google.com/chrome', False),
-                       response.GetRedirect())
-    assert_redirect('')
-    assert_redirect('index')
-
-  def testIndexRedirect(self):
+  def testIndexRender(self):
     response = self._Render('extensions')
-    self.assertEqual(('/extensions/index', False),
-                     response.GetRedirect())
+    self.assertEqual(200, response.status)
+    self.assertEqual(self._Render('extensions/index').content.ToString(),
+                     response.content.ToString())
 
   def testOtherRedirectsJsonRedirect(self):
     response = self._Render('apps/webview_tag')
     self.assertEqual(('/apps/tags/webview', False),
                      response.GetRedirect())
+
+  def testDirectories(self):
+    # Directories should be redirected to a URL that doesn't end in a '/'
+    # whether or not that exists.
+    self.assertEqual(('/dir', False), self._Render('dir/').GetRedirect())
+
+  def testEtags(self):
+    def test_path(path, content_type):
+      # Render without etag.
+      response = self._Render(path)
+      self.assertEqual(200, response.status)
+      etag = response.headers.get('ETag')
+      self.assertTrue(etag is not None)
+
+      # Render with an If-None-Match which doesn't match.
+      response = self._Render(path, headers={
+        'If-None-Match': '"fake etag"',
+      })
+      self.assertEqual(200, response.status)
+      self.assertEqual(content_type, response.headers.get('Content-Type'))
+      self.assertEqual(etag, response.headers.get('ETag'))
+
+      # Render with the correct matching If-None-Match.
+      response = self._Render(path, headers={
+        'If-None-Match': etag,
+      })
+      self.assertEqual(304, response.status)
+      self.assertEqual('Not Modified', response.content.ToString())
+      self.assertEqual(content_type, response.headers.get('Content-Type'))
+      self.assertEqual(etag, response.headers.get('ETag'))
+
+    # Test with a static path and a dynamic path.
+    test_path('static/css/out/site.css', 'text/css; charset=utf-8')
+    test_path('extensions/storage', 'text/html; charset=utf-8')
 
 
 if __name__ == '__main__':

@@ -29,8 +29,8 @@
 #include "base/observer_list_threadsafe.h"
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
-#include "content/public/common/p2p_socket_type.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "content/common/p2p_socket_type.h"
+#include "ipc/message_filter.h"
 #include "net/base/net_util.h"
 
 namespace base {
@@ -48,8 +48,7 @@ class P2PAsyncAddressResolver;
 class P2PSocketClientImpl;
 class RenderViewImpl;
 
-class CONTENT_EXPORT P2PSocketDispatcher
-    : public IPC::ChannelProxy::MessageFilter {
+class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter {
  public:
   explicit P2PSocketDispatcher(base::MessageLoopProxy* ipc_message_loop);
 
@@ -73,9 +72,9 @@ class CONTENT_EXPORT P2PSocketDispatcher
   // Send a message asynchronously.
   virtual void Send(IPC::Message* message);
 
-  // IPC::ChannelProxy::MessageFilter override. Called on IO thread.
+  // IPC::MessageFilter override. Called on IO thread.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
@@ -114,7 +113,7 @@ class CONTENT_EXPORT P2PSocketDispatcher
   scoped_refptr<ObserverListThreadSafe<NetworkListObserver> >
       network_list_observers_;
 
-  IPC::Channel* channel_;
+  IPC::Sender* sender_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketDispatcher);
 };

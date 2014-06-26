@@ -13,25 +13,26 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/bookmark_manager_private/bookmark_manager_private_api.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
-#include "chrome/browser/extensions/image_loader.h"
-#include "chrome/browser/favicon/favicon_util.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/favicon_base/favicon_util.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/page_transition_types.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/image_loader.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "net/base/file_stream.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -86,10 +87,10 @@ void UnregisterAndReplaceOverrideForWebContents(const std::string& page,
 // Run favicon callbck with image result. If no favicon was available then
 // |image| will be empty.
 void RunFaviconCallbackAsync(
-    const FaviconService::FaviconResultsCallback& callback,
+    const favicon_base::FaviconResultsCallback& callback,
     const gfx::Image& image) {
-  std::vector<chrome::FaviconBitmapResult>* favicon_bitmap_results =
-      new std::vector<chrome::FaviconBitmapResult>();
+  std::vector<favicon_base::FaviconRawBitmapResult>* favicon_bitmap_results =
+      new std::vector<favicon_base::FaviconRawBitmapResult>();
 
   const std::vector<gfx::ImageSkiaRep>& image_reps =
       image.AsImageSkia().image_reps();
@@ -100,12 +101,12 @@ void RunFaviconCallbackAsync(
     if (gfx::PNGCodec::EncodeBGRASkBitmap(image_rep.sk_bitmap(),
                                           false,
                                           &bitmap_data->data())) {
-      chrome::FaviconBitmapResult bitmap_result;
+      favicon_base::FaviconRawBitmapResult bitmap_result;
       bitmap_result.bitmap_data = bitmap_data;
       bitmap_result.pixel_size = gfx::Size(image_rep.pixel_width(),
                                             image_rep.pixel_height());
       // Leave |bitmap_result|'s icon URL as the default of GURL().
-      bitmap_result.icon_type = chrome::FAVICON;
+      bitmap_result.icon_type = favicon_base::FAVICON;
 
       favicon_bitmap_results->push_back(bitmap_result);
     } else {
@@ -120,6 +121,30 @@ void RunFaviconCallbackAsync(
                  base::Owned(favicon_bitmap_results)));
 }
 
+bool ValidateOverrideURL(const base::Value* override_url_value,
+                         const GURL& source_url,
+                         const extensions::ExtensionSet& extensions,
+                         GURL* override_url,
+                         const Extension** extension) {
+  std::string override;
+  if (!override_url_value || !override_url_value->GetAsString(&override)) {
+    return false;
+  }
+  if (!source_url.query().empty())
+    override += "?" + source_url.query();
+  if (!source_url.ref().empty())
+    override += "#" + source_url.ref();
+  *override_url = GURL(override);
+  if (!override_url->is_valid()) {
+    return false;
+  }
+  *extension = extensions.GetByID(override_url->host());
+  if (!*extension) {
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 const char ExtensionWebUI::kExtensionURLOverrides[] =
@@ -129,9 +154,8 @@ ExtensionWebUI::ExtensionWebUI(content::WebUI* web_ui, const GURL& url)
     : WebUIController(web_ui),
       url_(url) {
   Profile* profile = Profile::FromWebUI(web_ui);
-  ExtensionService* service = profile->GetExtensionService();
-  const Extension* extension =
-      service->extensions()->GetExtensionOrAppByURL(url);
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      profile)->enabled_extensions().GetExtensionOrAppByURL(url);
   DCHECK(extension);
 
   // The base class defaults to enabling WebUI bindings, but we don't need
@@ -142,8 +166,8 @@ ExtensionWebUI::ExtensionWebUI(content::WebUI* web_ui, const GURL& url)
 
   // Hack: A few things we specialize just for the bookmark manager.
   if (extension->id() == extension_misc::kBookmarkManagerId) {
-    bookmark_manager_private_event_router_.reset(
-        new extensions::BookmarkManagerPrivateEventRouter(
+    bookmark_manager_private_drag_event_router_.reset(
+        new extensions::BookmarkManagerPrivateDragEventRouter(
             profile, web_ui->GetWebContents()));
 
     web_ui->SetLinkTransitionType(content::PAGE_TRANSITION_AUTO_BOOKMARK);
@@ -152,9 +176,9 @@ ExtensionWebUI::ExtensionWebUI(content::WebUI* web_ui, const GURL& url)
 
 ExtensionWebUI::~ExtensionWebUI() {}
 
-extensions::BookmarkManagerPrivateEventRouter*
-ExtensionWebUI::bookmark_manager_private_event_router() {
-  return bookmark_manager_private_event_router_.get();
+extensions::BookmarkManagerPrivateDragEventRouter*
+ExtensionWebUI::bookmark_manager_private_drag_event_router() {
+  return bookmark_manager_private_drag_event_router_.get();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -178,47 +202,33 @@ bool ExtensionWebUI::HandleChromeURLOverride(
   Profile* profile = Profile::FromBrowserContext(browser_context);
   const base::DictionaryValue* overrides =
       profile->GetPrefs()->GetDictionary(kExtensionURLOverrides);
-  std::string page = url->host();
+
+  std::string url_host = url->host();
   const base::ListValue* url_list = NULL;
-  if (!overrides || !overrides->GetList(page, &url_list))
+  if (!overrides || !overrides->GetList(url_host, &url_list))
     return false;
 
-  ExtensionService* service = profile->GetExtensionService();
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(browser_context);
+  const extensions::ExtensionSet& extensions = registry->enabled_extensions();
 
-  size_t i = 0;
-  while (i < url_list->GetSize()) {
+  GURL component_url;
+  bool found_component_override = false;
+
+  // Iterate over the URL list looking for a suitable override. If a
+  // valid non-component override is encountered it is chosen immediately.
+  for (size_t i = 0; i < url_list->GetSize(); ++i) {
     const base::Value* val = NULL;
     url_list->Get(i, &val);
 
-    // Verify that the override value is good.  If not, unregister it and find
-    // the next one.
-    std::string override;
-    if (!val->GetAsString(&override)) {
-      NOTREACHED();
-      UnregisterChromeURLOverride(page, profile, val);
-      continue;
-    }
-
-    if (!url->query().empty())
-      override += "?" + url->query();
-    if (!url->ref().empty())
-      override += "#" + url->ref();
-    GURL extension_url(override);
-    if (!extension_url.is_valid()) {
-      NOTREACHED();
-      UnregisterChromeURLOverride(page, profile, val);
-      continue;
-    }
-
-    // Verify that the extension that's being referred to actually exists.
-    const Extension* extension =
-        service->extensions()->GetByID(extension_url.host());
-    if (!extension) {
-      // This can currently happen if you use --load-extension one run, and
-      // then don't use it the next.  It could also happen if an extension
-      // were deleted directly from the filesystem, etc.
-      LOG(WARNING) << "chrome URL override present for non-existant extension";
-      UnregisterChromeURLOverride(page, profile, val);
+    GURL override_url;
+    const Extension* extension;
+    if (!ValidateOverrideURL(
+            val, *url, extensions, &override_url, &extension)) {
+      LOG(WARNING) << "Invalid chrome URL override";
+      UnregisterChromeURLOverride(url_host, profile, val);
+      // The above Unregister call will remove this item from url_list.
+      --i;
       continue;
     }
 
@@ -228,13 +238,27 @@ bool ExtensionWebUI::HandleChromeURLOverride(
         extensions::IncognitoInfo::IsSplitMode(extension) &&
         extensions::util::IsIncognitoEnabled(extension->id(), profile);
     if (profile->IsOffTheRecord() && !incognito_override_allowed) {
-      ++i;
       continue;
     }
 
-    *url = extension_url;
+    if (!extensions::Manifest::IsComponentLocation(extension->location())) {
+      *url = override_url;
+      return true;
+    }
+
+    if (!found_component_override) {
+      found_component_override = true;
+      component_url = override_url;
+    }
+  }
+
+  // If no other non-component overrides were found, use the first known
+  // component override, if any.
+  if (found_component_override) {
+    *url = component_url;
     return true;
   }
+
   return false;
 }
 
@@ -380,15 +404,9 @@ void ExtensionWebUI::UnregisterChromeURLOverrides(
 void ExtensionWebUI::GetFaviconForURL(
     Profile* profile,
     const GURL& page_url,
-    const FaviconService::FaviconResultsCallback& callback) {
-  // Even when the extensions service is enabled by default, it's still
-  // disabled in incognito mode.
-  ExtensionService* service = profile->GetExtensionService();
-  if (!service) {
-    RunFaviconCallbackAsync(callback, gfx::Image());
-    return;
-  }
-  const Extension* extension = service->extensions()->GetByID(page_url.host());
+    const favicon_base::FaviconResultsCallback& callback) {
+  const Extension* extension = extensions::ExtensionRegistry::Get(
+      profile)->enabled_extensions().GetByID(page_url.host());
   if (!extension) {
     RunFaviconCallbackAsync(callback, gfx::Image());
     return;
@@ -398,23 +416,22 @@ void ExtensionWebUI::GetFaviconForURL(
   // resources. Load image reps for all supported scale factors (in addition to
   // 1x) immediately instead of in an as needed fashion to be consistent with
   // how favicons are requested for chrome:// and page URLs.
-  const std::vector<ui::ScaleFactor>& scale_factors =
-      FaviconUtil::GetFaviconScaleFactors();
+  const std::vector<float>& favicon_scales = favicon_base::GetFaviconScales();
   std::vector<extensions::ImageLoader::ImageRepresentation> info_list;
-  for (size_t i = 0; i < scale_factors.size(); ++i) {
-    float scale = ui::GetImageScale(scale_factors[i]);
+  for (size_t i = 0; i < favicon_scales.size(); ++i) {
+    float scale = favicon_scales[i];
     int pixel_size = static_cast<int>(gfx::kFaviconSize * scale);
     extensions::ExtensionResource icon_resource =
         extensions::IconsInfo::GetIconResource(extension,
                                                pixel_size,
                                                ExtensionIconSet::MATCH_BIGGER);
 
-    info_list.push_back(
-        extensions::ImageLoader::ImageRepresentation(
-            icon_resource,
-            extensions::ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
-            gfx::Size(pixel_size, pixel_size),
-            scale_factors[i]));
+    ui::ScaleFactor resource_scale_factor = ui::GetSupportedScaleFactor(scale);
+    info_list.push_back(extensions::ImageLoader::ImageRepresentation(
+        icon_resource,
+        extensions::ImageLoader::ImageRepresentation::ALWAYS_RESIZE,
+        gfx::Size(pixel_size, pixel_size),
+        resource_scale_factor));
   }
 
   // LoadImagesAsync actually can run callback synchronously. We want to force

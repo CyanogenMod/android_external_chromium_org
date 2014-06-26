@@ -14,9 +14,9 @@
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/tab_contents/background_contents.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/host_desktop.h"
@@ -32,8 +32,10 @@
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -219,7 +221,7 @@ void DriveWebContentsManager::StartLoad() {
 
   web_contents_.reset(content::WebContents::Create(create_params));
   web_contents_->SetDelegate(this);
-  extensions::ExtensionWebContentsObserver::CreateForWebContents(
+  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
       web_contents_.get());
 
   content::NavigationController::LoadURLParams load_params(url);
@@ -297,10 +299,9 @@ bool DriveWebContentsManager::ShouldCreateWebContents(
     return true;
 
   // Check that the target URL is for the Drive app.
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  const extensions::Extension *extension =
-      service->GetInstalledApp(target_url);
+  const extensions::Extension* extension =
+      extensions::ExtensionRegistry::Get(profile_)
+          ->enabled_extensions().GetAppByURL(target_url);
   if (!extension || extension->id() != app_id_)
     return true;
 

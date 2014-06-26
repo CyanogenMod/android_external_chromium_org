@@ -10,14 +10,16 @@
 #include <utility>
 #include <vector>
 
-#include "chrome/common/extensions/api/file_handlers/file_handlers_parser.h"
 #include "content/public/browser/render_view_host.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/manifest_handlers/file_handler_info.h"
 
 class Profile;
 
 namespace extensions {
+
 class ExtensionPrefs;
+struct GrantedFileEntry;
 
 // TODO(benwells): move this to platform_apps namespace.
 namespace app_file_handler_util {
@@ -51,25 +53,20 @@ bool FileHandlerCanHandleFile(
     const std::string& mime_type,
     const base::FilePath& path);
 
-// Refers to a file entry that a renderer has been given access to.
-struct GrantedFileEntry {
-  GrantedFileEntry();
-
-  std::string id;
-  std::string filesystem_id;
-  std::string registered_name;
-};
-
 // Creates a new file entry and allows |renderer_id| to access |path|. This
 // registers a new file system for |path|.
-GrantedFileEntry CreateFileEntry(
-    Profile* profile,
-    const Extension* extension,
-    int renderer_id,
-    const base::FilePath& path,
-    bool is_directory);
+GrantedFileEntry CreateFileEntry(Profile* profile,
+                                 const Extension* extension,
+                                 int renderer_id,
+                                 const base::FilePath& path,
+                                 bool is_directory);
 
-void CheckWritableFiles(
+// When |is_directory| is true, it verifies that directories exist at each of
+// the |paths| and calls back to |on_success| or otherwise to |on_failure|.
+// When |is_directory| is false, it ensures regular files exists (not links and
+// directories) at the |paths|, creating files if needed, and calls back to
+// |on_success| or to |on_failure| depending on the result.
+void PrepareFilesForWritableApp(
     const std::vector<base::FilePath>& paths,
     Profile* profile,
     bool is_directory,

@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef COMPONENTS_AUTOFILL_CORE_COMMON_FORM_DATA_H__
-#define COMPONENTS_AUTOFILL_CORE_COMMON_FORM_DATA_H__
+#ifndef COMPONENTS_AUTOFILL_CORE_COMMON_FORM_DATA_H_
+#define COMPONENTS_AUTOFILL_CORE_COMMON_FORM_DATA_H_
 
 #include <vector>
 
@@ -22,6 +22,9 @@ struct FormData {
   // Used in testing.
   bool operator==(const FormData& form) const;
   bool operator!=(const FormData& form) const;
+
+  // Allow FormData to be a key in STL containers.
+  bool operator<(const FormData& form) const;
 
   // The name of the form.
   base::string16 name;
@@ -49,4 +52,4 @@ bool DeserializeFormData(PickleIterator* iter, FormData* form_data);
 
 }  // namespace autofill
 
-#endif  // COMPONENTS_AUTOFILL_CORE_COMMON_FORM_DATA_H__
+#endif  // COMPONENTS_AUTOFILL_CORE_COMMON_FORM_DATA_H_

@@ -19,7 +19,6 @@
 #include "chrome/browser/ui/search/search_tab_helper.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
@@ -82,21 +81,26 @@ bool OmniboxCurrentPageDelegateImpl::ProcessExtensionKeyword(
   return true;
 }
 
-void OmniboxCurrentPageDelegateImpl::NotifySearchTabHelper(
-    bool user_input_in_progress,
-    bool cancelling) {
+void OmniboxCurrentPageDelegateImpl::OnInputStateChanged() {
   if (!controller_->GetWebContents())
     return;
   SearchTabHelper::FromWebContents(
-      controller_->GetWebContents())->OmniboxEditModelChanged(
-          user_input_in_progress, cancelling);
+      controller_->GetWebContents())->OmniboxInputStateChanged();
+}
+
+void OmniboxCurrentPageDelegateImpl::OnFocusChanged(
+    OmniboxFocusState state,
+    OmniboxFocusChangeReason reason) {
+  if (!controller_->GetWebContents())
+    return;
+  SearchTabHelper::FromWebContents(
+      controller_->GetWebContents())->OmniboxFocusChanged(state, reason);
 }
 
 void OmniboxCurrentPageDelegateImpl::DoPrerender(
     const AutocompleteMatch& match) {
   content::WebContents* web_contents = controller_->GetWebContents();
-  gfx::Rect container_bounds;
-  web_contents->GetView()->GetContainerBounds(&container_bounds);
+  gfx::Rect container_bounds = web_contents->GetContainerBounds();
 
   InstantSearchPrerenderer* prerenderer =
       InstantSearchPrerenderer::GetForProfile(profile_);
@@ -112,4 +116,22 @@ void OmniboxCurrentPageDelegateImpl::DoPrerender(
           match.destination_url,
           web_contents->GetController().GetSessionStorageNamespaceMap(),
           container_bounds.size());
+}
+
+void OmniboxCurrentPageDelegateImpl::SetSuggestionToPrefetch(
+      const InstantSuggestion& suggestion) {
+  content::WebContents* web_contents = controller_->GetWebContents();
+  if (web_contents &&
+      SearchTabHelper::FromWebContents(web_contents)->IsSearchResultsPage()) {
+    if (chrome::ShouldPrefetchSearchResultsOnSRP() ||
+        chrome::ShouldPrefetchSearchResults()) {
+      SearchTabHelper::FromWebContents(web_contents)->
+          SetSuggestionToPrefetch(suggestion);
+    }
+  } else if (chrome::ShouldPrefetchSearchResults()) {
+      InstantSearchPrerenderer* prerenderer =
+          InstantSearchPrerenderer::GetForProfile(profile_);
+      if (prerenderer)
+        prerenderer->Prerender(suggestion);
+  }
 }

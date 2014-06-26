@@ -94,6 +94,10 @@ class CONTENT_EXPORT NavigationControllerImpl
   virtual void PruneAllButLastCommitted() OVERRIDE;
   virtual void ClearAllScreenshots() OVERRIDE;
 
+  // Whether this is the initial navigation in an unmodified new tab.  In this
+  // case, we know there is no content displayed in the page.
+  bool IsUnmodifiedBlankTab() const;
+
   // The session storage namespace that all child RenderViews belonging to
   // |instance| should use.
   SessionStorageNamespace* GetSessionStorageNamespace(
@@ -134,10 +138,8 @@ class CONTENT_EXPORT NavigationControllerImpl
   //
   // In the case that nothing has changed, the details structure is undefined
   // and it will return false.
-  //
-  // TODO(creis): Change RenderViewHost to RenderFrameHost.
   bool RendererDidNavigate(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       LoadCommittedDetails* details);
 
@@ -157,19 +159,15 @@ class CONTENT_EXPORT NavigationControllerImpl
   // whether a navigation happened without loading anything, the same URL could
   // be a reload, while only a different ref would be in-page (pages can't clear
   // refs without reload, only change to "#" which we don't count as empty).
-  bool IsURLInPageNavigation(const GURL& url) const {
-    return IsURLInPageNavigation(url, false, NAVIGATION_TYPE_UNKNOWN);
-  }
-
+  //
   // The situation is made murkier by history.replaceState(), which could
   // provide the same URL as part of an in-page navigation, not a reload. So
-  // we need this form which lets the (untrustworthy) renderer resolve the
-  // ambiguity, but only when the URLs are equal. This should be safe since the
-  // origin isn't changing.
+  // we need to let the (untrustworthy) renderer resolve the ambiguity, but
+  // only when the URLs are on the same origin.
   bool IsURLInPageNavigation(
       const GURL& url,
       bool renderer_says_in_page,
-      NavigationType navigation_type) const;
+      RenderFrameHost* rfh) const;
 
   // Sets the SessionStorageNamespace for the given |partition_id|. This is
   // used during initialization of a new NavigationController to allow
@@ -235,7 +233,7 @@ class CONTENT_EXPORT NavigationControllerImpl
 
   // Classifies the given renderer navigation (see the NavigationType enum).
   NavigationType ClassifyNavigation(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) const;
 
   // Causes the controller to load the specified entry. The function assumes
@@ -255,27 +253,25 @@ class CONTENT_EXPORT NavigationControllerImpl
   // The functions taking |did_replace_entry| will fill into the given variable
   // whether the last entry has been replaced or not.
   // See LoadCommittedDetails.did_replace_entry.
-  //
-  // TODO(creis): Change RenderViewHost to RenderFrameHost.
   void RendererDidNavigateToNewPage(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool replace_entry);
   void RendererDidNavigateToExistingPage(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateToSamePage(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   void RendererDidNavigateInPage(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params,
       bool* did_replace_entry);
   void RendererDidNavigateNewSubframe(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
   bool RendererDidNavigateAutoSubframe(
-      RenderViewHost* rvh,
+      RenderFrameHost* rfh,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params);
 
   // Helper function for code shared between Reload() and ReloadIgnoringCache().
@@ -386,6 +382,9 @@ class CONTENT_EXPORT NavigationControllerImpl
   // Whether this is the initial navigation.
   // Becomes false when initial navigation commits.
   bool is_initial_navigation_;
+
+  // Prevent unsafe re-entrant calls to NavigateToPendingEntry.
+  bool in_navigate_to_pending_entry_;
 
   // Used to find the appropriate SessionStorageNamespace for the storage
   // partition of a NavigationEntry.

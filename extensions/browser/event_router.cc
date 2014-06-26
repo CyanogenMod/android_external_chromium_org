@@ -12,23 +12,25 @@
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "extensions/browser/api_activity_monitor.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/browser/lazy_background_task_queue.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_map.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_api.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_urls.h"
 #include "extensions/common/manifest_handlers/background_info.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -128,6 +130,11 @@ void EventRouter::DispatchExtensionMessage(IPC::Sender* ipc_sender,
 }
 
 // static
+EventRouter* EventRouter::Get(content::BrowserContext* browser_context) {
+  return ExtensionSystem::Get(browser_context)->event_router();
+}
+
+// static
 std::string EventRouter::GetBaseEventName(const std::string& full_event_name) {
   size_t slash_sep = full_event_name.find('/');
   return full_event_name.substr(0, slash_sep);
@@ -168,9 +175,10 @@ EventRouter::EventRouter(BrowserContext* browser_context,
                  content::NotificationService::AllSources());
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_ENABLED,
                  content::Source<BrowserContext>(browser_context_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<BrowserContext>(browser_context_));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<BrowserContext>(browser_context_));
 }
 
@@ -210,22 +218,20 @@ void EventRouter::UnregisterObserver(Observer* observer) {
 }
 
 void EventRouter::OnListenerAdded(const EventListener* listener) {
-  const EventListenerInfo details(
-      listener->event_name,
-      listener->extension_id,
-      listener->process ? listener->process->GetBrowserContext() : NULL);
-  std::string base_event_name = GetBaseEventName(listener->event_name);
+  const EventListenerInfo details(listener->event_name(),
+                                  listener->extension_id(),
+                                  listener->GetBrowserContext());
+  std::string base_event_name = GetBaseEventName(listener->event_name());
   ObserverMap::iterator observer = observers_.find(base_event_name);
   if (observer != observers_.end())
     observer->second->OnListenerAdded(details);
 }
 
 void EventRouter::OnListenerRemoved(const EventListener* listener) {
-  const EventListenerInfo details(
-      listener->event_name,
-      listener->extension_id,
-      listener->process ? listener->process->GetBrowserContext() : NULL);
-  std::string base_event_name = GetBaseEventName(listener->event_name);
+  const EventListenerInfo details(listener->event_name(),
+                                  listener->extension_id(),
+                                  listener->GetBrowserContext());
+  std::string base_event_name = GetBaseEventName(listener->event_name());
   ObserverMap::iterator observer = observers_.find(base_event_name);
   if (observer != observers_.end())
     observer->second->OnListenerRemoved(details);
@@ -290,7 +296,7 @@ void EventRouter::RemoveFilteredEventListener(
   listeners_.RemoveListener(&listener);
 
   if (remove_lazy_listener) {
-    listener.process = NULL;
+    listener.MakeLazy();
     bool removed = listeners_.RemoveListener(&listener);
 
     if (removed)
@@ -448,9 +454,9 @@ void EventRouter::DispatchEventImpl(const std::string& restrict_to_extension_id,
        it != listeners.end(); it++) {
     const EventListener* listener = *it;
     if (restrict_to_extension_id.empty() ||
-        restrict_to_extension_id == listener->extension_id) {
-      if (!listener->process) {
-        DispatchLazyEvent(listener->extension_id, event, &already_dispatched);
+        restrict_to_extension_id == listener->extension_id()) {
+      if (listener->IsLazy()) {
+        DispatchLazyEvent(listener->extension_id(), event, &already_dispatched);
       }
     }
   }
@@ -459,13 +465,13 @@ void EventRouter::DispatchEventImpl(const std::string& restrict_to_extension_id,
        it != listeners.end(); it++) {
     const EventListener* listener = *it;
     if (restrict_to_extension_id.empty() ||
-        restrict_to_extension_id == listener->extension_id) {
-      if (listener->process) {
-        EventDispatchIdentifier dispatch_id(
-            listener->process->GetBrowserContext(), listener->extension_id);
+        restrict_to_extension_id == listener->extension_id()) {
+      if (listener->process()) {
+        EventDispatchIdentifier dispatch_id(listener->GetBrowserContext(),
+                                            listener->extension_id());
         if (!ContainsKey(already_dispatched, dispatch_id)) {
-          DispatchEventToProcess(listener->extension_id, listener->process,
-              event);
+          DispatchEventToProcess(
+              listener->extension_id(), listener->process(), event);
         }
       }
     }
@@ -528,8 +534,9 @@ void EventRouter::DispatchEventToProcess(const std::string& extension_id,
   // permission for it (or if the event originated from itself).
   if (!event->event_url.is_empty() &&
       event->event_url.host() != extension->id() &&
-      !extension->GetActivePermissions()->HasEffectiveAccessToURL(
-          event->event_url)) {
+      !extension->permissions_data()
+           ->active_permissions()
+           ->HasEffectiveAccessToURL(event->event_url)) {
     return;
   }
 
@@ -565,7 +572,8 @@ bool EventRouter::MaybeLoadLazyBackgroundPageToDispatchEvent(
     BrowserContext* context,
     const Extension* extension,
     const linked_ptr<Event>& event) {
-  if (extension->is_ephemeral() && !event->can_load_ephemeral_apps) {
+  if (util::IsEphemeralApp(extension->id(), context) &&
+      !event->can_load_ephemeral_apps) {
     // Most events can only be dispatched to ephemeral apps that are already
     // running.
     ProcessManager* pm = ExtensionSystem::Get(context)->process_manager();
@@ -605,13 +613,12 @@ bool EventRouter::MaybeLoadLazyBackgroundPageToDispatchEvent(
 void EventRouter::IncrementInFlightEventsOnUI(
     void* browser_context_id,
     const std::string& extension_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserContext* browser_context =
       reinterpret_cast<BrowserContext*>(browser_context_id);
   if (!ExtensionsBrowserClient::Get()->IsValidContext(browser_context))
     return;
-  ExtensionSystem* extension_system = ExtensionSystem::Get(browser_context);
-  EventRouter* event_router = extension_system->event_router();
+  EventRouter* event_router = EventRouter::Get(browser_context);
   if (!event_router)
     return;
   const Extension* extension =
@@ -685,7 +692,7 @@ void EventRouter::Observe(int type,
       }
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       // Add all registered lazy listeners to our cache.
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
@@ -699,7 +706,7 @@ void EventRouter::Observe(int type,
         listeners_.LoadFilteredLazyListeners(extension->id(), *filtered_events);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       // Remove all registered lazy listeners from our cache.
       UnloadedExtensionInfo* unloaded =
           content::Details<UnloadedExtensionInfo>(details).ptr();

@@ -181,9 +181,9 @@ const char kRootOutDir_Help[] =
     "\n"
     "Example:\n"
     "\n"
-    "  custom(\"myscript\") {\n"
+    "  action(\"myscript\") {\n"
     "    # Pass the output dir to the script.\n"
-    "    args = [ \"-o\", rebase_path(root_out_dir, \".\", root_build_dir) ]\n"
+    "    args = [ \"-o\", rebase_path(root_out_dir, root_build_dir) ]\n"
     "  }\n";
 
 const char kTargetGenDir[] = "target_gen_dir";
@@ -206,9 +206,9 @@ const char kTargetGenDir_Help[] =
     "\n"
     "Example:\n"
     "\n"
-    "  custom(\"myscript\") {\n"
+    "  action(\"myscript\") {\n"
     "    # Pass the generated output dir to the script.\n"
-    "    args = [ \"-o\", rebase_path(target_gen_dir, \".\", root_build_dir) ]"
+    "    args = [ \"-o\", rebase_path(target_gen_dir, root_build_dir) ]"
     "\n"
     "  }\n";
 
@@ -232,13 +232,32 @@ const char kTargetOutDir_Help[] =
     "\n"
     "Example:\n"
     "\n"
-    "  custom(\"myscript\") {\n"
+    "  action(\"myscript\") {\n"
     "    # Pass the output dir to the script.\n"
-    "    args = [ \"-o\", rebase_path(target_out_dir, \".\", root_build_dir) ]"
+    "    args = [ \"-o\", rebase_path(target_out_dir, root_build_dir) ]"
     "\n"
     "  }\n";
 
 // Target variables ------------------------------------------------------------
+
+#define COMMON_ORDERING_HELP \
+    "\n" \
+    "Ordering of flags and values:\n" \
+    "\n" \
+    "  1. Those set on the current target (not in a config).\n" \
+    "  2. Those set on the \"configs\" on the target in order that the\n" \
+    "     configs appear in the list.\n" \
+    "  3. Those set on the \"all_dependent_configs\" on the target in order\n" \
+    "     that the configs appear in the list.\n" \
+    "  4. Those set on the \"direct_dependent_configs\" on the target in\n" \
+    "     order that those configs appear in the list.\n" \
+    "  5. all_dependent_configs pulled from dependencies, in the order of\n" \
+    "     the \"deps\" list. This is done recursively. If a config appears\n" \
+    "     more than once, only the first occurance will be used.\n" \
+    "  6. direct_dependent_configs pulled from dependencies, in the order\n" \
+    "     of the \"deps\" list. If a dependency has\n" \
+    "     \"forward_dependent_configs_from\", they will be applied\n" \
+    "     recursively.\n"
 
 const char kAllDependentConfigs[] = "all_dependent_configs";
 const char kAllDependentConfigs_HelpShort[] =
@@ -259,30 +278,24 @@ const char kAllDependentConfigs_Help[] =
     "  capability should generally only be used to add defines and include\n"
     "  directories necessary to compile a target's headers.\n"
     "\n"
-    "  See also \"direct_dependent_configs\".\n";
+    "  See also \"direct_dependent_configs\".\n"
+    COMMON_ORDERING_HELP;
 
 const char kArgs[] = "args";
 const char kArgs_HelpShort[] =
-    "args: [string list] Arguments passed to a custom script.";
+    "args: [string list] Arguments passed to an action.";
 const char kArgs_Help[] =
-    "args: Arguments passed to a custom script.\n"
+    "args: Arguments passed to an action.\n"
     "\n"
-    "  For custom script targets, args is the list of arguments to pass\n"
-    "  to the script. Typically you would use source expansion (see\n"
+    "  For action and action_foreach targets, args is the list of arguments\n"
+    "  to pass to the script. Typically you would use source expansion (see\n"
     "  \"gn help source_expansion\") to insert the source file names.\n"
     "\n"
-    "  See also \"gn help custom\".\n";
+    "  See also \"gn help action\" and \"gn help action_foreach\".\n";
 
 const char kCflags[] = "cflags";
 const char kCflags_HelpShort[] =
     "cflags: [string list] Flags passed to all C compiler variants.";
-// Avoid writing long help for each variant.
-#define COMMON_FLAGS_HELP \
-    "\n"\
-    "  Flags are never quoted. If your flag includes a string that must be\n"\
-    "  quoted, you must do it yourself. This also means that you can\n"\
-    "  specify more than one flag in a string if necessary (\"--foo --bar\")\n"\
-    "  and have them be seen as separate by the tool.\n"
 const char kCommonCflagsHelp[] =
     "cflags*: Flags passed to the C compiler.\n"
     "\n"
@@ -294,7 +307,7 @@ const char kCommonCflagsHelp[] =
     "  To target one of these variants individually, use \"cflags_c\",\n"
     "  \"cflags_cc\", \"cflags_objc\", and \"cflags_objcc\", respectively.\n"
     "  These variant-specific versions will be appended to the \"cflags\".\n"
-    COMMON_FLAGS_HELP;
+    COMMON_ORDERING_HELP;
 const char* kCflags_Help = kCommonCflagsHelp;
 
 const char kCflagsC[] = "cflags_c";
@@ -334,6 +347,7 @@ const char kConfigs_Help[] =
     "  configs applying to a given target type (see \"set_defaults\").\n"
     "  When a target is being defined, it can add to or remove from this\n"
     "  list.\n"
+    COMMON_ORDERING_HELP
     "\n"
     "Example:\n"
     "  static_library(\"foo\") {\n"
@@ -356,7 +370,7 @@ const char kData_Help[] =
     "  these but it is envisioned that test data can be listed here for use\n"
     "  running automated tests.\n"
     "\n"
-    "  See also \"gn help source_prereqs\" and \"gn help datadeps\", both of\n"
+    "  See also \"gn help inputs\" and \"gn help datadeps\", both of\n"
     "  which actually affect the build in concrete ways.\n";
 
 const char kDatadeps[] = "datadeps";
@@ -392,31 +406,32 @@ const char kDefines_Help[] =
     "\n"
     "  These strings will be passed to the C/C++ compiler as #defines. The\n"
     "  strings may or may not include an \"=\" to assign a value.\n"
+    COMMON_ORDERING_HELP
     "\n"
     "Example:\n"
     "  defines = [ \"AWESOME_FEATURE\", \"LOG_LEVEL=3\" ]\n";
 
 const char kDepfile[] = "depfile";
 const char kDepfile_HelpShort[] =
-    "depfile: [string] File name for input dependencies for custom targets.";
+    "depfile: [string] File name for input dependencies for actions.";
 const char kDepfile_Help[] =
-    "depfile: [string] File name for input dependencies for custom targets.\n"
+    "depfile: [string] File name for input dependencies for actions.\n"
     "\n"
-    "  If nonempty, this string specifies that the current \"custom\" target\n"
-    "  will generate the given \".d\" file containing the dependencies of the\n"
-    "  input. Empty or unset means that the script doesn't generate the\n"
-    "  files.\n"
+    "  If nonempty, this string specifies that the current action or\n"
+    "  action_foreach target will generate the given \".d\" file containing\n"
+    "  the dependencies of the input. Empty or unset means that the script\n"
+    "  doesn't generate the files.\n"
     "\n"
     "  The .d file should go in the target output directory. If you have more\n"
     "  than one source file that the script is being run over, you can use\n"
-    "  the output file expansions described in \"gn help custom\" to name the\n"
-    "  .d file according to the input."
+    "  the output file expansions described in \"gn help action_foreach\" to\n"
+    "  name the .d file according to the input."
     "\n"
     "  The format is that of a Makefile, and all of the paths should be\n"
     "  relative to the root build directory.\n"
     "\n"
     "Example:\n"
-    "  custom(\"myscript_target\") {\n"
+    "  action_foreach(\"myscript_target\") {\n"
     "    script = \"myscript.py\"\n"
     "    sources = [ ... ]\n"
     "\n"
@@ -438,9 +453,9 @@ const char kDeps_Help[] =
     "\n"
     "  Specifies dependencies of a target. Shared and dynamic libraries will\n"
     "  be linked into the current target. Other target types that can't be\n"
-    "  linked (like custom scripts and groups) listed in \"deps\" will be\n"
-    "  treated as \"datadeps\". Likewise, if the current target isn't\n"
-    "  linkable, then all deps will be treated as \"datadeps\".\n"
+    "  linked (like actions and groups) listed in \"deps\" will be treated\n"
+    "  as \"datadeps\". Likewise, if the current target isn't linkable, then\n"
+    "  all deps will be treated as \"datadeps\".\n"
     "\n"
     "  See also \"datadeps\".\n";
 
@@ -464,25 +479,8 @@ const char kDirectDependentConfigs_Help[] =
     "  capability should generally only be used to add defines and include\n"
     "  directories necessary to compile a target's headers.\n"
     "\n"
-    "  See also \"all_dependent_configs\".\n";
-
-const char kExternal[] = "external";
-const char kExternal_HelpShort[] =
-    "external: [boolean] Declares a target as externally generated.";
-const char kExternal_Help[] =
-    "external: Declares a target as externally generated.\n"
-    "\n"
-    "  External targets are treated like normal targets as far as dependent\n"
-    "  targets are concerned, but do not actually have their .ninja file\n"
-    "  written to disk. This allows them to be generated by an external\n"
-    "  program (e.g. GYP).\n"
-    "\n"
-    "  See also \"gn help gyp\".\n"
-    "\n"
-    "Example:\n"
-    "  static_library(\"foo\") {\n"
-    "    external = true\n"
-    "  }\n";
+    "  See also \"all_dependent_configs\".\n"
+    COMMON_ORDERING_HELP;
 
 const char kForwardDependentConfigsFrom[] = "forward_dependent_configs_from";
 const char kForwardDependentConfigsFrom_HelpShort[] =
@@ -523,67 +521,6 @@ const char kForwardDependentConfigsFrom_Help[] =
     "      forward_dependent_configs_from = deps\n"
     "    }\n";
 
-const char kGypFile[] = "gyp_file";
-const char kGypFile_HelpShort[] =
-    "gyp_file: [file name] Name of GYP file to write to in GYP mode.";
-const char kGypFile_Help[] =
-    "gyp_file: Name of GYP file to write to in GYP mode.\n"
-    "\n"
-    "  See \"gn help gyp\" for an overview of how this works.\n"
-    "\n"
-    "  Tip: If all targets in a given BUILD.gn file should go in the same\n"
-    "  GYP file, just put gyp_file = \"foo\" at the top of the file and\n"
-    "  the variable will be in scope for all targets.\n";
-
-const char kGypHeader[] = "gyp_header";
-const char kGypHeader_HelpShort[] =
-    "gyp_header: [string] Extra stuff to prepend to GYP files.";
-const char kGypHeader_Help[] =
-    "gyp_header: Extra stuff to prepend to GYP files.\n"
-    "\n"
-    "  A Python dictionary string. This will be inserted after the initial\n"
-    "  \"{\" in the GYP file. It is expected this is used to define the\n"
-    "  make_global_settings.\n"
-    "\n"
-    "  This string should end in a comma to keep the python dictionary syntax\n"
-    "  valid when everything is concatenated.\n";
-
-const char kHardDep[] = "hard_dep";
-const char kHardDep_HelpShort[] =
-    "hard_dep: [boolean] Indicates a target should be built before dependees.";
-const char kHardDep_Help[] =
-    "hard_dep: Indicates a target should be built before dependees.\n"
-    "\n"
-    "  Ninja's default is to assume that targets can be compiled\n"
-    "  independently. This breaks down for generated files that are included\n"
-    "  in other targets because Ninja doesn't know to run the generator\n"
-    "  before compiling the source file.\n"
-    "\n"
-    "  Setting \"hard_dep\" to true on a target means that no sources in\n"
-    "  targets depending directly on this one will be compiled until this\n"
-    "  target is complete. It will introduce a Ninja implicit dependency\n"
-    "  from those sources to this target. This flag is not transitive so\n"
-    "  it will only affect direct dependents, which will cause problems if\n"
-    "  a direct dependent uses this generated file in a public header that a\n"
-    "  third target consumes. Try not to do this.\n"
-    "\n"
-    "  See also \"gn help source_prereqs\" which allows you to specify the\n"
-    "  exact generated file dependency on the target consuming it.\n"
-    "\n"
-    "Example:\n"
-    "  executable(\"foo\") {\n"
-    "    # myresource will be run before any of the sources in this target\n"
-    "    # are compiled.\n"
-    "    deps = [ \":myresource\" ]\n"
-    "    ...\n"
-    "  }\n"
-    "\n"
-    "  custom(\"myresource\") {\n"
-    "    hard_dep = true\n"
-    "    script = \"my_generator.py\"\n"
-    "    outputs = \"$target_gen_dir/myresource.h\"\n"
-    "  }\n";
-
 const char kIncludeDirs[] = "include_dirs";
 const char kIncludeDirs_HelpShort[] =
     "include_dirs: [directory list] Additional include directories.";
@@ -594,9 +531,55 @@ const char kIncludeDirs_Help[] =
     "\n"
     "  The directories in this list will be added to the include path for\n"
     "  the files in the affected target.\n"
+    COMMON_ORDERING_HELP
     "\n"
     "Example:\n"
     "  include_dirs = [ \"src/include\", \"//third_party/foo\" ]\n";
+
+const char kInputs[] = "inputs";
+const char kInputs_HelpShort[] =
+    "inputs: [file list] Additional compile-time dependencies.";
+const char kInputs_Help[] =
+    "inputs: Additional compile-time dependencies.\n"
+    "\n"
+    "  Inputs are compile-time dependencies of the current target. This means\n"
+    "  that all inputs must be available before compiling any of the sources\n"
+    "  or executing any actions.\n"
+    "\n"
+    "  Inputs are typically only used for action and action_foreach targets.\n"
+    "\n"
+    "Inputs for actions\n"
+    "\n"
+    "  For action and action_foreach targets, inputs should be the inputs to\n"
+    "  script that don't vary. These should be all .py files that the script\n"
+    "  uses via imports (the main script itself will be an implcit dependency\n"
+    "  of the action so need not be listed).\n"
+    "\n"
+    "  For action targets, inputs should be the entire set of inputs the\n"
+    "  script needs. For action_foreach targets, inputs should be the set of\n"
+    "  dependencies that don't change. These will be applied to each script\n"
+    "  invocation over the sources.\n"
+    "\n"
+    "  Note that another way to declare input dependencies from an action\n"
+    "  is to have the action write a depfile (see \"gn help depfile\"). This\n"
+    "  allows the script to dynamically write input dependencies, that might\n"
+    "  not be known until actually executing the script. This is more\n"
+    "  efficient than doing processing while running GN to determine the\n"
+    "  inputs, and is easier to keep in-sync than hardcoding the list.\n"
+    "\n"
+    "Inputs for binary targets\n"
+    "\n"
+    "  Any input dependencies will be resolved before compiling any sources.\n"
+    "  Normally, all actions that a target depends on will be run before any\n"
+    "  files in a target are compiled. So if you depend on generated headers,\n"
+    "  you do not typically need to list them in the inputs section.\n"
+    "\n"
+    "Example\n"
+    "\n"
+    "  action(\"myscript\") {\n"
+    "    script = \"domything.py\"\n"
+    "    inputs = [ \"input.data\" ]\n"
+    "  }\n";
 
 const char kLdflags[] = "ldflags";
 const char kLdflags_HelpShort[] =
@@ -609,7 +592,11 @@ const char kLdflags_Help[] =
     "  These flags are passed on the command-line to the linker and generally\n"
     "  specify various linking options. Most targets will not need these and\n"
     "  will use \"libs\" and \"lib_dirs\" instead.\n"
-    COMMON_FLAGS_HELP;
+    "\n"
+    "  ldflags are NOT pushed to dependents, so applying ldflags to source\n"
+    "  sets or static libraries will be a no-op. If you want to apply ldflags\n"
+    "  to dependent targets, put them in a config and set it in the\n"
+    "  all_dependent_configs or direct_dependent_configs.\n";
 
 #define COMMON_LIB_INHERITANCE_HELP \
     "\n" \
@@ -617,13 +604,7 @@ const char kLdflags_Help[] =
     "  First, then are inherited across static library boundaries until a\n" \
     "  shared library or executable target is reached. Second, they are\n" \
     "  uniquified so each one is only passed once (the first instance of it\n" \
-    "  will be the one used).\n" \
-    "\n" \
-    "  The order that libs/lib_dirs apply is:\n" \
-    "    1. Ones set on the target itself.\n" \
-    "    2. Ones from the configs applying to the target.\n" \
-    "    3. Ones from deps of the target, in order (recursively following\n" \
-    "       these rules).\n"
+    "  will be the one used).\n"
 
 const char kLibDirs[] = "lib_dirs";
 const char kLibDirs_HelpShort[] =
@@ -637,6 +618,7 @@ const char kLibDirs_Help[] =
     "  for the required libraries. If an item is not an absolute path, it\n"
     "  will be treated as being relative to the current build file.\n"
     COMMON_LIB_INHERITANCE_HELP
+    COMMON_ORDERING_HELP
     "\n"
     "Example:\n"
     "  lib_dirs = [ \"/usr/lib/foo\", \"lib/doom_melon\" ]\n";
@@ -664,12 +646,24 @@ const char kLibs_Help[] =
     "  special-cased: the switch \"-framework\" will be prepended instead of\n"
     "  the lib_prefix, and the \".framework\" suffix will be trimmed.\n"
     COMMON_LIB_INHERITANCE_HELP
+    COMMON_ORDERING_HELP
     "\n"
     "Examples:\n"
     "  On Windows:\n"
     "    libs = [ \"ctl3d.lib\" ]\n"
     "  On Linux:\n"
     "    libs = [ \"ld\" ]\n";
+
+const char kOutputExtension[] = "output_extension";
+const char kOutputExtension_HelpShort[] =
+    "output_extension: [string] Value to use for the output's file extension.";
+const char kOutputExtension_Help[] =
+    "output_extension: Value to use for the output's file extension.\n"
+    "\n"
+    "  Normally the file extension for a target is based on the target\n"
+    "  type and the operating system, but in rare cases you will need to\n"
+    "  override the name (for example to use \"libfreetype.so.6\" instead\n"
+    "  of libfreetype.so on Linux).";
 
 const char kOutputName[] = "output_name";
 const char kOutputName_HelpShort[] =
@@ -697,74 +691,63 @@ const char kOutputName_Help[] =
 
 const char kOutputs[] = "outputs";
 const char kOutputs_HelpShort[] =
-    "outputs: [file list] Output files for custom script and copy targets.";
+    "outputs: [file list] Output files for actions and copy targets.";
 const char kOutputs_Help[] =
-    "outputs: Output files for custom script and copy targets.\n"
+    "outputs: Output files for actions and copy targets.\n"
     "\n"
-    "  Outputs is valid for \"copy\" and \"custom\" target types and\n"
-    "  indicates the resulting files. The values may contain source\n"
-    "  expansions to generate the output names from the sources (see\n"
+    "  Outputs is valid for \"copy\", \"action\", and \"action_foreach\"\n"
+    "  target types and indicates the resulting files. The values may contain\n"
+    "  source expansions to generate the output names from the sources (see\n"
     "  \"gn help source_expansion\").\n"
     "\n"
     "  For copy targets, the outputs is the destination for the copied\n"
-    "  file(s). For custom script targets, the outputs should be the list of\n"
-    "  files generated by the script.\n";
+    "  file(s). For actions, the outputs should be the list of files\n"
+    "  generated by the script.\n";
+
+const char kPublic[] = "public";
+const char kPublic_HelpShort[] =
+    "public: [file list] Declare public header files for a target.";
+const char kPublic_Help[] =
+    "public: Declare public header files for a target.\n"
+    "\n"
+    "  A list of files that other targets can include. These permissions are\n"
+    "  checked via the \"check\" command (see \"gn help check\").\n"
+    "\n"
+    "  If no public files are declared, other targets (assuming they have\n"
+    "  visibility to depend on this target can include any file in the\n"
+    "  sources list. If this variable is defined on a target, dependent\n"
+    "  targets may only include files on this whitelist.\n"
+    "\n"
+    "  Header file permissions are also subject to visibility. A target\n"
+    "  must be visible to another target to include any files from it at all\n"
+    "  and the public headers indicate which subset of those files are\n"
+    "  permitted. See \"gn help visibility\" for more.\n"
+    "\n"
+    "  Public files are inherited through the dependency tree. So if there is\n"
+    "  a dependency A -> B -> C, then A can include C's public headers.\n"
+    "  However, the same is NOT true of visibility, so unless A is in C's\n"
+    "  visibility list, the include will be rejected.\n"
+    "\n"
+    "  GN only knows about files declared in the \"sources\" and \"public\"\n"
+    "  sections of targets. If a file is included that is not known to the\n"
+    "  build, it will be allowed.\n"
+    "\n"
+    "Examples:\n"
+    "  These exact files are public:\n"
+    "    public = [ \"foo.h\", \"bar.h\" ]\n"
+    "\n"
+    "  No files are public (no targets may include headers from this one):\n"
+    "    public = []\n";
 
 const char kScript[] = "script";
 const char kScript_HelpShort[] =
-    "script: [file name] Script file for custom script targets.";
+    "script: [file name] Script file for actions.";
 const char kScript_Help[] =
-    "script: Script file for custom script targets.\n"
+    "script: Script file for actions.\n"
     "\n"
     "  An absolute or buildfile-relative file name of a Python script to run\n"
-    "  for a custom script target (see \"gn help custom\").\n";
-
-const char kSourcePrereqs[] = "source_prereqs";
-const char kSourcePrereqs_HelpShort[] =
-    "source_prereqs: [file list] Additional compile-time dependencies.";
-const char kSourcePrereqs_Help[] =
-    "source_prereqs: Additional compile-time dependencies.\n"
-    "\n"
-    "  Inputs are compile-time dependencies of the current target. This means\n"
-    "  that all source prerequisites must be available before compiling any\n"
-    "  of the sources.\n"
-    "\n"
-    "  If one of your sources #includes a generated file, that file must be\n"
-    "  available before that source file is compiled. For subsequent builds,\n"
-    "  the \".d\" files will list the include dependencies of each source\n"
-    "  and Ninja can know about that dependency to make sure it's generated\n"
-    "  before compiling your source file. However, for the first run it's\n"
-    "  not possible for Ninja to know about this dependency.\n"
-    "\n"
-    "  Source prerequisites solves this problem by declaring such\n"
-    "  dependencies. It will introduce a Ninja \"implicit\" dependency for\n"
-    "  each source file in the target on the listed files.\n"
-    "\n"
-    "  For binary targets, the files in the \"source_prereqs\" should all be\n"
-    "  listed in the \"outputs\" section of another target. There is no\n"
-    "  reason to declare static source files as source prerequisites since\n"
-    "  the normal include file dependency management will handle them more\n"
-    "  efficiently anyway.\n"
-    "\n"
-    "  For custom script targets that don't generate \".d\" files, the\n"
-    "  \"source_prereqs\" section is how you can list known compile-time\n"
-    "  dependencies your script may have.\n"
-    "\n"
-    "  See also \"gn help data\" and \"gn help datadeps\" (which declare\n"
-    "  run-time rather than compile-time dependencies), and\n"
-    "  \"gn help hard_dep\" which allows you to declare the source dependency\n"
-    "  on the target generating a file rather than the target consuming it.\n"
-    "\n"
-    "Examples:\n"
-    "  executable(\"foo\") {\n"
-    "    sources = [ \"foo.cc\" ]\n"
-    "    source_prereqs = [ \"$root_gen_dir/something/generated_data.h\" ]\n"
-    "  }\n"
-    "\n"
-    "  custom(\"myscript\") {\n"
-    "    script = \"domything.py\"\n"
-    "    source_prereqs = [ \"input.data\" ]\n"
-    "  }\n";
+    "  for a action and action_foreach targets (see \"gn help action\" and\n"
+    "  \"gn help action_foreach\").\n";
 
 const char kSources[] = "sources";
 const char kSources_HelpShort[] =
@@ -773,6 +756,73 @@ const char kSources_Help[] =
     "sources: Source files for a target\n"
     "\n"
     "  A list of files relative to the current buildfile.\n";
+
+const char kVisibility[] = "visibility";
+const char kVisibility_HelpShort[] =
+    "visibility: [label list] A list of labels that can depend on a target.";
+const char kVisibility_Help[] =
+    "visibility: A list of labels that can depend on a target.\n"
+    "\n"
+    "  A label or a list of labels and label patterns that define which\n"
+    "  targets can depend on the current one. These permissions are checked\n"
+    "  via then \"check\" command (see \"gn help check\").\n"
+    "\n"
+    "  If visibility is not defined, it defaults to public (\"*\").\n"
+    "\n"
+    "  If visibility is defined, only the targets with labels that match it\n"
+    "  can depend on the current target. The empty list means no targets\n"
+    "  can depend on the current target.\n"
+    "\n"
+    "  Tip: Often you will want the same visibility for all targets in a\n"
+    "  BUILD file. In this case you can just put the definition at the top,\n"
+    "  outside of any target, and the targets will inherit that scope and see\n"
+    "  the definition.\n"
+    "\n"
+    "Matching:\n"
+    "\n"
+    "  You can specify \"*\" but the inputs aren't general patterns. The\n"
+    "  following classes of patterns are supported:\n"
+    "\n"
+    "   - Explicit (no wildcard):\n"
+    "       \"//foo/bar:baz\"\n"
+    "       \":baz\"\n"
+    "   - Wildcard target names:\n"
+    "       \"//foo/bar:*\" (any target in the //foo/bar/BUILD.gn file)\n"
+    "       \":*\"  (any target in the current build file)\n"
+    "   - Wildcard directory names (\"*\" is only supported at the end)\n"
+    "       \"*\"  (any target anywhere)\n"
+    "       \"//foo/bar/*\"  (any target in any subdir of //foo/bar)\n"
+    "       \"./*\"  (any target in the current build file or sub dirs)\n"
+    "\n"
+    "  The toolchain (normally an implicit part of a label) is ignored when\n"
+    "  checking visibility.\n"
+    "\n"
+    "Examples:\n"
+    "\n"
+    "  Only targets in the current buildfile (\"private\", the default):\n"
+    "    visibility = \":*\"\n"
+    "\n"
+    "  No targets (used for targets that should be leaf nodes):\n"
+    "    visibility = []\n"
+    "\n"
+    "  Any target (\"public\"):\n"
+    "    visibility = \"*\"\n"
+    "\n"
+    "  All targets in the current directory and any subdirectory:\n"
+    "    visibility = \"./*\"\n"
+    "\n"
+    "  Any target in \"//bar/BUILD.gn\":\n"
+    "    visibility = \"//bar:*\"\n"
+    "\n"
+    "  Any target in \"//bar/\" or any subdirectory thereof:\n"
+    "    visibility = \"//bar/*\"\n"
+    "\n"
+    "  Just these specific targets:\n"
+    "    visibility = [ \":mything\", \"//foo:something_else\" ]\n"
+    "\n"
+    "  Any target in the current directory and any subdirectory thereof, plus\n"
+    "  any targets in \"//bar/\" and any subdirectory thereof.\n"
+    "    visibility = [ \"./*\", \"//bar/*\" ]\n";
 
 // -----------------------------------------------------------------------------
 
@@ -825,20 +875,19 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(Depfile)
     INSERT_VARIABLE(Deps)
     INSERT_VARIABLE(DirectDependentConfigs)
-    INSERT_VARIABLE(External)
     INSERT_VARIABLE(ForwardDependentConfigsFrom)
-    INSERT_VARIABLE(GypFile)
-    INSERT_VARIABLE(GypHeader)
-    INSERT_VARIABLE(HardDep)
     INSERT_VARIABLE(IncludeDirs)
+    INSERT_VARIABLE(Inputs)
     INSERT_VARIABLE(Ldflags)
     INSERT_VARIABLE(Libs)
     INSERT_VARIABLE(LibDirs)
+    INSERT_VARIABLE(OutputExtension)
     INSERT_VARIABLE(OutputName)
     INSERT_VARIABLE(Outputs)
+    INSERT_VARIABLE(Public)
     INSERT_VARIABLE(Script)
-    INSERT_VARIABLE(SourcePrereqs)
     INSERT_VARIABLE(Sources)
+    INSERT_VARIABLE(Visibility)
   }
   return info_map;
 }

@@ -4,34 +4,33 @@
 
 #include "chrome/browser/chromeos/input_method/input_method_engine.h"
 
-#define XK_MISCELLANY
-#include <X11/keysymdef.h>
-#include <X11/X.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
 #undef FocusIn
 #undef FocusOut
 #undef RootWindow
 #include <map>
 
+#include "ash/ime/input_method_menu_item.h"
+#include "ash/ime/input_method_menu_manager.h"
 #include "ash/shell.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/ime/component_extension_ime_manager.h"
 #include "chromeos/ime/composition_text.h"
 #include "chromeos/ime/extension_ime_util.h"
-#include "chromeos/ime/ibus_keymap.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/ime/candidate_window.h"
+#include "ui/base/ime/chromeos/ime_keymap.h"
 #include "ui/events/event.h"
-#include "ui/events/keycodes/dom4/keycode_converter.h"
-#include "ui/events/keycodes/keyboard_code_conversion_x.h"
+#include "ui/events/event_processor.h"
 #include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_util.h"
 
 namespace chromeos {
 const char* kErrorNotActive = "IME is not active";
@@ -44,21 +43,79 @@ namespace {
 void UpdateComposition(const CompositionText& composition_text,
                        uint32 cursor_pos,
                        bool is_visible) {
-  IBusInputContextHandlerInterface* input_context =
+  IMEInputContextHandlerInterface* input_context =
       IMEBridge::Get()->GetInputContextHandler();
   if (input_context)
     input_context->UpdateCompositionText(
         composition_text, cursor_pos, is_visible);
 }
 
+// Returns the length of characters of a UTF-8 string with unknown string
+// length. Cannot apply faster algorithm to count characters in an utf-8
+// string without knowing the string length,  so just does a full scan.
+size_t GetUtf8StringLength(const char* s) {
+  size_t ret = 0;
+  while (*s) {
+    if ((*s & 0xC0) != 0x80)
+      ret++;
+    ++s;
+  }
+  return ret;
+}
+
+std::string GetKeyFromEvent(const ui::KeyEvent& event) {
+  const std::string& code = event.code();
+  if (StartsWithASCII(code, "Control", true))
+    return "Ctrl";
+  if (StartsWithASCII(code, "Shift", true))
+    return "Shift";
+  if (StartsWithASCII(code, "Alt", true))
+    return "Alt";
+  if (StartsWithASCII(code, "Arrow", true))
+    return code.substr(5);
+  if (code == "Escape")
+    return "Esc";
+  if (code == "Backspace" || code == "Tab" ||
+      code == "Enter" || code == "CapsLock")
+    return code;
+  uint16 ch = 0;
+  // Ctrl+? cases, gets key value for Ctrl is not down.
+  if (event.flags() & ui::EF_CONTROL_DOWN) {
+    ui::KeyEvent event_no_ctrl(event.type(),
+                               event.key_code(),
+                               event.flags() ^ ui::EF_CONTROL_DOWN,
+                               false);
+    ch = event_no_ctrl.GetCharacter();
+  } else {
+    ch = event.GetCharacter();
+  }
+  return base::UTF16ToUTF8(base::string16(1, ch));
+}
+
+void GetExtensionKeyboardEventFromKeyEvent(
+    const ui::KeyEvent& event,
+    InputMethodEngine::KeyboardEvent* ext_event) {
+  DCHECK(event.type() == ui::ET_KEY_RELEASED ||
+         event.type() == ui::ET_KEY_PRESSED);
+  DCHECK(ext_event);
+  ext_event->type = (event.type() == ui::ET_KEY_RELEASED) ? "keyup" : "keydown";
+
+  ext_event->code = event.code();
+  ext_event->key_code = static_cast<int>(event.key_code());
+  ext_event->alt_key = event.IsAltDown();
+  ext_event->ctrl_key = event.IsControlDown();
+  ext_event->shift_key = event.IsShiftDown();
+  ext_event->caps_lock = event.IsCapsLockDown();
+  ext_event->key = GetKeyFromEvent(event);
+}
+
 }  // namespace
 
 InputMethodEngine::InputMethodEngine()
-    : focused_(false),
+    : current_input_type_(ui::TEXT_INPUT_TYPE_NONE),
       active_(false),
       context_id_(0),
       next_context_id_(1),
-      observer_(NULL),
       composition_text_(new CompositionText()),
       composition_cursor_(0),
       candidate_window_(new ui::CandidateWindow()),
@@ -66,11 +123,13 @@ InputMethodEngine::InputMethodEngine()
       sent_key_event_(NULL) {}
 
 InputMethodEngine::~InputMethodEngine() {
+  if (start_time_.ToInternalValue())
+    RecordHistogram("WorkingTime", (end_time_ - start_time_).InSeconds());
   input_method::InputMethodManager::Get()->RemoveInputMethodExtension(imm_id_);
 }
 
 void InputMethodEngine::Initialize(
-    InputMethodEngineInterface::Observer* observer,
+    scoped_ptr<InputMethodEngineInterface::Observer> observer,
     const char* engine_name,
     const char* extension_id,
     const char* engine_id,
@@ -81,7 +140,7 @@ void InputMethodEngine::Initialize(
   DCHECK(observer) << "Observer must not be null.";
 
   // TODO(komatsu): It is probably better to set observer out of Initialize.
-  observer_ = observer;
+  observer_ = observer.Pass();
   engine_id_ = engine_id;
   extension_id_ = extension_id;
 
@@ -90,7 +149,7 @@ void InputMethodEngine::Initialize(
   ComponentExtensionIMEManager* comp_ext_ime_manager =
       manager->GetComponentExtensionIMEManager();
 
-  if (comp_ext_ime_manager->IsInitialized() &&
+  if (comp_ext_ime_manager && comp_ext_ime_manager->IsInitialized() &&
       comp_ext_ime_manager->IsWhitelistedExtension(extension_id)) {
     imm_id_ = comp_ext_ime_manager->GetId(extension_id, engine_id);
   } else {
@@ -104,7 +163,8 @@ void InputMethodEngine::Initialize(
       std::string(), // TODO(uekawa): Set short name.
       layouts,
       languages,
-      false,  // is_login_keyboard
+      extension_ime_util::IsKeyboardLayoutExtension(
+          imm_id_), // is_login_keyboard
       options_page,
       input_view);
 
@@ -118,7 +178,16 @@ const input_method::InputMethodDescriptor& InputMethodEngine::GetDescriptor()
   return descriptor_;
 }
 
-void InputMethodEngine::StartIme() {
+void InputMethodEngine::RecordHistogram(const char* name, int count) {
+  std::string histo_name =
+      base::StringPrintf("InputMethod.%s.%s", name, engine_id_.c_str());
+  base::HistogramBase* counter = base::Histogram::FactoryGet(
+      histo_name, 0, 1000000, 50, base::HistogramBase::kNoFlags);
+  if (counter)
+    counter->Add(count);
+}
+
+void InputMethodEngine::NotifyImeReady() {
   input_method::InputMethodManager* manager =
       input_method::InputMethodManager::Get();
   if (manager && imm_id_ == manager->GetCurrentInputMethod().id())
@@ -205,6 +274,14 @@ bool InputMethodEngine::CommitText(int context_id, const char* text,
   }
 
   IMEBridge::Get()->GetInputContextHandler()->CommitText(text);
+
+  // Records times for using input method.
+  if (!start_time_.ToInternalValue())
+    start_time_ = base::Time::Now();
+  end_time_ = base::Time::Now();
+  // Records histograms for counts of commits and committed characters.
+  RecordHistogram("Commit", 1);
+  RecordHistogram("CommitCharacter", GetUtf8StringLength(text));
   return true;
 }
 
@@ -214,36 +291,36 @@ bool InputMethodEngine::SendKeyEvents(
   if (!active_) {
     return false;
   }
-  if (context_id != context_id_ || context_id_ == -1) {
+  // context_id  ==  0, means sending key events to non-input field.
+  // context_id_ == -1, means the focus is not in an input field.
+  if (context_id != 0 && (context_id != context_id_ || context_id_ == -1)) {
     return false;
   }
 
-  aura::WindowEventDispatcher* dispatcher =
-      ash::Shell::GetPrimaryRootWindow()->GetDispatcher();
+  ui::EventProcessor* dispatcher =
+      ash::Shell::GetPrimaryRootWindow()->GetHost()->event_processor();
 
   for (size_t i = 0; i < events.size(); ++i) {
     const KeyboardEvent& event = events[i];
     const ui::EventType type =
         (event.type == "keyup") ? ui::ET_KEY_RELEASED : ui::ET_KEY_PRESSED;
+    ui::KeyboardCode key_code = static_cast<ui::KeyboardCode>(event.key_code);
+    if (key_code == ui::VKEY_UNKNOWN)
+      key_code = ui::DomKeycodeToKeyboardCode(event.code);
 
-    // KeyboardCodeFromXKyeSym assumes US keyboard layout.
-    ui::KeycodeConverter* conv = ui::KeycodeConverter::GetInstance();
-    DCHECK(conv);
-
-     // DOM code (KeyA) -> XKB -> XKeySym (XK_A) -> KeyboardCode (VKEY_A)
-    const uint16 native_keycode =
-        conv->CodeToNativeKeycode(event.code.c_str());
-    const uint xkeysym = ui::DefaultXKeysymFromHardwareKeycode(native_keycode);
-    const ui::KeyboardCode key_code = ui::KeyboardCodeFromXKeysym(xkeysym);
-
-    const std::string code = event.code;
     int flags = ui::EF_NONE;
     flags |= event.alt_key   ? ui::EF_ALT_DOWN       : ui::EF_NONE;
     flags |= event.ctrl_key  ? ui::EF_CONTROL_DOWN   : ui::EF_NONE;
     flags |= event.shift_key ? ui::EF_SHIFT_DOWN     : ui::EF_NONE;
     flags |= event.caps_lock ? ui::EF_CAPS_LOCK_DOWN : ui::EF_NONE;
 
-    ui::KeyEvent ui_event(type, key_code, code, flags, false /* is_char */);
+    ui::KeyEvent ui_event(type,
+                          key_code,
+                          event.code,
+                          flags,
+                          false /* is_char */);
+    if (!event.key.empty())
+      ui_event.set_character(base::UTF8ToUTF16(event.key)[0]);
     base::AutoReset<const ui::KeyEvent*> reset_sent_key(&sent_key_event_,
                                                         &ui_event);
     ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&ui_event);
@@ -277,7 +354,7 @@ void InputMethodEngine::SetCandidateWindowProperty(
   candidate_window_property_ = property;
 
   if (active_) {
-    IBusPanelCandidateWindowHandlerInterface* cw_handler =
+    IMECandidateWindowHandlerInterface* cw_handler =
         IMEBridge::Get()->GetCandidateWindowHandler();
     if (cw_handler)
       cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
@@ -292,8 +369,8 @@ bool InputMethodEngine::SetCandidateWindowVisible(bool visible,
   }
 
   window_visible_ = visible;
-  IBusPanelCandidateWindowHandlerInterface* cw_handler =
-    IMEBridge::Get()->GetCandidateWindowHandler();
+  IMECandidateWindowHandlerInterface* cw_handler =
+      IMEBridge::Get()->GetCandidateWindowHandler();
   if (cw_handler)
     cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   return true;
@@ -332,8 +409,8 @@ bool InputMethodEngine::SetCandidates(
     candidate_window_->mutable_candidates()->push_back(entry);
   }
   if (active_) {
-    IBusPanelCandidateWindowHandlerInterface* cw_handler =
-      IMEBridge::Get()->GetCandidateWindowHandler();
+    IMECandidateWindowHandlerInterface* cw_handler =
+        IMEBridge::Get()->GetCandidateWindowHandler();
     if (cw_handler)
       cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   }
@@ -359,8 +436,8 @@ bool InputMethodEngine::SetCursorPosition(int context_id, int candidate_id,
   }
 
   candidate_window_->set_cursor_position(position->second);
-  IBusPanelCandidateWindowHandlerInterface* cw_handler =
-    IMEBridge::Get()->GetCandidateWindowHandler();
+  IMECandidateWindowHandlerInterface* cw_handler =
+      IMEBridge::Get()->GetCandidateWindowHandler();
   if (cw_handler)
     cw_handler->UpdateLookupTable(*candidate_window_, window_visible_);
   return true;
@@ -375,19 +452,17 @@ bool InputMethodEngine::UpdateMenuItems(
   if (!active_)
     return false;
 
-  input_method::InputMethodPropertyList property_list;
+  ash::ime::InputMethodMenuItemList menu_item_list;
   for (std::vector<MenuItem>::const_iterator item = items.begin();
        item != items.end(); ++item) {
-    input_method::InputMethodProperty property;
+    ash::ime::InputMethodMenuItem property;
     MenuItemToProperty(*item, &property);
-    property_list.push_back(property);
+    menu_item_list.push_back(property);
   }
 
-  input_method::InputMethodManager* manager =
-      input_method::InputMethodManager::Get();
-  if (manager)
-    manager->SetCurrentInputMethodProperties(property_list);
-
+  ash::ime::InputMethodMenuManager::GetInstance()->
+      SetCurrentInputMethodMenuItemList(
+          menu_item_list);
   return true;
 }
 
@@ -421,7 +496,7 @@ bool InputMethodEngine::DeleteSurroundingText(int context_id,
 
   // TODO(nona): Return false if there is ongoing composition.
 
-  IBusInputContextHandlerInterface* input_context =
+  IMEInputContextHandlerInterface* input_context =
       IMEBridge::Get()->GetInputContextHandler();
   if (input_context)
     input_context->DeleteSurroundingText(offset, number_of_chars);
@@ -431,24 +506,35 @@ bool InputMethodEngine::DeleteSurroundingText(int context_id,
 
 void InputMethodEngine::HideInputView() {
   keyboard::KeyboardController* keyboard_controller =
-    ash::Shell::GetInstance()->keyboard_controller();
+    keyboard::KeyboardController::GetInstance();
   if (keyboard_controller) {
     keyboard_controller->HideKeyboard(
         keyboard::KeyboardController::HIDE_REASON_MANUAL);
   }
 }
 
+void InputMethodEngine::EnableInputView(bool enabled) {
+  const GURL& url = enabled ? input_view_url_ : GURL();
+  keyboard::SetOverrideContentUrl(url);
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller)
+    keyboard_controller->Reload();
+}
+
 void InputMethodEngine::FocusIn(
     const IMEEngineHandlerInterface::InputContext& input_context) {
-  focused_ = true;
-  if (!active_)
+  current_input_type_ = input_context.type;
+
+  if (!active_ || current_input_type_ == ui::TEXT_INPUT_TYPE_NONE)
     return;
+
   context_id_ = next_context_id_;
   ++next_context_id_;
 
   InputMethodEngineInterface::InputContext context;
   context.id = context_id_;
-  switch (input_context.type) {
+  switch (current_input_type_) {
     case ui::TEXT_INPUT_TYPE_SEARCH:
       context.type = "search";
       break;
@@ -464,6 +550,9 @@ void InputMethodEngine::FocusIn(
     case ui::TEXT_INPUT_TYPE_NUMBER:
       context.type = "number";
       break;
+    case ui::TEXT_INPUT_TYPE_PASSWORD:
+      context.type = "password";
+      break;
     default:
       context.type = "text";
       break;
@@ -473,9 +562,11 @@ void InputMethodEngine::FocusIn(
 }
 
 void InputMethodEngine::FocusOut() {
-  focused_ = false;
-  if (!active_)
+  if (!active_ || current_input_type_ == ui::TEXT_INPUT_TYPE_NONE)
     return;
+
+  current_input_type_ = ui::TEXT_INPUT_TYPE_NONE;
+
   int context_id = context_id_;
   context_id_ = -1;
   observer_->OnBlur(context_id);
@@ -484,27 +575,22 @@ void InputMethodEngine::FocusOut() {
 void InputMethodEngine::Enable() {
   active_ = true;
   observer_->OnActivate(engine_id_);
-  IMEEngineHandlerInterface::InputContext context(ui::TEXT_INPUT_TYPE_TEXT,
-                                                  ui::TEXT_INPUT_MODE_DEFAULT);
-  FocusIn(context);
+  current_input_type_ = IMEBridge::Get()->GetCurrentTextInputType();
+  FocusIn(IMEEngineHandlerInterface::InputContext(
+      current_input_type_, ui::TEXT_INPUT_MODE_DEFAULT));
+  EnableInputView(true);
 
-  keyboard::KeyboardController* keyboard_controller =
-      ash::Shell::GetInstance()->keyboard_controller();
-  if (keyboard_controller) {
-    keyboard_controller->SetOverrideContentUrl(input_view_url_);
-  }
+  start_time_ = base::Time();
+  end_time_ = base::Time();
+  RecordHistogram("Enable", 1);
 }
 
 void InputMethodEngine::Disable() {
   active_ = false;
   observer_->OnDeactivated(engine_id_);
 
-  keyboard::KeyboardController* keyboard_controller =
-      ash::Shell::GetInstance()->keyboard_controller();
-  if (keyboard_controller) {
-    GURL empty_url;
-    keyboard_controller->SetOverrideContentUrl(empty_url);
-  }
+  if (start_time_.ToInternalValue())
+    RecordHistogram("WorkingTime", (end_time_ - start_time_).InSeconds());
 }
 
 void InputMethodEngine::PropertyActivate(const std::string& property_name) {
@@ -514,44 +600,6 @@ void InputMethodEngine::PropertyActivate(const std::string& property_name) {
 void InputMethodEngine::Reset() {
   observer_->OnReset(engine_id_);
 }
-
-namespace {
-void GetExtensionKeyboardEventFromKeyEvent(
-    const ui::KeyEvent& event,
-    InputMethodEngine::KeyboardEvent* ext_event) {
-  DCHECK(event.type() == ui::ET_KEY_RELEASED ||
-         event.type() == ui::ET_KEY_PRESSED);
-  DCHECK(ext_event);
-  ext_event->type = (event.type() == ui::ET_KEY_RELEASED) ? "keyup" : "keydown";
-
-  ext_event->code = event.code();
-  ext_event->alt_key = event.IsAltDown();
-  ext_event->ctrl_key = event.IsControlDown();
-  ext_event->shift_key = event.IsShiftDown();
-  ext_event->caps_lock = event.IsCapsLockDown();
-
-  uint32 ibus_keyval = 0;
-  if (event.HasNativeEvent()) {
-    const base::NativeEvent& native_event = event.native_event();
-    DCHECK(native_event);
-
-    XKeyEvent* x_key = &(static_cast<XEvent*>(native_event)->xkey);
-    KeySym keysym = NoSymbol;
-    ::XLookupString(x_key, NULL, 0, &keysym, NULL);
-    ibus_keyval = keysym;
-  } else {
-    // Convert ui::KeyEvent.key_code to DOM UIEvent key.
-    // XKeysymForWindowsKeyCode converts key_code to XKeySym, but it
-    // assumes US layout and does not care about CapLock state.
-    //
-    // TODO(komatsu): Support CapsLock states.
-    // TODO(komatsu): Support non-us keyboard layouts.
-    ibus_keyval = ui::XKeysymForWindowsKeyCode(event.key_code(),
-                                               event.IsShiftDown());
-  }
-  ext_event->key = input_method::GetIBusKey(ibus_keyval);
-}
-}  // namespace
 
 void InputMethodEngine::ProcessKeyEvent(
     const ui::KeyEvent& key_event,
@@ -595,9 +643,10 @@ void InputMethodEngine::SetSurroundingText(const std::string& text,
                                       static_cast<int>(anchor_pos));
 }
 
+// TODO(uekawa): rename this method to a more reasonable name.
 void InputMethodEngine::MenuItemToProperty(
     const MenuItem& item,
-    input_method::InputMethodProperty* property) {
+    ash::ime::InputMethodMenuItem* property) {
   property->key = item.id;
 
   if (item.modified & MENU_ITEM_MODIFIED_LABEL) {

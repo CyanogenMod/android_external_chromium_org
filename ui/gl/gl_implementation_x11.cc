@@ -13,7 +13,7 @@
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_glx_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
-#include "ui/gl/gl_implementation_linux.h"
+#include "ui/gl/gl_implementation_osmesa.h"
 #include "ui/gl/gl_osmesa_api_implementation.h"
 #include "ui/gl/gl_switches.h"
 
@@ -30,6 +30,15 @@ void GL_BINDING_CALL MarshalDepthRangeToDepthRangef(GLclampd z_near,
                                                     GLclampd z_far) {
   glDepthRangef(static_cast<GLclampf>(z_near), static_cast<GLclampf>(z_far));
 }
+
+#if defined(OS_OPENBSD)
+const char kGLLibraryName[] = "libGL.so";
+#else
+const char kGLLibraryName[] = "libGL.so.1";
+#endif
+
+const char kGLESv2LibraryName[] = "libGLESv2.so.2";
+const char kEGLLibraryName[] = "libEGL.so.1";
 
 }  // namespace
 
@@ -59,15 +68,11 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       const CommandLine* command_line = CommandLine::ForCurrentProcess();
 
       if (command_line->HasSwitch(switches::kTestGLLib))
-        library = LoadLibrary(command_line->GetSwitchValueASCII(
-            switches::kTestGLLib).c_str());
+        library = LoadLibraryAndPrintError(
+            command_line->GetSwitchValueASCII(switches::kTestGLLib).c_str());
 
       if (!library) {
-#if defined(OS_OPENBSD)
-        library = LoadLibrary("libGL.so");
-#else
-        library = LoadLibrary("libGL.so.1");
-#endif
+        library = LoadLibraryAndPrintError(kGLLibraryName);
       }
 
       if (!library)
@@ -92,10 +97,12 @@ bool InitializeStaticGLBindings(GLImplementation implementation) {
       break;
     }
     case kGLImplementationEGLGLES2: {
-      base::NativeLibrary gles_library = LoadLibrary("libGLESv2.so.2");
+      base::NativeLibrary gles_library =
+          LoadLibraryAndPrintError(kGLESv2LibraryName);
       if (!gles_library)
         return false;
-      base::NativeLibrary egl_library = LoadLibrary("libEGL.so.1");
+      base::NativeLibrary egl_library =
+          LoadLibraryAndPrintError(kEGLLibraryName);
       if (!egl_library) {
         base::UnloadNativeLibrary(gles_library);
         return false;

@@ -10,7 +10,8 @@ namespace input_method {
 MockInputMethodManager::MockInputMethodManager()
     : add_observer_count_(0),
       remove_observer_count_(0),
-      util_(&delegate_, whitelist_.GetSupportedInputMethods()) {
+      util_(&delegate_, whitelist_.GetSupportedInputMethods()),
+      mod3_used_(false) {
   active_input_method_ids_.push_back("xkb:us::eng");
 }
 
@@ -91,7 +92,7 @@ void MockInputMethodManager::ChangeInputMethod(
     const std::string& input_method_id) {
 }
 
-void MockInputMethodManager::ActivateInputMethodProperty(
+void MockInputMethodManager::ActivateInputMethodMenuItem(
     const std::string& key) {
 }
 
@@ -112,6 +113,10 @@ void MockInputMethodManager::SetEnabledExtensionImes(
 }
 
 void MockInputMethodManager::SetInputMethodLoginDefault() {
+}
+
+void MockInputMethodManager::SetInputMethodLoginDefaultFromVPD(
+    const std::string& locale, const std::string& layout) {
 }
 
 bool MockInputMethodManager::SwitchToNextInputMethod() {
@@ -144,18 +149,15 @@ InputMethodDescriptor MockInputMethodManager::GetCurrentInputMethod() const {
   return descriptor;
 }
 
-InputMethodPropertyList
-MockInputMethodManager::GetCurrentInputMethodProperties() const {
-  return InputMethodPropertyList();
+bool MockInputMethodManager::IsISOLevel5ShiftUsedByCurrentInputMethod() const {
+  return mod3_used_;
 }
 
-void MockInputMethodManager::SetCurrentInputMethodProperties(
-    const InputMethodPropertyList& property_list) {
+bool MockInputMethodManager::IsAltGrUsedByCurrentInputMethod() const {
+  return false;
 }
 
-XKeyboard* MockInputMethodManager::GetXKeyboard() {
-  return &xkeyboard_;
-}
+ImeKeyboard* MockInputMethodManager::GetImeKeyboard() { return &keyboard_; }
 
 InputMethodUtil* MockInputMethodManager::GetInputMethodUtil() {
   return &util_;
@@ -163,7 +165,12 @@ InputMethodUtil* MockInputMethodManager::GetInputMethodUtil() {
 
 ComponentExtensionIMEManager*
     MockInputMethodManager::GetComponentExtensionIMEManager() {
-  return NULL;
+  return comp_ime_manager_.get();
+}
+
+void MockInputMethodManager::SetComponentExtensionIMEManager(
+    scoped_ptr<ComponentExtensionIMEManager> comp_ime_manager) {
+  comp_ime_manager_ = comp_ime_manager.Pass();
 }
 
 void MockInputMethodManager::set_application_locale(const std::string& value) {
@@ -174,5 +181,11 @@ bool MockInputMethodManager::IsLoginKeyboard(
     const std::string& layout) const {
   return true;
 }
+
+bool MockInputMethodManager::MigrateInputMethods(
+    std::vector<std::string>* input_method_ids) {
+  return false;
+}
+
 }  // namespace input_method
 }  // namespace chromeos

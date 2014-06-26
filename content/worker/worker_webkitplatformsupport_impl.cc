@@ -7,7 +7,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/child/blink_glue.h"
 #include "content/child/database_util.h"
@@ -142,9 +141,11 @@ bool WorkerWebKitPlatformSupportImpl::isLinkVisited(
   return false;
 }
 
-WebMessagePortChannel*
-WorkerWebKitPlatformSupportImpl::createMessagePortChannel() {
-  return new WebMessagePortChannelImpl(child_thread_loop_.get());
+void WorkerWebKitPlatformSupportImpl::createMessageChannel(
+    blink::WebMessagePortChannel** channel1,
+    blink::WebMessagePortChannel** channel2) {
+  WebMessagePortChannelImpl::CreatePair(
+      child_thread_loop_.get(), channel1, channel2);
 }
 
 void WorkerWebKitPlatformSupportImpl::setCookies(
@@ -248,6 +249,14 @@ WorkerWebKitPlatformSupportImpl::supportsMediaMIMEType(
 
 bool WorkerWebKitPlatformSupportImpl::supportsMediaSourceMIMEType(
     const blink::WebString& mimeType, const blink::WebString& codecs) {
+  NOTREACHED();
+  return false;
+}
+
+bool WorkerWebKitPlatformSupportImpl::supportsEncryptedMediaMIMEType(
+    const blink::WebString& key_system,
+    const blink::WebString& mime_type,
+    const blink::WebString& codecs) {
   NOTREACHED();
   return false;
 }

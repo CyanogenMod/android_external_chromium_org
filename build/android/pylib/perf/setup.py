@@ -8,16 +8,51 @@ import json
 import fnmatch
 import logging
 import os
-import psutil
-import signal
 import shutil
-import time
 
+from pylib import android_commands
 from pylib import constants
 from pylib import forwarder
+from pylib.device import device_list
+from pylib.perf import test_runner
 from pylib.utils import test_environment
 
-import test_runner
+
+def _GetAllDevices():
+  devices_path = os.path.join(os.environ.get('CHROMIUM_OUT_DIR', 'out'),
+                              device_list.LAST_DEVICES_FILENAME)
+  try:
+    devices = device_list.GetPersistentDeviceList(devices_path)
+  except IOError as e:
+    logging.error('Unable to find %s [%s]', devices_path, e)
+    devices = android_commands.GetAttachedDevices()
+  return sorted(devices)
+
+
+def _GetStepsDictFromSingleStep(test_options):
+  # Running a single command, build the tests structure.
+  steps_dict = {
+    'version': 1,
+    'steps': {
+        'single_step': {
+          'device_affinity': 0,
+          'cmd': test_options.single_step
+        },
+    }
+  }
+  return steps_dict
+
+
+def _GetStepsDict(test_options):
+  if test_options.single_step:
+    return _GetStepsDictFromSingleStep(test_options)
+  if test_options.steps:
+    with file(test_options.steps, 'r') as f:
+      steps = json.load(f)
+
+      # Already using the new format.
+      assert steps['version'] == 1
+      return steps
 
 
 def Setup(test_options):
@@ -27,7 +62,7 @@ def Setup(test_options):
     test_options: A PerformanceOptions object.
 
   Returns:
-    A tuple of (TestRunnerFactory, tests).
+    A tuple of (TestRunnerFactory, tests, devices).
   """
   # TODO(bulach): remove this once the bot side lands. BUG=318369
   constants.SetBuildType('Release')
@@ -39,25 +74,15 @@ def Setup(test_options):
   test_environment.CleanupLeftoverProcesses()
   forwarder.Forwarder.UseMultiprocessing()
 
-  if test_options.single_step:
-    # Running a single command, build the tests structure.
-    tests = [['single_step', test_options.single_step]]
+  # We want to keep device affinity, so return all devices ever seen.
+  all_devices = _GetAllDevices()
 
-  if test_options.steps:
-    with file(test_options.steps, 'r') as f:
-      tests = json.load(f)
-
-  # The list is necessary to keep the steps order, but internally
-  # the format is squashed from a list of lists into a single dict:
-  # [["A", "cmd"], ["B", "cmd"]] into {"A": "cmd", "B": "cmd"}
-  sorted_test_names = [i[0] for i in tests]
-  tests_dict = dict(tests)
+  steps_dict = _GetStepsDict(test_options)
+  sorted_step_names = sorted(steps_dict['steps'].keys())
 
   if test_options.test_filter:
-    sorted_test_names = fnmatch.filter(sorted_test_names,
+    sorted_step_names = fnmatch.filter(sorted_step_names,
                                        test_options.test_filter)
-    tests_dict = dict((k, v) for k, v in tests_dict.iteritems()
-                      if k in sorted_test_names)
 
   flaky_steps = []
   if test_options.flaky_steps:
@@ -66,6 +91,7 @@ def Setup(test_options):
 
   def TestRunnerFactory(device, shard_index):
     return test_runner.TestRunner(
-        test_options, device, tests_dict, flaky_steps)
+        test_options, device, shard_index, len(all_devices),
+        steps_dict, flaky_steps)
 
-  return (TestRunnerFactory, sorted_test_names)
+  return (TestRunnerFactory, sorted_step_names, all_devices)

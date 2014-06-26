@@ -65,6 +65,7 @@ ShellBrowserContext::ShellBrowserContext(bool off_the_record,
     : off_the_record_(off_the_record),
       net_log_(net_log),
       ignore_certificate_errors_(false),
+      guest_manager_(NULL),
       resource_context_(new ShellResourceContext) {
   InitWhileIOAllowed();
 }
@@ -139,7 +140,8 @@ net::URLRequestContextGetter* ShellBrowserContext::GetRequestContext()  {
 }
 
 net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
-    ProtocolHandlerMap* protocol_handlers) {
+    ProtocolHandlerMap* protocol_handlers,
+    URLRequestInterceptorScopedVector request_interceptors) {
   DCHECK(!url_request_getter_.get());
   url_request_getter_ = new ShellURLRequestContextGetter(
       ignore_certificate_errors_,
@@ -147,6 +149,7 @@ net::URLRequestContextGetter* ShellBrowserContext::CreateRequestContext(
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::IO),
       BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::FILE),
       protocol_handlers,
+      request_interceptors.Pass(),
       net_log_);
   resource_context_->set_url_request_context_getter(url_request_getter_.get());
   return url_request_getter_.get();
@@ -176,48 +179,12 @@ net::URLRequestContextGetter*
   return GetRequestContext();
 }
 
-void ShellBrowserContext::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      const MidiSysExPermissionCallback& callback) {
-  // Always reject requests for LayoutTests for now.
-  // TODO(toyoshim): Make it programmable to improve test coverage.
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kDumpRenderTree)) {
-    callback.Run(false);
-    return;
-  }
-  callback.Run(true);
-}
-
-void ShellBrowserContext::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-}
-
-void ShellBrowserContext::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-  callback.Run(true);
-}
-
-void ShellBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
-}
-
 net::URLRequestContextGetter*
-    ShellBrowserContext::CreateRequestContextForStoragePartition(
-        const base::FilePath& partition_path,
-        bool in_memory,
-        ProtocolHandlerMap* protocol_handlers) {
+ShellBrowserContext::CreateRequestContextForStoragePartition(
+    const base::FilePath& partition_path,
+    bool in_memory,
+    ProtocolHandlerMap* protocol_handlers,
+    URLRequestInterceptorScopedVector request_interceptors) {
   return NULL;
 }
 
@@ -225,12 +192,15 @@ ResourceContext* ShellBrowserContext::GetResourceContext()  {
   return resource_context_.get();
 }
 
-GeolocationPermissionContext*
-    ShellBrowserContext::GetGeolocationPermissionContext()  {
-  return NULL;
+BrowserPluginGuestManager* ShellBrowserContext::GetGuestManager() {
+  return guest_manager_;
 }
 
 quota::SpecialStoragePolicy* ShellBrowserContext::GetSpecialStoragePolicy() {
+  return NULL;
+}
+
+PushMessagingService* ShellBrowserContext::GetPushMessagingService() {
   return NULL;
 }
 

@@ -7,18 +7,17 @@ package org.chromium.chrome.browser.input;
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.UrlUtils;
 import org.chromium.chrome.browser.ContentViewUtil;
-import org.chromium.chrome.testshell.ChromiumTestShellTestBase;
+import org.chromium.chrome.shell.ChromeShellTestBase;
 import org.chromium.content.browser.ContentView;
-import org.chromium.content.browser.input.SelectPopupDialog;
+import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.DOMUtils;
-import org.chromium.content.browser.test.util.TestCallbackHelperContainer;
 import org.chromium.content.browser.test.util.UiUtils;
 import org.chromium.ui.base.ActivityWindowAndroid;
 import org.chromium.ui.base.WindowAndroid;
 
-public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
+public class SelectPopupOtherContentViewTest extends ChromeShellTestBase {
     private static final String SELECT_URL = UrlUtils.encodeHtmlDataUri(
             "<html><body>" +
             "Which animal is the strongest:<br/>" +
@@ -33,10 +32,11 @@ public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
             "</select>" +
             "</body></html>");
 
-    private static class PopupShowingCriteria implements Criteria {
+    private class PopupShowingCriteria implements Criteria {
         @Override
         public boolean isSatisfied() {
-            return SelectPopupDialog.getCurrent() != null;
+            ContentViewCore contentViewCore = getActivity().getActiveContentViewCore();
+            return contentViewCore.getSelectPopupForTest() != null;
         }
     }
 
@@ -55,15 +55,13 @@ public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
     public void testPopupNotClosedByOtherContentView()
             throws InterruptedException, Exception, Throwable {
         // Load the test page.
-        launchChromiumTestShellWithUrl(SELECT_URL);
+        launchChromeShellWithUrl(SELECT_URL);
         assertTrue("Page failed to load", waitForActiveShellToBeDoneLoading());
 
-        final ContentView view = getActivity().getActiveContentView();
-        final TestCallbackHelperContainer viewClient =
-                new TestCallbackHelperContainer(view);
+        final ContentViewCore viewCore = getActivity().getActiveContentViewCore();
 
         // Once clicked, the popup should show up.
-        DOMUtils.clickNode(this, view, viewClient, "select");
+        DOMUtils.clickNode(this, viewCore, "select");
         assertTrue("The select popup did not show up on click.",
                 CriteriaHelper.pollForCriteria(new PopupShowingCriteria()));
 
@@ -73,9 +71,11 @@ public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
             public void run() {
                 long nativeWebContents = ContentViewUtil.createNativeWebContents(false);
                 WindowAndroid windowAndroid = new ActivityWindowAndroid(getActivity());
-                ContentView contentView = ContentView.newInstance(
-                        getActivity(), nativeWebContents, windowAndroid);
-                contentView.destroy();
+
+                ContentViewCore contentViewCore = new ContentViewCore(getActivity());
+                ContentView cv = ContentView.newInstance(getActivity(), contentViewCore);
+                contentViewCore.initialize(cv, cv, nativeWebContents, windowAndroid);
+                contentViewCore.destroy();
             }
         });
 
@@ -84,6 +84,6 @@ public class SelectPopupOtherContentViewTest extends ChromiumTestShellTestBase {
 
         // The popup should still be shown.
         assertNotNull("The select popup got hidden by destroying of unrelated ContentViewCore.",
-                SelectPopupDialog.getCurrent());
+                viewCore.getSelectPopupForTest());
     }
 }

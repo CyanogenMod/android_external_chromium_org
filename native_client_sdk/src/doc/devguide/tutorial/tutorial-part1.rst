@@ -80,7 +80,7 @@ rule called ``serve`` is the easiest way to invoke it:
   Client SDK </sdk/download>` for more details.
 
 If no port number is specified, the server defaults to port 5103, and can be
-accessed at http://localhost:5103.
+accessed at ``http://localhost:5103``.
 
 Any server can be used for the purpose of development. The one provided with the
 SDK is just a convenience, not a requirement.
@@ -165,7 +165,7 @@ Modules </devguide//devcycle/building>` for more details.
 
 Assuming the local server was started according to the instructions in
 :ref:`Step 2 <tutorial_step_2>`, you can now load the sample by pointing Chrome
-to http://localhost:5103/part1. Chrome should load the Native Client module
+to ``http://localhost:5103/part1``. Chrome should load the Native Client module
 successfully and the Status text should change from "LOADING..." to "SUCCESS".
 If you run into problems, check out the :ref:`Troubleshooting section
 <tutorial_troubleshooting>` below.
@@ -238,9 +238,9 @@ Populate the member function with code, as follows:
 
 See the Pepper API documentation for additional information about the
 `pp::Instance.HandleMessage
-<https://developers.google.com/native-client/peppercpp/classpp_1_1_instance.html#a5dce8c8b36b1df7cfcc12e42397a35e8>`_
+</native-client/pepper_stable/cpp/classpp_1_1_instance.html#a5dce8c8b36b1df7cfcc12e42397a35e8>`_
 and `pp::Instance.PostMessage
-<https://developers.google.com/native-client/peppercpp/classpp_1_1_instance.html#a67e888a4e4e23effe7a09625e73ecae9>`_
+</native-client/pepper_stable/cpp/classpp_1_1_instance.html#a67e888a4e4e23effe7a09625e73ecae9>`_
 member functions.
 
 Step 8: Compile the Native Client module and run the application again
@@ -248,7 +248,7 @@ Step 8: Compile the Native Client module and run the application again
 
 Compile the Native Client module by running the ``make`` command again.
 
-Re-run the application by reloading http://localhost:5103/part1 in Chrome.
+Re-run the application by reloading ``http://localhost:5103/part1`` in Chrome.
 
 After Chrome loads the Native Client module, you should see an alert panel
 appear with the message sent from the module.
@@ -282,9 +282,8 @@ Next steps
 * See the :doc:`Application Structure </devguide/coding/application-structure>`
   chapter in the Developer's Guide for information about how to structure a
   Native Client module.
-* Check the `C++ Reference
-  <https://developers.google.com/native-client/peppercpp>`_ for details about
-  how to use the Pepper APIs.
+* Check the `C++ Reference </native-client/pepper_stable/cpp>`_ for details
+  about how to use the Pepper APIs.
 * Browse through the source code of the SDK examples (in the ``examples``
   directory) to learn additional techniques for writing Native Client
   applications and using the Pepper APIs.

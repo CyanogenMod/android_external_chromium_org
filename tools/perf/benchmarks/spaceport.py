@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -7,7 +7,6 @@
 import logging
 import os
 
-from metrics import power
 from telemetry import test
 from telemetry.core import util
 from telemetry.page import page_measurement
@@ -17,21 +16,13 @@ from telemetry.page import page_set
 class _SpaceportMeasurement(page_measurement.PageMeasurement):
   def __init__(self):
     super(_SpaceportMeasurement, self).__init__()
-    self._power_metric = power.PowerMetric()
 
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--disable-gpu-vsync')
-    power.PowerMetric.CustomizeBrowserOptions(options)
-
-  def DidNavigateToPage(self, page, tab):
-    self._power_metric.Start(page, tab)
 
   def MeasurePage(self, page, tab, results):
     tab.WaitForJavaScriptExpression(
         '!document.getElementById("start-performance-tests").disabled', 60)
-
-    self._power_metric.Stop(page, tab)
-    self._power_metric.AddResults(tab, results)
 
     tab.ExecuteJavaScript("""
         window.__results = {};
@@ -73,6 +64,6 @@ class Spaceport(test.Test):
   def CreatePageSet(self, options):
     spaceport_dir = os.path.join(util.GetChromiumSrcDir(), 'chrome', 'test',
         'data', 'third_party', 'spaceport')
-    return page_set.PageSet.FromDict(
-        {'pages': [{'url': 'file://index.html'}]},
-        spaceport_dir)
+    ps = page_set.PageSet(file_path=spaceport_dir)
+    ps.AddPageWithDefaultRunNavigate('file://index.html')
+    return ps

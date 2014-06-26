@@ -15,8 +15,6 @@
 #include "ui/gfx/screen.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // The number of pixels from the top of the screen (a virtual bezel) to allow
@@ -94,7 +92,7 @@ bool OverviewGestureHandler::ProcessGestureEvent(
   }
 
   if (!in_top_bezel_gesture_ ||
-      event.type() != ui::ET_GESTURE_MULTIFINGER_SWIPE ||
+      event.type() != ui::ET_GESTURE_SWIPE ||
       !event.details().swipe_down() ||
       event.details().touch_points() != 3) {
     return false;
@@ -106,5 +104,4 @@ bool OverviewGestureHandler::ProcessGestureEvent(
   return true;
 }
 
-}  // namespace internal
 }  // namespace ash

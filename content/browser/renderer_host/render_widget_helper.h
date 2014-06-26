@@ -30,10 +30,12 @@ namespace base {
 class TimeDelta;
 }
 
+struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct ViewHostMsg_CreateWindow_Params;
 struct ViewMsg_SwapOut_Params;
 
 namespace content {
+class GpuProcessHost;
 class ResourceDispatcherHostImpl;
 class SessionStorageNamespace;
 
@@ -123,21 +125,17 @@ class RenderWidgetHelper
 
   // UI THREAD ONLY -----------------------------------------------------------
 
-  // These three functions provide the backend implementation of the
+  // These four functions provide the backend implementation of the
   // corresponding functions in RenderProcessHost. See those declarations
   // for documentation.
   void ResumeDeferredNavigation(const GlobalRequestID& request_id);
+  void ResumeResponseDeferredAtStart(const GlobalRequestID& request_id);
   bool WaitForBackingStoreMsg(int render_widget_id,
                               const base::TimeDelta& max_delay,
                               IPC::Message* msg);
   // Called to resume the requests for a view after it's ready. The view was
   // created by CreateNewWindow which initially blocked the requests.
   void ResumeRequestsForView(int route_id);
-
-#if defined(OS_POSIX) && !defined(TOOLKIT_GTK) && !defined(OS_ANDROID)
-  // Given the id of a transport DIB, return a mapping to it or NULL on error.
-  TransportDIB* MapTransportDIB(TransportDIB::Id dib_id);
-#endif
 
   // IO THREAD ONLY -----------------------------------------------------------
 
@@ -170,6 +168,12 @@ class RenderWidgetHelper
 
   // Called on the IO thread to handle the freeing of a transport DIB
   void FreeTransportDIB(TransportDIB::Id dib_id);
+#endif
+
+#if defined(OS_MACOSX)
+  static void OnNativeSurfaceBuffersSwappedOnIOThread(
+      GpuProcessHost* gpu_process_host,
+      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
 #endif
 
  private:
@@ -215,6 +219,10 @@ class RenderWidgetHelper
   // Called on the IO thread to resume a paused navigation in the network
   // stack without transferring it to a new renderer process.
   void OnResumeDeferredNavigation(const GlobalRequestID& request_id);
+
+  // Called on the IO thread to resume a navigation paused immediately after
+  // receiving response headers.
+  void OnResumeResponseDeferredAtStart(const GlobalRequestID& request_id);
 
 #if defined(OS_POSIX)
   // Called on destruction to release all allocated transport DIBs

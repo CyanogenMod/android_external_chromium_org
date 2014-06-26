@@ -90,15 +90,6 @@ MSVC_DISABLE_OPTIMIZE();
 void SilentRuntimeAssertHandler(const std::string& str) {
   base::debug::BreakDebugger();
 }
-void SilentRuntimeReportHandler(const std::string& str) {
-}
-#if defined(OS_WIN)
-// Handler to silently dump the current process when there is an assert in
-// chrome.
-void DumpProcessAssertHandler(const std::string& str) {
-  base::debug::DumpWithoutCrashing();
-}
-#endif  // OS_WIN
 MSVC_ENABLE_OPTIMIZE();
 
 // Suppresses error/assertion dialogs and enables the logging of
@@ -108,7 +99,6 @@ void SuppressDialogs() {
     return;
 
   logging::SetLogAssertHandler(SilentRuntimeAssertHandler);
-  logging::SetLogReportHandler(SilentRuntimeReportHandler);
 
 #if defined(OS_WIN)
   UINT new_flags = SEM_FAILCRITICALERRORS |
@@ -209,7 +199,8 @@ base::FilePath GetSessionLogFile(const CommandLine& command_line) {
     base::FilePath profile_dir;
     std::string login_profile_value =
         command_line.GetSwitchValueASCII(chromeos::switches::kLoginProfile);
-    if (login_profile_value == chrome::kLegacyProfileDir) {
+    if (login_profile_value == chrome::kLegacyProfileDir ||
+        login_profile_value == chrome::kTestUserProfileDir) {
       profile_dir = base::FilePath(login_profile_value);
     } else {
       // We could not use g_browser_process > profile_helper() here.
@@ -223,10 +214,9 @@ base::FilePath GetSessionLogFile(const CommandLine& command_line) {
 }
 
 void RedirectChromeLogging(const CommandLine& command_line) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kMultiProfiles) &&
-      chrome_logging_redirected_) {
+  if (chrome_logging_redirected_) {
     // TODO(nkostylev): Support multiple active users. http://crbug.com/230345
-    LOG(ERROR) << "NOT redirecting logging for multi-profiles case.";
+    LOG(WARNING) << "NOT redirecting logging for multi-profiles case.";
     return;
   }
 
@@ -243,17 +233,11 @@ void RedirectChromeLogging(const CommandLine& command_line) {
   // Always force a new symlink when redirecting.
   base::FilePath target_path = SetUpSymlinkIfNeeded(log_path, true);
 
-  logging::DcheckState dcheck_state =
-      command_line.HasSwitch(switches::kEnableDCHECK) ?
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS :
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
-
   // ChromeOS always logs through the symlink, so it shouldn't be
   // deleted if it already exists.
   logging::LoggingSettings settings;
   settings.logging_dest = DetermineLogMode(command_line);
   settings.log_file = log_path.value().c_str();
-  settings.dcheck_state = dcheck_state;
   if (!logging::InitLogging(settings)) {
     DLOG(ERROR) << "Unable to initialize logging to " << log_path.value();
     RemoveSymlinkAndLog(log_path, target_path);
@@ -303,17 +287,11 @@ void InitChromeLogging(const CommandLine& command_line,
     log_locking_state = DONT_LOCK_LOG_FILE;
   }
 
-  logging::DcheckState dcheck_state =
-      command_line.HasSwitch(switches::kEnableDCHECK) ?
-      logging::ENABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS :
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS;
-
   logging::LoggingSettings settings;
   settings.logging_dest = logging_dest;
   settings.log_file = log_path.value().c_str();
   settings.lock_log = log_locking_state;
   settings.delete_old = delete_old_log_file;
-  settings.dcheck_state = dcheck_state;
   bool success = logging::InitLogging(settings);
 
 #if defined(OS_CHROMEOS)
@@ -369,15 +347,6 @@ void InitChromeLogging(const CommandLine& command_line,
   // Enable trace control and transport through event tracing for Windows.
   logging::LogEventProvider::Initialize(kChromeTraceProviderName);
 #endif
-
-#ifdef NDEBUG
-  if (command_line.HasSwitch(switches::kSilentDumpOnDCHECK) &&
-      command_line.HasSwitch(switches::kEnableDCHECK)) {
-#if defined(OS_WIN)
-    logging::SetLogReportHandler(DumpProcessAssertHandler);
-#endif
-  }
-#endif  // NDEBUG
 
   chrome_logging_initialized_ = true;
 }

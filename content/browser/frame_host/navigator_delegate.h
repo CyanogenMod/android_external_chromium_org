@@ -9,6 +9,7 @@
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/common/page_transition_types.h"
+#include "ui/base/window_open_disposition.h"
 
 class GURL;
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
@@ -18,6 +19,7 @@ namespace content {
 
 class RenderFrameHostImpl;
 struct LoadCommittedDetails;
+struct OpenURLParams;
 
 // A delegate API used by Navigator to notify its embedder of navigation
 // related events.
@@ -27,9 +29,7 @@ class CONTENT_EXPORT NavigatorDelegate {
   // represented by |render_frame_host|.
   virtual void DidStartProvisionalLoad(
       RenderFrameHostImpl* render_frame_host,
-      int64 frame_id,
-      int64 parent_frame_id,
-      bool is_main_frame,
+      int parent_routing_id,
       const GURL& validated_url,
       bool is_error_page,
       bool is_iframe_srcdoc) {}
@@ -42,9 +42,7 @@ class CONTENT_EXPORT NavigatorDelegate {
   // Document load in |render_frame_host| failed.
   virtual void DidFailLoadWithError(
       RenderFrameHostImpl* render_frame_host,
-      int64 frame_id,
       const GURL& url,
-      bool is_main_frame,
       int error_code,
       const base::string16& error_description) {}
 
@@ -55,12 +53,15 @@ class CONTENT_EXPORT NavigatorDelegate {
 
   // A navigation was committed in |render_frame_host|.
   virtual void DidCommitProvisionalLoad(
-      int64 frame_id,
+      RenderFrameHostImpl* render_frame_host,
       const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& url,
-      PageTransition transition_type,
-      RenderFrameHostImpl* render_frame_host) {}
+      PageTransition transition_type) {}
+
+  // Handles post-navigation tasks in navigation BEFORE the entry has been
+  // committed to the NavigationController.
+  virtual void DidNavigateMainFramePreCommit(bool navigation_is_within_page) {}
 
   // Handles post-navigation tasks in navigation AFTER the entry has been
   // committed to the NavigationController. Note that the NavigationEntry is
@@ -75,7 +76,7 @@ class CONTENT_EXPORT NavigatorDelegate {
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {}
 
   virtual void SetMainFrameMimeType(const std::string& mime_type) {}
-  virtual bool CanOverscrollContent();
+  virtual bool CanOverscrollContent() const;
 
   // Notification to the Navigator embedder that navigation state has
   // changed. This method corresponds to
@@ -92,6 +93,15 @@ class CONTENT_EXPORT NavigatorDelegate {
       RenderFrameHostImpl* render_frame_host,
       const GURL& url,
       NavigationController::ReloadType reload_type) {}
+
+  // Opens a URL with the given parameters. See PageNavigator::OpenURL, which
+  // this forwards to.
+  virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
+                              const OpenURLParams& params) {}
+
+  // Returns whether URLs for aborted browser-initiated navigations should be
+  // preserved in the omnibox.  Defaults to false.
+  virtual bool ShouldPreserveAbortedURLs();
 };
 
 }  // namspace content

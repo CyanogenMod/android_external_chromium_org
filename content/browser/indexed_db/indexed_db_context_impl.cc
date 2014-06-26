@@ -5,12 +5,14 @@
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -196,7 +198,6 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
       for (IndexedDBFactory::OriginDBMapIterator it = range.first;
            it != range.second;
            ++it) {
-
         const IndexedDBDatabase* db = it->second;
         scoped_ptr<base::DictionaryValue> db_info(new base::DictionaryValue());
 
@@ -216,7 +217,6 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
                  transactions.begin();
              trans_it != transactions.end();
              ++trans_it) {
-
           const IndexedDBTransaction* transaction = *trans_it;
           scoped_ptr<base::DictionaryValue> transaction_info(
               new base::DictionaryValue());
@@ -232,6 +232,9 @@ base::ListValue* IndexedDBContextImpl::GetAllOriginsDetails() {
                 transaction_info->SetString("status", "running");
               else
                 transaction_info->SetString("status", "started");
+              break;
+            case IndexedDBTransaction::COMMITTING:
+              transaction_info->SetString("status", "committing");
               break;
             case IndexedDBTransaction::FINISHED:
               transaction_info->SetString("status", "finished");
@@ -306,14 +309,14 @@ base::Time IndexedDBContextImpl::GetOriginLastModified(const GURL& origin_url) {
 
 void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
-  ForceClose(origin_url);
+  ForceClose(origin_url, FORCE_CLOSE_DELETE_ORIGIN);
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
   base::FilePath idb_directory = GetFilePath(origin_url);
   EnsureDiskUsageCacheInitialized(origin_url);
-  bool deleted = LevelDBDatabase::Destroy(idb_directory);
-  if (!deleted) {
+  leveldb::Status s = LevelDBDatabase::Destroy(idb_directory);
+  if (!s.ok()) {
     LOG(WARNING) << "Failed to delete LevelDB database: "
                  << idb_directory.AsUTF8Unsafe();
   } else {
@@ -325,15 +328,20 @@ void IndexedDBContextImpl::DeleteForOrigin(const GURL& origin_url) {
   }
 
   QueryDiskAndUpdateQuotaUsage(origin_url);
-  if (deleted) {
+  if (s.ok()) {
     RemoveFromOriginSet(origin_url);
     origin_size_map_.erase(origin_url);
     space_available_map_.erase(origin_url);
   }
 }
 
-void IndexedDBContextImpl::ForceClose(const GURL origin_url) {
+void IndexedDBContextImpl::ForceClose(const GURL origin_url,
+                                      ForceCloseReason reason) {
   DCHECK(TaskRunner()->RunsTasksOnCurrentThread());
+  UMA_HISTOGRAM_ENUMERATION("WebCore.IndexedDB.Context.ForceCloseReason",
+                            reason,
+                            FORCE_CLOSE_REASON_MAX);
+
   if (data_path_.empty() || !IsInOriginSet(origin_url))
     return;
 
@@ -448,7 +456,7 @@ IndexedDBContextImpl::~IndexedDBContextImpl() {
       special_storage_policy_ &&
       special_storage_policy_->HasSessionOnlyOrigins();
 
-  // Clearning only session-only databases, and there are none.
+  // Clearing only session-only databases, and there are none.
   if (!has_session_only_databases)
     return;
 

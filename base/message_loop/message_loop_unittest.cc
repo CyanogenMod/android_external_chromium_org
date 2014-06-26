@@ -12,7 +12,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy_impl.h"
 #include "base/message_loop/message_loop_test.h"
-#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/pending_task.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/run_loop.h"
@@ -23,6 +22,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_WIN)
+#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/message_loop/message_pump_win.h"
 #include "base/process/memory.h"
 #include "base/strings/string16.h"
@@ -36,15 +36,15 @@ namespace base {
 
 namespace {
 
-MessagePump* TypeDefaultMessagePumpFactory() {
+scoped_ptr<MessagePump> TypeDefaultMessagePumpFactory() {
   return MessageLoop::CreateMessagePumpForType(MessageLoop::TYPE_DEFAULT);
 }
 
-MessagePump* TypeIOMessagePumpFactory() {
+scoped_ptr<MessagePump> TypeIOMessagePumpFactory() {
   return MessageLoop::CreateMessagePumpForType(MessageLoop::TYPE_IO);
 }
 
-MessagePump* TypeUIMessagePumpFactory() {
+scoped_ptr<MessagePump> TypeUIMessagePumpFactory() {
   return MessageLoop::CreateMessagePumpForType(MessageLoop::TYPE_UI);
 }
 
@@ -53,34 +53,9 @@ class Foo : public RefCounted<Foo> {
   Foo() : test_count_(0) {
   }
 
-  void Test0() {
-    ++test_count_;
-  }
-
   void Test1ConstRef(const std::string& a) {
     ++test_count_;
     result_.append(a);
-  }
-
-  void Test1Ptr(std::string* a) {
-    ++test_count_;
-    result_.append(*a);
-  }
-
-  void Test1Int(int a) {
-    test_count_ += a;
-  }
-
-  void Test2Ptr(std::string* a, std::string* b) {
-    ++test_count_;
-    result_.append(*a);
-    result_.append(*b);
-  }
-
-  void Test2Mixed(const std::string& a, std::string* b) {
-    ++test_count_;
-    result_.append(a);
-    result_.append(*b);
   }
 
   int test_count() const { return test_count_; }

@@ -16,8 +16,6 @@ const bool kCanToggleSystemTitleBar = true;
 
 const int kOmniboxFontPixelSize = 16;
 
-const bool kRestorePopups = false;
-
 #if defined(OS_CHROMEOS) || defined(OS_MACOSX)
 const bool kBrowserAliveWithNoWindows = true;
 const bool kShowExitMenuItem = false;
@@ -49,12 +47,6 @@ const bool kShowOtherBrowsersInAboutMemory = false;
 #else
 const bool kSyncAutoStarts = false;
 const bool kShowOtherBrowsersInAboutMemory = true;
-#endif
-
-#if defined(TOOLKIT_GTK)
-const bool kShowCancelButtonInTaskManager = true;
-#else
-const bool kShowCancelButtonInTaskManager = false;
 #endif
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)

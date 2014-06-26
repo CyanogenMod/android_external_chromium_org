@@ -6,10 +6,10 @@
 
 #include "base/bind.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 
 
 BookmarkBarBridge::BookmarkBarBridge(Profile* profile,
@@ -28,10 +28,14 @@ BookmarkBarBridge::BookmarkBarBridge(Profile* profile,
   profile_pref_registrar_.Init(profile->GetPrefs());
   profile_pref_registrar_.Add(
       prefs::kShowAppsShortcutInBookmarkBar,
-      base::Bind(&BookmarkBarBridge::OnAppsPageShortcutVisibilityPrefChanged,
+      base::Bind(&BookmarkBarBridge::OnExtraButtonsVisibilityChanged,
+                 base::Unretained(this)));
+  profile_pref_registrar_.Add(
+      prefs::kShowManagedBookmarksInBookmarkBar,
+      base::Bind(&BookmarkBarBridge::OnExtraButtonsVisibilityChanged,
                  base::Unretained(this)));
 
-  [controller_ updateAppsPageShortcutButtonVisibility];
+  OnExtraButtonsVisibilityChanged();
 }
 
 BookmarkBarBridge::~BookmarkBarBridge() {
@@ -66,15 +70,19 @@ void BookmarkBarBridge::BookmarkNodeAdded(BookmarkModel* model,
     [controller_ nodeAdded:model parent:parent index:index];
 }
 
-void BookmarkBarBridge::BookmarkNodeRemoved(BookmarkModel* model,
-                                            const BookmarkNode* parent,
-                                            int old_index,
-                                            const BookmarkNode* node) {
+void BookmarkBarBridge::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int old_index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   if (!batch_mode_)
     [controller_ nodeRemoved:model parent:parent index:old_index];
 }
 
-void BookmarkBarBridge::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkBarBridge::BookmarkAllUserNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   [controller_ loaded:model];
 }
 
@@ -106,6 +114,6 @@ void BookmarkBarBridge::ExtensiveBookmarkChangesEnded(BookmarkModel* model) {
   [controller_ loaded:model];
 }
 
-void BookmarkBarBridge::OnAppsPageShortcutVisibilityPrefChanged() {
-  [controller_ updateAppsPageShortcutButtonVisibility];
+void BookmarkBarBridge::OnExtraButtonsVisibilityChanged() {
+  [controller_ updateExtraButtonsVisibility];
 }

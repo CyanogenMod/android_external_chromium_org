@@ -10,6 +10,8 @@
 namespace functions {
 
 const char kSetDefaults[] = "set_defaults";
+const char kSetDefaults_HelpShort[] =
+    "set_defaults: Set default values for a target type.";
 const char kSetDefaults_Help[] =
     "set_defaults: Set default values for a target type.\n"
     "\n"
@@ -82,7 +84,8 @@ Value RunSetDefaults(Scope* scope,
   // Now copy the values set on the scope we made into the free-floating one
   // (with no containing scope) used to hold the target defaults.
   Scope* dest = scope->MakeTargetDefaults(target_type);
-  block_scope.NonRecursiveMergeTo(dest, function, "<SHOULD NOT FAIL>", err);
+  block_scope.NonRecursiveMergeTo(dest, Scope::MergeOptions(), function,
+                                  "<SHOULD NOT FAIL>", err);
   return Value();
 }
 

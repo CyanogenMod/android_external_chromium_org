@@ -13,6 +13,7 @@
 #include "content/browser/indexed_db/indexed_db_backing_store.h"
 #include "content/browser/indexed_db/indexed_db_database.h"
 #include "content/common/indexed_db/indexed_db_key_range.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
@@ -23,7 +24,7 @@ class CONTENT_EXPORT IndexedDBCursor
  public:
   IndexedDBCursor(scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
                   indexed_db::CursorType cursor_type,
-                  IndexedDBDatabase::TaskType task_type,
+                  blink::WebIDBTaskType task_type,
                   IndexedDBTransaction* transaction);
 
   void Advance(uint32 count, scoped_refptr<IndexedDBCallbacks> callbacks);
@@ -32,11 +33,11 @@ class CONTENT_EXPORT IndexedDBCursor
                 scoped_refptr<IndexedDBCallbacks> callbacks);
   void PrefetchContinue(int number_to_fetch,
                         scoped_refptr<IndexedDBCallbacks> callbacks);
-  void PrefetchReset(int used_prefetches, int unused_prefetches);
+  leveldb::Status PrefetchReset(int used_prefetches, int unused_prefetches);
 
   const IndexedDBKey& key() const { return cursor_->key(); }
   const IndexedDBKey& primary_key() const { return cursor_->primary_key(); }
-  std::string* Value() const {
+  IndexedDBValue* Value() const {
     return (cursor_type_ == indexed_db::CURSOR_KEY_ONLY) ? NULL
                                                          : cursor_->value();
   }
@@ -59,7 +60,7 @@ class CONTENT_EXPORT IndexedDBCursor
 
   ~IndexedDBCursor();
 
-  IndexedDBDatabase::TaskType task_type_;
+  blink::WebIDBTaskType task_type_;
   indexed_db::CursorType cursor_type_;
   const scoped_refptr<IndexedDBTransaction> transaction_;
 
@@ -69,6 +70,8 @@ class CONTENT_EXPORT IndexedDBCursor
   scoped_ptr<IndexedDBBackingStore::Cursor> saved_cursor_;
 
   bool closed_;
+
+  DISALLOW_COPY_AND_ASSIGN(IndexedDBCursor);
 };
 
 }  // namespace content

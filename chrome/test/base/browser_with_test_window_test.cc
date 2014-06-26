@@ -19,10 +19,14 @@
 
 #if defined(USE_AURA)
 #include "ui/aura/test/aura_test_helper.h"
+#include "ui/compositor/compositor.h"
+#include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/wm/core/default_activation_client.h"
 #endif
 
 #if defined(USE_ASH)
 #include "ash/test/ash_test_helper.h"
+#include "ash/test/ash_test_views_delegate.h"
 #endif
 
 #if defined(TOOLKIT_VIEWS)
@@ -57,19 +61,24 @@ void BrowserWithTestWindowTest::SetUp() {
 #if defined(OS_CHROMEOS)
   // TODO(jamescook): Windows Ash support. This will require refactoring
   // AshTestHelper and AuraTestHelper so they can be used at the same time,
-  // perhaps by AshTestHelper owning an AuraTestHelper.
+  // perhaps by AshTestHelper owning an AuraTestHelper. Also, need to cleanup
+  // CreateViewsDelegate() below when cleanup done.
   ash_test_helper_.reset(new ash::test::AshTestHelper(
       base::MessageLoopForUI::current()));
   ash_test_helper_->SetUp(true);
 #elif defined(USE_AURA)
+  // The ContextFactory must exist before any Compositors are created.
+  bool enable_pixel_output = false;
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
+
   aura_test_helper_.reset(new aura::test::AuraTestHelper(
       base::MessageLoopForUI::current()));
-  bool allow_test_contexts = true;
-  aura_test_helper_->SetUp(allow_test_contexts);
+  aura_test_helper_->SetUp(context_factory);
+  new wm::DefaultActivationClient(aura_test_helper_->root_window());
 #endif  // USE_AURA
-#if defined(TOOLKIT_VIEWS)
+#if !defined(OS_CHROMEOS) && defined(TOOLKIT_VIEWS)
   views_delegate_.reset(CreateViewsDelegate());
-  views::ViewsDelegate::views_delegate = views_delegate_.get();
 #endif
 
   // Subclasses can provide their own Profile.
@@ -96,6 +105,7 @@ void BrowserWithTestWindowTest::TearDown() {
   ash_test_helper_->TearDown();
 #elif defined(USE_AURA)
   aura_test_helper_->TearDown();
+  ui::TerminateContextFactoryForTests();
 #endif
   testing::Test::TearDown();
 
@@ -106,7 +116,6 @@ void BrowserWithTestWindowTest::TearDown() {
   base::MessageLoop::current()->Run();
 
 #if defined(TOOLKIT_VIEWS)
-  views::ViewsDelegate::views_delegate = NULL;
   views_delegate_.reset(NULL);
 #endif
 }
@@ -130,10 +139,10 @@ void BrowserWithTestWindowTest::CommitPendingLoad(
   RenderViewHost* pending_rvh = RenderViewHostTester::GetPendingForController(
       controller);
   if (pending_rvh) {
-    // Simulate the ShouldClose_ACK that is received from the current renderer
+    // Simulate the BeforeUnload_ACK that is received from the current renderer
     // for a cross-site navigation.
     DCHECK_NE(old_rvh, pending_rvh);
-    RenderViewHostTester::For(old_rvh)->SendShouldCloseACK(true);
+    RenderViewHostTester::For(old_rvh)->SendBeforeUnloadACK(true);
   }
   // Commit on the pending_rvh, if one exists.
   RenderViewHost* test_rvh = pending_rvh ? pending_rvh : old_rvh;
@@ -221,15 +230,25 @@ Browser* BrowserWithTestWindowTest::CreateBrowser(
     chrome::HostDesktopType host_desktop_type,
     BrowserWindow* browser_window) {
   Browser::CreateParams params(profile, host_desktop_type);
-  params.type = browser_type;
+  if (hosted_app) {
+    params = Browser::CreateParams::CreateForApp("Test",
+                                                 true /* trusted_source */,
+                                                 gfx::Rect(),
+                                                 profile,
+                                                 host_desktop_type);
+  } else {
+    params.type = browser_type;
+  }
   params.window = browser_window;
-  if (hosted_app)
-    params.app_name = "Test";
   return new Browser(params);
 }
 
-#if defined(TOOLKIT_VIEWS)
+#if !defined(OS_CHROMEOS) && defined(TOOLKIT_VIEWS)
 views::ViewsDelegate* BrowserWithTestWindowTest::CreateViewsDelegate() {
+#if defined(USE_ASH)
+  return new ash::test::AshTestViewsDelegate;
+#else
   return new views::TestViewsDelegate;
+#endif
 }
 #endif

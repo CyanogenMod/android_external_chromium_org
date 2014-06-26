@@ -9,8 +9,8 @@
 #include "ash/shell.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/options/network_property_ui_data.h"
 #include "chrome/browser/chromeos/options/vpn_config_view.h"
 #include "chrome/browser/chromeos/options/wifi_config_view.h"
@@ -20,14 +20,15 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
+#include "chromeos/login/login_state.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "ui/aura/root_window.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -87,12 +88,14 @@ NetworkConfigView::NetworkConfigView()
 bool NetworkConfigView::InitWithNetworkState(const NetworkState* network) {
   DCHECK(network);
   std::string service_path = network->path();
-  if (network->type() == shill::kTypeWifi)
+  if (network->type() == shill::kTypeWifi ||
+      network->type() == shill::kTypeEthernet) {
     child_config_view_ = new WifiConfigView(this, service_path, false);
-  else if (network->type() == shill::kTypeWimax)
+  } else if (network->type() == shill::kTypeWimax) {
     child_config_view_ = new WimaxConfigView(this, service_path);
-  else if (network->type() == shill::kTypeVPN)
+  } else if (network->type() == shill::kTypeVPN) {
     child_config_view_ = new VPNConfigView(this, service_path);
+  }
   return child_config_view_ != NULL;
 }
 
@@ -158,8 +161,11 @@ gfx::NativeWindow NetworkConfigView::GetNativeWindow() const {
 
 base::string16 NetworkConfigView::GetDialogButtonLabel(
     ui::DialogButton button) const {
-  if (button == ui::DIALOG_BUTTON_OK)
+  if (button == ui::DIALOG_BUTTON_OK) {
+    if (child_config_view_->IsConfigureDialog())
+      return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONFIGURE);
     return l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_CONNECT);
+  }
   return views::DialogDelegateView::GetDialogButtonLabel(button);
 }
 
@@ -204,10 +210,10 @@ ui::ModalType NetworkConfigView::GetModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-void NetworkConfigView::GetAccessibleState(ui::AccessibleViewState* state) {
+void NetworkConfigView::GetAccessibleState(ui::AXViewState* state) {
   state->name =
       l10n_util::GetStringUTF16(IDS_OPTIONS_SETTINGS_OTHER_WIFI_NETWORKS);
-  state->role = ui::AccessibilityTypes::ROLE_DIALOG;
+  state->role = ui::AX_ROLE_DIALOG;
 }
 
 void NetworkConfigView::ButtonPressed(views::Button* sender,
@@ -246,7 +252,7 @@ void NetworkConfigView::Layout() {
   child_config_view_->SetBounds(0, 0, width(), height());
 }
 
-gfx::Size NetworkConfigView::GetPreferredSize() {
+gfx::Size NetworkConfigView::GetPreferredSize() const {
   gfx::Size result(views::Widget::GetLocalizedContentsSize(
       IDS_JOIN_WIFI_NETWORK_DIALOG_WIDTH_CHARS,
       IDS_JOIN_WIFI_NETWORK_DIALOG_MINIMUM_HEIGHT_LINES));
@@ -291,6 +297,18 @@ ChildNetworkConfigView::ChildNetworkConfigView(
 ChildNetworkConfigView::~ChildNetworkConfigView() {
 }
 
+bool ChildNetworkConfigView::IsConfigureDialog() {
+  return false;
+}
+
+// static
+void ChildNetworkConfigView::GetShareStateForLoginState(bool* default_value,
+                                                        bool* modifiable) {
+  *default_value = !LoginState::Get()->UserHasNetworkProfile();
+  // Allow only authenticated user to change the share state.
+  *modifiable = LoginState::Get()->IsUserAuthenticated();
+}
+
 // ControlledSettingIndicatorView
 
 ControlledSettingIndicatorView::ControlledSettingIndicatorView()
@@ -318,7 +336,7 @@ void ControlledSettingIndicatorView::Update(
   PreferredSizeChanged();
 }
 
-gfx::Size ControlledSettingIndicatorView::GetPreferredSize() {
+gfx::Size ControlledSettingIndicatorView::GetPreferredSize() const {
   return (managed_ && visible()) ? image_view_->GetPreferredSize()
                                  : gfx::Size();
 }

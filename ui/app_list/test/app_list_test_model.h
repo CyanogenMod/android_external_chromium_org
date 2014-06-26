@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "ui/app_list/app_list_folder_item.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/app_list/app_list_model.h"
 
@@ -47,21 +48,26 @@ class AppListTestModel : public AppListModel {
   // Populate the model with |n| items titled "Item #".
   void PopulateApps(int n);
 
+  // Creates and populate a folder with |n| test apps in it.
+  AppListFolderItem* CreateAndPopulateFolderWithApps(int n);
+
+  AppListFolderItem* CreateAndAddOemFolder(const std::string& id);
+
+  AppListFolderItem* CreateSingleItemFolder(const std::string& folder_id,
+                                            const std::string& item_id);
+
   // Populate the model with an item titled "Item |id|".
   void PopulateAppWithId(int id);
 
   // Get a string of all apps in |model| joined with ','.
   std::string GetModelContent();
 
-  // Creates an item with |title| and |full_name|. Caller owns the result.
-  AppListTestItem* CreateItem(const std::string& title,
-                              const std::string& full_name);
+  // Creates an item with id |id|. Caller owns the result.
+  AppListTestItem* CreateItem(const std::string& id);
 
-  // Creates and adds an item with |title| and |full_name| to the model.
-  void CreateAndAddItem(const std::string& title, const std::string& full_name);
-
-  // Convenience version of CreateAndAddItem(title, title).
-  void CreateAndAddItem(const std::string& title);
+  // Creates and adds an item with id |id| to the model. Returns an unowned
+  // pointer to the created item.
+  AppListTestItem* CreateAndAddItem(const std::string& id);
 
   // Call SetHighlighted on the specified item.
   void HighlightItemAt(int index);

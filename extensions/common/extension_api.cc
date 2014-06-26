@@ -16,20 +16,17 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
-#include "chrome/common/extensions/api/generated_schemas.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extensions_client.h"
 #include "extensions/common/features/feature.h"
 #include "extensions/common/features/feature_provider.h"
+#include "extensions/common/features/simple_feature.h"
 #include "extensions/common/permissions/permission_set.h"
 #include "extensions/common/permissions/permissions_data.h"
-#include "grit/common_resources.h"
-#include "grit/extensions_api_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 
 namespace extensions {
-
-using api::GeneratedSchemas;
 
 namespace {
 
@@ -106,6 +103,9 @@ struct Static {
 
 base::LazyInstance<Static> g_lazy_instance = LAZY_INSTANCE_INITIALIZER;
 
+// May override |g_lazy_instance| for a test.
+ExtensionAPI* g_shared_instance_for_test = NULL;
+
 // If it exists and does not already specify a namespace, then the value stored
 // with key |key| in |schema| will be updated to |schema_namespace| + "." +
 // |schema[key]|.
@@ -170,7 +170,8 @@ void PrefixWithNamespace(const std::string& schema_namespace,
 
 // static
 ExtensionAPI* ExtensionAPI::GetSharedInstance() {
-  return g_lazy_instance.Get().api.get();
+  return g_shared_instance_for_test ? g_shared_instance_for_test
+                                    : g_lazy_instance.Get().api.get();
 }
 
 // static
@@ -196,11 +197,23 @@ void ExtensionAPI::SplitDependencyName(const std::string& full_name,
   *feature_name = full_name.substr(colon_index + 1);
 }
 
+ExtensionAPI::OverrideSharedInstanceForTest::OverrideSharedInstanceForTest(
+    ExtensionAPI* testing_api)
+    : original_api_(g_shared_instance_for_test) {
+  g_shared_instance_for_test = testing_api;
+}
+
+ExtensionAPI::OverrideSharedInstanceForTest::~OverrideSharedInstanceForTest() {
+  g_shared_instance_for_test = original_api_;
+}
+
 void ExtensionAPI::LoadSchema(const std::string& name,
                               const base::StringPiece& schema) {
   scoped_ptr<base::ListValue> schema_list(LoadSchemaList(name, schema));
   std::string schema_namespace;
-
+  extensions::ExtensionsClient* extensions_client =
+      extensions::ExtensionsClient::Get();
+  DCHECK(extensions_client);
   while (!schema_list->empty()) {
     base::DictionaryValue* schema = NULL;
     {
@@ -212,7 +225,7 @@ void ExtensionAPI::LoadSchema(const std::string& name,
     CHECK(schema->GetString("namespace", &schema_namespace));
     PrefixWithNamespace(schema_namespace, schema);
     schemas_[schema_namespace] = make_linked_ptr(schema);
-    if (!GeneratedSchemas::IsGenerated(schema_namespace))
+    if (!extensions_client->IsAPISchemaGenerated(schema_namespace))
       CHECK_EQ(1u, unloaded_schemas_.erase(schema_namespace));
   }
 }
@@ -228,38 +241,7 @@ void ExtensionAPI::InitDefaultConfiguration() {
   for (size_t i = 0; i < arraysize(names); ++i)
     RegisterDependencyProvider(names[i], FeatureProvider::GetByName(names[i]));
 
-  // Schemas to be loaded from resources.
-  CHECK(unloaded_schemas_.empty());
-  RegisterSchemaResource("app", IDR_EXTENSION_API_JSON_APP);
-  RegisterSchemaResource("browserAction", IDR_EXTENSION_API_JSON_BROWSERACTION);
-  RegisterSchemaResource("browsingData", IDR_EXTENSION_API_JSON_BROWSINGDATA);
-  RegisterSchemaResource("commands", IDR_EXTENSION_API_JSON_COMMANDS);
-  RegisterSchemaResource("declarativeContent",
-      IDR_EXTENSION_API_JSON_DECLARATIVE_CONTENT);
-  RegisterSchemaResource("declarativeWebRequest",
-      IDR_EXTENSION_API_JSON_DECLARATIVE_WEBREQUEST);
-  RegisterSchemaResource("runtime", IDR_EXTENSION_API_JSON_RUNTIME);
-  RegisterSchemaResource("fileBrowserHandler",
-      IDR_EXTENSION_API_JSON_FILEBROWSERHANDLER);
-  RegisterSchemaResource("inputMethodPrivate",
-      IDR_EXTENSION_API_JSON_INPUTMETHODPRIVATE);
-  RegisterSchemaResource("pageAction", IDR_EXTENSION_API_JSON_PAGEACTION);
-  RegisterSchemaResource("pageActions", IDR_EXTENSION_API_JSON_PAGEACTIONS);
-  RegisterSchemaResource("privacy", IDR_EXTENSION_API_JSON_PRIVACY);
-  RegisterSchemaResource("processes", IDR_EXTENSION_API_JSON_PROCESSES);
-  RegisterSchemaResource("proxy", IDR_EXTENSION_API_JSON_PROXY);
-  RegisterSchemaResource("scriptBadge", IDR_EXTENSION_API_JSON_SCRIPTBADGE);
-  RegisterSchemaResource("ttsEngine", IDR_EXTENSION_API_JSON_TTSENGINE);
-  RegisterSchemaResource("tts", IDR_EXTENSION_API_JSON_TTS);
-  RegisterSchemaResource("types", IDR_EXTENSION_API_JSON_TYPES);
-  RegisterSchemaResource("types.private", IDR_EXTENSION_API_JSON_TYPES_PRIVATE);
-  RegisterSchemaResource("webRequestInternal",
-      IDR_EXTENSION_API_JSON_WEBREQUESTINTERNAL);
-  RegisterSchemaResource("webstore", IDR_EXTENSION_API_JSON_WEBSTORE);
-  RegisterSchemaResource("webstorePrivate",
-      IDR_EXTENSION_API_JSON_WEBSTOREPRIVATE);
-  RegisterSchemaResource("webViewRequest",
-      IDR_EXTENSION_API_JSON_WEBVIEW_REQUEST);
+  ExtensionsClient::Get()->RegisterAPISchemaResources(this);
 
   default_configuration_initialized_ = true;
 }
@@ -270,7 +252,7 @@ void ExtensionAPI::RegisterSchemaResource(const std::string& name,
 }
 
 void ExtensionAPI::RegisterDependencyProvider(const std::string& name,
-                                              FeatureProvider* provider) {
+                                              const FeatureProvider* provider) {
   dependency_providers_[name] = provider;
 }
 
@@ -280,16 +262,16 @@ bool ExtensionAPI::IsAnyFeatureAvailableToContext(const Feature& api,
                                                   const GURL& url) {
   FeatureProviderMap::iterator provider = dependency_providers_.find("api");
   CHECK(provider != dependency_providers_.end());
-  if (IsAvailable(api, extension, context, url).is_available())
+  if (api.IsAvailableToContext(extension, context, url).is_available())
     return true;
 
   // Check to see if there are any parts of this API that are allowed in this
   // context.
   const std::vector<Feature*> features = provider->second->GetChildren(api);
-  for (std::vector<Feature*>::const_iterator feature = features.begin();
-       feature != features.end();
-       ++feature) {
-    if (IsAvailable(**feature, extension, context, url).is_available())
+  for (std::vector<Feature*>::const_iterator it = features.begin();
+       it != features.end();
+       ++it) {
+    if ((*it)->IsAvailableToContext(extension, context, url).is_available())
       return true;
   }
   return false;
@@ -300,34 +282,17 @@ Feature::Availability ExtensionAPI::IsAvailable(const std::string& full_name,
                                                 Feature::Context context,
                                                 const GURL& url) {
   Feature* feature = GetFeatureDependency(full_name);
-  CHECK(feature) << full_name;
-  return IsAvailable(*feature, extension, context, url);
-}
-
-Feature::Availability ExtensionAPI::IsAvailable(const Feature& feature,
-                                                const Extension* extension,
-                                                Feature::Context context,
-                                                const GURL& url) {
-  Feature::Availability availability =
-      feature.IsAvailableToContext(extension, context, url);
-  if (!availability.is_available())
-    return availability;
-
-  for (std::set<std::string>::iterator iter = feature.dependencies().begin();
-       iter != feature.dependencies().end(); ++iter) {
-    Feature::Availability dependency_availability =
-        IsAvailable(*iter, extension, context, url);
-    if (!dependency_availability.is_available())
-      return dependency_availability;
+  if (!feature) {
+    return Feature::CreateAvailability(Feature::NOT_PRESENT,
+        std::string("Unknown feature: ") + full_name);
   }
-
-  return Feature::CreateAvailability(Feature::IS_AVAILABLE, std::string());
+  return feature->IsAvailableToContext(extension, context, url);
 }
 
 bool ExtensionAPI::IsPrivileged(const std::string& full_name) {
   Feature* feature = GetFeatureDependency(full_name);
-  CHECK(feature);
-  DCHECK(!feature->GetContexts()->empty());
+  CHECK(feature) << full_name;
+  DCHECK(!feature->GetContexts()->empty()) << full_name;
   // An API is 'privileged' if it can only be run in a blessed context.
   return feature->GetContexts()->size() ==
       feature->GetContexts()->count(Feature::BLESSED_EXTENSION_CONTEXT);
@@ -344,14 +309,17 @@ const base::DictionaryValue* ExtensionAPI::GetSchema(
     result = maybe_schema->second.get();
   } else {
     // Might not have loaded yet; or might just not exist.
-   UnloadedSchemaMap::iterator maybe_schema_resource =
+    UnloadedSchemaMap::iterator maybe_schema_resource =
         unloaded_schemas_.find(api_name);
+    extensions::ExtensionsClient* extensions_client =
+        extensions::ExtensionsClient::Get();
+    DCHECK(extensions_client);
     if (maybe_schema_resource != unloaded_schemas_.end()) {
       LoadSchema(maybe_schema_resource->first,
                  ReadFromResource(maybe_schema_resource->second));
     } else if (default_configuration_initialized_ &&
-               GeneratedSchemas::IsGenerated(api_name)) {
-      LoadSchema(api_name, GeneratedSchemas::Get(api_name));
+               extensions_client->IsAPISchemaGenerated(api_name)) {
+      LoadSchema(api_name, extensions_client->GetAPISchema(api_name));
     } else {
       return NULL;
     }
@@ -390,9 +358,12 @@ Feature* ExtensionAPI::GetFeatureDependency(const std::string& full_name) {
 std::string ExtensionAPI::GetAPINameFromFullName(const std::string& full_name,
                                                  std::string* child_name) {
   std::string api_name_candidate = full_name;
+  extensions::ExtensionsClient* extensions_client =
+      extensions::ExtensionsClient::Get();
+  DCHECK(extensions_client);
   while (true) {
     if (schemas_.find(api_name_candidate) != schemas_.end() ||
-        GeneratedSchemas::IsGenerated(api_name_candidate) ||
+        extensions_client->IsAPISchemaGenerated(api_name_candidate) ||
         unloaded_schemas_.find(api_name_candidate) != unloaded_schemas_.end()) {
       std::string result = api_name_candidate;
 

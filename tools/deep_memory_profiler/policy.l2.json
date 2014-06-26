@@ -25,6 +25,7 @@
     "mmap-gpu-gles2-createbuffer",
     "mmap-skia-font",
     "mmap-catch-all",
+    "tc-webcore-cachedmatchedproperties",
     "tc-webcore-fontcache",
     "tc-skia",
     "tc-renderobject",
@@ -201,8 +202,13 @@
       "allocator": "mmap"
     },
     {
+      "name": "tc-webcore-cachedmatchedproperties",
+      "stacktrace": ".*WebCore::CachedMatchedProperties::(set|add).*",
+      "allocator": "malloc"
+    },
+    {
       "name": "tc-webcore-fontcache",
-      "stacktrace": ".*WebCore::FontCache::getCachedFontData.*",
+      "stacktrace": ".*WebCore::FontCache::getFontData.*",
       "allocator": "malloc"
     },
     {
@@ -302,7 +308,12 @@
     },
     {
       "name": "tc-webcore-stylepropertyset",
-      "stacktrace": ".*WebCore::StylePropertySet::create .*",
+      "stacktrace": ".*WebCore::ImmutableStylePropertySet::create .*",
+      "allocator": "malloc"
+    },
+    {
+      "name": "tc-webcore-stylepropertyset",
+      "stacktrace": ".*WebCore::MutableStylePropertySet::create .*",
       "allocator": "malloc"
     },
     {

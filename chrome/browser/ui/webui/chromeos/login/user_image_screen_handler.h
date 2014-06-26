@@ -60,8 +60,11 @@ class UserImageScreenHandler : public UserImageScreenActor,
   // Handles photo taken with WebRTC UI.
   void HandlePhotoTaken(const std::string& image_url);
 
-  // Handles camera presence check request.
-  void HandleCheckCameraPresence();
+  // Handles 'take-photo' button click.
+  void HandleTakePhoto();
+
+  // Handles 'discard-photo' button click.
+  void HandleDiscardPhoto();
 
   // Handles clicking on default user image.
   void HandleSelectImage(const std::string& image_url,

@@ -12,7 +12,6 @@
 #include "grit/ash_resources.h"
 
 namespace ash {
-namespace internal {
 
 TrayEnterprise::TrayEnterprise(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
@@ -39,7 +38,7 @@ views::View* TrayEnterprise::CreateDefaultView(user::LoginStatus status) {
   // instead.
   if (status == ash::user::LOGGED_IN_PUBLIC)
     return NULL;
-  tray_view_ = new LabelTrayView(this, IDR_AURA_UBER_TRAY_ENTERPRISE_DARK);
+  tray_view_ = new LabelTrayView(this, IDR_AURA_UBER_TRAY_ENTERPRISE);
   UpdateEnterpriseMessage();
   return tray_view_;
 }
@@ -56,5 +55,4 @@ void TrayEnterprise::OnViewClicked(views::View* sender) {
   Shell::GetInstance()->system_tray_delegate()->ShowEnterpriseInfo();
 }
 
-} // namespace internal
 } // namespace ash

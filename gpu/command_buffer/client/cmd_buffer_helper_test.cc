@@ -43,20 +43,39 @@ class CommandBufferServiceLocked : public CommandBufferService {
   explicit CommandBufferServiceLocked(
       TransferBufferManagerInterface* transfer_buffer_manager)
       : CommandBufferService(transfer_buffer_manager),
-        flush_locked_(false) {}
+        flush_locked_(false),
+        last_flush_(-1),
+        flush_count_(0) {}
   virtual ~CommandBufferServiceLocked() {}
 
   virtual void Flush(int32 put_offset) OVERRIDE {
-    if (!flush_locked_)
+    flush_count_++;
+    if (!flush_locked_) {
+      last_flush_ = -1;
       CommandBufferService::Flush(put_offset);
+    } else {
+      last_flush_ = put_offset;
+    }
   }
 
   void LockFlush() { flush_locked_ = true; }
 
   void UnlockFlush() { flush_locked_ = false; }
 
+  int FlushCount() { return flush_count_; }
+
+  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE {
+    if (last_flush_ != -1) {
+      CommandBufferService::Flush(last_flush_);
+      last_flush_ = -1;
+    }
+    CommandBufferService::WaitForGetOffsetInRange(start, end);
+  }
+
  private:
   bool flush_locked_;
+  int last_flush_;
+  int flush_count_;
   DISALLOW_COPY_AND_ASSIGN(CommandBufferServiceLocked);
 };
 
@@ -117,7 +136,8 @@ class CommandBufferHelperTest : public testing::Test {
     CommandHeader header;
     header.size = arg_count + 1;
     header.command = command;
-    CommandBufferEntry* cmds = helper_->GetSpace(arg_count + 1);
+    CommandBufferEntry* cmds =
+        static_cast<CommandBufferEntry*>(helper_->GetSpace(arg_count + 1));
     CommandBufferOffset put = 0;
     cmds[put++].value_header = header;
     for (int ii = 0; ii < arg_count; ++ii) {
@@ -216,19 +236,21 @@ class CommandBufferHelperTest : public testing::Test {
   }
 
   int32 GetGetOffset() {
-    return command_buffer_->GetState().get_offset;
+    return command_buffer_->GetLastState().get_offset;
   }
 
   int32 GetPutOffset() {
-    return command_buffer_->GetState().put_offset;
+    return command_buffer_->GetLastState().put_offset;
   }
 
   int32 GetHelperGetOffset() { return helper_->get_offset(); }
 
   int32 GetHelperPutOffset() { return helper_->put_; }
 
+  uint32 GetHelperFlushGeneration() { return helper_->flush_generation(); }
+
   error::Error GetError() {
-    return command_buffer_->GetState().error;
+    return command_buffer_->GetLastState().error;
   }
 
   CommandBufferOffset get_helper_put() { return helper_->put_; }
@@ -569,6 +591,46 @@ TEST_F(CommandBufferHelperTest, TestToken) {
   EXPECT_EQ(error::kNoError, GetError());
 }
 
+// Checks WaitForToken doesn't Flush if token is already read.
+TEST_F(CommandBufferHelperTest, TestWaitForTokenFlush) {
+  CommandBufferEntry args[2];
+  args[0].value_uint32 = 3;
+  args[1].value_float = 4.f;
+
+  // Add a first command.
+  AddCommandWithExpect(error::kNoError, kUnusedCommandId + 3, 2, args);
+  int32 token = helper_->InsertToken();
+
+  EXPECT_CALL(*api_mock_.get(), DoCommand(cmd::kSetToken, 1, _))
+      .WillOnce(DoAll(Invoke(api_mock_.get(), &AsyncAPIMock::SetToken),
+                      Return(error::kNoError)));
+
+  int flush_count = command_buffer_->FlushCount();
+
+  // Test that waiting for pending token causes a Flush.
+  helper_->WaitForToken(token);
+  EXPECT_EQ(command_buffer_->FlushCount(), flush_count + 1);
+
+  // Test that we don't Flush repeatedly.
+  helper_->WaitForToken(token);
+  EXPECT_EQ(command_buffer_->FlushCount(), flush_count + 1);
+
+  // Add another command.
+  AddCommandWithExpect(error::kNoError, kUnusedCommandId + 4, 2, args);
+
+  // Test that we don't Flush repeatedly even if commands are pending.
+  helper_->WaitForToken(token);
+  EXPECT_EQ(command_buffer_->FlushCount(), flush_count + 1);
+
+  helper_->Finish();
+
+  // Check that the commands did happen.
+  Mock::VerifyAndClearExpectations(api_mock_.get());
+
+  // Check the error status.
+  EXPECT_EQ(error::kNoError, GetError());
+}
+
 TEST_F(CommandBufferHelperTest, FreeRingBuffer) {
   EXPECT_TRUE(helper_->HaveRingBuffer());
 
@@ -610,6 +672,40 @@ TEST_F(CommandBufferHelperTest, IsContextLost) {
   EXPECT_FALSE(helper_->IsContextLost());
   command_buffer_->SetParseError(error::kGenericError);
   EXPECT_TRUE(helper_->IsContextLost());
+}
+
+// Checks helper's 'flush generation' updates.
+TEST_F(CommandBufferHelperTest, TestFlushGeneration) {
+  // Explicit flushing only.
+  helper_->SetAutomaticFlushes(false);
+
+  // Generation should change after Flush() but not before.
+  uint32 gen1, gen2, gen3;
+
+  gen1 = GetHelperFlushGeneration();
+  AddUniqueCommandWithExpect(error::kNoError, 2);
+  gen2 = GetHelperFlushGeneration();
+  helper_->Flush();
+  gen3 = GetHelperFlushGeneration();
+  EXPECT_EQ(gen2, gen1);
+  EXPECT_NE(gen3, gen2);
+
+  // Generation should change after Finish() but not before.
+  gen1 = GetHelperFlushGeneration();
+  AddUniqueCommandWithExpect(error::kNoError, 2);
+  gen2 = GetHelperFlushGeneration();
+  helper_->Finish();
+  gen3 = GetHelperFlushGeneration();
+  EXPECT_EQ(gen2, gen1);
+  EXPECT_NE(gen3, gen2);
+
+  helper_->Finish();
+
+  // Check that the commands did happen.
+  Mock::VerifyAndClearExpectations(api_mock_.get());
+
+  // Check the error status.
+  EXPECT_EQ(error::kNoError, GetError());
 }
 
 }  // namespace gpu

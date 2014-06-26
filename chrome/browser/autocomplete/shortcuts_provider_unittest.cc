@@ -22,14 +22,15 @@
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/autocomplete/shortcuts_backend.h"
+#include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/in_memory_url_index.h"
-#include "chrome/browser/history/shortcuts_backend.h"
-#include "chrome/browser/history/shortcuts_backend_factory.h"
-#include "chrome/browser/history/url_database.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/history/core/browser/url_database.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_browser_thread.h"
 #include "extensions/common/extension.h"
@@ -176,6 +177,26 @@ struct TestShortcutInfo {
     "http://duplicate.com/", "Duplicate", "0,1", "Duplicate", "0,1",
     content::PAGE_TRANSITION_TYPED, AutocompleteMatchType::HISTORY_URL, "", 1,
     100 },
+  { "BD85DBA2-8C29-49F9-84AE-48E1E90880F9", "notrailing.com/",
+    "http://notrailing.com", "http://notrailing.com/", "No Trailing Slash",
+    "0,1", "No Trailing Slash on fill_into_edit", "0,1",
+    content::PAGE_TRANSITION_TYPED, AutocompleteMatchType::HISTORY_URL, "",
+    1, 100 },
+  { "BD85DBA2-8C29-49F9-84AE-48E1E90880FA", "http:///foo.com",
+    "http://foo.com", "http://foo.com/", "Foo - Typo in Input",
+    "0,1", "Foo - Typo in Input Corrected in fill_into_edit", "0,1",
+    content::PAGE_TRANSITION_TYPED, AutocompleteMatchType::HISTORY_URL, "",
+    1, 100 },
+  { "BD85DBA2-8C29-49F9-84AE-48E1E90880FB", "trailing1 ",
+    "http://trailing1.com", "http://trailing1.com/",
+    "Trailing1 - Space in Shortcut", "0,1",
+    "Trailing1 - Space in Shortcut", "0,1", content::PAGE_TRANSITION_TYPED,
+    AutocompleteMatchType::HISTORY_URL, "", 1, 100 },
+  { "BD85DBA2-8C29-49F9-84AE-48E1E90880FC", "about:trailing2 ",
+    "chrome://trailing2blah", "chrome://trailing2blah/",
+    "Trailing2 - Space in Shortcut", "0,1",
+    "Trailing2 - Space in Shortcut", "0,1", content::PAGE_TRANSITION_TYPED,
+    AutocompleteMatchType::HISTORY_URL, "", 1, 100 },
 };
 
 }  // namespace
@@ -210,8 +231,6 @@ ACMatchClassifications ClassifyTest::RunTest(const base::string16& find_text) {
   return ShortcutsProvider::ClassifyAllMatchesInString(find_text,
       ShortcutsProvider::CreateWordMapForString(find_text), text_, matches_);
 }
-
-namespace history {
 
 
 // ShortcutsProviderTest ------------------------------------------------------
@@ -263,7 +282,7 @@ class ShortcutsProviderTest : public testing::Test,
 
   // Passthrough to the private function in provider_.
   int CalculateScore(const std::string& terms,
-                     const ShortcutsBackend::Shortcut& shortcut,
+                     const history::ShortcutsDatabase::Shortcut& shortcut,
                      int max_relevance);
 
   base::MessageLoopForUI message_loop_;
@@ -307,14 +326,12 @@ void ShortcutsProviderTest::FillData(TestShortcutInfo* db, size_t db_size) {
   size_t expected_size = backend_->shortcuts_map().size() + db_size;
   for (size_t i = 0; i < db_size; ++i) {
     const TestShortcutInfo& cur = db[i];
-    ShortcutsBackend::Shortcut shortcut(
+    history::ShortcutsDatabase::Shortcut shortcut(
         cur.guid, ASCIIToUTF16(cur.text),
-        ShortcutsBackend::Shortcut::MatchCore(
+        history::ShortcutsDatabase::Shortcut::MatchCore(
             ASCIIToUTF16(cur.fill_into_edit), GURL(cur.destination_url),
-            ASCIIToUTF16(cur.contents),
-            AutocompleteMatch::ClassificationsFromString(cur.contents_class),
-            ASCIIToUTF16(cur.description),
-            AutocompleteMatch::ClassificationsFromString(cur.description_class),
+            ASCIIToUTF16(cur.contents), cur.contents_class,
+            ASCIIToUTF16(cur.description), cur.description_class,
             cur.transition, cur.type, ASCIIToUTF16(cur.keyword)),
         base::Time::Now() - base::TimeDelta::FromDays(cur.days_from_now),
         cur.number_of_hits);
@@ -344,9 +361,9 @@ void ShortcutsProviderTest::RunTest(
     base::string16 top_result_inline_autocompletion) {
   base::MessageLoop::current()->RunUntilIdle();
   AutocompleteInput input(text, base::string16::npos, base::string16(), GURL(),
-                          AutocompleteInput::INVALID_SPEC,
-                          prevent_inline_autocomplete, false, true,
-                          AutocompleteInput::ALL_MATCHES);
+                          metrics::OmniboxEventProto::INVALID_SPEC,
+                          prevent_inline_autocomplete, false, true, true,
+                          &profile_);
   provider_->Start(input, false);
   EXPECT_TRUE(provider_->done());
 
@@ -378,7 +395,7 @@ void ShortcutsProviderTest::RunTest(
 
 int ShortcutsProviderTest::CalculateScore(
     const std::string& terms,
-    const ShortcutsBackend::Shortcut& shortcut,
+    const history::ShortcutsDatabase::Shortcut& shortcut,
     int max_relevance) {
   return provider_->CalculateScore(ASCIIToUTF16(terms), shortcut,
                                    max_relevance);
@@ -487,6 +504,54 @@ TEST_F(ShortcutsProviderTest, TrickySingleMatch) {
   // be used because |allowed_to_be_default_match| will be false.
   RunTest(text, true, expected_urls, expected_url,
           ASCIIToUTF16("ace/long-url-with-space.html"));
+
+  // Test when the user input has a trailing slash but fill_into_edit does
+  // not.  This should still be allowed to be default.
+  text = ASCIIToUTF16("notrailing.com/");
+  expected_url = "http://notrailing.com/";
+  expected_urls.clear();
+  expected_urls.push_back(
+      ExpectedURLAndAllowedToBeDefault(expected_url, true));
+  RunTest(text, true, expected_urls, expected_url, base::string16());
+
+  // Test when the user input has a typo that can be fixed up for matching
+  // fill_into_edit.  This should still be allowed to be default.
+  text = ASCIIToUTF16("http:///foo.com");
+  expected_url = "http://foo.com/";
+  expected_urls.clear();
+  expected_urls.push_back(
+      ExpectedURLAndAllowedToBeDefault(expected_url, true));
+  RunTest(text, true, expected_urls, expected_url, base::string16());
+
+  // A foursome of tests to verify that trailing spaces prevent the shortcut
+  // from being allowed to be the default match.  For each of two tests, we
+  // first verify that the match is allowed to be default without the trailing
+  // space but is not allowed to be default with the trailing space.  In both
+  // of these with-trailing-space cases, we actually get an
+  // inline_autocompletion, though it's never used because the match is
+  // prohibited from being default.
+  text = ASCIIToUTF16("trailing1");
+  expected_url = "http://trailing1.com/";
+  expected_urls.clear();
+  expected_urls.push_back(
+      ExpectedURLAndAllowedToBeDefault(expected_url, true));
+  RunTest(text, false, expected_urls, expected_url, ASCIIToUTF16(".com"));
+  text = ASCIIToUTF16("trailing1 ");
+  expected_urls.clear();
+  expected_urls.push_back(
+      ExpectedURLAndAllowedToBeDefault(expected_url, false));
+  RunTest(text, false, expected_urls, expected_url, ASCIIToUTF16(".com"));
+  text = ASCIIToUTF16("about:trailing2");
+  expected_url = "chrome://trailing2blah/";
+  expected_urls.clear();
+  expected_urls.push_back(
+      ExpectedURLAndAllowedToBeDefault(expected_url, true));
+  RunTest(text, false, expected_urls, expected_url, ASCIIToUTF16("blah"));
+  text = ASCIIToUTF16("about:trailing2 ");
+  expected_urls.clear();
+  expected_urls.push_back(
+      ExpectedURLAndAllowedToBeDefault(expected_url, false));
+  RunTest(text, false, expected_urls, expected_url, ASCIIToUTF16("blah"));
 }
 
 TEST_F(ShortcutsProviderTest, MultiMatch) {
@@ -650,20 +715,18 @@ TEST_F(ShortcutsProviderTest, ClassifyAllMatchesInString) {
 }
 
 TEST_F(ShortcutsProviderTest, CalculateScore) {
-  ShortcutsBackend::Shortcut shortcut(
+  history::ShortcutsDatabase::Shortcut shortcut(
       std::string(), ASCIIToUTF16("test"),
-      ShortcutsBackend::Shortcut::MatchCore(
+      history::ShortcutsDatabase::Shortcut::MatchCore(
           ASCIIToUTF16("www.test.com"), GURL("http://www.test.com"),
-          ASCIIToUTF16("www.test.com"),
-          AutocompleteMatch::ClassificationsFromString("0,1,4,3,8,1"),
-          ASCIIToUTF16("A test"),
-          AutocompleteMatch::ClassificationsFromString("0,0,2,2"),
-          content::PAGE_TRANSITION_TYPED, AutocompleteMatchType::HISTORY_URL,
-          base::string16()),
+          ASCIIToUTF16("www.test.com"), "0,1,4,3,8,1",
+          ASCIIToUTF16("A test"), "0,0,2,2", content::PAGE_TRANSITION_TYPED,
+          AutocompleteMatchType::HISTORY_URL, base::string16()),
       base::Time::Now(), 1);
 
   // Maximal score.
-  const int max_relevance = AutocompleteResult::kLowestDefaultScore - 1;
+  const int max_relevance =
+      ShortcutsProvider::kShortcutsProviderDefaultMaxRelevance;
   const int kMaxScore = CalculateScore("test", shortcut, max_relevance);
 
   // Score decreases as percent of the match is decreased.
@@ -783,12 +846,10 @@ TEST_F(ShortcutsProviderTest, Extension) {
   extensions::UnloadedExtensionInfo details(
       extension.get(), extensions::UnloadedExtensionInfo::REASON_UNINSTALL);
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::Source<Profile>(&profile_),
       content::Details<extensions::UnloadedExtensionInfo>(&details));
 
   // Now the URL should have disappeared.
   RunTest(text, false, ExpectedURLs(), std::string(), base::string16());
 }
-
-}  // namespace history

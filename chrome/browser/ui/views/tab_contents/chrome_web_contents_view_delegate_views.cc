@@ -8,8 +8,8 @@
 #include "chrome/browser/ui/aura/tab_contents/web_drag_bookmark_handler_aura.h"
 #include "chrome/browser/ui/sad_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/chrome_web_contents_view_delegate.h"
+#include "chrome/browser/ui/views/renderer_context_menu/render_view_context_menu_views.h"
 #include "chrome/browser/ui/views/sad_tab_view.h"
-#include "chrome/browser/ui/views/tab_contents/render_view_context_menu_views.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/render_process_host.h"
@@ -17,7 +17,6 @@
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "content/public/browser/web_contents_view.h"
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/window.h"
 #include "ui/views/focus/focus_manager.h"
@@ -28,7 +27,8 @@ using web_modal::WebContentsModalDialogManager;
 
 ChromeWebContentsViewDelegateViews::ChromeWebContentsViewDelegateViews(
     content::WebContents* web_contents)
-    : web_contents_(web_contents) {
+    : ContextMenuDelegate(web_contents),
+      web_contents_(web_contents) {
   last_focused_view_storage_id_ =
       views::ViewStorage::GetInstance()->CreateStorageID();
 }
@@ -118,33 +118,48 @@ void ChromeWebContentsViewDelegateViews::RestoreFocus() {
   }
 }
 
-void ChromeWebContentsViewDelegateViews::ShowContextMenu(
-    content::RenderFrameHost* render_frame_host,
+scoped_ptr<RenderViewContextMenu> ChromeWebContentsViewDelegateViews::BuildMenu(
+    content::WebContents* web_contents,
     const content::ContextMenuParams& params) {
+  scoped_ptr<RenderViewContextMenu> menu;
+  content::RenderFrameHost* focused_frame = web_contents->GetFocusedFrame();
+  // If the frame tree does not have a focused frame at this point, do not
+  // bother creating RenderViewContextMenuViews.
+  // This happens if the frame has navigated to a different page before
+  // ContextMenu message was received by the current RenderFrameHost.
+  if (focused_frame) {
+    menu.reset(RenderViewContextMenuViews::Create(focused_frame, params));
+    menu->Init();
+  }
+  return menu.Pass();
+}
+
+void ChromeWebContentsViewDelegateViews::ShowMenu(
+    scoped_ptr<RenderViewContextMenu> menu) {
+  context_menu_.reset(static_cast<RenderViewContextMenuViews*>(menu.release()));
+  if (!context_menu_.get())
+    return;
+
   // Menus need a Widget to work. If we're not the active tab we won't
   // necessarily be in a widget.
   views::Widget* top_level_widget = GetTopLevelWidget();
   if (!top_level_widget)
     return;
 
-  context_menu_.reset(
-      RenderViewContextMenuViews::Create(render_frame_host, params));
-  context_menu_->Init();
-
+  const content::ContextMenuParams& params = context_menu_->params();
   // Don't show empty menus.
   if (context_menu_->menu_model().GetItemCount() == 0)
     return;
 
   gfx::Point screen_point(params.x, params.y);
 
-  // Convert from content coordinates to window coordinates.
-  aura::Window* web_contents_window =
-      web_contents_->GetView()->GetNativeView();
-  aura::Window* root_window = web_contents_window->GetRootWindow();
+  // Convert from target window coordinates to root window coordinates.
+  aura::Window* target_window = GetActiveNativeView();
+  aura::Window* root_window = target_window->GetRootWindow();
   aura::client::ScreenPositionClient* screen_position_client =
       aura::client::GetScreenPositionClient(root_window);
   if (screen_position_client) {
-    screen_position_client->ConvertPointToScreen(web_contents_window,
+    screen_position_client->ConvertPointToScreen(target_window,
                                                  &screen_point);
   }
   // Enable recursive tasks on the message loop so we can get updates while
@@ -152,6 +167,14 @@ void ChromeWebContentsViewDelegateViews::ShowContextMenu(
   base::MessageLoop::ScopedNestableTaskAllower allow(
       base::MessageLoop::current());
   context_menu_->RunMenuAt(top_level_widget, screen_point, params.source_type);
+}
+
+void ChromeWebContentsViewDelegateViews::ShowContextMenu(
+    content::RenderFrameHost* render_frame_host,
+    const content::ContextMenuParams& params) {
+  ShowMenu(
+      BuildMenu(content::WebContents::FromRenderFrameHost(render_frame_host),
+                params));
 }
 
 void ChromeWebContentsViewDelegateViews::SizeChanged(const gfx::Size& size) {
@@ -163,9 +186,14 @@ void ChromeWebContentsViewDelegateViews::SizeChanged(const gfx::Size& size) {
     sad_tab->GetWidget()->SetBounds(gfx::Rect(size));
 }
 
+aura::Window* ChromeWebContentsViewDelegateViews::GetActiveNativeView() {
+  return web_contents_->GetFullscreenRenderWidgetHostView() ?
+      web_contents_->GetFullscreenRenderWidgetHostView()->GetNativeView() :
+      web_contents_->GetNativeView();
+}
+
 views::Widget* ChromeWebContentsViewDelegateViews::GetTopLevelWidget() {
-  return views::Widget::GetTopLevelWidgetForNativeView(
-      web_contents_->GetView()->GetNativeView());
+  return views::Widget::GetTopLevelWidgetForNativeView(GetActiveNativeView());
 }
 
 views::FocusManager*
@@ -179,7 +207,7 @@ void ChromeWebContentsViewDelegateViews::SetInitialFocus() {
     if (web_contents_->GetDelegate())
       web_contents_->GetDelegate()->SetFocusToLocationBar(false);
   } else {
-    web_contents_->GetView()->Focus();
+    web_contents_->Focus();
   }
 }
 

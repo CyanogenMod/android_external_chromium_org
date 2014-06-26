@@ -2,10 +2,10 @@
 
 
 <p>
-Event pages are very similar to
-<a href="background_pages.html">background pages</a>,
-with one important difference:
-event pages are loaded only when they are needed.
+A common need for apps and extensions is to have
+a single long-running script to manage some task or state.
+Event pages to the rescue.
+Event pages are loaded only when they are needed.
 When the event page is not actively doing something,
 it is unloaded, freeing memory and other system resources.
 </p>
@@ -29,7 +29,7 @@ new model.
 
 <p>
 Register your event page in the
-<a href="manifest.html">extension manifest</a>:
+<a href="manifest">extension manifest</a>:
 </p>
 
 {{^is_apps}}
@@ -78,9 +78,9 @@ that will cause the event page to load:
 (in order to <a href="#registration">register for events</a>).
 <li>The event page was listening for an event, and the event is dispatched.
 <li>A content script or other extension
-<a href="messaging.html">sends a message.</a>
+<a href="messaging">sends a message.</a>
 <li>Another view in the extension (for example, a popup) calls
-<code>$ref:runtime.getBackgroundPage</code>.
+<code>$(ref:runtime.getBackgroundPage)</code>.
 </ul>
 
 <p>
@@ -105,11 +105,11 @@ extension appears in the list of processes.
 <p>
 Once the event page has been idle a short time
 (a few seconds), the
-<code>$ref:runtime.onSuspend</code>
+<code>$(ref:runtime.onSuspend)</code>
 event is dispatched. The event page has a few more seconds to handle this
 event before it is forcibly unloaded. If during this time an event occurs which
 would normally cause the event page to be loaded, the suspend is canceled
-and the <code>$ref:runtime.onSuspendCanceled</code> event is dispatched.
+and the <code>$(ref:runtime.onSuspendCanceled)</code> event is dispatched.
 </p>
 
 <h2 id="registration">Event registration</h2>
@@ -126,7 +126,7 @@ load its event page for that event.
 Because the listeners themselves only exist in the context of the
 event page, you must use <code>addListener</code> each time the event
 page loads; only doing so at
-<code>$ref:runtime.onInstalled</code>
+<code>$(ref:runtime.onInstalled)</code>
 by itself is insufficient.
 </p>
 
@@ -136,6 +136,7 @@ For an example of event registration in action, you can view the
 Checker</a> extension.
 </p>
 
+{{^is_apps}}
 <h2 id="transition">Convert background page to event page</h2>
 <p>
 Follow this checklist to convert your extension's
@@ -146,22 +147,23 @@ Follow this checklist to convert your extension's
 
   <li>If your extension uses <code>window.setTimeout()</code> or
   <code>window.setInterval()</code>, switch to using the
-  <a href="alarms.html">alarms API</a> instead. DOM-based timers won't
+  <a href="alarms">alarms API</a> instead. DOM-based timers won't
   be honored if the event page shuts down.
 
   <li>Similarly, other asynchronous HTML5 APIs like notifications and
   geolocation will not complete if the event page shuts down. Instead,
   use equivalent extension APIs, like
-  <a href="notifications.html">notifications</a>.
+  <a href="notifications">notifications</a>.
 
   <li>If your extension uses,
-  <code>$ref:extension.getBackgroundPage</code>,
+  <code>$(ref:extension.getBackgroundPage)</a></code>,
   switch to
-  <code>$ref:runtime.getBackgroundPage</code>
+  <code>$(ref:runtime.getBackgroundPage)</code>
   instead. The newer method is asynchronous so that it can start the event
   page if necessary before returning it.
 </ol>
 </p>
+{{/is_apps}}
 
 <h2 id="best-practices">Best practices when using event pages</h2>
 <p>
@@ -177,47 +179,49 @@ Keep these tips in mind when using event pages to avoid common subtle pitfalls.
 
   <li>If you need to do some initialization when your extension is
   installed or upgraded, listen to the
-  <code>$ref:runtime.onInstalled</code>
+  <code>$(ref:runtime.onInstalled)</code>
   event. This is a good place to register for
-  <a href="declarativeWebRequest.html">declarativeWebRequest</a> rules,
-  <a href="contextMenus.html">contextMenu</a> entries, and other such
+  <a href="declarativeWebRequest">declarativeWebRequest</a> rules,
+  <a href="contextMenus">contextMenu</a> entries, and other such
   one-time initialization.
 
   <li>If you need to keep runtime state in memory throughout a browser
-  session, use the <a href="storage.html">storage API</a> or
+  session, use the <a href="storage">storage API</a> or
   IndexedDB. Since the event page does not stay loaded for long, you
   can no longer rely on global variables for runtime state.
 
-  <li>Use <a href="events.html#filtered">event filters</a> to restrict
+  {{^is_apps}}
+  <li>Use <a href="events#filtered">event filters</a> to restrict
   your event notifications to the cases you care about. For example, if
-  you listen to the <code>$ref:tabs.onUpdated</code>
+  you listen to the <code><a href="extensions/tabs#event-onUpdated">tabs.onUpdated</a></code>
   event, try using the
-  <code>$ref:webNavigation.onCompleted</code>
+  <code>$(ref:webNavigation.onCompleted)</code>
   event with filters instead (the tabs API does not support filters).
   That way, your event page will only be loaded for events that
   interest you.
+  {{/is_apps}}
 
   <li>Listen to the
-  <code>$ref:runtime.onSuspend</code>
+  <code>$(ref:runtime.onSuspend)</code>
   event if you need to do last second cleanup before your event page
   is shut down. However, we recommend persisting periodically instead.
   That way if your extension crashes without receiving
   <code>onSuspend</code>, no data will typically be lost.
 
-  <li>If you're using <a href="messaging.html">message passing</a>, be sure
+  <li>If you're using <a href="messaging">message passing</a>, be sure
   to close unused message ports. The event page will not shut down until all
   message ports are closed.
 
-  <li>If you're using the <a href="contextMenus.html">context menus</a> API,
+  <li>If you're using the <a href="contextMenus">context menus</a> API,
   pass a string <code>id</code> parameter to
-  <code>$ref:contextMenus.create</code>,
+  <code>$(ref:contextMenus.create)</code>,
   and use the
-  <code>$ref:contextMenus.onClicked</code>
+  <code>$(ref:contextMenus.onClicked)</code>
   callback instead of an <code>onclick</code> parameter to
-  <code>$ref:contextMenus.create</code>.
+  <code>$(ref:contextMenus.create)</code>.
 
   <li>Remember to test that your event page works properly when it is unloaded
-  and then reloaded, which only happens after several seconds of inactivity. 
+  and then reloaded, which only happens after several seconds of inactivity.
   Common mistakes include doing unnecessary work at page load time (when it
   should only be done when the extension is installed); setting an alarm at
   page load time (which resets any previous alarm); or not adding event

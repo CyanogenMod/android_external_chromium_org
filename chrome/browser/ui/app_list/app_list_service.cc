@@ -34,8 +34,9 @@ base::Time GetOriginalProcessStartTime(const CommandLine& command_line) {
 // platforms.
 #if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
   return base::CurrentProcessInfo::CreationTime();
-#endif
+#else
   return base::Time();
+#endif
 }
 
 StartupType GetStartupType(const CommandLine& command_line) {
@@ -88,7 +89,6 @@ void AppListService::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterInt64Pref(prefs::kLastAppListAppLaunchPing, 0);
   registry->RegisterIntegerPref(prefs::kAppListAppLaunchCount, 0);
   registry->RegisterStringPref(prefs::kAppListProfile, std::string());
-  registry->RegisterBooleanPref(prefs::kRestartWithAppList, false);
   registry->RegisterBooleanPref(prefs::kAppLauncherIsEnabled, false);
   registry->RegisterBooleanPref(prefs::kAppLauncherHasBeenEnabled, false);
   registry->RegisterIntegerPref(prefs::kAppListEnableMethod,

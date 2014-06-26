@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "extensions/common/extension.h"
 
 class ExtensionService;
@@ -26,9 +26,11 @@ class BrowserContext;
 namespace extensions {
 
 class Blacklist;
+class ContentVerifier;
 class ErrorConsole;
 class EventRouter;
 class Extension;
+class ExtensionSet;
 class ExtensionWarningService;
 class InfoMap;
 class InstallVerifier;
@@ -43,9 +45,9 @@ class UserScriptMaster;
 
 // ExtensionSystem manages the lifetime of many of the services used by the
 // extensions and apps system, and it handles startup and shutdown as needed.
-// Eventually, we'd like to make more of these services into
-// BrowserContextKeyedServices in their own right.
-class ExtensionSystem : public BrowserContextKeyedService {
+// Eventually, we'd like to make more of these services into KeyedServices in
+// their own right.
+class ExtensionSystem : public KeyedService {
  public:
   ExtensionSystem();
   virtual ~ExtensionSystem();
@@ -124,6 +126,15 @@ class ExtensionSystem : public BrowserContextKeyedService {
 
   // Signaled when the extension system has completed its startup tasks.
   virtual const OneShotEvent& ready() const = 0;
+
+  // Returns the content verifier, if any.
+  virtual ContentVerifier* content_verifier() = 0;
+
+  // Get a set of extensions that depend on the given extension.
+  // TODO(elijahtaylor): Move SharedModuleService out of chrome/browser
+  // so it can be retrieved from ExtensionSystem directly.
+  virtual scoped_ptr<ExtensionSet> GetDependentExtensions(
+      const Extension* extension) = 0;
 };
 
 }  // namespace extensions

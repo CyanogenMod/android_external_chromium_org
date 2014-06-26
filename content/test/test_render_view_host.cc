@@ -16,20 +16,12 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/page_state.h"
-#include "content/test/test_backing_store.h"
 #include "content/test/test_web_contents.h"
 #include "media/base/video_frame.h"
 #include "ui/gfx/rect.h"
 #include "webkit/common/webpreferences.h"
 
 namespace content {
-
-namespace {
-
-const int64 kFrameId = 13UL;
-
-}  // namespace
-
 
 void InitNavigateParams(FrameHostMsg_DidCommitProvisionalLoad_Params* params,
                         int page_id,
@@ -76,6 +68,10 @@ gfx::NativeViewAccessible TestRenderWidgetHostView::GetNativeViewAccessible() {
   return NULL;
 }
 
+ui::TextInputClient* TestRenderWidgetHostView::GetTextInputClient() {
+  return &text_input_client_;
+}
+
 bool TestRenderWidgetHostView::HasFocus() const {
   return true;
 }
@@ -107,11 +103,6 @@ gfx::Rect TestRenderWidgetHostView::GetViewBounds() const {
   return gfx::Rect();
 }
 
-BackingStore* TestRenderWidgetHostView::AllocBackingStore(
-    const gfx::Size& size) {
-  return new TestBackingStore(rwh_, size);
-}
-
 void TestRenderWidgetHostView::CopyFromCompositingSurface(
     const gfx::Rect& src_subrect,
     const gfx::Size& dst_size,
@@ -129,9 +120,6 @@ void TestRenderWidgetHostView::CopyFromCompositingSurfaceToVideoFrame(
 
 bool TestRenderWidgetHostView::CanCopyToVideoFrame() const {
   return false;
-}
-
-void TestRenderWidgetHostView::OnAcceleratedCompositingStateChange() {
 }
 
 void TestRenderWidgetHostView::AcceleratedSurfaceInitialized(int host_id,
@@ -187,16 +175,6 @@ gfx::Rect TestRenderWidgetHostView::GetBoundsInRootWindow() {
   return gfx::Rect();
 }
 
-#if defined(TOOLKIT_GTK)
-GdkEventButton* TestRenderWidgetHostView::GetLastMouseDown() {
-  return NULL;
-}
-
-gfx::NativeView TestRenderWidgetHostView::BuildInputMethodsGtkMenu() {
-  return NULL;
-}
-#endif  // defined(TOOLKIT_GTK)
-
 void TestRenderWidgetHostView::OnSwapCompositorFrame(
     uint32 output_surface_id,
     scoped_ptr<cc::CompositorFrame> frame) {
@@ -251,8 +229,6 @@ TestRenderViewHost::TestRenderViewHost(
   // constructor, and deletes itself when TestRenderWidgetHostView::Destroy() is
   // called.
   new TestRenderWidgetHostView(this);
-
-  main_frame_id_ = kFrameId;
 }
 
 TestRenderViewHost::~TestRenderViewHost() {
@@ -263,7 +239,9 @@ TestRenderViewHost::~TestRenderViewHost() {
 bool TestRenderViewHost::CreateRenderView(
     const base::string16& frame_name,
     int opener_route_id,
-    int32 max_page_id) {
+    int proxy_route_id,
+    int32 max_page_id,
+    bool window_was_created_with_opener) {
   DCHECK(!render_view_created_);
   render_view_created_ = true;
   opener_route_id_ = opener_route_id;
@@ -272,6 +250,10 @@ bool TestRenderViewHost::CreateRenderView(
 
 bool TestRenderViewHost::IsRenderViewLive() const {
   return render_view_created_;
+}
+
+bool TestRenderViewHost::IsFullscreen() const {
+  return RenderViewHostImpl::IsFullscreen();
 }
 
 void TestRenderViewHost::SendNavigate(int page_id, const GURL& url) {
@@ -328,12 +310,13 @@ void TestRenderViewHost::SendNavigateWithParameters(
 
   main_render_frame_host_->SendNavigateWithParameters(
       page_id, url, transition, original_request_url, response_code,
-      file_path_for_history_item);
+      file_path_for_history_item, std::vector<GURL>());
 }
 
-void TestRenderViewHost::SendShouldCloseACK(bool proceed) {
+void TestRenderViewHost::SendBeforeUnloadACK(bool proceed) {
+  // TODO(creis): Move this whole method to TestRenderFrameHost.
   base::TimeTicks now = base::TimeTicks::Now();
-  OnShouldCloseACK(proceed, now, now);
+  main_render_frame_host_->OnBeforeUnloadACK(proceed, now, now);
 }
 
 void TestRenderViewHost::SetContentsMimeType(const std::string& mime_type) {

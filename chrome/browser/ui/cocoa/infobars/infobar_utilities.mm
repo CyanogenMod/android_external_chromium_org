@@ -5,9 +5,27 @@
 #import "chrome/browser/ui/cocoa/infobars/infobar_utilities.h"
 
 #include "base/mac/scoped_nsobject.h"
-#import "chrome/browser/infobars/infobar.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_gradient_view.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
+#import "components/infobars/core/infobar.h"
+
+@interface InfobarLabelTextField : NSTextField
+@end
+
+@implementation InfobarLabelTextField
+
+- (void)drawRect:(NSRect)rect {
+  NSView* infobarGradientView = [self superview];
+  [self cr_drawUsingAncestor:infobarGradientView inRect:rect];
+  [super drawRect:rect];
+}
+
+- (BOOL)isOpaque {
+  return YES;
+}
+
+@end
 
 namespace InfoBarUtilities {
 
@@ -48,7 +66,7 @@ void VerticallyCenterView(NSView* toMove) {
   // rather than in the total height (which includes the bulge).
   CGFloat superHeight = NSHeight(superViewFrame);
   if ([[toMove superview] isKindOfClass:[InfoBarGradientView class]])
-    superHeight = InfoBar::kDefaultBarTargetHeight;
+    superHeight = infobars::InfoBar::kDefaultBarTargetHeight;
   viewFrame.origin.y =
       floor((superHeight - NSHeight(viewFrame)) / 2.0);
   [toMove setFrame:viewFrame];
@@ -57,7 +75,7 @@ void VerticallyCenterView(NSView* toMove) {
 // Creates a label control in the style we need for the infobar's labels
 // within |bounds|.
 NSTextField* CreateLabel(NSRect bounds) {
-  NSTextField* ret = [[NSTextField alloc] initWithFrame:bounds];
+  NSTextField* ret = [[InfobarLabelTextField alloc] initWithFrame:bounds];
   [ret setEditable:NO];
   [ret setDrawsBackground:NO];
   [ret setBordered:NO];

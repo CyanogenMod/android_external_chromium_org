@@ -28,10 +28,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/resource/resource_bundle.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
-
 using autofill::AutofillProfile;
 using autofill::PersonalDataManager;
 
@@ -132,16 +128,10 @@ void WebUIBidiCheckerBrowserTestRTL::SetUpOnMainThread() {
   ResourceBundle::GetSharedInstance().OverrideLocalePakForTest(pak_path);
   ReloadLocaleResources("he");
   base::i18n::SetICUDefaultLocale("he");
-#if defined(OS_POSIX) && defined(TOOLKIT_GTK)
-  gtk_widget_set_default_direction(GTK_TEXT_DIR_RTL);
-#endif
 }
 
 void WebUIBidiCheckerBrowserTestRTL::CleanUpOnMainThread() {
   WebUIBidiCheckerBrowserTest::CleanUpOnMainThread();
-#if defined(OS_POSIX) && defined(TOOLKIT_GTK)
-  gtk_widget_set_default_direction(GTK_TEXT_DIR_LTR);
-#endif
 
   base::i18n::SetICUDefaultLocale(app_locale_);
   ResourceBundle::GetSharedInstance().OverrideLocalePakForTest(
@@ -265,7 +255,7 @@ static void SetupSettingsAutofillPageTest(Profile* profile,
                                           const char* zipcode,
                                           const char* country,
                                           const char* phone) {
-  autofill::test::DisableSystemServices(profile);
+  autofill::test::DisableSystemServices(profile->GetPrefs());
   AutofillProfile autofill_profile;
   autofill::test::SetProfileInfo(&autofill_profile,
                                  first_name,

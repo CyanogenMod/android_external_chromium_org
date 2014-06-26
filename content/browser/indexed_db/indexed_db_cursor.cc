@@ -4,19 +4,22 @@
 
 #include "content/browser/indexed_db/indexed_db_cursor.h"
 
+#include <vector>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "content/browser/indexed_db/indexed_db_callbacks.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
 #include "content/browser/indexed_db/indexed_db_tracing.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
+#include "content/browser/indexed_db/indexed_db_value.h"
 
 namespace content {
 
 IndexedDBCursor::IndexedDBCursor(
     scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
     indexed_db::CursorType cursor_type,
-    IndexedDBDatabase::TaskType task_type,
+    blink::WebIDBTaskType task_type,
     IndexedDBTransaction* transaction)
     : task_type_(task_type),
       cursor_type_(cursor_type),
@@ -59,9 +62,13 @@ void IndexedDBCursor::CursorAdvanceOperation(
     scoped_refptr<IndexedDBCallbacks> callbacks,
     IndexedDBTransaction* /*transaction*/) {
   IDB_TRACE("IndexedDBCursor::CursorAdvanceOperation");
-  if (!cursor_ || !cursor_->Advance(count)) {
+  leveldb::Status s;
+  // TODO(cmumford): Handle this error (crbug.com/363397). Although this will
+  //                 properly fail, caller will not know why, and any corruption
+  //                 will be ignored.
+  if (!cursor_ || !cursor_->Advance(count, &s)) {
     cursor_.reset();
-    callbacks->OnSuccess(static_cast<std::string*>(NULL));
+    callbacks->OnSuccess(static_cast<IndexedDBValue*>(NULL));
     return;
   }
 
@@ -74,11 +81,16 @@ void IndexedDBCursor::CursorIterationOperation(
     scoped_refptr<IndexedDBCallbacks> callbacks,
     IndexedDBTransaction* /*transaction*/) {
   IDB_TRACE("IndexedDBCursor::CursorIterationOperation");
-  if (!cursor_ ||
-      !cursor_->Continue(
-           key.get(), primary_key.get(), IndexedDBBackingStore::Cursor::SEEK)) {
+  leveldb::Status s;
+  // TODO(cmumford): Handle this error (crbug.com/363397). Although this will
+  //                 properly fail, caller will not know why, and any corruption
+  //                 will be ignored.
+  if (!cursor_ || !cursor_->Continue(key.get(),
+                                     primary_key.get(),
+                                     IndexedDBBackingStore::Cursor::SEEK,
+                                     &s) || !s.ok()) {
     cursor_.reset();
-    callbacks->OnSuccess(static_cast<std::string*>(NULL));
+    callbacks->OnSuccess(static_cast<IndexedDBValue*>(NULL));
     return;
   }
 
@@ -106,14 +118,18 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
 
   std::vector<IndexedDBKey> found_keys;
   std::vector<IndexedDBKey> found_primary_keys;
-  std::vector<std::string> found_values;
+  std::vector<IndexedDBValue> found_values;
 
   saved_cursor_.reset();
   const size_t max_size_estimate = 10 * 1024 * 1024;
   size_t size_estimate = 0;
+  leveldb::Status s;
 
+  // TODO(cmumford): Handle this error (crbug.com/363397). Although this will
+  //                 properly fail, caller will not know why, and any corruption
+  //                 will be ignored.
   for (int i = 0; i < number_to_fetch; ++i) {
-    if (!cursor_ || !cursor_->Continue()) {
+    if (!cursor_ || !cursor_->Continue(&s)) {
       cursor_.reset();
       break;
     }
@@ -129,12 +145,12 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
 
     switch (cursor_type_) {
       case indexed_db::CURSOR_KEY_ONLY:
-        found_values.push_back(std::string());
+        found_values.push_back(IndexedDBValue());
         break;
       case indexed_db::CURSOR_KEY_AND_VALUE: {
-        std::string value;
+        IndexedDBValue value;
         value.swap(*cursor_->value());
-        size_estimate += value.size();
+        size_estimate += value.SizeEstimate();
         found_values.push_back(value);
         break;
       }
@@ -149,7 +165,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
   }
 
   if (!found_keys.size()) {
-    callbacks->OnSuccess(static_cast<std::string*>(NULL));
+    callbacks->OnSuccess(static_cast<IndexedDBValue*>(NULL));
     return;
   }
 
@@ -157,22 +173,25 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
       found_keys, found_primary_keys, found_values);
 }
 
-void IndexedDBCursor::PrefetchReset(int used_prefetches,
-                                    int /* unused_prefetches */) {
+leveldb::Status IndexedDBCursor::PrefetchReset(int used_prefetches,
+                                               int /* unused_prefetches */) {
   IDB_TRACE("IndexedDBCursor::PrefetchReset");
   cursor_.swap(saved_cursor_);
   saved_cursor_.reset();
+  leveldb::Status s;
 
   if (closed_)
-    return;
+    return s;
   if (cursor_) {
     // First prefetched result is always used.
     DCHECK_GT(used_prefetches, 0);
     for (int i = 0; i < used_prefetches - 1; ++i) {
-      bool ok = cursor_->Continue();
+      bool ok = cursor_->Continue(&s);
       DCHECK(ok);
     }
   }
+
+  return s;
 }
 
 void IndexedDBCursor::Close() {

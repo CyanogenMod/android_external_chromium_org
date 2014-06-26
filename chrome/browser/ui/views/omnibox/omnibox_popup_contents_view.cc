@@ -4,12 +4,13 @@
 
 #include "chrome/browser/ui/views/omnibox/omnibox_popup_contents_view.h"
 
+#include <algorithm>
+
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/omnibox/omnibox_result_view.h"
-#include "chrome/browser/ui/views/omnibox/touch_omnibox_popup_contents_view.h"
 #include "grit/ui_resources.h"
 #include "ui/base/theme_provider.h"
 #include "ui/gfx/canvas.h"
@@ -18,10 +19,7 @@
 #include "ui/views/controls/image_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
-
-#if defined(USE_AURA)
-#include "ui/views/corewm/window_animations.h"
-#endif
+#include "ui/wm/core/window_animations.h"
 
 // This is the number of pixels in the border image interior to the actual
 // border.
@@ -47,14 +45,8 @@ OmniboxPopupView* OmniboxPopupContentsView::Create(
     OmniboxEditModel* edit_model,
     LocationBarView* location_bar_view) {
   OmniboxPopupContentsView* view = NULL;
-  if (ui::GetDisplayLayout() == ui::LAYOUT_TOUCH) {
-    view = new TouchOmniboxPopupContentsView(
-        font_list, omnibox_view, edit_model, location_bar_view);
-  } else {
-    view = new OmniboxPopupContentsView(
-        font_list, omnibox_view, edit_model, location_bar_view);
-  }
-
+  view = new OmniboxPopupContentsView(
+      font_list, omnibox_view, edit_model, location_bar_view);
   view->Init();
   return view;
 }
@@ -85,7 +77,7 @@ void OmniboxPopupContentsView::Init() {
   // necessarily our final class yet, and we may have subclasses
   // overriding CreateResultView.
   for (size_t i = 0; i < AutocompleteResult::kMaxMatches; ++i) {
-    OmniboxResultView* result_view = CreateResultView(this, i, font_list_);
+    OmniboxResultView* result_view = CreateResultView(i, font_list_);
     result_view->SetVisible(false);
     AddChildViewAt(result_view, static_cast<int>(i));
   }
@@ -170,11 +162,18 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
   // Update the match cached by each row, in the process of doing so make sure
   // we have enough row views.
   const size_t result_size = model_->result().size();
+  max_match_contents_width_ = 0;
   for (size_t i = 0; i < result_size; ++i) {
     OmniboxResultView* view = result_view_at(i);
-    view->SetMatch(GetMatchAtIndex(i));
+    const AutocompleteMatch& match = GetMatchAtIndex(i);
+    view->SetMatch(match);
     view->SetVisible(i >= hidden_matches);
+    if (match.type == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE) {
+      max_match_contents_width_ = std::max(
+          max_match_contents_width_, view->GetMatchContentsWidth());
+    }
   }
+
   for (size_t i = result_size; i < AutocompleteResult::kMaxMatches; ++i)
     child_at(i)->SetVisible(false);
 
@@ -200,7 +199,6 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
     // If the popup is currently closed, we need to create it.
     popup_ = (new AutocompletePopupWidget)->AsWeakPtr();
     views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
-    params.can_activate = false;
     params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
     params.parent = popup_parent;
     params.bounds = GetPopupBounds();
@@ -213,10 +211,8 @@ void OmniboxPopupContentsView::UpdatePopupAppearance() {
     // avoid a NULL dereference.
     if (!popup_.get())
       return;
-#if defined(USE_AURA)
-    views::corewm::SetWindowVisibilityAnimationTransition(
-        popup_->GetNativeView(), views::corewm::ANIMATE_NONE);
-#endif
+    wm::SetWindowVisibilityAnimationTransition(
+        popup_->GetNativeView(), wm::ANIMATE_NONE);
     popup_->SetContentsView(this);
     popup_->StackAbove(omnibox_view_->GetRelativeWindowForPopup());
     if (!popup_.get()) {
@@ -373,7 +369,7 @@ void OmniboxPopupContentsView::OnGestureEvent(ui::GestureEvent* event) {
 void OmniboxPopupContentsView::PaintResultViews(gfx::Canvas* canvas) {
   canvas->DrawColor(result_view_at(0)->GetColor(
       OmniboxResultView::NORMAL, OmniboxResultView::BACKGROUND));
-  View::PaintChildren(canvas);
+  View::PaintChildren(canvas, views::CullSet());
 }
 
 int OmniboxPopupContentsView::CalculatePopupHeight() {
@@ -402,10 +398,9 @@ int OmniboxPopupContentsView::CalculatePopupHeight() {
 }
 
 OmniboxResultView* OmniboxPopupContentsView::CreateResultView(
-    OmniboxResultViewModel* model,
     int model_index,
     const gfx::FontList& font_list) {
-  return new OmniboxResultView(model, model_index, location_bar_view_,
+  return new OmniboxResultView(this, model_index, location_bar_view_,
                                font_list);
 }
 
@@ -437,7 +432,8 @@ void OmniboxPopupContentsView::OnPaint(gfx::Canvas* canvas) {
                        width(), bottom_shadow_->height());
 }
 
-void OmniboxPopupContentsView::PaintChildren(gfx::Canvas* canvas) {
+void OmniboxPopupContentsView::PaintChildren(gfx::Canvas* canvas,
+                                             const views::CullSet& cull_set) {
   // We paint our children inside OnPaint().
 }
 

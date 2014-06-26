@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/threading/thread.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/metrics/variations/variations_util.h"
 #include "chrome/common/render_messages.h"
+#include "chrome/common/variations/variations_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 
@@ -51,6 +51,7 @@ void FieldTrialSynchronizer::NotifyAllRenderers(
 void FieldTrialSynchronizer::OnFieldTrialGroupFinalized(
     const std::string& field_trial_name,
     const std::string& group_name) {
+  CHECK(!field_trial_name.empty() && !group_name.empty());
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&FieldTrialSynchronizer::NotifyAllRenderers,

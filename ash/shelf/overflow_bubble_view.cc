@@ -19,8 +19,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // Max bubble size to screen size ratio.
@@ -50,7 +48,6 @@ void OverflowBubbleView::InitOverflowBubble(views::View* anchor,
   set_background(NULL);
   set_color(SkColorSetARGB(kShelfBackgroundAlpha, 0, 0, 0));
   set_margins(gfx::Insets(kPadding, kPadding, kPadding, kPadding));
-  set_move_with_anchor(true);
   // Overflow bubble should not get focus. If it get focus when it is shown,
   // active state item is changed to running state.
   set_use_focusless(true);
@@ -65,7 +62,7 @@ void OverflowBubbleView::InitOverflowBubble(views::View* anchor,
 
   set_parent_window(Shell::GetContainer(
       anchor->GetWidget()->GetNativeWindow()->GetRootWindow(),
-      internal::kShellWindowId_ShelfBubbleContainer));
+      kShellWindowId_ShelfBubbleContainer));
   views::BubbleDelegateView::CreateBubble(this);
 }
 
@@ -111,7 +108,7 @@ void OverflowBubbleView::ScrollByYOffset(int y_offset) {
   scroll_offset_.set_y(y);
 }
 
-gfx::Size OverflowBubbleView::GetPreferredSize() {
+gfx::Size OverflowBubbleView::GetPreferredSize() const {
   gfx::Size preferred_size = GetContentsSize();
 
   const gfx::Rect monitor_rect = Shell::GetScreen()->GetDisplayNearestPoint(
@@ -186,7 +183,7 @@ gfx::Rect OverflowBubbleView::GetBubbleBounds() {
       views::BubbleBorder::is_arrow_on_horizontal(arrow()) ?
       bubble_insets.left() : bubble_insets.top();
   const int arrow_offset = border_size + kPadding + kShelfViewLeadingInset +
-      ShelfLayoutManager::GetPreferredShelfSize() / 2;
+      kShelfSize / 2;
 
   const gfx::Size content_size = GetPreferredSize();
   border->set_arrow_offset(arrow_offset);
@@ -223,5 +220,4 @@ gfx::Rect OverflowBubbleView::GetBubbleBounds() {
   return bubble_rect;
 }
 
-}  // namespace internal
 }  // namespace ash

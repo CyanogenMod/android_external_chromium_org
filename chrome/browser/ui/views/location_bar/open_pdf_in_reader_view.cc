@@ -5,24 +5,19 @@
 #include "chrome/browser/ui/views/location_bar/open_pdf_in_reader_view.h"
 
 #include "chrome/browser/ui/pdf/pdf_tab_helper.h"
-#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "chrome/browser/ui/views/open_pdf_in_reader_bubble_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/widget/widget.h"
 
-OpenPDFInReaderView::OpenPDFInReaderView(LocationBarView* location_bar_view)
-    : location_bar_view_(location_bar_view),
-      bubble_(NULL),
-      model_(NULL) {
+OpenPDFInReaderView::OpenPDFInReaderView() : bubble_(NULL), model_(NULL) {
   SetAccessibilityFocusable(true);
   SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
       IDR_OMNIBOX_PDF_ICON));
   SetTooltipText(l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_OPEN_IN_READER_LINK));
-  LocationBarView::InitTouchableLocationBarChildView(this);
 }
 
 OpenPDFInReaderView::~OpenPDFInReaderView() {
@@ -51,9 +46,9 @@ void OpenPDFInReaderView::ShowBubble() {
   bubble_->GetWidget()->Show();
 }
 
-void OpenPDFInReaderView::GetAccessibleState(ui::AccessibleViewState* state) {
+void OpenPDFInReaderView::GetAccessibleState(ui::AXViewState* state) {
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_OPEN_PDF_IN_READER);
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->role = ui::AX_ROLE_BUTTON;
 }
 
 bool OpenPDFInReaderView::OnMousePressed(const ui::MouseEvent& event) {

@@ -10,14 +10,19 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.view.View.OnFocusChangeListener;
+import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
+import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
+import android.webkit.WebChromeClient;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -28,7 +33,6 @@ import org.chromium.android_webview.AwBrowserProcess;
 import org.chromium.android_webview.AwContents;
 import org.chromium.android_webview.AwContentsClient;
 import org.chromium.android_webview.AwDevToolsServer;
-import org.chromium.android_webview.AwLayoutSizer;
 import org.chromium.android_webview.AwSettings;
 import org.chromium.android_webview.test.AwTestContainerView;
 import org.chromium.android_webview.test.NullContentsClient;
@@ -70,6 +74,7 @@ public class AwShellActivity extends Activity {
         }
 
         mAwTestContainerView.getAwContents().loadUrl(new LoadUrlParams(startupUrl));
+        AwContents.setShouldDownloadFavicons();
         mUrlTextView.setText(startupUrl);
     }
 
@@ -77,11 +82,43 @@ public class AwShellActivity extends Activity {
         AwBrowserProcess.start(this);
         AwTestContainerView testContainerView = new AwTestContainerView(this);
         AwContentsClient awContentsClient = new NullContentsClient() {
+            private View mCustomView;
+
             @Override
             public void onPageStarted(String url) {
                 if (mUrlTextView != null) {
                     mUrlTextView.setText(url);
                 }
+            }
+
+            @Override
+            public void onShowCustomView(View view, WebChromeClient.CustomViewCallback callback) {
+                getWindow().setFlags(
+                        WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                        WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
+                getWindow().addContentView(view,
+                        new FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                Gravity.CENTER));
+                mCustomView = view;
+            }
+
+            @Override
+            public void onHideCustomView() {
+                getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                FrameLayout decorView = (FrameLayout) getWindow().getDecorView();
+                decorView.removeView(mCustomView);
+                mCustomView = null;
+            }
+
+            @Override
+            public boolean shouldOverrideKeyEvent(KeyEvent event) {
+                if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
+                    return true;
+                }
+                return false;
             }
         };
 
@@ -93,8 +130,8 @@ public class AwShellActivity extends Activity {
         final AwSettings awSettings = new AwSettings(this /*context*/,
                 false /*isAccessFromFileURLsGrantedByDefault*/, true /*supportsLegacyQuirks*/);
         testContainerView.initialize(new AwContents(mBrowserContext, testContainerView,
-                testContainerView.getInternalAccessDelegate(),
-                awContentsClient, awSettings, new AwLayoutSizer()));
+                testContainerView.getContext(), testContainerView.getInternalAccessDelegate(),
+                testContainerView.getNativeGLDelegate(), awContentsClient, awSettings));
         testContainerView.getAwContents().getSettings().setJavaScriptEnabled(true);
         if (mDevToolsServer == null) {
             mDevToolsServer = new AwDevToolsServer();
@@ -124,7 +161,7 @@ public class AwShellActivity extends Activity {
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
                 if ((actionId != EditorInfo.IME_ACTION_GO) && (event == null ||
                         event.getKeyCode() != KeyEvent.KEYCODE_ENTER ||
-                        event.getKeyCode() != KeyEvent.ACTION_DOWN)) {
+                        event.getAction() != KeyEvent.ACTION_DOWN)) {
                     return false;
                 }
 
@@ -169,5 +206,17 @@ public class AwShellActivity extends Activity {
                 }
             }
         });
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (mAwTestContainerView.getContentViewCore().canGoBack()) {
+                mAwTestContainerView.getContentViewCore().goBack();
+                return true;
+            }
+        }
+
+        return super.onKeyUp(keyCode, event);
     }
 }

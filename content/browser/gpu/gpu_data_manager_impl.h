@@ -22,9 +22,12 @@
 #include "content/public/common/three_d_api_types.h"
 #include "gpu/config/gpu_info.h"
 
-class CommandLine;
 class GURL;
 struct WebPreferences;
+
+namespace base {
+class CommandLine;
+}
 
 namespace content {
 
@@ -95,14 +98,14 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   // Insert disable-feature switches corresponding to preliminary gpu feature
   // flags into the renderer process command line.
-  void AppendRendererCommandLine(CommandLine* command_line) const;
+  void AppendRendererCommandLine(base::CommandLine* command_line) const;
 
   // Insert switches into gpu process command line: kUseGL, etc.
-  void AppendGpuCommandLine(CommandLine* command_line) const;
+  void AppendGpuCommandLine(base::CommandLine* command_line) const;
 
   // Insert switches into plugin process command line:
   // kDisableCoreAnimationPlugins.
-  void AppendPluginCommandLine(CommandLine* command_line) const;
+  void AppendPluginCommandLine(base::CommandLine* command_line) const;
 
   // Update WebPreferences for renderer based on blacklisting decisions.
   void UpdateRendererWebPrefs(WebPreferences* prefs) const;
@@ -162,6 +165,10 @@ class CONTENT_EXPORT GpuDataManagerImpl
 
   void SetDisplayCount(unsigned int display_count);
   unsigned int GetDisplayCount() const;
+
+  // Set the active gpu.
+  // Return true if it's a different GPU from the previous active one.
+  bool UpdateActiveGpu(uint32 vendor_id, uint32 device_id);
 
   // Called when GPU process initialization failed.
   void OnGpuProcessInitFailure();

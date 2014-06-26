@@ -5,22 +5,29 @@
 #include "ash/wm/system_modal_container_layout_manager.h"
 
 #include "ash/root_window_controller.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_util.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/run_loop.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/compositor/test/layer_animator_test_controller.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/keyboard/keyboard_controller.h"
+#include "ui/keyboard/keyboard_controller_proxy.h"
+#include "ui/keyboard/keyboard_switches.h"
+#include "ui/keyboard/keyboard_util.h"
 #include "ui/views/test/capture_tracking_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 namespace test {
@@ -29,7 +36,7 @@ namespace {
 
 aura::Window* GetModalContainer() {
   return Shell::GetPrimaryRootWindowController()->GetContainer(
-      ash::internal::kShellWindowId_SystemModalContainer);
+      ash::kShellWindowId_SystemModalContainer);
 }
 
 bool AllRootWindowsHaveModalBackgroundsForContainer(int container_id) {
@@ -38,21 +45,20 @@ bool AllRootWindowsHaveModalBackgroundsForContainer(int container_id) {
   bool has_modal_screen = !containers.empty();
   for (std::vector<aura::Window*>::iterator iter = containers.begin();
        iter != containers.end(); ++iter) {
-    has_modal_screen &=
-        static_cast<internal::SystemModalContainerLayoutManager*>(
-            (*iter)->layout_manager())->has_modal_background();
+    has_modal_screen &= static_cast<SystemModalContainerLayoutManager*>(
+                            (*iter)->layout_manager())->has_modal_background();
   }
   return has_modal_screen;
 }
 
 bool AllRootWindowsHaveLockedModalBackgrounds() {
   return AllRootWindowsHaveModalBackgroundsForContainer(
-      internal::kShellWindowId_LockSystemModalContainer);
+      kShellWindowId_LockSystemModalContainer);
 }
 
 bool AllRootWindowsHaveModalBackgrounds() {
   return AllRootWindowsHaveModalBackgroundsForContainer(
-      internal::kShellWindowId_SystemModalContainer);
+      kShellWindowId_SystemModalContainer);
 }
 
 class TestWindow : public views::WidgetDelegateView {
@@ -67,7 +73,7 @@ class TestWindow : public views::WidgetDelegateView {
   }
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(50, 50);
   }
 
@@ -141,6 +147,21 @@ class TransientWindowObserver : public aura::WindowObserver {
 
 class SystemModalContainerLayoutManagerTest : public AshTestBase {
  public:
+  virtual void SetUp() OVERRIDE {
+    // Allow a virtual keyboard (and initialize it per default).
+    CommandLine::ForCurrentProcess()->AppendSwitch(
+        keyboard::switches::kEnableVirtualKeyboard);
+    AshTestBase::SetUp();
+    Shell::GetPrimaryRootWindowController()->ActivateKeyboard(
+        keyboard::KeyboardController::GetInstance());
+  }
+
+  virtual void TearDown() OVERRIDE {
+    Shell::GetPrimaryRootWindowController()->DeactivateKeyboard(
+        keyboard::KeyboardController::GetInstance());
+    AshTestBase::TearDown();
+  }
+
   aura::Window* OpenToplevelTestWindow(bool modal) {
     views::Widget* widget = views::Widget::CreateWindowWithContext(
         new TestWindow(modal), CurrentContext());
@@ -154,6 +175,29 @@ class SystemModalContainerLayoutManagerTest : public AshTestBase {
     widget->Show();
     return widget->GetNativeView();
   }
+
+  // Show or hide the keyboard.
+  void ShowKeyboard(bool show) {
+    keyboard::KeyboardController* keyboard =
+        keyboard::KeyboardController::GetInstance();
+    ASSERT_TRUE(keyboard);
+    if (show == keyboard->keyboard_visible())
+      return;
+
+    if (show) {
+      keyboard->ShowKeyboard(true);
+      if (keyboard->proxy()->GetKeyboardWindow()->bounds().height() == 0) {
+        keyboard->proxy()->GetKeyboardWindow()->SetBounds(
+            keyboard::KeyboardBoundsFromWindowBounds(
+                keyboard->GetContainerWindow()->bounds(), 100));
+      }
+    } else {
+      keyboard->HideKeyboard(keyboard::KeyboardController::HIDE_REASON_MANUAL);
+    }
+
+    DCHECK_EQ(show, keyboard->keyboard_visible());
+  }
+
 };
 
 TEST_F(SystemModalContainerLayoutManagerTest, NonModalTransient) {
@@ -162,7 +206,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, NonModalTransient) {
   TransientWindowObserver destruction_observer;
   transient->AddObserver(&destruction_observer);
 
-  EXPECT_EQ(parent.get(), views::corewm::GetTransientParent(transient));
+  EXPECT_EQ(parent.get(), ::wm::GetTransientParent(transient));
   EXPECT_EQ(parent->parent(), transient->parent());
 
   // The transient should be destroyed with its parent.
@@ -179,7 +223,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, ModalTransient) {
   TransientWindowObserver do1;
   t1->AddObserver(&do1);
 
-  EXPECT_EQ(parent.get(), views::corewm::GetTransientParent(t1));
+  EXPECT_EQ(parent.get(), ::wm::GetTransientParent(t1));
   EXPECT_EQ(GetModalContainer(), t1->parent());
 
   // t1 should now be active.
@@ -197,7 +241,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, ModalTransient) {
 
   EXPECT_TRUE(wm::IsActiveWindow(t2));
 
-  EXPECT_EQ(t1, views::corewm::GetTransientParent(t2));
+  EXPECT_EQ(t1, ::wm::GetTransientParent(t2));
   EXPECT_EQ(GetModalContainer(), t2->parent());
 
   // t2 should still be active, even after clicking on t1.
@@ -218,7 +262,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, ModalNonTransient) {
   TransientWindowObserver do1;
   t1->AddObserver(&do1);
 
-  EXPECT_EQ(NULL, views::corewm::GetTransientParent(t1.get()));
+  EXPECT_EQ(NULL, ::wm::GetTransientParent(t1.get()));
   EXPECT_EQ(GetModalContainer(), t1->parent());
 
   // t1 should now be active.
@@ -237,7 +281,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, ModalNonTransient) {
 
   EXPECT_TRUE(wm::IsActiveWindow(t2));
 
-  EXPECT_EQ(t1, views::corewm::GetTransientParent(t2));
+  EXPECT_EQ(t1, ::wm::GetTransientParent(t2));
   EXPECT_EQ(GetModalContainer(), t2->parent());
 
   // t2 should still be active, even after clicking on t1.
@@ -313,7 +357,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, EventFocusContainers) {
     EventTestWindow* lock_delegate = new EventTestWindow(false);
     scoped_ptr<aura::Window> lock(lock_delegate->OpenTestWindowWithParent(
         Shell::GetPrimaryRootWindowController()->GetContainer(
-            ash::internal::kShellWindowId_LockScreenContainer)));
+            ash::kShellWindowId_LockScreenContainer)));
     EXPECT_TRUE(wm::IsActiveWindow(lock.get()));
     e1.ClickLeftButton();
     EXPECT_EQ(1, lock_delegate->mouse_presses());
@@ -338,8 +382,10 @@ TEST_F(SystemModalContainerLayoutManagerTest, EventFocusContainers) {
 // is hidden.
 TEST_F(SystemModalContainerLayoutManagerTest, ShowModalWhileHidden) {
   // Hide the lock screen.
-  Shell::GetPrimaryRootWindowController()->GetContainer(
-      internal::kShellWindowId_SystemModalContainer)->layer()->SetOpacity(0);
+  Shell::GetPrimaryRootWindowController()
+      ->GetContainer(kShellWindowId_SystemModalContainer)
+      ->layer()
+      ->SetOpacity(0);
 
   // Create a modal window.
   scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
@@ -385,6 +431,24 @@ TEST_F(SystemModalContainerLayoutManagerTest, KeepVisible) {
   EXPECT_EQ(bounds, gfx::Rect(700, 500, 100, 100));
 }
 
+// Verifies that centered windows will remain centered after the visible screen
+// area changed.
+TEST_F(SystemModalContainerLayoutManagerTest, KeepCentered) {
+  GetModalContainer()->SetBounds(gfx::Rect(0, 0, 800, 600));
+  scoped_ptr<aura::Window> main(OpenTestWindowWithParent(GetModalContainer(),
+                                                         true));
+  // Center the window.
+  main->SetBounds(gfx::Rect((800 - 512) / 2, (600 - 256) / 2, 512, 256));
+
+  // We set now the bounds of the root window to something new which will
+  // Then trigger the reposition operation.
+  GetModalContainer()->SetBounds(gfx::Rect(0, 0, 1024, 768));
+
+  // The window should still be centered.
+  gfx::Rect bounds = main->bounds();
+  EXPECT_EQ(bounds.ToString(), gfx::Rect(256, 256, 512, 256).ToString());
+}
+
 TEST_F(SystemModalContainerLayoutManagerTest, ShowNormalBackgroundOrLocked) {
   scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
   scoped_ptr<aura::Window> modal_window(
@@ -409,7 +473,7 @@ TEST_F(SystemModalContainerLayoutManagerTest, ShowNormalBackgroundOrLocked) {
     BlockUserSession(static_cast<UserSessionBlockReason>(block_reason));
     scoped_ptr<aura::Window> lock_parent(OpenTestWindowWithParent(
         Shell::GetPrimaryRootWindowController()->GetContainer(
-            ash::internal::kShellWindowId_LockScreenContainer),
+            ash::kShellWindowId_LockScreenContainer),
         false));
     scoped_ptr<aura::Window> lock_modal_window(OpenTestWindowWithParent(
         lock_parent.get(), true));
@@ -447,9 +511,9 @@ TEST_F(SystemModalContainerLayoutManagerTest, MultiDisplays) {
   aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ(2U, root_windows.size());
   aura::Window* container1 = Shell::GetContainer(
-      root_windows[0], ash::internal::kShellWindowId_SystemModalContainer);
+      root_windows[0], ash::kShellWindowId_SystemModalContainer);
   aura::Window* container2 = Shell::GetContainer(
-      root_windows[1], ash::internal::kShellWindowId_SystemModalContainer);
+      root_windows[1], ash::kShellWindowId_SystemModalContainer);
 
   scoped_ptr<aura::Window> modal1(
       OpenTestWindowWithParent(container1, true));
@@ -490,6 +554,105 @@ TEST_F(SystemModalContainerLayoutManagerTest, MultiDisplays) {
   TestWindow::CloseTestWindow(modal1.release());
   EXPECT_FALSE(AllRootWindowsHaveModalBackgrounds());
   EXPECT_TRUE(wm::IsActiveWindow(normal.get()));
+}
+
+// Test that with the visible keyboard, an existing system modal dialog gets
+// positioned into the visible area.
+TEST_F(SystemModalContainerLayoutManagerTest,
+       SystemModalDialogGetPushedFromKeyboard) {
+  const gfx::Rect& container_bounds = GetModalContainer()->bounds();
+  // Place the window at the bottom of the screen.
+  gfx::Size modal_size(100, 100);
+  gfx::Point modal_origin = gfx::Point(
+      (container_bounds.right() - modal_size.width()) / 2,  // X centered
+      container_bounds.bottom() - modal_size.height());     // at bottom
+  gfx::Rect modal_bounds = gfx::Rect(modal_origin, modal_size);
+
+  // Create a modal window.
+  scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
+  scoped_ptr<aura::Window> modal_window(
+      OpenTestWindowWithParent(parent.get(), true));
+  modal_window->SetBounds(modal_bounds);
+  parent->Show();
+  modal_window->Show();
+
+  EXPECT_EQ(modal_bounds.ToString(), modal_window->bounds().ToString());
+
+  // The keyboard gets shown and the dialog should get pushed.
+  ShowKeyboard(true);
+  EXPECT_NE(modal_bounds.ToString(), modal_window->bounds().ToString());
+  EXPECT_GT(modal_bounds.y(), modal_window->bounds().y());
+  EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
+  EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+
+  // After the keyboard is gone, the window will remain where it was.
+  ShowKeyboard(false);
+  EXPECT_NE(modal_bounds.ToString(), modal_window->bounds().ToString());
+  EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
+  EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+}
+
+// Test that windows will not get cropped through the visible virtual keyboard -
+// if centered.
+TEST_F(SystemModalContainerLayoutManagerTest,
+       SystemModalDialogGetPushedButNotCroppedFromKeyboard) {
+  const gfx::Rect& container_bounds = GetModalContainer()->bounds();
+  const gfx::Size screen_size = Shell::GetPrimaryRootWindow()->bounds().size();
+  // Place the window at the bottom of the screen.
+  gfx::Size modal_size(100, screen_size.height() - 70);
+  gfx::Point modal_origin = gfx::Point(
+      (container_bounds.right() - modal_size.width()) / 2,  // X centered
+      container_bounds.bottom() - modal_size.height());     // at bottom
+  gfx::Rect modal_bounds = gfx::Rect(modal_origin, modal_size);
+
+  // Create a modal window.
+  scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
+  scoped_ptr<aura::Window> modal_window(
+      OpenTestWindowWithParent(parent.get(), true));
+  modal_window->SetBounds(modal_bounds);
+  parent->Show();
+  modal_window->Show();
+
+  EXPECT_EQ(modal_bounds.ToString(), modal_window->bounds().ToString());
+
+  // The keyboard gets shown and the dialog should get pushed up, but not get
+  // cropped (and aligned to the top).
+  ShowKeyboard(true);
+  EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
+  EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+  EXPECT_EQ(0, modal_window->bounds().y());
+
+  ShowKeyboard(false);
+}
+
+// Test that windows will not get cropped through the visible virtual keyboard -
+// if not centered.
+TEST_F(SystemModalContainerLayoutManagerTest,
+       SystemModalDialogGetPushedButNotCroppedFromKeyboardIfNotCentered) {
+  const gfx::Size screen_size = Shell::GetPrimaryRootWindow()->bounds().size();
+  // Place the window at the bottom of the screen.
+  gfx::Size modal_size(100, screen_size.height() - 70);
+  gfx::Point modal_origin = gfx::Point(10, 20);
+  gfx::Rect modal_bounds = gfx::Rect(modal_origin, modal_size);
+
+  // Create a modal window.
+  scoped_ptr<aura::Window> parent(OpenToplevelTestWindow(false));
+  scoped_ptr<aura::Window> modal_window(
+      OpenTestWindowWithParent(parent.get(), true));
+  modal_window->SetBounds(modal_bounds);
+  parent->Show();
+  modal_window->Show();
+
+  EXPECT_EQ(modal_bounds.ToString(), modal_window->bounds().ToString());
+
+  // The keyboard gets shown and the dialog should get pushed up, but not get
+  // cropped (and aligned to the top).
+  ShowKeyboard(true);
+  EXPECT_EQ(modal_size.ToString(), modal_window->bounds().size().ToString());
+  EXPECT_EQ(modal_origin.x(), modal_window->bounds().x());
+  EXPECT_EQ(0, modal_window->bounds().y());
+
+  ShowKeyboard(false);
 }
 
 }  // namespace test

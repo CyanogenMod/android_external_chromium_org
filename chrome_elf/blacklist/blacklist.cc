@@ -4,33 +4,55 @@
 
 #include "chrome_elf/blacklist/blacklist.h"
 
+#include <assert.h>
 #include <string.h>
+
+#include <vector>
 
 #include "base/basictypes.h"
 #include "chrome_elf/blacklist/blacklist_interceptions.h"
+#include "chrome_elf/chrome_elf_constants.h"
+#include "chrome_elf/chrome_elf_util.h"
+#include "chrome_elf/thunk_getter.h"
 #include "sandbox/win/src/interception_internal.h"
 #include "sandbox/win/src/internal_types.h"
-#include "sandbox/win/src/sandbox_utils.h"
 #include "sandbox/win/src/service_resolver.h"
-#include "version.h"  // NOLINT
 
 // http://blogs.msdn.com/oldnewthing/archive/2004/10/25/247180.aspx
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
 namespace blacklist{
 
+// The DLLs listed here are known (or under strong suspicion) of causing crashes
+// when they are loaded in the browser. DLLs should only be added to this list
+// if there is nothing else Chrome can do to prevent those crashes.
+// For more information about how this list is generated, and how to get off
+// of it, see:
+// https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
+// NOTE: Please remember to update the DllHash enum in histograms.xml when
+//       adding a new value to the blacklist.
 const wchar_t* g_troublesome_dlls[kTroublesomeDllsMaxCount] = {
+  L"activedetect32.dll",                // Lenovo One Key Theater.
+                                        // See crbug.com/379218.
+  L"activedetect64.dll",                // Lenovo One Key Theater.
+  L"bitguard.dll",                      // Unknown (suspected malware).
+  L"chrmxtn.dll",                       // Unknown (keystroke logger).
   L"datamngr.dll",                      // Unknown (suspected adware).
   L"hk.dll",                            // Unknown (keystroke logger).
   L"libsvn_tsvn32.dll",                 // TortoiseSVN.
   L"lmrn.dll",                          // Unknown.
+  L"scdetour.dll",                      // Quick Heal Antivirus.
+                                        // See crbug.com/382561.
+  L"systemk.dll",                       // Unknown (suspected adware).
+  L"windowsapihookdll32.dll",           // Lenovo One Key Theater.
+                                        // See crbug.com/379218.
+  L"windowsapihookdll64.dll",           // Lenovo One Key Theater.
   // Keep this null pointer here to mark the end of the list.
   NULL,
 };
 
-const wchar_t kRegistryBeaconPath[] = L"SOFTWARE\\Google\\Chrome\\BLBeacon";
-const wchar_t kBeaconVersion[] = L"version";
-const wchar_t kBeaconState[] = L"state";
+bool g_blocked_dlls[kTroublesomeDllsMaxCount] = {};
+int g_num_blocked_dlls = 0;
 
 }  // namespace blacklist
 
@@ -41,134 +63,58 @@ __declspec(allocate(".crthunk")) sandbox::ThunkData g_thunk_storage;
 
 namespace {
 
-enum Version {
-  VERSION_PRE_XP_SP2 = 0,  // Not supported.
-  VERSION_XP_SP2,
-  VERSION_SERVER_2003, // Also includes XP Pro x64 and Server 2003 R2.
-  VERSION_VISTA,       // Also includes Windows Server 2008.
-  VERSION_WIN7,        // Also includes Windows Server 2008 R2.
-  VERSION_WIN8,        // Also includes Windows Server 2012.
-  VERSION_WIN8_1,
-  VERSION_WIN_LAST,    // Indicates error condition.
-};
-
-// Whether a process is running under WOW64 (the wrapper that allows 32-bit
-// processes to run on 64-bit versions of Windows).  This will return
-// WOW64_DISABLED for both "32-bit Chrome on 32-bit Windows" and "64-bit
-// Chrome on 64-bit Windows".  WOW64_UNKNOWN means "an error occurred", e.g.
-// the process does not have sufficient access rights to determine this.
-enum WOW64Status {
-  WOW64_DISABLED,
-  WOW64_ENABLED,
-  WOW64_UNKNOWN,
-};
-
 // Record if the blacklist was successfully initialized so processes can easily
 // determine if the blacklist is enabled for them.
 bool g_blacklist_initialized = false;
 
-WOW64Status GetWOW64StatusForCurrentProcess() {
-  typedef BOOL (WINAPI* IsWow64ProcessFunc)(HANDLE, PBOOL);
-  IsWow64ProcessFunc is_wow64_process = reinterpret_cast<IsWow64ProcessFunc>(
-      GetProcAddress(GetModuleHandle(L"kernel32.dll"), "IsWow64Process"));
-  if (!is_wow64_process)
-    return WOW64_DISABLED;
-  BOOL is_wow64 = FALSE;
-  if (!(*is_wow64_process)(GetCurrentProcess(), &is_wow64))
-    return WOW64_UNKNOWN;
-  return is_wow64 ? WOW64_ENABLED : WOW64_DISABLED;
+// Helper to set DWORD registry values.
+DWORD SetDWValue(HKEY* key, const wchar_t* property, DWORD value) {
+  return ::RegSetValueEx(*key,
+                         property,
+                         0,
+                         REG_DWORD,
+                         reinterpret_cast<LPBYTE>(&value),
+                         sizeof(value));
 }
 
-class OSInfo {
- public:
-  struct VersionNumber {
-    int major;
-    int minor;
-    int build;
-  };
+bool GenerateStateFromBeaconAndAttemptCount(HKEY* key, DWORD blacklist_state) {
+  LONG result = 0;
+  if (blacklist_state == blacklist::BLACKLIST_SETUP_RUNNING) {
+    // Some part of the blacklist setup failed last time.  If this has occured
+    // blacklist::kBeaconMaxAttempts times in a row we switch the state to
+    // failed and skip setting up the blacklist.
+    DWORD attempt_count = 0;
+    DWORD attempt_count_size = sizeof(attempt_count);
+    result = ::RegQueryValueEx(*key,
+                               blacklist::kBeaconAttemptCount,
+                               0,
+                               NULL,
+                               reinterpret_cast<LPBYTE>(&attempt_count),
+                               &attempt_count_size);
 
-  struct ServicePack {
-    int major;
-    int minor;
-  };
+    if (result == ERROR_FILE_NOT_FOUND)
+      attempt_count = 0;
+    else if (result != ERROR_SUCCESS)
+      return false;
 
-  OSInfo() {
-    OSVERSIONINFOEX version_info = { sizeof(version_info) };
-    GetVersionEx(reinterpret_cast<OSVERSIONINFO*>(&version_info));
-    version_number_.major = version_info.dwMajorVersion;
-    version_number_.minor = version_info.dwMinorVersion;
-    version_number_.build = version_info.dwBuildNumber;
-    if ((version_number_.major == 5) && (version_number_.minor > 0)) {
-      // Treat XP Pro x64, Home Server, and Server 2003 R2 as Server 2003.
-      version_ = (version_number_.minor == 1) ? VERSION_XP_SP2 :
-                                                VERSION_SERVER_2003;
-      if (version_ == VERSION_XP_SP2 && version_info.wServicePackMajor < 2)
-        version_ = VERSION_PRE_XP_SP2;
-    } else if (version_number_.major == 6) {
-      switch (version_number_.minor) {
-        case 0:
-          // Treat Windows Server 2008 the same as Windows Vista.
-          version_ = VERSION_VISTA;
-          break;
-        case 1:
-          // Treat Windows Server 2008 R2 the same as Windows 7.
-          version_ = VERSION_WIN7;
-          break;
-        case 2:
-          // Treat Windows Server 2012 the same as Windows 8.
-          version_ = VERSION_WIN8;
-          break;
-        default:
-          version_ = VERSION_WIN8_1;
-          break;
-      }
-    } else if (version_number_.major > 6) {
-      version_ = VERSION_WIN_LAST;
-    } else {
-      version_ = VERSION_PRE_XP_SP2;
+    ++attempt_count;
+    SetDWValue(key, blacklist::kBeaconAttemptCount, attempt_count);
+
+    if (attempt_count >= blacklist::kBeaconMaxAttempts) {
+      blacklist_state = blacklist::BLACKLIST_SETUP_FAILED;
+      SetDWValue(key, blacklist::kBeaconState, blacklist_state);
+      return false;
     }
-
-    service_pack_.major = version_info.wServicePackMajor;
-    service_pack_.minor = version_info.wServicePackMinor;
+  } else if (blacklist_state == blacklist::BLACKLIST_ENABLED) {
+    // If the blacklist succeeded on the previous run reset the failure
+    // counter.
+    result =
+        SetDWValue(key, blacklist::kBeaconAttemptCount, static_cast<DWORD>(0));
+    if (result != ERROR_SUCCESS) {
+      return false;
+    }
   }
-
-  Version version() const { return version_; }
-  VersionNumber version_number() const { return version_number_; }
-  ServicePack service_pack() const { return service_pack_; }
-
- private:
-  Version version_;
-  VersionNumber version_number_;
-  ServicePack service_pack_;
-
-  DISALLOW_COPY_AND_ASSIGN(OSInfo);
-};
-
-bool IsNonBrowserProcess() {
-  typedef bool (*IsSandboxedProcessFunc)();
-  IsSandboxedProcessFunc is_sandboxed_process =
-      reinterpret_cast<IsSandboxedProcessFunc>(
-          GetProcAddress(GetModuleHandle(NULL), "IsSandboxedProcess"));
-  if (is_sandboxed_process && is_sandboxed_process())
-    return true;
-
-  return false;
-}
-
-// Record that the thunk setup completed succesfully and close the registry
-// key handle since it is no longer needed.
-void RecordSuccessfulThunkSetup(HKEY* key) {
-  if (key != NULL) {
-    DWORD blacklist_state = blacklist::BLACKLIST_SETUP_RUNNING;
-    ::RegSetValueEx(*key,
-                    blacklist::kBeaconState,
-                    0,
-                    REG_DWORD,
-                    reinterpret_cast<LPBYTE>(&blacklist_state),
-                    sizeof(blacklist_state));
-    ::RegCloseKey(*key);
-    key = NULL;
-  }
+  return true;
 }
 
 }  // namespace
@@ -198,7 +144,7 @@ bool LeaveSetupBeacon() {
     return false;
 
   // Retrieve the current blacklist state.
-  DWORD blacklist_state = BLACKLIST_DISABLED;
+  DWORD blacklist_state = BLACKLIST_STATE_MAX;
   DWORD blacklist_state_size = sizeof(blacklist_state);
   DWORD type = 0;
   result = ::RegQueryValueEx(key,
@@ -208,38 +154,18 @@ bool LeaveSetupBeacon() {
                              reinterpret_cast<LPBYTE>(&blacklist_state),
                              &blacklist_state_size);
 
-  if (blacklist_state != BLACKLIST_ENABLED ||
-      result != ERROR_SUCCESS || type != REG_DWORD) {
+  if (blacklist_state == BLACKLIST_DISABLED || result != ERROR_SUCCESS ||
+      type != REG_DWORD) {
     ::RegCloseKey(key);
     return false;
   }
 
-  // If the blacklist wasn't set as enabled for this version, don't
-  // use it.
-  wchar_t key_data[255] = {};
-  DWORD key_data_size = sizeof(key_data);
-  result = ::RegQueryValueEx(key,
-                             blacklist::kBeaconVersion,
-                             0,
-                             &type,
-                             reinterpret_cast<LPBYTE>(key_data),
-                             &key_data_size);
-
-  if (wcscmp(key_data, TEXT(CHROME_VERSION_STRING)) != 0 ||
-      result != ERROR_SUCCESS || type != REG_SZ) {
+  if (!GenerateStateFromBeaconAndAttemptCount(&key, blacklist_state)) {
     ::RegCloseKey(key);
     return false;
   }
 
-  // Mark the blacklist setup code as running so if it crashes the blacklist
-  // won't be enabled for the next run.
-  blacklist_state = BLACKLIST_SETUP_RUNNING;
-  result = ::RegSetValueEx(key,
-                           kBeaconState,
-                           0,
-                           REG_DWORD,
-                           reinterpret_cast<LPBYTE>(&blacklist_state),
-                           sizeof(blacklist_state));
+  result = SetDWValue(&key, kBeaconState, BLACKLIST_SETUP_RUNNING);
   ::RegCloseKey(key);
 
   return (result == ERROR_SUCCESS);
@@ -260,15 +186,28 @@ bool ResetBeacon() {
   if (result != ERROR_SUCCESS)
     return false;
 
-  DWORD blacklist_state = BLACKLIST_ENABLED;
-  result = ::RegSetValueEx(key,
-                           kBeaconState,
-                           0,
-                           REG_DWORD,
-                           reinterpret_cast<LPBYTE>(&blacklist_state),
-                           sizeof(blacklist_state));
-  ::RegCloseKey(key);
+  DWORD blacklist_state = BLACKLIST_STATE_MAX;
+  DWORD blacklist_state_size = sizeof(blacklist_state);
+  DWORD type = 0;
+  result = ::RegQueryValueEx(key,
+                             kBeaconState,
+                             0,
+                             &type,
+                             reinterpret_cast<LPBYTE>(&blacklist_state),
+                             &blacklist_state_size);
 
+  if (result != ERROR_SUCCESS || type != REG_DWORD) {
+    ::RegCloseKey(key);
+    return false;
+  }
+
+  // Reaching this point with the setup running state means the setup did not
+  // crash, so we reset to enabled.  Any other state indicates that setup was
+  // skipped; in that case we leave the state alone for later recording.
+  if (blacklist_state == BLACKLIST_SETUP_RUNNING)
+    result = SetDWValue(&key, kBeaconState, BLACKLIST_ENABLED);
+
+  ::RegCloseKey(key);
   return (result == ERROR_SUCCESS);
 }
 
@@ -298,6 +237,7 @@ bool AddDllToBlacklist(const wchar_t* dll_name) {
   wcscpy(str_buffer, dll_name);
 
   g_troublesome_dlls[blacklist_size] = str_buffer;
+  g_blocked_dlls[blacklist_size] = false;
   return true;
 }
 
@@ -310,10 +250,50 @@ bool RemoveDllFromBlacklist(const wchar_t* dll_name) {
       delete[] g_troublesome_dlls[i];
       g_troublesome_dlls[i] = g_troublesome_dlls[blacklist_size - 1];
       g_troublesome_dlls[blacklist_size - 1] = NULL;
+
+      // Also update the stats recording if we have blocked this dll or not.
+      if (g_blocked_dlls[i])
+        --g_num_blocked_dlls;
+      g_blocked_dlls[i] = g_blocked_dlls[blacklist_size - 1];
       return true;
     }
   }
   return false;
+}
+
+// TODO(csharp): Maybe store these values in the registry so we can
+// still report them if Chrome crashes early.
+void SuccessfullyBlocked(const wchar_t** blocked_dlls, int* size) {
+  if (size == NULL)
+    return;
+
+  // If the array isn't valid or big enough, just report the size it needs to
+  // be and return.
+  if (blocked_dlls == NULL && *size < g_num_blocked_dlls) {
+    *size = g_num_blocked_dlls;
+    return;
+  }
+
+  *size = g_num_blocked_dlls;
+
+  int strings_to_fill = 0;
+  for (int i = 0; strings_to_fill < g_num_blocked_dlls && g_troublesome_dlls[i];
+       ++i) {
+    if (g_blocked_dlls[i]) {
+      blocked_dlls[strings_to_fill] = g_troublesome_dlls[i];
+      ++strings_to_fill;
+    }
+  }
+}
+
+void BlockedDll(size_t blocked_index) {
+  assert(blocked_index < kTroublesomeDllsMaxCount);
+
+  if (!g_blocked_dlls[blocked_index] &&
+      blocked_index < kTroublesomeDllsMaxCount) {
+    ++g_num_blocked_dlls;
+    g_blocked_dlls[blocked_index] = true;
+  }
 }
 
 bool Initialize(bool force) {
@@ -325,67 +305,21 @@ bool Initialize(bool force) {
   if (IsNonBrowserProcess())
     return false;
 
-  // Check to see if a beacon is present, abort if so.
+  // Check to see if the blacklist beacon is still set to running (indicating a
+  // failure) or disabled, and abort if so.
   if (!force && !LeaveSetupBeacon())
     return false;
 
-  // Don't try blacklisting on unsupported OS versions.
-  OSInfo os_info;
-  if (os_info.version() <= VERSION_PRE_XP_SP2)
-    return false;
-
-  // Pseudo-handle, no need to close.
-  HANDLE current_process = ::GetCurrentProcess();
-
-  // Tells the resolver to patch already patched functions.
-  const bool kRelaxed = true;
-
-  // Record that we are starting the thunk setup code.
-  HKEY key = NULL;
-  DWORD disposition = 0;
-  LONG result = ::RegCreateKeyEx(HKEY_CURRENT_USER,
-                                 kRegistryBeaconPath,
-                                 0,
-                                 NULL,
-                                 REG_OPTION_NON_VOLATILE,
-                                 KEY_QUERY_VALUE | KEY_SET_VALUE,
-                                 NULL,
-                                 &key,
-                                 &disposition);
-  if (result == ERROR_SUCCESS) {
-    DWORD blacklist_state = BLACKLIST_THUNK_SETUP;
-    ::RegSetValueEx(key,
-                    kBeaconState,
-                    0,
-                    REG_DWORD,
-                    reinterpret_cast<LPBYTE>(&blacklist_state),
-                    sizeof(blacklist_state));
-  } else {
-    key = NULL;
-  }
+  // It is possible for other dlls to have already patched code by now and
+  // attempting to patch their code might result in crashes.
+  const bool kRelaxed = false;
 
   // Create a thunk via the appropriate ServiceResolver instance.
-  sandbox::ServiceResolverThunk* thunk = NULL;
-#if defined(_WIN64)
-  // Because Windows 8 and 8.1 have different stubs in 64-bit,
-  // ServiceResolverThunk can handle all the formats in 64-bit (instead only
-  // handling 1 like it does in 32-bit versions).
-  thunk = new sandbox::ServiceResolverThunk(current_process, kRelaxed);
-#else
-  if (GetWOW64StatusForCurrentProcess() == WOW64_ENABLED) {
-    if (os_info.version() >= VERSION_WIN8)
-      thunk = new sandbox::Wow64W8ResolverThunk(current_process, kRelaxed);
-    else
-      thunk = new sandbox::Wow64ResolverThunk(current_process, kRelaxed);
-  } else if (os_info.version() >= VERSION_WIN8) {
-    thunk = new sandbox::Win8ResolverThunk(current_process, kRelaxed);
-  } else {
-    thunk = new sandbox::ServiceResolverThunk(current_process, kRelaxed);
-  }
-#endif
+  sandbox::ServiceResolverThunk* thunk = GetThunk(kRelaxed);
 
-  // Record that we have initialized the blacklist.
-  g_blacklist_initialized = true;
+  // Don't try blacklisting on unsupported OS versions.
+  if (!thunk)
+    return false;
 
   BYTE* thunk_storage = reinterpret_cast<BYTE*>(&g_thunk_storage);
 
@@ -396,7 +330,6 @@ bool Initialize(bool force) {
                       sizeof(g_thunk_storage),
                       PAGE_EXECUTE_READWRITE,
                       &old_protect)) {
-    RecordSuccessfulThunkSetup(&key);
     return false;
   }
 
@@ -439,15 +372,58 @@ bool Initialize(bool force) {
 #endif
   delete thunk;
 
+  // Record if we have initialized the blacklist.
+  g_blacklist_initialized = NT_SUCCESS(ret);
+
   // Mark the thunk storage as executable and prevent any future writes to it.
   page_executable = page_executable && VirtualProtect(&g_thunk_storage,
                                                       sizeof(g_thunk_storage),
                                                       PAGE_EXECUTE_READ,
                                                       &old_protect);
 
-  RecordSuccessfulThunkSetup(&key);
+  AddDllsFromRegistryToBlacklist();
 
   return NT_SUCCESS(ret) && page_executable;
+}
+
+bool AddDllsFromRegistryToBlacklist() {
+  HKEY key = NULL;
+  LONG result = ::RegOpenKeyEx(HKEY_CURRENT_USER,
+                               kRegistryFinchListPath,
+                               0,
+                               KEY_QUERY_VALUE | KEY_SET_VALUE,
+                               &key);
+
+  if (result != ERROR_SUCCESS)
+    return false;
+
+  // We add dlls from the registry to the blacklist, and then clear registry.
+  DWORD value_len;
+  DWORD name_len = MAX_PATH;
+  std::vector<wchar_t> name_buffer(name_len);
+  for (int i = 0; result == ERROR_SUCCESS; ++i) {
+    name_len = MAX_PATH;
+    value_len = 0;
+    result = ::RegEnumValue(
+        key, i, &name_buffer[0], &name_len, NULL, NULL, NULL, &value_len);
+    name_len = name_len + 1;
+    value_len = value_len + 1;
+    std::vector<wchar_t> value_buffer(value_len);
+    result = ::RegEnumValue(key, i, &name_buffer[0], &name_len, NULL, NULL,
+                            reinterpret_cast<BYTE*>(&value_buffer[0]),
+                            &value_len);
+    value_buffer[value_len - 1] = L'\0';
+
+    if (result == ERROR_SUCCESS) {
+      AddDllToBlacklist(&value_buffer[0]);
+    }
+  }
+
+  // Delete the finch registry key to clear the values.
+  result = ::RegDeleteKey(key, L"");
+
+  ::RegCloseKey(key);
+  return result == ERROR_SUCCESS;
 }
 
 }  // namespace blacklist

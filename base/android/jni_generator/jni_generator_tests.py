@@ -148,6 +148,8 @@ class TestGenerator(unittest.TestCase):
             int nativeDataFetcherImplAndroid,
             double alpha, double beta, double gamma);
     """
+    jni_generator.JniParams.SetFullyQualifiedClass(
+        'org/chromium/example/jni_generator/SampleForTests')
     jni_generator.JniParams.ExtractImportsAndInnerClasses(test_data)
     natives = jni_generator.ExtractNatives(test_data, 'int')
     golden_natives = [
@@ -271,7 +273,7 @@ class TestGenerator(unittest.TestCase):
     ]
     self.assertListEquals(golden_natives, natives)
     h = jni_generator.InlHeaderFileGenerator('', 'org/chromium/TestJni',
-                                             natives, [], TestOptions())
+                                             natives, [], [], TestOptions())
     self.assertGoldenTextEquals(h.GetContent())
 
   def testInnerClassNatives(self):
@@ -290,7 +292,7 @@ class TestGenerator(unittest.TestCase):
     ]
     self.assertListEquals(golden_natives, natives)
     h = jni_generator.InlHeaderFileGenerator('', 'org/chromium/TestJni',
-                                             natives, [], TestOptions())
+                                             natives, [], [], TestOptions())
     self.assertGoldenTextEquals(h.GetContent())
 
   def testInnerClassNativesMultiple(self):
@@ -317,7 +319,7 @@ class TestGenerator(unittest.TestCase):
     ]
     self.assertListEquals(golden_natives, natives)
     h = jni_generator.InlHeaderFileGenerator('', 'org/chromium/TestJni',
-                                             natives, [], TestOptions())
+                                             natives, [], [], TestOptions())
     self.assertGoldenTextEquals(h.GetContent())
 
   def testInnerClassNativesBothInnerAndOuter(self):
@@ -343,7 +345,7 @@ class TestGenerator(unittest.TestCase):
     ]
     self.assertListEquals(golden_natives, natives)
     h = jni_generator.InlHeaderFileGenerator('', 'org/chromium/TestJni',
-                                             natives, [], TestOptions())
+                                             natives, [], [], TestOptions())
     self.assertGoldenTextEquals(h.GetContent())
 
   def testCalledByNatives(self):
@@ -652,7 +654,7 @@ class TestGenerator(unittest.TestCase):
     ]
     self.assertListEquals(golden_called_by_natives, called_by_natives)
     h = jni_generator.InlHeaderFileGenerator('', 'org/chromium/TestJni',
-                                             [], called_by_natives,
+                                             [], called_by_natives, [],
                                              TestOptions())
     self.assertGoldenTextEquals(h.GetContent())
 
@@ -746,35 +748,21 @@ public boolean add(E);
                           jni_from_javap7.GetContent())
 
   def testFromJavaP(self):
-    contents = """
-public abstract class java.io.InputStream extends
-  java.lang.Object implements java.io.Closeable{
-public java.io.InputStream();
-  Signature: ()V
-public int available()   throws java.io.IOException;
-  Signature: ()I
-public void close()   throws java.io.IOException;
-  Signature: ()V
-public void mark(int);
-  Signature: (I)V
-public boolean markSupported();
-  Signature: ()Z
-public abstract int read()   throws java.io.IOException;
-  Signature: ()I
-public int read(byte[])   throws java.io.IOException;
-  Signature: ([B)I
-public int read(byte[], int, int)   throws java.io.IOException;
-  Signature: ([BII)I
-public synchronized void reset()   throws java.io.IOException;
-  Signature: ()V
-public long skip(long)   throws java.io.IOException;
-  Signature: (J)J
-}
-"""
+    contents = self._ReadGoldenFile(os.path.join(os.path.dirname(sys.argv[0]),
+        'testInputStream.javap'))
     jni_from_javap = jni_generator.JNIFromJavaP(contents.split('\n'),
                                                 TestOptions())
     self.assertEquals(10, len(jni_from_javap.called_by_natives))
     self.assertGoldenTextEquals(jni_from_javap.GetContent())
+
+  def testConstantsFromJavaP(self):
+    for f in ['testMotionEvent.javap', 'testMotionEvent.javap7']:
+      contents = self._ReadGoldenFile(os.path.join(os.path.dirname(sys.argv[0]),
+          f))
+      jni_from_javap = jni_generator.JNIFromJavaP(contents.split('\n'),
+                                                  TestOptions())
+      self.assertEquals(86, len(jni_from_javap.called_by_natives))
+      self.assertGoldenTextEquals(jni_from_javap.GetContent())
 
   def testREForNatives(self):
     # We should not match "native SyncSetupFlow" inside the comment.
@@ -849,13 +837,22 @@ public long skip(long)   throws java.io.IOException;
 
     import org.chromium.example2.Test;
 
+    import org.chromium.example3.PrefixFoo;
+    import org.chromium.example3.Prefix;
+    import org.chromium.example3.Bar$Inner;
+
     class Example {
       private static native void nativeTest(Test t);
+      private static native void nativeTest2(PrefixFoo t);
+      private static native void nativeTest3(Prefix t);
+      private static native void nativeTest4(Bar$Inner t);
     }
     """
     jni_generator.JniParams.SetJarJarMappings(
         """rule org.chromium.example.** com.test.@1
-        rule org.chromium.example2.** org.test2.@0""")
+        rule org.chromium.example2.** org.test2.@1
+        rule org.chromium.example3.Prefix org.test3.Test
+        rule org.chromium.example3.Bar$** org.test3.TestBar$@1""")
     jni_from_java = jni_generator.JNIFromJavaSource(
         test_data, 'org/chromium/example/jni_generator/Example', TestOptions())
     jni_generator.JniParams.SetJarJarMappings('')
@@ -943,7 +940,7 @@ class Foo {
     ]
     self.assertListEquals(golden_natives, natives)
     h = jni_generator.InlHeaderFileGenerator('', 'org/chromium/TestJni',
-                                             natives, [], test_options)
+                                             natives, [], [], test_options)
     self.assertGoldenTextEquals(h.GetContent())
 
   def testPureNativeMethodsOption(self):
@@ -1007,6 +1004,86 @@ class Foo {
     jni_from_java = jni_generator.JNIFromJavaSource(
         test_data, 'org/chromium/example/jni_generator/Test', options)
     self.assertGoldenTextEquals(jni_from_java.GetContent())
+
+  def testOuterInnerRaises(self):
+    test_data = """
+    package org.chromium.media;
+
+    @CalledByNative
+    static int getCaptureFormatWidth(VideoCapture.CaptureFormat format) {
+        return format.getWidth();
+    }
+    """
+    def willRaise():
+      jni_generator.JNIFromJavaSource(
+          test_data,
+          'org/chromium/media/VideoCaptureFactory',
+          TestOptions())
+    self.assertRaises(SyntaxError, willRaise)
+
+  def testImplicitImport(self):
+    test_data = """
+    package org.chromium.android_webview;
+
+    %(IMPORT)s
+
+    @CalledByNative
+    private static void clientCertificatesCleared(Runnable callback) {
+        if (callbaback == null) return;
+        callback.run();
+    }
+    """
+    def generate(import_clause):
+      jni_generator.JNIFromJavaSource(
+          test_data % {'IMPORT': import_clause},
+          'org/chromium/android_webview/AwContentStatics',
+          TestOptions())
+    # Ensure it raises without the import.
+    self.assertRaises(SyntaxError, lambda: generate(''))
+
+    # Ensure it's fine with the import.
+    generate('import java.lang.Runnable;')
+
+  def testSingleJNIAdditionalImport(self):
+    test_data = """
+    package org.chromium.foo;
+
+    @JNIAdditionalImport(Bar.class)
+    class Foo {
+
+    @CalledByNative
+    private static void calledByNative(Bar.Callback callback) {
+    }
+
+    private static native void nativeDoSomething(Bar.Callback callback);
+    }
+    """
+    jni_from_java = jni_generator.JNIFromJavaSource(test_data,
+                                                    'org/chromium/foo/Foo',
+                                                    TestOptions())
+    self.assertGoldenTextEquals(jni_from_java.GetContent())
+
+  def testMultipleJNIAdditionalImport(self):
+    test_data = """
+    package org.chromium.foo;
+
+    @JNIAdditionalImport({Bar1.class, Bar2.class})
+    class Foo {
+
+    @CalledByNative
+    private static void calledByNative(Bar1.Callback callback1,
+                                       Bar2.Callback callback2) {
+    }
+
+    private static native void nativeDoSomething(Bar1.Callback callback1,
+                                                 Bar2.Callback callback2);
+    }
+    """
+    jni_from_java = jni_generator.JNIFromJavaSource(test_data,
+                                                    'org/chromium/foo/Foo',
+                                                    TestOptions())
+    self.assertGoldenTextEquals(jni_from_java.GetContent())
+
 
 if __name__ == '__main__':
   unittest.main()

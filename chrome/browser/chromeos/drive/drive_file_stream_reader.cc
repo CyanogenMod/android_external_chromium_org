@@ -29,12 +29,6 @@ int FileErrorToNetError(FileError error) {
   return net::FileErrorToNetError(FileErrorToBaseFileError(error));
 }
 
-// Runs task on UI thread.
-void RunTaskOnUIThread(const base::Closure& task) {
-  google_apis::RunTaskOnThread(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI), task);
-}
-
 // Computes the concrete |start| offset and the |length| of |range| in a file
 // of |total| size.
 //
@@ -119,6 +113,9 @@ int LocalReaderProxy::Read(net::IOBuffer* buffer, int buffer_length,
     buffer_length = static_cast<int>(remaining_length_);
   }
 
+  if (!buffer_length)
+    return 0;
+
   file_reader_->Read(buffer, buffer_length,
                      base::Bind(&LocalReaderProxy::OnReadCompleted,
                                 weak_ptr_factory_.GetWeakPtr(), callback));
@@ -155,9 +152,11 @@ void LocalReaderProxy::OnReadCompleted(const net::CompletionCallback& callback,
 NetworkReaderProxy::NetworkReaderProxy(
     int64 offset,
     int64 content_length,
+    int64 full_content_length,
     const base::Closure& job_canceller)
     : remaining_offset_(offset),
       remaining_content_length_(content_length),
+      is_full_download_(offset + content_length == full_content_length),
       error_code_(net::OK),
       buffer_length_(0),
       job_canceller_(job_canceller) {
@@ -208,6 +207,13 @@ int NetworkReaderProxy::Read(net::IOBuffer* buffer, int buffer_length,
   int result = ReadInternal(&pending_data_, buffer, buffer_length);
   remaining_content_length_ -= result;
   DCHECK_GE(remaining_content_length_, 0);
+
+  // Although OnCompleted() should reset |job_canceller_| when download is done,
+  // due to timing issues the ReaderProxy instance may be destructed before the
+  // notification. To fix the case we reset here earlier.
+  if (is_full_download_ && remaining_content_length_ == 0)
+    job_canceller_.Reset();
+
   return result;
 }
 
@@ -236,6 +242,9 @@ void NetworkReaderProxy::OnGetContent(scoped_ptr<std::string> data) {
   int result = ReadInternal(&pending_data_, buffer_.get(), buffer_length_);
   remaining_content_length_ -= result;
   DCHECK_GE(remaining_content_length_, 0);
+
+  if (is_full_download_ && remaining_content_length_ == 0)
+    job_canceller_.Reset();
 
   buffer_ = NULL;
   buffer_length_ = 0;
@@ -273,7 +282,7 @@ namespace {
 // Calls FileSystemInterface::GetFileContent if the file system
 // is available. If not, the |completion_callback| is invoked with
 // FILE_ERROR_FAILED.
-void GetFileContentOnUIThread(
+base::Closure GetFileContentOnUIThread(
     const DriveFileStreamReader::FileSystemGetter& file_system_getter,
     const base::FilePath& drive_file_path,
     const GetFileContentInitializedCallback& initialized_callback,
@@ -284,13 +293,14 @@ void GetFileContentOnUIThread(
   FileSystemInterface* file_system = file_system_getter.Run();
   if (!file_system) {
     completion_callback.Run(FILE_ERROR_FAILED);
-    return;
+    return base::Closure();
   }
 
-  file_system->GetFileContent(drive_file_path,
-                              initialized_callback,
-                              get_content_callback,
-                              completion_callback);
+  return google_apis::CreateRelayCallback(
+      file_system->GetFileContent(drive_file_path,
+                                  initialized_callback,
+                                  get_content_callback,
+                                  completion_callback));
 }
 
 // Helper to run FileSystemInterface::GetFileContent on UI thread.
@@ -299,10 +309,11 @@ void GetFileContent(
     const base::FilePath& drive_file_path,
     const GetFileContentInitializedCallback& initialized_callback,
     const google_apis::GetContentCallback& get_content_callback,
-    const FileOperationCallback& completion_callback) {
+    const FileOperationCallback& completion_callback,
+    const base::Callback<void(const base::Closure&)>& reply_callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
-  BrowserThread::PostTask(
+  BrowserThread::PostTaskAndReplyWithResult(
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(&GetFileContentOnUIThread,
@@ -310,7 +321,8 @@ void GetFileContent(
                  drive_file_path,
                  google_apis::CreateRelayCallback(initialized_callback),
                  google_apis::CreateRelayCallback(get_content_callback),
-                 google_apis::CreateRelayCallback(completion_callback)));
+                 google_apis::CreateRelayCallback(completion_callback)),
+      reply_callback);
 }
 
 }  // namespace
@@ -351,7 +363,9 @@ void DriveFileStreamReader::Initialize(
                  weak_ptr_factory_.GetWeakPtr()),
       base::Bind(&DriveFileStreamReader::OnGetFileContentCompletion,
                  weak_ptr_factory_.GetWeakPtr(),
-                 callback));
+                 callback),
+      base::Bind(&DriveFileStreamReader::StoreCancelDownloadClosure,
+                 weak_ptr_factory_.GetWeakPtr()));
 }
 
 int DriveFileStreamReader::Read(net::IOBuffer* buffer, int buffer_length,
@@ -363,14 +377,21 @@ int DriveFileStreamReader::Read(net::IOBuffer* buffer, int buffer_length,
   return reader_proxy_->Read(buffer, buffer_length, callback);
 }
 
+void DriveFileStreamReader::StoreCancelDownloadClosure(
+    const base::Closure& cancel_download_closure) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  cancel_download_closure_ = cancel_download_closure;
+}
+
 void DriveFileStreamReader::InitializeAfterGetFileContentInitialized(
     const net::HttpByteRange& byte_range,
     const InitializeCompletionCallback& callback,
     FileError error,
-    scoped_ptr<ResourceEntry> entry,
     const base::FilePath& local_cache_file_path,
-    const base::Closure& ui_cancel_download_closure) {
+    scoped_ptr<ResourceEntry> entry) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  // StoreCancelDownloadClosure() should be called before this function.
+  DCHECK(!cancel_download_closure_.is_null());
 
   if (error != FILE_ERROR_OK) {
     callback.Run(FileErrorToNetError(error), scoped_ptr<ResourceEntry>());
@@ -385,8 +406,7 @@ void DriveFileStreamReader::InitializeAfterGetFileContentInitialized(
     // At the same time, we cancel the in-flight downloading operation if
     // needed and and invalidate weak pointers so that we won't
     // receive unwanted callbacks.
-    if (!ui_cancel_download_closure.is_null())
-      RunTaskOnUIThread(ui_cancel_download_closure);
+    cancel_download_closure_.Run();
     weak_ptr_factory_.InvalidateWeakPtrs();
     callback.Run(
         net::ERR_REQUEST_RANGE_NOT_SATISFIABLE, scoped_ptr<ResourceEntry>());
@@ -395,11 +415,10 @@ void DriveFileStreamReader::InitializeAfterGetFileContentInitialized(
 
   if (local_cache_file_path.empty()) {
     // The file is not cached, and being downloaded.
-    DCHECK(!ui_cancel_download_closure.is_null());
     reader_proxy_.reset(
         new internal::NetworkReaderProxy(
             range_start, range_length,
-            base::Bind(&RunTaskOnUIThread, ui_cancel_download_closure)));
+            entry->file_info().size(), cancel_download_closure_));
     callback.Run(net::OK, entry.Pass());
     return;
   }

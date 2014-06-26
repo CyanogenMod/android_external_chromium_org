@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/scoped_observer.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
@@ -27,21 +28,18 @@
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
-#include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_url_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
-#include "extensions/common/extension.h"
-#include "grit/chromium_strings.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
-#include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "ui/gfx/size.h"
 
 namespace extensions {
 
@@ -58,10 +56,15 @@ static const int kMenuCommandId = IDC_EXTERNAL_EXTENSION_ALERT;
 
 class ExternalInstallGlobalError;
 
+namespace extensions {
+class ExtensionRegistry;
+}
+
 // This class is refcounted to stay alive while we try and pull webstore data.
 class ExternalInstallDialogDelegate
     : public ExtensionInstallPrompt::Delegate,
       public WebstoreDataFetcherDelegate,
+      public content::NotificationObserver,
       public base::RefCountedThreadSafe<ExternalInstallDialogDelegate> {
  public:
   ExternalInstallDialogDelegate(Browser* browser,
@@ -88,16 +91,22 @@ class ExternalInstallDialogDelegate
   virtual void OnWebstoreResponseParseFailure(
       const std::string& error) OVERRIDE;
 
+  // content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
+
   // Show the install dialog to the user.
   void ShowInstallUI();
 
   // The UI for showing the install dialog when enabling.
   scoped_ptr<ExtensionInstallPrompt> install_ui_;
-  scoped_ptr<ExtensionInstallPrompt::Prompt> prompt_;
+  scoped_refptr<ExtensionInstallPrompt::Prompt> prompt_;
 
   Browser* browser_;
   base::WeakPtr<ExtensionService> service_weak_;
   scoped_ptr<WebstoreDataFetcher> webstore_data_fetcher_;
+  content::NotificationRegistrar registrar_;
   std::string extension_id_;
   bool use_global_error_;
 
@@ -107,7 +116,8 @@ class ExternalInstallDialogDelegate
 // Only shows a menu item, no bubble. Clicking the menu item shows
 // an external install dialog.
 class ExternalInstallMenuAlert : public GlobalErrorWithStandardBubble,
-                                 public content::NotificationObserver {
+                                 public content::NotificationObserver,
+                                 public ExtensionRegistryObserver {
  public:
   ExternalInstallMenuAlert(ExtensionService* service,
                            const Extension* extension);
@@ -128,27 +138,40 @@ class ExternalInstallMenuAlert : public GlobalErrorWithStandardBubble,
   virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
   virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
 
+ protected:
+  ExtensionService* service_;
+  const Extension* extension_;
+
+ private:
+  // Delete this instance after cleaning jobs.
+  void Clean();
+
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
- protected:
-  ExtensionService* service_;
-  const Extension* extension_;
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+
   content::NotificationRegistrar registrar_;
 
- private:
+  // Listen to extension load notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
+
   DISALLOW_COPY_AND_ASSIGN(ExternalInstallMenuAlert);
 };
 
 // Shows a menu item and a global error bubble, replacing the install dialog.
 class ExternalInstallGlobalError : public ExternalInstallMenuAlert {
  public:
-  ExternalInstallGlobalError(ExtensionService* service,
-                             const Extension* extension,
-                             ExternalInstallDialogDelegate* delegate,
-                             const ExtensionInstallPrompt::Prompt& prompt);
+  ExternalInstallGlobalError(
+      ExtensionService* service,
+      const Extension* extension,
+      ExternalInstallDialogDelegate* delegate,
+      scoped_refptr<ExtensionInstallPrompt::Prompt> prompt);
   virtual ~ExternalInstallGlobalError();
 
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
@@ -167,7 +190,7 @@ class ExternalInstallGlobalError : public ExternalInstallMenuAlert {
   // having been clicked (perhaps because the user enabled the extension
   // manually).
   ExternalInstallDialogDelegate* delegate_;
-  const ExtensionInstallPrompt::Prompt* prompt_;
+  scoped_refptr<ExtensionInstallPrompt::Prompt> prompt_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ExternalInstallGlobalError);
@@ -178,7 +201,7 @@ static void CreateExternalInstallGlobalError(
     const std::string& extension_id,
     const ExtensionInstallPrompt::ShowParams& show_params,
     ExtensionInstallPrompt::Delegate* prompt_delegate,
-    const ExtensionInstallPrompt::Prompt& prompt) {
+    scoped_refptr<ExtensionInstallPrompt::Prompt> prompt) {
   if (!service.get())
     return;
   const Extension* extension = service->GetInstalledExtension(extension_id);
@@ -220,8 +243,8 @@ ExternalInstallDialogDelegate::ExternalInstallDialogDelegate(
       use_global_error_(use_global_error) {
   AddRef();  // Balanced in Proceed or Abort.
 
-  prompt_.reset(new ExtensionInstallPrompt::Prompt(
-      ExtensionInstallPrompt::EXTERNAL_INSTALL_PROMPT));
+  prompt_ = new ExtensionInstallPrompt::Prompt(
+      ExtensionInstallPrompt::EXTERNAL_INSTALL_PROMPT);
 
   // If we don't have a browser, we can't go to the webstore to fetch data.
   // This should only happen in tests.
@@ -229,6 +252,11 @@ ExternalInstallDialogDelegate::ExternalInstallDialogDelegate(
     ShowInstallUI();
     return;
   }
+
+  // Make sure to be notified if the owning profile is destroyed.
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_PROFILE_DESTROYED,
+                 content::Source<Profile>(browser->profile()));
 
   webstore_data_fetcher_.reset(new WebstoreDataFetcher(
       this,
@@ -272,6 +300,15 @@ void ExternalInstallDialogDelegate::OnWebstoreResponseParseFailure(
   ShowInstallUI();
 }
 
+void ExternalInstallDialogDelegate::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  DCHECK_EQ(type, chrome::NOTIFICATION_PROFILE_DESTROYED);
+  // If the owning profile is destroyed, we need to abort so that we don't leak.
+  InstallUIAbort(false);  // Not user initiated.
+}
+
 void ExternalInstallDialogDelegate::ShowInstallUI() {
   const Extension* extension = NULL;
   if (!service_weak_.get() ||
@@ -288,7 +325,7 @@ void ExternalInstallDialogDelegate::ShowInstallUI() {
                      extension_id_) :
           ExtensionInstallPrompt::GetDefaultShowDialogCallback();
 
-  install_ui_->ConfirmExternalInstall(this, extension, callback, *prompt_);
+  install_ui_->ConfirmExternalInstall(this, extension, callback, prompt_);
 }
 
 ExternalInstallDialogDelegate::~ExternalInstallDialogDelegate() {
@@ -296,33 +333,36 @@ ExternalInstallDialogDelegate::~ExternalInstallDialogDelegate() {
 
 void ExternalInstallDialogDelegate::InstallUIProceed() {
   const Extension* extension = NULL;
-  if (!service_weak_.get() ||
-      !(extension = service_weak_->GetInstalledExtension(extension_id_))) {
-    return;
+  if (service_weak_.get() &&
+      (extension = service_weak_->GetInstalledExtension(extension_id_))) {
+    service_weak_->GrantPermissionsAndEnableExtension(extension);
   }
-  service_weak_->GrantPermissionsAndEnableExtension(extension);
   Release();
 }
 
 void ExternalInstallDialogDelegate::InstallUIAbort(bool user_initiated) {
   const Extension* extension = NULL;
-  if (!service_weak_.get() ||
-      !(extension = service_weak_->GetInstalledExtension(extension_id_))) {
-    return;
+
+  // Uninstall the extension if the abort was user initiated (and not, e.g., the
+  // result of the window closing).
+  // Otherwise, the extension will remain installed, but unacknowledged, so it
+  // will be prompted again.
+  if (user_initiated &&
+      service_weak_.get() &&
+      (extension = service_weak_->GetInstalledExtension(extension_id_))) {
+    service_weak_->UninstallExtension(extension_id_, false, NULL);
   }
-  service_weak_->UninstallExtension(extension_id_, false, NULL);
   Release();
 }
 
 // ExternalInstallMenuAlert -------------------------------------------------
 
-ExternalInstallMenuAlert::ExternalInstallMenuAlert(
-    ExtensionService* service,
-    const Extension* extension)
+ExternalInstallMenuAlert::ExternalInstallMenuAlert(ExtensionService* service,
+                                                   const Extension* extension)
     : service_(service),
-      extension_(extension) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(service->profile()));
+      extension_(extension),
+      extension_registry_observer_(this) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(service->profile()));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_REMOVED,
                  content::Source<Profile>(service->profile()));
 }
@@ -390,16 +430,25 @@ void ExternalInstallMenuAlert::BubbleViewCancelButtonPressed(
   NOTREACHED();
 }
 
+void ExternalInstallMenuAlert::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension) {
+  if (extension == extension_)
+    Clean();
+}
+
 void ExternalInstallMenuAlert::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   // The error is invalidated if the extension has been loaded or removed.
-  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED ||
-         type == chrome::NOTIFICATION_EXTENSION_REMOVED);
+  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_REMOVED);
   const Extension* extension = content::Details<const Extension>(details).ptr();
-  if (extension != extension_)
-    return;
+  if (extension == extension_)
+    Clean();
+}
+
+void ExternalInstallMenuAlert::Clean() {
   GlobalErrorService* error_service =
       GlobalErrorServiceFactory::GetForProfile(service_->profile());
   error_service->RemoveGlobalError(this);
@@ -413,10 +462,10 @@ ExternalInstallGlobalError::ExternalInstallGlobalError(
     ExtensionService* service,
     const Extension* extension,
     ExternalInstallDialogDelegate* delegate,
-    const ExtensionInstallPrompt::Prompt& prompt)
+    scoped_refptr<ExtensionInstallPrompt::Prompt> prompt)
     : ExternalInstallMenuAlert(service, extension),
       delegate_(delegate),
-      prompt_(&prompt) {
+      prompt_(prompt) {
 }
 
 ExternalInstallGlobalError::~ExternalInstallGlobalError() {

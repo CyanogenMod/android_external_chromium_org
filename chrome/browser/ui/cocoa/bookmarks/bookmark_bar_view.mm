@@ -4,7 +4,6 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_view.h"
 
-#include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
 #include "chrome/browser/profiles/profile.h"
 #import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/themes/theme_service.h"
@@ -15,6 +14,8 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "components/bookmarks/browser/bookmark_pasteboard_helper_mac.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
@@ -226,7 +227,7 @@ using base::UserMetricsAction;
     const BookmarkModel* const model = [[self controller] bookmarkModel];
     const BookmarkNode* const source_node = [button bookmarkNode];
     const BookmarkNode* const target_node =
-        model->GetNodeByID(source_node->id());
+        GetBookmarkNodeByID(model, source_node->id());
 
     BOOL copy =
         !([info draggingSourceOperationMask] & NSDragOperationMove) ||

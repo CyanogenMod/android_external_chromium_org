@@ -13,9 +13,9 @@
 #include "content/browser/indexed_db/mock_indexed_db_database_callbacks.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_browser_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/browser/quota/quota_manager.h"
 #include "webkit/browser/quota/special_storage_policy.h"
 #include "webkit/common/database/database_identifier.h"
@@ -31,7 +31,7 @@ class IndexedDBTest : public testing::Test {
       : kNormalOrigin("http://normal/"),
         kSessionOnlyOrigin("http://session-only/"),
         task_runner_(new base::TestSimpleTaskRunner),
-        special_storage_policy_(new quota::MockSpecialStoragePolicy),
+        special_storage_policy_(new MockSpecialStoragePolicy),
         file_thread_(BrowserThread::FILE_USER_BLOCKING, &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_) {
     special_storage_policy_->AddSessionOnly(kSessionOnlyOrigin);
@@ -42,7 +42,7 @@ class IndexedDBTest : public testing::Test {
 
   base::MessageLoopForIO message_loop_;
   scoped_refptr<base::TestSimpleTaskRunner> task_runner_;
-  scoped_refptr<quota::MockSpecialStoragePolicy> special_storage_policy_;
+  scoped_refptr<MockSpecialStoragePolicy> special_storage_policy_;
 
  private:
   BrowserThreadImpl file_thread_;
@@ -174,18 +174,24 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnDelete) {
     test_path = idb_context->GetFilePathForTesting(
         webkit_database::GetIdentifierFromOrigin(kTestOrigin));
 
+    IndexedDBPendingConnection open_connection(open_callbacks,
+                                               open_db_callbacks,
+                                               0 /* child_process_id */,
+                                               0 /* host_transaction_id */,
+                                               0 /* version */);
     factory->Open(base::ASCIIToUTF16("opendb"),
-                  0,
-                  0,
-                  open_callbacks,
-                  open_db_callbacks,
+                  open_connection,
+                  NULL /* request_context */,
                   kTestOrigin,
                   idb_context->data_path());
+    IndexedDBPendingConnection closed_connection(closed_callbacks,
+                                                 closed_db_callbacks,
+                                                 0 /* child_process_id */,
+                                                 0 /* host_transaction_id */,
+                                                 0 /* version */);
     factory->Open(base::ASCIIToUTF16("closeddb"),
-                  0,
-                  0,
-                  closed_callbacks,
-                  closed_db_callbacks,
+                  closed_connection,
+                  NULL /* request_context */,
                   kTestOrigin,
                   idb_context->data_path());
 
@@ -247,11 +253,15 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnCommitFailure) {
   scoped_refptr<MockIndexedDBDatabaseCallbacks> db_callbacks(
       new MockIndexedDBDatabaseCallbacks());
   const int64 transaction_id = 1;
+  IndexedDBPendingConnection connection(
+      callbacks,
+      db_callbacks,
+      0 /* child_process_id */,
+      transaction_id,
+      IndexedDBDatabaseMetadata::DEFAULT_INT_VERSION);
   factory->Open(base::ASCIIToUTF16("db"),
-                IndexedDBDatabaseMetadata::DEFAULT_INT_VERSION,
-                transaction_id,
-                callbacks,
-                db_callbacks,
+                connection,
+                NULL /* request_context */,
                 kTestOrigin,
                 temp_dir.path());
 
@@ -263,7 +273,8 @@ TEST_F(IndexedDBTest, ForceCloseOpenDatabasesOnCommitFailure) {
   EXPECT_TRUE(factory->IsBackingStoreOpen(kTestOrigin));
 
   // Simulate the write failure.
-  callbacks->connection()->database()->TransactionCommitFailed();
+  leveldb::Status status = leveldb::Status::IOError("Simulated failure");
+  callbacks->connection()->database()->TransactionCommitFailed(status);
 
   EXPECT_TRUE(db_callbacks->forced_close_called());
   EXPECT_FALSE(factory->IsBackingStoreOpen(kTestOrigin));

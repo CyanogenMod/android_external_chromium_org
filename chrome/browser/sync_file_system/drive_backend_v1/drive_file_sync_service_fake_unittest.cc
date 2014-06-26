@@ -10,6 +10,7 @@
 #include "base/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_uploader.h"
 #include "chrome/browser/drive/fake_drive_service.h"
 #include "chrome/browser/extensions/test_extension_service.h"
@@ -25,7 +26,9 @@
 #include "chrome/browser/sync_file_system/sync_file_system.pb.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
@@ -39,7 +42,7 @@
 #include "webkit/common/fileapi/file_system_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #endif
@@ -56,8 +59,8 @@ using drive::FakeDriveService;
 
 using extensions::Extension;
 using extensions::DictionaryBuilder;
+using google_apis::FileResource;
 using google_apis::GDataErrorCode;
-using google_apis::ResourceEntry;
 
 namespace sync_file_system {
 
@@ -66,6 +69,8 @@ using drive_backend::APIUtilInterface;
 using drive_backend::FakeDriveServiceHelper;
 
 namespace {
+
+const char kTestProfileName[] = "test-profile";
 
 #if !defined(OS_ANDROID)
 const char kExtensionName1[] = "example1";
@@ -165,20 +170,22 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
  public:
   DriveFileSyncServiceFakeTest()
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
+        profile_manager_(TestingBrowserProcess::GetGlobal()),
         fake_drive_service_(NULL) {
   }
 
   virtual void SetUp() OVERRIDE {
-    profile_.reset(new TestingProfile());
+    ASSERT_TRUE(profile_manager_.SetUp());
+    profile_ = profile_manager_.CreateTestingProfile(kTestProfileName);
 
     // Add TestExtensionSystem with registered ExtensionIds used in tests.
     extensions::TestExtensionSystem* extension_system(
         static_cast<extensions::TestExtensionSystem*>(
-            extensions::ExtensionSystem::Get(profile_.get())));
+            extensions::ExtensionSystem::Get(profile_)));
     extension_system->CreateExtensionService(
         CommandLine::ForCurrentProcess(), base::FilePath(), false);
     extension_service_ = extension_system->Get(
-        profile_.get())->extension_service();
+        profile_)->extension_service();
 
     AddTestExtension(extension_service_, FPL("example1"));
     AddTestExtension(extension_service_, FPL("example2"));
@@ -206,11 +213,6 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(done);
 
-    fake_drive_service_->LoadResourceListForWapi(
-        "sync_file_system/initialize.json");
-    fake_drive_service()->LoadAccountMetadataForWapi(
-        "sync_file_system/account_metadata.json");
-
     // Setup the sync root directory.
     EXPECT_EQ(google_apis::HTTP_CREATED,
               fake_drive_helper_->AddOrphanedFolder(
@@ -221,7 +223,7 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
 
   void SetUpDriveSyncService(bool enabled) {
     sync_service_ = DriveFileSyncService::CreateForTesting(
-        profile_.get(),
+        profile_,
         fake_drive_helper_->base_dir_path(),
         api_util_.PassAs<APIUtilInterface>(),
         metadata_store_.Pass()).Pass();
@@ -243,7 +245,8 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
     RevokeSyncableFileSystem();
 
     extension_service_ = NULL;
-    profile_.reset();
+    profile_ = NULL;
+    profile_manager_.DeleteTestingProfile(kTestProfileName);
     base::RunLoop().RunUntilIdle();
   }
 
@@ -339,10 +342,12 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
   bool AppendIncrementalRemoteChangeByResourceId(
       const std::string& resource_id,
       const GURL& origin) {
-    scoped_ptr<ResourceEntry> entry;
+    scoped_ptr<FileResource> entry;
     EXPECT_EQ(google_apis::HTTP_SUCCESS,
-              fake_drive_helper_->GetResourceEntry(resource_id, &entry));
-    return sync_service_->AppendRemoteChange(origin, *entry, 12345);
+              fake_drive_helper_->GetFileResource(resource_id, &entry));
+    return sync_service_->AppendRemoteChange(
+        origin, *drive::util::ConvertFileResourceToResourceEntry(*entry),
+        12345);
   }
 
   bool AppendIncrementalRemoteChange(
@@ -377,18 +382,18 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
                   const std::string& parent_resource_id,
                   const std::string& title,
                   const std::string& content,
-                  scoped_ptr<google_apis::ResourceEntry>* entry) {
+                  scoped_ptr<google_apis::FileResource>* entry) {
     std::string file_id;
     ASSERT_EQ(google_apis::HTTP_SUCCESS,
               fake_drive_helper_->AddFile(
                   parent_resource_id, title, content, &file_id));
     ASSERT_EQ(google_apis::HTTP_SUCCESS,
-              fake_drive_helper_->GetResourceEntry(
+              fake_drive_helper_->GetFileResource(
                   file_id, entry));
 
     DriveMetadata metadata;
     metadata.set_resource_id(file_id);
-    metadata.set_md5_checksum((*entry)->file_md5());
+    metadata.set_md5_checksum((*entry)->md5_checksum());
     metadata.set_conflicted(false);
     metadata.set_to_be_fetched(false);
     metadata.set_type(DriveMetadata::RESOURCE_TYPE_FILE);
@@ -415,9 +420,11 @@ class DriveFileSyncServiceFakeTest : public testing::Test {
   void TestGetRemoteVersions();
 
  private:
+  ScopedDisableSyncFSV2 scoped_disable_v2_;
   content::TestBrowserThreadBundle thread_bundle_;
 
-  scoped_ptr<TestingProfile> profile_;
+  TestingProfileManager profile_manager_;
+  TestingProfile* profile_;
 
   std::string sync_root_resource_id_;
 
@@ -738,45 +745,6 @@ void DriveFileSyncServiceFakeTest::TestRemoteChange_Folder() {
       resource_id, ExtensionNameToGURL(kExtensionName1)));
 }
 
-void DriveFileSyncServiceFakeTest::TestGetRemoteVersions() {
-  SetUpDriveSyncService(true);
-  const std::string origin_resource_id =
-      SetUpOriginRootDirectory(kExtensionName1);
-
-  const GURL origin(ExtensionNameToGURL(kExtensionName1));
-  const std::string title("file");
-  const std::string content("data1");
-  const fileapi::FileSystemURL& url(CreateURL(origin, title));
-
-  scoped_ptr<google_apis::ResourceEntry> entry;
-  AddNewFile(origin, origin_resource_id, title, content, &entry);
-
-  SyncStatusCode status = SYNC_STATUS_FAILED;
-  std::vector<RemoteFileSyncService::Version> versions;
-  sync_service_->GetRemoteVersions(
-      url, CreateResultReceiver(&status, &versions));
-  base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(SYNC_STATUS_OK, status);
-  ASSERT_FALSE(versions.empty());
-  EXPECT_EQ(1u, versions.size());
-  EXPECT_EQ(static_cast<int64>(content.length()), versions[0].metadata.size);
-  EXPECT_EQ(entry->file_size(), versions[0].metadata.size);
-  EXPECT_EQ(entry->updated_time(), versions[0].metadata.last_modified);
-
-  status = SYNC_STATUS_FAILED;
-  webkit_blob::ScopedFile downloaded;
-  sync_service_->DownloadRemoteVersion(
-      url, versions[0].id, CreateResultReceiver(&status, &downloaded));
-  base::RunLoop().RunUntilIdle();
-
-  ASSERT_EQ(SYNC_STATUS_OK, status);
-
-  std::string downloaded_content;
-  EXPECT_TRUE(base::ReadFileToString(downloaded.path(), &downloaded_content));
-  EXPECT_EQ(content, downloaded_content);
-}
-
 TEST_F(DriveFileSyncServiceFakeTest, RegisterNewOrigin) {
   ASSERT_FALSE(IsDriveAPIDisabled());
   TestRegisterNewOrigin();
@@ -885,16 +853,6 @@ TEST_F(DriveFileSyncServiceFakeTest, RemoteChange_Folder) {
 TEST_F(DriveFileSyncServiceFakeTest, RemoteChange_Folder_WAPI) {
   ScopedDisableDriveAPI disable_drive_api;
   TestRemoteChange_Folder();
-}
-
-TEST_F(DriveFileSyncServiceFakeTest, GetRemoteVersions) {
-  ASSERT_FALSE(IsDriveAPIDisabled());
-  TestGetRemoteVersions();
-}
-
-TEST_F(DriveFileSyncServiceFakeTest, GetRemoteVersions_WAPI) {
-  ScopedDisableDriveAPI disable_drive_api;
-  TestGetRemoteVersions();
 }
 
 #endif  // !defined(OS_ANDROID)

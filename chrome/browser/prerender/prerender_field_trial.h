@@ -7,15 +7,18 @@
 
 #include <string>
 
-class CommandLine;
 class Profile;
+
+namespace base {
+class CommandLine;
+}
 
 namespace prerender {
 
 // Parse the --prerender= command line switch, which controls prerendering. If
 // the switch is unset or is set to "auto" then the user is assigned to a
 // field trial.
-void ConfigurePrerender(const CommandLine& command_line);
+void ConfigurePrerender(const base::CommandLine& command_line);
 
 // Returns true if the user has opted in or has been opted in to the
 // prerendering from Omnibox experiment.
@@ -44,6 +47,9 @@ bool IsLocalPredictorPrerenderLaunchEnabled();
 // group. If the local predictor never launches prerenders, then this setting
 // is irrelevant.
 bool IsLocalPredictorPrerenderAlwaysControlEnabled();
+
+// Returns true if the local predictor should prefetch rather than prerender.
+bool IsLocalPredictorPrerenderPrefetchEnabled();
 
 // Returns true if we should query the prerender service for the profile
 // provided.
@@ -76,6 +82,10 @@ int GetLocalPredictorPrerenderPriorityHalfLifeTimeSeconds();
 // may maintain.
 int GetLocalPredictorMaxConcurrentPrerenders();
 
+// Returns the maximum number of concurrent prerenders the local predictor
+// may launch concurrently.
+int GetLocalPredictorMaxLaunchPrerenders();
+
 // The following functions return whether certain LocalPredictor checks should
 // be skipped, as indicated by the name.
 bool SkipLocalPredictorFragment();
@@ -86,6 +96,9 @@ bool SkipLocalPredictorLoggedIn();
 bool SkipLocalPredictorDefaultNoPrerender();
 bool SkipLocalPredictorLocalCandidates();
 bool SkipLocalPredictorServiceCandidates();
+
+// Indicates whether no prerender cookie stores should be used for prerendering.
+bool IsPrerenderCookieStoreEnabled();
 
 }  // namespace prerender
 

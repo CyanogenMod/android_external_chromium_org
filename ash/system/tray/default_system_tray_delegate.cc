@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/volume_control_delegate.h"
 #include "base/message_loop/message_loop.h"
@@ -59,10 +59,6 @@ user::LoginStatus DefaultSystemTrayDelegate::GetUserLoginStatus() const {
   return user::LOGGED_IN_USER;
 }
 
-bool DefaultSystemTrayDelegate::IsOobeCompleted() const {
-  return true;
-}
-
 void DefaultSystemTrayDelegate::ChangeProfilePicture() {
 }
 
@@ -106,6 +102,9 @@ bool DefaultSystemTrayDelegate::ShouldShowSettings() {
 }
 
 void DefaultSystemTrayDelegate::ShowDateSettings() {
+}
+
+void DefaultSystemTrayDelegate::ShowSetTimeDialog() {
 }
 
 void DefaultSystemTrayDelegate::ShowNetworkSettings(
@@ -253,6 +252,10 @@ bool DefaultSystemTrayDelegate::GetBluetoothEnabled() {
   return bluetooth_enabled_;
 }
 
+bool DefaultSystemTrayDelegate::GetBluetoothDiscovering() {
+  return false;
+}
+
 void DefaultSystemTrayDelegate::ChangeProxySettings() {
 }
 
@@ -282,6 +285,20 @@ int DefaultSystemTrayDelegate::GetSystemTrayMenuWidth() {
 }
 
 void DefaultSystemTrayDelegate::ActiveUserWasChanged() {
+}
+
+bool DefaultSystemTrayDelegate::IsNetworkBehindCaptivePortal(
+    const std::string& /* service_path */) const {
+  return false;
+}
+
+bool DefaultSystemTrayDelegate::IsSearchKeyMappedToCapsLock() {
+  return false;
+}
+
+tray::UserAccountsDelegate* DefaultSystemTrayDelegate::GetUserAccountsDelegate(
+    const std::string& user_id) {
+  return NULL;
 }
 
 }  // namespace ash

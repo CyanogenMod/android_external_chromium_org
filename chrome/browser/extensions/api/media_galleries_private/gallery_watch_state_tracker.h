@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // GalleryWatchStateTracker tracks the gallery watchers, updates the
-// extension state storage and observes the notification events.
+// extension state storage and observes the extension registry events.
 // GalleryWatchStateTracker lives on the UI thread.
 
 #ifndef CHROME_BROWSER_EXTENSIONS_API_MEDIA_GALLERIES_PRIVATE_GALLERY_WATCH_STATE_TRACKER_H_
@@ -15,9 +15,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/media_galleries/media_galleries_preferences.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class Profile;
 
@@ -27,10 +27,12 @@ class Value;
 
 namespace extensions {
 
+class ExtensionRegistry;
+
 // This class is owned by the MediaGalleriesPrivateAPI, and is created on demand
 // along with the MediaGalleriesPrivateEventRouter.
 class GalleryWatchStateTracker
-    : public content::NotificationObserver,
+    : public extensions::ExtensionRegistryObserver,
       public base::SupportsWeakPtr<GalleryWatchStateTracker>,
       public MediaGalleriesPreferences::GalleryChangeObserver {
  public:
@@ -87,10 +89,13 @@ class GalleryWatchStateTracker
   // Value: Map of watched gallery information.
   typedef std::map<std::string, WatchedGalleriesMap> WatchedExtensionsMap;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // extensions::ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE;
 
   // Syncs media gallery watch data for the given extension to/from the state
   // storage.
@@ -133,9 +138,8 @@ class GalleryWatchStateTracker
   // Current profile.
   Profile* profile_;
 
-  // Used to listen for NOTIFICATION_EXTENSION_LOADED and
-  // NOTIFICATION_EXTENSION_UNLOADED events.
-  content::NotificationRegistrar registrar_;
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // A map of watched gallery details, per extension.
   WatchedExtensionsMap watched_extensions_map_;

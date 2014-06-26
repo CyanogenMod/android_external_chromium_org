@@ -27,6 +27,11 @@ do_testcase() {
   if [ -e "${3}" ]; then
     flags="$(cat "${3}")"
   fi
+
+  if [ "$(uname -s)" = "Darwin" ]; then
+    flags="${flags} -isysroot $(xcrun --show-sdk-path) -stdlib=libstdc++"
+  fi
+
   local output="$("${CLANG_DIR}"/bin/clang -c -Wno-c++11-extensions \
       -Xclang -load -Xclang "${CLANG_DIR}"/lib/libFindBadConstructs.${LIB} \
       -Xclang -add-plugin -Xclang find-bad-constructs ${flags} ${1} 2>&1)"
@@ -69,6 +74,10 @@ fi
 
 for input in *.cpp; do
   do_testcase "${input}" "${input%cpp}txt" "${input%cpp}flags"
+done
+
+for input in *.c; do
+  do_testcase "${input}" "${input%c}txt" "${input%c}flags"
 done
 
 if [[ "${failed_any_test}" ]]; then

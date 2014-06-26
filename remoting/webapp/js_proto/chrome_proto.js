@@ -51,6 +51,14 @@ chrome.runtime = {
  */
 chrome.runtime.connectNative = function(name) {};
 
+/**
+ * @param {string} extensionId
+ * @param {*} message
+ * @param {Object=} opt_options
+ * @param {function(*)=} opt_callback
+ */
+chrome.runtime.sendMessage = function(
+    extensionId, message, opt_options, opt_callback) {};
 
 /** @type {Object} */
 chrome.extension = {};
@@ -192,6 +200,11 @@ chrome.identity = {
   getAuthToken: function(parameters, callback) {},
   /**
    * @param {Object.<string>} parameters
+   * @param {function():void} callback
+   */
+  removeCachedAuthToken: function(parameters, callback) {},
+  /**
+   * @param {Object.<string>} parameters
    * @param {function(string):void} callback
    */
   launchWebAuthFlow: function(parameters, callback) {}
@@ -271,11 +284,22 @@ var AppWindow = function() {
   this.contentWindow = null;
   /** @type {chrome.Event} */
   this.onRestored = null;
+  /** @type {chrome.Event} */
+  this.onMaximized = null;
+  /** @type {chrome.Event} */
+  this.onFullscreened = null;
 };
 
 AppWindow.prototype.close = function() {};
 AppWindow.prototype.drawAttention = function() {};
+AppWindow.prototype.maximize = function() {};
 AppWindow.prototype.minimize = function() {};
+AppWindow.prototype.restore = function() {};
+AppWindow.prototype.fullscreen = function() {};
+/** @return {boolean} */
+AppWindow.prototype.isFullscreen = function() {};
+/** @return {boolean} */
+AppWindow.prototype.isMaximized = function() {};
 
 /**
  * @param {{rects: Array.<ClientRect>}} rects

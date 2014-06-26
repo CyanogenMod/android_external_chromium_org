@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/enrollment/enrollment_screen_actor.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
@@ -28,8 +29,8 @@ class EnrollmentScreen
                    EnrollmentScreenActor* actor);
   virtual ~EnrollmentScreen();
 
-  void SetParameters(bool is_auto_enrollment,
-                     bool can_exit_enrollment,
+  void SetParameters(EnrollmentScreenActor::EnrollmentMode enrollment_mode,
+                     const std::string& management_domain,
                      const std::string& enrollment_user);
 
   // WizardScreen implementation:
@@ -52,6 +53,8 @@ class EnrollmentScreen
   }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestSuccess);
+
   // Starts the Lockbox storage process.
   void WriteInstallAttributesData();
 
@@ -62,6 +65,10 @@ class EnrollmentScreen
   // show the specified enrollment status.
   void ReportEnrollmentStatus(policy::EnrollmentStatus status);
 
+  // Shows successful enrollment status after all enrollment related file
+  // operations are completed.
+  void ShowEnrollmentStatusOnSuccess(const policy::EnrollmentStatus& status);
+
   // Logs a UMA event in the kMetricEnrollment histogram. If auto-enrollment is
   // on |sample| is ignored and a kMetricEnrollmentAutoFailed sample is logged
   // instead.
@@ -70,9 +77,13 @@ class EnrollmentScreen
   // Shows the signin screen. Used as a callback to run after auth reset.
   void ShowSigninScreen();
 
+  // Convenience helper to check for auto enrollment mode.
+  bool is_auto_enrollment() const {
+    return enrollment_mode_ == EnrollmentScreenActor::ENROLLMENT_MODE_AUTO;
+  }
+
   EnrollmentScreenActor* actor_;
-  bool is_auto_enrollment_;
-  bool can_exit_enrollment_;
+  EnrollmentScreenActor::EnrollmentMode enrollment_mode_;
   bool enrollment_failed_once_;
   std::string user_;
   int lockbox_init_duration_;

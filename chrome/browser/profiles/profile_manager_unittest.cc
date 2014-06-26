@@ -22,8 +22,10 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths.h"
@@ -33,14 +35,18 @@
 #include "chrome/test/base/test_browser_window.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/mock_user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/mock_user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chromeos/chromeos_switches.h"
@@ -115,15 +121,29 @@ class ProfileManagerTest : public testing::Test {
   // Helper function to create a profile with |name| for a profile |manager|.
   void CreateProfileAsync(ProfileManager* manager,
                           const std::string& name,
-                          bool is_managed,
+                          bool is_supervised,
                           MockObserver* mock_observer) {
     manager->CreateProfileAsync(
         temp_dir_.path().AppendASCII(name),
         base::Bind(&MockObserver::OnProfileCreated,
                    base::Unretained(mock_observer)),
         base::UTF8ToUTF16(name),
-        base::UTF8ToUTF16(ProfileInfoCache::GetDefaultAvatarIconUrl(0)),
-        is_managed ? "Dummy ID" : std::string());
+        base::UTF8ToUTF16(profiles::GetDefaultAvatarIconUrl(0)),
+        is_supervised ? "Dummy ID" : std::string());
+  }
+
+  // Helper function to add a profile with |profile_name| to
+  // |profile_manager|'s ProfileInfoCache, and return the profile created.
+  Profile* AddProfileToCache(ProfileManager* profile_manager,
+                             const std::string& path_suffix,
+                             const base::string16& profile_name) {
+    ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+    size_t num_profiles = cache.GetNumberOfProfiles();
+    base::FilePath path = temp_dir_.path().AppendASCII(path_suffix);
+    cache.AddProfileToCache(path, profile_name,
+                            base::string16(), 0, std::string());
+    EXPECT_EQ(num_profiles + 1, cache.GetNumberOfProfiles());
+    return profile_manager->GetProfile(path);
   }
 
 #if defined(OS_CHROMEOS)
@@ -283,7 +303,7 @@ TEST_F(ProfileManagerTest, CreateProfilesAsync) {
 }
 
 TEST_F(ProfileManagerTest, CreateProfileAsyncCheckOmitted) {
-  std::string name = "Managed Profile";
+  std::string name = "0 Supervised Profile";
 
   MockObserver mock_observer;
   EXPECT_CALL(mock_observer, OnProfileCreated(
@@ -297,15 +317,15 @@ TEST_F(ProfileManagerTest, CreateProfileAsyncCheckOmitted) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(1u, cache.GetNumberOfProfiles());
-  // Managed profiles should start out omitted from the profile list.
+  // Supervised profiles should start out omitted from the profile list.
   EXPECT_TRUE(cache.IsOmittedProfileAtIndex(0));
 
-  name = "Regular Profile";
+  name = "1 Regular Profile";
   CreateProfileAsync(profile_manager, name, false, &mock_observer);
   base::RunLoop().RunUntilIdle();
 
   EXPECT_EQ(2u, cache.GetNumberOfProfiles());
-  // Non-managed profiles should be included in the profile list.
+  // Non-supervised profiles should be included in the profile list.
   EXPECT_FALSE(cache.IsOmittedProfileAtIndex(1));
 }
 
@@ -314,26 +334,29 @@ TEST_F(ProfileManagerTest, AddProfileToCacheCheckOmitted) {
   ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
   EXPECT_EQ(0u, cache.GetNumberOfProfiles());
 
-  const base::FilePath managed_path = temp_dir_.path().AppendASCII("Managed");
-  TestingProfile* managed_profile = new TestingProfile(managed_path, NULL);
-  managed_profile->GetPrefs()->SetString(prefs::kManagedUserId, "An ID");
+  const base::FilePath supervised_path =
+      temp_dir_.path().AppendASCII("Supervised");
+  TestingProfile* supervised_profile =
+      new TestingProfile(supervised_path, NULL);
+  supervised_profile->GetPrefs()->SetString(prefs::kSupervisedUserId, "An ID");
 
   // RegisterTestingProfile adds the profile to the cache and takes ownership.
-  profile_manager->RegisterTestingProfile(managed_profile, true, false);
+  profile_manager->RegisterTestingProfile(supervised_profile, true, false);
   EXPECT_EQ(1u, cache.GetNumberOfProfiles());
   EXPECT_TRUE(cache.IsOmittedProfileAtIndex(0));
 
-  const base::FilePath nonmanaged_path = temp_dir_.path().AppendASCII(
-      "Non-Managed");
-  TestingProfile* nonmanaged_profile = new TestingProfile(nonmanaged_path,
-                                                          NULL);
-  profile_manager->RegisterTestingProfile(nonmanaged_profile, true, false);
+  const base::FilePath nonsupervised_path = temp_dir_.path().AppendASCII(
+      "Non-Supervised");
+  TestingProfile* nonsupervised_profile = new TestingProfile(nonsupervised_path,
+                                                             NULL);
+  profile_manager->RegisterTestingProfile(nonsupervised_profile, true, false);
 
   EXPECT_EQ(2u, cache.GetNumberOfProfiles());
-  size_t managed_index = cache.GetIndexOfProfileWithPath(managed_path);
-  EXPECT_TRUE(cache.IsOmittedProfileAtIndex(managed_index));
-  size_t nonmanaged_index = cache.GetIndexOfProfileWithPath(nonmanaged_path);
-  EXPECT_FALSE(cache.IsOmittedProfileAtIndex(nonmanaged_index));
+  size_t supervised_index = cache.GetIndexOfProfileWithPath(supervised_path);
+  EXPECT_TRUE(cache.IsOmittedProfileAtIndex(supervised_index));
+  size_t nonsupervised_index =
+      cache.GetIndexOfProfileWithPath(nonsupervised_path);
+  EXPECT_FALSE(cache.IsOmittedProfileAtIndex(nonsupervised_index));
 }
 
 TEST_F(ProfileManagerTest, GetGuestProfilePath) {
@@ -343,7 +366,6 @@ TEST_F(ProfileManagerTest, GetGuestProfilePath) {
   EXPECT_EQ(expected_path, guest_path);
 }
 
-#if defined(OS_CHROMEOS)
 class UnittestGuestProfileManager : public UnittestProfileManager {
  public:
   explicit UnittestGuestProfileManager(const base::FilePath& user_data_dir)
@@ -352,19 +374,15 @@ class UnittestGuestProfileManager : public UnittestProfileManager {
  protected:
   virtual Profile* CreateProfileHelper(
       const base::FilePath& file_path) OVERRIDE {
-    TestingProfile* testing_profile = new TestingProfile(file_path, NULL);
-
     TestingProfile::Builder builder;
-    builder.SetIncognito();
     builder.SetGuestSession();
-    builder.SetPath(ProfileManager::GetGuestProfilePath());
-    testing_profile->SetOffTheRecordProfile(builder.Build().PassAs<Profile>());
-
+    builder.SetPath(file_path);
+    TestingProfile* testing_profile = builder.Build().release();
     return testing_profile;
   }
 };
 
-class ProfileManagerGuestTest : public ProfileManagerTest {
+class ProfileManagerGuestTest : public ProfileManagerTest  {
  protected:
   virtual void SetUp() {
     // Create a new temporary directory, and store the path
@@ -372,9 +390,15 @@ class ProfileManagerGuestTest : public ProfileManagerTest {
     TestingBrowserProcess::GetGlobal()->SetProfileManager(
         new UnittestGuestProfileManager(temp_dir_.path()));
 
+#if defined(OS_CHROMEOS)
     CommandLine* cl = CommandLine::ForCurrentProcess();
+    // This switch is needed to skip non-test specific behavior in
+    // ProfileManager (accessing DBusThreadManager).
     cl->AppendSwitch(switches::kTestType);
-    cl->AppendSwitchASCII(chromeos::switches::kLoginProfile, "user");
+
+    cl->AppendSwitchASCII(chromeos::switches::kLoginProfile,
+                          std::string(chrome::kProfileDirPrefix) +
+                              chromeos::UserManager::kGuestUserName);
     cl->AppendSwitch(chromeos::switches::kGuestSession);
     cl->AppendSwitch(::switches::kIncognito);
 
@@ -382,9 +406,20 @@ class ProfileManagerGuestTest : public ProfileManagerTest {
         chromeos::UserManager::kGuestUserName,
         chromeos::UserManager::kGuestUserName,
         false);
+#endif
   }
 };
 
+TEST_F(ProfileManagerGuestTest, GetLastUsedProfileAllowedByPolicy) {
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ASSERT_TRUE(profile_manager);
+
+  Profile* profile = profile_manager->GetLastUsedProfileAllowedByPolicy();
+  ASSERT_TRUE(profile);
+  EXPECT_TRUE(profile->IsOffTheRecord());
+}
+
+#if defined(OS_CHROMEOS)
 TEST_F(ProfileManagerGuestTest, GuestProfileIngonito) {
   Profile* primary_profile = ProfileManager::GetPrimaryUserProfile();
   EXPECT_TRUE(primary_profile->IsOffTheRecord());
@@ -393,6 +428,11 @@ TEST_F(ProfileManagerGuestTest, GuestProfileIngonito) {
   EXPECT_TRUE(active_profile->IsOffTheRecord());
 
   EXPECT_TRUE(active_profile->IsSameProfile(primary_profile));
+
+  Profile* last_used_profile = ProfileManager::GetLastUsedProfile();
+  EXPECT_TRUE(last_used_profile->IsOffTheRecord());
+
+  EXPECT_TRUE(last_used_profile->IsSameProfile(active_profile));
 }
 #endif
 
@@ -470,7 +510,7 @@ TEST_F(ProfileManagerTest, InitProfileUserPrefs) {
   // Check that the profile avatar index is valid
   size_t avatar_index =
       profile->GetPrefs()->GetInteger(prefs::kProfileAvatarIndex);
-  EXPECT_TRUE(profile_manager->GetProfileInfoCache().IsDefaultAvatarIconIndex(
+  EXPECT_TRUE(profiles::IsDefaultAvatarIconIndex(
       avatar_index));
 }
 
@@ -512,14 +552,6 @@ TEST_F(ProfileManagerTest, GetLastUsedProfileAllowedByPolicy) {
   EXPECT_EQ(IncognitoModePrefs::ENABLED,
             IncognitoModePrefs::GetAvailability(prefs));
 
-  // Attach an incognito Profile to the TestingProfile.
-  ASSERT_FALSE(profile->GetOffTheRecordProfile());
-  TestingProfile::Builder builder;
-  builder.SetIncognito();
-  scoped_ptr<TestingProfile> incognito_profile = builder.Build();
-  EXPECT_TRUE(incognito_profile->IsOffTheRecord());
-  TestingProfile* testing_profile = static_cast<TestingProfile*>(profile);
-  testing_profile->SetOffTheRecordProfile(incognito_profile.PassAs<Profile>());
   ASSERT_TRUE(profile->GetOffTheRecordProfile());
 
   IncognitoModePrefs::SetAvailability(prefs, IncognitoModePrefs::DISABLED);
@@ -826,10 +858,8 @@ TEST_F(ProfileManagerTest, ActiveProfileDeleted) {
   // Create and load two profiles.
   const std::string profile_name1 = "New Profile 1";
   const std::string profile_name2 = "New Profile 2";
-  base::FilePath dest_path1 =
-      temp_dir_.path().AppendASCII(profile_name1);
-  base::FilePath dest_path2 =
-      temp_dir_.path().AppendASCII(profile_name2);
+  base::FilePath dest_path1 = temp_dir_.path().AppendASCII(profile_name1);
+  base::FilePath dest_path2 = temp_dir_.path().AppendASCII(profile_name2);
 
   MockObserver mock_observer;
   EXPECT_CALL(mock_observer, OnProfileCreated(
@@ -855,6 +885,122 @@ TEST_F(ProfileManagerTest, ActiveProfileDeleted) {
   EXPECT_EQ(dest_path2, profile_manager->GetLastUsedProfile()->GetPath());
   EXPECT_EQ(profile_name2, local_state->GetString(prefs::kProfileLastUsed));
 }
+
+TEST_F(ProfileManagerTest, ProfileDisplayNameResetsDefaultName) {
+  if (!profiles::IsMultipleProfilesEnabled())
+    return;
+
+  // The command line is reset at the end of every test by the test suite.
+  switches::EnableNewProfileManagementForTesting(
+      CommandLine::ForCurrentProcess());
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+  EXPECT_EQ(0u, cache.GetNumberOfProfiles());
+
+  // Only one local profile means we display IDS_SINGLE_PROFILE_DISPLAY_NAME.
+  const base::string16 default_profile_name =
+      l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
+  const base::string16 profile_name1 = cache.ChooseNameForNewProfile(0);
+  Profile* profile1 = AddProfileToCache(profile_manager,
+                                        "path_1", profile_name1);
+  EXPECT_EQ(default_profile_name, profiles::GetAvatarNameForProfile(profile1));
+
+  // Multiple profiles means displaying the actual profile names.
+  const base::string16 profile_name2 = cache.ChooseNameForNewProfile(1);
+  Profile* profile2 = AddProfileToCache(profile_manager,
+                                        "path_2", profile_name2);
+  EXPECT_EQ(profile_name1, profiles::GetAvatarNameForProfile(profile1));
+  EXPECT_EQ(profile_name2, profiles::GetAvatarNameForProfile(profile2));
+
+  // Deleting a profile means returning to the default name.
+  profile_manager->ScheduleProfileForDeletion(profile2->GetPath(),
+                                              ProfileManager::CreateCallback());
+  // Spin the message loop so that all the callbacks can finish running.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(default_profile_name, profiles::GetAvatarNameForProfile(profile1));
+}
+
+TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesCustomName) {
+  if (!profiles::IsMultipleProfilesEnabled())
+    return;
+
+  // The command line is reset at the end of every test by the test suite.
+  switches::EnableNewProfileManagementForTesting(
+      CommandLine::ForCurrentProcess());
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+  EXPECT_EQ(0u, cache.GetNumberOfProfiles());
+
+  // Only one local profile means we display IDS_SINGLE_PROFILE_DISPLAY_NAME.
+  const base::string16 default_profile_name =
+      l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
+  const base::string16 profile_name1 = cache.ChooseNameForNewProfile(0);
+  Profile* profile1 = AddProfileToCache(profile_manager,
+                                        "path_1", profile_name1);
+  EXPECT_EQ(default_profile_name, profiles::GetAvatarNameForProfile(profile1));
+
+  // We should display custom names for local profiles.
+  const base::string16 custom_profile_name = ASCIIToUTF16("Batman");
+  cache.SetNameOfProfileAtIndex(0, custom_profile_name);
+  EXPECT_EQ(custom_profile_name, cache.GetNameOfProfileAtIndex(0));
+  EXPECT_EQ(custom_profile_name, profiles::GetAvatarNameForProfile(profile1));
+
+  // Multiple profiles means displaying the actual profile names.
+  const base::string16 profile_name2 = cache.ChooseNameForNewProfile(1);
+  Profile* profile2 = AddProfileToCache(profile_manager,
+                                        "path_2", profile_name2);
+  EXPECT_EQ(custom_profile_name, profiles::GetAvatarNameForProfile(profile1));
+  EXPECT_EQ(profile_name2, profiles::GetAvatarNameForProfile(profile2));
+
+  // Deleting a profile means returning to the original, custom name.
+  profile_manager->ScheduleProfileForDeletion(profile2->GetPath(),
+                                              ProfileManager::CreateCallback());
+  // Spin the message loop so that all the callbacks can finish running.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(custom_profile_name, profiles::GetAvatarNameForProfile(profile1));
+}
+
+TEST_F(ProfileManagerTest, ProfileDisplayNamePreservesSignedInName) {
+  if (!profiles::IsMultipleProfilesEnabled())
+    return;
+
+  // The command line is reset at the end of every test by the test suite.
+  switches::EnableNewProfileManagementForTesting(
+      CommandLine::ForCurrentProcess());
+
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  ProfileInfoCache& cache = profile_manager->GetProfileInfoCache();
+  EXPECT_EQ(0u, cache.GetNumberOfProfiles());
+
+  // Only one local profile means we display IDS_SINGLE_PROFILE_DISPLAY_NAME.
+  const base::string16 default_profile_name =
+      l10n_util::GetStringUTF16(IDS_SINGLE_PROFILE_DISPLAY_NAME);
+  const base::string16 profile_name1 = cache.ChooseNameForNewProfile(0);
+  Profile* profile1 = AddProfileToCache(profile_manager,
+                                        "path_1", profile_name1);
+  EXPECT_EQ(default_profile_name, profiles::GetAvatarNameForProfile(profile1));
+
+  // We should display the actual profile name for signed in profiles.
+  cache.SetUserNameOfProfileAtIndex(0, ASCIIToUTF16("user@gmail.com"));
+  EXPECT_EQ(profile_name1, cache.GetNameOfProfileAtIndex(0));
+  EXPECT_EQ(profile_name1, profiles::GetAvatarNameForProfile(profile1));
+
+  // Multiple profiles means displaying the actual profile names.
+  const base::string16 profile_name2 = cache.ChooseNameForNewProfile(1);
+  Profile* profile2 = AddProfileToCache(profile_manager,
+                                        "path_2", profile_name2);
+  EXPECT_EQ(profile_name1, profiles::GetAvatarNameForProfile(profile1));
+  EXPECT_EQ(profile_name2, profiles::GetAvatarNameForProfile(profile2));
+
+  // Deleting a profile means returning to the original, actual profile name.
+  profile_manager->ScheduleProfileForDeletion(profile2->GetPath(),
+                                              ProfileManager::CreateCallback());
+  // Spin the message loop so that all the callbacks can finish running.
+  base::RunLoop().RunUntilIdle();
+  EXPECT_EQ(profile_name1, profiles::GetAvatarNameForProfile(profile1));
+}
 #endif  // !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
 
 #if defined(OS_MACOSX)
@@ -867,10 +1013,8 @@ TEST_F(ProfileManagerTest, ActiveProfileDeletedNeedsToLoadNextProfile) {
   // Create and load one profile, and just create a second profile.
   const std::string profile_name1 = "New Profile 1";
   const std::string profile_name2 = "New Profile 2";
-  base::FilePath dest_path1 =
-      temp_dir_.path().AppendASCII(profile_name1);
-  base::FilePath dest_path2 =
-      temp_dir_.path().AppendASCII(profile_name2);
+  base::FilePath dest_path1 = temp_dir_.path().AppendASCII(profile_name1);
+  base::FilePath dest_path2 = temp_dir_.path().AppendASCII(profile_name2);
 
   MockObserver mock_observer;
   EXPECT_CALL(mock_observer, OnProfileCreated(
@@ -916,12 +1060,9 @@ TEST_F(ProfileManagerTest, ActiveProfileDeletedNextProfileDeletedToo) {
   const std::string profile_name1 = "New Profile 1";
   const std::string profile_name2 = "New Profile 2";
   const std::string profile_name3 = "New Profile 3";
-  base::FilePath dest_path1 =
-      temp_dir_.path().AppendASCII(profile_name1);
-  base::FilePath dest_path2 =
-      temp_dir_.path().AppendASCII(profile_name2);
-  base::FilePath dest_path3 =
-      temp_dir_.path().AppendASCII(profile_name3);
+  base::FilePath dest_path1 = temp_dir_.path().AppendASCII(profile_name1);
+  base::FilePath dest_path2 = temp_dir_.path().AppendASCII(profile_name2);
+  base::FilePath dest_path3 = temp_dir_.path().AppendASCII(profile_name3);
 
   MockObserver mock_observer;
   EXPECT_CALL(mock_observer, OnProfileCreated(

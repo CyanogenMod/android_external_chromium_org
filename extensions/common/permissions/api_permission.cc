@@ -47,8 +47,10 @@ class SimpleAPIPermission : public APIPermission {
     return true;
   }
 
-  virtual bool FromValue(const base::Value* value,
-                         std::string* /*error*/) OVERRIDE {
+  virtual bool FromValue(
+      const base::Value* value,
+      std::string* /*error*/,
+      std::vector<std::string>* /*unhandled_permissions*/) OVERRIDE {
     return (value == NULL);
   }
 
@@ -111,20 +113,14 @@ PermissionMessage APIPermission::GetMessage_() const {
 // APIPermissionInfo
 //
 
-APIPermissionInfo::APIPermissionInfo(
-    APIPermission::ID id,
-    const char* name,
-    int l10n_message_id,
-    PermissionMessage::ID message_id,
-    int flags,
-    APIPermissionConstructor api_permission_constructor)
-    : id_(id),
-      name_(name),
-      flags_(flags),
-      l10n_message_id_(l10n_message_id),
-      message_id_(message_id),
-      api_permission_constructor_(api_permission_constructor) { }
-
+APIPermissionInfo::APIPermissionInfo(const APIPermissionInfo::InitInfo& info)
+    : id_(info.id),
+      name_(info.name),
+      flags_(info.flags),
+      l10n_message_id_(info.l10n_message_id),
+      message_id_(info.message_id ? info.message_id : PermissionMessage::kNone),
+      api_permission_constructor_(info.constructor) {
+}
 
 APIPermissionInfo::~APIPermissionInfo() { }
 

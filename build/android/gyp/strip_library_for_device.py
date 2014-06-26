@@ -44,7 +44,7 @@ def FindFullPath(name, path):
 
 
 
-def main(argv):
+def main():
   parser = optparse.OptionParser()
 
   parser.add_option('--android-strip',
@@ -82,4 +82,4 @@ def main(argv):
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())

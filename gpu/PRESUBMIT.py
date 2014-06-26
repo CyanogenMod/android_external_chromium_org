@@ -8,10 +8,11 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into depot_tools.
 """
 
-def GetPreferredTrySlaves(project, change):
-  return [
-    'linux_gpu',
-    'mac_gpu',
-    'mac_gpu_retina',
-    'win_gpu',
-  ]
+def GetPreferredTryMasters(project, change):
+  return {
+    'tryserver.chromium.gpu': {
+      'linux_gpu': set(['defaulttests']),
+      'mac_gpu': set(['defaulttests']),
+      'win_gpu': set(['defaulttests']),
+    }
+  }

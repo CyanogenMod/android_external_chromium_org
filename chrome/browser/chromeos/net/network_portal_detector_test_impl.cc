@@ -8,22 +8,32 @@
 
 namespace chromeos {
 
-NetworkPortalDetectorTestImpl::NetworkPortalDetectorTestImpl() {}
+NetworkPortalDetectorTestImpl::NetworkPortalDetectorTestImpl()
+    : strategy_id_(PortalDetectorStrategy::STRATEGY_ID_LOGIN_SCREEN) {
+}
 
 NetworkPortalDetectorTestImpl::~NetworkPortalDetectorTestImpl() {
 }
 
 void NetworkPortalDetectorTestImpl::SetDefaultNetworkPathForTesting(
-    const std::string& service_path) {
-  if (service_path.empty())
+    const std::string& service_path,
+    const std::string& guid) {
+  DVLOG(1) << "SetDefaultNetworkPathForTesting:"
+           << " service path: " << service_path
+           << " guid: " << guid;
+  if (service_path.empty()) {
     default_network_.reset();
-  else
+  } else {
     default_network_.reset(new NetworkState(service_path));
+    default_network_->SetGuid(guid);
+  }
 }
 
 void NetworkPortalDetectorTestImpl::SetDetectionResultsForTesting(
     const std::string& service_path,
     const CaptivePortalState& state) {
+  DVLOG(1) << "SetDetectionResultsForTesting: " << service_path << " = "
+           << NetworkPortalDetector::CaptivePortalStatusString(state.status);
   if (!service_path.empty())
     portal_state_map_[service_path] = state;
 }
@@ -65,10 +75,15 @@ void NetworkPortalDetectorTestImpl::RemoveObserver(Observer* observer) {
 
 NetworkPortalDetector::CaptivePortalState
 NetworkPortalDetectorTestImpl::GetCaptivePortalState(
-    const chromeos::NetworkState* network) {
-  if (!network || !portal_state_map_.count(network->path()))
+    const std::string& service_path) {
+  CaptivePortalStateMap::iterator it = portal_state_map_.find(service_path);
+  if (it == portal_state_map_.end()) {
+    DVLOG(2) << "GetCaptivePortalState Not found: " << service_path;
     return CaptivePortalState();
-  return portal_state_map_[network->path()];
+  }
+  DVLOG(2) << "GetCaptivePortalState: " << service_path << " = "
+           << CaptivePortalStatusString(it->second.status);
+  return it->second;
 }
 
 bool NetworkPortalDetectorTestImpl::IsEnabled() {
@@ -82,10 +97,9 @@ bool NetworkPortalDetectorTestImpl::StartDetectionIfIdle() {
   return false;
 }
 
-void NetworkPortalDetectorTestImpl::EnableLazyDetection() {
-}
-
-void NetworkPortalDetectorTestImpl::DisableLazyDetection() {
+void NetworkPortalDetectorTestImpl::SetStrategy(
+    PortalDetectorStrategy::StrategyId id) {
+  strategy_id_ = id;
 }
 
 }  // namespace chromeos

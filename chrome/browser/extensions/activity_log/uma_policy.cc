@@ -6,35 +6,55 @@
 
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/active_script_controller.h"
 #include "chrome/browser/extensions/activity_log/activity_action_constants.h"
+#include "chrome/browser/extensions/activity_log/ad_network_database.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/extensions/dom_action_types.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/dom_action_types.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
+
+namespace extensions {
 
 namespace {
 
 // For convenience.
-const int kNoStatus           = extensions::UmaPolicy::NONE;
-const int kContentScript      = 1 << extensions::UmaPolicy::CONTENT_SCRIPT;
-const int kReadDom            = 1 << extensions::UmaPolicy::READ_DOM;
-const int kModifiedDom        = 1 << extensions::UmaPolicy::MODIFIED_DOM;
-const int kDomMethod          = 1 << extensions::UmaPolicy::DOM_METHOD;
-const int kDocumentWrite      = 1 << extensions::UmaPolicy::DOCUMENT_WRITE;
-const int kInnerHtml          = 1 << extensions::UmaPolicy::INNER_HTML;
-const int kCreatedScript      = 1 << extensions::UmaPolicy::CREATED_SCRIPT;
-const int kCreatedIframe      = 1 << extensions::UmaPolicy::CREATED_IFRAME;
-const int kCreatedDiv         = 1 << extensions::UmaPolicy::CREATED_DIV;
-const int kCreatedLink        = 1 << extensions::UmaPolicy::CREATED_LINK;
-const int kCreatedInput       = 1 << extensions::UmaPolicy::CREATED_INPUT;
-const int kCreatedEmbed       = 1 << extensions::UmaPolicy::CREATED_EMBED;
-const int kCreatedObject      = 1 << extensions::UmaPolicy::CREATED_OBJECT;
+const int kNoStatus           = UmaPolicy::NONE;
+const int kContentScript      = 1 << UmaPolicy::CONTENT_SCRIPT;
+const int kReadDom            = 1 << UmaPolicy::READ_DOM;
+const int kModifiedDom        = 1 << UmaPolicy::MODIFIED_DOM;
+const int kDomMethod          = 1 << UmaPolicy::DOM_METHOD;
+const int kDocumentWrite      = 1 << UmaPolicy::DOCUMENT_WRITE;
+const int kInnerHtml          = 1 << UmaPolicy::INNER_HTML;
+const int kCreatedScript      = 1 << UmaPolicy::CREATED_SCRIPT;
+const int kCreatedIframe      = 1 << UmaPolicy::CREATED_IFRAME;
+const int kCreatedDiv         = 1 << UmaPolicy::CREATED_DIV;
+const int kCreatedLink        = 1 << UmaPolicy::CREATED_LINK;
+const int kCreatedInput       = 1 << UmaPolicy::CREATED_INPUT;
+const int kCreatedEmbed       = 1 << UmaPolicy::CREATED_EMBED;
+const int kCreatedObject      = 1 << UmaPolicy::CREATED_OBJECT;
+const int kAdInjected         = 1 << UmaPolicy::AD_INJECTED;
+const int kAdRemoved          = 1 << UmaPolicy::AD_REMOVED;
+const int kAdReplaced         = 1 << UmaPolicy::AD_REPLACED;
+const int kAdLikelyInjected   = 1 << UmaPolicy::AD_LIKELY_INJECTED;
+const int kAdLikelyReplaced   = 1 << UmaPolicy::AD_LIKELY_REPLACED;
+
+// A mask of all the ad injection flags.
+const int kAnyAdActivity = kAdInjected |
+                           kAdRemoved |
+                           kAdReplaced |
+                           kAdLikelyInjected |
+                           kAdLikelyReplaced;
 
 }  // namespace
-
-namespace extensions {
 
 // Class constants, also used in testing. --------------------------------------
 
@@ -135,31 +155,80 @@ int UmaPolicy::MatchActionToStatus(scoped_refptr<Action> action) {
       ret_bit |= kCreatedObject;
     }
   }
+
+  const Action::InjectionType ad_injection =
+      action->DidInjectAd(g_browser_process->rappor_service());
+  switch (ad_injection) {
+    case Action::INJECTION_NEW_AD:
+      ret_bit |= kAdInjected;
+      break;
+    case Action::INJECTION_REMOVED_AD:
+      ret_bit |= kAdRemoved;
+      break;
+    case Action::INJECTION_REPLACED_AD:
+      ret_bit |= kAdReplaced;
+      break;
+    case Action::INJECTION_LIKELY_NEW_AD:
+      ret_bit |= kAdLikelyInjected;
+      break;
+    case Action::INJECTION_LIKELY_REPLACED_AD:
+      ret_bit |= kAdLikelyReplaced;
+      break;
+    case Action::NO_AD_INJECTION:
+      break;
+    case Action::NUM_INJECTION_TYPES:
+      NOTREACHED();
+  }
+
   return ret_bit;
 }
 
-void UmaPolicy::HistogramOnClose(const std::string& url) {
+void UmaPolicy::HistogramOnClose(const std::string& cleaned_url,
+                                 content::WebContents* web_contents) {
   // Let's try to avoid histogramming useless URLs.
-  if (url == "about:blank" || url.empty() || url == "chrome://newtab/")
+  if (cleaned_url.empty() || cleaned_url == url::kAboutBlankURL ||
+      cleaned_url == chrome::kChromeUINewTabURL)
     return;
 
-    int statuses[MAX_STATUS-1];
+  int statuses[MAX_STATUS - 1];
   std::memset(statuses, 0, sizeof(statuses));
 
-  SiteMap::iterator site_lookup = url_status_.find(url);
-  ExtensionMap exts = site_lookup->second;
-  ExtensionMap::iterator ext_iter;
-  for (ext_iter = exts.begin(); ext_iter != exts.end(); ++ext_iter) {
+  ActiveScriptController* active_script_controller =
+      ActiveScriptController::GetForWebContents(web_contents);
+  SiteMap::iterator site_lookup = url_status_.find(cleaned_url);
+  const ExtensionMap& exts = site_lookup->second;
+  std::set<std::string> ad_injectors;
+  for (ExtensionMap::const_iterator ext_iter = exts.begin();
+       ext_iter != exts.end();
+       ++ext_iter) {
     if (ext_iter->first == kNumberOfTabs)
       continue;
     for (int i = NONE + 1; i < MAX_STATUS; ++i) {
       if (ext_iter->second & (1 << i))
         statuses[i-1]++;
     }
+
+    if (ext_iter->second & kAnyAdActivity)
+      ad_injectors.insert(ext_iter->first);
+  }
+  if (active_script_controller)
+    active_script_controller->OnAdInjectionDetected(ad_injectors);
+
+  ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
+  for (std::set<std::string>::const_iterator iter = ad_injectors.begin();
+       iter != ad_injectors.end();
+       ++iter) {
+    const Extension* extension =
+        registry->GetExtensionById(*iter, ExtensionRegistry::EVERYTHING);
+    if (extension) {
+      UMA_HISTOGRAM_ENUMERATION("Extensions.AdInjection.InstallLocation",
+                                extension->location(),
+                                Manifest::NUM_LOCATIONS);
+    }
   }
 
   std::string prefix = "ExtensionActivity.";
-  if (GURL(url).host() != "www.google.com") {
+  if (GURL(cleaned_url).host() != "www.google.com") {
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CONTENT_SCRIPT),
                              statuses[CONTENT_SCRIPT - 1]);
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(READ_DOM),
@@ -186,6 +255,16 @@ void UmaPolicy::HistogramOnClose(const std::string& url) {
                              statuses[CREATED_EMBED - 1]);
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CREATED_OBJECT),
                              statuses[CREATED_OBJECT - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_INJECTED),
+                             statuses[AD_INJECTED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REMOVED),
+                             statuses[AD_REMOVED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REPLACED),
+                             statuses[AD_REPLACED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_LIKELY_INJECTED),
+                             statuses[AD_LIKELY_INJECTED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_LIKELY_REPLACED),
+                             statuses[AD_LIKELY_REPLACED - 1]);
   } else {
     prefix += "Google.";
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CONTENT_SCRIPT),
@@ -214,6 +293,16 @@ void UmaPolicy::HistogramOnClose(const std::string& url) {
                              statuses[CREATED_EMBED - 1]);
     UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(CREATED_OBJECT),
                              statuses[CREATED_OBJECT - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_INJECTED),
+                             statuses[AD_INJECTED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REMOVED),
+                             statuses[AD_REMOVED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_REPLACED),
+                             statuses[AD_REPLACED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_LIKELY_INJECTED),
+                             statuses[AD_LIKELY_INJECTED - 1]);
+    UMA_HISTOGRAM_COUNTS_100(prefix + GetHistogramName(AD_LIKELY_REPLACED),
+                             statuses[AD_LIKELY_REPLACED - 1]);
   }
 }
 
@@ -253,7 +342,7 @@ void UmaPolicy::TabChangedAt(content::WebContents* contents,
 
   // Is this an existing tab whose URL has changed.
   if (tab_it != tab_list_.end()) {
-    CleanupClosedPage(tab_it->second);
+    CleanupClosedPage(tab_it->second, contents);
     tab_list_.erase(tab_id);
   }
 
@@ -278,23 +367,24 @@ void UmaPolicy::TabClosingAt(TabStripModel* tab_strip_model,
   int32 tab_id = SessionID::IdForTab(contents);
   std::map<int, std::string>::iterator tab_it = tab_list_.find(tab_id);
   if (tab_it != tab_list_.end())
-   tab_list_.erase(tab_id);
+    tab_list_.erase(tab_id);
 
-  CleanupClosedPage(url);
+  CleanupClosedPage(url, contents);
 }
 
 void UmaPolicy::SetupOpenedPage(const std::string& url) {
   url_status_[url][kNumberOfTabs]++;
 }
 
-void UmaPolicy::CleanupClosedPage(const std::string& url) {
-  SiteMap::iterator old_site_lookup = url_status_.find(url);
+void UmaPolicy::CleanupClosedPage(const std::string& cleaned_url,
+                                  content::WebContents* web_contents) {
+  SiteMap::iterator old_site_lookup = url_status_.find(cleaned_url);
   if (old_site_lookup == url_status_.end())
     return;
   old_site_lookup->second[kNumberOfTabs]--;
   if (old_site_lookup->second[kNumberOfTabs] == 0) {
-    HistogramOnClose(url);
-    url_status_.erase(url);
+    HistogramOnClose(cleaned_url, web_contents);
+    url_status_.erase(cleaned_url);
   }
 }
 
@@ -305,7 +395,7 @@ void UmaPolicy::CleanupClosedPage(const std::string& url) {
 // We convert to a string in the hopes that this is faster than Replacements.
 std::string UmaPolicy::CleanURL(const GURL& gurl) {
   if (gurl.spec().empty())
-    return GURL("about:blank").spec();
+    return GURL(url::kAboutBlankURL).spec();
   if (!gurl.is_valid())
     return gurl.spec();
   if (!gurl.has_ref())
@@ -352,6 +442,16 @@ const char* UmaPolicy::GetHistogramName(PageStatus status) {
       return "CreatedEmbed";
     case CREATED_OBJECT:
       return "CreatedObject";
+    case AD_INJECTED:
+      return "AdInjected";
+    case AD_REMOVED:
+      return "AdRemoved";
+    case AD_REPLACED:
+      return "AdReplaced";
+    case AD_LIKELY_INJECTED:
+      return "AdLikelyInjected";
+    case AD_LIKELY_REPLACED:
+      return "AdLikelyReplaced";
     case NONE:
     case MAX_STATUS:
     default:

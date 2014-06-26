@@ -7,65 +7,128 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/password_manager/content_password_manager_driver.h"
-#include "chrome/browser/password_manager/password_manager_client.h"
+#include "components/password_manager/content/browser/content_password_manager_driver.h"
+#include "components/password_manager/core/browser/password_manager_client.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "ui/gfx/rect.h"
 
-class PasswordGenerationManager;
-class PasswordManager;
 class Profile;
+
+namespace autofill {
+class PasswordGenerationPopupObserver;
+class PasswordGenerationPopupControllerImpl;
+}
 
 namespace content {
 class WebContents;
 }
 
+namespace password_manager {
+class PasswordGenerationManager;
+class PasswordManager;
+}
+
 // ChromePasswordManagerClient implements the PasswordManagerClient interface.
 class ChromePasswordManagerClient
-    : public PasswordManagerClient,
+    : public password_manager::PasswordManagerClient,
+      public content::WebContentsObserver,
       public content::WebContentsUserData<ChromePasswordManagerClient> {
  public:
   virtual ~ChromePasswordManagerClient();
 
   // PasswordManagerClient implementation.
-  virtual void PromptUserToSavePassword(PasswordFormManager* form_to_save)
-      OVERRIDE;
+  virtual bool IsAutomaticPasswordSavingEnabled() const OVERRIDE;
+  virtual void PromptUserToSavePassword(
+      password_manager::PasswordFormManager* form_to_save) OVERRIDE;
   virtual void PasswordWasAutofilled(
+      const autofill::PasswordFormMap& best_matches) const OVERRIDE;
+  virtual void PasswordAutofillWasBlocked(
       const autofill::PasswordFormMap& best_matches) const OVERRIDE;
   virtual void AuthenticateAutofillAndFillForm(
       scoped_ptr<autofill::PasswordFormFillData> fill_data) OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
-  virtual PasswordStore* GetPasswordStore() OVERRIDE;
-  virtual PasswordManagerDriver* GetDriver() OVERRIDE;
+  virtual password_manager::PasswordStore* GetPasswordStore() OVERRIDE;
+  virtual password_manager::PasswordManagerDriver* GetDriver() OVERRIDE;
   virtual base::FieldTrial::Probability GetProbabilityForExperiment(
       const std::string& experiment_name) OVERRIDE;
   virtual bool IsPasswordSyncEnabled() OVERRIDE;
+  virtual void OnLogRouterAvailabilityChanged(bool router_can_be_used) OVERRIDE;
+  virtual void LogSavePasswordProgress(const std::string& text) OVERRIDE;
+  virtual bool IsLoggingActive() const OVERRIDE;
+
+  // Hides any visible generation UI.
+  void HidePasswordGenerationPopup();
+
+  static void CreateForWebContentsWithAutofillClient(
+      content::WebContents* contents,
+      autofill::AutofillClient* autofill_client);
 
   // Convenience method to allow //chrome code easy access to a PasswordManager
   // from a WebContents instance.
-  static PasswordManager* GetManagerFromWebContents(
+  static password_manager::PasswordManager* GetManagerFromWebContents(
       content::WebContents* contents);
 
   // Convenience method to allow //chrome code easy access to a
   // PasswordGenerationManager from a WebContents instance.
-  static PasswordGenerationManager* GetGenerationManagerFromWebContents(
-      content::WebContents* contents);
+  static password_manager::PasswordGenerationManager*
+      GetGenerationManagerFromWebContents(content::WebContents* contents);
+
+  // Observer for PasswordGenerationPopup events. Used for testing.
+  void SetTestObserver(autofill::PasswordGenerationPopupObserver* observer);
+
+  // Returns true if the bubble UI is enabled, and false if we're still using
+  // the sad old Infobar UI.
+  static bool IsTheHotNewBubbleUIEnabled();
 
  private:
-  explicit ChromePasswordManagerClient(content::WebContents* web_contents);
+  ChromePasswordManagerClient(content::WebContents* web_contents,
+                              autofill::AutofillClient* autofill_client);
   friend class content::WebContentsUserData<ChromePasswordManagerClient>;
+
+  // content::WebContentsObserver overrides.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Callback method to be triggered when authentication is successful for a
   // given password authentication request.  If authentication is disabled or
   // not supported, this will be triggered directly.
   void CommitFillPasswordForm(autofill::PasswordFormFillData* fill_data);
 
-  Profile* GetProfile();
+  // Given |bounds| in the renderers coordinate system, return the same bounds
+  // in the screens coordinate system.
+  gfx::RectF GetBoundsInScreenSpace(const gfx::RectF& bounds);
 
-  content::WebContents* web_contents_;
-  ContentPasswordManagerDriver driver_;
+  // Causes the password generation UI to be shown for the specified form.
+  // The popup will be anchored at |element_bounds|. The generated password
+  // will be no longer than |max_length|.
+  void ShowPasswordGenerationPopup(const gfx::RectF& bounds,
+                                   int max_length,
+                                   const autofill::PasswordForm& form);
+
+  // Causes the password editing UI to be shown anchored at |element_bounds|.
+  void ShowPasswordEditingPopup(
+      const gfx::RectF& bounds, const autofill::PasswordForm& form);
+
+  // Sends a message to the renderer with the current value of
+  // |can_use_log_router_|.
+  void NotifyRendererOfLoggingAvailability();
+
+  Profile* const profile_;
+
+  password_manager::ContentPasswordManagerDriver driver_;
+
+  // Observer for password generation popup.
+  autofill::PasswordGenerationPopupObserver* observer_;
+
+  // Controls the popup
+  base::WeakPtr<
+    autofill::PasswordGenerationPopupControllerImpl> popup_controller_;
 
   // Allows authentication callbacks to be destroyed when this client is gone.
   base::WeakPtrFactory<ChromePasswordManagerClient> weak_factory_;
+
+  // True if |this| is registered with some LogRouter which can accept logs.
+  bool can_use_log_router_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromePasswordManagerClient);
 };

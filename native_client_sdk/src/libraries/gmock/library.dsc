@@ -1,5 +1,5 @@
 {
-  'TOOLS': ['newlib', 'glibc', 'pnacl', 'linux', 'win'],
+  'TOOLS': ['bionic', 'newlib', 'glibc', 'pnacl', 'linux', 'win'],
   'SEARCH': [
     '../../../../testing/gmock/include/gmock',
     '../../../../testing/gmock/include/gmock/internal',
@@ -18,6 +18,7 @@
       ],
       #   gmock-spec-builders.cc:248: error: enumeration value ‘FAIL’ not handled in switch
       'CXXFLAGS': ['-Wno-switch-enum'],
+      'DEPS': ['gtest'],
     }
   ],
   'HEADERS': [

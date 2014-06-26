@@ -12,6 +12,7 @@
 #include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_vector.h"
 #include "base/task_runner.h"
 #include "base/threading/thread_checker.h"
 #include "sync/base/sync_export.h"
@@ -20,6 +21,8 @@
 #include "sync/internal_api/public/configure_reason.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 #include "sync/internal_api/public/engine/sync_status.h"
+#include "sync/internal_api/public/events/protocol_event.h"
+#include "sync/internal_api/public/sync_context_proxy.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/internal_api/public/util/report_unrecoverable_error_function.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
@@ -34,18 +37,21 @@ class EncryptedData;
 namespace syncer {
 
 class BaseTransaction;
+class CancelationSignal;
 class DataTypeDebugInfoListener;
 class Encryptor;
-struct Experiments;
 class ExtensionsActivity;
 class HttpPostProviderFactory;
 class InternalComponentsFactory;
 class JsBackend;
 class JsEventHandler;
+class ProtocolEvent;
+class SyncContextProxy;
 class SyncEncryptionHandler;
 class SyncScheduler;
+class TypeDebugInfoObserver;
+struct Experiments;
 struct UserShare;
-class CancelationSignal;
 
 namespace sessions {
 class SyncSessionSnapshot;
@@ -184,34 +190,6 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
     // notification is illegal!
     // WARNING: Calling methods on the SyncManager before receiving this
     // message, unless otherwise specified, produces undefined behavior.
-    //
-    // |js_backend| is what about:sync interacts with.  It can emit
-    // the following events:
-
-    /**
-     * @param {{ enabled: boolean }} details A dictionary containing:
-     *     - enabled: whether or not notifications are enabled.
-     */
-    // function onNotificationStateChange(details);
-
-    /**
-     * @param {{ changedTypes: Array.<string> }} details A dictionary
-     *     containing:
-     *     - changedTypes: a list of types (as strings) for which there
-             are new updates.
-     */
-    // function onIncomingNotification(details);
-
-    // Also, it responds to the following messages (all other messages
-    // are ignored):
-
-    /**
-     * Gets the current notification state.
-     *
-     * @param {function(boolean)} callback Called with whether or not
-     *     notifications are enabled.
-     */
-    // function getNotificationState(callback);
 
     virtual void OnInitializationComplete(
         const WeakHandle<JsBackend>& js_backend,
@@ -223,6 +201,8 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
         const SyncProtocolError& sync_protocol_error) = 0;
 
     virtual void OnMigrationRequested(ModelTypeSet types) = 0;
+
+    virtual void OnProtocolEvent(const ProtocolEvent& event) = 0;
 
    protected:
     virtual ~Observer();
@@ -278,10 +258,6 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) = 0;
-
-  // Throw an unrecoverable error from a transaction (mostly used for
-  // testing).
-  virtual void ThrowUnrecoverableError() = 0;
 
   virtual ModelTypeSet InitialSyncEndedTypes() = 0;
 
@@ -355,6 +331,9 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   // May be called from any thread.
   virtual UserShare* GetUserShare() = 0;
 
+  // Returns an instance of the main interface for non-blocking sync types.
+  virtual syncer::SyncContextProxy* GetSyncContextProxy() = 0;
+
   // Returns the cache_guid of the currently open database.
   // Requires that the SyncManager be initialized.
   virtual const std::string cache_guid() = 0;
@@ -371,8 +350,26 @@ class SYNC_EXPORT SyncManager : public syncer::InvalidationHandler {
   // Returns the SyncManager's encryption handler.
   virtual SyncEncryptionHandler* GetEncryptionHandler() = 0;
 
+  virtual scoped_ptr<base::ListValue> GetAllNodesForType(
+      syncer::ModelType type) = 0;
+
   // Ask the SyncManager to fetch updates for the given types.
   virtual void RefreshTypes(ModelTypeSet types) = 0;
+
+  // Returns any buffered protocol events.  Does not clear the buffer.
+  virtual ScopedVector<syncer::ProtocolEvent> GetBufferedProtocolEvents() = 0;
+
+  // Functions to manage registrations of DebugInfoObservers.
+  virtual void RegisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+  virtual void UnregisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+  virtual bool HasDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) = 0;
+
+  // Request that all current counter values be emitted as though they had just
+  // been updated.  Useful for initializing new observers' state.
+  virtual void RequestEmitDebugInfo() = 0;
 };
 
 }  // namespace syncer

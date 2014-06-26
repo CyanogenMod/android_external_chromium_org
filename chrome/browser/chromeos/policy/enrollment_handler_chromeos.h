@@ -12,7 +12,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/device_cloud_policy_initializer.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_validator.h"
 #include "chrome/browser/chromeos/policy/enterprise_install_attributes.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
@@ -23,15 +23,14 @@ namespace base {
 class SequencedTaskRunner;
 }
 
-namespace chromeos {
-class DeviceOAuth2TokenService;
-}
-
 namespace enterprise_management {
 class PolicyFetchResponse;
 }
 
 namespace policy {
+
+class DeviceCloudPolicyStoreChromeOS;
+class ServerBackedStateKeysBroker;
 
 // Implements the logic that establishes enterprise enrollment for Chromium OS
 // devices. The process is as follows:
@@ -48,9 +47,9 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
                                   public CloudPolicyStore::Observer,
                                   public gaia::GaiaOAuthClient::Delegate {
  public:
-  typedef DeviceCloudPolicyManagerChromeOS::AllowedDeviceModes
+  typedef DeviceCloudPolicyInitializer::AllowedDeviceModes
       AllowedDeviceModes;
-  typedef DeviceCloudPolicyManagerChromeOS::EnrollmentCallback
+  typedef DeviceCloudPolicyInitializer::EnrollmentCallback
       EnrollmentCallback;
 
   // |store| and |install_attributes| must remain valid for the life time of the
@@ -61,6 +60,7 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
   EnrollmentHandlerChromeOS(
       DeviceCloudPolicyStoreChromeOS* store,
       EnterpriseInstallAttributes* install_attributes,
+      ServerBackedStateKeysBroker* state_keys_broker,
       scoped_ptr<CloudPolicyClient> client,
       scoped_refptr<base::SequencedTaskRunner> background_task_runner,
       const std::string& auth_token,
@@ -102,6 +102,7 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
   // to be listed in the order they are traversed in.
   enum EnrollmentStep {
     STEP_PENDING,             // Not started yet.
+    STEP_STATE_KEYS,          // Waiting for state keys to become available.
     STEP_LOADING_STORE,       // Waiting for |store_| to initialize.
     STEP_REGISTRATION,        // Currently registering the client.
     STEP_POLICY_FETCH,        // Fetching policy.
@@ -113,6 +114,9 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
     STEP_STORE_POLICY,        // Storing policy and API refresh token.
     STEP_FINISHED,            // Enrollment process finished, no further action.
   };
+
+  // Handles the response to a request for server-backed state keys.
+  void CheckStateKeys(const std::vector<std::string>& state_keys);
 
   // Starts registration if the store is initialized.
   void AttemptRegistration();
@@ -136,17 +140,18 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
       const std::string& device_id,
       EnterpriseInstallAttributes::LockResult lock_result);
 
+  // Handles completion of the robot token store operation.
+  void HandleRobotAuthTokenStored(bool result);
+
   // Drops any ongoing actions.
   void Stop();
 
   // Reports the result of the enrollment process to the initiator.
   void ReportResult(EnrollmentStatus status);
 
-  // Continuation of OnStoreLoaded().
-  void DidGetTokenService(chromeos::DeviceOAuth2TokenService* token_service);
-
   DeviceCloudPolicyStoreChromeOS* store_;
   EnterpriseInstallAttributes* install_attributes_;
+  ServerBackedStateKeysBroker* state_keys_broker_;
   scoped_ptr<CloudPolicyClient> client_;
   scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
   scoped_ptr<gaia::GaiaOAuthClient> gaia_oauth_client_;
@@ -155,6 +160,7 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
   std::string client_id_;
   bool is_auto_enrollment_;
   std::string requisition_;
+  std::string current_state_key_;
   std::string refresh_token_;
   AllowedDeviceModes allowed_device_modes_;
   EnrollmentCallback completion_callback_;
@@ -174,7 +180,6 @@ class EnrollmentHandlerChromeOS : public CloudPolicyClient::Observer,
   // initialization.
   int lockbox_init_duration_;
 
-  // Used for locking the device and getting the OAuth2 token service.
   base::WeakPtrFactory<EnrollmentHandlerChromeOS> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(EnrollmentHandlerChromeOS);

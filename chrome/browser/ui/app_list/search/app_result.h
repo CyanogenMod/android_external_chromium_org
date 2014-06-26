@@ -8,18 +8,18 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/extension_icon_image.h"
-#include "chrome/browser/extensions/install_observer.h"
 #include "chrome/browser/ui/app_list/app_context_menu_delegate.h"
 #include "chrome/browser/ui/app_list/search/chrome_search_result.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
+#include "extensions/browser/extension_icon_image.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class AppListControllerDelegate;
 class ExtensionEnableFlow;
 class Profile;
 
 namespace extensions {
-class InstallTracker;
+class ExtensionRegistry;
 }
 
 namespace app_list {
@@ -32,7 +32,7 @@ class AppResult : public ChromeSearchResult,
                   public extensions::IconImage::Observer,
                   public AppContextMenuDelegate,
                   public ExtensionEnableFlowDelegate,
-                  public extensions::InstallObserver {
+                  public extensions::ExtensionRegistryObserver {
  public:
   AppResult(Profile* profile,
             const std::string& app_id,
@@ -50,8 +50,8 @@ class AppResult : public ChromeSearchResult,
   virtual ChromeSearchResultType GetType() OVERRIDE;
 
  private:
-  void StartObservingInstall();
-  void StopObservingInstall();
+  void StartObservingExtensionRegistry();
+  void StopObservingExtensionRegistry();
 
   // Checks if extension is disabled and if enable flow should be started.
   // Returns true if extension enable flow is started or there is already one
@@ -72,24 +72,14 @@ class AppResult : public ChromeSearchResult,
   virtual void ExtensionEnableFlowFinished() OVERRIDE;
   virtual void ExtensionEnableFlowAborted(bool user_initiated) OVERRIDE;
 
-  // extensions::InstallObserver overrides:
-  virtual void OnBeginExtensionInstall(
-      const ExtensionInstallParams& params) OVERRIDE;
-  virtual void OnDownloadProgress(const std::string& extension_id,
-                                  int percent_downloaded) OVERRIDE;
-  virtual void OnInstallFailure(const std::string& extension_id) OVERRIDE;
-  virtual void OnExtensionInstalled(
-      const extensions::Extension* extension) OVERRIDE;
+  // extensions::ExtensionRegistryObserver override:
   virtual void OnExtensionLoaded(
-      const extensions::Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
       const extensions::Extension* extension) OVERRIDE;
   virtual void OnExtensionUninstalled(
+      content::BrowserContext* browser_context,
       const extensions::Extension* extension) OVERRIDE;
-  virtual void OnAppsReordered() OVERRIDE;
-  virtual void OnAppInstalledToAppList(
-      const std::string& extension_id) OVERRIDE;
-  virtual void OnShutdown() OVERRIDE;
+  virtual void OnShutdown(extensions::ExtensionRegistry* registry) OVERRIDE;
 
   Profile* profile_;
   const std::string app_id_;
@@ -100,7 +90,7 @@ class AppResult : public ChromeSearchResult,
   scoped_ptr<AppContextMenu> context_menu_;
   scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;
 
-  extensions::InstallTracker* install_tracker_;  // Not owned.
+  extensions::ExtensionRegistry* extension_registry_;
 
   DISALLOW_COPY_AND_ASSIGN(AppResult);
 };

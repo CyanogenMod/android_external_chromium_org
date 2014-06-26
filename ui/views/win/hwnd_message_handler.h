@@ -17,8 +17,9 @@
 #include "base/strings/string16.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/win_util.h"
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/base/win/window_event_target.h"
 #include "ui/events/event.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/sequential_id_generator.h"
@@ -30,6 +31,10 @@ namespace gfx {
 class Canvas;
 class ImageSkia;
 class Insets;
+}
+
+namespace ui  {
+class ViewProp;
 }
 
 namespace views {
@@ -55,7 +60,7 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
 // IsMsgHandled() from a member function to a define that checks if the weak
 // factory is still valid in addition to the member. Together these allow for
 // |this| to be deleted during dispatch.
-#define IsMsgHandled() !ref.get() || msg_handled_
+#define IsMsgHandled() !weak_factory_.GetWeakPtr().get() || msg_handled_
 
 #define BEGIN_SAFE_MSG_MAP_EX(the_class) \
  private: \
@@ -73,10 +78,12 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
                             LPARAM l_param, \
                             LRESULT& l_result, \
                             DWORD msg_map_id = 0) { \
+    base::WeakPtr<HWNDMessageHandler> ref(weak_factory_.GetWeakPtr()); \
     BOOL old_msg_handled = msg_handled_; \
     BOOL ret = _ProcessWindowMessage(hwnd, msg, w_param, l_param, l_result, \
                                      msg_map_id); \
-    msg_handled_ = old_msg_handled; \
+    if (ref.get()) \
+      msg_handled_ = old_msg_handled; \
     return ret; \
   } \
   BOOL _ProcessWindowMessage(HWND hWnd, \
@@ -104,7 +111,8 @@ const int WM_NCUAHDRAWFRAME = 0xAF;
 // TODO(beng): This object should eventually *become* the WindowImpl.
 class VIEWS_EXPORT HWNDMessageHandler :
     public gfx::WindowImpl,
-    public internal::InputMethodDelegate {
+    public internal::InputMethodDelegate,
+    public ui::WindowEventTarget {
  public:
   explicit HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate);
   ~HWNDMessageHandler();
@@ -124,7 +132,10 @@ class VIEWS_EXPORT HWNDMessageHandler :
   void GetWindowPlacement(gfx::Rect* bounds,
                           ui::WindowShowState* show_state) const;
 
-  void SetBounds(const gfx::Rect& bounds_in_pixels);
+  // Sets the bounds of the HWND to |bounds_in_pixels|. If the HWND size is not
+  // changed, |force_size_changed| determines if we should pretend it is.
+  void SetBounds(const gfx::Rect& bounds_in_pixels, bool force_size_changed);
+
   void SetSize(const gfx::Size& size);
   void CenterWindow(const gfx::Size& size);
 
@@ -204,11 +215,42 @@ class VIEWS_EXPORT HWNDMessageHandler :
                             WPARAM w_param,
                             LPARAM l_param) OVERRIDE;
 
-  // Returns the auto-hide edges of the appbar. See Appbar::GetAutohideEdges()
-  // for details. If the edges change OnAppbarAutohideEdgesChanged() is called.
+  // Overridden from WindowEventTarget
+  virtual LRESULT HandleMouseMessage(unsigned int message,
+                                     WPARAM w_param,
+                                     LPARAM l_param,
+                                     bool* handled) OVERRIDE;
+  virtual LRESULT HandleKeyboardMessage(unsigned int message,
+                                        WPARAM w_param,
+                                        LPARAM l_param,
+                                        bool* handled) OVERRIDE;
+  virtual LRESULT HandleTouchMessage(unsigned int message,
+                                     WPARAM w_param,
+                                     LPARAM l_param,
+                                     bool* handled) OVERRIDE;
+
+  virtual LRESULT HandleScrollMessage(unsigned int message,
+                                      WPARAM w_param,
+                                      LPARAM l_param,
+                                      bool* handled) OVERRIDE;
+
+  virtual LRESULT HandleNcHitTestMessage(unsigned int message,
+                                         WPARAM w_param,
+                                         LPARAM l_param,
+                                         bool* handled) OVERRIDE;
+
+  virtual LRESULT HandleSysCommand(unsigned int message,
+                                   WPARAM w_param,
+                                   LPARAM l_param,
+                                   bool* handled);
+
+  // Returns the auto-hide edges of the appbar. See
+  // ViewsDelegate::GetAppbarAutohideEdges() for details. If the edges change,
+  // OnAppbarAutohideEdgesChanged() is called.
   int GetAppbarAutohideEdges(HMONITOR monitor);
 
-  // Callback if the autohide edges have changed. See Appbar for details.
+  // Callback if the autohide edges have changed. See
+  // ViewsDelegate::GetAppbarAutohideEdges() for details.
   void OnAppbarAutohideEdgesChanged();
 
   // Can be called after the delegate has had the opportunity to set focus and
@@ -254,9 +296,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
   LRESULT DefWindowProcWithRedrawLock(UINT message,
                                       WPARAM w_param,
                                       LPARAM l_param);
-
-  // Notifies any owned windows that we're closing.
-  void NotifyOwnedWindowsParentClosing();
 
   // Lock or unlock the window from being able to redraw itself in response to
   // updates to its invalid region.
@@ -427,6 +466,28 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // of a touch event.
   void HandleTouchEvents(const TouchEvents& touch_events);
 
+  // Resets the flag which indicates that we are in the context of a touch down
+  // event.
+  void ResetTouchDownContext();
+
+  // Helper to handle mouse events.
+  // The |message|, |w_param|, |l_param| parameters identify the Windows mouse
+  // message and its parameters respectively.
+  // The |track_mouse| parameter indicates if we should track the mouse.
+  LRESULT HandleMouseEventInternal(UINT message,
+                                   WPARAM w_param,
+                                   LPARAM l_param,
+                                   bool track_mouse);
+
+  // Returns true if the mouse message passed in is an OS synthesized mouse
+  // message.
+  // |message| identifies the mouse message.
+  // |message_time| is the time when the message occurred.
+  // |l_param| indicates the location of the mouse message.
+  bool IsSynthesizedMouseMessage(unsigned int message,
+                                 int message_time,
+                                 LPARAM l_param);
+
   HWNDMessageHandlerDelegate* delegate_;
 
   scoped_ptr<FullscreenHandler> fullscreen_handler_;
@@ -437,10 +498,6 @@ class VIEWS_EXPORT HWNDMessageHandler :
   bool remove_standard_frame_;
 
   bool use_system_default_icon_;
-
-  // Whether the focus should be restored next time we get enabled.  Needed to
-  // restore focus correctly when Windows modal dialogs are displayed.
-  bool restore_focus_when_enabled_;
 
   // Whether all ancestors have been enabled. This is only used if is_modal_ is
   // true.
@@ -539,13 +596,29 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Set to true if we are in the context of a sizing operation.
   bool in_size_loop_;
 
+  // Stores a pointer to the WindowEventTarget interface implemented by this
+  // class. Allows callers to retrieve the interface pointer.
+  scoped_ptr<ui::ViewProp> prop_window_target_;
+
+  // Number of active touch down contexts. This is incremented on touch down
+  // events and decremented later using a delayed task.
+  // We need this to ignore WM_MOUSEACTIVATE messages generated in response to
+  // touch input. This is fine because activation still works correctly via
+  // native SetFocus calls invoked in the views code.
+  int touch_down_contexts_;
+
+  // Time the last touch message was received. Used to flag mouse messages
+  // synthesized by Windows for touch which are not flagged by the OS as
+  // synthesized mouse messages. For more information please refer to
+  // the IsMouseEventFromTouch function.
+  static long last_touch_message_time_;
+
+  // Time the last WM_MOUSEHWHEEL message is received. Please refer to the
+  // HandleMouseEventInternal function as to why this is needed.
+  long last_mouse_hwheel_time_;
+
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };
-
-// This window property if set on the window does not activate the window for a
-// touch based WM_MOUSEACTIVATE message.
-const wchar_t kIgnoreTouchMouseActivateForWindow[] =
-    L"Chrome.IgnoreMouseActivate";
 
 }  // namespace views
 

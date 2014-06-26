@@ -7,8 +7,8 @@
 #include "base/i18n/rtl.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -46,7 +46,6 @@ BookmarkContextMenu::BookmarkContextMenu(
       parent_widget_(parent_widget),
       menu_(new views::MenuItemView(this)),
       menu_runner_(new views::MenuRunner(menu_)),
-      parent_node_(parent),
       observer_(NULL),
       close_on_remove_(close_on_remove) {
 
@@ -68,12 +67,16 @@ void BookmarkContextMenu::RunMenuAt(const gfx::Point& point,
       content::NotificationService::NoDetails());
   // width/height don't matter here.
   if (menu_runner_->RunMenuAt(
-          parent_widget_, NULL, gfx::Rect(point.x(), point.y(), 0, 0),
-          views::MenuItemView::TOPLEFT, source_type,
+          parent_widget_,
+          NULL,
+          gfx::Rect(point.x(), point.y(), 0, 0),
+          views::MENU_ANCHOR_TOPLEFT,
+          source_type,
           (views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED |
            views::MenuRunner::CONTEXT_MENU)) ==
-      views::MenuRunner::MENU_DELETED)
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 void BookmarkContextMenu::SetPageNavigator(PageNavigator* navigator) {

@@ -13,11 +13,7 @@
 namespace local_discovery {
 
 struct PrivetLocalPrinterLister::DeviceContext {
- public:
-  DeviceContext() {
-  }
-
-  ~DeviceContext() {
+  DeviceContext() : has_local_printing(false) {
   }
 
   scoped_ptr<PrivetHTTPResolution> privet_resolution;
@@ -32,12 +28,10 @@ PrivetLocalPrinterLister::PrivetLocalPrinterLister(
     ServiceDiscoveryClient* service_discovery_client,
     net::URLRequestContextGetter* request_context,
     Delegate* delegate) : delegate_(delegate) {
-  privet_lister_.reset(new PrivetDeviceListerImpl(service_discovery_client,
-                                                  this,
-                                                  kPrivetSubtypePrinter));
+  privet_lister_.reset(
+      new PrivetDeviceListerImpl(service_discovery_client, this));
   privet_http_factory_ = PrivetHTTPAsynchronousFactory::CreateInstance(
-      service_discovery_client,
-      request_context);
+      service_discovery_client, request_context);
 }
 
 PrivetLocalPrinterLister::~PrivetLocalPrinterLister() {
@@ -56,6 +50,9 @@ void PrivetLocalPrinterLister::DeviceChanged(
     bool added,
     const std::string& name,
     const DeviceDescription& description) {
+  if (description.type != kPrivetTypePrinter)
+    return;
+
   DeviceContextMap::iterator i = device_contexts_.find(name);
 
   if (i != device_contexts_.end()) {
@@ -70,7 +67,7 @@ void PrivetLocalPrinterLister::DeviceChanged(
         name,
         description.address,
         base::Bind(&PrivetLocalPrinterLister::OnPrivetResolved,
-                   base::Unretained(this)));
+                   base::Unretained(this), name));
 
     device_contexts_[name] = context;
     context->privet_resolution->Start();
@@ -83,7 +80,13 @@ void PrivetLocalPrinterLister::DeviceCacheFlushed() {
 }
 
 void PrivetLocalPrinterLister::OnPrivetResolved(
+    const std::string& name,
     scoped_ptr<PrivetHTTPClient> http_client) {
+  if (!http_client) {
+    // Remove device if we can't resolve it.
+    device_contexts_.erase(name);
+    return;
+  }
   DeviceContextMap::iterator i = device_contexts_.find(http_client->GetName());
   DCHECK(i != device_contexts_.end());
 
@@ -98,7 +101,7 @@ void PrivetLocalPrinterLister::OnPrivetResolved(
 
 void PrivetLocalPrinterLister::OnPrivetInfoDone(
     DeviceContext* context,
-    std::string name,
+    const std::string& name,
     const base::DictionaryValue* json_value) {
   bool has_local_printing = false;
   const base::ListValue* api_list = NULL;

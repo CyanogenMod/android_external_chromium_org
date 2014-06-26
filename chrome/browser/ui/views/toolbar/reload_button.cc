@@ -9,7 +9,6 @@
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/search/search_model.h"
-#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -37,10 +36,8 @@ const int kReloadMenuItems[]  = {
 // static
 const char ReloadButton::kViewClassName[] = "ReloadButton";
 
-ReloadButton::ReloadButton(LocationBarView* location_bar,
-                           CommandUpdater* command_updater)
+ReloadButton::ReloadButton(CommandUpdater* command_updater)
     : ToolbarButton(this, CreateMenuModel()),
-      location_bar_(location_bar),
       command_updater_(command_updater),
       intended_mode_(MODE_RELOAD),
       visible_mode_(MODE_RELOAD),
@@ -114,7 +111,7 @@ const char* ReloadButton::GetClassName() const {
   return kViewClassName;
 }
 
-void ReloadButton::GetAccessibleState(ui::AccessibleViewState* state) {
+void ReloadButton::GetAccessibleState(ui::AXViewState* state) {
   if (menu_enabled_)
     ToolbarButton::GetAccessibleState(state);
   else
@@ -220,16 +217,8 @@ ui::SimpleMenuModel* ReloadButton::CreateMenuModel() {
 void ReloadButton::ExecuteBrowserCommand(int command, int event_flags) {
   if (!command_updater_)
     return;
-
-  WindowOpenDisposition disposition =
-      ui::DispositionFromEventFlags(event_flags);
-  if ((disposition == CURRENT_TAB) && location_bar_) {
-    // Forcibly reset the location bar, since otherwise it won't discard any
-    // ongoing user edits, since it doesn't realize this is a user-initiated
-    // action.
-    location_bar_->Revert();
-  }
-  command_updater_->ExecuteCommandWithDisposition(command, disposition);
+  command_updater_->ExecuteCommandWithDisposition(
+      command, ui::DispositionFromEventFlags(event_flags));
 }
 
 void ReloadButton::ChangeModeInternal(Mode mode) {

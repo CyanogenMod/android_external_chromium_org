@@ -76,8 +76,8 @@ scoped_ptr<Cookie> CreateCookie(
   cookie->host_only = net::cookie_util::DomainIsHostOnly(
       canonical_cookie.Domain());
   // A non-UTF8 path is invalid, so we just replace it with an empty string.
-  cookie->path = IsStringUTF8(canonical_cookie.Path()) ? canonical_cookie.Path()
-                                                       : std::string();
+  cookie->path = base::IsStringUTF8(canonical_cookie.Path()) ?
+      canonical_cookie.Path() : std::string();
   cookie->secure = canonical_cookie.IsSecure();
   cookie->http_only = canonical_cookie.IsHttpOnly();
   cookie->session = !canonical_cookie.IsPersistent();
@@ -120,10 +120,10 @@ void GetCookieListFromStore(
 GURL GetURLFromCanonicalCookie(const net::CanonicalCookie& cookie) {
   const std::string& domain_key = cookie.Domain();
   const std::string scheme =
-      cookie.IsSecure() ? content::kHttpsScheme : content::kHttpScheme;
+      cookie.IsSecure() ? url::kHttpsScheme : url::kHttpScheme;
   const std::string host =
       domain_key.find('.') != 0 ? domain_key : domain_key.substr(1);
-  return GURL(scheme + content::kStandardSchemeSeparator + host + "/");
+  return GURL(scheme + url::kStandardSchemeSeparator + host + "/");
 }
 
 void AppendMatchingCookiesToVector(const net::CookieList& all_cookies,
@@ -136,7 +136,7 @@ void AppendMatchingCookiesToVector(const net::CookieList& all_cookies,
     // Ignore any cookie whose domain doesn't match the extension's
     // host permissions.
     GURL cookie_domain_url = GetURLFromCanonicalCookie(*it);
-    if (!PermissionsData::HasHostPermission(extension, cookie_domain_url))
+    if (!extension->permissions_data()->HasHostPermission(cookie_domain_url))
       continue;
     // Filter the cookie using the match filter.
     cookies_helpers::MatchFilter filter(details);

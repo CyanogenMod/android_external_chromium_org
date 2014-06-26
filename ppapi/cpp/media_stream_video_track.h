@@ -41,6 +41,10 @@ class MediaStreamVideoTrack : public Resource {
   /// @param[in] resource A <code>PPB_MediaStreamVideoTrack</code> resource.
   explicit MediaStreamVideoTrack(const Resource& resource);
 
+  /// Constructs a <code>MediaStreamVideoTrack</code> that outputs given frames
+  /// to a new video track, which will be consumed by Javascript.
+  explicit MediaStreamVideoTrack(const InstanceHandle& instance);
+
   /// A constructor used when you have received a <code>PP_Resource</code> as a
   /// return value that has had 1 ref added for you.
   ///
@@ -55,8 +59,9 @@ class MediaStreamVideoTrack : public Resource {
   /// chosen such that inter-frame processing time variability won't overrun the
   /// input buffer. If the buffer is overfilled, then frames will be dropped.
   /// The application can detect this by examining the timestamp on returned
-  /// frames. If <code>Configure()</code> is not called, default settings will
-  /// be used.
+  /// frames. If some attributes are not specified, default values will be used
+  /// for those unspecified attributes. If <code>Configure()</code> is not
+  /// called, default settings will be used.
   /// Example usage from plugin code:
   /// @code
   /// int32_t attribs[] = {
@@ -73,6 +78,11 @@ class MediaStreamVideoTrack : public Resource {
   /// completion of <code>Configure()</code>.
   ///
   /// @return An int32_t containing a result code from <code>pp_errors.h</code>.
+  /// Returns <code>PP_ERROR_INPROGRESS</code> if there is a pending call of
+  /// <code>Configure()</code> or <code>GetFrame()</code>, or the plugin
+  /// holds some frames which are not recycled with <code>RecycleFrame()</code>.
+  /// If an error is returned, all attributes and the underlying buffer will not
+  /// be changed.
   int32_t Configure(const int32_t attributes[],
                     const CompletionCallback& callback);
 
@@ -127,6 +137,17 @@ class MediaStreamVideoTrack : public Resource {
   /// Closes the MediaStream video track, and disconnects it from video source.
   /// After calling <code>Close()</code>, no new frames will be received.
   void Close();
+
+  // Gets a free frame for output. The frame is allocated by
+  // <code>Configure()</code>. The caller should fill it with frame data, and
+  // then use |PutFrame()| to send the frame back.
+  int32_t GetEmptyFrame(
+      const CompletionCallbackWithOutput<VideoFrame>& callback);
+
+  // Sends a frame returned by |GetEmptyFrame()| to the output track.
+  // After this function, the |frame| should not be used anymore and the
+  // caller should release the reference that it holds.
+  int32_t PutFrame(const VideoFrame& frame);
 
   /// Checks whether a <code>Resource</code> is a MediaStream video track,
   /// to test whether it is appropriate for use with the

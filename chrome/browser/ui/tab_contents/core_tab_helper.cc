@@ -12,8 +12,6 @@
 #include "base/strings/stringprintf.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_host/web_cache_manager.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
@@ -21,6 +19,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/render_messages.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -150,7 +149,7 @@ void CoreTabHelper::WasShown() {
       web_contents()->GetRenderProcessHost()->GetID());
 }
 
-void CoreTabHelper::WebContentsDestroyed(WebContents* web_contents) {
+void CoreTabHelper::WebContentsDestroyed() {
   // OnCloseStarted isn't called in unit tests.
   if (!close_start_time_.is_null()) {
     bool fast_tab_close_enabled = CommandLine::ForCurrentProcess()->HasSwitch(
@@ -188,7 +187,9 @@ void CoreTabHelper::BeforeUnloadDialogCancelled() {
   OnCloseCanceled();
 }
 
-bool CoreTabHelper::OnMessageReceived(const IPC::Message& message) {
+bool CoreTabHelper::OnMessageReceived(
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(CoreTabHelper, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_RequestThumbnailForContextNode_ACK,
@@ -235,7 +236,7 @@ void CoreTabHelper::OnRequestThumbnailForContextNodeACK(
   search_args.image_original_size = original_size;
   TemplateURLRef::PostContent post_content;
   GURL result(default_provider->image_url_ref().ReplaceSearchTerms(
-      search_args, &post_content));
+      search_args, template_url_service->search_terms_data(), &post_content));
   if (!result.is_valid())
     return;
 

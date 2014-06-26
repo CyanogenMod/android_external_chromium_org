@@ -59,10 +59,10 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
   // Parameters:
   //   - The vector of full hash results. If empty, indicates that there
   //     were no matches, and that the resource is safe.
-  //   - Whether the result can be cached. This may not be the case when
-  //     the result did not come from the SB server, for example.
+  //   - The cache lifetime of the result. A lifetime of 0 indicates the results
+  //     should not be cached.
   typedef base::Callback<void(const std::vector<SBFullHashResult>&,
-                              bool)> FullHashCallback;
+                              const base::TimeDelta&)> FullHashCallback;
 
   virtual ~SafeBrowsingProtocolManager();
 
@@ -129,8 +129,7 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
     GET_HASH_STATUS_204,
 
     // Subset of successful responses which returned no full hashes.
-    // This includes the 204 case, and also 200 responses for stale
-    // prefixes (deleted at the server but yet deleted on the client).
+    // This includes the STATUS_204 case, and the *_ERROR cases.
     GET_HASH_FULL_HASH_EMPTY,
 
     // Subset of successful responses for which one or more of the
@@ -141,6 +140,18 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
     // matches.  It means that there was a prefix collision which was
     // cleared up by the full hashes.
     GET_HASH_FULL_HASH_MISS,
+
+    // Subset of successful responses where the response body wasn't parsable.
+    GET_HASH_PARSE_ERROR,
+
+    // Gethash request failed (network error).
+    GET_HASH_NETWORK_ERROR,
+
+    // Gethash request returned HTTP result code other than 200 or 204.
+    GET_HASH_HTTP_ERROR,
+
+    // Gethash attempted during error backoff, no request sent.
+    GET_HASH_BACKOFF_ERROR,
 
     // Memory space for histograms is determined by the max.  ALWAYS
     // ADD NEW VALUES BEFORE THIS ONE.
@@ -154,6 +165,11 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
 
   // Returns whether another update is currently scheduled.
   bool IsUpdateScheduled() const;
+
+  // Called when app changes status of foreground or background.
+  void SetAppInForeground(bool foreground) {
+    app_in_foreground_ = foreground;
+  }
 
  protected:
   // Constructs a SafeBrowsingProtocolManager for |delegate| that issues
@@ -214,8 +230,8 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
   // Worker function for calculating GetHash and Update backoff times (in
   // seconds). |multiplier| is doubled for each consecutive error between the
   // 2nd and 5th, and |error_count| is incremented with each call.
-  base::TimeDelta GetNextBackOffInterval(int* error_count,
-                                         int* multiplier) const;
+  base::TimeDelta GetNextBackOffInterval(size_t* error_count,
+                                         size_t* multiplier) const;
 
   // Manages our update with the next allowable update time. If 'back_off_' is
   // true, we must decrease the frequency of requests of the SafeBrowsing
@@ -242,14 +258,10 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
   // Sends a request for a chunk to the SafeBrowsing servers.
   void IssueChunkRequest();
 
-  // Formats a string returned from the database into:
-  //   "list_name;a:<add_chunk_ranges>:s:<sub_chunk_ranges>\n"
-  static std::string FormatList(const SBListChunkRanges& list);
-
   // Runs the protocol parser on received data and update the
   // SafeBrowsingService with the new content. Returns 'true' on successful
   // parse, 'false' on error.
-  bool HandleServiceResponse(const GURL& url, const char* data, int length);
+  bool HandleServiceResponse(const GURL& url, const char* data, size_t length);
 
   // Updates internal state for each GetHash response error, assuming that the
   // current time is |now|.
@@ -294,12 +306,12 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
   SafeBrowsingRequestType request_type_;
 
   // The number of HTTP response errors, used for request backoff timing.
-  int update_error_count_;
-  int gethash_error_count_;
+  size_t update_error_count_;
+  size_t gethash_error_count_;
 
   // Multipliers which double (max == 8) for each error after the second.
-  int update_back_off_mult_;
-  int gethash_back_off_mult_;
+  size_t update_back_off_mult_;
+  size_t gethash_back_off_mult_;
 
   // Multiplier between 0 and 1 to spread clients over an interval.
   float back_off_fuzz_;
@@ -346,7 +358,7 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
   base::Time chunk_request_start_;
 
   // Tracks the size of each update (in bytes).
-  int update_size_;
+  size_t update_size_;
 
   // The safe browsing client name sent in each request.
   std::string client_name_;
@@ -374,8 +386,17 @@ class SafeBrowsingProtocolManager : public net::URLFetcherDelegate,
   // ForceScheduleNextUpdate() is called. This is set for testing purpose.
   bool disable_auto_update_;
 
+#if defined(OS_ANDROID)
+  // When true, protocol_manager will not check network connection
+  // type when scheduling next update. This is set for testing purpose.
+  bool disable_connection_check_;
+#endif
+
   // ID for URLFetchers for testing.
   int url_fetcher_id_;
+
+  // Whether the app is in foreground or background.
+  bool app_in_foreground_;
 
   DISALLOW_COPY_AND_ASSIGN(SafeBrowsingProtocolManager);
 };
@@ -421,12 +442,13 @@ class SafeBrowsingProtocolManagerDelegate {
 
   // Add new chunks to the database. Invokes |callback| when complete, but must
   // call at a later time.
-  virtual void AddChunks(const std::string& list, SBChunkList* chunks,
+  virtual void AddChunks(const std::string& list,
+                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
                          AddChunksCallback callback) = 0;
 
   // Delete chunks from the database.
   virtual void DeleteChunks(
-      std::vector<SBChunkDelete>* delete_chunks) = 0;
+      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) = 0;
 };
 
 #endif  // CHROME_BROWSER_SAFE_BROWSING_PROTOCOL_MANAGER_H_

@@ -29,17 +29,14 @@
 #include "chrome/browser/history/top_sites_cache.h"
 #include "chrome/browser/history/url_utils.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/ntp/most_visited_handler.h"
-#include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/thumbnail_score.h"
+#include "components/history/core/common/thumbnail_score.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
-#include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -661,7 +658,9 @@ size_t TopSitesImpl::MergeCachedForcedURLs(MostVisitedURLList* new_list) {
   std::set<GURL> all_new_urls;
   size_t num_forced = 0;
   for (size_t i = 0; i < new_list->size(); ++i) {
-    all_new_urls.insert((*new_list)[i].url);
+    for (size_t j = 0; j < (*new_list)[i].redirects.size(); j++) {
+      all_new_urls.insert((*new_list)[i].redirects[j]);
+    }
     if (!(*new_list)[i].last_forced_time.is_null())
       ++num_forced;
   }
@@ -934,12 +933,6 @@ void TopSitesImpl::OnTopSitesAvailableFromHistory(
     CancelableRequestProvider::Handle handle,
     MostVisitedURLList pages) {
   SetTopSites(pages);
-
-  // Used only in testing.
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_TOP_SITES_UPDATED,
-      content::Source<TopSitesImpl>(this),
-      content::Details<CancelableRequestProvider::Handle>(&handle));
 }
 
 }  // namespace history

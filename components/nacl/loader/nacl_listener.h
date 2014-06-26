@@ -11,7 +11,12 @@
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "components/nacl/common/nacl_types.h"
+#include "components/nacl/loader/nacl_trusted_listener.h"
 #include "ipc/ipc_listener.h"
+
+namespace base {
+class MessageLoopProxy;
+}
 
 namespace IPC {
 class SyncChannel;
@@ -29,6 +34,9 @@ class NaClListener : public IPC::Listener {
 
   bool Send(IPC::Message* msg);
 
+  void set_uses_nonsfi_mode(bool uses_nonsfi_mode) {
+    uses_nonsfi_mode_ = uses_nonsfi_mode;
+  }
 #if defined(OS_LINUX)
   void set_prereserved_sandbox_size(size_t prereserved_sandbox_size) {
     prereserved_sandbox_size_ = prereserved_sandbox_size;
@@ -41,8 +49,16 @@ class NaClListener : public IPC::Listener {
 #endif
 
  private:
-  void OnStart(const nacl::NaClStartParams& params);
   virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+
+  void OnStart(const nacl::NaClStartParams& params);
+
+  // Non-SFI version of OnStart().
+  void StartNonSfi(const nacl::NaClStartParams& params);
+
+  IPC::ChannelHandle CreateTrustedListener(
+      base::MessageLoopProxy* message_loop_proxy,
+      base::WaitableEvent* shutdown_event);
 
   // A channel back to the browser.
   scoped_ptr<IPC::SyncChannel> channel_;
@@ -53,6 +69,7 @@ class NaClListener : public IPC::Listener {
   base::WaitableEvent shutdown_event_;
   base::Thread io_thread_;
 
+  bool uses_nonsfi_mode_;
 #if defined(OS_LINUX)
   size_t prereserved_sandbox_size_;
 #endif
@@ -64,6 +81,8 @@ class NaClListener : public IPC::Listener {
   // NaClChromeMainArgs object.
   int number_of_cores_;
 #endif
+
+  scoped_refptr<NaClTrustedListener> trusted_listener_;
 
   // Used to identify what thread we're on.
   base::MessageLoop* main_loop_;

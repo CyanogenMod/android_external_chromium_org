@@ -43,6 +43,7 @@ class GURL;
 
 namespace net {
 
+class URLRequestContext;
 class IOBuffer;
 
 //------------------------------------------------------------------------------
@@ -74,6 +75,10 @@ class NET_EXPORT_PRIVATE FilterContext {
   // Return false if gurl is not present.
   virtual bool GetURL(GURL* gurl) const = 0;
 
+  // What Content-Disposition header came with this data?
+  // Return false if no header was present.
+  virtual bool GetContentDisposition(std::string* disposition) const = 0;
+
   // When was this data requested from a server?
   virtual base::Time GetRequestTime() const = 0;
 
@@ -93,6 +98,9 @@ class NET_EXPORT_PRIVATE FilterContext {
   // What response code was received with the associated network transaction?
   // For example: 200 is ok.   4xx are error codes. etc.
   virtual int GetResponseCode() const = 0;
+
+  // The URLRequestContext associated with the request.
+  virtual const URLRequestContext* GetURLRequestContext() const = 0;
 
   // The following method forces the context to emit a specific set of
   // statistics as selected by the argument.

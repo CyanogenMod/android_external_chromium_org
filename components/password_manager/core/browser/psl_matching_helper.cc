@@ -15,7 +15,9 @@
 
 using autofill::PasswordForm;
 
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
+namespace password_manager {
+
+#if !defined(OS_IOS)
 namespace {
 
 const char kPSLMatchingDesktopFieldTrialName[] = "PSLMatchingDesktop";
@@ -65,18 +67,14 @@ void PSLMatchingHelper::EnablePublicSuffixDomainMatchingForTesting() {
 
 // static
 bool PSLMatchingHelper::DeterminePSLEnabled() {
-  // Default choice is "enabled", so we do not need to check for
-  // kEnablePasswordAutofillPublicSuffixDomainMatching.
   bool enabled = true;
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
+#if !defined(OS_IOS)
   if (base::FieldTrialList::FindFullName(kPSLMatchingDesktopFieldTrialName) ==
       kPSLMatchingDesktopFieldTrialDisabledGroupName) {
     enabled = false;
   }
 #endif
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisablePasswordAutofillPublicSuffixDomainMatching)) {
-    enabled = false;
-  }
   return enabled;
 }
+
+}  // namespace password_manager

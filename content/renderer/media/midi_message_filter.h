@@ -10,8 +10,9 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_channel_proxy.h"
+#include "ipc/message_filter.h"
 #include "media/midi/midi_port_info.h"
+#include "media/midi/midi_result.h"
 #include "third_party/WebKit/public/platform/WebMIDIAccessorClient.h"
 
 namespace base {
@@ -21,8 +22,7 @@ class MessageLoopProxy;
 namespace content {
 
 // MessageFilter that handles MIDI messages.
-class CONTENT_EXPORT MidiMessageFilter
-    : public IPC::ChannelProxy::MessageFilter {
+class CONTENT_EXPORT MidiMessageFilter : public IPC::MessageFilter {
  public:
   explicit MidiMessageFilter(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
@@ -50,19 +50,19 @@ class CONTENT_EXPORT MidiMessageFilter
   virtual ~MidiMessageFilter();
 
  private:
-  // Sends an IPC message using |channel_|.
+  // Sends an IPC message using |sender_|.
   void Send(IPC::Message* message);
 
-  // IPC::ChannelProxy::MessageFilter override. Called on |io_message_loop|.
+  // IPC::MessageFilter override. Called on |io_message_loop|.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE;
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
   virtual void OnFilterRemoved() OVERRIDE;
   virtual void OnChannelClosing() OVERRIDE;
 
   // Called when the browser process has approved (or denied) access to
   // MIDI hardware.
   void OnSessionStarted(int client_id,
-                        bool success,
+                        media::MidiResult result,
                         media::MidiPortInfoList inputs,
                         media::MidiPortInfoList outputs);
 
@@ -78,7 +78,7 @@ class CONTENT_EXPORT MidiMessageFilter
   void OnAcknowledgeSentData(size_t bytes_sent);
 
   void HandleSessionStarted(int client_id,
-                            bool success,
+                            media::MidiResult result,
                             media::MidiPortInfoList inputs,
                             media::MidiPortInfoList outputs);
 
@@ -94,8 +94,8 @@ class CONTENT_EXPORT MidiMessageFilter
 
   blink::WebMIDIAccessorClient* GetClientFromId(int client_id);
 
-  // IPC channel for Send(); must only be accessed on |io_message_loop_|.
-  IPC::Channel* channel_;
+  // IPC sender for Send(); must only be accessed on |io_message_loop_|.
+  IPC::Sender* sender_;
 
   // Message loop on which IPC calls are driven.
   const scoped_refptr<base::MessageLoopProxy> io_message_loop_;

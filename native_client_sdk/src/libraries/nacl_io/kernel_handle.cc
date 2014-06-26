@@ -17,10 +17,12 @@
 namespace nacl_io {
 
 // It is only legal to construct a handle while the kernel lock is held.
-KernelHandle::KernelHandle() : filesystem_(NULL), node_(NULL) {}
+KernelHandle::KernelHandle() : filesystem_(NULL), node_(NULL) {
+}
 
 KernelHandle::KernelHandle(const ScopedFilesystem& fs, const ScopedNode& node)
-    : filesystem_(fs), node_(node) {}
+    : filesystem_(fs), node_(node) {
+}
 
 KernelHandle::~KernelHandle() {
   // Force release order for cases where filesystem_ is not ref'd by mounting.
@@ -54,8 +56,8 @@ Error KernelHandle::Init(int open_flags) {
 Error KernelHandle::Seek(off_t offset, int whence, off_t* out_offset) {
   // By default, don't move the offset.
   *out_offset = offset;
-  ssize_t base;
-  size_t node_size;
+  off_t base;
+  off_t node_size;
 
   AUTO_LOCK(handle_lock_);
   Error error = node_->GetSize(&node_size);
@@ -79,7 +81,7 @@ Error KernelHandle::Seek(off_t offset, int whence, off_t* out_offset) {
   if (base + offset < 0)
     return EINVAL;
 
-  size_t new_offset = base + offset;
+  off_t new_offset = base + offset;
 
   // Seeking past the end of the file will zero out the space between the old
   // end and the new end.
@@ -149,11 +151,15 @@ Error KernelHandle::VFcntl(int request, int* result, va_list args) {
       handle_attr_.flags |= flags;
       return 0;
     }
+    default:
+      LOG_ERROR("Unsupported fcntl: %#x", request);
+      break;
   }
   return ENOSYS;
 }
 
-Error KernelHandle::Accept(PP_Resource* new_sock, struct sockaddr* addr,
+Error KernelHandle::Accept(PP_Resource* new_sock,
+                           struct sockaddr* addr,
                            socklen_t* len) {
   SocketNode* sock = socket_node();
   if (!sock)
@@ -200,10 +206,7 @@ Error KernelHandle::RecvFrom(void* buf,
                         out_len);
 }
 
-Error KernelHandle::Send(const void* buf,
-                         size_t len,
-                         int flags,
-                         int* out_len) {
+Error KernelHandle::Send(const void* buf, size_t len, int flags, int* out_len) {
   SocketNode* sock = socket_node();
   if (!sock)
     return ENOTSOCK;

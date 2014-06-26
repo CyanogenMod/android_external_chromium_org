@@ -421,18 +421,7 @@
   ...
   fun:disk_cache::EntryImpl::WriteDataImpl*
 }
-{
-  bug_66835a
-  ThreadSanitizer:Race
-  fun:getenv
-  fun:::EnvironmentImpl::GetVarImpl
-  fun:::EnvironmentImpl::GetVar
-  fun:ShellIntegrationLinux::GetDesktopName
-  fun:::GetIsDefaultWebClient
-  fun:ShellIntegration::GetDefaultBrowser
-  fun:::RecordDefaultBrowserUMAStat
-  fun:base::internal::RunnableAdapter::Run
-}
+
 {
   bug_66835b
   ThreadSanitizer:Race
@@ -637,93 +626,6 @@
   fun:tracked_objects::DeathData::RecordDeath
 }
 {
-  bug_103711a
-  ThreadSanitizer:Race
-  fun:webrtc::Trace::SetLevelFilter
-}
-{
-  bug_103711b
-  ThreadSanitizer:Race
-  fun:webrtc::TraceImpl::TraceCheck
-}
-{
-  bug_103711c
-  ThreadSanitizer:Race
-  fun:webrtc::ThreadPosix::*
-}
-{
-  bug_103711d
-  ThreadSanitizer:Race
-  fun:webrtc::FileWrapper*::*
-  ...
-  fun:webrtc::TraceImpl::StaticInstance
-  fun:webrtc::Trace::ReturnTrace
-  fun:webrtc::voe::SharedData::~SharedData
-  fun:webrtc::VoiceEngineImpl::~VoiceEngineImpl
-  ...
-  fun:webrtc::VoiceEngine::Delete
-  fun:WebRTCAutoDelete::reset
-  ...
-  fun:content::WebRTCAudioDeviceTest_Construct_Test::TestBody
-}
-{
-  bug_103711e
-  ThreadSanitizer:Race
-  ...
-  fun:content::WebRTCAudioDeviceTest::OnMessageReceived
-  ...
-  fun:IPC::*
-  fun:IPC::Channel::ChannelImpl::OnFileCanReadWithoutBlocking
-  ...
-  fun:base::MessagePumpLibevent::FileDescriptorWatcher::OnFileCanReadWithoutBlocking
-  fun:base::MessagePumpLibevent::OnLibeventNotification
-  fun:event_process_active
-  fun:event_base_loop
-}
-{
-  bug_103711f
-  ThreadSanitizer:Race
-  fun:webrtc::TracePosix::AddTime
-  fun:webrtc::TraceImpl::AddImpl
-  fun:webrtc::Trace::Add
-  fun:webrtc::ThreadPosix::Run
-}
-{
-  bug_103711g
-  ThreadSanitizer:Race
-  fun:content::WebRTCAudioDeviceTest::SetUp
-}
-{
-  bug_103711h
-  ThreadSanitizer:Race
-  fun:webrtc::EventWrapper::~EventWrapper
-  fun:webrtc::EventPosix::~EventPosix
-  fun:webrtc::ProcessThreadImpl::~ProcessThreadImpl
-  fun:webrtc::ProcessThread::DestroyProcessThread
-  fun:webrtc::voe::SharedData::~SharedData
-  fun:webrtc::VoiceEngineImpl::~VoiceEngineImpl
-  fun:webrtc::VoiceEngine::Delete
-  fun:WebRTCAutoDelete::reset
-  fun:WebRTCAutoDelete::~WebRTCAutoDelete
-  fun:content::WebRTCAudioDeviceTest_Construct_Test::TestBody
-}
-{
-  bug_103711i
-  ThreadSanitizer:Race
-  fun:webrtc::ProcessThreadImpl::Process
-  fun:webrtc::ProcessThreadImpl::Run
-  fun:webrtc::ThreadPosix::Run
-  fun:StartThread
-}
-{
-  bug_103711j
-  ThreadSanitizer:Race
-  fun:webrtc::ProcessThreadImpl::Stop
-  fun:webrtc::VoEBaseImpl::TerminateInternal
-  fun:webrtc::VoEBaseImpl::Terminate
-  fun:content::WebRTCAudioDeviceTest_PlayLocalFile_Test::TestBody
-}
-{
   bug_104769
   ThreadSanitizer:Race
   fun:timeout_correct
@@ -775,24 +677,6 @@
   fun:syncer::SyncManager::~SyncManager
   fun:scoped_ptr::reset
   fun:browser_sync::SyncBackendHost::Core::DoShutdown
-  fun:base::internal::RunnableAdapter::Run
-}
-{
-  bug_108408
-  ThreadSanitizer:Race
-  fun:base::subtle::RefCountedBase::AddRef
-  fun:base::RefCounted::AddRef
-  fun:net::HttpCache::Transaction::DoCacheWriteData
-  fun:net::HttpCache::Transaction::DoLoop
-  fun:net::HttpCache::Transaction::ReadFromNetwork
-  fun:net::HttpCache::Transaction::Read
-  fun:net::URLRequestHttpJob::ReadRawData
-  fun:net::URLRequestJob::ReadRawDataHelper
-  fun:net::URLRequestJob::Read
-  fun:net::URLRequest::Read
-  fun:ResourceDispatcherHost::Read
-  fun:ResourceDispatcherHost::StartReading
-  fun:ResourceDispatcherHost::ResumeRequest
   fun:base::internal::RunnableAdapter::Run
 }
 {
@@ -944,26 +828,6 @@
   fun:_vsnprintf_helper
 }
 {
-  bug_137973_a
-  ThreadSanitizer:Race
-  fun:media::Pipeline::OnVideoTimeUpdate
-  fun:base::internal::RunnableAdapter::Run
-}
-{
-  bug_137973_b
-  ThreadSanitizer:Race
-  fun:media::Pipeline::SetState
-  fun:media::Pipeline::StopTask
-  fun:base::internal::RunnableAdapter::Run
-}
-{
-  bug_137973_c
-  ThreadSanitizer:Race
-  fun:media::Pipeline::SetState
-  fun:media::Pipeline::SeekTask
-  fun:base::internal::RunnableAdapter::Run
-}
-{
   bug_144894
   ThreadSanitizer:Race
   fun:av_parser_close
@@ -1033,10 +897,17 @@
   fun:gfx::GtkInitFromCommandLine
 }
 {
-  bug_239350
+  bug_239350_a
   ThreadSanitizer:Race
   fun:av_buffer_unref
   fun:av_frame_unref
+  ...
+}
+{
+  bug_239350_b
+  ThreadSanitizer:Race
+  fun:av_buffer_get_opaque
+  fun:av_buffer_get_opaque
   ...
 }
 {
@@ -1160,18 +1031,59 @@
   fun:base::internal::RunnableAdapter::Run
 }
 {
-  bug_330903
-  ThreadSanitizer:Race
-  fun:gcm::GCMClientMock::SetIsLoading
-  fun:gcm::GCMProfileServiceRegisterTest_GCMClientLoadingCompletedAfterReadingRegistration_Test::TestBody
-  fun:testing::internal::HandleSehExceptionsInMethodIfSupported
-}
-{
-  bug_344704
+  bug_344704_a
   ThreadSanitizer:Race
   fun:base::Thread::message_loop
   fun:printing::PrintJob::UpdatePrintedDocument
   fun:printing::PrintJob::ControlledWorkerShutdown
   fun:printing::PrintJob::Stop
   fun:PrintJobTest_SimplePrint_Test::TestBody
+}
+{
+  bug_344704_b
+  ThreadSanitizer:Race
+  fun:scoped_refptr::operator=
+  fun:base::MessageLoop::~MessageLoop
+  fun:base::MessageLoop::~MessageLoop
+  fun:base::DefaultDeleter::operator*
+  fun:base::internal::scoped_ptr_impl::~scoped_ptr_impl
+  fun:scoped_ptr::~scoped_ptr
+  fun:base::Thread::ThreadMain
+}
+{
+  bug_350982
+  ThreadSanitizer:Race
+  fun:change_state
+  fun:vp9_worker_sync
+  fun:decode_tile
+  fun:decode_tiles
+  fun:vp9_decode_frame
+}
+{
+  bug_343802
+  ThreadSanitizer:Race
+  ...
+  fun:base::debug::TraceLog::GetCategoryGroupEnabledInternal
+}
+{
+  bug_385022
+  ThreadSanitizer:Race
+  fun:std::_Rb_tree_rebalance_for_erase
+  fun:std::_Rb_tree::_M_erase_aux
+  fun:std::_Rb_tree::erase
+  fun:std::map::erase
+  fun:browser_sync::SyncBackendRegistrar::RemoveWorker
+  fun:browser_sync::SyncBackendRegistrar::OnWorkerLoopDestroyed
+  fun:syncer::ModelSafeWorker::WillDestroyCurrentMessageLoop
+  fun:base::MessageLoop::~MessageLoop
+  fun:base::MessageLoopForUI::~MessageLoopForUI
+  fun:base::MessageLoopForUI::~MessageLoopForUI
+  fun:base::DefaultDeleter::operator*
+  fun:base::internal::scoped_ptr_impl::~scoped_ptr_impl
+  fun:scoped_ptr::~scoped_ptr
+  fun:content::TestBrowserThreadBundle::~TestBrowserThreadBundle
+  fun:BrowserWithTestWindowTest::~BrowserWithTestWindowTest
+  fun:TestWithBrowserView::~TestWithBrowserView
+  fun:autofill::AutofillDialogViewsTest::~AutofillDialogViewsTest
+  fun:autofill::AutofillDialogViewsTest_SignInFocus_Test::~AutofillDialogViewsTest_SignInFocus_Test
 }

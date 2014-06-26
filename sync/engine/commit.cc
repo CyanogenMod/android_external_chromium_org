@@ -5,17 +5,19 @@
 #include "sync/engine/commit.h"
 
 #include "base/debug/trace_event.h"
+#include "sync/engine/commit_contribution.h"
 #include "sync/engine/commit_processor.h"
 #include "sync/engine/commit_util.h"
-#include "sync/engine/sync_directory_commit_contribution.h"
 #include "sync/engine/syncer.h"
 #include "sync/engine/syncer_proto_util.h"
+#include "sync/internal_api/public/events/commit_request_event.h"
+#include "sync/internal_api/public/events/commit_response_event.h"
 #include "sync/sessions/sync_session.h"
 
 namespace syncer {
 
 Commit::Commit(
-    const std::map<ModelType, SyncDirectoryCommitContribution*>& contributions,
+    const std::map<ModelType, CommitContribution*>& contributions,
     const sync_pb::ClientToServerMessage& message,
     ExtensionsActivity::Records extensions_activity_buffer)
   : contributions_(contributions),
@@ -71,7 +73,7 @@ Commit* Commit::Init(
       commit_message);
 
   // Finally, serialize all our contributions.
-  for (std::map<ModelType, SyncDirectoryCommitContribution*>::iterator it =
+  for (std::map<ModelType, CommitContribution*>::iterator it =
            contributions.begin(); it != contributions.end(); ++it) {
     it->second->AddToCommitMessage(&message);
   }
@@ -97,10 +99,25 @@ SyncerError Commit::PostAndProcessResponse(
   }
 
   DVLOG(1) << "Sending commit message.";
+
+  CommitRequestEvent request_event(
+      base::Time::Now(),
+      message_.commit().entries_size(),
+      request_types,
+      message_);
+  session->SendProtocolEvent(request_event);
+
   TRACE_EVENT_BEGIN0("sync", "PostCommit");
   const SyncerError post_result = SyncerProtoUtil::PostClientToServerMessage(
       &message_, &response_, session);
   TRACE_EVENT_END0("sync", "PostCommit");
+
+  // TODO(rlarocque): Use result that includes errors captured later?
+  CommitResponseEvent response_event(
+      base::Time::Now(),
+      post_result,
+      response_);
+  session->SendProtocolEvent(response_event);
 
   if (post_result != SYNCER_OK) {
     LOG(WARNING) << "Post commit failed";
@@ -130,7 +147,7 @@ SyncerError Commit::PostAndProcessResponse(
 
   // Let the contributors process the responses to each of their requests.
   SyncerError processing_result = SYNCER_OK;
-  for (std::map<ModelType, SyncDirectoryCommitContribution*>::iterator it =
+  for (std::map<ModelType, CommitContribution*>::iterator it =
        contributions_.begin(); it != contributions_.end(); ++it) {
     TRACE_EVENT1("sync", "ProcessCommitResponse",
                  "type", ModelTypeToString(it->first));

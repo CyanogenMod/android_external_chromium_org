@@ -12,9 +12,10 @@
 namespace net {
 namespace test {
 
-QuicTestPacketMaker::QuicTestPacketMaker(QuicVersion version, QuicGuid guid)
+QuicTestPacketMaker::QuicTestPacketMaker(QuicVersion version,
+                                         QuicConnectionId connection_id)
     : version_(version),
-      guid_(guid),
+      connection_id_(connection_id),
       spdy_request_framer_(SPDY3),
       spdy_response_framer_(SPDY3) {
 }
@@ -28,7 +29,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeRstPacket(
     QuicStreamId stream_id,
     QuicRstStreamErrorCode error_code) {
   QuicPacketHeader header;
-  header.public_header.guid = guid_;
+  header.public_header.connection_id = connection_id_;
   header.public_header.reset_flag = false;
   header.public_header.version_flag = include_version;
   header.public_header.sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
@@ -51,7 +52,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckAndRstPacket(
     bool send_feedback) {
 
   QuicPacketHeader header;
-  header.public_header.guid = guid_;
+  header.public_header.connection_id = connection_id_;
   header.public_header.reset_flag = false;
   header.public_header.version_flag = include_version;
   header.public_header.sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
@@ -60,15 +61,22 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckAndRstPacket(
   header.fec_flag = false;
   header.fec_group = 0;
 
-  QuicAckFrame ack(largest_received, QuicTime::Zero(), least_unacked);
+  QuicAckFrame ack(MakeAckFrame(largest_received, least_unacked));
+  ack.received_info.delta_time_largest_observed = QuicTime::Delta::Zero();
   QuicFrames frames;
   frames.push_back(QuicFrame(&ack));
+  QuicCongestionFeedbackFrame feedback;
   if (send_feedback) {
-    QuicCongestionFeedbackFrame feedback;
     feedback.type = kTCP;
     feedback.tcp.receive_window = 256000;
 
     frames.push_back(QuicFrame(&feedback));
+  }
+
+  QuicStopWaitingFrame stop_waiting;
+  if (version_ > QUIC_VERSION_15) {
+    stop_waiting.least_unacked = least_unacked;
+    frames.push_back(QuicFrame(&stop_waiting));
   }
 
   QuicRstStreamFrame rst(stream_id, error_code, 0);
@@ -76,7 +84,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckAndRstPacket(
 
   QuicFramer framer(SupportedVersions(version_), QuicTime::Zero(), false);
   scoped_ptr<QuicPacket> packet(
-      framer.BuildUnsizedDataPacket(header, frames).packet);
+      BuildUnsizedDataPacket(&framer, header, frames).packet);
   return scoped_ptr<QuicEncryptedPacket>(framer.EncryptPacket(
       ENCRYPTION_NONE, header.packet_sequence_number, *packet));
 }
@@ -84,7 +92,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckAndRstPacket(
 scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeConnectionClosePacket(
     QuicPacketSequenceNumber num) {
   QuicPacketHeader header;
-  header.public_header.guid = guid_;
+  header.public_header.connection_id = connection_id_;
   header.public_header.reset_flag = false;
   header.public_header.version_flag = false;
   header.public_header.sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
@@ -105,7 +113,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckPacket(
     QuicPacketSequenceNumber least_unacked,
     bool send_feedback) {
   QuicPacketHeader header;
-  header.public_header.guid = guid_;
+  header.public_header.connection_id = connection_id_;
   header.public_header.reset_flag = false;
   header.public_header.version_flag = false;
   header.public_header.sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
@@ -114,7 +122,8 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckPacket(
   header.fec_flag = false;
   header.fec_group = 0;
 
-  QuicAckFrame ack(largest_received, QuicTime::Zero(), least_unacked);
+  QuicAckFrame ack(MakeAckFrame(largest_received, least_unacked));
+  ack.received_info.delta_time_largest_observed = QuicTime::Delta::Zero();
 
   QuicCongestionFeedbackFrame feedback;
   feedback.type = kTCP;
@@ -126,8 +135,15 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeAckPacket(
   if (send_feedback) {
     frames.push_back(QuicFrame(&feedback));
   }
+
+  QuicStopWaitingFrame stop_waiting;
+  if (version_ > QUIC_VERSION_15) {
+    stop_waiting.least_unacked = least_unacked;
+    frames.push_back(QuicFrame(&stop_waiting));
+  }
+
   scoped_ptr<QuicPacket> packet(
-      framer.BuildUnsizedDataPacket(header, frames).packet);
+      BuildUnsizedDataPacket(&framer, header, frames).packet);
   return scoped_ptr<QuicEncryptedPacket>(framer.EncryptPacket(
       ENCRYPTION_NONE, header.packet_sequence_number, *packet));
 }
@@ -151,7 +167,6 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeRequestHeadersPacket(
     bool should_include_version,
     bool fin,
     const SpdyHeaderBlock& headers) {
-  EXPECT_LT(QUIC_VERSION_12, version_);
   InitializeHeader(sequence_number, should_include_version);
   SpdySynStreamIR syn_stream(stream_id);
   syn_stream.set_name_value_block(headers);
@@ -171,7 +186,6 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakeResponseHeadersPacket(
     bool should_include_version,
     bool fin,
     const SpdyHeaderBlock& headers) {
-  EXPECT_LT(QUIC_VERSION_12, version_);
   InitializeHeader(sequence_number, should_include_version);
   SpdySynReplyIR syn_reply(stream_id);
   syn_reply.set_name_value_block(headers);
@@ -197,14 +211,6 @@ SpdyHeaderBlock QuicTestPacketMaker::GetRequestHeaders(
   return headers;
 }
 
-std::string QuicTestPacketMaker::GetRequestString(
-    const std::string& method,
-    const std::string& scheme,
-    const std::string& path) {
-  DCHECK_GE(QUIC_VERSION_12, version_);
-  return SerializeHeaderBlock(GetRequestHeaders(method, scheme, path));
-}
-
 SpdyHeaderBlock QuicTestPacketMaker::GetResponseHeaders(
     const std::string& status) {
   SpdyHeaderBlock headers;
@@ -214,12 +220,6 @@ SpdyHeaderBlock QuicTestPacketMaker::GetResponseHeaders(
   return headers;
 }
 
-std::string QuicTestPacketMaker::GetResponseString(const std::string& status,
-                                                   const std::string& body) {
-  DCHECK_GE(QUIC_VERSION_12, version_);
-  return compressor_.CompressHeaders(GetResponseHeaders(status)) + body;
-}
-
 scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakePacket(
     const QuicPacketHeader& header,
     const QuicFrame& frame) {
@@ -227,7 +227,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakePacket(
   QuicFrames frames;
   frames.push_back(frame);
   scoped_ptr<QuicPacket> packet(
-      framer.BuildUnsizedDataPacket(header, frames).packet);
+      BuildUnsizedDataPacket(&framer, header, frames).packet);
   return scoped_ptr<QuicEncryptedPacket>(framer.EncryptPacket(
       ENCRYPTION_NONE, header.packet_sequence_number, *packet));
 }
@@ -235,7 +235,7 @@ scoped_ptr<QuicEncryptedPacket> QuicTestPacketMaker::MakePacket(
 void QuicTestPacketMaker::InitializeHeader(
     QuicPacketSequenceNumber sequence_number,
     bool should_include_version) {
-  header_.public_header.guid = guid_;
+  header_.public_header.connection_id = connection_id_;
   header_.public_header.reset_flag = false;
   header_.public_header.version_flag = should_include_version;
   header_.public_header.sequence_number_length = PACKET_1BYTE_SEQUENCE_NUMBER;
@@ -243,13 +243,6 @@ void QuicTestPacketMaker::InitializeHeader(
   header_.fec_group = 0;
   header_.entropy_flag = false;
   header_.fec_flag = false;
-}
-
-std::string QuicTestPacketMaker::SerializeHeaderBlock(
-    const SpdyHeaderBlock& headers) {
-  QuicSpdyCompressor compressor;
-  return compressor.CompressHeadersWithPriority(
-      ConvertRequestPriorityToQuicPriority(DEFAULT_PRIORITY), headers);
 }
 
 }  // namespace test

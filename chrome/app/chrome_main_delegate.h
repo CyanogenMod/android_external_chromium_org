@@ -10,6 +10,13 @@
 #include "chrome/common/chrome_content_client.h"
 #include "content/public/app/content_main_delegate.h"
 
+template <typename>
+class ScopedVector;
+
+namespace base {
+class CommandLine;
+}
+
 // Chrome implementation of ContentMainDelegate.
 class ChromeMainDelegate : public content::ContentMainDelegate {
  public:
@@ -32,7 +39,8 @@ class ChromeMainDelegate : public content::ContentMainDelegate {
   virtual bool DelaySandboxInitialization(
       const std::string& process_type) OVERRIDE;
 #elif defined(OS_POSIX) && !defined(OS_ANDROID)
-  virtual content::ZygoteForkDelegate* ZygoteStarting() OVERRIDE;
+  virtual void ZygoteStarting(
+      ScopedVector<content::ZygoteForkDelegate>* delegates) OVERRIDE;
   virtual void ZygoteForked() OVERRIDE;
 #endif
   virtual content::ContentBrowserClient* CreateContentBrowserClient() OVERRIDE;
@@ -42,7 +50,7 @@ class ChromeMainDelegate : public content::ContentMainDelegate {
   virtual content::ContentUtilityClient* CreateContentUtilityClient() OVERRIDE;
 
 #if defined(OS_MACOSX)
-  void InitMacCrashReporter(const CommandLine& command_line,
+  void InitMacCrashReporter(const base::CommandLine& command_line,
                             const std::string& process_type);
 #endif  // defined(OS_MACOSX)
 

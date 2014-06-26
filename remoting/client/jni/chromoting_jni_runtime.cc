@@ -46,24 +46,27 @@ static void LoadNative(JNIEnv* env, jclass clazz, jobject context) {
   // runtime API keys have been specified by the environment. Unfortunately, we
   // neither launch Chromium nor have a command line, so we need to prevent
   // them from DCHECKing out when they go looking.
-  CommandLine::Init(0, NULL);
+  base::CommandLine::Init(0, NULL);
 
   // Create the singleton now so that the Chromoting threads will be set up.
   remoting::ChromotingJniRuntime::GetInstance();
 }
 
 static jstring GetApiKey(JNIEnv* env, jclass clazz) {
-  return env->NewStringUTF(google_apis::GetAPIKey().c_str());
+  return ConvertUTF8ToJavaString(
+      env, google_apis::GetAPIKey().c_str()).Release();
 }
 
 static jstring GetClientId(JNIEnv* env, jclass clazz) {
-  return env->NewStringUTF(
-      google_apis::GetOAuth2ClientID(google_apis::CLIENT_REMOTING).c_str());
+  return ConvertUTF8ToJavaString(
+      env, google_apis::GetOAuth2ClientID(
+          google_apis::CLIENT_REMOTING).c_str()).Release();
 }
 
 static jstring GetClientSecret(JNIEnv* env, jclass clazz) {
-  return env->NewStringUTF(
-      google_apis::GetOAuth2ClientSecret(google_apis::CLIENT_REMOTING).c_str());
+  return ConvertUTF8ToJavaString(
+      env, google_apis::GetOAuth2ClientSecret(
+          google_apis::CLIENT_REMOTING).c_str()).Release();
 }
 
 static void Connect(JNIEnv* env,
@@ -92,47 +95,65 @@ static void Disconnect(JNIEnv* env, jclass clazz) {
 static void AuthenticationResponse(JNIEnv* env,
                                    jclass clazz,
                                    jstring pin,
-                                   jboolean createPair) {
+                                   jboolean createPair,
+                                   jstring deviceName) {
   remoting::ChromotingJniRuntime::GetInstance()->session()->ProvideSecret(
-      ConvertJavaStringToUTF8(env, pin).c_str(), createPair);
+      ConvertJavaStringToUTF8(env, pin).c_str(), createPair,
+      ConvertJavaStringToUTF8(env, deviceName));
 }
 
 static void ScheduleRedraw(JNIEnv* env, jclass clazz) {
   remoting::ChromotingJniRuntime::GetInstance()->session()->RedrawDesktop();
 }
 
-static void MouseAction(JNIEnv* env,
-                        jclass clazz,
-                        jint x,
-                        jint y,
-                        jint whichButton,
-                        jboolean buttonDown) {
+static void SendMouseEvent(JNIEnv* env,
+                           jclass clazz,
+                           jint x,
+                           jint y,
+                           jint whichButton,
+                           jboolean buttonDown) {
   // Button must be within the bounds of the MouseEvent_MouseButton enum.
   DCHECK(whichButton >= 0 && whichButton < 5);
 
-  remoting::ChromotingJniRuntime::GetInstance()->session()->PerformMouseAction(
-      x,
-      y,
+  remoting::ChromotingJniRuntime::GetInstance()->session()->SendMouseEvent(
+      x, y,
       static_cast<remoting::protocol::MouseEvent_MouseButton>(whichButton),
       buttonDown);
 }
 
-static void MouseWheelDeltaAction(JNIEnv* env,
-                                  jclass clazz,
-                                  jint delta_x,
-                                  jint delta_y) {
-  remoting::ChromotingJniRuntime::GetInstance()
-      ->session()
-      ->PerformMouseWheelDeltaAction(delta_x, delta_y);
+static void SendMouseWheelEvent(JNIEnv* env,
+                                jclass clazz,
+                                jint delta_x,
+                                jint delta_y) {
+  remoting::ChromotingJniRuntime::GetInstance()->session()->SendMouseWheelEvent(
+      delta_x, delta_y);
 }
 
-static void KeyboardAction(JNIEnv* env,
-                           jclass clazz,
-                           jint keyCode,
-                           jboolean keyDown) {
-  remoting::ChromotingJniRuntime::GetInstance()
-      ->session()
-      ->PerformKeyboardAction(keyCode, keyDown);
+static jboolean SendKeyEvent(JNIEnv* env,
+                         jclass clazz,
+                         jint keyCode,
+                         jboolean keyDown) {
+  return remoting::ChromotingJniRuntime::GetInstance()->session()->SendKeyEvent(
+      keyCode, keyDown);
+}
+
+static void SendTextEvent(JNIEnv* env,
+                          jclass clazz,
+                          jstring text) {
+  remoting::ChromotingJniRuntime::GetInstance()->session()->SendTextEvent(
+      ConvertJavaStringToUTF8(env, text));
+}
+
+static void OnThirdPartyTokenFetched(JNIEnv* env,
+                                     jclass clazz,
+                                     jstring token,
+                                     jstring shared_secret) {
+  ChromotingJniRuntime* runtime = remoting::ChromotingJniRuntime::GetInstance();
+  runtime->network_task_runner()->PostTask(FROM_HERE, base::Bind(
+      &ChromotingJniInstance::HandleOnThirdPartyTokenFetched,
+      runtime->session(),
+      ConvertJavaStringToUTF8(env, token),
+      ConvertJavaStringToUTF8(env, shared_secret)));
 }
 
 // ChromotingJniRuntime implementation.
@@ -246,6 +267,22 @@ void ChromotingJniRuntime::CommitPairingCredentials(const std::string& host,
       env, j_host.obj(), j_id.obj(), j_secret.obj());
 }
 
+void ChromotingJniRuntime::FetchThirdPartyToken(const GURL& token_url,
+                                                const std::string& client_id,
+                                                const std::string& scope) {
+  DCHECK(ui_task_runner_->BelongsToCurrentThread());
+  JNIEnv* env = base::android::AttachCurrentThread();
+
+  ScopedJavaLocalRef<jstring> j_url =
+      ConvertUTF8ToJavaString(env, token_url.spec());
+  ScopedJavaLocalRef<jstring> j_client_id =
+      ConvertUTF8ToJavaString(env, client_id);
+  ScopedJavaLocalRef<jstring> j_scope = ConvertUTF8ToJavaString(env, scope);
+
+  Java_JniInterface_fetchThirdPartyToken(
+      env, j_url.obj(), j_client_id.obj(), j_scope.obj());
+}
+
 base::android::ScopedJavaLocalRef<jobject> ChromotingJniRuntime::NewBitmap(
     webrtc::DesktopSize size) {
   JNIEnv* env = base::android::AttachCurrentThread();
@@ -293,5 +330,4 @@ void ChromotingJniRuntime::DetachFromVmAndSignal(base::WaitableEvent* waiter) {
   base::android::DetachFromVM();
   waiter->Signal();
 }
-
 }  // namespace remoting

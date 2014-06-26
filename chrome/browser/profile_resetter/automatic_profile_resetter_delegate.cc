@@ -17,19 +17,19 @@
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profile_resetter/brandcode_config_fetcher.h"
 #include "chrome/browser/profile_resetter/profile_reset_global_error.h"
 #include "chrome/browser/profile_resetter/profile_resetter.h"
 #include "chrome/browser/profile_resetter/resettable_settings_snapshot.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 
@@ -41,34 +41,52 @@ namespace {
 
 scoped_ptr<base::DictionaryValue> BuildSubTreeFromTemplateURL(
     const TemplateURL* template_url) {
+  // If this value contains a placeholder in the pre-populated data, it will
+  // have been replaced as it was loaded into a TemplateURL.
+  // BuildSubTreeFromTemplateURL works with TemplateURL (not TemplateURLData)
+  // in order to maintain this behaviour.
+  // TODO(engedy): Confirm the expected behaviour and convert to use
+  // TemplateURLData if possible."
   scoped_ptr<base::DictionaryValue> tree(new base::DictionaryValue);
+  tree->SetString("name", template_url->short_name());
+  tree->SetString("short_name", template_url->short_name());
+  tree->SetString("keyword", template_url->keyword());
   tree->SetString("search_url", template_url->url());
-  tree->SetString("search_terms_replacement_key",
-                  template_url->search_terms_replacement_key());
-  tree->SetString("suggest_url", template_url->suggestions_url());
+  tree->SetString("url", template_url->url());
+  tree->SetString("suggestions_url", template_url->suggestions_url());
   tree->SetString("instant_url", template_url->instant_url());
   tree->SetString("image_url", template_url->image_url());
   tree->SetString("new_tab_url", template_url->new_tab_url());
   tree->SetString("search_url_post_params",
                   template_url->search_url_post_params());
-  tree->SetString("suggest_url_post_params",
+  tree->SetString("suggestions_url_post_params",
                   template_url->suggestions_url_post_params());
   tree->SetString("instant_url_post_params",
                   template_url->instant_url_post_params());
   tree->SetString("image_url_post_params",
                   template_url->image_url_post_params());
-  tree->SetString("icon_url", template_url->favicon_url().spec());
-  tree->SetString("name", template_url->short_name());
-  tree->SetString("keyword", template_url->keyword());
-  base::ListValue* input_encodings = new base::ListValue;
-  input_encodings->AppendStrings(template_url->input_encodings());
-  tree->Set("encodings", input_encodings);
-  tree->SetString("id", base::Int64ToString(template_url->id()));
-  tree->SetString("prepopulate_id",
-                  base::IntToString(template_url->prepopulate_id()));
   base::ListValue* alternate_urls = new base::ListValue;
   alternate_urls->AppendStrings(template_url->alternate_urls());
   tree->Set("alternate_urls", alternate_urls);
+  tree->SetString("favicon_url", template_url->favicon_url().spec());
+  tree->SetString("originating_url", template_url->originating_url().spec());
+  tree->SetBoolean("safe_for_autoreplace",
+                   template_url->safe_for_autoreplace());
+  base::ListValue* input_encodings = new base::ListValue;
+  input_encodings->AppendStrings(template_url->input_encodings());
+  tree->Set("input_encodings", input_encodings);
+  tree->SetString("id", base::Int64ToString(template_url->id()));
+  tree->SetString("date_created",
+                  base::Int64ToString(
+                      template_url->date_created().ToInternalValue()));
+  tree->SetString("last_modified",
+                  base::Int64ToString(
+                      template_url->last_modified().ToInternalValue()));
+  tree->SetBoolean("created_by_policy", template_url->created_by_policy());
+  tree->SetInteger("usage_count", template_url->usage_count());
+  tree->SetInteger("prepopulate_id", template_url->prepopulate_id());
+  tree->SetString("search_terms_replacement_key",
+                  template_url->search_terms_replacement_key());
   return tree.Pass();
 }
 
@@ -175,7 +193,7 @@ void AutomaticProfileResetterDelegateImpl::
     return;
 
   std::string brandcode;
-  google_util::GetBrand(&brandcode);
+  google_brand::GetBrand(&brandcode);
   if (brandcode.empty()) {
     brandcoded_defaults_.reset(new BrandcodedDefaultSettings);
     brandcoded_defaults_fetched_event_.Signal();
@@ -234,13 +252,16 @@ bool AutomaticProfileResetterDelegateImpl::
 scoped_ptr<base::ListValue> AutomaticProfileResetterDelegateImpl::
     GetPrepopulatedSearchProvidersDetails() const {
   size_t default_search_index = 0;
-  ScopedVector<TemplateURL> engines(
+  ScopedVector<TemplateURLData> engines(
       TemplateURLPrepopulateData::GetPrepopulatedEngines(
-          template_url_service_->profile(), &default_search_index));
+          profile_->GetPrefs(), &default_search_index));
   scoped_ptr<base::ListValue> engines_details_list(new base::ListValue);
-  for (ScopedVector<TemplateURL>::const_iterator it = engines.begin();
-       it != engines.end(); ++it)
-    engines_details_list->Append(BuildSubTreeFromTemplateURL(*it).release());
+  for (ScopedVector<TemplateURLData>::const_iterator it = engines.begin();
+       it != engines.end(); ++it) {
+    TemplateURL template_url(**it);
+    engines_details_list->Append(
+        BuildSubTreeFromTemplateURL(&template_url).release());
+  }
   return engines_details_list.Pass();
 }
 
@@ -335,14 +356,14 @@ void AutomaticProfileResetterDelegateImpl::RunProfileSettingsReset(
     old_settings_snapshot.reset(new ResettableSettingsSnapshot(profile_));
     old_settings_snapshot->RequestShortcuts(base::Closure());
   }
-  profile_resetter_->Reset(
-      resettable_aspects_,
-      brandcoded_defaults_.Pass(),
-      base::Bind(&AutomaticProfileResetterDelegateImpl::
-                     OnProfileSettingsResetCompleted,
-                 AsWeakPtr(),
-                 completion,
-                 base::Passed(&old_settings_snapshot)));
+  profile_resetter_->Reset(resettable_aspects_,
+                           brandcoded_defaults_.Pass(),
+                           send_feedback,
+                           base::Bind(&AutomaticProfileResetterDelegateImpl::
+                                          OnProfileSettingsResetCompleted,
+                                      AsWeakPtr(),
+                                      completion,
+                                      base::Passed(&old_settings_snapshot)));
 }
 
 void AutomaticProfileResetterDelegateImpl::

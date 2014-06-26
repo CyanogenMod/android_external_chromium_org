@@ -8,6 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
+#include "ui/base/window_open_disposition.h"
 
 class GURL;
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
@@ -33,11 +34,15 @@ class RenderFrameHostImpl;
 // from WebContentsImpl to this interface.
 class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
  public:
+  // Returns the NavigationController associated with this Navigator.
+  virtual NavigationController* GetController();
+
+
+  // Notifications coming from the RenderFrameHosts ----------------------------
+
   // The RenderFrameHostImpl started a provisional load.
   virtual void DidStartProvisionalLoad(RenderFrameHostImpl* render_frame_host,
-                                       int64 frame_id,
-                                       int64 parent_frame_id,
-                                       bool main_frame,
+                                       int parent_routing_id,
                                        const GURL& url) {};
 
   // The RenderFrameHostImpl has failed a provisional load.
@@ -48,9 +53,7 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
   // The RenderFrameHostImpl has failed to load the document.
   virtual void DidFailLoadWithError(
       RenderFrameHostImpl* render_frame_host,
-      int64 frame_id,
       const GURL& url,
-      bool is_main_frame,
       int error_code,
       const base::string16& error_description) {}
 
@@ -70,14 +73,6 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       RenderFrameHostImpl* render_frame_host,
       const FrameHostMsg_DidCommitProvisionalLoad_Params& params) {}
 
-  // Causes the Navigator to navigate in the right render frame to |entry|,
-  // which must be already part of the entries in the navigation controller.
-  // This does not change the NavigationController state.
-  virtual bool NavigateToEntry(
-      RenderFrameHostImpl* render_frame_host,
-      const NavigationEntryImpl& entry,
-      NavigationController::ReloadType reload_type);
-
   // Called by the NavigationController to cause the Navigator to navigate
   // to the current pending entry. The NavigationController should be called
   // back with RendererDidNavigate on success or DiscardPendingEntry on failure.
@@ -96,7 +91,33 @@ class CONTENT_EXPORT Navigator : public base::RefCounted<Navigator> {
       RenderFrameHostImpl* render_frame_host,
       NavigationController::ReloadType reload_type);
 
+
+  // Navigation requests -------------------------------------------------------
+
   virtual base::TimeTicks GetCurrentLoadStart();
+
+  // The RenderFrameHostImpl has received a request to open a URL with the
+  // specified |disposition|.
+  virtual void RequestOpenURL(RenderFrameHostImpl* render_frame_host,
+                              const GURL& url,
+                              const Referrer& referrer,
+                              WindowOpenDisposition disposition,
+                              bool should_replace_current_entry,
+                              bool user_gesture) {}
+
+  // The RenderFrameHostImpl wants to transfer the request to a new renderer.
+  // |redirect_chain| contains any redirect URLs (excluding |url|) that happened
+  // before the transfer.
+  virtual void RequestTransferURL(
+      RenderFrameHostImpl* render_frame_host,
+      const GURL& url,
+      const std::vector<GURL>& redirect_chain,
+      const Referrer& referrer,
+      PageTransition page_transition,
+      WindowOpenDisposition disposition,
+      const GlobalRequestID& transferred_global_request_id,
+      bool should_replace_current_entry,
+      bool user_gesture) {}
 
  protected:
   friend class base::RefCounted<Navigator>;

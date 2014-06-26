@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CHROME_BROWSER_WEB_APPLICATIONS_APP_SHIM_HOST_MANAGER_MAC_H_
-#define CHROME_BROWSER_WEB_APPLICATIONS_APP_SHIM_HOST_MANAGER_MAC_H_
+#ifndef APPS_APP_SHIM_APP_SHIM_HOST_MANAGER_MAC_H_
+#define APPS_APP_SHIM_APP_SHIM_HOST_MANAGER_MAC_H_
 
 #include "apps/app_shim/extension_app_shim_handler_mac.h"
 #include "base/memory/ref_counted.h"
@@ -56,6 +56,11 @@ class AppShimHostManager
   // Called on the IO thread to begin listening for connections from app shims.
   void ListenOnIOThread();
 
+  // The AppShimHostManager is only initialized if the Chrome process
+  // successfully took the singleton lock. This prevents subsequent processes
+  // from deleting existing app shim socket files.
+  bool did_init_;
+
   base::FilePath directory_in_tmp_;
 
   scoped_ptr<IPC::ChannelFactory> factory_;
@@ -65,4 +70,4 @@ class AppShimHostManager
   DISALLOW_COPY_AND_ASSIGN(AppShimHostManager);
 };
 
-#endif  // CHROME_BROWSER_WEB_APPLICATIONS_APP_SHIM_HOST_MANAGER_MAC_H_
+#endif  // APPS_APP_SHIM_APP_SHIM_HOST_MANAGER_MAC_H_

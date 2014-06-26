@@ -33,9 +33,6 @@ const int kMiniTabWidth = 64;
 const int kMiniTabWidth = 56;
 #endif
 
-// Should session restore restore popup windows?
-extern const bool kRestorePopups;
-
 // Can the browser be alive without any browser windows?
 extern const bool kBrowserAliveWithNoWindows;
 
@@ -70,9 +67,6 @@ extern const bool kSyncAutoStarts;
 
 // Should other browsers be shown in about:memory page?
 extern const bool kShowOtherBrowsersInAboutMemory;
-
-// Should the close button be shown in the Task Manager dialog?
-extern const bool kShowCancelButtonInTaskManager;
 
 // Should scroll events on the tabstrip change tabs?
 extern const bool kScrollEventChangesTab;

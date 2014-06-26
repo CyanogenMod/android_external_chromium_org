@@ -6,10 +6,13 @@
 
 #include "base/files/file_path.h"
 #include "base/strings/string_util.h"
+#include "net/base/filename_util_unsafe.h"
 #include "net/base/io_buffer.h"
 #include "net/base/mime_util.h"
 #include "net/filter/gzip_filter.h"
 #include "net/filter/sdch_filter.h"
+#include "net/url_request/url_request_context.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -170,11 +173,13 @@ void Filter::FixupEncodingTypes(
       encoding_types->clear();
 
     GURL url;
+    std::string disposition;
     success = filter_context.GetURL(&url);
     DCHECK(success);
-    base::FilePath filename =
-        base::FilePath().AppendASCII(url.ExtractFileName());
-    base::FilePath::StringType extension = filename.Extension();
+    filter_context.GetContentDisposition(&disposition);
+    // Don't supply a MIME type here, since that may cause disk IO.
+    base::FilePath::StringType extension =
+        GenerateFileExtensionUnsafe(url, disposition, "UTF-8", "", "", "");
 
     if (filter_context.IsDownload()) {
       // We don't want to decompress gzipped files when the user explicitly
@@ -369,7 +374,8 @@ Filter* Filter::PrependNewFilter(FilterType type_id,
       break;
     case FILTER_TYPE_SDCH:
     case FILTER_TYPE_SDCH_POSSIBLE:
-      if (SdchManager::Global() && SdchManager::sdch_enabled()) {
+      if (filter_context.GetURLRequestContext()->sdch_manager() &&
+          SdchManager::sdch_enabled()) {
         first_filter.reset(
             InitSdchFilter(type_id, filter_context, buffer_size));
       }

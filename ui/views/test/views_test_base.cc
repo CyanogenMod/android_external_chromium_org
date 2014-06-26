@@ -7,11 +7,8 @@
 #include "base/run_loop.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/ime/input_method_initializer.h"
-#include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/test/aura_test_helper.h"
-#include "ui/views/corewm/capture_controller.h"
-#include "ui/views/corewm/wm_state.h"
+#include "ui/compositor/test/context_factories_for_test.h"
+#include "ui/views/test/views_test_helper.h"
 
 namespace views {
 
@@ -24,7 +21,7 @@ ViewsTestBase::~ViewsTestBase() {
   CHECK(setup_called_)
       << "You have overridden SetUp but never called super class's SetUp";
   CHECK(teardown_called_)
-      << "You have overrideen TearDown but never called super class's TearDown";
+      << "You have overridden TearDown but never called super class's TearDown";
 }
 
 void ViewsTestBase::SetUp() {
@@ -32,10 +29,13 @@ void ViewsTestBase::SetUp() {
   setup_called_ = true;
   if (!views_delegate_.get())
     views_delegate_.reset(new TestViewsDelegate());
-  aura_test_helper_.reset(new aura::test::AuraTestHelper(&message_loop_));
-  bool allow_test_contexts = true;
-  aura_test_helper_->SetUp(allow_test_contexts);
-  wm_state_.reset(new views::corewm::WMState);
+  // The ContextFactory must exist before any Compositors are created.
+  bool enable_pixel_output = false;
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output);
+
+  test_helper_.reset(ViewsTestHelper::Create(&message_loop_, context_factory));
+  test_helper_->SetUp();
   ui::InitializeInputMethodForTesting();
 }
 
@@ -49,9 +49,8 @@ void ViewsTestBase::TearDown() {
   views_delegate_.reset();
   testing::Test::TearDown();
   ui::ShutdownInputMethodForTesting();
-  aura_test_helper_->TearDown();
-  wm_state_.reset();
-  CHECK(!corewm::ScopedCaptureClient::IsActive());
+  test_helper_->TearDown();
+  ui::TerminateContextFactoryForTests();
 }
 
 void ViewsTestBase::RunPendingMessages() {
@@ -62,12 +61,12 @@ void ViewsTestBase::RunPendingMessages() {
 Widget::InitParams ViewsTestBase::CreateParams(
     Widget::InitParams::Type type) {
   Widget::InitParams params(type);
-  params.context = aura_test_helper_->root_window();
+  params.context = GetContext();
   return params;
 }
 
 gfx::NativeView ViewsTestBase::GetContext() {
-  return aura_test_helper_->root_window();
+  return test_helper_->GetContext();
 }
 
 }  // namespace views

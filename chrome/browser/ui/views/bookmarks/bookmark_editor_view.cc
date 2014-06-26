@@ -11,19 +11,19 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/common/net/url_fixer_upper.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/url_fixer/url_fixer.h"
 #include "components/user_prefs/user_prefs.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/views/background.h"
@@ -39,6 +39,7 @@
 #include "ui/views/window/dialog_client_view.h"
 #include "url/gurl.h"
 
+using bookmarks::BookmarkExpandedStateTracker;
 using views::GridLayout;
 
 namespace {
@@ -72,9 +73,12 @@ BookmarkEditorView::BookmarkEditorView(
       title_tf_(NULL),
       parent_(parent),
       details_(details),
+      bb_model_(BookmarkModelFactory::GetForProfile(profile)),
       running_menu_for_root_(false),
       show_tree_(configuration == SHOW_TREE) {
   DCHECK(profile);
+  DCHECK(bb_model_);
+  DCHECK(bb_model_->client()->CanBeEditedByUser(parent));
   Init();
 }
 
@@ -134,7 +138,7 @@ bool BookmarkEditorView::Accept() {
   return true;
 }
 
-gfx::Size BookmarkEditorView::GetPreferredSize() {
+gfx::Size BookmarkEditorView::GetPreferredSize() const {
   if (!show_tree_)
     return views::View::GetPreferredSize();
 
@@ -164,10 +168,10 @@ bool BookmarkEditorView::HandleKeyEvent(views::Textfield* sender,
     return false;
 }
 
-void BookmarkEditorView::GetAccessibleState(ui::AccessibleViewState* state) {
+void BookmarkEditorView::GetAccessibleState(ui::AXViewState* state) {
   state->name =
       l10n_util::GetStringUTF16(IDS_BOOKMARK_EDITOR_TITLE);
-  state->role = ui::AccessibilityTypes::ROLE_DIALOG;
+  state->role = ui::AX_ROLE_DIALOG;
 }
 
 void BookmarkEditorView::ButtonPressed(views::Button* sender,
@@ -208,7 +212,7 @@ void BookmarkEditorView::ExecuteCommand(int command_id, int event_flags) {
     if (!node)
       return;
     if (node->value != 0) {
-      const BookmarkNode* b_node = bb_model_->GetNodeByID(node->value);
+      const BookmarkNode* b_node = GetBookmarkNodeByID(bb_model_, node->value);
       if (!b_node->empty() &&
           !chrome::ConfirmDeleteBookmarkNode(b_node,
             GetWidget()->GetNativeWindow())) {
@@ -249,17 +253,19 @@ void BookmarkEditorView::ShowContextMenuForView(
 
   context_menu_runner_.reset(new views::MenuRunner(GetMenuModel()));
 
-  if (context_menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
-        NULL, gfx::Rect(point, gfx::Size()), views::MenuItemView::TOPRIGHT,
-        source_type,
-        views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-        views::MenuRunner::MENU_DELETED)
+  if (context_menu_runner_->RunMenuAt(
+          source->GetWidget()->GetTopLevelWidget(),
+          NULL,
+          gfx::Rect(point, gfx::Size()),
+          views::MENU_ANCHOR_TOPRIGHT,
+          source_type,
+          views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+      views::MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 void BookmarkEditorView::Init() {
-  bb_model_ = BookmarkModelFactory::GetForProfile(profile_);
-  DCHECK(bb_model_);
   bb_model_->AddObserver(this);
 
   title_label_ = new views::Label(
@@ -372,10 +378,12 @@ void BookmarkEditorView::BookmarkNodeAdded(BookmarkModel* model,
   Reset();
 }
 
-void BookmarkEditorView::BookmarkNodeRemoved(BookmarkModel* model,
-                                             const BookmarkNode* parent,
-                                             int index,
-                                             const BookmarkNode* node) {
+void BookmarkEditorView::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   if ((details_.type == EditDetails::EXISTING_NODE &&
        details_.existing_node->HasAncestor(node)) ||
       (parent_ && parent_->HasAncestor(node))) {
@@ -386,12 +394,15 @@ void BookmarkEditorView::BookmarkNodeRemoved(BookmarkModel* model,
   }
 }
 
-void BookmarkEditorView::BookmarkAllNodesRemoved(BookmarkModel* model) {
+void BookmarkEditorView::BookmarkAllUserNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   Reset();
 }
 
 void BookmarkEditorView::BookmarkNodeChildrenReordered(
-    BookmarkModel* model, const BookmarkNode* node) {
+    BookmarkModel* model,
+    const BookmarkNode* node) {
   Reset();
 }
 
@@ -423,8 +434,7 @@ void BookmarkEditorView::Reset() {
 GURL BookmarkEditorView::GetInputURL() const {
   if (details_.GetNodeType() == BookmarkNode::FOLDER)
     return GURL();
-  return URLFixerUpper::FixupURL(
-      base::UTF16ToUTF8(url_tf_->text()), std::string());
+  return url_fixer::FixupURL(base::UTF16ToUTF8(url_tf_->text()), std::string());
 }
 
 void BookmarkEditorView::UserInputChanged() {
@@ -486,10 +496,10 @@ BookmarkEditorView::EditorNode* BookmarkEditorView::CreateRootNode() {
   EditorNode* root_node = new EditorNode(base::string16(), 0);
   const BookmarkNode* bb_root_node = bb_model_->root_node();
   CreateNodes(bb_root_node, root_node);
-  DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 3);
+  DCHECK(root_node->child_count() >= 2 && root_node->child_count() <= 4);
   DCHECK_EQ(BookmarkNode::BOOKMARK_BAR, bb_root_node->GetChild(0)->type());
   DCHECK_EQ(BookmarkNode::OTHER_NODE, bb_root_node->GetChild(1)->type());
-  if (root_node->child_count() == 3)
+  if (root_node->child_count() >= 3)
     DCHECK_EQ(BookmarkNode::MOBILE, bb_root_node->GetChild(2)->type());
   return root_node;
 }
@@ -498,7 +508,8 @@ void BookmarkEditorView::CreateNodes(const BookmarkNode* bb_node,
                                      BookmarkEditorView::EditorNode* b_node) {
   for (int i = 0; i < bb_node->child_count(); ++i) {
     const BookmarkNode* child_bb_node = bb_node->GetChild(i);
-    if (child_bb_node->IsVisible() && child_bb_node->is_folder()) {
+    if (child_bb_node->IsVisible() && child_bb_node->is_folder() &&
+        bb_model_->client()->CanBeEditedByUser(child_bb_node)) {
       EditorNode* new_b_node = new EditorNode(child_bb_node->GetTitle(),
                                               child_bb_node->id());
       b_node->Add(new_b_node, b_node->child_count());
@@ -608,8 +619,9 @@ void BookmarkEditorView::UpdateExpandedNodes(
   if (!tree_view_->IsExpanded(editor_node))
     return;
 
-  if (editor_node->value != 0)  // The root is 0
-    expanded_nodes->insert(bb_model_->GetNodeByID(editor_node->value));
+  if (editor_node->value != 0)  // The root is 0.
+    expanded_nodes->insert(GetBookmarkNodeByID(bb_model_, editor_node->value));
+
   for (int i = 0; i < editor_node->child_count(); ++i)
     UpdateExpandedNodes(editor_node->GetChild(i), expanded_nodes);
 }

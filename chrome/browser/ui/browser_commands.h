@@ -64,7 +64,7 @@ bool CanGoForward(const Browser* browser);
 void GoForward(Browser* browser, WindowOpenDisposition disposition);
 bool NavigateToIndexWithDisposition(Browser* browser,
                                     int index,
-                                    WindowOpenDisposition disp);
+                                    WindowOpenDisposition disposition);
 void Reload(Browser* browser, WindowOpenDisposition disposition);
 void ReloadIgnoringCache(Browser* browser, WindowOpenDisposition disposition);
 bool CanReload(const Browser* browser);
@@ -92,11 +92,11 @@ bool CanDuplicateTabAt(Browser* browser, int index);
 void ConvertPopupToTabbedBrowser(Browser* browser);
 void Exit();
 void BookmarkCurrentPage(Browser* browser);
-void BookmarkCurrentPageFromStar(Browser* browser);
 bool CanBookmarkCurrentPage(const Browser* browser);
 void BookmarkAllTabs(Browser* browser);
 bool CanBookmarkAllTabs(const Browser* browser);
 void Translate(Browser* browser);
+void ManagePasswordsForPage(Browser* browser);
 void TogglePagePinnedToStartScreen(Browser* browser);
 void SavePage(Browser* browser);
 bool CanSavePage(const Browser* browser);
@@ -137,6 +137,7 @@ void ShowAppMenu(Browser* browser);
 void ShowAvatarMenu(Browser* browser);
 void OpenUpdateChromeDialog(Browser* browser);
 void ToggleSpeechInput(Browser* browser);
+void DistillCurrentPage(Browser* browser);
 bool CanRequestTabletSite(content::WebContents* current_tab);
 bool IsRequestingTabletSite(Browser* browser);
 void ToggleRequestTabletSite(Browser* browser);
@@ -157,8 +158,9 @@ void ViewSelectedSource(Browser* browser);
 bool CanViewSource(const Browser* browser);
 
 void CreateApplicationShortcuts(Browser* browser);
-void CreateHostedAppFromCurrentWebContents(Browser* browser);
+void CreateBookmarkAppFromCurrentWebContents(Browser* browser);
 bool CanCreateApplicationShortcuts(const Browser* browser);
+bool CanCreateBookmarkApp(const Browser* browser);
 
 void ConvertTabToAppWindow(Browser* browser, content::WebContents* contents);
 

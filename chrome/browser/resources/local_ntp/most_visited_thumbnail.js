@@ -14,8 +14,9 @@ window.addEventListener('DOMContentLoaded', function() {
     function logEvent(eventName) {
       chrome.embeddedSearch.newTabPage.logEvent(eventName);
     }
-    function logImpression(tileIndex, provider) {
-      chrome.embeddedSearch.newTabPage.logImpression(tileIndex, provider);
+    function logMostVisitedImpression(tileIndex, provider) {
+      chrome.embeddedSearch.newTabPage.logMostVisitedImpression(
+          tileIndex, provider);
     }
     function displayLink(link) {
       document.body.appendChild(link);
@@ -23,7 +24,7 @@ window.addEventListener('DOMContentLoaded', function() {
     }
     function showDomainElement() {
       var link = createMostVisitedLink(
-          params, data.url, data.title, undefined, data.ping, data.provider);
+          params, data.url, data.title, undefined, data.provider);
       var domain = document.createElement('div');
       domain.textContent = data.domain;
       link.appendChild(domain);
@@ -33,49 +34,48 @@ window.addEventListener('DOMContentLoaded', function() {
     // externally by the page itself.
     function showEmptyTile() {
       displayLink(createMostVisitedLink(
-          params, data.url, data.title, undefined, data.ping, data.provider));
+          params, data.url, data.title, undefined, data.provider));
     }
     // Creates and adds an image.
     function createThumbnail(src) {
-      var image = new Image();
+      var image = document.createElement('img');
       image.onload = function() {
         var shadow = document.createElement('span');
-        shadow.classList.add('shadow');
+        shadow.className = 'shadow';
         var link = createMostVisitedLink(
-            params, data.url, data.title, undefined, data.ping,
-            data.provider);
+            params, data.url, data.title, undefined, data.provider);
         link.appendChild(shadow);
         link.appendChild(image);
         displayLink(link);
       };
       image.onerror = function() {
-        logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ERROR);
         if (data.domain) {
-          logEvent(NTP_LOGGING_EVENT_TYPE.NTP_GRAY_TILE_FALLBACK);
           showDomainElement();
+          logEvent(NTP_LOGGING_EVENT_TYPE.NTP_GRAY_TILE_FALLBACK);
         } else {
-          logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE_FALLBACK);
           showEmptyTile();
+          logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE_FALLBACK);
         }
+        logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_ERROR);
       };
       image.src = src;
     }
 
+    if (data.thumbnailUrl) {
+      createThumbnail(data.thumbnailUrl);
+      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_TILE);
+    } else if (data.domain) {
+      showDomainElement();
+      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_GRAY_TILE);
+    } else {
+      showEmptyTile();
+      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE);
+    }
+    logEvent(NTP_LOGGING_EVENT_TYPE.NTP_TILE);
+
     // Log an impression if we know the position of the tile.
     if (isFinite(params.pos) && data.provider) {
-      logImpression(parseInt(params.pos, 10), data.provider);
-    }
-
-    logEvent(NTP_LOGGING_EVENT_TYPE.NTP_TILE);
-    if (data.thumbnailUrl) {
-      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_TILE);
-      createThumbnail(data.thumbnailUrl);
-    } else if (data.domain) {
-      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_GRAY_TILE);
-      showDomainElement();
-    } else {
-      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE);
-      showEmptyTile();
+      logMostVisitedImpression(parseInt(params.pos, 10), data.provider);
     }
   });
 });

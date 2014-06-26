@@ -21,11 +21,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/image_view.h"
@@ -40,8 +39,6 @@ using chromeos::NetworkStateHandler;
 using chromeos::NetworkTypePattern;
 
 namespace ash {
-namespace internal {
-
 namespace tray {
 
 class NetworkTrayView : public TrayItemView,
@@ -101,9 +98,9 @@ class NetworkTrayView : public TrayItemView,
   }
 
   // views::View override.
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE {
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE {
     state->name = connection_status_string_;
-    state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+    state->role = ui::AX_ROLE_BUTTON;
   }
 
   // network_icon::AnimationObserver
@@ -123,7 +120,7 @@ class NetworkTrayView : public TrayItemView,
     if (new_connection_status_string != connection_status_string_) {
       connection_status_string_ = new_connection_status_string;
       if(!connection_status_string_.empty())
-        NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_ALERT, true);
+        NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
     }
   }
 
@@ -265,11 +262,15 @@ TrayNetwork::TrayNetwork(SystemTray* system_tray)
       detailed_(NULL),
       request_wifi_view_(false) {
   network_state_observer_.reset(new TrayNetworkStateObserver(this));
-  Shell::GetInstance()->system_tray_notifier()->AddNetworkObserver(this);
+  SystemTrayNotifier* notifier = Shell::GetInstance()->system_tray_notifier();
+  notifier->AddNetworkObserver(this);
+  notifier->AddNetworkPortalDetectorObserver(this);
 }
 
 TrayNetwork::~TrayNetwork() {
-  Shell::GetInstance()->system_tray_notifier()->RemoveNetworkObserver(this);
+  SystemTrayNotifier* notifier = Shell::GetInstance()->system_tray_notifier();
+  notifier->RemoveNetworkObserver(this);
+  notifier->RemoveNetworkPortalDetectorObserver(this);
 }
 
 views::View* TrayNetwork::CreateTrayView(user::LoginStatus status) {
@@ -347,6 +348,11 @@ void TrayNetwork::RequestToggleWifi() {
                                 chromeos::network_handler::ErrorCallback());
 }
 
+void TrayNetwork::OnCaptivePortalDetected(
+    const std::string& /* service_path */) {
+  NetworkStateChanged(false);
+}
+
 void TrayNetwork::NetworkStateChanged(bool list_changed) {
   if (tray_)
     tray_->UpdateNetworkStateHandlerIcon();
@@ -365,5 +371,4 @@ void TrayNetwork::NetworkServiceChanged(const chromeos::NetworkState* network) {
     detailed_->NetworkServiceChanged(network);
 }
 
-}  // namespace internal
 }  // namespace ash

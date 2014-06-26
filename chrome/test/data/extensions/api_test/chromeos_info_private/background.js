@@ -102,10 +102,12 @@ function prefsTest() {
 
 // Run generated chrome.chromeosInfoPrivate.get() tests.
 var tests = generateTestsForKeys(['hwid',
+                                  'customizationId',
                                   'homeProvider',
                                   'initialLocale',
                                   'board',
                                   'isOwner',
+                                  'clientId',
                                   'a11yLargeCursorEnabled',
                                   'a11yStickyKeysEnabled',
                                   'a11ySpokenFeedbackEnabled',

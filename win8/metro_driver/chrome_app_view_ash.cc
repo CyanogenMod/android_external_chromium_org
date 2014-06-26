@@ -17,11 +17,14 @@
 #include "base/threading/thread.h"
 #include "base/win/metro.h"
 #include "base/win/win_util.h"
+#include "base/win/windows_version.h"
 #include "chrome/common/chrome_switches.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
 #include "ui/events/gestures/gesture_sequence.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/win/dpi.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
 #include "win8/metro_driver/file_picker_ash.h"
 #include "win8/metro_driver/ime/ime_popup_monitor.h"
@@ -73,6 +76,8 @@ struct Globals {
   BreakpadExceptionHandler breakpad_exception_handler;
 } globals;
 
+extern float GetModernUIScale();
+
 namespace {
 
 enum KeyModifier {
@@ -85,7 +90,7 @@ enum KeyModifier {
 // Helper function to send keystrokes via the SendInput function.
 // mnemonic_char: The keystroke to be sent.
 // modifiers: Combination with Alt, Ctrl, Shift, etc.
-void SendMnemonic(
+void SendKeySequence(
     WORD mnemonic_char, KeyModifier modifiers) {
   INPUT keys[4] = {0};  // Keyboard events
   int key_count = 0;  // Number of generated events
@@ -134,19 +139,6 @@ void SendMnemonic(
   }
 }
 
-// Helper function to Exit metro chrome cleanly. If we are in the foreground
-// then we try and exit by sending an Alt+F4 key combination to the core
-// window which ensures that the chrome application tile does not show up in
-// the running metro apps list on the top left corner.
-void MetroExit(HWND core_window) {
-  if ((core_window != NULL) && (core_window == ::GetForegroundWindow())) {
-    DVLOG(1) << "We are in the foreground. Exiting via Alt F4";
-    SendMnemonic(VK_F4, ALT);
-  } else {
-    globals.app_exit->Exit();
-  }
-}
-
 class ChromeChannelListener : public IPC::Listener {
  public:
   ChromeChannelListener(base::MessageLoop* ui_loop, ChromeAppViewAsh* app_view)
@@ -179,11 +171,15 @@ class ChromeChannelListener : public IPC::Listener {
 
   virtual void OnChannelError() OVERRIDE {
     DVLOG(1) << "Channel error. Exiting.";
-    MetroExit(app_view_->core_window_hwnd());
+    ui_proxy_->PostTask(FROM_HERE,
+        base::Bind(&ChromeAppViewAsh::OnMetroExit, base::Unretained(app_view_),
+                   TERMINATE_USING_KEY_SEQUENCE));
+
     // In early Windows 8 versions the code above sometimes fails so we call
     // it a second time with a NULL window which just calls Exit().
     ui_proxy_->PostDelayedTask(FROM_HERE,
-        base::Bind(&MetroExit, HWND(NULL)),
+        base::Bind(&ChromeAppViewAsh::OnMetroExit, base::Unretained(app_view_),
+                   TERMINATE_USING_PROCESS_EXIT),
         base::TimeDelta::FromMilliseconds(100));
   }
 
@@ -196,7 +192,9 @@ class ChromeChannelListener : public IPC::Listener {
   }
 
   void OnMetroExit() {
-    MetroExit(app_view_->core_window_hwnd());
+    ui_proxy_->PostTask(FROM_HERE,
+        base::Bind(&ChromeAppViewAsh::OnMetroExit,
+        base::Unretained(app_view_), TERMINATE_USING_KEY_SEQUENCE));
   }
 
   void OnOpenURLOnDesktop(const base::FilePath& shortcut,
@@ -279,8 +277,8 @@ bool WaitForChromeIPCConnection(const std::string& channel_name) {
   int ms_elapsed = 0;
   while (!IPC::Channel::IsNamedServerInitialized(channel_name) &&
          ms_elapsed < 10000) {
-    ms_elapsed += 500;
-    Sleep(500);
+    ms_elapsed += 100;
+    Sleep(100);
   }
   return IPC::Channel::IsNamedServerInitialized(channel_name);
 }
@@ -366,7 +364,7 @@ bool LaunchChromeBrowserProcess(const wchar_t* additional_parameters,
 // This class helps decoding the pointer properties of an event.
 class ChromeAppViewAsh::PointerInfoHandler {
  public:
-  PointerInfoHandler()
+  PointerInfoHandler(float metro_dpi_scale, float win32_dpi_scale)
       : x_(0),
         y_(0),
         wheel_delta_(0),
@@ -374,7 +372,9 @@ class ChromeAppViewAsh::PointerInfoHandler {
         timestamp_(0),
         pointer_id_(0),
         mouse_down_flags_(0),
-        is_horizontal_wheel_(0) {}
+        is_horizontal_wheel_(0),
+        metro_dpi_scale_(metro_dpi_scale),
+        win32_dpi_scale_(win32_dpi_scale) {}
 
   HRESULT Init(winui::Core::IPointerEventArgs* args) {
     HRESULT hr = args->get_CurrentPoint(&pointer_point_);
@@ -402,8 +402,18 @@ class ChromeAppViewAsh::PointerInfoHandler {
     is_horizontal_wheel_ = 0;
     properties->get_IsHorizontalMouseWheel(&is_horizontal_wheel_);
 
-    x_ = point.X;
-    y_ = point.Y;
+    // The input coordinates are in DIP based on the metro scale factor.
+    // We want to convert it to DIP based on the win32 scale factor.
+    // We scale the point by the metro scale factor and then scale down
+    // via the win32 scale factor which achieves the needful.
+    gfx::Point dip_point_metro(point.X, point.Y);
+    gfx::Point scaled_point_metro =
+      gfx::ToCeiledPoint(gfx::ScalePoint(dip_point_metro, metro_dpi_scale_));
+    gfx::Point dip_point_win32 =
+        gfx::ToCeiledPoint(gfx::ScalePoint(scaled_point_metro,
+                                           1.0 / win32_dpi_scale_));
+    x_ = dip_point_win32.x();
+    y_ = dip_point_win32.y();
 
     pointer_point_->get_Timestamp(&timestamp_);
     pointer_point_->get_PointerId(&pointer_id_);
@@ -506,13 +516,21 @@ class ChromeAppViewAsh::PointerInfoHandler {
   // Set to true for a horizontal wheel message.
   boolean is_horizontal_wheel_;
 
+  // The metro device scale factor as reported by the winrt interfaces.
+  float metro_dpi_scale_;
+  // The win32 dpi scale which is queried via GetDeviceCaps. Please refer to
+  // ui/gfx/win/dpi.cc for more information.
+  float win32_dpi_scale_;
+
   DISALLOW_COPY_AND_ASSIGN(PointerInfoHandler);
 };
 
 ChromeAppViewAsh::ChromeAppViewAsh()
     : mouse_down_flags_(ui::EF_NONE),
       ui_channel_(nullptr),
-      core_window_hwnd_(NULL) {
+      core_window_hwnd_(NULL),
+      metro_dpi_scale_(0),
+      win32_dpi_scale_(0) {
   DVLOG(1) << __FUNCTION__;
   globals.previous_state =
       winapp::Activation::ApplicationExecutionState_NotRunning;
@@ -580,7 +598,7 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
   CheckHR(hr);
 
   mswr::ComPtr<winui::Core::ICoreDispatcher> dispatcher;
-  hr = window_->get_Dispatcher(&dispatcher);
+  hr = window_->get_Dispatcher(dispatcher.GetAddressOf());
   CheckHR(hr, "Get Dispatcher failed.");
 
   mswr::ComPtr<winui::Core::ICoreAcceleratorKeys> accelerator_keys;
@@ -609,31 +627,44 @@ ChromeAppViewAsh::SetWindow(winui::Core::ICoreWindow* window) {
       &window_activated_token_);
   CheckHR(hr);
 
-  // Register for edge gesture notifications.
-  mswr::ComPtr<winui::Input::IEdgeGestureStatics> edge_gesture_statics;
-  hr = winrt_utils::CreateActivationFactory(
-      RuntimeClass_Windows_UI_Input_EdgeGesture,
-      edge_gesture_statics.GetAddressOf());
-  CheckHR(hr);
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    // Register for edge gesture notifications only for Windows 8 and above.
+    mswr::ComPtr<winui::Input::IEdgeGestureStatics> edge_gesture_statics;
+    hr = winrt_utils::CreateActivationFactory(
+        RuntimeClass_Windows_UI_Input_EdgeGesture,
+        edge_gesture_statics.GetAddressOf());
+    CheckHR(hr);
 
-  mswr::ComPtr<winui::Input::IEdgeGesture> edge_gesture;
-  hr = edge_gesture_statics->GetForCurrentView(&edge_gesture);
-  CheckHR(hr);
+    mswr::ComPtr<winui::Input::IEdgeGesture> edge_gesture;
+    hr = edge_gesture_statics->GetForCurrentView(&edge_gesture);
+    CheckHR(hr);
 
-  hr = edge_gesture->add_Completed(mswr::Callback<EdgeEventHandler>(
-      this, &ChromeAppViewAsh::OnEdgeGestureCompleted).Get(),
-      &edgeevent_token_);
-  CheckHR(hr);
+    hr = edge_gesture->add_Completed(mswr::Callback<EdgeEventHandler>(
+        this, &ChromeAppViewAsh::OnEdgeGestureCompleted).Get(),
+        &edgeevent_token_);
+    CheckHR(hr);
+  }
 
   // By initializing the direct 3D swap chain with the corewindow
   // we can now directly blit to it from the browser process.
   direct3d_helper_.Initialize(window);
   DVLOG(1) << "Initialized Direct3D.";
+
+  // On Windows 8+ the WinRT interface IDisplayProperties which we use to get
+  // device scale factor does not return the correct values in metro mode.
+  // To workaround this we retrieve the device scale factor via the win32 way
+  // and scale input coordinates accordingly to pass them in DIP to chrome.
+  // TODO(ananta). Investigate and fix.
+  metro_dpi_scale_ = GetModernUIScale();
+  win32_dpi_scale_ = gfx::GetDPIScale();
+  DVLOG(1) << "Metro Scale is " << metro_dpi_scale_;
+  DVLOG(1) << "Win32 Scale is " << win32_dpi_scale_;
   return S_OK;
 }
 
 IFACEMETHODIMP
 ChromeAppViewAsh::Load(HSTRING entryPoint) {
+  // On Win7 |entryPoint| is NULL.
   DVLOG(1) << __FUNCTION__;
   return S_OK;
 }
@@ -642,7 +673,7 @@ IFACEMETHODIMP
 ChromeAppViewAsh::Run() {
   DVLOG(1) << __FUNCTION__;
   mswr::ComPtr<winui::Core::ICoreDispatcher> dispatcher;
-  HRESULT hr = window_->get_Dispatcher(&dispatcher);
+  HRESULT hr = window_->get_Dispatcher(dispatcher.GetAddressOf());
   CheckHR(hr, "Dispatcher failed.");
 
   hr = window_->Activate();
@@ -663,16 +694,17 @@ ChromeAppViewAsh::Run() {
   // In Aura mode we create an IPC channel to the browser, then ask it to
   // connect to us.
   ChromeChannelListener ui_channel_listener(&ui_loop_, this);
-  IPC::ChannelProxy ui_channel(win8::kMetroViewerIPCChannelName,
-                               IPC::Channel::MODE_NAMED_CLIENT,
-                               &ui_channel_listener,
-                               io_thread.message_loop_proxy());
-  ui_channel_ = &ui_channel;
+  scoped_ptr<IPC::ChannelProxy> channel =
+      IPC::ChannelProxy::Create(win8::kMetroViewerIPCChannelName,
+                                IPC::Channel::MODE_NAMED_CLIENT,
+                                &ui_channel_listener,
+                                io_thread.message_loop_proxy());
+  ui_channel_ = channel.get();
 
   // Upon receipt of the MetroViewerHostMsg_SetTargetSurface message the
   // browser will use D3D from the browser process to present to our Window.
   ui_channel_->Send(new MetroViewerHostMsg_SetTargetSurface(
-                    gfx::NativeViewId(core_window_hwnd_)));
+                    gfx::NativeViewId(core_window_hwnd_), win32_dpi_scale_));
   DVLOG(1) << "ICoreWindow sent " << core_window_hwnd_;
 
   // Send an initial size message so that the Ash root window host gets sized
@@ -746,7 +778,7 @@ void ChromeAppViewAsh::OnActivateDesktop(const base::FilePath& file_path,
   if (ash_exit) {
     // As we are the top level window, the exiting is done async so we manage
     // to execute  the entire function including the final Send().
-    MetroExit(core_window_hwnd());
+    OnMetroExit(TERMINATE_USING_KEY_SEQUENCE);
   }
 
   // We are just executing delegate_execute here without parameters. Assumption
@@ -768,9 +800,6 @@ void ChromeAppViewAsh::OnActivateDesktop(const base::FilePath& file_path,
     ::TerminateProcess(sei.hProcess, 0);
     ::CloseHandle(sei.hProcess);
   }
-
-  if (ash_exit)
-    ui_channel_->Close();
 }
 
 void ChromeAppViewAsh::OnOpenURLOnDesktop(const base::FilePath& shortcut,
@@ -920,6 +949,30 @@ void ChromeAppViewAsh::OnImePopupChanged(ImePopupObserver::EventType event) {
   }
 }
 
+// Function to Exit metro chrome cleanly. If we are in the foreground
+// then we try and exit by sending an Alt+F4 key combination to the core
+// window which ensures that the chrome application tile does not show up in
+// the running metro apps list on the top left corner.
+void ChromeAppViewAsh::OnMetroExit(MetroTerminateMethod method) {
+  if (base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    HWND core_window = core_window_hwnd();
+    if (method == TERMINATE_USING_KEY_SEQUENCE && core_window != NULL &&
+        core_window == ::GetForegroundWindow()) {
+      DVLOG(1) << "We are in the foreground. Exiting via Alt F4";
+      SendKeySequence(VK_F4, ALT);
+      if (ui_channel_)
+        ui_channel_->Close();
+    } else {
+      globals.app_exit->Exit();
+    }
+  } else {
+    if (ui_channel_)
+      ui_channel_->Close();
+
+    globals.app_exit->Exit();
+  }
+}
+
 void ChromeAppViewAsh::OnInputSourceChanged() {
   if (!input_source_)
     return;
@@ -1023,7 +1076,7 @@ HRESULT ChromeAppViewAsh::OnActivate(
 
 HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
                                          winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1053,7 +1106,7 @@ HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
 HRESULT ChromeAppViewAsh::OnPointerPressed(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1076,7 +1129,7 @@ HRESULT ChromeAppViewAsh::OnPointerPressed(
 HRESULT ChromeAppViewAsh::OnPointerReleased(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1101,7 +1154,7 @@ HRESULT ChromeAppViewAsh::OnPointerReleased(
 HRESULT ChromeAppViewAsh::OnWheel(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
-  PointerInfoHandler pointer;
+  PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
@@ -1178,6 +1231,13 @@ HRESULT ChromeAppViewAsh::OnAcceleratorKeyDown(
       break;
 
     case winui::Core::CoreAcceleratorKeyEventType_SystemKeyDown:
+      // Don't send the Alt + F4 combination to Chrome as this is intended to
+      // shut the metro environment down. Reason we check for Control here is
+      // Windows does not shutdown metro if Ctrl is pressed along with Alt F4.
+      // Other key combinations with Alt F4 shutdown metro.
+      if ((virtual_key == VK_F4) && ((keyboard_flags & ui::EF_ALT_DOWN) &&
+          !(keyboard_flags & ui::EF_CONTROL_DOWN)))
+        return S_OK;
       ui_channel_->Send(new MetroViewerHostMsg_KeyDown(virtual_key,
                                                        status.RepeatCount,
                                                        status.ScanCode,
@@ -1308,13 +1368,14 @@ HRESULT ChromeAppViewAsh::OnSizeChanged(winui::Core::ICoreWindow* sender,
     return S_OK;
   }
 
-  winfoundtn::Size size;
-  HRESULT hr = args->get_Size(&size);
-  if (FAILED(hr))
-    return hr;
+  // winui::Core::IWindowSizeChangedEventArgs args->Size appears to return
+  // scaled values under HiDPI. We will instead use GetWindowRect() which
+  // should always return values in Pixels.
+  RECT rect = {0};
+  ::GetWindowRect(core_window_hwnd_, &rect);
 
-  uint32 cx = static_cast<uint32>(size.Width);
-  uint32 cy = static_cast<uint32>(size.Height);
+  uint32 cx = static_cast<uint32>(rect.right - rect.left);
+  uint32 cy = static_cast<uint32>(rect.bottom - rect.top);
 
   DVLOG(1) << "Window size changed: width=" << cx << ", height=" << cy;
   ui_channel_->Send(new MetroViewerHostMsg_WindowSizeChanged(cx, cy));
@@ -1324,9 +1385,7 @@ HRESULT ChromeAppViewAsh::OnSizeChanged(winui::Core::ICoreWindow* sender,
 ///////////////////////////////////////////////////////////////////////////////
 
 ChromeAppViewFactory::ChromeAppViewFactory(
-    winapp::Core::ICoreApplication* icore_app,
-    LPTHREAD_START_ROUTINE host_main,
-    void* host_context) {
+    winapp::Core::ICoreApplication* icore_app) {
   mswr::ComPtr<winapp::Core::ICoreApplication> core_app(icore_app);
   mswr::ComPtr<winapp::Core::ICoreApplicationExit> app_exit;
   CheckHR(core_app.As(&app_exit));

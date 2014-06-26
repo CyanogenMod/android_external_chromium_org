@@ -54,7 +54,7 @@ IndexedDBTransaction::IndexedDBTransaction(
     int64 id,
     scoped_refptr<IndexedDBDatabaseCallbacks> callbacks,
     const std::set<int64>& object_store_ids,
-    indexed_db::TransactionMode mode,
+    blink::WebIDBTransactionMode mode,
     IndexedDBDatabase* database,
     IndexedDBBackingStore::Transaction* backing_store_transaction)
     : id_(id),
@@ -81,36 +81,32 @@ IndexedDBTransaction::~IndexedDBTransaction() {
   // complete or aborted.
   DCHECK_EQ(state_, FINISHED);
   DCHECK(preemptive_task_queue_.empty());
+  DCHECK_EQ(pending_preemptive_events_, 0);
   DCHECK(task_queue_.empty());
   DCHECK(abort_task_stack_.empty());
 }
 
-void IndexedDBTransaction::ScheduleTask(Operation task, Operation abort_task) {
-  if (state_ == FINISHED)
-    return;
-
-  timeout_timer_.Stop();
-  used_ = true;
-  task_queue_.push(task);
-  ++diagnostics_.tasks_scheduled;
-  abort_task_stack_.push(abort_task);
-  RunTasksIfStarted();
-}
-
-void IndexedDBTransaction::ScheduleTask(IndexedDBDatabase::TaskType type,
+void IndexedDBTransaction::ScheduleTask(blink::WebIDBTaskType type,
                                         Operation task) {
+  DCHECK_NE(state_, COMMITTING);
   if (state_ == FINISHED)
     return;
 
   timeout_timer_.Stop();
   used_ = true;
-  if (type == IndexedDBDatabase::NORMAL_TASK) {
+  if (type == blink::WebIDBTaskTypeNormal) {
     task_queue_.push(task);
     ++diagnostics_.tasks_scheduled;
   } else {
     preemptive_task_queue_.push(task);
   }
   RunTasksIfStarted();
+}
+
+void IndexedDBTransaction::ScheduleAbortTask(Operation abort_task) {
+  DCHECK_NE(FINISHED, state_);
+  DCHECK(used_);
+  abort_task_stack_.push(abort_task);
 }
 
 void IndexedDBTransaction::RunTasksIfStarted() {
@@ -135,7 +131,7 @@ void IndexedDBTransaction::Abort() {
 }
 
 void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
-  IDB_TRACE("IndexedDBTransaction::Abort");
+  IDB_TRACE1("IndexedDBTransaction::Abort", "txn.id", id());
   if (state_ == FINISHED)
     return;
 
@@ -157,6 +153,7 @@ void IndexedDBTransaction::Abort(const IndexedDBDatabaseError& error) {
     abort_task_stack_.pop().Run(NULL);
 
   preemptive_task_queue_.clear();
+  pending_preemptive_events_ = 0;
   task_queue_.clear();
 
   // Backing store resources (held via cursors) must be released
@@ -210,14 +207,43 @@ void IndexedDBTransaction::Start() {
   RunTasksIfStarted();
 }
 
-void IndexedDBTransaction::Commit() {
-  IDB_TRACE("IndexedDBTransaction::Commit");
+class BlobWriteCallbackImpl : public IndexedDBBackingStore::BlobWriteCallback {
+ public:
+  explicit BlobWriteCallbackImpl(
+      scoped_refptr<IndexedDBTransaction> transaction)
+      : transaction_(transaction) {}
+  virtual void Run(bool succeeded) OVERRIDE {
+    transaction_->BlobWriteComplete(succeeded);
+  }
+
+ protected:
+  virtual ~BlobWriteCallbackImpl() {}
+
+ private:
+  scoped_refptr<IndexedDBTransaction> transaction_;
+};
+
+void IndexedDBTransaction::BlobWriteComplete(bool success) {
+  IDB_TRACE("IndexedDBTransaction::BlobWriteComplete");
+  if (state_ == FINISHED)  // aborted
+    return;
+  DCHECK_EQ(state_, COMMITTING);
+  if (success)
+    CommitPhaseTwo();
+  else
+    Abort(IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionDataError,
+                                 "Failed to write blobs."));
+}
+
+leveldb::Status IndexedDBTransaction::Commit() {
+  IDB_TRACE1("IndexedDBTransaction::Commit", "txn.id", id());
 
   // In multiprocess ports, front-end may have requested a commit but
   // an abort has already been initiated asynchronously by the
   // back-end.
   if (state_ == FINISHED)
-    return;
+    return leveldb::Status::OK();
+  DCHECK_NE(state_, COMMITTING);
 
   DCHECK(!used_ || state_ == STARTED);
   commit_pending_ = true;
@@ -226,7 +252,33 @@ void IndexedDBTransaction::Commit() {
   // create_index which are considered synchronous by the front-end
   // but are processed asynchronously.
   if (HasPendingTasks())
-    return;
+    return leveldb::Status::OK();
+
+  state_ = COMMITTING;
+
+  leveldb::Status s;
+  if (!used_) {
+    s = CommitPhaseTwo();
+  } else {
+    scoped_refptr<IndexedDBBackingStore::BlobWriteCallback> callback(
+        new BlobWriteCallbackImpl(this));
+    // CommitPhaseOne will call the callback synchronously if there are no blobs
+    // to write.
+    s = transaction_->CommitPhaseOne(callback);
+    if (!s.ok())
+      Abort(IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionDataError,
+                                   "Error processing blob journal."));
+  }
+
+  return s;
+}
+
+leveldb::Status IndexedDBTransaction::CommitPhaseTwo() {
+  // Abort may have been called just as the blob write completed.
+  if (state_ == FINISHED)
+    return leveldb::Status::OK();
+
+  DCHECK_EQ(state_, COMMITTING);
 
   // The last reference to this object may be released while performing the
   // commit steps below. We therefore take a self reference to keep ourselves
@@ -237,7 +289,14 @@ void IndexedDBTransaction::Commit() {
 
   state_ = FINISHED;
 
-  bool committed = !used_ || transaction_->Commit();
+  leveldb::Status s;
+  bool committed;
+  if (!used_) {
+    committed = true;
+  } else {
+    s = transaction_->CommitPhaseTwo();
+    committed = s.ok();
+  }
 
   // Backing store resources (held via cursors) must be released
   // before script callbacks are fired, as the script callbacks may
@@ -264,14 +323,15 @@ void IndexedDBTransaction::Commit() {
         IndexedDBDatabaseError(blink::WebIDBDatabaseExceptionUnknownError,
                                "Internal error committing transaction."));
     database_->TransactionFinished(this, false);
-    database_->TransactionCommitFailed();
+    database_->TransactionCommitFailed(s);
   }
 
   database_ = NULL;
+  return s;
 }
 
 void IndexedDBTransaction::ProcessTaskQueue() {
-  IDB_TRACE("IndexedDBTransaction::ProcessTaskQueue");
+  IDB_TRACE1("IndexedDBTransaction::ProcessTaskQueue", "txn.id", id());
 
   // May have been aborted.
   if (!should_process_queue_)
@@ -293,7 +353,7 @@ void IndexedDBTransaction::ProcessTaskQueue() {
   TaskQueue* task_queue =
       pending_preemptive_events_ ? &preemptive_task_queue_ : &task_queue_;
   while (!task_queue->empty() && state_ != FINISHED) {
-    DCHECK_EQ(STARTED, state_);
+    DCHECK_EQ(state_, STARTED);
     Operation task(task_queue->pop());
     task.Run(this);
     if (!pending_preemptive_events_) {
@@ -317,12 +377,17 @@ void IndexedDBTransaction::ProcessTaskQueue() {
   if (state_ == FINISHED)
     return;
 
+  DCHECK(state_ == STARTED);
+
   // Otherwise, start a timer in case the front-end gets wedged and
-  // never requests further activity.
-  timeout_timer_.Start(
-      FROM_HERE,
-      base::TimeDelta::FromSeconds(kInactivityTimeoutPeriodSeconds),
-      base::Bind(&IndexedDBTransaction::Timeout, this));
+  // never requests further activity. Read-only transactions don't
+  // block other transactions, so don't time those out.
+  if (mode_ != blink::WebIDBTransactionModeReadOnly) {
+    timeout_timer_.Start(
+        FROM_HERE,
+        base::TimeDelta::FromSeconds(kInactivityTimeoutPeriodSeconds),
+        base::Bind(&IndexedDBTransaction::Timeout, this));
+  }
 }
 
 void IndexedDBTransaction::Timeout() {

@@ -75,7 +75,7 @@ when your application is launched in any way:
 </p>
 
 <pre data-filename="background.js">
-chrome.app.runtime.onLaunched.addListener(function() { 
+chrome.app.runtime.onLaunched.addListener(function() {
   // Tell your app what to launch and how.
 });
 </pre>
@@ -89,8 +89,8 @@ to the event page and are directly scriptable by the event page.
 </p>
 
 <p>
-Windows in Chrome Apps are not associated with any Chrome browser 
-windows. They have an optional frame with title bar and size controls, 
+Windows in Chrome Apps are not associated with any Chrome browser
+windows. They have an optional frame with title bar and size controls,
 and a recommended window ID.
 Windows without IDs will not restore to their size and location after restart.
 </p>
@@ -147,13 +147,13 @@ or when it has been updated.
 Any time this function is called,
 the <code>onInstalled</code> event is fired.
 The event page can listen for this event and use the
-<a href="storage.html">Storage API</a>
+<a href="storage">Storage API</a>
 to store and update local settings
-(see also <a href="app_storage.html#options">Storage options</a>).
+(see also <a href="app_storage#options">Storage options</a>).
 </p>
 
 <pre data-filename="background.js">
-chrome.runtime.onInstalled.addListener(function() { 
+chrome.runtime.onInstalled.addListener(function() {
   chrome.storage.local.set(object items, function callback);
 });
 </pre>
@@ -176,7 +176,7 @@ you should store user settings
 so that if users reinstall your app,
 their information is still available for reuse.
 Using the Storage API
-($ref:storage.sync),
+($(ref:storage.sync)),
 user data can be automatically synced
 with Chrome sync.
 </p>
@@ -201,7 +201,7 @@ Keep the clean-up tasks synchronous and simple.
 </p>
 
 <pre data-filename="background.js">
-chrome.runtime.onSuspend.addListener(function() { 
+chrome.runtime.onSuspend.addListener(function() {
   // Do some simple clean-up tasks.
 });
 </pre>

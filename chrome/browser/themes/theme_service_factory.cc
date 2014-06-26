@@ -6,17 +6,13 @@
 
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
-
-#if defined(TOOLKIT_GTK)
-#include "chrome/browser/ui/gtk/gtk_theme_service.h"
-#endif
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "extensions/browser/extension_registry.h"
 
 #if defined(USE_AURA) && defined(USE_X11) && !defined(OS_CHROMEOS)
 #include "chrome/browser/themes/theme_service_aurax11.h"
@@ -36,7 +32,8 @@ const extensions::Extension* ThemeServiceFactory::GetThemeForProfile(
   if (id == ThemeService::kDefaultThemeID)
     return NULL;
 
-  return profile->GetExtensionService()->GetExtensionById(id, false);
+  return extensions::ExtensionRegistry::Get(
+      profile)->enabled_extensions().GetByID(id);
 }
 
 // static
@@ -51,12 +48,10 @@ ThemeServiceFactory::ThemeServiceFactory()
 
 ThemeServiceFactory::~ThemeServiceFactory() {}
 
-BrowserContextKeyedService* ThemeServiceFactory::BuildServiceInstanceFor(
+KeyedService* ThemeServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   ThemeService* provider = NULL;
-#if defined(TOOLKIT_GTK)
-  provider = new GtkThemeService;
-#elif defined(USE_AURA) && defined(USE_X11) && !defined(OS_CHROMEOS)
+#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_CHROMEOS)
   provider = new ThemeServiceAuraX11;
 #else
   provider = new ThemeService;
@@ -71,9 +66,7 @@ void ThemeServiceFactory::RegisterProfilePrefs(
 #if defined(USE_X11) && !defined(OS_CHROMEOS)
   bool default_uses_system_theme = false;
 
-#if defined(TOOLKIT_GTK)
-  default_uses_system_theme = GtkThemeService::DefaultUsesSystemTheme();
-#elif defined(USE_AURA) && defined(USE_X11) && !defined(OS_CHROMEOS)
+#if defined(USE_AURA) && defined(USE_X11) && !defined(OS_CHROMEOS)
   const views::LinuxUI* linux_ui = views::LinuxUI::instance();
   if (linux_ui)
     default_uses_system_theme = linux_ui->GetDefaultUsesSystemTheme();

@@ -14,7 +14,6 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/ui/ui_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "testing/perf/perf_test.h"
@@ -51,10 +50,6 @@ class WebRtcTypingDetectionBrowserTest : public WebRtcTestBase {
  public:
   // TODO(phoglund): clean up duplication from audio quality browser test when
   // this test is complete and is proven to work.
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
-  }
-
   bool HasAllRequiredResources() {
     base::FilePath reference_file =
         GetTestDataDir().Append(kReferenceFile);
@@ -88,22 +83,11 @@ class WebRtcTypingDetectionBrowserTest : public WebRtcTestBase {
               ExecuteJavascript("negotiateCall()", from_tab));
 
     // Ensure the call gets up on both sides.
-    EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
-                                 "active", from_tab));
-    EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
-                                 "active", to_tab));
+    EXPECT_TRUE(test::PollingWaitUntil("getPeerConnectionReadyState()",
+                                       "active", from_tab));
+    EXPECT_TRUE(test::PollingWaitUntil("getPeerConnectionReadyState()",
+                                       "active", to_tab));
   }
-
-  void HangUp(content::WebContents* from_tab) {
-    EXPECT_EQ("ok-call-hung-up", ExecuteJavascript("hangUp()", from_tab));
-  }
-
-  void WaitUntilHangupVerified(content::WebContents* tab_contents) {
-    EXPECT_TRUE(PollingWaitUntil("getPeerConnectionReadyState()",
-                                 "no-peer-connection", tab_contents));
-  }
-
-  PeerConnectionServerRunner peerconnection_server_;
 };
 
 // TODO(phoglund): enable when fully implemented.
@@ -112,7 +96,6 @@ IN_PROC_BROWSER_TEST_F(WebRtcTypingDetectionBrowserTest,
   // TODO(phoglund): make this use embedded_test_server when that test server
   // can handle files > ~400Kb.
   ASSERT_TRUE(test_server()->Start());
-  ASSERT_TRUE(peerconnection_server_.Start());
 
   ui_test_utils::NavigateToURL(
       browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
@@ -125,9 +108,6 @@ IN_PROC_BROWSER_TEST_F(WebRtcTypingDetectionBrowserTest,
   ui_test_utils::NavigateToURL(
       browser(), test_server()->GetURL(kMainWebrtcTestHtmlPage));
 
-  ConnectToPeerConnectionServer("peer 1", left_tab);
-  ConnectToPeerConnectionServer("peer 2", right_tab);
-
   GetUserMediaWithSpecificConstraintsAndAccept(left_tab,
                                                kAudioOnlyCallConstraints);
   EXPECT_EQ("ok-peerconnection-created",
@@ -136,23 +116,23 @@ IN_PROC_BROWSER_TEST_F(WebRtcTypingDetectionBrowserTest,
   AddAudioFile(kReferenceFileRelativeUrl, left_tab);
   MixLocalStreamWithPreviouslyLoadedAudioFile(left_tab);
 
-  EstablishCall(left_tab, right_tab);
+  SetupPeerconnectionWithLocalStream(left_tab);
+  SetupPeerconnectionWithLocalStream(right_tab);
+
+  NegotiateCall(left_tab, right_tab);
 
   // Note: the media flow isn't necessarily established on the connection just
   // because the ready state is ok on both sides. We sleep a bit between call
   // establishment and playing to avoid cutting of the beginning of the audio
   // file.
-  SleepInJavascript(left_tab, 2000);
+  test::SleepInJavascript(left_tab, 2000);
 
   PlayAudioFile(left_tab);
 
   // TODO(phoglund): simulate key presses, look for changes in typing detection
   // state.
-  SleepInJavascript(left_tab, 10000);
+  test::SleepInJavascript(left_tab, 10000);
 
   HangUp(left_tab);
-  WaitUntilHangupVerified(left_tab);
-  WaitUntilHangupVerified(right_tab);
-
-  ASSERT_TRUE(peerconnection_server_.Stop());
+  HangUp(right_tab);
 }

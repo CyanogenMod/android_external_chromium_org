@@ -54,16 +54,16 @@ void AdjustWindowToFit(HWND hwnd, const RECT& bounds, bool fit_to_monitor) {
 MSVC_DISABLE_OPTIMIZE();
 
 void CrashOutOfMemory() {
-  LOG_GETLASTERROR(FATAL);
+  PLOG(FATAL);
 }
 
 void CrashAccessDenied() {
-  LOG_GETLASTERROR(FATAL);
+  PLOG(FATAL);
 }
 
 // Crash isn't one of the ones we commonly see.
 void CrashOther() {
-  LOG_GETLASTERROR(FATAL);
+  PLOG(FATAL);
 }
 
 MSVC_ENABLE_OPTIMIZE();
@@ -200,16 +200,17 @@ void CheckWindowCreated(HWND hwnd) {
         CrashOther();
         break;
     }
-    LOG_GETLASTERROR(FATAL);
+    PLOG(FATAL);
   }
 }
 
 void ShowSystemMenu(HWND window) {
   RECT rect;
   GetWindowRect(window, &rect);
-  Point point = Point(rect.left, rect.top);
+  Point point = Point(base::i18n::IsRTL() ? rect.right : rect.left, rect.top);
   static const int kSystemMenuOffset = 10;
-  point.Offset(kSystemMenuOffset, kSystemMenuOffset);
+  point.Offset(base::i18n::IsRTL() ? -kSystemMenuOffset : kSystemMenuOffset,
+               kSystemMenuOffset);
   ShowSystemMenuAtPoint(window, point);
 }
 

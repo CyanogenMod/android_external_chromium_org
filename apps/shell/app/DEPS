@@ -1,8 +1,5 @@
 include_rules = [
-  # TODO(jamescook): Remove these. http://crbug.com/305404
-  # Chrome pieces for app_shell bring-up.
-  "+chrome/common/chrome_paths.h",
-
+  "+apps/shell",
   "+chromeos",
 
   # Override apps/DEPS to be more selective about content includes.

@@ -4,14 +4,16 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/test/integration/apps_helper.h"
-#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_app_list_helper.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
-#include "chrome/common/chrome_switches.h"
 #include "ui/app_list/app_list_switches.h"
+
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 
 namespace {
 
@@ -33,7 +35,7 @@ class SingleClientAppListSyncTest : public SyncTest {
   // SyncTest
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     SyncTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableSyncAppList);
+    command_line->AppendSwitch(app_list::switches::kEnableSyncAppList);
   }
 
   virtual bool SetupClients() OVERRIDE {
@@ -69,7 +71,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientAppListSyncTest, AppListSomeApps) {
       app_list::AppListSyncableServiceFactory::GetForProfile(verifier());
   ASSERT_EQ(kNumApps + kNumDefaultApps, service->GetNumSyncItemsForTest());
 
-  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
 
 }

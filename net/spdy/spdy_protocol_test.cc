@@ -16,8 +16,8 @@
 namespace {
 
 enum SpdyProtocolTestTypes {
-  SPDY2 = 2,
-  SPDY3 = 3,
+  SPDY2 = net::SPDY2,
+  SPDY3 = net::SPDY3,
 };
 
 }  // namespace
@@ -28,11 +28,11 @@ class SpdyProtocolTest
     : public ::testing::TestWithParam<SpdyProtocolTestTypes> {
  protected:
   virtual void SetUp() {
-    spdy_version_ = GetParam();
+    spdy_version_ = static_cast<SpdyMajorVersion>(GetParam());
   }
 
   // Version of SPDY protocol to be used.
-  int spdy_version_;
+  SpdyMajorVersion spdy_version_;
 };
 
 // All tests are run with two different SPDY versions: SPDY/2 and SPDY/3.
@@ -41,6 +41,7 @@ INSTANTIATE_TEST_CASE_P(SpdyProtocolTests,
                         ::testing::Values(SPDY2, SPDY3));
 
 // Test our protocol constants
+// TODO(hkhalil): Remove this test once we no longer rely on exact values.
 TEST_P(SpdyProtocolTest, ProtocolConstants) {
   EXPECT_EQ(1, SYN_STREAM);
   EXPECT_EQ(2, SYN_REPLY);
@@ -54,7 +55,10 @@ TEST_P(SpdyProtocolTest, ProtocolConstants) {
   EXPECT_EQ(10, CREDENTIAL);
   EXPECT_EQ(11, BLOCKED);
   EXPECT_EQ(12, PUSH_PROMISE);
-  EXPECT_EQ(12, LAST_CONTROL_TYPE);
+  EXPECT_EQ(13, CONTINUATION);
+  EXPECT_EQ(14, ALTSVC);
+  EXPECT_EQ(15, PRIORITY);
+  EXPECT_EQ(15, LAST_CONTROL_TYPE);
   EXPECT_EQ(std::numeric_limits<int32>::max(), kSpdyMaximumWindowSize);
 }
 

@@ -10,9 +10,10 @@
 
 #include "base/message_loop/message_loop.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/cursor/cursor_loader_win.h"
 #include "ui/base/view_prop.h"
+#include "ui/compositor/compositor.h"
 #include "ui/events/event.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
@@ -40,10 +41,7 @@ gfx::Size WindowTreeHost::GetNativeScreenSize() {
 }
 
 WindowTreeHostWin::WindowTreeHostWin(const gfx::Rect& bounds)
-    : fullscreen_(false),
-      has_capture_(false),
-      saved_window_style_(0),
-      saved_window_ex_style_(0) {
+    : has_capture_(false) {
   if (use_popup_as_root_window_for_test)
     set_window_style(WS_POPUP);
   Init(NULL, bounds);
@@ -53,11 +51,12 @@ WindowTreeHostWin::WindowTreeHostWin(const gfx::Rect& bounds)
 
 WindowTreeHostWin::~WindowTreeHostWin() {
   DestroyCompositor();
+  DestroyDispatcher();
   DestroyWindow(hwnd());
 }
 
-RootWindow* WindowTreeHostWin::GetRootWindow() {
-  return delegate_->AsRootWindow();
+ui::EventSource* WindowTreeHostWin::GetEventSource() {
+  return this;
 }
 
 gfx::AcceleratedWidget WindowTreeHostWin::GetAcceleratedWidget() {
@@ -72,38 +71,6 @@ void WindowTreeHostWin::Hide() {
   NOTIMPLEMENTED();
 }
 
-void WindowTreeHostWin::ToggleFullScreen() {
-  gfx::Rect target_rect;
-  if (!fullscreen_) {
-    fullscreen_ = true;
-    saved_window_style_ = GetWindowLong(hwnd(), GWL_STYLE);
-    saved_window_ex_style_ = GetWindowLong(hwnd(), GWL_EXSTYLE);
-    GetWindowRect(hwnd(), &saved_window_rect_);
-    SetWindowLong(hwnd(), GWL_STYLE,
-                  saved_window_style_ & ~(WS_CAPTION | WS_THICKFRAME));
-    SetWindowLong(hwnd(), GWL_EXSTYLE,
-                  saved_window_ex_style_ & ~(WS_EX_DLGMODALFRAME |
-                      WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE));
-
-    MONITORINFO mi;
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfo(MonitorFromWindow(hwnd(), MONITOR_DEFAULTTONEAREST), &mi);
-    target_rect = gfx::Rect(mi.rcMonitor);
-  } else {
-    fullscreen_ = false;
-    SetWindowLong(hwnd(), GWL_STYLE, saved_window_style_);
-    SetWindowLong(hwnd(), GWL_EXSTYLE, saved_window_ex_style_);
-    target_rect = gfx::Rect(saved_window_rect_);
-  }
-  SetWindowPos(hwnd(),
-               NULL,
-               target_rect.x(),
-               target_rect.y(),
-               target_rect.width(),
-               target_rect.height(),
-               SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-}
-
 gfx::Rect WindowTreeHostWin::GetBounds() const {
   RECT r;
   GetClientRect(hwnd(), &r);
@@ -111,11 +78,6 @@ gfx::Rect WindowTreeHostWin::GetBounds() const {
 }
 
 void WindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
-  if (fullscreen_) {
-    saved_window_rect_.right = saved_window_rect_.left + bounds.width();
-    saved_window_rect_.bottom = saved_window_rect_.top + bounds.height();
-    return;
-  }
   RECT window_rect;
   window_rect.left = bounds.x();
   window_rect.top = bounds.y();
@@ -134,21 +96,13 @@ void WindowTreeHostWin::SetBounds(const gfx::Rect& bounds) {
       window_rect.bottom - window_rect.top,
       SWP_NOMOVE | SWP_NOOWNERZORDER | SWP_NOREDRAW | SWP_NOREPOSITION);
 
-  // Explicity call NotifyHostResized when the scale has changed because
+  // Explicity call OnHostResized when the scale has changed because
   // the window size may not have changed.
   float current_scale = compositor()->device_scale_factor();
-  float new_scale = gfx::Screen::GetScreenFor(
-      delegate_->AsRootWindow()->window())->GetDisplayNearestWindow(
-          delegate_->AsRootWindow()->window()).device_scale_factor();
+  float new_scale = gfx::Screen::GetScreenFor(window())->
+      GetDisplayNearestWindow(window()).device_scale_factor();
   if (current_scale != new_scale)
-    NotifyHostResized(bounds.size());
-}
-
-gfx::Insets WindowTreeHostWin::GetInsets() const {
-  return gfx::Insets();
-}
-
-void WindowTreeHostWin::SetInsets(const gfx::Insets& insets) {
+    OnHostResized(bounds.size());
 }
 
 gfx::Point WindowTreeHostWin::GetLocationOnNativeScreen() const {
@@ -170,35 +124,6 @@ void WindowTreeHostWin::ReleaseCapture() {
     has_capture_ = false;
     ::ReleaseCapture();
   }
-}
-
-bool WindowTreeHostWin::QueryMouseLocation(gfx::Point* location_return) {
-  client::CursorClient* cursor_client =
-      client::GetCursorClient(GetRootWindow()->window());
-  if (cursor_client && !cursor_client->IsMouseEventsEnabled()) {
-    *location_return = gfx::Point(0, 0);
-    return false;
-  }
-
-  POINT pt;
-  GetCursorPos(&pt);
-  ScreenToClient(hwnd(), &pt);
-  const gfx::Size size = GetBounds().size();
-  *location_return =
-      gfx::Point(max(0, min(size.width(), static_cast<int>(pt.x))),
-                 max(0, min(size.height(), static_cast<int>(pt.y))));
-  return (pt.x >= 0 && static_cast<int>(pt.x) < size.width() &&
-          pt.y >= 0 && static_cast<int>(pt.y) < size.height());
-}
-
-bool WindowTreeHostWin::ConfineCursorToRootWindow() {
-  RECT window_rect;
-  GetWindowRect(hwnd(), &window_rect);
-  return ClipCursor(&window_rect) != 0;
-}
-
-void WindowTreeHostWin::UnConfineCursor() {
-  ClipCursor(NULL);
 }
 
 void WindowTreeHostWin::SetCursorNative(gfx::NativeCursor native_cursor) {
@@ -229,12 +154,8 @@ void WindowTreeHostWin::OnDeviceScaleFactorChanged(
   NOTIMPLEMENTED();
 }
 
-void WindowTreeHostWin::PrepareForShutdown() {
-  NOTIMPLEMENTED();
-}
-
 ui::EventProcessor* WindowTreeHostWin::GetEventProcessor() {
-  return delegate_->GetEventProcessor();
+  return dispatcher();
 }
 
 void WindowTreeHostWin::OnClose() {
@@ -272,7 +193,7 @@ LRESULT WindowTreeHostWin::OnCaptureChanged(UINT message,
                                             LPARAM l_param) {
   if (has_capture_) {
     has_capture_ = false;
-    delegate_->OnHostLostWindowCapture();
+    OnHostLostWindowCapture();
   }
   return 0;
 }
@@ -281,13 +202,12 @@ LRESULT WindowTreeHostWin::OnNCActivate(UINT message,
                                         WPARAM w_param,
                                         LPARAM l_param) {
   if (!!w_param)
-    delegate_->OnHostActivated();
+    OnHostActivated();
   return DefWindowProc(hwnd(), message, w_param, l_param);
 }
 
 void WindowTreeHostWin::OnMove(const gfx::Point& point) {
-  if (delegate_)
-    delegate_->OnHostMoved(point);
+  OnHostMoved(point);
 }
 
 void WindowTreeHostWin::OnPaint(HDC dc) {
@@ -302,8 +222,8 @@ void WindowTreeHostWin::OnPaint(HDC dc) {
 void WindowTreeHostWin::OnSize(UINT param, const gfx::Size& size) {
   // Minimizing resizes the window to 0x0 which causes our layout to go all
   // screwy, so we just ignore it.
-  if (delegate_ && param != SIZE_MINIMIZED)
-    NotifyHostResized(size);
+  if (dispatcher() && param != SIZE_MINIMIZED)
+    OnHostResized(size);
 }
 
 namespace test {

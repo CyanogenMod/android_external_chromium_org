@@ -15,7 +15,9 @@
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/gpu_export.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace gpu {
 namespace gles2 {
@@ -29,6 +31,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool chromium_color_buffer_float_rgba;
     bool chromium_color_buffer_float_rgb;
     bool chromium_framebuffer_multisample;
+    bool chromium_sync_query;
     // Use glBlitFramebuffer() and glRenderbufferStorageMultisample() with
     // GL_EXT_framebuffer_multisample-style semantics, since they are exposed
     // as core GL functions on this implementation.
@@ -57,6 +60,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool enable_samplers;
     bool ext_draw_buffers;
     bool ext_frag_depth;
+    bool ext_shader_texture_lod;
     bool use_async_readpixels;
     bool map_buffer_range;
     bool ext_discard_framebuffer;
@@ -77,13 +81,16 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     // Note: 0 here means use driver limit.
     GLint max_texture_size;
     GLint max_cube_map_texture_size;
+    GLint max_fragment_uniform_vectors;
+    GLint max_varying_vectors;
+    GLint max_vertex_uniform_vectors;
   };
 
   // Constructor with workarounds taken from the current process's CommandLine
   FeatureInfo();
 
   // Constructor with workarounds taken from |command_line|
-  FeatureInfo(const CommandLine& command_line);
+  FeatureInfo(const base::CommandLine& command_line);
 
   // Initializes the feature information. Needs a current GL context.
   bool Initialize();
@@ -112,7 +119,6 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
  private:
   friend class base::RefCounted<FeatureInfo>;
   friend class BufferManagerClientSideArraysTest;
-  friend class GLES2DecoderTestBase;
 
   typedef base::hash_map<GLenum, ValueValidator<GLenum> > ValidatorMap;
   ValidatorMap texture_format_validators_;
@@ -120,7 +126,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   ~FeatureInfo();
 
   void AddExtensionString(const std::string& str);
-  void InitializeBasicState(const CommandLine& command_line);
+  void InitializeBasicState(const base::CommandLine& command_line);
   void InitializeFeatures();
 
   Validators validators_;

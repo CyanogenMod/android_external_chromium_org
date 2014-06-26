@@ -48,14 +48,14 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/browser_resources.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "policy/policy_constants.h"
 #include "policy/proto/device_management_backend.pb.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/time_format.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_service.h"
@@ -188,11 +188,15 @@ void GetStatusFromCore(const policy::CloudPolicyCore* core,
   dict->SetString("clientId", client_id);
   dict->SetString("username", username);
   dict->SetString("refreshInterval",
-                  ui::TimeFormat::TimeDurationShort(refresh_interval));
+                  ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_DURATION,
+                                         ui::TimeFormat::LENGTH_SHORT,
+                                         refresh_interval));
   dict->SetString("timeSinceLastRefresh", last_refresh_time.is_null() ?
       l10n_util::GetStringUTF16(IDS_POLICY_NEVER_FETCHED) :
-      ui::TimeFormat::TimeElapsed(base::Time::NowFromSystemTime() -
-                                  last_refresh_time));
+      ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
+                             ui::TimeFormat::LENGTH_SHORT,
+                             base::Time::NowFromSystemTime() -
+                                 last_refresh_time));
 }
 
 void ExtractDomainFromUsername(base::DictionaryValue* dict) {
@@ -573,10 +577,10 @@ void PolicyUIHandler::RegisterMessages() {
   GetPolicyService()->AddObserver(policy::POLICY_DOMAIN_EXTENSIONS, this);
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::NotificationService::AllSources());
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::NotificationService::AllSources());
 
   web_ui()->RegisterMessageCallback(
@@ -591,8 +595,8 @@ void PolicyUIHandler::RegisterMessages() {
 void PolicyUIHandler::Observe(int type,
                               const content::NotificationSource& source,
                               const content::NotificationDetails& details) {
-  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED ||
-         type == chrome::NOTIFICATION_EXTENSION_UNLOADED);
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED ||
+         type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED);
   SendPolicyNames();
   SendPolicyValues();
 }
@@ -609,7 +613,7 @@ void PolicyUIHandler::SendPolicyNames() const {
   Profile* profile = Profile::FromWebUI(web_ui());
   policy::SchemaRegistry* registry =
       policy::SchemaRegistryServiceFactory::GetForContext(
-          profile->GetOriginalProfile());
+          profile->GetOriginalProfile())->registry();
   scoped_refptr<policy::SchemaMap> schema_map = registry->schema_map();
 
   // Add Chrome policy names.

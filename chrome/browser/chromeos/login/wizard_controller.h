@@ -14,10 +14,10 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/chromeos/accessibility/accessibility_manager.h"
 #include "chrome/browser/chromeos/login/screens/screen_observer.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
 
@@ -30,9 +30,12 @@ class DictionaryValue;
 
 namespace chromeos {
 
+class AutoEnrollmentCheckScreen;
 class EnrollmentScreen;
 class ErrorScreen;
 class EulaScreen;
+class HIDDetectionScreen;
+struct Geoposition;
 class KioskAutolaunchScreen;
 class KioskEnableScreen;
 class LocallyManagedUserCreationScreen;
@@ -41,7 +44,10 @@ class LoginScreenContext;
 class NetworkScreen;
 class OobeDisplay;
 class ResetScreen;
+class SimpleGeolocationProvider;
 class TermsOfServiceScreen;
+class TimeZoneProvider;
+struct TimeZoneResponseData;
 class UpdateScreen;
 class UserImageScreen;
 class WizardScreen;
@@ -49,8 +55,7 @@ class WrongHWIDScreen;
 
 // Class that manages control flow between wizard screens. Wizard controller
 // interacts with screen controllers to move the user between screens.
-class WizardController : public ScreenObserver,
-                         public content::NotificationObserver {
+class WizardController : public ScreenObserver {
  public:
   // Observes screen changes.
   class Observer {
@@ -97,11 +102,6 @@ class WizardController : public ScreenObserver,
   // Advances to screen defined by |screen_name| and shows it.
   void AdvanceToScreen(const std::string& screen_name);
 
-  // Advances to screen defined by |screen_name| and shows it.
-  // Takes ownership of |screen_parameters|.
-  void AdvanceToScreenWithParams(const std::string& first_screen_name,
-                                 base::DictionaryValue* screen_parameters);
-
   // Advances to login screen. Should be used in for testing only.
   void SkipToLoginForTesting(const LoginScreenContext& context);
 
@@ -130,6 +130,8 @@ class WizardController : public ScreenObserver,
   KioskEnableScreen* GetKioskEnableScreen();
   TermsOfServiceScreen* GetTermsOfServiceScreen();
   WrongHWIDScreen* GetWrongHWIDScreen();
+  AutoEnrollmentCheckScreen* GetAutoEnrollmentCheckScreen();
+  HIDDetectionScreen* GetHIDDetectionScreen();
   LocallyManagedUserCreationScreen* GetLocallyManagedUserCreationScreen();
 
   // Returns a pointer to the current screen or NULL if there's no such
@@ -152,9 +154,11 @@ class WizardController : public ScreenObserver,
   static const char kKioskAutolaunchScreenName[];
   static const char kErrorScreenName[];
   static const char kTermsOfServiceScreenName[];
+  static const char kAutoEnrollmentCheckScreenName[];
   static const char kWrongHWIDScreenName[];
   static const char kLocallyManagedUserCreationScreenName[];
   static const char kAppLaunchSplashScreenName[];
+  static const char kHIDDetectionScreenName [];
 
   // Volume percent at which spoken feedback is still audible.
   static const int kMinAudibleOutputVolumePercent;
@@ -171,7 +175,9 @@ class WizardController : public ScreenObserver,
   void ShowKioskEnableScreen();
   void ShowTermsOfServiceScreen();
   void ShowWrongHWIDScreen();
+  void ShowAutoEnrollmentCheckScreen();
   void ShowLocallyManagedUserCreationScreen();
+  void ShowHIDDetectionScreen();
 
   // Shows images login screen.
   void ShowLoginScreen(const LoginScreenContext& context);
@@ -180,6 +186,7 @@ class WizardController : public ScreenObserver,
   void ResumeLoginScreen();
 
   // Exit handlers:
+  void OnHIDDetectionCompleted();
   void OnNetworkConnected();
   void OnNetworkOffline();
   void OnConnectionFailed();
@@ -214,7 +221,7 @@ class WizardController : public ScreenObserver,
   void PerformPostEulaActions();
 
   // Actions that should be done right after update stage is finished.
-  void PerformPostUpdateActions();
+  void PerformOOBECompletedActions();
 
   // Overridden from ScreenObserver:
   virtual void OnExit(ExitCodes exit_code) OVERRIDE;
@@ -227,10 +234,9 @@ class WizardController : public ScreenObserver,
   virtual void ShowErrorScreen() OVERRIDE;
   virtual void HideErrorScreen(WizardScreen* parent_screen) OVERRIDE;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Notification of a change in the state of an accessibility setting.
+  void OnAccessibilityStatusChanged(
+      const AccessibilityStatusEventDetails& details);
 
   // Switches from one screen to another.
   void SetCurrentScreen(WizardScreen* screen);
@@ -249,7 +255,10 @@ class WizardController : public ScreenObserver,
   void AutoLaunchKioskApp();
 
   // Checks whether the user is allowed to exit enrollment.
-  bool CanExitEnrollment() const;
+  static bool CanExitEnrollment();
+
+  // Gets the management domain.
+  static std::string GetForcedEnrollmentDomain();
 
   // Called when LocalState is initialized.
   void OnLocalStateInitialized(bool /* succeeded */);
@@ -260,6 +269,27 @@ class WizardController : public ScreenObserver,
   static void set_local_state_for_testing(PrefService* local_state) {
     local_state_for_testing_ = local_state;
   }
+
+  std::string first_screen_name() { return first_screen_name_; }
+
+  // Called when network is UP.
+  void StartTimezoneResolve();
+
+  // Creates provider on demand.
+  TimeZoneProvider* GetTimezoneProvider();
+
+  // TimeZoneRequest::TimeZoneResponseCallback implementation.
+  void OnTimezoneResolved(scoped_ptr<TimeZoneResponseData> timezone,
+                          bool server_error);
+
+  // Called from SimpleGeolocationProvider when location is resolved.
+  void OnLocationResolved(const Geoposition& position,
+                          bool server_error,
+                          const base::TimeDelta elapsed);
+
+  // Returns true if callback has been installed.
+  // Returns false if timezone has already been resolved.
+  bool SetOnTimeZoneResolvedForTesting(const base::Closure& callback);
 
   // Whether to skip any screens that may normally be shown after login
   // (registration, Terms of Service, user image selection).
@@ -279,8 +309,10 @@ class WizardController : public ScreenObserver,
   scoped_ptr<ErrorScreen> error_screen_;
   scoped_ptr<TermsOfServiceScreen> terms_of_service_screen_;
   scoped_ptr<WrongHWIDScreen> wrong_hwid_screen_;
+  scoped_ptr<AutoEnrollmentCheckScreen> auto_enrollment_check_screen_;
   scoped_ptr<LocallyManagedUserCreationScreen>
       locally_managed_user_creation_screen_;
+  scoped_ptr<HIDDetectionScreen> hid_detection_screen_;
 
   // Screen that's currently active.
   WizardScreen* current_screen_;
@@ -339,12 +371,20 @@ class WizardController : public ScreenObserver,
   FRIEND_TEST_ALL_PREFIXES(EnrollmentScreenTest, TestCancel);
   FRIEND_TEST_ALL_PREFIXES(WizardControllerFlowTest, Accelerators);
   friend class WizardControllerFlowTest;
+  friend class WizardControllerOobeResumeTest;
   friend class WizardInProcessBrowserTest;
   friend class WizardControllerBrokenLocalStateTest;
 
-  base::WeakPtrFactory<WizardController> weak_factory_;
+  scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
 
-  content::NotificationRegistrar registrar_;
+  scoped_ptr<SimpleGeolocationProvider> geolocation_provider_;
+  scoped_ptr<TimeZoneProvider> timezone_provider_;
+
+  // Tests check result of timezone resolve.
+  bool timezone_resolved_;
+  base::Closure on_timezone_resolved_for_testing_;
+
+  base::WeakPtrFactory<WizardController> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WizardController);
 };

@@ -111,9 +111,30 @@ TEST(ValidationSuite, TestRegistry) {
 // to get to the interactive desktop or to make the sbox desktop interactive.
 TEST(ValidationSuite, TestDesktop) {
   TestRunner runner;
-  runner.GetPolicy()->SetAlternateDesktop(false);
+  runner.GetPolicy()->SetAlternateDesktop(true);
+  runner.GetPolicy()->SetIntegrityLevel(INTEGRITY_LEVEL_LOW);
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(L"OpenInteractiveDesktop NULL"));
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(L"SwitchToSboxDesktop NULL"));
+}
+
+// Tests that the permissions on the Windowstation does not allow the sandbox
+// to get to the interactive desktop or to make the sbox desktop interactive.
+TEST(ValidationSuite, TestAlternateDesktop) {
+  base::win::Version version = base::win::GetVersion();
+  if (version < base::win::VERSION_WIN7)
+    return;
+
+  TestRunner runner;
+  EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(L"EnumAlternateWinsta NULL"));
+
+  wchar_t command[1024] = {0};
+  runner.SetTimeout(3600000);
+  runner.GetPolicy()->SetAlternateDesktop(true);
+  runner.GetPolicy()->SetIntegrityLevel(INTEGRITY_LEVEL_LOW);
+  base::string16 desktop_name = runner.GetPolicy()->GetAlternateDesktop();
+  desktop_name = desktop_name.substr(desktop_name.find('\\') + 1);
+  wsprintf(command, L"OpenAlternateDesktop %lS", desktop_name.c_str());
+  EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(command));
 }
 
 // Tests if the windows are correctly protected by the sandbox.
@@ -195,6 +216,27 @@ TEST(ValidationSuite, TestThread) {
 
   wsprintf(command, L"OpenThreadCmd %d", ::GetCurrentThreadId());
   EXPECT_EQ(SBOX_TEST_DENIED, runner.RunTest(command));
+}
+
+// Tests if an over-limit allocation will be denied.
+TEST(ValidationSuite, TestMemoryLimit) {
+  TestRunner runner;
+  wchar_t command[1024] = {0};
+  const int kAllocationSize = 256 * 1024 * 1024;
+
+  wsprintf(command, L"AllocateCmd %d", kAllocationSize);
+  runner.GetPolicy()->SetJobMemoryLimit(kAllocationSize);
+  EXPECT_EQ(SBOX_FATAL_MEMORY_EXCEEDED, runner.RunTest(command));
+}
+
+// Tests a large allocation will succeed absent limits.
+TEST(ValidationSuite, TestMemoryNoLimit) {
+  TestRunner runner;
+  wchar_t command[1024] = {0};
+  const int kAllocationSize = 256 * 1024 * 1024;
+
+  wsprintf(command, L"AllocateCmd %d", kAllocationSize);
+  EXPECT_EQ(SBOX_TEST_SUCCEEDED, runner.RunTest(command));
 }
 
 }  // namespace sandbox

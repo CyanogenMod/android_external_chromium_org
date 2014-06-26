@@ -4,37 +4,40 @@
 
 #include "ui/app_list/views/app_list_view.h"
 
+#include <algorithm>
+
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/win/windows_version.h"
 #include "ui/app_list/app_list_constants.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
-#include "ui/app_list/pagination_model.h"
-#include "ui/app_list/signin_delegate.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/app_list/views/app_list_background.h"
+#include "ui/app_list/views/app_list_folder_view.h"
 #include "ui/app_list/views/app_list_main_view.h"
 #include "ui/app_list/views/app_list_view_observer.h"
+#include "ui/app_list/views/apps_container_view.h"
+#include "ui/app_list/views/contents_view.h"
 #include "ui/app_list/views/search_box_view.h"
-#include "ui/app_list/views/signin_view.h"
 #include "ui/app_list/views/speech_view.h"
 #include "ui/base/ui_base_switches.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/views/bubble/bubble_frame_view.h"
-#include "ui/views/bubble/bubble_window_targeter.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 
 #if defined(USE_AURA)
 #include "ui/aura/window.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/views/bubble/bubble_window_targeter.h"
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
 #endif
@@ -46,8 +49,6 @@
 namespace app_list {
 
 namespace {
-
-void (*g_next_paint_callback)();
 
 // The margin from the edge to the speech UI.
 const int kSpeechUIMargin = 12;
@@ -67,7 +68,7 @@ bool SupportsShadow() {
           switches::kDisableDwmComposition)) {
     return false;
   }
-#elif defined(OS_LINUX) && !defined(USE_ASH)
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
   // Shadows are not supported on (non-ChromeOS) Linux.
   return false;
 #endif
@@ -121,7 +122,6 @@ class HideViewAnimationObserver : public ui::ImplicitAnimationObserver {
 AppListView::AppListView(AppListViewDelegate* delegate)
     : delegate_(delegate),
       app_list_main_view_(NULL),
-      signin_view_(NULL),
       speech_view_(NULL),
       animation_observer_(new HideViewAnimationObserver()) {
   CHECK(delegate);
@@ -140,26 +140,26 @@ AppListView::~AppListView() {
 
 void AppListView::InitAsBubbleAttachedToAnchor(
     gfx::NativeView parent,
-    PaginationModel* pagination_model,
+    int initial_apps_page,
     views::View* anchor,
     const gfx::Vector2d& anchor_offset,
     views::BubbleBorder::Arrow arrow,
     bool border_accepts_events) {
   SetAnchorView(anchor);
   InitAsBubbleInternal(
-      parent, pagination_model, arrow, border_accepts_events, anchor_offset);
+      parent, initial_apps_page, arrow, border_accepts_events, anchor_offset);
 }
 
 void AppListView::InitAsBubbleAtFixedLocation(
     gfx::NativeView parent,
-    PaginationModel* pagination_model,
+    int initial_apps_page,
     const gfx::Point& anchor_point_in_screen,
     views::BubbleBorder::Arrow arrow,
     bool border_accepts_events) {
   SetAnchorView(NULL);
   SetAnchorRect(gfx::Rect(anchor_point_in_screen, gfx::Size()));
   InitAsBubbleInternal(
-      parent, pagination_model, arrow, border_accepts_events, gfx::Vector2d());
+      parent, initial_apps_page, arrow, border_accepts_events, gfx::Vector2d());
 }
 
 void AppListView::SetBubbleArrow(views::BubbleBorder::Arrow arrow) {
@@ -190,15 +190,19 @@ void AppListView::UpdateBounds() {
   SizeToContents();
 }
 
-gfx::Size AppListView::GetPreferredSize() {
+bool AppListView::ShouldCenterWindow() const {
+  return delegate_->ShouldCenterWindow();
+}
+
+gfx::Size AppListView::GetPreferredSize() const {
   return app_list_main_view_->GetPreferredSize();
 }
 
-void AppListView::Paint(gfx::Canvas* canvas) {
-  views::BubbleDelegateView::Paint(canvas);
-  if (g_next_paint_callback) {
-    g_next_paint_callback();
-    g_next_paint_callback = NULL;
+void AppListView::Paint(gfx::Canvas* canvas, const views::CullSet& cull_set) {
+  views::BubbleDelegateView::Paint(canvas, cull_set);
+  if (!next_paint_callback_.is_null()) {
+    next_paint_callback_.Run();
+    next_paint_callback_.Reset();
   }
 }
 
@@ -217,12 +221,6 @@ void AppListView::Prerender() {
 }
 
 void AppListView::OnProfilesChanged() {
-  SigninDelegate* signin_delegate =
-      delegate_ ? delegate_->GetSigninDelegate() : NULL;
-  bool show_signin_view = signin_delegate && signin_delegate->NeedSignin();
-
-  signin_view_->SetVisible(show_signin_view);
-  app_list_main_view_->SetVisible(!show_signin_view);
   app_list_main_view_->search_box_view()->InvalidateMenu();
 }
 
@@ -240,58 +238,50 @@ void AppListView::RemoveObserver(AppListViewObserver* observer) {
 }
 
 // static
-void AppListView::SetNextPaintCallback(void (*callback)()) {
-  g_next_paint_callback = callback;
+void AppListView::SetNextPaintCallback(const base::Closure& callback) {
+  next_paint_callback_ = callback;
 }
 
 #if defined(OS_WIN)
 HWND AppListView::GetHWND() const {
-#if defined(USE_AURA)
   gfx::NativeWindow window =
       GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-  return window->GetDispatcher()->host()->GetAcceleratedWidget();
-#else
-  return GetWidget()->GetTopLevelWidget()->GetNativeWindow();
-#endif
+  return window->GetHost()->GetAcceleratedWidget();
 }
 #endif
 
+PaginationModel* AppListView::GetAppsPaginationModel() {
+  return app_list_main_view_->contents_view()
+      ->apps_container_view()
+      ->apps_grid_view()
+      ->pagination_model();
+}
+
 void AppListView::InitAsBubbleInternal(gfx::NativeView parent,
-                                       PaginationModel* pagination_model,
+                                       int initial_apps_page,
                                        views::BubbleBorder::Arrow arrow,
                                        bool border_accepts_events,
                                        const gfx::Vector2d& anchor_offset) {
-  app_list_main_view_ = new AppListMainView(delegate_.get(),
-                                            pagination_model,
-                                            parent);
+  app_list_main_view_ =
+      new AppListMainView(delegate_.get(), initial_apps_page, parent);
   AddChildView(app_list_main_view_);
-#if defined(USE_AURA)
   app_list_main_view_->SetPaintToLayer(true);
   app_list_main_view_->SetFillsBoundsOpaquely(false);
   app_list_main_view_->layer()->SetMasksToBounds(true);
-#endif
-
-  signin_view_ =
-      new SigninView(delegate_->GetSigninDelegate(),
-                     app_list_main_view_->GetPreferredSize().width());
-  AddChildView(signin_view_);
 
   // Speech recognition is available only when the start page exists.
-  if (delegate_ && delegate_->GetSpeechRecognitionContents()) {
+  if (delegate_ && delegate_->IsSpeechRecognitionEnabled()) {
     speech_view_ = new SpeechView(delegate_.get());
     speech_view_->SetVisible(false);
-#if defined(USE_AURA)
     speech_view_->SetPaintToLayer(true);
     speech_view_->SetFillsBoundsOpaquely(false);
     speech_view_->layer()->SetOpacity(0.0f);
-#endif
     AddChildView(speech_view_);
   }
 
   OnProfilesChanged();
   set_color(kContentsBackgroundColor);
   set_margins(gfx::Insets());
-  set_move_with_anchor(true);
   set_parent_window(parent);
   set_close_on_deactivate(false);
   set_close_on_esc(false);
@@ -380,6 +370,14 @@ bool AppListView::AcceleratorPressed(const ui::Accelerator& accelerator) {
   if (accelerator.key_code() == ui::VKEY_ESCAPE) {
     if (app_list_main_view_->search_box_view()->HasSearch()) {
       app_list_main_view_->search_box_view()->ClearSearch();
+    } else if (app_list_main_view_->contents_view()
+                   ->apps_container_view()
+                   ->IsInFolderView()) {
+      app_list_main_view_->contents_view()
+          ->apps_container_view()
+          ->app_list_folder_view()
+          ->CloseFolderPage();
+      return true;
     } else {
       GetWidget()->Deactivate();
       Close();
@@ -393,7 +391,6 @@ bool AppListView::AcceleratorPressed(const ui::Accelerator& accelerator) {
 void AppListView::Layout() {
   const gfx::Rect contents_bounds = GetContentsBounds();
   app_list_main_view_->SetBoundsRect(contents_bounds);
-  signin_view_->SetBoundsRect(contents_bounds);
 
   if (speech_view_) {
     gfx::Rect speech_bounds = contents_bounds;
@@ -404,6 +401,12 @@ void AppListView::Layout() {
     speech_bounds.Inset(-speech_view_->GetInsets());
     speech_view_->SetBoundsRect(speech_bounds);
   }
+}
+
+void AppListView::SchedulePaintInRect(const gfx::Rect& rect) {
+  BubbleDelegateView::SchedulePaintInRect(rect);
+  if (GetBubbleFrameView())
+    GetBubbleFrameView()->SchedulePaint();
 }
 
 void AppListView::OnWidgetDestroying(views::Widget* widget) {
@@ -428,74 +431,61 @@ void AppListView::OnWidgetVisibilityChanged(views::Widget* widget,
   if (widget != GetWidget())
     return;
 
-  // We clear the search when hiding so the next time the app list appears it is
-  // not showing search results.
   if (!visible)
-    app_list_main_view_->search_box_view()->ClearSearch();
-
-  // Whether we need to signin or not may have changed since last time we were
-  // shown.
-  Layout();
+    app_list_main_view_->ResetForShow();
 }
 
 void AppListView::OnSpeechRecognitionStateChanged(
     SpeechRecognitionState new_state) {
-  if (signin_view_->visible() || !speech_view_)
+  if (!speech_view_)
     return;
 
-  bool recognizing = (new_state == SPEECH_RECOGNITION_RECOGNIZING ||
-                      new_state == SPEECH_RECOGNITION_IN_SPEECH);
+  bool will_appear = (new_state == SPEECH_RECOGNITION_RECOGNIZING ||
+                      new_state == SPEECH_RECOGNITION_IN_SPEECH ||
+                      new_state == SPEECH_RECOGNITION_NETWORK_ERROR);
   // No change for this class.
-  if (speech_view_->visible() == recognizing)
+  if (speech_view_->visible() == will_appear)
     return;
 
-  if (recognizing)
+  if (will_appear)
     speech_view_->Reset();
 
-#if defined(USE_AURA)
   animation_observer_->set_frame(GetBubbleFrameView());
   gfx::Transform speech_transform;
   speech_transform.Translate(
       0, SkFloatToMScalar(kSpeechUIAppearingPosition));
-  if (recognizing)
+  if (will_appear)
     speech_view_->layer()->SetTransform(speech_transform);
 
   {
     ui::ScopedLayerAnimationSettings main_settings(
         app_list_main_view_->layer()->GetAnimator());
-    if (recognizing) {
+    if (will_appear) {
       animation_observer_->SetTarget(app_list_main_view_);
       main_settings.AddObserver(animation_observer_.get());
     }
-    app_list_main_view_->layer()->SetOpacity(recognizing ? 0.0f : 1.0f);
+    app_list_main_view_->layer()->SetOpacity(will_appear ? 0.0f : 1.0f);
   }
 
   {
     ui::ScopedLayerAnimationSettings speech_settings(
         speech_view_->layer()->GetAnimator());
-    if (!recognizing) {
+    if (!will_appear) {
       animation_observer_->SetTarget(speech_view_);
       speech_settings.AddObserver(animation_observer_.get());
     }
 
-    speech_view_->layer()->SetOpacity(recognizing ? 1.0f : 0.0f);
-    if (recognizing)
+    speech_view_->layer()->SetOpacity(will_appear ? 1.0f : 0.0f);
+    if (will_appear)
       speech_view_->layer()->SetTransform(gfx::Transform());
     else
       speech_view_->layer()->SetTransform(speech_transform);
   }
 
-  if (recognizing)
+  if (will_appear)
     speech_view_->SetVisible(true);
   else
     app_list_main_view_->SetVisible(true);
-#else
-  speech_view_->SetVisible(recognizing);
-  app_list_main_view_->SetVisible(!recognizing);
-
-  // Needs to schedule paint of AppListView itself, to repaint the background.
-  GetBubbleFrameView()->SchedulePaint();
-#endif
 }
 
 }  // namespace app_list

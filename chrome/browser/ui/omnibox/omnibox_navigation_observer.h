@@ -15,9 +15,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "net/url_request/url_fetcher_delegate.h"
 
-namespace history {
 class ShortcutsBackend;
-}
 
 namespace net {
 class URLFetcher;
@@ -84,8 +82,7 @@ class OmniboxNavigationObserver : public content::NotificationObserver,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
   virtual void NavigationEntryCommitted(
       const content::LoadCommittedDetails& load_details) OVERRIDE;
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // net::URLFetcherDelegate:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
@@ -97,8 +94,7 @@ class OmniboxNavigationObserver : public content::NotificationObserver,
   const base::string16 text_;
   const AutocompleteMatch match_;
   const AutocompleteMatch alternate_nav_match_;
-  scoped_refptr<history::ShortcutsBackend> shortcuts_backend_;  // May be NULL
-                                                                // in incognito.
+  scoped_refptr<ShortcutsBackend> shortcuts_backend_;  // NULL in incognito.
   scoped_ptr<net::URLFetcher> fetcher_;
   LoadState load_state_;
   FetchState fetch_state_;

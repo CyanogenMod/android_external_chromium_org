@@ -10,7 +10,10 @@
 #include <string>
 
 class Browser;
-class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace aura {
 class Window;
@@ -75,6 +78,11 @@ class MultiUserWindowManager {
   // will get returned.
   static MultiProfileMode GetMultiProfileMode();
 
+  // Whether or not the window's title should show the avatar. On chromeos,
+  // this is true when the owner of the window is different from the owner of
+  // the desktop.
+  static bool ShouldShowAvatar(aura::Window* window);
+
   // Removes the instance.
   static void DeleteInstance();
 
@@ -93,7 +101,7 @@ class MultiUserWindowManager {
 
   // See who owns this window. The return value is the user id or an empty
   // string if not assigned yet.
-  virtual const std::string& GetWindowOwner(aura::Window* window) = 0;
+  virtual const std::string& GetWindowOwner(aura::Window* window) const = 0;
 
   // Allows to show an owned window for another users. If the window is not
   // owned, this call will return immediately. (The FileManager for example
@@ -105,26 +113,28 @@ class MultiUserWindowManager {
       aura::Window* window, const std::string& user_id) = 0;
 
   // Returns true when windows are shared among users.
-  virtual bool AreWindowsSharedAmongUsers() = 0;
+  virtual bool AreWindowsSharedAmongUsers() const = 0;
 
   // Get the owners for the visible windows and set them to |user_ids|.
-  virtual void GetOwnersOfVisibleWindows(std::set<std::string>* user_ids) = 0;
+  virtual void GetOwnersOfVisibleWindows(
+      std::set<std::string>* user_ids) const = 0;
 
   // A query call for a given window to see if it is on the given user's
   // desktop.
   virtual bool IsWindowOnDesktopOfUser(aura::Window* window,
-                                       const std::string& user_id) = 0;
+                                       const std::string& user_id) const = 0;
 
   // Get the user on which the window is currently shown. If an empty string is
   // passed back the window will be presented for every user.
-  virtual const std::string& GetUserPresentingWindow(aura::Window* window) = 0;
+  virtual const std::string& GetUserPresentingWindow(
+      aura::Window* window) const = 0;
 
   // Adds user to monitor starting and running V1/V2 application windows.
   // Returns immediately if the user (identified by a |profile|) is already
   // known to the manager. Note: This function is not implemented as a
   // SessionStateObserver to coordinate the timing of the addition with other
   // modules.
-  virtual void AddUser(Profile* profile) = 0;
+  virtual void AddUser(content::BrowserContext* profile) = 0;
 
   // Manages observers.
   virtual void AddObserver(Observer* observer) = 0;

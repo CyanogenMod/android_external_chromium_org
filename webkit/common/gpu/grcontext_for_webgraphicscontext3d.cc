@@ -35,23 +35,7 @@ GrContextForWebGraphicsContext3D::GrContextForWebGraphicsContext3D(
   gr_context_ = skia::AdoptRef(GrContext::Create(
       kOpenGL_GrBackend,
       reinterpret_cast<GrBackendContext>(interface.get())));
-  if (!gr_context_)
-    return;
-
-  bool nonzero_allocation = true;
-  SetMemoryLimit(nonzero_allocation);
-}
-
-GrContextForWebGraphicsContext3D::~GrContextForWebGraphicsContext3D() {
-  if (gr_context_)
-    gr_context_->contextDestroyed();
-}
-
-void GrContextForWebGraphicsContext3D::SetMemoryLimit(bool nonzero_allocation) {
-  if (!gr_context_)
-    return;
-
-  if (nonzero_allocation) {
+  if (gr_context_) {
     // The limit of the number of textures we hold in the GrContext's
     // bitmap->texture cache.
     static const int kMaxGaneshTextureCacheCount = 2048;
@@ -59,13 +43,24 @@ void GrContextForWebGraphicsContext3D::SetMemoryLimit(bool nonzero_allocation) {
     // bitmap->texture cache.
     static const size_t kMaxGaneshTextureCacheBytes = 96 * 1024 * 1024;
 
-    gr_context_->setTextureCacheLimits(
-        kMaxGaneshTextureCacheCount, kMaxGaneshTextureCacheBytes);
-  } else {
+    gr_context_->setTextureCacheLimits(kMaxGaneshTextureCacheCount,
+                                       kMaxGaneshTextureCacheBytes);
+  }
+}
+
+GrContextForWebGraphicsContext3D::~GrContextForWebGraphicsContext3D() {
+}
+
+void GrContextForWebGraphicsContext3D::OnLostContext() {
+  if (gr_context_)
+    gr_context_->contextDestroyed();
+}
+
+void GrContextForWebGraphicsContext3D::FreeGpuResources() {
+  if (gr_context_) {
     TRACE_EVENT_INSTANT0("gpu", "GrContext::freeGpuResources", \
         TRACE_EVENT_SCOPE_THREAD);
     gr_context_->freeGpuResources();
-    gr_context_->setTextureCacheLimits(0, 0);
   }
 }
 

@@ -8,6 +8,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
 #include "content/public/test/async_file_test_helper.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_backend.h"
 #include "content/public/test/test_file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -17,22 +18,21 @@
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/common/blob/shareable_file_reference.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 using content::AsyncFileTestHelper;
 using fileapi::CopyOrMoveFileValidator;
 using fileapi::CopyOrMoveFileValidatorFactory;
-using fileapi::FileSystemType;
 using fileapi::FileSystemURL;
 
 namespace content {
 
 namespace {
 
-const FileSystemType kNoValidatorType = fileapi::kFileSystemTypeTemporary;
-const FileSystemType kWithValidatorType = fileapi::kFileSystemTypeTest;
+const fileapi::FileSystemType kNoValidatorType =
+    fileapi::kFileSystemTypeTemporary;
+const fileapi::FileSystemType kWithValidatorType = fileapi::kFileSystemTypeTest;
 
 void ExpectOk(const GURL& origin_url,
               const std::string& name,
@@ -42,13 +42,10 @@ void ExpectOk(const GURL& origin_url,
 
 class CopyOrMoveFileValidatorTestHelper {
  public:
-  CopyOrMoveFileValidatorTestHelper(
-      const GURL& origin,
-      FileSystemType src_type,
-      FileSystemType dest_type)
-      : origin_(origin),
-        src_type_(src_type),
-        dest_type_(dest_type) {}
+  CopyOrMoveFileValidatorTestHelper(const GURL& origin,
+                                    fileapi::FileSystemType src_type,
+                                    fileapi::FileSystemType dest_type)
+      : origin_(origin), src_type_(src_type), dest_type_(dest_type) {}
 
   ~CopyOrMoveFileValidatorTestHelper() {
     file_system_context_ = NULL;
@@ -70,8 +67,8 @@ class CopyOrMoveFileValidatorTestHelper {
     // Sets up source.
     fileapi::FileSystemBackend* src_file_system_backend =
         file_system_context_->GetFileSystemBackend(src_type_);
-    src_file_system_backend->OpenFileSystem(
-        origin_, src_type_,
+    src_file_system_backend->ResolveURL(
+        FileSystemURL::CreateForTest(origin_, src_type_, base::FilePath()),
         fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&ExpectOk));
     base::RunLoop().RunUntilIdle();
@@ -170,8 +167,8 @@ class CopyOrMoveFileValidatorTestHelper {
 
   const GURL origin_;
 
-  const FileSystemType src_type_;
-  const FileSystemType dest_type_;
+  const fileapi::FileSystemType src_type_;
+  const fileapi::FileSystemType dest_type_;
   std::string src_fsid_;
   std::string dest_fsid_;
 

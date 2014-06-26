@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/browser_tabrestore.h"
 
+#include "apps/ui/web_contents_sizer.h"
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_service.h"
@@ -16,7 +17,6 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/session_storage_namespace.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 
 using content::WebContents;
 using content::NavigationController;
@@ -43,7 +43,8 @@ WebContents* CreateRestoredTab(
     const std::string& extension_app_id,
     bool from_last_session,
     content::SessionStorageNamespace* session_storage_namespace,
-    const std::string& user_agent_override) {
+    const std::string& user_agent_override,
+    bool initially_hidden) {
   GURL restore_url = navigations.at(selected_navigation).virtual_url();
   // TODO(ajwong): Remove the temporary session_storage_namespace_map when
   // we teach session restore to understand that one tab can have multiple
@@ -55,11 +56,12 @@ WebContents* CreateRestoredTab(
   WebContents::CreateParams create_params(
       browser->profile(),
       tab_util::GetSiteInstanceForNewTab(browser->profile(), restore_url));
+  create_params.initially_hidden = initially_hidden;
   WebContents* base_web_contents =
       browser->tab_strip_model()->GetActiveWebContents();
   if (base_web_contents) {
     create_params.initial_size =
-        base_web_contents->GetView()->GetContainerSize();
+        base_web_contents->GetContainerBounds().size();
   }
   WebContents* web_contents = content::WebContents::CreateWithSessionStorage(
       create_params,
@@ -98,7 +100,8 @@ content::WebContents* AddRestoredTab(
                                                 extension_app_id,
                                                 from_last_session,
                                                 session_storage_namespace,
-                                                user_agent_override);
+                                                user_agent_override,
+                                                !select);
 
   int add_types = select ? TabStripModel::ADD_ACTIVE
                          : TabStripModel::ADD_NONE;
@@ -113,14 +116,14 @@ content::WebContents* AddRestoredTab(
   if (select) {
     browser->window()->Activate();
   } else {
-    // We set the size of the view here, before WebKit does its initial
-    // layout.  If we don't, the initial layout of background tabs will be
-    // performed with a view width of 0, which may cause script outputs and
-    // anchor link location calculations to be incorrect even after a new
-    // layout with proper view dimensions. TabStripModel::AddWebContents()
-    // contains similar logic.
-    web_contents->GetView()->SizeContents(
-        browser->window()->GetRestoredBounds().size());
+    // We set the size of the view here, before Blink does its initial layout.
+    // If we don't, the initial layout of background tabs will be performed
+    // with a view width of 0, which may cause script outputs and anchor link
+    // location calculations to be incorrect even after a new layout with
+    // proper view dimensions. TabStripModel::AddWebContents() contains similar
+    // logic.
+    apps::ResizeWebContents(web_contents,
+                            browser->window()->GetRestoredBounds().size());
     web_contents->WasHidden();
   }
   SessionService* session_service =
@@ -144,7 +147,8 @@ content::WebContents* ReplaceRestoredTab(
                                                 extension_app_id,
                                                 from_last_session,
                                                 session_storage_namespace,
-                                                user_agent_override);
+                                                user_agent_override,
+                                                false);
 
   // ReplaceWebContentsAt won't animate in the restoration, so manually do the
   // equivalent of ReplaceWebContentsAt.

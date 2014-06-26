@@ -12,12 +12,12 @@
 #include <string>
 
 #include "ash/shell.h"
-#include "ash/wm/user_activity_detector.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -33,7 +33,7 @@
 #include "base/time/tick_clock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/system/automatic_reboot_manager_observer.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_paths.h"
@@ -43,6 +43,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "ui/wm/core/user_activity_detector.h"
 
 namespace chromeos {
 namespace system {
@@ -56,15 +57,15 @@ const int kOneKilobyte = 1 << 10;                  // 1 kB in bytes.
 
 base::TimeDelta ReadTimeDeltaFromFile(const base::FilePath& path) {
   base::ThreadRestrictions::AssertIOAllowed();
-  int fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY | O_NOFOLLOW));
-  if (fd < 0)
+  base::ScopedFD fd(
+      HANDLE_EINTR(open(path.value().c_str(), O_RDONLY | O_NOFOLLOW)));
+  if (!fd.is_valid())
     return base::TimeDelta();
-  file_util::ScopedFD fd_closer(&fd);
 
   std::string contents;
   char buffer[kOneKilobyte];
   ssize_t length;
-  while ((length = read(fd, buffer, sizeof(buffer))) > 0)
+  while ((length = HANDLE_EINTR(read(fd.get(), buffer, sizeof(buffer)))) > 0)
     contents.append(buffer, length);
 
   double seconds;
@@ -108,18 +109,17 @@ void SaveUpdateRebootNeededUptime() {
   if (uptime == kZeroTimeDelta)
     return;
 
-  int fd = HANDLE_EINTR(open(update_reboot_needed_uptime_file.value().c_str(),
-                             O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW,
-                             0666));
-  if (fd < 0)
+  base::ScopedFD fd(HANDLE_EINTR(
+      open(update_reboot_needed_uptime_file.value().c_str(),
+           O_CREAT | O_WRONLY | O_TRUNC | O_NOFOLLOW,
+           0666)));
+  if (!fd.is_valid())
     return;
-  file_util::ScopedFD fd_closer(&fd);
 
   std::string update_reboot_needed_uptime =
       base::DoubleToString(uptime.InSecondsF());
-  file_util::WriteFileDescriptor(fd,
-                                 update_reboot_needed_uptime.c_str(),
-                                 update_reboot_needed_uptime.size());
+  base::WriteFileDescriptor(fd.get(), update_reboot_needed_uptime.c_str(),
+                            update_reboot_needed_uptime.size());
 }
 
 }  // namespace
@@ -216,7 +216,7 @@ void AutomaticRebootManager::RemoveObserver(
   observers_.RemoveObserver(observer);
 }
 
-void AutomaticRebootManager::SystemResumed(
+void AutomaticRebootManager::SuspendDone(
     const base::TimeDelta& sleep_duration) {
   MaybeReboot(true);
 }

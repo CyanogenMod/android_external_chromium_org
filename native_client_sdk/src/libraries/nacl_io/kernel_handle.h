@@ -31,7 +31,7 @@ struct HandleAttr {
   HandleAttr() : offs(0), flags(0) {}
   bool IsBlocking() const { return !(flags & O_NONBLOCK); }
 
-  size_t offs;
+  off_t offs;
   int flags;
 };
 
@@ -40,7 +40,6 @@ struct HandleAttr {
 // KernelHandle can only be referenced when the KernelProxy lock is held.
 class KernelHandle : public sdk_util::RefObject {
  public:
-
   KernelHandle();
   KernelHandle(const ScopedFilesystem& fs, const ScopedNode& node);
   ~KernelHandle();

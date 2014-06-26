@@ -8,50 +8,38 @@
 #include <set>
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "chrome/browser/ui/global_error/global_error.h"
-#include "google_apis/gaia/google_service_auth_error.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "components/signin/core/browser/signin_error_controller.h"
 
 class Profile;
 
-// Shows auth errors on the wrench menu using a bubble view and a
-// menu item. Services that wish to expose auth errors to the user should
-// register an AuthStatusProvider to report their current authentication state,
-// and should invoke AuthStatusChanged() when their authentication state may
-// have changed.
-class SigninGlobalError : public GlobalErrorWithStandardBubble {
+// Shows auth errors on the wrench menu using a bubble view and a menu item.
+class SigninGlobalError : public GlobalErrorWithStandardBubble,
+                          public SigninErrorController::Observer,
+                          public KeyedService {
  public:
-  class AuthStatusProvider {
-   public:
-    AuthStatusProvider();
-    virtual ~AuthStatusProvider();
-
-    // Returns the account id with the status specified by GetAuthStatus().
-    virtual std::string GetAccountId() const = 0;
-
-    // API invoked by SigninGlobalError to get the current auth status of
-    // the various signed in services.
-    virtual GoogleServiceAuthError GetAuthStatus() const = 0;
-  };
-
-  explicit SigninGlobalError(Profile* profile);
+  SigninGlobalError(SigninErrorController* error_controller,
+                    Profile* profile);
   virtual ~SigninGlobalError();
 
-  // Adds a provider which the SigninGlobalError object will start querying for
-  // auth status.
-  void AddProvider(const AuthStatusProvider* provider);
+  // Returns true if there is an authentication error.
+  bool HasError();
 
-  // Removes a provider previously added by SigninGlobalError (generally only
-  // called in preparation for shutdown).
-  void RemoveProvider(const AuthStatusProvider* provider);
+  // Shows re-authentication UI to the user in an attempt to fix the error.
+  // The re-authentication UI will be shown in |browser|.
+  void AttemptToFixError(Browser* browser);
 
-  // Invoked when the auth status of an AuthStatusProvider has changed.
-  void AuthStatusChanged();
+ private:
+  FRIEND_TEST_ALL_PREFIXES(SigninGlobalErrorTest, NoErrorAuthStatusProviders);
+  FRIEND_TEST_ALL_PREFIXES(SigninGlobalErrorTest, ErrorAuthStatusProvider);
+  FRIEND_TEST_ALL_PREFIXES(SigninGlobalErrorTest, AuthStatusEnumerateAllErrors);
 
-  std::string GetAccountIdOfLastAuthError() const { return account_id_; }
+  // KeyedService:
+  virtual void Shutdown() OVERRIDE;
 
-  GoogleServiceAuthError GetLastAuthError() const { return auth_error_; }
-
-  // GlobalError implementation.
+  // GlobalErrorWithStandardBubble:
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
   virtual base::string16 MenuItemLabel() OVERRIDE;
@@ -65,21 +53,19 @@ class SigninGlobalError : public GlobalErrorWithStandardBubble {
   virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
   virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
 
-  // Returns the SigninGlobalError instance for the given profile.
-  static SigninGlobalError* GetForProfile(Profile* profile);
+  // SigninErrorController::Observer:
+  virtual void OnErrorChanged() OVERRIDE;
 
- private:
-  std::set<const AuthStatusProvider*> provider_set_;
-
-  // The account that generated the last auth error.
-  std::string account_id_;
-
-  // The auth error detected the last time AuthStatusChanged() was invoked (or
-  // NONE if AuthStatusChanged() has never been invoked).
-  GoogleServiceAuthError auth_error_;
-
-  // The Profile this object belongs to.
+  // The Profile this service belongs to.
   Profile* profile_;
+
+  // The SigninErrorController that provides auth status.
+  SigninErrorController* error_controller_;
+
+  // True if signin global error was added to the global error service.
+  bool is_added_to_global_error_service_;
+
+  DISALLOW_COPY_AND_ASSIGN(SigninGlobalError);
 };
 
 #endif  // CHROME_BROWSER_SIGNIN_SIGNIN_GLOBAL_ERROR_H_

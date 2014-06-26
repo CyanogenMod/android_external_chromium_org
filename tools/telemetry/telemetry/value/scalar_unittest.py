@@ -10,15 +10,10 @@ from telemetry.value import scalar
 
 class TestBase(unittest.TestCase):
   def setUp(self):
-    self.page_set =  page_set.PageSet.FromDict({
-      "description": "hello",
-      "archive_path": "foo.wpr",
-      "pages": [
-        {"url": "http://www.bar.com/"},
-        {"url": "http://www.baz.com/"},
-        {"url": "http://www.foo.com/"}
-        ]
-      }, os.path.dirname(__file__))
+    self.page_set = page_set.PageSet(file_path=os.path.dirname(__file__))
+    self.page_set.AddPageWithDefaultRunNavigate("http://www.bar.com/")
+    self.page_set.AddPageWithDefaultRunNavigate("http://www.baz.com/")
+    self.page_set.AddPageWithDefaultRunNavigate("http://www.foo.com/")
 
   @property
   def pages(self):
@@ -29,15 +24,15 @@ class ValueTest(TestBase):
     page0 = self.pages[0]
     v = scalar.ScalarValue(page0, 'x', 'unit', 3, important=True)
     self.assertEquals('default', v.GetBuildbotDataType(
-        value.MERGED_PAGES_RESULT_OUTPUT_CONTEXT))
+        value.COMPUTED_PER_PAGE_SUMMARY_OUTPUT_CONTEXT))
     self.assertEquals([3], v.GetBuildbotValue())
-    self.assertEquals(('x_by_url', page0.display_name),
+    self.assertEquals(('x', page0.display_name),
                       v.GetBuildbotMeasurementAndTraceNameForPerPageResult())
 
     v = scalar.ScalarValue(page0, 'x', 'unit', 3, important=False)
     self.assertEquals(
         'unimportant',
-        v.GetBuildbotDataType(value.MERGED_PAGES_RESULT_OUTPUT_CONTEXT))
+        v.GetBuildbotDataType(value.COMPUTED_PER_PAGE_SUMMARY_OUTPUT_CONTEXT))
 
   def testScalarSamePageMerging(self):
     page0 = self.pages[0]

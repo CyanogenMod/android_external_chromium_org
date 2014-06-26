@@ -6,15 +6,13 @@
 #define MOJO_SERVICES_NATIVE_VIEWPORT_SERVICE_H_
 
 #include "base/memory/scoped_vector.h"
-#include "mojo/public/bindings/remote_ptr.h"
-#include "mojo/public/shell/application.h"
+#include "mojo/public/cpp/application/application_impl.h"
 #include "mojo/services/native_viewport/native_viewport_export.h"
 #include "mojo/shell/context.h"
 
-#if defined(OS_ANDROID)
-MOJO_NATIVE_VIEWPORT_EXPORT mojo::Application*
-    CreateNativeViewportService(mojo::shell::Context* context,
-                                mojo::ScopedShellHandle shell_handle);
-#endif
+MOJO_NATIVE_VIEWPORT_EXPORT mojo::ApplicationImpl*
+    CreateNativeViewportService(
+        mojo::shell::Context* context,
+        mojo::ScopedMessagePipeHandle service_provider_handle);
 
 #endif  // MOJO_SERVICES_NATIVE_VIEWPORT_SERVICE_H_

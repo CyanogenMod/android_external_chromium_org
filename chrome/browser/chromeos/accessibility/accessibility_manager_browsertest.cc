@@ -13,22 +13,33 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/login/helper.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager_impl.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager_impl.h"
+#include "chrome/browser/chromeos/preferences.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
-#include "chrome/browser/extensions/api/braille_display_private/stub_braille_controller.h"
+#include "chrome/browser/extensions/api/braille_display_private/mock_braille_controller.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/component_extension_ime_manager.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using chromeos::input_method::InputMethodManager;
+using chromeos::input_method::InputMethodUtil;
+using chromeos::input_method::InputMethodDescriptors;
+using content::BrowserThread;
 using extensions::api::braille_display_private::BrailleObserver;
 using extensions::api::braille_display_private::DisplayState;
-using extensions::api::braille_display_private::StubBrailleController;
+using extensions::api::braille_display_private::KeyEvent;
+using extensions::api::braille_display_private::MockBrailleController;
 
 namespace chromeos {
 
@@ -42,24 +53,19 @@ const int kTestAutoclickDelayMs = 2000;
 // with UserManager::kLocallyManagedUserDomain.
 const char kTestLocallyManagedUserName[] = "test@locally-managed.localhost";
 
-class MockAccessibilityObserver : public content::NotificationObserver {
+class MockAccessibilityObserver {
  public:
   MockAccessibilityObserver() : observed_(false),
                                 observed_enabled_(false),
-                                observed_type_(-1) {
-    registrar_.Add(
-        this,
-        chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK,
-        content::NotificationService::AllSources());
-    registrar_.Add(
-        this,
-        chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE,
-        content::NotificationService::AllSources());
-    registrar_.Add(
-        this,
-        chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD,
-        content::NotificationService::AllSources());
+                                observed_type_(-1)
+  {
+    AccessibilityManager* accessibility_manager = AccessibilityManager::Get();
+    CHECK(accessibility_manager);
+    accessibility_subscription_ = accessibility_manager->RegisterCallback(
+        base::Bind(&MockAccessibilityObserver::OnAccessibilityStatusChanged,
+                   base::Unretained(this)));
   }
+
   virtual ~MockAccessibilityObserver() {}
 
   bool observed() const { return observed_; }
@@ -69,31 +75,12 @@ class MockAccessibilityObserver : public content::NotificationObserver {
   void reset() { observed_ = false; }
 
  private:
-  // content::NotificationObserver implimentation:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    AccessibilityStatusEventDetails* accessibility_status =
-        content::Details<AccessibilityStatusEventDetails>(
-            details).ptr();
-    ASSERT_FALSE(observed_);
-
-    switch (type) {
-      case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK:
-        observed_ = true;
-        observed_enabled_ = accessibility_status->enabled;
-        observed_type_ = type;
-        break;
-      case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE:
-        observed_ = true;
-        observed_enabled_ = accessibility_status->enabled;
-        observed_type_ = type;
-        break;
-      case chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD:
-        observed_ = true;
-        observed_enabled_ = accessibility_status->enabled;
-        observed_type_ = type;
-        break;
+  void OnAccessibilityStatusChanged(
+      const AccessibilityStatusEventDetails& details) {
+    if (details.notification_type != ACCESSIBILITY_TOGGLE_SCREEN_MAGNIFIER) {
+      observed_type_ = details.notification_type;
+      observed_enabled_ = details.enabled;
+      observed_ = true;
     }
   }
 
@@ -101,42 +88,9 @@ class MockAccessibilityObserver : public content::NotificationObserver {
   bool observed_enabled_;
   int observed_type_;
 
-  content::NotificationRegistrar registrar_;
+  scoped_ptr<AccessibilityStatusSubscription> accessibility_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(MockAccessibilityObserver);
-};
-
-class MockBrailleController : public StubBrailleController {
- public:
-
-  MockBrailleController() : available_(false), observer_(NULL) {}
-
-  virtual scoped_ptr<DisplayState> GetDisplayState() OVERRIDE {
-    scoped_ptr<DisplayState> state(new DisplayState());
-    state->available = available_;
-    return state.Pass();
-  }
-
-  virtual void AddObserver(BrailleObserver* observer) OVERRIDE {
-    ASSERT_EQ(NULL, observer_);
-    observer_ = observer;
-  }
-
-  virtual void RemoveObserver(BrailleObserver* observer) OVERRIDE {
-    ASSERT_EQ(observer_, observer);
-  }
-
-  void SetAvailable(bool available) {
-    available_ = available;
-  }
-
-  BrailleObserver* GetObserver() {
-    return observer_;
-  }
-
- private:
-  bool available_;
-  BrailleObserver* observer_;
 };
 
 void SetLargeCursorEnabled(bool enabled) {
@@ -203,50 +157,68 @@ PrefService* GetPrefs() {
 }
 
 void SetLargeCursorEnabledPref(bool enabled) {
-  GetPrefs()->SetBoolean(prefs::kLargeCursorEnabled, enabled);
+  GetPrefs()->SetBoolean(prefs::kAccessibilityLargeCursorEnabled, enabled);
 }
 
 void SetHighContrastEnabledPref(bool enabled) {
-  GetPrefs()->SetBoolean(prefs::kHighContrastEnabled, enabled);
+  GetPrefs()->SetBoolean(prefs::kAccessibilityHighContrastEnabled, enabled);
 }
 
 void SetSpokenFeedbackEnabledPref(bool enabled) {
-  GetPrefs()->SetBoolean(prefs::kSpokenFeedbackEnabled, enabled);
+  GetPrefs()->SetBoolean(prefs::kAccessibilitySpokenFeedbackEnabled, enabled);
 }
 
 void SetAutoclickEnabledPref(bool enabled) {
-  GetPrefs()->SetBoolean(prefs::kAutoclickEnabled, enabled);
+  GetPrefs()->SetBoolean(prefs::kAccessibilityAutoclickEnabled, enabled);
 }
 
 void SetAutoclickDelayPref(int delay_ms) {
-  GetPrefs()->SetInteger(prefs::kAutoclickDelayMs, delay_ms);
+  GetPrefs()->SetInteger(prefs::kAccessibilityAutoclickDelayMs, delay_ms);
 }
 
 void SetVirtualKeyboardEnabledPref(bool enabled) {
-  GetPrefs()->SetBoolean(prefs::kVirtualKeyboardEnabled, enabled);
+  GetPrefs()->SetBoolean(prefs::kAccessibilityVirtualKeyboardEnabled, enabled);
 }
 
 bool GetLargeCursorEnabledFromPref() {
-  return GetPrefs()->GetBoolean(prefs::kLargeCursorEnabled);
+  return GetPrefs()->GetBoolean(prefs::kAccessibilityLargeCursorEnabled);
 }
 
 bool GetHighContrastEnabledFromPref() {
-  return GetPrefs()->GetBoolean(prefs::kHighContrastEnabled);
+  return GetPrefs()->GetBoolean(prefs::kAccessibilityHighContrastEnabled);
 }
 
 bool GetSpokenFeedbackEnabledFromPref() {
-  return GetPrefs()->GetBoolean(prefs::kSpokenFeedbackEnabled);
+  return GetPrefs()->GetBoolean(prefs::kAccessibilitySpokenFeedbackEnabled);
 }
 
 bool GetAutoclickEnabledFromPref() {
-  return GetPrefs()->GetBoolean(prefs::kAutoclickEnabled);
+  return GetPrefs()->GetBoolean(prefs::kAccessibilityAutoclickEnabled);
 }
 
 int GetAutoclickDelayFromPref() {
-  return GetPrefs()->GetInteger(prefs::kAutoclickDelayMs);
+  return GetPrefs()->GetInteger(prefs::kAccessibilityAutoclickDelayMs);
 }
 
-}  // anonymouse namespace
+bool IsBrailleImeActive() {
+  InputMethodManager* imm = InputMethodManager::Get();
+  scoped_ptr<InputMethodDescriptors> descriptors =
+      imm->GetActiveInputMethods();
+  for (InputMethodDescriptors::const_iterator i = descriptors->begin();
+       i != descriptors->end();
+       ++i) {
+    if (i->id() == extension_misc::kBrailleImeEngineId)
+      return true;
+  }
+  return false;
+}
+
+bool IsBrailleImeCurrent() {
+  InputMethodManager* imm = InputMethodManager::Get();
+  return imm->GetCurrentInputMethod().id() ==
+         extension_misc::kBrailleImeEngineId;
+}
+}  // anonymous namespace
 
 class AccessibilityManagerTest : public InProcessBrowserTest {
  protected:
@@ -272,6 +244,12 @@ class AccessibilityManagerTest : public InProcessBrowserTest {
 
   virtual void CleanUpOnMainThread() OVERRIDE {
     AccessibilityManager::SetBrailleControllerForTest(NULL);
+  }
+
+  void SetBrailleDisplayAvailability(bool available) {
+    braille_controller_.SetAvailable(available);
+    braille_controller_.GetObserver()->OnBrailleDisplayStateChanged(
+        *braille_controller_.GetDisplayState());
   }
 
   int default_autoclick_delay() const { return default_autoclick_delay_; }
@@ -348,10 +326,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest, BrailleOnLoginScreen) {
   EXPECT_FALSE(IsSpokenFeedbackEnabled());
 
   // Signal the accessibility manager that a braille display was connected.
-  braille_controller_.SetAvailable(true);
-  braille_controller_.GetObserver()->OnDisplayStateChanged(
-      *braille_controller_.GetDisplayState());
-
+  SetBrailleDisplayAvailability(true);
   // Confirms that the spoken feedback is enabled.
   EXPECT_TRUE(IsSpokenFeedbackEnabled());
 }
@@ -471,7 +446,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_TRUE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
+            ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
   EXPECT_TRUE(IsSpokenFeedbackEnabled());
 
   observer.reset();
@@ -479,7 +454,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_FALSE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
+            ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
   EXPECT_FALSE(IsSpokenFeedbackEnabled());
 
   observer.reset();
@@ -487,7 +462,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_TRUE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
+            ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
   EXPECT_TRUE(IsHighContrastEnabled());
 
   observer.reset();
@@ -495,7 +470,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_FALSE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
+            ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
   EXPECT_FALSE(IsHighContrastEnabled());
 
   observer.reset();
@@ -503,7 +478,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_TRUE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
+            ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
   EXPECT_TRUE(IsVirtualKeyboardEnabled());
 
   observer.reset();
@@ -511,7 +486,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_FALSE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
+            ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
   EXPECT_FALSE(IsVirtualKeyboardEnabled());
 }
 
@@ -530,7 +505,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_TRUE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
+            ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
   EXPECT_TRUE(IsSpokenFeedbackEnabled());
 
   observer.reset();
@@ -538,7 +513,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_FALSE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
+            ACCESSIBILITY_TOGGLE_SPOKEN_FEEDBACK);
   EXPECT_FALSE(IsSpokenFeedbackEnabled());
 
   observer.reset();
@@ -546,7 +521,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_TRUE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
+            ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
   EXPECT_TRUE(IsHighContrastEnabled());
 
   observer.reset();
@@ -554,7 +529,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_FALSE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
+            ACCESSIBILITY_TOGGLE_HIGH_CONTRAST_MODE);
   EXPECT_FALSE(IsHighContrastEnabled());
 
   observer.reset();
@@ -562,7 +537,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_TRUE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
+            ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
   EXPECT_TRUE(IsVirtualKeyboardEnabled());
 
   observer.reset();
@@ -570,7 +545,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest,
   EXPECT_TRUE(observer.observed());
   EXPECT_FALSE(observer.observed_enabled());
   EXPECT_EQ(observer.observed_type(),
-            chrome::NOTIFICATION_CROS_ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
+            ACCESSIBILITY_TOGGLE_VIRTUAL_KEYBOARD);
   EXPECT_FALSE(IsVirtualKeyboardEnabled());
 }
 
@@ -637,6 +612,56 @@ IN_PROC_BROWSER_TEST_P(AccessibilityManagerUserTypeTest,
   EXPECT_TRUE(GetHighContrastEnabledFromPref());
   EXPECT_TRUE(GetAutoclickEnabledFromPref());
   EXPECT_EQ(kTestAutoclickDelayMs, GetAutoclickDelayFromPref());
+}
+
+IN_PROC_BROWSER_TEST_P(AccessibilityManagerUserTypeTest, BrailleWhenLoggedIn) {
+  // Logs in.
+  const char* user_name = GetParam();
+  UserManager::Get()->UserLoggedIn(user_name, user_name, true);
+  UserManager::Get()->SessionStarted();
+  // The |ComponentExtensionIMEManager| defers some initialization to the
+  // |FILE| thread.  We need to wait for that to finish before continuing.
+  InputMethodManager* imm = InputMethodManager::Get();
+  while (!imm->GetComponentExtensionIMEManager()->IsInitialized()) {
+    content::RunAllPendingInMessageLoop(BrowserThread::FILE);
+  }
+  // This object watches for IME preference changes and reflects those in
+  // the IME framework state.
+  chromeos::Preferences prefs;
+  prefs.InitUserPrefsForTesting(PrefServiceSyncable::FromProfile(GetProfile()),
+                                UserManager::Get()->GetActiveUser());
+
+  // Make sure we start in the expected state.
+  EXPECT_FALSE(IsBrailleImeActive());
+  EXPECT_FALSE(IsSpokenFeedbackEnabled());
+
+  // Signal the accessibility manager that a braille display was connected.
+  SetBrailleDisplayAvailability(true);
+
+  // Now, both spoken feedback and the Braille IME should be enabled.
+  EXPECT_TRUE(IsSpokenFeedbackEnabled());
+  EXPECT_TRUE(IsBrailleImeActive());
+
+  // Send a braille dots key event and make sure that the braille IME is
+  // enabled.
+  KeyEvent event;
+  event.command = extensions::api::braille_display_private::KEY_COMMAND_DOTS;
+  event.braille_dots.reset(new int(0));
+  braille_controller_.GetObserver()->OnBrailleKeyEvent(event);
+  EXPECT_TRUE(IsBrailleImeCurrent());
+
+  // Unplug the display.  Spolken feedback remains on, but the Braille IME
+  // should get deactivated.
+  SetBrailleDisplayAvailability(false);
+  EXPECT_TRUE(IsSpokenFeedbackEnabled());
+  EXPECT_FALSE(IsBrailleImeActive());
+  EXPECT_FALSE(IsBrailleImeCurrent());
+
+  // Plugging in a display while spoken feedback is enabled should activate
+  // the Braille IME.
+  SetBrailleDisplayAvailability(true);
+  EXPECT_TRUE(IsSpokenFeedbackEnabled());
+  EXPECT_TRUE(IsBrailleImeActive());
 }
 
 IN_PROC_BROWSER_TEST_F(AccessibilityManagerTest, AcessibilityMenuVisibility) {

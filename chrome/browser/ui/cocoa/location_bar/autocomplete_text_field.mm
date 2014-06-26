@@ -8,6 +8,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
+#import "chrome/browser/ui/cocoa/location_bar/location_bar_decoration.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
@@ -79,6 +80,8 @@
 // a decoration area and get the expected selection behaviour,
 // likewise for multiple clicks in those areas.
 - (void)mouseDown:(NSEvent*)theEvent {
+  // TODO(groby): Figure out if OnMouseDown needs to be postponed/skipped
+  // for button decorations.
   if (observer_)
     observer_->OnMouseDown([theEvent buttonNumber]);
 
@@ -250,6 +253,13 @@
   return suggestColor_;
 }
 
+- (NSPoint)bubblePointForDecoration:(LocationBarDecoration*)decoration {
+  const NSRect frame =
+      [[self cell] frameForDecoration:decoration inFrame:[self bounds]];
+  const NSPoint point = decoration->GetBubblePointInFrame(frame);
+  return [self convertPoint:point toView:nil];
+}
+
 // TODO(shess): -resetFieldEditorFrameIfNeeded is the place where
 // changes to the cell layout should be flushed.  LocationBarViewMac
 // and ToolbarController are calling this routine directly, and I
@@ -368,11 +378,7 @@
     // because the first responder will be immediately set to the field editor
     // when calling [super becomeFirstResponder], thus we won't receive
     // resignFirstResponder: anymore when losing focus.
-    if (observer_) {
-      NSEvent* theEvent = [NSApp currentEvent];
-      const bool controlDown = ([theEvent modifierFlags]&NSControlKeyMask) != 0;
-      observer_->OnSetFocus(controlDown);
-    }
+    [[self cell] handleFocusEvent:[NSApp currentEvent] ofView:self];
   }
   return doAccept;
 }

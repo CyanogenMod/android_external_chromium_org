@@ -153,6 +153,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
           NULL,  // special_storage_policy
           NULL,  // quota_manager_proxy,
           ScopedVector<fileapi::FileSystemBackend>(),
+          std::vector<fileapi::URLRequestAutoMountHandler>(),
           temp_dir_.path(),  // partition_path
           content::CreateAllowFileAccessOptions()));
 
@@ -198,6 +199,7 @@ TEST(FileSystemUtilTest, ExtractDrivePathFromFileSystemUrl) {
   std::string isolated_id =
       fileapi::IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeForPlatformApp,
+          std::string(),
           GetDriveMountPointPath(&profile).AppendASCII("bar/buz"),
           &isolated_name);
   EXPECT_EQ(

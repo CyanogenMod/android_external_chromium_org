@@ -10,6 +10,7 @@
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/layer_tree_host_common.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -18,17 +19,15 @@ namespace {
 
 void SetLayerPropertiesForTesting(LayerImpl* layer,
                                   const gfx::Transform& transform,
-                                  const gfx::PointF& anchor,
+                                  const gfx::Point3F& transform_origin,
                                   const gfx::PointF& position,
                                   const gfx::Size& bounds,
-                                  bool flatten_transform,
-                                  bool is_3d_sorted) {
+                                  bool flatten_transform) {
   layer->SetTransform(transform);
-  layer->SetAnchorPoint(anchor);
+  layer->SetTransformOrigin(transform_origin);
   layer->SetPosition(position);
   layer->SetBounds(bounds);
   layer->SetShouldFlattenTransform(flatten_transform);
-  layer->SetIs3dSorted(is_3d_sorted);
   layer->SetContentBounds(bounds);
 }
 
@@ -64,8 +63,7 @@ void ExecuteCalculateDrawProperties(LayerImpl* root_layer) {
 
 class LayerPositionConstraintTest : public testing::Test {
  public:
-  LayerPositionConstraintTest()
-      : host_impl_(&proxy_) {
+  LayerPositionConstraintTest() : host_impl_(&proxy_, &shared_bitmap_manager_) {
     root_ = CreateTreeForTest();
     scroll_ = root_->children()[0];
     fixed_to_top_left_.set_is_fixed_position(true);
@@ -87,38 +85,30 @@ class LayerPositionConstraintTest : public testing::Test {
         LayerImpl::Create(host_impl_.active_tree(), 4);
 
     gfx::Transform IdentityMatrix;
-    gfx::PointF anchor;
+    gfx::Point3F transform_origin;
     gfx::PointF position;
     gfx::Size bounds(200, 200);
     gfx::Size clip_bounds(100, 100);
     SetLayerPropertiesForTesting(scroll_layer.get(),
                                  IdentityMatrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
-                                 true,
-                                 false);
-    SetLayerPropertiesForTesting(child.get(),
-                                 IdentityMatrix,
-                                 anchor,
-                                 position,
-                                 bounds,
-                                 true,
-                                 false);
+                                 true);
+    SetLayerPropertiesForTesting(
+        child.get(), IdentityMatrix, transform_origin, position, bounds, true);
     SetLayerPropertiesForTesting(grand_child.get(),
                                  IdentityMatrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
-                                 true,
-                                 false);
+                                 true);
     SetLayerPropertiesForTesting(great_grand_child.get(),
                                  IdentityMatrix,
-                                 anchor,
+                                 transform_origin,
                                  position,
                                  bounds,
-                                 true,
-                                 false);
+                                 true);
 
     root->SetBounds(clip_bounds);
     scroll_layer->SetScrollClipLayer(root->id());
@@ -135,6 +125,7 @@ class LayerPositionConstraintTest : public testing::Test {
 
  protected:
   FakeImplProxy proxy_;
+  TestSharedBitmapManager shared_bitmap_manager_;
   FakeLayerTreeHostImpl host_impl_;
   scoped_ptr<LayerImpl> root_;
   LayerImpl* scroll_;
@@ -142,6 +133,21 @@ class LayerPositionConstraintTest : public testing::Test {
   LayerPositionConstraint fixed_to_top_left_;
   LayerPositionConstraint fixed_to_bottom_right_;
 };
+
+namespace {
+
+void SetFixedContainerSizeDelta(LayerImpl* scroll_layer,
+                                const gfx::Vector2d& delta) {
+  DCHECK(scroll_layer);
+  DCHECK(scroll_layer->scrollable());
+
+  LayerImpl* container_layer = scroll_layer->scroll_clip_layer();
+  gfx::Size container_size(container_layer->bounds());
+  gfx::Size new_container_size(container_size.width() + delta.x(),
+                               container_size.height() + delta.y());
+  container_layer->SetTemporaryImplBounds(new_container_size);
+}
+}  // namespace
 
 TEST_F(LayerPositionConstraintTest,
      ScrollCompensationForFixedPositionLayerWithDirectContainer) {
@@ -180,7 +186,7 @@ TEST_F(LayerPositionConstraintTest,
                                   grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -257,7 +263,7 @@ TEST_F(LayerPositionConstraintTest,
                                   grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -331,7 +337,7 @@ TEST_F(LayerPositionConstraintTest,
                                   great_grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -435,7 +441,7 @@ TEST_F(LayerPositionConstraintTest,
                                   great_grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -550,7 +556,7 @@ TEST_F(LayerPositionConstraintTest,
                                   great_grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -669,7 +675,7 @@ TEST_F(LayerPositionConstraintTest,
                                   great_grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -725,11 +731,10 @@ TEST_F(LayerPositionConstraintTest,
         LayerImpl::Create(host_impl_.active_tree(), 5);
     SetLayerPropertiesForTesting(fixed_position_child.get(),
                                  identity,
-                                 gfx::PointF(),
+                                 gfx::Point3F(),
                                  gfx::PointF(),
                                  gfx::Size(100, 100),
-                                 true,
-                                 false);
+                                 true);
     great_grand_child->AddChild(fixed_position_child.Pass());
   }
   LayerImpl* fixed_position_child = great_grand_child->children()[0];
@@ -855,7 +860,7 @@ TEST_F(LayerPositionConstraintTest,
 
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -946,7 +951,7 @@ TEST_F(LayerPositionConstraintTest,
                                   grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -1014,7 +1019,7 @@ TEST_F(LayerPositionConstraintTest,
                                   grand_child->draw_transform());
 
   // Case 3: fixed-container size delta of 20, 20
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   // Top-left fixed-position layer should not be affected by container size.
@@ -1079,7 +1084,7 @@ TEST_F(LayerPositionConstraintTest,
 
   // Case 2: sizeDelta
   child->SetScrollDelta(gfx::Vector2d(0, 0));
-  child->SetFixedContainerSizeDelta(gfx::Vector2d(20, 20));
+  SetFixedContainerSizeDelta(child, gfx::Vector2d(20, 20));
   ExecuteCalculateDrawProperties(root_.get());
 
   expected_child_transform.MakeIdentity();

@@ -42,6 +42,10 @@ img {
   padding-left: 20px;
 }
 
+#serviceworker-internals {
+  visibility: hidden;
+}
+
 .tab-header {
   -webkit-border-start: 6px solid transparent;
   padding-left: 15px;
@@ -145,9 +149,12 @@ img {
 }
 
 .row {
-  display: flex;
   padding: 6px 0;
   position: relative;
+}
+
+.properties-box {
+  display: flex;
 }
 
 .subrow-box {
@@ -214,8 +221,12 @@ img {
   text-decoration: underline;
 }
 
+.browser-header .action {
+  margin-left: 10px;
+}
+
 .list:not(.pages) .subrow {
-  height: 19px;
+  min-height: 19px;
 }
 
 .action.disabled {
@@ -368,6 +379,11 @@ img {
 
 .port-forwarding-pair:not(.selected) .close-button:not(:hover) {
   opacity: 0.5;
+}
+
+#port-forwarding-message {
+  margin-bottom: 12px;
+  width: 20em;
 }
 
 #port-forwarding-config-buttons {

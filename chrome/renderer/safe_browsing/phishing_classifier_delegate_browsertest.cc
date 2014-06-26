@@ -87,8 +87,7 @@ class InterceptingMessageFilter : public content::BrowserMessageFilter {
   }
 
   const ClientPhishingRequest* verdict() const { return verdict_.get(); }
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE {
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     bool handled = true;
     IPC_BEGIN_MESSAGE_MAP(InterceptingMessageFilter, message)
         IPC_MESSAGE_HANDLER(SafeBrowsingHostMsg_PhishingDetectionDone,
@@ -146,7 +145,7 @@ class PhishingClassifierDelegateTest : public InProcessBrowserTest {
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
+    command_line->AppendSwitch(switches::kDisableGpu);
 #endif
   }
 
@@ -568,7 +567,13 @@ IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest,
   EXPECT_CALL(*classifier_, CancelPendingClassification());
 }
 
-IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest, DuplicatePageCapture) {
+#if defined(ADDRESS_SANITIZER)
+#define Maybe_DuplicatePageCapture DISABLED_DuplicatePageCapture
+#else
+#define Maybe_DuplicatePageCapture DuplicatePageCapture
+#endif
+IN_PROC_BROWSER_TEST_F(PhishingClassifierDelegateTest,
+                       Maybe_DuplicatePageCapture) {
   // Tests that a second PageCaptured notification causes classification to
   // be cancelled.
   MockScorer scorer;

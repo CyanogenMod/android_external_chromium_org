@@ -12,18 +12,18 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/tab_contents/background_contents.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/common/window_container_type.h"
 #include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
-class CommandLine;
 class PrefService;
 class Profile;
 
 namespace base {
+class CommandLine;
 class DictionaryValue;
 }
 
@@ -51,9 +51,10 @@ struct BackgroundContentsOpenedDetails;
 // parent app is unloaded.
 class BackgroundContentsService : private content::NotificationObserver,
                                   public BackgroundContents::Delegate,
-                                  public BrowserContextKeyedService {
+                                  public KeyedService {
  public:
-  BackgroundContentsService(Profile* profile, const CommandLine* command_line);
+  BackgroundContentsService(Profile* profile,
+                            const base::CommandLine* command_line);
   virtual ~BackgroundContentsService();
 
   // Allows tests to reduce the time between a force-installed app/extension

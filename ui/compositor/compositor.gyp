@@ -49,9 +49,13 @@
         'layer_animation_sequence.h',
         'layer_animator.cc',
         'layer_animator.h',
+        'layer_animator_collection.cc',
+        'layer_animator_collection.h',
         'layer_delegate.h',
         'layer_owner.cc',
         'layer_owner.h',
+        'layer_tree_owner.cc',
+        'layer_tree_owner.h',
         'layer_type.h',
         'reflector.h',
         'scoped_animation_duration_scale_mode.cc',
@@ -83,20 +87,20 @@
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
+        '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
-        '<(DEPTH)/ui/ui.gyp:ui',
         '<(DEPTH)/webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',
         'compositor',
       ],
       'sources': [
         'test/context_factories_for_test.cc',
         'test/context_factories_for_test.h',
-        'test/default_context_factory.cc',
-        'test/default_context_factory.h',
         'test/draw_waiter_for_test.cc',
         'test/draw_waiter_for_test.h',
+        'test/in_process_context_factory.cc',
+        'test/in_process_context_factory.h',
         'test/layer_animator_test_controller.cc',
         'test/layer_animator_test_controller.h',
         'test/test_compositor_host.h',
@@ -104,8 +108,6 @@
         'test/test_compositor_host_ozone.cc',
         'test/test_compositor_host_win.cc',
         'test/test_compositor_host_x11.cc',
-        'test/test_context_factory.cc',
-        'test/test_context_factory.h',
         'test/test_layer_animation_delegate.cc',
         'test/test_layer_animation_delegate.h',
         'test/test_layer_animation_observer.cc',
@@ -120,7 +122,8 @@
       'conditions': [
         ['use_x11==1', {
           'dependencies': [
-            '<(DEPTH)/build/linux/system.gyp:x11'
+            '<(DEPTH)/build/linux/system.gyp:x11',
+            '<(DEPTH)/ui/gfx/x/gfx_x11.gyp:gfx_x11',
           ]
         }]
       ]
@@ -135,11 +138,11 @@
         '<(DEPTH)/cc/cc_tests.gyp:cc_test_support',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(DEPTH)/ui/base/ui_base.gyp:ui_base',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
         '<(DEPTH)/ui/gl/gl.gyp:gl',
         '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-        '<(DEPTH)/ui/ui.gyp:ui',
         'compositor',
         'compositor_test_support',
       ],
@@ -147,6 +150,7 @@
         'layer_animation_element_unittest.cc',
         'layer_animation_sequence_unittest.cc',
         'layer_animator_unittest.cc',
+        'layer_owner_unittest.cc',
         'layer_unittest.cc',
         'run_all_unittests.cc',
         'transform_animation_curve_adapter_unittest.cc',
@@ -160,7 +164,7 @@
         }],
         ['os_posix == 1 and OS != "mac"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '<(DEPTH)/base/allocator/allocator.gyp:allocator',
               ],

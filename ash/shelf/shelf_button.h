@@ -11,8 +11,6 @@
 #include "ui/views/controls/image_view.h"
 
 namespace ash {
-namespace internal {
-
 class ShelfButtonHost;
 class ShelfLayoutManager;
 
@@ -84,8 +82,8 @@ class ASH_EXPORT ShelfButton : public views::CustomButton {
     void set_icon_size(int icon_size) { icon_size_ = icon_size; }
     int icon_size() const { return icon_size_; }
 
-    // views::View overrides.
-    virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
+    // views::View:
+    virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
 
    private:
     // Set to non-zero to force icons to be resized to fit within a square,
@@ -102,7 +100,7 @@ class ASH_EXPORT ShelfButton : public views::CustomButton {
   virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
@@ -154,7 +152,6 @@ class ASH_EXPORT ShelfButton : public views::CustomButton {
   DISALLOW_COPY_AND_ASSIGN(ShelfButton);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SHELF_SHELF_BUTTON_H_

@@ -7,12 +7,33 @@ var MIN_VERSION_TARGET_ID = 26;
 var MIN_VERSION_NEW_TAB = 29;
 var MIN_VERSION_TAB_ACTIVATE = 30;
 
+var queryParamsObject = {};
+
+(function() {
+var queryParams = window.location.search;
+if (!queryParams)
+    return;
+var params = queryParams.substring(1).split('&');
+for (var i = 0; i < params.length; ++i) {
+    var pair = params[i].split('=');
+    queryParamsObject[pair[0]] = pair[1];
+}
+
+})();
+
 function sendCommand(command, args) {
   chrome.send(command, Array.prototype.slice.call(arguments, 1));
 }
 
 function sendTargetCommand(command, target) {
   sendCommand(command, target.source, target.id);
+}
+
+function sendServiceWorkerCommand(action, worker) {
+  $('serviceworker-internals').contentWindow.postMessage({
+    'action': action,
+    'worker': worker
+  },'chrome://serviceworker-internals');
 }
 
 function removeChildren(element_id) {
@@ -37,6 +58,15 @@ function onload() {
   onHashChange();
   initSettings();
   sendCommand('init-ui');
+  window.addEventListener('message', onMessage.bind(this), false);
+}
+
+function onMessage(event) {
+  if (event.origin != 'chrome://serviceworker-internals') {
+    return;
+  }
+  populateServiceWorkers(event.data.partition_id,
+                         event.data.workers);
 }
 
 function onHashChange() {
@@ -50,6 +80,8 @@ function onHashChange() {
  * @return {boolean} True if successful.
  */
 function selectTab(id) {
+  closePortForwardingConfig();
+
   var tabContents = document.querySelectorAll('#content > div');
   var tabHeaders = $('navigation').querySelectorAll('.tab-header');
   var found = false;
@@ -69,6 +101,39 @@ function selectTab(id) {
     return false;
   window.location.hash = id;
   return true;
+}
+
+function populateServiceWorkers(partition_id, workers) {
+  var list = $('service-workers-list-' + partition_id);
+  if (workers.length == 0) {
+    if (list) {
+        list.parentNode.removeChild(list);
+    }
+    return;
+  }
+  if (list) {
+    list.textContent = '';
+  } else {
+    list = document.createElement('div');
+    list.id = 'service-workers-list-' + partition_id;
+    list.className = 'list';
+    $('service-workers-list').appendChild(list);
+  }
+  for (var i = 0; i < workers.length; i++) {
+    var worker = workers[i];
+    worker.hasCustomInspectAction = true;
+    var row = addTargetToList(worker, list, ['scope', 'url']);
+    addActionLink(
+        row,
+        'inspect',
+        sendServiceWorkerCommand.bind(null, 'inspect', worker),
+        false);
+    addActionLink(
+        row,
+        'terminate',
+        sendServiceWorkerCommand.bind(null, 'stop', worker),
+        false);
+  }
 }
 
 function populateTargets(source, data) {
@@ -105,6 +170,10 @@ function populateWorkerTargets(data) {
 
   for (var i = 0; i < data.length; i++)
     addToWorkersList(data[i]);
+}
+
+function showIncognitoWarning() {
+  $('devices-incognito').hidden = false;
 }
 
 function populateRemoteTargets(devices) {
@@ -196,30 +265,6 @@ function populateRemoteTargets(devices) {
         device.adbConnected ? '' : 'Pending authentication: please accept ' +
           'debugging session on the device.';
 
-    var devicePorts = deviceSection.querySelector('.device-ports');
-    devicePorts.textContent = '';
-    if (device.adbPortStatus) {
-      for (var port in device.adbPortStatus) {
-        var status = device.adbPortStatus[port];
-        var portIcon = document.createElement('div');
-        portIcon.className = 'port-icon';
-        if (status > 0)
-          portIcon.classList.add('connected');
-        else if (status == -1 || status == -2)
-          portIcon.classList.add('transient');
-        else if (status < 0)
-          portIcon.classList.add('error');
-        devicePorts.appendChild(portIcon);
-
-        var portNumber = document.createElement('div');
-        portNumber.className = 'port-number';
-        portNumber.textContent = ':' + port;
-        if (status > 0)
-          portNumber.textContent += '(' + status + ')';
-        devicePorts.appendChild(portNumber);
-      }
-    }
-
     var browserList = deviceSection.querySelector('.browsers');
     var newBrowserIds =
         device.browsers.map(function(b) { return b.id });
@@ -289,6 +334,27 @@ function populateRemoteTargets(devices) {
           browserHeader.appendChild(newPage);
         }
 
+        var browserInspector;
+        var browserInspectorTitle;
+        if ('trace' in queryParamsObject || 'tracing' in queryParamsObject) {
+          browserInspector = 'chrome://tracing';
+          browserInspectorTitle = 'trace';
+        } else {
+          browserInspector = queryParamsObject['browser-inspector'];
+          browserInspectorTitle = 'inspect';
+        }
+        if (browserInspector) {
+          var link = document.createElement('span');
+          link.classList.add('action');
+          link.setAttribute('tabindex', 1);
+          link.textContent = browserInspectorTitle;
+          browserHeader.appendChild(link);
+          link.addEventListener(
+              'click',
+              sendCommand.bind(null, 'inspect-browser', browser.source,
+                  browser.id, browserInspector), false);
+        }
+
         pageList = document.createElement('div');
         pageList.className = 'list pages';
         browserSection.appendChild(pageList);
@@ -319,7 +385,7 @@ function populateRemoteTargets(devices) {
         }
         if (majorChromeVersion >= MIN_VERSION_TAB_CLOSE) {
           addActionLink(row, 'close',
-              sendTargetCommand.bind(null, 'close', page), page.attached);
+              sendTargetCommand.bind(null, 'close', page), false);
         }
       }
     }
@@ -359,7 +425,7 @@ function addToWorkersList(data) {
   var row =
       addTargetToList(data, $('workers-list'), ['name', 'description', 'url']);
   addActionLink(row, 'terminate',
-      sendTargetCommand.bind(null, 'close', data), data.attached);
+      sendTargetCommand.bind(null, 'close', data), false);
 }
 
 function addToOthersList(data) {
@@ -387,7 +453,8 @@ function addFavicon(row, data) {
   var favicon = document.createElement('img');
   if (data['faviconUrl'])
     favicon.src = data['faviconUrl'];
-  row.insertBefore(favicon, row.firstChild);
+  var propertiesBox = row.querySelector('.properties-box');
+  propertiesBox.insertBefore(favicon, propertiesBox.firstChild);
 }
 
 function addWebViewDetails(row, data) {
@@ -476,16 +543,21 @@ function addWebViewThumbnail(row, webview, screenWidth, screenHeight) {
     screenRect.appendChild(viewRect);
   }
 
-  row.insertBefore(thumbnail, row.firstChild);
+  var propertiesBox = row.querySelector('.properties-box');
+  propertiesBox.insertBefore(thumbnail, propertiesBox.firstChild);
 }
 
 function addTargetToList(data, list, properties) {
   var row = document.createElement('div');
   row.className = 'row';
 
+  var propertiesBox = document.createElement('div');
+  propertiesBox.className = 'properties-box';
+  row.appendChild(propertiesBox);
+
   var subrowBox = document.createElement('div');
   subrowBox.className = 'subrow-box';
-  row.appendChild(subrowBox);
+  propertiesBox.appendChild(subrowBox);
 
   var subrow = document.createElement('div');
   subrow.className = 'subrow';
@@ -498,8 +570,10 @@ function addTargetToList(data, list, properties) {
   actionBox.className = 'actions';
   subrowBox.appendChild(actionBox);
 
-  addActionLink(row, 'inspect', sendTargetCommand.bind(null, 'inspect', data),
-      data.hasNoUniqueId || data.adbAttachedForeign);
+  if (!data.hasCustomInspectAction) {
+    addActionLink(row, 'inspect', sendTargetCommand.bind(null, 'inspect', data),
+        data.hasNoUniqueId || data.adbAttachedForeign);
+  }
 
   list.appendChild(row);
   return row;
@@ -508,6 +582,7 @@ function addTargetToList(data, list, properties) {
 function addActionLink(row, text, handler, opt_disabled) {
   var link = document.createElement('span');
   link.classList.add('action');
+  link.setAttribute('tabindex', 1);
   if (opt_disabled)
     link.classList.add('disabled');
   else
@@ -515,6 +590,13 @@ function addActionLink(row, text, handler, opt_disabled) {
 
   link.textContent = text;
   link.addEventListener('click', handler, true);
+  function handleKey(e) {
+    if (e.keyIdentifier == 'Enter' || e.keyIdentifier == 'U+0020') {
+      e.preventDefault();
+      handler();
+    }
+  }
+  link.addEventListener('keydown', handleKey, true);
   row.querySelector('.actions').appendChild(link);
 }
 
@@ -583,7 +665,7 @@ function unsetModal(dialog) {
     if (dialog.tabIndexes[i] === null)
       node.removeAttribute('tabindex');
     else
-      node.setAttribute('tabindex', tabIndexes[i]);
+      node.setAttribute('tabindex', dialog.tabIndexes[i]);
   }
 
   if (window.holdDevices) {
@@ -612,6 +694,9 @@ function openPortForwardingConfig() {
 }
 
 function closePortForwardingConfig() {
+  if (!$('port-forwarding-overlay').classList.contains('open'))
+    return;
+
   $('port-forwarding-overlay').classList.remove('open');
   document.removeEventListener('keyup', handleKey);
   unsetModal($('port-forwarding-overlay'));
@@ -807,6 +892,55 @@ function commitFreshLineIfValid(opt_selectNew) {
   if (opt_selectNew)
     freshLine.querySelector('.port').focus();
   return true;
+}
+
+function populatePortStatus(devicesStatusMap) {
+  for (var deviceId in devicesStatusMap) {
+    if (!devicesStatusMap.hasOwnProperty(deviceId))
+      continue;
+    var deviceStatusMap = devicesStatusMap[deviceId];
+
+    var deviceSection = $(deviceId);
+    if (!deviceSection)
+      continue;
+
+    var devicePorts = deviceSection.querySelector('.device-ports');
+    devicePorts.textContent = '';
+    for (var port in deviceStatusMap) {
+      if (!deviceStatusMap.hasOwnProperty(port))
+        continue;
+
+      var status = deviceStatusMap[port];
+      var portIcon = document.createElement('div');
+      portIcon.className = 'port-icon';
+      // status === 0 is the default (connected) state.
+      // Positive values correspond to the tunnelling connection count
+      // (in DEBUG_DEVTOOLS mode).
+      if (status > 0)
+        portIcon.classList.add('connected');
+      else if (status === -1 || status === -2)
+        portIcon.classList.add('transient');
+      else if (status < 0)
+        portIcon.classList.add('error');
+      devicePorts.appendChild(portIcon);
+
+      var portNumber = document.createElement('div');
+      portNumber.className = 'port-number';
+      portNumber.textContent = ':' + port;
+      if (status > 0)
+        portNumber.textContent += '(' + status + ')';
+      devicePorts.appendChild(portNumber);
+    }
+  }
+
+  function clearPorts(deviceSection) {
+    if (deviceSection.id in devicesStatusMap)
+      return;
+    deviceSection.querySelector('.device-ports').textContent = '';
+  }
+
+  Array.prototype.forEach.call(
+      document.querySelectorAll('.device'), clearPorts);
 }
 
 document.addEventListener('DOMContentLoaded', onload);

@@ -11,13 +11,14 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
-#include "base/message_loop/message_pump_dispatcher.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/events/event.h"
 #include "ui/events/ozone/evdev/touch_event_converter_evdev.h"
+#include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/events/platform/platform_event_source.h"
 
 namespace {
 
@@ -34,8 +35,7 @@ const char kTestDevicePath[] = "/dev/input/test-device";
 
 namespace ui {
 
-class MockTouchEventConverterEvdev : public TouchEventConverterEvdev,
-                                     public base::MessagePumpDispatcher {
+class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
  public:
   MockTouchEventConverterEvdev(int fd, base::FilePath path);
   virtual ~MockTouchEventConverterEvdev() {};
@@ -53,7 +53,12 @@ class MockTouchEventConverterEvdev : public TouchEventConverterEvdev,
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
+  void DispatchCallback(Event* event) {
+    dispatched_events_.push_back(
+        new TouchEvent(*static_cast<TouchEvent*>(event)));
+  }
+
+  virtual bool Reinitialize() OVERRIDE { return true; }
 
  private:
   int read_pipe_;
@@ -66,20 +71,25 @@ class MockTouchEventConverterEvdev : public TouchEventConverterEvdev,
 
 MockTouchEventConverterEvdev::MockTouchEventConverterEvdev(int fd,
                                                            base::FilePath path)
-    : TouchEventConverterEvdev(fd, path, EventDeviceInfo()) {
+    : TouchEventConverterEvdev(
+          fd,
+          path,
+          EventDeviceInfo(),
+          base::Bind(&MockTouchEventConverterEvdev::DispatchCallback,
+                     base::Unretained(this))) {
   pressure_min_ = 30;
   pressure_max_ = 60;
 
   // TODO(rjkroege): Check test axes.
-  x_min_ = 0;
-  x_max_ = std::numeric_limits<int>::max();
-  y_min_ = 0;
-  y_max_ = std::numeric_limits<int>::max();
+  x_min_pixels_ = x_min_tuxels_ = 0;
+  x_num_pixels_ = x_num_tuxels_ = std::numeric_limits<int>::max();
+  y_min_pixels_ = y_min_tuxels_ = 0;
+  y_num_pixels_ = y_num_tuxels_ = std::numeric_limits<int>::max();
 
   int fds[2];
 
   if (pipe(fds))
-    NOTREACHED() << "failed pipe(): " << strerror(errno);
+    PLOG(FATAL) << "failed pipe";
 
   DCHECK(SetNonBlocking(fds[0]) == 0)
       << "SetNonBlocking for pipe fd[0] failed, errno: " << errno;
@@ -87,13 +97,6 @@ MockTouchEventConverterEvdev::MockTouchEventConverterEvdev(int fd,
       << "SetNonBlocking for pipe fd[0] failed, errno: " << errno;
   read_pipe_ = fds[0];
   write_pipe_ = fds[1];
-}
-
-uint32_t MockTouchEventConverterEvdev::Dispatch(
-    const base::NativeEvent& event) {
-  ui::TouchEvent* ev = new ui::TouchEvent(event);
-  dispatched_events_.push_back(ev);
-  return POST_DISPATCH_NONE;
 }
 
 void MockTouchEventConverterEvdev::ConfigureReadMock(struct input_event* queue,
@@ -126,8 +129,8 @@ class TouchEventConverterEvdevTest : public testing::Test {
     loop_ = new base::MessageLoopForUI;
     device_ = new ui::MockTouchEventConverterEvdev(
         events_in_, base::FilePath(kTestDevicePath));
-    base::MessagePumpOzone::Current()->AddDispatcherForRootWindow(device_);
   }
+
   virtual void TearDown() OVERRIDE {
     delete device_;
     delete loop_;
@@ -417,4 +420,62 @@ TEST_F(TouchEventConverterEvdevTest, TwoFingerGesture) {
   EXPECT_EQ(1, ev1->touch_id());
   EXPECT_FLOAT_EQ(.5f, ev1->force());
   EXPECT_FLOAT_EQ(0.f, ev1->rotation_angle());
+}
+
+TEST_F(TouchEventConverterEvdevTest, TypeA) {
+  ui::MockTouchEventConverterEvdev* dev = device();
+
+  struct input_event mock_kernel_queue_press0[] = {
+    {{0, 0}, EV_ABS, ABS_MT_TOUCH_MAJOR, 3},
+    {{0, 0}, EV_ABS, ABS_MT_PRESSURE, 45},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 42},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_Y, 51},
+    {{0, 0}, EV_SYN, SYN_MT_REPORT, 0},
+    {{0, 0}, EV_ABS, ABS_MT_PRESSURE, 45},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 61},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_Y, 71},
+    {{0, 0}, EV_SYN, SYN_MT_REPORT, 0},
+    {{0, 0}, EV_SYN, SYN_REPORT, 0}
+  };
+
+  // Check that two events are generated.
+  dev->ConfigureReadMock(mock_kernel_queue_press0, 10, 0);
+  dev->ReadNow();
+  EXPECT_EQ(2u, dev->size());
+}
+
+TEST_F(TouchEventConverterEvdevTest, Unsync) {
+  ui::MockTouchEventConverterEvdev* dev = device();
+
+  struct input_event mock_kernel_queue_press0[] = {
+    {{0, 0}, EV_ABS, ABS_MT_TRACKING_ID, 684},
+    {{0, 0}, EV_ABS, ABS_MT_TOUCH_MAJOR, 3},
+    {{0, 0}, EV_ABS, ABS_MT_PRESSURE, 45},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 42},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_Y, 51}, {{0, 0}, EV_SYN, SYN_REPORT, 0}
+  };
+
+  dev->ConfigureReadMock(mock_kernel_queue_press0, 6, 0);
+  dev->ReadNow();
+  EXPECT_EQ(1u, dev->size());
+
+  // Prepare a move with a drop.
+  struct input_event mock_kernel_queue_move0[] = {
+    {{0, 0}, EV_SYN, SYN_DROPPED, 0},
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 40}, {{0, 0}, EV_SYN, SYN_REPORT, 0}
+  };
+
+  // Verify that we didn't receive it/
+  dev->ConfigureReadMock(mock_kernel_queue_move0, 3, 0);
+  dev->ReadNow();
+  EXPECT_EQ(1u, dev->size());
+
+  struct input_event mock_kernel_queue_move1[] = {
+    {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 40}, {{0, 0}, EV_SYN, SYN_REPORT, 0}
+  };
+
+  // Verify that it re-syncs after a SYN_REPORT.
+  dev->ConfigureReadMock(mock_kernel_queue_move1, 2, 0);
+  dev->ReadNow();
+  EXPECT_EQ(2u, dev->size());
 }

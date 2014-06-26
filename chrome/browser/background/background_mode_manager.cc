@@ -207,7 +207,7 @@ BackgroundModeManager::BackgroundModeManager(
   // there are background apps) or exit if there are none.
   if (command_line->HasSwitch(switches::kNoStartupWindow)) {
     keep_alive_for_startup_ = true;
-    chrome::StartKeepAlive();
+    chrome::IncrementKeepAliveCount();
   } else {
     // Otherwise, start with background mode suspended in case we're launching
     // in a mode that doesn't open a browser window. It will be resumed when the
@@ -276,7 +276,8 @@ void BackgroundModeManager::RegisterProfile(Profile* profile) {
   // Listen for when extensions are loaded or add the background permission so
   // we can display a "background app installed" notification and enter
   // "launch on login" mode on the Mac.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_PERMISSIONS_UPDATED,
                  content::Source<Profile>(profile));
@@ -321,10 +322,10 @@ void BackgroundModeManager::Observe(
     case chrome::NOTIFICATION_EXTENSIONS_READY:
       // Extensions are loaded, so we don't need to manually keep the browser
       // process alive any more when running in no-startup-window mode.
-      EndKeepAliveForStartup();
+      DecrementKeepAliveCountForStartup();
       break;
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
         Extension* extension = content::Details<Extension>(details).ptr();
         Profile* profile = content::Source<Profile>(source).ptr();
         if (BackgroundApplicationListModel::IsBackgroundApp(
@@ -357,7 +358,7 @@ void BackgroundModeManager::Observe(
     case chrome::NOTIFICATION_APP_TERMINATING:
       // Make sure we aren't still keeping the app alive (only happens if we
       // don't receive an EXTENSIONS_READY notification for some reason).
-      EndKeepAliveForStartup();
+      DecrementKeepAliveCountForStartup();
       // Performing an explicit shutdown, so exit background mode (does nothing
       // if we aren't in background mode currently).
       EndBackgroundMode();
@@ -459,7 +460,14 @@ void BackgroundModeManager::OnProfileWillBeRemoved(
       GetBackgroundModeIterator(profile_name);
   // If a profile isn't running a background app, it may not be in the map.
   if (it != background_mode_data_.end()) {
+    it->second->applications_->RemoveObserver(this);
     background_mode_data_.erase(it);
+    // If there are no background mode profiles any longer, then turn off
+    // background mode.
+    if (!ShouldBeInBackgroundMode()) {
+      EnableLaunchOnStartup(false);
+      EndBackgroundMode();
+    }
     UpdateStatusTrayIconContextMenu();
   }
 }
@@ -522,14 +530,14 @@ void BackgroundModeManager::ExecuteCommand(int command_id, int event_flags) {
 
 ///////////////////////////////////////////////////////////////////////////////
 //  BackgroundModeManager, private
-void BackgroundModeManager::EndKeepAliveForStartup() {
+void BackgroundModeManager::DecrementKeepAliveCountForStartup() {
   if (keep_alive_for_startup_) {
     keep_alive_for_startup_ = false;
     // We call this via the message queue to make sure we don't try to end
     // keep-alive (which can shutdown Chrome) before the message loop has
     // started.
-    base::MessageLoop::current()->PostTask(FROM_HERE,
-                                           base::Bind(&chrome::EndKeepAlive));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE, base::Bind(&chrome::DecrementKeepAliveCount));
   }
 }
 
@@ -596,7 +604,7 @@ void BackgroundModeManager::UpdateKeepAliveAndTrayIcon() {
   if (in_background_mode_ && !background_mode_suspended_) {
     if (!keeping_alive_) {
       keeping_alive_ = true;
-      chrome::StartKeepAlive();
+      chrome::IncrementKeepAliveCount();
     }
     CreateStatusTrayIcon();
     return;
@@ -605,7 +613,7 @@ void BackgroundModeManager::UpdateKeepAliveAndTrayIcon() {
   RemoveStatusTrayIcon();
   if (keeping_alive_) {
     keeping_alive_ = false;
-    chrome::EndKeepAlive();
+    chrome::DecrementKeepAliveCount();
   }
 }
 
@@ -657,17 +665,20 @@ void BackgroundModeManager::OnBackgroundAppInstalled(
 void BackgroundModeManager::CheckReloadStatus(
     const Extension* extension,
     bool* is_being_reloaded) {
-    // Walk the BackgroundModeData for all profiles to see if one of their
-    // extensions is being reloaded.
-    for (BackgroundModeInfoMap::const_iterator it =
-             background_mode_data_.begin();
-         it != background_mode_data_.end();
-         ++it) {
-      Profile* profile = it->first;
-      // If the extension is being reloaded, no need to show a notification.
-      if (profile->GetExtensionService()->IsBeingReloaded(extension->id()))
-        *is_being_reloaded = true;
+  // Walk the BackgroundModeData for all profiles to see if one of their
+  // extensions is being reloaded.
+  for (BackgroundModeInfoMap::const_iterator it =
+           background_mode_data_.begin();
+       it != background_mode_data_.end();
+       ++it) {
+    ExtensionService* service =
+        extensions::ExtensionSystem::Get(it->first)->extension_service();
+    // If the extension is being reloaded, no need to show a notification.
+    if (service->IsBeingReloaded(extension->id())) {
+      *is_being_reloaded = true;
+      return;
     }
+  }
 }
 
 void BackgroundModeManager::CreateStatusTrayIcon() {

@@ -7,7 +7,6 @@
 #include <ApplicationServices/ApplicationServices.h>
 #import <Cocoa/Cocoa.h>
 
-#include "apps/app_shim/app_shim_mac.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
@@ -15,6 +14,7 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/singleton.h"
 #include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -27,7 +27,6 @@
 #include "chrome/browser/ui/app_list/app_list_view_delegate.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/browser/ui/web_applications/web_app_ui.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "chrome/browser/web_applications/web_app_mac.h"
 #include "chrome/common/chrome_switches.h"
@@ -80,7 +79,7 @@ class ImageSkia;
 namespace {
 
 // Version of the app list shortcut version installed.
-const int kShortcutVersion = 1;
+const int kShortcutVersion = 2;
 
 // Duration of show and hide animations.
 const NSTimeInterval kAnimationDuration = 0.2;
@@ -88,9 +87,9 @@ const NSTimeInterval kAnimationDuration = 0.2;
 // Distance towards the screen edge that the app list moves from when showing.
 const CGFloat kDistanceMovedOnShow = 20;
 
-ShellIntegration::ShortcutInfo GetAppListShortcutInfo(
+web_app::ShortcutInfo GetAppListShortcutInfo(
     const base::FilePath& profile_path) {
-  ShellIntegration::ShortcutInfo shortcut_info;
+  web_app::ShortcutInfo shortcut_info;
   chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
   if (channel == chrome::VersionInfo::CHANNEL_CANARY) {
     shortcut_info.title =
@@ -107,9 +106,9 @@ ShellIntegration::ShortcutInfo GetAppListShortcutInfo(
 }
 
 void CreateAppListShim(const base::FilePath& profile_path) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   WebApplicationInfo web_app_info;
-  ShellIntegration::ShortcutInfo shortcut_info =
+  web_app::ShortcutInfo shortcut_info =
       GetAppListShortcutInfo(profile_path);
 
   ResourceBundle& resource_bundle = ResourceBundle::GetSharedInstance();
@@ -138,7 +137,7 @@ void CreateAppListShim(const base::FilePath& profile_path) {
         *resource_bundle.GetImageSkiaNamed(IDR_APP_LIST_256));
   }
 
-  ShellIntegration::ShortcutLocations shortcut_locations;
+  web_app::ShortcutLocations shortcut_locations;
   PrefService* local_state = g_browser_process->local_state();
   int installed_version =
       local_state->GetInteger(prefs::kAppLauncherShortcutVersion);
@@ -150,9 +149,10 @@ void CreateAppListShim(const base::FilePath& profile_path) {
   if (installed_version == 0)
     shortcut_locations.in_quick_launch_bar = true;
 
-  web_app::CreateShortcuts(shortcut_info,
-                           shortcut_locations,
-                           web_app::SHORTCUT_CREATION_AUTOMATED);
+  web_app::CreateShortcutsForShortcutInfo(
+      web_app::SHORTCUT_CREATION_AUTOMATED,
+      shortcut_locations,
+      shortcut_info);
 
   local_state->SetInteger(prefs::kAppLauncherShortcutVersion,
                           kShortcutVersion);
@@ -397,7 +397,7 @@ void AppListServiceMac::CreateForProfile(Profile* requested_profile) {
 }
 
 void AppListServiceMac::ShowForProfile(Profile* requested_profile) {
-  if (requested_profile->IsManaged())
+  if (requested_profile->IsSupervised())
     return;
 
   InvalidatePendingProfileLoads();

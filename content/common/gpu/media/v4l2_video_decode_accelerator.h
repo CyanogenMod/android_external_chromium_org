@@ -19,10 +19,10 @@
 #include "base/threading/thread.h"
 #include "content/common/content_export.h"
 #include "content/common/gpu/media/v4l2_video_device.h"
-#include "content/common/gpu/media/video_decode_accelerator_impl.h"
 #include "media/base/limits.h"
 #include "media/base/video_decoder_config.h"
 #include "media/video/picture.h"
+#include "media/video/video_decode_accelerator.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_bindings.h"
 
@@ -73,11 +73,11 @@ namespace content {
 // subtle races (esp. if we get Reset() in the meantime), we block the decoder
 // thread while we wait for AssignPictureBuffers from the client.
 class CONTENT_EXPORT V4L2VideoDecodeAccelerator
-    : public VideoDecodeAcceleratorImpl {
+    : public media::VideoDecodeAccelerator {
  public:
   V4L2VideoDecodeAccelerator(
       EGLDisplay egl_display,
-      Client* client,
+      EGLContext egl_context,
       const base::WeakPtr<Client>& io_client_,
       const base::Callback<bool(void)>& make_context_current,
       scoped_ptr<V4L2Device> device,
@@ -86,7 +86,8 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
 
   // media::VideoDecodeAccelerator implementation.
   // Note: Initialize() and Destroy() are synchronous.
-  virtual bool Initialize(media::VideoCodecProfile profile) OVERRIDE;
+  virtual bool Initialize(media::VideoCodecProfile profile,
+                          Client* client) OVERRIDE;
   virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
   virtual void AssignPictureBuffers(
       const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
@@ -94,8 +95,6 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
   virtual void Flush() OVERRIDE;
   virtual void Reset() OVERRIDE;
   virtual void Destroy() OVERRIDE;
-
-  // VideoDecodeAcceleratorImpl implementation.
   virtual bool CanDecodeOnIOThread() OVERRIDE;
 
  private:
@@ -104,7 +103,10 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
     kInputBufferCount = 8,
     // TODO(posciak): determine input buffer size based on level limits.
     // See http://crbug.com/255116.
-    kInputBufferMaxSize = 1024 * 1024,
+    // Input bitstream buffer size for up to 1080p streams.
+    kInputBufferMaxSizeFor1080p = 1024 * 1024,
+    // Input bitstream buffer size for up to 4k streams.
+    kInputBufferMaxSizeFor4k = 4 * kInputBufferMaxSizeFor1080p,
     // Number of output buffers to use for each VDA stage above what's required
     // by the decoder (e.g. DPB size, in H264).  We need
     // media::limits::kMaxVideoFrames to fill up the GpuVideoDecode pipeline,
@@ -155,7 +157,6 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
     ~OutputRecord();
     bool at_device;         // held by device.
     bool at_client;         // held by client.
-    int fds[2];             // file descriptors for each plane.
     EGLImageKHR egl_image;  // EGLImageKHR for the output buffer.
     EGLSyncKHR egl_sync;    // sync the compositor's use of the EGLImage.
     int32 picture_id;       // picture buffer id as returned to PictureReady().
@@ -294,6 +295,12 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
   // Callback that indicates a picture has been cleared.
   void PictureCleared();
 
+  // This method determines whether a resolution change event processing
+  // is indeed required by returning true iff:
+  // - width or height of the new format is different than previous format; or
+  // - V4L2_CID_MIN_BUFFERS_FOR_CAPTURE has changed.
+  bool IsResolutionChangeNecessary();
+
   // Our original calling message loop for the child thread.
   scoped_refptr<base::MessageLoopProxy> child_message_loop_proxy_;
 
@@ -311,7 +318,7 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
   // To expose client callbacks from VideoDecodeAccelerator.
   // NOTE: all calls to these objects *MUST* be executed on
   // child_message_loop_proxy_.
-  base::WeakPtrFactory<Client> client_ptr_factory_;
+  scoped_ptr<base::WeakPtrFactory<Client> > client_ptr_factory_;
   base::WeakPtr<Client> client_;
   // Callbacks to |io_client_| must be executed on |io_message_loop_proxy_|.
   base::WeakPtr<Client> io_client_;
@@ -362,9 +369,10 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
   //
   // Hardware state and associated queues.  Since decoder_thread_ services
   // the hardware, decoder_thread_ owns these too.
-  // output_buffer_map_ and free_output_buffers_ are an exception during the
-  // buffer (re)allocation sequence, when the decoder_thread_ is blocked briefly
-  // while the Child thread manipulates them.
+  // output_buffer_map_, free_output_buffers_ and output_planes_count_ are an
+  // exception during the buffer (re)allocation sequence, when the
+  // decoder_thread_ is blocked briefly while the Child thread manipulates
+  // them.
   //
 
   // Completed decode buffers.
@@ -388,10 +396,10 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
   std::queue<int> free_output_buffers_;
   // Mapping of int index to output buffer record.
   std::vector<OutputRecord> output_buffer_map_;
-  // Output pixel format.
-  uint32 output_buffer_pixelformat_;
   // Required size of DPB for decoding.
   int output_dpb_size_;
+  // Stores the number of planes (i.e. separate memory buffers) for output.
+  size_t output_planes_count_;
 
   // Pictures that are ready but not sent to PictureReady yet.
   std::queue<PictureRecord> pending_picture_ready_;
@@ -422,9 +430,13 @@ class CONTENT_EXPORT V4L2VideoDecodeAccelerator
 
   // EGL state
   EGLDisplay egl_display_;
+  EGLContext egl_context_;
 
   // The codec we'll be decoding for.
   media::VideoCodecProfile video_profile_;
+
+  // The WeakPtrFactory for |weak_this_|.
+  base::WeakPtrFactory<V4L2VideoDecodeAccelerator> weak_this_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(V4L2VideoDecodeAccelerator);
 };

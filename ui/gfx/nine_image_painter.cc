@@ -4,13 +4,47 @@
 
 #include "ui/gfx/nine_image_painter.h"
 
+#include <limits>
+
+#include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkRect.h"
+#include "third_party/skia/include/core/SkScalar.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_canvas.h"
+#include "ui/gfx/skia_util.h"
 
 namespace gfx {
+
+namespace {
+
+// The following functions width and height of the image in pixels for the
+// scale factor in the Canvas.
+int ImageWidthInPixels(const ImageSkia& i, Canvas* c) {
+  return i.GetRepresentation(c->image_scale()).pixel_width();
+}
+
+int ImageHeightInPixels(const ImageSkia& i, Canvas* c) {
+  return i.GetRepresentation(c->image_scale()).pixel_height();
+}
+
+// Stretches the given image over the specified canvas area.
+void Fill(Canvas* c,
+          const ImageSkia& i,
+          int x,
+          int y,
+          int w,
+          int h,
+          const SkPaint& paint) {
+  c->DrawImageIntInPixel(i, 0, 0, ImageWidthInPixels(i, c),
+                         ImageHeightInPixels(i, c), x, y, w, h, false, paint);
+}
+
+}  // namespace
 
 NineImagePainter::NineImagePainter(const std::vector<ImageSkia>& images) {
   DCHECK_EQ(arraysize(images_), images.size());
@@ -51,54 +85,73 @@ Size NineImagePainter::GetMinimumSize() const {
 }
 
 void NineImagePainter::Paint(Canvas* canvas, const Rect& bounds) {
+  // When no alpha value is specified, use default value of 100% opacity.
+  Paint(canvas, bounds, std::numeric_limits<uint8>::max());
+}
+
+void NineImagePainter::Paint(Canvas* canvas,
+                             const Rect& bounds,
+                             const uint8 alpha) {
   if (IsEmpty())
     return;
 
   ScopedCanvas scoped_canvas(canvas);
   canvas->Translate(bounds.OffsetFromOrigin());
 
+  SkPaint paint;
+  paint.setAlpha(alpha);
+
+  // Get the current transform from the canvas and apply it to the logical
+  // bounds passed in. This will give us the pixel bounds which can be used
+  // to draw the images at the correct locations.
+  // We should not scale the bounds by the canvas->image_scale() as that can be
+  // different from the real scale in the canvas transform.
+  SkMatrix matrix = canvas->sk_canvas()->getTotalMatrix();
+  SkRect scaled_rect;
+  matrix.mapRect(&scaled_rect, RectToSkRect(bounds));
+
+  int scaled_width = gfx::ToCeiledInt(SkScalarToFloat(scaled_rect.width()));
+  int scaled_height = gfx::ToCeiledInt(SkScalarToFloat(scaled_rect.height()));
+
   // In case the corners and edges don't all have the same width/height, we draw
   // the center first, and extend it out in all directions to the edges of the
   // images with the smallest widths/heights.  This way there will be no
   // unpainted areas, though some corners or edges might overlap the center.
-  int w = bounds.width();
-  int i0w = images_[0].width();
-  int i2w = images_[2].width();
-  int i3w = images_[3].width();
-  int i5w = images_[5].width();
-  int i6w = images_[6].width();
-  int i8w = images_[8].width();
-  int i4x = std::min(std::min(i0w, i3w), i6w);
-  int i4w = w - i4x - std::min(std::min(i2w, i5w), i8w);
-  int h = bounds.height();
-  int i0h = images_[0].height();
-  int i1h = images_[1].height();
-  int i2h = images_[2].height();
-  int i6h = images_[6].height();
-  int i7h = images_[7].height();
-  int i8h = images_[8].height();
-  int i4y = std::min(std::min(i0h, i1h), i2h);
-  int i4h = h - i4y - std::min(std::min(i6h, i7h), i8h);
-  if (!images_[4].isNull())
-    Fill(canvas, images_[4], i4x, i4y, i4w, i4h);
-  canvas->DrawImageInt(images_[0], 0, 0);
-  Fill(canvas, images_[1], i0w, 0, w - i0w - i2w, i1h);
-  canvas->DrawImageInt(images_[2], w - i2w, 0);
-  Fill(canvas, images_[3], 0, i0h, i3w, h - i0h - i6h);
-  Fill(canvas, images_[5], w - i5w, i2h, i5w, h - i2h - i8h);
-  canvas->DrawImageInt(images_[6], 0, h - i6h);
-  Fill(canvas, images_[7], i6w, h - i7h, w - i6w - i8w, i7h);
-  canvas->DrawImageInt(images_[8], w - i8w, h - i8h);
-}
+  int i0w = ImageWidthInPixels(images_[0], canvas);
+  int i2w = ImageWidthInPixels(images_[2], canvas);
+  int i3w = ImageWidthInPixels(images_[3], canvas);
+  int i5w = ImageWidthInPixels(images_[5], canvas);
+  int i6w = ImageWidthInPixels(images_[6], canvas);
+  int i8w = ImageWidthInPixels(images_[8], canvas);
 
-// static
-void NineImagePainter::Fill(Canvas* c,
-                            const ImageSkia& i,
-                            int x,
-                            int y,
-                            int w,
-                            int h) {
-  c->DrawImageInt(i, 0, 0, i.width(), i.height(), x, y, w, h, false);
+  int i4x = std::min(std::min(i0w, i3w), i6w);
+  int i4w = scaled_width - i4x - std::min(std::min(i2w, i5w), i8w);
+
+  int i0h = ImageHeightInPixels(images_[0], canvas);
+  int i1h = ImageHeightInPixels(images_[1], canvas);
+  int i2h = ImageHeightInPixels(images_[2], canvas);
+  int i6h = ImageHeightInPixels(images_[6], canvas);
+  int i7h = ImageHeightInPixels(images_[7], canvas);
+  int i8h = ImageHeightInPixels(images_[8], canvas);
+
+  int i4y = std::min(std::min(i0h, i1h), i2h);
+  int i4h = scaled_height - i4y - std::min(std::min(i6h, i7h), i8h);
+  if (!images_[4].isNull())
+    Fill(canvas, images_[4], i4x, i4y, i4w, i4h, paint);
+  canvas->DrawImageIntInPixel(images_[0], 0, 0, i0w, i0h,
+                              0, 0, i0w, i0h, false, paint);
+  Fill(canvas, images_[1], i0w, 0, scaled_width - i0w - i2w, i1h, paint);
+  canvas->DrawImageIntInPixel(images_[2], 0, 0, i2w, i2h, scaled_width - i2w,
+                              0, i2w, i2h, false, paint);
+  Fill(canvas, images_[3], 0, i0h, i3w, scaled_height - i0h - i6h, paint);
+  Fill(canvas, images_[5], scaled_width - i5w, i2h, i5w,
+       scaled_height - i2h - i8h, paint);
+  canvas->DrawImageIntInPixel(images_[6], 0, 0, i6w, i6h, 0,
+                              scaled_height - i6h, i6w, i6h, false, paint);
+  Fill(canvas, images_[7], i6w, scaled_height - i7h, scaled_width - i6w - i8w,
+       i7h, paint);
+  canvas->DrawImageIntInPixel(images_[8], 0, 0, i8w, i8h, scaled_width - i8w,
+                              scaled_height - i8h, i8w, i8h, false, paint);
 }
 
 }  // namespace gfx

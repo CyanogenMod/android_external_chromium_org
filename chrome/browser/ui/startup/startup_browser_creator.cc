@@ -9,7 +9,6 @@
 
 #include "apps/app_load_service.h"
 #include "apps/switches.h"
-#include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
@@ -30,16 +29,12 @@
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/auto_launch_trial.h"
-#include "chrome/browser/automation/automation_provider.h"
-#include "chrome/browser/automation/automation_provider_list.h"
-#include "chrome/browser/automation/testing_automation_provider.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
 #include "chrome/browser/extensions/startup_helper.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
@@ -58,11 +53,12 @@
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/profile_management_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/signin/core/common/profile_management_switches.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/navigation_controller.h"
@@ -71,11 +67,15 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
+#if defined(USE_ASH)
+#include "ash/shell.h"
+#endif
+
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/app_mode/app_launch_utils.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chromeos/chromeos_switches.h"
@@ -85,8 +85,8 @@
 #include "ui/events/x/touch_factory_x11.h"
 #endif
 
-#if defined(OS_WIN)
-#include "chrome/browser/ui/startup/startup_browser_creator_win.h"
+#if defined(OS_MACOSX)
+#include "chrome/browser/web_applications/web_app_mac.h"
 #endif
 
 #if defined(ENABLE_FULL_PRINTING)
@@ -240,8 +240,8 @@ void DumpBrowserHistograms(const base::FilePath& output_file) {
   base::ThreadRestrictions::AssertIOAllowed();
 
   std::string output_string(base::StatisticsRecorder::ToJSON(std::string()));
-  file_util::WriteFile(output_file, output_string.data(),
-                       static_cast<int>(output_string.size()));
+  base::WriteFile(output_file, output_string.data(),
+                  static_cast<int>(output_string.size()));
 }
 
 }  // namespace
@@ -303,7 +303,7 @@ bool StartupBrowserCreator::LaunchBrowser(
     chrome::HostDesktopType host_desktop_type =
         chrome::HOST_DESKTOP_TYPE_NATIVE;
 
-#if defined(OS_WIN) && defined(USE_ASH)
+#if defined(USE_ASH) && !defined(OS_CHROMEOS)
     // We want to maintain only one type of instance for now, either ASH
     // or desktop.
     // TODO(shrikant): Remove this code once we decide on running both desktop
@@ -429,37 +429,30 @@ std::vector<GURL> StartupBrowserCreator::GetURLsFromCommandLine(
     // This call can (in rare circumstances) block the UI thread.
     // Allow it until this bug is fixed.
     //  http://code.google.com/p/chromium/issues/detail?id=60641
-    GURL url;
-    {
+    GURL url = GURL(param.MaybeAsASCII());
+    // http://crbug.com/371030: Only use URLFixerUpper if we don't have a valid
+    // URL, otherwise we will look in the current directory for a file named
+    // 'about' if the browser was started with a about:foo argument.
+    if (!url.is_valid()) {
       base::ThreadRestrictions::ScopedAllowIO allow_io;
-      url = URLFixerUpper::FixupRelativeFile(cur_dir, param);
+      url = url_fixer::FixupRelativeFile(cur_dir, param);
     }
     // Exclude dangerous schemes.
     if (url.is_valid()) {
       ChildProcessSecurityPolicy* policy =
           ChildProcessSecurityPolicy::GetInstance();
       if (policy->IsWebSafeScheme(url.scheme()) ||
-          url.SchemeIs(content::kFileScheme) ||
+          url.SchemeIs(url::kFileScheme) ||
 #if defined(OS_CHROMEOS)
           // In ChromeOS, allow a settings page to be specified on the
           // command line. See ExistingUserController::OnLoginSuccess.
           (url.spec().find(chrome::kChromeUISettingsURL) == 0) ||
 #endif
-          (url.spec().compare(content::kAboutBlankURL) == 0)) {
+          (url.spec().compare(url::kAboutBlankURL) == 0)) {
         urls.push_back(url);
       }
     }
   }
-#if defined(OS_WIN)
-  if (urls.empty()) {
-    // If we are in Windows 8 metro mode and were launched as a result of the
-    // search charm or via a url navigation in metro, then fetch the
-    // corresponding url.
-    GURL url(chrome::GetURLToOpen(profile));
-    if (url.is_valid())
-      urls.push_back(url);
-  }
-#endif  // OS_WIN
   return urls;
 }
 
@@ -479,70 +472,6 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   }
 
   bool silent_launch = false;
-
-#if defined(ENABLE_AUTOMATION)
-  // Look for the testing channel ID ONLY during process startup
-  if (process_startup &&
-      command_line.HasSwitch(switches::kTestingChannelID)) {
-    std::string testing_channel_id = command_line.GetSwitchValueASCII(
-        switches::kTestingChannelID);
-    // TODO(sanjeevr) Check if we need to make this a singleton for
-    // compatibility with the old testing code
-    // If there are any extra parameters, we expect each one to generate a
-    // new tab; if there are none then we get one homepage tab.
-    int expected_tab_count = 1;
-    if (command_line.HasSwitch(switches::kNoStartupWindow) &&
-        !command_line.HasSwitch(switches::kAutoLaunchAtStartup)) {
-      expected_tab_count = 0;
-#if defined(OS_CHROMEOS)
-    // kLoginManager will cause Chrome to start up with the ChromeOS login
-    // screen instead of a browser window, so it won't load any tabs.
-    } else if (command_line.HasSwitch(chromeos::switches::kLoginManager)) {
-      expected_tab_count = 0;
-#endif
-    } else if (command_line.HasSwitch(switches::kRestoreLastSession)) {
-      std::string restore_session_value(
-          command_line.GetSwitchValueASCII(switches::kRestoreLastSession));
-      base::StringToInt(restore_session_value, &expected_tab_count);
-    } else {
-      std::vector<GURL> urls_to_open = GetURLsFromCommandLine(
-          command_line, cur_dir, last_used_profile);
-      expected_tab_count =
-          std::max(1, static_cast<int>(urls_to_open.size()));
-    }
-    if (!CreateAutomationProvider<TestingAutomationProvider>(
-        testing_channel_id,
-        last_used_profile,
-        static_cast<size_t>(expected_tab_count)))
-      return false;
-  }
-
-  if (command_line.HasSwitch(switches::kSilentLaunch)) {
-    std::vector<GURL> urls_to_open = GetURLsFromCommandLine(
-        command_line, cur_dir, last_used_profile);
-    size_t expected_tabs =
-        std::max(static_cast<int>(urls_to_open.size()), 0);
-    if (expected_tabs == 0)
-      silent_launch = true;
-  }
-
-  if (command_line.HasSwitch(switches::kAutomationClientChannelID)) {
-    std::string automation_channel_id = command_line.GetSwitchValueASCII(
-        switches::kAutomationClientChannelID);
-    // If there are any extra parameters, we expect each one to generate a
-    // new tab; if there are none then we have no tabs
-    std::vector<GURL> urls_to_open = GetURLsFromCommandLine(
-        command_line, cur_dir, last_used_profile);
-    size_t expected_tabs =
-        std::max(static_cast<int>(urls_to_open.size()), 0);
-    if (expected_tabs == 0)
-      silent_launch = true;
-
-    if (!CreateAutomationProvider<AutomationProvider>(
-        automation_channel_id, last_used_profile, expected_tabs))
-      return false;
-  }
-#endif  // defined(ENABLE_AUTOMATION)
 
 #if defined(ENABLE_FULL_PRINTING)
   // If we are just displaying a print dialog we shouldn't open browser
@@ -633,6 +562,11 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   ui::TouchFactory::SetTouchDeviceListFromCommandLine();
 #endif
 
+#if defined(OS_MACOSX)
+  if (web_app::MaybeRebuildShortcut(command_line))
+    return true;
+#endif
+
   if (!process_startup &&
       command_line.HasSwitch(switches::kDumpBrowserHistograms)) {
     // Only handle --dump-browser-histograms from a rendezvous. In this case, do
@@ -647,8 +581,7 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
     silent_launch = true;
   }
 
-  // If we don't want to launch a new browser window or tab (in the case
-  // of an automation request), we are done here.
+  // If we don't want to launch a new browser window or tab we are done here.
   if (silent_launch)
     return true;
 
@@ -687,11 +620,18 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
   // |last_used_profile| is the last used incognito profile. Restoring it will
   // create a browser window for the corresponding original profile.
   if (last_opened_profiles.empty()) {
-    // If the last used profile was a guest, show the user manager instead.
-    if (switches::IsNewProfileManagement() &&
-        last_used_profile->IsGuestSession()) {
-      chrome::ShowUserManager(base::FilePath());
-      return true;
+    // If the last used profile is locked or was a guest, show the user manager.
+    if (switches::IsNewProfileManagement()) {
+      ProfileInfoCache& profile_info =
+          g_browser_process->profile_manager()->GetProfileInfoCache();
+      size_t profile_index = profile_info.GetIndexOfProfileWithPath(
+          last_used_profile->GetPath());
+      bool signin_required = profile_index != std::string::npos &&
+          profile_info.ProfileIsSigninRequiredAtIndex(profile_index);
+      if (signin_required || last_used_profile->IsGuestSession()) {
+        chrome::ShowUserManager(base::FilePath());
+        return true;
+      }
     }
     if (!browser_creator->LaunchBrowser(command_line, last_used_profile,
                                         cur_dir, is_process_startup,
@@ -742,26 +682,6 @@ bool StartupBrowserCreator::ProcessCmdLineImpl(
         !last_used_profile->IsGuestSession())
       profile_launch_observer.Get().set_profile_to_activate(last_used_profile);
   }
-  return true;
-}
-
-template <class AutomationProviderClass>
-bool StartupBrowserCreator::CreateAutomationProvider(
-    const std::string& channel_id,
-    Profile* profile,
-    size_t expected_tabs) {
-#if defined(ENABLE_AUTOMATION)
-  scoped_refptr<AutomationProviderClass> automation =
-      new AutomationProviderClass(profile);
-  if (!automation->InitializeChannel(channel_id))
-    return false;
-  automation->SetExpectedTabCount(expected_tabs);
-
-  AutomationProviderList* list = g_browser_process->GetAutomationProviderList();
-  DCHECK(list);
-  list->AddProvider(automation.get());
-#endif  // defined(ENABLE_AUTOMATION)
-
   return true;
 }
 

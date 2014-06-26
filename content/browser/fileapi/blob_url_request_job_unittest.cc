@@ -12,9 +12,9 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
+#include "content/browser/fileapi/mock_url_request_delegate.h"
 #include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
-#include "net/base/io_buffer.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_byte_range.h"
 #include "net/http/http_request_headers.h"
@@ -54,70 +54,6 @@ const fileapi::FileSystemType kFileSystemType =
 
 class BlobURLRequestJobTest : public testing::Test {
  public:
-
-  // Test Harness -------------------------------------------------------------
-  // TODO(jianli): share this test harness with AppCacheURLRequestJobTest
-
-  class MockURLRequestDelegate : public net::URLRequest::Delegate {
-   public:
-    MockURLRequestDelegate()
-        : received_data_(new net::IOBuffer(kBufferSize)) {}
-
-    virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE {
-      if (request->status().is_success()) {
-        EXPECT_TRUE(request->response_headers());
-        ReadSome(request);
-      } else {
-        RequestComplete();
-      }
-    }
-
-    virtual void OnReadCompleted(net::URLRequest* request,
-                                 int bytes_read) OVERRIDE {
-       if (bytes_read > 0)
-         ReceiveData(request, bytes_read);
-       else
-         RequestComplete();
-    }
-
-    const std::string& response_data() const { return response_data_; }
-
-   private:
-    void ReadSome(net::URLRequest* request) {
-      if (!request->is_pending()) {
-        RequestComplete();
-        return;
-      }
-
-      int bytes_read = 0;
-      if (!request->Read(received_data_.get(), kBufferSize, &bytes_read)) {
-        if (!request->status().is_io_pending()) {
-          RequestComplete();
-        }
-        return;
-      }
-
-      ReceiveData(request, bytes_read);
-    }
-
-    void ReceiveData(net::URLRequest* request, int bytes_read) {
-      if (bytes_read) {
-        response_data_.append(received_data_->data(),
-                              static_cast<size_t>(bytes_read));
-        ReadSome(request);
-      } else {
-        RequestComplete();
-      }
-    }
-
-    void RequestComplete() {
-      base::MessageLoop::current()->Quit();
-    }
-
-    scoped_refptr<net::IOBuffer> received_data_;
-    std::string response_data_;
-  };
-
   // A simple ProtocolHandler implementation to create BlobURLRequestJob.
   class MockProtocolHandler :
       public net::URLRequestJobFactory::ProtocolHandler {
@@ -148,7 +84,7 @@ class BlobURLRequestJobTest : public testing::Test {
 
     temp_file1_ = temp_dir_.path().AppendASCII("BlobFile1.dat");
     ASSERT_EQ(static_cast<int>(arraysize(kTestFileData1) - 1),
-              file_util::WriteFile(temp_file1_, kTestFileData1,
+              base::WriteFile(temp_file1_, kTestFileData1,
                                    arraysize(kTestFileData1) - 1));
     base::File::Info file_info1;
     base::GetFileInfo(temp_file1_, &file_info1);
@@ -156,7 +92,7 @@ class BlobURLRequestJobTest : public testing::Test {
 
     temp_file2_ = temp_dir_.path().AppendASCII("BlobFile2.dat");
     ASSERT_EQ(static_cast<int>(arraysize(kTestFileData2) - 1),
-              file_util::WriteFile(temp_file2_, kTestFileData2,
+              base::WriteFile(temp_file2_, kTestFileData2,
                                    arraysize(kTestFileData2) - 1));
     base::File::Info file_info2;
     base::GetFileInfo(temp_file2_, &file_info2);
@@ -248,7 +184,7 @@ class BlobURLRequestJobTest : public testing::Test {
   void TestRequest(const std::string& method,
                    const net::HttpRequestHeaders& extra_headers) {
     request_ = url_request_context_.CreateRequest(
-        GURL("blob:blah"), net::DEFAULT_PRIORITY, &url_request_delegate_);
+        GURL("blob:blah"), net::DEFAULT_PRIORITY, &url_request_delegate_, NULL);
     request_->set_method(method);
     if (!extra_headers.IsEmpty())
       request_->SetExtraRequestHeaders(extra_headers);
@@ -336,7 +272,7 @@ TEST_F(BlobURLRequestJobTest, TestGetLargeFileRequest) {
   for (int i = 0; i < kBufferSize * 5; ++i)
     large_data.append(1, static_cast<char>(i % 256));
   ASSERT_EQ(static_cast<int>(large_data.size()),
-            file_util::WriteFile(large_temp_file, large_data.data(),
+            base::WriteFile(large_temp_file, large_data.data(),
                                  large_data.size()));
   blob_data_->AppendFile(large_temp_file, 0, -1, base::Time());
   TestSuccessNonrangeRequest(large_data, large_data.size());

@@ -31,6 +31,10 @@ GS_SERVER_LOGS_URL = GS_CHROMEDRIVER_DATA_BUCKET + '/server_logs'
 SERVER_LOGS_LINK = (
     'http://chromedriver-data.storage.googleapis.com/server_logs')
 TEST_LOG_FORMAT = '%s_log.json'
+GS_GITHASH_TO_SVN_URL = (
+    'https://chromium.googlesource.com/chromium/src/+/%s?format=json')
+GS_SEARCH_PATTERN = (
+    r'.*git-svn-id: svn://svn.chromium.org/chrome/trunk/src@(\d+) ')
 
 SCRIPT_DIR = os.path.join(_THIS_DIR, os.pardir, os.pardir, os.pardir, os.pardir,
                           os.pardir, os.pardir, os.pardir, 'scripts')
@@ -76,7 +80,9 @@ def _DownloadPrebuilts():
   util.MarkBuildStepStart('Download latest chromedriver')
 
   zip_path = os.path.join(util.MakeTempDir(), 'build.zip')
-  if gsutil_download.DownloadLatestFile(GS_PREBUILTS_URL, 'r', zip_path):
+  if gsutil_download.DownloadLatestFile(GS_PREBUILTS_URL,
+                                        GS_PREBUILTS_URL + '/r',
+                                        zip_path):
     util.MarkBuildStepError()
 
   util.Unzip(zip_path, chrome_paths.GetBuildDir(['host_forwarder']))
@@ -272,8 +278,18 @@ def _Release(build, version, platform):
   """Releases the given candidate build."""
   release_name = 'chromedriver_%s.zip' % platform
   util.MarkBuildStepStart('releasing %s' % release_name)
+  temp_dir = util.MakeTempDir()
+  slave_utils.GSUtilCopy(build, temp_dir)
+  zip_path = os.path.join(temp_dir, os.path.basename(build))
+
+  if util.IsLinux():
+    util.Unzip(zip_path, temp_dir)
+    server_path = os.path.join(temp_dir, 'chromedriver')
+    util.RunCommand(['strip', server_path])
+    zip_path = util.Zip(server_path)
+
   slave_utils.GSUtilCopy(
-      build, '%s/%s/%s' % (GS_CHROMEDRIVER_BUCKET, version, release_name))
+      zip_path, '%s/%s/%s' % (GS_CHROMEDRIVER_BUCKET, version, release_name))
 
   _MaybeUploadReleaseNotes(version)
   _MaybeUpdateLatestRelease(version)
@@ -368,14 +384,44 @@ def _CleanTmpDir():
       os.remove(file_path)
 
 
+def _GetSVNRevisionFromGitHash(snapshot_hashcode):
+  json_url = GS_GITHASH_TO_SVN_URL % snapshot_hashcode
+  try:
+    response = urllib2.urlopen(json_url)
+  except urllib2.HTTPError as error:
+    util.PrintAndFlush('HTTP Error %d' % error.getcode())
+    return None
+  data = json.loads(response.read()[4:])
+  if 'message' in data:
+    message = data['message'].split('\n')
+    message = [line for line in message if line.strip()]
+    search_pattern = re.compile(GS_SEARCH_PATTERN)
+    result = search_pattern.search(message[len(message)-1])
+    if result:
+      return result.group(1)
+  util.PrintAndFlush('Failed to get svn revision number for %s' %
+                     snapshot_hashcode)
+  return None
+
+
 def _WaitForLatestSnapshot(revision):
   util.MarkBuildStepStart('wait_for_snapshot')
+  def _IsRevisionNumber(revision):
+    if isinstance(revision, int):
+      return True
+    else:
+      return revision.isdigit()
   while True:
-    snapshot_revision = archive.GetLatestRevision(archive.Site.SNAPSHOT)
-    if int(snapshot_revision) >= int(revision):
-      break
-    util.PrintAndFlush('Waiting for snapshot >= %s, found %s' %
-                       (revision, snapshot_revision))
+    snapshot_revision = archive.GetLatestSnapshotVersion()
+    if not _IsRevisionNumber(revision):
+      revision = _GetSVNRevisionFromGitHash(revision)
+    if not _IsRevisionNumber(snapshot_revision):
+      snapshot_revision = _GetSVNRevisionFromGitHash(snapshot_revision)
+    if revision is not None and snapshot_revision is not None:
+      if int(snapshot_revision) >= int(revision):
+        break
+      util.PrintAndFlush('Waiting for snapshot >= %s, found %s' %
+                         (revision, snapshot_revision))
     time.sleep(60)
   util.PrintAndFlush('Got snapshot revision %s' % snapshot_revision)
 

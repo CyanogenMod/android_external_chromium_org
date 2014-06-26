@@ -15,7 +15,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
-#include "chrome/browser/ui/app_list/keep_alive_service.h"
 #include "chrome/browser/ui/app_list/profile_loader.h"
 
 class ProfileStore;
@@ -31,10 +30,9 @@ class AppListServiceImpl : public AppListService,
   virtual ~AppListServiceImpl();
 
   // Constructor used for testing.
-  AppListServiceImpl(const CommandLine& command_line,
+  AppListServiceImpl(const base::CommandLine& command_line,
                      PrefService* local_state,
-                     scoped_ptr<ProfileStore> profile_store,
-                     scoped_ptr<KeepAliveService> keep_alive_service);
+                     scoped_ptr<ProfileStore> profile_store);
 
   void RecordAppListLaunch();
   static void RecordAppListAppLaunch();
@@ -50,6 +48,7 @@ class AppListServiceImpl : public AppListService,
   virtual void AutoShowForProfile(Profile* requested_profile) OVERRIDE;
   virtual void EnableAppList(Profile* initial_profile,
                              AppListEnableSource enable_source) OVERRIDE;
+  virtual void CreateShortcut() OVERRIDE;
 
  protected:
   AppListServiceImpl();
@@ -62,9 +61,6 @@ class AppListServiceImpl : public AppListService,
   // list. Currently this checks command line flags to enable or disable the app
   // list, and records UMA stats delayed from a previous Chrome process.
   void PerformStartupChecks(Profile* initial_profile);
-
-  // Create a platform-specific shortcut for the app list.
-  virtual void CreateShortcut();
 
  private:
   static void SendAppListStats();
@@ -83,7 +79,7 @@ class AppListServiceImpl : public AppListService,
 
   scoped_ptr<ProfileStore> profile_store_;
   base::WeakPtrFactory<AppListServiceImpl> weak_factory_;
-  CommandLine command_line_;
+  base::CommandLine command_line_;
   PrefService* local_state_;
   scoped_ptr<ProfileLoader> profile_loader_;
 

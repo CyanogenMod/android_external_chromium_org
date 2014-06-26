@@ -6,17 +6,13 @@
 
 #include "base/command_line.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/ui/views/avatar_label.h"
-#include "chrome/browser/ui/views/avatar_menu_button.h"
+#include "chrome/browser/ui/views/profiles/avatar_label.h"
+#include "chrome/browser/ui/views/profiles/avatar_menu_button.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/profile_management_switches.h"
+#include "components/signin/core/common/profile_management_switches.h"
 #include "ui/gfx/font.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
-
-#if defined(OS_WIN)
-#include "win8/util/win8_util.h"
-#endif  // OS_WIN
 
 namespace {
 
@@ -128,14 +124,6 @@ OpaqueBrowserFrameViewLayout::OpaqueBrowserFrameViewLayout(
 
 OpaqueBrowserFrameViewLayout::~OpaqueBrowserFrameViewLayout() {}
 
-// static
-bool OpaqueBrowserFrameViewLayout::ShouldAddDefaultCaptionButtons() {
-#if defined(OS_WIN)
-  return !win8::IsSingleWindowMetroMode();
-#endif  // OS_WIN
-  return true;
-}
-
 void OpaqueBrowserFrameViewLayout::SetButtonOrdering(
     const std::vector<views::FrameButton>& leading_buttons,
     const std::vector<views::FrameButton>& trailing_buttons) {
@@ -148,9 +136,6 @@ gfx::Rect OpaqueBrowserFrameViewLayout::GetBoundsForTabStrip(
     int available_width) const {
   available_width -= trailing_button_start_;
   available_width -= leading_button_start_;
-
-  if (delegate_->GetAdditionalReservedSpaceInTabStrip())
-    available_width -= delegate_->GetAdditionalReservedSpaceInTabStrip();
 
   const int caption_spacing = NewTabCaptionSpacing();
   const int tabstrip_width = available_width - caption_spacing;
@@ -291,9 +276,6 @@ int OpaqueBrowserFrameViewLayout::NewTabCaptionSpacing() const {
 }
 
 void OpaqueBrowserFrameViewLayout::LayoutWindowControls(views::View* host) {
-  if (!ShouldAddDefaultCaptionButtons())
-    return;
-
   int caption_y = CaptionButtonY(false);
 
   // Keep a list of all buttons that we don't show.
@@ -331,8 +313,8 @@ void OpaqueBrowserFrameViewLayout::LayoutTitleBar(views::View* host) {
 
   int size = delegate_->GetIconSize();
   int frame_thickness = FrameBorderThickness(false);
-  bool should_show_icon = delegate_->ShouldShowWindowIcon();
-  bool should_show_title = delegate_->ShouldShowWindowTitle();
+  bool should_show_icon = delegate_->ShouldShowWindowIcon() && window_icon_;
+  bool should_show_title = delegate_->ShouldShowWindowTitle() && window_title_;
 
   if (should_show_icon || should_show_title) {
     use_hidden_icon_location = false;
@@ -396,7 +378,7 @@ void OpaqueBrowserFrameViewLayout::LayoutTitleBar(views::View* host) {
 }
 
 void OpaqueBrowserFrameViewLayout::LayoutNewStyleAvatar(views::View* host) {
-  DCHECK(switches::IsNewProfileManagement());
+  DCHECK(switches::IsNewAvatarMenu());
   if (!new_avatar_button_)
     return;
 
@@ -406,6 +388,9 @@ void OpaqueBrowserFrameViewLayout::LayoutNewStyleAvatar(views::View* host) {
   int button_x = host->width() - trailing_button_start_ -
       button_size_with_offset;
   int button_y = CaptionButtonY(false);
+  // If the window is maximized, the button is 1 pixel too short. Determined
+  // via visual inspection.
+  int extra_height = IsTitleBarCondensed() ? 1 : 0;
 
   trailing_button_start_ += button_size_with_offset;
   minimum_size_for_buttons_ += button_size_with_offset;
@@ -414,7 +399,7 @@ void OpaqueBrowserFrameViewLayout::LayoutNewStyleAvatar(views::View* host) {
       button_x,
       button_y,
       label_size.width(),
-      button_y + kCaptionButtonHeightWithPadding);
+      button_y + kCaptionButtonHeightWithPadding + extra_height);
 }
 
 void OpaqueBrowserFrameViewLayout::LayoutAvatar(views::View* host) {
@@ -681,8 +666,7 @@ void OpaqueBrowserFrameViewLayout::Layout(views::View* host) {
   // on the trailing side.
   leading_button_start_++;
 
-  if (delegate_->IsRegularOrGuestSession() &&
-      switches::IsNewProfileManagement())
+  if (delegate_->IsRegularOrGuestSession() && switches::IsNewAvatarMenu())
     LayoutNewStyleAvatar(host);
   else
     LayoutAvatar(host);
@@ -691,7 +675,8 @@ void OpaqueBrowserFrameViewLayout::Layout(views::View* host) {
       host->width(), host->height());
 }
 
-gfx::Size OpaqueBrowserFrameViewLayout::GetPreferredSize(views::View* host) {
+gfx::Size OpaqueBrowserFrameViewLayout::GetPreferredSize(
+    const views::View* host) const {
   // This is never used; NonClientView::GetPreferredSize() will be called
   // instead.
   NOTREACHED();

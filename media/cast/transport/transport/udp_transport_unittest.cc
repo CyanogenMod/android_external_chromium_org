@@ -12,6 +12,7 @@
 #include "base/callback.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "media/cast/test/utility/net_utility.h"
 #include "media/cast/transport/cast_transport_config.h"
 #include "net/base/net_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -45,8 +46,10 @@ class MockPacketReceiver {
 };
 
 void SendPacket(UdpTransport* transport, Packet packet) {
-  transport->SendPacket(packet);
+  base::Closure cb;
+  transport->SendPacket(new base::RefCountedData<Packet>(packet), cb);
 }
+
 static void UpdateCastTransportStatus(transport::CastTransportStatus status) {
   NOTREACHED();
 }
@@ -54,17 +57,19 @@ static void UpdateCastTransportStatus(transport::CastTransportStatus status) {
 TEST(UdpTransport, SendAndReceive) {
   base::MessageLoopForIO message_loop;
 
-  net::IPAddressNumber local_addr_number;
+  net::IPEndPoint free_local_port1 = test::GetFreeLocalPort();
+  net::IPEndPoint free_local_port2 = test::GetFreeLocalPort();
   net::IPAddressNumber empty_addr_number;
-  net::ParseIPLiteralToNumber("127.0.0.1", &local_addr_number);
   net::ParseIPLiteralToNumber("0.0.0.0", &empty_addr_number);
 
-  UdpTransport send_transport(message_loop.message_loop_proxy(),
-                              net::IPEndPoint(local_addr_number, 2344),
-                              net::IPEndPoint(local_addr_number, 2345),
+  UdpTransport send_transport(NULL,
+                              message_loop.message_loop_proxy(),
+                              free_local_port1,
+                              free_local_port2,
                               base::Bind(&UpdateCastTransportStatus));
-  UdpTransport recv_transport(message_loop.message_loop_proxy(),
-                              net::IPEndPoint(local_addr_number, 2345),
+  UdpTransport recv_transport(NULL,
+                              message_loop.message_loop_proxy(),
+                              free_local_port2,
                               net::IPEndPoint(empty_addr_number, 0),
                               base::Bind(&UpdateCastTransportStatus));
 
@@ -81,7 +86,8 @@ TEST(UdpTransport, SendAndReceive) {
   send_transport.StartReceiving(receiver1.packet_receiver());
   recv_transport.StartReceiving(receiver2.packet_receiver());
 
-  send_transport.SendPacket(packet);
+  base::Closure cb;
+  send_transport.SendPacket(new base::RefCountedData<Packet>(packet), cb);
   run_loop.Run();
   EXPECT_TRUE(
       std::equal(packet.begin(), packet.end(), receiver1.packet().begin()));

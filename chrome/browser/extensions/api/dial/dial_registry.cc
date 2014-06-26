@@ -13,7 +13,6 @@
 #include "chrome/browser/extensions/api/dial/dial_api.h"
 #include "chrome/browser/extensions/api/dial/dial_device_data.h"
 #include "chrome/browser/extensions/api/dial/dial_service.h"
-#include "chrome/browser/extensions/event_names.h"
 #include "chrome/browser/net/chrome_net_log.h"
 #include "chrome/common/extensions/api/dial.h"
 
@@ -320,6 +319,7 @@ void DialRegistry::OnNetworkChanged(
     case NetworkChangeNotifier::CONNECTION_ETHERNET:
     case NetworkChangeNotifier::CONNECTION_WIFI:
     case NetworkChangeNotifier::CONNECTION_UNKNOWN:
+    case NetworkChangeNotifier::CONNECTION_BLUETOOTH:
       if (!dial_.get()) {
         VLOG(2) << "Connection detected, restarting discovery.";
         StartPeriodicDiscovery();

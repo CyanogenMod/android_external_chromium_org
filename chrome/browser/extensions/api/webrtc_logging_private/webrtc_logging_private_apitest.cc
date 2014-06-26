@@ -80,6 +80,9 @@ IN_PROC_BROWSER_TEST_F(WebrtcLoggingPrivateApiTest, TestStartStopDiscard) {
   ASSERT_FALSE(result.get());
 
   ASSERT_TRUE(multipart.empty());
+
+  g_browser_process->webrtc_log_uploader()->OverrideUploadWithBufferForTesting(
+      NULL);
 }
 
 // Tests WebRTC diagnostic logging. Sets up the browser to save the multipart
@@ -269,4 +272,42 @@ IN_PROC_BROWSER_TEST_F(WebrtcLoggingPrivateApiTest, TestStartStopUpload) {
   final_delimiter += "--";
   EXPECT_STREQ(final_delimiter.c_str(), multipart_lines[29].c_str());
   EXPECT_TRUE(multipart_lines[30].empty());
+
+  g_browser_process->webrtc_log_uploader()->OverrideUploadWithBufferForTesting(
+      NULL);
+}
+
+IN_PROC_BROWSER_TEST_F(WebrtcLoggingPrivateApiTest, TestStartStopRtpDump) {
+  scoped_refptr<Extension> empty_extension(utils::CreateEmptyExtension());
+
+  // Start RTP dump.
+  scoped_refptr<extensions::WebrtcLoggingPrivateStartRtpDumpFunction>
+      start_function(
+          new extensions::WebrtcLoggingPrivateStartRtpDumpFunction());
+  start_function->set_extension(empty_extension.get());
+  start_function->set_has_callback(true);
+
+  content::WebContents* contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  base::ListValue parameters;
+  parameters.AppendInteger(extensions::ExtensionTabUtil::GetTabId(contents));
+  parameters.AppendString(contents->GetURL().GetOrigin().spec());
+  parameters.AppendBoolean(true);
+  parameters.AppendBoolean(true);
+  std::string parameter_string;
+  base::JSONWriter::Write(&parameters, &parameter_string);
+
+  scoped_ptr<base::Value> result(utils::RunFunctionAndReturnSingleResult(
+      start_function.get(), parameter_string, browser()));
+  ASSERT_FALSE(result.get());
+
+  // Stop RTP dump.
+  scoped_refptr<extensions::WebrtcLoggingPrivateStopRtpDumpFunction>
+      stop_function(new extensions::WebrtcLoggingPrivateStopRtpDumpFunction());
+  stop_function->set_extension(empty_extension.get());
+  stop_function->set_has_callback(true);
+
+  result.reset(utils::RunFunctionAndReturnSingleResult(
+      stop_function.get(), parameter_string, browser()));
+  ASSERT_FALSE(result.get());
 }

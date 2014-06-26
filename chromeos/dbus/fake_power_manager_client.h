@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list.h"
-#include "base/time/time.h"
 #include "chromeos/dbus/power_manager/policy.pb.h"
 #include "chromeos/dbus/power_manager/suspend.pb.h"
 #include "chromeos/dbus/power_manager_client.h"
@@ -63,23 +62,16 @@ class FakePowerManagerClient : public PowerManagerClient {
   virtual base::Closure GetSuspendReadinessCallback() OVERRIDE;
   virtual int GetNumPendingSuspendReadinessCallbacks() OVERRIDE;
 
-  // Emulates that the dbus server sends a message "SuspendImminent" to the
-  // client.
+  // Emulates the power manager announcing that the system is starting or
+  // completing a suspend attempt.
   void SendSuspendImminent();
-
-  // Emulates that the dbus server sends a message "SuspendStateChanged" to the
-  // client.
-  void SendSuspendStateChanged(
-      const power_manager::SuspendState& suspend_state);
+  void SendSuspendDone();
 
  private:
   ObserverList<Observer> observers_;
 
   // Last policy passed to SetPolicy().
   power_manager::PowerManagementPolicy policy_;
-
-  // Last time passed to a SUSPEND_TO_MEMORY call to SendSuspendStateChanged().
-  base::Time last_suspend_wall_time_;
 
   // Number of times that RequestRestart() has been called.
   int num_request_restart_calls_;

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chrome_content_browser_client.h"
 
+#include "base/command_line.h"
 #include "base/metrics/field_trial.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
@@ -15,6 +16,7 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -22,12 +24,66 @@ namespace chrome {
 
 typedef testing::Test ChromeContentBrowserClientTest;
 
-
 TEST_F(ChromeContentBrowserClientTest, ShouldAssignSiteForURL) {
   ChromeContentBrowserClient client;
   EXPECT_FALSE(client.ShouldAssignSiteForURL(GURL("chrome-native://test")));
   EXPECT_TRUE(client.ShouldAssignSiteForURL(GURL("http://www.google.com")));
   EXPECT_TRUE(client.ShouldAssignSiteForURL(GURL("https://www.google.com")));
+}
+
+// NOTE: Any updates to the expectations in these tests should also be done in
+// the browser test WebRtcDisableEncryptionFlagBrowserTest.
+class DisableWebRtcEncryptionFlagTest : public testing::Test {
+ public:
+  DisableWebRtcEncryptionFlagTest()
+      : from_command_line_(CommandLine::NO_PROGRAM),
+        to_command_line_(CommandLine::NO_PROGRAM) {}
+
+ protected:
+  virtual void SetUp() {
+    from_command_line_.AppendSwitch(switches::kDisableWebRtcEncryption);
+  }
+
+  void MaybeCopyDisableWebRtcEncryptionSwitch(VersionInfo::Channel channel) {
+    ChromeContentBrowserClient::MaybeCopyDisableWebRtcEncryptionSwitch(
+        &to_command_line_,
+        from_command_line_,
+        channel);
+  }
+
+  CommandLine from_command_line_;
+  CommandLine to_command_line_;
+
+  DISALLOW_COPY_AND_ASSIGN(DisableWebRtcEncryptionFlagTest);
+};
+
+TEST_F(DisableWebRtcEncryptionFlagTest, UnknownChannel) {
+  MaybeCopyDisableWebRtcEncryptionSwitch(VersionInfo::CHANNEL_UNKNOWN);
+  EXPECT_TRUE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
+}
+
+TEST_F(DisableWebRtcEncryptionFlagTest, CanaryChannel) {
+  MaybeCopyDisableWebRtcEncryptionSwitch(VersionInfo::CHANNEL_CANARY);
+  EXPECT_TRUE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
+}
+
+TEST_F(DisableWebRtcEncryptionFlagTest, DevChannel) {
+  MaybeCopyDisableWebRtcEncryptionSwitch(VersionInfo::CHANNEL_DEV);
+  EXPECT_TRUE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
+}
+
+TEST_F(DisableWebRtcEncryptionFlagTest, BetaChannel) {
+  MaybeCopyDisableWebRtcEncryptionSwitch(VersionInfo::CHANNEL_BETA);
+#if defined(OS_ANDROID)
+  EXPECT_TRUE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
+#else
+  EXPECT_FALSE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
+#endif
+}
+
+TEST_F(DisableWebRtcEncryptionFlagTest, StableChannel) {
+  MaybeCopyDisableWebRtcEncryptionSwitch(VersionInfo::CHANNEL_STABLE);
+  EXPECT_FALSE(to_command_line_.HasSwitch(switches::kDisableWebRtcEncryption));
 }
 
 }  // namespace chrome
@@ -53,10 +109,10 @@ class InstantNTPURLRewriteTest : public BrowserWithTestWindowTest {
     TemplateURLData data;
     data.SetURL("http://foo.com/url?bar={searchTerms}");
     data.new_tab_url = new_tab_page_url.spec();
-    TemplateURL* template_url = new TemplateURL(browser()->profile(), data);
+    TemplateURL* template_url = new TemplateURL(data);
     // Takes ownership.
     template_url_service->Add(template_url);
-    template_url_service->SetDefaultSearchProvider(template_url);
+    template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
   }
 
   scoped_ptr<base::FieldTrialList> field_trial_list_;

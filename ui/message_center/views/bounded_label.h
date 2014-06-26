@@ -40,6 +40,7 @@ class MESSAGE_CENTER_EXPORT BoundedLabel : public views::View {
   void SetColors(SkColor textColor, SkColor backgroundColor);
   void SetLineHeight(int height);  // Pass in 0 for default height.
   void SetLineLimit(int lines);  // Pass in -1 for no limit.
+  void SetText(const base::string16& text);  // Additionally clears caches.
 
   int GetLineHeight() const;
   int GetLineLimit() const;
@@ -48,13 +49,14 @@ class MESSAGE_CENTER_EXPORT BoundedLabel : public views::View {
   int GetLinesForWidthAndLimit(int width, int limit);
   gfx::Size GetSizeForWidthAndLines(int width, int lines);
 
-  // Overridden from views::View.
+  // views::View:
   virtual int GetBaseline() const OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
+  virtual void Paint(gfx::Canvas* canvas,
+                     const views::CullSet& cull_set) OVERRIDE;
+  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  protected:
   // Overridden from views::View.

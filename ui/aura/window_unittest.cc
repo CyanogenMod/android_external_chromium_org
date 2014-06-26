@@ -18,19 +18,20 @@
 #include "ui/aura/client/focus_change_observer.h"
 #include "ui/aura/client/visibility_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/test/aura_test_base.h"
+#include "ui/aura/test/aura_test_utils.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/test/window_test_api.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/aura/window_property.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/compositor/test/test_layers.h"
@@ -93,13 +94,13 @@ class DestroyTrackingDelegateImpl : public TestWindowDelegate {
 
   bool in_destroying() const { return in_destroying_; }
 
-  virtual void OnWindowDestroying() OVERRIDE {
+  virtual void OnWindowDestroying(Window* window) OVERRIDE {
     EXPECT_FALSE(in_destroying_);
     in_destroying_ = true;
     destroying_count_++;
   }
 
-  virtual void OnWindowDestroyed() OVERRIDE {
+  virtual void OnWindowDestroyed(Window* window) OVERRIDE {
     EXPECT_TRUE(in_destroying_);
     in_destroying_ = false;
     destroyed_count_++;
@@ -122,9 +123,9 @@ class ChildWindowDelegateImpl : public DestroyTrackingDelegateImpl {
       : parent_delegate_(parent_delegate) {
   }
 
-  virtual void OnWindowDestroying() OVERRIDE {
+  virtual void OnWindowDestroying(Window* window) OVERRIDE {
     EXPECT_TRUE(parent_delegate_->in_destroying());
-    DestroyTrackingDelegateImpl::OnWindowDestroying();
+    DestroyTrackingDelegateImpl::OnWindowDestroying(window);
   }
 
  private:
@@ -142,7 +143,7 @@ class DestroyOrphanDelegate : public TestWindowDelegate {
 
   void set_window(Window* window) { window_ = window; }
 
-  virtual void OnWindowDestroyed() OVERRIDE {
+  virtual void OnWindowDestroyed(Window* window) OVERRIDE {
     EXPECT_FALSE(window_->parent());
   }
 
@@ -244,7 +245,7 @@ class DestroyWindowDelegate : public TestWindowDelegate {
   virtual ~DestroyWindowDelegate() {}
 
   // Overridden from WindowDelegate.
-  virtual void OnWindowDestroyed() OVERRIDE {
+  virtual void OnWindowDestroyed(Window* window) OVERRIDE {
     delete this;
   }
 
@@ -371,13 +372,11 @@ TEST_F(WindowTest, MoveCursorToWithTransformRootWindow) {
   transform.Translate(100.0, 100.0);
   transform.Rotate(90.0);
   transform.Scale(2.0, 5.0);
-  dispatcher()->host()->SetTransform(transform);
-  dispatcher()->host()->MoveCursorTo(gfx::Point(10, 10));
+  host()->SetRootTransform(transform);
+  host()->MoveCursorTo(gfx::Point(10, 10));
 #if !defined(OS_WIN)
-  gfx::Point mouse_location;
-  EXPECT_TRUE(dispatcher()->host()->QueryMouseLocation(&mouse_location));
   // TODO(yoshiki): fix this to build on Windows. See crbug.com/133413.OD
-  EXPECT_EQ("50,120", mouse_location.ToString());
+  EXPECT_EQ("50,120", QueryLatestMousePositionRequestInHost(host()).ToString());
 #endif
   EXPECT_EQ("10,10", gfx::Screen::GetScreenFor(
       root_window())->GetCursorScreenPoint().ToString());
@@ -452,7 +451,7 @@ TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
   transform.Translate(10.0, 20.0);
   transform.Rotate(10.0);
   transform.Scale(0.3f, 0.5f);
-  dispatcher()->host()->SetTransform(root_transform);
+  host()->SetRootTransform(root_transform);
   w1->SetTransform(transform);
   w11->SetTransform(transform);
   w111->SetTransform(transform);
@@ -462,48 +461,10 @@ TEST_F(WindowTest, MoveCursorToWithComplexTransform) {
 
 #if !defined(OS_WIN)
   // TODO(yoshiki): fix this to build on Windows. See crbug.com/133413.
-  gfx::Point mouse_location;
-  EXPECT_TRUE(dispatcher()->host()->QueryMouseLocation(&mouse_location));
-  EXPECT_EQ("169,80", mouse_location.ToString());
+  EXPECT_EQ("169,80", QueryLatestMousePositionRequestInHost(host()).ToString());
 #endif
   EXPECT_EQ("20,53",
       gfx::Screen::GetScreenFor(root)->GetCursorScreenPoint().ToString());
-}
-
-TEST_F(WindowTest, HitTest) {
-  Window w1(new ColorTestWindowDelegate(SK_ColorWHITE));
-  w1.set_id(1);
-  w1.Init(aura::WINDOW_LAYER_TEXTURED);
-  w1.SetBounds(gfx::Rect(10, 20, 50, 60));
-  w1.Show();
-  ParentWindow(&w1);
-
-  // Points are in the Window's coordinates.
-  EXPECT_TRUE(w1.HitTest(gfx::Point(1, 1)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(-1, -1)));
-
-  // TODO(beng): clip Window to parent.
-}
-
-TEST_F(WindowTest, HitTestMask) {
-  MaskedWindowDelegate d1(gfx::Rect(5, 6, 20, 30));
-  Window w1(&d1);
-  w1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
-  w1.SetBounds(gfx::Rect(10, 20, 50, 60));
-  w1.Show();
-  ParentWindow(&w1);
-
-  // Points inside the mask.
-  EXPECT_TRUE(w1.HitTest(gfx::Point(5, 6)));  // top-left
-  EXPECT_TRUE(w1.HitTest(gfx::Point(15, 21)));  // center
-  EXPECT_TRUE(w1.HitTest(gfx::Point(24, 35)));  // bottom-right
-
-  // Points outside the mask.
-  EXPECT_FALSE(w1.HitTest(gfx::Point(0, 0)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(60, 80)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(4, 6)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(5, 5)));
-  EXPECT_FALSE(w1.HitTest(gfx::Point(25, 36)));
 }
 
 TEST_F(WindowTest, GetEventHandlerForPoint) {
@@ -1105,7 +1066,7 @@ TEST_F(WindowTest, ReleaseCaptureOnDestroy) {
   window.reset();
 
   // Make sure the root window doesn't reference the window anymore.
-  EXPECT_EQ(NULL, dispatcher()->mouse_pressed_handler());
+  EXPECT_EQ(NULL, host()->dispatcher()->mouse_pressed_handler());
   EXPECT_EQ(NULL, aura::client::GetCaptureWindow(root_window()));
 }
 
@@ -1522,7 +1483,7 @@ TEST_F(WindowTest, IgnoreEventsTest) {
 
 // Tests transformation on the root window.
 TEST_F(WindowTest, Transform) {
-  gfx::Size size = dispatcher()->host()->GetBounds().size();
+  gfx::Size size = host()->GetBounds().size();
   EXPECT_EQ(gfx::Rect(size),
             gfx::Screen::GetScreenFor(root_window())->GetDisplayNearestPoint(
                 gfx::Point()).bounds());
@@ -1531,7 +1492,7 @@ TEST_F(WindowTest, Transform) {
   gfx::Transform transform;
   transform.Translate(size.height(), 0);
   transform.Rotate(90.0);
-  dispatcher()->host()->SetTransform(transform);
+  host()->SetRootTransform(transform);
 
   // The size should be the transformed size.
   gfx::Size transformed_size(size.height(), size.width());
@@ -1543,12 +1504,11 @@ TEST_F(WindowTest, Transform) {
           gfx::Point()).bounds().ToString());
 
   // Host size shouldn't change.
-  EXPECT_EQ(size.ToString(),
-            dispatcher()->host()->GetBounds().size().ToString());
+  EXPECT_EQ(size.ToString(), host()->GetBounds().size().ToString());
 }
 
 TEST_F(WindowTest, TransformGesture) {
-  gfx::Size size = dispatcher()->host()->GetBounds().size();
+  gfx::Size size = host()->GetBounds().size();
 
   scoped_ptr<GestureTrackPositionDelegate> delegate(
       new GestureTrackPositionDelegate);
@@ -1559,7 +1519,7 @@ TEST_F(WindowTest, TransformGesture) {
   gfx::Transform transform;
   transform.Translate(size.height(), 0.0);
   transform.Rotate(90.0);
-  dispatcher()->host()->SetTransform(transform);
+  host()->SetRootTransform(transform);
 
   ui::TouchEvent press(
       ui::ET_TOUCH_PRESSED, gfx::Point(size.height() - 10, 10), 0, getTime());
@@ -1666,7 +1626,7 @@ TEST_F(WindowTest, SetBoundsInternalShouldCheckTargetBounds) {
 
   EXPECT_FALSE(!w1->layer());
   w1->layer()->GetAnimator()->set_disable_timer_for_test(true);
-  gfx::AnimationContainerElement* element = w1->layer()->GetAnimator();
+  ui::LayerAnimator* animator = w1->layer()->GetAnimator();
 
   EXPECT_EQ("0,0 100x100", w1->bounds().ToString());
   EXPECT_EQ("0,0 100x100", w1->layer()->GetTargetBounds().ToString());
@@ -1696,7 +1656,7 @@ TEST_F(WindowTest, SetBoundsInternalShouldCheckTargetBounds) {
   base::TimeTicks start_time =
       w1->layer()->GetAnimator()->last_step_time();
 
-  element->Step(start_time + base::TimeDelta::FromMilliseconds(1000));
+  animator->Step(start_time + base::TimeDelta::FromMilliseconds(1000));
 
   EXPECT_EQ("0,0 100x100", w1->bounds().ToString());
 }
@@ -1920,6 +1880,12 @@ TEST_F(WindowTest, AcquireLayer) {
   EXPECT_FALSE(window1_test_api.OwnsLayer());
   EXPECT_TRUE(window1_layer.get() == window1->layer());
 
+  // The acquired layer's owner should be set NULL and re-acquring
+  // should return NULL.
+  EXPECT_FALSE(window1_layer->owner());
+  scoped_ptr<ui::Layer> window1_layer_reacquired(window1->AcquireLayer());
+  EXPECT_FALSE(window1_layer_reacquired.get());
+
   // Upon destruction, window1's layer should still be valid, and in the layer
   // hierarchy, but window2's should be gone, and no longer in the hierarchy.
   window1.reset();
@@ -1940,7 +1906,6 @@ TEST_F(WindowTest, RecreateLayer) {
   w.SetBounds(gfx::Rect(0, 0, 100, 100));
 
   ui::Layer* layer = w.layer();
-  layer->set_scale_content(false);
   layer->SetVisible(false);
   layer->SetMasksToBounds(true);
 
@@ -1950,14 +1915,11 @@ TEST_F(WindowTest, RecreateLayer) {
   scoped_ptr<ui::Layer> old_layer(w.RecreateLayer());
   layer = w.layer();
   EXPECT_EQ(ui::LAYER_SOLID_COLOR, layer->type());
-  EXPECT_FALSE(layer->scale_content());
   EXPECT_FALSE(layer->visible());
   EXPECT_EQ(1u, layer->children().size());
   EXPECT_TRUE(layer->GetMasksToBounds());
-  // On recreate it's expected the bounds of both the window and layer go to
-  // 0. See description of Window::RecreateLayer() for details.
-  EXPECT_EQ("0,0 0x0", w.bounds().ToString());
-  EXPECT_EQ("0,0 0x0", layer->bounds().ToString());
+  EXPECT_EQ("0,0 100x100", w.bounds().ToString());
+  EXPECT_EQ("0,0 100x100", layer->bounds().ToString());
 }
 
 // Verify that RecreateLayer() stacks the old layer above the newly creatd
@@ -1981,8 +1943,8 @@ TEST_F(WindowTest, AcquireThenRecreateLayer) {
   scoped_ptr<Window> w(
       CreateTestWindow(SK_ColorWHITE, 1, gfx::Rect(0, 0, 100, 100),
                        root_window()));
-  scoped_ptr<ui::Layer>acquired_layer(w->AcquireLayer());
-  scoped_ptr<ui::Layer>doubly_acquired_layer(w->RecreateLayer());
+  scoped_ptr<ui::Layer> acquired_layer(w->AcquireLayer());
+  scoped_ptr<ui::Layer> doubly_acquired_layer(w->RecreateLayer());
   EXPECT_EQ(NULL, doubly_acquired_layer.get());
 
   // Destroy window before layer gets destroyed.
@@ -2054,7 +2016,7 @@ TEST_F(WindowTest, VisibilityClientIsVisible) {
 
 // Tests mouse events on window change.
 TEST_F(WindowTest, MouseEventsOnWindowChange) {
-  gfx::Size size = dispatcher()->host()->GetBounds().size();
+  gfx::Size size = host()->GetBounds().size();
 
   EventGenerator generator(root_window());
   generator.MoveMouseTo(50, 50);
@@ -2163,7 +2125,8 @@ class RootWindowAttachmentObserver : public WindowObserver {
   virtual void OnWindowAddedToRootWindow(Window* window) OVERRIDE {
     ++added_count_;
   }
-  virtual void OnWindowRemovingFromRootWindow(Window* window) OVERRIDE {
+  virtual void OnWindowRemovingFromRootWindow(Window* window,
+                                              Window* new_root) OVERRIDE {
     ++removed_count_;
   }
 
@@ -2239,6 +2202,62 @@ TEST_F(WindowTest, RootWindowAttachment) {
   EXPECT_EQ(2, observer.removed_count());
 }
 
+class BoundsChangedWindowObserver : public WindowObserver {
+ public:
+  BoundsChangedWindowObserver() : root_set_(false) {}
+
+  virtual void OnWindowBoundsChanged(Window* window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) OVERRIDE {
+    root_set_ = window->GetRootWindow() != NULL;
+  }
+
+  bool root_set() const { return root_set_; }
+
+ private:
+  bool root_set_;
+
+  DISALLOW_COPY_AND_ASSIGN(BoundsChangedWindowObserver);
+};
+
+TEST_F(WindowTest, RootWindowSetWhenReparenting) {
+  Window parent1(NULL);
+  parent1.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  Window parent2(NULL);
+  parent2.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  ParentWindow(&parent1);
+  ParentWindow(&parent2);
+  parent1.SetBounds(gfx::Rect(10, 10, 300, 300));
+  parent2.SetBounds(gfx::Rect(20, 20, 300, 300));
+
+  BoundsChangedWindowObserver observer;
+  Window child(NULL);
+  child.Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  child.SetBounds(gfx::Rect(5, 5, 100, 100));
+  parent1.AddChild(&child);
+
+  // We need animations to start in order to observe the bounds changes.
+  ui::ScopedAnimationDurationScaleMode animation_duration_mode(
+      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  ui::ScopedLayerAnimationSettings settings1(child.layer()->GetAnimator());
+  settings1.SetTransitionDuration(base::TimeDelta::FromMilliseconds(100));
+  gfx::Rect new_bounds(gfx::Rect(35, 35, 50, 50));
+  child.SetBounds(new_bounds);
+
+  child.AddObserver(&observer);
+
+  // Reparenting the |child| will cause it to get moved. During this move
+  // the window should still have root window set.
+  parent2.AddChild(&child);
+  EXPECT_TRUE(observer.root_set());
+
+  // Animations should stop and the bounds should be as set before the |child|
+  // got reparented.
+  EXPECT_EQ(new_bounds.ToString(), child.GetTargetBounds().ToString());
+  EXPECT_EQ(new_bounds.ToString(), child.bounds().ToString());
+  EXPECT_EQ("55,55 50x50", child.GetBoundsInRootWindow().ToString());
+}
+
 TEST_F(WindowTest, OwnedByParentFalse) {
   // By default, a window is owned by its parent. If this is set to false, the
   // window will not be destroyed when its parent is.
@@ -2268,7 +2287,7 @@ class OwningWindowDelegate : public TestWindowDelegate {
     owned_window_.reset(window);
   }
 
-  virtual void OnWindowDestroyed() OVERRIDE {
+  virtual void OnWindowDestroyed(Window* window) OVERRIDE {
     owned_window_.reset(NULL);
   }
 
@@ -2356,8 +2375,8 @@ TEST_F(WindowTest, DelegateNotifiedAsBoundsChange) {
   // Animate to the end, which should notify of the change.
   base::TimeTicks start_time =
       window->layer()->GetAnimator()->last_step_time();
-  gfx::AnimationContainerElement* element = window->layer()->GetAnimator();
-  element->Step(start_time + base::TimeDelta::FromMilliseconds(1000));
+  ui::LayerAnimator* animator = window->layer()->GetAnimator();
+  animator->Step(start_time + base::TimeDelta::FromMilliseconds(1000));
   EXPECT_TRUE(delegate.bounds_changed());
   EXPECT_NE("0,0 100x100", window->bounds().ToString());
 }
@@ -2398,8 +2417,8 @@ TEST_F(WindowTest, DelegateNotifiedAsBoundsChangeInHiddenLayer) {
   // Animate to the end: will *not* notify of the change since we are hidden.
   base::TimeTicks start_time =
       window->layer()->GetAnimator()->last_step_time();
-  gfx::AnimationContainerElement* element = window->layer()->GetAnimator();
-  element->Step(start_time + base::TimeDelta::FromMilliseconds(1000));
+  ui::LayerAnimator* animator = window->layer()->GetAnimator();
+  animator->Step(start_time + base::TimeDelta::FromMilliseconds(1000));
 
   // No bounds changed notification at the end of animation since layer
   // delegate is NULL.
@@ -2425,7 +2444,8 @@ class AddChildNotificationsObserver : public WindowObserver {
   virtual void OnWindowAddedToRootWindow(Window* window) OVERRIDE {
     added_count_++;
   }
-  virtual void OnWindowRemovingFromRootWindow(Window* window) OVERRIDE {
+  virtual void OnWindowRemovingFromRootWindow(Window* window,
+                                              Window* new_root) OVERRIDE {
     removed_count_++;
   }
 
@@ -3326,6 +3346,96 @@ TEST_F(WindowTest, StackChildAtLayerless) {
               BuildRootWindowTreeDescription(root))
         << "window tree doesn't match at " << i;
   }
+}
+
+namespace {
+
+class TestLayerAnimationObserver : public ui::LayerAnimationObserver {
+ public:
+  TestLayerAnimationObserver()
+      : animation_completed_(false),
+        animation_aborted_(false) {}
+  virtual ~TestLayerAnimationObserver() {}
+
+  bool animation_completed() const { return animation_completed_; }
+  bool animation_aborted() const { return animation_aborted_; }
+
+  void Reset() {
+    animation_completed_ = false;
+    animation_aborted_ = false;
+  }
+
+ private:
+  // ui::LayerAnimationObserver:
+  virtual void OnLayerAnimationEnded(
+      ui::LayerAnimationSequence* sequence) OVERRIDE {
+    animation_completed_ = true;
+  }
+
+  virtual void OnLayerAnimationAborted(
+      ui::LayerAnimationSequence* sequence) OVERRIDE {
+    animation_aborted_ = true;
+  }
+
+  virtual void OnLayerAnimationScheduled(
+      ui::LayerAnimationSequence* sequence) OVERRIDE {
+  }
+
+  bool animation_completed_;
+  bool animation_aborted_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestLayerAnimationObserver);
+};
+
+}
+
+TEST_F(WindowTest, WindowDestroyCompletesAnimations) {
+  ui::ScopedAnimationDurationScaleMode normal_duration_mode(
+      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+  scoped_refptr<ui::LayerAnimator> animator =
+      ui::LayerAnimator::CreateImplicitAnimator();
+  TestLayerAnimationObserver observer;
+  animator->AddObserver(&observer);
+  // Make sure destroying a Window completes the animation.
+  {
+    scoped_ptr<Window> window(CreateTestWindowWithId(1, root_window()));
+    window->layer()->SetAnimator(animator);
+
+    gfx::Transform transform;
+    transform.Scale(0.5f, 0.5f);
+    window->SetTransform(transform);
+
+    EXPECT_TRUE(animator->is_animating());
+    EXPECT_FALSE(observer.animation_completed());
+  }
+  EXPECT_TRUE(animator);
+  EXPECT_FALSE(animator->is_animating());
+  EXPECT_TRUE(observer.animation_completed());
+  EXPECT_FALSE(observer.animation_aborted());
+  animator->RemoveObserver(&observer);
+  observer.Reset();
+
+  animator = ui::LayerAnimator::CreateImplicitAnimator();
+  animator->AddObserver(&observer);
+  ui::Layer layer;
+  layer.SetAnimator(animator);
+  {
+    scoped_ptr<Window> window(CreateTestWindowWithId(1, root_window()));
+    window->layer()->Add(&layer);
+
+    gfx::Transform transform;
+    transform.Scale(0.5f, 0.5f);
+    layer.SetTransform(transform);
+
+    EXPECT_TRUE(animator->is_animating());
+    EXPECT_FALSE(observer.animation_completed());
+  }
+
+  EXPECT_TRUE(animator);
+  EXPECT_FALSE(animator->is_animating());
+  EXPECT_TRUE(observer.animation_completed());
+  EXPECT_FALSE(observer.animation_aborted());
+  animator->RemoveObserver(&observer);
 }
 
 }  // namespace test

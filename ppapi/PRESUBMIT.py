@@ -66,8 +66,6 @@ def CheckTODO(input_api, output_api):
     # Only examine public stable interfaces.
     if name_parts[2] in ['dev', 'private', 'trusted']:
       continue
-    if name_parts[2] == 'extensions' and name_parts[3] == 'dev':
-      continue
 
     filepath = os.path.join('..', filename)
     if RE_TODO.search(open(filepath, 'rb').read()):
@@ -172,7 +170,7 @@ def CheckHistogramXml(input_api, output_api):
       has_histogram_xml_change = True
 
   if interface_changes and not has_histogram_xml_change:
-    return [output_api.PresubmitPromptWarning(
+    return [output_api.PresubmitNotifyResult(
         'Missing change to tools/metrics/histograms/histograms.xml.\n' +
         'Run pepper_hash_for_uma to make get values for new interfaces.\n' +
         'Interface changes:\n' + '\n'.join(interface_changes))]

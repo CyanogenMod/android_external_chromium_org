@@ -10,13 +10,12 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/extensions/wallpaper_private_api.h"
-#include "chrome/browser/chromeos/login/fake_user_manager.h"
+#include "chrome/browser/chromeos/login/users/fake_user_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
-#include "chrome/common/chrome_switches.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 //#include "base/compiler_specific.h"
 //#include "base/logging.h"
@@ -51,8 +50,8 @@ class TestMinimizeFunction
  public:
   TestMinimizeFunction() {}
 
-  virtual bool RunImpl() OVERRIDE {
-    return WallpaperPrivateMinimizeInactiveWindowsFunction::RunImpl();
+  virtual bool RunAsync() OVERRIDE {
+    return WallpaperPrivateMinimizeInactiveWindowsFunction::RunAsync();
   }
 
  protected:
@@ -64,8 +63,8 @@ class TestRestoreFunction
  public:
   TestRestoreFunction() {}
 
-  virtual bool RunImpl() OVERRIDE {
-    return WallpaperPrivateRestoreMinimizedWindowsFunction::RunImpl();
+  virtual bool RunAsync() OVERRIDE {
+    return WallpaperPrivateRestoreMinimizedWindowsFunction::RunAsync();
   }
  protected:
   virtual ~TestRestoreFunction() {}
@@ -100,7 +99,7 @@ TEST_F(WallpaperPrivateApiUnittest, HideAndRestoreWindows) {
   EXPECT_TRUE(window0_state->IsActive());
   scoped_refptr<TestMinimizeFunction> minimize_function(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function->RunImpl());
+  EXPECT_TRUE(minimize_function->RunAsync());
 
   // All windows except window 0 should be minimized.
   EXPECT_FALSE(window0_state->IsMinimized());
@@ -112,7 +111,7 @@ TEST_F(WallpaperPrivateApiUnittest, HideAndRestoreWindows) {
   window0.reset();
   scoped_refptr<TestRestoreFunction> restore_function(
       new TestRestoreFunction());
-  EXPECT_TRUE(restore_function->RunImpl());
+  EXPECT_TRUE(restore_function->RunAsync());
 
   // Windows 1 and 2 should no longer be minimized. Window 1 should again
   // be maximized. Window 3 should still be minimized.
@@ -140,7 +139,7 @@ TEST_F(WallpaperPrivateApiUnittest, HideAndManualUnminimizeWindows) {
   EXPECT_TRUE(window0_state->IsActive());
   scoped_refptr<TestMinimizeFunction> minimize_function_0(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function_0->RunImpl());
+  EXPECT_TRUE(minimize_function_0->RunAsync());
 
   // All windows except window 0 should be minimized.
   EXPECT_FALSE(window0_state->IsMinimized());
@@ -150,7 +149,7 @@ TEST_F(WallpaperPrivateApiUnittest, HideAndManualUnminimizeWindows) {
   // change.
   scoped_refptr<TestMinimizeFunction> minimize_function_1(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function_1->RunImpl());
+  EXPECT_TRUE(minimize_function_1->RunAsync());
 
   // All windows except window 0 should be minimized.
   EXPECT_FALSE(window0_state->IsMinimized());
@@ -163,7 +162,7 @@ TEST_F(WallpaperPrivateApiUnittest, HideAndManualUnminimizeWindows) {
 
   scoped_refptr<TestMinimizeFunction> minimize_function_2(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function_2->RunImpl());
+  EXPECT_TRUE(minimize_function_2->RunAsync());
 
   // Window 1 should be minimized again.
   EXPECT_FALSE(window0_state->IsMinimized());
@@ -173,7 +172,7 @@ TEST_F(WallpaperPrivateApiUnittest, HideAndManualUnminimizeWindows) {
   window0.reset();
   scoped_refptr<TestRestoreFunction> restore_function(
       new TestRestoreFunction());
-  EXPECT_TRUE(restore_function->RunImpl());
+  EXPECT_TRUE(restore_function->RunAsync());
 
   // Windows 1 should no longer be minimized.
   EXPECT_FALSE(window1_state->IsMinimized());
@@ -208,7 +207,6 @@ class WallpaperPrivateApiMultiUserUnittest
 };
 
 void WallpaperPrivateApiMultiUserUnittest::SetUp() {
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kMultiProfiles);
   AshTestBase::SetUp();
   session_state_delegate_ =
       static_cast<ash::test::TestSessionStateDelegate*> (
@@ -230,7 +228,8 @@ void WallpaperPrivateApiMultiUserUnittest::SetUpMultiUserWindowManager(
   chrome::MultiUserWindowManager::SetInstanceForTest(
       multi_user_window_manager_, mode);
   // We do not want animations while the test is going on.
-  multi_user_window_manager_->SetAnimationsForTest(true);
+  multi_user_window_manager_->SetAnimationSpeedForTest(
+      chrome::MultiUserWindowManagerChromeOS::ANIMATION_SPEED_DISABLED);
   EXPECT_TRUE(multi_user_window_manager_);
 }
 
@@ -279,7 +278,7 @@ TEST_F(WallpaperPrivateApiMultiUserUnittest, HideAndRestoreWindowsTwoUsers) {
   EXPECT_TRUE(window0_state->IsActive());
   scoped_refptr<TestMinimizeFunction> minimize_function_0(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function_0->RunImpl());
+  EXPECT_TRUE(minimize_function_0->RunAsync());
 
   // All windows except window 0 should be minimized.
   EXPECT_FALSE(window0_state->IsMinimized());
@@ -297,7 +296,7 @@ TEST_F(WallpaperPrivateApiMultiUserUnittest, HideAndRestoreWindowsTwoUsers) {
   EXPECT_TRUE(window2_state->IsActive());
   scoped_refptr<TestMinimizeFunction> minimize_function_1(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function_1->RunImpl());
+  EXPECT_TRUE(minimize_function_1->RunAsync());
 
   // All windows except window 2 should be minimized.
   EXPECT_FALSE(window2_state->IsMinimized());
@@ -321,7 +320,7 @@ TEST_F(WallpaperPrivateApiMultiUserUnittest, HideAndRestoreWindowsTwoUsers) {
   window2.reset();
   scoped_refptr<TestRestoreFunction> restore_function_0(
       new TestRestoreFunction());
-  EXPECT_TRUE(restore_function_0->RunImpl());
+  EXPECT_TRUE(restore_function_0->RunAsync());
 
   EXPECT_FALSE(window3_state->IsMinimized());
 
@@ -335,7 +334,7 @@ TEST_F(WallpaperPrivateApiMultiUserUnittest, HideAndRestoreWindowsTwoUsers) {
   window0.reset();
   scoped_refptr<TestRestoreFunction> restore_function_1(
       new TestRestoreFunction());
-  EXPECT_TRUE(restore_function_1->RunImpl());
+  EXPECT_TRUE(restore_function_1->RunAsync());
 
   EXPECT_FALSE(window1_state->IsMinimized());
   EXPECT_FALSE(window3_state->IsMinimized());
@@ -379,7 +378,7 @@ TEST_F(WallpaperPrivateApiMultiUserUnittest, HideTeleportedWindow) {
   EXPECT_TRUE(window0_state->IsActive());
   scoped_refptr<TestMinimizeFunction> minimize_function_0(
       new TestMinimizeFunction());
-  EXPECT_TRUE(minimize_function_0->RunImpl());
+  EXPECT_TRUE(minimize_function_0->RunAsync());
 
   // All windows except window 0 should be minimized.
   EXPECT_FALSE(window0_state->IsMinimized());
@@ -394,7 +393,7 @@ TEST_F(WallpaperPrivateApiMultiUserUnittest, HideTeleportedWindow) {
   window0.reset();
   scoped_refptr<TestRestoreFunction> restore_function_1(
       new TestRestoreFunction());
-  EXPECT_TRUE(restore_function_1->RunImpl());
+  EXPECT_TRUE(restore_function_1->RunAsync());
 
   EXPECT_FALSE(window1_state->IsMinimized());
   EXPECT_FALSE(window2_state->IsMinimized());

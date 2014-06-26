@@ -6,11 +6,13 @@
 #define CHROME_BROWSER_CHROMEOS_LOGIN_USER_FLOW_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/login/login_status_consumer.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/profiles/profile.h"
 
 namespace chromeos {
+
+class UserContext;
 
 class LoginDisplayHost;
 // Defines possible variants of user flow upon logging in.
@@ -25,6 +27,7 @@ class UserFlow {
   virtual bool ShouldLaunchBrowser() = 0;
   virtual bool ShouldSkipPostLoginScreens() = 0;
   virtual bool HandleLoginFailure(const LoginFailure& failure) = 0;
+  virtual void HandleLoginSuccess(const UserContext& context) = 0;
   virtual bool HandlePasswordChangeDetected() = 0;
   virtual void HandleOAuthTokenStatusChange(User::OAuthTokenStatus status) = 0;
   virtual void LaunchExtraSteps(Profile* profile) = 0;
@@ -51,6 +54,7 @@ class DefaultUserFlow : public UserFlow {
   virtual bool ShouldLaunchBrowser() OVERRIDE;
   virtual bool ShouldSkipPostLoginScreens() OVERRIDE;
   virtual bool HandleLoginFailure(const LoginFailure& failure) OVERRIDE;
+  virtual void HandleLoginSuccess(const UserContext& context) OVERRIDE;
   virtual bool HandlePasswordChangeDetected() OVERRIDE;
   virtual void HandleOAuthTokenStatusChange(User::OAuthTokenStatus status)
       OVERRIDE;
@@ -70,7 +74,7 @@ class ExtendedUserFlow : public UserFlow {
   virtual void UnregisterFlowSoon();
   std::string user_id() {
     return user_id_;
-  };
+  }
 
  private:
   std::string user_id_;

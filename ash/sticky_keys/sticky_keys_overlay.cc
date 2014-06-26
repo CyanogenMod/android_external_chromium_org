@@ -54,12 +54,6 @@ class StickyKeyOverlayLabel : public views::Label {
   void SetKeyState(StickyKeyState state);
 
  private:
-  // views::Label overrides:
-  virtual void PaintText(gfx::Canvas* canvas,
-                         const base::string16& text,
-                         const gfx::Rect& text_bounds,
-                         int flags) OVERRIDE;
-
   StickyKeyState state_;
 
   DISALLOW_COPY_AND_ASSIGN(StickyKeyOverlayLabel);
@@ -76,6 +70,7 @@ StickyKeyOverlayLabel::StickyKeyOverlayLabel(const std::string& key_name)
   SetFocusable(false);
   SetEnabledColor(SkColorSetARGB(0x80, 0xFF, 0xFF, 0xFF));
   SetDisabledColor(SkColorSetARGB(0x80, 0xFF, 0xFF, 0xFF));
+  set_subpixel_rendering_enabled(false);
 }
 
 StickyKeyOverlayLabel::~StickyKeyOverlayLabel() {
@@ -104,19 +99,8 @@ void StickyKeyOverlayLabel::SetKeyState(StickyKeyState state) {
   SetFontList(font_list().DeriveWithStyle(style));
 }
 
-void StickyKeyOverlayLabel::PaintText(gfx::Canvas* canvas,
-                                      const base::string16& text,
-                                      const gfx::Rect& text_bounds,
-                                      int flags) {
-  views::Label::PaintText(canvas,
-                          text,
-                          text_bounds,
-                          flags | gfx::Canvas::NO_SUBPIXEL_RENDERING);
-}
-
-
 ///////////////////////////////////////////////////////////////////////////////
-//  StickyKeyOverlayLabel
+//  StickyKeysOverlayView
 class StickyKeysOverlayView : public views::WidgetDelegateView {
  public:
   StickyKeysOverlayView();
@@ -129,6 +113,9 @@ class StickyKeysOverlayView : public views::WidgetDelegateView {
   void SetKeyState(ui::EventFlags modifier, StickyKeyState state);
 
   StickyKeyState GetKeyState(ui::EventFlags modifier);
+
+  void SetModifierVisible(ui::EventFlags modifier, bool visible);
+  bool GetModifierVisible(ui::EventFlags modifier);
 
  private:
   void AddKeyLabel(ui::EventFlags modifier, const std::string& key_label);
@@ -161,6 +148,10 @@ StickyKeysOverlayView::StickyKeysOverlayView() {
               l10n_util::GetStringUTF8(IDS_ASH_ALT_KEY));
   AddKeyLabel(ui::EF_SHIFT_DOWN,
               l10n_util::GetStringUTF8(IDS_ASH_SHIFT_KEY));
+  AddKeyLabel(ui::EF_ALTGR_DOWN,
+              l10n_util::GetStringUTF8(IDS_ASH_ALTGR_KEY));
+  AddKeyLabel(ui::EF_MOD3_DOWN,
+              l10n_util::GetStringUTF8(IDS_ASH_MOD3_KEY));
 }
 
 StickyKeysOverlayView::~StickyKeysOverlayView() {}
@@ -189,6 +180,19 @@ StickyKeyState StickyKeysOverlayView::GetKeyState(ui::EventFlags modifier) {
   return it->second->state();
 }
 
+void StickyKeysOverlayView::SetModifierVisible(ui::EventFlags modifier,
+                                               bool visible) {
+  ModifierLabelMap::iterator it = modifier_label_map_.find(modifier);
+  DCHECK(it != modifier_label_map_.end());
+  it->second->SetVisible(visible);
+}
+
+bool StickyKeysOverlayView::GetModifierVisible(ui::EventFlags modifier) {
+  ModifierLabelMap::iterator it = modifier_label_map_.find(modifier);
+  DCHECK(it != modifier_label_map_.end());
+  return it->second->visible();
+}
+
 void StickyKeysOverlayView::AddKeyLabel(ui::EventFlags modifier,
                                         const std::string& key_label) {
   StickyKeyOverlayLabel* label = new StickyKeyOverlayLabel(key_label);
@@ -207,14 +211,12 @@ StickyKeysOverlay::StickyKeysOverlay()
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.accept_events = false;
-  params.can_activate = false;
   params.keep_on_top = true;
   params.remove_standard_frame = true;
   params.delegate = overlay_view_;
   params.bounds = CalculateOverlayBounds();
-  params.parent = Shell::GetContainer(
-      Shell::GetTargetRootWindow(),
-      internal::kShellWindowId_OverlayContainer);
+  params.parent = Shell::GetContainer(Shell::GetTargetRootWindow(),
+                                      kShellWindowId_OverlayContainer);
   overlay_widget_.reset(new views::Widget);
   overlay_widget_->Init(params);
   overlay_widget_->SetVisibilityChangedAnimationsEnabled(false);
@@ -253,6 +255,16 @@ void StickyKeysOverlay::Show(bool visible) {
       base::TimeDelta::FromMilliseconds(kSlideAnimationDurationMs));
 
   overlay_widget_->GetLayer()->SetTransform(gfx::Transform());
+}
+
+void StickyKeysOverlay::SetModifierVisible(ui::EventFlags modifier,
+                                           bool visible) {
+  overlay_view_->SetModifierVisible(modifier, visible);
+  widget_size_ = overlay_view_->GetPreferredSize();
+}
+
+bool StickyKeysOverlay::GetModifierVisible(ui::EventFlags modifier) {
+  return overlay_view_->GetModifierVisible(modifier);
 }
 
 void StickyKeysOverlay::SetModifierKeyState(ui::EventFlags modifier,

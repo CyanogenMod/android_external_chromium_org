@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/mac/scoped_nsobject.h"
 #include "chrome/browser/ui/cocoa/omnibox/omnibox_view_mac.h"
+#include "ui/gfx/font.h"
 
 const CGFloat LocationBarDecoration::kOmittedWidth = 0.0;
 
@@ -59,7 +60,7 @@ NSPasteboard* LocationBarDecoration::GetDragPasteboard() {
   return nil;
 }
 
-bool LocationBarDecoration::OnMousePressed(NSRect frame) {
+bool LocationBarDecoration::OnMousePressed(NSRect frame, NSPoint location) {
   return false;
 }
 
@@ -68,7 +69,15 @@ NSMenu* LocationBarDecoration::GetMenu() {
 }
 
 NSFont* LocationBarDecoration::GetFont() const {
-  return OmniboxViewMac::GetFieldFont();
+  return OmniboxViewMac::GetFieldFont(gfx::Font::NORMAL);
+}
+
+NSPoint LocationBarDecoration::GetBubblePointInFrame(NSRect frame) {
+  // Clients that use a bubble should implement this. Can't be abstract
+  // because too many LocationBarDecoration subclasses don't use a bubble.
+  // Can't live on subclasses only because it needs to be on a shared API.
+  NOTREACHED();
+  return frame.origin;
 }
 
 // static

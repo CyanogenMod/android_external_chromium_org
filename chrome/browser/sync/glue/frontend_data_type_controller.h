@@ -102,8 +102,15 @@ class FrontendDataTypeController : public DataTypeController {
 
   virtual AssociatorInterface* model_associator() const;
   virtual void set_model_associator(AssociatorInterface* associator);
-  virtual ChangeProcessor* change_processor() const;
+  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
   virtual void set_change_processor(ChangeProcessor* processor);
+
+  // Handles the reporting of unrecoverable error. It records stuff in
+  // UMA and reports to breakpad.
+  // Virtual for testing purpose.
+  virtual void RecordUnrecoverableError(
+      const tracked_objects::Location& from_here,
+      const std::string& message);
 
   ProfileSyncComponentsFactory* const profile_sync_factory_;
   Profile* const profile_;

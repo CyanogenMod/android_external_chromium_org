@@ -13,8 +13,8 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/views/controls/menu/menu_controller.h"
 #include "ui/views/view.h"
@@ -45,7 +45,7 @@ void CloseBrowser(Browser* browser) {
 
 gfx::Rect GetChromeIconBoundsForRootWindow(aura::Window* root_window) {
   ash::Shelf* shelf = ash::Shelf::ForWindow(root_window);
-  const ash::internal::ShelfView* shelf_view =
+  const ash::ShelfView* shelf_view =
       ash::test::ShelfTestAPI(shelf).shelf_view();
   const views::ViewModel* view_model = shelf_view->view_model_for_test();
 
@@ -67,7 +67,7 @@ void OpenBrowserUsingShelfOnRootWindow(aura::Window* root_window) {
 
 }  // namespace
 
-#if defined(OS_WIN)
+#if !defined(OS_CHROMEOS)
 #define MAYBE_OpenBrowserUsingShelfOnOtherDisplay DISABLED_OpenBrowserUsingShelfOnOtherDisplay
 #define MAYBE_OpenBrowserUsingContextMenuOnOtherDisplay DISABLED_OpenBrowserUsingContextMenuOnOtherDisplay
 #else
@@ -78,7 +78,7 @@ void OpenBrowserUsingShelfOnRootWindow(aura::Window* root_window) {
 IN_PROC_BROWSER_TEST_F(WindowSizerTest,
                        MAYBE_OpenBrowserUsingShelfOnOtherDisplay) {
   // Don't shutdown when closing the last browser window.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
 
   aura::Window::Windows root_windows = ash::Shell::GetAllRootWindows();
 
@@ -111,8 +111,8 @@ IN_PROC_BROWSER_TEST_F(WindowSizerTest,
             browser_list->get(0)->window()->GetNativeWindow()->GetRootWindow());
   EXPECT_EQ(root_windows[0], ash::Shell::GetTargetRootWindow());
 
-  // Balanced with the chrome::StartKeepAlive above.
-  chrome::EndKeepAlive();
+  // Balanced with the chrome::IncrementKeepAliveCount above.
+  chrome::DecrementKeepAliveCount();
 }
 
 namespace {
@@ -166,7 +166,7 @@ void OpenBrowserUsingContextMenuOnRootWindow(aura::Window* root_window) {
 IN_PROC_BROWSER_TEST_F(WindowSizerContextMenuTest,
                        MAYBE_OpenBrowserUsingContextMenuOnOtherDisplay) {
   // Don't shutdown when closing the last browser window.
-  chrome::StartKeepAlive();
+  chrome::IncrementKeepAliveCount();
 
   views::MenuController::TurnOffMenuSelectionHoldForTest();
 
@@ -175,14 +175,14 @@ IN_PROC_BROWSER_TEST_F(WindowSizerContextMenuTest,
   BrowserList* browser_list =
       BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
 
-  EXPECT_EQ(1u, browser_list->size());
+  ASSERT_EQ(1u, browser_list->size());
   EXPECT_EQ(root_windows[0], ash::Shell::GetTargetRootWindow());
   CloseBrowser(browser_list->get(0));
 
   OpenBrowserUsingContextMenuOnRootWindow(root_windows[1]);
 
   // A new browser must be created on 2nd display.
-  EXPECT_EQ(1u, browser_list->size());
+  ASSERT_EQ(1u, browser_list->size());
   EXPECT_EQ(root_windows[1],
             browser_list->get(0)->window()->GetNativeWindow()->GetRootWindow());
   EXPECT_EQ(root_windows[1], ash::Shell::GetTargetRootWindow());
@@ -190,11 +190,11 @@ IN_PROC_BROWSER_TEST_F(WindowSizerContextMenuTest,
   OpenBrowserUsingContextMenuOnRootWindow(root_windows[0]);
 
   // Next new browser must be created on 1st display.
-  EXPECT_EQ(2u, browser_list->size());
+  ASSERT_EQ(2u, browser_list->size());
   EXPECT_EQ(root_windows[0],
             browser_list->get(1)->window()->GetNativeWindow()->GetRootWindow());
   EXPECT_EQ(root_windows[0], ash::Shell::GetTargetRootWindow());
 
-  // Balanced with the chrome::StartKeepAlive above.
-  chrome::EndKeepAlive();
+  // Balanced with the chrome::IncrementKeepAliveCount above.
+  chrome::DecrementKeepAliveCount();
 }

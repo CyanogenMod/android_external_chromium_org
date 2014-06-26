@@ -9,7 +9,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
 #include "cc/trees/layer_tree_host_client.h"
-#include "mojo/public/system/core_cpp.h"
+#include "mojo/public/cpp/system/core.h"
 #include "ui/gfx/size.h"
 
 namespace cc {
@@ -23,10 +23,10 @@ class GLES2ClientImpl;
 
 class CompositorHost : public cc::LayerTreeHostClient {
  public:
-  explicit CompositorHost(ScopedMessagePipeHandle gl_pipe);
+  explicit CompositorHost(ScopedMessagePipeHandle command_buffer_handle);
   virtual ~CompositorHost();
 
-  void SetSize(gfx::Size viewport_size);
+  void SetSize(const gfx::Size& viewport_size);
 
   // cc::LayerTreeHostClient implementation.
   virtual void WillBeginMainFrame(int frame_id) OVERRIDE;
@@ -37,18 +37,16 @@ class CompositorHost : public cc::LayerTreeHostClient {
                                    float page_scale) OVERRIDE;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
       OVERRIDE;
-  virtual void DidInitializeOutputSurface(bool success) OVERRIDE;
+  virtual void DidInitializeOutputSurface() OVERRIDE;
   virtual void WillCommit() OVERRIDE;
   virtual void DidCommit() OVERRIDE;
   virtual void DidCommitAndDrawFrame() OVERRIDE;
   virtual void DidCompleteSwapBuffers() OVERRIDE;
-  virtual scoped_refptr<cc::ContextProvider> OffscreenContextProvider()
-      OVERRIDE;
 
  private:
   void SetupScene();
 
-  ScopedMessagePipeHandle gl_pipe_;
+  ScopedMessagePipeHandle command_buffer_handle_;
   scoped_ptr<cc::LayerTreeHost> tree_;
   scoped_refptr<cc::Layer> child_layer_;
   base::Thread compositor_thread_;

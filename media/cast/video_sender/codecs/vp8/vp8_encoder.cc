@@ -19,7 +19,7 @@ namespace cast {
 
 static const uint32 kMinIntra = 300;
 
-static int ComputeMaxNumOfRepeatedBuffes(uint8 max_unacked_frames) {
+static int ComputeMaxNumOfRepeatedBuffes(int max_unacked_frames) {
   if (max_unacked_frames > kNumberOfVp8VideoBuffers)
     return (max_unacked_frames - 1) / kNumberOfVp8VideoBuffers;
 
@@ -27,7 +27,7 @@ static int ComputeMaxNumOfRepeatedBuffes(uint8 max_unacked_frames) {
 }
 
 Vp8Encoder::Vp8Encoder(const VideoSenderConfig& video_config,
-                       uint8 max_unacked_frames)
+                       int max_unacked_frames)
     : cast_config_(video_config),
       use_multiple_video_buffers_(
           cast_config_.max_number_of_video_buffers_used ==
@@ -35,7 +35,7 @@ Vp8Encoder::Vp8Encoder(const VideoSenderConfig& video_config,
       max_number_of_repeated_buffers_in_a_row_(
           ComputeMaxNumOfRepeatedBuffes(max_unacked_frames)),
       key_frame_requested_(true),
-      timestamp_(0),
+      first_frame_received_(false),
       last_encoded_frame_id_(kStartFrameId),
       number_of_repeated_buffers_(0) {
   // TODO(pwestin): we need to figure out how to synchronize the acking with the
@@ -79,10 +79,10 @@ void Vp8Encoder::Initialize() {
     acked_frame_buffers_[i] = true;
     used_buffers_frame_id_[i] = kStartFrameId;
   }
-  InitEncode(cast_config_.number_of_cores);
+  InitEncode(cast_config_.number_of_encode_threads);
 }
 
-void Vp8Encoder::InitEncode(int number_of_cores) {
+void Vp8Encoder::InitEncode(int number_of_encode_threads) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // Populate encoder configuration with default values.
   if (vpx_codec_enc_config_default(vpx_codec_vp8_cx(), config_.get(), 0)) {
@@ -102,17 +102,11 @@ void Vp8Encoder::InitEncode(int number_of_cores) {
     // codec requirements.
     config_->g_error_resilient = 1;
   }
-
-  if (cast_config_.width * cast_config_.height > 640 * 480 &&
-      number_of_cores >= 2) {
-    config_->g_threads = 2;  // 2 threads for qHD/HD.
-  } else {
-    config_->g_threads = 1;  // 1 thread for VGA or less.
-  }
+  config_->g_threads = number_of_encode_threads;
 
   // Rate control settings.
-  // TODO(pwestin): revisit these constants. Currently identical to webrtc.
-  config_->rc_dropframe_thresh = 30;
+  // Never allow the encoder to drop frame internally.
+  config_->rc_dropframe_thresh = 0;
   config_->rc_end_usage = VPX_CBR;
   config_->g_pass = VPX_RC_ONE_PASS;
   config_->rc_resize_allowed = 0;
@@ -127,7 +121,6 @@ void Vp8Encoder::InitEncode(int number_of_cores) {
   // set the maximum target size of any key-frame.
   uint32 rc_max_intra_target = MaxIntraTarget(config_->rc_buf_optimal_sz);
   vpx_codec_flags_t flags = 0;
-  // TODO(mikhal): Tune settings.
   if (vpx_codec_enc_init(
           encoder_.get(), vpx_codec_vp8_cx(), config_.get(), flags)) {
     DCHECK(false) << "vpx_codec_enc_init() failed.";
@@ -142,7 +135,7 @@ void Vp8Encoder::InitEncode(int number_of_cores) {
 }
 
 bool Vp8Encoder::Encode(const scoped_refptr<media::VideoFrame>& video_frame,
-                        transport::EncodedVideoFrame* encoded_image) {
+                        transport::EncodedFrame* encoded_image) {
   DCHECK(thread_checker_.CalledOnValidThread());
   // Image in vpx_image_t format.
   // Input image is const. VP8's raw image is not defined as const.
@@ -177,49 +170,63 @@ bool Vp8Encoder::Encode(const scoped_refptr<media::VideoFrame>& video_frame,
 
   // Note: The duration does not reflect the real time between frames. This is
   // done to keep the encoder happy.
+  //
+  // TODO(miu): This is a semi-hack.  We should consider using
+  // |video_frame->timestamp()| instead.
   uint32 duration = kVideoFrequency / cast_config_.max_frame_rate;
+
+  // Note: Timestamp here is used for bitrate calculation. The absolute value
+  // is not important.
+  if (!first_frame_received_) {
+    first_frame_received_ = true;
+    first_frame_timestamp_ = video_frame->timestamp();
+  }
+
+  vpx_codec_pts_t timestamp =
+      (video_frame->timestamp() - first_frame_timestamp_).InMicroseconds() *
+      kVideoFrequency / base::Time::kMicrosecondsPerSecond;
+
   if (vpx_codec_encode(encoder_.get(),
                        raw_image_,
-                       timestamp_,
+                       timestamp,
                        duration,
                        flags,
-                       VPX_DL_REALTIME)) {
+                       VPX_DL_REALTIME) != VPX_CODEC_OK) {
+    LOG(ERROR) << "Failed to encode for once.";
     return false;
   }
-  timestamp_ += duration;
 
   // Get encoded frame.
   const vpx_codec_cx_pkt_t* pkt = NULL;
   vpx_codec_iter_t iter = NULL;
-  size_t total_size = 0;
+  bool is_key_frame = false;
   while ((pkt = vpx_codec_get_cx_data(encoder_.get(), &iter)) != NULL) {
-    if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
-      total_size += pkt->data.frame.sz;
-      encoded_image->data.reserve(total_size);
-      encoded_image->data.insert(
-          encoded_image->data.end(),
-          static_cast<const uint8*>(pkt->data.frame.buf),
-          static_cast<const uint8*>(pkt->data.frame.buf) + pkt->data.frame.sz);
-      if (pkt->data.frame.flags & VPX_FRAME_IS_KEY) {
-        encoded_image->key_frame = true;
-      } else {
-        encoded_image->key_frame = false;
-      }
-    }
+    if (pkt->kind != VPX_CODEC_CX_FRAME_PKT)
+      continue;
+    encoded_image->data.assign(
+        static_cast<const uint8*>(pkt->data.frame.buf),
+        static_cast<const uint8*>(pkt->data.frame.buf) + pkt->data.frame.sz);
+    is_key_frame = !!(pkt->data.frame.flags & VPX_FRAME_IS_KEY);
+    break;  // Done, since all data is provided in one CX_FRAME_PKT packet.
   }
   // Don't update frame_id for zero size frames.
-  if (total_size == 0)
+  if (encoded_image->data.empty())
     return true;
 
   // Populate the encoded frame.
-  encoded_image->codec = transport::kVp8;
-  encoded_image->last_referenced_frame_id = latest_frame_id_to_reference;
   encoded_image->frame_id = ++last_encoded_frame_id_;
+  if (is_key_frame) {
+    encoded_image->dependency = transport::EncodedFrame::KEY;
+    encoded_image->referenced_frame_id = encoded_image->frame_id;
+  } else {
+    encoded_image->dependency = transport::EncodedFrame::DEPENDENT;
+    encoded_image->referenced_frame_id = latest_frame_id_to_reference;
+  }
 
-  VLOG(1) << "VP8 encoded frame:" << static_cast<int>(encoded_image->frame_id)
-          << " sized:" << total_size;
+  DVLOG(1) << "VP8 encoded frame_id " << encoded_image->frame_id
+           << ", sized:" << encoded_image->data.size();
 
-  if (encoded_image->key_frame) {
+  if (is_key_frame) {
     key_frame_requested_ = false;
 
     for (int i = 0; i < kNumberOfVp8VideoBuffers; ++i) {
@@ -292,9 +299,12 @@ uint32 Vp8Encoder::GetLatestFrameIdToReference() {
 }
 
 Vp8Encoder::Vp8Buffers Vp8Encoder::GetNextBufferToUpdate() {
+  if (!use_multiple_video_buffers_)
+    return kNoBuffer;
+
   // Update at most one buffer, except for key-frames.
 
-  Vp8Buffers buffer_to_update;
+  Vp8Buffers buffer_to_update = kNoBuffer;
   if (number_of_repeated_buffers_ < max_number_of_repeated_buffers_in_a_row_) {
     // TODO(pwestin): experiment with this. The issue with only this change is
     // that we can end up with only 4 frames in flight when we expect 6.

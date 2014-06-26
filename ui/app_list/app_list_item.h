@@ -13,6 +13,8 @@
 #include "ui/app_list/app_list_export.h"
 #include "ui/gfx/image/image_skia.h"
 
+class FastShowPickler;
+
 namespace ui {
 class MenuModel;
 }
@@ -35,10 +37,13 @@ class APP_LIST_EXPORT AppListItem {
   const gfx::ImageSkia& icon() const { return icon_; }
   bool has_shadow() const { return has_shadow_; }
 
-  void SetTitleAndFullName(const std::string& title,
-                           const std::string& full_name);
-  const std::string& title() const { return title_; }
-  const std::string& full_name() const { return full_name_; }
+  const std::string& GetDisplayName() const {
+    return short_name_.empty() ? name_ : short_name_;
+  }
+
+  const std::string& name() const { return name_; }
+  // Should only be used in tests; otheriwse use GetDisplayName().
+  const std::string& short_name() const { return short_name_; }
 
   void SetHighlighted(bool highlighted);
   bool highlighted() const { return highlighted_; }
@@ -77,14 +82,30 @@ class APP_LIST_EXPORT AppListItem {
   // Returns the number of child items if it has any (e.g. is a folder) or 0.
   virtual size_t ChildItemCount() const;
 
+  // Called when the extension preference changed. Used by ExtensionAppItem
+  // to update icon overlays.
+  virtual void OnExtensionPreferenceChanged();
+
   // Utility functions for sync integration tests.
   virtual bool CompareForTest(const AppListItem* other) const;
   virtual std::string ToDebugString() const;
 
  protected:
+  friend class ::FastShowPickler;
   friend class AppListItemList;
   friend class AppListItemListTest;
   friend class AppListModel;
+
+  // These should only be called by AppListModel or in tests so that name
+  // changes trigger update notifications.
+
+  // Sets the full name of the item. Clears any shortened name.
+  void SetName(const std::string& name);
+
+  // Sets the full name and an optional shortened name of the item (e.g. to use
+  // if the full name is too long to fit in a view).
+  void SetNameAndShortName(const std::string& name,
+                           const std::string& short_name);
 
   void set_position(const syncer::StringOrdinal& new_position) {
     DCHECK(new_position.IsValid());
@@ -101,8 +122,13 @@ class APP_LIST_EXPORT AppListItem {
   syncer::StringOrdinal position_;
   gfx::ImageSkia icon_;
   bool has_shadow_;
-  std::string title_;
-  std::string full_name_;
+
+  // The full name of an item. Used for display if |short_name_| is empty.
+  std::string name_;
+
+  // A shortened name for the item, used for display.
+  std::string short_name_;
+
   bool highlighted_;
   bool is_installing_;
   int percent_downloaded_;

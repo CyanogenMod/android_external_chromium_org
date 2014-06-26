@@ -117,6 +117,15 @@ void RecordVaryHeaderHistogram(const net::HttpResponseInfo* response) {
   UMA_HISTOGRAM_ENUMERATION("HttpCache.Vary", vary, VARY_MAX);
 }
 
+void RecordNoStoreHeaderHistogram(int load_flags,
+                                  const net::HttpResponseInfo* response) {
+  if (load_flags & net::LOAD_MAIN_FRAME) {
+    UMA_HISTOGRAM_BOOLEAN(
+        "Net.MainFrameNoStore",
+        response->headers->HasHeaderValue("cache-control", "no-store"));
+  }
+}
+
 }  // namespace
 
 namespace net {
@@ -187,7 +196,7 @@ HttpCache::Transaction::Transaction(
     : next_state_(STATE_NONE),
       request_(NULL),
       priority_(priority),
-      cache_(cache->AsWeakPtr()),
+      cache_(cache->GetWeakPtr()),
       entry_(NULL),
       new_entry_(NULL),
       new_response_(NULL),
@@ -203,6 +212,7 @@ HttpCache::Transaction::Transaction(
       done_reading_(false),
       vary_mismatch_(false),
       couldnt_conditionalize_request_(false),
+      bypass_lock_for_test_(false),
       io_buf_len_(0),
       read_offset_(0),
       effective_load_flags_(0),
@@ -446,6 +456,9 @@ void HttpCache::Transaction::StopCaching() {
   // entry how it is (it will be marked as truncated at destruction), and let
   // the next piece of code that executes know that we are now reading directly
   // from the net.
+  // TODO(mmenke):  This doesn't release the lock on the cache entry, so a
+  //                future request for the resource will be blocked on this one.
+  //                Fix this.
   if (cache_.get() && entry_ && (mode_ & WRITE) && network_trans_.get() &&
       !is_sparse_ && !range_requested_) {
     mode_ = NONE;
@@ -1024,6 +1037,7 @@ int HttpCache::Transaction::DoSuccessfulSendRequest() {
   }
 
   RecordVaryHeaderHistogram(new_response);
+  RecordNoStoreHeaderHistogram(request_->load_flags, new_response);
 
   if (new_response_->headers->response_code() == 416 &&
       (request_->method == "GET" || request_->method == "POST")) {
@@ -1197,7 +1211,20 @@ int HttpCache::Transaction::DoAddToEntry() {
   net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_ADD_TO_ENTRY);
   DCHECK(entry_lock_waiting_since_.is_null());
   entry_lock_waiting_since_ = TimeTicks::Now();
-  return cache_->AddTransactionToEntry(new_entry_, this);
+  int rv = cache_->AddTransactionToEntry(new_entry_, this);
+  if (rv == ERR_IO_PENDING) {
+    if (bypass_lock_for_test_) {
+      OnAddToEntryTimeout(entry_lock_waiting_since_);
+    } else {
+      const int kTimeoutSeconds = 20;
+      base::MessageLoop::current()->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&HttpCache::Transaction::OnAddToEntryTimeout,
+                     weak_factory_.GetWeakPtr(), entry_lock_waiting_since_),
+          TimeDelta::FromSeconds(kTimeoutSeconds));
+    }
+  }
+  return rv;
 }
 
 int HttpCache::Transaction::DoAddToEntryComplete(int result) {
@@ -1219,6 +1246,17 @@ int HttpCache::Transaction::DoAddToEntryComplete(int result) {
 
   if (result == ERR_CACHE_RACE) {
     next_state_ = STATE_INIT_ENTRY;
+    return OK;
+  }
+
+  if (result == ERR_CACHE_LOCK_TIMEOUT) {
+    // The cache is busy, bypass it for this transaction.
+    mode_ = NONE;
+    next_state_ = STATE_SEND_REQUEST;
+    if (partial_) {
+      partial_->RestoreHeaders(&custom_request_->extra_headers);
+      partial_.reset();
+    }
     return OK;
   }
 
@@ -1366,7 +1404,7 @@ int HttpCache::Transaction::DoTruncateCachedData() {
   next_state_ = STATE_TRUNCATE_CACHED_DATA_COMPLETE;
   if (!entry_)
     return OK;
-  if (net_log_.IsLoggingAllEvents())
+  if (net_log_.IsLogging())
     net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_WRITE_DATA);
   // Truncate the stream.
   return WriteToEntry(kResponseContentIndex, 0, NULL, 0, io_callback_);
@@ -1374,7 +1412,7 @@ int HttpCache::Transaction::DoTruncateCachedData() {
 
 int HttpCache::Transaction::DoTruncateCachedDataComplete(int result) {
   if (entry_) {
-    if (net_log_.IsLoggingAllEvents()) {
+    if (net_log_.IsLogging()) {
       net_log_.EndEventWithNetErrorCode(NetLog::TYPE_HTTP_CACHE_WRITE_DATA,
                                         result);
     }
@@ -1389,14 +1427,14 @@ int HttpCache::Transaction::DoTruncateCachedMetadata() {
   if (!entry_)
     return OK;
 
-  if (net_log_.IsLoggingAllEvents())
+  if (net_log_.IsLogging())
     net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_WRITE_INFO);
   return WriteToEntry(kMetadataIndex, 0, NULL, 0, io_callback_);
 }
 
 int HttpCache::Transaction::DoTruncateCachedMetadataComplete(int result) {
   if (entry_) {
-    if (net_log_.IsLoggingAllEvents()) {
+    if (net_log_.IsLogging()) {
       net_log_.EndEventWithNetErrorCode(NetLog::TYPE_HTTP_CACHE_WRITE_INFO,
                                         result);
     }
@@ -1488,7 +1526,7 @@ int HttpCache::Transaction::DoCacheReadResponseComplete(int result) {
 
 int HttpCache::Transaction::DoCacheWriteResponse() {
   if (entry_) {
-    if (net_log_.IsLoggingAllEvents())
+    if (net_log_.IsLogging())
       net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_WRITE_INFO);
   }
   return WriteResponseInfoToEntry(false);
@@ -1496,7 +1534,7 @@ int HttpCache::Transaction::DoCacheWriteResponse() {
 
 int HttpCache::Transaction::DoCacheWriteTruncatedResponse() {
   if (entry_) {
-    if (net_log_.IsLoggingAllEvents())
+    if (net_log_.IsLogging())
       net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_WRITE_INFO);
   }
   return WriteResponseInfoToEntry(true);
@@ -1507,7 +1545,7 @@ int HttpCache::Transaction::DoCacheWriteResponseComplete(int result) {
   target_state_ = STATE_NONE;
   if (!entry_)
     return OK;
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.EndEventWithNetErrorCode(NetLog::TYPE_HTTP_CACHE_WRITE_INFO,
                                       result);
   }
@@ -1565,7 +1603,7 @@ int HttpCache::Transaction::DoCacheReadData() {
   DCHECK(entry_);
   next_state_ = STATE_CACHE_READ_DATA_COMPLETE;
 
-  if (net_log_.IsLoggingAllEvents())
+  if (net_log_.IsLogging())
     net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_READ_DATA);
   if (partial_.get()) {
     return partial_->CacheRead(entry_->disk_entry, read_buf_.get(), io_buf_len_,
@@ -1578,7 +1616,7 @@ int HttpCache::Transaction::DoCacheReadData() {
 }
 
 int HttpCache::Transaction::DoCacheReadDataComplete(int result) {
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.EndEventWithNetErrorCode(NetLog::TYPE_HTTP_CACHE_READ_DATA,
                                       result);
   }
@@ -1609,7 +1647,7 @@ int HttpCache::Transaction::DoCacheWriteData(int num_bytes) {
   next_state_ = STATE_CACHE_WRITE_DATA_COMPLETE;
   write_len_ = num_bytes;
   if (entry_) {
-    if (net_log_.IsLoggingAllEvents())
+    if (net_log_.IsLogging())
       net_log_.BeginEvent(NetLog::TYPE_HTTP_CACHE_WRITE_DATA);
   }
 
@@ -1618,7 +1656,7 @@ int HttpCache::Transaction::DoCacheWriteData(int num_bytes) {
 
 int HttpCache::Transaction::DoCacheWriteDataComplete(int result) {
   if (entry_) {
-    if (net_log_.IsLoggingAllEvents()) {
+    if (net_log_.IsLogging()) {
       net_log_.EndEventWithNetErrorCode(NetLog::TYPE_HTTP_CACHE_WRITE_DATA,
                                         result);
     }
@@ -2276,7 +2314,7 @@ int HttpCache::Transaction::WriteResponseInfoToEntry(bool truncated) {
        response_.headers->HasHeaderValue("cache-control", "no-store")) ||
       net::IsCertStatusError(response_.ssl_info.cert_status)) {
     DoneWritingToEntry(false);
-    if (net_log_.IsLoggingAllEvents())
+    if (net_log_.IsLogging())
       net_log_.EndEvent(NetLog::TYPE_HTTP_CACHE_WRITE_INFO);
     return OK;
   }
@@ -2345,6 +2383,19 @@ int HttpCache::Transaction::OnCacheReadError(int result, bool restart) {
   }
 
   return ERR_CACHE_READ_FAILURE;
+}
+
+void HttpCache::Transaction::OnAddToEntryTimeout(base::TimeTicks start_time) {
+  if (entry_lock_waiting_since_ != start_time)
+    return;
+
+  DCHECK_EQ(next_state_, STATE_ADD_TO_ENTRY_COMPLETE);
+
+  if (!cache_)
+    return;
+
+  cache_->RemovePendingTransaction(this);
+  OnIOComplete(ERR_CACHE_LOCK_TIMEOUT);
 }
 
 void HttpCache::Transaction::DoomPartialEntry(bool delete_object) {

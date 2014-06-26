@@ -6,28 +6,27 @@
 
 #include "base/bind.h"
 #include "base/run_loop.h"
+#include "base/strings/string_split.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_service.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/search_engines/default_search_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/google/google_util_chromeos.h"
+#include "chrome/browser/google/google_brand_chromeos.h"
 #endif
 
 // Trivial subclass of TemplateURLService that records the last invocation of
 // SetKeywordSearchTermsForURL.
 class TestingTemplateURLService : public TemplateURLService {
  public:
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
+  static KeyedService* Build(content::BrowserContext* profile) {
     return new TestingTemplateURLService(static_cast<Profile*>(profile));
   }
 
@@ -125,13 +124,10 @@ void TemplateURLServiceTestUtilBase::SetGoogleBaseURL(
     const GURL& base_url) const {
   DCHECK(base_url.is_valid());
   UIThreadSearchTermsData data(profile());
-  GoogleURLTracker::UpdatedDetails urls(GURL(data.GoogleBaseURLValue()),
-                                        base_url);
+  GURL old_url = GURL(data.GoogleBaseURLValue());
   UIThreadSearchTermsData::SetGoogleBaseURL(base_url.spec());
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_GOOGLE_URL_UPDATED,
-      content::Source<Profile>(profile()),
-      content::Details<GoogleURLTracker::UpdatedDetails>(&urls));
+  TemplateURLServiceFactory::GetForProfile(profile())
+      ->OnGoogleURLUpdated(old_url, base_url);
 }
 
 void TemplateURLServiceTestUtilBase::SetManagedDefaultSearchPreferences(
@@ -145,50 +141,55 @@ void TemplateURLServiceTestUtilBase::SetManagedDefaultSearchPreferences(
     const std::string& alternate_url,
     const std::string& search_terms_replacement_key) {
   TestingPrefServiceSyncable* pref_service = profile()->GetTestingPrefService();
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderEnabled,
-                               base::Value::CreateBooleanValue(enabled));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderName,
-                               base::Value::CreateStringValue(name));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderKeyword,
-                               base::Value::CreateStringValue(keyword));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderSearchURL,
-                               base::Value::CreateStringValue(search_url));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderSuggestURL,
-                               base::Value::CreateStringValue(suggest_url));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderIconURL,
-                               base::Value::CreateStringValue(icon_url));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderEncodings,
-                               base::Value::CreateStringValue(encodings));
+  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue);
+  if (!enabled) {
+    value->SetBoolean(DefaultSearchManager::kDisabledByPolicy, true);
+    pref_service->SetManagedPref(
+        DefaultSearchManager::kDefaultSearchProviderDataPrefName,
+        value.release());
+    return;
+  }
+
+  EXPECT_FALSE(keyword.empty());
+  EXPECT_FALSE(search_url.empty());
+  value->Set(DefaultSearchManager::kShortName,
+             base::Value::CreateStringValue(name));
+  value->Set(DefaultSearchManager::kKeyword,
+             base::Value::CreateStringValue(keyword));
+  value->Set(DefaultSearchManager::kURL,
+             base::Value::CreateStringValue(search_url));
+  value->Set(DefaultSearchManager::kSuggestionsURL,
+             base::Value::CreateStringValue(suggest_url));
+  value->Set(DefaultSearchManager::kFaviconURL,
+             base::Value::CreateStringValue(icon_url));
+  value->Set(DefaultSearchManager::kSearchTermsReplacementKey,
+             base::Value::CreateStringValue(search_terms_replacement_key));
+
+  std::vector<std::string> encodings_items;
+  base::SplitString(encodings, ';', &encodings_items);
+  scoped_ptr<base::ListValue> encodings_list(new base::ListValue);
+  for (std::vector<std::string>::const_iterator it = encodings_items.begin();
+       it != encodings_items.end();
+       ++it) {
+    encodings_list->AppendString(*it);
+  }
+  value->Set(DefaultSearchManager::kInputEncodings, encodings_list.release());
+
   scoped_ptr<base::ListValue> alternate_url_list(new base::ListValue());
   if (!alternate_url.empty())
     alternate_url_list->Append(base::Value::CreateStringValue(alternate_url));
-  pref_service->SetManagedPref(prefs::kDefaultSearchProviderAlternateURLs,
-                               alternate_url_list.release());
+  value->Set(DefaultSearchManager::kAlternateURLs,
+             alternate_url_list.release());
+
   pref_service->SetManagedPref(
-      prefs::kDefaultSearchProviderSearchTermsReplacementKey,
-      base::Value::CreateStringValue(search_terms_replacement_key));
-  model()->Observe(chrome::NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-                   content::NotificationService::AllSources(),
-                   content::NotificationService::NoDetails());
+      DefaultSearchManager::kDefaultSearchProviderDataPrefName,
+      value.release());
 }
 
 void TemplateURLServiceTestUtilBase::RemoveManagedDefaultSearchPreferences() {
   TestingPrefServiceSyncable* pref_service = profile()->GetTestingPrefService();
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderEnabled);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderName);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderKeyword);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderSearchURL);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderSuggestURL);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderIconURL);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderEncodings);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderAlternateURLs);
   pref_service->RemoveManagedPref(
-      prefs::kDefaultSearchProviderSearchTermsReplacementKey);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderID);
-  pref_service->RemoveManagedPref(prefs::kDefaultSearchProviderPrepopulateID);
-  model()->Observe(chrome::NOTIFICATION_DEFAULT_SEARCH_POLICY_CHANGED,
-                   content::NotificationService::AllSources(),
-                   content::NotificationService::NoDetails());
+      DefaultSearchManager::kDefaultSearchProviderDataPrefName);
 }
 
 TemplateURLService* TemplateURLServiceTestUtilBase::model() const {
@@ -213,7 +214,7 @@ void TemplateURLServiceTestUtil::SetUp() {
   TemplateURLServiceTestUtilBase::CreateTemplateUrlService();
 
 #if defined(OS_CHROMEOS)
-  google_util::chromeos::ClearBrandForCurrentSession();
+  google_brand::chromeos::ClearBrandForCurrentSession();
 #endif
 }
 

@@ -79,6 +79,34 @@ BrowserAccessibility* CountedBrowserAccessibilityFactory::Create() {
   return instance;
 }
 
+// Provides functionality for creating the accessible hwnd and ensures that
+// the hwnd along with the LegacyRenderWidgetHostHWND instance is destroyed
+// when this instance is destroyed.
+class TestLegacyRenderWidgetHostHWND {
+ public:
+  TestLegacyRenderWidgetHostHWND()
+      : accessible_hwnd_(NULL) {}
+
+  ~TestLegacyRenderWidgetHostHWND() {
+    if (accessible_hwnd())
+      ::DestroyWindow(accessible_hwnd()->hwnd());
+  }
+
+  bool Initialize(HWND parent) {
+    accessible_hwnd_ = LegacyRenderWidgetHostHWND::Create(parent);
+    EXPECT_NE(accessible_hwnd_,
+              static_cast<LegacyRenderWidgetHostHWND*>(NULL));
+    return accessible_hwnd_ != NULL;
+  }
+
+  LegacyRenderWidgetHostHWND* accessible_hwnd() {
+    return accessible_hwnd_;
+  }
+
+ private:
+  LegacyRenderWidgetHostHWND* accessible_hwnd_;
+};
+
 }  // namespace
 
 
@@ -141,8 +169,8 @@ TEST_F(BrowserAccessibilityTest, TestNoLeaks) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(button, checkbox);
+          MakeAXTreeUpdate(root, button, checkbox),
+          NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(3, CountedBrowserAccessibility::num_instances());
 
   // Delete the manager and test that all 3 instances are deleted.
@@ -152,8 +180,8 @@ TEST_F(BrowserAccessibilityTest, TestNoLeaks) {
   // Construct a manager again, and this time use the IAccessible interface
   // to get new references to two of the three nodes in the tree.
   manager.reset(BrowserAccessibilityManager::Create(
-      root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(button, checkbox);
+      MakeAXTreeUpdate(root, button, checkbox),
+      NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(3, CountedBrowserAccessibility::num_instances());
   IAccessible* root_accessible =
       manager->GetRoot()->ToBrowserAccessibilityWin();
@@ -202,8 +230,8 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(text);
+          MakeAXTreeUpdate(root, text),
+          NULL, new CountedBrowserAccessibilityFactory()));
 
   // Query for the text IAccessible and verify that it returns "old text" as its
   // value.
@@ -235,7 +263,7 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChange) {
   text2.SetName("old text");
   AccessibilityHostMsg_EventParams param;
   param.event_type = ui::AX_EVENT_CHILDREN_CHANGED;
-  param.nodes.push_back(text2);
+  param.update.nodes.push_back(text2);
   param.id = text2.id;
   std::vector<AccessibilityHostMsg_EventParams> events;
   events.push_back(param);
@@ -298,8 +326,8 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(div, text3, text4);
+          MakeAXTreeUpdate(root, div, text3, text4),
+          NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(4, CountedBrowserAccessibility::num_instances());
 
   // Notify the BrowserAccessibilityManager that the div node and its children
@@ -307,7 +335,7 @@ TEST_F(BrowserAccessibilityTest, TestChildrenChangeNoLeaks) {
   root.child_ids.clear();
   AccessibilityHostMsg_EventParams param;
   param.event_type = ui::AX_EVENT_CHILDREN_CHANGED;
-  param.nodes.push_back(root);
+  param.update.nodes.push_back(root);
   param.id = root.id;
   std::vector<AccessibilityHostMsg_EventParams> events;
   events.push_back(param);
@@ -342,8 +370,8 @@ TEST_F(BrowserAccessibilityTest, TestTextBoundaries) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(text1);
+          MakeAXTreeUpdate(root, text1),
+          NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(2, CountedBrowserAccessibility::num_instances());
 
   BrowserAccessibilityWin* root_obj =
@@ -442,8 +470,8 @@ TEST_F(BrowserAccessibilityTest, TestSimpleHypertext) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(root, text1, text2);
+          MakeAXTreeUpdate(root, root, text1, text2),
+          NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(3, CountedBrowserAccessibility::num_instances());
 
   BrowserAccessibilityWin* root_obj =
@@ -532,11 +560,10 @@ TEST_F(BrowserAccessibilityTest, TestComplexHypertext) {
   CountedBrowserAccessibility::reset();
   scoped_ptr<BrowserAccessibilityManager> manager(
       BrowserAccessibilityManager::Create(
-          root, NULL, new CountedBrowserAccessibilityFactory()));
-  manager->UpdateNodesForTesting(root,
-                                 text1, button1, button1_text,
-                                 text2, link1, link1_text);
-
+          MakeAXTreeUpdate(root,
+                           text1, button1, button1_text,
+                           text2, link1, link1_text),
+          NULL, new CountedBrowserAccessibilityFactory()));
   ASSERT_EQ(7, CountedBrowserAccessibility::num_instances());
 
   BrowserAccessibilityWin* root_obj =
@@ -605,12 +632,13 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   CountedBrowserAccessibility::reset();
   const int32 busy_state = 1 << ui::AX_STATE_BUSY;
   const int32 readonly_state = 1 << ui::AX_STATE_READ_ONLY;
-  const int32 enabled_state = 1 << blink::WebAXStateEnabled;
-  scoped_ptr<content::LegacyRenderWidgetHostHWND> accessible_hwnd(
-      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()));
+  const int32 enabled_state = 1 << ui::AX_STATE_ENABLED;
+  scoped_ptr<TestLegacyRenderWidgetHostHWND> accessibility_test
+      (new TestLegacyRenderWidgetHostHWND);
+  EXPECT_EQ(accessibility_test->Initialize(GetDesktopWindow()), true);
   scoped_ptr<BrowserAccessibilityManager> manager(
       new BrowserAccessibilityManagerWin(
-          accessible_hwnd.get(),
+          accessibility_test->accessible_hwnd(),
           NULL,
           BrowserAccessibilityManagerWin::GetEmptyDocument(),
           NULL,
@@ -618,9 +646,9 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
 
   // Verify the root is as we expect by default.
   BrowserAccessibility* root = manager->GetRoot();
-  EXPECT_EQ(0, root->renderer_id());
-  EXPECT_EQ(ui::AX_ROLE_ROOT_WEB_AREA, root->role());
-  EXPECT_EQ(busy_state | readonly_state | enabled_state, root->state());
+  EXPECT_EQ(0, root->GetId());
+  EXPECT_EQ(ui::AX_ROLE_ROOT_WEB_AREA, root->GetRole());
+  EXPECT_EQ(busy_state | readonly_state | enabled_state, root->GetState());
 
   // Tree with a child textfield.
   ui::AXNodeData tree1_1;
@@ -637,20 +665,20 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   params.push_back(AccessibilityHostMsg_EventParams());
   AccessibilityHostMsg_EventParams* msg = &params[0];
   msg->event_type = ui::AX_EVENT_LOAD_COMPLETE;
-  msg->nodes.push_back(tree1_1);
-  msg->nodes.push_back(tree1_2);
+  msg->update.nodes.push_back(tree1_1);
+  msg->update.nodes.push_back(tree1_2);
   msg->id = tree1_1.id;
   manager->OnAccessibilityEvents(params);
 
   // Save for later comparison.
-  BrowserAccessibility* acc1_2 = manager->GetFromRendererID(2);
+  BrowserAccessibility* acc1_2 = manager->GetFromID(2);
 
   // Verify the root has changed.
   EXPECT_NE(root, manager->GetRoot());
 
   // And the proper child remains.
-  EXPECT_EQ(ui::AX_ROLE_TEXT_FIELD, acc1_2->role());
-  EXPECT_EQ(2, acc1_2->renderer_id());
+  EXPECT_EQ(ui::AX_ROLE_TEXT_FIELD, acc1_2->GetRole());
+  EXPECT_EQ(2, acc1_2->GetId());
 
   // Tree with a child button.
   ui::AXNodeData tree2_1;
@@ -662,22 +690,22 @@ TEST_F(BrowserAccessibilityTest, TestCreateEmptyDocument) {
   tree2_2.id = 3;
   tree2_2.role = ui::AX_ROLE_BUTTON;
 
-  msg->nodes.clear();
-  msg->nodes.push_back(tree2_1);
-  msg->nodes.push_back(tree2_2);
+  msg->update.nodes.clear();
+  msg->update.nodes.push_back(tree2_1);
+  msg->update.nodes.push_back(tree2_2);
   msg->id = tree2_1.id;
 
   // Fire another load complete.
   manager->OnAccessibilityEvents(params);
 
-  BrowserAccessibility* acc2_2 = manager->GetFromRendererID(3);
+  BrowserAccessibility* acc2_2 = manager->GetFromID(3);
 
   // Verify the root has changed.
   EXPECT_NE(root, manager->GetRoot());
 
   // And the new child exists.
-  EXPECT_EQ(ui::AX_ROLE_BUTTON, acc2_2->role());
-  EXPECT_EQ(3, acc2_2->renderer_id());
+  EXPECT_EQ(ui::AX_ROLE_BUTTON, acc2_2->GetRole());
+  EXPECT_EQ(3, acc2_2->GetId());
 
   // Ensure we properly cleaned up.
   manager.reset();
@@ -692,12 +720,13 @@ TEST(BrowserAccessibilityManagerWinTest, TestAccessibleHWND) {
       IID_IAccessible,
       reinterpret_cast<void**>(desktop_hwnd_iaccessible.Receive())));
 
-  scoped_ptr<content::LegacyRenderWidgetHostHWND> accessible_hwnd(
-      content::LegacyRenderWidgetHostHWND::Create(GetDesktopWindow()));
+  scoped_ptr<TestLegacyRenderWidgetHostHWND> accessibility_test
+      (new TestLegacyRenderWidgetHostHWND);
+  EXPECT_EQ(accessibility_test->Initialize(GetDesktopWindow()), true);
 
   scoped_ptr<BrowserAccessibilityManagerWin> manager(
       new BrowserAccessibilityManagerWin(
-          accessible_hwnd.get(),
+          accessibility_test->accessible_hwnd(),
           desktop_hwnd_iaccessible,
           BrowserAccessibilityManagerWin::GetEmptyDocument(),
           NULL));
@@ -720,11 +749,11 @@ TEST(BrowserAccessibilityManagerWinTest, TestAccessibleHWND) {
   ASSERT_EQ(NULL, manager->parent_hwnd());
 
   // Now create it again.
-  accessible_hwnd = content::LegacyRenderWidgetHostHWND::Create(
-      GetDesktopWindow());
+  accessibility_test.reset(new TestLegacyRenderWidgetHostHWND);
+  EXPECT_EQ(accessibility_test->Initialize(::GetDesktopWindow()), true);
   manager.reset(
       new BrowserAccessibilityManagerWin(
-          accessible_hwnd.get(),
+          accessibility_test->accessible_hwnd(),
           desktop_hwnd_iaccessible,
           BrowserAccessibilityManagerWin::GetEmptyDocument(),
           NULL));

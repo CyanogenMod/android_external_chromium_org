@@ -12,6 +12,7 @@
 
 #include "nacl_io/getdents_helper.h"
 #include "nacl_io/kernel_handle.h"
+#include "nacl_io/log.h"
 #include "sdk_util/macros.h"
 
 namespace nacl_io {
@@ -29,7 +30,8 @@ struct FillDirInfo {
 
 }  // namespace
 
-FuseFs::FuseFs() : fuse_ops_(NULL), fuse_user_data_(NULL) {}
+FuseFs::FuseFs() : fuse_ops_(NULL), fuse_user_data_(NULL) {
+}
 
 Error FuseFs::Init(const FsInitArgs& args) {
   Error error = Filesystem::Init(args);
@@ -37,8 +39,10 @@ Error FuseFs::Init(const FsInitArgs& args) {
     return error;
 
   fuse_ops_ = args.fuse_ops;
-  if (fuse_ops_ == NULL)
+  if (fuse_ops_ == NULL) {
+    LOG_ERROR("fuse_ops_ is NULL.");
     return EINVAL;
+  }
 
   if (fuse_ops_->init) {
     struct fuse_conn_info info;
@@ -54,8 +58,10 @@ void FuseFs::Destroy() {
 }
 
 Error FuseFs::Access(const Path& path, int a_mode) {
-  if (!fuse_ops_->access)
+  if (!fuse_ops_->access) {
+    LOG_TRACE("fuse_ops_->access is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->access(path.Join().c_str(), a_mode);
   if (result < 0)
@@ -86,6 +92,7 @@ Error FuseFs::Open(const Path& path, int open_flags, ScopedNode* out_node) {
       if (result < 0)
         return -result;
     } else {
+      LOG_TRACE("fuse_ops_->create and fuse_ops_->mknod are NULL.");
       return ENOSYS;
     }
   } else {
@@ -113,15 +120,19 @@ Error FuseFs::Open(const Path& path, int open_flags, ScopedNode* out_node) {
     if (open_flags & O_TRUNC) {
       // According to the FUSE docs, O_TRUNC does two calls: first truncate()
       // then open().
-      if (!fuse_ops_->truncate)
+      if (!fuse_ops_->truncate) {
+        LOG_TRACE("fuse_ops_->truncate is NULL.");
         return ENOSYS;
+      }
       result = fuse_ops_->truncate(path_cstr, 0);
       if (result < 0)
         return -result;
     }
 
-    if (!fuse_ops_->open)
+    if (!fuse_ops_->open) {
+      LOG_TRACE("fuse_ops_->open is NULL.");
       return ENOSYS;
+    }
     result = fuse_ops_->open(path_cstr, &fi);
     if (result < 0)
       return -result;
@@ -137,8 +148,10 @@ Error FuseFs::Open(const Path& path, int open_flags, ScopedNode* out_node) {
 }
 
 Error FuseFs::Unlink(const Path& path) {
-  if (!fuse_ops_->unlink)
+  if (!fuse_ops_->unlink) {
+    LOG_TRACE("fuse_ops_->unlink is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->unlink(path.Join().c_str());
   if (result < 0)
@@ -148,8 +161,10 @@ Error FuseFs::Unlink(const Path& path) {
 }
 
 Error FuseFs::Mkdir(const Path& path, int perm) {
-  if (!fuse_ops_->mkdir)
+  if (!fuse_ops_->mkdir) {
+    LOG_TRACE("fuse_ops_->mkdir is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->mkdir(path.Join().c_str(), perm);
   if (result < 0)
@@ -159,8 +174,10 @@ Error FuseFs::Mkdir(const Path& path, int perm) {
 }
 
 Error FuseFs::Rmdir(const Path& path) {
-  if (!fuse_ops_->rmdir)
+  if (!fuse_ops_->rmdir) {
+    LOG_TRACE("fuse_ops_->rmdir is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->rmdir(path.Join().c_str());
   if (result < 0)
@@ -190,8 +207,10 @@ Error FuseFs::Remove(const Path& path) {
 }
 
 Error FuseFs::Rename(const Path& path, const Path& newpath) {
-  if (!fuse_ops_->rename)
+  if (!fuse_ops_->rename) {
+    LOG_TRACE("fuse_ops_->rename is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->rename(path.Join().c_str(), newpath.Join().c_str());
   if (result < 0)
@@ -204,7 +223,8 @@ FuseFsNode::FuseFsNode(Filesystem* filesystem,
                        struct fuse_operations* fuse_ops,
                        struct fuse_file_info& info,
                        const std::string& path)
-    : Node(filesystem), fuse_ops_(fuse_ops), info_(info), path_(path) {}
+    : Node(filesystem), fuse_ops_(fuse_ops), info_(info), path_(path) {
+}
 
 bool FuseFsNode::CanOpen(int open_flags) {
   struct stat statbuf;
@@ -228,6 +248,7 @@ Error FuseFsNode::GetStat(struct stat* stat) {
     if (result < 0)
       return -result;
   } else {
+    LOG_TRACE("fuse_ops_->fgetattr and fuse_ops_->getattr are NULL.");
     return ENOSYS;
   }
 
@@ -237,27 +258,27 @@ Error FuseFsNode::GetStat(struct stat* stat) {
 }
 
 Error FuseFsNode::VIoctl(int request, va_list args) {
-  // TODO(binji): implement
+  LOG_ERROR("Ioctl not implemented for fusefs.");
   return ENOSYS;
 }
 
 Error FuseFsNode::Tcflush(int queue_selector) {
-  // TODO(binji): use ioctl for this?
+  LOG_ERROR("Tcflush not implemented for fusefs.");
   return ENOSYS;
 }
 
 Error FuseFsNode::Tcgetattr(struct termios* termios_p) {
-  // TODO(binji): use ioctl for this?
+  LOG_ERROR("Tcgetattr not implemented for fusefs.");
   return ENOSYS;
 }
 
 Error FuseFsNode::Tcsetattr(int optional_actions,
                             const struct termios* termios_p) {
-  // TODO(binji): use ioctl for this?
+  LOG_ERROR("Tcsetattr not implemented for fusefs.");
   return ENOSYS;
 }
 
-Error FuseFsNode::GetSize(size_t* out_size) {
+Error FuseFsNode::GetSize(off_t* out_size) {
   struct stat statbuf;
   Error error = GetStat(&statbuf);
   if (error)
@@ -271,7 +292,8 @@ FileFuseFsNode::FileFuseFsNode(Filesystem* filesystem,
                                struct fuse_operations* fuse_ops,
                                struct fuse_file_info& info,
                                const std::string& path)
-    : FuseFsNode(filesystem, fuse_ops, info, path) {}
+    : FuseFsNode(filesystem, fuse_ops, info, path) {
+}
 
 void FileFuseFsNode::Destroy() {
   if (!fuse_ops_->release)
@@ -280,8 +302,10 @@ void FileFuseFsNode::Destroy() {
 }
 
 Error FileFuseFsNode::FSync() {
-  if (!fuse_ops_->fsync)
+  if (!fuse_ops_->fsync) {
+    LOG_ERROR("fuse_ops_->fsync is NULL.");
     return ENOSYS;
+  }
 
   int datasync = 0;
   int result = fuse_ops_->fsync(path_.c_str(), datasync, &info_);
@@ -291,8 +315,10 @@ Error FileFuseFsNode::FSync() {
 }
 
 Error FileFuseFsNode::FTruncate(off_t length) {
-  if (!fuse_ops_->ftruncate)
+  if (!fuse_ops_->ftruncate) {
+    LOG_ERROR("fuse_ops_->ftruncate is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->ftruncate(path_.c_str(), length, &info_);
   if (result < 0)
@@ -304,8 +330,10 @@ Error FileFuseFsNode::Read(const HandleAttr& attr,
                            void* buf,
                            size_t count,
                            int* out_bytes) {
-  if (!fuse_ops_->read)
+  if (!fuse_ops_->read) {
+    LOG_ERROR("fuse_ops_->read is NULL.");
     return ENOSYS;
+  }
 
   char* cbuf = static_cast<char*>(buf);
 
@@ -327,8 +355,10 @@ Error FileFuseFsNode::Write(const HandleAttr& attr,
                             const void* buf,
                             size_t count,
                             int* out_bytes) {
-  if (!fuse_ops_->write)
+  if (!fuse_ops_->write) {
+    LOG_ERROR("fuse_ops_->write is NULL.");
     return ENOSYS;
+  }
 
   int result = fuse_ops_->write(
       path_.c_str(), static_cast<const char*>(buf), count, attr.offs, &info_);
@@ -347,7 +377,8 @@ DirFuseFsNode::DirFuseFsNode(Filesystem* filesystem,
                              struct fuse_operations* fuse_ops,
                              struct fuse_file_info& info,
                              const std::string& path)
-    : FuseFsNode(filesystem, fuse_ops, info, path) {}
+    : FuseFsNode(filesystem, fuse_ops, info, path) {
+}
 
 void DirFuseFsNode::Destroy() {
   if (!fuse_ops_->releasedir)
@@ -356,8 +387,10 @@ void DirFuseFsNode::Destroy() {
 }
 
 Error DirFuseFsNode::FSync() {
-  if (!fuse_ops_->fsyncdir)
+  if (!fuse_ops_->fsyncdir) {
+    LOG_ERROR("fuse_ops_->fsyncdir is NULL.");
     return ENOSYS;
+  }
 
   int datasync = 0;
   int result = fuse_ops_->fsyncdir(path_.c_str(), datasync, &info_);
@@ -370,8 +403,10 @@ Error DirFuseFsNode::GetDents(size_t offs,
                               struct dirent* pdir,
                               size_t count,
                               int* out_bytes) {
-  if (!fuse_ops_->readdir)
+  if (!fuse_ops_->readdir) {
+    LOG_ERROR("fuse_ops_->readdir is NULL.");
     return ENOSYS;
+  }
 
   bool opened_dir = false;
   int result;

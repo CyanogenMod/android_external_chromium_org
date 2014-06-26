@@ -16,6 +16,7 @@
 
 #include "nacl_io/filesystem.h"
 #include "nacl_io/kernel_handle.h"
+#include "nacl_io/log.h"
 #include "nacl_io/node.h"
 
 #include "sdk_util/auto_lock.h"
@@ -24,7 +25,9 @@
 
 namespace nacl_io {
 
-KernelObject::KernelObject() { cwd_ = "/"; }
+KernelObject::KernelObject() {
+  cwd_ = "/";
+}
 
 KernelObject::~KernelObject() {};
 
@@ -33,24 +36,33 @@ Error KernelObject::AttachFsAtPath(const ScopedFilesystem& fs,
   std::string abs_path = GetAbsParts(path).Join();
 
   AUTO_LOCK(fs_lock_);
-  if (filesystems_.find(abs_path) != filesystems_.end())
+  if (filesystems_.find(abs_path) != filesystems_.end()) {
+    LOG_ERROR("Can't mount at %s, it is already mounted.", path.c_str());
     return EBUSY;
+  }
 
   filesystems_[abs_path] = fs;
   return 0;
 }
 
-Error KernelObject::DetachFsAtPath(const std::string& path) {
+Error KernelObject::DetachFsAtPath(const std::string& path,
+                                   ScopedFilesystem* out_fs) {
   std::string abs_path = GetAbsParts(path).Join();
 
   AUTO_LOCK(fs_lock_);
   FsMap_t::iterator it = filesystems_.find(abs_path);
-  if (filesystems_.end() == it)
+  if (filesystems_.end() == it) {
+    LOG_TRACE("Can't unmount at %s, nothing is mounted.", path.c_str());
     return EINVAL;
+  }
 
   // It is only legal to unmount if there are no open references
-  if (it->second->RefCount() != 1)
+  if (it->second->RefCount() != 1) {
+    LOG_TRACE("Can't unmount at %s, refcount is != 1.", path.c_str());
     return EBUSY;
+  }
+
+  *out_fs = it->second;
 
   filesystems_.erase(it);
   return 0;
@@ -172,27 +184,29 @@ Error KernelObject::AcquireHandle(int fd, ScopedKernelHandle* out_handle) {
   if (fd < 0 || fd >= static_cast<int>(handle_map_.size()))
     return EBADF;
 
-  *out_handle = handle_map_[fd].handle;
-  if (out_handle)
-    return 0;
+  Descriptor_t& desc = handle_map_[fd];
+  if (!desc.handle)
+    return EBADF;
 
-  return EBADF;
+  *out_handle = desc.handle;
+  return 0;
 }
 
-Error KernelObject::AcquireHandleAndPath(int fd, ScopedKernelHandle* out_handle,
-                                         std::string* out_path){
+Error KernelObject::AcquireHandleAndPath(int fd,
+                                         ScopedKernelHandle* out_handle,
+                                         std::string* out_path) {
   out_handle->reset(NULL);
 
   AUTO_LOCK(handle_lock_);
   if (fd < 0 || fd >= static_cast<int>(handle_map_.size()))
     return EBADF;
 
-  *out_handle = handle_map_[fd].handle;
-  if (!out_handle)
+  Descriptor_t& desc = handle_map_[fd];
+  if (!desc.handle)
     return EBADF;
 
-  *out_path = handle_map_[fd].path;
-
+  *out_handle = desc.handle;
+  *out_path = desc.path;
   return 0;
 }
 
@@ -219,7 +233,8 @@ int KernelObject::AllocateFD(const ScopedKernelHandle& handle,
   return id;
 }
 
-void KernelObject::FreeAndReassignFD(int fd, const ScopedKernelHandle& handle,
+void KernelObject::FreeAndReassignFD(int fd,
+                                     const ScopedKernelHandle& handle,
                                      const std::string& path) {
   if (NULL == handle) {
     FreeFD(fd);
@@ -243,7 +258,6 @@ void KernelObject::FreeFD(int fd) {
 
   // Force lower numbered FD to be available first.
   std::push_heap(free_fds_.begin(), free_fds_.end(), std::greater<int>());
-  //
 }
 
 }  // namespace nacl_io

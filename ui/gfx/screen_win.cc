@@ -65,7 +65,8 @@ bool ScreenWin::IsDIPEnabled() {
 gfx::Point ScreenWin::GetCursorScreenPoint() {
   POINT pt;
   GetCursorPos(&pt);
-  return gfx::Point(pt);
+  gfx::Point cursor_pos_pixels(pt);
+  return gfx::win::ScreenToDIPPoint(cursor_pos_pixels);
 }
 
 gfx::NativeWindow ScreenWin::GetWindowUnderCursor() {
@@ -75,7 +76,8 @@ gfx::NativeWindow ScreenWin::GetWindowUnderCursor() {
 }
 
 gfx::NativeWindow ScreenWin::GetWindowAtScreenPoint(const gfx::Point& point) {
-  return GetNativeWindowFromHWND(WindowFromPoint(point.ToPOINT()));
+  gfx::Point point_in_pixels = gfx::win::DIPToScreenPoint(point);
+  return GetNativeWindowFromHWND(WindowFromPoint(point_in_pixels.ToPOINT()));
 }
 
 int ScreenWin::GetNumDisplays() const {
@@ -146,27 +148,13 @@ void ScreenWin::RemoveObserver(DisplayObserver* observer) {
 }
 
 HWND ScreenWin::GetHWNDFromNativeView(NativeView window) const {
-#if defined(USE_AURA)
   NOTREACHED();
   return NULL;
-#else
-  return window;
-#endif  // USE_AURA
 }
 
 NativeWindow ScreenWin::GetNativeWindowFromHWND(HWND hwnd) const {
-#if defined(USE_AURA)
   NOTREACHED();
   return NULL;
-#else
-  return hwnd;
-#endif  // USE_AURA
 }
-
-#if !defined(USE_AURA)
-Screen* CreateNativeScreen() {
-  return new ScreenWin;
-}
-#endif  // !USE_AURA
 
 }  // namespace gfx

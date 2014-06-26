@@ -39,7 +39,7 @@ scoped_refptr<Extension> CreateExtensionWithBackgroundPage() {
 
 class RuntimeDataTest : public testing::Test {
  public:
-  RuntimeDataTest() : runtime_data_(&registry_) {}
+  RuntimeDataTest() : registry_(NULL), runtime_data_(&registry_) {}
   virtual ~RuntimeDataTest() {}
 
  protected:
@@ -80,7 +80,6 @@ TEST_F(RuntimeDataTest, IsBeingUpgraded) {
   EXPECT_FALSE(runtime_data_.IsBeingUpgraded(extension));
 }
 
-// TODO(mpcomplete): Remove. http://crbug.com/100411
 TEST_F(RuntimeDataTest, HasUsedWebRequest) {
   scoped_refptr<Extension> extension = CreateExtension();
 
@@ -100,7 +99,8 @@ TEST_F(RuntimeDataTest, OnExtensionUnloaded) {
   runtime_data_.SetBackgroundPageReady(extension, true);
   ASSERT_TRUE(runtime_data_.HasExtensionForTesting(extension));
 
-  runtime_data_.OnExtensionUnloaded(extension);
+  runtime_data_.OnExtensionUnloaded(
+      NULL, extension, UnloadedExtensionInfo::REASON_DISABLE);
   EXPECT_FALSE(runtime_data_.HasExtensionForTesting(extension));
 }
 

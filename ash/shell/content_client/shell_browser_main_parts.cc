@@ -9,6 +9,7 @@
 #include "ash/shell.h"
 #include "ash/shell/shell_delegate_impl.h"
 #include "ash/shell/window_watcher.h"
+#include "ash/shell_init_params.h"
 #include "ash/system/user/login_status.h"
 #include "base/bind.h"
 #include "base/command_line.h"
@@ -17,20 +18,21 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
+#include "content/public/browser/context_factory.h"
 #include "content/public/common/content_switches.h"
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_net_log.h"
 #include "net/base/net_module.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/screen.h"
 #include "ui/message_center/message_center.h"
-#include "ui/views/corewm/wm_state.h"
 #include "ui/views/test/test_views_delegate.h"
+#include "ui/wm/core/wm_state.h"
 
 #if defined(USE_X11)
 #include "ui/events/x/touch_factory_x11.h"
@@ -66,7 +68,7 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
     if (params->native_widget)
       return;
 
-    if (!params->parent && !params->context && params->top_level)
+    if (!params->parent && !params->context && !params->child)
       params->context = Shell::GetPrimaryRootWindow();
   }
 
@@ -98,7 +100,7 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 }
 
 void ShellBrowserMainParts::ToolkitInitialized() {
-  wm_state_.reset(new views::corewm::WMState);
+  wm_state_.reset(new wm::WMState);
 }
 
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
@@ -121,7 +123,10 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
   chromeos::CrasAudioHandler::InitializeForTesting();
 #endif
 
-  ash::Shell::CreateInstance(delegate_);
+  ash::ShellInitParams init_params;
+  init_params.delegate = delegate_;
+  init_params.context_factory = content::GetContextFactory();
+  ash::Shell::CreateInstance(init_params);
   delegate_->set_browser_context(browser_context_.get());
   ash::Shell::GetInstance()->CreateShelf();
   ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(
@@ -134,10 +139,7 @@ void ShellBrowserMainParts::PreMainMessageLoopRun() {
 
   ash::shell::InitWindowTypeLauncher();
 
-  Shell::GetInstance()->desktop_background_controller()->SetDefaultWallpaper(
-      false /* is_guest */);
-
-  ash::Shell::GetPrimaryRootWindow()->GetDispatcher()->host()->Show();
+  ash::Shell::GetPrimaryRootWindow()->GetHost()->Show();
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {

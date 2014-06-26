@@ -29,7 +29,6 @@ enum TouchState {
   TS_RELEASED,
   TS_PRESSED,
   TS_MOVED,
-  TS_STATIONARY,
   TS_CANCELLED,
   TS_UNKNOWN,
 };
@@ -60,8 +59,6 @@ TouchState TouchEventTypeToTouchState(ui::EventType type) {
       return TS_PRESSED;
     case ui::ET_TOUCH_MOVED:
       return TS_MOVED;
-    case ui::ET_TOUCH_STATIONARY:
-      return TS_STATIONARY;
     case ui::ET_TOUCH_CANCELLED:
       return TS_CANCELLED;
     default:
@@ -99,9 +96,6 @@ enum EdgeStateSignatureType {
   GST_PENDING_SYNTHETIC_CLICK_FIRST_MOVED_PROCESSED =
       G(GS_PENDING_SYNTHETIC_CLICK, 0, TS_MOVED, TSI_PROCESSED),
 
-  GST_PENDING_SYNTHETIC_CLICK_FIRST_STATIONARY =
-      G(GS_PENDING_SYNTHETIC_CLICK, 0, TS_STATIONARY, TSI_NOT_PROCESSED),
-
   GST_PENDING_SYNTHETIC_CLICK_FIRST_CANCELLED =
       G(GS_PENDING_SYNTHETIC_CLICK, 0, TS_CANCELLED, TSI_ALWAYS),
 
@@ -119,9 +113,6 @@ enum EdgeStateSignatureType {
 
   GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_MOVED =
       G(GS_PENDING_SYNTHETIC_CLICK_NO_SCROLL, 0, TS_MOVED, TSI_ALWAYS),
-
-  GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_STATIONARY =
-      G(GS_PENDING_SYNTHETIC_CLICK_NO_SCROLL, 0, TS_STATIONARY, TSI_ALWAYS),
 
   GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_CANCELLED =
       G(GS_PENDING_SYNTHETIC_CLICK_NO_SCROLL, 0, TS_CANCELLED, TSI_ALWAYS),
@@ -341,13 +332,11 @@ EdgeStateSignatureType Signature(GestureState gesture_state,
     case GST_PENDING_SYNTHETIC_CLICK_FIRST_RELEASED_HANDLED:
     case GST_PENDING_SYNTHETIC_CLICK_FIRST_MOVED:
     case GST_PENDING_SYNTHETIC_CLICK_FIRST_MOVED_PROCESSED:
-    case GST_PENDING_SYNTHETIC_CLICK_FIRST_STATIONARY:
     case GST_PENDING_SYNTHETIC_CLICK_FIRST_CANCELLED:
     case GST_PENDING_SYNTHETIC_CLICK_SECOND_PRESSED:
     case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_RELEASED:
     case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_RELEASED_HANDLED:
     case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_MOVED:
-    case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_STATIONARY:
     case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_CANCELLED:
     case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_SECOND_PRESSED:
     case GST_SYNTHETIC_CLICK_ABORTED_FIRST_RELEASED:
@@ -576,7 +565,6 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
       set_state(GS_NO_GESTURE);
       break;
     case GST_PENDING_SYNTHETIC_CLICK_FIRST_MOVED:
-    case GST_PENDING_SYNTHETIC_CLICK_FIRST_STATIONARY:
       if (ScrollStart(event, point, gestures.get())) {
         PrependTapCancelGestureEvent(point, gestures.get());
         set_state(GS_SCROLL);
@@ -586,7 +574,6 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
       break;
     case GST_PENDING_SYNTHETIC_CLICK_FIRST_MOVED_PROCESSED:
     case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_MOVED:
-    case GST_PENDING_SYNTHETIC_CLICK_NO_SCROLL_FIRST_STATIONARY:
       if (point.IsInScrollWindow(event)) {
         PrependTapCancelGestureEvent(point, gestures.get());
         set_state(GS_SYNTHETIC_CLICK_ABORTED);
@@ -612,6 +599,8 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
         point.UpdateForScroll();
       break;
     case GST_SCROLL_FIRST_MOVED_HANDLED:
+      if (point.DidScroll(event, 0))
+        point.UpdateForScroll();
       break;
     case GST_SCROLL_FIRST_RELEASED:
     case GST_SCROLL_FIRST_CANCELLED:
@@ -633,7 +622,7 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_TWO_FINGER_TAP_FIRST_RELEASED:
     case GST_PENDING_TWO_FINGER_TAP_SECOND_RELEASED:
       TwoFingerTouchReleased(event, point, gestures.get());
-      set_state(GS_SCROLL);
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_TWO_FINGER_TAP_FIRST_MOVED:
     case GST_PENDING_TWO_FINGER_TAP_SECOND_MOVED:
@@ -648,8 +637,7 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_TWO_FINGER_TAP_SECOND_RELEASED_HANDLED:
     case GST_PENDING_TWO_FINGER_TAP_FIRST_CANCELLED:
     case GST_PENDING_TWO_FINGER_TAP_SECOND_CANCELLED:
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_TWO_FINGER_TAP_THIRD_PRESSED:
       set_state(GS_PENDING_PINCH);
@@ -661,18 +649,17 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_FIRST_RELEASED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_SECOND_RELEASED:
       TwoFingerTouchReleased(event, point, gestures.get());
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_FIRST_RELEASED_HANDLED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_SECOND_RELEASED_HANDLED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_FIRST_CANCELLED:
     case GST_PENDING_TWO_FINGER_TAP_NO_PINCH_SECOND_CANCELLED:
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_PINCH_FIRST_MOVED:
     case GST_PENDING_PINCH_SECOND_MOVED:
@@ -687,10 +674,9 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_PINCH_SECOND_RELEASED:
     case GST_PENDING_PINCH_FIRST_CANCELLED:
     case GST_PENDING_PINCH_SECOND_CANCELLED:
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PENDING_PINCH_NO_PINCH_FIRST_MOVED:
     case GST_PENDING_PINCH_NO_PINCH_SECOND_MOVED:
@@ -700,16 +686,19 @@ GestureSequence::Gestures* GestureSequence::ProcessTouchEventForGesture(
     case GST_PENDING_PINCH_NO_PINCH_SECOND_RELEASED:
     case GST_PENDING_PINCH_NO_PINCH_FIRST_CANCELLED:
     case GST_PENDING_PINCH_NO_PINCH_SECOND_CANCELLED:
-      // We transit into GS_SCROLL even though the touch move can be
-      // consumed and no scroll should happen. crbug.com/240399.
-      scroll_type_ = ST_FREE;
-      set_state(GS_SCROLL);
+      // We transition into GS_SCROLL even though the touch move can be consumed
+      // and no scroll should happen. crbug.com/240399.
+      StartRailFreeScroll(point, gestures.get());
       break;
     case GST_PINCH_FIRST_MOVED_HANDLED:
     case GST_PINCH_SECOND_MOVED_HANDLED:
     case GST_PINCH_THIRD_MOVED_HANDLED:
     case GST_PINCH_FOURTH_MOVED_HANDLED:
     case GST_PINCH_FIFTH_MOVED_HANDLED:
+      // If touches are consumed for a while, and then left unconsumed, we don't
+      // want a PinchUpdate or ScrollUpdate with a massive delta.
+      latest_multi_scroll_update_location_ = bounding_box_.CenterPoint();
+      pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
       break;
     case GST_PINCH_FIRST_MOVED:
     case GST_PINCH_SECOND_MOVED:
@@ -987,9 +976,7 @@ void GestureSequence::AppendScrollGestureEnd(const GesturePoint& point,
     gestures->push_back(CreateGestureEvent(
         GestureEventDetails(ui::ET_SCROLL_FLING_START,
             CalibrateFlingVelocity(railed_x_velocity),
-            CalibrateFlingVelocity(railed_y_velocity),
-            CalibrateFlingVelocity(x_velocity),
-            CalibrateFlingVelocity(y_velocity)),
+            CalibrateFlingVelocity(railed_y_velocity)),
         location,
         flags_,
         base::Time::FromDoubleT(point.last_touch_time()),
@@ -1042,8 +1029,6 @@ void GestureSequence::AppendScrollGestureUpdate(GesturePoint& point,
     d.set_y(d.y() * ratio);
   }
 
-  gfx::Vector2dF o = d;
-
   if (scroll_type_ == ST_HORIZONTAL)
     d.set_y(0);
   else if (scroll_type_ == ST_VERTICAL)
@@ -1051,13 +1036,7 @@ void GestureSequence::AppendScrollGestureUpdate(GesturePoint& point,
   if (d.IsZero())
     return;
 
-  GestureEventDetails details(ui::ET_GESTURE_SCROLL_UPDATE,
-                              d.x(), d.y(), o.x(), o.y());
-  details.SetScrollVelocity(
-      scroll_type_ == ST_VERTICAL ? 0 : point.XVelocity(),
-      scroll_type_ == ST_HORIZONTAL ? 0 : point.YVelocity(),
-      point.XVelocity(),
-      point.YVelocity());
+  GestureEventDetails details(ui::ET_GESTURE_SCROLL_UPDATE, d.x(), d.y());
   gestures->push_back(CreateGestureEvent(
       details,
       location,
@@ -1109,7 +1088,7 @@ void GestureSequence::AppendSwipeGesture(const GesturePoint& point,
                                          int swipe_y,
                                          Gestures* gestures) {
   gestures->push_back(CreateGestureEvent(
-      GestureEventDetails(ui::ET_GESTURE_MULTIFINGER_SWIPE, swipe_x, swipe_y),
+      GestureEventDetails(ui::ET_GESTURE_SWIPE, swipe_x, swipe_y),
       bounding_box_.CenterPoint(),
       flags_,
       base::Time::FromDoubleT(point.last_touch_time()),
@@ -1322,15 +1301,15 @@ bool GestureSequence::PinchStart(const TouchEvent& event,
   const GesturePoint* point1 = GetPointByPointId(0);
   const GesturePoint* point2 = GetPointByPointId(1);
 
-  pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
-  pinch_distance_start_ = pinch_distance_current_;
-  latest_multi_scroll_update_location_ = bounding_box_.CenterPoint();
-  AppendPinchGestureBegin(*point1, *point2, gestures);
-
   if (state_ == GS_PENDING_TWO_FINGER_TAP ||
       state_ == GS_PENDING_PINCH) {
     AppendScrollGestureBegin(point, bounding_box_.CenterPoint(), gestures);
   }
+
+  pinch_distance_current_ = BoundingBoxDiagonal(bounding_box_);
+  pinch_distance_start_ = pinch_distance_current_;
+  latest_multi_scroll_update_location_ = bounding_box_.CenterPoint();
+  AppendPinchGestureBegin(*point1, *point2, gestures);
 
   return true;
 }
@@ -1358,7 +1337,7 @@ bool GestureSequence::PinchUpdate(const TouchEvent& event,
 
   float distance = BoundingBoxDiagonal(bounding_box_);
 
-  if (abs(distance - pinch_distance_current_) >=
+  if (std::abs(distance - pinch_distance_current_) >=
       GestureConfiguration::min_pinch_update_distance_in_pixels()) {
     AppendPinchGestureUpdate(point,
         distance / pinch_distance_current_, gestures);
@@ -1421,7 +1400,6 @@ bool GestureSequence::MaybeSwipe(const TouchEvent& event,
   }
 
   float min_velocity = GestureConfiguration::min_swipe_speed();
-  min_velocity *= min_velocity;
 
   velocity_x = fabs(velocity_x / point_count_);
   velocity_y = fabs(velocity_y / point_count_);
@@ -1477,6 +1455,13 @@ void GestureSequence::StopTimersIfRequired(const TouchEvent& event) {
     GetLongPressTimer()->Stop();
     GetShowPressTimer()->Stop();
   }
+}
+
+void GestureSequence::StartRailFreeScroll(const GesturePoint& point,
+                                          Gestures* gestures) {
+  AppendScrollGestureBegin(point, point.first_touch_position(), gestures);
+  scroll_type_ = ST_FREE;
+  set_state(GS_SCROLL);
 }
 
 }  // namespace ui

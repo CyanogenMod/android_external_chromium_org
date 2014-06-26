@@ -8,28 +8,50 @@
 #include "ash/shell.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/test/cursor_manager_test_api.h"
+#include "base/path_service.h"
 #include "base/run_loop.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/test/ui_controls.h"
+#include "ui/base/ui_base_paths.h"
+#include "ui/gl/gl_surface.h"
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
 
-#include "base/message_loop/message_pump_x11.h"
+#include "ui/gfx/x/x11_types.h"
 #endif
 
 namespace ash {
 
-using views::corewm::CursorManager;
-typedef test::AshTestBase AshNativeCursorManagerTest;
+class AshNativeCursorManagerTest : public test::AshTestBase {
+ public:
+  AshNativeCursorManagerTest() {}
+  virtual ~AshNativeCursorManagerTest() {}
+
+  virtual void SetUp() OVERRIDE {
+    gfx::GLSurface::InitializeOneOffForTests();
+
+    ui::RegisterPathProvider();
+    ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+    base::FilePath resources_pack_path;
+    PathService::Get(base::DIR_MODULE, &resources_pack_path);
+    resources_pack_path =
+        resources_pack_path.Append(FILE_PATH_LITERAL("resources.pak"));
+    ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+        resources_pack_path, ui::SCALE_FACTOR_NONE);
+
+    test::AshTestBase::SetUp();
+  }
+};
 
 namespace {
 
-internal::DisplayInfo CreateDisplayInfo(int64 id,
-                                        const gfx::Rect& bounds,
-                                        float device_scale_factor) {
-  internal::DisplayInfo info(id, "", false);
+DisplayInfo CreateDisplayInfo(int64 id,
+                              const gfx::Rect& bounds,
+                              float device_scale_factor) {
+  DisplayInfo info(id, "", false);
   info.SetBounds(bounds);
   info.set_device_scale_factor(device_scale_factor);
   return info;
@@ -37,9 +59,9 @@ internal::DisplayInfo CreateDisplayInfo(int64 id,
 
 void MoveMouseSync(aura::Window* window, int x, int y) {
 #if defined(USE_X11)
-  XWarpPointer(base::MessagePumpX11::GetDefaultXDisplay(),
+  XWarpPointer(gfx::GetXDisplay(),
                None,
-               window->GetDispatcher()->host()->GetAcceleratedWidget(),
+               window->GetHost()->GetAcceleratedWidget(),
                0, 0, 0, 0,
                x, y);
 #endif
@@ -66,25 +88,24 @@ void MoveMouseSync(aura::Window* window, int x, int y) {
 #endif
 
 TEST_F(AshNativeCursorManagerTest, MAYBE_CursorChangeOnEnterNotify) {
-  CursorManager* cursor_manager = Shell::GetInstance()->cursor_manager();
+  ::wm::CursorManager* cursor_manager = Shell::GetInstance()->cursor_manager();
   test::CursorManagerTestApi test_api(cursor_manager);
 
-  internal::DisplayManager* display_manager =
-      Shell::GetInstance()->display_manager();
-  internal::DisplayInfo display_info1 =
+  DisplayManager* display_manager = Shell::GetInstance()->display_manager();
+  DisplayInfo display_info1 =
       CreateDisplayInfo(10, gfx::Rect(0, 0, 500, 300), 1.0f);
-  internal::DisplayInfo display_info2 =
+  DisplayInfo display_info2 =
       CreateDisplayInfo(20, gfx::Rect(500, 0, 500, 300), 2.0f);
-  std::vector<internal::DisplayInfo> display_info_list;
+  std::vector<DisplayInfo> display_info_list;
   display_info_list.push_back(display_info1);
   display_info_list.push_back(display_info2);
   display_manager->OnNativeDisplaysChanged(display_info_list);
 
   MoveMouseSync(Shell::GetAllRootWindows()[0], 10, 10);
-  EXPECT_EQ(1.0f, test_api.GetDisplay().device_scale_factor());
+  EXPECT_EQ(1.0f, test_api.GetCurrentCursor().device_scale_factor());
 
   MoveMouseSync(Shell::GetAllRootWindows()[0], 600, 10);
-  EXPECT_EQ(2.0f, test_api.GetDisplay().device_scale_factor());
+  EXPECT_EQ(2.0f, test_api.GetCurrentCursor().device_scale_factor());
 }
 
 }  // namespace ash

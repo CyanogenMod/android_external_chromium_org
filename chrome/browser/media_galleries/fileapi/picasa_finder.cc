@@ -68,7 +68,7 @@ base::FilePath GetPicasaDatabasePath() {
 // Returns path of Picasa's DB3 database directory. May only be called on
 // threads that allow for disk IO, like the FILE thread or MediaTaskRunner.
 base::FilePath FindPicasaDatabaseOnFileThread() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
 
 #if defined(OS_WIN) || defined(OS_MACOSX)
    base::FilePath path = GetPicasaDatabasePath();
@@ -86,8 +86,8 @@ void FinishOnOriginalThread(const DeviceIDCallback& callback,
                             const base::FilePath& database_path) {
   std::string device_id;
   if (!database_path.empty()) {
-    device_id = StorageInfo::MakeDeviceId(StorageInfo::PICASA,
-                                          database_path.AsUTF8Unsafe());
+    device_id = storage_monitor::StorageInfo::MakeDeviceId(
+        storage_monitor::StorageInfo::PICASA, database_path.AsUTF8Unsafe());
   }
   callback.Run(device_id);
 }

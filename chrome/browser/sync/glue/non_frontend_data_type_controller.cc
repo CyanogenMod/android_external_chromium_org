@@ -8,10 +8,10 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/change_processor.h"
 #include "components/sync_driver/model_associator.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
@@ -156,13 +156,17 @@ NonFrontendDataTypeController::AssociationResult::AssociationResult(
 
 NonFrontendDataTypeController::AssociationResult::~AssociationResult() {}
 
+// TODO(tim): Legacy controllers are being left behind in componentization
+// effort for now, hence passing null DisableTypeCallback and still having
+// a dependency on ProfileSyncService.  That dep can probably be removed
+// without too much work.
 NonFrontendDataTypeController::NonFrontendDataTypeController(
     scoped_refptr<base::MessageLoopProxy> ui_thread,
     const base::Closure& error_callback,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : DataTypeController(ui_thread, error_callback),
+    : DataTypeController(ui_thread, error_callback, DisableTypeCallback()),
       state_(NOT_RUNNING),
       profile_sync_factory_(profile_sync_factory),
       profile_(profile),
@@ -305,7 +309,8 @@ void NonFrontendDataTypeController::OnSingleDatatypeUnrecoverableError(
 }
 
 NonFrontendDataTypeController::NonFrontendDataTypeController()
-    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure(),
+                         DisableTypeCallback()),
       state_(NOT_RUNNING),
       profile_sync_factory_(NULL),
       profile_(NULL),
@@ -378,7 +383,7 @@ void NonFrontendDataTypeController::DisableImpl(
     const tracked_objects::Location& from_here,
     const std::string& message) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  profile_sync_service_->DisableBrokenDatatype(type(), from_here, message);
+  profile_sync_service_->DisableDatatype(type(), from_here, message);
 }
 
 void NonFrontendDataTypeController::RecordAssociationTime(
@@ -401,6 +406,22 @@ void NonFrontendDataTypeController::RecordStartFailure(StartResult result) {
   SYNC_DATA_TYPE_HISTOGRAM(type());
 #undef PER_DATA_TYPE_MACRO
 }
+
+void NonFrontendDataTypeController::RecordUnrecoverableError(
+    const tracked_objects::Location& from_here,
+    const std::string& message) {
+  DVLOG(1) << "Datatype Controller failed for type "
+           << ModelTypeToString(type()) << "  "
+           << message << " at location "
+           << from_here.ToString();
+  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeRunFailures",
+                            ModelTypeToHistogramInt(type()),
+                            syncer::MODEL_TYPE_COUNT);
+
+  if (!error_callback_.is_null())
+    error_callback_.Run();
+}
+
 
 ProfileSyncComponentsFactory*
     NonFrontendDataTypeController::profile_sync_factory() const {
@@ -429,7 +450,7 @@ AssociatorInterface* NonFrontendDataTypeController::associator() const {
   return model_associator_;
 }
 
-ChangeProcessor* NonFrontendDataTypeController::change_processor() const {
+ChangeProcessor* NonFrontendDataTypeController::GetChangeProcessor() const {
   return change_processor_;
 }
 
@@ -464,8 +485,6 @@ void NonFrontendDataTypeController::AssociationCallback(
   change_processor_ = result.change_processor;
   model_associator_ = result.model_associator;
 
-  profile_sync_service_->ActivateDataType(type(), model_safe_group(),
-                                          change_processor());
   StartDone(!result.sync_has_nodes ? OK_FIRST_RUN : OK,
             result.local_merge_result,
             result.syncer_merge_result);

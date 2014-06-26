@@ -6,8 +6,10 @@
 
 #include "base/bind.h"
 #include "base/rand_util.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "remoting/base/constants.h"
 #include "remoting/jingle_glue/iq_sender.h"
@@ -38,6 +40,12 @@ const int kTransportInfoSendDelayMs = 2;
 // for all requests except |transport-info|.
 const int kDefaultMessageTimeout = 10;
 
+// During a reconnection, it usually takes longer for the peer to respond due to
+// pending messages in the channel from the previous session.  From experiment,
+// it can take up to 20s for the session to reconnect. To make it safe, setting
+// the timeout to 30s.
+const int kSessionInitiateAndAcceptTimeout = kDefaultMessageTimeout * 3;
+
 // Timeout for the transport-info messages.
 const int kTransportInfoTimeout = 10 * 60;
 
@@ -63,7 +71,8 @@ JingleSession::JingleSession(JingleSessionManager* session_manager)
       event_handler_(NULL),
       state_(INITIALIZING),
       error_(OK),
-      config_is_set_(false) {
+      config_is_set_(false),
+      weak_factory_(this) {
 }
 
 JingleSession::~JingleSession() {
@@ -181,9 +190,10 @@ void JingleSession::ContinueAcceptIncomingConnection() {
     SetState(AUTHENTICATED);
   } else {
     DCHECK_EQ(authenticator_->state(), Authenticator::WAITING_MESSAGE);
+    if (authenticator_->started()) {
+      SetState(AUTHENTICATING);
+    }
   }
-
-  return;
 }
 
 const std::string& JingleSession::jid() {
@@ -298,11 +308,6 @@ void JingleSession::OnTransportRouteChange(Transport* transport,
     event_handler_->OnSessionRouteChange(transport->name(), route);
 }
 
-void JingleSession::OnTransportReady(Transport* transport, bool ready) {
-  if (event_handler_)
-    event_handler_->OnSessionChannelReady(transport->name(), ready);
-}
-
 void JingleSession::OnTransportFailed(Transport* transport) {
   CloseInternal(CHANNEL_CONNECTION_ERROR);
 }
@@ -317,9 +322,16 @@ void JingleSession::SendMessage(const JingleMessage& message) {
   scoped_ptr<IqRequest> request = session_manager_->iq_sender()->SendIq(
       message.ToXml(),
       base::Bind(&JingleSession::OnMessageResponse,
-                 base::Unretained(this), message.action));
+                 base::Unretained(this),
+                 message.action));
+
+  int timeout = kDefaultMessageTimeout;
+  if (message.action == JingleMessage::SESSION_INITIATE ||
+      message.action == JingleMessage::SESSION_ACCEPT) {
+    timeout = kSessionInitiateAndAcceptTimeout;
+  }
   if (request) {
-    request->SetTimeout(base::TimeDelta::FromSeconds(kDefaultMessageTimeout));
+    request->SetTimeout(base::TimeDelta::FromSeconds(timeout));
     pending_requests_.insert(request.release());
   } else {
     LOG(ERROR) << "Failed to send a "
@@ -485,7 +497,7 @@ void JingleSession::OnSessionInfo(const JingleMessage& message,
     return;
   }
 
-  if (state_ != CONNECTED ||
+  if ((state_ != CONNECTED && state_ != AUTHENTICATING) ||
       authenticator_->state() != Authenticator::WAITING_MESSAGE) {
     LOG(WARNING) << "Received unexpected authenticator message "
                  << message.info->Str();
@@ -517,8 +529,7 @@ void JingleSession::ProcessTransportInfo(const JingleMessage& message) {
 
 void JingleSession::OnTerminate(const JingleMessage& message,
                                 const ReplyCallback& reply_callback) {
-  if (state_ != CONNECTING && state_ != ACCEPTING && state_ != CONNECTED &&
-      state_ != AUTHENTICATED) {
+  if (!is_session_active()) {
     LOG(WARNING) << "Received unexpected session-terminate message.";
     reply_callback.Run(JingleMessageReply::UNEXPECTED_REQUEST);
     return;
@@ -577,7 +588,7 @@ void JingleSession::ProcessAuthenticationStep() {
   DCHECK(CalledOnValidThread());
   DCHECK_NE(authenticator_->state(), Authenticator::PROCESSING_MESSAGE);
 
-  if (state_ != CONNECTED) {
+  if (state_ != CONNECTED && state_ != AUTHENTICATING) {
     DCHECK(state_ == FAILED || state_ == CLOSED);
     // The remote host closed the connection while the authentication was being
     // processed asynchronously, nothing to do.
@@ -592,6 +603,21 @@ void JingleSession::ProcessAuthenticationStep() {
   }
   DCHECK_NE(authenticator_->state(), Authenticator::MESSAGE_READY);
 
+  // The current JingleSession object can be destroyed by event_handler of
+  // SetState(AUTHENTICATING) and cause subsequent dereferencing of the this
+  // pointer to crash.  To protect against it, we run ContinueAuthenticationStep
+  // asychronously using a weak pointer.
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
+    FROM_HERE,
+    base::Bind(&JingleSession::ContinueAuthenticationStep,
+               weak_factory_.GetWeakPtr()));
+
+  if (authenticator_->started()) {
+    SetState(AUTHENTICATING);
+  }
+}
+
+void JingleSession::ContinueAuthenticationStep() {
   if (authenticator_->state() == Authenticator::ACCEPTED) {
     SetState(AUTHENTICATED);
   } else if (authenticator_->state() == Authenticator::REJECTED) {
@@ -603,8 +629,7 @@ void JingleSession::ProcessAuthenticationStep() {
 void JingleSession::CloseInternal(ErrorCode error) {
   DCHECK(CalledOnValidThread());
 
-  if (state_ == CONNECTING || state_ == ACCEPTING || state_ == CONNECTED ||
-      state_ == AUTHENTICATED) {
+  if (is_session_active()) {
     // Send session-terminate message with the appropriate error code.
     JingleMessage::Reason reason;
     switch (error) {
@@ -653,6 +678,11 @@ void JingleSession::SetState(State new_state) {
     if (event_handler_)
       event_handler_->OnSessionStateChange(new_state);
   }
+}
+
+bool JingleSession::is_session_active() {
+  return state_ == CONNECTING || state_ == ACCEPTING || state_ == CONNECTED ||
+        state_ == AUTHENTICATING || state_ == AUTHENTICATED;
 }
 
 }  // namespace protocol

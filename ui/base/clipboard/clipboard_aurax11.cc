@@ -15,8 +15,7 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop/message_pump_observer.h"
-#include "base/message_loop/message_pump_x11.h"
+#include "base/metrics/histogram.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -25,6 +24,9 @@
 #include "ui/base/x/selection_requestor.h"
 #include "ui/base/x/selection_utils.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/events/platform/platform_event_observer.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/x/x11_atom_cache.h"
@@ -34,17 +36,21 @@ namespace ui {
 namespace {
 
 const char kClipboard[] = "CLIPBOARD";
+const char kClipboardManager[] = "CLIPBOARD_MANAGER";
 const char kMimeTypeFilename[] = "chromium/filename";
 const char kMimeTypePepperCustomData[] = "chromium/x-pepper-custom-data";
 const char kMimeTypeWebkitSmartPaste[] = "chromium/x-webkit-paste";
+const char kSaveTargets[] = "SAVE_TARGETS";
 const char kTargets[] = "TARGETS";
 
 const char* kAtomsToCache[] = {
   kClipboard,
+  kClipboardManager,
   Clipboard::kMimeTypePNG,
   kMimeTypeFilename,
   kMimeTypeMozillaURL,
   kMimeTypeWebkitSmartPaste,
+  kSaveTargets,
   kString,
   kTargets,
   kText,
@@ -55,7 +61,7 @@ const char* kAtomsToCache[] = {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Uses the XFixes API to provide sequence numbers for GetSequenceNumber().
-class SelectionChangeObserver : public base::MessagePumpObserver {
+class SelectionChangeObserver : public ui::PlatformEventObserver {
  public:
   static SelectionChangeObserver* GetInstance();
 
@@ -70,11 +76,9 @@ class SelectionChangeObserver : public base::MessagePumpObserver {
   SelectionChangeObserver();
   virtual ~SelectionChangeObserver();
 
-  // Overridden from base::MessagePumpObserver:
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE;
-  virtual void DidProcessEvent(
-      const base::NativeEvent& event) OVERRIDE {}
+  // ui::PlatformEventObserver:
+  virtual void WillProcessEvent(const ui::PlatformEvent& event) OVERRIDE;
+  virtual void DidProcessEvent(const ui::PlatformEvent& event) OVERRIDE {}
 
   int event_base_;
   Atom clipboard_atom_;
@@ -106,20 +110,19 @@ SelectionChangeObserver::SelectionChangeObserver()
                                XFixesSelectionWindowDestroyNotifyMask |
                                XFixesSelectionClientCloseNotifyMask);
 
-    base::MessagePumpX11::Current()->AddObserver(this);
+    ui::PlatformEventSource::GetInstance()->AddPlatformEventObserver(this);
   }
 }
 
 SelectionChangeObserver::~SelectionChangeObserver() {
-  // We are a singleton; we will outlive our message pump.
+  // We are a singleton; we will outlive the event source.
 }
 
 SelectionChangeObserver* SelectionChangeObserver::GetInstance() {
   return Singleton<SelectionChangeObserver>::get();
 }
 
-base::EventStatus SelectionChangeObserver::WillProcessEvent(
-    const base::NativeEvent& event) {
+void SelectionChangeObserver::WillProcessEvent(const ui::PlatformEvent& event) {
   if (event->type == event_base_ + XFixesSelectionNotify) {
     XFixesSelectionNotifyEvent* ev =
         reinterpret_cast<XFixesSelectionNotifyEvent*>(event);
@@ -131,7 +134,6 @@ base::EventStatus SelectionChangeObserver::WillProcessEvent(
       DLOG(ERROR) << "Unexpected selection atom: " << ev->selection;
     }
   }
-  return base::EVENT_CONTINUE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -224,7 +226,7 @@ bool Clipboard::FormatType::Equals(const FormatType& other) const {
 
 // Private implementation of our X11 integration. Keeps X11 headers out of the
 // majority of chrome, which break badly.
-class Clipboard::AuraX11Details : public base::MessagePumpDispatcher {
+class Clipboard::AuraX11Details : public PlatformEventDispatcher {
  public:
   AuraX11Details();
   virtual ~AuraX11Details();
@@ -234,6 +236,10 @@ class Clipboard::AuraX11Details : public base::MessagePumpDispatcher {
   // Returns the X11 type that we pass to various XSelection functions for the
   // given type.
   ::Atom LookupSelectionForClipboardType(ClipboardType type) const;
+
+  // Returns the X11 type that we pass to various XSelection functions for
+  // CLIPBOARD_TYPE_COPY_PASTE.
+  ::Atom GetCopyPasteSelection() const;
 
   // Returns the object which is responsible for communication on |type|.
   SelectionRequestor* GetSelectionRequestorForClipboardType(ClipboardType type);
@@ -278,12 +284,17 @@ class Clipboard::AuraX11Details : public base::MessagePumpDispatcher {
   // Returns a vector with a |format| converted to an X11 atom.
   std::vector< ::Atom> GetAtomsForFormat(const Clipboard::FormatType& format);
 
-  // Clears a certain clipboard type.
+  // Clears a certain clipboard type, whether we own it or not.
   void Clear(ClipboardType type);
 
+  // If we own the CLIPBOARD selection, requests the clipboard manager to take
+  // ownership of it.
+  void StoreCopyPasteDataAndWait();
+
  private:
-  // Overridden from base::MessagePumpDispatcher:
-  virtual uint32_t Dispatch(const base::NativeEvent& event) OVERRIDE;
+  // PlatformEventDispatcher:
+  virtual bool CanDispatchEvent(const PlatformEvent& event) OVERRIDE;
+  virtual uint32_t DispatchEvent(const PlatformEvent& event) OVERRIDE;
 
   // Our X11 state.
   Display* x_display_;
@@ -297,6 +308,7 @@ class Clipboard::AuraX11Details : public base::MessagePumpDispatcher {
   // Objects which request and receive selection data.
   SelectionRequestor clipboard_requestor_;
   SelectionRequestor primary_requestor_;
+  SelectionRequestor clipboard_manager_requestor_;
 
   // Temporary target map that we write to during DispatchObects.
   SelectionFormatMap clipboard_data_;
@@ -322,8 +334,11 @@ Clipboard::AuraX11Details::AuraX11Details()
           NULL)),
       atom_cache_(x_display_, kAtomsToCache),
       clipboard_requestor_(x_display_, x_window_,
-                           atom_cache_.GetAtom(kClipboard)),
-      primary_requestor_(x_display_, x_window_, XA_PRIMARY),
+                           atom_cache_.GetAtom(kClipboard), this),
+      primary_requestor_(x_display_, x_window_, XA_PRIMARY, this),
+      clipboard_manager_requestor_(x_display_, x_window_,
+                                   atom_cache_.GetAtom(kClipboardManager),
+                                   this),
       clipboard_owner_(x_display_, x_window_, atom_cache_.GetAtom(kClipboard)),
       primary_owner_(x_display_, x_window_, XA_PRIMARY) {
   // We don't know all possible MIME types at compile time.
@@ -332,11 +347,13 @@ Clipboard::AuraX11Details::AuraX11Details()
   XStoreName(x_display_, x_window_, "Chromium clipboard");
   XSelectInput(x_display_, x_window_, PropertyChangeMask);
 
-  base::MessagePumpX11::Current()->AddDispatcherForWindow(this, x_window_);
+  if (PlatformEventSource::GetInstance())
+    PlatformEventSource::GetInstance()->AddPlatformEventDispatcher(this);
 }
 
 Clipboard::AuraX11Details::~AuraX11Details() {
-  base::MessagePumpX11::Current()->RemoveDispatcherForWindow(x_window_);
+  if (PlatformEventSource::GetInstance())
+    PlatformEventSource::GetInstance()->RemovePlatformEventDispatcher(this);
 
   XDestroyWindow(x_display_, x_window_);
 }
@@ -344,9 +361,13 @@ Clipboard::AuraX11Details::~AuraX11Details() {
 ::Atom Clipboard::AuraX11Details::LookupSelectionForClipboardType(
     ClipboardType type) const {
   if (type == CLIPBOARD_TYPE_COPY_PASTE)
-    return atom_cache_.GetAtom(kClipboard);
+    return GetCopyPasteSelection();
 
   return XA_PRIMARY;
+}
+
+::Atom Clipboard::AuraX11Details::GetCopyPasteSelection() const {
+  return atom_cache_.GetAtom(kClipboard);
 }
 
 const SelectionFormatMap& Clipboard::AuraX11Details::LookupStorageForAtom(
@@ -354,7 +375,7 @@ const SelectionFormatMap& Clipboard::AuraX11Details::LookupStorageForAtom(
   if (atom == XA_PRIMARY)
     return primary_owner_.selection_format_map();
 
-  DCHECK_EQ(atom_cache_.GetAtom(kClipboard), atom);
+  DCHECK_EQ(GetCopyPasteSelection(), atom);
   return clipboard_owner_.selection_format_map();
 }
 
@@ -435,7 +456,8 @@ TargetList Clipboard::AuraX11Details::WaitAndGetTargetsList(
                                                   NULL,
                                                   &out_data_items,
                                                   &out_type)) {
-      if (out_type == XA_ATOM) {
+      // Some apps return an |out_type| of "TARGETS". (crbug.com/377893)
+      if (out_type == XA_ATOM || out_type == atom_cache_.GetAtom(kTargets)) {
         const ::Atom* atom_array =
             reinterpret_cast<const ::Atom*>(data->front());
         for (size_t i = 0; i < out_data_items; ++i)
@@ -480,34 +502,68 @@ std::vector< ::Atom> Clipboard::AuraX11Details::GetAtomsForFormat(
 
 void Clipboard::AuraX11Details::Clear(ClipboardType type) {
   if (type == CLIPBOARD_TYPE_COPY_PASTE)
-    return clipboard_owner_.Clear();
+    clipboard_owner_.ClearSelectionOwner();
   else
-    return primary_owner_.Clear();
+    primary_owner_.ClearSelectionOwner();
 }
 
-uint32_t Clipboard::AuraX11Details::Dispatch(const base::NativeEvent& event) {
-  XEvent* xev = event;
+void Clipboard::AuraX11Details::StoreCopyPasteDataAndWait() {
+  ::Atom selection = GetCopyPasteSelection();
+  if (XGetSelectionOwner(x_display_, selection) != x_window_)
+    return;
 
+  ::Atom clipboard_manager_atom = atom_cache_.GetAtom(kClipboardManager);
+  if (XGetSelectionOwner(x_display_, clipboard_manager_atom) == None)
+    return;
+
+  const SelectionFormatMap& format_map = LookupStorageForAtom(selection);
+  if (format_map.size() == 0)
+    return;
+  std::vector<Atom> targets = format_map.GetTypes();
+
+  base::TimeTicks start = base::TimeTicks::Now();
+  clipboard_manager_requestor_.PerformBlockingConvertSelectionWithParameter(
+      atom_cache_.GetAtom(kSaveTargets), targets);
+  UMA_HISTOGRAM_TIMES("Clipboard.X11StoreCopyPasteDuration",
+                      base::TimeTicks::Now() - start);
+}
+
+bool Clipboard::AuraX11Details::CanDispatchEvent(const PlatformEvent& event) {
+  return event->xany.window == x_window_;
+}
+
+uint32_t Clipboard::AuraX11Details::DispatchEvent(const PlatformEvent& xev) {
   switch (xev->type) {
     case SelectionRequest: {
-      if (xev->xselectionrequest.selection == XA_PRIMARY)
+      if (xev->xselectionrequest.selection == XA_PRIMARY) {
         primary_owner_.OnSelectionRequest(xev->xselectionrequest);
-      else
+      } else {
+        // We should not get requests for the CLIPBOARD_MANAGER selection
+        // because we never take ownership of it.
+        DCHECK_EQ(GetCopyPasteSelection(), xev->xselectionrequest.selection);
         clipboard_owner_.OnSelectionRequest(xev->xselectionrequest);
+      }
       break;
     }
     case SelectionNotify: {
-      if (xev->xselection.selection == XA_PRIMARY)
+      ::Atom selection = xev->xselection.selection;
+      if (selection == XA_PRIMARY)
         primary_requestor_.OnSelectionNotify(xev->xselection);
-      else
+      else if (selection == GetCopyPasteSelection())
         clipboard_requestor_.OnSelectionNotify(xev->xselection);
+      else if (selection == atom_cache_.GetAtom(kClipboardManager))
+        clipboard_manager_requestor_.OnSelectionNotify(xev->xselection);
       break;
     }
     case SelectionClear: {
-      if (xev->xselectionclear.selection == XA_PRIMARY)
+      if (xev->xselectionclear.selection == XA_PRIMARY) {
         primary_owner_.OnSelectionClear(xev->xselectionclear);
-      else
+      } else {
+        // We should not get requests for the CLIPBOARD_MANAGER selection
+        // because we never take ownership of it.
+        DCHECK_EQ(GetCopyPasteSelection(), xev->xselection.selection);
         clipboard_owner_.OnSelectionClear(xev->xselectionclear);
+        }
       break;
     }
     default:
@@ -528,9 +584,7 @@ Clipboard::Clipboard()
 Clipboard::~Clipboard() {
   DCHECK(CalledOnValidThread());
 
-  // TODO(erg): We need to do whatever the equivalent of
-  // gtk_clipboard_store(clipboard_) is here. When we shut down, we want the
-  // current selection to live on.
+  aurax11_details_->StoreCopyPasteDataAndWait();
 }
 
 void Clipboard::WriteObjects(ClipboardType type, const ObjectMap& objects) {
@@ -762,8 +816,11 @@ void Clipboard::WriteBookmark(const char* title_data,
 // Write an extra flavor that signifies WebKit was the last to modify the
 // pasteboard. This flavor has no data.
 void Clipboard::WriteWebSmartPaste() {
-  aurax11_details_->InsertMapping(kMimeTypeWebkitSmartPaste,
-                                  scoped_refptr<base::RefCountedMemory>());
+  std::string empty;
+  aurax11_details_->InsertMapping(
+      kMimeTypeWebkitSmartPaste,
+      scoped_refptr<base::RefCountedMemory>(
+          base::RefCountedString::TakeString(&empty)));
 }
 
 void Clipboard::WriteBitmap(const SkBitmap& bitmap) {

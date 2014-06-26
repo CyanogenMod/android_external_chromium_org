@@ -16,13 +16,14 @@
 #include "base/time/time.h"
 #include "base/version.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/web_application_info.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -129,7 +130,8 @@ TEST(ExtensionFromWebApp, Basic) {
   EXPECT_EQ(base::UTF16ToUTF8(web_app.title), extension->name());
   EXPECT_EQ(base::UTF16ToUTF8(web_app.description), extension->description());
   EXPECT_EQ(web_app.app_url, AppLaunchInfo::GetFullLaunchURL(extension.get()));
-  EXPECT_EQ(0u, extension->GetActivePermissions()->apis().size());
+  EXPECT_EQ(0u,
+            extension->permissions_data()->active_permissions()->apis().size());
   ASSERT_EQ(0u, extension->web_extent().patterns().size());
 
   EXPECT_EQ(web_app.icons.size(),
@@ -175,7 +177,8 @@ TEST(ExtensionFromWebApp, Minimal) {
   EXPECT_EQ("", extension->description());
   EXPECT_EQ(web_app.app_url, AppLaunchInfo::GetFullLaunchURL(extension.get()));
   EXPECT_EQ(0u, IconsInfo::GetIcons(extension.get()).map().size());
-  EXPECT_EQ(0u, extension->GetActivePermissions()->apis().size());
+  EXPECT_EQ(0u,
+            extension->permissions_data()->active_permissions()->apis().size());
   ASSERT_EQ(0u, extension->web_extent().patterns().size());
 }
 

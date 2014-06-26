@@ -43,6 +43,9 @@ class FakeTransformTransition : public TransformAnimationCurve {
   virtual gfx::Transform GetValue(double time) const OVERRIDE;
   virtual bool AnimatedBoundsForBox(const gfx::BoxF& box,
                                     gfx::BoxF* bounds) const OVERRIDE;
+  virtual bool AffectsScale() const OVERRIDE;
+  virtual bool IsTranslation() const OVERRIDE;
+  virtual bool MaximumScale(float* max_scale) const OVERRIDE;
 
   virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
 
@@ -152,6 +155,11 @@ int AddAnimatedTransformToLayer(LayerImpl* layer,
                                 double duration,
                                 int delta_x,
                                 int delta_y);
+
+int AddAnimatedTransformToLayer(Layer* layer,
+                                double duration,
+                                TransformOperations start_operations,
+                                TransformOperations operations);
 
 int AddAnimatedTransformToLayer(LayerImpl* layer,
                                 double duration,

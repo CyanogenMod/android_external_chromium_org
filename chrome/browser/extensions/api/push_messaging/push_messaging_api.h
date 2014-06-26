@@ -11,28 +11,29 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/api/push_messaging/obfuscated_gaia_id_fetcher.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler_delegate.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_token_service.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
-
+class ExtensionRegistry;
 class PushMessagingInvalidationMapper;
-class ObfuscatedGaiaIdFetcher;
 
 // Observes a single InvalidationHandler and generates onMessage events.
 class PushMessagingEventRouter
     : public PushMessagingInvalidationHandlerDelegate {
  public:
-  explicit PushMessagingEventRouter(Profile* profile);
+  explicit PushMessagingEventRouter(content::BrowserContext* context);
   virtual ~PushMessagingEventRouter();
 
   // For testing purposes.
@@ -46,7 +47,7 @@ class PushMessagingEventRouter
                          int subchannel,
                          const std::string& payload) OVERRIDE;
 
-  Profile* const profile_;
+  content::BrowserContext* const browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(PushMessagingEventRouter);
 };
@@ -63,7 +64,7 @@ class PushMessagingGetChannelIdFunction
   virtual ~PushMessagingGetChannelIdFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   DECLARE_EXTENSION_FUNCTION("pushMessaging.getChannelId",
                              PUSHMESSAGING_GETCHANNELID)
 
@@ -92,14 +93,12 @@ class PushMessagingGetChannelIdFunction
       const OAuth2TokenService::Request* request,
       const GoogleServiceAuthError& error) OVERRIDE;
 
-  // Check if the user is signed into chrome.
-  bool IsUserLoggedIn() const;
-
   // ObfuscatedGiaiaIdFetcher::Delegate implementation.
   virtual void OnObfuscatedGaiaIdFetchSuccess(const std::string& gaia_id)
       OVERRIDE;
   virtual void OnObfuscatedGaiaIdFetchFailure(
       const GoogleServiceAuthError& error) OVERRIDE;
+
   scoped_ptr<ObfuscatedGaiaIdFetcher> fetcher_;
   bool interactive_;
   scoped_ptr<OAuth2TokenService::Request> fetcher_access_token_request_;
@@ -107,24 +106,24 @@ class PushMessagingGetChannelIdFunction
   DISALLOW_COPY_AND_ASSIGN(PushMessagingGetChannelIdFunction);
 };
 
-class PushMessagingAPI : public ProfileKeyedAPI,
-                         public content::NotificationObserver {
+class PushMessagingAPI : public BrowserContextKeyedAPI,
+                         public ExtensionRegistryObserver {
  public:
-  explicit PushMessagingAPI(Profile* profile);
+  explicit PushMessagingAPI(content::BrowserContext* context);
   virtual ~PushMessagingAPI();
 
-  // Convenience method to get the PushMessagingAPI for a profile.
-  static PushMessagingAPI* Get(Profile* profile);
+  // Convenience method to get the PushMessagingAPI for a BrowserContext.
+  static PushMessagingAPI* Get(content::BrowserContext* context);
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<PushMessagingAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<PushMessagingAPI>* GetFactoryInstance();
 
   // For testing purposes.
   PushMessagingEventRouter* GetEventRouterForTest() const {
-  return event_router_.get();
+    return event_router_.get();
   }
   PushMessagingInvalidationMapper* GetMapperForTest() const {
     return handler_.get();
@@ -132,33 +131,47 @@ class PushMessagingAPI : public ProfileKeyedAPI,
   void SetMapperForTest(scoped_ptr<PushMessagingInvalidationMapper> mapper);
 
  private:
-  friend class ProfileKeyedAPIFactory<PushMessagingAPI>;
+  friend class BrowserContextKeyedAPIFactory<PushMessagingAPI>;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "PushMessagingAPI";
   }
   static const bool kServiceIsNULLWhileTesting = true;
 
-  // content::NotificationDelegate implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Overridden from ExtensionRegistryObserver.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionWillBeInstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      bool is_update,
+      bool from_ephemeral,
+      const std::string& old_name) OVERRIDE;
+
+  // Initialize |event_router_| and |handler_|.
+  bool InitEventRouterAndHandler();
 
   // Created lazily when an app or extension with the push messaging permission
   // is loaded.
   scoped_ptr<PushMessagingEventRouter> event_router_;
   scoped_ptr<PushMessagingInvalidationMapper> handler_;
 
-  content::NotificationRegistrar registrar_;
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
-  Profile* profile_;
+  content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(PushMessagingAPI);
 };
 
 template <>
-void ProfileKeyedAPIFactory<PushMessagingAPI>::DeclareFactoryDependencies();
+void BrowserContextKeyedAPIFactory<
+    PushMessagingAPI>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

@@ -15,16 +15,9 @@
 #include "net/dns/mock_host_resolver.h"
 
 #if defined(OS_WIN)
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #endif
-
-// Window resizes are not completed by the time the callback happens,
-// so these tests fail on linux/gtk. http://crbug.com/72369
-#if defined(OS_LINUX) && !defined(USE_AURA)
-#define MAYBE_UpdateWindowResize DISABLED_UpdateWindowResize
-#define MAYBE_UpdateWindowShowState DISABLED_UpdateWindowShowState
-#else
 
 #if defined(USE_AURA) || defined(OS_MACOSX)
 // Maximizing/fullscreen popup window doesn't work on aura's managed mode.
@@ -34,9 +27,6 @@
 #else
 #define MAYBE_UpdateWindowShowState UpdateWindowShowState
 #endif  // defined(USE_AURA) || defined(OS_MACOSX)
-
-#define MAYBE_UpdateWindowResize UpdateWindowResize
-#endif  // defined(OS_LINUX) && !defined(USE_AURA)
 
 // http://crbug.com/145639
 #if defined(OS_LINUX) || defined(OS_WIN)
@@ -199,7 +189,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest,
                                   "test_race.html")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest, CaptureVisibleFile) {
+
+// Disabled for being flaky, see http://crbug/367695.
+IN_PROC_BROWSER_TEST_F(ExtensionApiCaptureTest,
+                       DISABLED_CaptureVisibleFile) {
   ASSERT_TRUE(RunExtensionSubtest("tabs/capture_visible_tab",
                                   "test_file.html")) << message_;
 }
@@ -219,15 +212,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, TabsNoPermissions) {
   ASSERT_TRUE(RunExtensionTest("tabs/no_permissions")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
-                       MAYBE_UpdateWindowResize) {
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, UpdateWindowResize) {
   ASSERT_TRUE(RunExtensionTest("window_update/resize")) << message_;
 }
 
 #if defined(OS_WIN)
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, FocusWindowDoesNotUnmaximize) {
-  HWND window = browser()->window()->GetNativeWindow()->
-      GetDispatcher()->host()->GetAcceleratedWidget();
+  HWND window =
+      browser()->window()->GetNativeWindow()->GetHost()->GetAcceleratedWidget();
   ::SendMessage(window, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
   ASSERT_TRUE(RunExtensionTest("window_update/focus")) << message_;
   ASSERT_TRUE(::IsZoomed(window));

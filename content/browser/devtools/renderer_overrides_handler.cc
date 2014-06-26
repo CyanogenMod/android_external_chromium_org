@@ -13,6 +13,7 @@
 #include "base/bind_helpers.h"
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/values.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/devtools/devtools_protocol_constants.h"
@@ -20,9 +21,10 @@
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/view_messages.h"
-#include "content/port/browser/render_widget_host_view_port.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/javascript_dialog_manager.h"
 #include "content/public/browser/navigation_controller.h"
@@ -38,9 +40,12 @@
 #include "content/public/common/referrer.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/net_util.h"
+#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/snapshot/snapshot.h"
 #include "url/gurl.h"
@@ -89,6 +94,16 @@ RendererOverridesHandler::RendererOverridesHandler(DevToolsAgentHost* agent)
       devtools::DOM::setFileInputFiles::kName,
       base::Bind(
           &RendererOverridesHandler::GrantPermissionsForSetFileInputFiles,
+          base::Unretained(this)));
+  RegisterCommandHandler(
+      devtools::Network::clearBrowserCache::kName,
+      base::Bind(
+          &RendererOverridesHandler::ClearBrowserCache,
+          base::Unretained(this)));
+  RegisterCommandHandler(
+      devtools::Network::clearBrowserCookies::kName,
+      base::Bind(
+          &RendererOverridesHandler::ClearBrowserCookies,
           base::Unretained(this)));
   RegisterCommandHandler(
       devtools::Page::disable::kName,
@@ -187,64 +202,70 @@ void RendererOverridesHandler::InnerSwapCompositorFrame() {
     return;
 
   last_frame_time_ = base::TimeTicks::Now();
+
+  RenderWidgetHostViewBase* view = static_cast<RenderWidgetHostViewBase*>(
+      host->GetView());
+  // TODO(vkuzkokov): do not use previous frame metadata.
+  cc::CompositorFrameMetadata& metadata = last_compositor_frame_metadata_;
+
+  float page_scale = metadata.page_scale_factor;
+  gfx::SizeF viewport_size_dip = gfx::ScaleSize(metadata.viewport_size,
+                                                page_scale);
+
+  float total_bar_height_dip = metadata.location_bar_content_translation.y() +
+                                   metadata.overdraw_bottom_height;
+  gfx::SizeF screen_size_dip(viewport_size_dip.width(),
+                             viewport_size_dip.height() + total_bar_height_dip);
+
   std::string format;
   int quality = kDefaultScreenshotQuality;
   double scale = 1;
-  ParseCaptureParameters(screencast_command_.get(), &format, &quality, &scale);
-
-  RenderWidgetHostViewPort* view_port =
-      RenderWidgetHostViewPort::FromRWHV(host->GetView());
-
-  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-  gfx::Size snapshot_size = gfx::ToFlooredSize(
-      gfx::ScaleSize(view_bounds.size(), scale));
-
-  view_port->CopyFromCompositingSurface(
-      view_bounds, snapshot_size,
-      base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
-                 weak_factory_.GetWeakPtr(),
-                 scoped_refptr<DevToolsProtocol::Command>(), format, quality,
-                 last_compositor_frame_metadata_),
-      SkBitmap::kARGB_8888_Config);
-}
-
-void RendererOverridesHandler::ParseCaptureParameters(
-    DevToolsProtocol::Command* command,
-    std::string* format,
-    int* quality,
-    double* scale) {
-  *quality = kDefaultScreenshotQuality;
-  *scale = 1;
   double max_width = -1;
   double max_height = -1;
-  base::DictionaryValue* params = command->params();
+  base::DictionaryValue* params = screencast_command_->params();
   if (params) {
-    params->GetString(devtools::Page::captureScreenshot::kParamFormat,
-                      format);
-    params->GetInteger(devtools::Page::captureScreenshot::kParamQuality,
-                       quality);
-    params->GetDouble(devtools::Page::captureScreenshot::kParamMaxWidth,
+    params->GetString(devtools::Page::startScreencast::kParamFormat,
+                      &format);
+    params->GetInteger(devtools::Page::startScreencast::kParamQuality,
+                       &quality);
+    params->GetDouble(devtools::Page::startScreencast::kParamMaxWidth,
                       &max_width);
-    params->GetDouble(devtools::Page::captureScreenshot::kParamMaxHeight,
+    params->GetDouble(devtools::Page::startScreencast::kParamMaxHeight,
                       &max_height);
   }
 
-  RenderViewHost* host = agent_->GetRenderViewHost();
-  CHECK(host->GetView());
-  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-  if (max_width > 0)
-    *scale = std::min(*scale, max_width / view_bounds.width());
-  if (max_height > 0)
-    *scale = std::min(*scale, max_height / view_bounds.height());
+  blink::WebScreenInfo screen_info;
+  view->GetScreenInfo(&screen_info);
+  double device_scale_factor = screen_info.deviceScaleFactor;
 
-  if (format->empty())
-    *format = kPng;
-  if (*quality < 0 || *quality > 100)
-    *quality = kDefaultScreenshotQuality;
-  if (*scale <= 0)
-    *scale = 0.1;
-  if (*scale > 5)
-    *scale = 5;
+  if (max_width > 0) {
+    double max_width_dip = max_width / device_scale_factor;
+    scale = std::min(scale, max_width_dip / screen_size_dip.width());
+  }
+  if (max_height > 0) {
+    double max_height_dip = max_height / device_scale_factor;
+    scale = std::min(scale, max_height_dip / screen_size_dip.height());
+  }
+
+  if (format.empty())
+    format = kPng;
+  if (quality < 0 || quality > 100)
+    quality = kDefaultScreenshotQuality;
+  if (scale <= 0)
+    scale = 0.1;
+
+  gfx::Size snapshot_size_dip(gfx::ToRoundedSize(
+      gfx::ScaleSize(viewport_size_dip, scale)));
+
+  if (snapshot_size_dip.width() > 0 && snapshot_size_dip.height() > 0) {
+    gfx::Rect viewport_bounds_dip(gfx::ToRoundedSize(viewport_size_dip));
+    view->CopyFromCompositingSurface(
+        viewport_bounds_dip, snapshot_size_dip,
+        base::Bind(&RendererOverridesHandler::ScreencastFrameCaptured,
+                   weak_factory_.GetWeakPtr(),
+                   format, quality, last_compositor_frame_metadata_),
+        SkBitmap::kARGB_8888_Config);
+  }
 }
 
 // DOM agent handlers  --------------------------------------------------------
@@ -270,6 +291,23 @@ RendererOverridesHandler::GrantPermissionsForSetFileInputFiles(
         host->GetProcess()->GetID(), base::FilePath(file));
   }
   return NULL;
+}
+
+
+// Network agent handlers  ----------------------------------------------------
+
+scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::ClearBrowserCache(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  GetContentClient()->browser()->ClearCache(agent_->GetRenderViewHost());
+  return command->SuccessResponse(NULL);
+}
+
+scoped_refptr<DevToolsProtocol::Response>
+RendererOverridesHandler::ClearBrowserCookies(
+    scoped_refptr<DevToolsProtocol::Command> command) {
+  GetContentClient()->browser()->ClearCookies(agent_->GetRenderViewHost());
+  return command->SuccessResponse(NULL);
 }
 
 
@@ -307,7 +345,7 @@ RendererOverridesHandler::PageHandleJavaScriptDialog(
           web_contents->GetDelegate()->GetJavaScriptDialogManager();
       if (manager && manager->HandleJavaScriptDialog(
               web_contents, accept, prompt_override_ptr)) {
-        return NULL;
+        return command->SuccessResponse(new base::DictionaryValue());
       }
     }
   }
@@ -423,47 +461,37 @@ RendererOverridesHandler::PageNavigateToHistoryEntry(
 scoped_refptr<DevToolsProtocol::Response>
 RendererOverridesHandler::PageCaptureScreenshot(
     scoped_refptr<DevToolsProtocol::Command> command) {
-  RenderViewHost* host = agent_->GetRenderViewHost();
+  RenderViewHostImpl* host = static_cast<RenderViewHostImpl*>(
+      agent_->GetRenderViewHost());
   if (!host->GetView())
     return command->InternalErrorResponse("Unable to access the view");
 
-  std::string format;
-  int quality = kDefaultScreenshotQuality;
-  double scale = 1;
-  ParseCaptureParameters(command.get(), &format, &quality, &scale);
+  host->GetSnapshotFromBrowser(
+      base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
+          weak_factory_.GetWeakPtr(), command));
+  return command->AsyncResponsePromise();
+}
 
-  gfx::Rect view_bounds = host->GetView()->GetViewBounds();
-  gfx::Size snapshot_size = gfx::ToFlooredSize(
-      gfx::ScaleSize(view_bounds.size(), scale));
-
-  // Grab screen pixels if available for current platform.
-  // TODO(pfeldman): support format, scale and quality in ui::GrabViewSnapshot.
-  std::vector<unsigned char> png;
-  bool is_unscaled_png = scale == 1 && format == kPng;
-  if (is_unscaled_png && ui::GrabViewSnapshot(host->GetView()->GetNativeView(),
-                                              &png,
-                                              gfx::Rect(snapshot_size))) {
-    std::string base64_data;
-    base::Base64Encode(
-        base::StringPiece(reinterpret_cast<char*>(&*png.begin()), png.size()),
-        &base64_data);
-    base::DictionaryValue* result = new base::DictionaryValue();
-    result->SetString(
-        devtools::Page::captureScreenshot::kResponseData, base64_data);
-    return command->SuccessResponse(result);
+void RendererOverridesHandler::ScreenshotCaptured(
+    scoped_refptr<DevToolsProtocol::Command> command,
+    const unsigned char* png_data,
+    size_t png_size) {
+  if (!png_data || !png_size) {
+    SendAsyncResponse(
+        command->InternalErrorResponse("Unable to capture screenshot"));
+    return;
   }
 
-  // Fallback to copying from compositing surface.
-  RenderWidgetHostViewPort* view_port =
-      RenderWidgetHostViewPort::FromRWHV(host->GetView());
+  std::string base_64_data;
+  base::Base64Encode(
+      base::StringPiece(reinterpret_cast<const char*>(png_data), png_size),
+      &base_64_data);
 
-  view_port->CopyFromCompositingSurface(
-      view_bounds, snapshot_size,
-      base::Bind(&RendererOverridesHandler::ScreenshotCaptured,
-                 weak_factory_.GetWeakPtr(), command, format, quality,
-                 last_compositor_frame_metadata_),
-      SkBitmap::kARGB_8888_Config);
-  return command->AsyncResponsePromise();
+  base::DictionaryValue* response = new base::DictionaryValue();
+  response->SetString(devtools::Page::screencastFrame::kParamData,
+                      base_64_data);
+
+  SendAsyncResponse(command->SuccessResponse(response));
 }
 
 scoped_refptr<DevToolsProtocol::Response>
@@ -499,18 +527,14 @@ RendererOverridesHandler::PageStopScreencast(
   return command->SuccessResponse(NULL);
 }
 
-void RendererOverridesHandler::ScreenshotCaptured(
-    scoped_refptr<DevToolsProtocol::Command> command,
+void RendererOverridesHandler::ScreencastFrameCaptured(
     const std::string& format,
     int quality,
     const cc::CompositorFrameMetadata& metadata,
     bool success,
     const SkBitmap& bitmap) {
   if (!success) {
-    if (command) {
-      SendAsyncResponse(
-          command->InternalErrorResponse("Unable to capture screenshot"));
-    } else if (capture_retry_count_) {
+    if (capture_retry_count_) {
       --capture_retry_count_;
       base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
@@ -543,13 +567,8 @@ void RendererOverridesHandler::ScreenshotCaptured(
     encoded = false;
   }
 
-  if (!encoded) {
-    if (command) {
-      SendAsyncResponse(
-          command->InternalErrorResponse("Unable to encode screenshot"));
-    }
+  if (!encoded)
     return;
-  }
 
   std::string base_64_data;
   base::Base64Encode(
@@ -595,20 +614,11 @@ void RendererOverridesHandler::ScreenshotCaptured(
     response_metadata->Set(
         devtools::Page::ScreencastFrameMetadata::kParamViewport, viewport);
 
-    if (command) {
-      response->Set(devtools::Page::captureScreenshot::kResponseMetadata,
-                    response_metadata);
-    } else {
-      response->Set(devtools::Page::screencastFrame::kParamMetadata,
-                    response_metadata);
-    }
+    response->Set(devtools::Page::screencastFrame::kParamMetadata,
+                  response_metadata);
   }
 
-  if (command) {
-    SendAsyncResponse(command->SuccessResponse(response));
-  } else {
-    SendNotification(devtools::Page::screencastFrame::kName, response);
-  }
+  SendNotification(devtools::Page::screencastFrame::kName, response);
 }
 
 // Quota and Usage ------------------------------------------
@@ -696,8 +706,8 @@ std::string GetQuotaClientName(quota::QuotaClient::ID id) {
       return devtools::Page::UsageItem::Id::kEnumIndexeddatabase;
     default:
       NOTREACHED();
-      return "";
   }
+  return "";
 }
 
 void QueryUsageAndQuotaOnIOThread(
@@ -908,6 +918,7 @@ RendererOverridesHandler::InputDispatchGestureEvent(
       agent_->GetRenderViewHost());
   blink::WebGestureEvent event;
   ParseGenericInputParams(params, &event);
+  event.sourceDevice = blink::WebGestureDeviceTouchscreen;
 
   std::string type;
   if (params->GetString(devtools::Input::dispatchGestureEvent::kParamType,

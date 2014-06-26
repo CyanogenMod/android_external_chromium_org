@@ -14,7 +14,9 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/scoped_file.h"
 #include "base/format_macros.h"
+#include "base/hash.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -41,6 +43,15 @@
 
 namespace base {
 
+// Launches a child process using |command_line|. If the child process is still
+// running after |timeout|, it is terminated and |*was_timeout| is set to true.
+// Returns exit code of the process.
+int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
+                                      const LaunchOptions& options,
+                                      bool use_job_objects,
+                                      base::TimeDelta timeout,
+                                      bool* was_timeout);
+
 // See https://groups.google.com/a/chromium.org/d/msg/chromium-dev/nkdTP7sstSc/uT3FaE_sgkAJ .
 using ::operator<<;
 
@@ -64,6 +75,11 @@ const char kUnreliableResultsTag[] = "UNRELIABLE_RESULTS";
 // time is mysterious and gives no info about what is happening) 3) help
 // debugging in case the process hangs anyway.
 const int kOutputTimeoutSeconds = 15;
+
+// Limit of output snippet lines when printing to stdout.
+// Avoids flooding the logs with amount of output that gums up
+// the infrastructure.
+const size_t kOutputSnippetLinesLimit = 5000;
 
 // Set of live launch test processes with corresponding lock (it is allowed
 // for callers to launch processes on different threads).
@@ -207,6 +223,7 @@ void RunCallback(
 void DoLaunchChildTestProcess(
     const CommandLine& command_line,
     base::TimeDelta timeout,
+    bool use_job_objects,
     bool redirect_stdio,
     scoped_refptr<MessageLoopProxy> message_loop_proxy,
     const TestLauncher::LaunchChildGTestProcessCallback& callback) {
@@ -244,30 +261,28 @@ void DoLaunchChildTestProcess(
   options.new_process_group = true;
 
   base::FileHandleMappingVector fds_mapping;
-  file_util::ScopedFD output_file_fd_closer;
+  base::ScopedFD output_file_fd;
 
   if (redirect_stdio) {
-    int output_file_fd = open(output_file.value().c_str(), O_RDWR);
-    CHECK_GE(output_file_fd, 0);
+    output_file_fd.reset(open(output_file.value().c_str(), O_RDWR));
+    CHECK(output_file_fd.is_valid());
 
-    output_file_fd_closer.reset(&output_file_fd);
-
-    fds_mapping.push_back(std::make_pair(output_file_fd, STDOUT_FILENO));
-    fds_mapping.push_back(std::make_pair(output_file_fd, STDERR_FILENO));
+    fds_mapping.push_back(std::make_pair(output_file_fd.get(), STDOUT_FILENO));
+    fds_mapping.push_back(std::make_pair(output_file_fd.get(), STDERR_FILENO));
     options.fds_to_remap = &fds_mapping;
   }
 #endif
 
   bool was_timeout = false;
   int exit_code = LaunchChildTestProcessWithOptions(
-      command_line, options, timeout, &was_timeout);
+      command_line, options, use_job_objects, timeout, &was_timeout);
 
   if (redirect_stdio) {
 #if defined(OS_WIN)
-  FlushFileBuffers(handle.Get());
-  handle.Close();
+    FlushFileBuffers(handle.Get());
+    handle.Close();
 #elif defined(OS_POSIX)
-  output_file_fd_closer.reset();
+    output_file_fd.reset();
 #endif
   }
 
@@ -342,7 +357,7 @@ TestLauncher::~TestLauncher() {
     worker_pool_owner_->pool()->Shutdown();
 }
 
-bool TestLauncher::Run(int argc, char** argv) {
+bool TestLauncher::Run() {
   if (!Init())
     return false;
 
@@ -394,6 +409,7 @@ void TestLauncher::LaunchChildGTestProcess(
     const CommandLine& command_line,
     const std::string& wrapper,
     base::TimeDelta timeout,
+    bool use_job_objects,
     const LaunchChildGTestProcessCallback& callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -411,6 +427,7 @@ void TestLauncher::LaunchChildGTestProcess(
       Bind(&DoLaunchChildTestProcess,
            new_command_line,
            timeout,
+           use_job_objects,
            redirect_stdio,
            MessageLoopProxy::current(),
            Bind(&TestLauncher::OnLaunchTestProcessFinished,
@@ -439,7 +456,16 @@ void TestLauncher::OnTestFinished(const TestResult& result) {
                  << ": " << print_test_stdio;
   }
   if (print_snippet) {
-    fprintf(stdout, "%s", result.output_snippet.c_str());
+    std::vector<std::string> snippet_lines;
+    SplitString(result.output_snippet, '\n', &snippet_lines);
+    if (snippet_lines.size() > kOutputSnippetLinesLimit) {
+      size_t truncated_size = snippet_lines.size() - kOutputSnippetLinesLimit;
+      snippet_lines.erase(
+          snippet_lines.begin(),
+          snippet_lines.begin() + truncated_size);
+      snippet_lines.insert(snippet_lines.begin(), "<truncated>");
+    }
+    fprintf(stdout, "%s", JoinString(snippet_lines, "\n").c_str());
     fflush(stdout);
   }
 
@@ -448,9 +474,6 @@ void TestLauncher::OnTestFinished(const TestResult& result) {
   } else {
     tests_to_retry_.insert(result.full_name);
   }
-
-  if (result.status == TestResult::TEST_UNKNOWN)
-    results_tracker_.AddGlobalTag(kUnreliableResultsTag);
 
   results_tracker_.AddTestResult(result);
 
@@ -489,7 +512,7 @@ void TestLauncher::OnTestFinished(const TestResult& result) {
     test_broken_count_++;
   }
   size_t broken_threshold =
-      std::max(static_cast<size_t>(10), test_started_count_ / 10);
+      std::max(static_cast<size_t>(20), test_started_count_ / 10);
   if (test_broken_count_ >= broken_threshold) {
     fprintf(stdout, "Too many badly broken tests (%" PRIuS "), exiting now.\n",
             test_broken_count_);
@@ -756,8 +779,6 @@ bool TestLauncher::Init() {
 void TestLauncher::RunTests() {
   testing::UnitTest* const unit_test = testing::UnitTest::GetInstance();
 
-  int num_runnable_tests = 0;
-
   std::vector<std::string> test_names;
 
   for (int i = 0; i < unit_test->total_test_case_count(); ++i) {
@@ -805,8 +826,10 @@ void TestLauncher::RunTests() {
       if (!launcher_delegate_->ShouldRunTest(test_case, test_info))
         continue;
 
-      if (num_runnable_tests++ % total_shards_ != shard_index_)
+      if (base::Hash(test_name) % total_shards_ !=
+          static_cast<uint32>(shard_index_)) {
         continue;
+      }
 
       test_names.push_back(test_name);
     }
@@ -869,6 +892,11 @@ void TestLauncher::OnLaunchTestProcessFinished(
 }
 
 void TestLauncher::OnTestIterationFinished() {
+  TestResultsTracker::TestStatusMap tests_by_status(
+      results_tracker_.GetTestStatusMapForCurrentIteration());
+  if (!tests_by_status[TestResult::TEST_UNKNOWN].empty())
+    results_tracker_.AddGlobalTag(kUnreliableResultsTag);
+
   // When we retry tests, success is determined by having nothing more
   // to retry (everything eventually passed), as opposed to having
   // no failures at all.
@@ -944,27 +972,6 @@ std::string GetTestOutputSnippet(const TestResult& result,
   return snippet;
 }
 
-int LaunchChildGTestProcess(const CommandLine& command_line,
-                            const std::string& wrapper,
-                            base::TimeDelta timeout,
-                            bool* was_timeout) {
-  LaunchOptions options;
-
-#if defined(OS_POSIX)
-  // On POSIX, we launch the test in a new process group with pgid equal to
-  // its pid. Any child processes that the test may create will inherit the
-  // same pgid. This way, if the test is abruptly terminated, we can clean up
-  // any orphaned child processes it may have left behind.
-  options.new_process_group = true;
-#endif
-
-  return LaunchChildTestProcessWithOptions(
-      PrepareCommandLineForGTest(command_line, wrapper),
-      options,
-      timeout,
-      was_timeout);
-}
-
 CommandLine PrepareCommandLineForGTest(const CommandLine& command_line,
                                        const std::string& wrapper) {
   CommandLine new_command_line(command_line.GetProgram());
@@ -972,6 +979,9 @@ CommandLine PrepareCommandLineForGTest(const CommandLine& command_line,
 
   // Strip out gtest_repeat flag - this is handled by the launcher process.
   switches.erase(kGTestRepeatFlag);
+
+  // Don't try to write the final XML report in child processes.
+  switches.erase(kGTestOutputFlag);
 
   for (CommandLine::SwitchMap::const_iterator iter = switches.begin();
        iter != switches.end(); ++iter) {
@@ -991,8 +1001,10 @@ CommandLine PrepareCommandLineForGTest(const CommandLine& command_line,
   return new_command_line;
 }
 
+// TODO(phajdan.jr): Move to anonymous namespace.
 int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
                                       const LaunchOptions& options,
+                                      bool use_job_objects,
                                       base::TimeDelta timeout,
                                       bool* was_timeout) {
 #if defined(OS_POSIX)
@@ -1005,24 +1017,34 @@ int LaunchChildTestProcessWithOptions(const CommandLine& command_line,
 #if defined(OS_WIN)
   DCHECK(!new_options.job_handle);
 
-  win::ScopedHandle job_handle(CreateJobObject(NULL, NULL));
-  if (!job_handle.IsValid()) {
-    LOG(ERROR) << "Could not create JobObject.";
-    return -1;
-  }
+  win::ScopedHandle job_handle;
+  if (use_job_objects) {
+    job_handle.Set(CreateJobObject(NULL, NULL));
+    if (!job_handle.IsValid()) {
+      LOG(ERROR) << "Could not create JobObject.";
+      return -1;
+    }
 
-  // Allow break-away from job since sandbox and few other places rely on it
-  // on Windows versions prior to Windows 8 (which supports nested jobs).
-  // TODO(phajdan.jr): Do not allow break-away on Windows 8.
-  if (!SetJobObjectLimitFlags(job_handle.Get(),
-                              JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
-                              JOB_OBJECT_LIMIT_BREAKAWAY_OK)) {
-    LOG(ERROR) << "Could not SetJobObjectLimitFlags.";
-    return -1;
-  }
+    // Allow break-away from job since sandbox and few other places rely on it
+    // on Windows versions prior to Windows 8 (which supports nested jobs).
+    // TODO(phajdan.jr): Do not allow break-away on Windows 8.
+    if (!SetJobObjectLimitFlags(job_handle.Get(),
+                                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
+                                JOB_OBJECT_LIMIT_BREAKAWAY_OK)) {
+      LOG(ERROR) << "Could not SetJobObjectLimitFlags.";
+      return -1;
+    }
 
-  new_options.job_handle = job_handle.Get();
+    new_options.job_handle = job_handle.Get();
+  }
 #endif  // defined(OS_WIN)
+
+#if defined(OS_LINUX)
+  // To prevent accidental privilege sharing to an untrusted child, processes
+  // are started with PR_SET_NO_NEW_PRIVS. Do not set that here, since this
+  // new child will be privileged and trusted.
+  new_options.allow_new_privs = true;
+#endif
 
   base::ProcessHandle process_handle;
 

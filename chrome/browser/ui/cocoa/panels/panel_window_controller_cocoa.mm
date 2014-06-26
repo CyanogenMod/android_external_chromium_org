@@ -23,7 +23,7 @@
 #import "chrome/browser/ui/cocoa/panels/panel_utils_cocoa.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/throbber_view.h"
+#import "chrome/browser/ui/cocoa/sprite_view.h"
 #include "chrome/browser/ui/panels/panel_bounds_animation.h"
 #include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
@@ -33,7 +33,6 @@
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -95,17 +94,6 @@ const double kWidthOfMouseResizeArea = 15.0;
 
 - (void)performMiniaturize:(id)sender {
   [[self windowController] minimizeButtonClicked:0];
-}
-
-// Ignore key events if window cannot become key window to fix problem
-// where keyboard input is still going into a minimized panel even though
-// the app has been deactivated in -[PanelWindowControllerCocoa deactivate:].
-- (void)sendEvent:(NSEvent*)anEvent {
-  NSEventType eventType = [anEvent type];
-  if ((eventType == NSKeyDown || eventType == NSKeyUp) &&
-      ![self canBecomeKeyWindow])
-    return;
-  [super sendEvent:anEvent];
 }
 
 - (void)mouseMoved:(NSEvent*)event {
@@ -231,7 +219,7 @@ const double kWidthOfMouseResizeArea = 15.0;
   NSRect contentFrame = [self contentRectForFrameRect:[[self window] frame]];
   contentFrame.origin = NSZeroPoint;
 
-  NSView* contentView = webContents->GetView()->GetNativeView();
+  NSView* contentView = webContents->GetNativeView();
   if (!NSEqualRects([contentView frame], contentFrame))
     [contentView setFrame:contentFrame];
 }
@@ -286,31 +274,30 @@ const double kWidthOfMouseResizeArea = 15.0;
 }
 
 - (void)updateIcon {
-  NSView* icon = nil;
-  NSRect iconFrame = [[titlebar_view_ icon] frame];
+  base::scoped_nsobject<NSView> iconView;
   if (throbberShouldSpin_) {
     // If the throbber is spinning now, no need to replace it.
-    if ([[titlebar_view_ icon] isKindOfClass:[ThrobberView class]])
+    if ([[titlebar_view_ icon] isKindOfClass:[SpriteView class]])
       return;
 
     NSImage* iconImage =
         ResourceBundle::GetSharedInstance().GetNativeImageNamed(
             IDR_THROBBER).ToNSImage();
-    icon = [ThrobberView filmstripThrobberViewWithFrame:iconFrame
-                                                  image:iconImage];
+    SpriteView* spriteView = [[SpriteView alloc] init];
+    [spriteView setImage:iconImage];
+    iconView.reset(spriteView);
   } else {
     const gfx::Image& page_icon = windowShim_->panel()->GetCurrentPageIcon();
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    NSRect iconFrame = [[titlebar_view_ icon] frame];
     NSImage* iconImage = page_icon.IsEmpty() ?
         rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToNSImage() :
         page_icon.ToNSImage();
-    NSImageView* iconView =
-        [[[NSImageView alloc] initWithFrame:iconFrame] autorelease];
-    [iconView setImage:iconImage];
-    icon = iconView;
+    NSImageView* imageView = [[NSImageView alloc] initWithFrame:iconFrame];
+    [imageView setImage:iconImage];
+    iconView.reset(imageView);
   }
-
-  [titlebar_view_ setIcon:icon];
+  [titlebar_view_ setIcon:iconView];
 }
 
 - (void)updateThrobber:(BOOL)shouldSpin {
@@ -332,7 +319,7 @@ const double kWidthOfMouseResizeArea = 15.0;
 }
 
 - (void)webContentsInserted:(WebContents*)contents {
-  NSView* view = contents->GetView()->GetNativeView();
+  NSView* view = contents->GetNativeView();
   [[[self window] contentView] addSubview:view];
   [view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
 
@@ -340,7 +327,7 @@ const double kWidthOfMouseResizeArea = 15.0;
 }
 
 - (void)webContentsDetached:(WebContents*)contents {
-  [contents->GetView()->GetNativeView() removeFromSuperview];
+  [contents->GetNativeView() removeFromSuperview];
 }
 
 - (PanelTitlebarViewCocoa*)titlebarView {
@@ -498,10 +485,10 @@ const double kWidthOfMouseResizeArea = 15.0;
   // is too large, we clip the duration (effectively increasing speed) to
   // limit total duration of animation. This makes 'small' transitions fast.
   // 'distance' is the max travel between 4 potentially traveling corners.
-  double distanceX = std::max(abs(NSMinX(currentFrame) - NSMinX(frame)),
-                              abs(NSMaxX(currentFrame) - NSMaxX(frame)));
-  double distanceY = std::max(abs(NSMinY(currentFrame) - NSMinY(frame)),
-                              abs(NSMaxY(currentFrame) - NSMaxY(frame)));
+  double distanceX = std::max(std::abs(NSMinX(currentFrame) - NSMinX(frame)),
+                              std::abs(NSMaxX(currentFrame) - NSMaxX(frame)));
+  double distanceY = std::max(std::abs(NSMinY(currentFrame) - NSMinY(frame)),
+                              std::abs(NSMaxY(currentFrame) - NSMaxY(frame)));
   double distance = std::max(distanceX, distanceY);
   double duration = std::min(distance / kBoundsAnimationSpeedPixelsPerSecond,
                              kBoundsAnimationMaxDurationSeconds);
@@ -613,13 +600,6 @@ const double kWidthOfMouseResizeArea = 15.0;
     return;
 
   [self onWindowDidResignKey];
-
-  // Make the window not user-resizable when it loses the focus. This is to
-  // solve the problem that the bottom edge of the active panel does not
-  // trigger the user-resizing if this panel stacks with another inactive
-  // panel at the bottom.
-  [[self window] setStyleMask:
-      [[self window] styleMask] & ~NSResizableWindowMask];
 }
 
 - (void)windowWillStartLiveResize:(NSNotification*)notification {
@@ -692,7 +672,7 @@ const double kWidthOfMouseResizeArea = 15.0;
   content::WebContents* webContents = panel->GetWebContents();
   if (!webContents)
     return;
-  NSView* contentView = webContents->GetView()->GetNativeView();
+  NSView* contentView = webContents->GetNativeView();
   if (NSHeight([self contentRectForFrameRect:[[self window] frame]]) <= 0) {
     // No need to retain the view before it is removed from its superview
     // because WebContentsView keeps a reference to this view.
@@ -725,10 +705,33 @@ const double kWidthOfMouseResizeArea = 15.0;
   if (![[self window] isMainWindow])
     return;
 
-  // Cocoa does not support deactivating a window, so we deactivate the app.
   [NSApp deactivate];
 
-  // Deactivating the app does not trigger windowDidResignKey. Do it manually.
+  // Cocoa does not support deactivating a NSWindow explicitly. To work around
+  // this, we call orderOut and orderFront to force the window to lose its key
+  // window state.
+
+  // Before doing this, we need to disable screen updates to prevent flickering.
+  NSDisableScreenUpdates();
+
+  // If a panel is in stacked mode, the window has a background parent window.
+  // We need to detach it from its parent window before applying the ordering
+  // change and then put it back because otherwise tha background parent window
+  // might show up.
+  NSWindow* parentWindow = [[self window] parentWindow];
+  if (parentWindow)
+    [parentWindow removeChildWindow:[self window]];
+
+  [[self window] orderOut:nil];
+  [[self window] orderFront:nil];
+
+  if (parentWindow)
+    [parentWindow addChildWindow:[self window] ordered:NSWindowAbove];
+
+  NSEnableScreenUpdates();
+
+  // Though the above workaround causes the window to lose its key window state,
+  // it does not trigger the system to call windowDidResignKey.
   [self onWindowDidResignKey];
 }
 
@@ -742,6 +745,13 @@ const double kWidthOfMouseResizeArea = 15.0;
   }
 
   windowShim_->panel()->OnActiveStateChanged(false);
+
+  // Make the window not user-resizable when it loses the focus. This is to
+  // solve the problem that the bottom edge of the active panel does not
+  // trigger the user-resizing if this panel stacks with another inactive
+  // panel at the bottom.
+  [[self window] setStyleMask:
+      [[self window] styleMask] & ~NSResizableWindowMask];
 }
 
 - (void)preventBecomingKeyWindow:(BOOL)prevent {

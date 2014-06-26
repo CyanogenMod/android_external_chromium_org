@@ -10,14 +10,12 @@
 #include "base/bind_helpers.h"
 #include "base/i18n/time_formatting.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/crash_upload_list.h"
+#include "chrome/browser/metrics/chrome_metrics_service_accessor.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_version_info.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -31,7 +29,8 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/debug_daemon_client.h"
 #endif
 
 using content::WebContents;
@@ -44,6 +43,7 @@ content::WebUIDataSource* CreateCrashesUIHTMLSource() {
       content::WebUIDataSource::Create(chrome::kChromeUICrashesHost);
   source->SetUseJsonJSFormatV2();
 
+  source->AddLocalizedString("shortProductName", IDS_SHORT_PRODUCT_NAME);
   source->AddLocalizedString("crashesTitle", IDS_CRASHES_TITLE);
   source->AddLocalizedString("crashCountFormat",
                              IDS_CRASHES_CRASH_COUNT_BANNER_FORMAT);
@@ -55,6 +55,8 @@ content::WebUIDataSource* CreateCrashesUIHTMLSource() {
                              IDS_CRASHES_NO_CRASHES_MESSAGE);
   source->AddLocalizedString("disabledHeader", IDS_CRASHES_DISABLED_HEADER);
   source->AddLocalizedString("disabledMessage", IDS_CRASHES_DISABLED_MESSAGE);
+  source->AddLocalizedString("uploadCrashesLinkText",
+                             IDS_CRASHES_UPLOAD_MESSAGE);
   source->SetJsonPath("strings.js");
   source->AddResourcePath("crashes.js", IDR_CRASHES_JS);
   source->SetDefaultResource(IDR_CRASHES_HTML);
@@ -84,6 +86,11 @@ class CrashesDOMHandler : public WebUIMessageHandler,
   // Asynchronously fetches the list of crashes. Called from JS.
   void HandleRequestCrashes(const base::ListValue* args);
 
+#if defined(OS_CHROMEOS)
+  // Asynchronously triggers crash uploading. Called from JS.
+  void HandleRequestUploads(const base::ListValue* args);
+#endif
+
   // Sends the recent crashes list JS.
   void UpdateUI();
 
@@ -108,6 +115,12 @@ void CrashesDOMHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("requestCrashList",
       base::Bind(&CrashesDOMHandler::HandleRequestCrashes,
                  base::Unretained(this)));
+
+#if defined(OS_CHROMEOS)
+  web_ui()->RegisterMessageCallback("requestCrashUpload",
+      base::Bind(&CrashesDOMHandler::HandleRequestUploads,
+                 base::Unretained(this)));
+#endif
 }
 
 void CrashesDOMHandler::HandleRequestCrashes(const base::ListValue* args) {
@@ -121,6 +134,16 @@ void CrashesDOMHandler::HandleRequestCrashes(const base::ListValue* args) {
   }
 }
 
+#if defined(OS_CHROMEOS)
+void CrashesDOMHandler::HandleRequestUploads(const base::ListValue* args) {
+  chromeos::DebugDaemonClient* debugd_client =
+      chromeos::DBusThreadManager::Get()->GetDebugDaemonClient();
+  DCHECK(debugd_client);
+
+  debugd_client->UploadCrashes();
+}
+#endif
+
 void CrashesDOMHandler::OnUploadListAvailable() {
   list_available_ = true;
   if (!first_load_)
@@ -128,8 +151,15 @@ void CrashesDOMHandler::OnUploadListAvailable() {
 }
 
 void CrashesDOMHandler::UpdateUI() {
-  bool crash_reporting_enabled = CrashesUI::CrashReportingUIEnabled();
+  bool crash_reporting_enabled =
+      ChromeMetricsServiceAccessor::IsCrashReportingEnabled();
   base::ListValue crash_list;
+  bool system_crash_reporter = false;
+
+#if defined(OS_CHROMEOS)
+  // Chrome OS has a system crash reporter.
+  system_crash_reporter = true;
+#endif
 
   if (crash_reporting_enabled) {
     std::vector<CrashUploadList::UploadInfo> crashes;
@@ -140,17 +170,19 @@ void CrashesDOMHandler::UpdateUI() {
       base::DictionaryValue* crash = new base::DictionaryValue();
       crash->SetString("id", i->id);
       crash->SetString("time", base::TimeFormatFriendlyDateAndTime(i->time));
+      crash->SetString("local_id", i->local_id);
       crash_list.Append(crash);
     }
   }
 
   base::FundamentalValue enabled(crash_reporting_enabled);
+  base::FundamentalValue dynamic_backend(system_crash_reporter);
 
   const chrome::VersionInfo version_info;
   base::StringValue version(version_info.Version());
 
-  web_ui()->CallJavascriptFunction("updateCrashList", enabled, crash_list,
-                                   version);
+  web_ui()->CallJavascriptFunction("updateCrashList", enabled, dynamic_backend,
+                                   crash_list, version);
 }
 
 }  // namespace
@@ -174,25 +206,4 @@ base::RefCountedMemory* CrashesUI::GetFaviconResourceBytes(
       ui::ScaleFactor scale_factor) {
   return ResourceBundle::GetSharedInstance().
       LoadDataResourceBytesForScale(IDR_SAD_FAVICON, scale_factor);
-}
-
-// static
-bool CrashesUI::CrashReportingUIEnabled() {
-#if defined(GOOGLE_CHROME_BUILD)
-#if defined(OS_CHROMEOS)
-  bool reporting_enabled = false;
-  chromeos::CrosSettings::Get()->GetBoolean(chromeos::kStatsReportingPref,
-                                            &reporting_enabled);
-  return reporting_enabled;
-#elif defined(OS_ANDROID)
-  // Android has it's own setings for metrics / crash uploading.
-  PrefService* prefs = g_browser_process->local_state();
-  return prefs->GetBoolean(prefs::kCrashReportingEnabled);
-#else
-  PrefService* prefs = g_browser_process->local_state();
-  return prefs->GetBoolean(prefs::kMetricsReportingEnabled);
-#endif
-#else
-  return false;
-#endif
 }

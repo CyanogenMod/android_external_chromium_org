@@ -6,6 +6,7 @@
 #define CONTENT_BROWSER_SHARED_WORKER_SHARED_WORKER_MESSAGE_FILTER_H_
 
 #include "content/browser/worker_host/worker_storage_partition.h"
+#include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 
 class GURL;
@@ -17,7 +18,7 @@ class ResourceContext;
 
 // If "enable-embedded-shared-worker" is set this class will be used instead of
 // WorkerMessageFilter.
-class SharedWorkerMessageFilter : public BrowserMessageFilter {
+class CONTENT_EXPORT SharedWorkerMessageFilter : public BrowserMessageFilter {
  public:
   SharedWorkerMessageFilter(int render_process_id,
                             ResourceContext* resource_context,
@@ -26,8 +27,7 @@ class SharedWorkerMessageFilter : public BrowserMessageFilter {
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   int GetNextRoutingID();
   int render_process_id() const { return render_process_id_; }
@@ -36,9 +36,11 @@ class SharedWorkerMessageFilter : public BrowserMessageFilter {
     return message_port_message_filter_;
   }
 
- private:
+ protected:
+  // This is protected, so we can define sub classes for testing.
   virtual ~SharedWorkerMessageFilter();
 
+ private:
   // Message handlers.
   void OnCreateWorker(const ViewHostMsg_CreateWorker_Params& params,
                       int* route_id);
@@ -55,9 +57,9 @@ class SharedWorkerMessageFilter : public BrowserMessageFilter {
                        const base::string16& display_name,
                        unsigned long estimated_size,
                        bool* result);
-  void OnAllowFileSystem(int worker_route_id,
-                         const GURL& url,
-                         bool* result);
+  void OnRequestFileSystemAccessSync(int worker_route_id,
+                                     const GURL& url,
+                                     bool* result);
   void OnAllowIndexedDB(int worker_route_id,
                         const GURL& url,
                         const base::string16& name,

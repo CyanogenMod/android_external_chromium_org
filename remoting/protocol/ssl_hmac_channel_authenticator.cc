@@ -10,12 +10,12 @@
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/cert/cert_verifier.h"
 #include "net/cert/x509_certificate.h"
 #include "net/http/transport_security_state.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/socket/ssl_client_socket_openssl.h"
 #include "net/socket/ssl_server_socket.h"
 #include "net/ssl/ssl_config_service.h"
 #include "remoting/base/rsa_key_pair.h"
@@ -64,6 +64,12 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
 
   int result;
   if (is_ssl_server()) {
+#if defined(OS_NACL)
+    // Client plugin doesn't use server SSL sockets, and so SSLServerSocket
+    // implementation is not compiled for NaCl as part of net_nacl.
+    NOTREACHED();
+    result = net::ERR_FAILED;
+#else
     scoped_refptr<net::X509Certificate> cert =
         net::X509Certificate::CreateFromBytes(
             local_cert_.data(), local_cert_.length());
@@ -86,8 +92,8 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
     result = raw_server_socket->Handshake(
         base::Bind(&SslHmacChannelAuthenticator::OnConnected,
                    base::Unretained(this)));
+#endif
   } else {
-    cert_verifier_.reset(net::CertVerifier::CreateDefault());
     transport_security_state_.reset(new net::TransportSecurityState);
 
     net::SSLConfig::CertAndStatus cert_and_status;
@@ -105,13 +111,20 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
 
     net::HostPortPair host_and_port(kSslFakeHostName, 0);
     net::SSLClientSocketContext context;
-    context.cert_verifier = cert_verifier_.get();
     context.transport_security_state = transport_security_state_.get();
-    scoped_ptr<net::ClientSocketHandle> connection(new net::ClientSocketHandle);
-    connection->SetSocket(socket.Pass());
+    scoped_ptr<net::ClientSocketHandle> socket_handle(
+        new net::ClientSocketHandle);
+    socket_handle->SetSocket(socket.Pass());
+
+#if defined(OS_NACL)
+    // net_nacl doesn't include ClientSocketFactory.
+    socket_.reset(new net::SSLClientSocketOpenSSL(
+        socket_handle.Pass(), host_and_port, ssl_config, context));
+#else
     socket_ =
         net::ClientSocketFactory::GetDefaultFactory()->CreateSSLClientSocket(
-            connection.Pass(), host_and_port, ssl_config, context);
+            socket_handle.Pass(), host_and_port, ssl_config, context);
+#endif
 
     result = socket_->Connect(
         base::Bind(&SslHmacChannelAuthenticator::OnConnected,

@@ -24,9 +24,7 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 namespace tray {
-
 namespace {
 
 // Amount of slop to add into the timer to make sure we're into the next minute
@@ -130,7 +128,7 @@ void BaseDateTimeView::OnLocaleChanged() {
 DateView::DateView()
     : hour_type_(ash::Shell::GetInstance()->system_tray_delegate()->
                  GetHourClockType()),
-      actionable_(false) {
+      action_(TrayDate::NONE) {
   SetLayoutManager(
       new views::BoxLayout(
           views::BoxLayout::kVertical, 0, 0, 0));
@@ -138,15 +136,23 @@ DateView::DateView()
   date_label_->SetEnabledColor(kHeaderTextColorNormal);
   UpdateTextInternal(base::Time::Now());
   AddChildView(date_label_);
-  SetFocusable(actionable_);
+  SetFocusable(false);
 }
 
 DateView::~DateView() {
 }
 
-void DateView::SetActionable(bool actionable) {
-  actionable_ = actionable;
-  SetFocusable(actionable_);
+void DateView::SetAction(TrayDate::DateAction action) {
+  if (action == action_)
+    return;
+  if (IsMouseHovered()) {
+    date_label_->SetEnabledColor(
+        action == TrayDate::NONE ? kHeaderTextColorNormal :
+                                   kHeaderTextColorHover);
+    SchedulePaint();
+  }
+  action_ = action;
+  SetFocusable(action_ != TrayDate::NONE);
 }
 
 void DateView::UpdateTimeFormat() {
@@ -171,22 +177,24 @@ void DateView::UpdateTextInternal(const base::Time& now) {
 }
 
 bool DateView::PerformAction(const ui::Event& event) {
-  if (!actionable_)
+  if (action_ == TrayDate::NONE)
     return false;
-
-  ash::Shell::GetInstance()->system_tray_delegate()->ShowDateSettings();
+  if (action_ == TrayDate::SHOW_DATE_SETTINGS)
+    ash::Shell::GetInstance()->system_tray_delegate()->ShowDateSettings();
+  else if (action_ == TrayDate::SET_SYSTEM_TIME)
+    ash::Shell::GetInstance()->system_tray_delegate()->ShowSetTimeDialog();
   return true;
 }
 
 void DateView::OnMouseEntered(const ui::MouseEvent& event) {
-  if (!actionable_)
+  if (action_ == TrayDate::NONE)
     return;
   date_label_->SetEnabledColor(kHeaderTextColorHover);
   SchedulePaint();
 }
 
 void DateView::OnMouseExited(const ui::MouseEvent& event) {
-  if (!actionable_)
+  if (action_ == TrayDate::NONE)
     return;
   date_label_->SetEnabledColor(kHeaderTextColorNormal);
   SchedulePaint();
@@ -314,5 +322,4 @@ void TimeView::SetupLabel(views::Label* label) {
 }
 
 }  // namespace tray
-}  // namespace internal
 }  // namespace ash

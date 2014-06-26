@@ -5,6 +5,7 @@
 #ifndef NET_SPDY_MOCK_SPDY_FRAMER_VISITOR_H_
 #define NET_SPDY_MOCK_SPDY_FRAMER_VISITOR_H_
 
+#include "base/strings/string_piece.h"
 #include "net/spdy/spdy_framer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -37,15 +38,24 @@ class MockSpdyFramerVisitor : public SpdyFramerVisitorInterface {
                                  SpdyRstStreamStatus status));
   MOCK_METHOD1(OnSettings, void(bool clear_persisted));
   MOCK_METHOD3(OnSetting, void(SpdySettingsIds id, uint8 flags, uint32 value));
-  MOCK_METHOD1(OnPing, void(SpdyPingId unique_id));
+  MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
+  MOCK_METHOD0(OnSettingsEnd, void());
   MOCK_METHOD2(OnGoAway, void(SpdyStreamId last_accepted_stream_id,
                               SpdyGoAwayStatus status));
-  MOCK_METHOD2(OnHeaders, void(SpdyStreamId stream_id, bool fin));
+  MOCK_METHOD3(OnHeaders, void(SpdyStreamId stream_id, bool fin, bool end));
   MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId stream_id,
                                     uint32 delta_window_size));
   MOCK_METHOD1(OnBlocked, void(SpdyStreamId stream_id));
-  MOCK_METHOD2(OnPushPromise, void(SpdyStreamId stream_id,
-                                   SpdyStreamId promised_stream_id));
+  MOCK_METHOD3(OnPushPromise, void(SpdyStreamId stream_id,
+                                   SpdyStreamId promised_stream_id,
+                                   bool end));
+  MOCK_METHOD2(OnContinuation, void(SpdyStreamId stream_id, bool end));
+  MOCK_METHOD6(OnAltSvc, void(SpdyStreamId stream_id,
+                              uint32 max_age,
+                              uint16 port,
+                              base::StringPiece protocol_id,
+                              base::StringPiece host,
+                              base::StringPiece origin));
 };
 
 }  // namespace test

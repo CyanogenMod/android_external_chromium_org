@@ -5,12 +5,10 @@
 #include "chrome/browser/extensions/api/spellcheck/spellcheck_api.h"
 
 #include "base/lazy_instance.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/extensions/api/spellcheck/spellcheck_handler.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/common/manifest_constants.h"
 
 namespace extensions {
@@ -27,7 +25,8 @@ SpellcheckDictionaryInfo* GetSpellcheckDictionaryInfo(
   return spellcheck_info;
 }
 
-SpellcheckService::DictionaryFormat GetDictionaryFormat(std::string format) {
+SpellcheckService::DictionaryFormat GetDictionaryFormat(
+    const std::string& format) {
   if (format == "hunspell") {
     return SpellcheckService::DICT_HUNSPELL;
   } else if (format == "text") {
@@ -39,65 +38,55 @@ SpellcheckService::DictionaryFormat GetDictionaryFormat(std::string format) {
 
 }  // namespace
 
-
-SpellcheckAPI::SpellcheckAPI(Profile* profile) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+SpellcheckAPI::SpellcheckAPI(content::BrowserContext* context)
+    : extension_registry_observer_(this) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(context));
 }
 
 SpellcheckAPI::~SpellcheckAPI() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<SpellcheckAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<SpellcheckAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<SpellcheckAPI>* SpellcheckAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<SpellcheckAPI>*
+SpellcheckAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-void SpellcheckAPI::Observe(int type,
-                            const content::NotificationSource& source,
-                            const content::NotificationDetails& details) {
-  Profile* profile = content::Source<Profile>(source).ptr();
-  SpellcheckService* spellcheck = NULL;
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
-      const Extension* extension = content::Details<Extension>(details).ptr();
-      SpellcheckDictionaryInfo* spellcheck_info =
-          GetSpellcheckDictionaryInfo(extension);
-      if (spellcheck_info) {
-        // TODO(rlp): Handle load failure. =
-        spellcheck = SpellcheckServiceFactory::GetForContext(profile);
-        spellcheck->LoadExternalDictionary(
-            spellcheck_info->language,
-            spellcheck_info->locale,
-            spellcheck_info->path,
-            GetDictionaryFormat(spellcheck_info->format));
-      }
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      const Extension* extension =
-          content::Details<UnloadedExtensionInfo>(details)->extension;
-      SpellcheckDictionaryInfo* spellcheck_info =
-          GetSpellcheckDictionaryInfo(extension);
-      if (spellcheck_info) {
-        // TODO(rlp): Handle unload failure.
-        spellcheck = SpellcheckServiceFactory::GetForContext(profile);
-        spellcheck->UnloadExternalDictionary(spellcheck_info->path);
-      }
-      break;
-    }
-    default:
-      NOTREACHED();
+void SpellcheckAPI::OnExtensionLoaded(content::BrowserContext* browser_context,
+                                      const Extension* extension) {
+  SpellcheckDictionaryInfo* spellcheck_info =
+      GetSpellcheckDictionaryInfo(extension);
+  if (spellcheck_info) {
+    // TODO(rlp): Handle load failure. =
+    SpellcheckService* spellcheck =
+        SpellcheckServiceFactory::GetForContext(browser_context);
+    spellcheck->LoadExternalDictionary(
+        spellcheck_info->language,
+        spellcheck_info->locale,
+        spellcheck_info->path,
+        GetDictionaryFormat(spellcheck_info->format));
+  }
+}
+void SpellcheckAPI::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  SpellcheckDictionaryInfo* spellcheck_info =
+      GetSpellcheckDictionaryInfo(extension);
+  if (spellcheck_info) {
+    // TODO(rlp): Handle unload failure.
+    SpellcheckService* spellcheck =
+        SpellcheckServiceFactory::GetForContext(browser_context);
+    spellcheck->UnloadExternalDictionary(spellcheck_info->path);
   }
 }
 
 template <>
-void ProfileKeyedAPIFactory<SpellcheckAPI>::DeclareFactoryDependencies() {
+void
+BrowserContextKeyedAPIFactory<SpellcheckAPI>::DeclareFactoryDependencies() {
   DependsOn(SpellcheckServiceFactory::GetInstance());
 }
 

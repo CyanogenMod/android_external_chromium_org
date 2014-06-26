@@ -10,22 +10,28 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "chrome/browser/local_discovery/test_service_discovery_client.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_base.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/webui/local_discovery/local_discovery_ui_handler.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/base/web_ui_browsertest.h"
+#include "chrome/test/base/web_ui_browser_test.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/signin/core/browser/signin_manager_base.h"
 #include "google_apis/gaia/gaia_urls.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "net/url_request/url_request_status.h"
 #include "net/url_request/url_request_test_util.h"
+
+#if defined(OS_CHROMEOS)
+#include "base/prefs/pref_service.h"
+#include "chrome/common/pref_names.h"
+#endif
 
 using testing::InvokeWithoutArgs;
 using testing::Return;
@@ -91,13 +97,14 @@ const uint8 kAnnouncePacket[] = {
   0x00, 0x01,        // CLASS is IN.
   0x00, 0x00,        // TTL (4 bytes) is 32768 seconds.
   0x01, 0x00,
-  0x00, 0x34,        // RDLENGTH is 69 bytes.
+  0x00, 0x41,        // RDLENGTH is 69 bytes.
   0x03, 'i', 'd', '=',
   0x10, 't', 'y', '=', 'S', 'a', 'm', 'p', 'l', 'e', ' ',
         'd', 'e', 'v', 'i', 'c', 'e',
   0x1e, 'n', 'o', 't', 'e', '=',
         'S', 'a', 'm', 'p', 'l', 'e', ' ', 'd', 'e', 'v', 'i', 'c', 'e', ' ',
         'd', 'e', 's', 'c', 'r', 'i', 'p', 't', 'i', 'o', 'n',
+  0x0c, 't', 'y', 'p', 'e', '=', 'p', 'r', 'i', 'n', 't', 'e', 'r',
 
   0x09, 'm', 'y', 'S', 'e', 'r', 'v', 'i', 'c', 'e',
   0xc0, 0x0c,
@@ -354,6 +361,12 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
     SigninManagerBase* signin_manager =
         SigninManagerFactory::GetForProfile(browser()->profile());
 
+#if defined(OS_CHROMEOS)
+    // Chrome OS initializes prefs::kGoogleServicesUsername to "stub user" so
+    // we need to override it as well.
+    browser()->profile()->GetPrefs()->
+        SetString(prefs::kGoogleServicesUsername, kSampleUser);
+#endif
     DCHECK(signin_manager);
     signin_manager->SetAuthenticatedUsername(kSampleUser);
 
@@ -398,13 +411,13 @@ class LocalDiscoveryUITest : public WebUIBrowserTest {
         .Times(AnyNumber());
 
     fake_fetcher_factory().SetFakeResponse(
-        GaiaUrls::GetInstance()->oauth_user_info_url(),
+        GaiaUrls::GetInstance()->people_get_url(),
         kResponseGaiaId,
         net::HTTP_OK,
         net::URLRequestStatus::SUCCESS);
 
     EXPECT_CALL(fake_url_fetcher_creator(), OnCreateFakeURLFetcher(
-        GaiaUrls::GetInstance()->oauth_user_info_url().spec()))
+        GaiaUrls::GetInstance()->people_get_url().spec()))
         .Times(AnyNumber());
 
     ProfileOAuth2TokenService* token_service =

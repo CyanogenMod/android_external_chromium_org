@@ -12,6 +12,7 @@ import sys
 
 from telemetry import decorators
 from telemetry.core import browser
+from telemetry.core import platform
 from telemetry.core import possible_browser
 from telemetry.core import util
 from telemetry.core.backends import adb_commands
@@ -24,10 +25,10 @@ CHROME_PACKAGE_NAMES = {
       ['org.chromium.content_shell_apk',
        android_browser_backend.ContentShellBackendSettings,
        'ContentShell.apk'],
-  'android-chromium-testshell':
-      ['org.chromium.chrome.testshell',
-       android_browser_backend.ChromiumTestShellBackendSettings,
-       'ChromiumTestShell.apk'],
+  'android-chrome-shell':
+      ['org.chromium.chrome.shell',
+       android_browser_backend.ChromeShellBackendSettings,
+       'ChromeShell.apk'],
   'android-webview':
       ['com.android.webview.chromium.shell',
        android_browser_backend.WebviewBackendSettings,
@@ -42,6 +43,10 @@ CHROME_PACKAGE_NAMES = {
        None],
   'android-chrome-dev':
       ['com.google.android.apps.chrome_dev',
+       android_browser_backend.ChromeBackendSettings,
+       None],
+  'android-chrome-canary':
+      ['com.chrome.canary',
        android_browser_backend.ChromeBackendSettings,
        None],
   'android-jb-system-chrome':
@@ -62,7 +67,7 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   """A launchable android browser instance."""
   def __init__(self, browser_type, finder_options, backend_settings, apk_name):
     super(PossibleAndroidBrowser, self).__init__(browser_type, 'android',
-        finder_options)
+        finder_options, backend_settings.supports_tab_control)
     assert browser_type in ALL_BROWSER_TYPES, \
         'Please add %s to ALL_BROWSER_TYPES' % browser_type
     self._backend_settings = backend_settings
@@ -91,12 +96,13 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   @decorators.Cache
   def _platform_backend(self):
     return android_platform_backend.AndroidPlatformBackend(
-        self._backend_settings.adb.Adb(),
+        self._backend_settings.adb.device(),
         self.finder_options.no_performance_mode)
 
   def Create(self):
     use_rndis_forwarder = (self.finder_options.android_rndis or
-                           self.finder_options.browser_options.netsim)
+                           self.finder_options.browser_options.netsim or
+                           platform.GetHostPlatform().GetOSName() != 'linux')
     backend = android_browser_backend.AndroidBrowserBackend(
         self.finder_options.browser_options, self._backend_settings,
         use_rndis_forwarder,
@@ -113,6 +119,7 @@ class PossibleAndroidBrowser(possible_browser.PossibleBrowser):
   def HaveLocalAPK(self):
     return self._local_apk and os.path.exists(self._local_apk)
 
+  @decorators.Cache
   def UpdateExecutableIfNeeded(self):
     if self.HaveLocalAPK():
       real_logging.warn(
@@ -193,6 +200,10 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
   device = devices[0]
 
   adb = adb_commands.AdbCommands(device=device)
+  # Trying to root the device, if possible.
+  if not adb.IsRootEnabled():
+    # Ignore result.
+    adb.EnableAdbRoot()
 
   if sys.platform.startswith('linux'):
     # Host side workaround for crbug.com/268450 (adb instability)
@@ -208,12 +219,12 @@ def FindAllAvailableBrowsers(finder_options, logging=real_logging):
         if ret:
           logging.warn('Failed to taskset %d (%s)', pid, ret)
 
-    if not os.environ.get('BUILDBOT_BUILDERNAME'):
-      # Killing adbd before running tests has proven to make them less likely to
-      # flake out during the test. We skip this if Telemetry is running under a
-      # buildbot because build/android/test_runner.py wrapper already took care
-      # of it before starting the shards.
-      adb_commands.CleanupLeftoverProcesses()
+  if not os.environ.get('BUILDBOT_BUILDERNAME'):
+    # Killing adbd before running tests has proven to make them less likely to
+    # flake out during the test. We skip this if Telemetry is running under a
+    # buildbot because build/android/test_runner.py wrapper already took care
+    # of it before starting the shards.
+    adb.RestartAdbdOnDevice()
 
   packages = adb.RunShellCommand('pm list packages')
   possible_browsers = []

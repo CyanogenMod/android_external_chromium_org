@@ -10,6 +10,7 @@
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/file_system_interface.h"
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_base.h"
+#include "chrome/browser/chromeos/file_manager/fileapi_util.h"
 
 namespace drive {
 class FileCacheEntry;
@@ -18,11 +19,12 @@ struct SearchResultInfo;
 }
 
 namespace extensions {
+
 namespace api {
-namespace file_browser_private{
+namespace file_browser_private {
 struct DriveEntryProperties;
-}
-}
+}  // namespace file_browser_private
+}  // namespace api
 
 // Retrieves property information for an entry and returns it as a dictionary.
 // On error, returns a dictionary with the key "error" set to the error number
@@ -39,20 +41,14 @@ class FileBrowserPrivateGetDriveEntryPropertiesFunction
   virtual ~FileBrowserPrivateGetDriveEntryPropertiesFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  void OnGetFileInfo(drive::FileError error,
-                     scoped_ptr<drive::ResourceEntry> entry);
-
-  void CacheStateReceived(bool success,
-                          const drive::FileCacheEntry& cache_entry);
-
   void CompleteGetFileProperties(drive::FileError error);
 
-  base::FilePath file_path_;
-  scoped_ptr<extensions::api::file_browser_private::
-             DriveEntryProperties> properties_;
+  size_t processed_count_;
+  std::vector<linked_ptr<api::file_browser_private::DriveEntryProperties> >
+      properties_list_;
 };
 
 // Implements the chrome.fileBrowserPrivate.pinDriveFile method.
@@ -66,10 +62,10 @@ class FileBrowserPrivatePinDriveFileFunction
   virtual ~FileBrowserPrivatePinDriveFileFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
-  // Callback for RunImpl().
+  // Callback for RunAsync().
   void OnPinStateSet(drive::FileError error);
 };
 
@@ -93,7 +89,7 @@ class FileBrowserPrivateGetDriveFilesFunction
   virtual ~FileBrowserPrivateGetDriveFilesFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Gets the file on the top of the |remaining_drive_paths_| or sends the
@@ -121,25 +117,35 @@ class FileBrowserPrivateCancelFileTransfersFunction
   virtual ~FileBrowserPrivateCancelFileTransfersFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 class FileBrowserPrivateSearchDriveFunction
     : public LoggedAsyncExtensionFunction {
  public:
+  typedef std::vector<drive::SearchResultInfo> SearchResultInfoList;
+
   DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.searchDrive",
                              FILEBROWSERPRIVATE_SEARCHDRIVE)
 
  protected:
   virtual ~FileBrowserPrivateSearchDriveFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Callback for Search().
   void OnSearch(drive::FileError error,
                 const GURL& next_link,
                 scoped_ptr<std::vector<drive::SearchResultInfo> > result_paths);
+
+  // Called when |result_paths| in OnSearch() are converted to a list of
+  // entry definitions.
+  void OnEntryDefinitionList(
+      const GURL& next_link,
+      scoped_ptr<SearchResultInfoList> search_result_info_list,
+      scoped_ptr<file_manager::util::EntryDefinitionList>
+          entry_definition_list);
 };
 
 // Similar to FileBrowserPrivateSearchDriveFunction but this one is used for
@@ -153,12 +159,19 @@ class FileBrowserPrivateSearchDriveMetadataFunction
  protected:
   virtual ~FileBrowserPrivateSearchDriveMetadataFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Callback for SearchMetadata();
   void OnSearchMetadata(drive::FileError error,
                         scoped_ptr<drive::MetadataSearchResultVector> results);
+
+  // Called when |results| in OnSearchMetadata() are converted to a list of
+  // entry definitions.
+  void OnEntryDefinitionList(
+      scoped_ptr<drive::MetadataSearchResultVector> search_result_info_list,
+      scoped_ptr<file_manager::util::EntryDefinitionList>
+          entry_definition_list);
 };
 
 // Implements the chrome.fileBrowserPrivate.getDriveConnectionState method.
@@ -172,7 +185,7 @@ class FileBrowserPrivateGetDriveConnectionStateFunction
  protected:
   virtual ~FileBrowserPrivateGetDriveConnectionStateFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.requestAccessToken method.
@@ -186,7 +199,7 @@ class FileBrowserPrivateRequestAccessTokenFunction
   virtual ~FileBrowserPrivateRequestAccessTokenFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // Callback with a cached auth token (if available) or a fetched one.
   void OnAccessTokenFetched(google_apis::GDataErrorCode code,
@@ -204,11 +217,27 @@ class FileBrowserPrivateGetShareUrlFunction
   virtual ~FileBrowserPrivateGetShareUrlFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // Callback with an url to the sharing dialog as |share_url|, called by
   // FileSystem::GetShareUrl.
   void OnGetShareUrl(drive::FileError error, const GURL& share_url);
+};
+
+// Implements the chrome.fileBrowserPrivate.requestDriveShare method.
+class FileBrowserPrivateRequestDriveShareFunction
+    : public LoggedAsyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.requestDriveShare",
+                             FILEBROWSERPRIVATE_REQUESTDRIVESHARE);
+
+ protected:
+  virtual ~FileBrowserPrivateRequestDriveShareFunction() {}
+  virtual bool RunAsync() OVERRIDE;
+
+ private:
+  // Called back after the drive file system operation is finished.
+  void OnAddPermission(drive::FileError error);
 };
 
 }  // namespace extensions

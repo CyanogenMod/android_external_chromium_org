@@ -46,12 +46,6 @@ class Feature {
     BLESSED_WEB_PAGE_CONTEXT,
   };
 
-  // The location required of extensions the feature is supported in.
-  enum Location {
-    UNSPECIFIED_LOCATION,
-    COMPONENT_LOCATION
-  };
-
   // The platforms the feature is supported in.
   enum Platform {
     UNSPECIFIED_PLATFORM,
@@ -75,6 +69,7 @@ class Feature {
     INVALID_MAX_MANIFEST_VERSION,
     NOT_PRESENT,
     UNSUPPORTED_CHANNEL,
+    FOUND_IN_BLACKLIST,
   };
 
   // Container for AvailabiltyResult that also exposes a user-visible error
@@ -101,39 +96,43 @@ class Feature {
   virtual ~Feature();
 
   // Used by ChromeV8Context until the feature system is fully functional.
+  // TODO(kalman): This is no longer used by ChromeV8Context, so what is the
+  // comment trying to say?
   static Availability CreateAvailability(AvailabilityResult result,
                                          const std::string& message);
 
   const std::string& name() const { return name_; }
   void set_name(const std::string& name) { name_ = name; }
-  const std::set<std::string>& dependencies() const { return dependencies_; }
   bool no_parent() const { return no_parent_; }
 
   // Gets the platform the code is currently running on.
   static Platform GetCurrentPlatform();
-
-  // Gets the Feature::Location value for the specified Manifest::Location.
-  static Location ConvertLocation(Manifest::Location extension_location);
 
   virtual std::set<Context>* GetContexts() = 0;
 
   // Tests whether this is an internal API or not.
   virtual bool IsInternal() const = 0;
 
+  // Returns True for features excluded from service worker backed contexts.
+  virtual bool IsBlockedInServiceWorker() const = 0;
+
   // Returns true if the feature is available to be parsed into a new extension
   // manifest.
   Availability IsAvailableToManifest(const std::string& extension_id,
                                      Manifest::Type type,
-                                     Location location,
+                                     Manifest::Location location,
                                      int manifest_version) const {
     return IsAvailableToManifest(extension_id, type, location, manifest_version,
                                  GetCurrentPlatform());
   }
   virtual Availability IsAvailableToManifest(const std::string& extension_id,
                                              Manifest::Type type,
-                                             Location location,
+                                             Manifest::Location location,
                                              int manifest_version,
                                              Platform platform) const = 0;
+
+  // Returns true if the feature is available to |extension|.
+  Availability IsAvailableToExtension(const Extension* extension);
 
   // Returns true if the feature is available to be used in the specified
   // extension and context.
@@ -152,11 +151,11 @@ class Feature {
                                              const GURL& url,
                                              Context context) const = 0;
 
+  virtual bool IsIdInBlacklist(const std::string& extension_id) const = 0;
   virtual bool IsIdInWhitelist(const std::string& extension_id) const = 0;
 
  protected:
   std::string name_;
-  std::set<std::string> dependencies_;
   bool no_parent_;
 };
 

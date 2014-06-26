@@ -6,14 +6,13 @@
 #define CHROME_BROWSER_OMNIBOX_OMNIBOX_FIELD_TRIAL_H_
 
 #include <map>
-#include <set>
 #include <string>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
-#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/common/autocomplete_match_type.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 
 namespace base {
 class TimeDelta;
@@ -90,9 +89,6 @@ class OmniboxFieldTrial {
   // specified type should have their relevance score multiplied by the
   // given number.  Omitted types are assumed to have multipliers of 1.0.
   typedef std::map<AutocompleteMatchType::Type, float> DemotionMultipliers;
-
-  // A set of types that should not be demoted when they are the top match.
-  typedef std::set<AutocompleteMatchType::Type> UndemotableTopMatchTypes;
 
   // Creates the static field trial groups.
   // *** MUST NOT BE CALLED MORE THAN ONCE. ***
@@ -175,6 +171,10 @@ class OmniboxFieldTrial {
   // suggestions can continue to appear after the user has started typing.
   static bool InZeroSuggestAfterTypingFieldTrial();
 
+  // Returns whether the user is in a ZeroSuggest field trial, but should
+  // show recently searched-for queries instead.
+  static bool InZeroSuggestPersonalizedFieldTrial();
+
   // ---------------------------------------------------------
   // For the ShortcutsScoringMaxRelevance experiment that's part of the
   // bundled omnibox field trial.
@@ -190,7 +190,8 @@ class OmniboxFieldTrial {
   // for non-inlineable results.  Shortcuts results are not allowed to be
   // inlined.)
   static bool ShortcutsScoringMaxRelevance(
-      AutocompleteInput::PageClassification current_page_classification,
+      metrics::OmniboxEventProto::PageClassification
+          current_page_classification,
       int* max_relevance);
 
   // ---------------------------------------------------------
@@ -201,13 +202,15 @@ class OmniboxFieldTrial {
   // provided |current_page_classification| context, scores search history
   // query suggestions less aggressively so that they don't inline.
   static bool SearchHistoryPreventInlining(
-      AutocompleteInput::PageClassification current_page_classification);
+      metrics::OmniboxEventProto::PageClassification
+          current_page_classification);
 
   // Returns true if the user is in the experiment group that, given the
   // provided |current_page_classification| context, disables all query
   // suggestions from search history.
   static bool SearchHistoryDisable(
-      AutocompleteInput::PageClassification current_page_classification);
+      metrics::OmniboxEventProto::PageClassification
+          current_page_classification);
 
   // ---------------------------------------------------------
   // For the DemoteByType experiment that's part of the bundled omnibox field
@@ -216,28 +219,12 @@ class OmniboxFieldTrial {
   // If the user is in an experiment group that, in the provided
   // |current_page_classification| context, demotes the relevance scores
   // of certain types of matches, populates the |demotions_by_type| map
-  // appropriately.  Otherwise, clears |demotions_by_type|.
+  // appropriately.  Otherwise, sets |demotions_by_type| to its default
+  // value based on the context.
   static void GetDemotionsByType(
-      AutocompleteInput::PageClassification current_page_classification,
+      metrics::OmniboxEventProto::PageClassification
+          current_page_classification,
       DemotionMultipliers* demotions_by_type);
-
-  // Get the set of types that should not be demoted if they are the top
-  // match.
-  static UndemotableTopMatchTypes GetUndemotableTopTypes(
-      AutocompleteInput::PageClassification current_page_classification);
-
-  // ---------------------------------------------------------
-  // For the ReorderForLegalDefaultMatch experiment that's part of the
-  // bundled omnibox field trial.
-
-  // Returns true if the omnibox will reorder matches, in the provided
-  // |current_page_classification| context so that a match that's allowed to
-  // be the default match will appear first.  This means AutocompleteProviders
-  // can score matches however they desire without regard to making sure the
-  // top match when all the matches from all providers are merged is a legal
-  // default match.
-  static bool ReorderForLegalDefaultMatch(
-      AutocompleteInput::PageClassification current_page_classification);
 
   // ---------------------------------------------------------
   // For the HistoryURL provider new scoring experiment that is part of the
@@ -254,18 +241,8 @@ class OmniboxFieldTrial {
   // Returns the value an untyped visit to a bookmark should receive.
   // Compare this value with the default of 1 for non-bookmarked untyped
   // visits to pages and the default of 20 for typed visits.  Returns
-  // 1 if the bookmark value experiment isn't active.
+  // 10 if the bookmark value experiment isn't active.
   static int HQPBookmarkValue();
-
-  // ---------------------------------------------------------
-  // For the HQPDiscountFrecencyWhenFewVisits experiment that's part of
-  // the bundled omnibox field trial.
-
-  // Returns whether to discount the frecency score estimates when a
-  // URL has fewer than ScoredHistoryMatch::kMaxVisitsToScore visits.
-  // See comments in scored_history_match.h for details.  Returns false
-  // if the discount frecency experiment isn't active.
-  static bool HQPDiscountFrecencyWhenFewVisits();
 
   // ---------------------------------------------------------
   // For the HQPAllowMatchInTLD experiment that's part of the
@@ -286,22 +263,69 @@ class OmniboxFieldTrial {
   static bool HQPAllowMatchInSchemeValue();
 
   // ---------------------------------------------------------
+  // For the BookmarksIndexURLs experiment that's part of the
+  // bundled omnibox field trial.
+
+  // Returns true if BookmarkIndex should index the URL of bookmarks
+  // (not only the titles) and search for / mark matches in the URLs,
+  // and BookmarkProvider should score bookmarks based on both the
+  // matches in bookmark title and URL.  Returns false if the bookmarks
+  // index URLs experiment isn't active.
+  static bool BookmarksIndexURLsValue();
+
+  // ---------------------------------------------------------
+  // For the DisableInlining experiment that's part of the bundled omnibox
+  // field trial.
+
+  // Returns true if AutocompleteResult should prevent any suggestion with
+  // a non-empty |inline_autocomplete| from being the default match.  In
+  // other words, prevent an inline autocompletion from appearing as the
+  // top suggestion / within the omnibox itself, reordering matches as
+  // necessary to make this true.  Returns false if the experiment isn't
+  // active.
+  static bool DisableInlining();
+
+  // ---------------------------------------------------------
+  // For the AnswersInSuggest experiment that's part of the bundled omnibox
+  // field trial.
+
+  // Returns true if the AnswersInSuggest feature should be enabled causing
+  // query responses such as current weather conditions or stock quotes
+  // to be provided in the Omnibox suggestion list. Considers both the
+  // field trial state as well as the overriding command-line flags.
+  static bool EnableAnswersInSuggest();
+
+  // ---------------------------------------------------------
+  // For the AddUWYTMatchEvenIfPromotedURLs experiment that's part of the
+  // bundled omnibox field trial.
+
+  // Returns true if HistoryURL Provider should add the URL-what-you-typed match
+  // (if valid and reasonable) even if the provider has good inline
+  // autocompletions to offer.  Normally HistoryURL does not add the UWYT match
+  // if there are good inline autocompletions, as the user could simply hit
+  // backspace to delete the completion and get the what-you-typed match.
+  // However, for the disabling inlining experiment we want to have the UWYT
+  // always explicitly displayed at an option if possible.  Returns false if
+  // the experiment isn't active.
+  static bool AddUWYTMatchEvenIfPromotedURLs();
+
+  // ---------------------------------------------------------
   // Exposed publicly for the sake of unittests.
   static const char kBundledExperimentFieldTrialName[];
   // Rule names used by the bundled experiment.
   static const char kShortcutsScoringMaxRelevanceRule[];
   static const char kSearchHistoryRule[];
   static const char kDemoteByTypeRule[];
-  static const char kUndemotableTopTypeRule[];
-  static const char kReorderForLegalDefaultMatchRule[];
   static const char kHQPBookmarkValueRule[];
   static const char kHQPDiscountFrecencyWhenFewVisitsRule[];
   static const char kHQPAllowMatchInTLDRule[];
   static const char kHQPAllowMatchInSchemeRule[];
   static const char kZeroSuggestRule[];
   static const char kZeroSuggestVariantRule[];
-  // Rule values.
-  static const char kReorderForLegalDefaultMatchRuleDisabled[];
+  static const char kBookmarksIndexURLsRule[];
+  static const char kDisableInliningRule[];
+  static const char kAnswersInSuggestRule[];
+  static const char kAddUWYTMatchEvenIfPromotedURLsRule[];
 
   // Parameter names used by the HUP new scoring experiments.
   static const char kHUPNewScoringEnabledParam[];
@@ -332,7 +356,7 @@ class OmniboxFieldTrial {
   // interpret the value is left to the caller; this is rule-dependent.
   static std::string GetValueForRuleInContext(
       const std::string& rule,
-      AutocompleteInput::PageClassification page_classification);
+      metrics::OmniboxEventProto::PageClassification page_classification);
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(OmniboxFieldTrial);
 };

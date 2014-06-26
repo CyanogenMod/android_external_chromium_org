@@ -30,6 +30,7 @@ namespace blink {
 class WebAudioDevice;
 class WebClipboard;
 class WebFrame;
+class WebLocalFrame;
 class WebMIDIAccessor;
 class WebMIDIAccessorClient;
 class WebMediaStreamCenter;
@@ -90,7 +91,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // returns false, the content layer will create the plugin.
   virtual bool OverrideCreatePlugin(
       RenderFrame* render_frame,
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin);
 
@@ -216,9 +217,6 @@ class CONTENT_EXPORT ContentRendererClient {
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
                                       int world_id) {}
-  virtual void WillReleaseScriptContext(blink::WebFrame* frame,
-                                        v8::Handle<v8::Context>,
-                                        int world_id) {}
 
   // See blink::Platform.
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
@@ -236,9 +234,6 @@ class CONTENT_EXPORT ContentRendererClient {
   // Returns true if the given Pepper plugin is external (requiring special
   // startup steps).
   virtual bool IsExternalPepperPlugin(const std::string& module_name);
-
-  // Returns whether BrowserPlugin should be allowed within the |container|.
-  virtual bool AllowBrowserPlugin(blink::WebPluginContainer* container);
 
   // Returns true if the page at |url| can use Pepper MediaStream APIs.
   virtual bool AllowPepperMediaStreamAPI(const GURL& url);

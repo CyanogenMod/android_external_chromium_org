@@ -8,52 +8,183 @@
 
 # it takes too long to run all browser_tests with Dr.Memory,
 # and we only select subset to run
-# A*: ~70  tests
-A*
-# DrM-i#1052-c#52
-# AutofillTest.*
-# AcceleratedCompositingBlockedTest.*
-# AppApiTest.*
-# BrowserAccessibilityStateImplTest.*
-B*
-C*
-D*
-E*
-F*
-G*
-# H*: ~35  tests
-H*
-# DrM-i#1052-c#53
-# HistoryWebUITest.*
-# I*: ~10  tests
-# DrM-i#1052-c#53
-InfoBarsTest.*
-# J*: 0    tests
-# K*: 1    tests
-# L*: 62   tests
-M*
-N*
-O*
-P*
-Q*
-R*
-S*
-T*
-# U*: ~20  tests
-# DrM-i#1052-c#53
-UnloadTest.*
-# V*: 5    tests
-# W*: ~150 tests
-W*
-# X*: 0    tests
-# Y*: 0    tests
-# Z*: 0    tests
-
-# http://crbug.com/302993
-InstantNTPURLRewriteTest.UberURLHandler_InstantExtendedNewTabPage
-
-# http://crbug.com/328936
-IEImporterBrowserTest.IEImporter
-
-# http://crbug.com/332219
-IEImporterBrowserTest.IEImporterMalformedFavoritesRegistry
+# A*
+Act*
+Ad*
+All*
+AppA*
+AppB*
+AppL*
+AppW*
+Auto*
+# B*
+BaseD*
+Bac*App*.R*
+Blue*
+Bit*
+Bo*sT*
+Br*erA*
+Br*erC*
+Br*erN*
+Br*erT*
+# C*
+Cal*
+Cap*
+Cas*
+Clou*cy
+Clear*
+Click*
+Com*
+ChromeA*
+ChromeC*
+ChromeR*
+Col*
+Con*UITest.*
+Con*.Re*
+Con*Se*
+Cont*ns
+Context*
+Coo*
+# D*
+Dia*E*
+Dec*
+Dev*
+Dns*
+DoNot*
+Down*Ext*
+Down*UI*
+Do*adTest.*
+Drive*
+# E*
+ECK*
+Ed*
+Enc*
+Ep*
+Er*
+Exe*
+Ext*.D*
+Ext*.P*
+Ext*.N*
+Ext*.RS*
+Ext*Api*
+Ext*Man*
+Ext*Se*
+Ext*re*
+Ext*Re*
+Ext*nB*
+Ext*Crx*
+# F*
+FileSys*
+Find*
+Fl*
+Font*gs
+Ftp*
+# G*
+Gcm*.R*
+GetA*
+Ge*Br*
+# H*
+Hot*
+His*
+HostR*
+Ht*
+# I*
+IE*
+Ide*
+Inv*
+# J*
+# K*
+# L*
+Lan*
+Lau*
+Laz*
+LoadT*
+Loc*
+Log*hs
+# M*
+MDn*
+Med*B*
+Med*Se*
+Med*Ge*
+Mock*
+MSC_C*
+MSE*
+Man*t.*
+# N*
+NaCl*lib*
+NaCl*Pn*
+NetIn*
+Noti*
+NoSe*
+# O*
+Opt*WebUI*
+Out*PPAPITe*
+# P*
+Pag*
+Pas*erBro*
+Pe*
+Plat*Bro*
+Policy*H*
+Port*
+Prefe*
+PrefsF*
+Print*
+Prox*
+Prof*ta
+Prof*t
+Prer*
+PPA*ib*
+PPA*lT*.*
+PPAPIT*.F*
+PPAPIT*.W*
+# Q*
+# R*
+Red*
+Ref*
+Reg*
+Rem*De*
+Rem*Ad*
+Res*
+# S*
+Sa*
+Sea*Pr*
+Ses*
+Set*
+Scr*
+Soc*
+Spe*
+SRC*.Pl*
+SRC*.Fr*
+SSL*ed
+Sup*Mo*
+Str*
+SyncF*
+SyncInt*
+Sys*Di*
+Sys*In*
+Sys*Ne*
+# T*
+Tab*
+Tas*
+Tran*Bu*
+Tran*Up*
+Tran*ag
+# U*
+Us*
+Un*.Br*
+# V*
+# W*
+WebViewT*
+WebRtcB*
+WebUIA*
+WebUIBr*
+WebC*
+WebN*ss
+WebN*.S*
+WebstoreIn*
+WebstoreSt*
+WebSo*
+Win*.Cl*
+# X*
+# Y*
+# Z*

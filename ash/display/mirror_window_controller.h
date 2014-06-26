@@ -9,15 +9,11 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window_observer.h"
-#include "ui/gfx/display.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
 namespace aura {
-class RootWindow;
-class RootWindowTransformer;
 class Window;
 }
 
@@ -26,17 +22,18 @@ class Reflector;
 }
 
 namespace ash {
+class AshWindowTreeHost;
+class DisplayInfo;
+class RootWindowTransformer;
+
 namespace test{
 class MirrorWindowTestApi;
 }
 
-namespace internal {
-class DisplayInfo;
-
 // An object that copies the content of the primary root window to a
 // mirror window. This also draws a mouse cursor as the mouse cursor
 // is typically drawn by the window system.
-class ASH_EXPORT MirrorWindowController : public aura::RootWindowObserver {
+class ASH_EXPORT MirrorWindowController : public aura::WindowTreeHostObserver {
  public:
   MirrorWindowController();
   virtual ~MirrorWindowController();
@@ -52,27 +49,27 @@ class ASH_EXPORT MirrorWindowController : public aura::RootWindowObserver {
   // Close the mirror window.
   void Close();
 
-  // aura::RootWindowObserver overrides:
-  virtual void OnWindowTreeHostResized(const aura::RootWindow* root) OVERRIDE;
+  // aura::WindowTreeHostObserver overrides:
+  virtual void OnHostResized(const aura::WindowTreeHost* host) OVERRIDE;
 
-  // Returns the mirror root window.
-  aura::RootWindow* root_window() const { return root_window_.get(); }
+  // Return the root window used to mirror the content. NULL if the
+  // display is not mirrored by the compositor path.
+  aura::Window* GetWindow();
 
  private:
   friend class test::MirrorWindowTestApi;
 
   // Creates a RootWindowTransformer for current display
   // configuration.
-  scoped_ptr<aura::RootWindowTransformer> CreateRootWindowTransformer() const;
+  scoped_ptr<RootWindowTransformer> CreateRootWindowTransformer() const;
 
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<AshWindowTreeHost> ash_host_;
   gfx::Size mirror_window_host_size_;
   scoped_refptr<ui::Reflector> reflector_;
 
   DISALLOW_COPY_AND_ASSIGN(MirrorWindowController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DISPLAY_MIRROR_WINDOW_CONTROLLER_H_

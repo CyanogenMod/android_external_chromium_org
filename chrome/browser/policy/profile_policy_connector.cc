@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/cloud_policy_core.h"
@@ -19,8 +20,8 @@
 #include "google_apis/gaia/gaia_auth_util.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/device_local_account_policy_provider.h"
@@ -28,6 +29,18 @@
 #endif
 
 namespace policy {
+
+namespace {
+
+bool HasChromePolicy(ConfigurationPolicyProvider* provider,
+                     const char* name) {
+  if (!provider)
+    return false;
+  PolicyNamespace chrome_ns(POLICY_DOMAIN_CHROME, "");
+  return provider->policies().Get(chrome_ns).Get(name) != NULL;
+}
+
+}  // namespace
 
 ProfilePolicyConnector::ProfilePolicyConnector()
 #if defined(OS_CHROMEOS)
@@ -57,6 +70,9 @@ void ProfilePolicyConnector::Init(
   // use the policies exposed by the PolicyService!
   // The default ConfigurationPolicyProvider::IsInitializationComplete()
   // result is true, so take care if a provider overrides that.
+  //
+  // Note: if you append a new provider then make sure IsPolicyFromCloudPolicy()
+  // is also updated below.
   std::vector<ConfigurationPolicyProvider*> providers;
 
 #if defined(OS_CHROMEOS)
@@ -88,17 +104,17 @@ void ProfilePolicyConnector::Init(
     // This case occurs for the signin profile.
     special_user_policy_provider_.reset(
         new LoginProfilePolicyProvider(connector->GetPolicyService()));
-    special_user_policy_provider_->Init(schema_registry);
   } else {
     // |user| should never be NULL except for the signin profile.
     is_primary_user_ = user == chromeos::UserManager::Get()->GetPrimaryUser();
-    if (user->GetType() == chromeos::User::USER_TYPE_PUBLIC_ACCOUNT) {
-      InitializeDeviceLocalAccountPolicyProvider(user->email(),
-                                                 schema_registry);
-    }
+    special_user_policy_provider_ = DeviceLocalAccountPolicyProvider::Create(
+        user->email(),
+        connector->GetDeviceLocalAccountPolicyService());
   }
-  if (special_user_policy_provider_)
+  if (special_user_policy_provider_) {
+    special_user_policy_provider_->Init(schema_registry);
     providers.push_back(special_user_policy_provider_.get());
+  }
 #endif
 
   policy_service_.reset(new PolicyServiceImpl(providers));
@@ -143,20 +159,25 @@ std::string ProfilePolicyConnector::GetManagementDomain() const {
   return "";
 }
 
+bool ProfilePolicyConnector::IsPolicyFromCloudPolicy(const char* name) const {
+  if (!HasChromePolicy(user_cloud_policy_manager_, name))
+    return false;
+
+  // Check all the providers that have higher priority than the
+  // |user_cloud_policy_manager_|. These checks must be kept in sync with the
+  // order of the providers in Init().
+
+  if (HasChromePolicy(forwarding_policy_provider_.get(), name))
+    return false;
+
 #if defined(OS_CHROMEOS)
-void ProfilePolicyConnector::InitializeDeviceLocalAccountPolicyProvider(
-    const std::string& username,
-    SchemaRegistry* schema_registry) {
   BrowserPolicyConnectorChromeOS* connector =
       g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  DeviceLocalAccountPolicyService* device_local_account_policy_service =
-      connector->GetDeviceLocalAccountPolicyService();
-  if (!device_local_account_policy_service)
-    return;
-  special_user_policy_provider_.reset(new DeviceLocalAccountPolicyProvider(
-      username, device_local_account_policy_service));
-  special_user_policy_provider_->Init(schema_registry);
-}
+  if (HasChromePolicy(connector->GetDeviceCloudPolicyManager(), name))
+    return false;
 #endif
+
+  return true;
+}
 
 }  // namespace policy

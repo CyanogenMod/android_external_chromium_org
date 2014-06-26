@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/extensions/api/api_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/notifications.h"
 #include "extensions/browser/extension_function.h"
 #include "ui/message_center/notification_types.h"
@@ -17,7 +17,7 @@ class Notification;
 
 namespace extensions {
 
-class NotificationsApiFunction : public ApiFunction {
+class NotificationsApiFunction : public ChromeAsyncExtensionFunction {
  public:
   // Whether the current extension and channel allow the API. Public for
   // testing.
@@ -41,11 +41,11 @@ class NotificationsApiFunction : public ApiFunction {
   // notifications for a notifier have been disabled.
   virtual bool CanRunWhileDisabled() const;
 
-  // Called inside of RunImpl.
+  // Called inside of RunAsync.
   virtual bool RunNotificationsApi() = 0;
 
   // UITHreadExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   message_center::NotificationType MapApiTemplateTypeToType(
       api::notifications::TemplateType type);

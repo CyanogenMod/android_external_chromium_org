@@ -10,8 +10,8 @@
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/drive/resource_entry_conversion.h"
 #include "chrome/browser/chromeos/drive/resource_metadata.h"
+#include "chrome/browser/drive/drive_api_util.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/gdata_wapi_parser.h"
 
 namespace drive {
 namespace internal {
@@ -53,6 +53,15 @@ class ChangeListToEntryMapUMAStats {
   int num_shared_with_me_entries_;
 };
 
+// Returns true if it's OK to overwrite the local entry with the remote one.
+bool ShouldApplyChange(const ResourceEntry& local_entry,
+                       const ResourceEntry& remote_entry) {
+  if (local_entry.metadata_edit_state() == ResourceEntry::CLEAN)
+    return true;
+  return base::Time::FromInternalValue(remote_entry.modification_date()) >
+      base::Time::FromInternalValue(local_entry.modification_date());
+}
+
 }  // namespace
 
 std::string DirectoryFetchInfo::ToString() const {
@@ -63,18 +72,39 @@ std::string DirectoryFetchInfo::ToString() const {
 
 ChangeList::ChangeList() {}
 
-ChangeList::ChangeList(const google_apis::ResourceList& resource_list)
-    : largest_changestamp_(resource_list.largest_changestamp()) {
-  resource_list.GetNextFeedURL(&next_url_);
-
-  entries_.resize(resource_list.entries().size());
-  parent_resource_ids_.resize(resource_list.entries().size());
+ChangeList::ChangeList(const google_apis::ChangeList& change_list)
+    : next_url_(change_list.next_link()),
+      largest_changestamp_(change_list.largest_change_id()) {
+  const ScopedVector<google_apis::ChangeResource>& items = change_list.items();
+  entries_.resize(items.size());
+  parent_resource_ids_.resize(items.size());
   size_t entries_index = 0;
-  for (size_t i = 0; i < resource_list.entries().size(); ++i) {
-    if (ConvertToResourceEntry(*resource_list.entries()[i],
-                               &entries_[entries_index],
-                               &parent_resource_ids_[entries_index]))
+  for (size_t i = 0; i < items.size(); ++i) {
+    if (ConvertChangeResourceToResourceEntry(
+            *items[i],
+            &entries_[entries_index],
+            &parent_resource_ids_[entries_index])) {
       ++entries_index;
+    }
+  }
+  entries_.resize(entries_index);
+  parent_resource_ids_.resize(entries_index);
+}
+
+ChangeList::ChangeList(const google_apis::FileList& file_list)
+    : next_url_(file_list.next_link()),
+      largest_changestamp_(0) {
+  const ScopedVector<google_apis::FileResource>& items = file_list.items();
+  entries_.resize(items.size());
+  parent_resource_ids_.resize(items.size());
+  size_t entries_index = 0;
+  for (size_t i = 0; i < items.size(); ++i) {
+    if (ConvertFileResourceToResourceEntry(
+            *items[i],
+            &entries_[entries_index],
+            &parent_resource_ids_[entries_index])) {
+      ++entries_index;
+    }
   }
   entries_.resize(entries_index);
   parent_resource_ids_.resize(entries_index);
@@ -274,11 +304,12 @@ FileError ChangeListProcessor::ApplyEntryMap(
       // root entry, but we should better be defensive (see crbug.com/297259).
       ResourceEntryMap::iterator it = entries[i];
       if (it->first != root.resource_id()) {
-        // TODO(hashimoto): Handle ApplyEntry errors correctly.
         FileError error = ApplyEntry(it->second);
-        DLOG_IF(WARNING, error != FILE_ERROR_OK)
-            << "ApplyEntry failed: " << FileErrorToString(error)
-            << ", title = " << it->second.title();
+        if (error != FILE_ERROR_OK) {
+          LOG(ERROR) << "ApplyEntry failed: " << FileErrorToString(error)
+                     << ", title = " << it->second.title();
+          return error;
+        }
       }
       entry_map_.erase(it);
     }
@@ -289,12 +320,21 @@ FileError ChangeListProcessor::ApplyEntryMap(
     std::string local_id;
     FileError error = resource_metadata_->GetIdByResourceId(
         deleted_resource_ids[i], &local_id);
-    if (error == FILE_ERROR_OK)
-      error = resource_metadata_->RemoveEntry(local_id);
-
-    DLOG_IF(WARNING, error != FILE_ERROR_OK && error != FILE_ERROR_NOT_FOUND)
-        << "Failed to delete: " << FileErrorToString(error)
-        << ", resource_id = " << deleted_resource_ids[i];
+    switch (error) {
+      case FILE_ERROR_OK:
+        error = resource_metadata_->RemoveEntry(local_id);
+        break;
+      case FILE_ERROR_NOT_FOUND:
+        error = FILE_ERROR_OK;
+        break;
+      default:
+        break;
+    }
+    if (error != FILE_ERROR_OK) {
+      LOG(ERROR) << "Failed to delete: " << FileErrorToString(error)
+                 << ", resource_id = " << deleted_resource_ids[i];
+      return error;
+    }
   }
 
   return FILE_ERROR_OK;
@@ -321,9 +361,21 @@ FileError ChangeListProcessor::ApplyEntry(const ResourceEntry& entry) {
     error = resource_metadata_->GetResourceEntryById(local_id, &existing_entry);
 
   switch (error) {
-    case FILE_ERROR_OK:  // Entry exists and needs to be refreshed.
-      new_entry.set_local_id(local_id);
-      error = resource_metadata_->RefreshEntry(new_entry);
+    case FILE_ERROR_OK:
+      if (ShouldApplyChange(existing_entry, new_entry)) {
+        // Entry exists and needs to be refreshed.
+        new_entry.set_local_id(local_id);
+        error = resource_metadata_->RefreshEntry(new_entry);
+      } else {
+        if (entry.file_info().is_directory()) {
+          // No need to refresh, but update the changestamp.
+          new_entry = existing_entry;
+          new_entry.mutable_directory_specific_info()->set_changestamp(
+              new_entry.directory_specific_info().changestamp());
+          error = resource_metadata_->RefreshEntry(new_entry);
+        }
+        DVLOG(1) << "Change was discarded for: " << entry.resource_id();
+      }
       break;
     case FILE_ERROR_NOT_FOUND: {  // Adding a new entry.
       std::string local_id;
@@ -344,8 +396,8 @@ FileError ChangeListProcessor::ApplyEntry(const ResourceEntry& entry) {
 FileError ChangeListProcessor::RefreshDirectory(
     ResourceMetadata* resource_metadata,
     const DirectoryFetchInfo& directory_fetch_info,
-    ScopedVector<ChangeList> change_lists,
-    base::FilePath* out_file_path) {
+    scoped_ptr<ChangeList> change_list,
+    std::vector<ResourceEntry>* out_refreshed_entries) {
   DCHECK(!directory_fetch_info.empty());
 
   ResourceEntry directory;
@@ -357,52 +409,45 @@ FileError ChangeListProcessor::RefreshDirectory(
   if (!directory.file_info().is_directory())
     return FILE_ERROR_NOT_A_DIRECTORY;
 
-  for (size_t i = 0; i < change_lists.size(); ++i) {
-    ChangeList* change_list = change_lists[i];
-    std::vector<ResourceEntry>* entries = change_list->mutable_entries();
-    for (size_t i = 0; i < entries->size(); ++i) {
-      ResourceEntry* entry = &(*entries)[i];
-      const std::string& parent_resource_id =
-          change_list->parent_resource_ids()[i];
+  std::vector<ResourceEntry>* entries = change_list->mutable_entries();
+  for (size_t i = 0; i < entries->size(); ++i) {
+    ResourceEntry* entry = &(*entries)[i];
+    const std::string& parent_resource_id =
+        change_list->parent_resource_ids()[i];
 
-      // Skip if the parent resource ID does not match. This is needed to
-      // handle entries with multiple parents. For such entries, the first
-      // parent is picked and other parents are ignored, hence some entries may
-      // have a parent resource ID which does not match the target directory's.
-      if (parent_resource_id != directory_fetch_info.resource_id()) {
-        DVLOG(1) << "Wrong-parent entry rejected: " << entry->resource_id();
-        continue;
-      }
-
-      entry->set_parent_local_id(directory_fetch_info.local_id());
-
-      std::string local_id;
-      error = resource_metadata->GetIdByResourceId(entry->resource_id(),
-                                                   &local_id);
-      if (error == FILE_ERROR_OK) {
-        entry->set_local_id(local_id);
-        error = resource_metadata->RefreshEntry(*entry);
-      }
-
-      if (error == FILE_ERROR_NOT_FOUND) {  // If refreshing fails, try adding.
-        std::string local_id;
-        entry->clear_local_id();
-        error = resource_metadata->AddEntry(*entry, &local_id);
-      }
-
-      if (error != FILE_ERROR_OK)
-        return error;
+    // Skip if the parent resource ID does not match. This is needed to
+    // handle entries with multiple parents. For such entries, the first
+    // parent is picked and other parents are ignored, hence some entries may
+    // have a parent resource ID which does not match the target directory's.
+    if (parent_resource_id != directory_fetch_info.resource_id()) {
+      DVLOG(1) << "Wrong-parent entry rejected: " << entry->resource_id();
+      continue;
     }
+
+    entry->set_parent_local_id(directory_fetch_info.local_id());
+
+    std::string local_id;
+    error = resource_metadata->GetIdByResourceId(entry->resource_id(),
+                                                 &local_id);
+    if (error == FILE_ERROR_OK) {
+      entry->set_local_id(local_id);
+      error = resource_metadata->RefreshEntry(*entry);
+    }
+
+    if (error == FILE_ERROR_NOT_FOUND) {  // If refreshing fails, try adding.
+      entry->clear_local_id();
+      error = resource_metadata->AddEntry(*entry, &local_id);
+    }
+
+    if (error != FILE_ERROR_OK)
+      return error;
+
+    ResourceEntry result_entry;
+    error = resource_metadata->GetResourceEntryById(local_id, &result_entry);
+    if (error != FILE_ERROR_OK)
+      return error;
+    out_refreshed_entries->push_back(result_entry);
   }
-
-  directory.mutable_directory_specific_info()->set_changestamp(
-      directory_fetch_info.changestamp());
-  error = resource_metadata->RefreshEntry(directory);
-  if (error != FILE_ERROR_OK)
-    return error;
-
-  *out_file_path = resource_metadata->GetFilePath(
-      directory_fetch_info.local_id());
   return FILE_ERROR_OK;
 }
 
@@ -432,7 +477,7 @@ void ChangeListProcessor::UpdateChangedDirs(const ResourceEntry& entry) {
   base::FilePath file_path;
   if (resource_metadata_->GetIdByResourceId(
           entry.resource_id(), &local_id) == FILE_ERROR_OK)
-    file_path = resource_metadata_->GetFilePath(local_id);
+    resource_metadata_->GetFilePath(local_id, &file_path);
 
   if (!file_path.empty()) {
     // Notify parent.

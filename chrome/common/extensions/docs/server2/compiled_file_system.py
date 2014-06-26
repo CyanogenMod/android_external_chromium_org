@@ -7,7 +7,7 @@ import sys
 import schema_util
 from docs_server_utils import ToUnicode
 from file_system import FileNotFoundError
-from future import Gettable, Future
+from future import Future
 from path_util import AssertIsDirectory, AssertIsFile
 from third_party.handlebar import Handlebar
 from third_party.json_schema_compiler import json_parse
@@ -106,7 +106,7 @@ class CompiledFileSystem(object):
                          category='json')
 
     @memoize
-    def ForApiSchema(self, file_system):
+    def ForAPISchema(self, file_system):
       '''Creates a CompiledFileSystem for parsing raw JSON or IDL API schema
       data and formatting it so that it can be used by other classes, such
       as Model and APISchemaGraph.
@@ -198,7 +198,7 @@ class CompiledFileSystem(object):
 
       return first_layer_files + get_from_future_listing(second_layer_listing)
 
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def GetFromFile(self, path):
     '''Calls |compilation_function| on the contents of the file at |path|.  If
@@ -222,7 +222,7 @@ class CompiledFileSystem(object):
       cache_data = self._compilation_function(path, future_files.Get())
       self._file_object_store.Set(path, _CacheEntry(cache_data, version))
       return cache_data
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def GetFromFileListing(self, path):
     '''Calls |compilation_function| on the listing of the files at |path|.
@@ -244,7 +244,7 @@ class CompiledFileSystem(object):
       cache_data = self._compilation_function(path, recursive_list_future.Get())
       self._list_object_store.Set(path, _CacheEntry(cache_data, version))
       return cache_data
-    return Future(delegate=Gettable(resolve))
+    return Future(callback=resolve)
 
   def GetFileVersion(self, path):
     cache_entry = self._file_object_store.Get(path).Get()
@@ -259,3 +259,9 @@ class CompiledFileSystem(object):
     if cache_entry is not None:
       return cache_entry.version
     return self._file_system.Stat(path).version
+
+  def FileExists(self, path):
+    return self._file_system.Exists(path)
+
+  def GetIdentity(self):
+    return self._file_system.GetIdentity()

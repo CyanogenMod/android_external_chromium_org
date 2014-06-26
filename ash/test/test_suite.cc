@@ -13,6 +13,7 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/gfx/gfx_paths.h"
+#include "ui/gl/gl_surface.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -29,14 +30,19 @@ AuraShellTestSuite::AuraShellTestSuite(int argc, char** argv)
 
 void AuraShellTestSuite::Initialize() {
   base::TestSuite::Initialize();
+  gfx::GLSurface::InitializeOneOffForTests();
 
 #if defined(OS_WIN)
-  if (base::win::GetVersion() >= base::win::VERSION_WIN8 &&
+  base::win::Version version = base::win::GetVersion();
+  // Although Ash officially is only supported for users on Win7+, we still run
+  // ash_unittests on Vista builders, so we still need to initialize COM.
+  if (version >= base::win::VERSION_VISTA &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           ash::switches::kForceAshToDesktop)) {
     com_initializer_.reset(new base::win::ScopedCOMInitializer());
     ui::win::CreateATLModuleIfNeeded();
-    ASSERT_TRUE(win8::MakeTestDefaultBrowserSynchronously());
+    if (version >= base::win::VERSION_WIN8)
+      ASSERT_TRUE(win8::MakeTestDefaultBrowserSynchronously());
   }
 #endif
 

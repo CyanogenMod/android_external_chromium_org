@@ -16,13 +16,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chromeos/ime/composition_text.h"
-#include "chromeos/ime/ibus_keymap.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ime/chromeos/ime_bridge.h"
 #include "ui/base/ime/chromeos/mock_ime_candidate_window_handler.h"
 #include "ui/base/ime/chromeos/mock_ime_engine_handler.h"
 #include "ui/base/ime/input_method_delegate.h"
 #include "ui/base/ime/text_input_client.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #include "ui/gfx/geometry/rect.h"
@@ -32,6 +33,10 @@ using base::UTF16ToUTF8;
 
 namespace ui {
 namespace {
+
+const base::string16 kSampleText = base::UTF8ToUTF16(
+    "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
+
 typedef chromeos::IMEEngineHandlerInterface::KeyEventDoneCallback
     KeyEventCallback;
 
@@ -219,12 +224,19 @@ class InputMethodChromeOSTest : public internal::InputMethodDelegate,
         mock_ime_candidate_window_handler_.get());
 
     ime_.reset(new TestableInputMethodChromeOS(this));
-    ime_->SetFocusedTextInputClient(this);
+    if (switches::IsTextInputFocusManagerEnabled())
+      TextInputFocusManager::GetInstance()->FocusTextInputClient(this);
+    else
+      ime_->SetFocusedTextInputClient(this);
   }
 
   virtual void TearDown() OVERRIDE {
-    if (ime_.get())
-      ime_->SetFocusedTextInputClient(NULL);
+    if (ime_.get()) {
+      if (switches::IsTextInputFocusManagerEnabled())
+        TextInputFocusManager::GetInstance()->BlurTextInputClient(this);
+      else
+        ime_->SetFocusedTextInputClient(NULL);
+    }
     ime_.reset();
     chromeos::IMEBridge::Get()->SetCurrentEngineHandler(NULL);
     chromeos::IMEBridge::Get()->SetCandidateWindowHandler(NULL);
@@ -313,6 +325,10 @@ class InputMethodChromeOSTest : public internal::InputMethodDelegate,
   virtual void OnCandidateWindowShown() OVERRIDE {}
   virtual void OnCandidateWindowUpdated() OVERRIDE {}
   virtual void OnCandidateWindowHidden() OVERRIDE {}
+  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE {
+    return false;
+  }
+  virtual void ExecuteEditingCommand(int command_id) OVERRIDE {}
 
   bool HasNativeEvent() const {
     return dispatched_key_event_.HasNativeEvent();
@@ -401,21 +417,30 @@ TEST_F(InputMethodChromeOSTest, CanComposeInline) {
 TEST_F(InputMethodChromeOSTest, GetTextInputClient) {
   ime_->Init(true);
   EXPECT_EQ(this, ime_->GetTextInputClient());
-  ime_->SetFocusedTextInputClient(NULL);
+  if (switches::IsTextInputFocusManagerEnabled())
+    TextInputFocusManager::GetInstance()->BlurTextInputClient(this);
+  else
+    ime_->SetFocusedTextInputClient(NULL);
   EXPECT_EQ(NULL, ime_->GetTextInputClient());
 }
 
 TEST_F(InputMethodChromeOSTest, GetInputTextType_WithoutFocusedClient) {
   ime_->Init(true);
   EXPECT_EQ(TEXT_INPUT_TYPE_NONE, ime_->GetTextInputType());
-  ime_->SetFocusedTextInputClient(NULL);
+  if (switches::IsTextInputFocusManagerEnabled())
+    TextInputFocusManager::GetInstance()->BlurTextInputClient(this);
+  else
+    ime_->SetFocusedTextInputClient(NULL);
   input_type_ = TEXT_INPUT_TYPE_PASSWORD;
   ime_->OnTextInputTypeChanged(this);
   // The OnTextInputTypeChanged() call above should be ignored since |this| is
   // not the current focused client.
   EXPECT_EQ(TEXT_INPUT_TYPE_NONE, ime_->GetTextInputType());
 
-  ime_->SetFocusedTextInputClient(this);
+  if (switches::IsTextInputFocusManagerEnabled())
+    TextInputFocusManager::GetInstance()->FocusTextInputClient(this);
+  else
+    ime_->SetFocusedTextInputClient(this);
   ime_->OnTextInputTypeChanged(this);
   EXPECT_EQ(TEXT_INPUT_TYPE_PASSWORD, ime_->GetTextInputType());
 }
@@ -423,19 +448,30 @@ TEST_F(InputMethodChromeOSTest, GetInputTextType_WithoutFocusedClient) {
 TEST_F(InputMethodChromeOSTest, GetInputTextType_WithoutFocusedWindow) {
   ime_->Init(true);
   EXPECT_EQ(TEXT_INPUT_TYPE_NONE, ime_->GetTextInputType());
-  ime_->OnBlur();
+  if (switches::IsTextInputFocusManagerEnabled())
+    TextInputFocusManager::GetInstance()->BlurTextInputClient(this);
+  else
+    ime_->OnBlur();
   input_type_ = TEXT_INPUT_TYPE_PASSWORD;
   ime_->OnTextInputTypeChanged(this);
   // The OnTextInputTypeChanged() call above should be ignored since the top-
   // level window which the ime_ is attached to is not currently focused.
   EXPECT_EQ(TEXT_INPUT_TYPE_NONE, ime_->GetTextInputType());
 
-  ime_->OnFocus();
+  if (switches::IsTextInputFocusManagerEnabled())
+    TextInputFocusManager::GetInstance()->FocusTextInputClient(this);
+  else
+    ime_->OnFocus();
   ime_->OnTextInputTypeChanged(this);
   EXPECT_EQ(TEXT_INPUT_TYPE_PASSWORD, ime_->GetTextInputType());
 }
 
 TEST_F(InputMethodChromeOSTest, GetInputTextType_WithoutFocusedWindow2) {
+  // We no longer support the case that |ime_->Init(false)| because no one
+  // actually uses it.
+  if (switches::IsTextInputFocusManagerEnabled())
+    return;
+
   ime_->Init(false);  // the top-level is initially unfocused.
   EXPECT_EQ(TEXT_INPUT_TYPE_NONE, ime_->GetTextInputType());
   input_type_ = TEXT_INPUT_TYPE_PASSWORD;
@@ -467,15 +503,15 @@ TEST_F(InputMethodChromeOSTest, FocusIn_Text) {
   EXPECT_EQ(1U, on_input_method_changed_call_count_);
 }
 
-// Confirm that IBusClient::FocusIn is NOT called on "connected" if input_type_
-// is PASSWORD.
+// Confirm that InputMethodEngine::FocusIn is called on "connected" even if
+// input_type_ is PASSWORD.
 TEST_F(InputMethodChromeOSTest, FocusIn_Password) {
   ime_->Init(true);
   EXPECT_EQ(0U, on_input_method_changed_call_count_);
   input_type_ = TEXT_INPUT_TYPE_PASSWORD;
   ime_->OnTextInputTypeChanged(this);
-  // Since a form has focus, IBusClient::FocusIn() should NOT be called.
-  EXPECT_EQ(0, mock_ime_engine_handler_->focus_in_call_count());
+  // InputMethodEngine::FocusIn() should be called even for password field.
+  EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
   EXPECT_EQ(1U, on_input_method_changed_call_count_);
 }
 
@@ -499,7 +535,7 @@ TEST_F(InputMethodChromeOSTest, FocusOut_Password) {
   EXPECT_EQ(0, mock_ime_engine_handler_->focus_out_call_count());
   input_type_ = TEXT_INPUT_TYPE_PASSWORD;
   ime_->OnTextInputTypeChanged(this);
-  EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(2, mock_ime_engine_handler_->focus_in_call_count());
   EXPECT_EQ(1, mock_ime_engine_handler_->focus_out_call_count());
 }
 
@@ -528,24 +564,37 @@ TEST_F(InputMethodChromeOSTest, Focus_Scenario) {
 
   input_mode_ = TEXT_INPUT_MODE_KANA;
   ime_->OnTextInputTypeChanged(this);
-  // Confirm that both FocusIn and FocusOut are NOT called.
-  EXPECT_EQ(1, mock_ime_engine_handler_->focus_in_call_count());
-  EXPECT_EQ(0, mock_ime_engine_handler_->focus_out_call_count());
+  // Confirm that both FocusIn and FocusOut are called for mode change.
+  EXPECT_EQ(2, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(1, mock_ime_engine_handler_->focus_out_call_count());
   EXPECT_EQ(TEXT_INPUT_TYPE_TEXT,
             mock_ime_engine_handler_->last_text_input_context().type);
-  EXPECT_EQ(TEXT_INPUT_MODE_LATIN,
+  EXPECT_EQ(TEXT_INPUT_MODE_KANA,
             mock_ime_engine_handler_->last_text_input_context().mode);
 
   input_type_ = TEXT_INPUT_TYPE_URL;
   ime_->OnTextInputTypeChanged(this);
   // Confirm that both FocusIn and FocusOut are called and the TextInputType is
-  // URL.
-  EXPECT_EQ(2, mock_ime_engine_handler_->focus_in_call_count());
-  EXPECT_EQ(1, mock_ime_engine_handler_->focus_out_call_count());
+  // changed to URL.
+  EXPECT_EQ(3, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(2, mock_ime_engine_handler_->focus_out_call_count());
   EXPECT_EQ(TEXT_INPUT_TYPE_URL,
             mock_ime_engine_handler_->last_text_input_context().type);
   EXPECT_EQ(TEXT_INPUT_MODE_KANA,
             mock_ime_engine_handler_->last_text_input_context().mode);
+
+  // When IsTextInputFocusManagerEnabled, InputMethod::SetFocusedTextInputClient
+  // is not supported and it's no-op.
+  if (switches::IsTextInputFocusManagerEnabled())
+    return;
+  // Confirm that FocusOut is called when set focus to NULL client.
+  ime_->SetFocusedTextInputClient(NULL);
+  EXPECT_EQ(3, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(3, mock_ime_engine_handler_->focus_out_call_count());
+  // Confirm that FocusIn is called when set focus to this client.
+  ime_->SetFocusedTextInputClient(this);
+  EXPECT_EQ(4, mock_ime_engine_handler_->focus_in_call_count());
+  EXPECT_EQ(3, mock_ime_engine_handler_->focus_out_call_count());
 }
 
 // Test if the new |caret_bounds_| is correctly sent to ibus-daemon.
@@ -575,16 +624,16 @@ TEST_F(InputMethodChromeOSTest, OnCaretBoundsChanged) {
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_NoAttribute) {
-  const base::string16 kSampleText = base::UTF8ToUTF16("Sample Text");
+  const base::string16 kSampleAsciiText = UTF8ToUTF16("Sample Text");
   const uint32 kCursorPos = 2UL;
 
   chromeos::CompositionText chromeos_composition_text;
-  chromeos_composition_text.set_text(kSampleText);
+  chromeos_composition_text.set_text(kSampleAsciiText);
 
   CompositionText composition_text;
   ime_->ExtractCompositionText(
       chromeos_composition_text, kCursorPos, &composition_text);
-  EXPECT_EQ(kSampleText, composition_text.text);
+  EXPECT_EQ(kSampleAsciiText, composition_text.text);
   // If there is no selection, |selection| represents cursor position.
   EXPECT_EQ(kCursorPos, composition_text.selection.start());
   EXPECT_EQ(kCursorPos, composition_text.selection.end());
@@ -592,13 +641,11 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_NoAttribute) {
   // whole text underline.
   ASSERT_EQ(1UL, composition_text.underlines.size());
   EXPECT_EQ(0UL, composition_text.underlines[0].start_offset);
-  EXPECT_EQ(kSampleText.size(), composition_text.underlines[0].end_offset);
+  EXPECT_EQ(kSampleAsciiText.size(), composition_text.underlines[0].end_offset);
   EXPECT_FALSE(composition_text.underlines[0].thick);
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_SingleUnderline) {
-  const base::string16 kSampleText = base::UTF8ToUTF16(
-      "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
   const uint32 kCursorPos = 2UL;
 
   // Set up chromeos composition text with one underline attribute.
@@ -626,11 +673,11 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_SingleUnderline) {
   // Single underline represents as black thin line.
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_FALSE(composition_text.underlines[0].thick);
+  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
+            composition_text.underlines[0].background_color);
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_DoubleUnderline) {
-  const base::string16 kSampleText = base::UTF8ToUTF16(
-      "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
   const uint32 kCursorPos = 2UL;
 
   // Set up chromeos composition text with one underline attribute.
@@ -658,11 +705,11 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_DoubleUnderline) {
   // Double underline represents as black thick line.
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
+  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
+            composition_text.underlines[0].background_color);
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_ErrorUnderline) {
-  const base::string16 kSampleText = base::UTF8ToUTF16(
-      "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
   const uint32 kCursorPos = 2UL;
 
   // Set up chromeos composition text with one underline attribute.
@@ -692,8 +739,6 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_ErrorUnderline) {
 }
 
 TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_Selection) {
-  const base::string16 kSampleText = base::UTF8ToUTF16(
-      "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
   const uint32 kCursorPos = 2UL;
 
   // Set up chromeos composition text with one underline attribute.
@@ -717,12 +762,12 @@ TEST_F(InputMethodChromeOSTest, ExtractCompositionTextTest_Selection) {
             composition_text.underlines[0].end_offset);
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
+  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
+            composition_text.underlines[0].background_color);
 }
 
 TEST_F(InputMethodChromeOSTest,
        ExtractCompositionTextTest_SelectionStartWithCursor) {
-  const base::string16 kSampleText = base::UTF8ToUTF16(
-      "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
   const uint32 kCursorPos = 1UL;
 
   // Set up chromeos composition text with one underline attribute.
@@ -751,12 +796,12 @@ TEST_F(InputMethodChromeOSTest,
             composition_text.underlines[0].end_offset);
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
+  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
+            composition_text.underlines[0].background_color);
 }
 
 TEST_F(InputMethodChromeOSTest,
        ExtractCompositionTextTest_SelectionEndWithCursor) {
-  const base::string16 kSampleText = base::UTF8ToUTF16(
-      "\xE3\x81\x82\xE3\x81\x84\xE3\x81\x86\xE3\x81\x88\xE3\x81\x8A");
   const uint32 kCursorPos = 4UL;
 
   // Set up chromeos composition text with one underline attribute.
@@ -785,6 +830,8 @@ TEST_F(InputMethodChromeOSTest,
             composition_text.underlines[0].end_offset);
   EXPECT_EQ(SK_ColorBLACK, composition_text.underlines[0].color);
   EXPECT_TRUE(composition_text.underlines[0].thick);
+  EXPECT_EQ(static_cast<SkColor>(SK_ColorTRANSPARENT),
+            composition_text.underlines[0].background_color);
 }
 
 TEST_F(InputMethodChromeOSTest, SurroundingText_NoSelectionTest) {
@@ -849,7 +896,7 @@ TEST_F(InputMethodChromeOSTest, SurroundingText_PartialText) {
   ime_->OnTextInputTypeChanged(this);
 
   // Set the TextInputClient behaviors.
-  surrounding_text_ = base::UTF8ToUTF16("abcdefghij");
+  surrounding_text_ = UTF8ToUTF16("abcdefghij");
   text_range_ = gfx::Range(5, 10);
   selection_range_ = gfx::Range(7, 9);
 
@@ -877,7 +924,7 @@ TEST_F(InputMethodChromeOSTest, SurroundingText_BecomeEmptyText) {
   // Set the TextInputClient behaviors.
   // If the surrounding text becomes empty, text_range become (0, 0) and
   // selection range become invalid.
-  surrounding_text_ = base::UTF8ToUTF16("");
+  surrounding_text_ = UTF8ToUTF16("");
   text_range_ = gfx::Range(0, 0);
   selection_range_ = gfx::Range::InvalidRange();
 

@@ -5,7 +5,6 @@ include_rules = [
   # directories in content/ so we disallow all of them.
   "-content",
   "+content/common",
-  "+content/port/common",
   "+content/public/common",
   "+content/public/test",
   "+content/shell",  # for content_browsertests
@@ -17,7 +16,6 @@ include_rules = [
   "-base/prefs",
 
   "+cc",
-  "-cc/surfaces",
   # If you want to use any of these files, move them to src/base first.
   "-cc/base/scoped_ptr_algorithm.h",
   "-cc/base/scoped_ptr_deque.h",
@@ -35,6 +33,11 @@ include_rules = [
 
   "+dbus",
   "+gpu",
+  "+mojo/public",
+  "+mojo/bindings/js",
+  "+mojo/common",
+  "+mojo/embedder",
+  "+mojo/service_manager",
   "+net",
   "+ppapi",
   "+printing",
@@ -83,10 +86,11 @@ include_rules = [
   "+ui/gfx",
   "+ui/gl",
   "+ui/native_theme",
+  "+ui/ozone",
   "+ui/shell_dialogs",
   "+ui/snapshot",
   "+ui/surface",
-  "+ui/wm/public",
+  "+ui/wm",
   # Content knows about grd files, but the specifics of how to get a resource
   # given its id is left to the embedder.
   "-ui/base/l10n",

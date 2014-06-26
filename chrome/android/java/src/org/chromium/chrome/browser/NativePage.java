@@ -4,12 +4,22 @@
 
 package org.chromium.chrome.browser;
 
-import org.chromium.content.browser.PageInfo;
+import android.view.View;
 
 /**
  * An interface for pages that will be shown in a tab using Android views instead of html.
  */
-public interface NativePage extends PageInfo {
+public interface NativePage {
+    /**
+     * @return The View to display the page. This is always non-null.
+     */
+    View getView();
+
+    /**
+     * @return The title of the page.
+     */
+    String getTitle();
+
     /**
      * @return The URL of the page.
      */
@@ -18,15 +28,20 @@ public interface NativePage extends PageInfo {
     /**
      * @return The hostname for this page, e.g. "newtab" or "bookmarks".
      */
-    public String getHost();
+    String getHost();
 
     /**
-     * Called after a page has been removed from the view hierarchy and will no longer be used.
+     * @return The background color of the page.
      */
-    public void destroy();
+    int getBackgroundColor();
 
     /**
      * Updates the native page based on the given url.
      */
-    public void updateForUrl(String url);
+    void updateForUrl(String url);
+
+    /**
+     * Called after a page has been removed from the view hierarchy and will no longer be used.
+     */
+    void destroy();
 }

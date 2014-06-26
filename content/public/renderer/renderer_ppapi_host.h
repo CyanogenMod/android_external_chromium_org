@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/callback_forward.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
-#include "base/platform_file.h"
 #include "base/process/process.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_platform_file.h"
@@ -122,6 +122,23 @@ class RendererPpapiHost {
 
   // Returns true if the plugin is running in process.
   virtual bool IsRunningInProcess() const = 0;
+
+  virtual std::string GetPluginName() const = 0;
+
+  // Used by the embedder to inform this RendererPpapiHost that the associated
+  // plugin module is a host for "external plugins."
+  //
+  // An embedder may, at the time a plugin module is created, configure it to
+  // be a host for external plugins. Instances of such plugins go through two
+  // two stages of initialization; the first stage initializes a host plugin
+  // instance, which then loads and initializes a child plugin which takes
+  // over control. These are treated as one Pepper Instance, because despite the
+  // two-stage initialization process, the host and child appear to blink as
+  // one plugin instance.
+  //
+  // The host plugin appears as an in-process plugin, while we interact with the
+  // child plugin via the Pepper proxy.
+  virtual void SetToExternalPluginHost() = 0;
 
   // There are times when the renderer needs to create a ResourceHost in the
   // browser. This function does so asynchronously. |nested_msgs| is a list of

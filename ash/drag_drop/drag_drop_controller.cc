@@ -12,11 +12,10 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/capture_client.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/hit_test.h"
@@ -29,11 +28,11 @@
 #include "ui/gfx/rect_conversions.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_aura.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
+
 // The duration of the drag cancel animation in millisecond.
 const int kCancelAnimationDuration = 250;
 const int kTouchCancelAnimationDuration = 20;
@@ -114,8 +113,8 @@ class DragDropTrackerDelegate : public aura::WindowDelegate {
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
   }
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
-  virtual void OnWindowDestroying() OVERRIDE {}
-  virtual void OnWindowDestroyed() OVERRIDE {}
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {}
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {}
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE {}
   virtual bool HasHitTestMask() const OVERRIDE {
     return true;
@@ -123,8 +122,6 @@ class DragDropTrackerDelegate : public aura::WindowDelegate {
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE {
     DCHECK(mask->isEmpty());
   }
-  virtual void DidRecreateLayer(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE {}
 
  private:
   DragDropController* drag_drop_controller_;
@@ -562,5 +559,4 @@ void DragDropController::Cleanup() {
   drag_drop_tracker_.Pass();
 }
 
-}  // namespace internal
 }  // namespace ash

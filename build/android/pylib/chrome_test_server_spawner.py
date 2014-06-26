@@ -7,6 +7,7 @@
 It's used to accept requests from the device to spawn and kill instances of the
 chrome test server on the host.
 """
+# pylint: disable=W0702
 
 import BaseHTTPServer
 import json
@@ -20,10 +21,11 @@ import threading
 import time
 import urlparse
 
-import constants
-import ports
+from pylib import constants
+from pylib import ports
 
 from pylib.forwarder import Forwarder
+
 
 # Path that are needed to import necessary modules when launching a testserver.
 os.environ['PYTHONPATH'] = os.environ.get('PYTHONPATH', '') + (':%s:%s:%s:%s:%s'
@@ -54,7 +56,7 @@ def _WaitUntil(predicate, max_attempts=5):
     Whether the provided predicate was satisfied once (before the timeout).
   """
   sleep_time_sec = 0.025
-  for attempt in xrange(1, max_attempts):
+  for _ in xrange(1, max_attempts):
     if predicate():
       return True
     time.sleep(sleep_time_sec)
@@ -75,9 +77,9 @@ def _CheckPortStatus(port, expected_status):
   return _WaitUntil(lambda: ports.IsHostPortUsed(port) == expected_status)
 
 
-def _CheckDevicePortStatus(adb, port):
+def _CheckDevicePortStatus(device, port):
   """Returns whether the provided port is used."""
-  return _WaitUntil(lambda: ports.IsDevicePortUsed(adb, port))
+  return _WaitUntil(lambda: ports.IsDevicePortUsed(device, port))
 
 
 def _GetServerTypeCommandLine(server_type):
@@ -100,13 +102,13 @@ def _GetServerTypeCommandLine(server_type):
 class TestServerThread(threading.Thread):
   """A thread to run the test server in a separate process."""
 
-  def __init__(self, ready_event, arguments, adb, tool):
+  def __init__(self, ready_event, arguments, device, tool):
     """Initialize TestServerThread with the following argument.
 
     Args:
       ready_event: event which will be set when the test server is ready.
       arguments: dictionary of arguments to run the test server.
-      adb: instance of AndroidCommands.
+      device: An instance of DeviceUtils.
       tool: instance of runtime error detection tool.
     """
     threading.Thread.__init__(self)
@@ -115,7 +117,7 @@ class TestServerThread(threading.Thread):
     self.ready_event = ready_event
     self.ready_event.clear()
     self.arguments = arguments
-    self.adb = adb
+    self.device = device
     self.tool = tool
     self.test_server_process = None
     self.is_ready = False
@@ -126,6 +128,7 @@ class TestServerThread(threading.Thread):
     # Anonymous pipe in order to get port info from test server.
     self.pipe_in = None
     self.pipe_out = None
+    self.process = None
     self.command_line = []
 
   def _WaitToStartAndGetPortFromTestServer(self):
@@ -176,47 +179,30 @@ class TestServerThread(threading.Thread):
     """
     if self.command_line:
       return
-    # The following arguments must exist.
-    type_cmd = _GetServerTypeCommandLine(self.arguments['server-type'])
+
+    args_copy = dict(self.arguments)
+
+    # Translate the server type.
+    type_cmd = _GetServerTypeCommandLine(args_copy.pop('server-type'))
     if type_cmd:
       self.command_line.append(type_cmd)
-    self.command_line.append('--port=%d' % self.host_port)
+
     # Use a pipe to get the port given by the instance of Python test server
     # if the test does not specify the port.
+    assert self.host_port == args_copy['port']
     if self.host_port == 0:
       (self.pipe_in, self.pipe_out) = os.pipe()
       self.command_line.append('--startup-pipe=%d' % self.pipe_out)
-    self.command_line.append('--host=%s' % self.arguments['host'])
-    data_dir = self.arguments['data-dir'] or 'chrome/test/data'
-    if not os.path.isabs(data_dir):
-      data_dir = os.path.join(constants.DIR_SOURCE_ROOT, data_dir)
-    self.command_line.append('--data-dir=%s' % data_dir)
-    # The following arguments are optional depending on the individual test.
-    if self.arguments.has_key('log-to-console'):
-      self.command_line.append('--log-to-console')
-    if self.arguments.has_key('auth-token'):
-      self.command_line.append('--auth-token=%s' % self.arguments['auth-token'])
-    if self.arguments.has_key('https'):
-      self.command_line.append('--https')
-      if self.arguments.has_key('cert-and-key-file'):
-        self.command_line.append('--cert-and-key-file=%s' % os.path.join(
-            constants.DIR_SOURCE_ROOT, self.arguments['cert-and-key-file']))
-      if self.arguments.has_key('ocsp'):
-        self.command_line.append('--ocsp=%s' % self.arguments['ocsp'])
-      if self.arguments.has_key('https-record-resume'):
-        self.command_line.append('--https-record-resume')
-      if self.arguments.has_key('ssl-client-auth'):
-        self.command_line.append('--ssl-client-auth')
-      if self.arguments.has_key('tls-intolerant'):
-        self.command_line.append('--tls-intolerant=%s' %
-                                 self.arguments['tls-intolerant'])
-      if self.arguments.has_key('ssl-client-ca'):
-        for ca in self.arguments['ssl-client-ca']:
-          self.command_line.append('--ssl-client-ca=%s' %
-                                   os.path.join(constants.DIR_SOURCE_ROOT, ca))
-      if self.arguments.has_key('ssl-bulk-cipher'):
-        for bulk_cipher in self.arguments['ssl-bulk-cipher']:
-          self.command_line.append('--ssl-bulk-cipher=%s' % bulk_cipher)
+
+    # Pass the remaining arguments as-is.
+    for key, values in args_copy.iteritems():
+      if not isinstance(values, list):
+        values = [values]
+      for value in values:
+        if value is None:
+          self.command_line.append('--%s' % key)
+        else:
+          self.command_line.append('--%s=%s' % (key, value))
 
   def _CloseUnnecessaryFDsForTestServerProcess(self):
     # This is required to avoid subtle deadlocks that could be caused by the
@@ -241,19 +227,22 @@ class TestServerThread(threading.Thread):
       command = [os.path.join(command, 'net', 'tools', 'testserver',
                               'testserver.py')] + self.command_line
     logging.info('Running: %s', command)
+    # Pass DIR_SOURCE_ROOT as the child's working directory so that relative
+    # paths in the arguments are resolved correctly.
     self.process = subprocess.Popen(
-        command, preexec_fn=self._CloseUnnecessaryFDsForTestServerProcess)
+        command, preexec_fn=self._CloseUnnecessaryFDsForTestServerProcess,
+        cwd=constants.DIR_SOURCE_ROOT)
     if self.process:
       if self.pipe_out:
         self.is_ready = self._WaitToStartAndGetPortFromTestServer()
       else:
         self.is_ready = _CheckPortStatus(self.host_port, True)
     if self.is_ready:
-      Forwarder.Map([(0, self.host_port)], self.adb, self.tool)
+      Forwarder.Map([(0, self.host_port)], self.device, self.tool)
       # Check whether the forwarder is ready on the device.
       self.is_ready = False
       device_port = Forwarder.DevicePortForHostPort(self.host_port)
-      if device_port and _CheckDevicePortStatus(self.adb, device_port):
+      if device_port and _CheckDevicePortStatus(self.device, device_port):
         self.is_ready = True
         self.forwarder_device_port = device_port
     # Wake up the request handler thread.
@@ -262,7 +251,7 @@ class TestServerThread(threading.Thread):
     _WaitUntil(lambda: self.stop_flag, max_attempts=sys.maxint)
     if self.process.poll() is None:
       self.process.kill()
-    Forwarder.UnmapDevicePort(self.forwarder_device_port, self.adb)
+    Forwarder.UnmapDevicePort(self.forwarder_device_port, self.device)
     self.process = None
     self.is_ready = False
     if self.pipe_out:
@@ -330,7 +319,7 @@ class SpawningServerRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     self.server.test_server_instance = TestServerThread(
         ready_event,
         json.loads(test_server_argument_json),
-        self.server.adb,
+        self.server.device,
         self.server.tool)
     self.server.test_server_instance.setDaemon(True)
     self.server.test_server_instance.start()
@@ -398,11 +387,11 @@ class SpawningServerRequestHandler(BaseHTTPServer.BaseHTTPRequestHandler):
 class SpawningServer(object):
   """The class used to start/stop a http server."""
 
-  def __init__(self, test_server_spawner_port, adb, tool):
+  def __init__(self, test_server_spawner_port, device, tool):
     logging.info('Creating new spawner on port: %d.', test_server_spawner_port)
     self.server = BaseHTTPServer.HTTPServer(('', test_server_spawner_port),
                                             SpawningServerRequestHandler)
-    self.server.adb = adb
+    self.server.device = device
     self.server.tool = tool
     self.server.test_server_instance = None
     self.server.build_type = constants.GetBuildType()

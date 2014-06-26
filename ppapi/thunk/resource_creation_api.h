@@ -119,6 +119,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateAudioConfig(PP_Instance instance,
                                         PP_AudioSampleRate sample_rate,
                                         uint32_t sample_frame_count) = 0;
+  virtual PP_Resource CreateCompositor(PP_Instance instance) = 0;
   virtual PP_Resource CreateFileChooser(PP_Instance instance,
                                         PP_FileChooserMode_Dev mode,
                                         const PP_Var& accept_types) = 0;
@@ -141,6 +142,7 @@ class ResourceCreationAPI {
                                             PP_ImageDataFormat format,
                                             const PP_Size* size,
                                             PP_Bool init_to_zero) = 0;
+  virtual PP_Resource CreateMediaStreamVideoTrack(PP_Instance instance) = 0;
   virtual PP_Resource CreateNetAddressFromIPv4Address(
       PP_Instance instance,
       const PP_NetAddress_IPv4* ipv4_addr) = 0;
@@ -159,6 +161,7 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateTCPSocketPrivate(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocket(PP_Instance instace) = 0;
   virtual PP_Resource CreateUDPSocketPrivate(PP_Instance instace) = 0;
+  virtual PP_Resource CreateVideoDecoder(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoDestination(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoSource(PP_Instance instance) = 0;
   virtual PP_Resource CreateWebSocket(PP_Instance instance) = 0;
@@ -184,7 +187,7 @@ class ResourceCreationAPI {
                                       PP_Bool vertical) = 0;
   virtual PP_Resource CreateTalk(PP_Instance instance) = 0;
   virtual PP_Resource CreateVideoCapture(PP_Instance instance) = 0;
-  virtual PP_Resource CreateVideoDecoder(
+  virtual PP_Resource CreateVideoDecoderDev(
       PP_Instance instance,
       PP_Resource context3d_id,
       PP_VideoDecoder_Profile profile) = 0;

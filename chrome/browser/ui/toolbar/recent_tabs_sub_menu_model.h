@@ -23,7 +23,7 @@ namespace browser_sync {
 class OpenTabsUIDelegate;
 }
 
-namespace chrome {
+namespace favicon_base {
 struct FaviconImageResult;
 }
 
@@ -46,6 +46,10 @@ class RecentTabsSubMenuModel : public ui::SimpleMenuModel,
   // accelerator string will be appended.
   static const int kRecentlyClosedHeaderCommandId;
   static const int kDisabledRecentlyClosedHeaderCommandId;
+
+  // Exposed for tests only: return the Command Id for the first entry in the
+  // recently closed window items list.
+  static int GetFirstRecentTabsCommandId();
 
   // If |open_tabs_delegate| is NULL, the default delegate for |browser|'s
   // profile will be used. Testing may require a specific |open_tabs_delegate|.
@@ -107,8 +111,9 @@ class RecentTabsSubMenuModel : public ui::SimpleMenuModel,
   // Add the favicon for a local or other devices' tab asynchronously,
   // OnFaviconDataAvailable() will be invoked when the favicon is ready.
   void AddTabFavicon(int command_id, const GURL& url);
-  void OnFaviconDataAvailable(int command_id,
-                              const chrome::FaviconImageResult& image_result);
+  void OnFaviconDataAvailable(
+      int command_id,
+      const favicon_base::FaviconImageResult& image_result);
 
   // Clear all recently closed tabs and windows.
   void ClearLocalEntries();

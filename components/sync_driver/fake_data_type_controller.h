@@ -39,13 +39,11 @@ class FakeDataTypeController : public DataTypeController {
 
   virtual syncer::ModelSafeGroup model_safe_group() const OVERRIDE;
 
+  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
+
   virtual State state() const OVERRIDE;
 
   virtual void OnSingleDatatypeUnrecoverableError(
-      const tracked_objects::Location& from_here,
-      const std::string& message) OVERRIDE;
-
-  virtual void RecordUnrecoverableError(
       const tracked_objects::Location& from_here,
       const std::string& message) OVERRIDE;
 

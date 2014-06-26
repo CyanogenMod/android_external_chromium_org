@@ -12,9 +12,11 @@ import os
 import shutil
 import sys
 
-from pylib import android_commands
 from pylib import cmd_helper
 from pylib import constants
+
+from pylib.base import base_test_result
+from pylib.base import test_dispatcher
 from pylib.gtest import test_package_apk
 from pylib.gtest import test_package_exe
 from pylib.gtest import test_runner
@@ -28,7 +30,7 @@ import unittest_util # pylint: disable=F0401
 _ISOLATE_FILE_PATHS = {
     'base_unittests': 'base/base_unittests.isolate',
     'blink_heap_unittests':
-      'third_party/WebKit/Source/heap/BlinkHeapUnitTests.isolate',
+      'third_party/WebKit/Source/platform/heap/BlinkHeapUnitTests.isolate',
     'breakpad_unittests': 'breakpad/breakpad_unittests.isolate',
     'cc_perftests': 'cc/cc_perftests.isolate',
     'components_unittests': 'components/components_unittests.isolate',
@@ -46,19 +48,20 @@ _ISOLATE_FILE_PATHS = {
 # Paths relative to third_party/webrtc/ (kept separate for readability).
 _WEBRTC_ISOLATE_FILE_PATHS = {
     'audio_decoder_unittests':
-      'modules/audio_coding/neteq4/audio_decoder_unittests.isolate',
+      'modules/audio_coding/neteq/audio_decoder_unittests.isolate',
     'common_audio_unittests': 'common_audio/common_audio_unittests.isolate',
     'common_video_unittests': 'common_video/common_video_unittests.isolate',
     'modules_tests': 'modules/modules_tests.isolate',
     'modules_unittests': 'modules/modules_unittests.isolate',
-    'neteq_unittests': 'modules/audio_coding/neteq/neteq_unittests.isolate',
     'system_wrappers_unittests':
       'system_wrappers/source/system_wrappers_unittests.isolate',
     'test_support_unittests': 'test/test_support_unittests.isolate',
     'tools_unittests': 'tools/tools_unittests.isolate',
+    'video_engine_tests': 'video_engine_tests.isolate',
     'video_engine_core_unittests':
       'video_engine/video_engine_core_unittests.isolate',
     'voice_engine_unittests': 'voice_engine/voice_engine_unittests.isolate',
+    'webrtc_perf_tests': 'webrtc_perf_tests.isolate',
 }
 
 # Append the WebRTC tests with the full path from Chromium's src/ root.
@@ -91,21 +94,30 @@ _ISOLATE_SCRIPT = os.path.join(
     constants.DIR_SOURCE_ROOT, 'tools', 'swarming_client', 'isolate.py')
 
 
-def _GenerateDepsDirUsingIsolate(suite_name):
+def _GenerateDepsDirUsingIsolate(suite_name, isolate_file_path=None):
   """Generate the dependency dir for the test suite using isolate.
 
   Args:
     suite_name: Name of the test suite (e.g. base_unittests).
+    isolate_file_path: .isolate file path to use. If there is a default .isolate
+                       file path for the suite_name, this will override it.
   """
   if os.path.isdir(constants.ISOLATE_DEPS_DIR):
     shutil.rmtree(constants.ISOLATE_DEPS_DIR)
 
-  isolate_rel_path = _ISOLATE_FILE_PATHS.get(suite_name)
-  if not isolate_rel_path:
-    logging.info('Did not find an isolate file for the test suite.')
-    return
+  if isolate_file_path:
+    if os.path.isabs(isolate_file_path):
+      isolate_abs_path = isolate_file_path
+    else:
+      isolate_abs_path = os.path.join(constants.DIR_SOURCE_ROOT,
+                                      isolate_file_path)
+  else:
+    isolate_rel_path = _ISOLATE_FILE_PATHS.get(suite_name)
+    if not isolate_rel_path:
+      logging.info('Did not find an isolate file for the test suite.')
+      return
+    isolate_abs_path = os.path.join(constants.DIR_SOURCE_ROOT, isolate_rel_path)
 
-  isolate_abs_path = os.path.join(constants.DIR_SOURCE_ROOT, isolate_rel_path)
   isolated_abs_path = os.path.join(
       constants.GetOutDirectory(), '%s.isolated' % suite_name)
   assert os.path.exists(isolate_abs_path)
@@ -118,12 +130,13 @@ def _GenerateDepsDirUsingIsolate(suite_name):
       '--isolated', isolated_abs_path,
       '--outdir', constants.ISOLATE_DEPS_DIR,
 
+      '--path-variable', 'DEPTH', constants.DIR_SOURCE_ROOT,
       '--path-variable', 'PRODUCT_DIR', constants.GetOutDirectory(),
 
       '--config-variable', 'OS', 'android',
       '--config-variable', 'chromeos', '0',
       '--config-variable', 'component', 'static_library',
-      '--config-variable', 'icu_use_data_file_flag', '0',
+      '--config-variable', 'icu_use_data_file_flag', '1',
       '--config-variable', 'use_openssl', '0',
   ]
   assert not cmd_helper.RunCmd(isolate_cmd)
@@ -162,19 +175,22 @@ def _GenerateDepsDirUsingIsolate(suite_name):
   # On Android, all pak files need to be in the top-level 'paks' directory.
   paks_dir = os.path.join(constants.ISOLATE_DEPS_DIR, 'paks')
   os.mkdir(paks_dir)
-  for root, _, filenames in os.walk(os.path.join(constants.ISOLATE_DEPS_DIR,
-                                                 'out')):
+
+  deps_out_dir = os.path.join(
+      constants.ISOLATE_DEPS_DIR,
+      os.path.relpath(os.path.join(constants.GetOutDirectory(), os.pardir),
+                      constants.DIR_SOURCE_ROOT))
+  for root, _, filenames in os.walk(deps_out_dir):
     for filename in fnmatch.filter(filenames, '*.pak'):
       shutil.move(os.path.join(root, filename), paks_dir)
 
   # Move everything in PRODUCT_DIR to top level.
-  deps_product_dir = os.path.join(constants.ISOLATE_DEPS_DIR, 'out',
-      constants.GetBuildType())
+  deps_product_dir = os.path.join(deps_out_dir, constants.GetBuildType())
   if os.path.isdir(deps_product_dir):
     for p in os.listdir(deps_product_dir):
       shutil.move(os.path.join(deps_product_dir, p), constants.ISOLATE_DEPS_DIR)
     os.rmdir(deps_product_dir)
-    os.rmdir(os.path.join(constants.ISOLATE_DEPS_DIR, 'out'))
+    os.rmdir(deps_out_dir)
 
 
 def _GetDisabledTestsFilterFromFile(suite_name):
@@ -203,26 +219,35 @@ def _GetDisabledTestsFilterFromFile(suite_name):
   return disabled_filter
 
 
-def _GetTestsFromDevice(runner_factory, devices):
-  """Get a list of tests from a device.
+def _GetTests(test_options, test_package, devices):
+  """Get a list of tests.
 
   Args:
-    runner_factory: Callable that takes device and shard_index and returns
-        a TestRunner.
-    devices: A list of device ids.
+    test_options: A GTestOptions object.
+    test_package: A TestPackageApk object.
+    devices: A list of attached devices.
 
   Returns:
-    All the tests in the test suite.
+    A list of all the tests in the test suite.
   """
-  for device in devices:
-    try:
-      logging.info('Obtaining tests from %s', device)
-      return runner_factory(device, 0).GetAllTests()
-    except (android_commands.errors.WaitForResponseTimedOutError,
-            android_commands.errors.DeviceUnresponsiveError), e:
-      logging.warning('Failed obtaining test list from %s with exception: %s',
-                      device, e)
-  raise Exception('Failed to obtain test list from devices.')
+  def TestListerRunnerFactory(device, _shard_index):
+    class TestListerRunner(test_runner.TestRunner):
+      def RunTest(self, _test):
+        result = base_test_result.BaseTestResult(
+            'gtest_list_tests', base_test_result.ResultType.PASS)
+        self.test_package.Install(self.device)
+        result.test_list = self.test_package.GetAllTests(self.device)
+        results = base_test_result.TestRunResults()
+        results.AddResult(result)
+        return results, None
+    return TestListerRunner(test_options, device, test_package)
+
+  results, _no_retry = test_dispatcher.RunTests(
+      ['gtest_list_tests'], TestListerRunnerFactory, devices)
+  tests = []
+  for r in results.GetAll():
+    tests.extend(r.test_list)
+  return tests
 
 
 def _FilterTestsUsingPrefixes(all_tests, pre=False, manual=False):
@@ -296,7 +321,10 @@ def Setup(test_options, devices):
           % test_options.suite_name)
   logging.warning('Found target %s', test_package.suite_path)
 
-  _GenerateDepsDirUsingIsolate(test_options.suite_name)
+  _GenerateDepsDirUsingIsolate(test_options.suite_name,
+                               test_options.isolate_file_path)
+
+  tests = _GetTests(test_options, test_package, devices)
 
   # Constructs a new TestRunner with the current options.
   def TestRunnerFactory(device, _shard_index):
@@ -305,7 +333,6 @@ def Setup(test_options, devices):
         device,
         test_package)
 
-  tests = _GetTestsFromDevice(TestRunnerFactory, devices)
   if test_options.run_disabled:
     test_options = test_options._replace(
         test_arguments=('%s --gtest_also_run_disabled_tests' %

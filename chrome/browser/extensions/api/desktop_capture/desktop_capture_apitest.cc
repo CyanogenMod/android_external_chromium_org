@@ -47,9 +47,11 @@ class FakeDesktopMediaPicker : public DesktopMediaPicker {
   }
 
   // DesktopMediaPicker interface.
-  virtual void Show(gfx::NativeWindow context,
+  virtual void Show(content::WebContents* web_contents,
+                    gfx::NativeWindow context,
                     gfx::NativeWindow parent,
                     const base::string16& app_name,
+                    const base::string16& target_name,
                     scoped_ptr<DesktopMediaList> model,
                     const DoneCallback& done_callback) OVERRIDE {
     if (!expectation_->cancelled) {

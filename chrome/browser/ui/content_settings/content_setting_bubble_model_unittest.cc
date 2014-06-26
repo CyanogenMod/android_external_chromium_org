@@ -8,7 +8,6 @@
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
@@ -17,6 +16,7 @@
 #include "chrome/common/content_settings.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/infobars/core/infobar_delegate.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/web_contents_tester.h"
 #include "grit/generated_resources.h"
@@ -460,6 +460,7 @@ TEST_F(ContentSettingBubbleModelTest, Plugins) {
   EXPECT_FALSE(bubble_content.custom_link.empty());
   EXPECT_TRUE(bubble_content.custom_link_enabled);
   EXPECT_FALSE(bubble_content.manage_link.empty());
+  EXPECT_FALSE(bubble_content.learn_more_link.empty());
 }
 
 TEST_F(ContentSettingBubbleModelTest, PepperBroker) {
@@ -559,8 +560,8 @@ TEST_F(ContentSettingBubbleModelTest, RegisterProtocolHandler) {
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
   content_settings->set_pending_protocol_handler(
-      ProtocolHandler::CreateProtocolHandler("mailto",
-          GURL("http://www.toplevel.example/"), base::ASCIIToUTF16("Handler")));
+      ProtocolHandler::CreateProtocolHandler(
+          "mailto", GURL("http://www.toplevel.example/")));
 
   ContentSettingRPHBubbleModel content_setting_bubble_model(
           NULL, web_contents(), profile(), NULL,
@@ -613,8 +614,7 @@ TEST_F(ContentSettingBubbleModelTest, RPHAllow) {
   TabSpecificContentSettings* content_settings =
       TabSpecificContentSettings::FromWebContents(web_contents());
   ProtocolHandler test_handler = ProtocolHandler::CreateProtocolHandler(
-      "mailto", GURL("http://www.toplevel.example/"),
-      base::ASCIIToUTF16("Handler"));
+      "mailto", GURL("http://www.toplevel.example/"));
   content_settings->set_pending_protocol_handler(test_handler);
 
   ContentSettingRPHBubbleModel content_setting_bubble_model(
@@ -633,7 +633,6 @@ TEST_F(ContentSettingBubbleModelTest, RPHAllow) {
   {
     ProtocolHandler handler = registry.GetHandlerFor("mailto");
     ASSERT_FALSE(handler.IsEmpty());
-    EXPECT_EQ(base::ASCIIToUTF16("Handler"), handler.title());
     EXPECT_EQ(CONTENT_SETTING_ALLOW,
               content_settings->pending_protocol_handler_setting());
   }
@@ -662,7 +661,6 @@ TEST_F(ContentSettingBubbleModelTest, RPHAllow) {
   {
     ProtocolHandler handler = registry.GetHandlerFor("mailto");
     ASSERT_FALSE(handler.IsEmpty());
-    EXPECT_EQ(base::ASCIIToUTF16("Handler"), handler.title());
     EXPECT_EQ(CONTENT_SETTING_ALLOW,
               content_settings->pending_protocol_handler_setting());
     EXPECT_FALSE(registry.IsIgnored(test_handler));

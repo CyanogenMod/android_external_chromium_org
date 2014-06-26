@@ -1,17 +1,26 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import os
 
 from telemetry.page.actions.gesture_action import GestureAction
 from telemetry.page.actions import page_action
 
 class TapAction(GestureAction):
-  def __init__(self, attributes=None):
-    super(TapAction, self).__init__(attributes)
-    self._SetTimelineMarkerBaseName('TapAction::RunAction')
+  def __init__(self, selector=None, text=None, element_function=None,
+               left_position_percentage=0.5, top_position_percentage=0.5,
+               duration_ms=50):
+    super(TapAction, self).__init__()
+    self.automatically_record_interaction = False
+    self.selector = selector
+    self.text = text
+    self.element_function = element_function
+    self.left_position_percentage = left_position_percentage
+    self.top_position_percentage = top_position_percentage
+    self.duration_ms = duration_ms
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     for js_file in ['gesture_common.js', 'tap.js']:
       with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
         js = f.read()
@@ -28,51 +37,36 @@ class TapAction(GestureAction):
         window.__tapAction = new __TapAction(%s);"""
         % (done_callback))
 
-  def RunGesture(self, page, tab, previous_action):
-    left_position_percentage = 0.5
-    top_position_percentage = 0.5
-    duration_ms = 0
+  def HasElementSelector(self):
+    return (self.element_function is not None or self.selector is not None or
+            self.text is not None)
+
+  def RunGesture(self, tab):
+    if not self.HasElementSelector():
+      self.element_function = 'document.body'
     gesture_source_type = GestureAction.GetGestureSourceTypeFromOptions(tab)
-    if hasattr(self, 'left_position_percentage'):
-      left_position_percentage = self.left_position_percentage
-    if hasattr(self, 'top_position_percentage'):
-      top_position_percentage = self.top_position_percentage
-    if hasattr(self, 'duration_ms'):
-      duration_ms = self.duration_ms
-    if hasattr(self, 'element_function'):
-      tab.ExecuteJavaScript("""
-          (%s)(function(element) { window.__tapAction.start(
-             { element: element,
-               left_position_percentage: %s,
-               top_position_percentage: %s,
-               duration_ms: %s,
-               gesture_source_type: %s })
-             });""" % (self.element_function,
-                       left_position_percentage,
-                       top_position_percentage,
-                       duration_ms,
-                       gesture_source_type))
-    else:
-      tab.ExecuteJavaScript("""
-          window.__tapAction.start(
-          { element: document.body,
-            left_position_percentage: %s,
-            top_position_percentage: %s,
-            duration_ms: %s,
-            gesture_source_type: %s });"""
-        % (left_position_percentage,
-           top_position_percentage,
-           duration_ms,
-           gesture_source_type))
 
+    tap_cmd = ('''
+        window.__tapAction.start({
+          element: element,
+          left_position_percentage: %s,
+          top_position_percentage: %s,
+          duration_ms: %s,
+          gesture_source_type: %s
+        });'''
+          % (self.left_position_percentage,
+             self.top_position_percentage,
+             self.duration_ms,
+             gesture_source_type))
+    code = '''
+        function(element, errorMsg) {
+          if (!element) {
+            throw Error('Cannot find element: ' + errorMsg);
+          }
+          %s;
+        }''' % tap_cmd
+
+    page_action.EvaluateCallbackWithElement(
+        tab, code, selector=self.selector, text=self.text,
+        element_function=self.element_function)
     tab.WaitForJavaScriptExpression('window.__tapActionDone', 60)
-
-  def CanBeBound(self):
-    return True
-
-  def BindMeasurementJavaScript(self, tab, start_js, stop_js):
-    # Make the tap action start and stop measurement automatically.
-    tab.ExecuteJavaScript("""
-        window.__tapAction.beginMeasuringHook = function() { %s };
-        window.__tapAction.endMeasuringHook = function() { %s };
-    """ % (start_js, stop_js))

@@ -111,6 +111,10 @@ typedef std::vector<IMEInfo> IMEInfoList;
 
 class VolumeControlDelegate;
 
+namespace tray {
+class UserAccountsDelegate;
+}  // namespace tray
+
 class ASH_EXPORT SystemTrayDelegate {
  public:
   virtual ~SystemTrayDelegate() {}
@@ -126,7 +130,6 @@ class ASH_EXPORT SystemTrayDelegate {
 
   // Gets information about the active user.
   virtual user::LoginStatus GetUserLoginStatus() const = 0;
-  virtual bool IsOobeCompleted() const = 0;
 
   // Shows UI for changing user's profile picture.
   virtual void ChangeProfilePicture() = 0;
@@ -161,6 +164,9 @@ class ASH_EXPORT SystemTrayDelegate {
 
   // Shows the settings related to date, timezone etc.
   virtual void ShowDateSettings() = 0;
+
+  // Shows the dialog to set system time, date, and timezone.
+  virtual void ShowSetTimeDialog() = 0;
 
   // Shows the settings related to network. If |service_path| is not empty,
   // show the settings for that network.
@@ -300,6 +306,9 @@ class ASH_EXPORT SystemTrayDelegate {
   // Returns whether bluetooth is enabled.
   virtual bool GetBluetoothEnabled() = 0;
 
+  // Returns whether the delegate has initiated a bluetooth discovery session.
+  virtual bool GetBluetoothDiscovering() = 0;
+
   // Shows UI for changing proxy settings.
   virtual void ChangeProxySettings() = 0;
 
@@ -323,6 +332,17 @@ class ASH_EXPORT SystemTrayDelegate {
   // to be switched to the new user.
   // Note: This will happen after SessionStateObserver::ActiveUserChanged fires.
   virtual void ActiveUserWasChanged() = 0;
+
+  // Returns true when |network| is behind captive portal.
+  virtual bool IsNetworkBehindCaptivePortal(
+      const std::string& service_path) const = 0;
+
+  // Returns true when the Search key is configured to be treated as Caps Lock.
+  virtual bool IsSearchKeyMappedToCapsLock() = 0;
+
+  // Returns accounts delegate for given user.
+  virtual tray::UserAccountsDelegate* GetUserAccountsDelegate(
+      const std::string& user_id) = 0;
 };
 
 }  // namespace ash

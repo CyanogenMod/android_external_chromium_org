@@ -6,7 +6,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/process/process_handle.h"
 #include "base/memory/shared_memory.h"
 #include "base/single_thread_task_runner.h"
@@ -233,8 +232,7 @@ bool DesktopSessionProxy::AttachToDesktop(
   HANDLE temp_handle;
   if (!DuplicateHandle(desktop_process_, desktop_pipe, GetCurrentProcess(),
                        &temp_handle, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
-    LOG_GETLASTERROR(ERROR) << "Failed to duplicate the desktop-to-network"
-                               " pipe handle";
+    PLOG(ERROR) << "Failed to duplicate the desktop-to-network pipe handle";
 
     desktop_process_ = base::kNullProcessHandle;
     base::CloseProcessHandle(desktop_process);
@@ -255,10 +253,10 @@ bool DesktopSessionProxy::AttachToDesktop(
 #endif
 
   // Connect to the desktop process.
-  desktop_channel_.reset(new IPC::ChannelProxy(desktop_channel_handle,
+  desktop_channel_ = IPC::ChannelProxy::Create(desktop_channel_handle,
                                                IPC::Channel::MODE_CLIENT,
                                                this,
-                                               io_task_runner_.get()));
+                                               io_task_runner_.get());
 
   // Pass ID of the client (which is authenticated at this point) to the desktop
   // session agent and start the agent.
@@ -351,6 +349,19 @@ void DesktopSessionProxy::InjectKeyEvent(const protocol::KeyEvent& event) {
 
   SendToDesktop(
       new ChromotingNetworkDesktopMsg_InjectKeyEvent(serialized_event));
+}
+
+void DesktopSessionProxy::InjectTextEvent(const protocol::TextEvent& event) {
+  DCHECK(caller_task_runner_->BelongsToCurrentThread());
+
+  std::string serialized_event;
+  if (!event.SerializeToString(&serialized_event)) {
+    LOG(ERROR) << "Failed to serialize protocol::TextEvent.";
+    return;
+  }
+
+  SendToDesktop(
+      new ChromotingNetworkDesktopMsg_InjectTextEvent(serialized_event));
 }
 
 void DesktopSessionProxy::InjectMouseEvent(const protocol::MouseEvent& event) {

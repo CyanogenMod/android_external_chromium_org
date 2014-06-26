@@ -9,7 +9,7 @@
 #include "ash/wm/coordinate_conversion.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/display.h"
@@ -18,7 +18,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 const int kIndicatorAnimationDurationMs = 1000;
@@ -50,7 +49,6 @@ views::Widget* CreateWidget(const gfx::Rect& bounds,
   views::Widget* widget = new views::Widget;
   views::Widget::InitParams params(views::Widget::InitParams::TYPE_POPUP);
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
-  params.can_activate = false;
   params.keep_on_top = true;
   // We set the context to the primary root window; this is OK because the ash
   // stacking controller will still place us in the correct RootWindow.
@@ -113,5 +111,4 @@ void SharedDisplayEdgeIndicator::AnimationProgressed(
 
 }
 
-}  // namespace internal
 }  // namespace ash

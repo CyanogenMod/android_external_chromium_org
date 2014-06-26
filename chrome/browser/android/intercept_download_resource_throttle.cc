@@ -4,6 +4,7 @@
 
 #include "chrome/browser/android/intercept_download_resource_throttle.h"
 
+#include "components/data_reduction_proxy/common/data_reduction_proxy_headers.h"
 #include "content/public/browser/android/download_controller_android.h"
 #include "content/public/browser/resource_controller.h"
 #include "net/http/http_request_headers.h"
@@ -52,7 +53,8 @@ void InterceptDownloadResourceThrottle::ProcessDownloadRequest() {
     request_->GetFullRequestHeaders(&headers);
     if (headers.HasHeader(net::HttpRequestHeaders::kAuthorization) ||
         !(request_->response_info().headers &&
-            request_->response_info().headers->IsChromeProxyResponse())) {
+            data_reduction_proxy::HasDataReductionProxyViaHeader(
+                request_->response_info().headers))) {
       return;
     }
 #else

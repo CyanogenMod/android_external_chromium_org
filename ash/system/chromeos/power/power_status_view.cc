@@ -22,7 +22,6 @@
 #include "ui/views/layout/grid_layout.h"
 
 namespace ash {
-namespace internal {
 
 // Padding between battery status text and battery icon on default view.
 const int kPaddingBetweenBatteryStatusAndIcon = 3;
@@ -84,8 +83,7 @@ void PowerStatusView::LayoutDefaultView() {
                              kTrayPopupPaddingBetweenItems);
     SetLayoutManager(layout);
 
-    icon_ =
-        new ash::internal::FixedSizedImageView(0, ash::kTrayPopupItemHeight);
+    icon_ = new ash::FixedSizedImageView(0, ash::kTrayPopupItemHeight);
     AddChildView(icon_);
 
     AddChildView(percentage_label_);
@@ -186,7 +184,8 @@ void PowerStatusView::UpdateTextForNotificationView() {
               base::IntToString16(min)));
     } else {
       // This is a low battery warning prompting the user in minutes.
-      time_label_->SetText(ui::TimeFormat::TimeRemainingLong(
+      time_label_->SetText(ui::TimeFormat::Simple(
+          ui::TimeFormat::FORMAT_REMAINING, ui::TimeFormat::LENGTH_LONG,
           base::TimeDelta::FromMinutes(hour * 60 + min)));
     }
   } else {
@@ -198,12 +197,12 @@ void PowerStatusView::ChildPreferredSizeChanged(views::View* child) {
   PreferredSizeChanged();
 }
 
-gfx::Size PowerStatusView::GetPreferredSize() {
+gfx::Size PowerStatusView::GetPreferredSize() const {
   gfx::Size size = views::View::GetPreferredSize();
   return gfx::Size(size.width(), kTrayPopupItemHeight);
 }
 
-int PowerStatusView::GetHeightForWidth(int width) {
+int PowerStatusView::GetHeightForWidth(int width) const {
   return kTrayPopupItemHeight;
 }
 
@@ -217,5 +216,4 @@ void PowerStatusView::Layout() {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

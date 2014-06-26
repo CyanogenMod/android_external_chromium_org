@@ -4,26 +4,30 @@
 
 #include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 
+#include "base/auto_reset.h"
+#include "base/bind.h"
 #include "base/run_loop.h"
 
 namespace views {
 
-DesktopDispatcherClient::DesktopDispatcherClient() {}
+DesktopDispatcherClient::DesktopDispatcherClient() {
+}
 
-DesktopDispatcherClient::~DesktopDispatcherClient() {}
+DesktopDispatcherClient::~DesktopDispatcherClient() {
+}
 
-void DesktopDispatcherClient::RunWithDispatcher(
-    base::MessagePumpDispatcher* nested_dispatcher,
-    aura::Window* associated_window) {
-  // TODO(erg): This class has been copypastad from
-  // ash/accelerators/nested_dispatcher_controller.cc. I have left my changes
-  // commented out because I don't entirely understand the implications of the
-  // change.
-  base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
-  base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
-
-  base::RunLoop run_loop(nested_dispatcher);
-  run_loop.Run();
+void DesktopDispatcherClient::PrepareNestedLoopClosures(
+    base::MessagePumpDispatcher* dispatcher,
+    base::Closure* run_closure,
+    base::Closure* quit_closure) {
+#if defined(OS_WIN)
+  scoped_ptr<base::RunLoop> run_loop(new base::RunLoop(dispatcher));
+#else
+  scoped_ptr<base::RunLoop> run_loop(new base::RunLoop());
+#endif
+  *quit_closure = run_loop->QuitClosure();
+  *run_closure =
+      base::Bind(&base::RunLoop::Run, base::Owned(run_loop.release()));
 }
 
 }  // namespace views

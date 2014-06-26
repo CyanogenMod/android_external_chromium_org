@@ -15,12 +15,10 @@ class Label;
 }
 
 namespace ash {
-namespace internal {
-
+class DateDefaultView;
 #if defined(OS_CHROMEOS)
 class SystemClockObserver;
 #endif
-class DateDefaultView;
 
 namespace tray {
 class TimeView;
@@ -29,9 +27,16 @@ class TimeView;
 class ASH_EXPORT TrayDate : public SystemTrayItem, public ClockObserver {
  public:
   enum ClockLayout {
-   HORIZONTAL_CLOCK,
-   VERTICAL_CLOCK,
+    HORIZONTAL_CLOCK,
+    VERTICAL_CLOCK,
   };
+
+  enum DateAction {
+    NONE,
+    SET_SYSTEM_TIME,
+    SHOW_DATE_SETTINGS,
+  };
+
   explicit TrayDate(SystemTray* system_tray);
   virtual ~TrayDate();
 
@@ -57,12 +62,14 @@ class ASH_EXPORT TrayDate : public SystemTrayItem, public ClockObserver {
   // Overridden from ClockObserver.
   virtual void OnDateFormatChanged() OVERRIDE;
   virtual void OnSystemClockTimeUpdated() OVERRIDE;
+  virtual void OnSystemClockCanSetTimeChanged(bool can_set_time) OVERRIDE;
   virtual void Refresh() OVERRIDE;
 
   void SetupLabelForTimeTray(views::Label* label);
 
   tray::TimeView* time_tray_;
   DateDefaultView* default_view_;
+  user::LoginStatus login_status_;
 
 #if defined(OS_CHROMEOS)
   scoped_ptr<SystemClockObserver> system_clock_observer_;
@@ -71,7 +78,6 @@ class ASH_EXPORT TrayDate : public SystemTrayItem, public ClockObserver {
   DISALLOW_COPY_AND_ASSIGN(TrayDate);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_DATE_TRAY_DATE_H_

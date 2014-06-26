@@ -24,19 +24,20 @@
 #include "chrome/browser/chromeos/accessibility/magnification_manager.h"
 #include "chrome/browser/chromeos/drive/file_system_util.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/session/session_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/system/input_device_settings.h"
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/feedback/tracing_manager.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/ime/extension_ime_util.h"
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/xkeyboard.h"
 #include "chromeos/system/statistics_provider.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/feedback/tracing_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "third_party/icu/source/i18n/unicode/timezone.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
@@ -60,7 +61,8 @@ Preferences::Preferences()
 Preferences::Preferences(input_method::InputMethodManager* input_method_manager)
     : prefs_(NULL),
       input_method_manager_(input_method_manager),
-      user_(NULL) {
+      user_(NULL),
+      user_is_primary_(false) {
   // Do not observe shell, if there is no shell instance; e.g., in some unit
   // tests.
   if (ash::Shell::HasInstance())
@@ -80,7 +82,9 @@ Preferences::~Preferences() {
 void Preferences::RegisterPrefs(PrefRegistrySimple* registry) {
   registry->RegisterBooleanPref(prefs::kOwnerPrimaryMouseButtonRight, false);
   registry->RegisterBooleanPref(prefs::kOwnerTapToClickEnabled, true);
-  registry->RegisterBooleanPref(prefs::kVirtualKeyboardEnabled, false);
+  registry->RegisterBooleanPref(prefs::kAccessibilityVirtualKeyboardEnabled,
+                                false);
+  registry->RegisterStringPref(prefs::kLogoutStartedLast, std::string());
 }
 
 // static
@@ -133,45 +137,45 @@ void Preferences::RegisterProfilePrefs(
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kStickyKeysEnabled,
+      prefs::kAccessibilityStickyKeysEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kLargeCursorEnabled,
+      prefs::kAccessibilityLargeCursorEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kSpokenFeedbackEnabled,
+      prefs::kAccessibilitySpokenFeedbackEnabled,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kHighContrastEnabled,
+      prefs::kAccessibilityHighContrastEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kScreenMagnifierEnabled,
+      prefs::kAccessibilityScreenMagnifierEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
-      prefs::kScreenMagnifierType,
+      prefs::kAccessibilityScreenMagnifierType,
       ash::kDefaultMagnifierType,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterDoublePref(
-      prefs::kScreenMagnifierScale,
+      prefs::kAccessibilityScreenMagnifierScale,
       std::numeric_limits<double>::min(),
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
   registry->RegisterBooleanPref(
-      prefs::kAutoclickEnabled,
+      prefs::kAccessibilityAutoclickEnabled,
       false,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterIntegerPref(
-      prefs::kAutoclickDelayMs,
+      prefs::kAccessibilityAutoclickDelayMs,
       ash::AutoclickController::kDefaultAutoclickDelayMs,
       user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
-    prefs::kVirtualKeyboardEnabled,
-    false,
-    user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
+      prefs::kAccessibilityVirtualKeyboardEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::SYNCABLE_PREF);
   registry->RegisterBooleanPref(
       prefs::kShouldAlwaysShowAccessibilityMenu,
       false,
@@ -303,6 +307,11 @@ void Preferences::RegisterProfilePrefs(
       prefs::kTouchHudProjectionEnabled,
       false,
       user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+
+  registry->RegisterBooleanPref(
+      prefs::kTouchVirtualKeyboardEnabled,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 void Preferences::InitUserPrefs(PrefServiceSyncable* prefs) {
@@ -358,10 +367,10 @@ void Preferences::Init(PrefServiceSyncable* prefs, const User* user) {
   ApplyPreferences(REASON_INITIALIZATION, "");
 
   // If a guest is logged in, initialize the prefs as if this is the first
-  // login.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession)) {
-    LoginUtils::Get()->SetFirstLoginPrefs(prefs);
-  }
+  // login. For a regular user this is done in
+  // SessionManager::InitProfilePreferences().
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kGuestSession))
+    SessionManager::SetFirstLoginPrefs(prefs);
 }
 
 void Preferences::InitUserPrefsForTesting(PrefServiceSyncable* prefs,
@@ -440,7 +449,7 @@ void Preferences::ApplyPreferences(ApplyReason reason,
     const bool enabled = natural_scroll_.GetValue();
     DVLOG(1) << "Natural scroll set to " << enabled;
     if (user_is_active)
-      ui::SetNaturalScroll(enabled);
+      touchpad_settings.SetNaturalScroll(enabled);
     if (reason == REASON_PREF_CHANGED)
       UMA_HISTOGRAM_BOOLEAN("Touchpad.NaturalScroll.Changed", enabled);
     else if (reason == REASON_INITIALIZATION)
@@ -516,7 +525,8 @@ void Preferences::ApplyPreferences(ApplyReason reason,
       pref_name == prefs::kLanguageXkbAutoRepeatEnabled) {
     if (user_is_active) {
       const bool enabled = xkb_auto_repeat_enabled_.GetValue();
-      input_method::InputMethodManager::Get()->GetXKeyboard()
+      input_method::InputMethodManager::Get()
+          ->GetImeKeyboard()
           ->SetAutoRepeatEnabled(enabled);
     }
   }
@@ -581,6 +591,10 @@ void Preferences::SetLanguageConfigStringListAsCSV(const char* section,
   if (!value.empty())
     base::SplitString(value, ',', &split_values);
 
+  // Transfers the xkb id to extension-xkb id.
+  if (input_method_manager_->MigrateInputMethods(&split_values))
+    preload_engines_.SetValue(JoinString(split_values, ','));
+
   if (section == std::string(language_prefs::kGeneralSectionName) &&
       name == std::string(language_prefs::kPreloadEnginesConfigName)) {
     input_method_manager_->ReplaceEnabledInputMethods(split_values);
@@ -619,7 +633,8 @@ void Preferences::UpdateAutoRepeatRate() {
   rate.repeat_interval_in_ms = xkb_auto_repeat_interval_pref_.GetValue();
   DCHECK(rate.initial_delay_in_ms > 0);
   DCHECK(rate.repeat_interval_in_ms > 0);
-  input_method::InputMethodManager::Get()->GetXKeyboard()
+  input_method::InputMethodManager::Get()
+      ->GetImeKeyboard()
       ->SetAutoRepeatRate(rate);
 }
 

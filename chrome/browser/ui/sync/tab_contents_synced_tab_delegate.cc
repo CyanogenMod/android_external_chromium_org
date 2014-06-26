@@ -5,7 +5,6 @@
 #include "chrome/browser/ui/sync/tab_contents_synced_tab_delegate.h"
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
 #include "chrome/browser/sync/glue/synced_window_delegate.h"
@@ -14,8 +13,12 @@
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/tab_helper.h"
+#endif
+
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
+#include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
 #endif
 
 using content::NavigationEntry;
@@ -45,9 +48,13 @@ Profile* TabContentsSyncedTabDelegate::profile() const {
 }
 
 std::string TabContentsSyncedTabDelegate::GetExtensionAppId() const {
+#if defined(ENABLE_EXTENSIONS)
   const scoped_refptr<const extensions::Extension> extension_app(
       extensions::TabHelper::FromWebContents(web_contents_)->extension_app());
-  return (extension_app.get() ? extension_app->id() : std::string());
+  if (extension_app.get())
+    return extension_app->id();
+#endif
+  return std::string();
 }
 
 int TabContentsSyncedTabDelegate::GetCurrentEntryIndex() const {
@@ -74,15 +81,15 @@ NavigationEntry* TabContentsSyncedTabDelegate::GetActiveEntry() const {
   return web_contents_->GetController().GetVisibleEntry();
 }
 
-bool TabContentsSyncedTabDelegate::ProfileIsManaged() const {
-  return profile()->IsManaged();
+bool TabContentsSyncedTabDelegate::ProfileIsSupervised() const {
+  return profile()->IsSupervised();
 }
 
 const std::vector<const content::NavigationEntry*>*
 TabContentsSyncedTabDelegate::GetBlockedNavigations() const {
 #if defined(ENABLE_MANAGED_USERS)
-  ManagedModeNavigationObserver* navigation_observer =
-      ManagedModeNavigationObserver::FromWebContents(web_contents_);
+  SupervisedUserNavigationObserver* navigation_observer =
+      SupervisedUserNavigationObserver::FromWebContents(web_contents_);
   DCHECK(navigation_observer);
   return navigation_observer->blocked_navigations();
 #else

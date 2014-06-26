@@ -8,16 +8,12 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/install_tracker.h"
-#include "chrome/browser/extensions/install_tracker_factory.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/app_list/recommended_apps_observer.h"
 #include "chrome/common/pref_names.h"
 #include "extensions/browser/extension_prefs.h"
-#include "extensions/browser/extension_system.h"
-#include "extensions/browser/extension_system_provider.h"
-#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -42,23 +38,18 @@ bool AppLaunchedMoreRecent(const AppSortInfo& app1, const AppSortInfo& app2) {
 
 }  // namespace
 
-RecommendedApps::RecommendedApps(Profile* profile) : profile_(profile) {
-  extensions::InstallTrackerFactory::GetForProfile(profile_)->AddObserver(this);
-
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  extensions::ExtensionPrefs* prefs = service->extension_prefs();
+RecommendedApps::RecommendedApps(Profile* profile)
+    : profile_(profile), extension_registry_observer_(this) {
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile_);
   pref_change_registrar_.Init(prefs->pref_service());
   pref_change_registrar_.Add(extensions::pref_names::kExtensions,
                              base::Bind(&RecommendedApps::Update,
                                         base::Unretained(this)));
-
+  extension_registry_observer_.Add(extensions::ExtensionRegistry::Get(profile));
   Update();
 }
 
 RecommendedApps::~RecommendedApps() {
-  extensions::InstallTrackerFactory::GetForProfile(profile_)
-      ->RemoveObserver(this);
 }
 
 void RecommendedApps::AddObserver(RecommendedAppsObserver* observer) {
@@ -70,15 +61,15 @@ void RecommendedApps::RemoveObserver(RecommendedAppsObserver* observer) {
 }
 
 void RecommendedApps::Update() {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile_)->extension_service();
-  extensions::ExtensionPrefs* prefs = service->extension_prefs();
+  extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile_);
 
   std::vector<AppSortInfo> sorted_apps;
-  const extensions::ExtensionSet* extensions = service->extensions();
-  for (extensions::ExtensionSet::const_iterator app = extensions->begin();
-       app != extensions->end(); ++app) {
-    if (!(*app)->ShouldDisplayInAppLauncher())
+  const extensions::ExtensionSet& extensions =
+      extensions::ExtensionRegistry::Get(profile_)->enabled_extensions();
+  for (extensions::ExtensionSet::const_iterator app = extensions.begin();
+       app != extensions.end();
+       ++app) {
+    if (!extensions::ui_util::ShouldDisplayInAppLauncher(*app, profile_))
       continue;
 
     sorted_apps.push_back(
@@ -103,39 +94,32 @@ void RecommendedApps::Update() {
   }
 }
 
-void RecommendedApps::OnBeginExtensionInstall(
-    const ExtensionInstallParams& params) {}
-
-void RecommendedApps::OnDownloadProgress(const std::string& extension_id,
-                                int percent_downloaded) {}
-
-void RecommendedApps::OnInstallFailure(const std::string& extension_id) {}
-
-void RecommendedApps::OnExtensionInstalled(
-    const extensions::Extension* extension) {
+void RecommendedApps::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
   Update();
 }
 
 void RecommendedApps::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
     const extensions::Extension* extension) {
   Update();
 }
 
 void RecommendedApps::OnExtensionUnloaded(
-    const extensions::Extension* extension) {
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UnloadedExtensionInfo::Reason reason) {
   Update();
 }
 
 void RecommendedApps::OnExtensionUninstalled(
+    content::BrowserContext* browser_context,
     const extensions::Extension* extension) {
   Update();
 }
-
-void RecommendedApps::OnAppsReordered() {}
-
-void RecommendedApps::OnAppInstalledToAppList(
-    const std::string& extension_id) {}
-
-void RecommendedApps::OnShutdown() {}
 
 }  // namespace app_list

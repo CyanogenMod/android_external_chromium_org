@@ -47,8 +47,8 @@ class FeedbackTest : public ExtensionBrowserTest {
 
  protected:
   bool IsFeedbackAppAvailable() {
-    return extensions::ExtensionSystem::Get(
-        browser()->profile())->event_router()->ExtensionHasEventListener(
+    return extensions::EventRouter::Get(browser()->profile())
+        ->ExtensionHasEventListener(
             kFeedbackExtensionId,
             extensions::api::feedback_private::OnFeedbackRequested::kEventName);
   }
@@ -65,7 +65,7 @@ class FeedbackTest : public ExtensionBrowserTest {
     AppWindow* window =
         PlatformAppBrowserTest::GetFirstAppWindowForBrowser(browser());
     ASSERT_TRUE(window);
-    const Extension* feedback_app = window->extension();
+    const Extension* feedback_app = window->GetExtension();
     ASSERT_TRUE(feedback_app);
     EXPECT_EQ(feedback_app->id(), std::string(kFeedbackExtensionId));
   }
@@ -73,7 +73,7 @@ class FeedbackTest : public ExtensionBrowserTest {
  private:
   void InvokeFeedbackUI() {
     extensions::FeedbackPrivateAPI* api =
-        extensions::FeedbackPrivateAPI::GetFactoryInstance()->GetForProfile(
+        extensions::FeedbackPrivateAPI::GetFactoryInstance()->Get(
             browser()->profile());
     api->RequestFeedback("Test description",
                          "Test tag",
@@ -81,7 +81,15 @@ class FeedbackTest : public ExtensionBrowserTest {
   }
 };
 
-IN_PROC_BROWSER_TEST_F(FeedbackTest, ShowFeedback) {
+// Disabled test; it is crashing on ChromeOS build bots intermittently.
+// See http://crbug.com/369886.
+#if defined(OS_CHROMEOS)
+#define MAYBE_ShowFeedback DISABLED_ShowFeedback
+#else
+#define MAYBE_ShowFeedback ShowFeedback
+#endif
+
+IN_PROC_BROWSER_TEST_F(FeedbackTest, MAYBE_ShowFeedback) {
   WaitForExtensionViewsToLoad();
 
   ASSERT_TRUE(IsFeedbackAppAvailable());

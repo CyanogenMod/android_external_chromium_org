@@ -10,10 +10,12 @@
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/auth/login_status_consumer.h"
+#include "chrome/browser/chromeos/login/auth/user_context.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chromeos/cryptohome/async_method_caller.h"
@@ -116,10 +118,10 @@ class KioskProfileLoader::CryptohomedChecker
 // KioskProfileLoader
 
 KioskProfileLoader::KioskProfileLoader(const std::string& app_user_id,
-                                       bool force_ephemeral,
+                                       bool use_guest_mount,
                                        Delegate* delegate)
     : user_id_(app_user_id),
-      force_ephemeral_(force_ephemeral),
+      use_guest_mount_(use_guest_mount),
       delegate_(delegate) {}
 
 KioskProfileLoader::~KioskProfileLoader() {}
@@ -133,7 +135,7 @@ void KioskProfileLoader::Start() {
 
 void KioskProfileLoader::LoginAsKioskAccount() {
   login_performer_.reset(new LoginPerformer(this));
-  login_performer_->LoginAsKioskAccount(user_id_, force_ephemeral_);
+  login_performer_->LoginAsKioskAccount(user_id_, use_guest_mount_);
 }
 
 void KioskProfileLoader::ReportLaunchResult(KioskAppLaunchError::Error error) {
@@ -149,9 +151,16 @@ void KioskProfileLoader::OnLoginSuccess(const UserContext& user_context)  {
   login_performer_->set_delegate(NULL);
   ignore_result(login_performer_.release());
 
-  LoginUtils::Get()->PrepareProfile(user_context,
-                                    std::string(),  // display email
-                                    false,  // has_cookies
+  // If we are launching a demo session, we need to start MountGuest with the
+  // guest username; this is because there are several places in the cros code
+  // which rely on the username sent to cryptohome to be $guest. Back in Chrome
+  // we switch this back to the demo user name to correctly identify this
+  // user as a demo user.
+  UserContext context = user_context;
+  if (context.GetUserID() == UserManager::kGuestUserName)
+    context.SetUserID(DemoAppLauncher::kDemoUserName);
+  LoginUtils::Get()->PrepareProfile(context,
+                                    false,  // has_auth_cookies
                                     false,  // has_active_session
                                     this);
 }

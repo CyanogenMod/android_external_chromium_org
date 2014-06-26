@@ -14,6 +14,8 @@ import android.util.Log;
 import android.webkit.WebSettings;
 import android.webkit.WebSettings.PluginState;
 
+import com.google.common.annotations.VisibleForTesting;
+
 import org.chromium.base.CalledByNative;
 import org.chromium.base.JNINamespace;
 import org.chromium.base.ThreadUtils;
@@ -35,6 +37,14 @@ public class AwSettings {
         NARROW_COLUMNS,
         TEXT_AUTOSIZING,
     }
+
+    // These constants must be kept in sync with the Android framework, defined in WebSettimgs.
+    @VisibleForTesting
+    public static final int MIXED_CONTENT_ALWAYS_ALLOW = 0;
+    @VisibleForTesting
+    public static final int MIXED_CONTENT_NEVER_ALLOW = 1;
+    @VisibleForTesting
+    public static final int MIXED_CONTENT_COMPATIBILITY_MODE = 2;
 
     private static final String TAG = "AwSettings";
 
@@ -83,13 +93,15 @@ public class AwSettings {
     private float mInitialPageScalePercent = 0;
     private boolean mSpatialNavigationEnabled;  // Default depends on device features.
     private boolean mEnableSupportedHardwareAcceleratedFeatures = false;
+    private int mMixedContentMode = MIXED_CONTENT_NEVER_ALLOW;
+    private boolean mVideoOverlayForEmbeddedVideoEnabled = false;
+
+    // Although this bit is stored on AwSettings it is actually controlled via the CookieManager.
+    private boolean mAcceptThirdPartyCookies;
 
     private final boolean mSupportLegacyQuirks;
 
     private final boolean mPasswordEchoEnabled;
-
-    // Font scale factor determined by Android system setting.
-    private final float mFontScale;
 
     // Not accessed by the native side.
     private boolean mBlockNetworkLoads;  // Default depends on permission of embedding APK.
@@ -223,8 +235,10 @@ public class AwSettings {
             // Respect the system setting for password echoing.
             mPasswordEchoEnabled = Settings.System.getInt(context.getContentResolver(),
                     Settings.System.TEXT_SHOW_PASSWORD, 1) == 1;
-            mFontScale = context.getResources().getConfiguration().fontScale;
-            mTextSizePercent *= mFontScale;
+
+            // By default, scale the text size by the system font scale factor. Embedders
+            // may override this by invoking setTextZoom().
+            mTextSizePercent *= context.getResources().getConfiguration().fontScale;
 
             mSupportLegacyQuirks = supportsLegacyQuirks;
         }
@@ -257,7 +271,7 @@ public class AwSettings {
         }
     }
 
-    void setWebContents(int nativeWebContents) {
+    void setWebContents(long nativeWebContents) {
         synchronized (mAwSettingsLock) {
             if (mNativeAwSettings != 0) {
                 nativeDestroy(mNativeAwSettings);
@@ -266,11 +280,17 @@ public class AwSettings {
             if (nativeWebContents != 0) {
                 mEventHandler.bindUiThread();
                 mNativeAwSettings = nativeInit(nativeWebContents);
-                nativeUpdateEverythingLocked(mNativeAwSettings);
-                onGestureZoomSupportChanged(
-                        supportsDoubleTapZoomLocked(), supportsMultiTouchZoomLocked());
+                updateEverythingLocked();
             }
         }
+    }
+
+    private void updateEverythingLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        assert mNativeAwSettings != 0;
+        nativeUpdateEverythingLocked(mNativeAwSettings);
+        onGestureZoomSupportChanged(
+                supportsDoubleTapZoomLocked(), supportsMultiTouchZoomLocked());
     }
 
     /**
@@ -292,6 +312,28 @@ public class AwSettings {
     public boolean getBlockNetworkLoads() {
         synchronized (mAwSettingsLock) {
             return mBlockNetworkLoads;
+        }
+    }
+
+    /**
+     * Enable/disable third party cookies for an AwContents
+     * @param accept true if we should accept third party cookies
+     */
+    public void setAcceptThirdPartyCookies(boolean accept) {
+        synchronized (mAwSettingsLock) {
+            if (mAcceptThirdPartyCookies != accept) {
+                mAcceptThirdPartyCookies = accept;
+            }
+        }
+    }
+
+    /**
+     * Return whether third party cookies are enabled for an AwContents
+     * @return true if accept third party cookies
+     */
+    public boolean getAcceptThirdPartyCookies() {
+        synchronized (mAwSettingsLock) {
+            return mAcceptThirdPartyCookies;
         }
     }
 
@@ -374,7 +416,9 @@ public class AwSettings {
                 mEventHandler.runOnUiThreadBlockingAndLocked(new Runnable() {
                     @Override
                     public void run() {
-                        nativeUpdateInitialPageScaleLocked(mNativeAwSettings);
+                        if (mNativeAwSettings != 0) {
+                            nativeUpdateInitialPageScaleLocked(mNativeAwSettings);
+                        }
                     }
                 });
             }
@@ -456,7 +500,9 @@ public class AwSettings {
                 mEventHandler.runOnUiThreadBlockingAndLocked(new Runnable() {
                     @Override
                     public void run() {
-                        nativeUpdateFormDataPreferencesLocked(mNativeAwSettings);
+                        if (mNativeAwSettings != 0) {
+                            nativeUpdateFormDataPreferencesLocked(mNativeAwSettings);
+                        }
                     }
                 });
             }
@@ -501,7 +547,9 @@ public class AwSettings {
                 mEventHandler.runOnUiThreadBlockingAndLocked(new Runnable() {
                     @Override
                     public void run() {
-                        nativeUpdateUserAgentLocked(mNativeAwSettings);
+                        if (mNativeAwSettings != 0) {
+                            nativeUpdateUserAgentLocked(mNativeAwSettings);
+                        }
                     }
                 });
             }
@@ -513,7 +561,7 @@ public class AwSettings {
      */
     public String getUserAgentString() {
         synchronized (mAwSettingsLock) {
-            return mUserAgent;
+            return getUserAgentLocked();
         }
     }
 
@@ -533,8 +581,10 @@ public class AwSettings {
                 mEventHandler.runOnUiThreadBlockingAndLocked(new Runnable() {
                     @Override
                     public void run() {
-                        updateWebkitPreferencesOnUiThreadLocked();
-                        nativeResetScrollAndScaleState(mNativeAwSettings);
+                        if (mNativeAwSettings != 0) {
+                            updateWebkitPreferencesOnUiThreadLocked();
+                            nativeResetScrollAndScaleState(mNativeAwSettings);
+                        }
                     }
                 });
             }
@@ -546,7 +596,7 @@ public class AwSettings {
      */
     public boolean getLoadWithOverviewMode() {
         synchronized (mAwSettingsLock) {
-            return mLoadWithOverviewMode;
+            return getLoadWithOverviewModeLocked();
         }
     }
 
@@ -561,9 +611,8 @@ public class AwSettings {
      */
     public void setTextZoom(final int textZoom) {
         synchronized (mAwSettingsLock) {
-            int scaledTextZoomPercent = (int)(textZoom * mFontScale);
-            if (mTextSizePercent != scaledTextZoomPercent) {
-                mTextSizePercent = scaledTextZoomPercent;
+            if (mTextSizePercent != textZoom) {
+                mTextSizePercent = textZoom;
                 mEventHandler.updateWebkitPreferencesLocked();
             }
         }
@@ -574,7 +623,7 @@ public class AwSettings {
      */
     public int getTextZoom() {
         synchronized (mAwSettingsLock) {
-            return mTextSizePercent;
+            return getTextSizePercentLocked();
         }
     }
 
@@ -601,7 +650,7 @@ public class AwSettings {
      */
     public String getStandardFontFamily() {
         synchronized (mAwSettingsLock) {
-            return mStandardFontFamily;
+            return getStandardFontFamilyLocked();
         }
     }
 
@@ -628,7 +677,7 @@ public class AwSettings {
      */
     public String getFixedFontFamily() {
         synchronized (mAwSettingsLock) {
-            return mFixedFontFamily;
+            return getFixedFontFamilyLocked();
         }
     }
 
@@ -655,7 +704,7 @@ public class AwSettings {
      */
     public String getSansSerifFontFamily() {
         synchronized (mAwSettingsLock) {
-            return mSansSerifFontFamily;
+            return getSansSerifFontFamilyLocked();
         }
     }
 
@@ -682,7 +731,7 @@ public class AwSettings {
      */
     public String getSerifFontFamily() {
         synchronized (mAwSettingsLock) {
-            return mSerifFontFamily;
+            return getSerifFontFamilyLocked();
         }
     }
 
@@ -709,7 +758,7 @@ public class AwSettings {
      */
     public String getCursiveFontFamily() {
         synchronized (mAwSettingsLock) {
-            return mCursiveFontFamily;
+            return getCursiveFontFamilyLocked();
         }
     }
 
@@ -736,7 +785,7 @@ public class AwSettings {
      */
     public String getFantasyFontFamily() {
         synchronized (mAwSettingsLock) {
-            return mFantasyFontFamily;
+            return getFantasyFontFamilyLocked();
         }
     }
 
@@ -764,7 +813,7 @@ public class AwSettings {
      */
     public int getMinimumFontSize() {
         synchronized (mAwSettingsLock) {
-            return mMinimumFontSize;
+            return getMinimumFontSizeLocked();
         }
     }
 
@@ -792,7 +841,7 @@ public class AwSettings {
      */
     public int getMinimumLogicalFontSize() {
         synchronized (mAwSettingsLock) {
-            return mMinimumLogicalFontSize;
+            return getMinimumLogicalFontSizeLocked();
         }
     }
 
@@ -820,7 +869,7 @@ public class AwSettings {
      */
     public int getDefaultFontSize() {
         synchronized (mAwSettingsLock) {
-            return mDefaultFontSize;
+            return getDefaultFontSizeLocked();
         }
     }
 
@@ -848,7 +897,7 @@ public class AwSettings {
      */
     public int getDefaultFixedFontSize() {
         synchronized (mAwSettingsLock) {
-            return mDefaultFixedFontSize;
+            return getDefaultFixedFontSizeLocked();
         }
     }
 
@@ -911,7 +960,7 @@ public class AwSettings {
      */
     public boolean getLoadsImagesAutomatically() {
         synchronized (mAwSettingsLock) {
-            return mLoadsImagesAutomatically;
+            return getLoadsImagesAutomaticallyLocked();
         }
     }
 
@@ -968,7 +1017,7 @@ public class AwSettings {
      */
     public boolean getAllowUniversalAccessFromFileURLs() {
         synchronized (mAwSettingsLock) {
-            return mAllowUniversalAccessFromFileURLs;
+            return getAllowUniversalAccessFromFileURLsLocked();
         }
     }
 
@@ -983,7 +1032,7 @@ public class AwSettings {
      */
     public boolean getAllowFileAccessFromFileURLs() {
         synchronized (mAwSettingsLock) {
-            return mAllowFileAccessFromFileURLs;
+            return getAllowFileAccessFromFileURLsLocked();
         }
     }
 
@@ -1058,7 +1107,7 @@ public class AwSettings {
      */
     public boolean getJavaScriptCanOpenWindowsAutomatically() {
         synchronized (mAwSettingsLock) {
-            return mJavaScriptCanOpenWindowsAutomatically;
+            return getJavaScriptCanOpenWindowsAutomaticallyLocked();
         }
     }
 
@@ -1152,7 +1201,7 @@ public class AwSettings {
      */
     public boolean getUseWideViewPort() {
         synchronized (mAwSettingsLock) {
-            return mUseWideViewport;
+            return getUseWideViewportLocked();
         }
     }
 
@@ -1289,7 +1338,7 @@ public class AwSettings {
      */
     public String getDefaultTextEncodingName() {
         synchronized (mAwSettingsLock) {
-            return mDefaultTextEncoding;
+            return getDefaultTextEncodingLocked();
         }
     }
 
@@ -1316,7 +1365,7 @@ public class AwSettings {
      */
     public boolean getMediaPlaybackRequiresUserGesture() {
         synchronized (mAwSettingsLock) {
-            return mMediaPlaybackRequiresUserGesture;
+            return getMediaPlaybackRequiresUserGestureLocked();
         }
     }
 
@@ -1344,7 +1393,7 @@ public class AwSettings {
      */
     public String getDefaultVideoPosterURL() {
         synchronized (mAwSettingsLock) {
-            return mDefaultVideoPosterURL;
+            return getDefaultVideoPosterURLLocked();
         }
     }
 
@@ -1432,6 +1481,70 @@ public class AwSettings {
         }
     }
 
+    public void setMixedContentMode(int mode) {
+        synchronized (mAwSettingsLock) {
+            if (mMixedContentMode != mode) {
+                mMixedContentMode = mode;
+                mEventHandler.updateWebkitPreferencesLocked();
+            }
+        }
+    }
+
+    public int getMixedContentMode() {
+        synchronized (mAwSettingsLock) {
+            return mMixedContentMode;
+        }
+    }
+
+    @CalledByNative
+    private boolean getAllowRunningInsecureContentLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mMixedContentMode == MIXED_CONTENT_ALWAYS_ALLOW;
+    }
+
+    @CalledByNative
+    private boolean getAllowDisplayingInsecureContentLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mMixedContentMode == MIXED_CONTENT_ALWAYS_ALLOW ||
+                mMixedContentMode == MIXED_CONTENT_COMPATIBILITY_MODE;
+    }
+
+    /**
+     * Sets whether to use the video overlay for the embedded video.
+     * @param flag whether to enable the video overlay for the embedded video.
+     */
+    public void setVideoOverlayForEmbeddedVideoEnabled(final boolean enabled) {
+        synchronized (mAwSettingsLock) {
+            if (mVideoOverlayForEmbeddedVideoEnabled != enabled) {
+                mVideoOverlayForEmbeddedVideoEnabled = enabled;
+                mEventHandler.runOnUiThreadBlockingAndLocked(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (mNativeAwSettings != 0) {
+                            nativeUpdateRendererPreferencesLocked(mNativeAwSettings);
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    /**
+     * Gets whether to use the video overlay for the embedded video.
+     * @return true if the WebView enables the video overlay for the embedded video.
+     */
+    public boolean getVideoOverlayForEmbeddedVideoEnabled() {
+        synchronized (mAwSettingsLock) {
+            return getVideoOverlayForEmbeddedVideoEnabledLocked();
+        }
+    }
+
+    @CalledByNative
+    private boolean getVideoOverlayForEmbeddedVideoEnabledLocked() {
+        assert Thread.holdsLock(mAwSettingsLock);
+        return mVideoOverlayForEmbeddedVideoEnabled;
+    }
+
     @CalledByNative
     private boolean supportsDoubleTapZoomLocked() {
         assert Thread.holdsLock(mAwSettingsLock);
@@ -1467,13 +1580,14 @@ public class AwSettings {
     @CalledByNative
     private void updateEverything() {
         synchronized (mAwSettingsLock) {
-            nativeUpdateEverythingLocked(mNativeAwSettings);
+            updateEverythingLocked();
         }
     }
 
     @CalledByNative
     private void populateWebPreferences(long webPrefsPtr) {
         synchronized (mAwSettingsLock) {
+            assert mNativeAwSettings != 0;
             nativePopulateWebPreferencesLocked(mNativeAwSettings, webPrefsPtr);
         }
     }
@@ -1481,7 +1595,9 @@ public class AwSettings {
     private void updateWebkitPreferencesOnUiThreadLocked() {
         assert mEventHandler.mHandler != null;
         ThreadUtils.assertOnUiThread();
-        nativeUpdateWebkitPreferencesLocked(mNativeAwSettings);
+        if (mNativeAwSettings != 0) {
+            nativeUpdateWebkitPreferencesLocked(mNativeAwSettings);
+        }
     }
 
     private native long nativeInit(long webContentsPtr);
@@ -1503,4 +1619,6 @@ public class AwSettings {
     private static native String nativeGetDefaultUserAgent();
 
     private native void nativeUpdateFormDataPreferencesLocked(long nativeAwSettings);
+
+    private native void nativeUpdateRendererPreferencesLocked(long nativeAwSettings);
 }

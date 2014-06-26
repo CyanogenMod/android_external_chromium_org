@@ -24,7 +24,7 @@ namespace content {
 
 MidiMessageFilter::MidiMessageFilter(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
-    : channel_(NULL),
+    : sender_(NULL),
       io_message_loop_(io_message_loop),
       main_message_loop_(base::MessageLoopProxy::current()),
       next_available_id_(0),
@@ -35,10 +35,10 @@ MidiMessageFilter::~MidiMessageFilter() {}
 
 void MidiMessageFilter::Send(IPC::Message* message) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  if (!channel_) {
+  if (!sender_) {
     delete message;
   } else {
-    channel_->Send(message);
+    sender_->Send(message);
   }
 }
 
@@ -54,9 +54,9 @@ bool MidiMessageFilter::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void MidiMessageFilter::OnFilterAdded(IPC::Channel* channel) {
+void MidiMessageFilter::OnFilterAdded(IPC::Sender* sender) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  channel_ = channel;
+  sender_ = sender;
 }
 
 void MidiMessageFilter::OnFilterRemoved() {
@@ -69,7 +69,7 @@ void MidiMessageFilter::OnFilterRemoved() {
 
 void MidiMessageFilter::OnChannelClosing() {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
-  channel_ = NULL;
+  sender_ = NULL;
 }
 
 void MidiMessageFilter::StartSession(blink::WebMIDIAccessorClient* client) {
@@ -100,26 +100,26 @@ void MidiMessageFilter::RemoveClient(blink::WebMIDIAccessorClient* client) {
 
 void MidiMessageFilter::OnSessionStarted(
     int client_id,
-    bool success,
+    media::MidiResult result,
     MidiPortInfoList inputs,
     MidiPortInfoList outputs) {
   // Handle on the main JS thread.
   main_message_loop_->PostTask(
       FROM_HERE,
       base::Bind(&MidiMessageFilter::HandleSessionStarted, this,
-                 client_id, success, inputs, outputs));
+                 client_id, result, inputs, outputs));
 }
 
 void MidiMessageFilter::HandleSessionStarted(
     int client_id,
-    bool success,
+    media::MidiResult result,
     MidiPortInfoList inputs,
     MidiPortInfoList outputs) {
   blink::WebMIDIAccessorClient* client = GetClientFromId(client_id);
   if (!client)
     return;
 
-  if (success) {
+  if (result == media::MIDI_OK) {
     // Add the client's input and output ports.
     for (size_t i = 0; i < inputs.size(); ++i) {
       client->didAddInputPort(
@@ -137,7 +137,26 @@ void MidiMessageFilter::HandleSessionStarted(
           base::UTF8ToUTF16(outputs[i].version));
     }
   }
-  client->didStartSession(success);
+  std::string error;
+  std::string message;
+  switch (result) {
+    case media::MIDI_OK:
+      break;
+    case media::MIDI_NOT_SUPPORTED:
+      error = "NotSupportedError";
+      break;
+    case media::MIDI_INITIALIZATION_ERROR:
+      error = "InvalidStateError";
+      message = "Platform dependent initialization failed.";
+      break;
+    default:
+      NOTREACHED();
+      error = "InvalidStateError";
+      message = "Unknown internal error occurred.";
+      break;
+  }
+  client->didStartSession(result == media::MIDI_OK, base::UTF8ToUTF16(error),
+                          base::UTF8ToUTF16(message));
 }
 
 blink::WebMIDIAccessorClient*

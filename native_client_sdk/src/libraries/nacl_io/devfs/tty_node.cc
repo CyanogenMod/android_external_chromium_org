@@ -18,10 +18,11 @@
 #include "nacl_io/ioctl.h"
 #include "nacl_io/kernel_handle.h"
 #include "nacl_io/kernel_intercept.h"
+#include "nacl_io/log.h"
 #include "nacl_io/pepper_interface.h"
 #include "sdk_util/auto_lock.h"
 
-#define CHECK_LFLAG(TERMIOS, FLAG) (TERMIOS.c_lflag & FLAG)
+#define CHECK_LFLAG(TERMIOS, FLAG) (TERMIOS.c_lflag& FLAG)
 
 #define IS_ECHO CHECK_LFLAG(termios_, ECHO)
 #define IS_ECHOE CHECK_LFLAG(termios_, ECHOE)
@@ -53,8 +54,10 @@ void TtyNode::InitTermios() {
   termios_.c_cflag = CREAD | 077;
   termios_.c_lflag =
       ISIG | ICANON | ECHO | ECHOE | ECHOK | ECHOCTL | ECHOKE | IEXTEN;
+#if !defined(__BIONIC__)
   termios_.c_ispeed = B38400;
   termios_.c_ospeed = B38400;
+#endif
   termios_.c_cc[VINTR] = 3;
   termios_.c_cc[VQUIT] = 28;
   termios_.c_cc[VERASE] = 127;
@@ -74,7 +77,9 @@ void TtyNode::InitTermios() {
   termios_.c_cc[VEOL2] = 0;
 }
 
-EventEmitter* TtyNode::GetEventEmitter() { return emitter_.get(); }
+EventEmitter* TtyNode::GetEventEmitter() {
+  return emitter_.get();
+}
 
 Error TtyNode::Write(const HandleAttr& attr,
                      const void* buf,
@@ -84,8 +89,11 @@ Error TtyNode::Write(const HandleAttr& attr,
   *out_bytes = 0;
 
   // No handler registered.
-  if (output_handler_.handler == NULL)
+  if (output_handler_.handler == NULL) {
+    // No error here; many of the tests trigger this message.
+    LOG_TRACE("No output handler registered.");
     return EIO;
+  }
 
   int rtn = output_handler_.handler(
       static_cast<const char*>(buf), count, output_handler_.user_data);
@@ -108,6 +116,8 @@ Error TtyNode::Read(const HandleAttr& attr,
 
   // If interrupted, return
   Error err = wait.WaitOnEvent(POLLIN, -1);
+  if (err == ETIMEDOUT)
+    err = EWOULDBLOCK;
   if (err != 0)
     return err;
 
@@ -161,11 +171,32 @@ Error TtyNode::Echo(const char* string, int count) {
   return 0;
 }
 
-Error TtyNode::ProcessInput(struct tioc_nacl_input_string* message) {
-  AUTO_LOCK(emitter_->GetLock())
+Error TtyNode::ProcessInput(PP_Var message) {
+  if (message.type != PP_VARTYPE_STRING) {
+    LOG_ERROR("Expected VarString but got %d.", message.type);
+    return EINVAL;
+  }
 
-  const char* buffer = message->buffer;
-  size_t num_bytes = message->length;
+  PepperInterface* ppapi = filesystem_->ppapi();
+  if (!ppapi) {
+    LOG_ERROR("ppapi is NULL.");
+    return EINVAL;
+  }
+
+  VarInterface* var_iface = ppapi->GetVarInterface();
+  if (!var_iface) {
+    LOG_ERROR("Got NULL interface: Var");
+    return EINVAL;
+  }
+
+  uint32_t num_bytes;
+  const char* buffer = var_iface->VarToUtf8(message, &num_bytes);
+  Error error = ProcessInput(buffer, num_bytes);
+  return error;
+}
+
+Error TtyNode::ProcessInput(const char* buffer, size_t num_bytes) {
+  AUTO_LOCK(emitter_->GetLock())
 
   for (size_t i = 0; i < num_bytes; i++) {
     char c = buffer[i];
@@ -237,17 +268,16 @@ Error TtyNode::VIoctl(int request, va_list args) {
         output_handler_.handler = NULL;
         return 0;
       }
-      if (output_handler_.handler != NULL)
+      if (output_handler_.handler != NULL) {
+        LOG_ERROR("Output handler already set.");
         return EALREADY;
+      }
       output_handler_ = *arg;
       return 0;
     }
-    case TIOCNACLINPUT: {
-      // This ioctl is used to deliver data from the user to this tty node's
-      // input buffer.
-      struct tioc_nacl_input_string* message =
-          va_arg(args, struct tioc_nacl_input_string*);
-      return ProcessInput(message);
+    case NACL_IOC_HANDLEMESSAGE: {
+      struct PP_Var* message = va_arg(args, struct PP_Var*);
+      return ProcessInput(*message);
     }
     case TIOCSWINSZ: {
       struct winsize* size = va_arg(args, struct winsize*);
@@ -273,6 +303,9 @@ Error TtyNode::VIoctl(int request, va_list args) {
       size->ws_row = rows_;
       size->ws_col = cols_;
       return 0;
+    }
+    default: {
+      LOG_ERROR("TtyNode:VIoctl: Unknown request: %#x", request);
     }
   }
 

@@ -9,9 +9,10 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "chrome/browser/net/spdyproxy/data_reduction_proxy_settings.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_params.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_settings.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/base/request_priority.h"
@@ -21,12 +22,15 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 
+// TODO(marq): Remove this class because it is not being used.
+
 // Ensure data reduction features are available.
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
 #error proxy_advisor should only be included in Android or iOS builds.
 #endif
 
 using content::BrowserThread;
+using data_reduction_proxy::DataReductionProxySettings;
 
 namespace {
 const char kOmniboxMotivation[] = "omnibox";
@@ -77,7 +81,9 @@ ProxyAdvisor::ProxyAdvisor(PrefService* pref_service,
 
   // pref_service may be null in mock test subclasses.
   if (pref_service) {
-    proxy_pref_member_.Init(prefs::kSpdyProxyAuthEnabled, pref_service,
+    proxy_pref_member_.Init(
+        data_reduction_proxy::prefs::kDataReductionProxyEnabled,
+        pref_service,
         base::Bind(&ProxyAdvisor::UpdateProxyState, base::Unretained(this)));
     proxy_pref_member_.MoveToThread(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
@@ -116,10 +122,14 @@ void ProxyAdvisor::Advise(
   std::string motivation_name(MotivationName(motivation, is_preconnect));
   std::string header_value = motivation_name + " " + url.spec();
   net::URLRequestContext* context = context_getter_->GetURLRequestContext();
+  data_reduction_proxy::DataReductionProxyParams params(
+      data_reduction_proxy::DataReductionProxyParams::kAllowed |
+      data_reduction_proxy::DataReductionProxyParams::kFallbackAllowed |
+      data_reduction_proxy::DataReductionProxyParams::kPromoAllowed);
   std::string endpoint =
-      DataReductionProxySettings::GetDataReductionProxyOrigin() + "preconnect";
+      params.origin().spec() + "preconnect";
   scoped_ptr<net::URLRequest> request = context->CreateRequest(
-      GURL(endpoint), net::DEFAULT_PRIORITY, this);
+      GURL(endpoint), net::DEFAULT_PRIORITY, this, NULL);
   request->set_method("HEAD");
   request->SetExtraRequestHeaderByName(
       "Proxy-Host-Advisory", header_value, false);

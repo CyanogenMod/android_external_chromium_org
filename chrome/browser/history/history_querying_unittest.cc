@@ -10,6 +10,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/history/history_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -78,10 +79,11 @@ class HistoryQueryTest : public testing::Test {
   void QueryHistory(const std::string& text_query,
                     const QueryOptions& options,
                     QueryResults* results) {
-    history_->QueryHistory(
-        base::UTF8ToUTF16(text_query), options, &consumer_,
-        base::Bind(&HistoryQueryTest::QueryHistoryComplete,
-                   base::Unretained(this)));
+    history_->QueryHistory(base::UTF8ToUTF16(text_query),
+                           options,
+                           base::Bind(&HistoryQueryTest::QueryHistoryComplete,
+                                      base::Unretained(this)),
+                           &tracker_);
     // Will go until ...Complete calls Quit.
     base::MessageLoop::current()->Run();
     results->Swap(&last_query_results_);
@@ -147,10 +149,10 @@ class HistoryQueryTest : public testing::Test {
 
   void AddEntryToHistory(const TestEntry& entry) {
     // We need the ID scope and page ID so that the visit tracker can find it.
-    const void* id_scope = reinterpret_cast<void*>(1);
+    ContextID context_id = reinterpret_cast<ContextID>(1);
     GURL url(entry.url);
 
-    history_->AddPage(url, entry.time, id_scope, page_id_++, GURL(),
+    history_->AddPage(url, entry.time, context_id, page_id_++, GURL(),
                       history::RedirectList(), content::PAGE_TRANSITION_LINK,
                       history::SOURCE_BROWSED, false);
     history_->SetPageTitle(url, base::UTF8ToUTF16(entry.title));
@@ -163,7 +165,7 @@ class HistoryQueryTest : public testing::Test {
     ASSERT_TRUE(base::CreateDirectory(history_dir_));
 
     history_.reset(new HistoryService);
-    if (!history_->Init(history_dir_, NULL)) {
+    if (!history_->Init(history_dir_)) {
       history_.reset();  // Tests should notice this NULL ptr & fail.
       return;
     }
@@ -186,7 +188,7 @@ class HistoryQueryTest : public testing::Test {
     }
   }
 
-  void QueryHistoryComplete(HistoryService::Handle, QueryResults* results) {
+  void QueryHistoryComplete(QueryResults* results) {
     results->Swap(&last_query_results_);
     base::MessageLoop::current()->Quit();  // Will return out to QueryHistory.
   }
@@ -197,7 +199,7 @@ class HistoryQueryTest : public testing::Test {
 
   base::FilePath history_dir_;
 
-  CancelableRequestConsumer consumer_;
+  base::CancelableTaskTracker tracker_;
 
   // The QueryHistoryComplete callback will put the results here so QueryHistory
   // can return them.
@@ -382,66 +384,6 @@ TEST_F(HistoryQueryTest, TextSearchCount) {
   EXPECT_EQ(1U, results.size());
   EXPECT_TRUE(NthResultIs(results, 0, 3));
 }
-
-// Tests that text search queries can find URLs when they exist only in the
-// archived database. This also tests that imported URLs can be found, since
-// we use AddPageWithDetails just like the importer.
-TEST_F(HistoryQueryTest, TextSearchArchived) {
-  ASSERT_TRUE(history_.get());
-
-  URLRows urls_to_add;
-
-  URLRow row1(GURL("http://foo.bar/"));
-  row1.set_title(base::UTF8ToUTF16("archived title same"));
-  row1.set_last_visit(Time::Now() - TimeDelta::FromDays(365));
-  urls_to_add.push_back(row1);
-
-  URLRow row2(GURL("http://foo.bar/"));
-  row2.set_title(base::UTF8ToUTF16("nonarchived title same"));
-  row2.set_last_visit(Time::Now());
-  urls_to_add.push_back(row2);
-
-  history_->AddPagesWithDetails(urls_to_add, history::SOURCE_BROWSED);
-
-  QueryOptions options;
-  QueryResults results;
-
-  // Query all time. The title we get should be the one in the archived and
-  // not the most current title (since otherwise highlighting in
-  // the title might be wrong).
-  QueryHistory("archived", options, &results);
-  ASSERT_EQ(1U, results.size());
-  EXPECT_TRUE(row1.url() == results[0].url());
-  EXPECT_TRUE(row1.title() == results[0].title());
-
-  // Check query is ordered correctly when split between archived and
-  // non-archived database.
-  QueryHistory("same", options, &results);
-  ASSERT_EQ(2U, results.size());
-  EXPECT_TRUE(row2.url() == results[0].url());
-  EXPECT_TRUE(row2.title() == results[0].title());
-  EXPECT_TRUE(row1.url() == results[1].url());
-  EXPECT_TRUE(row1.title() == results[1].title());
-}
-
-/* TODO(brettw) re-enable this. It is commented out because the current history
-   code prohibits adding more than one indexed page with the same URL. When we
-   have tiered history, there could be a dupe in the archived history which
-   won't get picked up by the deletor and it can happen again. When this is the
-   case, we should fix this test to duplicate that situation.
-
-// Tests duplicate collapsing and not in text search situations.
-TEST_F(HistoryQueryTest, TextSearchDupes) {
-  ASSERT_TRUE(history_.get());
-
-  QueryOptions options;
-  QueryResults results;
-
-  QueryHistory("Other", options, &results);
-  EXPECT_EQ(1U, results.size());
-  EXPECT_TRUE(NthResultIs(results, 0, 4));
-}
-*/
 
 // Tests IDN text search by both ASCII and UTF.
 TEST_F(HistoryQueryTest, TextSearchIDN) {

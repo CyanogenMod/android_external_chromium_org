@@ -20,6 +20,7 @@
 #include <libaddressinput/util/basictypes.h>
 #include <libaddressinput/util/scoped_ptr.h>
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -57,7 +58,8 @@ class Ruleset;
 //    };
 class CountryRulesAggregator {
  public:
-  typedef i18n::addressinput::ScopedPtrCallback<std::string, Ruleset> Callback;
+  typedef i18n::addressinput::ScopedPtrCallback<void(std::string, Ruleset)>
+      Callback;
 
   explicit CountryRulesAggregator(scoped_ptr<Retriever> retriever);
   ~CountryRulesAggregator();
@@ -71,13 +73,23 @@ class CountryRulesAggregator {
 
  private:
   // Callback for Retriever::Retrieve() method.
-  void OnDataReady(bool success,
+  bool OnDataReady(bool success,
                    const std::string& key,
                    const std::string& data);
 
-  // Builds and returns the ruleset for |key| at |field| level. Returns NULL on
-  // failure, e.g. missing sub-region data in JSON.
-  scoped_ptr<Ruleset> Build(const std::string& key, AddressField field);
+  // Builds and returns the ruleset for |key| at |field| level. Language
+  // specific rules are retrieved using |language_specific_keys|, which is a
+  // mapping of language to key.
+  //
+  // Most regions use the same keys for all language variations. For example,
+  // "CA/AB--fr" is a French variant of "CA/AB". The notable exception is Hong
+  // Kong, where "data/HK/Kowloon--en" is the English variant of "HK/香港島".
+  //
+  // Returns NULL on failure, e.g. missing sub-region data in JSON.
+  scoped_ptr<Ruleset> Build(
+      const std::string& key,
+      AddressField field,
+      const std::map<std::string, std::string>& language_specific_keys);
 
   // Builds and returns the rule for |key| at |field| level. Returns NULL if
   // |key| is not in JSON.

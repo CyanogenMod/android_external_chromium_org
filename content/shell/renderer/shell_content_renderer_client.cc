@@ -7,17 +7,18 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
+#include "content/common/sandbox_win.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/test/layouttest_support.h"
 #include "content/shell/common/shell_switches.h"
+#include "content/shell/common/webkit_test_helpers.h"
 #include "content/shell/renderer/shell_render_frame_observer.h"
 #include "content/shell/renderer/shell_render_process_observer.h"
 #include "content/shell/renderer/shell_render_view_observer.h"
 #include "content/shell/renderer/test_runner/WebTestInterfaces.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
-#include "content/shell/renderer/test_runner/WebTestRunner.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "content/shell/renderer/webkit_test_runner.h"
 #include "content/test/mock_webclipboard_impl.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamCenter.h"
@@ -25,9 +26,15 @@
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
+#if defined(OS_WIN)
+#include "content/public/renderer/render_font_warmup_win.h"
+#include "third_party/WebKit/public/web/win/WebFontRendering.h"
+#include "third_party/skia/include/ports/SkFontMgr.h"
+#endif
+
 using blink::WebAudioDevice;
 using blink::WebClipboard;
-using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebMIDIAccessor;
 using blink::WebMIDIAccessorClient;
 using blink::WebMediaStreamCenter;
@@ -37,32 +44,42 @@ using blink::WebPluginParams;
 using blink::WebRTCPeerConnectionHandler;
 using blink::WebRTCPeerConnectionHandlerClient;
 using blink::WebThemeEngine;
-using WebTestRunner::WebTestDelegate;
-using WebTestRunner::WebTestInterfaces;
-using WebTestRunner::WebTestProxyBase;
 
 namespace content {
 
+#if defined(OS_WIN)
 namespace {
-ShellContentRendererClient* g_renderer_client;
+
+// DirectWrite only has access to %WINDIR%\Fonts by default. For developer
+// side-loading, support kRegisterFontFiles to allow access to additional fonts.
+void RegisterSideloadedTypefaces(SkFontMgr* fontmgr) {
+  std::vector<std::string> files = GetSideloadFontFiles();
+  for (std::vector<std::string>::const_iterator i(files.begin());
+       i != files.end();
+       ++i) {
+    SkTypeface* typeface = fontmgr->createFromFile(i->c_str());
+    DoPreSandboxWarmupForTypeface(typeface);
+    blink::WebFontRendering::addSideloadedFontForTesting(typeface);
+  }
 }
 
-ShellContentRendererClient* ShellContentRendererClient::Get() {
-  return g_renderer_client;
-}
+}  // namespace
+#endif  // OS_WIN
 
 ShellContentRendererClient::ShellContentRendererClient() {
-  DCHECK(!g_renderer_client);
-  g_renderer_client = this;
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree)) {
     EnableWebTestProxyCreation(
         base::Bind(&ShellContentRendererClient::WebTestProxyCreated,
                    base::Unretained(this)));
   }
+
+#if defined(OS_WIN)
+  if (ShouldUseDirectWrite())
+    RegisterSideloadedTypefaces(GetPreSandboxWarmupFontMgr());
+#endif
 }
 
 ShellContentRendererClient::~ShellContentRendererClient() {
-  g_renderer_client = NULL;
 }
 
 void ShellContentRendererClient::RenderThreadStarted() {
@@ -86,7 +103,7 @@ void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
   WebKitTestRunner* test_runner = WebKitTestRunner::Get(render_view);
   test_runner->Reset();
   render_view->GetWebView()->setSpellCheckClient(
-      test_runner->proxy()->spellCheckClient());
+      test_runner->proxy()->GetSpellCheckClient());
   WebTestDelegate* delegate =
       ShellRenderProcessObserver::GetInstance()->test_delegate();
   if (delegate == static_cast<WebTestDelegate*>(test_runner))
@@ -95,16 +112,9 @@ void ShellContentRendererClient::RenderViewCreated(RenderView* render_view) {
 
 bool ShellContentRendererClient::OverrideCreatePlugin(
     RenderFrame* render_frame,
-    WebFrame* frame,
+    WebLocalFrame* frame,
     const WebPluginParams& params,
     WebPlugin** plugin) {
-  std::string mime_type = params.mimeType.utf8();
-  if (mime_type == content::kBrowserPluginMimeType) {
-    // Allow browser plugin in content_shell only if it is forced by flag.
-    // Returning true here disables the plugin.
-    return !CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kEnableBrowserPluginForAllViewTypes);
-  }
   return false;
 }
 
@@ -147,6 +157,8 @@ ShellContentRendererClient::OverrideCreateMIDIAccessor(
 WebAudioDevice*
 ShellContentRendererClient::OverrideCreateAudioDevice(
     double sample_rate) {
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(switches::kDumpRenderTree))
+    return NULL;
   WebTestInterfaces* interfaces =
       ShellRenderProcessObserver::GetInstance()->test_interfaces();
   return interfaces->createAudioDevice(sample_rate);
@@ -173,21 +185,10 @@ void ShellContentRendererClient::WebTestProxyCreated(RenderView* render_view,
   test_runner->set_proxy(proxy);
   if (!ShellRenderProcessObserver::GetInstance()->test_delegate())
     ShellRenderProcessObserver::GetInstance()->SetTestDelegate(test_runner);
-  proxy->setInterfaces(
+  proxy->SetInterfaces(
       ShellRenderProcessObserver::GetInstance()->test_interfaces());
-  test_runner->proxy()->setDelegate(
+  test_runner->proxy()->SetDelegate(
       ShellRenderProcessObserver::GetInstance()->test_delegate());
-}
-
-bool ShellContentRendererClient::AllowBrowserPlugin(
-    blink::WebPluginContainer* container) {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableBrowserPluginForAllViewTypes)) {
-    // Allow BrowserPlugin if forced by command line flag. This is generally
-    // true for tests.
-    return true;
-  }
-  return ContentRendererClient::AllowBrowserPlugin(container);
 }
 
 }  // namespace content

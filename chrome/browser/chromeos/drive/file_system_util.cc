@@ -48,21 +48,6 @@ namespace util {
 
 namespace {
 
-const base::FilePath::CharType kSpecialMountPointRoot[] =
-    FILE_PATH_LITERAL("/special");
-
-const char kDriveMountPointNameBase[] = "drive";
-
-const base::FilePath::CharType kDriveMyDriveRootPath[] =
-    FILE_PATH_LITERAL("drive/root");
-
-const base::FilePath::CharType kFileCacheVersionDir[] =
-    FILE_PATH_LITERAL("v1");
-
-const char kSlash[] = "/";
-const char kDot = '.';
-const char kEscapedChars[] = "_";
-
 std::string ReadStringFromGDocFile(const base::FilePath& file_path,
                                    const std::string& key) {
   const int64 kMaxGDocSize = 4096;
@@ -104,15 +89,6 @@ DriveIntegrationService* GetIntegrationServiceByProfile(Profile* profile) {
   return service;
 }
 
-void CheckDirectoryExistsAfterGetResourceEntry(
-    const FileOperationCallback& callback,
-    FileError error,
-    scoped_ptr<ResourceEntry> entry) {
-  if (error == FILE_ERROR_OK && !entry->file_info().is_directory())
-    error = FILE_ERROR_NOT_A_DIRECTORY;
-  callback.Run(error);
-}
-
 }  // namespace
 
 const base::FilePath& GetDriveGrandRootPath() {
@@ -123,13 +99,23 @@ const base::FilePath& GetDriveGrandRootPath() {
 
 const base::FilePath& GetDriveMyDriveRootPath() {
   CR_DEFINE_STATIC_LOCAL(base::FilePath, drive_root_path,
-      (kDriveMyDriveRootPath));
+                         (FILE_PATH_LITERAL("drive/root")));
   return drive_root_path;
+}
+
+base::FilePath GetDriveMountPointPathForUserIdHash(
+    const std::string user_id_hash) {
+  static const base::FilePath::CharType kSpecialMountPointRoot[] =
+      FILE_PATH_LITERAL("/special");
+  static const char kDriveMountPointNameBase[] = "drive";
+  return base::FilePath(kSpecialMountPointRoot).AppendASCII(
+      net::EscapePath(kDriveMountPointNameBase +
+                      (user_id_hash.empty() ? "" : "-" + user_id_hash)));
 }
 
 base::FilePath GetDriveMountPointPath(Profile* profile) {
   std::string id = chromeos::ProfileHelper::GetUserIdHashFromProfile(profile);
-  if (id.empty()) {
+  if (id.empty() || id == chrome::kLegacyProfileDir) {
     // ProfileHelper::GetUserIdHashFromProfile works only when multi-profile is
     // enabled. In that case, we fall back to use UserManager (it basically just
     // returns currently active users's hash in such a case.) I still try
@@ -141,8 +127,7 @@ base::FilePath GetDriveMountPointPath(Profile* profile) {
     if (user)
       id = user->username_hash();
   }
-  return base::FilePath(kSpecialMountPointRoot).AppendASCII(
-      net::EscapePath(kDriveMountPointNameBase + (id.empty() ? "" : "-" + id)));
+  return GetDriveMountPointPathForUserIdHash(id);
 }
 
 FileSystemInterface* GetFileSystemByProfile(Profile* profile) {
@@ -261,6 +246,8 @@ base::FilePath GetCacheRootPath(Profile* profile) {
   chrome::GetUserCacheDirectory(profile->GetPath(), &cache_base_path);
   base::FilePath cache_root_path =
       cache_base_path.Append(chromeos::kDriveCacheDirname);
+  static const base::FilePath::CharType kFileCacheVersionDir[] =
+      FILE_PATH_LITERAL("v1");
   return cache_root_path.Append(kFileCacheVersionDir);
 }
 
@@ -293,14 +280,14 @@ std::string UnescapeCacheFileName(const std::string& filename) {
 }
 
 std::string NormalizeFileName(const std::string& input) {
-  DCHECK(IsStringUTF8(input));
+  DCHECK(base::IsStringUTF8(input));
 
   std::string output;
   if (!base::ConvertToUtf8AndNormalize(input, base::kCodepageUTF8, &output))
     output = input;
-  base::ReplaceChars(output, kSlash, std::string(kEscapedChars), &output);
-  if (!output.empty() && output.find_first_not_of(kDot, 0) == std::string::npos)
-    output = kEscapedChars;
+  base::ReplaceChars(output, "/", "_", &output);
+  if (!output.empty() && output.find_first_not_of('.', 0) == std::string::npos)
+    output = "_";
   return output;
 }
 
@@ -342,20 +329,6 @@ void EnsureDirectoryExists(Profile* profile,
   }
 }
 
-void CheckDirectoryExists(Profile* profile,
-                          const base::FilePath& directory,
-                          const FileOperationCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(!callback.is_null());
-
-  FileSystemInterface* file_system = GetFileSystemByProfile(profile);
-  DCHECK(file_system);
-
-  file_system->GetResourceEntry(
-      ExtractDrivePath(directory),
-      base::Bind(&CheckDirectoryExistsAfterGetResourceEntry, callback));
-}
-
 void EmptyFileOperationCallback(FileError error) {
 }
 
@@ -365,7 +338,7 @@ bool CreateGDocFile(const base::FilePath& file_path,
   std::string content = base::StringPrintf(
       "{\"url\": \"%s\", \"resource_id\": \"%s\"}",
       url.spec().c_str(), resource_id.c_str());
-  return file_util::WriteFile(file_path, content.data(), content.size()) ==
+  return base::WriteFile(file_path, content.data(), content.size()) ==
       static_cast<int>(content.size());
 }
 

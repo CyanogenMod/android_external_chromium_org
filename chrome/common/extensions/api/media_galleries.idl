@@ -17,8 +17,10 @@ namespace mediaGalleries {
   };
 
   [inline_doc] enum GetMetadataType {
-    // Retrieve all available metadata.
+    // Retrieve the mime type, metadata tags, and attached images.
     all,
+    // Retrieve only the mime type and the metadata tags.
+    mimeTypeAndTags,
     // Retrieve only the mime type.
     mimeTypeOnly
   };
@@ -51,11 +53,13 @@ namespace mediaGalleries {
   };
 
   callback MediaFileSystemsCallback =
-      void ([instanceOf=DOMFileSystem] optional object[] mediaFileSystems);
+      void ([instanceOf=DOMFileSystem] object[] mediaFileSystems);
 
   callback AddUserFolderCallback =
       void ([instanceOf=DOMFileSystem] object[] mediaFileSystems,
             DOMString selectedFileSystemName);
+
+  callback DropPermissionForMediaFileSystemCallback = void ();
 
   [inline_doc] dictionary MediaFileSystemMetadata {
     // The name of the file system.
@@ -96,6 +100,14 @@ namespace mediaGalleries {
   callback MediaFileSystemsMetadataCallback =
       void (MediaFileSystemMetadata[] metadata);
 
+  dictionary StreamInfo {
+    // Describes format of container or codec of stream, i.e. "mp3", "h264".
+    DOMString type;
+    
+    // An unfiltered string->string dictionary of tags for the stream.
+    object tags;
+  };
+
   dictionary MediaMetadata {
     // The browser sniffed mime type.
     DOMString mimeType;
@@ -104,13 +116,26 @@ namespace mediaGalleries {
     long? height;
     long? width;
 
+    // Defined for images only.
+    double? xResolution;
+    double? yResolution;
+
     // Defined for audio and video. In seconds.
     double? duration;
     
     // Defined for images and video. In degrees.
     long? rotation;
 
-    // Generic metadata tags.
+    // Defined for images only.
+    DOMString? cameraMake;
+    DOMString? cameraModel;
+    double? exposureTimeSeconds;
+    boolean? flashFired;
+    double? fNumber;
+    double? focalLengthMm;
+    double? isoEquivalent;
+
+    // Defined for audio and video only.
     DOMString? album;
     DOMString? artist;
     DOMString? comment;
@@ -120,6 +145,14 @@ namespace mediaGalleries {
     DOMString? language;
     DOMString? title;
     long? track;
+
+    // All the metadata in the media file. For formats with multiple streams,
+    // stream order will be preserved. Container metadata is the first element.
+    StreamInfo[] rawTags;
+
+    // The images embedded in the media file's metadata. This is most often
+    // used for album art or video thumbnails.
+    [instanceof=Blob] object[] attachedImages;
   };
 
   callback MediaMetadataCallback = void (MediaMetadata metadata);
@@ -137,6 +170,11 @@ namespace mediaGalleries {
     // gesture, the callback will run as though the user canceled.
     static void addUserSelectedFolder(AddUserFolderCallback callback);
 
+    // Give up access to a given media gallery.
+    static void dropPermissionForMediaFileSystem(
+        DOMString galleryId,
+        optional DropPermissionForMediaFileSystemCallback callback);
+
     // Start a scan of the user's hard disks for directories containing media.
     // The scan may take a long time so progress and completion is communicated
     // by events. No permission is granted as a result of the scan, see
@@ -149,7 +187,7 @@ namespace mediaGalleries {
 
     // Show the user the scan results and let them add any or all of them as
     // galleries. This should be used after the 'finish' onScanProgress()
-    // event has happened. A galleries the app has access to are returned, not
+    // event has happened. All galleries the app has access to are returned, not
     // just the newly added galleries.
     static void addScanResults(MediaFileSystemsCallback callback);
 

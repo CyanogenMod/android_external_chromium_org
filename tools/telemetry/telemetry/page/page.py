@@ -1,37 +1,75 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import inspect
 import os
 import re
 import urlparse
 
 
 class Page(object):
-  def __init__(self, url, page_set, attributes=None, base_dir=None):
-    self.url = url
-    self.page_set = page_set
+  def __init__(self, url, page_set=None, base_dir=None, name=''):
+    self._url = url
+    self._page_set = page_set
+    # Default value of base_dir is the directory of the file that defines the
+    # class of this page instace.
+    if base_dir is None:
+      base_dir = os.path.dirname(inspect.getfile(self.__class__))
     self._base_dir = base_dir
+    self._name = name
 
     # These attributes can be set dynamically by the page.
+    self.synthetic_delays = dict()
+    self.startup_url = page_set.startup_url if page_set else ''
     self.credentials = None
     self.disabled = False
-    self.name = None
     self.script_to_evaluate_on_commit = None
+    self._SchemeErrorCheck()
 
-    if attributes:
-      for k, v in attributes.iteritems():
-        setattr(self, k, v)
-
+  def _SchemeErrorCheck(self):
     if not self._scheme:
       raise ValueError('Must prepend the URL with scheme (e.g. file://)')
 
-  def __getattr__(self, name):
-    # Inherit attributes from the page set.
-    if self.page_set and hasattr(self.page_set, name):
-      return getattr(self.page_set, name)
-    raise AttributeError(
-        '%r object has no attribute %r' % (self.__class__, name))
+    if self.startup_url:
+      startup_url_scheme = urlparse.urlparse(self.startup_url).scheme
+      if not startup_url_scheme:
+        raise ValueError('Must prepend the URL with scheme (e.g. http://)')
+      if startup_url_scheme == 'file':
+        raise ValueError('startup_url with local file scheme is not supported')
+
+  def RunNavigateSteps(self, action_runner):
+    action_runner.NavigateToPage(self)
+
+  def CanRunOnBrowser(self, browser_info):
+    """Override this to returns whether this page can be run on specific
+    browser.
+
+    Args:
+      browser_info: an instance of telemetry.core.browser_info.BrowserInfo
+    """
+    assert browser_info
+    return True
+
+  @property
+  def page_set(self):
+    return self._page_set
+
+  @property
+  def name(self):
+    return self._name
+
+  @property
+  def url(self):
+    return self._url
+
+  def GetSyntheticDelayCategories(self):
+    result = []
+    for delay, options in self.synthetic_delays.items():
+      options = '%f;%s' % (options.get('target_duration', 0),
+                           options.get('mode', 'static'))
+      result.append('DELAY(%s;%s)' % (delay, options))
+    return result
 
   def __lt__(self, other):
     return self.url < other.url
@@ -44,6 +82,10 @@ class Page(object):
 
   def __str__(self):
     return self.url
+
+  def AddCustomizeBrowserOptions(self, options):
+    """ Inherit page overrides this to add customized browser options."""
+    pass
 
   @property
   def _scheme(self):

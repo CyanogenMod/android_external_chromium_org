@@ -13,7 +13,7 @@ namespace content {
 class BrowserAccessibilityAndroid : public BrowserAccessibility {
  public:
   // Overrides from BrowserAccessibility.
-  virtual void PostInitialize() OVERRIDE;
+  virtual void OnDataChanged() OVERRIDE;
   virtual bool IsNative() const OVERRIDE;
 
   virtual bool PlatformIsLeaf() const OVERRIDE;
@@ -30,6 +30,7 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
   bool IsFocused() const;
   bool IsHeading() const;
   bool IsHierarchical() const;
+  bool IsLink() const;
   bool IsMultiLine() const;
   bool IsPassword() const;
   bool IsRangeType() const;
@@ -38,6 +39,8 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
   bool IsVisibleToUser() const;
 
   bool CanOpenPopup() const;
+
+  bool HasFocusableChild() const;
 
   const char* GetClassName() const;
   base::string16 GetText() const;
@@ -81,7 +84,6 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
 
   BrowserAccessibilityAndroid();
 
-  bool HasFocusableChild() const;
   bool HasOnlyStaticTextChildren() const;
   bool IsIframe() const;
 

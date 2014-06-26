@@ -10,11 +10,14 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/json/json_reader.h"
+#include "base/json/json_writer.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -23,11 +26,13 @@
 #include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/chromeos/login/authentication_notification_details.h"
+#include "chrome/browser/chromeos/login/auth/authentication_notification_details.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
@@ -41,6 +46,9 @@ using content::RenderWidgetHostView;
 using content::WebContents;
 
 namespace {
+
+const char kUptime[] = "uptime";
+const char kDisk[] = "disk";
 
 RenderWidgetHost* GetRenderWidgetHost(NavigationController* tab) {
   WebContents* web_contents = tab->GetWebContents();
@@ -67,6 +75,19 @@ const std::string GetTabUrl(RenderWidgetHost* rwh) {
     }
   }
   return std::string();
+}
+
+// Appends the given buffer into the file. Returns the number of bytes
+// written, or -1 on error.
+// TODO(satorux): Move this to file_util.
+int AppendFile(const base::FilePath& file_path, const char* data, int size) {
+  FILE* file = base::OpenFile(file_path, "a");
+  if (!file)
+    return -1;
+
+  const int num_bytes_written = fwrite(data, 1, size, file);
+  base::CloseFile(file);
+  return num_bytes_written;
 }
 
 }  // namespace
@@ -96,9 +117,11 @@ static const base::FilePath::CharType kChromeFirstRender[] =
 
 // Names of login UMA values.
 static const char kUmaLogin[] = "BootTime.Login";
+static const char kUmaLoginNewUser[] = "BootTime.LoginNewUser";
 static const char kUmaLoginPrefix[] = "BootTime.";
 static const char kUmaLogout[] = "ShutdownTime.Logout";
 static const char kUmaLogoutPrefix[] = "ShutdownTime.";
+static const char kUmaRestart[] = "ShutdownTime.Restart";
 
 // Name of file collecting login times.
 static const base::FilePath::CharType kLoginTimes[] = FPL("login-times");
@@ -109,38 +132,98 @@ static const char kLogoutTimes[] = "logout-times";
 static base::LazyInstance<BootTimesLoader> g_boot_times_loader =
     LAZY_INSTANCE_INITIALIZER;
 
-BootTimesLoader::BootTimesLoader()
-    : backend_(new Backend()),
-      have_registered_(false) {
-  login_time_markers_.reserve(30);
-  logout_time_markers_.reserve(30);
+// static
+BootTimesLoader::Stats BootTimesLoader::Stats::GetCurrentStats() {
+  const base::FilePath kProcUptime(FPL("/proc/uptime"));
+  const base::FilePath kDiskStat(FPL("/sys/block/sda/stat"));
+  Stats stats;
+  // Callers of this method expect synchronous behavior.
+  // It's safe to allow IO here, because only virtual FS are accessed.
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  base::ReadFileToString(kProcUptime, &stats.uptime_);
+  base::ReadFileToString(kDiskStat, &stats.disk_);
+  return stats;
 }
 
-BootTimesLoader::~BootTimesLoader() {}
+std::string BootTimesLoader::Stats::SerializeToString() const {
+  if (uptime_.empty() || disk_.empty())
+    return std::string();
+  base::DictionaryValue dictionary;
+  dictionary.SetString(kUptime, uptime_);
+  dictionary.SetString(kDisk, disk_);
+
+  std::string result;
+  if (!base::JSONWriter::Write(&dictionary, &result)) {
+    LOG(WARNING) << "BootTimesLoader::Stats::SerializeToString(): failed.";
+    return std::string();
+  }
+
+  return result;
+}
 
 // static
-BootTimesLoader* BootTimesLoader::Get() {
-  return g_boot_times_loader.Pointer();
-}
+BootTimesLoader::Stats BootTimesLoader::Stats::DeserializeFromString(
+    const std::string& source) {
+  if (source.empty())
+    return Stats();
 
-// Appends the given buffer into the file. Returns the number of bytes
-// written, or -1 on error.
-// TODO(satorux): Move this to file_util.
-static int AppendFile(const base::FilePath& file_path,
-                      const char* data,
-                      int size) {
-  FILE* file = base::OpenFile(file_path, "a");
-  if (!file) {
-    return -1;
+  scoped_ptr<base::Value> value(base::JSONReader::Read(source));
+  base::DictionaryValue* dictionary;
+  if (!value || !value->GetAsDictionary(&dictionary)) {
+    LOG(ERROR) << "BootTimesLoader::Stats::DeserializeFromString(): not a "
+                  "dictionary: '" << source << "'";
+    return Stats();
   }
-  const int num_bytes_written = fwrite(data, 1, size, file);
-  base::CloseFile(file);
-  return num_bytes_written;
+
+  Stats result;
+  if (!dictionary->GetString(kUptime, &result.uptime_) ||
+      !dictionary->GetString(kDisk, &result.disk_)) {
+    LOG(ERROR)
+        << "BootTimesLoader::Stats::DeserializeFromString(): format error: '"
+        << source << "'";
+    return Stats();
+  }
+
+  return result;
 }
 
-static void RecordStatsDelayed(const base::FilePath::StringType& name,
-                               const std::string& uptime,
-                               const std::string& disk) {
+bool BootTimesLoader::Stats::UptimeDouble(double* result) const {
+  std::string uptime = uptime_;
+  const size_t space_at = uptime.find_first_of(' ');
+  if (space_at == std::string::npos)
+    return false;
+
+  uptime.resize(space_at);
+
+  if (base::StringToDouble(uptime, result))
+    return true;
+
+  return false;
+}
+
+void BootTimesLoader::Stats::RecordStats(const std::string& name) const {
+  BrowserThread::PostBlockingPoolTask(
+      FROM_HERE,
+      base::Bind(&BootTimesLoader::Stats::RecordStatsImpl,
+                 base::Owned(new Stats(*this)),
+                 name));
+}
+
+void BootTimesLoader::Stats::RecordStatsWithCallback(
+    const std::string& name,
+    const base::Closure& callback) const {
+  BrowserThread::PostBlockingPoolTaskAndReply(
+      FROM_HERE,
+      base::Bind(&BootTimesLoader::Stats::RecordStatsImpl,
+                 base::Owned(new Stats(*this)),
+                 name),
+      callback);
+}
+
+void BootTimesLoader::Stats::RecordStatsImpl(
+    const base::FilePath::StringType& name) const {
+  DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
+
   const base::FilePath log_path(kLogPath);
   const base::FilePath uptime_output =
       log_path.Append(base::FilePath(kUptimePrefix + name));
@@ -148,8 +231,25 @@ static void RecordStatsDelayed(const base::FilePath::StringType& name,
       log_path.Append(base::FilePath(kDiskPrefix + name));
 
   // Append numbers to the files.
-  AppendFile(uptime_output, uptime.data(), uptime.size());
-  AppendFile(disk_output, disk.data(), disk.size());
+  AppendFile(uptime_output, uptime_.data(), uptime_.size());
+  AppendFile(disk_output, disk_.data(), disk_.size());
+}
+
+BootTimesLoader::BootTimesLoader()
+    : backend_(new Backend()),
+      have_registered_(false),
+      login_done_(false),
+      restart_requested_(false) {
+  login_time_markers_.reserve(30);
+  logout_time_markers_.reserve(30);
+}
+
+BootTimesLoader::~BootTimesLoader() {
+}
+
+// static
+BootTimesLoader* BootTimesLoader::Get() {
+  return g_boot_times_loader.Pointer();
 }
 
 // static
@@ -209,28 +309,40 @@ void BootTimesLoader::WriteTimes(
   }
   output += '\n';
 
-  file_util::WriteFile(
-      log_path.Append(base_name), output.data(), output.size());
+  base::WriteFile(log_path.Append(base_name), output.data(), output.size());
 }
 
-void BootTimesLoader::LoginDone() {
+void BootTimesLoader::LoginDone(bool is_user_new) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (login_done_)
+    return;
+
+  login_done_ = true;
   AddLoginTimeMarker("LoginDone", false);
   RecordCurrentStats(kChromeFirstRender);
-  registrar_.Remove(this, content::NOTIFICATION_LOAD_START,
-                    content::NotificationService::AllSources());
-  registrar_.Remove(this, content::NOTIFICATION_LOAD_STOP,
-                    content::NotificationService::AllSources());
-  registrar_.Remove(this, content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-                    content::NotificationService::AllSources());
-  registrar_.Remove(
-      this,
-      content::NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
-      content::NotificationService::AllSources());
+  if (have_registered_) {
+    registrar_.Remove(this,
+                      content::NOTIFICATION_LOAD_START,
+                      content::NotificationService::AllSources());
+    registrar_.Remove(this,
+                      content::NOTIFICATION_LOAD_STOP,
+                      content::NotificationService::AllSources());
+    registrar_.Remove(this,
+                      content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
+                      content::NotificationService::AllSources());
+    registrar_.Remove(
+        this,
+        content::NOTIFICATION_RENDER_WIDGET_HOST_DID_UPDATE_BACKING_STORE,
+        content::NotificationService::AllSources());
+  }
   // Don't swamp the FILE thread right away.
   BrowserThread::PostDelayedTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&WriteTimes, kLoginTimes, kUmaLogin, kUmaLoginPrefix,
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&WriteTimes,
+                 kLoginTimes,
+                 (is_user_new ? kUmaLoginNewUser : kUmaLogin),
+                 kUmaLoginPrefix,
                  login_time_markers_),
       base::TimeDelta::FromMilliseconds(kLoginTimeWriteDelayMs));
 }
@@ -243,41 +355,75 @@ void BootTimesLoader::WriteLogoutTimes() {
          !BrowserThread::IsMessageLoopValid(BrowserThread::UI));
 
   WriteTimes(kLogoutTimes,
-             kUmaLogout,
+             (restart_requested_ ? kUmaRestart : kUmaLogout),
              kUmaLogoutPrefix,
              logout_time_markers_);
 }
 
-void BootTimesLoader::RecordStats(const std::string& name, const Stats& stats) {
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&RecordStatsDelayed, name, stats.uptime, stats.disk));
+// static
+void BootTimesLoader::ClearLogoutStartedLastPreference() {
+  PrefService* local_state = g_browser_process->local_state();
+  local_state->ClearPref(prefs::kLogoutStartedLast);
 }
 
-BootTimesLoader::Stats BootTimesLoader::GetCurrentStats() {
-  const base::FilePath kProcUptime(FPL("/proc/uptime"));
-  const base::FilePath kDiskStat(FPL("/sys/block/sda/stat"));
-  Stats stats;
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
-  base::ReadFileToString(kProcUptime, &stats.uptime);
-  base::ReadFileToString(kDiskStat, &stats.disk);
-  return stats;
+void BootTimesLoader::OnChromeProcessStart() {
+  PrefService* local_state = g_browser_process->local_state();
+  const std::string logout_started_last_str =
+      local_state->GetString(prefs::kLogoutStartedLast);
+  if (logout_started_last_str.empty())
+    return;
+
+  // Note that kLogoutStartedLast is not cleared on format error to stay in
+  // logs in case of other fatal system errors.
+
+  const Stats logout_started_last_stats =
+      Stats::DeserializeFromString(logout_started_last_str);
+  if (logout_started_last_stats.uptime().empty())
+    return;
+
+  double logout_started_last;
+  double uptime;
+  if (!logout_started_last_stats.UptimeDouble(&logout_started_last) ||
+      !Stats::GetCurrentStats().UptimeDouble(&uptime)) {
+    return;
+  }
+
+  if (logout_started_last >= uptime) {
+    // Reboot happened.
+    ClearLogoutStartedLastPreference();
+    return;
+  }
+
+  // Write /tmp/uptime-logout-started as well.
+  const char kLogoutStarted[] = "logout-started";
+  logout_started_last_stats.RecordStatsWithCallback(
+      kLogoutStarted,
+      base::Bind(&BootTimesLoader::ClearLogoutStartedLastPreference));
+}
+
+void BootTimesLoader::OnLogoutStarted(PrefService* state) {
+  const std::string uptime = Stats::GetCurrentStats().SerializeToString();
+  if (!uptime.empty())
+    state->SetString(prefs::kLogoutStartedLast, uptime);
 }
 
 void BootTimesLoader::RecordCurrentStats(const std::string& name) {
-  RecordStats(name, GetCurrentStats());
+  Stats::GetCurrentStats().RecordStats(name);
 }
 
 void BootTimesLoader::SaveChromeMainStats() {
-  chrome_main_stats_ = GetCurrentStats();
+  chrome_main_stats_ = Stats::GetCurrentStats();
 }
 
 void BootTimesLoader::RecordChromeMainStats() {
-  RecordStats(kChromeMain, chrome_main_stats_);
+  chrome_main_stats_.RecordStats(kChromeMain);
 }
 
 void BootTimesLoader::RecordLoginAttempted() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  if (login_done_)
+    return;
+
   login_time_markers_.clear();
   AddLoginTimeMarker("LoginStarted", false);
   if (!have_registered_) {
@@ -368,7 +514,7 @@ void BootTimesLoader::Observe(
       if (render_widget_hosts_loading_.find(rwh) !=
           render_widget_hosts_loading_.end()) {
         AddLoginTimeMarker("TabPaint: " + GetTabUrl(rwh), false);
-        LoginDone();
+        LoginDone(UserManager::Get()->IsCurrentUserNew());
       }
       break;
     }

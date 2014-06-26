@@ -12,9 +12,15 @@
 #include "base/stl_util.h"
 #include "components/autofill/core/common/password_form.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
+#include "components/password_manager/core/browser/password_syncable_service.h"
+
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+#include "components/password_manager/core/browser/password_syncable_service.h"
+#endif
 
 using autofill::PasswordForm;
-using std::vector;
+
+namespace password_manager {
 
 namespace {
 
@@ -22,7 +28,7 @@ namespace {
 // Takes ownership of the elements in |result|, passing ownership to |consumer|
 // if it is still alive.
 void MaybeCallConsumerCallback(base::WeakPtr<PasswordStoreConsumer> consumer,
-                               scoped_ptr<vector<PasswordForm*> > result) {
+                               scoped_ptr<std::vector<PasswordForm*> > result) {
   if (consumer.get())
     consumer->OnGetPasswordStoreResults(*result);
   else
@@ -34,7 +40,7 @@ void MaybeCallConsumerCallback(base::WeakPtr<PasswordStoreConsumer> consumer,
 PasswordStore::GetLoginsRequest::GetLoginsRequest(
     PasswordStoreConsumer* consumer)
     : consumer_weak_(consumer->GetWeakPtr()),
-      result_(new vector<PasswordForm*>()) {
+      result_(new std::vector<PasswordForm*>()) {
   DCHECK(thread_checker_.CalledOnValidThread());
   origin_loop_ = base::MessageLoopProxy::current();
 }
@@ -72,8 +78,11 @@ PasswordStore::PasswordStore(
       observers_(new ObserverListThreadSafe<Observer>()),
       shutdown_called_(false) {}
 
-bool PasswordStore::Init() {
+bool PasswordStore::Init(const syncer::SyncableService::StartSyncFlare& flare) {
   ReportMetrics();
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+  ScheduleTask(base::Bind(&PasswordStore::InitSyncableService, this, flare));
+#endif
   return true;
 }
 
@@ -95,12 +104,23 @@ void PasswordStore::RemoveLogin(const PasswordForm& form) {
                  base::Bind(&PasswordStore::RemoveLoginImpl, this, form)));
 }
 
-void PasswordStore::RemoveLoginsCreatedBetween(const base::Time& delete_begin,
-                                               const base::Time& delete_end) {
+void PasswordStore::RemoveLoginsCreatedBetween(base::Time delete_begin,
+                                               base::Time delete_end) {
   ScheduleTask(
       base::Bind(&PasswordStore::WrapModificationTask, this,
                  base::Bind(&PasswordStore::RemoveLoginsCreatedBetweenImpl,
                             this, delete_begin, delete_end)));
+}
+
+void PasswordStore::RemoveLoginsSyncedBetween(base::Time delete_begin,
+                                              base::Time delete_end) {
+  ScheduleTask(
+      base::Bind(&PasswordStore::WrapModificationTask,
+                 this,
+                 base::Bind(&PasswordStore::RemoveLoginsSyncedBetweenImpl,
+                            this,
+                            delete_begin,
+                            delete_end)));
 }
 
 void PasswordStore::GetLogins(
@@ -154,10 +174,6 @@ void PasswordStore::RemoveObserver(Observer* observer) {
   observers_->RemoveObserver(observer);
 }
 
-void PasswordStore::Shutdown() { shutdown_called_ = true; }
-
-PasswordStore::~PasswordStore() { DCHECK(shutdown_called_); }
-
 bool PasswordStore::ScheduleTask(const base::Closure& task) {
   scoped_refptr<base::SingleThreadTaskRunner> task_runner(
       GetBackgroundTaskRunner());
@@ -165,6 +181,24 @@ bool PasswordStore::ScheduleTask(const base::Closure& task) {
     return task_runner->PostTask(FROM_HERE, task);
   return false;
 }
+
+void PasswordStore::Shutdown() {
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+  ScheduleTask(base::Bind(&PasswordStore::DestroySyncableService, this));
+#endif
+  shutdown_called_ = true;
+}
+
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+base::WeakPtr<syncer::SyncableService>
+    PasswordStore::GetPasswordSyncableService() {
+  DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
+  DCHECK(syncable_service_);
+  return syncable_service_->AsWeakPtr();
+}
+#endif
+
+PasswordStore::~PasswordStore() { DCHECK(shutdown_called_); }
 
 scoped_refptr<base::SingleThreadTaskRunner>
 PasswordStore::GetBackgroundTaskRunner() {
@@ -178,7 +212,7 @@ void PasswordStore::ForwardLoginsResult(GetLoginsRequest* request) {
 
 void PasswordStore::CopyAndForwardLoginsResult(
     PasswordStore::GetLoginsRequest* request,
-    const vector<PasswordForm*>& matched_forms) {
+    const std::vector<PasswordForm*>& matched_forms) {
   // Copy the contents of |matched_forms| into the request. The request takes
   // ownership of the PasswordForm elements.
   *(request->result()) = matched_forms;
@@ -208,6 +242,29 @@ void PasswordStore::WrapModificationTask(ModificationTask task) {
 
 void PasswordStore::NotifyLoginsChanged(
     const PasswordStoreChangeList& changes) {
-  if (!changes.empty())
+  DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
+  if (!changes.empty()) {
     observers_->Notify(&Observer::OnLoginsChanged, changes);
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+    if (syncable_service_)
+      syncable_service_->ActOnPasswordStoreChanges(changes);
+#endif
+  }
 }
+
+#if defined(PASSWORD_MANAGER_ENABLE_SYNC)
+void PasswordStore::InitSyncableService(
+    const syncer::SyncableService::StartSyncFlare& flare) {
+  DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
+  DCHECK(!syncable_service_);
+  syncable_service_.reset(new PasswordSyncableService(this));
+  syncable_service_->InjectStartSyncFlare(flare);
+}
+
+void PasswordStore::DestroySyncableService() {
+  DCHECK(GetBackgroundTaskRunner()->BelongsToCurrentThread());
+  syncable_service_.reset();
+}
+#endif
+
+}  // namespace password_manager

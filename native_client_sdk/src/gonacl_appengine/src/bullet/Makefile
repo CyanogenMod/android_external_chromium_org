@@ -13,7 +13,7 @@ include $(NACL_SDK_ROOT)/tools/common.mk
 TARGET = NaClAMBullet
 LIBS = BulletDynamics BulletCollision LinearMath ppapi pthread
 
-USR_INCLUDE=$(NACL_SDK_ROOT)/toolchain/$(OSNAME)_pnacl/usr/include
+USR_INCLUDE=$(NACL_SDK_ROOT)/toolchain/$(OSNAME)_pnacl/usr/local/include
 BULLET_INCLUDE=$(USR_INCLUDE)/bullet
 
 CFLAGS = -I$(CURDIR) -I$(BULLET_INCLUDE)
@@ -28,7 +28,9 @@ SOURCES = \
 
 $(foreach src,$(SOURCES),$(eval $(call COMPILE_RULE,$(src),$(CFLAGS))))
 
-ifeq ($(CONFIG),Release)
+# The PNaCl workflow uses both an unstripped and finalized/stripped binary.
+# On NaCl, only produce a stripped binary for Release configs (not Debug).
+ifneq (,$(or $(findstring pnacl,$(TOOLCHAIN)),$(findstring Release,$(CONFIG))))
 $(eval $(call LINK_RULE,$(TARGET)_unstripped,$(SOURCES),$(LIBS),$(DEPS)))
 $(eval $(call STRIP_RULE,$(TARGET),$(TARGET)_unstripped))
 else

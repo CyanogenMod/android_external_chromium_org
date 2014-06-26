@@ -25,9 +25,9 @@
 #include "third_party/WebKit/public/web/WebExceptionCode.h"
 #include "third_party/WebKit/public/web/WebFormControlElement.h"
 #include "third_party/WebKit/public/web/WebFormElement.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
 #include "third_party/WebKit/public/web/WebLabelElement.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebNode.h"
 #include "third_party/WebKit/public/web/WebNodeList.h"
 #include "third_party/WebKit/public/web/WebOptionElement.h"
@@ -67,17 +67,17 @@ enum FieldFilterMask {
 
 bool IsOptionElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kOption, ("option"));
-  return element.hasTagName(kOption);
+  return element.hasHTMLTagName(kOption);
 }
 
 bool IsScriptElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kScript, ("script"));
-  return element.hasTagName(kScript);
+  return element.hasHTMLTagName(kScript);
 }
 
 bool IsNoScriptElement(const WebElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kNoScript, ("noscript"));
-  return element.hasTagName(kNoScript);
+  return element.hasHTMLTagName(kNoScript);
 }
 
 bool HasTagName(const WebNode& node, const blink::WebString& tag) {
@@ -115,13 +115,13 @@ const base::string16 CombineAndCollapseWhitespace(
     const base::string16& suffix,
     bool force_whitespace) {
   base::string16 prefix_trimmed;
-  TrimPositions prefix_trailing_whitespace =
-      TrimWhitespace(prefix, TRIM_TRAILING, &prefix_trimmed);
+  base::TrimPositions prefix_trailing_whitespace =
+      base::TrimWhitespace(prefix, base::TRIM_TRAILING, &prefix_trimmed);
 
   // Recursively compute the children's text.
   base::string16 suffix_trimmed;
-  TrimPositions suffix_leading_whitespace =
-      TrimWhitespace(suffix, TRIM_LEADING, &suffix_trimmed);
+  base::TrimPositions suffix_leading_whitespace =
+      base::TrimWhitespace(suffix, base::TRIM_LEADING, &suffix_trimmed);
 
   if (prefix_trailing_whitespace || suffix_leading_whitespace ||
       force_whitespace) {
@@ -190,7 +190,7 @@ base::string16 FindChildText(const WebNode& node) {
 
   const int kChildSearchDepth = 10;
   base::string16 node_text = FindChildTextInner(child, kChildSearchDepth);
-  TrimWhitespace(node_text, TRIM_ALL, &node_text);
+  base::TrimWhitespace(node_text, base::TRIM_ALL, &node_text);
   return node_text;
 }
 
@@ -242,7 +242,7 @@ base::string16 InferLabelFromPrevious(const WebFormControlElement& element) {
     // If we have identified a partial label and have reached a non-lightweight
     // element, consider the label to be complete.
     base::string16 trimmed_label;
-    TrimWhitespace(inferred_label, TRIM_ALL, &trimmed_label);
+    base::TrimWhitespace(inferred_label, base::TRIM_ALL, &trimmed_label);
     if (!trimmed_label.empty())
       break;
 
@@ -262,7 +262,7 @@ base::string16 InferLabelFromPrevious(const WebFormControlElement& element) {
     break;
   }
 
-  TrimWhitespace(inferred_label, TRIM_ALL, &inferred_label);
+  base::TrimWhitespace(inferred_label, base::TRIM_ALL, &inferred_label);
   return inferred_label;
 }
 
@@ -273,7 +273,7 @@ base::string16 InferLabelFromListItem(const WebFormControlElement& element) {
   WebNode parent = element.parentNode();
   CR_DEFINE_STATIC_LOCAL(WebString, kListItem, ("li"));
   while (!parent.isNull() && parent.isElementNode() &&
-         !parent.to<WebElement>().hasTagName(kListItem)) {
+         !parent.to<WebElement>().hasHTMLTagName(kListItem)) {
     parent = parent.parentNode();
   }
 
@@ -293,7 +293,7 @@ base::string16 InferLabelFromTableColumn(const WebFormControlElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kTableCell, ("td"));
   WebNode parent = element.parentNode();
   while (!parent.isNull() && parent.isElementNode() &&
-         !parent.to<WebElement>().hasTagName(kTableCell)) {
+         !parent.to<WebElement>().hasHTMLTagName(kTableCell)) {
     parent = parent.parentNode();
   }
 
@@ -322,7 +322,7 @@ base::string16 InferLabelFromTableRow(const WebFormControlElement& element) {
   CR_DEFINE_STATIC_LOCAL(WebString, kTableRow, ("tr"));
   WebNode parent = element.parentNode();
   while (!parent.isNull() && parent.isElementNode() &&
-         !parent.to<WebElement>().hasTagName(kTableRow)) {
+         !parent.to<WebElement>().hasHTMLTagName(kTableRow)) {
     parent = parent.parentNode();
   }
 
@@ -389,7 +389,7 @@ base::string16 InferLabelFromDefinitionList(
   CR_DEFINE_STATIC_LOCAL(WebString, kDefinitionData, ("dd"));
   WebNode parent = element.parentNode();
   while (!parent.isNull() && parent.isElementNode() &&
-         !parent.to<WebElement>().hasTagName(kDefinitionData))
+         !parent.to<WebElement>().hasHTMLTagName(kDefinitionData))
     parent = parent.parentNode();
 
   if (parent.isNull() || !HasTagName(parent, kDefinitionData))
@@ -448,6 +448,13 @@ void GetOptionStringsFromElement(const WebSelectElement& select_element,
   option_values->clear();
   option_contents->clear();
   WebVector<WebElement> list_items = select_element.listItems();
+
+  // Constrain the maximum list length to prevent a malicious site from DOS'ing
+  // the browser, without entirely breaking autocomplete for some extreme
+  // legitimate sites: http://crbug.com/49332 and http://crbug.com/363094
+  if (list_items.size() > kMaxListSize)
+    return;
+
   option_values->reserve(list_items.size());
   option_contents->reserve(list_items.size());
   for (size_t i = 0; i < list_items.size(); ++i) {
@@ -507,10 +514,9 @@ void ForEachMatchingFormField(const WebFormElement& form_element,
     // i.e. the field the user is currently editing and interacting with.
     const WebInputElement* input_element = toWebInputElement(element);
     if (!force_override && !is_initiating_element &&
-        ((IsAutofillableInputElement(input_element) &&
-          !input_element->value().isEmpty()) ||
-         (IsTextAreaElement(*element) &&
-          !element->toConst<WebTextAreaElement>().value().isEmpty())))
+        ((IsAutofillableInputElement(input_element) ||
+          IsTextAreaElement(*element)) &&
+         !element->value().isEmpty()))
       continue;
 
     if (((filters & FILTER_DISABLED_ELEMENTS) && !element->isEnabled()) ||
@@ -531,35 +537,31 @@ void FillFormField(const FormFieldData& data,
   if (data.value.empty())
     return;
 
+  if (!data.is_autofilled)
+    return;
+
   field->setAutofilled(true);
 
   WebInputElement* input_element = toWebInputElement(field);
-  if (IsTextInput(input_element) || IsMonthInput(input_element)) {
-    // If the maxlength attribute contains a negative value, maxLength()
-    // returns the default maxlength value.
-    input_element->setValue(
-        data.value.substr(0, input_element->maxLength()), true);
-    if (is_initiating_node) {
-      int length = input_element->value().length();
-      input_element->setSelectionRange(length, length);
-      // Clear the current IME composition (the underline), if there is one.
-      input_element->document().frame()->unmarkText();
-    }
-  } else if (IsTextAreaElement(*field)) {
-    WebTextAreaElement text_area = field->to<WebTextAreaElement>();
-    if (text_area.value() != data.value) {
-      text_area.setValue(data.value);
-      text_area.dispatchFormControlChangeEvent();
-    }
-  } else if (IsSelectElement(*field)) {
-    WebSelectElement select_element = field->to<WebSelectElement>();
-    if (select_element.value() != data.value) {
-      select_element.setValue(data.value);
-      select_element.dispatchFormControlChangeEvent();
-    }
-  } else {
-    DCHECK(IsCheckableElement(input_element));
+  if (IsCheckableElement(input_element)) {
     input_element->setChecked(data.is_checked, true);
+  } else {
+    base::string16 value = data.value;
+    if (IsTextInput(input_element) || IsMonthInput(input_element)) {
+      // If the maxlength attribute contains a negative value, maxLength()
+      // returns the default maxlength value.
+      value = value.substr(0, input_element->maxLength());
+    }
+    field->setValue(value, true);
+  }
+
+  if (is_initiating_node &&
+      ((IsTextInput(input_element) || IsMonthInput(input_element)) ||
+       IsTextAreaElement(*field))) {
+    int length = field->value().length();
+    field->setSelectionRange(length, length);
+    // Clear the current IME composition (the underline), if there is one.
+    field->document().frame()->unmarkText();
   }
 }
 
@@ -572,26 +574,30 @@ void PreviewFormField(const FormFieldData& data,
   if (data.value.empty())
     return;
 
-  // Preview input and textarea fields. For input fields, excludes checkboxes
-  // and radio buttons, as there is no provision for setSuggestedCheckedValue
-  // in WebInputElement.
+  if (!data.is_autofilled)
+    return;
+
+  // Preview input, textarea and select fields. For input fields, excludes
+  // checkboxes and radio buttons, as there is no provision for
+  // setSuggestedCheckedValue in WebInputElement.
   WebInputElement* input_element = toWebInputElement(field);
-  if (IsTextInput(input_element)) {
+  if (IsTextInput(input_element) || IsMonthInput(input_element)) {
     // If the maxlength attribute contains a negative value, maxLength()
     // returns the default maxlength value.
     input_element->setSuggestedValue(
       data.value.substr(0, input_element->maxLength()));
     input_element->setAutofilled(true);
-    if (is_initiating_node) {
-      // Select the part of the text that the user didn't type.
-      input_element->setSelectionRange(
-          input_element->value().length(),
-          input_element->suggestedValue().length());
-    }
-  } else if (IsTextAreaElement(*field)) {
-    WebTextAreaElement textarea = field->to<WebTextAreaElement>();
-    textarea.setSuggestedValue(data.value);
+  } else if (IsTextAreaElement(*field) || IsSelectElement(*field)) {
+    field->setSuggestedValue(data.value);
     field->setAutofilled(true);
+  }
+
+  if (is_initiating_node &&
+      (IsTextInput(input_element) || IsTextAreaElement(*field))) {
+    // Select the part of the text that the user didn't type.
+    int start = field->value().length();
+    int end = field->suggestedValue().length();
+    field->setSelectionRange(start, end);
   }
 }
 
@@ -772,17 +778,21 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
     return;
 
   const WebInputElement* input_element = toWebInputElement(&element);
+  if (IsAutofillableInputElement(input_element) ||
+      IsTextAreaElement(element)) {
+    field->is_autofilled = element.isAutofilled();
+    field->is_focusable = element.isFocusable();
+    field->should_autocomplete = element.autoComplete();
+    field->text_direction = element.directionForFormData() ==
+        "rtl" ? base::i18n::RIGHT_TO_LEFT : base::i18n::LEFT_TO_RIGHT;
+  }
+
   if (IsAutofillableInputElement(input_element)) {
     if (IsTextInput(input_element))
       field->max_length = input_element->maxLength();
 
-    field->is_autofilled = input_element->isAutofilled();
-    field->is_focusable = input_element->isFocusable();
     field->is_checkable = IsCheckableElement(input_element);
     field->is_checked = input_element->isChecked();
-    field->should_autocomplete = input_element->autoComplete();
-    field->text_direction = input_element->directionForFormData() == "rtl" ?
-        base::i18n::RIGHT_TO_LEFT : base::i18n::LEFT_TO_RIGHT;
   } else if (IsTextAreaElement(element)) {
     // Nothing more to do in this case.
   } else if (extract_mask & EXTRACT_OPTIONS) {
@@ -797,16 +807,10 @@ void WebFormControlElementToFormField(const WebFormControlElement& element,
   if (!(extract_mask & EXTRACT_VALUE))
     return;
 
-  base::string16 value;
-  if (IsAutofillableInputElement(input_element)) {
-    value = input_element->value();
-  } else if (IsTextAreaElement(element)) {
-    value = element.toConst<WebTextAreaElement>().value();
-  } else {
-    DCHECK(IsSelectElement(element));
-    const WebSelectElement select_element = element.toConst<WebSelectElement>();
-    value = select_element.value();
+  base::string16 value = element.value();
 
+  if (IsSelectElement(element)) {
+    const WebSelectElement select_element = element.toConst<WebSelectElement>();
     // Convert the |select_element| value to text if requested.
     if (extract_mask & EXTRACT_OPTION_TEXT) {
       WebVector<WebElement> list_items = select_element.listItems();
@@ -971,10 +975,10 @@ bool WebFormElementToFormData(
   return true;
 }
 
-bool FindFormAndFieldForInputElement(const WebInputElement& element,
-                                     FormData* form,
-                                     FormFieldData* field,
-                                     RequirementsMask requirements) {
+bool FindFormAndFieldForFormControlElement(const WebFormControlElement& element,
+                                           FormData* form,
+                                           FormFieldData* field,
+                                           RequirementsMask requirements) {
   if (!IsAutofillableElement(element))
     return false;
 
@@ -992,7 +996,7 @@ bool FindFormAndFieldForInputElement(const WebInputElement& element,
                                   field);
 }
 
-void FillForm(const FormData& form, const WebInputElement& element) {
+void FillForm(const FormData& form, const WebFormControlElement& element) {
   WebFormElement form_element = element.form();
   if (form_element.isNull())
     return;
@@ -1033,7 +1037,7 @@ void FillFormForAllElements(const FormData& form_data,
                            &FillFormField);
 }
 
-void PreviewForm(const FormData& form, const WebInputElement& element) {
+void PreviewForm(const FormData& form, const WebFormControlElement& element) {
   WebFormElement form_element = element.form();
   if (form_element.isNull())
     return;
@@ -1046,7 +1050,7 @@ void PreviewForm(const FormData& form, const WebInputElement& element) {
                            &PreviewFormField);
 }
 
-bool ClearPreviewedFormWithElement(const WebInputElement& element,
+bool ClearPreviewedFormWithElement(const WebFormControlElement& element,
                                    bool was_autofilled) {
   WebFormElement form_element = element.form();
   if (form_element.isNull())
@@ -1062,9 +1066,12 @@ bool ClearPreviewedFormWithElement(const WebInputElement& element,
     // want to reset the auto-filled status for fields that were previewed.
     WebFormControlElement control_element = control_elements[i];
 
-    // Only text input and textarea elements can be previewed.
+    // Only text input, textarea and select elements can be previewed.
     WebInputElement* input_element = toWebInputElement(&control_element);
-    if (!IsTextInput(input_element) && !IsTextAreaElement(control_element))
+    if (!IsTextInput(input_element) &&
+        !IsMonthInput(input_element) &&
+        !IsTextAreaElement(control_element) &&
+        !IsSelectElement(control_element))
       continue;
 
     // If the element is not auto-filled, we did not preview it,
@@ -1072,37 +1079,32 @@ bool ClearPreviewedFormWithElement(const WebInputElement& element,
     if(!control_element.isAutofilled())
       continue;
 
-    if ((IsTextInput(input_element) &&
-         input_element->suggestedValue().isEmpty()) ||
-        (IsTextAreaElement(control_element) &&
-         control_element.to<WebTextAreaElement>().suggestedValue().isEmpty()))
+    if ((IsTextInput(input_element) ||
+         IsMonthInput(input_element) ||
+         IsTextAreaElement(control_element) ||
+         IsSelectElement(control_element)) &&
+        control_element.suggestedValue().isEmpty())
       continue;
 
     // Clear the suggested value. For the initiating node, also restore the
     // original value.
-    if (IsTextInput(input_element)) {
-      input_element->setSuggestedValue(WebString());
-      bool is_initiating_node = (element == *input_element);
-      if (is_initiating_node)
-        input_element->setAutofilled(was_autofilled);
-      else
-        input_element->setAutofilled(false);
-
-      // Clearing the suggested value in the focused node (above) can cause
-      // selection to be lost. We force selection range to restore the text
-      // cursor.
+    if (IsTextInput(input_element) || IsMonthInput(input_element) ||
+        IsTextAreaElement(control_element)) {
+      control_element.setSuggestedValue(WebString());
+      bool is_initiating_node = (element == control_element);
       if (is_initiating_node) {
-        int length = input_element->value().length();
-        input_element->setSelectionRange(length, length);
-      }
-    } else if (IsTextAreaElement(control_element)) {
-      WebTextAreaElement text_area = control_element.to<WebTextAreaElement>();
-      text_area.setSuggestedValue(WebString());
-      bool is_initiating_node = (element == text_area);
-      if (is_initiating_node)
         control_element.setAutofilled(was_autofilled);
-      else
+        // Clearing the suggested value in the focused node (above) can cause
+        // selection to be lost. We force selection range to restore the text
+        // cursor.
+        int length = control_element.value().length();
+        control_element.setSelectionRange(length, length);
+      } else {
         control_element.setAutofilled(false);
+      }
+    } else if (IsSelectElement(control_element)) {
+      control_element.setSuggestedValue(WebString());
+      control_element.setAutofilled(false);
     }
   }
 
@@ -1155,7 +1157,8 @@ bool IsWebElementEmpty(const blink::WebElement& element) {
     const blink::WebNode& item = children.item(i);
 
     if (item.isTextNode() &&
-        !ContainsOnlyWhitespaceASCII(item.nodeValue().utf8()))
+        !base::ContainsOnlyChars(item.nodeValue().utf8(),
+                                 base::kWhitespaceASCII))
       return false;
 
     // We ignore all other items with names which begin with
@@ -1179,7 +1182,7 @@ bool IsWebElementEmpty(const blink::WebElement& element) {
   return true;
 }
 
-gfx::RectF GetScaledBoundingBox(float scale, WebInputElement* element) {
+gfx::RectF GetScaledBoundingBox(float scale, WebFormControlElement* element) {
   gfx::Rect bounding_box(element->boundsInViewportSpace());
   return gfx::RectF(bounding_box.x() * scale,
                     bounding_box.y() * scale,

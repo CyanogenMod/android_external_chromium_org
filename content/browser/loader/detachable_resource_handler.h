@@ -10,11 +10,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "base/timer/elapsed_timer.h"
 #include "base/timer/timer.h"
 #include "content/browser/loader/resource_handler.h"
 #include "content/public/browser/resource_controller.h"
-#include "net/url_request/url_request_status.h"
 
 namespace net {
 class IOBuffer;
@@ -50,30 +48,22 @@ class DetachableResourceHandler : public ResourceHandler,
 
   // ResourceHandler implementation:
   virtual void SetController(ResourceController* controller) OVERRIDE;
-  virtual bool OnUploadProgress(int request_id, uint64 position,
-                                uint64 size) OVERRIDE;
-  virtual bool OnRequestRedirected(int request_id, const GURL& url,
+  virtual bool OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
+  virtual bool OnRequestRedirected(const GURL& url,
                                    ResourceResponse* response,
                                    bool* defer) OVERRIDE;
-  virtual bool OnResponseStarted(int request_id,
-                                 ResourceResponse* response,
+  virtual bool OnResponseStarted(ResourceResponse* response,
                                  bool* defer) OVERRIDE;
-  virtual bool OnWillStart(int request_id, const GURL& url,
-                           bool* defer) OVERRIDE;
-  virtual bool OnBeforeNetworkStart(int request_id,
-                                    const GURL& url,
-                                    bool* defer) OVERRIDE;
-  virtual bool OnWillRead(int request_id,
-                          scoped_refptr<net::IOBuffer>* buf,
+  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
+  virtual bool OnBeforeNetworkStart(const GURL& url, bool* defer) OVERRIDE;
+  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                           int* buf_size,
                           int min_size) OVERRIDE;
-  virtual bool OnReadCompleted(int request_id, int bytes_read,
-                               bool* defer) OVERRIDE;
-  virtual void OnResponseCompleted(int request_id,
-                                   const net::URLRequestStatus& status,
+  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
+  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
                                    const std::string& security_info,
                                    bool* defer) OVERRIDE;
-  virtual void OnDataDownloaded(int request_id, int bytes_downloaded) OVERRIDE;
+  virtual void OnDataDownloaded(int bytes_downloaded) OVERRIDE;
 
   // ResourceController implementation:
   virtual void Resume() OVERRIDE;
@@ -82,8 +72,6 @@ class DetachableResourceHandler : public ResourceHandler,
   virtual void CancelWithError(int error_code) OVERRIDE;
 
  private:
-  void TimedOut();
-
   scoped_ptr<ResourceHandler> next_handler_;
   scoped_refptr<net::IOBuffer> read_buffer_;
 
@@ -92,14 +80,6 @@ class DetachableResourceHandler : public ResourceHandler,
 
   bool is_deferred_;
   bool is_finished_;
-  bool timed_out_;
-
-  bool response_started_;
-  base::ElapsedTimer time_since_start_;
-
-  // The status recorded from OnResponseCompleted. Value is
-  // net::URLRequestStatus::IO_PENDING if OnResponseCompleted is never received.
-  net::URLRequestStatus::Status status_;
 
   DISALLOW_COPY_AND_ASSIGN(DetachableResourceHandler);
 };

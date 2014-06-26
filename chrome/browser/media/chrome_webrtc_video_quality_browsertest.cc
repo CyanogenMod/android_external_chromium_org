@@ -2,16 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/base64.h"
+#include "base/command_line.h"
 #include "base/environment.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
+#include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/media/webrtc_browsertest_base.h"
@@ -23,7 +27,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "chrome/test/ui/ui_test.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/browser_test_utils.h"
 #include "media/base/media_switches.h"
@@ -46,18 +50,6 @@ static const base::FilePath::CharType kArgbToI420ConverterExecutable[] =
     FILE_PATH_LITERAL("rgba_to_i420_converter");
 #endif
 
-static const char kHomeEnvName[] =
-#if defined(OS_WIN)
-    "HOMEPATH";
-#else
-    "HOME";
-#endif
-
-// The working dir should be in the user's home folder.
-static const base::FilePath::CharType kWorkingDirName[] =
-    FILE_PATH_LITERAL("webrtc_video_quality");
-static const base::FilePath::CharType kReferenceYuvFileName[] =
-    FILE_PATH_LITERAL("reference_video.yuv");
 static const base::FilePath::CharType kCapturedYuvFileName[] =
     FILE_PATH_LITERAL("captured_video.yuv");
 static const base::FilePath::CharType kStatsFileName[] =
@@ -66,18 +58,29 @@ static const char kMainWebrtcTestHtmlPage[] =
     "/webrtc/webrtc_jsep01_test.html";
 static const char kCapturingWebrtcHtmlPage[] =
     "/webrtc/webrtc_video_quality_test.html";
-static const int kVgaWidth = 640;
-static const int kVgaHeight = 480;
 
-// If you change the port number, don't forget to modify video_extraction.js
-// too!
-static const char kPyWebSocketPortNumber[] = "12221";
+static const struct VideoQualityTestConfig {
+  const char* test_name;
+  int width;
+  int height;
+  const base::FilePath::CharType* reference_video;
+  const char* constraints;
+} kVideoConfigurations[] = {
+  { "360p", 640, 360,
+    test::kReferenceFileName360p,
+    WebRtcTestBase::kAudioVideoCallConstraints360p },
+  { "720p", 1280, 720,
+    test::kReferenceFileName720p,
+    WebRtcTestBase::kAudioVideoCallConstraints720p },
+};
 
 // Test the video quality of the WebRTC output.
 //
-// Prerequisites: This test case must run on a machine with a virtual webcam
-// that plays video from the reference file located in <the running user's home
-// folder>/kWorkingDirName/kReferenceYuvFileName.
+// Prerequisites: This test case must run on a machine with a chrome playing
+// the video from the reference files located in GetReferenceFilesDir().
+// The file kReferenceY4mFileName.kY4mFileExtension is played using a
+// FileVideoCaptureDevice and its sibling with kYuvFileExtension is used for
+// comparison.
 //
 // You must also compile the chromium_builder_webrtc target before you run this
 // test to get all the tools built.
@@ -87,117 +90,63 @@ static const char kPyWebSocketPortNumber[] = "12221";
 // * zxing (see the CPP version at https://code.google.com/p/zxing)
 // * ffmpeg 0.11.1 or compatible version (see http://www.ffmpeg.org)
 //
-// The test case will launch a custom binary (peerconnection_server) which will
-// allow two WebRTC clients to find each other.
-//
-// The test also runs several other custom binaries - rgba_to_i420 converter and
+// The test runs several custom binaries - rgba_to_i420 converter and
 // frame_analyzer. Both tools can be found under third_party/webrtc/tools. The
 // test also runs a stand alone Python implementation of a WebSocket server
 // (pywebsocket) and a barcode_decoder script.
-class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
+class WebRtcVideoQualityBrowserTest : public WebRtcTestBase,
+    public testing::WithParamInterface<VideoQualityTestConfig> {
  public:
   WebRtcVideoQualityBrowserTest()
-      : pywebsocket_server_(0),
-        environment_(base::Environment::Create()) {}
+      : environment_(base::Environment::Create()) {
+    test_config_ = GetParam();
+  }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
-    PeerConnectionServerRunner::KillAllPeerConnectionServersOnCurrentSystem();
     DetectErrorsInJavaScript();  // Look for errors in our rather complex js.
+
+    ASSERT_TRUE(temp_working_dir_.CreateUniqueTempDir());
   }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // This test expects real device handling and requires a real webcam / audio
-    // device; it will not work with fake devices.
-    EXPECT_FALSE(
-        command_line->HasSwitch(switches::kUseFakeDeviceForMediaStream))
-        << "You cannot run this test with fake devices.";
-
-#if defined(OS_MACOSX)
-    // TODO(mcasas): Remove this switch when ManyCam virtual video capture
-    // device starts supporting AVFoundation, see http://crbug.com/327618.
-    command_line->AppendSwitch(switches::kDisableAVFoundation);
-#endif
+    // Set up the command line option with the expected file name. We will check
+    // its existence in HasAllRequiredResources().
+    webrtc_reference_video_y4m_ = test::GetReferenceFilesDir()
+        .Append(test_config_.reference_video)
+        .AddExtension(test::kY4mFileExtension);
+    command_line->AppendSwitchPath(switches::kUseFileForFakeVideoCapture,
+                                   webrtc_reference_video_y4m_);
+    command_line->AppendSwitch(switches::kUseFakeDeviceForMediaStream);
 
     // The video playback will not work without a GPU, so force its use here.
     command_line->AppendSwitch(switches::kUseGpuInTests);
   }
 
-  bool HasAllRequiredResources() {
-    if (!base::PathExists(GetWorkingDir())) {
-      LOG(ERROR) << "Cannot find the working directory for the reference video "
-          "and the temporary files:" << GetWorkingDir().value();
-      return false;
+  // Writes all frames we've captured so far by grabbing them from the
+  // javascript and writing them to the temporary work directory.
+  void WriteCapturedFramesToWorkingDir(content::WebContents* capturing_tab) {
+    int num_frames = 0;
+    std::string response =
+        ExecuteJavascript("getTotalNumberCapturedFrames()", capturing_tab);
+    ASSERT_TRUE(base::StringToInt(response, &num_frames)) <<
+        "Failed to retrieve frame count: got " << response;
+    ASSERT_NE(0, num_frames) << "Failed to capture any frames.";
+
+    for (int i = 0; i < num_frames; i++) {
+      std::string base64_encoded_frame =
+          ExecuteJavascript(base::StringPrintf("getOneCapturedFrame(%d)", i),
+                            capturing_tab);
+      std::string decoded_frame;
+      ASSERT_TRUE(base::Base64Decode(base64_encoded_frame, &decoded_frame))
+          << "Failed to decode frame data '" << base64_encoded_frame << "'.";
+
+      std::string file_name = base::StringPrintf("frame_%04d", i);
+      base::File frame_file(GetWorkingDir().AppendASCII(file_name),
+                            base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+      size_t written = frame_file.Write(0, decoded_frame.c_str(),
+                                        decoded_frame.length());
+      ASSERT_EQ(decoded_frame.length(), written);
     }
-    base::FilePath reference_file =
-        GetWorkingDir().Append(kReferenceYuvFileName);
-    if (!base::PathExists(reference_file)) {
-      LOG(ERROR) << "Cannot find the reference file to be used for video "
-          << "quality comparison: " << reference_file.value();
-      return false;
-    }
-    return true;
-  }
-
-  bool StartPyWebSocketServer() {
-    base::FilePath path_pywebsocket_dir =
-        GetSourceDir().Append(FILE_PATH_LITERAL("third_party/pywebsocket/src"));
-    base::FilePath pywebsocket_server = path_pywebsocket_dir.Append(
-        FILE_PATH_LITERAL("mod_pywebsocket/standalone.py"));
-    base::FilePath path_to_data_handler =
-        GetSourceDir().Append(FILE_PATH_LITERAL("chrome/test/functional"));
-
-    if (!base::PathExists(pywebsocket_server)) {
-      LOG(ERROR) << "Missing pywebsocket server.";
-      return false;
-    }
-    if (!base::PathExists(path_to_data_handler)) {
-      LOG(ERROR) << "Missing data handler for pywebsocket server.";
-      return false;
-    }
-
-    AppendToPythonPath(path_pywebsocket_dir);
-
-    // Note: don't append switches to this command since it will mess up the
-    // -u in the python invocation!
-    CommandLine pywebsocket_command(CommandLine::NO_PROGRAM);
-    EXPECT_TRUE(GetPythonCommand(&pywebsocket_command));
-
-    pywebsocket_command.AppendArgPath(pywebsocket_server);
-    pywebsocket_command.AppendArg("-p");
-    pywebsocket_command.AppendArg(kPyWebSocketPortNumber);
-    pywebsocket_command.AppendArg("-d");
-    pywebsocket_command.AppendArgPath(path_to_data_handler);
-
-    VLOG(0) << "Running " << pywebsocket_command.GetCommandLineString();
-    return base::LaunchProcess(pywebsocket_command, base::LaunchOptions(),
-                               &pywebsocket_server_);
-  }
-
-  bool ShutdownPyWebSocketServer() {
-    return base::KillProcess(pywebsocket_server_, 0, false);
-  }
-
-  void EstablishCall(content::WebContents* from_tab,
-                     content::WebContents* to_tab) {
-    EXPECT_EQ("ok-peerconnection-created",
-              ExecuteJavascript("preparePeerConnection()", from_tab));
-    EXPECT_EQ("ok-added", ExecuteJavascript("addLocalStream()", from_tab));
-    EXPECT_EQ("ok-negotiating", ExecuteJavascript("negotiateCall()", from_tab));
-
-    // Ensure the call gets up on both sides.
-    EXPECT_TRUE(PollingWaitUntil(
-        "getPeerConnectionReadyState()", "active", from_tab));
-    EXPECT_TRUE(PollingWaitUntil(
-        "getPeerConnectionReadyState()", "active", to_tab));
-  }
-
-  void HangUp(content::WebContents* from_tab) {
-    EXPECT_EQ("ok-call-hung-up", ExecuteJavascript("hangUp()", from_tab));
-  }
-
-  void WaitUntilHangupVerified(content::WebContents* tab_contents) {
-    EXPECT_TRUE(PollingWaitUntil(
-        "getPeerConnectionReadyState()", "no-peer-connection", tab_contents));
   }
 
   // Runs the RGBA to I420 converter on the video in |capture_video_filename|,
@@ -226,6 +175,7 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
                                         base::StringPrintf("%d", width));
     converter_command.AppendSwitchASCII("--height",
                                         base::StringPrintf("%d", height));
+    converter_command.AppendSwitchASCII("--delete_frames", "true");
 
     // We produce an output file that will later be used as an input to the
     // barcode decoder and frame analyzer tools.
@@ -245,6 +195,7 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
   // |width| x |height|.
   // All measurements calculated are printed as perf parsable numbers to stdout.
   bool CompareVideosAndPrintResult(
+      const char* test_label,
       int width,
       int height,
       const base::FilePath& captured_video_filename,
@@ -273,7 +224,7 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
     EXPECT_TRUE(GetPythonCommand(&compare_command));
 
     compare_command.AppendArgPath(path_to_compare_script);
-    compare_command.AppendArg("--label=VGA");
+    compare_command.AppendArg(base::StringPrintf("--label=%s", test_label));
     compare_command.AppendArg("--ref_video");
     compare_command.AppendArgPath(reference_video_filename);
     compare_command.AppendArg("--test_video");
@@ -296,15 +247,12 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
     return ok;
   }
 
-  base::FilePath GetWorkingDir() {
-    std::string home_dir;
-    environment_->GetVar(kHomeEnvName, &home_dir);
-    base::FilePath::StringType native_home_dir(home_dir.begin(),
-                                               home_dir.end());
-    return base::FilePath(native_home_dir).Append(kWorkingDirName);
-  }
+ protected:
+  VideoQualityTestConfig test_config_;
 
-  PeerConnectionServerRunner peerconnection_server_;
+  base::FilePath GetWorkingDir() {
+    return temp_working_dir_.path();
+  }
 
  private:
   base::FilePath GetSourceDir() {
@@ -319,64 +267,69 @@ class WebRtcVideoQualityBrowserTest : public WebRtcTestBase {
     return browser_dir;
   }
 
-  base::ProcessHandle pywebsocket_server_;
   scoped_ptr<base::Environment> environment_;
+  base::FilePath webrtc_reference_video_y4m_;
+  base::ScopedTempDir temp_working_dir_;
 };
 
-IN_PROC_BROWSER_TEST_F(WebRtcVideoQualityBrowserTest,
-                       MANUAL_TestVGAVideoQuality) {
+INSTANTIATE_TEST_CASE_P(
+    WebRtcVideoQualityBrowserTests,
+    WebRtcVideoQualityBrowserTest,
+    testing::ValuesIn(kVideoConfigurations));
+
+IN_PROC_BROWSER_TEST_P(WebRtcVideoQualityBrowserTest,
+                       MANUAL_TestVideoQuality) {
+  if (OnWinXp())
+    return;  // Fails on XP. http://crbug.com/353078.
+
   ASSERT_GE(TestTimeouts::action_max_timeout().InSeconds(), 150) <<
       "This is a long-running test; you must specify "
       "--ui-test-action-max-timeout to have a value of at least 150000.";
-
-  ASSERT_TRUE(HasAllRequiredResources());
+  ASSERT_TRUE(test::HasReferenceFilesInCheckout());
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
-  ASSERT_TRUE(StartPyWebSocketServer());
-  ASSERT_TRUE(peerconnection_server_.Start());
 
   content::WebContents* left_tab =
-      OpenPageAndGetUserMediaInNewTab(
-          embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage));
+      OpenPageAndGetUserMediaInNewTabWithConstraints(
+          embedded_test_server()->GetURL(kMainWebrtcTestHtmlPage),
+          test_config_.constraints);
   content::WebContents* right_tab =
-      OpenPageAndGetUserMediaInNewTab(
-          embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage));
+      OpenPageAndGetUserMediaInNewTabWithConstraints(
+          embedded_test_server()->GetURL(kCapturingWebrtcHtmlPage),
+          test_config_.constraints);
 
-  ConnectToPeerConnectionServer("peer 1", left_tab);
-  ConnectToPeerConnectionServer("peer 2", right_tab);
+  SetupPeerconnectionWithLocalStream(left_tab);
+  SetupPeerconnectionWithLocalStream(right_tab);
 
-  EstablishCall(left_tab, right_tab);
+  NegotiateCall(left_tab, right_tab);
 
   // Poll slower here to avoid flooding the log with messages: capturing and
   // sending frames take quite a bit of time.
   int polling_interval_msec = 1000;
 
-  EXPECT_TRUE(PollingWaitUntil(
+  EXPECT_TRUE(test::PollingWaitUntil(
       "doneFrameCapturing()", "done-capturing", right_tab,
       polling_interval_msec));
 
   HangUp(left_tab);
-  WaitUntilHangupVerified(left_tab);
-  WaitUntilHangupVerified(right_tab);
 
-  EXPECT_TRUE(PollingWaitUntil(
-      "haveMoreFramesToSend()", "no-more-frames", right_tab,
-      polling_interval_msec));
+  WriteCapturedFramesToWorkingDir(right_tab);
 
   // Shut everything down to avoid having the javascript race with the analysis
   // tools. For instance, dont have console log printouts interleave with the
   // RESULT lines from the analysis tools (crbug.com/323200).
-  ASSERT_TRUE(peerconnection_server_.Stop());
-  ASSERT_TRUE(ShutdownPyWebSocketServer());
-
   chrome::CloseWebContents(browser(), left_tab, false);
   chrome::CloseWebContents(browser(), right_tab, false);
 
-  RunARGBtoI420Converter(
-      kVgaWidth, kVgaHeight, GetWorkingDir().Append(kCapturedYuvFileName));
-  ASSERT_TRUE(
-      CompareVideosAndPrintResult(kVgaWidth,
-                                  kVgaHeight,
-                                  GetWorkingDir().Append(kCapturedYuvFileName),
-                                  GetWorkingDir().Append(kReferenceYuvFileName),
-                                  GetWorkingDir().Append(kStatsFileName)));
+  ASSERT_TRUE(RunARGBtoI420Converter(
+      test_config_.width, test_config_.height,
+      GetWorkingDir().Append(kCapturedYuvFileName)));
+  ASSERT_TRUE(CompareVideosAndPrintResult(
+      test_config_.test_name,
+      test_config_.width,
+      test_config_.height,
+      GetWorkingDir().Append(kCapturedYuvFileName),
+      test::GetReferenceFilesDir()
+          .Append(test_config_.reference_video)
+          .AddExtension(test::kYuvFileExtension),
+      GetWorkingDir().Append(kStatsFileName)));
 }

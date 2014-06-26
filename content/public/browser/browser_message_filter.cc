@@ -11,26 +11,28 @@
 #include "base/process/kill.h"
 #include "base/process/process_handle.h"
 #include "base/task_runner.h"
+#include "content/browser/browser_child_process_host_impl.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "ipc/ipc_sync_message.h"
+#include "ipc/message_filter.h"
 
 using content::BrowserMessageFilter;
 
 namespace content {
 
-class BrowserMessageFilter::Internal : public IPC::ChannelProxy::MessageFilter {
+class BrowserMessageFilter::Internal : public IPC::MessageFilter {
  public:
   explicit Internal(BrowserMessageFilter* filter) : filter_(filter) {}
 
  private:
   virtual ~Internal() {}
 
-  // IPC::ChannelProxy::MessageFilter implementation:
-  virtual void OnFilterAdded(IPC::Channel* channel) OVERRIDE {
-    filter_->channel_ = channel;
-    filter_->OnFilterAdded(channel);
+  // IPC::MessageFilter implementation:
+  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+    filter_->sender_ = sender;
+    filter_->OnFilterAdded(sender);
   }
 
   virtual void OnFilterRemoved() OVERRIDE {
@@ -38,7 +40,7 @@ class BrowserMessageFilter::Internal : public IPC::ChannelProxy::MessageFilter {
   }
 
   virtual void OnChannelClosing() OVERRIDE {
-    filter_->channel_ = NULL;
+    filter_->sender_ = NULL;
     filter_->OnChannelClosing();
   }
 
@@ -86,16 +88,9 @@ class BrowserMessageFilter::Internal : public IPC::ChannelProxy::MessageFilter {
 
   // Dispatches a message to the derived class.
   bool DispatchMessage(const IPC::Message& message) {
-    bool message_was_ok = true;
-    bool rv = filter_->OnMessageReceived(message, &message_was_ok);
+    bool rv = filter_->OnMessageReceived(message);
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO) || rv) <<
         "Must handle messages that were dispatched to another thread!";
-    if (!message_was_ok) {
-      content::RecordAction(
-          base::UserMetricsAction("BadMessageTerminate_BMF"));
-      filter_->BadMessageReceived();
-    }
-
     return rv;
   }
 
@@ -106,7 +101,7 @@ class BrowserMessageFilter::Internal : public IPC::ChannelProxy::MessageFilter {
 
 BrowserMessageFilter::BrowserMessageFilter(uint32 message_class_to_filter)
     : internal_(NULL),
-      channel_(NULL),
+      sender_(NULL),
 #if defined(OS_WIN)
       peer_handle_(base::kNullProcessHandle),
 #endif
@@ -117,7 +112,7 @@ BrowserMessageFilter::BrowserMessageFilter(
     const uint32* message_classes_to_filter,
     size_t num_message_classes_to_filter)
     : internal_(NULL),
-      channel_(NULL),
+      sender_(NULL),
 #if defined(OS_WIN)
       peer_handle_(base::kNullProcessHandle),
 #endif
@@ -166,8 +161,8 @@ bool BrowserMessageFilter::Send(IPC::Message* message) {
     return true;
   }
 
-  if (channel_)
-    return channel_->Send(message);
+  if (sender_)
+    return sender_->Send(message);
 
   delete message;
   return false;
@@ -205,11 +200,13 @@ bool BrowserMessageFilter::CheckCanDispatchOnUI(const IPC::Message& message,
 
 void BrowserMessageFilter::BadMessageReceived() {
   CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(switches::kDisableKillAfterBadIPC))
+    return;
 
-  if (!command_line->HasSwitch(switches::kDisableKillAfterBadIPC)) {
-    base::KillProcess(PeerHandle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
-                      false);
-  }
+  BrowserChildProcessHostImpl::HistogramBadMessageTerminated(
+      PROCESS_TYPE_RENDERER);
+  base::KillProcess(PeerHandle(), content::RESULT_CODE_KILLED_BAD_MESSAGE,
+                    false);
 }
 
 BrowserMessageFilter::~BrowserMessageFilter() {
@@ -219,7 +216,7 @@ BrowserMessageFilter::~BrowserMessageFilter() {
 #endif
 }
 
-IPC::ChannelProxy::MessageFilter* BrowserMessageFilter::GetFilter() {
+IPC::MessageFilter* BrowserMessageFilter::GetFilter() {
   // We create this on demand so that if a filter is used in a unit test but
   // never attached to a channel, we don't leak Internal and this;
   DCHECK(!internal_) << "Should only be called once.";

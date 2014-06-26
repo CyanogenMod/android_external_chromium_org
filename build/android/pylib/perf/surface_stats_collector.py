@@ -7,6 +7,8 @@ import datetime
 import logging
 import re
 import threading
+from pylib import android_commands
+from pylib.device import device_utils
 
 
 # Log marker containing SurfaceTexture timestamps.
@@ -20,7 +22,7 @@ class SurfaceStatsCollector(object):
   """Collects surface stats for a SurfaceView from the output of SurfaceFlinger.
 
   Args:
-    adb: the adb connection to use.
+    device: A DeviceUtils instance.
   """
   class Result(object):
     def __init__(self, name, value, unit):
@@ -28,8 +30,11 @@ class SurfaceStatsCollector(object):
       self.value = value
       self.unit = unit
 
-  def __init__(self, adb):
-    self._adb = adb
+  def __init__(self, device):
+    # TODO(jbudorick) Remove once telemetry gets switched over.
+    if isinstance(device, android_commands.AndroidCommands):
+      device = device_utils.DeviceUtils(device)
+    self._device = device
     self._collector_thread = None
     self._use_legacy_method = False
     self._surface_before = None
@@ -71,7 +76,8 @@ class SurfaceStatsCollector(object):
   def GetResults(self):
     return self._results or self._GetEmptyResults()
 
-  def _GetEmptyResults(self):
+  @staticmethod
+  def _GetEmptyResults():
     return [
         SurfaceStatsCollector.Result('refresh_period', None, 'seconds'),
         SurfaceStatsCollector.Result('jank_count', None, 'janks'),
@@ -102,7 +108,7 @@ class SurfaceStatsCollector(object):
       frame_count = len(frame_lengths) + 1
     if len(frame_lengths) == 0:
       raise Exception('No valid frames lengths found.')
-    length_changes, normalized_changes = \
+    _, normalized_changes = \
         SurfaceStatsCollector._GetNormalizedDeltas(
             frame_lengths, refresh_period)
     jankiness = [max(0, round(change)) for change in normalized_changes]
@@ -209,7 +215,7 @@ class SurfaceStatsCollector(object):
     """
     # The command returns nothing if it is supported, otherwise returns many
     # lines of result just like 'dumpsys SurfaceFlinger'.
-    results = self._adb.RunShellCommand(
+    results = self._device.RunShellCommand(
         'dumpsys SurfaceFlinger --latency-clear SurfaceView')
     return not len(results)
 
@@ -252,9 +258,8 @@ class SurfaceStatsCollector(object):
     # We use the special "SurfaceView" window name because the statistics for
     # the activity's main window are not updated when the main web content is
     # composited into a SurfaceView.
-    results = self._adb.RunShellCommand(
-        'dumpsys SurfaceFlinger --latency SurfaceView',
-        log_result=logging.getLogger().isEnabledFor(logging.DEBUG))
+    results = self._device.RunShellCommand(
+        'dumpsys SurfaceFlinger --latency SurfaceView')
     if not len(results):
       return (None, None)
 
@@ -290,7 +295,7 @@ class SurfaceStatsCollector(object):
     Returns:
       Dict of {page_flip_count (or 0 if there was an error), timestamp}.
     """
-    results = self._adb.RunShellCommand('service call SurfaceFlinger 1013')
+    results = self._device.RunShellCommand('service call SurfaceFlinger 1013')
     assert len(results) == 1
     match = re.search('^Result: Parcel\((\w+)', results[0])
     cur_surface = 0

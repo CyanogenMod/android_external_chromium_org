@@ -7,7 +7,7 @@
 
 #include <jni.h>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
@@ -37,16 +37,29 @@ class ContentViewCore;
 class WebContents;
 }
 
+namespace prerender {
+class PrerenderManager;
+}
+
 class TabAndroid : public CoreTabHelperDelegate,
                    public content::NotificationObserver {
  public:
+  enum TabLoadStatus {
+#define DEFINE_TAB_LOAD_STATUS(name, value)  name = value,
+#include "chrome/browser/android/tab_load_status.h"
+#undef DEFINE_TAB_LOAD_STATUS
+  };
+
   // Convenience method to retrieve the Tab associated with the passed
   // WebContents.  Can return NULL.
   static TabAndroid* FromWebContents(content::WebContents* web_contents);
 
-  // Returns the native TabAndroid stored in the Java TabBase represented by
+  // Returns the native TabAndroid stored in the Java Tab represented by
   // |obj|.
   static TabAndroid* GetNativeTab(JNIEnv* env, jobject obj);
+
+  // Function to attach helpers to the contentView.
+  static void AttachTabHelpers(content::WebContents* web_contents);
 
   TabAndroid(JNIEnv* env, jobject obj);
   virtual ~TabAndroid();
@@ -67,8 +80,8 @@ class TabAndroid : public CoreTabHelperDelegate,
   // Return the tab url.
   GURL GetURL() const;
 
-  // Restore the tab if it was unloaded from memory.
-  bool RestoreIfNeeded();
+  // Load the tab if it was unloaded from memory.
+  bool LoadIfNeeded();
 
   // Helper methods to make it easier to access objects from the associated
   // WebContents.  Can return NULL.
@@ -76,6 +89,7 @@ class TabAndroid : public CoreTabHelperDelegate,
   Profile* GetProfile() const;
   browser_sync::SyncedTabDelegate* GetSyncedTabDelegate() const;
 
+  void SetWindowSessionID(SessionID::id_type window_id);
   void SetSyncId(int sync_id);
 
   virtual void HandlePopupNavigation(chrome::NavigateParams* params);
@@ -84,30 +98,11 @@ class TabAndroid : public CoreTabHelperDelegate,
                                          const base::string16& host,
                                          const base::string16& realm);
 
-  // Called when context menu option to create the bookmark shortcut on
-  // homescreen is called.
-  virtual void AddShortcutToBookmark(const GURL& url,
-                                     const base::string16& title,
-                                     const SkBitmap& skbitmap,
-                                     int r_value,
-                                     int g_value,
-                                     int b_value);
-
-  // Called when a bookmark node should be edited.
-  virtual void EditBookmark(int64 node_id,
-                            const base::string16& node_title,
-                            bool is_folder,
-                            bool is_partner_bookmark);
-
-  // Called to notify that the new tab page has completely rendered.
-  virtual void OnNewTabPageReady();
-
   // Called to determine if chrome://welcome should contain links to the terms
   // of service and the privacy notice.
   virtual bool ShouldWelcomePageLinkToTermsOfService();
 
-  // Register the Tab's native methods through JNI.
-  static bool RegisterTabAndroid(JNIEnv* env);
+  bool HasPrerenderedUrl(GURL gurl);
 
   // CoreTabHelperDelegate ----------------------------------------------------
 
@@ -137,6 +132,15 @@ class TabAndroid : public CoreTabHelperDelegate,
                                                             jobject obj);
   base::android::ScopedJavaLocalRef<jobject> GetProfileAndroid(JNIEnv* env,
                                                                jobject obj);
+  virtual TabLoadStatus LoadUrl(JNIEnv* env,
+                                jobject obj,
+                                jstring url,
+                                jstring j_extra_headers,
+                                jbyteArray j_post_data,
+                                jint page_transition,
+                                jstring j_referrer_url,
+                                jint referrer_policy,
+                                jboolean is_renderer_initiated);
   ToolbarModel::SecurityLevel GetSecurityLevel(JNIEnv* env, jobject obj);
   void SetActiveNavigationEntryTitleForUrl(JNIEnv* env,
                                            jobject obj,
@@ -144,10 +148,19 @@ class TabAndroid : public CoreTabHelperDelegate,
                                            jstring jtitle);
   bool Print(JNIEnv* env, jobject obj);
 
+  // Register the Tab's native methods through JNI.
+  static bool RegisterTabAndroid(JNIEnv* env);
+
  private:
+  prerender::PrerenderManager* GetPrerenderManager() const;
+
   JavaObjectWeakGlobalRef weak_java_tab_;
 
+  // The identifier used by session restore for this tab.
   SessionID session_tab_id_;
+
+  // Identifier of the window the tab is in.
+  SessionID session_window_id_;
 
   content::NotificationRegistrar notification_registrar_;
 

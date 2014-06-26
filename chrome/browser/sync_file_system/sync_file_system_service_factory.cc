@@ -4,18 +4,16 @@
 
 #include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
 
+#include <set>
+
 #include "base/command_line.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/local/local_file_sync_service.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace sync_file_system {
-
-namespace {
-const char kDisableLastWriteWin[] = "disable-syncfs-last-write-win";
-}
 
 // static
 SyncFileSystemService* SyncFileSystemServiceFactory::GetForProfile(
@@ -53,8 +51,7 @@ SyncFileSystemServiceFactory::SyncFileSystemServiceFactory()
 
 SyncFileSystemServiceFactory::~SyncFileSystemServiceFactory() {}
 
-BrowserContextKeyedService*
-SyncFileSystemServiceFactory::BuildServiceInstanceFor(
+KeyedService* SyncFileSystemServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = Profile::FromBrowserContext(context);
 
@@ -68,15 +65,10 @@ SyncFileSystemServiceFactory::BuildServiceInstanceFor(
     remote_file_service = mock_remote_file_service_.Pass();
   } else if (IsV2Enabled()) {
     remote_file_service = RemoteFileSyncService::CreateForBrowserContext(
-        RemoteFileSyncService::V2, context);
+        RemoteFileSyncService::V2, context, service->task_logger());
   } else {
     remote_file_service = RemoteFileSyncService::CreateForBrowserContext(
-        RemoteFileSyncService::V1, context);
-  }
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(kDisableLastWriteWin)) {
-    remote_file_service->SetConflictResolutionPolicy(
-        CONFLICT_RESOLUTION_POLICY_MANUAL);
+        RemoteFileSyncService::V1, context, service->task_logger());
   }
 
   service->Initialize(local_file_service.Pass(),

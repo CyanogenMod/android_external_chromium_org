@@ -27,8 +27,7 @@ const int kSizePacketLenMin = 1;
 const int kSizePacketLenMax = 2;
 
 // The current MCS protocol version.
-// TODO(zea): bump to 41 once the server supports it.
-const int kMCSVersion = 38;
+const int kMCSVersion = 41;
 
 }  // namespace
 
@@ -185,9 +184,9 @@ void ConnectionHandlerImpl::WaitForData(ProcessingState state) {
   }
 
   // Used to determine whether a Socket::Read is necessary.
-  int min_bytes_needed = 0;
+  size_t min_bytes_needed = 0;
   // Used to limit the size of the Socket::Read.
-  int max_bytes_needed = 0;
+  size_t max_bytes_needed = 0;
 
   switch(state) {
     case MCS_VERSION_TAG_AND_SIZE:
@@ -215,25 +214,39 @@ void ConnectionHandlerImpl::WaitForData(ProcessingState state) {
   }
   DCHECK_GE(max_bytes_needed, min_bytes_needed);
 
-  int byte_count = input_stream_->UnreadByteCount();
-  if (min_bytes_needed - byte_count > 0 &&
+  size_t unread_byte_count = input_stream_->UnreadByteCount();
+  if (min_bytes_needed > unread_byte_count &&
       input_stream_->Refresh(
           base::Bind(&ConnectionHandlerImpl::WaitForData,
                      weak_ptr_factory_.GetWeakPtr(),
                      state),
-          max_bytes_needed - byte_count) == net::ERR_IO_PENDING) {
+          max_bytes_needed - unread_byte_count) == net::ERR_IO_PENDING) {
     return;
   }
 
   // Check for refresh errors.
   if (input_stream_->GetState() != SocketInputStream::READY) {
     // An error occurred.
-    int last_error = output_stream_->last_error();
+    int last_error = input_stream_->last_error();
     CloseConnection();
     // If the socket stream had an error, plumb it up, else plumb up FAILED.
     if (last_error == net::OK)
       last_error = net::ERR_FAILED;
     connection_callback_.Run(last_error);
+    return;
+  }
+
+  // Check whether read is complete, or needs to be continued (
+  // SocketInputStream::Refresh can finish without reading all the data).
+  if (input_stream_->UnreadByteCount() < min_bytes_needed) {
+    DVLOG(1) << "Socket read finished prematurely. Waiting for "
+             << min_bytes_needed - input_stream_->UnreadByteCount()
+             << " more bytes.";
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&ConnectionHandlerImpl::WaitForData,
+                   weak_ptr_factory_.GetWeakPtr(),
+                   MCS_PROTO_BYTES));
     return;
   }
 
@@ -263,7 +276,8 @@ void ConnectionHandlerImpl::OnGotVersion() {
     CodedInputStream coded_input_stream(input_stream_.get());
     coded_input_stream.ReadRaw(&version, 1);
   }
-  if (version < kMCSVersion) {
+  // TODO(zea): remove this when the server is ready.
+  if (version < kMCSVersion && version != 38) {
     LOG(ERROR) << "Invalid GCM version response: " << static_cast<int>(version);
     connection_callback_.Run(net::ERR_FAILED);
     return;
@@ -357,18 +371,18 @@ void ConnectionHandlerImpl::OnGotMessageBytes() {
       input_stream_->GetState() != SocketInputStream::READY) {
     LOG(ERROR) << "Failed to extract protobuf bytes of type "
                << static_cast<unsigned int>(message_tag_);
-    protobuf.reset();  // Return a null pointer to denote an error.
-    read_callback_.Run(protobuf.Pass());
+    // Reset the connection.
+    connection_callback_.Run(net::ERR_FAILED);
     return;
   }
 
   {
     CodedInputStream coded_input_stream(input_stream_.get());
     if (!protobuf->ParsePartialFromCodedStream(&coded_input_stream)) {
-      NOTREACHED() << "Unable to parse GCM message of type "
-                   << static_cast<unsigned int>(message_tag_);
-      protobuf.reset();  // Return a null pointer to denote an error.
-      read_callback_.Run(protobuf.Pass());
+      LOG(ERROR) << "Unable to parse GCM message of type "
+                 << static_cast<unsigned int>(message_tag_);
+      // Reset the connection.
+      connection_callback_.Run(net::ERR_FAILED);
       return;
     }
   }
@@ -402,6 +416,9 @@ void ConnectionHandlerImpl::CloseConnection() {
   if (socket_)
     socket_->Disconnect();
   socket_ = NULL;
+  handshake_complete_ = false;
+  message_tag_ = 0;
+  message_size_ = 0;
   input_stream_.reset();
   output_stream_.reset();
   weak_ptr_factory_.InvalidateWeakPtrs();

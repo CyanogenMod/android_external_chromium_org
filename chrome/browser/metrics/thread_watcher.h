@@ -381,7 +381,7 @@ class ThreadWatcherList {
   // This method posts a task on WatchDogThread to start watching all browser
   // threads.
   // This method is accessible on UI thread.
-  static void StartWatchingAll(const CommandLine& command_line);
+  static void StartWatchingAll(const base::CommandLine& command_line);
 
   // This method posts a task on WatchDogThread to RevokeAll tasks and to
   // deactive thread watching of other threads and tell NotificationService to
@@ -406,7 +406,11 @@ class ThreadWatcherList {
  private:
   // Allow tests to access our innards for testing purposes.
   friend class CustomThreadWatcher;
+  friend class ThreadWatcherListTest;
   friend class ThreadWatcherTest;
+  FRIEND_TEST_ALL_PREFIXES(ThreadWatcherAndroidTest,
+                           ApplicationStatusNotification);
+  FRIEND_TEST_ALL_PREFIXES(ThreadWatcherListTest, Restart);
   FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, ThreadNamesOnlyArgs);
   FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, ThreadNamesAndLiveThresholdArgs);
   FRIEND_TEST_ALL_PREFIXES(ThreadWatcherTest, CrashOnHangThreadsAllArgs);
@@ -421,7 +425,7 @@ class ThreadWatcherList {
   // switches::kCrashOnHangThreads. |crash_on_hang_threads| is a map of
   // |crash_on_hang| thread's names to |CrashDataThresholds|.
   static void ParseCommandLine(
-      const CommandLine& command_line,
+      const base::CommandLine& command_line,
       uint32* unresponsive_threshold,
       CrashOnHangThreadMap* crash_on_hang_threads);
 
@@ -462,9 +466,18 @@ class ThreadWatcherList {
   // already registered, or to retrieve a pointer to it from the global map.
   static ThreadWatcher* Find(const content::BrowserThread::ID& thread_id);
 
+  // Sets |g_stopped_| on the WatchDogThread. This is necessary to reflect the
+  // state between the delayed |StartWatchingAll| and the immediate
+  // |StopWatchingAll|.
+  static void SetStopped(bool stopped);
+
   // The singleton of this class and is used to keep track of information about
   // threads that are being watched.
   static ThreadWatcherList* g_thread_watcher_list_;
+
+  // StartWatchingAll() is delayed in relation to StopWatchingAll(), so if
+  // a Stop comes first, prevent further initialization.
+  static bool g_stopped_;
 
   // This is the wait time between ping messages.
   static const int kSleepSeconds;
@@ -478,6 +491,10 @@ class ThreadWatcherList {
 
   // Default values for |live_threads_threshold|.
   static const int kLiveThreadsThreshold;
+
+  // Default value for the delay until |InitializeAndStartWatching| is called.
+  // Non-const for tests.
+  static int g_initialize_delay_seconds;
 
   // Map of all registered watched threads, from thread_id to ThreadWatcher.
   RegistrationList registered_;

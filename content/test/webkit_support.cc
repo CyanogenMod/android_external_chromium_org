@@ -8,18 +8,19 @@
 
 #include "base/command_line.h"
 #include "base/message_loop/message_loop.h"
-#include "base/path_service.h"
 #include "base/run_loop.h"
 #include "base/strings/string_tokenizer.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/user_agent.h"
 #include "content/test/test_webkit_platform_support.h"
 #include "third_party/WebKit/public/web/WebCache.h"
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "url/url_util.h"
-#include "webkit/common/user_agent/user_agent.h"
-#include "webkit/common/user_agent/user_agent_util.h"
+
+#if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
+#endif
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
@@ -62,19 +63,9 @@ class TestEnvironment {
 
     // TestWebKitPlatformSupport must be instantiated after MessageLoopType.
     webkit_platform_support_.reset(new TestWebKitPlatformSupport);
-
-#if defined(OS_WIN)
-    base::FilePath pak_file;
-    PathService::Get(base::DIR_MODULE, &pak_file);
-    pak_file = pak_file.AppendASCII("ui_test.pak");
-    ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
-#endif
   }
 
   ~TestEnvironment() {
-#if defined(OS_WIN)
-    ui::ResourceBundle::CleanupSharedInstance();
-#endif
   }
 
   TestWebKitPlatformSupport* webkit_platform_support() const {
@@ -93,7 +84,6 @@ TestEnvironment* test_environment;
 void SetUpTestEnvironmentForUnitTests() {
   ParseBlinkCommandLineArgumentsForUnitTests();
 
-  blink::WebRuntimeFeatures::enableStableFeatures(true);
   blink::WebRuntimeFeatures::enableExperimentalFeatures(true);
   blink::WebRuntimeFeatures::enableTestOnlyFeatures(true);
 
@@ -106,13 +96,15 @@ void SetUpTestEnvironmentForUnitTests() {
   mock_cr_app::RegisterMockCrApp();
 #endif
 
+#if defined(OS_WIN)
+  gfx::InitDeviceScaleFactor(1.0f);
+#endif
+
   // Explicitly initialize the GURL library before spawning any threads.
   // Otherwise crash may happend when different threads try to create a GURL
   // at same time.
-  url_util::Initialize();
+  url::Initialize();
   test_environment = new TestEnvironment;
-  webkit_glue::SetUserAgent(webkit_glue::BuildUserAgentFromProduct(
-      "DumpRenderTree/0.0.0.0"), false);
 }
 
 void TearDownTestEnvironment() {

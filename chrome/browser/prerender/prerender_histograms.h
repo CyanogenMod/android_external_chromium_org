@@ -65,6 +65,11 @@ class PrerenderHistograms {
   void RecordTimeUntilUsed(Origin origin,
                            base::TimeDelta time_until_used) const;
 
+  // Records the time from when a prerender is abandoned to when the user
+  // navigates to it. This must be called on the UI thread.
+  void RecordAbandonTimeUntilUsed(Origin origin,
+                                  base::TimeDelta time_until_used) const;
+
   // Record a PerSessionCount data point.
   void RecordPerSessionCount(Origin origin, int count) const;
 
@@ -105,6 +110,12 @@ class PrerenderHistograms {
                           uint8 experiment_id,
                           int cookie_status) const;
 
+  // Record a prerender cookie send type. Must be in the range
+  // [0, PrerenderContents::kNumCookieSendTypes).
+  void RecordCookieSendType(Origin origin,
+                            uint8 experiment_id,
+                            int cookie_send_type) const;
+
   void RecordPrerenderPageVisitedStatus(Origin origin,
                                         uint8 experiment_id,
                                         bool visited_before) const;
@@ -112,7 +123,8 @@ class PrerenderHistograms {
   // Record the bytes in the prerender, whether it was used or not, and the
   // total number of bytes fetched for this profile since the last call to
   // RecordBytes.
-  void RecordNetworkBytes(bool used,
+  void RecordNetworkBytes(Origin origin,
+                          bool used,
                           int64 prerender_bytes,
                           int64 profile_bytes);
 

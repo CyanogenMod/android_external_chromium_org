@@ -7,6 +7,7 @@
 #import <Cocoa/Cocoa.h>
 #include <sys/sysctl.h>
 
+#include "apps/app_shim/app_shim_host_manager_mac.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/mac/bundle_locations.h"
@@ -18,12 +19,12 @@
 #include "chrome/browser/browser_process.h"
 #import "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/mac/install_from_dmg.h"
-#include "chrome/browser/mac/keychain_reauthorize.h"
 #import "chrome/browser/mac/keystone_glue.h"
-#include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "components/breakpad/app/breakpad_mac.h"
+#include "components/metrics/metrics_service.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/common/result_codes.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -31,17 +32,6 @@
 #include "ui/base/resource/resource_handle.h"
 
 namespace {
-
-// Some users rarely restart Chrome, so they might never get a chance to run
-// the at-launch KeychainReauthorize. To account for them, there's also an
-// at-update KeychainReauthorize option, which runs from .keystone_install for
-// users on a user Keystone ticket. This operation may make sense for a period
-// of time after the application switches to being signed by the new
-// certificate, as long as the at-update stub executable is still signed by
-// the old one.
-NSString* const kKeychainReauthorizeAtUpdatePref =
-    @"KeychainReauthorizeAtUpdateMay2012";
-const int kKeychainReauthorizeAtUpdateMaxTries = 3;
 
 // This is one enum instead of two so that the values can be correlated in a
 // histogram.
@@ -69,6 +59,11 @@ enum CatSixtyFour {
   LION_DUNNO,
   MOUNTAIN_LION_DUNNO,
   MAVERICKS_DUNNO,
+
+  // More known cats.
+  YOSEMITE_32,  // Unexpected, Yosemite requires a 64-bit CPU.
+  YOSEMITE_64,
+  YOSEMITE_DUNNO,
 
   // Newer than any known cat.
   FUTURE_CAT_32,  // Unexpected, it's unlikely Apple will un-obsolete old CPUs.
@@ -123,7 +118,11 @@ CatSixtyFour CatSixtyFourValue() {
     return cpu64_known ? (cpu64 ? MAVERICKS_64 : MAVERICKS_32) :
                          MAVERICKS_DUNNO;
   }
-  if (base::mac::IsOSLaterThanMavericks_DontCallThis()) {
+  if (base::mac::IsOSYosemite()) {
+    return cpu64_known ? (cpu64 ? YOSEMITE_64 : YOSEMITE_32) :
+                         YOSEMITE_DUNNO;
+  }
+  if (base::mac::IsOSLaterThanYosemite_DontCallThis()) {
     return cpu64_known ? (cpu64 ? FUTURE_CAT_64 : FUTURE_CAT_32) :
                          FUTURE_CAT_DUNNO;
   }
@@ -162,28 +161,12 @@ ChromeBrowserMainPartsMac::~ChromeBrowserMainPartsMac() {
 }
 
 void ChromeBrowserMainPartsMac::PreEarlyInitialization() {
-  if (parsed_command_line().HasSwitch(switches::kKeychainReauthorize)) {
-    if (base::mac::AmIBundled()) {
-      LOG(FATAL) << "Inappropriate process type for Keychain reauthorization";
-    }
-
-    // Do Keychain reauthorization at the time of update installation. This
-    // gets three chances to run. If the first or second try doesn't complete
-    // successfully (crashes or is interrupted for any reason), there will be
-    // another chance. Once this step completes successfully, it should never
-    // have to run again.
-    //
-    // This is kicked off by a special stub executable during an automatic
-    // update. See chrome/installer/mac/keychain_reauthorize_main.cc.
-    chrome::KeychainReauthorizeIfNeeded(kKeychainReauthorizeAtUpdatePref,
-                                        kKeychainReauthorizeAtUpdateMaxTries);
-
-    exit(0);
-  }
-
   ChromeBrowserMainPartsPosix::PreEarlyInitialization();
 
-  if (base::mac::WasLaunchedAsHiddenLoginItem()) {
+  if (base::mac::WasLaunchedAsLoginItemRestoreState()) {
+    CommandLine* singleton_command_line = CommandLine::ForCurrentProcess();
+    singleton_command_line->AppendSwitch(switches::kRestoreLastSession);
+  } else if (base::mac::WasLaunchedAsHiddenLoginItem()) {
     CommandLine* singleton_command_line = CommandLine::ForCurrentProcess();
     singleton_command_line->AppendSwitch(switches::kNoStartupWindow);
   }
@@ -205,26 +188,25 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
   // Initialize NSApplication using the custom subclass.
   chrome_browser_application_mac::RegisterBrowserCrApp();
 
-  // If ui_task is not NULL, the app is actually a browser_test, so startup is
-  // handled outside of BrowserMain (which is what called this).
+  // If ui_task is not NULL, the app is actually a browser_test.
   if (!parameters().ui_task) {
     // The browser process only wants to support the language Cocoa will use,
     // so force the app locale to be overriden with that value.
     l10n_util::OverrideLocaleWithCocoaLocale();
-
-    // Before we load the nib, we need to start up the resource bundle so we
-    // have the strings avaiable for localization.
-    // TODO(markusheintz): Read preference pref::kApplicationLocale in order
-    // to enforce the application locale.
-    const std::string loaded_locale =
-        ResourceBundle::InitSharedInstanceWithLocale(std::string(), NULL);
-    CHECK(!loaded_locale.empty()) << "Default locale could not be found";
-
-    base::FilePath resources_pack_path;
-    PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
-    ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-        resources_pack_path, ui::SCALE_FACTOR_NONE);
   }
+
+  // Before we load the nib, we need to start up the resource bundle so we
+  // have the strings avaiable for localization.
+  // TODO(markusheintz): Read preference pref::kApplicationLocale in order
+  // to enforce the application locale.
+  const std::string loaded_locale =
+      ResourceBundle::InitSharedInstanceWithLocale(std::string(), NULL);
+  CHECK(!loaded_locale.empty()) << "Default locale could not be found";
+
+  base::FilePath resources_pack_path;
+  PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
+  ResourceBundle::GetSharedInstance().AddDataPackFromPath(
+      resources_pack_path, ui::SCALE_FACTOR_NONE);
 
   // This is a no-op if the KeystoneRegistration framework is not present.
   // The framework is only distributed with branded Google Chrome builds.
@@ -260,18 +242,27 @@ void ChromeBrowserMainPartsMac::PreMainMessageLoopStart() {
   // Make sure the app controller has been created.
   DCHECK([NSApp delegate]);
 
-  // Prevent Cocoa from turning command-line arguments into
-  // |-application:openFiles:|, since we already handle them directly.
-  [[NSUserDefaults standardUserDefaults]
-      setObject:@"NO" forKey:@"NSTreatUnknownArgumentsAsOpen"];
-  // CoreAnimation has poor performance and CoreAnimation and non-CoreAnimation
-  // exhibit window flickering when layers are not hosted in the window server,
-  // which is the default when not not using the 10.9 SDK.
-  // TODO: Remove this when we build with the 10.9 SDK.
-  if (base::mac::IsOSMavericksOrLater())
-    [[NSUserDefaults standardUserDefaults]
-        setObject:@"YES"
-          forKey:@"NSWindowHostsLayersInWindowServer"];
+  [[NSUserDefaults standardUserDefaults] registerDefaults:@{
+      // Prevent Cocoa from turning command-line arguments into
+      // |-application:openFiles:|, since we already handle them directly.
+      // @"NO" looks like a mistake, but the value really is supposed to be a
+      // string.
+      @"NSTreatUnknownArgumentsAsOpen": @"NO",
+      // CoreAnimation has poor performance and CoreAnimation and
+      // non-CoreAnimation exhibit window flickering when layers are not hosted
+      // in the window server, which is the default when not not using the
+      // 10.9 SDK.
+      // TODO: Remove this when we build with the 10.9 SDK.
+      @"NSWindowHostsLayersInWindowServer": @(base::mac::IsOSMavericksOrLater())
+  }];
+}
+
+void ChromeBrowserMainPartsMac::PreProfileInit() {
+  ChromeBrowserMainPartsPosix::PreProfileInit();
+  // This is called here so that the app shim socket is only created after
+  // taking the singleton lock.
+  g_browser_process->platform_part()->app_shim_host_manager()->Init();
+  AppListService::InitAll(NULL);
 }
 
 void ChromeBrowserMainPartsMac::PostProfileInit() {

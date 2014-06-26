@@ -8,13 +8,20 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "chrome/browser/renderer_context_menu/context_menu_delegate.h"
 #include "content/public/browser/web_contents_view_delegate.h"
 
+class RenderViewContextMenu;
 class RenderViewContextMenuViews;
+
+namespace aura {
+class Window;
+}
 
 namespace content {
 class WebContents;
 class WebDragDestDelegate;
+class RenderFrameHost;
 }
 
 namespace views {
@@ -25,7 +32,8 @@ class Widget;
 // A chrome specific class that extends WebContentsViewWin with features like
 // focus management, which live in chrome.
 class ChromeWebContentsViewDelegateViews
-    : public content::WebContentsViewDelegate {
+    : public content::WebContentsViewDelegate,
+      public ContextMenuDelegate {
  public:
   explicit ChromeWebContentsViewDelegateViews(
       content::WebContents* web_contents);
@@ -42,7 +50,14 @@ class ChromeWebContentsViewDelegateViews
       const content::ContextMenuParams& params) OVERRIDE;
   virtual void SizeChanged(const gfx::Size& size) OVERRIDE;
 
+  // Overridden from ContextMenuDelegate.
+  virtual scoped_ptr<RenderViewContextMenu> BuildMenu(
+      content::WebContents* web_contents,
+      const content::ContextMenuParams& params) OVERRIDE;
+  virtual void ShowMenu(scoped_ptr<RenderViewContextMenu> menu) OVERRIDE;
+
  private:
+  aura::Window* GetActiveNativeView();
   views::Widget* GetTopLevelWidget();
   views::FocusManager* GetFocusManager();
   void SetInitialFocus();

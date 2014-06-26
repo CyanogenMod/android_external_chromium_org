@@ -4,16 +4,19 @@
 
 #include "chrome/browser/extensions/api/sync_file_system/extension_sync_event_observer.h"
 
+#include "base/lazy_instance.h"
 #include "chrome/browser/extensions/api/sync_file_system/sync_file_system_api_helpers.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync_file_system/sync_event_observer.h"
 #include "chrome/browser/sync_file_system/sync_file_system_service.h"
+#include "chrome/browser/sync_file_system/sync_file_system_service_factory.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
 #include "chrome/common/extensions/api/sync_file_system.h"
+#include "content/public/browser/browser_context.h"
 #include "extensions/browser/event_router.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/common/extension_set.h"
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
@@ -21,10 +24,19 @@ using sync_file_system::SyncEventObserver;
 
 namespace extensions {
 
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver> > g_factory =
+    LAZY_INSTANCE_INITIALIZER;
+
+// static
+BrowserContextKeyedAPIFactory<ExtensionSyncEventObserver>*
+ExtensionSyncEventObserver::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
+
 ExtensionSyncEventObserver::ExtensionSyncEventObserver(
-    Profile* profile)
-    : profile_(profile),
-      sync_service_(NULL) {}
+    content::BrowserContext* context)
+    : browser_context_(context), sync_service_(NULL) {}
 
 void ExtensionSyncEventObserver::InitializeForService(
     sync_file_system::SyncFileSystemService* sync_service) {
@@ -46,8 +58,8 @@ void ExtensionSyncEventObserver::Shutdown() {
 
 std::string ExtensionSyncEventObserver::GetExtensionId(
     const GURL& app_origin) {
-  const Extension* app = ExtensionSystem::Get(profile_)->extension_service()->
-      GetInstalledApp(app_origin);
+  const Extension* app = ExtensionRegistry::Get(browser_context_)
+      ->enabled_extensions().GetAppByURL(app_origin);
   if (!app) {
     // The app is uninstalled or disabled.
     return std::string();
@@ -80,8 +92,12 @@ void ExtensionSyncEventObserver::OnFileSynced(
   scoped_ptr<base::ListValue> params(new base::ListValue());
 
   // For now we always assume events come only for files (not directories).
-  params->Append(CreateDictionaryValueForFileSystemEntry(
-      url, sync_file_system::SYNC_FILE_TYPE_FILE));
+  scoped_ptr<base::DictionaryValue> entry(
+      CreateDictionaryValueForFileSystemEntry(
+          url, sync_file_system::SYNC_FILE_TYPE_FILE));
+  if (!entry)
+    return;
+  params->Append(entry.release());
 
   // Status, SyncAction and any optional notes to go here.
   api::sync_file_system::FileStatus status_enum =
@@ -107,11 +123,11 @@ void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
   // Check to see whether the event should be broadcasted to all listening
   // extensions or sent to a specific extension ID.
   bool broadcast_mode = app_origin.is_empty();
-  EventRouter* event_router = ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(browser_context_);
   DCHECK(event_router);
 
   scoped_ptr<Event> event(new Event(event_name, values.Pass()));
-  event->restrict_to_browser_context = profile_;
+  event->restrict_to_browser_context = browser_context_;
 
   // No app_origin, broadcast to all listening extensions for this event name.
   if (broadcast_mode) {
@@ -124,6 +140,13 @@ void ExtensionSyncEventObserver::BroadcastOrDispatchEvent(
   if (extension_id.empty())
     return;
   event_router->DispatchEventToExtension(extension_id, event.Pass());
+}
+
+template <>
+void BrowserContextKeyedAPIFactory<
+    ExtensionSyncEventObserver>::DeclareFactoryDependencies() {
+  DependsOn(sync_file_system::SyncFileSystemServiceFactory::GetInstance());
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 }  // namespace extensions

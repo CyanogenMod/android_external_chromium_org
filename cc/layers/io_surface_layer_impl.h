@@ -27,7 +27,8 @@ class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
       OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer_tree_impl) OVERRIDE;
 
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
 
   virtual bool WillDraw(DrawMode draw_mode,
@@ -37,14 +38,13 @@ class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
  private:
   IOSurfaceLayerImpl(LayerTreeImpl* tree_impl, int id);
 
-  void DestroyTexture();
+  void DestroyResource();
 
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
   unsigned io_surface_id_;
   gfx::Size io_surface_size_;
   bool io_surface_changed_;
-  unsigned io_surface_texture_id_;
   unsigned io_surface_resource_id_;
 
   DISALLOW_COPY_AND_ASSIGN(IOSurfaceLayerImpl);

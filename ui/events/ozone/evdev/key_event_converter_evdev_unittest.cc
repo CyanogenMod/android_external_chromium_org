@@ -19,7 +19,10 @@ const char kTestDevicePath[] = "/dev/input/test-device";
 class MockKeyEventConverterEvdev : public KeyEventConverterEvdev {
  public:
   MockKeyEventConverterEvdev(int fd, EventModifiersEvdev* modifiers)
-      : KeyEventConverterEvdev(fd, base::FilePath(kTestDevicePath), modifiers) {
+      : KeyEventConverterEvdev(fd,
+                               base::FilePath(kTestDevicePath),
+                               modifiers,
+                               EventDispatchCallback()) {
     Start();
   }
   virtual ~MockKeyEventConverterEvdev() {};
@@ -30,7 +33,7 @@ class MockKeyEventConverterEvdev : public KeyEventConverterEvdev {
     return dispatched_events_[index];
   }
 
-  virtual void DispatchEvent(scoped_ptr<Event> event) OVERRIDE;
+  virtual void DispatchEventToCallback(Event* event) OVERRIDE;
 
  private:
   ScopedVector<KeyEvent> dispatched_events_;
@@ -38,8 +41,8 @@ class MockKeyEventConverterEvdev : public KeyEventConverterEvdev {
   DISALLOW_COPY_AND_ASSIGN(MockKeyEventConverterEvdev);
 };
 
-void MockKeyEventConverterEvdev::DispatchEvent(scoped_ptr<Event> event) {
-  dispatched_events_.push_back(static_cast<KeyEvent*>(event.release()));
+void MockKeyEventConverterEvdev::DispatchEventToCallback(Event* event) {
+  dispatched_events_.push_back(new KeyEvent(*static_cast<KeyEvent*>(event)));
 }
 
 }  // namespace ui

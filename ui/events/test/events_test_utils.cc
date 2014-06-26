@@ -4,6 +4,8 @@
 
 #include "ui/events/test/events_test_utils.h"
 
+#include "ui/events/event_source.h"
+
 namespace ui {
 
 EventTestApi::EventTestApi(Event* event) : event_(event) {}
@@ -16,5 +18,14 @@ LocatedEventTestApi::~LocatedEventTestApi() {}
 
 EventTargetTestApi::EventTargetTestApi(EventTarget* target)
     : target_(target) {}
+
+EventSourceTestApi::EventSourceTestApi(EventSource* event_source)
+    : event_source_(event_source) {
+  DCHECK(event_source);
+}
+
+EventDispatchDetails EventSourceTestApi::SendEventToProcessor(Event* event) {
+  return event_source_->SendEventToProcessor(event);
+}
 
 }  // namespace ui

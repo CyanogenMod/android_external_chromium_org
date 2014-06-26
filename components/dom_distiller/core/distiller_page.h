@@ -7,86 +7,69 @@
 
 #include <string>
 
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "third_party/dom_distiller_js/dom_distiller.pb.h"
 #include "url/gurl.h"
 
 namespace dom_distiller {
 
+struct DistilledPageInfo {
+  std::string title;
+  std::string html;
+  std::string next_page_url;
+  std::string prev_page_url;
+  std::vector<std::string> image_urls;
+  DistilledPageInfo();
+  ~DistilledPageInfo();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(DistilledPageInfo);
+};
+
+class SourcePageHandle {
+ public:
+  virtual ~SourcePageHandle() {}
+};
+
 // Injects JavaScript into a page, and uses it to extract and return long-form
 // content. The class can be reused to load and distill multiple pages,
 // following the state transitions described along with the class's states.
+// Constructing a DistillerPage should be cheap, as some of the instances can be
+// thrown away without ever being used.
 class DistillerPage {
  public:
-  class Delegate {
-   public:
-    virtual ~Delegate() {}
-    virtual void OnLoadURLDone() {}
-    virtual void OnExecuteJavaScriptDone(const GURL& page_url,
-                                         const base::Value* value) {}
-  };
+  typedef base::Callback<void(scoped_ptr<DistilledPageInfo> distilled_page,
+                              bool distillation_successful)>
+      DistillerPageCallback;
 
-  explicit DistillerPage(Delegate* delegate);
-
+  DistillerPage();
   virtual ~DistillerPage();
 
-
-  // Initializes a |DistillerPage|. It must be called before any
-  // other functions, and must only be called once.
-  void Init();
-
-  // Loads a URL. |OnLoadURLDone| is called when the load completes or fails.
-  // May be called when the distiller is idle or a page is available.
-  void LoadURL(const GURL& url);
-  virtual void OnLoadURLDone();
-  virtual void OnLoadURLFailed();
-
-  // Injects and executes JavaScript in the context of a loaded page. |LoadURL|
-  // must complete before this function is called. May be called only when
-  // a page is available.
-  void ExecuteJavaScript(const std::string& script);
+  // Loads a URL. |OnDistillationDone| is called when the load completes or
+  // fails. May be called when the distiller is idle. Callers can assume that,
+  // for a given |url| and |options|, any DistillerPage implementation will
+  // extract the same content.
+  void DistillPage(const GURL& url,
+                   const dom_distiller::proto::DomDistillerOptions options,
+                   const DistillerPageCallback& callback);
 
   // Called when the JavaScript execution completes. |page_url| is the url of
   // the distilled page. |value| contains data returned by the script.
-  virtual void OnExecuteJavaScriptDone(const GURL& page_url,
-                                       const base::Value* value);
+  virtual void OnDistillationDone(const GURL& page_url,
+                                  const base::Value* value);
 
  protected:
-  enum State {
-    // No context has yet been set in which to load or distill a page.
-    NO_CONTEXT,
-    // The page distiller has been initialized and is idle.
-    IDLE,
-    // A page is currently loading.
-    LOADING_PAGE,
-    // A page has loaded within the specified context.
-    PAGE_AVAILABLE,
-    // There was an error processing the page.
-    PAGELOAD_FAILED,
-    // JavaScript is executing within the context of the page. When the
-    // JavaScript completes, the state will be returned to |PAGE_AVAILABLE|.
-    EXECUTING_JAVASCRIPT
-  };
-
-  // Called by |Init| to do plaform-specific initialization work set up an
-  // environment in which a page can be loaded.
-  virtual void InitImpl() = 0;
-
-  // Called by |LoadURL| to carry out platform-specific instructions to load a
-  // page.
-  virtual void LoadURLImpl(const GURL& gurl) = 0;
-
-  // Called by |ExecuteJavaScript| to carry out platform-specific instructions
-  // to inject and execute JavaScript within the context of the loaded page.
-  virtual void ExecuteJavaScriptImpl(const std::string& script) = 0;
-
-
-
-  // The current state of the |DistillerPage|, initially |NO_CONTEXT|.
-  State state_;
+  // Called by |DistillPage| to carry out platform-specific instructions to load
+  // and distill the |url| using the provided |script|. The extracted content
+  // should be the same regardless of the DistillerPage implementation.
+  virtual void DistillPageImpl(const GURL& url, const std::string& script) = 0;
 
  private:
-  Delegate* delegate_;
+  bool ready_;
+  DistillerPageCallback distiller_page_callback_;
   DISALLOW_COPY_AND_ASSIGN(DistillerPage);
 };
 
@@ -95,8 +78,12 @@ class DistillerPageFactory {
  public:
   virtual ~DistillerPageFactory();
 
-  virtual scoped_ptr<DistillerPage> CreateDistillerPage(
-      DistillerPage::Delegate* delegate) const = 0;
+  // Constructs and returns a new DistillerPage. The implementation of this
+  // should be very cheap, since the pages can be thrown away without being
+  // used.
+  virtual scoped_ptr<DistillerPage> CreateDistillerPage() const = 0;
+  virtual scoped_ptr<DistillerPage> CreateDistillerPageWithHandle(
+      scoped_ptr<SourcePageHandle> handle) const = 0;
 };
 
 }  // namespace dom_distiller

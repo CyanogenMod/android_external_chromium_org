@@ -8,14 +8,19 @@
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/wallpaper_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/wallpaper/wallpaper_manager.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/extension_constants.h"
+#include "chrome/common/pref_names.h"
 #include "net/base/load_flags.h"
+#include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "url/gurl.h"
@@ -23,8 +28,7 @@
 using base::BinaryValue;
 using content::BrowserThread;
 
-typedef base::Callback<void(net::URLRequestStatus::Status, const std::string&)>
-    FetchCallback;
+typedef base::Callback<void(bool success, const std::string&)> FetchCallback;
 
 namespace set_wallpaper = extensions::api::wallpaper::SetWallpaper;
 
@@ -51,23 +55,26 @@ class WallpaperFetcher : public net::URLFetcherDelegate {
  private:
   // URLFetcherDelegate overrides:
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
-    net::URLRequestStatus::Status status = source->GetStatus().status();
+    DCHECK(url_fetcher_.get() == source);
+
+    bool success = source->GetStatus().is_success() &&
+                   source->GetResponseCode() == net::HTTP_OK;
     std::string response;
-    if (status == net::URLRequestStatus::SUCCESS) {
-      url_fetcher_->GetResponseAsString(&response);
+    if (success) {
+      source->GetResponseAsString(&response);
     } else {
-      response = source->GetStatus().error();
+      response = base::StringPrintf(
+          "Downloading wallpaper %s failed. The response code is %d.",
+          source->GetOriginalURL().ExtractFileName().c_str(),
+          source->GetResponseCode());
     }
     url_fetcher_.reset();
-    callback_.Run(status, response);
+    callback_.Run(success, response);
   }
 
   void CancelPreviousFetch() {
     if (url_fetcher_.get()) {
-      std::string error = base::StringPrintf(
-          "Downloading wallpaper %s is canceled.",
-          url_fetcher_->GetOriginalURL().ExtractFileName().c_str());
-      callback_.Run(net::URLRequestStatus::CANCELED, error);
+      callback_.Run(false, wallpaper_api_util::kCancelWallpaperMessage);
       url_fetcher_.reset();
     }
   }
@@ -87,7 +94,8 @@ WallpaperSetWallpaperFunction::WallpaperSetWallpaperFunction() {
 WallpaperSetWallpaperFunction::~WallpaperSetWallpaperFunction() {
 }
 
-bool WallpaperSetWallpaperFunction::RunImpl() {
+bool WallpaperSetWallpaperFunction::RunAsync() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   params_ = set_wallpaper::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_);
 
@@ -101,10 +109,9 @@ bool WallpaperSetWallpaperFunction::RunImpl() {
   } else {
     GURL wallpaper_url(*params_->details.url);
     if (wallpaper_url.is_valid()) {
-    g_wallpaper_fetcher.Get().FetchWallpaper(
-        wallpaper_url,
-        base::Bind(&WallpaperSetWallpaperFunction::OnWallpaperFetched,
-                   this));
+      g_wallpaper_fetcher.Get().FetchWallpaper(
+          wallpaper_url,
+          base::Bind(&WallpaperSetWallpaperFunction::OnWallpaperFetched, this));
     } else {
       SetError("URL is invalid.");
       SendResponse(false);
@@ -114,13 +121,9 @@ bool WallpaperSetWallpaperFunction::RunImpl() {
 }
 
 void WallpaperSetWallpaperFunction::OnWallpaperDecoded(
-    const gfx::ImageSkia& wallpaper) {
+    const gfx::ImageSkia& image) {
   chromeos::WallpaperManager* wallpaper_manager =
       chromeos::WallpaperManager::Get();
-  chromeos::UserImage::RawImage raw_image(
-      params_->details.wallpaper_data->begin(),
-      params_->details.wallpaper_data->end());
-  chromeos::UserImage image(wallpaper, raw_image);
   base::FilePath thumbnail_path = wallpaper_manager->GetCustomWallpaperPath(
       chromeos::kThumbnailWallpaperSubDir,
       user_id_hash_,
@@ -146,15 +149,28 @@ void WallpaperSetWallpaperFunction::OnWallpaperDecoded(
   unsafe_wallpaper_decoder_ = NULL;
 
   if (params_->details.thumbnail) {
-    wallpaper.EnsureRepsForSupportedScales();
-    scoped_ptr<gfx::ImageSkia> deep_copy(wallpaper.DeepCopy());
+    image.EnsureRepsForSupportedScales();
+    scoped_ptr<gfx::ImageSkia> deep_copy(image.DeepCopy());
     // Generates thumbnail before call api function callback. We can then
     // request thumbnail in the javascript callback.
-    task_runner->PostTask(FROM_HERE,
-        base::Bind(
-            &WallpaperSetWallpaperFunction::GenerateThumbnail,
-            this, thumbnail_path, base::Passed(&deep_copy)));
+    task_runner->PostTask(
+        FROM_HERE,
+        base::Bind(&WallpaperSetWallpaperFunction::GenerateThumbnail,
+                   this,
+                   thumbnail_path,
+                   base::Passed(deep_copy.Pass())));
   } else {
+    // Save current extenion name. It will be displayed in the component
+    // wallpaper picker app. If current extension is the component wallpaper
+    // picker, set an empty string.
+    Profile* profile = Profile::FromBrowserContext(browser_context());
+    if (GetExtension()->id() == extension_misc::kWallpaperManagerId) {
+      profile->GetPrefs()->SetString(prefs::kCurrentWallpaperAppName,
+                                     std::string());
+    } else {
+      profile->GetPrefs()->SetString(prefs::kCurrentWallpaperAppName,
+                                     GetExtension()->name());
+    }
     SendResponse(true);
   }
 }
@@ -163,17 +179,17 @@ void WallpaperSetWallpaperFunction::GenerateThumbnail(
     const base::FilePath& thumbnail_path, scoped_ptr<gfx::ImageSkia> image) {
   DCHECK(BrowserThread::GetBlockingPool()->IsRunningSequenceOnCurrentThread(
       sequence_token_));
-  chromeos::UserImage wallpaper(*image.get());
   if (!base::PathExists(thumbnail_path.DirName()))
     base::CreateDirectory(thumbnail_path.DirName());
 
   scoped_refptr<base::RefCountedBytes> data;
-  chromeos::WallpaperManager::Get()->ResizeWallpaper(
-      wallpaper,
+  chromeos::WallpaperManager::Get()->ResizeImage(
+      *image,
       ash::WALLPAPER_LAYOUT_STRETCH,
-      ash::kWallpaperThumbnailWidth,
-      ash::kWallpaperThumbnailHeight,
-      &data);
+      chromeos::kWallpaperThumbnailWidth,
+      chromeos::kWallpaperThumbnailHeight,
+      &data,
+      NULL);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(
@@ -190,8 +206,9 @@ void WallpaperSetWallpaperFunction::ThumbnailGenerated(
 }
 
 void WallpaperSetWallpaperFunction::OnWallpaperFetched(
-    net::URLRequestStatus::Status status, const std::string& response) {
-  if (status == net::URLRequestStatus::SUCCESS) {
+    bool success,
+    const std::string& response) {
+  if (success) {
     params_->details.wallpaper_data.reset(new std::string(response));
     StartDecode(*params_->details.wallpaper_data);
   } else {

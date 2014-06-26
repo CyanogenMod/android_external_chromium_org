@@ -17,6 +17,7 @@
 #include "chrome/browser/about_flags.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_browser_main.h"
+#include "chrome/browser/chrome_browser_metrics_service_observer.h"
 #include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/shell_integration.h"
 #include "content/public/browser/browser_thread.h"
@@ -28,7 +29,12 @@
 #include <gnu/libc-version.h>
 
 #include "base/version.h"
-#endif
+#include "ui/base/x/x11_util.h"
+#endif  // defined(OS_LINUX) && !defined(OS_CHROMEOS)
+
+#if defined(OS_WIN)
+#include "chrome/installer/util/google_update_settings.h"
+#endif  // defined(OS_WIN)
 
 namespace {
 
@@ -38,8 +44,26 @@ enum UMALinuxGlibcVersion {
   UMA_LINUX_GLIBC_2_11,
   UMA_LINUX_GLIBC_2_19 = UMA_LINUX_GLIBC_2_11 + 8,
   // NOTE: Add new version above this line and update the enum list in
-  // tools/histograms/histograms.xml accordingly.
+  // tools/metrics/histograms/histograms.xml accordingly.
   UMA_LINUX_GLIBC_VERSION_COUNT
+};
+
+enum UMALinuxWindowManager {
+  UMA_LINUX_WINDOW_MANAGER_OTHER,
+  UMA_LINUX_WINDOW_MANAGER_BLACKBOX,
+  UMA_LINUX_WINDOW_MANAGER_CHROME_OS,
+  UMA_LINUX_WINDOW_MANAGER_COMPIZ,
+  UMA_LINUX_WINDOW_MANAGER_ENLIGHTENMENT,
+  UMA_LINUX_WINDOW_MANAGER_ICE_WM,
+  UMA_LINUX_WINDOW_MANAGER_KWIN,
+  UMA_LINUX_WINDOW_MANAGER_METACITY,
+  UMA_LINUX_WINDOW_MANAGER_MUFFIN,
+  UMA_LINUX_WINDOW_MANAGER_MUTTER,
+  UMA_LINUX_WINDOW_MANAGER_OPENBOX,
+  UMA_LINUX_WINDOW_MANAGER_XFWM4,
+  // NOTE: Add new window managers above this line and update the enum list in
+  // tools/metrics/histograms/histograms.xml accordingly.
+  UMA_LINUX_WINDOW_MANAGER_COUNT
 };
 
 enum UMATouchEventsState {
@@ -48,7 +72,8 @@ enum UMATouchEventsState {
   UMA_TOUCH_EVENTS_AUTO_DISABLED,
   UMA_TOUCH_EVENTS_DISABLED,
   // NOTE: Add states only immediately above this line. Make sure to
-  // update the enum list in tools/histograms/histograms.xml accordingly.
+  // update the enum list in tools/metrics/histograms/histograms.xml
+  // accordingly.
   UMA_TOUCH_EVENTS_STATE_COUNT
 };
 
@@ -63,12 +88,12 @@ void RecordMicroArchitectureStats() {
                               base::SysInfo::NumberOfProcessors());
 }
 
-void RecordDefaultBrowserUMAStat() {
-  // Record whether Chrome is the default browser or not.
-  ShellIntegration::DefaultWebClientState default_state =
-      ShellIntegration::GetDefaultBrowser();
-  UMA_HISTOGRAM_ENUMERATION("DefaultBrowser.State", default_state,
-                            ShellIntegration::NUM_DEFAULT_STATES);
+// Called on the blocking pool some time after startup to avoid slowing down
+// startup with metrics that aren't trivial to compute.
+void RecordStartupMetricsOnBlockingPool() {
+#if defined(OS_WIN)
+  GoogleUpdateSettings::RecordChromeUpdatePolicyHistograms();
+#endif  // defined(OS_WIN)
 }
 
 void RecordLinuxGlibcVersion() {
@@ -95,6 +120,53 @@ void RecordLinuxGlibcVersion() {
   }
   UMA_HISTOGRAM_ENUMERATION("Linux.GlibcVersion", glibc_version_result,
                             UMA_LINUX_GLIBC_VERSION_COUNT);
+#endif
+}
+
+void RecordLinuxWindowManager() {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  ui::WindowManagerName name = ui::GuessWindowManager();
+  UMALinuxWindowManager uma_name = UMA_LINUX_WINDOW_MANAGER_OTHER;
+  switch (name) {
+    case ui::WM_UNKNOWN:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_OTHER;
+      break;
+    case ui::WM_BLACKBOX:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_BLACKBOX;
+      break;
+    case ui::WM_CHROME_OS:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_CHROME_OS;
+      break;
+    case ui::WM_COMPIZ:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_COMPIZ;
+      break;
+    case ui::WM_ENLIGHTENMENT:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_ENLIGHTENMENT;
+      break;
+    case ui::WM_ICE_WM:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_ICE_WM;
+      break;
+    case ui::WM_KWIN:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_KWIN;
+      break;
+    case ui::WM_METACITY:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_METACITY;
+      break;
+    case ui::WM_MUFFIN:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_MUFFIN;
+      break;
+    case ui::WM_MUTTER:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_MUTTER;
+      break;
+    case ui::WM_OPENBOX:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_OPENBOX;
+      break;
+    case ui::WM_XFWM4:
+      uma_name = UMA_LINUX_WINDOW_MANAGER_XFWM4;
+      break;
+  }
+  UMA_HISTOGRAM_ENUMERATION("Linux.WindowManager", uma_name,
+                            UMA_LINUX_WINDOW_MANAGER_COUNT);
 #endif
 }
 
@@ -139,17 +211,24 @@ void ChromeBrowserMainExtraPartsMetrics::PreBrowserStart() {
   about_flags::PrefServiceFlagsStorage flags_storage_(
       g_browser_process->local_state());
   about_flags::RecordUMAStatistics(&flags_storage_);
-
-  // Querying the default browser state can be slow, do it in the background.
-  content::BrowserThread::GetBlockingPool()->PostDelayedTask(
-        FROM_HERE,
-        base::Bind(&RecordDefaultBrowserUMAStat),
-        base::TimeDelta::FromSeconds(45));
 }
 
 void ChromeBrowserMainExtraPartsMetrics::PostBrowserStart() {
   RecordLinuxGlibcVersion();
+  RecordLinuxWindowManager();
   RecordTouchEventState();
+
+  const int kStartupMetricsGatheringDelaySeconds = 45;
+  content::BrowserThread::GetBlockingPool()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&RecordStartupMetricsOnBlockingPool),
+      base::TimeDelta::FromSeconds(kStartupMetricsGatheringDelaySeconds));
+
+  // Create the metrics log observer.
+  // We only need this for Android for now.
+#if defined(ANDROID)
+  metrics_service_observer_.reset(new ChromeBrowserMetricsServiceObserver());
+#endif
 }
 
 namespace chrome {

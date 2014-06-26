@@ -7,27 +7,13 @@
 #include <X11/extensions/XInput2.h>
 #include <X11/Xlib.h>
 
+#include "chromeos/ime/ime_keyboard.h"
 #include "chromeos/ime/input_method_manager.h"
-#include "chromeos/ime/xkeyboard.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/platform/platform_event_source.h"
 
 namespace chromeos {
 namespace {
-
-// Gets the major opcode for XInput2. Returns -1 on error.
-int GetXInputOpCode() {
-  static const char kExtensionName[] = "XInputExtension";
-  int xi_opcode = -1;
-  int event;
-  int error;
-
-  if (!XQueryExtension(
-          gfx::GetXDisplay(), kExtensionName, &xi_opcode, &event, &error)) {
-    VLOG(1) << "X Input extension not available: error=" << error;
-    return -1;
-  }
-  return xi_opcode;
-}
 
 // Checks the |event| and asynchronously sets the XKB layout when necessary.
 void HandleHierarchyChangedEvent(
@@ -55,10 +41,10 @@ void HandleHierarchyChangedEvent(
   if (update_keyboard_status) {
     chromeos::input_method::InputMethodManager* input_method_manager =
         chromeos::input_method::InputMethodManager::Get();
-    chromeos::input_method::XKeyboard* xkeyboard =
-        input_method_manager->GetXKeyboard();
-    xkeyboard->ReapplyCurrentModifierLockStatus();
-    xkeyboard->ReapplyCurrentKeyboardLayout();
+    chromeos::input_method::ImeKeyboard* keyboard =
+        input_method_manager->GetImeKeyboard();
+    keyboard->ReapplyCurrentModifierLockStatus();
+    keyboard->ReapplyCurrentKeyboardLayout();
   }
 }
 
@@ -71,9 +57,8 @@ XInputHierarchyChangedEventListener::GetInstance() {
 }
 
 XInputHierarchyChangedEventListener::XInputHierarchyChangedEventListener()
-    : stopped_(false),
-      xiopcode_(GetXInputOpCode()) {
-  base::MessageLoopForUI::current()->AddObserver(this);
+    : stopped_(false) {
+  ui::PlatformEventSource::GetInstance()->AddPlatformEventObserver(this);
 }
 
 XInputHierarchyChangedEventListener::~XInputHierarchyChangedEventListener() {
@@ -84,9 +69,8 @@ void XInputHierarchyChangedEventListener::Stop() {
   if (stopped_)
     return;
 
-  base::MessageLoopForUI::current()->RemoveObserver(this);
+  ui::PlatformEventSource::GetInstance()->RemovePlatformEventObserver(this);
   stopped_ = true;
-  xiopcode_ = -1;
 }
 
 void XInputHierarchyChangedEventListener::AddObserver(
@@ -99,45 +83,27 @@ void XInputHierarchyChangedEventListener::RemoveObserver(
   observer_list_.RemoveObserver(observer);
 }
 
-base::EventStatus XInputHierarchyChangedEventListener::WillProcessEvent(
-    const base::NativeEvent& event) {
-  // There may be multiple listeners for the XI_HierarchyChanged event. So
-  // always return EVENT_CONTINUE to make sure all the listeners receive the
-  // event.
+void XInputHierarchyChangedEventListener::WillProcessEvent(
+    const ui::PlatformEvent& event) {
   ProcessedXEvent(event);
-  return base::EVENT_CONTINUE;
 }
 
 void XInputHierarchyChangedEventListener::DidProcessEvent(
-    const base::NativeEvent& event) {
+    const ui::PlatformEvent& event) {
 }
 
-bool XInputHierarchyChangedEventListener::ProcessedXEvent(XEvent* xevent) {
-  if ((xevent->xcookie.type != GenericEvent) ||
-      (xevent->xcookie.extension != xiopcode_)) {
-    return false;
-  }
+void XInputHierarchyChangedEventListener::ProcessedXEvent(XEvent* xevent) {
+  if (xevent->xcookie.type != GenericEvent)
+    return;
 
   XGenericEventCookie* cookie = &(xevent->xcookie);
-  bool handled = false;
 
   if (cookie->evtype == XI_HierarchyChanged) {
     XIHierarchyEvent* event = static_cast<XIHierarchyEvent*>(cookie->data);
     HandleHierarchyChangedEvent(event, &observer_list_);
     if (event->flags & XIDeviceEnabled || event->flags & XIDeviceDisabled)
       NotifyDeviceHierarchyChanged();
-    handled = true;
-  } else if (cookie->evtype == XI_KeyPress || cookie->evtype == XI_KeyRelease) {
-    XIDeviceEvent* xiev = reinterpret_cast<XIDeviceEvent*>(cookie->data);
-    if (xiev->deviceid == xiev->sourceid) {
-      FOR_EACH_OBSERVER(DeviceHierarchyObserver,
-                        observer_list_,
-                        DeviceKeyPressedOrReleased(xiev->deviceid));
-      handled = true;
-    }
   }
-
-  return handled;
 }
 
 void XInputHierarchyChangedEventListener::NotifyDeviceHierarchyChanged() {

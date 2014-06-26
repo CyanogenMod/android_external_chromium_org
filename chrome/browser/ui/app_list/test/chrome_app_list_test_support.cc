@@ -4,8 +4,6 @@
 
 #include "chrome/browser/ui/app_list/test/chrome_app_list_test_support.h"
 
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/app_list/app_list_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
@@ -20,11 +18,6 @@ app_list::AppListModel* GetAppListModel(AppListService* service) {
 AppListService* GetAppListService() {
   // TODO(tapted): Consider testing ash explicitly on the win-ash trybot.
   return AppListService::Get(chrome::GetActiveDesktop());
-}
-
-void SigninProfile(Profile* profile) {
-  SigninManagerFactory::GetForProfile(profile)->
-      SetAuthenticatedUsername("user@example.com");
 }
 
 }  // namespace test

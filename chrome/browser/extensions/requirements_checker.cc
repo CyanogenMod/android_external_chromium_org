@@ -5,7 +5,6 @@
 #include "chrome/browser/extensions/requirements_checker.h"
 
 #include "base/bind.h"
-#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/gpu/gpu_feature_checker.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/extension.h"
@@ -17,7 +16,7 @@
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
-#endif // defined(OS_WIN)
+#endif
 
 namespace extensions {
 
@@ -30,23 +29,30 @@ RequirementsChecker::~RequirementsChecker() {
 
 void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
     base::Callback<void(std::vector<std::string> errors)> callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   callback_ = callback;
   const RequirementsInfo& requirements =
       RequirementsInfo::GetRequirements(extension.get());
 
   if (requirements.npapi) {
-#if defined(OS_CHROMEOS)
+#if defined(OS_POSIX) && !defined(OS_MACOSX)
     errors_.push_back(
         l10n_util::GetStringUTF8(IDS_EXTENSION_NPAPI_NOT_SUPPORTED));
-#endif  // defined(OS_CHROMEOS)
+#endif
 #if defined(OS_WIN)
     if (base::win::IsMetroProcess()) {
       errors_.push_back(
           l10n_util::GetStringUTF8(IDS_EXTENSION_NPAPI_NOT_SUPPORTED));
     }
-#endif  // defined(OS_WIN)
+#endif
+  }
+
+  if (requirements.window_shape) {
+#if !defined(USE_AURA)
+    errors_.push_back(
+        l10n_util::GetStringUTF8(IDS_EXTENSION_WINDOW_SHAPE_NOT_SUPPORTED));
+#endif
   }
 
   if (requirements.webgl) {
@@ -54,14 +60,6 @@ void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
     webgl_checker_ = new GPUFeatureChecker(
       gpu::GPU_FEATURE_TYPE_WEBGL,
       base::Bind(&RequirementsChecker::SetWebGLAvailability,
-                 AsWeakPtr()));
-  }
-
-  if (requirements.css3d) {
-    ++pending_requirement_checks_;
-    css3d_checker_ = new GPUFeatureChecker(
-      gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING,
-      base::Bind(&RequirementsChecker::SetCSS3DAvailability,
                  AsWeakPtr()));
   }
 
@@ -76,22 +74,12 @@ void RequirementsChecker::Check(scoped_refptr<const Extension> extension,
   // from the use of pending_requirement_checks_.
   if (webgl_checker_.get())
     webgl_checker_->CheckGPUFeatureAvailability();
-  if (css3d_checker_.get())
-    css3d_checker_->CheckGPUFeatureAvailability();
 }
 
 void RequirementsChecker::SetWebGLAvailability(bool available) {
   if (!available) {
     errors_.push_back(
         l10n_util::GetStringUTF8(IDS_EXTENSION_WEBGL_NOT_SUPPORTED));
-  }
-  MaybeRunCallback();
-}
-
-void RequirementsChecker::SetCSS3DAvailability(bool available) {
-  if (!available) {
-    errors_.push_back(
-        l10n_util::GetStringUTF8(IDS_EXTENSION_CSS3D_NOT_SUPPORTED));
   }
   MaybeRunCallback();
 }

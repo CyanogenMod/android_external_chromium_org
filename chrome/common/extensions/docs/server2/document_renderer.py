@@ -5,6 +5,7 @@
 import logging
 import os
 from document_parser import ParseDocument
+from platform_util import ExtractPlatformFromURL
 from third_party.json_schema_compiler.model import UnixName
 
 
@@ -21,16 +22,24 @@ class DocumentRenderer(object):
   the concept. Currently title and table_of_contents are supported.
   '''
 
-  def __init__(self, table_of_contents_renderer, ref_resolver):
+  def __init__(self, table_of_contents_renderer, platform_bundle):
     self._table_of_contents_renderer = table_of_contents_renderer
-    self._ref_resolver = ref_resolver
+    self._platform_bundle = platform_bundle
 
   def _RenderLinks(self, document, path):
-    ''' Replaces all $(ref:...) references in |document| with html links
+    ''' Replaces all $(ref:...) references in |document| with html links.
+
+        References have two forms:
+
+          $(ref:api.node) - Replaces the reference with a link to node on the
+                            API page. The title is set to the name of the node.
+
+          $(ref:api.node Title) - Same as the previous form, but title is set
+                                  to "Title".
     '''
     START_REF = '$(ref:'
     END_REF = ')'
-    MAX_REF_LENGTH = 100
+    MAX_REF_LENGTH = 256
 
     new_document = []
 
@@ -52,16 +61,22 @@ class DocumentRenderer(object):
         new_document.append(document[cursor_index:end_ref_index + 1])
       else:
         ref = document[start_ref_index:end_ref_index]
-        ref_parts = ref[len(START_REF):].split(' ', 1)
+        ref_parts = ref[len(START_REF):].split(None, 1)
 
         # Guess the api name from the html name, replacing '_' with '.' (e.g.
         # if the page is app_window.html, guess the api name is app.window)
         api_name = os.path.splitext(os.path.basename(path))[0].replace('_', '.')
         title = ref_parts[0] if len(ref_parts) == 1 else ref_parts[1]
 
-        ref_dict = self._ref_resolver.SafeGetLink(ref_parts[0],
-                                                  namespace=api_name,
-                                                  title=title)
+        platform = ExtractPlatformFromURL(path)
+        if platform is None:
+          logging.error('Cannot resolve reference without a platform.')
+          continue
+        ref_dict = self._platform_bundle.GetReferenceResolver(
+            platform).SafeGetLink(ref_parts[0],
+                                  namespace=api_name,
+                                  title=title,
+                                  path=path)
 
         new_document.append(document[cursor_index:start_ref_index])
         new_document.append('<a href=%s>%s</a>' % (ref_dict['href'],

@@ -33,8 +33,9 @@ namespace {
 InputDeviceSettings* g_instance_;
 InputDeviceSettings* g_test_instance_;
 
-const char kTpControl[] = "/opt/google/touchpad/tpcontrol";
-const char kMouseControl[] = "/opt/google/mouse/mousecontrol";
+const char kDeviceTypeTouchpad[] = "touchpad";
+const char kDeviceTypeMouse[] = "mouse";
+const char kInputControl[] = "/opt/google/input/inputcontrol";
 
 const char kRemoraRequisition[] = "remora";
 
@@ -81,34 +82,35 @@ void ExecuteScript(const std::vector<std::string>& argv) {
   runner->PostTask(FROM_HERE, base::Bind(&ExecuteScriptOnFileThread, argv));
 }
 
-void AddSensitivityArguments(int value, std::vector<std::string>* argv) {
+void AddSensitivityArguments(const char* device_type, int value,
+                             std::vector<std::string>* argv) {
   DCHECK(value >= kMinPointerSensitivity && value <= kMaxPointerSensitivity);
-  argv->push_back("sensitivity");
-  argv->push_back(base::StringPrintf("%d", value));
+  argv->push_back(base::StringPrintf("--%s_sensitivity=%d",
+                                     device_type, value));
 }
 
 void AddTPControlArguments(const char* control,
                            bool enabled,
                            std::vector<std::string>* argv) {
-  argv->push_back(control);
-  argv->push_back(enabled ? "on" : "off");
+  argv->push_back(base::StringPrintf("--%s=%d", control, enabled ? 1 : 0));
 }
 
-void DeviceExistsBlockingPool(const char* script,
+void DeviceExistsBlockingPool(const char* device_type,
                               scoped_refptr<RefCountedBool> exists) {
   DCHECK(content::BrowserThread::GetBlockingPool()->RunsTasksOnCurrentThread());
   exists->data = false;
-  if (!ScriptExists(script))
+  if (!ScriptExists(kInputControl))
     return;
 
   std::vector<std::string> argv;
-  argv.push_back(script);
-  argv.push_back("status");
+  argv.push_back(kInputControl);
+  argv.push_back(base::StringPrintf("--type=%s", device_type));
+  argv.push_back("--list");
   std::string output;
   // Output is empty if the device is not found.
   exists->data = base::GetAppOutput(CommandLine(argv), &output) &&
       !output.empty();
-  DVLOG(1) << "DeviceExistsBlockingPool:" << script << "=" << exists->data;
+  DVLOG(1) << "DeviceExistsBlockingPool:" << device_type << "=" << exists->data;
 }
 
 void RunCallbackUIThread(
@@ -149,6 +151,7 @@ class InputDeviceSettingsImpl : public InputDeviceSettings {
   virtual void SetTapToClick(bool enabled) OVERRIDE;
   virtual void SetThreeFingerClick(bool enabled) OVERRIDE;
   virtual void SetTapDragging(bool enabled) OVERRIDE;
+  virtual void SetNaturalScroll(bool enabled) OVERRIDE;
   virtual void MouseExists(const DeviceExistsCallback& callback) OVERRIDE;
   virtual void UpdateMouseSettings(const MouseSettings& update) OVERRIDE;
   virtual void SetMouseSensitivity(int value) OVERRIDE;
@@ -168,7 +171,7 @@ InputDeviceSettingsImpl::InputDeviceSettingsImpl() {}
 
 void InputDeviceSettingsImpl::TouchpadExists(
     const DeviceExistsCallback& callback) {
-  DeviceExists(kTpControl, callback);
+  DeviceExists(kDeviceTypeTouchpad, callback);
 }
 
 void InputDeviceSettingsImpl::UpdateTouchpadSettings(
@@ -181,6 +184,12 @@ void InputDeviceSettingsImpl::UpdateTouchpadSettings(
 void InputDeviceSettingsImpl::SetTouchpadSensitivity(int value) {
   TouchpadSettings settings;
   settings.SetSensitivity(value);
+  UpdateTouchpadSettings(settings);
+}
+
+void InputDeviceSettingsImpl::SetNaturalScroll(bool enabled) {
+  TouchpadSettings settings;
+  settings.SetNaturalScroll(enabled);
   UpdateTouchpadSettings(settings);
 }
 
@@ -206,7 +215,7 @@ void InputDeviceSettingsImpl::SetTapDragging(bool enabled) {
 void InputDeviceSettingsImpl::MouseExists(
     const DeviceExistsCallback& callback) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  DeviceExists(kMouseControl, callback);
+  DeviceExists(kDeviceTypeMouse, callback);
 }
 
 void InputDeviceSettingsImpl::UpdateMouseSettings(const MouseSettings& update) {
@@ -274,6 +283,7 @@ TouchpadSettings& TouchpadSettings::operator=(const TouchpadSettings& other) {
     tap_to_click_ = other.tap_to_click_;
     three_finger_click_ = other.three_finger_click_;
     tap_dragging_ = other.tap_dragging_;
+    natural_scroll_ = other.natural_scroll_;
   }
   return *this;
 }
@@ -292,6 +302,14 @@ void TouchpadSettings::SetTapToClick(bool enabled) {
 
 bool TouchpadSettings::GetTapToClick() const {
   return tap_to_click_.value();
+}
+
+void TouchpadSettings::SetNaturalScroll(bool enabled) {
+  natural_scroll_.Set(enabled);
+}
+
+bool TouchpadSettings::GetNaturalScroll() const {
+  return natural_scroll_.value();
 }
 
 void TouchpadSettings::SetThreeFingerClick(bool enabled) {
@@ -313,17 +331,17 @@ bool TouchpadSettings::GetTapDragging() const {
 bool TouchpadSettings::Update(const TouchpadSettings& settings,
                               std::vector<std::string>* argv) {
   if (argv)
-    argv->push_back(kTpControl);
+    argv->push_back(kInputControl);
   bool updated = false;
   if (sensitivity_.Update(settings.sensitivity_)) {
     updated = true;
     if (argv)
-      AddSensitivityArguments(sensitivity_.value(), argv);
+      AddSensitivityArguments(kDeviceTypeTouchpad, sensitivity_.value(), argv);
   }
   if (tap_to_click_.Update(settings.tap_to_click_)) {
     updated = true;
     if (argv)
-      AddTPControlArguments("taptoclick", tap_to_click_.value(), argv);
+      AddTPControlArguments("tapclick", tap_to_click_.value(), argv);
   }
   if (three_finger_click_.Update(settings.three_finger_click_)) {
     updated = true;
@@ -335,7 +353,13 @@ bool TouchpadSettings::Update(const TouchpadSettings& settings,
   if (tap_dragging_.Update(settings.tap_dragging_)) {
     updated = true;
     if (argv)
-      AddTPControlArguments("tap_dragging", tap_dragging_.value(), argv);
+      AddTPControlArguments("tapdrag", tap_dragging_.value(), argv);
+  }
+  if (natural_scroll_.Update(settings.natural_scroll_)) {
+    updated = true;
+    if (argv)
+      AddTPControlArguments("australian_scrolling", natural_scroll_.value(),
+                            argv);
   }
   return updated;
 }
@@ -369,18 +393,18 @@ bool MouseSettings::GetPrimaryButtonRight() const {
 bool MouseSettings::Update(const MouseSettings& settings,
                            std::vector<std::string>* argv) {
   if (argv)
-    argv->push_back(kMouseControl);
+    argv->push_back(kInputControl);
   bool updated = false;
   if (sensitivity_.Update(settings.sensitivity_)) {
     updated = true;
     if (argv)
-      AddSensitivityArguments(sensitivity_.value(), argv);
+      AddSensitivityArguments(kDeviceTypeMouse, sensitivity_.value(), argv);
   }
   if (primary_button_right_.Update(settings.primary_button_right_)) {
     updated = true;
     if (argv) {
-      argv->push_back("swap_left_right");
-      argv->push_back(settings.GetPrimaryButtonRight() ? "1" : "0");
+      AddTPControlArguments("mouse_swap_lr", primary_button_right_.value(),
+                            argv);
     }
   }
   return updated;

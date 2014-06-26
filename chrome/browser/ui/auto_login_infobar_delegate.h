@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,21 +6,21 @@
 #define CHROME_BROWSER_UI_AUTO_LOGIN_INFOBAR_DELEGATE_H_
 
 #include <string>
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "components/auto_login_parser/auto_login_parser.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/signin/core/browser/signin_manager.h"
 
 class PrefService;
 class Profile;
 
 namespace content {
 class NavigationController;
+class WebContents;
 }
 
 // This is the actual infobar displayed to prompt the user to auto-login.
 class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
-                                 public content::NotificationObserver {
+                                 public SigninManagerBase::Observer {
  public:
   struct Params {
     // Information from a parsed header.
@@ -38,10 +38,6 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
   static bool Create(content::WebContents* web_contents, const Params& params);
 
  protected:
-  AutoLoginInfoBarDelegate(const Params& params, Profile* profile);
-  virtual ~AutoLoginInfoBarDelegate();
-
- private:
   // Enum values used for UMA histograms.
   enum Actions {
     SHOWN,       // The infobar was shown to the user.
@@ -53,6 +49,12 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
     HISTOGRAM_BOUNDING_VALUE
   };
 
+  AutoLoginInfoBarDelegate(const Params& params, Profile* profile);
+  virtual ~AutoLoginInfoBarDelegate();
+
+  void RecordHistogramAction(Actions action);
+
+ private:
   // ConfirmInfoBarDelegate:
   virtual void InfoBarDismissed() OVERRIDE;
   virtual int GetIconID() const OVERRIDE;
@@ -63,20 +65,15 @@ class AutoLoginInfoBarDelegate : public ConfirmInfoBarDelegate,
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
-  void RecordHistogramAction(Actions action);
+  // SigninManagerBase::Observer:
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
 
   const Params params_;
 
+  Profile* profile_;
+
   // Whether any UI controls in the infobar were pressed or not.
   bool button_pressed_;
-
-  // For listening to the user signing out.
-  content::NotificationRegistrar registrar_;
 
   DISALLOW_COPY_AND_ASSIGN(AutoLoginInfoBarDelegate);
 };

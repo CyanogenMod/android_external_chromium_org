@@ -8,6 +8,8 @@
 
 #include "base/bind.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/simple_thread.h"
+#include "cc/base/scoped_ptr_deque.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -17,12 +19,12 @@ const int kNamespaceCount = 3;
 
 class TaskGraphRunnerTestBase {
  public:
-  struct Task {
-    Task(int namespace_index,
-         unsigned id,
-         unsigned dependent_id,
-         unsigned dependent_count,
-         unsigned priority)
+  struct TaskInfo {
+    TaskInfo(int namespace_index,
+             unsigned id,
+             unsigned dependent_id,
+             unsigned dependent_count,
+             unsigned priority)
         : namespace_index(namespace_index),
           id(id),
           dependent_id(dependent_id),
@@ -36,6 +38,8 @@ class TaskGraphRunnerTestBase {
     unsigned priority;
   };
 
+  TaskGraphRunnerTestBase() : task_graph_runner_(new TaskGraphRunner) {}
+
   void ResetIds(int namespace_index) {
     run_task_ids_[namespace_index].clear();
     on_task_completed_ids_[namespace_index].clear();
@@ -45,10 +49,10 @@ class TaskGraphRunnerTestBase {
     task_graph_runner_->WaitForTasksToFinishRunning(
         namespace_token_[namespace_index]);
 
-    internal::Task::Vector completed_tasks;
+    Task::Vector completed_tasks;
     task_graph_runner_->CollectCompletedTasks(namespace_token_[namespace_index],
                                               &completed_tasks);
-    for (internal::Task::Vector::const_iterator it = completed_tasks.begin();
+    for (Task::Vector::const_iterator it = completed_tasks.begin();
          it != completed_tasks.end();
          ++it) {
       FakeTaskImpl* task = static_cast<FakeTaskImpl*>(it->get());
@@ -73,26 +77,26 @@ class TaskGraphRunnerTestBase {
     return on_task_completed_ids_[namespace_index];
   }
 
-  void ScheduleTasks(int namespace_index, const std::vector<Task>& tasks) {
-    internal::Task::Vector new_tasks;
-    internal::Task::Vector new_dependents;
-    internal::TaskGraph new_graph;
+  void ScheduleTasks(int namespace_index, const std::vector<TaskInfo>& tasks) {
+    Task::Vector new_tasks;
+    Task::Vector new_dependents;
+    TaskGraph new_graph;
 
-    for (std::vector<Task>::const_iterator it = tasks.begin();
+    for (std::vector<TaskInfo>::const_iterator it = tasks.begin();
          it != tasks.end();
          ++it) {
       scoped_refptr<FakeTaskImpl> new_task(
           new FakeTaskImpl(this, it->namespace_index, it->id));
       new_graph.nodes.push_back(
-          internal::TaskGraph::Node(new_task.get(), it->priority, 0u));
+          TaskGraph::Node(new_task.get(), it->priority, 0u));
       for (unsigned i = 0; i < it->dependent_count; ++i) {
         scoped_refptr<FakeDependentTaskImpl> new_dependent_task(
             new FakeDependentTaskImpl(
                 this, it->namespace_index, it->dependent_id));
-        new_graph.nodes.push_back(internal::TaskGraph::Node(
-            new_dependent_task.get(), it->priority, 1u));
-        new_graph.edges.push_back(internal::TaskGraph::Edge(
-            new_task.get(), new_dependent_task.get()));
+        new_graph.nodes.push_back(
+            TaskGraph::Node(new_dependent_task.get(), it->priority, 1u));
+        new_graph.edges.push_back(
+            TaskGraph::Edge(new_task.get(), new_dependent_task.get()));
 
         new_dependents.push_back(new_dependent_task.get());
       }
@@ -100,21 +104,21 @@ class TaskGraphRunnerTestBase {
       new_tasks.push_back(new_task.get());
     }
 
-    task_graph_runner_->SetTaskGraph(namespace_token_[namespace_index],
-                                     &new_graph);
+    task_graph_runner_->ScheduleTasks(namespace_token_[namespace_index],
+                                      &new_graph);
 
     dependents_[namespace_index].swap(new_dependents);
     tasks_[namespace_index].swap(new_tasks);
   }
 
  protected:
-  class FakeTaskImpl : public internal::Task {
+  class FakeTaskImpl : public Task {
    public:
     FakeTaskImpl(TaskGraphRunnerTestBase* test, int namespace_index, int id)
         : test_(test), namespace_index_(namespace_index), id_(id) {}
 
-    // Overridden from internal::Task:
-    virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+    // Overridden from Task:
+    virtual void RunOnWorkerThread() OVERRIDE {
       test_->RunTaskOnWorkerThread(namespace_index_, id_);
     }
 
@@ -149,26 +153,45 @@ class TaskGraphRunnerTestBase {
     DISALLOW_COPY_AND_ASSIGN(FakeDependentTaskImpl);
   };
 
-  scoped_ptr<internal::TaskGraphRunner> task_graph_runner_;
-  internal::NamespaceToken namespace_token_[kNamespaceCount];
-  internal::Task::Vector tasks_[kNamespaceCount];
-  internal::Task::Vector dependents_[kNamespaceCount];
+  scoped_ptr<TaskGraphRunner> task_graph_runner_;
+  NamespaceToken namespace_token_[kNamespaceCount];
+  Task::Vector tasks_[kNamespaceCount];
+  Task::Vector dependents_[kNamespaceCount];
   std::vector<unsigned> run_task_ids_[kNamespaceCount];
   base::Lock run_task_ids_lock_;
   std::vector<unsigned> on_task_completed_ids_[kNamespaceCount];
 };
 
 class TaskGraphRunnerTest : public TaskGraphRunnerTestBase,
-                            public testing::TestWithParam<int> {
+                            public testing::TestWithParam<int>,
+                            public base::DelegateSimpleThread::Delegate {
  public:
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
-    task_graph_runner_ =
-        make_scoped_ptr(new internal::TaskGraphRunner(GetParam(), "Test"));
+    const size_t num_threads = GetParam();
+    while (workers_.size() < num_threads) {
+      scoped_ptr<base::DelegateSimpleThread> worker =
+          make_scoped_ptr(new base::DelegateSimpleThread(this, "TestWorker"));
+      worker->Start();
+      workers_.push_back(worker.Pass());
+    }
+
     for (int i = 0; i < kNamespaceCount; ++i)
       namespace_token_[i] = task_graph_runner_->GetNamespaceToken();
   }
-  virtual void TearDown() OVERRIDE { task_graph_runner_.reset(); }
+  virtual void TearDown() OVERRIDE {
+    task_graph_runner_->Shutdown();
+    while (workers_.size()) {
+      scoped_ptr<base::DelegateSimpleThread> worker = workers_.take_front();
+      worker->Join();
+    }
+  }
+
+ private:
+  // Overridden from base::DelegateSimpleThread::Delegate:
+  virtual void Run() OVERRIDE { task_graph_runner_->Run(); }
+
+  ScopedPtrDeque<base::DelegateSimpleThread> workers_;
 };
 
 TEST_P(TaskGraphRunnerTest, Basic) {
@@ -176,7 +199,7 @@ TEST_P(TaskGraphRunnerTest, Basic) {
     EXPECT_EQ(0u, run_task_ids(i).size());
     EXPECT_EQ(0u, on_task_completed_ids(i).size());
 
-    ScheduleTasks(i, std::vector<Task>(1, Task(i, 0u, 0u, 0u, 0u)));
+    ScheduleTasks(i, std::vector<TaskInfo>(1, TaskInfo(i, 0u, 0u, 0u, 0u)));
   }
 
   for (int i = 0; i < kNamespaceCount; ++i) {
@@ -187,7 +210,7 @@ TEST_P(TaskGraphRunnerTest, Basic) {
   }
 
   for (int i = 0; i < kNamespaceCount; ++i)
-    ScheduleTasks(i, std::vector<Task>(1, Task(i, 0u, 0u, 1u, 0u)));
+    ScheduleTasks(i, std::vector<TaskInfo>(1, TaskInfo(i, 0u, 0u, 1u, 0u)));
 
   for (int i = 0; i < kNamespaceCount; ++i) {
     RunAllTasks(i);
@@ -197,7 +220,7 @@ TEST_P(TaskGraphRunnerTest, Basic) {
   }
 
   for (int i = 0; i < kNamespaceCount; ++i)
-    ScheduleTasks(i, std::vector<Task>(1, Task(i, 0u, 0u, 2u, 0u)));
+    ScheduleTasks(i, std::vector<TaskInfo>(1, TaskInfo(i, 0u, 0u, 2u, 0u)));
 
   for (int i = 0; i < kNamespaceCount; ++i) {
     RunAllTasks(i);
@@ -210,12 +233,12 @@ TEST_P(TaskGraphRunnerTest, Basic) {
 TEST_P(TaskGraphRunnerTest, Dependencies) {
   for (int i = 0; i < kNamespaceCount; ++i) {
     ScheduleTasks(i,
-                  std::vector<Task>(1,
-                                    Task(i,
-                                         0u,
-                                         1u,
-                                         1u,  // 1 dependent
-                                         0u)));
+                  std::vector<TaskInfo>(1,
+                                        TaskInfo(i,
+                                                 0u,
+                                                 1u,
+                                                 1u,  // 1 dependent
+                                                 0u)));
   }
 
   for (int i = 0; i < kNamespaceCount; ++i) {
@@ -231,12 +254,12 @@ TEST_P(TaskGraphRunnerTest, Dependencies) {
 
   for (int i = 0; i < kNamespaceCount; ++i) {
     ScheduleTasks(i,
-                  std::vector<Task>(1,
-                                    Task(i,
-                                         2u,
-                                         3u,
-                                         2u,  // 2 dependents
-                                         0u)));
+                  std::vector<TaskInfo>(1,
+                                        TaskInfo(i,
+                                                 2u,
+                                                 3u,
+                                                 2u,  // 2 dependents
+                                                 0u)));
   }
 
   for (int i = 0; i < kNamespaceCount; ++i) {
@@ -256,25 +279,37 @@ INSTANTIATE_TEST_CASE_P(TaskGraphRunnerTests,
                         TaskGraphRunnerTest,
                         ::testing::Range(1, 5));
 
-class TaskGraphRunnerSingleThreadTest : public TaskGraphRunnerTestBase,
-                                        public testing::Test {
+class TaskGraphRunnerSingleThreadTest
+    : public TaskGraphRunnerTestBase,
+      public testing::Test,
+      public base::DelegateSimpleThread::Delegate {
  public:
   // Overridden from testing::Test:
   virtual void SetUp() OVERRIDE {
-    task_graph_runner_ =
-        make_scoped_ptr(new internal::TaskGraphRunner(1, "Test"));
+    worker_.reset(new base::DelegateSimpleThread(this, "TestWorker"));
+    worker_->Start();
+
     for (int i = 0; i < kNamespaceCount; ++i)
       namespace_token_[i] = task_graph_runner_->GetNamespaceToken();
   }
-  virtual void TearDown() OVERRIDE { task_graph_runner_.reset(); }
+  virtual void TearDown() OVERRIDE {
+    task_graph_runner_->Shutdown();
+    worker_->Join();
+  }
+
+ private:
+  // Overridden from base::DelegateSimpleThread::Delegate:
+  virtual void Run() OVERRIDE { task_graph_runner_->Run(); }
+
+  scoped_ptr<base::DelegateSimpleThread> worker_;
 };
 
 TEST_F(TaskGraphRunnerSingleThreadTest, Priority) {
   for (int i = 0; i < kNamespaceCount; ++i) {
-    Task tasks[] = {Task(i, 0u, 2u, 1u, 1u),  // Priority 1
-                    Task(i, 1u, 3u, 1u, 0u)   // Priority 0
+    TaskInfo tasks[] = {TaskInfo(i, 0u, 2u, 1u, 1u),  // Priority 1
+                        TaskInfo(i, 1u, 3u, 1u, 0u)   // Priority 0
     };
-    ScheduleTasks(i, std::vector<Task>(tasks, tasks + arraysize(tasks)));
+    ScheduleTasks(i, std::vector<TaskInfo>(tasks, tasks + arraysize(tasks)));
   }
 
   for (int i = 0; i < kNamespaceCount; ++i) {

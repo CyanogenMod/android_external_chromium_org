@@ -24,9 +24,9 @@
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/aura/env.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/layout.h"
 #include "ui/base/models/list_selection_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/theme_provider.h"
@@ -36,7 +36,6 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_analysis.h"
 #include "ui/gfx/favicon_size.h"
-#include "ui/gfx/font.h"
 #include "ui/gfx/image/image_skia_operations.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect_conversions.h"
@@ -44,126 +43,22 @@
 #include "ui/gfx/text_elider.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/label.h"
 #include "ui/views/rect_based_targeting_utils.h"
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
 
-#if defined(OS_WIN)
-#include "win8/util/win8_util.h"
-#endif
-
-#if defined(USE_ASH)
-#include "ui/aura/env.h"
-#endif
-
 namespace {
 
 // Padding around the "content" of a tab, occupied by the tab border graphics.
-
-int left_padding() {
-  static int value = -1;
-  if (value == -1) {
-    switch (ui::GetDisplayLayout()) {
-      case ui::LAYOUT_DESKTOP:
-        value = 22;
-        break;
-      case ui::LAYOUT_TOUCH:
-        value = 30;
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-  return value;
-}
-
-int top_padding() {
-  static int value = -1;
-  if (value == -1) {
-    switch (ui::GetDisplayLayout()) {
-      case ui::LAYOUT_DESKTOP:
-        value = 7;
-        break;
-      case ui::LAYOUT_TOUCH:
-        value = 10;
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-  return value;
-}
-
-int right_padding() {
-  static int value = -1;
-  if (value == -1) {
-    switch (ui::GetDisplayLayout()) {
-      case ui::LAYOUT_DESKTOP:
-        value = 17;
-        break;
-      case ui::LAYOUT_TOUCH:
-        value = 21;
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-  return value;
-}
-
-int bottom_padding() {
-  static int value = -1;
-  if (value == -1) {
-    switch (ui::GetDisplayLayout()) {
-      case ui::LAYOUT_DESKTOP:
-        value = 5;
-        break;
-      case ui::LAYOUT_TOUCH:
-        value = 7;
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-  return value;
-}
+const int kLeftPadding = 22;
+const int kTopPadding = 7;
+const int kRightPadding = 17;
+const int kBottomPadding = 5;
 
 // Height of the shadow at the top of the tab image assets.
-int drop_shadow_height() {
-  static int value = -1;
-  if (value == -1) {
-    switch (ui::GetDisplayLayout()) {
-      case ui::LAYOUT_DESKTOP:
-        value = 4;
-        break;
-      case ui::LAYOUT_TOUCH:
-        value = 5;
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-  return value;
-}
-
-// Size of icon used for throbber and favicon next to tab title.
-int tab_icon_size() {
-  static int value = -1;
-  if (value == -1) {
-    switch (ui::GetDisplayLayout()) {
-      case ui::LAYOUT_DESKTOP:
-        value = gfx::kFaviconSize;
-        break;
-      case ui::LAYOUT_TOUCH:
-        value = 20;
-        break;
-      default:
-        NOTREACHED();
-    }
-  }
-  return value;
-}
+const int kDropShadowHeight = 4;
 
 // How long the pulse throb takes.
 const int kPulseDurationMs = 200;
@@ -350,16 +245,9 @@ class Tab::TabCloseButton : public views::ImageButton {
     gfx::Rect contents_bounds = GetContentsBounds();
     contents_bounds.set_x(GetMirroredXForRect(contents_bounds));
 
-    // TODO(tdanderson): Remove this ifdef if rect-based targeting
-    // is turned on by default.
-#if defined(USE_ASH)
     // Include the padding in hit-test for touch events.
     if (aura::Env::GetInstance()->is_touch_down())
       contents_bounds = GetLocalBounds();
-#elif defined(OS_WIN)
-    // TODO(sky): Use local-bounds if a touch-point is active.
-    // http://crbug.com/145258
-#endif
 
     return contents_bounds.Intersects(rect) ? this : parent();
   }
@@ -471,16 +359,9 @@ Tab::ImageCacheEntry::~ImageCacheEntry() {}
 
 // static
 const char Tab::kViewClassName[] = "Tab";
-
-// static
-Tab::TabImage Tab::tab_alpha_ = {0};
 Tab::TabImage Tab::tab_active_ = {0};
 Tab::TabImage Tab::tab_inactive_ = {0};
-// static
-gfx::Font* Tab::font_ = NULL;
-// static
-int Tab::font_height_ = 0;
-// static
+Tab::TabImage Tab::tab_alpha_ = {0};
 Tab::ImageCache* Tab::image_cache_ = NULL;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -490,11 +371,14 @@ Tab::Tab(TabController* controller)
     : controller_(controller),
       closing_(false),
       dragging_(false),
+      detached_(false),
       favicon_hiding_offset_(0),
       loading_animation_frame_(0),
       immersive_loading_step_(0),
       should_display_crashed_favicon_(false),
       animating_media_state_(TAB_MEDIA_STATE_NONE),
+      close_button_(NULL),
+      title_(new views::Label()),
       tab_activated_with_last_gesture_begin_(false),
       hover_controller_(this),
       showing_icon_(false),
@@ -509,6 +393,13 @@ Tab::Tab(TabController* controller)
   set_notify_enter_exit_on_child(true);
 
   set_id(VIEW_ID_TAB);
+
+  title_->set_directionality_mode(gfx::DIRECTIONALITY_FROM_TEXT);
+  title_->SetHorizontalAlignment(gfx::ALIGN_TO_HEAD);
+  title_->SetElideBehavior(gfx::FADE_TAIL);
+  title_->SetAutoColorReadabilityEnabled(false);
+  title_->SetText(CoreTabHelper::GetDefaultTitle());
+  AddChildView(title_);
 
   // Add the Close Button.
   close_button_ = new TabCloseButton(this);
@@ -551,6 +442,16 @@ void Tab::SetData(const TabRendererData& data) {
 
   TabRendererData old(data_);
   data_ = data;
+
+  base::string16 title = data_.title;
+  if (title.empty()) {
+    title = data_.loading ?
+        l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE) :
+        CoreTabHelper::GetDefaultTitle();
+  } else {
+    Browser::FormatTitleForDisplay(&title);
+  }
+  title_->SetText(title);
 
   if (data_.IsCrashed()) {
     if (!should_display_crashed_favicon_ && !IsPerformingCrashAnimation()) {
@@ -664,7 +565,7 @@ gfx::Size Tab::GetBasicMinimumUnselectedSize() {
   InitTabResources();
 
   gfx::Size minimum_size;
-  minimum_size.set_width(left_padding() + right_padding());
+  minimum_size.set_width(kLeftPadding + kRightPadding);
   // Since we use image images, the real minimum height of the image is
   // defined most accurately by the height of the end cap images.
   minimum_size.set_height(tab_active_.image_l->height());
@@ -679,7 +580,7 @@ gfx::Size Tab::GetMinimumUnselectedSize() {
 gfx::Size Tab::GetMinimumSelectedSize() {
   gfx::Size minimum_size = GetBasicMinimumUnselectedSize();
   minimum_size.set_width(
-      left_padding() + gfx::kFaviconSize + right_padding());
+      kLeftPadding + gfx::kFaviconSize + kRightPadding);
   return minimum_size;
 }
 
@@ -783,12 +684,13 @@ void Tab::Layout() {
   gfx::Rect lb = GetContentsBounds();
   if (lb.IsEmpty())
     return;
-  lb.Inset(
-      left_padding(), top_padding(), right_padding(), bottom_padding());
+  lb.Inset(kLeftPadding, kTopPadding, kRightPadding, kBottomPadding);
 
   // The height of the content of the Tab is the largest of the favicon,
   // the title text and the close button graphic.
-  int content_height = std::max(tab_icon_size(), font_height_);
+  const int kTabIconSize = gfx::kFaviconSize;
+  const int font_height = title_->font_list().GetHeight();
+  int content_height = std::max(kTabIconSize, font_height);
   close_button_->SetBorder(views::Border::NullBorder());
   gfx::Size close_button_size(close_button_->GetPreferredSize());
   content_height = std::max(content_height, close_button_size.height());
@@ -797,10 +699,10 @@ void Tab::Layout() {
   showing_icon_ = ShouldShowIcon();
   if (showing_icon_) {
     // Use the size of the favicon as apps use a bigger favicon size.
-    int favicon_top = top_padding() + content_height / 2 - tab_icon_size() / 2;
+    int favicon_top = kTopPadding + content_height / 2 - kTabIconSize / 2;
     int favicon_left = lb.x();
     favicon_bounds_.SetRect(favicon_left, favicon_top,
-                            tab_icon_size(), tab_icon_size());
+                            kTabIconSize, kTabIconSize);
     MaybeAdjustLeftForMiniTab(&favicon_bounds_);
   } else {
     favicon_bounds_.SetRect(lb.x(), lb.y(), 0, 0);
@@ -813,7 +715,7 @@ void Tab::Layout() {
   if (showing_close_button_) {
     const int close_button_vert_fuzz = is_host_desktop_type_ash ?
         kCloseButtonVertFuzzAsh : kCloseButtonVertFuzz;
-    int close_button_top = top_padding() + close_button_vert_fuzz +
+    int close_button_top = kTopPadding + close_button_vert_fuzz +
         (content_height - close_button_size.height()) / 2;
     // If the ratio of the close button size to tab width exceeds the maximum.
     // The close button should be as large as possible so that there is a larger
@@ -845,7 +747,7 @@ void Tab::Layout() {
     media_indicator_bounds_.set_width(media_indicator_image.Width());
     media_indicator_bounds_.set_height(media_indicator_image.Height());
     media_indicator_bounds_.set_y(
-        top_padding() +
+        kTopPadding +
             (content_height - media_indicator_bounds_.height()) / 2);
     const int right = showing_close_button_ ?
         close_button_->x() + close_button_->GetInsets().left() : lb.right();
@@ -859,15 +761,16 @@ void Tab::Layout() {
   const int title_text_offset = is_host_desktop_type_ash ?
       kTitleTextOffsetYAsh : kTitleTextOffsetY;
   int title_left = favicon_bounds_.right() + kFaviconTitleSpacing;
-  int title_top = top_padding() + title_text_offset +
-      (content_height - font_height_) / 2;
+  int title_top = kTopPadding + title_text_offset +
+      (content_height - font_height) / 2;
+  gfx::Rect title_bounds(title_left, title_top, 0, 0);
   // Size the Title text to fill the remaining space.
   if (!data().mini || width() >= kMiniTabRendererAsNormalTabWidth) {
     // If the user has big fonts, the title will appear rendered too far down
     // on the y-axis if we use the regular top padding, so we need to adjust it
     // so that the text appears centered.
     gfx::Size minimum_size = GetMinimumUnselectedSize();
-    int text_height = title_top + font_height_ + bottom_padding();
+    int text_height = title_top + font_height + kBottomPadding;
     if (text_height > minimum_size.height())
       title_top -= (text_height - minimum_size.height()) / 2;
 
@@ -885,19 +788,11 @@ void Tab::Layout() {
       title_width = lb.width() - title_left;
     }
     title_width = std::max(title_width, 0);
-    title_bounds_.SetRect(title_left, title_top, title_width, font_height_);
-  } else {
-    title_bounds_.SetRect(title_left, title_top, 0, 0);
+    title_bounds.SetRect(title_left, title_top, title_width, font_height);
   }
 
-  // Certain UI elements within the Tab (the favicon, etc.) are not represented
-  // as child Views (which is the preferred method).  Instead, these UI elements
-  // are drawn directly on the canvas from within Tab::OnPaint(). The Tab's
-  // child Views (for example, the Tab's close button which is a views::Button
-  // instance) are automatically mirrored by the mirroring infrastructure in
-  // views. The elements Tab draws directly on the canvas need to be manually
-  // mirrored if the View's layout is right-to-left.
-  title_bounds_.set_x(GetMirroredXForRect(title_bounds_));
+  title_bounds.set_x(GetMirroredXForRect(title_bounds));
+  title_->SetBoundsRect(title_bounds);
 }
 
 void Tab::OnThemeChanged() {
@@ -942,7 +837,7 @@ bool Tab::GetTooltipText(const gfx::Point& p, base::string16* tooltip) const {
 }
 
 bool Tab::GetTooltipTextOrigin(const gfx::Point& p, gfx::Point* origin) const {
-  origin->set_x(title_bounds_.x() + 10);
+  origin->set_x(title_->x() + 10);
   origin->set_y(-views::TooltipManager::GetTooltipHeight() - 4);
   return true;
 }
@@ -1077,21 +972,13 @@ void Tab::OnGestureEvent(ui::GestureEvent* event) {
   event->SetHandled();
 }
 
-void Tab::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PAGETAB;
+void Tab::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_TAB;
   state->name = data_.title;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tab, private
-
-const gfx::Rect& Tab::GetTitleBounds() const {
-  return title_bounds_;
-}
-
-const gfx::Rect& Tab::GetIconBounds() const {
-  return favicon_bounds_;
-}
 
 void Tab::MaybeAdjustLeftForMiniTab(gfx::Rect* bounds) const {
   if (!data().mini || width() >= kMiniTabRendererAsNormalTabWidth)
@@ -1130,13 +1017,12 @@ void Tab::PaintTab(gfx::Canvas* canvas) {
 
   PaintTabBackground(canvas);
 
-  SkColor title_color = GetThemeProvider()->
-      GetColor(IsSelected() ?
-          ThemeProperties::COLOR_TAB_TEXT :
-          ThemeProperties::COLOR_BACKGROUND_TAB_TEXT);
-
-  if (!data().mini || width() > kMiniTabRendererAsNormalTabWidth)
-    PaintTitle(canvas, title_color);
+  const SkColor title_color = GetThemeProvider()->GetColor(IsSelected() ?
+      ThemeProperties::COLOR_TAB_TEXT :
+      ThemeProperties::COLOR_BACKGROUND_TAB_TEXT);
+  title_->SetVisible(!data().mini ||
+                     width() > kMiniTabRendererAsNormalTabWidth);
+  title_->SetEnabledColor(title_color);
 
   if (show_icon)
     PaintIcon(canvas);
@@ -1366,11 +1252,11 @@ void Tab::PaintInactiveTabBackgroundUsingResourceId(gfx::Canvas* canvas,
   // rectangle. And again, don't draw over the toolbar.
   background_canvas.TileImageInt(*tab_bg,
      offset + tab_image->l_width,
-     bg_offset_y + drop_shadow_height(),
+     bg_offset_y + kDropShadowHeight,
      tab_image->l_width,
-     drop_shadow_height(),
+     kDropShadowHeight,
      width() - tab_image->l_width - tab_image->r_width,
-     height() - drop_shadow_height() - kToolbarOverlap);
+     height() - kDropShadowHeight - kToolbarOverlap);
 
   canvas->DrawImageInt(
       gfx::ImageSkia(background_canvas.ExtractImageRep()), 0, 0);
@@ -1419,11 +1305,11 @@ void Tab::PaintActiveTabBackground(gfx::Canvas* canvas) {
   // by incrementing by GetDropShadowHeight(), since it's a simple rectangle.
   canvas->TileImageInt(*tab_background,
      offset + tab_image->l_width,
-     drop_shadow_height(),
+     kDropShadowHeight,
      tab_image->l_width,
-     drop_shadow_height(),
+     kDropShadowHeight,
      width() - tab_image->l_width - tab_image->r_width,
-     height() - drop_shadow_height());
+     height() - kDropShadowHeight);
 
   // Now draw the highlights/shadows around the tab edge.
   canvas->DrawImageInt(*tab_image->image_l, 0, 0);
@@ -1433,7 +1319,7 @@ void Tab::PaintActiveTabBackground(gfx::Canvas* canvas) {
 }
 
 void Tab::PaintIcon(gfx::Canvas* canvas) {
-  gfx::Rect bounds = GetIconBounds();
+  gfx::Rect bounds = favicon_bounds_;
   if (bounds.IsEmpty())
     return;
 
@@ -1457,9 +1343,9 @@ void Tab::PaintIcon(gfx::Canvas* canvas) {
     gfx::ImageSkia crashed_favicon(*rb.GetImageSkiaNamed(IDR_SAD_FAVICON));
     bounds.set_y(bounds.y() + favicon_hiding_offset_);
     DrawIconCenter(canvas, crashed_favicon, 0,
-                    crashed_favicon.width(),
-                    crashed_favicon.height(),
-                    bounds, true, SkPaint());
+                   crashed_favicon.width(),
+                   crashed_favicon.height(),
+                   bounds, true, SkPaint());
   } else if (!data().favicon.isNull()) {
     // Paint the normal favicon.
     DrawIconCenter(canvas, data().favicon, 0,
@@ -1489,21 +1375,6 @@ void Tab::PaintMediaIndicator(gfx::Canvas* canvas) {
   DrawIconAtLocation(canvas, media_indicator_image, 0,
                      bounds.x(), bounds.y(), media_indicator_image.width(),
                      media_indicator_image.height(), true, paint);
-}
-
-void Tab::PaintTitle(gfx::Canvas* canvas, SkColor title_color) {
-  // Paint the Title.
-  base::string16 title = data().title;
-  if (title.empty()) {
-    title = data().loading ?
-        l10n_util::GetStringUTF16(IDS_TAB_LOADING_TITLE) :
-        CoreTabHelper::GetDefaultTitle();
-  } else {
-    Browser::FormatTitleForDisplay(&title);
-  }
-
-  canvas->DrawFadeTruncatingStringRect(title, gfx::Canvas::TruncateFadeTail,
-      gfx::FontList(*font_), title_color, GetTitleBounds());
 }
 
 void Tab::AdvanceLoadingAnimation(TabRendererData::NetworkState old_state,
@@ -1569,8 +1440,8 @@ int Tab::IconCapacity() const {
   if (height() < GetMinimumUnselectedSize().height())
     return 0;
   const int available_width =
-      std::max(0, width() - left_padding() - right_padding());
-  const int width_per_icon = tab_icon_size();
+      std::max(0, width() - kLeftPadding - kRightPadding);
+  const int width_per_icon = gfx::kFaviconSize;
   const int kPaddingBetweenIcons = 2;
   if (available_width >= width_per_icon &&
       available_width < (width_per_icon + kPaddingBetweenIcons)) {
@@ -1648,12 +1519,11 @@ void Tab::StartMediaIndicatorAnimation() {
 }
 
 void Tab::ScheduleIconPaint() {
-  gfx::Rect bounds = GetIconBounds();
+  gfx::Rect bounds = favicon_bounds_;
   if (bounds.IsEmpty())
     return;
 
-  // Extends the area to the bottom when sad_favicon is
-  // animating.
+  // Extends the area to the bottom when sad_favicon is animating.
   if (IsPerformingCrashAnimation())
     bounds.set_height(height() - bounds.y());
   bounds.set_x(GetMirroredXForRect(bounds));
@@ -1681,11 +1551,6 @@ void Tab::GetTabIdAndFrameId(views::Widget* widget,
   } else if (data().incognito) {
     *tab_id = IDR_THEME_TAB_BACKGROUND_INCOGNITO;
     *frame_id = IDR_THEME_FRAME_INCOGNITO;
-#if defined(OS_WIN)
-  } else if (win8::IsSingleWindowMetroMode()) {
-    *tab_id = IDR_THEME_TAB_BACKGROUND_V;
-    *frame_id = 0;
-#endif
   } else {
     *tab_id = IDR_THEME_TAB_BACKGROUND;
     *frame_id = IDR_THEME_FRAME;
@@ -1702,11 +1567,6 @@ void Tab::InitTabResources() {
     return;
 
   initialized = true;
-
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  font_ = new gfx::Font(rb.GetFont(ui::ResourceBundle::BaseFont));
-  font_height_ = font_->GetHeight();
-
   image_cache_ = new ImageCache();
 
   // Load the tab images once now, and maybe again later if the theme changes.

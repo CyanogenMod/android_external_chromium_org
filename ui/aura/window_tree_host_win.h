@@ -13,34 +13,27 @@
 
 namespace aura {
 
-class WindowTreeHostWin : public WindowTreeHost,
-                          public ui::EventSource,
-                          public gfx::WindowImpl {
+class AURA_EXPORT WindowTreeHostWin : public WindowTreeHost,
+                                      public ui::EventSource,
+                                      public gfx::WindowImpl {
  public:
-  WindowTreeHostWin(const gfx::Rect& bounds);
+  explicit WindowTreeHostWin(const gfx::Rect& bounds);
   virtual ~WindowTreeHostWin();
   // WindowTreeHost:
-  virtual RootWindow* GetRootWindow() OVERRIDE;
+  virtual ui::EventSource* GetEventSource() OVERRIDE;
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
-  virtual void ToggleFullScreen() OVERRIDE;
   virtual gfx::Rect GetBounds() const OVERRIDE;
   virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
   virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
   virtual void SetCapture() OVERRIDE;
   virtual void ReleaseCapture() OVERRIDE;
-  virtual bool QueryMouseLocation(gfx::Point* location_return) OVERRIDE;
-  virtual bool ConfineCursorToRootWindow() OVERRIDE;
-  virtual void UnConfineCursor() OVERRIDE;
   virtual void SetCursorNative(gfx::NativeCursor cursor) OVERRIDE;
   virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
   virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
   virtual void PostNativeEvent(const base::NativeEvent& native_event) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void PrepareForShutdown() OVERRIDE;
 
   // ui::EventSource:
   virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
@@ -81,11 +74,7 @@ class WindowTreeHostWin : public WindowTreeHost,
   void OnPaint(HDC dc);
   void OnSize(UINT param, const gfx::Size& size);
 
-  bool fullscreen_;
   bool has_capture_;
-  RECT saved_window_rect_;
-  DWORD saved_window_style_;
-  DWORD saved_window_ex_style_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowTreeHostWin);
 };

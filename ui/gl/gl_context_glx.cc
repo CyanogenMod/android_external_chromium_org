@@ -19,20 +19,6 @@ extern "C" {
 
 namespace gfx {
 
-namespace {
-
-// scoped_ptr functor for XFree(). Use as follows:
-//   scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> foo(...);
-// where "XVisualInfo" is any X type that is freed with XFree.
-class ScopedPtrXFree {
- public:
-  void operator()(void* x) const {
-    ::XFree(x);
-  }
-};
-
-}  // namespace
-
 GLContextGLX::GLContextGLX(GLShareGroup* share_group)
   : GLContextReal(share_group),
     context_(NULL),
@@ -112,6 +98,7 @@ bool GLContextGLX::MakeCurrent(GLSurface* surface) {
   if (IsCurrent(surface))
     return true;
 
+  ScopedReleaseCurrent release_current;
   TRACE_EVENT0("gpu", "GLContextGLX::MakeCurrent");
   if (!glXMakeContextCurrent(
       display_,
@@ -128,18 +115,17 @@ bool GLContextGLX::MakeCurrent(GLSurface* surface) {
 
   SetCurrent(surface);
   if (!InitializeDynamicBindings()) {
-    ReleaseCurrent(surface);
     Destroy();
     return false;
   }
 
   if (!surface->OnMakeCurrent(this)) {
     LOG(ERROR) << "Could not make current.";
-    ReleaseCurrent(surface);
     Destroy();
     return false;
   }
 
+  release_current.Cancel();
   return true;
 }
 

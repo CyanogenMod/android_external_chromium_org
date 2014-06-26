@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -34,18 +34,13 @@ class Browser(object):
     self._http_server = None
     self._wpr_server = None
     self._platform_backend = platform_backend
+    self._platform = platform.Platform(platform_backend)
     self._active_profilers = []
     self._profilers_states = {}
-
-    self._extensions = None
-    if backend.supports_extensions:
-      self._extensions = extension_dict.ExtensionDict(
-          backend.extension_dict_backend)
-
     self._local_server_controller = local_server.LocalServerController(backend)
     self._tabs = tab_list.TabList(backend.tab_list_backend)
     self.credentials = browser_credentials.BrowserCredentials()
-    self.platform.SetFullPerformanceModeEnabled(True)
+    self._platform.SetFullPerformanceModeEnabled(True)
 
   def __enter__(self):
     self.Start()
@@ -55,18 +50,12 @@ class Browser(object):
     self.Close()
 
   @property
-  @decorators.Cache
   def platform(self):
-    return platform.Platform(self._platform_backend)
+    return self._platform
 
   @property
   def browser_type(self):
     return self._browser_backend.browser_type
-
-  @property
-  def is_content_shell(self):
-    """Returns whether this browser is a content shell, only."""
-    return self._browser_backend.is_content_shell
 
   @property
   def supports_extensions(self):
@@ -97,12 +86,12 @@ class Browser(object):
     raise Exception("No foreground tab found")
 
   @property
+  @decorators.Cache
   def extensions(self):
-    """Returns the extension dictionary if it exists."""
     if not self.supports_extensions:
       raise browser_backend.ExtensionsNotSupportedException(
           'Extensions not supported')
-    return self._extensions
+    return extension_dict.ExtensionDict(self._browser_backend.extension_backend)
 
   @property
   def supports_tracing(self):
@@ -216,11 +205,12 @@ class Browser(object):
     del result['ProcessCount']
 
     # We want a single time value, not the sum for all processes.
+    cpu_timestamp = self._platform_backend.GetCpuTimestamp()
     for process_type in result:
       # Skip any process_types that are empty
       if not len(result[process_type]):
         continue
-      result[process_type].update(self._platform_backend.GetCpuTimestamp())
+      result[process_type].update(cpu_timestamp)
     return result
 
   @property
@@ -283,11 +273,17 @@ class Browser(object):
   def StartTracing(self, custom_categories=None, timeout=10):
     return self._browser_backend.StartTracing(custom_categories, timeout)
 
+  @property
+  def is_tracing_running(self):
+    return self._browser_backend.is_tracing_running
+
   def StopTracing(self):
+    """ Stops tracing and returns the result as TimelineData object. """
     return self._browser_backend.StopTracing()
 
   def Start(self):
     browser_options = self._browser_backend.browser_options
+    self.platform.FlushDnsCache()
     if browser_options.clear_sytem_cache_for_browser_and_profile_on_start:
       if self.platform.CanFlushIndividualFilesFromSystemCache():
         self.platform.FlushSystemCacheForDirectory(
@@ -297,8 +293,8 @@ class Browser(object):
       else:
         self.platform.FlushEntireSystemCache()
 
-    self._browser_backend.Start()
     self._browser_backend.SetBrowser(self)
+    self._browser_backend.Start()
 
   def Close(self):
     """Closes this browser."""
@@ -404,4 +400,3 @@ class Browser(object):
 
        See the documentation of the SystemInfo class for more details."""
     return self._browser_backend.GetSystemInfo()
-

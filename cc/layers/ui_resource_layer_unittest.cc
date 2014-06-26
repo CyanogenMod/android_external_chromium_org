@@ -4,7 +4,6 @@
 
 #include "cc/layers/ui_resource_layer.h"
 
-#include "cc/debug/overdraw_metrics.h"
 #include "cc/resources/prioritized_resource_manager.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/resource_update_queue.h"
@@ -58,15 +57,15 @@ TEST_F(UIResourceLayerTest, SetBitmap) {
   EXPECT_EQ(test_layer->layer_tree_host(), layer_tree_host_.get());
 
   ResourceUpdateQueue queue;
-  OcclusionTracker occlusion_tracker(gfx::Rect(), false);
+  gfx::Rect screen_space_clip_rect;
+  OcclusionTracker<Layer> occlusion_tracker(screen_space_clip_rect);
   test_layer->SavePaintProperties();
   test_layer->Update(&queue, &occlusion_tracker);
 
   EXPECT_FALSE(test_layer->DrawsContent());
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 10, 10);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(10, 10);
   bitmap.setImmutable();
 
   test_layer->SetBitmap(bitmap);
@@ -86,19 +85,16 @@ TEST_F(UIResourceLayerTest, SetUIResourceId) {
   EXPECT_EQ(test_layer->layer_tree_host(), layer_tree_host_.get());
 
   ResourceUpdateQueue queue;
-  OcclusionTracker occlusion_tracker(gfx::Rect(), false);
+  gfx::Rect screen_space_clip_rect;
+  OcclusionTracker<Layer> occlusion_tracker(screen_space_clip_rect);
   test_layer->SavePaintProperties();
   test_layer->Update(&queue, &occlusion_tracker);
 
   EXPECT_FALSE(test_layer->DrawsContent());
 
-  SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 10, 10);
-  bitmap.allocPixels();
-  bitmap.setImmutable();
-
+  bool is_opaque = false;
   scoped_ptr<ScopedUIResource> resource = ScopedUIResource::Create(
-      layer_tree_host_.get(), UIResourceBitmap(bitmap));
+      layer_tree_host_.get(), UIResourceBitmap(gfx::Size(10, 10), is_opaque));
   test_layer->SetUIResourceId(resource->id());
   test_layer->Update(&queue, &occlusion_tracker);
 

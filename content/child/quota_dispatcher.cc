@@ -13,16 +13,14 @@
 #include "content/common/quota_messages.h"
 #include "third_party/WebKit/public/platform/WebStorageQuotaCallbacks.h"
 #include "third_party/WebKit/public/platform/WebStorageQuotaType.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 #include "url/gurl.h"
-
-using quota::QuotaStatusCode;
-using quota::StorageType;
 
 using blink::WebStorageQuotaCallbacks;
 using blink::WebStorageQuotaError;
 using blink::WebStorageQuotaType;
-
-using webkit_glue::WorkerTaskRunner;
+using quota::QuotaStatusCode;
+using quota::StorageType;
 
 namespace content {
 
@@ -129,8 +127,16 @@ void QuotaDispatcher::RequestStorageQuota(
   DCHECK(CurrentWorkerId() == 0);
   int request_id = quota_message_filter_->GenerateRequestID(CurrentWorkerId());
   pending_quota_callbacks_.AddWithID(callback, request_id);
-  thread_safe_sender_->Send(new QuotaHostMsg_RequestStorageQuota(
-      render_view_id, request_id, origin_url, type, requested_size));
+
+  StorageQuotaParams params;
+  params.render_view_id = render_view_id;
+  params.request_id = request_id;
+  params.origin_url = origin_url;
+  params.storage_type = type;
+  params.requested_size = requested_size;
+  params.user_gesture =
+      blink::WebUserGestureIndicator::isProcessingUserGesture();
+  thread_safe_sender_->Send(new QuotaHostMsg_RequestStorageQuota(params));
 }
 
 // static

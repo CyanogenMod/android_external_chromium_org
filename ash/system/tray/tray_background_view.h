@@ -9,23 +9,23 @@
 #include "ash/shelf/background_animator.h"
 #include "ash/shelf/shelf_types.h"
 #include "ash/system/tray/actionable_view.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/views/bubble/tray_bubble_view.h"
 
 namespace ash {
-namespace internal {
-
 class ShelfLayoutManager;
 class StatusAreaWidget;
 class TrayEventFilter;
 class TrayBackground;
 
 // Base class for children of StatusAreaWidget: SystemTray, WebNotificationTray,
-// LogoutButtonTray.
+// LogoutButtonTray, OverviewButtonTray.
 // This class handles setting and animating the background when the Launcher
 // his shown/hidden. It also inherits from ActionableView so that the tray
 // items can override PerformAction when clicked on.
 class ASH_EXPORT TrayBackgroundView : public ActionableView,
-                                      public BackgroundAnimatorDelegate {
+                                      public BackgroundAnimatorDelegate,
+                                      public ui::ImplicitAnimationObserver {
  public:
   static const char kViewClassName[];
 
@@ -40,11 +40,11 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
 
     void set_size(const gfx::Size& size) { size_ = size; }
 
-    // Overridden from views::View.
-    virtual gfx::Size GetPreferredSize() OVERRIDE;
+    // views::View:
+    virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
    protected:
-    // Overridden from views::View.
+    // views::View:
     virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
     virtual void ChildVisibilityChanged(View* child) OVERRIDE;
     virtual void ViewHierarchyChanged(
@@ -59,25 +59,26 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
     DISALLOW_COPY_AND_ASSIGN(TrayContainer);
   };
 
-  explicit TrayBackgroundView(internal::StatusAreaWidget* status_area_widget);
+  explicit TrayBackgroundView(StatusAreaWidget* status_area_widget);
   virtual ~TrayBackgroundView();
 
   // Called after the tray has been added to the widget containing it.
   virtual void Initialize();
 
-  // Overridden from views::View.
+  // views::View:
+  virtual void SetVisible(bool visible) OVERRIDE;
   virtual const char* GetClassName() const OVERRIDE;
   virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual void AboutToRequestFocusFromTabTraversal(bool reverse) OVERRIDE;
 
-  // Overridden from internal::ActionableView.
+  // ActionableView:
   virtual bool PerformAction(const ui::Event& event) OVERRIDE;
   virtual gfx::Rect GetFocusBounds() OVERRIDE;
 
-  // Overridden from internal::BackgroundAnimatorDelegate.
+  // BackgroundAnimatorDelegate:
   virtual void UpdateBackground(int alpha) OVERRIDE;
 
   // Called whenever the shelf alignment changes.
@@ -154,6 +155,13 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   // Sets the border based on the position of the view.
   void SetTrayBorder();
 
+  // ui::ImplicitAnimationObserver:
+  virtual void OnImplicitAnimationsCompleted() OVERRIDE;
+
+  // Applies transformations to the |layer()| to animate the view when
+  // SetVisible(false) is called.
+  void HideTransformation();
+
   // Unowned pointer to parent widget.
   StatusAreaWidget* status_area_widget_;
 
@@ -164,11 +172,11 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   ShelfAlignment shelf_alignment_;
 
   // Owned by the view passed to SetContents().
-  internal::TrayBackground* background_;
+  TrayBackground* background_;
 
   // Animators for the background. They are only used for the old shelf layout.
-  internal::BackgroundAnimator hide_background_animator_;
-  internal::BackgroundAnimator hover_background_animator_;
+  BackgroundAnimator hide_background_animator_;
+  BackgroundAnimator hover_background_animator_;
 
   // True if the background gets hovered.
   bool hovered_;
@@ -183,7 +191,6 @@ class ASH_EXPORT TrayBackgroundView : public ActionableView,
   DISALLOW_COPY_AND_ASSIGN(TrayBackgroundView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_BACKGROUND_VIEW_H_

@@ -11,13 +11,13 @@
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observer.h"
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/idle.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 namespace base {
 class StringValue;
@@ -26,6 +26,7 @@ class StringValue;
 class Profile;
 
 namespace extensions {
+class ExtensionRegistry;
 
 typedef base::Callback<void(IdleState)> QueryStateCallback;
 
@@ -37,9 +38,9 @@ struct IdleMonitor {
   int threshold;
 };
 
-class IdleManager : public content::NotificationObserver,
+class IdleManager : public ExtensionRegistryObserver,
                     public EventRouter::Observer,
-                    public BrowserContextKeyedService {
+                    public KeyedService {
  public:
   class IdleTimeProvider {
    public:
@@ -72,13 +73,14 @@ class IdleManager : public content::NotificationObserver,
 
   void Init();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // content::NotificationDelegate implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
@@ -103,6 +105,7 @@ class IdleManager : public content::NotificationObserver,
   FRIEND_TEST_ALL_PREFIXES(IdleTest, LockedToActive);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, LockedToIdle);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, MultipleExtensions);
+  FRIEND_TEST_ALL_PREFIXES(IdleTest, ReAddListener);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, SetDetectionInterval);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, SetDetectionIntervalBeforeListener);
   FRIEND_TEST_ALL_PREFIXES(IdleTest, SetDetectionIntervalMaximum);
@@ -124,12 +127,15 @@ class IdleManager : public content::NotificationObserver,
 
   base::RepeatingTimer<IdleManager> poll_timer_;
   base::WeakPtrFactory<IdleManager> weak_factory_;
-  content::NotificationRegistrar registrar_;
 
   scoped_ptr<IdleTimeProvider> idle_time_provider_;
   scoped_ptr<EventDelegate> event_delegate_;
 
   base::ThreadChecker thread_checker_;
+
+  // Listen to extension unloaded notification.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(IdleManager);
 };

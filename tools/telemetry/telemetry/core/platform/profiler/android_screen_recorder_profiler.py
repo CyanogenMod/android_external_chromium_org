@@ -21,7 +21,7 @@ class AndroidScreenRecordingProfiler(profiler.Profiler):
                       'screenshot.py'),
          '--video',
          '--file', self._output_path,
-         '--device', browser_backend.adb.device()],
+         '--device', browser_backend.adb.device_serial()],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
   @classmethod
@@ -36,7 +36,6 @@ class AndroidScreenRecordingProfiler(profiler.Profiler):
 
   def CollectProfile(self):
     self._recorder.communicate(input='\n')
-    self._recorder.wait()
 
     print 'Screen recording saved as %s' % self._output_path
     print 'To view, open in Chrome or a video player'

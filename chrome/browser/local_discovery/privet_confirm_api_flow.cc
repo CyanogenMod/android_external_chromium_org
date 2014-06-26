@@ -2,69 +2,63 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/values.h"
-#include "chrome/browser/local_discovery/cloud_print_base_api_flow.h"
 #include "chrome/browser/local_discovery/privet_confirm_api_flow.h"
+
+#include "base/strings/stringprintf.h"
+#include "base/values.h"
+#include "chrome/browser/local_discovery/gcd_api_flow.h"
+#include "chrome/browser/local_discovery/gcd_constants.h"
+#include "chrome/browser/local_discovery/privet_constants.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
+#include "components/cloud_devices/common/cloud_devices_urls.h"
+#include "net/base/url_util.h"
 
 namespace local_discovery {
 
-PrivetConfirmApiCallFlow::PrivetConfirmApiCallFlow(
-    net::URLRequestContextGetter* request_context,
-    OAuth2TokenService* token_service,
-    const std::string& account_id,
-    const GURL& automated_claim_url,
-    const ResponseCallback& callback)
-    : flow_(request_context,
-            token_service,
-            account_id,
-            automated_claim_url,
-            this),
-      callback_(callback) {
+namespace {
+
+GURL GetConfirmFlowUrl(const std::string& token) {
+  return net::AppendQueryParameter(
+      cloud_devices::GetCloudPrintRelativeURL("confirm"), "token", token);
 }
 
+}  // namespace
+
 PrivetConfirmApiCallFlow::PrivetConfirmApiCallFlow(
-    net::URLRequestContextGetter* request_context,
-    int  user_index,
-    const std::string& xsrf_token,
-    const GURL& automated_claim_url,
+    const std::string& token,
     const ResponseCallback& callback)
-    : flow_(request_context,
-            user_index,
-            xsrf_token,
-            automated_claim_url,
-            this),
-      callback_(callback) {
+    : callback_(callback), token_(token) {
 }
 
 PrivetConfirmApiCallFlow::~PrivetConfirmApiCallFlow() {
 }
 
-void PrivetConfirmApiCallFlow::Start() {
-  flow_.Start();
-}
-
-void PrivetConfirmApiCallFlow::OnCloudPrintAPIFlowError(
-    CloudPrintBaseApiFlow* flow,
-    CloudPrintBaseApiFlow::Status status) {
+void PrivetConfirmApiCallFlow::OnGCDAPIFlowError(GCDApiFlow::Status status) {
   callback_.Run(status);
 }
 
-void PrivetConfirmApiCallFlow::OnCloudPrintAPIFlowComplete(
-    CloudPrintBaseApiFlow* flow,
-    const base::DictionaryValue* value) {
+void PrivetConfirmApiCallFlow::OnGCDAPIFlowComplete(
+    const base::DictionaryValue& value) {
   bool success = false;
 
-  if (!value->GetBoolean(cloud_print::kSuccessValue, &success)) {
-    callback_.Run(CloudPrintBaseApiFlow::ERROR_MALFORMED_RESPONSE);
+  if (!value.GetBoolean(cloud_print::kSuccessValue, &success)) {
+    callback_.Run(GCDApiFlow::ERROR_MALFORMED_RESPONSE);
     return;
   }
 
   if (success) {
-    callback_.Run(CloudPrintBaseApiFlow::SUCCESS);
+    callback_.Run(GCDApiFlow::SUCCESS);
   } else {
-    callback_.Run(CloudPrintBaseApiFlow::ERROR_FROM_SERVER);
+    callback_.Run(GCDApiFlow::ERROR_FROM_SERVER);
   }
+}
+
+net::URLFetcher::RequestType PrivetConfirmApiCallFlow::GetRequestType() {
+  return net::URLFetcher::GET;
+}
+
+GURL PrivetConfirmApiCallFlow::GetURL() {
+  return GetConfirmFlowUrl(token_);
 }
 
 }  // namespace local_discovery

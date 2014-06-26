@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/keycodes/keyboard_codes.h"
-#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/device_data_manager_x11.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/x/x11_types.h"
 
@@ -17,10 +17,10 @@ typedef union _XEvent XEvent;
 namespace ui {
 
 struct Valuator {
-  Valuator(DeviceDataManager::DataType type, double v)
+  Valuator(DeviceDataManagerX11::DataType type, double v)
       : data_type(type), value(v) {}
 
-  DeviceDataManager::DataType data_type;
+  DeviceDataManagerX11::DataType data_type;
   double value;
 };
 
@@ -42,15 +42,14 @@ class ScopedXI2Event {
                     KeyboardCode key_code,
                     int flags);
 
-  void InitButtonEvent(EventType type,
-                       int flags);
-
   void InitGenericButtonEvent(int deviceid,
                               EventType type,
+                              const gfx::Point& location,
                               int flags);
 
-  void InitMouseWheelEvent(int wheel_delta,
-                           int flags);
+  void InitGenericMouseWheelEvent(int deviceid,
+                                  int wheel_delta,
+                                  int flags);
 
   void InitScrollEvent(int deviceid,
                        int x_offset,
@@ -83,7 +82,7 @@ class ScopedXI2Event {
 };
 
 // Initializes a test touchpad device for scroll events.
-void SetUpScrollDeviceForTest(unsigned int deviceid);
+void SetUpTouchPadForTest(unsigned int deviceid);
 
 // Initializes a list of touchscreen devices for touch events.
 void SetUpTouchDevicesForTest(const std::vector<unsigned int>& devices);

@@ -14,6 +14,7 @@
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_notification_view.h"
+#include "ash/wm/maximize_mode/maximize_mode_controller.h"
 #include "base/bind.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
@@ -31,7 +32,6 @@
 using message_center::Notification;
 
 namespace ash {
-namespace internal {
 namespace {
 
 DisplayManager* GetDisplayManager() {
@@ -130,7 +130,7 @@ void OpenSettings() {
 
 const char TrayDisplay::kNotificationId[] = "chrome://settings/display";
 
-class DisplayView : public internal::ActionableView {
+class DisplayView : public ActionableView {
  public:
   explicit DisplayView() {
     SetLayoutManager(new views::BoxLayout(
@@ -139,7 +139,7 @@ class DisplayView : public internal::ActionableView {
         kTrayPopupPaddingBetweenItems));
 
     ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-    image_ = new internal::FixedSizedImageView(0, kTrayPopupItemHeight);
+    image_ = new FixedSizedImageView(0, kTrayPopupItemHeight);
     image_->SetImage(
         bundle.GetImageNamed(IDR_AURA_UBER_TRAY_DISPLAY).ToImageSkia());
     AddChildView(image_);
@@ -159,6 +159,7 @@ class DisplayView : public internal::ActionableView {
       message = GetDisplayInfoLine(GetDisplayManager()->first_display_id());
     SetVisible(!message.empty());
     label_->SetText(message);
+    SetAccessibleName(message);
     Layout();
   }
 
@@ -374,6 +375,13 @@ void TrayDisplay::CreateOrUpdateNotification(
   if (message.empty())
     return;
 
+  // Don't display notifications for accelerometer triggered screen rotations.
+  // See http://crbug.com/364949
+  if (Shell::GetInstance()->maximize_mode_controller()->
+      in_set_screen_rotation()) {
+    return;
+  }
+
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   scoped_ptr<Notification> notification(new Notification(
       message_center::NOTIFICATION_TYPE_SIMPLE,
@@ -388,7 +396,8 @@ void TrayDisplay::CreateOrUpdateNotification(
       message_center::RichNotificationData(),
       new message_center::HandleNotificationClickedDelegate(
           base::Bind(&OpenSettings))));
-  message_center::MessageCenter::Get()->AddNotification(notification.Pass());
+
+    message_center::MessageCenter::Get()->AddNotification(notification.Pass());
 }
 
 views::View* TrayDisplay::CreateDefaultView(user::LoginStatus status) {
@@ -426,5 +435,13 @@ base::string16 TrayDisplay::GetDefaultViewMessage() const {
   return static_cast<DisplayView*>(default_)->label()->text();
 }
 
-}  // namespace internal
+bool TrayDisplay::GetAccessibleStateForTesting(ui::AXViewState* state) {
+  views::View* view = default_;
+  if (view) {
+    view->GetAccessibleState(state);
+    return true;
+  }
+  return false;
+}
+
 }  // namespace ash

@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
 #include "media/midi/midi_manager.h"
 #include "media/midi/usb_midi_device.h"
@@ -31,7 +32,7 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
   virtual ~MidiManagerUsb();
 
   // MidiManager implementation.
-  virtual bool Initialize() OVERRIDE;
+  virtual void StartInitialization() OVERRIDE;
   virtual void DispatchSendMidiData(MidiManagerClient* client,
                                     uint32 port_index,
                                     const std::vector<uint8>& data,
@@ -42,13 +43,13 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
                                   int endpoint_number,
                                   const uint8* data,
                                   size_t size,
-                                  double timestamp) OVERRIDE;
+                                  base::TimeTicks time) OVERRIDE;
 
   // UsbMidiInputStream::Delegate implementation.
   virtual void OnReceivedData(size_t jack_index,
                               const uint8* data,
                               size_t size,
-                              double timestamp) OVERRIDE;
+                              base::TimeTicks time) OVERRIDE;
 
   const ScopedVector<UsbMidiOutputStream>& output_streams() const {
     return output_streams_;
@@ -60,7 +61,9 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
   // result.
   // When this factory is destroyed during the operation, the operation
   // will be canceled silently (i.e. |callback| will not be called).
-  void Initialize(base::Callback<void(bool result)> callback);
+  // The function is public just for unit tests. Do not call this function
+  // outside code for testing.
+  void Initialize(base::Callback<void(MidiResult result)> callback);
 
  private:
   void OnEnumerateDevicesDone(bool result, UsbMidiDevice::Devices* devices);
@@ -70,7 +73,7 @@ class MEDIA_EXPORT MidiManagerUsb : public MidiManager,
   ScopedVector<UsbMidiOutputStream> output_streams_;
   scoped_ptr<UsbMidiInputStream> input_stream_;
 
-  base::Callback<void(bool result)> initialize_callback_;
+  base::Callback<void(MidiResult result)> initialize_callback_;
 
   // A map from <endpoint_number, cable_number> to the index of input jacks.
   base::hash_map<std::pair<int, int>, size_t> input_jack_dictionary_;

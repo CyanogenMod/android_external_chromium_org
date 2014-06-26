@@ -33,14 +33,15 @@ class ProcSupportingPlatformBackendTest(unittest.TestCase):
       return
 
     backend = TestBackend()
-    backend.SetMockFile(
-        '/proc/1/stat',
-        open(os.path.join(util.GetUnittestDataDir(), 'stat')).read())
-    backend.SetMockFile(
-        '/proc/1/status',
-        open(os.path.join(util.GetUnittestDataDir(), 'status')).read())
+    with open(os.path.join(util.GetUnittestDataDir(), 'stat')) as f:
+      backend.SetMockFile('/proc/1/stat', f.read())
+    with open(os.path.join(util.GetUnittestDataDir(), 'status')) as f:
+      backend.SetMockFile('/proc/1/status', f.read())
+    with open(os.path.join(util.GetUnittestDataDir(), 'smaps')) as f:
+      backend.SetMockFile('/proc/1/smaps', f.read())
     result = backend.GetMemoryStats(1)
-    self.assertEquals(result, {'VM': 1025978368,
+    self.assertEquals(result, {'PrivateDirty': 5324800,
+                               'VM': 1025978368,
                                'VMPeak': 1050099712,
                                'WorkingSetSize': 84000768,
                                'WorkingSetSizePeak': 144547840})
@@ -51,14 +52,15 @@ class ProcSupportingPlatformBackendTest(unittest.TestCase):
       return
 
     backend = TestBackend()
-    backend.SetMockFile(
-        '/proc/1/stat',
-        open(os.path.join(util.GetUnittestDataDir(), 'stat')).read())
-    backend.SetMockFile(
-        '/proc/1/status',
-        open(os.path.join(util.GetUnittestDataDir(), 'status_nohwm')).read())
+    with open(os.path.join(util.GetUnittestDataDir(), 'stat')) as f:
+      backend.SetMockFile('/proc/1/stat', f.read())
+    with open(os.path.join(util.GetUnittestDataDir(), 'status_nohwm')) as f:
+      backend.SetMockFile('/proc/1/status', f.read())
+    with open(os.path.join(util.GetUnittestDataDir(), 'smaps')) as f:
+      backend.SetMockFile('/proc/1/smaps', f.read())
     result = backend.GetMemoryStats(1)
-    self.assertEquals(result, {'VM': 1025978368,
+    self.assertEquals(result, {'PrivateDirty': 5324800,
+                               'VM': 1025978368,
                                'VMPeak': 1025978368,
                                'WorkingSetSize': 84000768,
                                'WorkingSetSizePeak': 84000768})

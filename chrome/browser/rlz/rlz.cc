@@ -19,14 +19,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/google/google_brand.h"
+#include "chrome/browser/omnibox/omnibox_log.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_service.h"
@@ -64,7 +66,7 @@ const base::TimeDelta kMaxInitDelay = base::TimeDelta::FromSeconds(200);
 const base::TimeDelta kMinInitDelay = base::TimeDelta::FromSeconds(20);
 
 bool IsBrandOrganic(const std::string& brand) {
-  return brand.empty() || google_util::IsOrganic(brand);
+  return brand.empty() || google_brand::IsOrganic(brand);
 }
 
 void RecordProductEvents(bool first_run,
@@ -73,22 +75,28 @@ void RecordProductEvents(bool first_run,
                          bool is_google_in_startpages,
                          bool already_ran,
                          bool omnibox_used,
-                         bool homepage_used) {
+                         bool homepage_used,
+                         bool app_list_used) {
   TRACE_EVENT0("RLZ", "RecordProductEvents");
   // Record the installation of chrome. We call this all the time but the rlz
   // lib should ignore all but the first one.
   rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                              RLZTracker::CHROME_OMNIBOX,
+                              RLZTracker::ChromeOmnibox(),
+                              rlz_lib::INSTALL);
+#if !defined(OS_IOS)
+  rlz_lib::RecordProductEvent(rlz_lib::CHROME,
+                              RLZTracker::ChromeHomePage(),
                               rlz_lib::INSTALL);
   rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                              RLZTracker::CHROME_HOME_PAGE,
+                              RLZTracker::ChromeAppList(),
                               rlz_lib::INSTALL);
+#endif  // !defined(OS_IOS)
 
   if (!already_ran) {
     // Do the initial event recording if is the first run or if we have an
     // empty rlz which means we haven't got a chance to do it.
     char omnibox_rlz[rlz_lib::kMaxRlzLength + 1];
-    if (!rlz_lib::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, omnibox_rlz,
+    if (!rlz_lib::GetAccessPointRlz(RLZTracker::ChromeOmnibox(), omnibox_rlz,
                                     rlz_lib::kMaxRlzLength)) {
       omnibox_rlz[0] = 0;
     }
@@ -96,12 +104,13 @@ void RecordProductEvents(bool first_run,
     // Record if google is the initial search provider and/or home page.
     if ((first_run || omnibox_rlz[0] == 0) && is_google_default_search) {
       rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                  RLZTracker::CHROME_OMNIBOX,
+                                  RLZTracker::ChromeOmnibox(),
                                   rlz_lib::SET_TO_GOOGLE);
     }
 
+#if !defined(OS_IOS)
     char homepage_rlz[rlz_lib::kMaxRlzLength + 1];
-    if (!rlz_lib::GetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, homepage_rlz,
+    if (!rlz_lib::GetAccessPointRlz(RLZTracker::ChromeHomePage(), homepage_rlz,
                                     rlz_lib::kMaxRlzLength)) {
       homepage_rlz[0] = 0;
     }
@@ -109,36 +118,63 @@ void RecordProductEvents(bool first_run,
     if ((first_run || homepage_rlz[0] == 0) &&
         (is_google_homepage || is_google_in_startpages)) {
       rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                  RLZTracker::CHROME_HOME_PAGE,
+                                  RLZTracker::ChromeHomePage(),
                                   rlz_lib::SET_TO_GOOGLE);
     }
+
+    char app_list_rlz[rlz_lib::kMaxRlzLength + 1];
+    if (!rlz_lib::GetAccessPointRlz(RLZTracker::ChromeAppList(), app_list_rlz,
+                                    rlz_lib::kMaxRlzLength)) {
+      app_list_rlz[0] = 0;
+    }
+
+    // Record if google is the initial search provider and/or home page.
+    if ((first_run || app_list_rlz[0] == 0) && is_google_default_search) {
+      rlz_lib::RecordProductEvent(rlz_lib::CHROME,
+                                  RLZTracker::ChromeAppList(),
+                                  rlz_lib::SET_TO_GOOGLE);
+    }
+#endif  // !defined(OS_IOS)
   }
 
   // Record first user interaction with the omnibox. We call this all the
   // time but the rlz lib should ingore all but the first one.
   if (omnibox_used) {
     rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                RLZTracker::CHROME_OMNIBOX,
+                                RLZTracker::ChromeOmnibox(),
                                 rlz_lib::FIRST_SEARCH);
   }
 
+#if !defined(OS_IOS)
   // Record first user interaction with the home page. We call this all the
   // time but the rlz lib should ingore all but the first one.
   if (homepage_used || is_google_in_startpages) {
     rlz_lib::RecordProductEvent(rlz_lib::CHROME,
-                                RLZTracker::CHROME_HOME_PAGE,
+                                RLZTracker::ChromeHomePage(),
                                 rlz_lib::FIRST_SEARCH);
   }
+
+  // Record first user interaction with the app list. We call this all the
+  // time but the rlz lib should ingore all but the first one.
+  if (app_list_used) {
+    rlz_lib::RecordProductEvent(rlz_lib::CHROME,
+                                RLZTracker::ChromeAppList(),
+                                rlz_lib::FIRST_SEARCH);
+  }
+#endif  // !defined(OS_IOS)
 }
 
 bool SendFinancialPing(const std::string& brand,
                        const base::string16& lang,
                        const base::string16& referral) {
-  rlz_lib::AccessPoint points[] = {RLZTracker::CHROME_OMNIBOX,
-                                   RLZTracker::CHROME_HOME_PAGE,
+  rlz_lib::AccessPoint points[] = {RLZTracker::ChromeOmnibox(),
+#if !defined(OS_IOS)
+                                   RLZTracker::ChromeHomePage(),
+                                   RLZTracker::ChromeAppList(),
+#endif
                                    rlz_lib::NO_ACCESS_POINT};
-  std::string lang_ascii(UTF16ToASCII(lang));
-  std::string referral_ascii(UTF16ToASCII(referral));
+  std::string lang_ascii(base::UTF16ToASCII(lang));
+  std::string referral_ascii(base::UTF16ToASCII(referral));
   std::string product_signature;
 #if defined(OS_CHROMEOS)
   product_signature = "chromeos";
@@ -152,36 +188,6 @@ bool SendFinancialPing(const std::string& brand,
 }
 
 }  // namespace
-
-#if defined(OS_WIN)
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
-    rlz_lib::CHROME_OMNIBOX;
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
-    rlz_lib::CHROME_HOME_PAGE;
-#elif defined(OS_IOS)
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
-    rlz_lib::CHROME_IOS_OMNIBOX;
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
-    rlz_lib::CHROME_IOS_HOME_PAGE;
-#elif defined(OS_MACOSX)
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
-    rlz_lib::CHROME_MAC_OMNIBOX;
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
-    rlz_lib::CHROME_MAC_HOME_PAGE;
-#elif defined(OS_CHROMEOS)
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_OMNIBOX =
-    rlz_lib::CHROMEOS_OMNIBOX;
-// static
-const rlz_lib::AccessPoint RLZTracker::CHROME_HOME_PAGE =
-    rlz_lib::CHROMEOS_HOME_PAGE;
-#endif
 
 RLZTracker* RLZTracker::tracker_ = NULL;
 
@@ -200,6 +206,7 @@ RLZTracker::RLZTracker()
       already_ran_(false),
       omnibox_used_(false),
       homepage_used_(false),
+      app_list_used_(false),
       min_init_delay_(kMinInitDelay) {
 }
 
@@ -230,7 +237,8 @@ bool RLZTracker::InitRlzFromProfileDelayed(Profile* profile,
     const TemplateURL* url_template =
         template_url_service->GetDefaultSearchProvider();
     is_google_default_search =
-        url_template && url_template->url_ref().HasGoogleBaseURLs();
+        url_template && url_template->url_ref().HasGoogleBaseURLs(
+            template_url_service->search_terms_data());
   }
 
   PrefService* pref_service = profile->GetPrefs();
@@ -257,10 +265,12 @@ bool RLZTracker::InitRlzFromProfileDelayed(Profile* profile,
     return false;
   }
 
+#if !defined(OS_IOS)
   // Prime the RLZ cache for the home page access point so that its avaiable
   // for the startup page if needed (i.e., when the startup page is set to
   // the home page).
-  GetAccessPointRlz(CHROME_HOME_PAGE, NULL);
+  GetAccessPointRlz(ChromeHomePage(), NULL);
+#endif  // !defined(OS_IOS)
 
   return true;
 }
@@ -283,18 +293,20 @@ bool RLZTracker::Init(bool first_run,
 
   delay = std::min(kMaxInitDelay, std::max(min_init_delay_, delay));
 
-  if (google_util::GetBrand(&brand_) && !IsBrandOrganic(brand_)) {
+  if (google_brand::GetBrand(&brand_) && !IsBrandOrganic(brand_)) {
     // Register for notifications from the omnibox so that we can record when
     // the user performs a first search.
     registrar_.Add(this, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
                    content::NotificationService::AllSources());
 
+#if !defined(OS_IOS)
     // Register for notifications from navigations, to see if the user has used
     // the home page.
     registrar_.Add(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
                    content::NotificationService::AllSources());
+#endif  // !defined(OS_IOS)
   }
-  google_util::GetReactivationBrand(&reactivation_brand_);
+  google_brand::GetReactivationBrand(&reactivation_brand_);
 
   net::URLRequestContextGetter* context_getter =
       g_browser_process->system_request_context();
@@ -326,7 +338,8 @@ void RLZTracker::DelayedInit() {
   if (!IsBrandOrganic(brand_)) {
     RecordProductEvents(first_run_, is_google_default_search_,
                         is_google_homepage_, is_google_in_startpages_,
-                        already_ran_, omnibox_used_, homepage_used_);
+                        already_ran_, omnibox_used_, homepage_used_,
+                        app_list_used_);
     schedule_ping = true;
   }
 
@@ -336,7 +349,8 @@ void RLZTracker::DelayedInit() {
     rlz_lib::SupplementaryBranding branding(reactivation_brand_.c_str());
     RecordProductEvents(first_run_, is_google_default_search_,
                         is_google_homepage_, is_google_in_startpages_,
-                        already_ran_, omnibox_used_, homepage_used_);
+                        already_ran_, omnibox_used_, homepage_used_,
+                        app_list_used_);
     schedule_ping = true;
   }
 
@@ -372,8 +386,11 @@ void RLZTracker::PingNowImpl() {
     }
 
     // Prime the RLZ cache for the access points we are interested in.
-    GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, NULL);
-    GetAccessPointRlz(RLZTracker::CHROME_HOME_PAGE, NULL);
+    GetAccessPointRlz(RLZTracker::ChromeOmnibox(), NULL);
+#if !defined(OS_IOS)
+    GetAccessPointRlz(RLZTracker::ChromeHomePage(), NULL);
+    GetAccessPointRlz(RLZTracker::ChromeAppList(), NULL);
+#endif  // !defined(OS_IOS)
   }
 
   if (!IsBrandOrganic(reactivation_brand_)) {
@@ -393,22 +410,30 @@ void RLZTracker::Observe(int type,
                          const content::NotificationDetails& details) {
   switch (type) {
     case chrome::NOTIFICATION_OMNIBOX_OPENED_URL:
-      RecordFirstSearch(CHROME_OMNIBOX);
+      // In M-36, we made NOTIFICATION_OMNIBOX_OPENED_URL fire more often than
+      // it did previously.  The RLZ folks want RLZ's "first search" detection
+      // to remain as unaffected as possible by this change.  This test is
+      // there to keep the old behavior.
+      if (!content::Details<OmniboxLog>(details).ptr()->is_popup_open)
+        break;
+      RecordFirstSearch(ChromeOmnibox());
       registrar_.Remove(this, chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
                         content::NotificationService::AllSources());
       break;
+#if !defined(OS_IOS)
     case content::NOTIFICATION_NAV_ENTRY_PENDING: {
       const NavigationEntry* entry =
           content::Details<content::NavigationEntry>(details).ptr();
       if (entry != NULL &&
           ((entry->GetTransitionType() &
             content::PAGE_TRANSITION_HOME_PAGE) != 0)) {
-        RecordFirstSearch(CHROME_HOME_PAGE);
+        RecordFirstSearch(ChromeHomePage());
         registrar_.Remove(this, content::NOTIFICATION_NAV_ENTRY_PENDING,
                           content::NotificationService::AllSources());
       }
       break;
     }
+#endif  // !defined(OS_IOS)
     default:
       NOTREACHED();
       break;
@@ -463,14 +488,13 @@ void RLZTracker::RecordFirstSearch(rlz_lib::AccessPoint point) {
   if (ScheduleRecordFirstSearch(point))
     return;
 
-  bool* record_used = point == CHROME_OMNIBOX ?
-      &omnibox_used_ : &homepage_used_;
+  bool* record_used = GetAccessPointRecord(point);
 
   // Try to record event now, else set the flag to try later when we
   // attempt the ping.
   if (!RecordProductEvent(rlz_lib::CHROME, point, rlz_lib::FIRST_SEARCH))
     *record_used = true;
-  else if (send_ping_immediately_ && point == CHROME_OMNIBOX)
+  else if (send_ping_immediately_ && point == ChromeOmnibox())
     ScheduleDelayedInit(base::TimeDelta());
 }
 
@@ -484,6 +508,19 @@ bool RLZTracker::ScheduleRecordFirstSearch(rlz_lib::AccessPoint point) {
                  base::Unretained(this), point),
       base::SequencedWorkerPool::SKIP_ON_SHUTDOWN);
   return true;
+}
+
+bool* RLZTracker::GetAccessPointRecord(rlz_lib::AccessPoint point) {
+  if (point == ChromeOmnibox())
+    return &omnibox_used_;
+#if !defined(OS_IOS)
+  if (point == ChromeHomePage())
+    return &homepage_used_;
+  if (point == ChromeAppList())
+    return &app_list_used_;
+#endif  // !defined(OS_IOS)
+  NOTREACHED();
+  return NULL;
 }
 
 // static
@@ -593,3 +630,10 @@ void RLZTracker::CleanupRlz() {
 void RLZTracker::EnableZeroDelayForTesting() {
   GetInstance()->min_init_delay_ = base::TimeDelta();
 }
+
+#if !defined(OS_IOS)
+// static
+void RLZTracker::RecordAppListSearch() {
+  GetInstance()->RecordFirstSearch(RLZTracker::ChromeAppList());
+}
+#endif

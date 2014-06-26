@@ -75,15 +75,16 @@ void ShortcutBuilder::OnDidRetrieveWebappInformation(
   // TODO(dfalcantara): Try combining with the new BookmarksHandler once its
   //                    rewrite is further along.
   std::vector<int> icon_types;
-  icon_types.push_back(chrome::FAVICON);
-  icon_types.push_back(chrome::TOUCH_PRECOMPOSED_ICON | chrome::TOUCH_ICON);
+  icon_types.push_back(favicon_base::FAVICON);
+  icon_types.push_back(favicon_base::TOUCH_PRECOMPOSED_ICON |
+                       favicon_base::TOUCH_ICON);
   FaviconService* favicon_service = FaviconServiceFactory::GetForProfile(
       profile, Profile::EXPLICIT_ACCESS);
 
   // Using favicon if its size is not smaller than platform required size,
   // otherwise using the largest icon among all avaliable icons.
   int threshold_to_get_any_largest_icon = launcher_large_icon_size_ - 1;
-  favicon_service->GetLargestRawFaviconForURL(profile, url_, icon_types,
+  favicon_service->GetLargestRawFaviconForPageURL(url_, icon_types,
       threshold_to_get_any_largest_icon,
       base::Bind(&ShortcutBuilder::FinishAddingShortcut,
                  base::Unretained(this)),
@@ -91,7 +92,7 @@ void ShortcutBuilder::OnDidRetrieveWebappInformation(
 }
 
 void ShortcutBuilder::FinishAddingShortcut(
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   base::WorkerPool::PostTask(
       FROM_HERE,
       base::Bind(&ShortcutHelper::AddShortcutInBackground,
@@ -113,7 +114,7 @@ bool ShortcutBuilder::OnMessageReceived(const IPC::Message& message) {
   return handled;
 }
 
-void ShortcutBuilder::WebContentsDestroyed(content::WebContents* web_contents) {
+void ShortcutBuilder::WebContentsDestroyed() {
   Destroy();
 }
 
@@ -139,21 +140,17 @@ void ShortcutHelper::AddShortcutInBackground(
     const GURL& url,
     const base::string16& title,
     ShortcutBuilder::ShortcutType shortcut_type,
-    const chrome::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconRawBitmapResult& bitmap_result) {
   DCHECK(base::WorkerPool::RunsTasksOnCurrentThread());
 
   // Grab the average color from the bitmap.
   SkColor color = SK_ColorWHITE;
   SkBitmap favicon_bitmap;
   if (bitmap_result.is_valid()) {
-    color_utils::GridSampler sampler;
-    color = color_utils::CalculateKMeanColorOfPNG(bitmap_result.bitmap_data,
-                                                  100,
-                                                  665,
-                                                  &sampler);
-    gfx::PNGCodec::Decode(bitmap_result.bitmap_data->front(),
-                          bitmap_result.bitmap_data->size(),
-                          &favicon_bitmap);
+    if (gfx::PNGCodec::Decode(bitmap_result.bitmap_data->front(),
+                              bitmap_result.bitmap_data->size(),
+                              &favicon_bitmap))
+      color = color_utils::CalculateKMeanColorOfBitmap(favicon_bitmap);
   }
 
   int r_value = SkColorGetR(color);

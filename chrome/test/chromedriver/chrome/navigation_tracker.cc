@@ -8,17 +8,24 @@
 #include "base/values.h"
 #include "chrome/test/chromedriver/chrome/devtools_client.h"
 #include "chrome/test/chromedriver/chrome/status.h"
+#include "chrome/test/chromedriver/chrome/version.h"
 
-NavigationTracker::NavigationTracker(DevToolsClient* client)
+NavigationTracker::NavigationTracker(DevToolsClient* client,
+                                     const BrowserInfo* browser_info)
     : client_(client),
-      loading_state_(kUnknown) {
+      loading_state_(kUnknown),
+      browser_info_(browser_info),
+      num_frames_pending_(0) {
   client_->AddListener(this);
 }
 
 NavigationTracker::NavigationTracker(DevToolsClient* client,
-                                     LoadingState known_state)
+                                     LoadingState known_state,
+                                     const BrowserInfo* browser_info)
     : client_(client),
-      loading_state_(known_state) {
+      loading_state_(known_state),
+      browser_info_(browser_info),
+      num_frames_pending_(0) {
   client_->AddListener(this);
 }
 
@@ -69,8 +76,7 @@ Status NavigationTracker::IsPendingNavigation(const std::string& frame_id,
 }
 
 Status NavigationTracker::OnConnected(DevToolsClient* client) {
-  loading_state_ = kUnknown;
-  scheduled_frame_set_.clear();
+  ResetLoadingState(kUnknown);
 
   // Enable page domain notifications to allow tracking navigation state.
   base::DictionaryValue empty_params;
@@ -80,13 +86,37 @@ Status NavigationTracker::OnConnected(DevToolsClient* client) {
 Status NavigationTracker::OnEvent(DevToolsClient* client,
                                   const std::string& method,
                                   const base::DictionaryValue& params) {
-  // Chrome does not send Page.frameStoppedLoading until all frames have
-  // run their onLoad handlers (including frames created during the handlers).
-  // When it does, it only sends one stopped event for all frames.
   if (method == "Page.frameStartedLoading") {
     loading_state_ = kLoading;
+    num_frames_pending_++;
   } else if (method == "Page.frameStoppedLoading") {
-    loading_state_ = kNotLoading;
+    // Versions of Blink before revision 170248 sent a single
+    // Page.frameStoppedLoading event per page, but 170248 and newer revisions
+    // only send one event for each frame on the page.
+    //
+    // This change was rolled into the Chromium tree in revision 260203.
+    // Versions of Chrome with build number 1916 and earlier do not contain this
+    // change.
+    bool expecting_single_stop_event = false;
+
+    if (browser_info_->browser_name == "chrome") {
+      // If we're talking to a version of Chrome with an old build number, we
+      // are using a branched version of Blink which does not contain 170248
+      // (even if blink_revision > 170248).
+      expecting_single_stop_event = browser_info_->build_no <= 1916;
+    } else {
+      // If we're talking to a non-Chrome embedder (e.g. Content Shell, Android
+      // WebView), assume that the browser does not use a branched version of
+      // Blink.
+      expecting_single_stop_event = browser_info_->blink_revision < 170248;
+    }
+
+    num_frames_pending_--;
+
+    if (num_frames_pending_ <= 0 || expecting_single_stop_event) {
+      num_frames_pending_ = 0;
+      loading_state_ = kNotLoading;
+    }
   } else if (method == "Page.frameScheduledNavigation") {
     double delay;
     if (!params.GetDouble("delay", &delay))
@@ -115,11 +145,12 @@ Status NavigationTracker::OnEvent(DevToolsClient* client,
     // received when navigating.
     // See crbug.com/180742.
     const base::Value* unused_value;
-    if (!params.Get("frame.parentId", &unused_value))
+    if (!params.Get("frame.parentId", &unused_value)) {
+      num_frames_pending_ = 0;
       scheduled_frame_set_.clear();
+    }
   } else if (method == "Inspector.targetCrashed") {
-    loading_state_ = kNotLoading;
-    scheduled_frame_set_.clear();
+    ResetLoadingState(kNotLoading);
   }
   return Status(kOk);
 }
@@ -165,4 +196,10 @@ Status NavigationTracker::OnCommandSuccess(DevToolsClient* client,
       loading_state_ = kLoading;
   }
   return Status(kOk);
+}
+
+void NavigationTracker::ResetLoadingState(LoadingState loading_state) {
+  loading_state_ = loading_state;
+  num_frames_pending_ = 0;
+  scheduled_frame_set_.clear();
 }

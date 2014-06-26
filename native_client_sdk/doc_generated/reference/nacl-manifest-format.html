@@ -63,7 +63,15 @@ section for the rules on URL resolution.</p>
   &quot;program&quot;: {
     &quot;pnacl-translate&quot;: {
       // url is required
-      &quot;url&quot;: &quot;url_to_my_pexe&quot;
+      &quot;url&quot;: &quot;url_to_my_pexe&quot;,
+
+      // optlevel is optional
+      &quot;optlevel&quot;: 2
+    },
+    // pnacl-debug is optional
+    &quot;pnacl-debug&quot;: {
+      // url is required
+      &quot;url&quot;: &quot;url_to_my_bitcode_bc&quot;,
 
       // optlevel is optional
       &quot;optlevel&quot;: 0
@@ -82,6 +90,10 @@ as first load speed, an application could specify an <code>optlevel</code>
 of <code>0</code>. Note that <code>optlevel</code> is only a <em>hint</em>. In the future, the
 Portable Native Client translator and runtime may <em>automatically</em> choose
 an <code>optlevel</code> to best balance load time and application performance.</p>
+<p>A <code>pnacl-debug</code> section can specify an unfinalized pnacl llvm bitcode file
+for debugging. The <code>url</code> provided in this section will be used when Native
+Client debugging is enabled with either the <code>--enable-nacl-debug</code> Chrome
+command line switch, or via <code>about://flags</code>.</p>
 </section><section id="example-of-a-program-for-statically-linked-native-client-executables">
 <h4 id="example-of-a-program-for-statically-linked-native-client-executables">Example of a <code>program</code> for statically linked Native Client executables</h4>
 <pre class="prettyprint">
@@ -117,18 +129,16 @@ an <code>optlevel</code> to best balance load time and application performance.<
 </pre>
 </section></section><section id="files">
 <h3 id="files">files</h3>
-<p>The <code>files</code> field specifies a dictionary of file resources to be
-used by a Native Client application. This is not supported and
-not needed by Portable Native Client applications (use the PPAPI
-<a class="reference external" href="https://developers.google.com/native-client/peppercpp/classpp_1_1_u_r_l_loader">URL Loader interfaces</a>
-to load resources instead). However, the <code>files</code> manifest field
-is important for dynamically linked executables, which must
-load files before PPAPI is initialized. The <code>files</code> dictionary
-should include the main dynamic program and its dynamic libraries.
-There should be one file entry that corresponds to each a
-dynamic library. Each file entry is a dictionary of supported architectures
-and the URLs where the appropriate Native Client shared object
-(<code>.so</code>) for that architecture may be found.</p>
+<p>The <code>files</code> field specifies a dictionary of file resources to be used by a
+Native Client application. This is not supported and not needed by Portable
+Native Client applications (use the PPAPI <a class="reference external" href="/native-client/pepper_stable/cpp/classpp_1_1_u_r_l_loader">URL Loader interfaces</a> to load resources
+instead). However, the <code>files</code> manifest field is important for dynamically
+linked executables, which must load files before PPAPI is initialized. The
+<code>files</code> dictionary should include the main dynamic program and its dynamic
+libraries.  There should be one file entry that corresponds to each a dynamic
+library. Each file entry is a dictionary of supported architectures and the
+URLs where the appropriate Native Client shared object (<code>.so</code>) for that
+architecture may be found.</p>
 <p>Since <code>program</code> is used to refer to the dynamic linker that comes
 with the NaCl port of glibc, the main program is specified in the
 <code>files</code> dictionary. The main program is specified under the

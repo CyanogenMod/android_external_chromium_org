@@ -9,16 +9,22 @@
 
 namespace ash {
 
-// Height of the shelf. Hard coded to avoid resizing as items are added/removed.
-ASH_EXPORT extern const int kShelfPreferredSize;
-
 // Max alpha of the shelf background.
 ASH_EXPORT extern const int kShelfBackgroundAlpha;
 
 // Invalid image resource id used for ShelfItemDetails.
 extern const int kInvalidImageResourceID;
 
-extern const int kInvalidShelfID;
+const int kInvalidShelfID = 0;
+
+// Size of the shelf when visible (height when the shelf is horizontal).
+ASH_EXPORT extern const int kShelfSize;
+
+// Size of the space between buttons on the shelf.
+ASH_EXPORT extern const int kShelfButtonSpacing;
+
+// Size allocated for each button on the shelf.
+ASH_EXPORT extern const int kShelfButtonSize;
 
 // Animation duration for switching black shelf and dock background on and off.
 ASH_EXPORT extern const int kTimeToSwitchBackgroundMs;

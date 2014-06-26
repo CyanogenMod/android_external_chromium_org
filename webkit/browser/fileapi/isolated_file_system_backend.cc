@@ -11,7 +11,6 @@
 #include "base/files/file_util_proxy.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/platform_file.h"
 #include "base/sequenced_task_runner.h"
 #include "webkit/browser/blob/file_stream_reader.h"
 #include "webkit/browser/fileapi/async_file_util_adapter.h"
@@ -57,17 +56,16 @@ bool IsolatedFileSystemBackend::CanHandleType(FileSystemType type) const {
 void IsolatedFileSystemBackend::Initialize(FileSystemContext* context) {
 }
 
-void IsolatedFileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    FileSystemType type,
+void IsolatedFileSystemBackend::ResolveURL(
+    const FileSystemURL& url,
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
-  // We never allow opening a new isolated FileSystem via usual OpenFileSystem.
+  // We never allow opening a new isolated FileSystem via usual ResolveURL.
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(callback,
-                 GetFileSystemRootURI(origin_url, type),
-                 GetFileSystemName(origin_url, type),
+                 GURL(),
+                 std::string(),
                  base::File::FILE_ERROR_SECURITY));
 }
 
@@ -102,6 +100,11 @@ FileSystemOperation* IsolatedFileSystemBackend::CreateFileSystemOperation(
       url, context, make_scoped_ptr(new FileSystemOperationContext(context)));
 }
 
+bool IsolatedFileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  return false;
+}
+
 scoped_ptr<webkit_blob::FileStreamReader>
 IsolatedFileSystemBackend::CreateFileStreamReader(
     const FileSystemURL& url,
@@ -118,8 +121,12 @@ scoped_ptr<FileStreamWriter> IsolatedFileSystemBackend::CreateFileStreamWriter(
     const FileSystemURL& url,
     int64 offset,
     FileSystemContext* context) const {
-  return scoped_ptr<FileStreamWriter>(FileStreamWriter::CreateForLocalFile(
-      context->default_file_task_runner(), url.path(), offset));
+  return scoped_ptr<FileStreamWriter>(
+      FileStreamWriter::CreateForLocalFile(
+          context->default_file_task_runner(),
+          url.path(),
+          offset,
+          FileStreamWriter::OPEN_EXISTING_FILE));
 }
 
 FileSystemQuotaUtil* IsolatedFileSystemBackend::GetQuotaUtil() {

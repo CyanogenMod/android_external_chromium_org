@@ -240,6 +240,9 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
     bool done = false;
     switch (it->first) {
       case kICSL:
+      case kIFCW:
+      case kCFCW:
+      case kSFCW:
       case kIRTT:
       case kKATO:
       case kMSPC:
@@ -252,18 +255,11 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
           done = true;
         }
         break;
-      case kVERS:
-        // uint16 value
-        if (it->second.size() == 2) {
-          uint16 value;
-          memcpy(&value, it->second.data(), sizeof(value));
-          ret += base::UintToString(value);
-          done = true;
-        }
-        break;
       case kKEXS:
       case kAEAD:
       case kCGST:
+      case kCOPT:
+      case kLOSS:
       case kPDMD:
       case kVER:
         // tag lists
@@ -305,6 +301,10 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
       case kPAD:
         ret += StringPrintf("(%d bytes of padding)",
                             static_cast<int>(it->second.size()));
+        done = true;
+        break;
+      case kUAID:
+        ret += it->second;
         done = true;
         break;
     }

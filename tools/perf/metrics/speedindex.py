@@ -3,10 +3,10 @@
 # found in the LICENSE file.
 
 import collections
-import os
 
 from metrics import Metric
 from telemetry.core import bitmap
+from telemetry.value import scalar
 
 
 class SpeedIndexMetric(Metric):
@@ -23,10 +23,6 @@ class SpeedIndexMetric(Metric):
   def __init__(self):
     super(SpeedIndexMetric, self).__init__()
     self._impl = None
-    self._script_is_loaded = False
-    self._is_finished = False
-    with open(os.path.join(os.path.dirname(__file__), 'speedindex.js')) as f:
-      self._js = f.read()
 
   @classmethod
   def CustomizeBrowserOptions(cls, options):
@@ -42,8 +38,6 @@ class SpeedIndexMetric(Metric):
     self._impl = (VideoSpeedIndexImpl() if tab.video_capture_supported else
                   PaintRectSpeedIndexImpl())
     self._impl.Start(tab)
-    self._script_is_loaded = False
-    self._is_finished = False
 
   def Stop(self, _, tab):
     """Stop timeline recording."""
@@ -58,7 +52,8 @@ class SpeedIndexMetric(Metric):
     index = self._impl.CalculateSpeedIndex(tab)
     # Release the tab so that it can be disconnected.
     self._impl = None
-    results.Add('speed_index', 'ms', index, chart_name=chart_name)
+    results.AddValue(scalar.ScalarValue(
+        results.current_page, '%s.speed_index' % chart_name, 'ms', index))
 
   def IsFinished(self, tab):
     """Decide whether the timeline recording should be stopped.
@@ -78,23 +73,7 @@ class SpeedIndexMetric(Metric):
       True if 2 seconds have passed since last resource received, false
       otherwise.
     """
-    if self._is_finished:
-      return True
-
-    # The script that provides the function window.timeSinceLastResponseMs()
-    # needs to be loaded for this function, but it must be loaded AFTER
-    # the Start method is called, because if the Start method is called in
-    # the PageMeasurement's WillNavigateToPage function, then it will
-    # not be available here. The script should only be re-loaded once per page
-    # so that variables in the script get reset only for a new page.
-    if not self._script_is_loaded:
-      tab.ExecuteJavaScript(self._js)
-      self._script_is_loaded = True
-
-    time_since_last_response_ms = tab.EvaluateJavaScript(
-        "window.timeSinceLastResponseAfterLoadMs()")
-    self._is_finished = time_since_last_response_ms > 2000
-    return self._is_finished
+    return tab.HasReachedQuiescence()
 
 
 class SpeedIndexImpl(object):
@@ -161,26 +140,24 @@ class VideoSpeedIndexImpl(SpeedIndexImpl):
     # previous page to white. The tolerance of 8 experimentally does well with
     # video capture at 4mbps. We should keep this as low as possible with
     # supported video compression settings.
+    video_capture = tab.StopVideoCapture()
     histograms = [(time, bmp.ColorHistogram(ignore_color=bitmap.WHITE,
                                             tolerance=8))
-                  for time, bmp in tab.StopVideoCapture()]
+                  for time, bmp in video_capture.GetVideoFrameIter()]
 
     start_histogram = histograms[0][1]
     final_histogram = histograms[-1][1]
-
-    def Difference(hist1, hist2):
-      return (abs(a - b) for a, b in zip(hist1, hist2))
-
-    full_difference = list(Difference(start_histogram, final_histogram))
-    total = float(sum(full_difference))
+    total_distance = start_histogram.Distance(final_histogram)
 
     def FrameProgress(histogram):
-      difference = Difference(start_histogram, histogram)
-      # Each color bucket is capped at the full difference, so that progress
-      # does not exceed 100%.
-      return sum(min(a, b) for a, b in zip(difference, full_difference))
+      if total_distance == 0:
+        if histogram.Distance(final_histogram) == 0:
+          return 1.0
+        else:
+          return 0.0
+      return 1 - histogram.Distance(final_histogram) / total_distance
 
-    self._time_completeness_list = [(time, FrameProgress(hist) / total)
+    self._time_completeness_list = [(time, FrameProgress(hist))
                                     for time, hist in histograms]
 
   def GetTimeCompletenessList(self, tab):

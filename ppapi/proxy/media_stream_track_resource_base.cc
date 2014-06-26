@@ -22,6 +22,14 @@ MediaStreamTrackResourceBase::MediaStreamTrackResourceBase(
   AttachToPendingHost(RENDERER, pending_renderer_id);
 }
 
+MediaStreamTrackResourceBase::MediaStreamTrackResourceBase(
+    Connection connection,
+    PP_Instance instance)
+    : PluginResource(connection, instance),
+      buffer_manager_(this),
+      has_ended_(false) {
+}
+
 MediaStreamTrackResourceBase::~MediaStreamTrackResourceBase() {
 }
 
@@ -35,14 +43,17 @@ void MediaStreamTrackResourceBase::SendEnqueueBufferMessageToHost(
 void MediaStreamTrackResourceBase::OnReplyReceived(
     const ResourceMessageReplyParams& params,
     const IPC::Message& msg) {
-  IPC_BEGIN_MESSAGE_MAP(MediaStreamTrackResourceBase, msg)
+  PPAPI_BEGIN_MESSAGE_MAP(MediaStreamTrackResourceBase, msg)
     PPAPI_DISPATCH_PLUGIN_RESOURCE_CALL(
         PpapiPluginMsg_MediaStreamTrack_InitBuffers, OnPluginMsgInitBuffers)
     PPAPI_DISPATCH_PLUGIN_RESOURCE_CALL(
         PpapiPluginMsg_MediaStreamTrack_EnqueueBuffer, OnPluginMsgEnqueueBuffer)
+    PPAPI_DISPATCH_PLUGIN_RESOURCE_CALL(
+        PpapiPluginMsg_MediaStreamTrack_EnqueueBuffers,
+        OnPluginMsgEnqueueBuffers)
     PPAPI_DISPATCH_PLUGIN_RESOURCE_CALL_UNHANDLED(
         PluginResource::OnReplyReceived(params, msg))
-  IPC_END_MESSAGE_MAP()
+  PPAPI_END_MESSAGE_MAP()
 }
 
 void MediaStreamTrackResourceBase::CloseInternal() {
@@ -55,11 +66,13 @@ void MediaStreamTrackResourceBase::CloseInternal() {
 void MediaStreamTrackResourceBase::OnPluginMsgInitBuffers(
     const ResourceMessageReplyParams& params,
     int32_t number_of_buffers,
-    int32_t buffer_size) {
+    int32_t buffer_size,
+    bool readonly) {
   base::SharedMemoryHandle shm_handle = base::SharedMemory::NULLHandle();
   params.TakeSharedMemoryHandleAtIndex(0, &shm_handle);
   buffer_manager_.SetBuffers(number_of_buffers, buffer_size,
-      scoped_ptr<base::SharedMemory>(new base::SharedMemory(shm_handle, true)),
+      scoped_ptr<base::SharedMemory>(new base::SharedMemory(shm_handle,
+                                                            readonly)),
       false);
 }
 
@@ -67,6 +80,13 @@ void MediaStreamTrackResourceBase::OnPluginMsgEnqueueBuffer(
     const ResourceMessageReplyParams& params,
     int32_t index) {
   buffer_manager_.EnqueueBuffer(index);
+}
+
+void MediaStreamTrackResourceBase::OnPluginMsgEnqueueBuffers(
+    const ResourceMessageReplyParams& params,
+    const std::vector<int32_t>& indices) {
+  for (size_t i = 0; i < indices.size(); ++i)
+    buffer_manager_.EnqueueBuffer(indices[i]);
 }
 
 }  // namespace proxy

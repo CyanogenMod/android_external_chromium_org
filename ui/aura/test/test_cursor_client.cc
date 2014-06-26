@@ -11,6 +11,7 @@ namespace test {
 
 TestCursorClient::TestCursorClient(aura::Window* root_window)
     : visible_(true),
+      should_hide_cursor_on_key_event_(true),
       mouse_events_enabled_(true),
       cursor_lock_count_(0),
       calls_to_set_cursor_(0),
@@ -47,13 +48,6 @@ void TestCursorClient::SetCursorSet(ui::CursorSetType cursor_set) {
 
 ui::CursorSetType TestCursorClient::GetCursorSet() const {
   return ui::CURSOR_SET_NORMAL;
-}
-
-void TestCursorClient::SetScale(float scale) {
-}
-
-float TestCursorClient::GetScale() const {
-  return 1.f;
 }
 
 bool TestCursorClient::IsCursorVisible() const {
@@ -97,6 +91,11 @@ void TestCursorClient::AddObserver(
 void TestCursorClient::RemoveObserver(
     aura::client::CursorClientObserver* observer) {
   observers_.RemoveObserver(observer);
+}
+
+bool TestCursorClient::ShouldHideCursorOnKeyEvent(
+    const ui::KeyEvent& event) const {
+  return should_hide_cursor_on_key_event_;
 }
 
 }  // namespace test

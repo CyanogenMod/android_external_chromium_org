@@ -5,13 +5,14 @@
 #include "cc/layers/surface_layer_impl.h"
 
 #include "cc/debug/debug_colors.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/quads/surface_draw_quad.h"
+#include "cc/trees/occlusion_tracker.h"
 
 namespace cc {
 
 SurfaceLayerImpl::SurfaceLayerImpl(LayerTreeImpl* tree_impl, int id)
-    : LayerImpl(tree_impl, id), surface_id_(0) {}
+    : LayerImpl(tree_impl, id) {
+}
 
 SurfaceLayerImpl::~SurfaceLayerImpl() {}
 
@@ -20,7 +21,7 @@ scoped_ptr<LayerImpl> SurfaceLayerImpl::CreateLayerImpl(
   return SurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
 }
 
-void SurfaceLayerImpl::SetSurfaceId(int surface_id) {
+void SurfaceLayerImpl::SetSurfaceId(SurfaceId surface_id) {
   if (surface_id_ == surface_id)
     return;
 
@@ -35,19 +36,28 @@ void SurfaceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
   layer_impl->SetSurfaceId(surface_id_);
 }
 
-void SurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                   AppendQuadsData* append_quads_data) {
+void SurfaceLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data) {
   SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+      render_pass->CreateAndAppendSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
 
-  if (!surface_id_)
+  AppendDebugBorderQuad(
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
+
+  if (surface_id_.is_null())
     return;
 
   scoped_ptr<SurfaceDrawQuad> quad = SurfaceDrawQuad::Create();
   gfx::Rect quad_rect(content_bounds());
-  quad->SetNew(shared_quad_state, quad_rect, surface_id_);
-  quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+  gfx::Rect visible_quad_rect = occlusion_tracker.UnoccludedContentRect(
+      quad_rect, draw_properties().target_space_transform);
+  if (visible_quad_rect.IsEmpty())
+    return;
+  quad->SetNew(shared_quad_state, quad_rect, visible_quad_rect, surface_id_);
+  render_pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
 }
 
 void SurfaceLayerImpl::GetDebugBorderProperties(SkColor* color,
@@ -58,7 +68,7 @@ void SurfaceLayerImpl::GetDebugBorderProperties(SkColor* color,
 
 void SurfaceLayerImpl::AsValueInto(base::DictionaryValue* dict) const {
   LayerImpl::AsValueInto(dict);
-  dict->SetInteger("surface_id", surface_id_);
+  dict->SetInteger("surface_id", surface_id_.id);
 }
 
 const char* SurfaceLayerImpl::LayerTypeAsString() const {

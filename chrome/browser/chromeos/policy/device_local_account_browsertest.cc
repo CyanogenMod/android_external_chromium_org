@@ -5,6 +5,11 @@
 #include <map>
 #include <string>
 
+#include "apps/app_window_registry.h"
+#include "apps/ui/native_app_window.h"
+#include "ash/shell.h"
+#include "ash/system/chromeos/session/logout_confirmation_controller.h"
+#include "ash/system/chromeos/session/logout_confirmation_dialog.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
@@ -12,7 +17,6 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/files/scoped_temp_dir.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/location.h"
@@ -28,22 +32,21 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/test/scoped_path_override.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/login/auth/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/mock_login_status_consumer.h"
 #include "chrome/browser/chromeos/login/screens/wizard_screen.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_image_manager.h"
-#include "chrome/browser/chromeos/login/user_image_manager_impl.h"
-#include "chrome/browser/chromeos/login/user_image_manager_test_util.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/user_manager_impl.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image_manager.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image_manager_impl.h"
+#include "chrome/browser/chromeos/login/users/avatar/user_image_manager_test_util.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager_impl.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/policy/cloud_external_data_manager_base_test_util.h"
@@ -52,6 +55,7 @@
 #include "chrome/browser/chromeos/policy/device_policy_builder.h"
 #include "chrome/browser/chromeos/policy/device_policy_cros_browser_test.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
+#include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
@@ -64,12 +68,15 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 #include "chrome/browser/ui/webui/chromeos/login/signin_screen_handler.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "chromeos/chromeos_paths.h"
 #include "chromeos/chromeos_switches.h"
 #include "chromeos/dbus/fake_session_manager_client.h"
@@ -82,7 +89,9 @@
 #include "components/policy/core/common/policy_namespace.h"
 #include "components/policy/core/common/policy_service.h"
 #include "components/policy/core/common/policy_switches.h"
+#include "components/signin/core/common/signin_pref_names.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -90,6 +99,7 @@
 #include "content/public/test/test_utils.h"
 #include "crypto/rsa_private_key.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/management_policy.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -104,7 +114,9 @@
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/views/widget/widget.h"
 #include "url/gurl.h"
 //#include "third_party/cros_system_api/dbus/service_constants.h"
 
@@ -145,6 +157,7 @@ const char kHostedAppVersion[] = "1.0.0.0";
 const char kGoodExtensionID[] = "ldnnhddmnhbkjipkidpdiheffobcpfmf";
 const char kGoodExtensionCRXPath[] = "extensions/good.crx";
 const char kGoodExtensionVersion[] = "1.0";
+const char kPackagedAppCRXPath[] = "extensions/platform_apps/app_window_2.crx";
 
 const char kExternalData[] = "External data";
 const char kExternalDataURL[] = "http://localhost/external_data";
@@ -152,7 +165,6 @@ const char kExternalDataURL[] = "http://localhost/external_data";
 // Helper that serves extension update manifests to Chrome.
 class TestingUpdateManifestProvider {
  public:
-
   // Update manifests will be served at |relative_update_url|.
   explicit TestingUpdateManifestProvider(
       const std::string& relative_update_url);
@@ -272,13 +284,17 @@ scoped_ptr<net::FakeURLFetcher> RunCallbackAndReturnFakeURLFetcher(
 }  // namespace
 
 class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
-                               public chromeos::UserManager::Observer {
+                               public chromeos::UserManager::Observer,
+                               public chrome::BrowserListObserver,
+                               public apps::AppWindowRegistry::Observer {
  protected:
   DeviceLocalAccountTest()
       : user_id_1_(GenerateDeviceLocalAccountUserId(
             kAccountId1, DeviceLocalAccount::TYPE_PUBLIC_SESSION)),
         user_id_2_(GenerateDeviceLocalAccountUserId(
-            kAccountId2, DeviceLocalAccount::TYPE_PUBLIC_SESSION)) {}
+            kAccountId2, DeviceLocalAccount::TYPE_PUBLIC_SESSION)) {
+    set_exit_when_last_browser_closes(false);
+  }
 
   virtual ~DeviceLocalAccountTest() {}
 
@@ -286,20 +302,15 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     // Configure and start the test server.
     scoped_ptr<crypto::RSAPrivateKey> signing_key(
         PolicyBuilder::CreateTestSigningKey());
-    ASSERT_TRUE(test_server_.SetSigningKey(signing_key.get()));
+    ASSERT_TRUE(test_server_.SetSigningKeyAndSignature(
+        signing_key.get(), PolicyBuilder::GetTestSigningKeySignature()));
     signing_key.reset();
     test_server_.RegisterClient(PolicyBuilder::kFakeToken,
                                 PolicyBuilder::kFakeDeviceId);
     ASSERT_TRUE(test_server_.Start());
 
-    ASSERT_TRUE(extension_cache_root_dir_.CreateUniqueTempDir());
-    extension_cache_root_dir_override_.reset(new base::ScopedPathOverride(
-        chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTENSIONS,
-        extension_cache_root_dir_.path()));
-    ASSERT_TRUE(external_data_cache_dir_.CreateUniqueTempDir());
-    external_data_cache_dir_override_.reset(new base::ScopedPathOverride(
-        chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTERNAL_DATA,
-        external_data_cache_dir_.path()));
+    BrowserList::AddObserver(this);
+
     DevicePolicyCrosBrowserTest::SetUp();
   }
 
@@ -330,6 +341,8 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
+    BrowserList::RemoveObserver(this);
+
     // This shuts down the login UI.
     base::MessageLoop::current()->PostTask(FROM_HERE,
                                            base::Bind(&chrome::AttemptExit));
@@ -337,7 +350,23 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   }
 
   virtual void LocalStateChanged(chromeos::UserManager* user_manager) OVERRIDE {
-    run_loop_->Quit();
+    if (run_loop_)
+      run_loop_->Quit();
+  }
+
+  virtual void OnBrowserRemoved(Browser* browser) OVERRIDE {
+    if (run_loop_)
+      run_loop_->Quit();
+  }
+
+  virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE {
+    if (run_loop_)
+      run_loop_->Quit();
+  }
+
+  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE {
+    if (run_loop_)
+      run_loop_->Quit();
   }
 
   void InitializePolicy() {
@@ -392,15 +421,21 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
     EXPECT_EQ(chromeos::User::USER_TYPE_PUBLIC_ACCOUNT, user->GetType());
   }
 
-  base::FilePath GetCacheDirectoryForAccountID(const std::string& account_id) {
-    return extension_cache_root_dir_.path()
-        .Append(base::HexEncode(account_id.c_str(), account_id.size()));
+  base::FilePath GetExtensionCacheDirectoryForAccountID(
+      const std::string& account_id) {
+    base::FilePath extension_cache_root_dir;
+    if (!PathService::Get(chromeos::DIR_DEVICE_LOCAL_ACCOUNT_EXTENSIONS,
+                          &extension_cache_root_dir)) {
+      ADD_FAILURE();
+    }
+    return extension_cache_root_dir.Append(
+        base::HexEncode(account_id.c_str(), account_id.size()));
   }
 
   base::FilePath GetCacheCRXFile(const std::string& account_id,
                                  const std::string& id,
                                  const std::string& version) {
-    return GetCacheDirectoryForAccountID(account_id)
+    return GetExtensionCacheDirectoryForAccountID(account_id)
         .Append(base::StringPrintf("%s-%s.crx", id.c_str(), version.c_str()));
   }
 
@@ -419,11 +454,6 @@ class DeviceLocalAccountTest : public DevicePolicyCrosBrowserTest,
   LocalPolicyTestServer test_server_;
 
  private:
-  base::ScopedTempDir extension_cache_root_dir_;
-  base::ScopedTempDir external_data_cache_dir_;
-  scoped_ptr<base::ScopedPathOverride> extension_cache_root_dir_override_;
-  scoped_ptr<base::ScopedPathOverride> external_data_cache_dir_override_;
-
   DISALLOW_COPY_AND_ASSIGN(DeviceLocalAccountTest);
 };
 
@@ -580,6 +610,13 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, StartSession) {
     EXPECT_EQ(GURL(kStartupURLs[i]),
               tabs->GetWebContentsAt(i)->GetVisibleURL());
   }
+
+  // Verify that the session is not considered to be logged in with a GAIA
+  // account.
+  Profile* profile = GetProfileForTest();
+  ASSERT_TRUE(profile);
+  EXPECT_FALSE(profile->GetPrefs()->HasPrefPath(
+      prefs::kGoogleServicesUsername));
 }
 
 IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, FullscreenDisallowed) {
@@ -605,10 +642,6 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, FullscreenDisallowed) {
   if (!oobe_ui_ready)
     run_loop.Run();
 
-  // Ensure that the browser stays alive, even though no windows are opened
-  // during session start.
-  chrome::StartKeepAlive();
-
   // Start login into the device-local account.
   host->StartSignInScreen(LoginScreenContext());
   chromeos::ExistingUserController* controller =
@@ -620,8 +653,6 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, FullscreenDisallowed) {
   content::WindowedNotificationObserver(chrome::NOTIFICATION_SESSION_STARTED,
                                         base::Bind(IsSessionStarted)).Wait();
 
-  // Open a browser window.
-  chrome::NewEmptyWindow(GetProfileForTest(), chrome::HOST_DESKTOP_TYPE_ASH);
   BrowserList* browser_list =
     BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
   EXPECT_EQ(1U, browser_list->size());
@@ -629,7 +660,6 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, FullscreenDisallowed) {
   ASSERT_TRUE(browser);
   BrowserWindow* browser_window = browser->window();
   ASSERT_TRUE(browser_window);
-  chrome::EndKeepAlive();
 
   // Verify that an attempt to enter fullscreen mode is denied.
   EXPECT_FALSE(browser_window->IsFullscreen());
@@ -688,13 +718,9 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsUncached) {
   if (!oobe_ui_ready)
     run_loop.Run();
 
-  // Ensure that the browser stays alive, even though no windows are opened
-  // during session start.
-  chrome::StartKeepAlive();
-
   // Start listening for app/extension installation results.
   content::WindowedNotificationObserver hosted_app_observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
       base::Bind(DoesInstallSuccessReferToId, kHostedAppID));
   content::WindowedNotificationObserver extension_observer(
       chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
@@ -741,7 +767,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
   // Pre-populate the device local account's extension cache with a hosted app
   // and an extension.
   EXPECT_TRUE(base::CreateDirectory(
-      GetCacheDirectoryForAccountID(kAccountId1)));
+      GetExtensionCacheDirectoryForAccountID(kAccountId1)));
   base::FilePath test_dir;
   ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
   const base::FilePath cached_hosted_app =
@@ -787,13 +813,9 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExtensionsCached) {
   if (!oobe_ui_ready)
     run_loop.Run();
 
-  // Ensure that the browser stays alive, even though no windows are opened
-  // during session start.
-  chrome::StartKeepAlive();
-
   // Start listening for app/extension installation results.
   content::WindowedNotificationObserver hosted_app_observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
       base::Bind(DoesInstallSuccessReferToId, kHostedAppID));
   content::WindowedNotificationObserver extension_observer(
       chrome::NOTIFICATION_EXTENSION_INSTALL_ERROR,
@@ -913,10 +935,6 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, ExternalData) {
   if (!oobe_ui_ready)
     run_loop->Run();
 
-  // Ensure that the browser stays alive, even though no windows are opened
-  // during session start.
-  chrome::StartKeepAlive();
-
   // Start login into the device-local account.
   host->StartSignInScreen(LoginScreenContext());
   chromeos::ExistingUserController* controller =
@@ -1010,7 +1028,7 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, UserAvatarImage) {
 
   EXPECT_FALSE(user->HasDefaultImage());
   EXPECT_EQ(chromeos::User::kExternalImageIndex, user->image_index());
-  EXPECT_TRUE(chromeos::test::AreImagesEqual(*policy_image, user->image()));
+  EXPECT_TRUE(chromeos::test::AreImagesEqual(*policy_image, user->GetImage()));
   const base::DictionaryValue* images_pref =
       g_browser_process->local_state()->GetDictionary("user_image_info");
   ASSERT_TRUE(images_pref);
@@ -1033,6 +1051,184 @@ IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, UserAvatarImage) {
   EXPECT_EQ(policy_image->width(), saved_image->width());
   EXPECT_EQ(policy_image->height(), saved_image->height());
 }
+
+IN_PROC_BROWSER_TEST_F(DeviceLocalAccountTest, LastWindowClosedLogoutReminder) {
+  UploadAndInstallDeviceLocalAccountPolicy();
+  AddPublicSessionToDevicePolicy(kAccountId1);
+
+  // This observes the display name becoming available as this indicates
+  // device-local account policy is fully loaded.
+  content::WindowedNotificationObserver(
+      chrome::NOTIFICATION_USER_LIST_CHANGED,
+      base::Bind(&DisplayNameMatches, user_id_1_, kDisplayName)).Wait();
+
+  // Wait for the login UI to be ready.
+  chromeos::LoginDisplayHostImpl* host =
+      reinterpret_cast<chromeos::LoginDisplayHostImpl*>(
+          chromeos::LoginDisplayHostImpl::default_host());
+  ASSERT_TRUE(host);
+  chromeos::OobeUI* oobe_ui = host->GetOobeUI();
+  ASSERT_TRUE(oobe_ui);
+  base::RunLoop run_loop;
+  const bool oobe_ui_ready = oobe_ui->IsJSReady(run_loop.QuitClosure());
+  if (!oobe_ui_ready)
+    run_loop.Run();
+
+  // Start login into the device-local account.
+  host->StartSignInScreen(LoginScreenContext());
+  chromeos::ExistingUserController* controller =
+      chromeos::ExistingUserController::current_controller();
+  ASSERT_TRUE(controller);
+  controller->LoginAsPublicAccount(user_id_1_);
+
+  // Wait for the session to start.
+  content::WindowedNotificationObserver(chrome::NOTIFICATION_SESSION_STARTED,
+                                        base::Bind(IsSessionStarted)).Wait();
+
+  Profile* profile = GetProfileForTest();
+  ASSERT_TRUE(profile);
+  apps::AppWindowRegistry* app_window_registry =
+      apps::AppWindowRegistry::Get(profile);
+  app_window_registry->AddObserver(this);
+
+  // Verify that the logout confirmation dialog is not showing.
+  ash::LogoutConfirmationController* logout_confirmation_controller =
+      ash::Shell::GetInstance()->logout_confirmation_controller();
+  ASSERT_TRUE(logout_confirmation_controller);
+  EXPECT_FALSE(logout_confirmation_controller->dialog_for_testing());
+
+  // Remove policy that allows only explicitly whitelisted apps to be installed
+  // in a public session.
+  extensions::ExtensionSystem* extension_system =
+      extensions::ExtensionSystem::Get(profile);
+  ASSERT_TRUE(extension_system);
+  extension_system->management_policy()->UnregisterAllProviders();
+
+  // Install and a platform app.
+  scoped_refptr<extensions::CrxInstaller> installer =
+      extensions::CrxInstaller::CreateSilent(
+          extension_system->extension_service());
+  installer->set_allow_silent_install(true);
+  installer->set_install_cause(extension_misc::INSTALL_CAUSE_USER_DOWNLOAD);
+  installer->set_creation_flags(extensions::Extension::FROM_WEBSTORE);
+  content::WindowedNotificationObserver app_install_observer(
+      chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+      content::NotificationService::AllSources());
+  base::FilePath test_dir;
+  ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
+  installer->InstallCrx(test_dir.Append(kPackagedAppCRXPath));
+  app_install_observer.Wait();
+  const extensions::Extension* app =
+      content::Details<const extensions::Extension>(
+          app_install_observer.details()).ptr();
+
+  // Start the platform app, causing it to open a window.
+  run_loop_.reset(new base::RunLoop);
+  OpenApplication(AppLaunchParams(
+      profile, app, extensions::LAUNCH_CONTAINER_NONE, NEW_WINDOW));
+  run_loop_->Run();
+  EXPECT_EQ(1U, app_window_registry->app_windows().size());
+
+  // Close the only open browser window.
+  BrowserList* browser_list =
+      BrowserList::GetInstance(chrome::HOST_DESKTOP_TYPE_ASH);
+  EXPECT_EQ(1U, browser_list->size());
+  Browser* browser = browser_list->get(0);
+  ASSERT_TRUE(browser);
+  BrowserWindow* browser_window = browser->window();
+  ASSERT_TRUE(browser_window);
+  run_loop_.reset(new base::RunLoop);
+  browser_window->Close();
+  browser_window = NULL;
+  run_loop_->Run();
+  browser = NULL;
+  EXPECT_TRUE(browser_list->empty());
+
+  // Verify that the logout confirmation dialog is not showing because an app
+  // window is still open.
+  EXPECT_FALSE(logout_confirmation_controller->dialog_for_testing());
+
+  // Open a browser window.
+  Browser* first_browser = CreateBrowser(profile);
+  EXPECT_EQ(1U, browser_list->size());
+
+  // Close the app window.
+  run_loop_.reset(new base::RunLoop);
+  ASSERT_EQ(1U, app_window_registry->app_windows().size());
+  app_window_registry->app_windows().front()->GetBaseWindow()->Close();
+  run_loop_->Run();
+  EXPECT_TRUE(app_window_registry->app_windows().empty());
+
+  // Verify that the logout confirmation dialog is not showing because a browser
+  // window is still open.
+  EXPECT_FALSE(logout_confirmation_controller->dialog_for_testing());
+
+  // Open a second browser window.
+  Browser* second_browser = CreateBrowser(profile);
+  EXPECT_EQ(2U, browser_list->size());
+
+  // Close the first browser window.
+  browser_window = first_browser->window();
+  ASSERT_TRUE(browser_window);
+  run_loop_.reset(new base::RunLoop);
+  browser_window->Close();
+  browser_window = NULL;
+  run_loop_->Run();
+  first_browser = NULL;
+  EXPECT_EQ(1U, browser_list->size());
+
+  // Verify that the logout confirmation dialog is not showing because a browser
+  // window is still open.
+  EXPECT_FALSE(logout_confirmation_controller->dialog_for_testing());
+
+  // Close the second browser window.
+  browser_window = second_browser->window();
+  ASSERT_TRUE(browser_window);
+  run_loop_.reset(new base::RunLoop);
+  browser_window->Close();
+  browser_window = NULL;
+  run_loop_->Run();
+  second_browser = NULL;
+  EXPECT_TRUE(browser_list->empty());
+
+  // Verify that the logout confirmation dialog is showing.
+  ash::LogoutConfirmationDialog* dialog =
+      logout_confirmation_controller->dialog_for_testing();
+  ASSERT_TRUE(dialog);
+
+  // Deny the logout.
+  dialog->GetWidget()->Close();
+  dialog = NULL;
+  base::RunLoop().RunUntilIdle();
+
+  // Verify that the logout confirmation dialog is no longer showing.
+  EXPECT_FALSE(logout_confirmation_controller->dialog_for_testing());
+
+  // Open a browser window.
+  browser = CreateBrowser(profile);
+  EXPECT_EQ(1U, browser_list->size());
+
+  // Close the browser window.
+  browser_window = browser->window();
+  ASSERT_TRUE(browser_window);
+  run_loop_.reset(new base::RunLoop);
+  browser_window->Close();
+  browser_window = NULL;
+  run_loop_->Run();
+  browser = NULL;
+  EXPECT_TRUE(browser_list->empty());
+
+  // Verify that the logout confirmation dialog is showing again.
+  dialog = logout_confirmation_controller->dialog_for_testing();
+  ASSERT_TRUE(dialog);
+
+  // Deny the logout.
+  dialog->GetWidget()->Close();
+  dialog = NULL;
+  base::RunLoop().RunUntilIdle();
+
+  app_window_registry->RemoveObserver(this);
+};
 
 class TermsOfServiceTest : public DeviceLocalAccountTest,
                            public testing::WithParamInterface<bool> {
@@ -1105,9 +1301,9 @@ IN_PROC_BROWSER_TEST_P(TermsOfServiceTest, TermsOfServiceScreen) {
   ASSERT_TRUE(contents);
   std::string json;
   ASSERT_TRUE(content::ExecuteScriptAndExtractString(contents,
-      "var screen = document.getElementById('terms-of-service');"
+      "var screenElement = document.getElementById('terms-of-service');"
       "function SendReplyIfDownloadDone() {"
-      "  if (screen.classList.contains('tos-loading'))"
+      "  if (screenElement.classList.contains('tos-loading'))"
       "    return false;"
       "  var status = {};"
       "  status.heading = document.getElementById('tos-heading').textContent;"
@@ -1117,7 +1313,7 @@ IN_PROC_BROWSER_TEST_P(TermsOfServiceTest, TermsOfServiceScreen) {
       "      document.getElementById('tos-content-heading').textContent;"
       "  status.content ="
       "      document.getElementById('tos-content-main').textContent;"
-      "  status.error = screen.classList.contains('error');"
+      "  status.error = screenElement.classList.contains('error');"
       "  status.acceptEnabled ="
       "      !document.getElementById('tos-accept-button').disabled;"
       "  domAutomationController.send(JSON.stringify(status));"
@@ -1127,7 +1323,7 @@ IN_PROC_BROWSER_TEST_P(TermsOfServiceTest, TermsOfServiceScreen) {
       "var observer = new MutationObserver(SendReplyIfDownloadDone);"
       "if (!SendReplyIfDownloadDone()) {"
       "  var options = { attributes: true, attributeFilter: [ 'class' ] };"
-      "  observer.observe(screen, options);"
+      "  observer.observe(screenElement, options);"
       "}",
       &json));
   scoped_ptr<base::Value> value_ptr(base::JSONReader::Read(json));

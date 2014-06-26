@@ -5,7 +5,6 @@
 #ifndef MEDIA_BASE_SINC_RESAMPLER_H_
 #define MEDIA_BASE_SINC_RESAMPLER_H_
 
-#include "base/atomic_ref_count.h"
 #include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/aligned_memory.h"
@@ -34,10 +33,6 @@ class MEDIA_EXPORT SincResampler {
     kKernelOffsetCount = 32,
     kKernelStorageSize = kKernelSize * (kKernelOffsetCount + 1),
   };
-
-  // Selects runtime specific CPU features like SSE.  Must be called before
-  // using SincResampler.
-  static void InitializeCPUSpecificFeatures();
 
   // Callback type for providing more data into the resampler.  Expects |frames|
   // of data to be rendered into |destination|; zero padded if not enough frames
@@ -135,11 +130,6 @@ class MEDIA_EXPORT SincResampler {
   float* const r2_;
   float* r3_;
   float* r4_;
-
-  // Atomic ref count indicating when when we're in the middle of resampling.
-  // Will be CHECK'd to find crashes...
-  // TODO(dalecurtis): Remove debug helpers for http://crbug.com/295278
-  base::AtomicRefCount currently_resampling_;
 
   DISALLOW_COPY_AND_ASSIGN(SincResampler);
 };

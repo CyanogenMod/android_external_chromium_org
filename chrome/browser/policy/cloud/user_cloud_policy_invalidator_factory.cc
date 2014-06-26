@@ -4,12 +4,10 @@
 
 #include "chrome/browser/policy/cloud/user_cloud_policy_invalidator_factory.h"
 
-#include "base/command_line.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
 #include "chrome/browser/policy/cloud/user_cloud_policy_invalidator.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/policy/core/common/policy_switches.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
@@ -30,7 +28,7 @@ UserCloudPolicyInvalidatorFactory::UserCloudPolicyInvalidatorFactory()
     : BrowserContextKeyedServiceFactory(
           "UserCloudPolicyInvalidator",
           BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(invalidation::InvalidationServiceFactory::GetInstance());
+  DependsOn(invalidation::ProfileInvalidationProviderFactory::GetInstance());
 #if defined(OS_CHROMEOS)
   DependsOn(UserCloudPolicyManagerFactoryChromeOS::GetInstance());
 #else
@@ -40,14 +38,8 @@ UserCloudPolicyInvalidatorFactory::UserCloudPolicyInvalidatorFactory()
 
 UserCloudPolicyInvalidatorFactory::~UserCloudPolicyInvalidatorFactory() {}
 
-BrowserContextKeyedService*
-    UserCloudPolicyInvalidatorFactory::BuildServiceInstanceFor(
-        content::BrowserContext* context) const {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kDisableCloudPolicyPush)) {
-    return NULL;
-  }
-
+KeyedService* UserCloudPolicyInvalidatorFactory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
   Profile* profile = static_cast<Profile*>(context);
 #if defined(OS_CHROMEOS)
   CloudPolicyManager* policy_manager =

@@ -93,7 +93,8 @@ void CloudPolicyClient::Register(em::DeviceRegisterRequest::Type type,
                                  const std::string& auth_token,
                                  const std::string& client_id,
                                  bool is_auto_enrollement,
-                                 const std::string& requisition) {
+                                 const std::string& requisition,
+                                 const std::string& current_state_key) {
   DCHECK(service_);
   DCHECK(!auth_token.empty());
   DCHECK(!is_registered());
@@ -126,6 +127,8 @@ void CloudPolicyClient::Register(em::DeviceRegisterRequest::Type type,
     request->set_auto_enrolled(true);
   if (!requisition.empty())
     request->set_requisition(requisition);
+  if (!current_state_key.empty())
+    request->set_server_backed_state_key(current_state_key);
 
   request_job_->SetRetryCallback(
       base::Bind(&CloudPolicyClient::OnRetryRegister, base::Unretained(this)));
@@ -196,6 +199,18 @@ void CloudPolicyClient::FetchPolicy() {
     if (!status_provider_->GetSessionStatus(
             request->mutable_session_status_report_request())) {
       request->clear_session_status_report_request();
+    }
+  }
+
+  // Add device state keys.
+  if (!state_keys_to_upload_.empty()) {
+    em::DeviceStateKeyUpdateRequest* key_update_request =
+        request->mutable_device_state_key_update_request();
+    for (std::vector<std::string>::const_iterator key(
+             state_keys_to_upload_.begin());
+         key != state_keys_to_upload_.end();
+         ++key) {
+      key_update_request->add_server_backed_state_key(*key);
     }
   }
 
@@ -279,6 +294,11 @@ void CloudPolicyClient::AddNamespaceToFetch(const PolicyNamespaceKey& key) {
 
 void CloudPolicyClient::RemoveNamespaceToFetch(const PolicyNamespaceKey& key) {
   namespaces_to_fetch_.erase(key);
+}
+
+void CloudPolicyClient::SetStateKeysToUpload(
+    const std::vector<std::string>& keys) {
+  state_keys_to_upload_ = keys;
 }
 
 const em::PolicyFetchResponse* CloudPolicyClient::GetPolicyFor(
@@ -395,6 +415,7 @@ void CloudPolicyClient::OnPolicyFetchCompleted(
     }
     if (status_provider_)
       status_provider_->OnSubmittedSuccessfully();
+    state_keys_to_upload_.clear();
     NotifyPolicyFetched();
   } else {
     NotifyClientError();

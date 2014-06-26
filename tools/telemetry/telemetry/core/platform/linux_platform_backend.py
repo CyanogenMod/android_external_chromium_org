@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -8,11 +8,11 @@ import subprocess
 import sys
 
 from telemetry import decorators
-from telemetry.core import util
 from telemetry.core.platform import platform_backend
 from telemetry.core.platform import posix_platform_backend
 from telemetry.core.platform import proc_supporting_platform_backend
 from telemetry.page import cloud_storage
+from telemetry.util import support_binaries
 
 
 class LinuxPlatformBackend(
@@ -44,14 +44,15 @@ class LinuxPlatformBackend(
 
     codename = None
     version = None
-    for line in open('/etc/lsb-release', 'r').readlines():
-      key, _, value = line.partition('=')
-      if key == 'DISTRIB_CODENAME':
-        codename = value.strip()
-      elif key == 'DISTRIB_RELEASE':
-        version = float(value)
-      if codename and version:
-        break
+    with open('/etc/lsb-release') as f:
+      for line in f.readlines():
+        key, _, value = line.partition('=')
+        if key == 'DISTRIB_CODENAME':
+          codename = value.strip()
+        elif key == 'DISTRIB_RELEASE':
+          version = float(value)
+        if codename and version:
+          break
     return platform_backend.OSVersion(codename, version)
 
   def CanFlushIndividualFilesFromSystemCache(self):
@@ -71,7 +72,9 @@ class LinuxPlatformBackend(
     if application == 'ipfw':
       self._InstallIpfw()
     elif application == 'avconv':
-      self._InstallAvconv()
+      self._InstallBinary(application, 'libav-tools')
+    elif application == 'perfhost':
+      self._InstallBinary(application, 'linux-tools')
     else:
       raise NotImplementedError(
           'Please teach Telemetry how to install ' + application)
@@ -81,8 +84,8 @@ class LinuxPlatformBackend(
         ['lsmod'], stdout=subprocess.PIPE).communicate()[0]
 
   def _InstallIpfw(self):
-    ipfw_bin = os.path.join(util.GetTelemetryDir(), 'bin', 'ipfw')
-    ipfw_mod = os.path.join(util.GetTelemetryDir(), 'bin', 'ipfw_mod.ko')
+    ipfw_bin = support_binaries.FindPath('ipfw', self.GetOSName())
+    ipfw_mod = support_binaries.FindPath('ipfw_mod.ko', self.GetOSName())
 
     try:
       changed = cloud_storage.GetIfChanged(
@@ -103,17 +106,18 @@ class LinuxPlatformBackend(
 
     assert self.CanLaunchApplication('ipfw'), 'Failed to install ipfw'
 
-  def _InstallAvconv(self):
-    telemetry_bin_dir = os.path.join(util.GetTelemetryDir(), 'bin')
-    avconv_bin = os.path.join(telemetry_bin_dir, 'avconv')
-    os.environ['PATH'] += os.pathsep + telemetry_bin_dir
+  def _InstallBinary(self, bin_name, fallback_package=None):
+    bin_path = support_binaries.FindPath(bin_name, self.GetOSName())
+    os.environ['PATH'] += os.pathsep + os.path.dirname(bin_path)
 
     try:
-      cloud_storage.GetIfChanged(avconv_bin, cloud_storage.INTERNAL_BUCKET)
+      cloud_storage.GetIfChanged(bin_path, cloud_storage.INTERNAL_BUCKET)
+      os.chmod(bin_path, 0755)
     except cloud_storage.CloudStorageError, e:
       logging.error(e)
-      logging.error('You may proceed by manually installing avconv via:\n'
-                    'sudo apt-get install libav-tools')
+      if fallback_package:
+        logging.error('You may proceed by manually installing %s via:\n'
+                      'sudo apt-get install %s' % (bin_name, fallback_package))
       sys.exit(1)
 
-    assert self.CanLaunchApplication('avconv'), 'Failed to install avconv'
+    assert self.CanLaunchApplication(bin_name), 'Failed to install ' + bin_name

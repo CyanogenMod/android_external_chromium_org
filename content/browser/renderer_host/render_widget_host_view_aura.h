@@ -16,31 +16,26 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "cc/layers/delegated_frame_provider.h"
-#include "cc/layers/delegated_frame_resource_collection.h"
-#include "cc/resources/texture_mailbox.h"
 #include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/compositor/delegated_frame_host.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/compositor/owned_mailbox.h"
-#include "content/browser/renderer_host/delegated_frame_evictor.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
-#include "content/browser/renderer_host/software_frame_manager.h"
 #include "content/common/content_export.h"
-#include "content/common/gpu/client/gl_helper.h"
+#include "content/common/cursors/webcursor.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/aura/client/activation_change_observer.h"
-#include "ui/aura/client/activation_delegate.h"
 #include "ui/aura/client/cursor_client_observer.h"
 #include "ui/aura/client/focus_change_observer.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/base/ime/text_input_client.h"
-#include "ui/compositor/compositor.h"
-#include "ui/compositor/compositor_observer.h"
-#include "ui/compositor/compositor_vsync_manager.h"
 #include "ui/gfx/display_observer.h"
+#include "ui/gfx/insets.h"
 #include "ui/gfx/rect.h"
-#include "webkit/common/cursors/webcursor.h"
+#include "ui/wm/public/activation_change_observer.h"
+#include "ui/wm/public/activation_delegate.h"
+
+struct ViewHostMsg_TextInputState_Params;
 
 namespace aura {
 class WindowTracker;
@@ -66,7 +61,6 @@ struct Mailbox;
 
 namespace ui {
 class CompositorLock;
-class CompositorVSyncManager;
 class InputMethod;
 class LocatedEvent;
 class Texture;
@@ -77,29 +71,24 @@ namespace content {
 class LegacyRenderWidgetHostHWND;
 #endif
 
+class OverscrollController;
+class RenderFrameHostImpl;
 class RenderWidgetHostImpl;
 class RenderWidgetHostView;
-class ResizeLock;
 
 // RenderWidgetHostView class hierarchy described in render_widget_host_view.h.
 class CONTENT_EXPORT RenderWidgetHostViewAura
     : public RenderWidgetHostViewBase,
-      public ui::CompositorObserver,
-      public ui::CompositorVSyncManager::Observer,
+      public DelegatedFrameHostClient,
       public ui::TextInputClient,
       public gfx::DisplayObserver,
-      public aura::RootWindowObserver,
+      public aura::WindowTreeHostObserver,
       public aura::WindowDelegate,
       public aura::client::ActivationDelegate,
       public aura::client::ActivationChangeObserver,
       public aura::client::FocusChangeObserver,
       public aura::client::CursorClientObserver,
-      public ImageTransportFactoryObserver,
-      public BrowserAccessibilityDelegate,
-      public SoftwareFrameManagerClient,
-      public DelegatedFrameEvictorClient,
-      public base::SupportsWeakPtr<RenderWidgetHostViewAura>,
-      public cc::DelegatedFrameResourceCollectionClient {
+      public base::SupportsWeakPtr<RenderWidgetHostViewAura> {
  public:
   // Displays and controls touch editing elements such as selection handles.
   class TouchEditingClient {
@@ -139,8 +128,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     touch_editing_client_ = client;
   }
 
+  explicit RenderWidgetHostViewAura(RenderWidgetHost* host);
+
   // RenderWidgetHostView implementation.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
   virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
@@ -148,15 +138,18 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual gfx::NativeView GetNativeView() const OVERRIDE;
   virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
   virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
   virtual bool HasFocus() const OVERRIDE;
   virtual bool IsSurfaceAvailableForCopy() const OVERRIDE;
   virtual void Show() OVERRIDE;
   virtual void Hide() OVERRIDE;
   virtual bool IsShowing() OVERRIDE;
   virtual gfx::Rect GetViewBounds() const OVERRIDE;
-  virtual void SetBackground(const SkBitmap& background) OVERRIDE;
+  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
+  virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
+  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
 
-  // Overridden from RenderWidgetHostViewPort:
+  // Overridden from RenderWidgetHostViewBase:
   virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
                            const gfx::Rect& pos) OVERRIDE;
   virtual void InitAsFullscreen(
@@ -164,24 +157,17 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void WasShown() OVERRIDE;
   virtual void WasHidden() OVERRIDE;
   virtual void MovePluginWindows(
-      const gfx::Vector2d& scroll_offset,
       const std::vector<WebPluginGeometry>& moves) OVERRIDE;
   virtual void Focus() OVERRIDE;
   virtual void Blur() OVERRIDE;
   virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
   virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputTypeChanged(ui::TextInputType type,
-                                    ui::TextInputMode input_mode,
-                                    bool can_compose_inline) OVERRIDE;
+  virtual void TextInputStateChanged(
+      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
   virtual void ImeCancelComposition() OVERRIDE;
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
       const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
-  virtual void DidUpdateBackingStore(
-      const gfx::Rect& scroll_rect,
-      const gfx::Vector2d& scroll_delta,
-      const std::vector<gfx::Rect>& copy_rects,
-      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) OVERRIDE;
   virtual void Destroy() OVERRIDE;
@@ -189,10 +175,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void SelectionChanged(const base::string16& text,
                                 size_t offset,
                                 const gfx::Range& range) OVERRIDE;
+  virtual gfx::Size GetRequestedRendererSize() const OVERRIDE;
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
   virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual BackingStore* AllocBackingStore(const gfx::Size& size) OVERRIDE;
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
@@ -207,7 +193,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
   virtual void EndFrameSubscription() OVERRIDE;
-  virtual void OnAcceleratedCompositingStateChange() OVERRIDE;
   virtual void AcceleratedSurfaceInitialized(int host_id,
                                              int route_id) OVERRIDE;
   virtual void AcceleratedSurfaceBuffersSwapped(
@@ -221,6 +206,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
   virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
   virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
+  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                             InputEventAckState ack_result) OVERRIDE;
   virtual void GestureEventAck(const blink::WebGestureEvent& event,
                                InputEventAckState ack_result) OVERRIDE;
   virtual void ProcessAckedTouchEvent(
@@ -228,10 +215,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
       InputEventAckState ack_result) OVERRIDE;
   virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       OVERRIDE;
-  virtual void SetHasHorizontalScrollbar(
-      bool has_horizontal_scrollbar) OVERRIDE;
-  virtual void SetScrollOffsetPinning(
-      bool is_pinned_to_left, bool is_pinned_to_right) OVERRIDE;
+  virtual InputEventAckState FilterInputEvent(
+      const blink::WebInputEvent& input_event) OVERRIDE;
   virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
   virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
   virtual bool LockMouse() OVERRIDE;
@@ -239,6 +224,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnSwapCompositorFrame(
       uint32 output_surface_id,
       scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
+
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) OVERRIDE;
@@ -275,11 +261,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCandidateWindowShown() OVERRIDE;
   virtual void OnCandidateWindowUpdated() OVERRIDE;
   virtual void OnCandidateWindowHidden() OVERRIDE;
+  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE;
+  virtual void ExecuteEditingCommand(int command_id) OVERRIDE;
 
   // Overridden from gfx::DisplayObserver:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // Overridden from aura::WindowDelegate:
   virtual gfx::Size GetMinimumSize() const OVERRIDE;
@@ -295,13 +284,11 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnCaptureLost() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying() OVERRIDE;
-  virtual void OnWindowDestroyed() OVERRIDE;
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
   virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
   virtual bool HasHitTestMask() const OVERRIDE;
   virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
-  virtual void DidRecreateLayer(ui::Layer *old_layer,
-                                ui::Layer *new_layer) OVERRIDE;
 
   // Overridden from ui::EventHandler:
   virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
@@ -324,24 +311,18 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   virtual void OnWindowFocused(aura::Window* gained_focus,
                                aura::Window* lost_focus) OVERRIDE;
 
-  // Overridden from aura::RootWindowObserver:
-  virtual void OnWindowTreeHostMoved(const aura::RootWindow* root,
-                                     const gfx::Point& new_origin) OVERRIDE;
-
-  // SoftwareFrameManagerClient implementation:
-  virtual void SoftwareFrameWasFreed(
-      uint32 output_surface_id, unsigned frame_id) OVERRIDE;
-  virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
-
-  bool CanCopyToBitmap() const;
-
-  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
+  // Overridden from aura::WindowTreeHostObserver:
+  virtual void OnHostMoved(const aura::WindowTreeHost* host,
+                           const gfx::Point& new_origin) OVERRIDE;
 
 #if defined(OS_WIN)
   // Sets the cutout rects from constrained windows. These are rectangles that
   // windowed NPAPI plugins shouldn't paint in. Overwrites any previous cutout
   // rects.
   void UpdateConstrainedWindowRects(const std::vector<gfx::Rect>& rects);
+
+  // Updates the cursor clip region. Used for mouse locking.
+  void UpdateMouseLockRegion();
 #endif
 
   // Method to indicate if this instance is shutting down or closing.
@@ -349,44 +330,26 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // as part of RenderWidgetHostView.
   bool IsClosing() const { return in_shutdown_; }
 
- protected:
-  friend class RenderWidgetHostView;
-  virtual ~RenderWidgetHostViewAura();
+  // Sets whether the overscroll controller should be enabled for this page.
+  void SetOverscrollControllerEnabled(bool enabled);
 
-  // Should be constructed via RenderWidgetHostView::CreateViewForWidget.
-  explicit RenderWidgetHostViewAura(RenderWidgetHost* host);
-
-  RenderWidgetHostViewFrameSubscriber* frame_subscriber() const {
-    return frame_subscriber_.get();
+  OverscrollController* overscroll_controller() const {
+    return overscroll_controller_.get();
   }
 
-  virtual bool ShouldCreateResizeLock();
-  virtual scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock);
-
-  virtual void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
+ protected:
+  virtual ~RenderWidgetHostViewAura();
 
   // Exposed for tests.
   aura::Window* window() { return window_; }
-  gfx::Size current_frame_size() const { return current_frame_size_; }
-  void LockResources();
-  void UnlockResources();
-
-  // Overridden from ui::CompositorObserver:
-  virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingStarted(ui::Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE;
-  virtual void OnCompositingEnded(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingAborted(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingLockStateChanged(
-      ui::Compositor* compositor) OVERRIDE;
-
-  // Overridden from ui::CompositorVSyncManager::Observer
-  virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE;
+  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
+  virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           TouchEventPositionsArentRounded);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
@@ -401,41 +364,27 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            UpdateCursorIfOverSelf);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraCopyRequestTest,
                            DestroyedAfterCopyRequest);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           VisibleViewportTest);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           OverscrollResetsOnBlur);
 
   class WindowObserver;
   friend class WindowObserver;
 
-  // Overridden from ImageTransportFactoryObserver:
-  virtual void OnLostResources() OVERRIDE;
-
-  // Overridden from BrowserAccessibilityDelegate:
-  virtual void SetAccessibilityFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityDoDefaultAction(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, gfx::Rect subfocus) OVERRIDE;
-  virtual void AccessibilityScrollToPoint(
-      int acc_obj_id, gfx::Point point) OVERRIDE;
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) OVERRIDE;
-  virtual gfx::Point GetLastTouchEventLocation() const OVERRIDE;
-  virtual void FatalAccessibilityTreeError() OVERRIDE;
-
   void UpdateCursorIfOverSelf();
-  bool ShouldSkipFrame(gfx::Size size_in_dip) const;
+
+  void SnapToPhysicalPixelBoundary();
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate
   // space is required by the aura::Window.
   void InternalSetBounds(const gfx::Rect& rect);
 
-  // Lazily grab a resize lock if the aura window size doesn't match the current
-  // frame size, to give time to the renderer.
-  void MaybeCreateResizeLock();
+#if defined(OS_WIN)
+  bool UsesNativeWindowFrame() const;
+#endif
 
-  // Checks if the resize lock can be released because we received an new frame.
-  void CheckResizeLock();
-
-  void UpdateExternalTexture();
   ui::InputMethod* GetInputMethod() const;
 
   // Returns whether the widget needs an input grab to work properly.
@@ -461,60 +410,32 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // moved to center.
   bool ShouldMoveToCenter();
 
-  // Run all on compositing commit callbacks.
-  void RunOnCommitCallbacks();
-
-  // Add on compositing commit callback.
-  void AddOnCommitCallbackAndDisableLocks(const base::Closure& callback);
-
-  // Called after |window_| is parented to a RootWindow.
+  // Called after |window_| is parented to a WindowEventDispatcher.
   void AddedToRootWindow();
 
-  // Called prior to removing |window_| from a RootWindow.
+  // Called prior to removing |window_| from a WindowEventDispatcher.
   void RemovingFromRootWindow();
 
-  // Called after commit for the last reference to the texture going away
-  // after it was released as the frontbuffer.
-  void SetSurfaceNotInUseByCompositor(scoped_refptr<ui::Texture>);
-
-  // Called after async thumbnailer task completes.  Scales and crops the result
-  // of the copy.
-  static void CopyFromCompositingSurfaceHasResult(
-      const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      scoped_ptr<cc::CopyOutputResult> result);
-  static void PrepareTextureCopyOutputResult(
-      const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      scoped_ptr<cc::CopyOutputResult> result);
-  static void PrepareBitmapCopyOutputResult(
-      const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      scoped_ptr<cc::CopyOutputResult> result);
-  static void CopyFromCompositingSurfaceHasResultForVideo(
-      base::WeakPtr<RenderWidgetHostViewAura> rwhva,
-      scoped_refptr<OwnedMailbox> subscriber_texture,
-      scoped_refptr<media::VideoFrame> video_frame,
-      const base::Callback<void(bool)>& callback,
-      scoped_ptr<cc::CopyOutputResult> result);
-  static void CopyFromCompositingSurfaceFinishedForVideo(
-      base::WeakPtr<RenderWidgetHostViewAura> rwhva,
-      const base::Callback<void(bool)>& callback,
-      scoped_refptr<OwnedMailbox> subscriber_texture,
-      scoped_ptr<cc::SingleReleaseCallback> release_callback,
-      bool result);
-  static void ReturnSubscriberTexture(
-      base::WeakPtr<RenderWidgetHostViewAura> rwhva,
-      scoped_refptr<OwnedMailbox> subscriber_texture,
-      uint32 sync_point);
-
-  ui::Compositor* GetCompositor() const;
+  // DelegatedFrameHostClient implementation.
+  virtual ui::Compositor* GetCompositor() const OVERRIDE;
+  virtual ui::Layer* GetLayer() OVERRIDE;
+  virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
+  virtual void SchedulePaintInRect(
+      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
+  virtual bool IsVisible() OVERRIDE;
+  virtual scoped_ptr<ResizeLock> CreateResizeLock(
+      bool defer_compositor_lock) OVERRIDE;
+  virtual gfx::Size DesiredFrameSize() OVERRIDE;
+  virtual float CurrentDeviceScaleFactor() OVERRIDE;
+  virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) OVERRIDE;
 
   // Detaches |this| from the input method object.
   void DetachFromInputMethod();
+
+  // Before calling RenderWidgetHost::ForwardKeyboardEvent(), this method
+  // calls our keybindings handler against the event and send matched
+  // edit commands to renderer instead.
+  void ForwardKeyboardEvent(const NativeWebKeyboardEvent& event);
 
   // Dismisses a Web Popup on a mouse or touch press outside the popup and its
   // parent.
@@ -526,60 +447,17 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Converts |rect| from screen coordinate to window coordinate.
   gfx::Rect ConvertRectFromScreen(const gfx::Rect& rect) const;
 
-  typedef base::Callback<void(bool, const scoped_refptr<ui::Texture>&)>
-      BufferPresentedCallback;
-
-  // The common entry point for buffer updates from renderer
-  // and GPU process.
-  void BuffersSwapped(const gfx::Size& surface_size,
-                      const gfx::Rect& damage_rect,
-                      float surface_scale_factor,
-                      const gpu::Mailbox& mailbox,
-                      const std::vector<ui::LatencyInfo>& latency_info,
-                      const BufferPresentedCallback& ack_callback);
-
-  bool SwapBuffersPrepare(const gfx::Rect& surface_rect,
-                          float surface_scale_factor,
-                          const gfx::Rect& damage_rect,
-                          const gpu::Mailbox& mailbox,
-                          const BufferPresentedCallback& ack_callback);
-
-  void SwapBuffersCompleted(
-      const BufferPresentedCallback& ack_callback,
-      const scoped_refptr<ui::Texture>& texture_to_return);
-
-  void SwapDelegatedFrame(
-      uint32 output_surface_id,
-      scoped_ptr<cc::DelegatedFrameData> frame_data,
-      float frame_device_scale_factor,
-      const std::vector<ui::LatencyInfo>& latency_info);
-  void SendDelegatedFrameAck(uint32 output_surface_id);
-  void SendReturnedDelegatedResources(uint32 output_surface_id);
-
-  // DelegatedFrameEvictorClient implementation.
-  virtual void EvictDelegatedFrame() OVERRIDE;
-
-  // cc::DelegatedFrameProviderClient implementation.
-  virtual void UnusedResourcesAreAvailable() OVERRIDE;
-
-  void SwapSoftwareFrame(uint32 output_surface_id,
-                         scoped_ptr<cc::SoftwareFrameData> frame_data,
-                         float frame_device_scale_factor,
-                         const std::vector<ui::LatencyInfo>& latency_info);
-  void SendSoftwareFrameAck(uint32 output_surface_id);
-  void SendReclaimSoftwareFrames();
-  void ReleaseSoftwareFrame(uint32 output_surface_id,
-                            unsigned software_frame_id);
-
-  void DidReceiveFrameFromRenderer();
-
   // Helper function to set keyboard focus to the main window.
   void SetKeyboardFocus();
+
+  RenderFrameHostImpl* GetFocusedFrame();
 
   // The model object.
   RenderWidgetHostImpl* host_;
 
   aura::Window* window_;
+
+  scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
 
   scoped_ptr<WindowObserver> window_observer_;
 
@@ -637,49 +515,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Current tooltip text.
   base::string16 tooltip_;
 
-  std::vector<base::Closure> on_compositing_did_commit_callbacks_;
-
-  // The current frontbuffer texture.
-  scoped_refptr<ui::Texture> current_surface_;
-
-  // This holds the current software framebuffer, if any.
-  scoped_ptr<SoftwareFrameManager> software_frame_manager_;
-
-  // The vsync manager we are observing for changes, if any.
-  scoped_refptr<ui::CompositorVSyncManager> vsync_manager_;
-
-  // With delegated renderer, this is the last output surface, used to
-  // disambiguate resources with the same id coming from different output
-  // surfaces.
-  uint32 last_output_surface_id_;
-
-  // The number of delegated frame acks that are pending, to delay resource
-  // returns until the acks are sent.
-  int pending_delegated_ack_count_;
-
-  // The damage in the previously presented buffer.
-  SkRegion previous_damage_;
-
-  // Pending damage from previous frames that we skipped.
-  SkRegion skipped_damage_;
-
-  // True after a delegated frame has been skipped, until a frame is not
-  // skipped.
-  bool skipped_frames_;
-
-  // Holds delegated resources that have been given to a DelegatedFrameProvider,
-  // and gives back resources when they are no longer in use for return to the
-  // renderer.
-  scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection_;
-
-  // Provides delegated frame updates to the cc::DelegatedRendererLayer.
-  scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;
-
-  // The size of the last frame that was swapped (even if we skipped it).
-  // Used to determine when the skipped_damage_ needs to be reset due to
-  // size changes between front- and backbuffer.
-  gfx::Size last_swapped_surface_size_;
-  float last_swapped_surface_scale_factor_;
+  // The size and scale of the last software compositing frame that was swapped.
+  gfx::Size last_swapped_software_frame_size_;
+  float last_swapped_software_frame_scale_factor_;
 
   // If non-NULL we're in OnPaint() and this is the supplied canvas.
   gfx::Canvas* paint_canvas_;
@@ -699,39 +537,9 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // events vs. normal mouse move events.
   bool synthetic_move_sent_;
 
-  // Signals that the accelerated compositing has been turned on or off.
-  // This is used to signal to turn off the external texture as soon as the
-  // software backing store is updated.
-  bool accelerated_compositing_state_changed_;
-
-  // This lock is the one waiting for a frame of the right size to come back
-  // from the renderer/GPU process. It is set from the moment the aura window
-  // got resized, to the moment we committed the renderer frame of the same
-  // size. It keeps track of the size we expect from the renderer, and locks the
-  // compositor, as well as the UI for a short time to give a chance to the
-  // renderer of producing a frame of the right size.
-  scoped_ptr<ResizeLock> resize_lock_;
-
-  // Keeps track of the current frame size.
-  gfx::Size current_frame_size_;
-
-  // This lock is for waiting for a front surface to become available to draw.
-  scoped_refptr<ui::CompositorLock> released_front_lock_;
-
   // Used to track the state of the window we're created from. Only used when
   // created fullscreen.
   scoped_ptr<aura::WindowTracker> host_tracker_;
-
-  enum CanLockCompositorState {
-    YES,
-    // We locked, so at some point we'll need to kick a frame.
-    YES_DID_LOCK,
-    // No. A lock timed out, we need to kick a new frame before locking again.
-    NO_PENDING_RENDERER_FRAME,
-    // No. We've got a frame, but it hasn't been committed.
-    NO_PENDING_COMMIT,
-  };
-  CanLockCompositorState can_lock_compositor_;
 
   // Used to track the last cursor visibility update that was sent to the
   // renderer via NotifyRendererOfCursorVisibilityState().
@@ -755,29 +563,13 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   PluginWindowMoves plugin_window_moves_;
 #endif
 
-  base::TimeTicks last_draw_ended_;
-
-  // Subscriber that listens to frame presentation events.
-  scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
-  std::vector<scoped_refptr<OwnedMailbox> > idle_frame_subscriber_textures_;
-  std::set<OwnedMailbox*> active_frame_subscriber_textures_;
-
-  // YUV readback pipeline.
-  scoped_ptr<content::ReadbackYUVInterface>
-      yuv_readback_pipeline_;
-
   TouchEditingClient* touch_editing_client_;
 
-  std::vector<ui::LatencyInfo> software_latency_info_;
+  scoped_ptr<OverscrollController> overscroll_controller_;
 
-  struct ReleasedFrameInfo {
-    ReleasedFrameInfo(uint32 output_id, unsigned software_frame_id)
-        : output_surface_id(output_id), frame_id(software_frame_id) {}
-    uint32 output_surface_id;
-    unsigned frame_id;
-  };
-  scoped_ptr<ReleasedFrameInfo> released_software_frame_;
-  scoped_ptr<DelegatedFrameEvictor> delegated_frame_evictor_;
+  gfx::Insets insets_;
+
+  std::vector<ui::LatencyInfo> software_latency_info_;
 
   scoped_ptr<aura::client::ScopedTooltipDisabler> tooltip_disabler_;
 
@@ -788,8 +580,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // for accessibility, as the container for windowless plugins like
   // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
   // etc.
-  scoped_ptr<content::LegacyRenderWidgetHostHWND>
-      legacy_render_widget_host_HWND_;
+  // The LegacyRenderWidgetHostHWND instance is created during the first call
+  // to RenderWidgetHostViewAura::InternalSetBounds. The instance is destroyed
+  // when the LegacyRenderWidgetHostHWND hwnd is destroyed.
+  content::LegacyRenderWidgetHostHWND* legacy_render_widget_host_HWND_;
 #endif
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };

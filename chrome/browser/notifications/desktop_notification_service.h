@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/prefs/pref_member.h"
@@ -17,7 +18,7 @@
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/notifications/extension_welcome_notification.h"
 #include "chrome/common/content_settings.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "third_party/WebKit/public/web/WebNotificationPresenter.h"
@@ -32,7 +33,8 @@ class NotificationUIManager;
 class Profile;
 
 namespace content {
-class WebContents;
+class DesktopNotificationDelegate;
+class RenderFrameHost;
 struct ShowDesktopNotificationHostMsgParams;
 }
 
@@ -46,14 +48,9 @@ class PrefRegistrySyncable;
 
 // The DesktopNotificationService is an object, owned by the Profile,
 // which provides the creation of desktop "toasts" to web pages and workers.
-class DesktopNotificationService : public BrowserContextKeyedService,
+class DesktopNotificationService : public KeyedService,
                                    public content::NotificationObserver {
  public:
-  enum DesktopNotificationSource {
-    PageNotification,
-    WorkerNotification
-  };
-
   // Register profile-specific prefs of notifications.
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* prefs);
 
@@ -61,31 +58,19 @@ class DesktopNotificationService : public BrowserContextKeyedService,
                              NotificationUIManager* ui_manager);
   virtual ~DesktopNotificationService();
 
-  // Requests permission (using an info-bar) for a given origin.
-  // |callback_context| contains an opaque value to pass back to the
-  // requesting process when the info-bar finishes.
+  // Requests permission for a given origin. |callback| is run when the UI
+  // finishes.
   void RequestPermission(const GURL& origin,
-                         int process_id,
-                         int route_id,
-                         int callback_context,
-                         content::WebContents* tab);
+                         content::RenderFrameHost* render_frame_host,
+                         const base::Closure& callback);
 
-  // ShowNotification is called on the UI thread handling IPCs from a child
-  // process, identified by |process_id| and |route_id|.  |source| indicates
-  // whether the script is in a worker or page. |params| contains all the
-  // other parameters supplied by the worker or page.
-  bool ShowDesktopNotification(
+  // Show a desktop notification. If |cancel_callback| is non-null, it's set to
+  // a callback which can be used to cancel the notification.
+  void ShowDesktopNotification(
       const content::ShowDesktopNotificationHostMsgParams& params,
-      int process_id,
-      int route_id,
-      DesktopNotificationSource source);
-
-  // Cancels a notification.  If it has already been shown, it will be
-  // removed from the screen.  If it hasn't been shown yet, it won't be
-  // shown.
-  bool CancelDesktopNotification(int process_id,
-                                 int route_id,
-                                 int notification_id);
+      content::RenderFrameHost* render_frame_host,
+      content::DesktopNotificationDelegate* delegate,
+      base::Closure* cancel_callback);
 
   // Methods to setup and modify permission preferences.
   void GrantPermission(const GURL& origin);
@@ -105,20 +90,7 @@ class DesktopNotificationService : public BrowserContextKeyedService,
   static base::string16 CreateDataUrl(int resource,
                                 const std::vector<std::string>& subst);
 
-  // Add a desktop notification. On non-Ash platforms this will generate a HTML
-  // notification from the input parameters. On Ash it will generate a normal
-  // ash notification. Returns the notification id.
-  // TODO(mukai): remove these methods. HTML notifications are no longer
-  // supported.
-  static std::string AddNotification(const GURL& origin_url,
-                                     const base::string16& title,
-                                     const base::string16& message,
-                                     const GURL& icon_url,
-                                     const base::string16& replace_id,
-                                     NotificationDelegate* delegate,
-                                     Profile* profile);
-
-  // Same as above, but takes a gfx::Image for the icon instead.
+  // Add a desktop notification.
   static std::string AddIconNotification(const GURL& origin_url,
                                          const base::string16& title,
                                          const base::string16& message,
@@ -126,9 +98,6 @@ class DesktopNotificationService : public BrowserContextKeyedService,
                                          const base::string16& replace_id,
                                          NotificationDelegate* delegate,
                                          Profile* profile);
-
-  // Remove any active notification corresponding to |notification_id|.
-  static void RemoveNotification(const std::string& notification_id);
 
   // The default content setting determines how to handle origins that haven't
   // been allowed or denied yet. If |provider_id| is not NULL, the id of the
@@ -164,9 +133,6 @@ class DesktopNotificationService : public BrowserContextKeyedService,
   void ShowWelcomeNotificationIfNecessary(const Notification& notification);
 
  private:
-  // Takes a notification object and shows it in the UI.
-  void ShowNotification(const Notification& notification);
-
   // Returns a display name for an origin in the process id, to be used in
   // permission infobar or on the frame of the notification toast.  Different
   // from the origin itself when dealing with extensions.

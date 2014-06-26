@@ -54,7 +54,7 @@ class PopupMessage::MessageBubble : public views::BubbleDelegateView {
 
  private:
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   // Each component (width/height) can force a size override for that component
   // if not 0.
@@ -163,7 +163,7 @@ void PopupMessage::MessageBubble::Close() {
     GetWidget()->Close();
 }
 
-gfx::Size PopupMessage::MessageBubble::GetPreferredSize() {
+gfx::Size PopupMessage::MessageBubble::GetPreferredSize() const {
   gfx::Size pref_size = views::BubbleDelegateView::GetPreferredSize();
   // Override the size with either the provided size or adjust it to not
   // violate our minimum / maximum sizes.
@@ -194,10 +194,10 @@ PopupMessage::PopupMessage(const base::string16& caption,
   widget_ = view_->GetWidget();
 
   gfx::NativeView native_view = widget_->GetNativeView();
-  views::corewm::SetWindowVisibilityAnimationType(
-      native_view, views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_VERTICAL);
-  views::corewm::SetWindowVisibilityAnimationTransition(
-      native_view, views::corewm::ANIMATE_HIDE);
+  wm::SetWindowVisibilityAnimationType(
+      native_view, wm::WINDOW_VISIBILITY_ANIMATION_TYPE_VERTICAL);
+  wm::SetWindowVisibilityAnimationTransition(
+      native_view, wm::ANIMATE_HIDE);
   view_->GetWidget()->Show();
 }
 
@@ -219,8 +219,8 @@ void PopupMessage::CancelHidingAnimation() {
     return;
 
   gfx::NativeView native_view = widget_->GetNativeView();
-  views::corewm::SetWindowVisibilityAnimationTransition(
-      native_view, views::corewm::ANIMATE_NONE);
+  wm::SetWindowVisibilityAnimationTransition(
+      native_view, wm::ANIMATE_NONE);
 }
 
 }  // namespace ash

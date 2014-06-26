@@ -145,7 +145,7 @@ public class TemplateUrlService {
 
     public void setSearchEngine(int selectedIndex) {
         ThreadUtils.assertOnUiThread();
-        nativeSetDefaultSearchProvider(mNativeTemplateUrlServiceAndroid, selectedIndex);
+        nativeSetUserSelectedDefaultSearchProvider(mNativeTemplateUrlServiceAndroid, selectedIndex);
     }
 
     public boolean isSearchProviderManaged() {
@@ -173,8 +173,8 @@ public class TemplateUrlService {
      */
     public void registerLoadListener(LoadListener listener) {
         ThreadUtils.assertOnUiThread();
-        assert !mLoadListeners.hasObserver(listener);
-        mLoadListeners.addObserver(listener);
+        boolean added = mLoadListeners.addObserver(listener);
+        assert added;
     }
 
     /**
@@ -183,8 +183,8 @@ public class TemplateUrlService {
      */
     public void unregisterLoadListener(LoadListener listener) {
         ThreadUtils.assertOnUiThread();
-        assert (mLoadListeners.hasObserver(listener));
-        mLoadListeners.removeObserver(listener);
+        boolean removed = mLoadListeners.removeObserver(listener);
+        assert removed;
     }
 
     /**
@@ -223,14 +223,24 @@ public class TemplateUrlService {
         return nativeReplaceSearchTermsInUrl(mNativeTemplateUrlServiceAndroid, query, url);
     }
 
+    /**
+     * Finds the default search engine for the default provider and returns the url query
+     * {@link String} for {@code query} with the contextual search version param set.
+     * @return      A {@link String} that contains the url of the default search engine with
+     *              {@code query} inserted as the search parameter and contextual search param set.
+     */
+    public String getUrlForContextualSearchQuery(String query) {
+        return nativeGetUrlForContextualSearchQuery(mNativeTemplateUrlServiceAndroid, query);
+    }
+
     private native long nativeInit();
     private native void nativeLoad(long nativeTemplateUrlServiceAndroid);
     private native boolean nativeIsLoaded(long nativeTemplateUrlServiceAndroid);
     private native int nativeGetTemplateUrlCount(long nativeTemplateUrlServiceAndroid);
     private native TemplateUrl nativeGetPrepopulatedTemplateUrlAt(
             long nativeTemplateUrlServiceAndroid, int i);
-    private native void nativeSetDefaultSearchProvider(long nativeTemplateUrlServiceAndroid,
-            int selectedIndex);
+    private native void nativeSetUserSelectedDefaultSearchProvider(
+            long nativeTemplateUrlServiceAndroid, int selectedIndex);
     private native int nativeGetDefaultSearchProvider(long nativeTemplateUrlServiceAndroid);
     private native boolean nativeIsSearchProviderManaged(long nativeTemplateUrlServiceAndroid);
     private native boolean nativeIsSearchByImageAvailable(long nativeTemplateUrlServiceAndroid);
@@ -241,4 +251,6 @@ public class TemplateUrlService {
             String query);
     private native String nativeReplaceSearchTermsInUrl(long nativeTemplateUrlServiceAndroid,
             String query, String currentUrl);
+    private native String nativeGetUrlForContextualSearchQuery(long nativeTemplateUrlServiceAndroid,
+            String query);
 }

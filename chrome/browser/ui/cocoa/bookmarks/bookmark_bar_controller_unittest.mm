@@ -11,10 +11,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_test_helpers.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_constants.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
@@ -27,7 +24,11 @@
 #import "chrome/browser/ui/cocoa/view_resizer_pong.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
@@ -209,6 +210,9 @@ class FakeTheme : public ui::ThemeProvider {
   FakeTheme(NSColor* color) : color_(color) {}
   base::scoped_nsobject<NSColor> color_;
 
+  virtual bool UsingSystemTheme() const OVERRIDE {
+    return true;
+  }
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE {
     return NULL;
   }
@@ -336,10 +340,9 @@ class BookmarkBarControllerTestBase : public CocoaProfileTest {
 
 class BookmarkBarControllerTest : public BookmarkBarControllerTestBase {
  public:
-  base::scoped_nsobject<NSButtonCell> cell_;
   base::scoped_nsobject<BookmarkBarControllerNoOpen> bar_;
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     BookmarkBarControllerTestBase::SetUp();
     ASSERT_TRUE(browser());
     AddCommandLineSwitches();
@@ -700,7 +703,7 @@ TEST_F(BookmarkBarControllerTest, MenuForFolderNode) {
   EXPECT_TRUE(item);
   if (item) {
     int64 tag = [bar_ nodeIdFromMenuTag:[item tag]];
-    const BookmarkNode* node = model->GetNodeByID(tag);
+    const BookmarkNode* node = GetBookmarkNodeByID(model, tag);
     EXPECT_TRUE(node);
     EXPECT_EQ(gurl, node->url());
   }
@@ -1449,6 +1452,11 @@ TEST_F(BookmarkBarControllerTest, CloseFolderOnAnimate) {
   // Now that we've closed the bookmark bar (with animation) the folder menu
   // should have been closed thus releasing the folderController.
   EXPECT_FALSE([bar_ folderController]);
+
+  // Stop the pending animation to tear down cleanly.
+  [bar_ updateState:BookmarkBar::DETACHED
+         changeType:BookmarkBar::DONT_ANIMATE_STATE_CHANGE];
+  EXPECT_FALSE([bar_ isAnimationRunning]);
 }
 
 TEST_F(BookmarkBarControllerTest, MoveRemoveAddButtons) {
@@ -1602,6 +1610,24 @@ TEST_F(BookmarkBarControllerTest, BookmarksWithoutAppsPageShortcut) {
             NSMinX([[[bar_ buttonView] noItemTextfield] frame]));
   EXPECT_LE(NSMaxX([[[bar_ buttonView] noItemTextfield] frame]),
             NSMinX([[[bar_ buttonView] importBookmarksButton] frame]));
+}
+
+TEST_F(BookmarkBarControllerTest, ManagedShowAppsShortcutInBookmarksBar) {
+  // By default the pref is not managed and the apps shortcut is shown.
+  TestingPrefServiceSyncable* prefs = profile()->GetTestingPrefService();
+  EXPECT_FALSE(
+      prefs->IsManagedPreference(prefs::kShowAppsShortcutInBookmarkBar));
+  EXPECT_FALSE([bar_ appsPageShortcutButtonIsHidden]);
+
+  // Hide the apps shortcut by policy, via the managed pref.
+  prefs->SetManagedPref(prefs::kShowAppsShortcutInBookmarkBar,
+                        new base::FundamentalValue(false));
+  EXPECT_TRUE([bar_ appsPageShortcutButtonIsHidden]);
+
+  // And try showing it via policy too.
+  prefs->SetManagedPref(prefs::kShowAppsShortcutInBookmarkBar,
+                        new base::FundamentalValue(true));
+  EXPECT_FALSE([bar_ appsPageShortcutButtonIsHidden]);
 }
 
 class BookmarkBarControllerOpenAllTest : public BookmarkBarControllerTest {

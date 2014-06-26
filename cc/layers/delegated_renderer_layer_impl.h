@@ -34,7 +34,8 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   virtual void ReleaseResources() OVERRIDE;
   virtual bool WillDraw(DrawMode draw_mode,
                         ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
 
@@ -47,8 +48,6 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
 
   void SetFrameData(const DelegatedFrameData* frame_data,
                     const gfx::RectF& damage_in_frame);
-
-  void SetDisplaySize(const gfx::Size& size);
 
  protected:
   DelegatedRendererLayerImpl(LayerTreeImpl* tree_impl, int id);
@@ -64,7 +63,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
  private:
   void ClearChildId();
 
-  void AppendRainbowDebugBorder(QuadSink* quad_sink,
+  void AppendRainbowDebugBorder(RenderPass* render_pass,
                                 AppendQuadsData* append_quads_data);
 
   void SetRenderPasses(
@@ -77,11 +76,9 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
       RenderPass::Id delegated_render_pass_id,
       RenderPass::Id* output_render_pass_id) const;
 
-  gfx::Transform DelegatedFrameToLayerSpaceTransform(
-      const gfx::Size& frame_size) const;
-
   void AppendRenderPassQuads(
-      QuadSink* quad_sink,
+      RenderPass* render_pass,
+      const OcclusionTracker<LayerImpl>& occlusion_tracker,
       AppendQuadsData* append_quads_data,
       const RenderPass* delegated_render_pass,
       const gfx::Size& frame_size) const;
@@ -90,11 +87,11 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   virtual const char* LayerTypeAsString() const OVERRIDE;
 
   bool have_render_passes_to_push_;
+  float inverse_device_scale_factor_;
   ScopedPtrVector<RenderPass> render_passes_in_draw_order_;
   base::hash_map<RenderPass::Id, int> render_passes_index_by_id_;
   ResourceProvider::ResourceIdArray resources_;
 
-  gfx::Size display_size_;
   int child_id_;
   bool own_child_id_;
 

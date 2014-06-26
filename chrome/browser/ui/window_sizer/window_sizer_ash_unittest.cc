@@ -18,12 +18,12 @@
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/render_view_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_windows.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/public/activation_client.h"
 
 typedef ash::test::AshTestBase WindowSizerAshTest;
 
@@ -92,9 +92,17 @@ scoped_ptr<TestBrowserWindowAura> CreateTestBrowserWindow(
 
 }  // namespace
 
+// On desktop linux aura, we currently don't use the ash frame, breaking some
+// tests which expect ash sizes: http://crbug.com/303862
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_DefaultSizeCase DISABLED_DefaultSizeCase
+#else
+#define MAYBE_DefaultSizeCase DefaultSizeCase
+#endif
+
 // Test that the window is sized appropriately for the first run experience
 // where the default window bounds calculation is invoked.
-TEST_F(WindowSizerAshTest, DefaultSizeCase) {
+TEST_F(WindowSizerAshTest, MAYBE_DefaultSizeCase) {
 #if defined(OS_WIN)
   CommandLine::ForCurrentProcess()->AppendSwitch(switches::kOpenAsh);
 #endif
@@ -451,8 +459,16 @@ TEST_F(WindowSizerAshTest, LastWindowOffscreenWithNonAggressiveRepositioning) {
   }
 }
 
+// On desktop linux aura, we currently don't use the ash frame, breaking some
+// tests which expect ash sizes: http://crbug.com/303862
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_PlaceNewWindows DISABLED_PlaceNewWindows
+#else
+#define MAYBE_PlaceNewWindows PlaceNewWindows
+#endif
+
 // Test the placement of newly created windows.
-TEST_F(WindowSizerAshTest, PlaceNewWindows) {
+TEST_F(WindowSizerAshTest, MAYBE_PlaceNewWindows) {
   // Create a browser which we can use to pass into the GetWindowBounds
   // function.
   scoped_ptr<TestingProfile> profile(new TestingProfile());
@@ -521,10 +537,18 @@ TEST_F(WindowSizerAshTest, PlaceNewWindows) {
   }
 }
 
+// On desktop linux aura, we currently don't use the ash frame, breaking some
+// tests which expect ash sizes: http://crbug.com/303862
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_PlaceNewBrowserWindowOnEmptyDesktop DISABLED_PlaceNewBrowserWindowOnEmptyDesktop
+#else
+#define MAYBE_PlaceNewBrowserWindowOnEmptyDesktop PlaceNewBrowserWindowOnEmptyDesktop
+#endif
+
 // Test the placement of newly created windows on an empty desktop.
 // This test supplements "PlaceNewWindows" by testing the creation of a newly
 // created browser window on an empty desktop.
-TEST_F(WindowSizerAshTest, PlaceNewBrowserWindowOnEmptyDesktop) {
+TEST_F(WindowSizerAshTest, MAYBE_PlaceNewBrowserWindowOnEmptyDesktop) {
   // Create a browser which we can use to pass into the GetWindowBounds
   // function.
   scoped_ptr<TestingProfile> profile(new TestingProfile());
@@ -695,8 +719,16 @@ TEST_F(WindowSizerAshTest, MAYBE_PlaceNewWindowsOnMultipleDisplays) {
   }
 }
 
+// On desktop linux aura, we currently don't use the ash frame, breaking some
+// tests which expect ash sizes: http://crbug.com/303862
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_TestShowState DISABLED_TestShowState
+#else
+#define MAYBE_TestShowState TestShowState
+#endif
+
 // Test that the show state is properly returned for non default cases.
-TEST_F(WindowSizerAshTest, TestShowState) {
+TEST_F(WindowSizerAshTest, MAYBE_TestShowState) {
   scoped_ptr<TestingProfile> profile(new TestingProfile());
 
   // Creating a browser & window to play with.
@@ -870,8 +902,7 @@ TEST_F(WindowSizerAshTest, DefaultBoundsInTargetDisplay) {
   {
     aura::Window* first_root =
         ash::Shell::GetAllRootWindows()[0];
-    ash::internal::ScopedTargetRootWindow tmp(
-        first_root);
+    ash::ScopedTargetRootWindow tmp(first_root);
     gfx::Rect bounds;
     ui::WindowShowState show_state;
     WindowSizer::GetBrowserWindowBoundsAndShowState(
@@ -885,8 +916,7 @@ TEST_F(WindowSizerAshTest, DefaultBoundsInTargetDisplay) {
   {
     aura::Window* second_root =
         ash::Shell::GetAllRootWindows()[1];
-    ash::internal::ScopedTargetRootWindow tmp(
-        second_root);
+    ash::ScopedTargetRootWindow tmp(second_root);
     gfx::Rect bounds;
     ui::WindowShowState show_state;
     WindowSizer::GetBrowserWindowBoundsAndShowState(
@@ -897,4 +927,24 @@ TEST_F(WindowSizerAshTest, DefaultBoundsInTargetDisplay) {
         &show_state);
     EXPECT_TRUE(second_root->GetBoundsInScreen().Contains(bounds));
   }
+}
+
+TEST_F(WindowSizerAshTest, TrustedPopupBehavior) {
+  scoped_ptr<TestingProfile> profile(new TestingProfile());
+  Browser::CreateParams trusted_popup_create_params(
+      Browser::TYPE_POPUP, profile.get(), chrome::HOST_DESKTOP_TYPE_ASH);
+  trusted_popup_create_params.trusted_source = true;
+
+  scoped_ptr<TestBrowserWindowAura> trusted_popup(CreateTestBrowserWindow(
+      CreateTestWindowInShellWithId(1),
+      gfx::Rect(16, 32, 640, 320),
+      trusted_popup_create_params));
+  // Trusted popup windows should follow the saved show state and ignore the
+  // last show state.
+  EXPECT_EQ(ui::SHOW_STATE_DEFAULT,
+            GetWindowShowState(ui::SHOW_STATE_DEFAULT,
+                               ui::SHOW_STATE_NORMAL,
+                               BOTH,
+                               trusted_popup->browser(),
+                               p1600x1200));
 }

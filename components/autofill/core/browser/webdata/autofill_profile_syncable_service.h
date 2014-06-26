@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/scoped_observer.h"
 #include "base/supports_user_data.h"
@@ -175,8 +176,7 @@ class AutofillProfileSyncableService
 
   // Calls merge_into->OverwriteWithOrAddTo() and then checks if the
   // |merge_into| has extra data. Returns |true| if |merge_into| posseses some
-  // multi-valued field values that are not in |merge_from| or if the origins
-  // of the two profiles differ, false otherwise.
+  // multi-valued field values that are not in |merge_from|.
   // TODO(isherman): Seems like this should return |true| if |merge_into| was
   // modified at all: http://crbug.com/248440
   static bool MergeProfile(const AutofillProfile& merge_from,

@@ -7,14 +7,12 @@
 #include "base/bind.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_types.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_prefs_factory.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extensions_browser_client.h"
 #include "extensions/common/extension.h"
 
@@ -32,13 +30,9 @@ AppWindowGeometryCache::AppWindowGeometryCache(
     Profile* profile,
     extensions::ExtensionPrefs* prefs)
     : prefs_(prefs),
-      sync_delay_(base::TimeDelta::FromMilliseconds(kSyncTimeoutMilliseconds)) {
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
-                 content::Source<Profile>(profile));
-  registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile));
+      sync_delay_(base::TimeDelta::FromMilliseconds(kSyncTimeoutMilliseconds)),
+      extension_registry_observer_(this) {
+  extension_registry_observer_.Add(extensions::ExtensionRegistry::Get(profile));
 }
 
 AppWindowGeometryCache::~AppWindowGeometryCache() {}
@@ -150,7 +144,6 @@ bool AppWindowGeometryCache::GetGeometry(const std::string& extension_id,
                                          gfx::Rect* bounds,
                                          gfx::Rect* screen_bounds,
                                          ui::WindowShowState* window_state) {
-
   std::map<std::string, ExtensionData>::const_iterator extension_data_it =
       cache_.find(extension_id);
 
@@ -193,29 +186,18 @@ AppWindowGeometryCache::WindowData::WindowData()
 
 AppWindowGeometryCache::WindowData::~WindowData() {}
 
-void AppWindowGeometryCache::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
-      std::string extension_id =
-          content::Details<const extensions::Extension>(details).ptr()->id();
-      LoadGeometryFromStorage(extension_id);
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-      std::string extension_id =
-          content::Details<const extensions::UnloadedExtensionInfo>(details)
-              .ptr()
-              ->extension->id();
-      OnExtensionUnloaded(extension_id);
-      break;
-    }
-    default:
-      NOTREACHED();
-      return;
-  }
+void AppWindowGeometryCache::OnExtensionLoaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension) {
+  LoadGeometryFromStorage(extension->id());
+}
+
+void AppWindowGeometryCache::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    extensions::UnloadedExtensionInfo::Reason reason) {
+  SyncToStorage();
+  cache_.erase(extension->id());
 }
 
 void AppWindowGeometryCache::SetSyncDelayForTests(int timeout_ms) {
@@ -275,12 +257,6 @@ void AppWindowGeometryCache::LoadGeometryFromStorage(
   }
 }
 
-void AppWindowGeometryCache::OnExtensionUnloaded(
-    const std::string& extension_id) {
-  SyncToStorage();
-  cache_.erase(extension_id);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 // Factory boilerplate
 
@@ -306,8 +282,7 @@ AppWindowGeometryCache::Factory::Factory()
 
 AppWindowGeometryCache::Factory::~Factory() {}
 
-BrowserContextKeyedService*
-AppWindowGeometryCache::Factory::BuildServiceInstanceFor(
+KeyedService* AppWindowGeometryCache::Factory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   Profile* profile = Profile::FromBrowserContext(context);
   return new AppWindowGeometryCache(profile,

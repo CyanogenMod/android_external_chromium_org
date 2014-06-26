@@ -8,30 +8,29 @@
 """
 
 import optparse
-import os
 import shutil
 import sys
 import tempfile
 
 from util import build_utils
 
-def SignApk(keystore_path, unsigned_path, signed_path):
+def SignApk(key_path, key_name, key_passwd, unsigned_path, signed_path):
   shutil.copy(unsigned_path, signed_path)
   sign_cmd = [
       'jarsigner',
       '-sigalg', 'MD5withRSA',
       '-digestalg', 'SHA1',
-      '-keystore', keystore_path,
-      '-storepass', 'chromium',
+      '-keystore', key_path,
+      '-storepass', key_passwd,
       signed_path,
-      'chromiumdebugkey',
+      key_name,
     ]
   build_utils.CheckOutput(sign_cmd)
 
 
-def AlignApk(android_sdk_root, unaligned_path, final_path):
+def AlignApk(zipalign_path, unaligned_path, final_path):
   align_cmd = [
-      os.path.join(android_sdk_root, 'tools', 'zipalign'),
+      zipalign_path,
       '-f', '4',  # 4 bytes
       unaligned_path,
       final_path,
@@ -39,31 +38,31 @@ def AlignApk(android_sdk_root, unaligned_path, final_path):
   build_utils.CheckOutput(align_cmd)
 
 
-def main(argv):
+def main():
   parser = optparse.OptionParser()
 
-  parser.add_option('--android-sdk-root', help='Android sdk root directory.')
+  parser.add_option('--zipalign-path', help='Path to the zipalign tool.')
   parser.add_option('--unsigned-apk-path', help='Path to input unsigned APK.')
   parser.add_option('--final-apk-path',
       help='Path to output signed and aligned APK.')
-  parser.add_option('--keystore-path', help='Path to keystore for signing.')
+  parser.add_option('--key-path', help='Path to keystore for signing.')
+  parser.add_option('--key-passwd', help='Keystore password')
+  parser.add_option('--key-name', help='Keystore name')
   parser.add_option('--stamp', help='Path to touch on success.')
-
-  # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-  parser.add_option('--ignore', help='Ignored.')
 
   options, _ = parser.parse_args()
 
   with tempfile.NamedTemporaryFile() as intermediate_file:
     signed_apk_path = intermediate_file.name
-    SignApk(options.keystore_path, options.unsigned_apk_path, signed_apk_path)
-    AlignApk(options.android_sdk_root, signed_apk_path, options.final_apk_path)
+    SignApk(options.key_path, options.key_name, options.key_passwd,
+            options.unsigned_apk_path, signed_apk_path)
+    AlignApk(options.zipalign_path, signed_apk_path, options.final_apk_path)
 
   if options.stamp:
     build_utils.Touch(options.stamp)
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())
 
 

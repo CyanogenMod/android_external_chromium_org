@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chromeos/network/network_state.h"
+#include "chromeos/network/network_util.h"
 #include "chromeos/network/onc/onc_signature.h"
 #include "chromeos/network/onc/onc_translation_tables.h"
 #include "chromeos/network/shill_property_util.h"
@@ -66,6 +67,7 @@ class ShillToONCTranslator {
   void TranslateWiFiWithState();
   void TranslateCellularWithState();
   void TranslateNetworkWithState();
+  void TranslateIPConfig();
 
   // Creates an ONC object from |dictionary| according to the signature
   // associated to |onc_field_name| and adds it to |onc_object_| at
@@ -131,6 +133,8 @@ ShillToONCTranslator::CreateTranslatedONCObject() {
     TranslateWiFiWithState();
   } else if (onc_signature_ == &kCellularWithStateSignature) {
     TranslateCellularWithState();
+  } else if (onc_signature_ == &kIPConfigSignature) {
+    TranslateIPConfig();
   } else {
     CopyPropertiesAccordingToSignature();
   }
@@ -254,10 +258,36 @@ void ShillToONCTranslator::TranslateCellularWithState() {
         shill::kCellularApnProperty, &dictionary)) {
     TranslateAndAddNestedObject(::onc::cellular::kAPN, *dictionary);
   }
-  const base::ListValue* list = NULL;
+  const base::ListValue* shill_apns = NULL;
   if (shill_dictionary_->GetListWithoutPathExpansion(
-          shill::kCellularApnListProperty, &list)) {
-    TranslateAndAddListOfObjects(::onc::cellular::kAPNList, *list);
+          shill::kCellularApnListProperty, &shill_apns)) {
+    TranslateAndAddListOfObjects(::onc::cellular::kAPNList, *shill_apns);
+  }
+
+  const base::DictionaryValue* device_dictionary = NULL;
+  if (!shill_dictionary_->GetDictionaryWithoutPathExpansion(
+          shill::kDeviceProperty, &device_dictionary)) {
+    return;
+  }
+
+  // Iterate through all fields of the CellularWithState signature and copy
+  // values from the device properties according to the separate
+  // CellularDeviceTable.
+  for (const OncFieldSignature* field_signature = onc_signature_->fields;
+       field_signature->onc_field_name != NULL; ++field_signature) {
+    const std::string& onc_field_name = field_signature->onc_field_name;
+
+    std::string shill_property_name;
+    const base::Value* shill_value = NULL;
+    if (!GetShillPropertyName(field_signature->onc_field_name,
+                              kCellularDeviceTable,
+                              &shill_property_name) ||
+        !device_dictionary->GetWithoutPathExpansion(shill_property_name,
+                                                    &shill_value)) {
+      continue;
+    }
+    onc_object_->SetWithoutPathExpansion(onc_field_name,
+                                         shill_value->DeepCopy());
   }
 }
 
@@ -273,6 +303,7 @@ void ShillToONCTranslator::TranslateNetworkWithState() {
     TranslateStringToONC(
         kNetworkTypeTable, shill_network_type, &onc_network_type);
   }
+  // Translate nested Cellular, WiFi, etc. properties.
   if (!onc_network_type.empty()) {
     onc_object_->SetStringWithoutPathExpansion(::onc::network_config::kType,
                                                onc_network_type);
@@ -287,6 +318,7 @@ void ShillToONCTranslator::TranslateNetworkWithState() {
   onc_object_->SetStringWithoutPathExpansion(::onc::network_config::kName,
                                              name);
 
+  // Limit ONC state to "NotConnected", "Connected", or "Connecting".
   std::string state;
   if (shill_dictionary_->GetStringWithoutPathExpansion(shill::kStateProperty,
                                                        &state)) {
@@ -299,6 +331,46 @@ void ShillToONCTranslator::TranslateNetworkWithState() {
     onc_object_->SetStringWithoutPathExpansion(
         ::onc::network_config::kConnectionState, onc_state);
   }
+
+  // Use a human-readable aa:bb format for any hardware MAC address. Note:
+  // this property is provided by the caller but is not part of the Shill
+  // Service properties (it is copied from the Device properties).
+  std::string address;
+  if (shill_dictionary_->GetStringWithoutPathExpansion(shill::kAddressProperty,
+                                                       &address)) {
+    onc_object_->SetStringWithoutPathExpansion(
+        ::onc::network_config::kMacAddress,
+        network_util::FormattedMacAddress(address));
+  }
+
+  // Shill's Service has an IPConfig property (note the singular), not an
+  // IPConfigs property. However, we require the caller of the translation to
+  // patch the Shill dictionary before passing it to the translator.
+  const base::ListValue* shill_ipconfigs = NULL;
+  if (shill_dictionary_->GetListWithoutPathExpansion(shill::kIPConfigsProperty,
+                                                     &shill_ipconfigs)) {
+    TranslateAndAddListOfObjects(::onc::network_config::kIPConfigs,
+                                 *shill_ipconfigs);
+  }
+}
+
+void ShillToONCTranslator::TranslateIPConfig() {
+  CopyPropertiesAccordingToSignature();
+  std::string shill_ip_method;
+  shill_dictionary_->GetStringWithoutPathExpansion(shill::kMethodProperty,
+                                                   &shill_ip_method);
+  std::string type;
+  if (shill_ip_method == shill::kTypeIPv4 ||
+      shill_ip_method == shill::kTypeDHCP) {
+    type = ::onc::ipconfig::kIPv4;
+  } else if (shill_ip_method == shill::kTypeIPv6 ||
+             shill_ip_method == shill::kTypeDHCP6) {
+    type = ::onc::ipconfig::kIPv6;
+  } else {
+    return;  // Ignore unhandled IPConfig types, e.g. bootp, zeroconf, ppp
+  }
+
+  onc_object_->SetStringWithoutPathExpansion(::onc::ipconfig::kType, type);
 }
 
 void ShillToONCTranslator::TranslateAndAddNestedObject(
@@ -345,14 +417,13 @@ void ShillToONCTranslator::TranslateAndAddListOfObjects(
         *field_signature->value_signature->onc_array_entry_signature);
     scoped_ptr<base::DictionaryValue> nested_object =
         nested_translator.CreateTranslatedONCObject();
+    // If the nested object couldn't be parsed, simply omit it.
     if (nested_object->empty())
-      // The nested object couldn't be parsed, so simply omit it.
       continue;
     result->Append(nested_object.release());
   }
+  // If there are no entries in the list, there is no need to expose this field.
   if (result->empty())
-    // There are no entries in the list, so there is no need to expose this
-    // field.
     return;
   onc_object_->SetWithoutPathExpansion(onc_field_name, result.release());
 }

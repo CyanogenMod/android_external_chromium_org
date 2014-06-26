@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "base/strings/string16.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -27,7 +27,7 @@ class RenderProcessHost;
 // This class keeps a cache of NTP resources (HTML and CSS) so we don't have to
 // regenerate them all the time.
 class NTPResourceCache : public content::NotificationObserver,
-                         public BrowserContextKeyedService {
+                         public KeyedService {
  public:
   enum WindowType {
     NORMAL,
@@ -76,7 +76,6 @@ class NTPResourceCache : public content::NotificationObserver,
 
   scoped_refptr<base::RefCountedMemory> new_tab_html_;
 
-#if !defined(OS_ANDROID)
   // Returns a message describing any newly-added sync types, or an empty
   // string if all types have already been acknowledged.
   base::string16 GetSyncTypeMessage();
@@ -97,7 +96,6 @@ class NTPResourceCache : public content::NotificationObserver,
   content::NotificationRegistrar registrar_;
   PrefChangeRegistrar profile_pref_change_registrar_;
   PrefChangeRegistrar local_state_pref_change_registrar_;
-#endif
 
   // Set based on platform_util::IsSwipeTrackingFromScrollEventsEnabled.
   bool is_swipe_tracking_from_scroll_events_enabled_;

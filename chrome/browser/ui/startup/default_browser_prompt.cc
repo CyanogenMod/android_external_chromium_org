@@ -12,8 +12,6 @@
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/shell_integration.h"
@@ -24,6 +22,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/master_preferences.h"
 #include "chrome/installer/util/master_preferences_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/web_contents.h"
@@ -76,11 +76,11 @@ class DefaultBrowserInfoBarDelegate : public ConfirmInfoBarDelegate {
   virtual int GetIconID() const OVERRIDE;
   virtual base::string16 GetMessageText() const OVERRIDE;
   virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool NeedElevation(InfoBarButton button) const OVERRIDE;
+  virtual bool OKButtonTriggersUACPrompt() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool ShouldExpireInternal(
-      const content::LoadCommittedDetails& details) const OVERRIDE;
+      const NavigationDetails& details) const OVERRIDE;
 
   // The prefs to use.
   PrefService* prefs_;
@@ -148,8 +148,8 @@ base::string16 DefaultBrowserInfoBarDelegate::GetButtonLabel(
       IDS_DONT_ASK_AGAIN_INFOBAR_BUTTON_LABEL);
 }
 
-bool DefaultBrowserInfoBarDelegate::NeedElevation(InfoBarButton button) const {
-  return button == BUTTON_OK;
+bool DefaultBrowserInfoBarDelegate::OKButtonTriggersUACPrompt() const {
+  return true;
 }
 
 bool DefaultBrowserInfoBarDelegate::Accept() {
@@ -171,7 +171,7 @@ bool DefaultBrowserInfoBarDelegate::Cancel() {
 }
 
 bool DefaultBrowserInfoBarDelegate::ShouldExpireInternal(
-    const content::LoadCommittedDetails& details) const {
+    const NavigationDetails& details) const {
   return should_expire_;
 }
 

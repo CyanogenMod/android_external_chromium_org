@@ -13,6 +13,7 @@
 #include "media/base/demuxer_stream.h"
 #include "media/base/pipeline.h"
 #include "media/base/video_decoder.h"
+#include "media/filters/decoder_stream_traits.h"
 #include "media/filters/decrypting_audio_decoder.h"
 #include "media/filters/decrypting_demuxer_stream.h"
 #include "media/filters/decrypting_video_decoder.h"
@@ -67,16 +68,15 @@ DecoderSelector<StreamType>::~DecoderSelector() {
 template <DemuxerStream::Type StreamType>
 void DecoderSelector<StreamType>::SelectDecoder(
     DemuxerStream* stream,
-    StatisticsCB statistics_cb,
-    const SelectDecoderCB& select_decoder_cb) {
+    bool low_delay,
+    const SelectDecoderCB& select_decoder_cb,
+    const typename Decoder::OutputCB& output_cb) {
   DVLOG(2) << __FUNCTION__;
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(stream);
 
   // Make sure |select_decoder_cb| runs on a different execution stack.
   select_decoder_cb_ = BindToCurrentLoop(select_decoder_cb);
-
-  statistics_cb_ = statistics_cb;
 
   if (!HasValidStreamConfig(stream)) {
     DLOG(ERROR) << "Invalid stream config.";
@@ -85,6 +85,8 @@ void DecoderSelector<StreamType>::SelectDecoder(
   }
 
   input_stream_ = stream;
+  low_delay_ = low_delay;
+  output_cb_ = output_cb;
 
   if (!IsStreamEncrypted(input_stream_)) {
     InitializeDecoder();
@@ -100,9 +102,13 @@ void DecoderSelector<StreamType>::SelectDecoder(
   decoder_.reset(new typename StreamTraits::DecryptingDecoderType(
       task_runner_, set_decryptor_ready_cb_));
 
-  DoInitializeDecoder(
+  DecoderStreamTraits<StreamType>::Initialize(
+      decoder_.get(),
+      StreamTraits::GetDecoderConfig(*input_stream_),
+      low_delay_,
       base::Bind(&DecoderSelector<StreamType>::DecryptingDecoderInitDone,
-                 weak_ptr_factory_.GetWeakPtr()));
+                 weak_ptr_factory_.GetWeakPtr()),
+      output_cb_);
 }
 
 template <DemuxerStream::Type StreamType>
@@ -124,8 +130,8 @@ void DecoderSelector<StreamType>::Abort() {
   if (decoder_) {
     // |decrypted_stream_| is either NULL or already initialized. We don't
     // need to Stop() |decrypted_stream_| in either case.
-    decoder_->Stop(base::Bind(&DecoderSelector<StreamType>::ReturnNullDecoder,
-                              weak_ptr_factory_.GetWeakPtr()));
+    decoder_->Stop();
+    ReturnNullDecoder();
     return;
   }
 
@@ -192,8 +198,13 @@ void DecoderSelector<StreamType>::InitializeDecoder() {
   decoder_.reset(decoders_.front());
   decoders_.weak_erase(decoders_.begin());
 
-  DoInitializeDecoder(base::Bind(&DecoderSelector<StreamType>::DecoderInitDone,
-                                 weak_ptr_factory_.GetWeakPtr()));
+  DecoderStreamTraits<StreamType>::Initialize(
+      decoder_.get(),
+      StreamTraits::GetDecoderConfig(*input_stream_),
+      low_delay_,
+      base::Bind(&DecoderSelector<StreamType>::DecoderInitDone,
+                 weak_ptr_factory_.GetWeakPtr()),
+      output_cb_);
 }
 
 template <DemuxerStream::Type StreamType>
@@ -218,22 +229,6 @@ void DecoderSelector<StreamType>::ReturnNullDecoder() {
   base::ResetAndReturn(&select_decoder_cb_)
       .Run(scoped_ptr<Decoder>(),
            scoped_ptr<DecryptingDemuxerStream>());
-}
-
-// TODO(rileya): Get rid of this and the specialization below once the Audio and
-// Video Decoders' Initialize() interfaces match up (see crbug.com/338059).
-template <DemuxerStream::Type StreamType>
-void DecoderSelector<StreamType>::DoInitializeDecoder(
-    const PipelineStatusCB& status_cb) {
-  decoder_->Initialize(input_stream_->video_decoder_config(), status_cb);
-}
-
-// Specialization for AudioDecoder (its Initialize() signature currently doesn't
-// match that of VideoDecoder (eventually it will, see the TODO above).
-template <>
-void AudioDecoderSelector::DoInitializeDecoder(
-    const PipelineStatusCB& status_cb) {
-  decoder_->Initialize(input_stream_, status_cb, statistics_cb_);
 }
 
 // These forward declarations tell the compiler that we will use

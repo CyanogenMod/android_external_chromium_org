@@ -18,8 +18,6 @@ class View;
 }
 
 namespace ash {
-namespace internal {
-
 class TouchHudCanvas;
 class TouchLog;
 
@@ -62,7 +60,8 @@ class ASH_EXPORT TouchHudDebug : public TouchObserverHUD {
 
   // Overriden from TouchObserverHUD.
   virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
   virtual void SetHudForRootWindowController(
       RootWindowController* controller) OVERRIDE;
   virtual void UnsetHudForRootWindowController(
@@ -81,7 +80,6 @@ class ASH_EXPORT TouchHudDebug : public TouchObserverHUD {
   DISALLOW_COPY_AND_ASSIGN(TouchHudDebug);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_TOUCH_TOUCH_HUD_DEBUG_H_

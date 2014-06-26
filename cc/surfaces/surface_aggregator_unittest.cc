@@ -19,7 +19,12 @@
 
 namespace cc {
 namespace {
-const int kInvalidSurfaceId = -1;
+
+SurfaceId InvalidSurfaceId() {
+  static SurfaceId invalid;
+  invalid.id = -1;
+  return invalid;
+}
 
 class SurfaceAggregatorTest : public testing::Test {
  public:
@@ -31,7 +36,7 @@ class SurfaceAggregatorTest : public testing::Test {
 };
 
 TEST_F(SurfaceAggregatorTest, InvalidSurfaceId) {
-  scoped_ptr<CompositorFrame> frame = aggregator_.Aggregate(kInvalidSurfaceId);
+  scoped_ptr<CompositorFrame> frame = aggregator_.Aggregate(InvalidSurfaceId());
   EXPECT_FALSE(frame);
 }
 
@@ -258,7 +263,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, MultiPassSurfaceReference) {
 // be dropped.
 TEST_F(SurfaceAggregatorValidSurfaceTest, InvalidSurfaceReference) {
   test::Quad quads[] = {test::Quad::SolidColorQuad(SK_ColorGREEN),
-                        test::Quad::SurfaceQuad(kInvalidSurfaceId),
+                        test::Quad::SurfaceQuad(InvalidSurfaceId()),
                         test::Quad::SolidColorQuad(SK_ColorBLUE)};
   test::Pass passes[] = {test::Pass(quads, arraysize(quads))};
 
@@ -418,18 +423,19 @@ void AddSolidColorQuadWithBlendMode(const gfx::Size& size,
   float opacity = 1.f;
 
   bool force_anti_aliasing_off = false;
-  scoped_ptr<SharedQuadState> sqs = SharedQuadState::Create();
+  SharedQuadState* sqs = pass->CreateAndAppendSharedQuadState();
   sqs->SetAll(content_to_target_transform,
               content_bounds,
               visible_content_rect,
               clip_rect,
               is_clipped,
               opacity,
-              blend_mode);
-  pass->shared_quad_state_list.push_back(sqs.Pass());
+              blend_mode,
+              0);
 
   scoped_ptr<SolidColorDrawQuad> color_quad = SolidColorDrawQuad::Create();
   color_quad->SetNew(pass->shared_quad_state_list.back(),
+                     visible_content_rect,
                      visible_content_rect,
                      SK_ColorGREEN,
                      force_anti_aliasing_off);
@@ -479,7 +485,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateSharedQuadStateProperties) {
   Surface grandchild_surface(&manager_, NULL, surface_size);
   scoped_ptr<RenderPass> grandchild_pass = RenderPass::Create();
   gfx::Rect output_rect(surface_size);
-  gfx::RectF damage_rect(surface_size);
+  gfx::Rect damage_rect(surface_size);
   gfx::Transform transform_to_root_target;
   grandchild_pass->SetNew(
       pass_id, output_rect, damage_rect, transform_to_root_target);
@@ -497,6 +503,7 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateSharedQuadStateProperties) {
   scoped_ptr<SurfaceDrawQuad> grandchild_surface_quad =
       SurfaceDrawQuad::Create();
   grandchild_surface_quad->SetNew(child_one_pass->shared_quad_state_list.back(),
+                                  gfx::Rect(surface_size),
                                   gfx::Rect(surface_size),
                                   grandchild_surface.surface_id());
   child_one_pass->quad_list.push_back(
@@ -523,12 +530,14 @@ TEST_F(SurfaceAggregatorValidSurfaceTest, AggregateSharedQuadStateProperties) {
       SurfaceDrawQuad::Create();
   child_one_surface_quad->SetNew(root_pass->shared_quad_state_list.back(),
                                  gfx::Rect(surface_size),
+                                 gfx::Rect(surface_size),
                                  child_one_surface.surface_id());
   root_pass->quad_list.push_back(child_one_surface_quad.PassAs<DrawQuad>());
   AddSolidColorQuadWithBlendMode(surface_size, root_pass.get(), blend_modes[4]);
   scoped_ptr<SurfaceDrawQuad> child_two_surface_quad =
       SurfaceDrawQuad::Create();
   child_two_surface_quad->SetNew(root_pass->shared_quad_state_list.back(),
+                                 gfx::Rect(surface_size),
                                  gfx::Rect(surface_size),
                                  child_two_surface.surface_id());
   root_pass->quad_list.push_back(child_two_surface_quad.PassAs<DrawQuad>());

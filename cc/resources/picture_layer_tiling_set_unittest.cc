@@ -13,6 +13,7 @@
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_picture_layer_tiling_client.h"
 #include "cc/test/fake_tile_manager_client.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size_conversions.h"
 
@@ -65,8 +66,10 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
         FakeOutputSurface::Create3d();
     CHECK(output_surface->BindToClient(&output_surface_client));
 
-    scoped_ptr<ResourceProvider> resource_provider =
-        ResourceProvider::Create(output_surface.get(), NULL, 0, false, 1);
+    scoped_ptr<SharedBitmapManager> shared_bitmap_manager(
+        new TestSharedBitmapManager());
+    scoped_ptr<ResourceProvider> resource_provider = ResourceProvider::Create(
+        output_surface.get(), shared_bitmap_manager.get(), 0, false, 1, false);
 
     FakePictureLayerTilingClient client(resource_provider.get());
     client.SetTileSize(gfx::Size(256, 256));
@@ -78,8 +81,7 @@ class PictureLayerTilingSetTestWithResources : public testing::Test {
       PictureLayerTiling* tiling = set.AddTiling(scale);
       tiling->CreateAllTilesForTesting();
       std::vector<Tile*> tiles = tiling->AllTilesForTesting();
-      client.tile_manager()->InitializeTilesWithResourcesForTesting(
-          tiles, resource_provider.get());
+      client.tile_manager()->InitializeTilesWithResourcesForTesting(tiles);
     }
 
     float max_contents_scale = scale;
@@ -217,10 +219,10 @@ class PictureLayerTilingSetSyncTest : public testing::Test {
 
   void ValidateTiling(const PictureLayerTiling* tiling,
                       const PicturePileImpl* pile) const {
-    if (tiling->ContentRect().IsEmpty())
+    if (tiling->TilingRect().IsEmpty())
       EXPECT_TRUE(tiling->live_tiles_rect().IsEmpty());
     else if (!tiling->live_tiles_rect().IsEmpty())
-      EXPECT_TRUE(tiling->ContentRect().Contains(tiling->live_tiles_rect()));
+      EXPECT_TRUE(tiling->TilingRect().Contains(tiling->live_tiles_rect()));
 
     std::vector<Tile*> tiles = tiling->AllTilesForTesting();
     for (size_t i = 0; i < tiles.size(); ++i) {

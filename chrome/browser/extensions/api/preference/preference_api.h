@@ -7,11 +7,12 @@
 
 #include <string>
 
+#include "base/memory/ref_counted.h"
 #include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "content/public/browser/notification_observer.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
 #include "extensions/browser/extension_prefs_scope.h"
 
@@ -86,43 +87,31 @@ class PreferenceAPIBase {
   // Virtual for testing.
   virtual ExtensionPrefs* extension_prefs() = 0;
   virtual ExtensionPrefValueMap* extension_pref_value_map() = 0;
+  virtual scoped_refptr<ContentSettingsStore> content_settings_store() = 0;
 };
 
 class PreferenceAPI : public PreferenceAPIBase,
-                      public ProfileKeyedAPI,
+                      public BrowserContextKeyedAPI,
                       public EventRouter::Observer,
                       public ContentSettingsStore::Observer {
  public:
-  explicit PreferenceAPI(Profile* profile);
+  explicit PreferenceAPI(content::BrowserContext* context);
   virtual ~PreferenceAPI();
 
-  // BrowserContextKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<PreferenceAPI>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<PreferenceAPI>* GetFactoryInstance();
 
   // Convenience method to get the PreferenceAPI for a profile.
-  static PreferenceAPI* Get(Profile* profile);
+  static PreferenceAPI* Get(content::BrowserContext* context);
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const EventListenerInfo& details) OVERRIDE;
 
-  // Loads the preferences controlled by the specified extension from their
-  // dictionary and sets them in the |value_map|.
-  static void LoadExtensionControlledPrefs(ExtensionPrefs* prefs,
-                                           ExtensionPrefValueMap* value_map,
-                                           const std::string& extension_id,
-                                           ExtensionPrefsScope scope);
-
-  // Store extension controlled preference values in the |value_map|,
-  // which then informs the subscribers (ExtensionPrefStores) about the winning
-  // values.
-  static void InitExtensionControlledPrefs(ExtensionPrefs* prefs,
-                                           ExtensionPrefValueMap* value_map);
-
  private:
-  friend class ProfileKeyedAPIFactory<PreferenceAPI>;
+  friend class BrowserContextKeyedAPIFactory<PreferenceAPI>;
 
   // ContentSettingsStore::Observer implementation.
   virtual void OnContentSettingChanged(const std::string& extension_id,
@@ -134,10 +123,11 @@ class PreferenceAPI : public PreferenceAPIBase,
   // PreferenceAPIBase implementation.
   virtual ExtensionPrefs* extension_prefs() OVERRIDE;
   virtual ExtensionPrefValueMap* extension_pref_value_map() OVERRIDE;
+  virtual scoped_refptr<ContentSettingsStore> content_settings_store() OVERRIDE;
 
   Profile* profile_;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "PreferenceAPI";
   }
@@ -177,6 +167,8 @@ class PrefTransformerInterface {
 // classes.
 class PreferenceFunction : public ChromeSyncExtensionFunction {
  protected:
+  enum PermissionType { PERMISSION_TYPE_READ, PERMISSION_TYPE_WRITE };
+
   virtual ~PreferenceFunction();
 
   // Given an |extension_pref_key|, provides its |browser_pref_key| from the
@@ -185,6 +177,7 @@ class PreferenceFunction : public ChromeSyncExtensionFunction {
   // modify that pref. Sets |error_| if the extension doesn't have the needed
   // permission.
   bool ValidateBrowserPref(const std::string& extension_pref_key,
+                           PermissionType permission_type,
                            std::string* browser_pref_key);
 };
 
@@ -196,7 +189,7 @@ class GetPreferenceFunction : public PreferenceFunction {
   virtual ~GetPreferenceFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class SetPreferenceFunction : public PreferenceFunction {
@@ -207,7 +200,7 @@ class SetPreferenceFunction : public PreferenceFunction {
   virtual ~SetPreferenceFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class ClearPreferenceFunction : public PreferenceFunction {
@@ -219,7 +212,7 @@ class ClearPreferenceFunction : public PreferenceFunction {
   virtual ~ClearPreferenceFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 }  // namespace extensions

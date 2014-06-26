@@ -7,16 +7,26 @@
 #include "base/logging.h"
 #include "base/values.h"
 #include "chromeos/network/device_state.h"
-#include "chromeos/network/favorite_state.h"
 #include "chromeos/network/network_event_log.h"
 #include "chromeos/network/network_state.h"
-#include "chromeos/network/shill_property_util.h"
+#include "chromeos/network/network_type_pattern.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
 
 bool ManagedState::Matches(const NetworkTypePattern& pattern) const {
   return pattern.MatchesType(type());
+}
+
+// static
+std::string ManagedState::TypeToString(ManagedType type) {
+  switch (type) {
+    case MANAGED_TYPE_NETWORK:
+      return "Network";
+    case MANAGED_TYPE_DEVICE:
+      return "Device";
+  }
+  return "Unknown";
 }
 
 ManagedState::ManagedState(ManagedType type, const std::string& path)
@@ -33,8 +43,6 @@ ManagedState* ManagedState::Create(ManagedType type, const std::string& path) {
   switch (type) {
     case MANAGED_TYPE_NETWORK:
       return new NetworkState(path);
-    case MANAGED_TYPE_FAVORITE:
-      return new FavoriteState(path);
     case MANAGED_TYPE_DEVICE:
       return new DeviceState(path);
   }
@@ -53,15 +61,14 @@ DeviceState* ManagedState::AsDeviceState() {
   return NULL;
 }
 
-FavoriteState* ManagedState::AsFavoriteState() {
-  if (managed_type() == MANAGED_TYPE_FAVORITE)
-    return static_cast<FavoriteState*>(this);
-  return NULL;
-}
-
 bool ManagedState::InitialPropertiesReceived(
     const base::DictionaryValue& properties) {
   return false;
+}
+
+void ManagedState::GetStateProperties(base::DictionaryValue* dictionary) const {
+  dictionary->SetStringWithoutPathExpansion(shill::kNameProperty, name());
+  dictionary->SetStringWithoutPathExpansion(shill::kTypeProperty, type());
 }
 
 bool ManagedState::ManagedStatePropertyChanged(const std::string& key,
@@ -107,7 +114,7 @@ bool ManagedState::GetStringValue(const std::string& key,
                                   std::string* out_value) {
   std::string new_value;
   if (!value.GetAsString(&new_value)) {
-    NET_LOG_ERROR("Error parsing state value", path() + "." + key);
+    NET_LOG_ERROR("Error parsing state: " + key, path());
     return false;
   }
   if (*out_value == new_value)

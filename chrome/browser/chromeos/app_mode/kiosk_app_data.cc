@@ -18,17 +18,19 @@
 #include "chrome/browser/chromeos/app_mode/kiosk_app_data_delegate.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/image_loader.h"
+#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/webstore_data_fetcher.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
 #include "chrome/browser/image_decoder.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_constants.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image.h"
 
@@ -58,8 +60,8 @@ void SaveIconToLocalOnBlockingPool(
     CHECK(base::CreateDirectory(dir));
 
   CHECK_EQ(static_cast<int>(raw_icon->size()),
-           file_util::WriteFile(icon_path,
-                                raw_icon->data().c_str(), raw_icon->size()));
+           base::WriteFile(icon_path,
+                           raw_icon->data().c_str(), raw_icon->size()));
 }
 
 // Returns true for valid kiosk app manifest.
@@ -403,7 +405,7 @@ void KioskAppData::OnExtensionIconLoaded(const gfx::Image& icon) {
   if (icon.IsEmpty()) {
     LOG(WARNING) << "Failed to load icon from installed app"
                  << ", id=" << app_id_;
-    SetCache(name_, *extensions::IconsInfo::GetDefaultAppIcon().bitmap());
+    SetCache(name_, *extensions::util::GetDefaultAppIcon().bitmap());
   } else {
     SetCache(name_, icon.AsBitmap());
   }

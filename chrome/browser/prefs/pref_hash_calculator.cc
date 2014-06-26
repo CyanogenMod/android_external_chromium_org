@@ -6,12 +6,14 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/values.h"
+#include "chrome/browser/prefs/tracked/pref_hash_calculator_helper.h"
 #include "crypto/hmac.h"
 
 namespace {
@@ -64,13 +66,18 @@ std::string ValueAsString(const base::Value* value) {
   return value_as_string;
 }
 
-// Common helper for all hash algorithms.
-std::string GetMessageFromValueAndComponents(
-    const std::string& value_as_string,
-    const std::vector<std::string>& extra_components) {
-  return JoinString(extra_components, "") + value_as_string;
+// Concatenates |device_id|, |path|, and |value_as_string| to give the hash
+// input.
+std::string GetMessage(const std::string& device_id,
+                       const std::string& path,
+                       const std::string& value_as_string) {
+  std::string message;
+  message.reserve(device_id.size() + path.size() + value_as_string.size());
+  message.append(device_id);
+  message.append(path);
+  message.append(value_as_string);
+  return message;
 }
-
 
 // Generates a device ID based on the input device ID. The derived device ID has
 // no useful properties beyond those of the input device ID except that it is
@@ -83,28 +90,30 @@ std::string GenerateDeviceIdLikePrefMetricsServiceDid(
       GetDigestString(original_device_id, "PrefMetricsService"));
 }
 
-// Verifies a hash using a deprecated hash algorithm. For validating old
-// hashes during migration.
-bool VerifyLegacyHash(const std::string& seed,
-                      const std::string& value_as_string,
-                      const std::string& digest_string) {
-  return VerifyDigestString(
-      seed,
-      GetMessageFromValueAndComponents(value_as_string,
-                                       std::vector<std::string>()),
-      digest_string);
-}
-
 }  // namespace
 
 PrefHashCalculator::PrefHashCalculator(const std::string& seed,
                                        const std::string& device_id)
     : seed_(seed),
-      device_id_(GenerateDeviceIdLikePrefMetricsServiceDid(device_id)) {}
+      device_id_(GenerateDeviceIdLikePrefMetricsServiceDid(device_id)),
+      raw_device_id_(device_id),
+      get_legacy_device_id_callback_(base::Bind(&GetLegacyDeviceId)) {}
+
+PrefHashCalculator::PrefHashCalculator(
+    const std::string& seed,
+    const std::string& device_id,
+    const GetLegacyDeviceIdCallback& get_legacy_device_id_callback)
+    : seed_(seed),
+      device_id_(GenerateDeviceIdLikePrefMetricsServiceDid(device_id)),
+      raw_device_id_(device_id),
+      get_legacy_device_id_callback_(get_legacy_device_id_callback) {}
+
+PrefHashCalculator::~PrefHashCalculator() {}
 
 std::string PrefHashCalculator::Calculate(const std::string& path,
                                           const base::Value* value) const {
-  return GetDigestString(seed_, GetMessage(path, ValueAsString(value)));
+  return GetDigestString(seed_,
+                         GetMessage(device_id_, path, ValueAsString(value)));
 }
 
 PrefHashCalculator::ValidationResult PrefHashCalculator::Validate(
@@ -112,21 +121,36 @@ PrefHashCalculator::ValidationResult PrefHashCalculator::Validate(
     const base::Value* value,
     const std::string& digest_string) const {
   const std::string value_as_string(ValueAsString(value));
-  if (VerifyDigestString(seed_, GetMessage(path, value_as_string),
+  if (VerifyDigestString(seed_, GetMessage(device_id_, path, value_as_string),
                          digest_string)) {
     return VALID;
   }
-  if (VerifyLegacyHash(seed_, value_as_string, digest_string))
-    return VALID_LEGACY;
+  if (VerifyDigestString(seed_,
+                         GetMessage(RetrieveLegacyDeviceId(), path,
+                                    value_as_string),
+                         digest_string)) {
+    return VALID_SECURE_LEGACY;
+  }
+  if (VerifyDigestString(seed_, value_as_string, digest_string))
+    return VALID_WEAK_LEGACY;
   return INVALID;
 }
 
-std::string PrefHashCalculator::GetMessage(
-    const std::string& path,
-    const std::string& value_as_string) const {
-  std::vector<std::string> components;
-  if (!device_id_.empty())
-    components.push_back(device_id_);
-  components.push_back(path);
-  return GetMessageFromValueAndComponents(value_as_string, components);
+std::string PrefHashCalculator::RetrieveLegacyDeviceId() const {
+  if (!legacy_device_id_instance_) {
+    // Allow IO on this thread to retrieve the legacy device ID. The result of
+    // this operation is stored in |legacy_device_id_instance_| and will thus
+    // only happen at most once per PrefHashCalculator. This is not ideal, but
+    // this value is required synchronously to be able to continue loading prefs
+    // for this profile. This profile should then be migrated to a modern device
+    // ID and subsequent loads of this profile shouldn't need to run this code
+    // ever again.
+    // TODO(gab): Remove this when the legacy device ID (M33) becomes
+    // irrelevant.
+    base::ThreadRestrictions::ScopedAllowIO allow_io;
+    legacy_device_id_instance_.reset(
+        new std::string(GenerateDeviceIdLikePrefMetricsServiceDid(
+            get_legacy_device_id_callback_.Run(raw_device_id_))));
+  }
+  return *legacy_device_id_instance_;
 }

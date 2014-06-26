@@ -37,6 +37,8 @@ bool ReadString(Scope& scope, const char* var, std::string* dest, Err* err) {
 // toolchain -------------------------------------------------------------------
 
 const char kToolchain[] = "toolchain";
+const char kToolchain_HelpShort[] =
+    "toolchain: Defines a toolchain.";
 const char kToolchain_Help[] =
     "toolchain: Defines a toolchain.\n"
     "\n"
@@ -74,7 +76,7 @@ const char kToolchain_Help[] =
     "Example:\n"
     "  toolchain(\"plugin_toolchain\") {\n"
     "    tool(\"cc\") {\n"
-    "      command = \"gcc $in\""
+    "      command = \"gcc $in\"\n"
     "    }\n"
     "\n"
     "    toolchain_args() {\n"
@@ -105,6 +107,7 @@ Value RunToolchain(Scope* scope,
   // manager, but that has to be done in the lock.
   scoped_ptr<Toolchain> toolchain(new Toolchain(scope->settings(), label));
   toolchain->set_defined_from(function);
+  toolchain->visibility().SetPublic();
 
   Scope block_scope(scope);
   block_scope.SetProperty(&kToolchainPropertyKey, toolchain.get());
@@ -113,25 +116,24 @@ Value RunToolchain(Scope* scope,
   if (err->has_error())
     return Value();
 
-  // Extract the gyp_header contents, if any.
-  const Value* gyp_header_value =
-      block_scope.GetValue(variables::kGypHeader, true);
-  if (gyp_header_value) {
-    if (!gyp_header_value->VerifyTypeIs(Value::STRING, err))
-      return Value();
-    toolchain->set_gyp_header(gyp_header_value->string_value());
-  }
-
   if (!block_scope.CheckForUnusedVars(err))
     return Value();
 
-  scope->settings()->build_settings()->ItemDefined(toolchain.PassAs<Item>());
+  // Save this target for the file.
+  Scope::ItemVector* collector = scope->GetItemCollector();
+  if (!collector) {
+    *err = Err(function, "Can't define a toolchain in this context.");
+    return Value();
+  }
+  collector->push_back(new scoped_ptr<Item>(toolchain.PassAs<Item>()));
   return Value();
 }
 
 // tool ------------------------------------------------------------------------
 
 const char kTool[] = "tool";
+const char kTool_HelpShort[] =
+    "tool: Specify arguments to a toolchain tool.";
 const char kTool_Help[] =
     "tool: Specify arguments to a toolchain tool.\n"
     "\n"
@@ -238,6 +240,8 @@ Value RunTool(Scope* scope,
 // toolchain_args --------------------------------------------------------------
 
 extern const char kToolchainArgs[] = "toolchain_args";
+extern const char kToolchainArgs_HelpShort[] =
+    "toolchain_args: Set build arguments for toolchain build setup.";
 extern const char kToolchainArgs_Help[] =
     "toolchain_args: Set build arguments for toolchain build setup.\n"
     "\n"

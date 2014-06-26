@@ -7,6 +7,8 @@
 
 #include "net/tools/quic/quic_dispatcher.h"
 
+#include "net/base/ip_endpoint.h"
+
 namespace net {
 namespace tools {
 
@@ -20,14 +22,22 @@ class QuicDispatcherPeer {
       QuicDispatcher* dispatcher,
       QuicTimeWaitListManager* time_wait_list_manager);
 
-  // Injects |writer| into |dispatcher| beneath the top-level wrapper (to avoid
-  // messing up existing connections).
+  // Injects |writer| into |dispatcher| as the top level writer.
   static void UseWriter(QuicDispatcher* dispatcher,
                         QuicPacketWriterWrapper* writer);
 
-  static QuicPacketWriterWrapper* GetWriter(QuicDispatcher* dispatcher);
+  static QuicPacketWriter* GetWriter(QuicDispatcher* dispatcher);
 
   static QuicEpollConnectionHelper* GetHelper(QuicDispatcher* dispatcher);
+
+  static QuicConnection* CreateQuicConnection(
+      QuicDispatcher* dispatcher,
+      QuicConnectionId connection_id,
+      const IPEndPoint& server,
+      const IPEndPoint& client);
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(QuicDispatcherPeer);
 };
 
 }  // namespace test

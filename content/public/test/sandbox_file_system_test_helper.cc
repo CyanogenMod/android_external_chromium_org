@@ -7,6 +7,7 @@
 #include "base/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_context.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_system_context.h"
@@ -16,20 +17,19 @@
 #include "webkit/browser/fileapi/file_system_url.h"
 #include "webkit/browser/fileapi/file_system_usage_cache.h"
 #include "webkit/browser/fileapi/sandbox_file_system_backend.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 #include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 using fileapi::FileSystemContext;
 using fileapi::FileSystemOperationContext;
 using fileapi::FileSystemOperationRunner;
-using fileapi::FileSystemType;
 using fileapi::FileSystemURL;
 
 namespace content {
 
 SandboxFileSystemTestHelper::SandboxFileSystemTestHelper(
-    const GURL& origin, FileSystemType type)
+    const GURL& origin,
+    fileapi::FileSystemType type)
     : origin_(origin), type_(type), file_util_(NULL) {
 }
 

@@ -11,19 +11,20 @@
 #include "chromeos/dbus/power_manager_client.h"
 
 namespace ash {
-namespace internal {
-
 namespace tray {
 class BrightnessView;
 }
 
-class TrayBrightness : public SystemTrayItem,
-                       public chromeos::PowerManagerClient::Observer {
+class ASH_EXPORT TrayBrightness
+    : public SystemTrayItem,
+      public chromeos::PowerManagerClient::Observer {
  public:
   explicit TrayBrightness(SystemTray* system_tray);
   virtual ~TrayBrightness();
 
  private:
+  friend class TrayBrightnessTest;
+
   // Sends a request to get the current screen brightness so |current_percent_|
   // can be initialized.
   void GetInitialBrightness();
@@ -53,11 +54,6 @@ class TrayBrightness : public SystemTrayItem,
 
   tray::BrightnessView* brightness_view_;
 
-  // Was |brightness_view_| created for CreateDefaultView() rather than
-  // CreateDetailedView()?  Used to avoid resetting |brightness_view_|
-  // inappropriately in DestroyDefaultView() or DestroyDetailedView().
-  bool is_default_view_;
-
   // Brightness level in the range [0.0, 100.0] that we've heard about most
   // recently.
   double current_percent_;
@@ -68,7 +64,6 @@ class TrayBrightness : public SystemTrayItem,
   DISALLOW_COPY_AND_ASSIGN(TrayBrightness);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_CHROMEOS_BRIGHTNESS_TRAY_BRIGHTNESS_H_

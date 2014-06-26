@@ -8,6 +8,7 @@
 #include "sync/engine/syncer_proto_util.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/engine/syncer_util.h"
+#include "sync/internal_api/public/sessions/update_counters.h"
 #include "sync/syncable/directory.h"
 #include "sync/syncable/model_neutral_mutable_entry.h"
 #include "sync/syncable/syncable_model_neutral_write_transaction.h"
@@ -285,18 +286,47 @@ void ProcessDownloadedUpdates(
     syncable::ModelNeutralWriteTransaction* trans,
     ModelType type,
     const SyncEntityList& applicable_updates,
-    sessions::StatusController* status) {
+    sessions::StatusController* status,
+    UpdateCounters* counters) {
   for (SyncEntityList::const_iterator update_it = applicable_updates.begin();
        update_it != applicable_updates.end(); ++update_it) {
     DCHECK_EQ(type, GetModelType(**update_it));
-    if (!UpdateContainsNewVersion(trans, **update_it))
+    if (!UpdateContainsNewVersion(trans, **update_it)) {
       status->increment_num_reflected_updates_downloaded_by(1);
-    if ((*update_it)->deleted())
+      counters->num_reflected_updates_received++;
+    }
+    if ((*update_it)->deleted()) {
       status->increment_num_tombstone_updates_downloaded_by(1);
+      counters->num_tombstone_updates_received++;
+    }
     VerifyResult verify_result = VerifyUpdate(trans, **update_it, type);
     if (verify_result != VERIFY_SUCCESS && verify_result != VERIFY_UNDELETE)
       continue;
     ProcessUpdate(**update_it, dir->GetCryptographer(trans), trans);
+  }
+}
+
+void ExpireEntriesByVersion(syncable::Directory* dir,
+                            syncable::ModelNeutralWriteTransaction* trans,
+                            ModelType type,
+                            int64 version_watermark) {
+  syncable::Directory::Metahandles handles;
+  dir->GetMetaHandlesOfType(trans, type, &handles);
+  for (size_t i = 0; i < handles.size(); ++i) {
+    syncable::ModelNeutralMutableEntry entry(trans, syncable::GET_BY_HANDLE,
+                                             handles[i]);
+    if (!entry.good() || !entry.GetId().ServerKnows() ||
+        entry.GetUniqueServerTag() == ModelTypeToRootTag(type) ||
+        entry.GetIsUnappliedUpdate() || entry.GetIsUnsynced() ||
+        entry.GetIsDel() || entry.GetServerIsDel() ||
+        entry.GetBaseVersion() >= version_watermark) {
+      continue;
+    }
+
+    // Mark entry as deleted by server.
+    entry.PutServerIsDel(true);
+    entry.PutServerVersion(version_watermark);
+    entry.PutIsUnappliedUpdate(true);
   }
 }
 

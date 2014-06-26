@@ -5,8 +5,10 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SERIAL_SERIAL_EVENT_DISPATCHER_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SERIAL_SERIAL_EVENT_DISPATCHER_H_
 
-#include "chrome/browser/extensions/api/api_resource_manager.h"
 #include "chrome/common/extensions/api/serial.h"
+#include "extensions/browser/api/api_resource_manager.h"
+
+class Profile;
 
 namespace extensions {
 
@@ -16,27 +18,26 @@ class SerialConnection;
 namespace api {
 
 // Per-profile dispatcher for events on serial connections.
-class SerialEventDispatcher : public ProfileKeyedAPI {
+class SerialEventDispatcher : public BrowserContextKeyedAPI {
  public:
-  explicit SerialEventDispatcher(Profile* profile);
+  explicit SerialEventDispatcher(content::BrowserContext* context);
   virtual ~SerialEventDispatcher();
 
   // Start receiving data and firing events for a connection.
   void PollConnection(const std::string& extension_id, int connection_id);
 
-  static SerialEventDispatcher* Get(Profile* profile);
+  static SerialEventDispatcher* Get(content::BrowserContext* context);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<SerialEventDispatcher>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<SerialEventDispatcher>*
+      GetFactoryInstance();
 
  private:
   typedef ApiResourceManager<SerialConnection>::ApiResourceData ConnectionData;
-  friend class ProfileKeyedAPIFactory<SerialEventDispatcher>;
+  friend class BrowserContextKeyedAPIFactory<SerialEventDispatcher>;
 
-  // ProfileKeyedAPI implementation.
-  static const char *service_name() {
-    return "SerialEventDispatcher";
-  }
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "SerialEventDispatcher"; }
   static const bool kServiceHasOwnInstanceInIncognito = true;
   static const bool kServiceIsNULLWhileTesting = true;
 
@@ -60,7 +61,7 @@ class SerialEventDispatcher : public ProfileKeyedAPI {
   static void PostEvent(const ReceiveParams& params,
                         scoped_ptr<extensions::Event> event);
 
-  static void DispatchEvent(void *profile_id,
+  static void DispatchEvent(void* profile_id,
                             const std::string& extension_id,
                             scoped_ptr<extensions::Event> event);
 

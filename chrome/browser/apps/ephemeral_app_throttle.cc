@@ -52,7 +52,8 @@ bool LaunchEphemeralApp(
   // The EphemeralAppLauncher will handle launching of an existing app or
   // installing and launching a new ephemeral app.
   scoped_refptr<EphemeralAppLauncher> installer =
-      EphemeralAppLauncher::CreateForLink(app_id, source);
+      EphemeralAppLauncher::CreateForWebContents(
+          app_id, source, EphemeralAppLauncher::LaunchCallback());
   installer->Start();
   return true;
 }
@@ -72,7 +73,7 @@ EphemeralAppThrottle::MaybeCreateThrottleForLaunch(
     return NULL;
 
   // Not supported for incognito profiles.
-  if (profile_io_data->is_incognito())
+  if (profile_io_data->IsOffTheRecord())
     return NULL;
 
   // Only watch for links in Google search results.

@@ -2,14 +2,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import copy
+from copy import copy
 import logging
 import os
 import posixpath
 
+from data_source import DataSource
+from docs_server_utils import StringIdentity
 from environment import IsPreviewServer
-from extensions_paths import (
-    API, API_FEATURES, JSON_TEMPLATES, PRIVATE_TEMPLATES)
+from extensions_paths import JSON_TEMPLATES, PRIVATE_TEMPLATES
+from file_system import FileNotFoundError
+from future import Future, Collect
+from platform_util import GetPlatforms
 import third_party.json_schema_compiler.json_parse as json_parse
 import third_party.json_schema_compiler.model as model
 from environment import IsPreviewServer
@@ -67,37 +71,25 @@ class _JSCModel(object):
   '''
 
   def __init__(self,
-               api_name,
-               api_models,
-               ref_resolver,
-               disable_refs,
-               availability_finder,
+               namespace,
+               availability,
                json_cache,
                template_cache,
-               event_byname_function):
-    self._ref_resolver = ref_resolver
-    self._disable_refs = disable_refs
-    self._availability_finder = availability_finder
+               features_bundle,
+               event_byname_future):
+    self._availability = availability
     self._api_availabilities = json_cache.GetFromFile(
         posixpath.join(JSON_TEMPLATES, 'api_availabilities.json'))
     self._intro_tables = json_cache.GetFromFile(
         posixpath.join(JSON_TEMPLATES, 'intro_tables.json'))
-    self._api_features = json_cache.GetFromFile(API_FEATURES)
+    self._api_features = features_bundle.GetAPIFeatures()
     self._template_cache = template_cache
-    self._event_byname_function = event_byname_function
-    self._namespace = api_models.GetModel(api_name).Get()
-
-  def _FormatDescription(self, description):
-    if self._disable_refs:
-      return description
-    return self._ref_resolver.ResolveAllLinks(description,
-                                              namespace=self._namespace.name)
+    self._event_byname_future = event_byname_future
+    self._namespace = namespace
 
   def _GetLink(self, link):
-    if self._disable_refs:
-      type_name = link.split('.', 1)[-1]
-      return { 'href': '#type-%s' % type_name, 'text': link, 'name': link }
-    return self._ref_resolver.SafeGetLink(link, namespace=self._namespace.name)
+    ref = link if '.' in link else (self._namespace.name + '.' + link)
+    return { 'ref': ref, 'text': link, 'name': link }
 
   def ToDict(self):
     if self._namespace is None:
@@ -115,25 +107,20 @@ class _JSCModel(object):
       'events': self._GenerateEvents(self._namespace.events),
       'domEvents': self._GenerateDomEvents(self._namespace.events),
       'properties': self._GenerateProperties(self._namespace.properties),
+      'introList': self._GetIntroTableList(),
+      'channelWarning': self._GetChannelWarning(),
     }
     if self._namespace.deprecated:
       as_dict['deprecated'] = self._namespace.deprecated
-    # Rendering the intro list is really expensive and there's no point doing it
-    # unless we're rending the page - and disable_refs=True implies we're not.
-    if not self._disable_refs:
-      as_dict.update({
-        'introList': self._GetIntroTableList(),
-        'channelWarning': self._GetChannelWarning(),
-      })
+
     as_dict['byName'] = _GetByNameDict(as_dict)
     return as_dict
 
-  def _GetApiAvailability(self):
-    return self._availability_finder.GetApiAvailability(self._namespace.name)
-
   def _GetChannelWarning(self):
     if not self._IsExperimental():
-      return { self._GetApiAvailability().channel: True }
+      return {
+        self._availability.channel_info.channel: True
+      }
     return None
 
   def _IsExperimental(self):
@@ -145,7 +132,7 @@ class _JSCModel(object):
   def _GenerateType(self, type_):
     type_dict = {
       'name': type_.simple_name,
-      'description': self._FormatDescription(type_.description),
+      'description': type_.description,
       'properties': self._GenerateProperties(type_.properties),
       'functions': self._GenerateFunctions(type_.functions),
       'events': self._GenerateEvents(type_.events),
@@ -160,7 +147,7 @@ class _JSCModel(object):
   def _GenerateFunction(self, function):
     function_dict = {
       'name': function.simple_name,
-      'description': self._FormatDescription(function.description),
+      'description': function.description,
       'callback': self._GenerateCallback(function.callback),
       'parameters': [],
       'returns': None,
@@ -190,7 +177,7 @@ class _JSCModel(object):
   def _GenerateEvent(self, event):
     event_dict = {
       'name': event.simple_name,
-      'description': self._FormatDescription(event.description),
+      'description': event.description,
       'filters': [self._GenerateProperty(f) for f in event.filters],
       'conditions': [self._GetLink(condition)
                      for condition in event.conditions],
@@ -203,10 +190,8 @@ class _JSCModel(object):
     }
     self._AddCommonProperties(event_dict, event)
     # Add the Event members to each event in this object.
-    # If refs are disabled then don't worry about this, since it's only needed
-    # for rendering, and disable_refs=True implies we're not rendering.
-    if self._event_byname_function and not self._disable_refs:
-      event_dict['byName'].update(self._event_byname_function())
+    if self._event_byname_future:
+      event_dict['byName'].update(self._event_byname_future.Get())
     # We need to create the method description for addListener based on the
     # information stored in |event|.
     if event.supports_listeners:
@@ -267,7 +252,7 @@ class _JSCModel(object):
     property_dict = {
       'name': property_.simple_name,
       'optional': property_.optional,
-      'description': self._FormatDescription(property_.description),
+      'description': property_.description,
       'properties': self._GenerateProperties(type_.properties),
       'functions': self._GenerateFunctions(type_.functions),
       'parameters': [],
@@ -297,7 +282,7 @@ class _JSCModel(object):
   def _GenerateCallbackProperty(self, callback):
     property_dict = {
       'name': callback.simple_name,
-      'description': self._FormatDescription(callback.description),
+      'description': callback.description,
       'optional': callback.optional,
       'is_callback': True,
       'id': _CreateId(callback, 'property'),
@@ -357,7 +342,7 @@ class _JSCModel(object):
     return {
       'title': 'Description',
       'content': [
-        { 'text': self._FormatDescription(self._namespace.description) }
+        { 'text': self._namespace.description }
       ]
     }
 
@@ -367,10 +352,11 @@ class _JSCModel(object):
     if self._IsExperimental():
       status = 'experimental'
       version = None
+      scheduled = None
     else:
-      availability = self._GetApiAvailability()
-      status = availability.channel
-      version = availability.version
+      status = self._availability.channel_info.channel
+      version = self._availability.channel_info.version
+      scheduled = self._availability.scheduled
     return {
       'title': 'Availability',
       'content': [{
@@ -378,7 +364,8 @@ class _JSCModel(object):
           posixpath.join(PRIVATE_TEMPLATES,
                          'intro_tables',
                          '%s_message.html' % status)).Get(),
-        'version': version
+        'version': version,
+        'scheduled': scheduled
       }]
     }
 
@@ -386,21 +373,20 @@ class _JSCModel(object):
     # Devtools aren't in _api_features. If we're dealing with devtools, bail.
     if 'devtools' in self._namespace.name:
       return []
-    feature = self._api_features.Get().get(self._namespace.name)
-    assert feature, ('"%s" not found in _api_features.json.'
-                     % self._namespace.name)
 
-    dependencies = feature.get('dependencies')
-    if dependencies is None:
+    api_feature = self._api_features.Get().get(self._namespace.name)
+    if not api_feature:
+      logging.error('"%s" not found in _api_features.json' %
+                    self._namespace.name)
       return []
-
-    def make_code_node(text):
-      return { 'class': 'code', 'text': text }
 
     permissions_content = []
     manifest_content = []
 
     def categorize_dependency(dependency):
+      def make_code_node(text):
+        return { 'class': 'code', 'text': text }
+
       context, name = dependency.split(':', 1)
       if context == 'permission':
         permissions_content.append(make_code_node('"%s"' % name))
@@ -412,10 +398,10 @@ class _JSCModel(object):
         for transitive_dependency in transitive_dependencies:
           categorize_dependency(transitive_dependency)
       else:
-        raise ValueError('Unrecognized dependency for %s: %s' % (
-            self._namespace.name, context))
+        logging.error('Unrecognized dependency for %s: %s' %
+                      (self._namespace.name, context))
 
-    for dependency in dependencies:
+    for dependency in api_feature.get('dependencies', ()):
       categorize_dependency(dependency)
 
     dependency_rows = []
@@ -443,21 +429,24 @@ class _JSCModel(object):
     if table_info is None:
       return misc_rows
 
-    for category in table_info.keys():
-      content = copy.deepcopy(table_info[category])
-      for node in content:
+    for category in table_info.iterkeys():
+      content = []
+      for node in table_info[category]:
         # If there is a 'partial' argument and it hasn't already been
         # converted to a Handlebar object, transform it to a template.
         if 'partial' in node:
+          # Note: it's enough to copy() not deepcopy() because only a single
+          # top-level key is being modified.
+          node = copy(node)
           node['partial'] = self._template_cache.GetFromFile(
               posixpath.join(PRIVATE_TEMPLATES, node['partial'])).Get()
+        content.append(node)
       misc_rows.append({ 'title': category, 'content': content })
     return misc_rows
 
   def _AddCommonProperties(self, target, src):
     if src.deprecated is not None:
-      target['deprecated'] = self._FormatDescription(
-          src.deprecated)
+      target['deprecated'] = src.deprecated
     if (src.parent is not None and
         not isinstance(src.parent, model.Namespace)):
       target['parentName'] = src.parent.simple_name
@@ -476,99 +465,81 @@ class _LazySamplesGetter(object):
     return self._samples.FilterSamples(key, self._api_name)
 
 
-class APIDataSource(object):
+class APIDataSource(DataSource):
   '''This class fetches and loads JSON APIs from the FileSystem passed in with
   |compiled_fs_factory|, so the APIs can be plugged into templates.
   '''
+  def __init__(self, server_instance, request):
+    file_system = server_instance.host_file_system_provider.GetTrunk()
+    self._json_cache = server_instance.compiled_fs_factory.ForJson(file_system)
+    self._template_cache = server_instance.compiled_fs_factory.ForTemplates(
+        file_system)
+    self._platform_bundle = server_instance.platform_bundle
+    self._model_cache = server_instance.object_store_creator.Create(
+        APIDataSource,
+        # Update the models when any of templates, APIs, or Features change.
+        category=StringIdentity(self._json_cache.GetIdentity(),
+                                self._template_cache.GetIdentity(),
+                                self._platform_bundle.GetIdentity()))
 
-  class Factory(object):
-    def __init__(self,
-                 compiled_fs_factory,
-                 file_system,
-                 availability_finder,
-                 api_models,
-                 object_store_creator):
-      self._json_cache = compiled_fs_factory.ForJson(file_system)
-      self._template_cache = compiled_fs_factory.ForTemplates(file_system)
-      self._availability_finder = availability_finder
-      self._api_models = api_models
-      self._model_cache_refs = object_store_creator.Create(
-          APIDataSource, 'model-cache-refs')
-      self._model_cache_no_refs = object_store_creator.Create(
-          APIDataSource, 'model-cache-no-refs')
+    # This caches the result of _LoadEventByName.
+    self._event_byname_futures = {}
+    self._samples = server_instance.samples_data_source_factory.Create(request)
 
-      # These must be set later via the SetFooDataSourceFactory methods.
-      self._ref_resolver_factory = None
-      self._samples_data_source_factory = None
+  def _LoadEventByName(self, platform):
+    '''All events have some members in common. We source their description
+    from Event in events.json.
+    '''
+    if platform not in self._event_byname_futures:
+      future = self._GetSchemaModel(platform, 'events')
+      self._event_byname_futures[platform] = Future(
+          callback=lambda: _GetEventByNameFromEvents(future.Get()))
+    return self._event_byname_futures[platform]
 
-      # This caches the result of _LoadEventByName.
-      self._event_byname = None
-
-    def SetSamplesDataSourceFactory(self, samples_data_source_factory):
-      self._samples_data_source_factory = samples_data_source_factory
-
-    def SetReferenceResolverFactory(self, ref_resolver_factory):
-      self._ref_resolver_factory = ref_resolver_factory
-
-    def Create(self, request):
-      '''Creates an APIDataSource.
-      '''
-      if self._samples_data_source_factory is None:
-        # Only error if there is a request, which means this APIDataSource is
-        # actually being used to render a page.
-        if request is not None:
-          logging.error('SamplesDataSource.Factory was never set in '
-                        'APIDataSource.Factory.')
-        samples = None
-      else:
-        samples = self._samples_data_source_factory.Create(request)
-      return APIDataSource(self._GetSchemaModel, samples)
-
-    def _LoadEventByName(self):
-      '''All events have some members in common. We source their description
-      from Event in events.json.
-      '''
-      if self._event_byname is None:
-        self._event_byname = _GetEventByNameFromEvents(
-            self._GetSchemaModel('events', True))
-      return self._event_byname
-
-    def _GetModelCache(self, disable_refs):
-      if disable_refs:
-        return self._model_cache_no_refs
-      return self._model_cache_refs
-
-    def _GetSchemaModel(self, api_name, disable_refs):
-      jsc_model = self._GetModelCache(disable_refs).Get(api_name).Get()
-      if jsc_model is not None:
-        return jsc_model
-
-      jsc_model = _JSCModel(
-          api_name,
-          self._api_models,
-          self._ref_resolver_factory.Create() if not disable_refs else None,
-          disable_refs,
-          self._availability_finder,
-          self._json_cache,
-          self._template_cache,
-          self._LoadEventByName).ToDict()
-
-      self._GetModelCache(disable_refs).Set(api_name, jsc_model)
+  def _GetSchemaModel(self, platform, api_name):
+    object_store_key = '/'.join((platform, api_name))
+    jsc_model_future = self._model_cache.Get(object_store_key)
+    model_future = self._platform_bundle.GetAPIModels(platform).GetModel(
+        api_name)
+    def resolve():
+      jsc_model = jsc_model_future.Get()
+      if jsc_model is None:
+        jsc_model = _JSCModel(
+            model_future.Get(),
+            self._platform_bundle.GetAvailabilityFinder(
+                platform).GetAPIAvailability(api_name),
+            self._json_cache,
+            self._template_cache,
+            self._platform_bundle.GetFeaturesBundle(platform),
+            self._LoadEventByName(platform)).ToDict()
+        self._model_cache.Set(object_store_key, jsc_model)
       return jsc_model
+    return Future(callback=resolve)
 
-  def __init__(self, get_schema_model, samples):
-    self._get_schema_model = get_schema_model
-    self._samples = samples
+  def _GetImpl(self, platform, api_name):
+    handlebar_dict_future = self._GetSchemaModel(platform, api_name)
+    def resolve():
+      handlebar_dict = handlebar_dict_future.Get()
+      # Parsing samples on the preview server takes seconds and doesn't add
+      # anything. Don't do it.
+      if not IsPreviewServer():
+        handlebar_dict['samples'] = _LazySamplesGetter(
+            handlebar_dict['name'],
+            self._samples)
+      return handlebar_dict
+    return Future(callback=resolve)
 
-  def _GenerateHandlebarContext(self, handlebar_dict):
-    # Parsing samples on the preview server takes seconds and doesn't add
-    # anything. Don't do it.
-    if not IsPreviewServer():
-      handlebar_dict['samples'] = _LazySamplesGetter(
-          handlebar_dict['name'],
-          self._samples)
-    return handlebar_dict
+  def get(self, platform):
+    '''Return a getter object so that templates can perform lookups such
+    as apis.extensions.runtime.
+    '''
+    getter = lambda: 0
+    getter.get = lambda api_name: self._GetImpl(platform, api_name).Get()
+    return getter
 
-  def get(self, api_name, disable_refs=False):
-    return self._GenerateHandlebarContext(
-        self._get_schema_model(api_name, disable_refs))
+  def Cron(self):
+    futures = []
+    for platform in GetPlatforms():
+      futures += [self._GetImpl(platform, name)
+          for name in self._platform_bundle.GetAPIModels(platform).GetNames()]
+    return Collect(futures, except_pass=FileNotFoundError)

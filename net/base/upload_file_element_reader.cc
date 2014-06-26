@@ -50,11 +50,11 @@ int UploadFileElementReader::Init(const CompletionCallback& callback) {
   DCHECK(!callback.is_null());
   Reset();
 
-  file_stream_.reset(new FileStream(NULL, task_runner_.get()));
+  file_stream_.reset(new FileStream(task_runner_.get()));
   int result = file_stream_->Open(
       path_,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
-      base::PLATFORM_FILE_ASYNC,
+      base::File::FLAG_OPEN | base::File::FLAG_READ |
+      base::File::FLAG_ASYNC,
       base::Bind(&UploadFileElementReader::OnOpenCompleted,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback));
@@ -114,7 +114,7 @@ void UploadFileElementReader::OnOpenCompleted(
 
   if (range_offset_) {
     int result = file_stream_->Seek(
-        FROM_BEGIN, range_offset_,
+        base::File::FROM_BEGIN, range_offset_,
         base::Bind(&UploadFileElementReader::OnSeekCompleted,
                    weak_ptr_factory_.GetWeakPtr(),
                    callback));

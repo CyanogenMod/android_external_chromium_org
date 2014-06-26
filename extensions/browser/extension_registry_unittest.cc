@@ -7,6 +7,8 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_util.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -16,8 +18,74 @@ namespace {
 
 typedef testing::Test ExtensionRegistryTest;
 
+testing::AssertionResult HasSingleExtension(
+    const ExtensionList& list,
+    const scoped_refptr<const Extension>& extension) {
+  if (list.empty())
+    return testing::AssertionFailure() << "No extensions in list";
+  if (list.size() > 1)
+    return testing::AssertionFailure() << list.size()
+                                       << " extensions, expected 1";
+  const Extension* did_load = list[0].get();
+  if (did_load != extension)
+    return testing::AssertionFailure() << "Expected " << extension->id()
+                                       << " found " << did_load->id();
+  return testing::AssertionSuccess();
+}
+
+class TestObserver : public ExtensionRegistryObserver {
+ public:
+  void Reset() {
+    loaded_.clear();
+    unloaded_.clear();
+    installed_.clear();
+    uninstalled_.clear();
+  }
+
+  const ExtensionList& loaded() { return loaded_; }
+  const ExtensionList& unloaded() { return unloaded_; }
+  const ExtensionList& installed() { return installed_; }
+  const ExtensionList& uninstalled() { return uninstalled_; }
+
+ private:
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE {
+    loaded_.push_back(extension);
+  }
+
+  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE {
+    unloaded_.push_back(extension);
+  }
+
+  virtual void OnExtensionWillBeInstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      bool is_update,
+      bool from_ephemeral,
+      const std::string& old_name) OVERRIDE {
+    installed_.push_back(extension);
+  }
+
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE {
+    uninstalled_.push_back(extension);
+  }
+
+  virtual void OnShutdown(extensions::ExtensionRegistry* registry) OVERRIDE {
+    Reset();
+  }
+
+  ExtensionList loaded_;
+  ExtensionList unloaded_;
+  ExtensionList installed_;
+  ExtensionList uninstalled_;
+};
+
 TEST_F(ExtensionRegistryTest, FillAndClearRegistry) {
-  ExtensionRegistry registry;
+  ExtensionRegistry registry(NULL);
   scoped_refptr<Extension> extension1 = test_util::CreateExtensionWithID("id1");
   scoped_refptr<Extension> extension2 = test_util::CreateExtensionWithID("id2");
   scoped_refptr<Extension> extension3 = test_util::CreateExtensionWithID("id3");
@@ -51,7 +119,7 @@ TEST_F(ExtensionRegistryTest, FillAndClearRegistry) {
 
 // A simple test of adding and removing things from sets.
 TEST_F(ExtensionRegistryTest, AddAndRemoveExtensionFromRegistry) {
-  ExtensionRegistry registry;
+  ExtensionRegistry registry(NULL);
 
   // Adding an extension works.
   scoped_refptr<Extension> extension = test_util::CreateExtensionWithID("id");
@@ -72,7 +140,7 @@ TEST_F(ExtensionRegistryTest, AddAndRemoveExtensionFromRegistry) {
 }
 
 TEST_F(ExtensionRegistryTest, AddExtensionToRegistryTwice) {
-  ExtensionRegistry registry;
+  ExtensionRegistry registry(NULL);
   scoped_refptr<Extension> extension = test_util::CreateExtensionWithID("id");
 
   // An extension can exist in two sets at once. It would be nice to eliminate
@@ -87,7 +155,7 @@ TEST_F(ExtensionRegistryTest, AddExtensionToRegistryTwice) {
 }
 
 TEST_F(ExtensionRegistryTest, GetExtensionById) {
-  ExtensionRegistry registry;
+  ExtensionRegistry registry(NULL);
 
   // Trying to get an extension fails cleanly when the sets are empty.
   EXPECT_FALSE(
@@ -163,6 +231,45 @@ TEST_F(ExtensionRegistryTest, GetExtensionById) {
   // Enabled isn't found if the wrong flags are set.
   EXPECT_FALSE(registry.GetExtensionById(
       "enabled", ExtensionRegistry::DISABLED | ExtensionRegistry::BLACKLISTED));
+}
+
+TEST_F(ExtensionRegistryTest, Observer) {
+  ExtensionRegistry registry(NULL);
+  TestObserver observer;
+  registry.AddObserver(&observer);
+
+  EXPECT_TRUE(observer.loaded().empty());
+  EXPECT_TRUE(observer.unloaded().empty());
+  EXPECT_TRUE(observer.installed().empty());
+
+  scoped_refptr<const Extension> extension =
+      test_util::CreateExtensionWithID("id");
+
+  registry.TriggerOnWillBeInstalled(
+      extension, false, false, base::EmptyString());
+  EXPECT_TRUE(HasSingleExtension(observer.installed(), extension.get()));
+
+  registry.AddEnabled(extension);
+  registry.TriggerOnLoaded(extension);
+
+  registry.TriggerOnWillBeInstalled(extension, true, false, "foo");
+
+  EXPECT_TRUE(HasSingleExtension(observer.loaded(), extension.get()));
+  EXPECT_TRUE(observer.unloaded().empty());
+  registry.Shutdown();
+
+  registry.RemoveEnabled(extension->id());
+  registry.TriggerOnUnloaded(extension, UnloadedExtensionInfo::REASON_DISABLE);
+
+  EXPECT_TRUE(observer.loaded().empty());
+  EXPECT_TRUE(HasSingleExtension(observer.unloaded(), extension.get()));
+  registry.Shutdown();
+
+  registry.TriggerOnUninstalled(extension);
+  EXPECT_TRUE(observer.installed().empty());
+  EXPECT_TRUE(HasSingleExtension(observer.uninstalled(), extension.get()));
+
+  registry.RemoveObserver(&observer);
 }
 
 }  // namespace

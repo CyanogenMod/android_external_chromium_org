@@ -7,6 +7,8 @@
 
 #include <string>
 
+#include "base/bind.h"
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.pb.h"
@@ -34,6 +36,11 @@ void PutFileMetadataToBatch(const FileMetadata& file,
 void PutFileTrackerToBatch(const FileTracker& tracker,
                            leveldb::WriteBatch* batch);
 
+void PutFileMetadataDeletionToBatch(const std::string& file_id,
+                                    leveldb::WriteBatch* batch);
+void PutFileTrackerDeletionToBatch(int64 tracker_id,
+                                   leveldb::WriteBatch* batch);
+
 void PopulateFileDetailsByFileResource(
     const google_apis::FileResource& file_resource,
     FileDetails* details);
@@ -57,11 +64,39 @@ bool HasFileAsParent(const FileDetails& details, const std::string& file_id);
 
 std::string GetMimeTypeFromTitle(const base::FilePath& title);
 
-scoped_ptr<google_apis::ResourceEntry> GetOldestCreatedFolderResource(
-    ScopedVector<google_apis::ResourceEntry> list);
-
 SyncStatusCode GDataErrorCodeToSyncStatusCode(
     google_apis::GDataErrorCode error);
+
+scoped_ptr<FileTracker> CloneFileTracker(const FileTracker* obj);
+
+template <typename Src, typename Dest>
+void AppendContents(const Src& src, Dest* dest) {
+  dest->insert(dest->end(), src.begin(), src.end());
+}
+
+template <typename Container>
+const typename Container::mapped_type& LookUpMap(
+    const Container& container,
+    const typename Container::key_type& key,
+    const typename Container::mapped_type& default_value) {
+  typename Container::const_iterator found = container.find(key);
+  if (found == container.end())
+    return default_value;
+  return found->second;
+}
+
+template <typename R, typename S, typename T>
+R ComposeFunction(const base::Callback<T()>& g,
+                  const base::Callback<R(S)>& f) {
+  return f.Run(g.Run());
+}
+
+template <typename R, typename S, typename T>
+base::Callback<R()> CreateComposedFunction(
+    const base::Callback<T()>& g,
+    const base::Callback<R(S)>& f) {
+  return base::Bind(&ComposeFunction<R, S, T>, g, f);
+}
 
 }  // namespace drive_backend
 }  // namespace sync_file_system

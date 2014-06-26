@@ -18,41 +18,23 @@ class IMEBridgeImpl : public IMEBridge {
   IMEBridgeImpl()
     : input_context_handler_(NULL),
       engine_handler_(NULL),
-      candidate_window_handler_(NULL) {
+      candidate_window_handler_(NULL),
+      current_text_input_(ui::TEXT_INPUT_TYPE_NONE) {
   }
 
   virtual ~IMEBridgeImpl() {
   }
 
   // IMEBridge override.
-  virtual IBusInputContextHandlerInterface*
+  virtual IMEInputContextHandlerInterface*
       GetInputContextHandler() const OVERRIDE {
     return input_context_handler_;
   }
 
   // IMEBridge override.
   virtual void SetInputContextHandler(
-      IBusInputContextHandlerInterface* handler) OVERRIDE {
+      IMEInputContextHandlerInterface* handler) OVERRIDE {
     input_context_handler_ = handler;
-  }
-
-  // IMEBridge override.
-  virtual void SetEngineHandler(
-      const std::string& engine_id,
-      IMEEngineHandlerInterface* handler) OVERRIDE {
-    DCHECK(!engine_id.empty());
-    DCHECK(handler);
-    engine_handler_map_[engine_id] = handler;
-  }
-
-  // IMEBridge override.
-  virtual IMEEngineHandlerInterface* GetEngineHandler(
-      const std::string& engine_id) OVERRIDE {
-    if (engine_id.empty() ||
-        engine_handler_map_.find(engine_id) == engine_handler_map_.end()) {
-      return NULL;
-    }
-    return engine_handler_map_[engine_id];
   }
 
   // IMEBridge override.
@@ -62,44 +44,37 @@ class IMEBridgeImpl : public IMEBridge {
   }
 
   // IMEBridge override.
-  virtual IMEEngineHandlerInterface* SetCurrentEngineHandlerById(
-      const std::string& engine_id) OVERRIDE {
-    std::map<std::string, IMEEngineHandlerInterface*>::const_iterator itor =
-        engine_handler_map_.find(engine_id);
-    // |engine_id| must be found unless it's empty, but if it's not found, fall
-    // back to NULL when non-debug build.
-    DCHECK(itor != engine_handler_map_.end() || engine_id.empty());
-    if (itor == engine_handler_map_.end()) {
-      engine_handler_ = NULL;
-      return NULL;
-    }
-
-    engine_handler_ = engine_handler_map_[engine_id];
-    return engine_handler_;
-  }
-
-  // IMEBridge override.
   virtual IMEEngineHandlerInterface* GetCurrentEngineHandler() const OVERRIDE {
     return engine_handler_;
   }
 
   // IMEBridge override.
-  virtual IBusPanelCandidateWindowHandlerInterface*
-  GetCandidateWindowHandler() const OVERRIDE {
+  virtual IMECandidateWindowHandlerInterface* GetCandidateWindowHandler() const
+      OVERRIDE {
     return candidate_window_handler_;
   }
 
   // IMEBridge override.
   virtual void SetCandidateWindowHandler(
-      IBusPanelCandidateWindowHandlerInterface* handler) OVERRIDE {
+      IMECandidateWindowHandlerInterface* handler) OVERRIDE {
     candidate_window_handler_ = handler;
   }
 
+  // IMEBridge override.
+  virtual void SetCurrentTextInputType(ui::TextInputType input_type) OVERRIDE {
+    current_text_input_ = input_type;
+  }
+
+  // IMEBridge override.
+  virtual ui::TextInputType GetCurrentTextInputType() const OVERRIDE {
+    return current_text_input_;
+  }
+
  private:
-  IBusInputContextHandlerInterface* input_context_handler_;
+  IMEInputContextHandlerInterface* input_context_handler_;
   IMEEngineHandlerInterface* engine_handler_;
-  IBusPanelCandidateWindowHandlerInterface* candidate_window_handler_;
-  std::map<std::string, IMEEngineHandlerInterface*> engine_handler_map_;
+  IMECandidateWindowHandlerInterface* candidate_window_handler_;
+  ui::TextInputType current_text_input_;
 
   DISALLOW_COPY_AND_ASSIGN(IMEBridgeImpl);
 };

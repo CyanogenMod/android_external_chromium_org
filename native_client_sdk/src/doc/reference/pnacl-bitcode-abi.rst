@@ -15,11 +15,11 @@ the bitcode on a *semantic* level; the physical encoding level will be described
 elsewhere. For the purpose of this document, the textual form of LLVM IR is
 used to describe instructions and other bitcode constructs.
 
-Since the PNaCl bitcode is based to a large extent on LLVM IR, many sections
-in this document point to a relevant section of the LLVM language reference
-manual. Only the changes, restrictions and variations specific to PNaCl are
-described---full semantic descriptions are not duplicated from the LLVM
-reference manual.
+Since the PNaCl bitcode is based to a large extent on LLVM IR as of
+version 3.3, many sections in this document point to a relevant section
+of the LLVM language reference manual. Only the changes, restrictions
+and variations specific to PNaCl are described---full semantic
+descriptions are not duplicated from the LLVM reference manual.
 
 High Level Structure
 ====================
@@ -198,6 +198,17 @@ Scalar types
   * The only integer sizes allowed for function arguments and function return
     values are i32 and i64.
 
+Vector types
+------------
+
+The only vector types allowed are:
+
+* 128-bit vectors integers of elements size i8, i16, i32.
+* 128-bit vectors of float elements.
+* Vectors of i1 type with element counts corresponding to the allowed
+  element counts listed previously (their width is therefore not
+  128-bits).
+
 Array and struct types
 ----------------------
 
@@ -265,6 +276,17 @@ Intrinsic Global Variables
 
 PNaCl bitcode does not support intrinsic global variables.
 
+.. _ir_and_errno:
+
+Errno and errors in arithmetic instructions
+===========================================
+
+Some arithmetic instructions and intrinsics have the similar semantics to
+libc math functions, but differ in the treatment of ``errno``. While the
+libc functions may set ``errno`` for domain errors, the instructions and
+intrinsics do not. This is because the variable ``errno`` is not special
+and is not required to be part of the program.
+
 Instruction Reference
 =====================
 
@@ -305,6 +327,14 @@ Only the LLVM instructions listed here are supported by PNaCl bitcode.
 * ``fmul``
 * ``fdiv``
 * ``frem``
+
+  The frem instruction has the semantics of the libc fmod function for
+  computing the floating point remainder. If the numerator is infinity, or
+  denominator is zero, or either are NaN, then the result is NaN.
+  Unlike the libc fmod function, this does not set ``errno`` when the
+  result is NaN (see the :ref:`instructions and errno <ir_and_errno>`
+  section).
+
 * ``alloca``
 
   See :ref:`alloca instructions <bitcode_allocainst>`.
@@ -349,6 +379,9 @@ Only the LLVM instructions listed here are supported by PNaCl bitcode.
 * ``phi``
 * ``select``
 * ``call``
+* ``unreachable``
+* ``insertelement``
+* ``extractelement``
 
 .. _bitcode_allocainst:
 
@@ -396,8 +429,10 @@ The only intrinsics supported by PNaCl bitcode are the following.
 * ``llvm.sqrt``
 
   The overloaded ``llvm.sqrt`` intrinsic is only supported for float
-  and double arguments types. Unlike the standard LLVM intrinsic,
-  PNaCl guarantees that llvm.sqrt returns a QNaN for values less than -0.0.
+  and double arguments types. This has the same semantics as the libc
+  sqrt function, returning NaN for values less than -0.0. However, this
+  does not set ``errno`` when the result is NaN (see the
+  :ref:`instructions and errno <ir_and_errno>` section).
 
 * ``llvm.stacksave``
 * ``llvm.stackrestore``

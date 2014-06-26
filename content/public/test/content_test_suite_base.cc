@@ -7,20 +7,23 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/metrics/statistics_recorder.h"
 #include "base/test/test_suite.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "content/browser/browser_thread_impl.h"
-#include "content/browser/gpu/gpu_process_host.h"
 #include "content/common/url_schemes.h"
 #include "content/gpu/in_process_gpu_thread.h"
-#include "content/public/browser/render_process_host.h"
-#include "content/public/browser/utility_process_host.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/content_paths.h"
 #include "content/renderer/in_process_renderer_thread.h"
 #include "content/utility/in_process_utility_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/ui_base_paths.h"
+
+#if !defined(OS_IOS)
+#include "content/browser/gpu/gpu_process_host.h"
+#include "content/browser/renderer_host/render_process_host_impl.h"
+#include "content/browser/utility_process_host_impl.h"
+#endif
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
@@ -32,10 +35,6 @@
 #include "ui/gfx/android/gfx_jni_registrar.h"
 #include "ui/gl/android/gl_jni_registrar.h"
 #include "ui/shell_dialogs/android/shell_dialogs_jni_registrar.h"
-#endif
-
-#if !defined(OS_IOS)
-#include "media/base/media.h"
 #endif
 
 namespace content {
@@ -52,12 +51,16 @@ class ContentTestSuiteBaseListener : public testing::EmptyTestEventListener {
 };
 
 ContentTestSuiteBase::ContentTestSuiteBase(int argc, char** argv)
-    : base::TestSuite(argc, argv),
-      external_libraries_enabled_(true) {
+    : base::TestSuite(argc, argv) {
 }
 
 void ContentTestSuiteBase::Initialize() {
   base::TestSuite::Initialize();
+
+  // Initialize the histograms subsystem, so that any histograms hit in tests
+  // are correctly registered with the statistics recorder and can be queried
+  // by tests.
+  base::StatisticsRecorder::Initialize();
 
 #if defined(OS_ANDROID)
   // Register JNI bindings for android.
@@ -71,26 +74,25 @@ void ContentTestSuiteBase::Initialize() {
   ui::shell_dialogs::RegisterJni(env);
 #endif
 
-#if !defined(OS_IOS)
-  UtilityProcessHost::RegisterUtilityMainThreadFactory(
-      CreateInProcessUtilityThread);
-  RenderProcessHost::RegisterRendererMainThreadFactory(
-      CreateInProcessRendererThread);
-  GpuProcessHost::RegisterGpuMainThreadFactory(CreateInProcessGpuThread);
-  if (external_libraries_enabled_)
-    media::InitializeMediaLibraryForTesting();
-#endif
-
-  scoped_ptr<ContentClient> client_for_init(CreateClientForInitialization());
-  SetContentClient(client_for_init.get());
-  RegisterContentSchemes(false);
-  SetContentClient(NULL);
-
-  RegisterPathProvider();
-  ui::RegisterPathProvider();
-
   testing::UnitTest::GetInstance()->listeners().Append(
       new ContentTestSuiteBaseListener);
+}
+
+void ContentTestSuiteBase::RegisterContentSchemes(
+    ContentClient* content_client) {
+  SetContentClient(content_client);
+  content::RegisterContentSchemes(false);
+  SetContentClient(NULL);
+}
+
+void ContentTestSuiteBase::RegisterInProcessThreads() {
+#if !defined(OS_IOS)
+  UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
+      CreateInProcessUtilityThread);
+  RenderProcessHostImpl::RegisterRendererMainThreadFactory(
+      CreateInProcessRendererThread);
+  GpuProcessHost::RegisterGpuMainThreadFactory(CreateInProcessGpuThread);
+#endif
 }
 
 }  // namespace content

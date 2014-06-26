@@ -75,10 +75,8 @@ ContentSettingImageView::ContentSettingImageView(
                               parent_background_color,
                               SkColorGetA(background_image_color)));
   text_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-  text_label_->SetElideBehavior(views::Label::NO_ELIDE);
+  text_label_->SetElideBehavior(gfx::TRUNCATE);
   AddChildView(text_label_);
-
-  LocationBarView::InitTouchableLocationBarChildView(this);
 
   slide_animator_.SetSlideDuration(kAnimationDurationMS);
   slide_animator_.SetTweenType(gfx::Tween::LINEAR);
@@ -129,7 +127,7 @@ void ContentSettingImageView::Update(content::WebContents* web_contents) {
 
 // static
 int ContentSettingImageView::GetBubbleOuterPadding(bool by_icon) {
-  return LocationBarView::GetItemPadding() - LocationBarView::kBubblePadding +
+  return LocationBarView::kItemPadding - LocationBarView::kBubblePadding +
       (by_icon ? 0 : LocationBarView::kIconInternalPadding);
 }
 
@@ -155,7 +153,7 @@ void ContentSettingImageView::AnimationCanceled(
   AnimationEnded(animation);
 }
 
-gfx::Size ContentSettingImageView::GetPreferredSize() {
+gfx::Size ContentSettingImageView::GetPreferredSize() const {
   // Height will be ignored by the LocationBarView.
   gfx::Size size(icon_->GetPreferredSize());
   if (background_showing()) {
@@ -184,7 +182,7 @@ void ContentSettingImageView::Layout() {
       std::min((width() - icon_width) / 2, GetBubbleOuterPadding(true)), 0,
       icon_width, height());
   text_label_->SetBounds(
-      icon_->bounds().right() + LocationBarView::GetItemPadding(), 0,
+      icon_->bounds().right() + LocationBarView::kItemPadding, 0,
       std::max(width() - GetTotalSpacingWhileAnimating() - icon_width, 0),
       height());
 }
@@ -226,7 +224,7 @@ void ContentSettingImageView::OnWidgetDestroying(views::Widget* widget) {
 }
 
 int ContentSettingImageView::GetTotalSpacingWhileAnimating() const {
-  return GetBubbleOuterPadding(true) + LocationBarView::GetItemPadding() +
+  return GetBubbleOuterPadding(true) + LocationBarView::kItemPadding +
       GetBubbleOuterPadding(false);
 }
 
@@ -247,7 +245,7 @@ void ContentSettingImageView::OnClick() {
                 parent_->delegate()->GetContentSettingBubbleModelDelegate(),
                 web_contents, parent_->profile(),
                 content_setting_image_model_->get_content_settings_type()),
-            this, views::BubbleBorder::TOP_RIGHT));
+            web_contents, this, views::BubbleBorder::TOP_RIGHT));
     bubble_widget_->AddObserver(this);
     bubble_widget_->Show();
   }

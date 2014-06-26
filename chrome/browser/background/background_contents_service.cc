@@ -19,9 +19,7 @@
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_delegate.h"
@@ -32,18 +30,21 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/image_loader.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ipc/ipc_message.h"
@@ -53,7 +54,6 @@
 
 #if defined(ENABLE_NOTIFICATIONS)
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_util.h"
 #endif
 
 using content::SiteInstance;
@@ -71,7 +71,7 @@ void CloseBalloon(const std::string& balloon_id) {
       g_browser_process->notification_ui_manager();
   bool cancelled ALLOW_UNUSED = notification_ui_manager->CancelById(balloon_id);
 #if defined(ENABLE_NOTIFICATIONS)
-  if (cancelled && message_center::IsRichNotificationEnabled()) {
+  if (cancelled) {
     // TODO(dewittj): Add this functionality to the notification UI manager's
     // API.
     g_browser_process->message_center()->SetVisibility(
@@ -143,7 +143,7 @@ class CrashNotificationDelegate : public NotificationDelegate {
     return kNotificationPrefix + extension_id_;
   }
 
-  virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE {
+  virtual content::WebContents* GetWebContents() const OVERRIDE {
     return NULL;
   }
 
@@ -173,15 +173,15 @@ void NotificationImageReady(
 
   // Origin URL must be different from the crashed extension to avoid the
   // conflict. NotificationSystemObserver will cancel all notifications from
-  // the same origin when NOTIFICATION_EXTENSION_UNLOADED.
+  // the same origin when NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED.
   // TODO(mukai, dewittj): remove this and switch to message center
   // notifications.
   DesktopNotificationService::AddIconNotification(
-      GURL() /* empty origin */,
-      base::string16(),
+      GURL("chrome://extension-crash"),  // Origin URL.
+      base::string16(),                  // Title of notification.
       message,
       notification_icon,
-      base::string16(),
+      base::UTF8ToUTF16(delegate->id()),  // Replace ID.
       delegate.get(),
       profile);
 }
@@ -221,12 +221,18 @@ void ReloadExtension(const std::string& extension_id, Profile* profile) {
       !g_browser_process->profile_manager()->IsValidProfile(profile)) {
       return;
   }
+
   extensions::ExtensionSystem* extension_system =
       extensions::ExtensionSystem::Get(profile);
-  if (!extension_system || !extension_system->extension_service())
+  extensions::ExtensionRegistry* extension_registry =
+      extensions::ExtensionRegistry::Get(profile);
+  if (!extension_system || !extension_system->extension_service() ||
+      !extension_registry) {
     return;
-  if (!extension_system->extension_service()->
-          GetTerminatedExtension(extension_id)) {
+  }
+
+  if (!extension_registry->GetExtensionById(
+          extension_id, extensions::ExtensionRegistry::TERMINATED)) {
     // Either the app/extension was uninstalled by policy or it has since
     // been restarted successfully by someone else (the user).
     return;
@@ -256,10 +262,8 @@ int BackgroundContentsService::restart_delay_in_ms_ = 3000;  // 3 seconds.
 BackgroundContentsService::BackgroundContentsService(
     Profile* profile, const CommandLine* command_line)
     : prefs_(NULL) {
-  // Don't load/store preferences if the proper switch is not enabled, or if
-  // the parent profile is incognito.
-  if (!profile->IsOffTheRecord() &&
-      !command_line->HasSwitch(switches::kDisableRestoreBackgroundContents))
+  // Don't load/store preferences if the parent profile is incognito.
+  if (!profile->IsOffTheRecord())
     prefs_ = profile->GetPrefs();
 
   // Listen for events to tell us when to load/unload persisted background
@@ -327,7 +331,8 @@ void BackgroundContentsService::StartObserving(Profile* profile) {
 
   // Listen for new extension installs so that we can load any associated
   // background page.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile));
 
   // Track when the extensions crash so that the user can be notified
@@ -339,14 +344,15 @@ void BackgroundContentsService::StartObserving(Profile* profile) {
 
   // Listen for extensions to be unloaded so we can shutdown associated
   // BackgroundContents.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile));
 
   // Make sure the extension-crash balloons are removed when the extension is
   // uninstalled/reloaded. We cannot do this from UNLOADED since a crashed
   // extension is unloaded immediately after the crash, not when user reloads or
   // uninstalls the extension.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile));
 }
 
@@ -395,7 +401,7 @@ void BackgroundContentsService::Observe(
       RegisterBackgroundContents(bgcontents);
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       Profile* profile = content::Source<Profile>(source).ptr();
@@ -431,7 +437,7 @@ void BackgroundContentsService::Observe(
       if (type == chrome::NOTIFICATION_BACKGROUND_CONTENTS_TERMINATED) {
         BackgroundContents* bg =
             content::Details<BackgroundContents>(details).ptr();
-        std::string extension_id = UTF16ToASCII(
+        std::string extension_id = base::UTF16ToASCII(
             BackgroundContentsServiceFactory::GetForProfile(profile)->
                 GetParentApplicationId(bg));
         extension =
@@ -456,12 +462,13 @@ void BackgroundContentsService::Observe(
       }
       break;
     }
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
       switch (content::Details<UnloadedExtensionInfo>(details)->reason) {
         case UnloadedExtensionInfo::REASON_DISABLE:    // Fall through.
         case UnloadedExtensionInfo::REASON_TERMINATE:  // Fall through.
         case UnloadedExtensionInfo::REASON_UNINSTALL:  // Fall through.
-        case UnloadedExtensionInfo::REASON_BLACKLIST:
+        case UnloadedExtensionInfo::REASON_BLACKLIST:  // Fall through.
+        case UnloadedExtensionInfo::REASON_PROFILE_SHUTDOWN:
           ShutdownAssociatedBackgroundContents(base::ASCIIToUTF16(
               content::Details<UnloadedExtensionInfo>(details)->
                   extension->id()));
@@ -491,7 +498,7 @@ void BackgroundContentsService::Observe(
       }
       break;
 
-    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED: {
       // Close the crash notification balloon for the app/extension, if any.
       ScheduleCloseBalloon(
           content::Details<const Extension>(details).ptr()->id());
@@ -738,7 +745,7 @@ void BackgroundContentsService::BackgroundContentsOpened(
   contents_map_[details->application_id].contents = details->contents;
   contents_map_[details->application_id].frame_name = details->frame_name;
 
-  ScheduleCloseBalloon(UTF16ToASCII(details->application_id));
+  ScheduleCloseBalloon(base::UTF16ToASCII(details->application_id));
 }
 
 // Used by test code and debug checks to verify whether a given

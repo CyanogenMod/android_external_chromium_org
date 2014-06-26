@@ -18,21 +18,22 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/image_loader.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "ui/base/l10n/l10n_util_collator.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
@@ -176,10 +177,10 @@ BackgroundApplicationListModel::BackgroundApplicationListModel(Profile* profile)
     : profile_(profile) {
   DCHECK(profile_);
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSIONS_READY,
@@ -277,8 +278,10 @@ int BackgroundApplicationListModel::GetPosition(
 bool BackgroundApplicationListModel::RequiresBackgroundModeForPushMessaging(
     const Extension& extension) {
   // No PushMessaging permission - does not require the background mode.
-  if (!extension.HasAPIPermission(APIPermission::kPushMessaging))
+  if (!extension.permissions_data()->HasAPIPermission(
+          APIPermission::kPushMessaging)) {
     return false;
+  }
 
   // If in the whitelist, then does not require background mode even if
   // uses push messaging.
@@ -306,7 +309,8 @@ bool BackgroundApplicationListModel::IsBackgroundApp(
 
   // Not a background app if we don't have the background permission or
   // the push messaging permission
-  if (!extension.HasAPIPermission(APIPermission::kBackground) &&
+  if (!extension.permissions_data()->HasAPIPermission(
+          APIPermission::kBackground) &&
       !RequiresBackgroundModeForPushMessaging(extension))
     return false;
 
@@ -350,10 +354,10 @@ void BackgroundApplicationListModel::Observe(
     return;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       OnExtensionLoaded(content::Details<Extension>(details).ptr());
       break;
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
       OnExtensionUnloaded(
           content::Details<UnloadedExtensionInfo>(details)->extension);
       break;

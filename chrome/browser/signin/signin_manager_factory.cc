@@ -6,22 +6,39 @@
 
 #include "base/prefs/pref_registry_simple.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/signin/chrome_signin_manager_delegate.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/local_auth.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/core/browser/signin_manager.h"
 
 SigninManagerFactory::SigninManagerFactory()
     : BrowserContextKeyedServiceFactory(
         "SigninManager",
         BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(ChromeSigninClientFactory::GetInstance());
   DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
 }
 
-SigninManagerFactory::~SigninManagerFactory() {}
+SigninManagerFactory::~SigninManagerFactory() {
+#if defined(OS_MACOSX)
+  // Check that the number of remaining observers is as expected. Mac has a
+  // known issue wherein there might be a remaining observer
+  // (UIAppListViewDelegate).
+  int num_observers = 0;
+  if (observer_list_.might_have_observers()) {
+    ObserverListBase<SigninManagerFactory::Observer>::Iterator it(
+        observer_list_);
+    while (it.GetNext()) {
+      num_observers++;
+    }
+  }
+  DCHECK_LE(num_observers, 1);
+#endif  // defined(OS_MACOSX)
+}
 
 #if defined(OS_CHROMEOS)
 // static
@@ -104,18 +121,19 @@ void SigninManagerFactory::NotifyObserversOfSigninManagerCreationForTesting(
   FOR_EACH_OBSERVER(Observer, observer_list_, SigninManagerCreated(manager));
 }
 
-BrowserContextKeyedService* SigninManagerFactory::BuildServiceInstanceFor(
+KeyedService* SigninManagerFactory::BuildServiceInstanceFor(
     content::BrowserContext* context) const {
   SigninManagerBase* service = NULL;
   Profile* profile = static_cast<Profile*>(context);
+  SigninClient* client =
+      ChromeSigninClientFactory::GetInstance()->GetForProfile(profile);
 #if defined(OS_CHROMEOS)
-  service = new SigninManagerBase();
+  service = new SigninManagerBase(client);
 #else
   service = new SigninManager(
-      scoped_ptr<SigninManagerDelegate>(
-          new ChromeSigninManagerDelegate(profile)));
+      client, ProfileOAuth2TokenServiceFactory::GetForProfile(profile));
 #endif
-  service->Initialize(profile, g_browser_process->local_state());
+  service->Initialize(g_browser_process->local_state());
   FOR_EACH_OBSERVER(Observer, observer_list_, SigninManagerCreated(service));
   return service;
 }

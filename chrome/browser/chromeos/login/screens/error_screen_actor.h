@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "chrome/browser/chromeos/login/screens/error_screen.h"
+#include "chrome/browser/chromeos/login/screens/error_screen_actor_delegate.h"
 #include "chrome/browser/ui/webui/chromeos/login/oobe_ui.h"
 
 namespace base {
@@ -45,6 +46,9 @@ class ErrorScreenActor {
   // screen.
   OobeUI::Screen parent_screen() const { return parent_screen_; }
 
+  // Sets screen this actor belongs to.
+  virtual void SetDelegate(ErrorScreenActorDelegate* delegate) = 0;
+
   // Shows the screen.
   virtual void Show(OobeDisplay::Screen parent_screen,
                     base::DictionaryValue* params) = 0;
@@ -68,6 +72,8 @@ class ErrorScreenActor {
   virtual void AllowGuestSignin(bool allowed) = 0;
   virtual void AllowOfflineLogin(bool allowed) = 0;
 
+  virtual void ShowConnectingIndicator(bool show) = 0;
+
   static const char* ErrorReasonString(ErrorReason reason);
 
  protected:
@@ -76,6 +82,7 @@ class ErrorScreenActor {
   std::string network_;
   bool guest_signin_allowed_;
   bool offline_login_allowed_;
+  bool show_connecting_indicator_;
 
   OobeUI::Screen parent_screen_;
 

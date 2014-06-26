@@ -8,7 +8,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/platform_file.h"
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "content/browser/plugin_process_host.h"
@@ -19,7 +18,7 @@
 #include "content/public/common/bindings_policy.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "net/url_request/url_request.h"
 #include "url/gurl.h"
 #include "webkit/browser/fileapi/file_permission_policy.h"
@@ -176,7 +175,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
     // file:// URLs are more granular.  The child may have been given
     // permission to a specific file but not the file:// scheme in general.
-    if (url.SchemeIs(kFileScheme)) {
+    if (url.SchemeIs(url::kFileScheme)) {
       base::FilePath path;
       if (net::FileURLToFilePath(url, &path))
         return ContainsKey(request_file_set_, path);
@@ -274,7 +273,7 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
  private:
   typedef std::map<std::string, bool> SchemeMap;
 
-  typedef int FilePermissionFlags;  // bit-set of PlatformFileFlags
+  typedef int FilePermissionFlags;  // bit-set of base::File::Flags
   typedef std::map<base::FilePath, FilePermissionFlags> FileMap;
   typedef std::map<std::string, FilePermissionFlags> FileSystemMap;
   typedef std::set<base::FilePath> FileSet;
@@ -308,17 +307,17 @@ class ChildProcessSecurityPolicyImpl::SecurityState {
 
 ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl() {
   // We know about these schemes and believe them to be safe.
-  RegisterWebSafeScheme(kHttpScheme);
-  RegisterWebSafeScheme(kHttpsScheme);
-  RegisterWebSafeScheme(kFtpScheme);
-  RegisterWebSafeScheme(kDataScheme);
+  RegisterWebSafeScheme(url::kHttpScheme);
+  RegisterWebSafeScheme(url::kHttpsScheme);
+  RegisterWebSafeScheme(url::kFtpScheme);
+  RegisterWebSafeScheme(url::kDataScheme);
   RegisterWebSafeScheme("feed");
-  RegisterWebSafeScheme(chrome::kBlobScheme);
-  RegisterWebSafeScheme(kFileSystemScheme);
+  RegisterWebSafeScheme(url::kBlobScheme);
+  RegisterWebSafeScheme(url::kFileSystemScheme);
 
   // We know about the following pseudo schemes and treat them specially.
-  RegisterPseudoScheme(chrome::kAboutScheme);
-  RegisterPseudoScheme(kJavaScriptScheme);
+  RegisterPseudoScheme(url::kAboutScheme);
+  RegisterPseudoScheme(url::kJavaScriptScheme);
   RegisterPseudoScheme(kViewSourceScheme);
 }
 
@@ -434,7 +433,7 @@ void ChildProcessSecurityPolicyImpl::GrantRequestURL(
 void ChildProcessSecurityPolicyImpl::GrantRequestSpecificFileURL(
     int child_id,
     const GURL& url) {
-  if (!url.SchemeIs(kFileScheme))
+  if (!url.SchemeIs(url::kFileScheme))
     return;
 
   {
@@ -459,6 +458,16 @@ void ChildProcessSecurityPolicyImpl::GrantReadFile(int child_id,
 void ChildProcessSecurityPolicyImpl::GrantCreateReadWriteFile(
     int child_id, const base::FilePath& file) {
   GrantPermissionsForFile(child_id, file, CREATE_READ_WRITE_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantCopyInto(int child_id,
+                                                   const base::FilePath& dir) {
+  GrantPermissionsForFile(child_id, dir, COPY_INTO_FILE_GRANT);
+}
+
+void ChildProcessSecurityPolicyImpl::GrantDeleteFrom(
+    int child_id, const base::FilePath& dir) {
+  GrantPermissionsForFile(child_id, dir, DELETE_FILE_GRANT);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantPermissionsForFile(
@@ -548,7 +557,7 @@ void ChildProcessSecurityPolicyImpl::GrantWebUIBindings(int child_id) {
   state->second->GrantScheme(kChromeUIScheme);
 
   // Web UI pages can contain links to file:// URLs.
-  state->second->GrantScheme(kFileScheme);
+  state->second->GrantScheme(url::kFileScheme);
 }
 
 void ChildProcessSecurityPolicyImpl::GrantReadRawCookies(int child_id) {
@@ -608,7 +617,7 @@ bool ChildProcessSecurityPolicyImpl::CanRequestURL(
       return CanRequestURL(child_id, child_url);
     }
 
-    if (LowerCaseEqualsASCII(url.spec(), kAboutBlankURL))
+    if (LowerCaseEqualsASCII(url.spec(), url::kAboutBlankURL))
       return true;  // Every child process can request <about:blank>.
 
     // URLs like <about:memory> and <about:crash> shouldn't be requestable by

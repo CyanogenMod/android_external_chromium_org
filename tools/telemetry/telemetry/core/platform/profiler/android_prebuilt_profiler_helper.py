@@ -2,18 +2,13 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Android-specific, downloads and installs pre-built profilers.
+"""Android-specific, installs pre-built profilers."""
 
-These pre-built binaries are stored in Cloud Storage, and they were
-built from AOSP source. Specific profilers using this helper class contain
-more detailed information.
-"""
-
+import logging
 import os
 
 from telemetry import decorators
-from telemetry.core import util
-from telemetry.page import cloud_storage
+from telemetry.util import support_binaries
 
 
 _DEVICE_PROFILER_DIR = '/data/local/tmp/profilers/'
@@ -23,18 +18,16 @@ def GetDevicePath(profiler_binary):
   return os.path.join(_DEVICE_PROFILER_DIR, os.path.basename(profiler_binary))
 
 
-def GetHostPath(profiler_binary):
-  return os.path.join(util.GetTelemetryDir(),
-                      'bin', 'prebuilt', 'android', profiler_binary)
-
-
-def GetIfChanged(profiler_binary):
-  cloud_storage.GetIfChanged(GetHostPath(profiler_binary),
-                             cloud_storage.PUBLIC_BUCKET)
-
-
 @decorators.Cache
-def InstallOnDevice(adb, profiler_binary):
-  GetIfChanged(profiler_binary)
-  adb.PushIfNeeded(GetHostPath(profiler_binary), GetDevicePath(profiler_binary))
-  adb.RunShellCommand('chmod 777 ' + GetDevicePath(profiler_binary))
+def InstallOnDevice(device, profiler_binary):
+  host_path = support_binaries.FindPath(profiler_binary, 'android')
+  if not host_path:
+    logging.error('Profiler binary "%s" not found. Could not be installed',
+                  host_path)
+    return False
+
+  device_binary_path = GetDevicePath(profiler_binary)
+  device.old_interface.PushIfNeeded(host_path, device_binary_path)
+  device.RunShellCommand('chmod 777 ' + device_binary_path)
+  return True
+

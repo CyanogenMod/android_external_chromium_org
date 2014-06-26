@@ -10,6 +10,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
+#include "base/debug/alias.h"
 #include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted.h"
@@ -18,6 +19,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/appcache/view_appcache_internals_job.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/histogram_internals_request_job.h"
 #include "content/browser/net/view_blob_internals_job_factory.h"
@@ -41,9 +43,6 @@
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "url/url_util.h"
-#include "webkit/browser/appcache/view_appcache_internals_job.h"
-
-using appcache::AppCacheService;
 
 namespace content {
 
@@ -55,6 +54,8 @@ const char kChromeURLContentSecurityPolicyHeaderBase[] =
     "'self' 'unsafe-eval'; ";
 
 const char kChromeURLXFrameOptionsHeader[] = "X-Frame-Options: DENY";
+
+const int kNoRenderProcessId = -1;
 
 bool SchemeIsInSchemes(const std::string& scheme,
                        const std::vector<std::string>& schemes) {
@@ -81,9 +82,9 @@ bool CheckURLIsValid(const GURL& url) {
 // path is the remaining portion after the scheme and hostname.
 void URLToRequestPath(const GURL& url, std::string* path) {
   const std::string& spec = url.possibly_invalid_spec();
-  const url_parse::Parsed& parsed = url.parsed_for_possibly_invalid_spec();
+  const url::Parsed& parsed = url.parsed_for_possibly_invalid_spec();
   // + 1 to skip the slash at the beginning of the path.
-  int offset = parsed.CountCharactersBefore(url_parse::Parsed::PATH, false) + 1;
+  int offset = parsed.CountCharactersBefore(url::Parsed::PATH, false) + 1;
 
   if (offset < static_cast<int>(spec.size()))
     path->assign(spec.substr(offset));
@@ -237,8 +238,10 @@ URLRequestChromeJob::~URLRequestChromeJob() {
 
 void URLRequestChromeJob::Start() {
   int render_process_id, unused;
-  ResourceRequestInfo::GetRenderFrameForRequest(
+  bool is_renderer_request = ResourceRequestInfo::GetRenderFrameForRequest(
       request_, &render_process_id, &unused);
+  if (!is_renderer_request)
+    render_process_id = kNoRenderProcessId;
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
@@ -337,6 +340,11 @@ bool URLRequestChromeJob::ReadRawData(net::IOBuffer* buf, int buf_size,
 
 void URLRequestChromeJob::CompleteRead(net::IOBuffer* buf, int buf_size,
                                        int* bytes_read) {
+  // http://crbug.com/373841
+  char url_buf[128];
+  base::strlcpy(url_buf, request_->url().spec().c_str(), arraysize(url_buf));
+  base::debug::Alias(url_buf);
+
   int remaining = static_cast<int>(data_->size()) - data_offset_;
   if (buf_size > remaining)
     buf_size = remaining;
@@ -357,7 +365,15 @@ void URLRequestChromeJob::CheckStoragePartitionMatches(
   // exploited renderer pretending to add them as a subframe. We skip this check
   // for resources.
   bool allowed = false;
-  if (url.SchemeIs(kChromeUIScheme) && url.host() == kChromeUIResourcesHost) {
+  std::vector<std::string> hosts;
+  GetContentClient()->
+      browser()->GetAdditionalWebUIHostsToIgnoreParititionCheck(&hosts);
+  if (url.SchemeIs(kChromeUIScheme) &&
+      (url.SchemeIs(kChromeUIScheme) ||
+       std::find(hosts.begin(), hosts.end(), url.host()) != hosts.end())) {
+    allowed = true;
+  } else if (render_process_id == kNoRenderProcessId) {
+    // Request was not issued by renderer.
     allowed = true;
   } else {
     RenderProcessHost* process = RenderProcessHost::FromID(render_process_id);
@@ -410,7 +426,7 @@ class ChromeProtocolHandler
   // |is_incognito| should be set for incognito profiles.
   ChromeProtocolHandler(ResourceContext* resource_context,
                         bool is_incognito,
-                        AppCacheService* appcache_service,
+                        AppCacheServiceImpl* appcache_service,
                         ChromeBlobStorageContext* blob_storage_context)
       : resource_context_(resource_context),
         is_incognito_(is_incognito),
@@ -431,7 +447,7 @@ class ChromeProtocolHandler
     // Next check for chrome://appcache-internals/, which uses its own job type.
     if (request->url().SchemeIs(kChromeUIScheme) &&
         request->url().host() == kChromeUIAppCacheInternalsHost) {
-      return appcache::ViewAppCacheInternalsJobFactory::CreateJobForRequest(
+      return ViewAppCacheInternalsJobFactory::CreateJobForRequest(
           request, network_delegate, appcache_service_);
     }
 
@@ -471,7 +487,7 @@ class ChromeProtocolHandler
 
   // True when generated from an incognito profile.
   const bool is_incognito_;
-  AppCacheService* appcache_service_;
+  AppCacheServiceImpl* appcache_service_;
   ChromeBlobStorageContext* blob_storage_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeProtocolHandler);
@@ -500,7 +516,7 @@ net::URLRequestJobFactory::ProtocolHandler*
 URLDataManagerBackend::CreateProtocolHandler(
     content::ResourceContext* resource_context,
     bool is_incognito,
-    AppCacheService* appcache_service,
+    AppCacheServiceImpl* appcache_service,
     ChromeBlobStorageContext* blob_storage_context) {
   DCHECK(resource_context);
   return new ChromeProtocolHandler(

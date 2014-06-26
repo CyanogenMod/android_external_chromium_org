@@ -68,7 +68,7 @@ class DirNodeForTesting : public DirNode {
 TEST(MemFsNodeTest, File) {
   MemFsNodeForTesting file;
   ScopedNode result_node;
-  size_t result_size = 0;
+  off_t result_size = 0;
   int result_bytes = 0;
 
   EXPECT_EQ(0, file.Init(0));
@@ -79,7 +79,7 @@ TEST(MemFsNodeTest, File) {
   EXPECT_EQ(S_IFREG, file.GetType());
   EXPECT_FALSE(file.IsaDir());
   EXPECT_TRUE(file.IsaFile());
-  EXPECT_FALSE(file.IsaTTY());
+  EXPECT_EQ(ENOTTY, file.Isatty());
   EXPECT_EQ(0, file.RefCount());
 
   // Test IO
@@ -120,7 +120,7 @@ TEST(MemFsNodeTest, File) {
 
 TEST(MemFsNodeTest, FTruncate) {
   MemFsNodeForTesting file;
-  size_t result_size = 0;
+  off_t result_size = 0;
   int result_bytes = 0;
 
   char data[1024];
@@ -197,7 +197,7 @@ TEST(MemFsNodeTest, Directory) {
   s_alloc_num = 0;
   DirNodeForTesting root;
   ScopedNode result_node;
-  size_t result_size = 0;
+  off_t result_size = 0;
   int result_bytes = 0;
 
   root.Init(0);
@@ -209,7 +209,7 @@ TEST(MemFsNodeTest, Directory) {
   EXPECT_EQ(S_IFDIR, root.GetType());
   EXPECT_TRUE(root.IsaDir());
   EXPECT_FALSE(root.IsaFile());
-  EXPECT_FALSE(root.IsaTTY());
+  EXPECT_EQ(ENOTTY, root.Isatty());
   EXPECT_EQ(0, root.RefCount());
 
   // IO operations should fail

@@ -14,11 +14,11 @@
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
 #include "ui/gfx/image/image.h"
 
 using apps::AppWindow;
@@ -140,8 +140,7 @@ void AshPanelWindowController::SetFullscreenMode(
 
 bool AshPanelWindowController::IsVisibleToExtension(
     const extensions::Extension* extension) const {
-  return app_window_->extension() &&
-         extension->id() == app_window_->extension()->id();
+  return extension->id() == app_window_->extension_id();
 }
 
 void AshPanelWindowController::NativeWindowChanged() {
@@ -170,7 +169,7 @@ void AshPanelContents::Initialize(content::BrowserContext* context,
   url_ = url;
 
   extension_function_dispatcher_.reset(
-      new ExtensionFunctionDispatcher(context, this));
+      new extensions::ExtensionFunctionDispatcher(context, this));
 
   web_contents_.reset(
       content::WebContents::Create(content::WebContents::CreateParams(
@@ -208,6 +207,9 @@ void AshPanelContents::NativeWindowChanged(NativeAppWindow* native_app_window) {
 }
 
 void AshPanelContents::NativeWindowClosed() {
+}
+
+void AshPanelContents::DispatchWindowShownForTests() const {
 }
 
 content::WebContents* AshPanelContents::GetWebContents() const {

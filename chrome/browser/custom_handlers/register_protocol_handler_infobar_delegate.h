@@ -6,8 +6,8 @@
 #define CHROME_BROWSER_CUSTOM_HANDLERS_REGISTER_PROTOCOL_HANDLER_INFOBAR_DELEGATE_H_
 
 #include "base/strings/string16.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 
 class InfoBarService;
 class ProtocolHandlerRegistry;
@@ -36,7 +36,7 @@ class RegisterProtocolHandlerInfoBarDelegate : public ConfirmInfoBarDelegate {
       AsRegisterProtocolHandlerInfoBarDelegate() OVERRIDE;
   virtual base::string16 GetMessageText() const OVERRIDE;
   virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool NeedElevation(InfoBarButton button) const OVERRIDE;
+  virtual bool OKButtonTriggersUACPrompt() const OVERRIDE;
   virtual bool Accept() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual base::string16 GetLinkText() const OVERRIDE;

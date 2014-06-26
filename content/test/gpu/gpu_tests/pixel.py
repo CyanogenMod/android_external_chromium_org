@@ -8,9 +8,12 @@ import os
 import re
 
 import cloud_storage_test_base
+import page_sets
+import pixel_expectations
 
 from telemetry import test
 from telemetry.core import bitmap
+from telemetry.page import cloud_storage
 from telemetry.page import page_test
 
 test_data_dir = os.path.abspath(os.path.join(
@@ -45,10 +48,7 @@ class PixelTestFailure(Exception):
 def _DidTestSucceed(tab):
   return tab.EvaluateJavaScript('domAutomationController._succeeded')
 
-class PixelValidator(cloud_storage_test_base.ValidatorBase):
-  def __init__(self):
-    super(PixelValidator, self).__init__('ValidatePage')
-
+class _PixelValidator(cloud_storage_test_base.ValidatorBase):
   def CustomizeBrowserOptions(self, options):
     options.AppendExtraBrowserArgs('--enable-gpu-benchmarking')
 
@@ -83,7 +83,20 @@ class PixelValidator(cloud_storage_test_base.ValidatorBase):
     elif self.options.download_refimg_from_cloud_storage:
       # This bot doesn't have the ability to properly generate a
       # reference image, so download it from cloud storage.
-      ref_png = self._DownloadFromCloudStorage(image_name, page, tab)
+      try:
+        ref_png = self._DownloadFromCloudStorage(image_name, page, tab)
+      except cloud_storage.NotFoundError as e:
+        # There is no reference image yet in cloud storage. This
+        # happens when the revision of the test is incremented or when
+        # a new test is added, because the trybots are not allowed to
+        # produce reference images, only the bots on the main
+        # waterfalls. Report this as a failure so the developer has to
+        # take action by explicitly suppressing the failure and
+        # removing the suppression once the reference images have been
+        # generated. Otherwise silent failures could happen for long
+        # periods of time.
+        raise page_test.Failure('Could not find image %s in cloud storage' %
+                                image_name)
     else:
       # Legacy path using on-disk results.
       ref_png = self._GetReferenceImage(self.options.reference_dir,
@@ -133,21 +146,22 @@ class PixelValidator(cloud_storage_test_base.ValidatorBase):
     return screenshot
 
 class Pixel(cloud_storage_test_base.TestBase):
-  test = PixelValidator
-  page_set = 'page_sets/pixel_tests.json'
+  test = _PixelValidator
+  page_set = page_sets.PixelTestsPageSet
 
-  @staticmethod
-  def AddTestCommandLineOptions(parser):
-    group = optparse.OptionGroup(parser, 'Pixel test options')
-    cloud_storage_test_base.TestBase._AddTestCommandLineOptions(parser, group)
+  @classmethod
+  def AddTestCommandLineArgs(cls, group):
+    super(Pixel, cls).AddTestCommandLineArgs(group)
     group.add_option('--reference-dir',
         help='Overrides the default on-disk location for reference images '
         '(only used for local testing without a cloud storage account)',
         default=default_reference_image_dir)
-    parser.add_option_group(group)
 
   def CreatePageSet(self, options):
     page_set = super(Pixel, self).CreatePageSet(options)
     for page in page_set.pages:
       page.script_to_evaluate_on_commit = test_harness_script
     return page_set
+
+  def CreateExpectations(self, page_set):
+    return pixel_expectations.PixelExpectations()

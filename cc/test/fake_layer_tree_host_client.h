@@ -35,12 +35,11 @@ class FakeLayerTreeHostClient : public LayerTreeHostClient,
                                    float page_scale) OVERRIDE {}
 
   virtual scoped_ptr<OutputSurface> CreateOutputSurface(bool fallback) OVERRIDE;
-  virtual void DidInitializeOutputSurface(bool success) OVERRIDE {}
+  virtual void DidInitializeOutputSurface() OVERRIDE {}
   virtual void WillCommit() OVERRIDE {}
   virtual void DidCommit() OVERRIDE {}
   virtual void DidCommitAndDrawFrame() OVERRIDE {}
   virtual void DidCompleteSwapBuffers() OVERRIDE {}
-  virtual scoped_refptr<ContextProvider> OffscreenContextProvider() OVERRIDE;
 
   // LayerTreeHostSingleThreadClient implementation.
   virtual void ScheduleComposite() OVERRIDE {}
@@ -51,8 +50,6 @@ class FakeLayerTreeHostClient : public LayerTreeHostClient,
  private:
   bool use_software_rendering_;
   bool use_delegating_renderer_;
-
-  scoped_refptr<TestContextProvider> offscreen_contexts_;
 };
 
 }  // namespace cc

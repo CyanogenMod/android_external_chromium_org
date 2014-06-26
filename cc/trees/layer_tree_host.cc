@@ -20,7 +20,6 @@
 #include "cc/animation/layer_animation_controller.h"
 #include "cc/base/math_util.h"
 #include "cc/debug/devtools_instrumentation.h"
-#include "cc/debug/overdraw_metrics.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
@@ -49,19 +48,16 @@ namespace cc {
 
 RendererCapabilities::RendererCapabilities(ResourceFormat best_texture_format,
                                            bool allow_partial_texture_updates,
-                                           bool using_offscreen_context3d,
                                            int max_texture_size,
                                            bool using_shared_memory_resources)
     : best_texture_format(best_texture_format),
       allow_partial_texture_updates(allow_partial_texture_updates),
-      using_offscreen_context3d(using_offscreen_context3d),
       max_texture_size(max_texture_size),
       using_shared_memory_resources(using_shared_memory_resources) {}
 
 RendererCapabilities::RendererCapabilities()
     : best_texture_format(RGBA_8888),
       allow_partial_texture_updates(false),
-      using_offscreen_context3d(false),
       max_texture_size(0),
       using_shared_memory_resources(false) {}
 
@@ -90,20 +86,16 @@ scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
   return layer_tree_host.Pass();
 }
 
-
-LayerTreeHost::LayerTreeHost(
-    LayerTreeHostClient* client,
-    SharedBitmapManager* manager,
-    const LayerTreeSettings& settings)
+LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
+                             SharedBitmapManager* manager,
+                             const LayerTreeSettings& settings)
     : micro_benchmark_controller_(this),
       next_ui_resource_id_(1),
       animating_(false),
       needs_full_tree_sync_(true),
-      needs_filter_context_(false),
       client_(client),
       source_frame_number_(0),
       rendering_stats_instrumentation_(RenderingStatsInstrumentation::Create()),
-      output_surface_can_be_initialized_(true),
       output_surface_lost_(true),
       num_failed_recreate_attempts_(0),
       settings_(settings),
@@ -114,7 +106,9 @@ LayerTreeHost::LayerTreeHost(
       page_scale_factor_(1.f),
       min_page_scale_factor_(1.f),
       max_page_scale_factor_(1.f),
-      trigger_idle_updates_(true),
+      has_gpu_rasterization_trigger_(false),
+      content_is_suitable_for_gpu_rasterization_(true),
+      gpu_rasterization_histogram_recorded_(false),
       background_color_(SK_ColorWHITE),
       has_transparent_background_(false),
       partial_texture_update_requests_(0),
@@ -182,50 +176,38 @@ static void LayerTreeHostOnOutputSurfaceCreatedCallback(Layer* layer) {
   layer->OnOutputSurfaceCreated();
 }
 
-LayerTreeHost::CreateResult
-LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
+void LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(bool success) {
+  DCHECK(output_surface_lost_);
   TRACE_EVENT1("cc",
                "LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted",
                "success",
                success);
 
-  DCHECK(output_surface_lost_);
-  if (success) {
-    output_surface_lost_ = false;
-
-    if (!contents_texture_manager_ && !settings_.impl_side_painting) {
-      contents_texture_manager_ =
-          PrioritizedResourceManager::Create(proxy_.get());
-      surface_memory_placeholder_ =
-          contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
-    }
-
-    if (root_layer()) {
-      LayerTreeHostCommon::CallFunctionForSubtree(
-          root_layer(),
-          base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
-    }
-
-    client_->DidInitializeOutputSurface(true);
-    return CreateSucceeded;
+  if (!success) {
+    // Tolerate a certain number of recreation failures to work around races
+    // in the output-surface-lost machinery.
+    ++num_failed_recreate_attempts_;
+    if (num_failed_recreate_attempts_ >= 5)
+      LOG(FATAL) << "Failed to create a fallback OutputSurface.";
+    client_->DidFailToInitializeOutputSurface();
+    return;
   }
 
-  // Failure path.
+  output_surface_lost_ = false;
 
-  client_->DidFailToInitializeOutputSurface();
-
-  // Tolerate a certain number of recreation failures to work around races
-  // in the output-surface-lost machinery.
-  ++num_failed_recreate_attempts_;
-  if (num_failed_recreate_attempts_ >= 5) {
-    // We have tried too many times to recreate the output surface. Tell the
-    // host to fall back to software rendering.
-    output_surface_can_be_initialized_ = false;
-    client_->DidInitializeOutputSurface(false);
-    return CreateFailedAndGaveUp;
+  if (!contents_texture_manager_ && !settings_.impl_side_painting) {
+    contents_texture_manager_ =
+        PrioritizedResourceManager::Create(proxy_.get());
+    surface_memory_placeholder_ =
+        contents_texture_manager_->CreateTexture(gfx::Size(), RGBA_8888);
   }
 
-  return CreateFailedButTryAgain;
+  if (root_layer()) {
+    LayerTreeHostCommon::CallFunctionForSubtree(
+        root_layer(), base::Bind(&LayerTreeHostOnOutputSurfaceCreatedCallback));
+  }
+
+  client_->DidInitializeOutputSurface();
 }
 
 void LayerTreeHost::DeleteContentsTexturesOnImplThread(
@@ -233,11 +215,6 @@ void LayerTreeHost::DeleteContentsTexturesOnImplThread(
   DCHECK(proxy_->IsImplThread());
   if (contents_texture_manager_)
     contents_texture_manager_->ClearAllMemory(resource_provider);
-}
-
-void LayerTreeHost::AcquireLayerTextures() {
-  DCHECK(proxy_->IsMainThread());
-  proxy_->AcquireLayerTextures();
 }
 
 void LayerTreeHost::DidBeginMainFrame() {
@@ -294,28 +271,15 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
     contents_texture_manager_->UpdateBackingsState(
         host_impl->resource_provider());
-  }
-
-  // In impl-side painting, synchronize to the pending tree so that it has
-  // time to raster before being displayed.  If no pending tree is needed,
-  // synchronization can happen directly to the active tree and
-  // unlinked contents resources can be reclaimed immediately.
-  LayerTreeImpl* sync_tree;
-  if (settings_.impl_side_painting) {
-    // Commits should not occur while there is already a pending tree.
-    DCHECK(!host_impl->pending_tree());
-    host_impl->CreatePendingTree();
-    sync_tree = host_impl->pending_tree();
-    if (next_commit_forces_redraw_)
-      sync_tree->ForceRedrawNextActivation();
-  } else {
-    if (next_commit_forces_redraw_)
-      host_impl->SetFullRootLayerDamage();
     contents_texture_manager_->ReduceMemory(host_impl->resource_provider());
-    sync_tree = host_impl->active_tree();
   }
 
-  next_commit_forces_redraw_ = false;
+  LayerTreeImpl* sync_tree = host_impl->sync_tree();
+
+  if (next_commit_forces_redraw_) {
+    sync_tree->ForceRedrawNextActivation();
+    next_commit_forces_redraw_ = false;
+  }
 
   sync_tree->set_source_frame_number(source_frame_number());
 
@@ -351,26 +315,18 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     sync_tree->ClearViewportLayers();
   }
 
-  float page_scale_delta, sent_page_scale_delta;
-  if (settings_.impl_side_painting) {
-    // Update the delta from the active tree, which may have
-    // adjusted its delta prior to the pending tree being created.
-    // This code is equivalent to that in LayerTreeImpl::SetPageScaleDelta.
-    DCHECK_EQ(1.f, sync_tree->sent_page_scale_delta());
-    page_scale_delta = host_impl->active_tree()->page_scale_delta();
-    sent_page_scale_delta = host_impl->active_tree()->sent_page_scale_delta();
-  } else {
-    page_scale_delta = sync_tree->page_scale_delta();
-    sent_page_scale_delta = sync_tree->sent_page_scale_delta();
-    sync_tree->set_sent_page_scale_delta(1.f);
-  }
-
-  sync_tree->SetPageScaleFactorAndLimits(page_scale_factor_,
-                                         min_page_scale_factor_,
-                                         max_page_scale_factor_);
-  sync_tree->SetPageScaleDelta(page_scale_delta / sent_page_scale_delta);
+  float page_scale_delta =
+      sync_tree->page_scale_delta() / sync_tree->sent_page_scale_delta();
+  sync_tree->SetPageScaleValues(page_scale_factor_,
+                                min_page_scale_factor_,
+                                max_page_scale_factor_,
+                                page_scale_delta);
+  sync_tree->set_sent_page_scale_delta(1.f);
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
+
+  host_impl->SetUseGpuRasterization(UseGpuRasterization());
+  RecordGpuRasterizationHistogram();
 
   host_impl->SetViewportSize(device_viewport_size_);
   host_impl->SetOverdrawBottomHeight(overdraw_bottom_height_);
@@ -388,10 +344,6 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   if (!ui_resource_request_queue_.empty()) {
     sync_tree->set_ui_resource_request_queue(ui_resource_request_queue_);
     ui_resource_request_queue_.clear();
-    // Process any ui resource requests in the queue.  For impl-side-painting,
-    // the queue is processed in LayerTreeHostImpl::ActivatePendingTree.
-    if (!settings_.impl_side_painting)
-      sync_tree->ProcessUIResourceRequestQueue();
   }
   if (overhang_ui_resource_) {
     host_impl->SetOverhangUIResource(
@@ -406,16 +358,7 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
       sync_tree->ResetContentsTexturesPurged();
   }
 
-  if (!settings_.impl_side_painting) {
-    // If we're not in impl-side painting, the tree is immediately
-    // considered active.
-    sync_tree->DidBecomeActive();
-    devtools_instrumentation::DidActivateLayerTree(id_, source_frame_number_);
-  }
-
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
-
-  source_frame_number_++;
 }
 
 void LayerTreeHost::WillCommit() {
@@ -436,6 +379,7 @@ void LayerTreeHost::UpdateHudLayer() {
 }
 
 void LayerTreeHost::CommitComplete() {
+  source_frame_number_++;
   client_->DidCommit();
 }
 
@@ -453,6 +397,7 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
                                 rendering_stats_instrumentation_.get(),
                                 shared_bitmap_manager_,
                                 id_);
+  host_impl->SetUseGpuRasterization(UseGpuRasterization());
   shared_bitmap_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
@@ -473,15 +418,6 @@ void LayerTreeHost::DidLoseOutputSurface() {
   num_failed_recreate_attempts_ = 0;
   output_surface_lost_ = true;
   SetNeedsCommit();
-}
-
-bool LayerTreeHost::CompositeAndReadback(
-    void* pixels,
-    const gfx::Rect& rect_in_device_viewport) {
-  trigger_idle_updates_ = false;
-  bool ret = proxy_->CompositeAndReadback(pixels, rect_in_device_viewport);
-  trigger_idle_updates_ = true;
-  return ret;
 }
 
 void LayerTreeHost::FinishAllRendering() {
@@ -562,8 +498,8 @@ void LayerTreeHost::SetNextCommitForcesRedraw() {
   next_commit_forces_redraw_ = true;
 }
 
-void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
-                                       base::Time wall_clock_time) {
+void LayerTreeHost::SetAnimationEvents(
+    scoped_ptr<AnimationEventsVector> events) {
   DCHECK(proxy_->IsMainThread());
   for (size_t event_index = 0; event_index < events->size(); ++event_index) {
     int event_layer_id = (*events)[event_index].layer_id;
@@ -577,13 +513,11 @@ void LayerTreeHost::SetAnimationEvents(scoped_ptr<AnimationEventsVector> events,
     if (iter != animation_controllers.end()) {
       switch ((*events)[event_index].type) {
         case AnimationEvent::Started:
-          (*iter).second->NotifyAnimationStarted((*events)[event_index],
-                                                 wall_clock_time.ToDoubleT());
+          (*iter).second->NotifyAnimationStarted((*events)[event_index]);
           break;
 
         case AnimationEvent::Finished:
-          (*iter).second->NotifyAnimationFinished((*events)[event_index],
-                                                  wall_clock_time.ToDoubleT());
+          (*iter).second->NotifyAnimationFinished((*events)[event_index]);
           break;
 
         case AnimationEvent::Aborted:
@@ -613,6 +547,11 @@ void LayerTreeHost::SetRootLayer(scoped_refptr<Layer> root_layer) {
   if (hud_layer_.get())
     hud_layer_->RemoveFromParent();
 
+  // Reset gpu rasterization flag.
+  // This flag is sticky until a new tree comes along.
+  content_is_suitable_for_gpu_rasterization_ = true;
+  gpu_rasterization_histogram_recorded_ = false;
+
   SetNeedsFullTreeSync();
 }
 
@@ -629,6 +568,30 @@ void LayerTreeHost::SetDebugState(const LayerTreeDebugState& debug_state) {
       debug_state_.RecordRenderingStats());
 
   SetNeedsCommit();
+  proxy_->SetDebugState(debug_state);
+}
+
+bool LayerTreeHost::UseGpuRasterization() const {
+  if (settings_.gpu_rasterization_forced) {
+    return true;
+  } else if (settings_.gpu_rasterization_enabled) {
+    return has_gpu_rasterization_trigger_ &&
+           content_is_suitable_for_gpu_rasterization_;
+  } else {
+    return false;
+  }
+}
+
+void LayerTreeHost::SetHasGpuRasterizationTrigger(bool has_trigger) {
+  if (has_trigger == has_gpu_rasterization_trigger_)
+    return;
+
+  has_gpu_rasterization_trigger_ = has_trigger;
+  TRACE_EVENT_INSTANT1("cc",
+                       "LayerTreeHost::SetHasGpuRasterizationTrigger",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "has_trigger",
+                       has_gpu_rasterization_trigger_);
 }
 
 void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
@@ -675,7 +638,7 @@ void LayerTreeHost::SetOverhangBitmap(const SkBitmap& bitmap) {
   if (bitmap.isImmutable()) {
     bitmap_copy = bitmap;
   } else {
-    bitmap.copyTo(&bitmap_copy, bitmap.config());
+    bitmap.copyTo(&bitmap_copy);
     bitmap_copy.setImmutable();
   }
 
@@ -711,20 +674,15 @@ void LayerTreeHost::NotifyInputThrottledUntilCommit() {
 }
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
-  if (!proxy_->HasImplThread())
-    static_cast<SingleThreadProxy*>(proxy_.get())->CompositeImmediately(
-        frame_begin_time);
-  else
-    SetNeedsCommit();
-}
-
-bool LayerTreeHost::InitializeOutputSurfaceIfNeeded() {
-  if (!output_surface_can_be_initialized_)
-    return false;
+  DCHECK(!proxy_->HasImplThread());
+  SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
   if (output_surface_lost_)
-    proxy_->CreateAndInitializeOutputSurface();
-  return !output_surface_lost_;
+    proxy->CreateAndInitializeOutputSurface();
+  if (output_surface_lost_)
+    return;
+
+  proxy->CompositeImmediately(frame_begin_time);
 }
 
 bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
@@ -739,7 +697,7 @@ bool LayerTreeHost::UpdateLayers(ResourceUpdateQueue* queue) {
 
   micro_benchmark_controller_.DidUpdateLayers();
 
-  return result;
+  return result || next_commit_forces_redraw_;
 }
 
 static Layer* FindFirstScrollableLayer(Layer* layer) {
@@ -756,6 +714,31 @@ static Layer* FindFirstScrollableLayer(Layer* layer) {
   }
 
   return NULL;
+}
+
+void LayerTreeHost::RecordGpuRasterizationHistogram() {
+  // Gpu rasterization is only supported when impl-side painting is enabled.
+  if (gpu_rasterization_histogram_recorded_ || !settings_.impl_side_painting)
+    return;
+
+  // Record how widely gpu rasterization is enabled.
+  // This number takes device/gpu whitelisting/backlisting into account.
+  // Note that we do not consider the forced gpu rasterization mode, which is
+  // mostly used for debugging purposes.
+  UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationEnabled",
+                        settings_.gpu_rasterization_enabled);
+  if (settings_.gpu_rasterization_enabled) {
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationTriggered",
+                          has_gpu_rasterization_trigger_);
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationSuitableContent",
+                          content_is_suitable_for_gpu_rasterization_);
+    // Record how many pages actually get gpu rasterization when enabled.
+    UMA_HISTOGRAM_BOOLEAN("Renderer4.GpuRasterizationUsed",
+                          (has_gpu_rasterization_trigger_ &&
+                           content_is_suitable_for_gpu_rasterization_));
+  }
+
+  gpu_rasterization_histogram_recorded_ = true;
 }
 
 void LayerTreeHost::CalculateLCDTextMetricsCallback(Layer* layer) {
@@ -795,6 +778,10 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
 
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::CalcDrawProps");
     bool can_render_to_separate_surface = true;
+    // TODO(vmpstr): Passing 0 as the current render surface layer list id means
+    // that we won't be able to detect if a layer is part of |update_list|.
+    // Change this if this information is required.
+    int render_surface_layer_list_id = 0;
     LayerTreeHostCommon::CalcDrawPropsMainInputs inputs(
         root_layer,
         device_viewport_size(),
@@ -806,7 +793,8 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
         settings_.can_use_lcd_text,
         can_render_to_separate_surface,
         settings_.layer_transforms_should_scale_layer_contents,
-        &update_list);
+        &update_list,
+        render_surface_layer_list_id);
     LayerTreeHostCommon::CalculateDrawProperties(&inputs);
 
     if (total_frames_used_for_lcd_text_metrics_ <=
@@ -840,7 +828,7 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
   bool need_more_updates = false;
   PaintLayerContents(
       update_list, queue, &did_paint_content, &need_more_updates);
-  if (trigger_idle_updates_ && need_more_updates) {
+  if (need_more_updates) {
     TRACE_EVENT0("cc", "LayerTreeHost::UpdateLayers::posting prepaint task");
     prepaint_callback_.Reset(base::Bind(&LayerTreeHost::TriggerPrepaint,
                                         base::Unretained(this)));
@@ -905,8 +893,7 @@ void LayerTreeHost::SetPrioritiesForLayers(
 }
 
 void LayerTreeHost::PrioritizeTextures(
-    const RenderSurfaceLayerList& render_surface_layer_list,
-    OverdrawMetrics* metrics) {
+    const RenderSurfaceLayerList& render_surface_layer_list) {
   if (!contents_texture_manager_)
     return;
 
@@ -917,11 +904,6 @@ void LayerTreeHost::PrioritizeTextures(
 
   SetPrioritiesForLayers(render_surface_layer_list);
   SetPrioritiesForSurfaces(memory_for_render_surfaces_metric);
-
-  metrics->DidUseContentsTextureMemoryBytes(
-      contents_texture_manager_->MemoryAboveCutoffBytes());
-  metrics->DidUseRenderSurfaceTextureMemoryBytes(
-      memory_for_render_surfaces_metric);
 
   contents_texture_manager_->PrioritizeTextures();
 }
@@ -985,17 +967,12 @@ void LayerTreeHost::PaintLayerContents(
     ResourceUpdateQueue* queue,
     bool* did_paint_content,
     bool* need_more_updates) {
-  bool record_metrics_for_frame =
-      settings_.show_overdraw_in_tracing &&
-      base::debug::TraceLog::GetInstance() &&
-      base::debug::TraceLog::GetInstance()->IsEnabled();
-  OcclusionTracker occlusion_tracker(
-      root_layer_->render_surface()->content_rect(), record_metrics_for_frame);
+  OcclusionTracker<Layer> occlusion_tracker(
+      root_layer_->render_surface()->content_rect());
   occlusion_tracker.set_minimum_tracking_size(
       settings_.minimum_occlusion_tracking_size);
 
-  PrioritizeTextures(render_surface_layer_list,
-                     occlusion_tracker.overdraw_metrics());
+  PrioritizeTextures(render_surface_layer_list);
 
   in_paint_layer_contents_ = true;
 
@@ -1012,18 +989,25 @@ void LayerTreeHost::PaintLayerContents(
     if (it.represents_target_render_surface()) {
       PaintMasksForRenderSurface(
           *it, queue, did_paint_content, need_more_updates);
-    } else if (it.represents_itself() && it->DrawsContent()) {
+    } else if (it.represents_itself()) {
       DCHECK(!it->paint_properties().bounds.IsEmpty());
       *did_paint_content |= it->Update(queue, &occlusion_tracker);
       *need_more_updates |= it->NeedMoreUpdates();
+      // Note the '&&' with previous is-suitable state.
+      // This means that once the layer-tree becomes unsuitable for gpu
+      // rasterization due to some content, it will continue to be unsuitable
+      // even if that content is replaced by gpu-friendly content.
+      // This is to avoid switching back-and-forth between gpu and sw
+      // rasterization which may be both bad for performance and visually
+      // jarring.
+      content_is_suitable_for_gpu_rasterization_ &=
+          it->IsSuitableForGpuRasterization();
     }
 
     occlusion_tracker.LeaveLayer(it);
   }
 
   in_paint_layer_contents_ = false;
-
-  occlusion_tracker.overdraw_metrics()->RecordMetrics(this);
 }
 
 void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
@@ -1073,50 +1057,6 @@ void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
         inner_viewport_scroll_delta + outer_viewport_scroll_delta,
         info.page_scale_delta);
   }
-}
-
-gfx::Vector2d LayerTreeHost::DistributeScrollOffsetToViewports(
-    const gfx::Vector2d offset,
-    Layer* layer) {
-  DCHECK(layer);
-  if (layer != outer_viewport_scroll_layer_.get())
-    return offset;
-
-  gfx::Vector2d inner_viewport_offset =
-      inner_viewport_scroll_layer_->scroll_offset();
-  gfx::Vector2d outer_viewport_offset =
-      outer_viewport_scroll_layer_->scroll_offset();
-
-  if (offset == inner_viewport_offset + outer_viewport_offset) {
-    // In this case, nothing should change, so we just return to the outer
-    // viewport the offset is already has.
-    return outer_viewport_offset;
-  }
-
-  // In the spirit of document-scrolls-first, we always want any change to
-  // go to the outer viewport first.
-  gfx::Vector2d max_outer_viewport_scroll_offset =
-      outer_viewport_scroll_layer_->MaxScrollOffset();
-  gfx::Vector2d max_inner_viewport_scroll_offset =
-      inner_viewport_scroll_layer_->MaxScrollOffset();
-
-  // TODO(bokan): This trips on zoom-out due to how Blink orders scale-scroll.
-  //              Disabled until that's sorted out: crbug.com/336574
-  // gfx::Vector2d total_max_scroll_offset =
-  //    max_outer_viewport_scroll_offset + max_inner_viewport_scroll_offset;
-  // DCHECK(total_max_scroll_offset.x() >= offset.x() &&
-  //       total_max_scroll_offset.y() >= offset.y());
-
-  outer_viewport_offset = offset - inner_viewport_offset;
-  outer_viewport_offset.SetToMin(max_outer_viewport_scroll_offset);
-  outer_viewport_offset.SetToMax(gfx::Vector2d());
-
-  inner_viewport_offset = offset - outer_viewport_offset;
-  inner_viewport_offset.SetToMin(max_inner_viewport_scroll_offset);
-  inner_viewport_offset.SetToMax(gfx::Vector2d());
-  inner_viewport_scroll_layer_->SetScrollOffset(inner_viewport_offset);
-
-  return outer_viewport_offset;
 }
 
 void LayerTreeHost::StartRateLimiter() {
@@ -1198,14 +1138,12 @@ scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
   return state.PassAs<base::Value>();
 }
 
-void LayerTreeHost::AnimateLayers(base::TimeTicks time) {
+void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
   if (!settings_.accelerated_animation_enabled ||
       animation_registrar_->active_animation_controllers().empty())
     return;
 
   TRACE_EVENT0("cc", "LayerTreeHost::AnimateLayers");
-
-  double monotonic_time = (time - base::TimeTicks()).InSecondsF();
 
   AnimationRegistrar::AnimationControllerMap copy =
       animation_registrar_->active_animation_controllers();
@@ -1283,12 +1221,17 @@ void LayerTreeHost::RegisterViewportLayers(
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
-bool LayerTreeHost::ScheduleMicroBenchmark(
+int LayerTreeHost::ScheduleMicroBenchmark(
     const std::string& benchmark_name,
     scoped_ptr<base::Value> value,
     const MicroBenchmark::DoneCallback& callback) {
   return micro_benchmark_controller_.ScheduleRun(
       benchmark_name, value.Pass(), callback);
+}
+
+bool LayerTreeHost::SendMessageToMicroBenchmark(int id,
+                                                scoped_ptr<base::Value> value) {
+  return micro_benchmark_controller_.SendMessage(id, value.Pass());
 }
 
 void LayerTreeHost::InsertSwapPromiseMonitor(SwapPromiseMonitor* monitor) {

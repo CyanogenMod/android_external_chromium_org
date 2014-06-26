@@ -23,10 +23,12 @@
     }
   },
   "permissions": [
+    "alarms",
     "identity",
     "chromeosInfoPrivate",
     "firstRunPrivate",
     "management",
+    "metricsPrivate",
     "webview",
     "storage",
     "unlimitedStorage",

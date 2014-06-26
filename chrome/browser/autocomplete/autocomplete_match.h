@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/common/autocomplete_match_type.h"
+#include "components/search_engines/template_url.h"
 #include "content/public/common/page_transition_types.h"
 #include "url/gurl.h"
 
@@ -22,6 +22,10 @@ class TemplateURL;
 namespace base {
 class Time;
 }  // namespace base
+
+const char kACMatchPropertyInputText[] = "input text";
+const char kACMatchPropertyContentsPrefix[] = "match contents prefix";
+const char kACMatchPropertyContentsStartIndex[] = "match contents start index";
 
 // AutocompleteMatch ----------------------------------------------------------
 
@@ -104,12 +108,10 @@ struct AutocompleteMatch {
   static bool MoreRelevant(const AutocompleteMatch& elem1,
                            const AutocompleteMatch& elem2);
 
-  // Comparison functions for removing matches with duplicate destinations.
+  // Comparison function for removing matches with duplicate destinations.
   // Destinations are compared using |stripped_destination_url|.  Pairs of
   // matches with empty destinations are treated as differing, since empty
   // destinations are expected for non-navigable matches.
-  static bool DestinationSortFunc(const AutocompleteMatch& elem1,
-                                  const AutocompleteMatch& elem2);
   static bool DestinationsEqual(const AutocompleteMatch& elem1,
                                 const AutocompleteMatch& elem2);
 
@@ -161,6 +163,10 @@ struct AutocompleteMatch {
   // Convenience function to check if |type| is a search (as opposed to a URL or
   // an extension).
   static bool IsSearchType(Type type);
+
+  // Convenience function to check if |type| is a special search suggest type -
+  // like entity, personalized, profile or postfix.
+  static bool IsSpecializedSearchType(Type type);
 
   // Copies the destination_url with "www." stripped off to
   // |stripped_destination_url| and also converts https protocol to
@@ -229,6 +235,10 @@ struct AutocompleteMatch {
   // is not shown.
   bool IsVerbatimType() const;
 
+  // Returns whether this match or any duplicate of this match can be deleted.
+  // This is used to decide whether we should call DeleteMatch().
+  bool SupportsDeletion() const;
+
   // The provider of this match, used to remember which provider the user had
   // selected when the input changes. This may be NULL, in which case there is
   // no provider (or memory of the user's selection).
@@ -288,6 +298,10 @@ struct AutocompleteMatch {
   base::string16 description;
   ACMatchClassifications description_class;
 
+  // A rich-format version of the display for the dropdown.
+  base::string16 answer_contents;
+  base::string16 answer_type;
+
   // The transition type to use when the user opens this match.  By default
   // this is TYPED.  Providers whose matches do not look like URLs should set
   // it to GENERATED.
@@ -336,6 +350,10 @@ struct AutocompleteMatch {
   // Information dictionary into which each provider can optionally record a
   // property and associated value and which is presented in chrome://omnibox.
   AdditionalInfo additional_info;
+
+  // A list of matches culled during de-duplication process, retained to
+  // ensure if a match is deleted, the duplicates are deleted as well.
+  std::vector<AutocompleteMatch> duplicate_matches;
 
 #ifndef NDEBUG
   // Does a data integrity check on this match.

@@ -9,10 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/drive/file_errors.h"
 #include "chrome/browser/chromeos/drive/resource_metadata_storage.h"
 
@@ -24,24 +22,20 @@ namespace drive {
 
 typedef std::vector<ResourceEntry> ResourceEntryVector;
 
-// Used to get a resource entry from the file system.
-// If |error| is not FILE_ERROR_OK, |entry_info| is set to NULL.
-typedef base::Callback<void(FileError error,
-                            scoped_ptr<ResourceEntry> entry)>
-    GetResourceEntryCallback;
-
-typedef base::Callback<void(const ResourceEntry& entry)> IterateCallback;
-
 namespace internal {
 
+class FileCache;
+
 // Storage for Drive Metadata.
-// All methods must be run with |blocking_task_runner| unless otherwise noted.
+// All methods except the constructor and Destroy() function must be run with
+// |blocking_task_runner| unless otherwise noted.
 class ResourceMetadata {
  public:
   typedef ResourceMetadataStorage::Iterator Iterator;
 
   ResourceMetadata(
       ResourceMetadataStorage* storage,
+      FileCache* cache,
       scoped_refptr<base::SequencedTaskRunner> blocking_task_runner);
 
   // Initializes this object.
@@ -57,7 +51,7 @@ class ResourceMetadata {
   FileError Reset();
 
   // Returns the largest changestamp.
-  int64 GetLargestChangestamp();
+  FileError GetLargestChangestamp(int64* out_value);
 
   // Sets the largest changestamp.
   FileError SetLargestChangestamp(int64 value);
@@ -71,13 +65,6 @@ class ResourceMetadata {
   // Finds an entry (a file or a directory) by |id|.
   FileError GetResourceEntryById(const std::string& id,
                                  ResourceEntry* out_entry);
-
-  // Finds an entry (a file or a directory) by |file_path|.
-  // |callback| must not be null.
-  // Must be called on the UI thread.
-  void GetResourceEntryByPathOnUIThread(
-      const base::FilePath& file_path,
-      const GetResourceEntryCallback& callback);
 
   // Synchronous version of GetResourceEntryByPathOnUIThread().
   FileError GetResourceEntryByPath(const base::FilePath& file_path,
@@ -95,20 +82,22 @@ class ResourceMetadata {
   FileError RefreshEntry(const ResourceEntry& entry);
 
   // Recursively gets directories under the entry pointed to by |id|.
-  void GetSubDirectoriesRecursively(const std::string& id,
-                                    std::set<base::FilePath>* sub_directories);
+  FileError GetSubDirectoriesRecursively(
+      const std::string& id,
+      std::set<base::FilePath>* sub_directories);
 
   // Returns the id of the resource named |base_name| directly under
   // the directory with |parent_local_id|.
   // If not found, empty string will be returned.
-  std::string GetChildId(const std::string& parent_local_id,
-                         const std::string& base_name);
+  FileError GetChildId(const std::string& parent_local_id,
+                       const std::string& base_name,
+                       std::string* out_child_id);
 
   // Returns an object to iterate over entries.
   scoped_ptr<Iterator> GetIterator();
 
   // Returns virtual file path of the entry.
-  base::FilePath GetFilePath(const std::string& id);
+  FileError GetFilePath(const std::string& id, base::FilePath* out_file_path);
 
   // Returns ID of the entry at the given path.
   FileError GetIdByPath(const base::FilePath& file_path, std::string* out_id);
@@ -122,7 +111,7 @@ class ResourceMetadata {
   ~ResourceMetadata();
 
   // Sets up entries which should be present by default.
-  bool SetUpDefaultEntries();
+  FileError SetUpDefaultEntries();
 
   // Used to implement Destroy().
   void DestroyOnBlockingPool();
@@ -131,18 +120,19 @@ class ResourceMetadata {
   // parent if there is. This method will also do name de-duplication to ensure
   // that the exposed presentation path does not have naming conflicts. Two
   // files with the same name "Foo" will be renamed to "Foo (1)" and "Foo (2)".
-  bool PutEntryUnderDirectory(const ResourceEntry& entry);
+  FileError PutEntryUnderDirectory(const ResourceEntry& entry);
+
+  // Returns an unused base name for |entry|.
+  FileError GetDeduplicatedBaseName(const ResourceEntry& entry,
+                                    std::string* base_name);
 
   // Removes the entry and its descendants.
-  bool RemoveEntryRecursively(const std::string& id);
+  FileError RemoveEntryRecursively(const std::string& id);
 
   scoped_refptr<base::SequencedTaskRunner> blocking_task_runner_;
 
   ResourceMetadataStorage* storage_;
-
-  // This should remain the last member so it'll be destroyed first and
-  // invalidate its weak pointers before other members are destroyed.
-  base::WeakPtrFactory<ResourceMetadata> weak_ptr_factory_;
+  FileCache* cache_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceMetadata);
 };

@@ -5,7 +5,6 @@
 #include "content/browser/loader/detachable_resource_handler.h"
 
 #include "base/logging.h"
-#include "base/metrics/histogram.h"
 #include "base/time/time.h"
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "net/base/io_buffer.h"
@@ -13,29 +12,9 @@
 #include "net/url_request/url_request_status.h"
 
 namespace {
-
 // This matches the maximum allocation size of AsyncResourceHandler.
 const int kReadBufSize = 32 * 1024;
-
-// Enum type for <a ping> result histograms. Only add new values to the end.
-enum UMAPingResultType {
-  // The ping request completed successfully.
-  UMA_PING_RESULT_TYPE_SUCCESS = 0,
-  // The ping request received a response, but did not consume the entire body.
-  UMA_PING_RESULT_TYPE_RESPONSE_STARTED = 1,
-  // The ping request was canceled due to the internal timeout.
-  UMA_PING_RESULT_TYPE_TIMEDOUT = 2,
-  // The ping request was canceled for some other reason.
-  UMA_PING_RESULT_TYPE_CANCELED = 3,
-  // The ping request failed for some reason.
-  UMA_PING_RESULT_TYPE_FAILED = 4,
-  // The ping request was deleted before OnResponseCompleted.
-  UMA_PING_RESULT_TYPE_UNCOMPLETED = 5,
-
-  UMA_PING_RESULT_TYPE_MAX,
-};
-
-}  // namespace
+}
 
 namespace content {
 
@@ -47,51 +26,13 @@ DetachableResourceHandler::DetachableResourceHandler(
       next_handler_(next_handler.Pass()),
       cancel_delay_(cancel_delay),
       is_deferred_(false),
-      is_finished_(false),
-      timed_out_(false),
-      response_started_(false),
-      status_(net::URLRequestStatus::IO_PENDING) {
+      is_finished_(false) {
   GetRequestInfo()->set_detachable_handler(this);
 }
 
 DetachableResourceHandler::~DetachableResourceHandler() {
   // Cleanup back-pointer stored on the request info.
   GetRequestInfo()->set_detachable_handler(NULL);
-
-  // Record the status of <a ping> requests.
-  // http://crbug.com/302816
-  if (GetRequestInfo()->GetResourceType() == ResourceType::PING) {
-    UMAPingResultType result_type = UMA_PING_RESULT_TYPE_MAX;
-
-    if (status_ == net::URLRequestStatus::SUCCESS) {
-      result_type = UMA_PING_RESULT_TYPE_SUCCESS;
-    } else if (response_started_) {
-      // However the request ended, bucket this under RESPONSE_STARTED because
-      // OnResponseStarted was received. Note: OnResponseCompleted is also sent
-      // when a request is canceled before completion, so it is possible to
-      // receive OnResponseCompleted without OnResponseStarted.
-      result_type = UMA_PING_RESULT_TYPE_RESPONSE_STARTED;
-    } else if (status_ == net::URLRequestStatus::IO_PENDING) {
-      // The request was deleted without OnResponseCompleted and before any
-      // response was received.
-      result_type = UMA_PING_RESULT_TYPE_UNCOMPLETED;
-    } else if (status_ == net::URLRequestStatus::CANCELED) {
-      if (timed_out_) {
-        result_type = UMA_PING_RESULT_TYPE_TIMEDOUT;
-      } else {
-        result_type = UMA_PING_RESULT_TYPE_CANCELED;
-      }
-    } else if (status_ == net::URLRequestStatus::FAILED) {
-      result_type = UMA_PING_RESULT_TYPE_FAILED;
-    }
-
-    if (result_type < UMA_PING_RESULT_TYPE_MAX) {
-      UMA_HISTOGRAM_ENUMERATION("Net.Ping_Result", result_type,
-                                UMA_PING_RESULT_TYPE_MAX);
-    } else {
-      NOTREACHED();
-    }
-  }
 }
 
 void DetachableResourceHandler::Detach() {
@@ -103,8 +44,7 @@ void DetachableResourceHandler::Detach() {
     net::URLRequestStatus status(net::URLRequestStatus::CANCELED,
                                  net::ERR_ABORTED);
     bool defer_ignored = false;
-    next_handler_->OnResponseCompleted(GetRequestID(), status, std::string(),
-                                       &defer_ignored);
+    next_handler_->OnResponseCompleted(status, std::string(), &defer_ignored);
     DCHECK(!defer_ignored);
     // If |next_handler_| were to defer its shutdown in OnResponseCompleted,
     // this would destroy it anyway. Fortunately, AsyncResourceHandler never
@@ -124,7 +64,7 @@ void DetachableResourceHandler::Detach() {
   // Time the request out if it takes too long.
   detached_timer_.reset(new base::OneShotTimer<DetachableResourceHandler>());
   detached_timer_->Start(
-      FROM_HERE, cancel_delay_, this, &DetachableResourceHandler::TimedOut);
+      FROM_HERE, cancel_delay_, this, &DetachableResourceHandler::Cancel);
 
   // Resume if necessary. The request may have been deferred, say, waiting on a
   // full buffer in AsyncResourceHandler. Now that it has been detached, resume
@@ -142,17 +82,14 @@ void DetachableResourceHandler::SetController(ResourceController* controller) {
     next_handler_->SetController(this);
 }
 
-bool DetachableResourceHandler::OnUploadProgress(int request_id,
-                                                 uint64 position,
-                                                 uint64 size) {
+bool DetachableResourceHandler::OnUploadProgress(uint64 position, uint64 size) {
   if (!next_handler_)
     return true;
 
-  return next_handler_->OnUploadProgress(request_id, position, size);
+  return next_handler_->OnUploadProgress(position, size);
 }
 
-bool DetachableResourceHandler::OnRequestRedirected(int request_id,
-                                                    const GURL& url,
+bool DetachableResourceHandler::OnRequestRedirected(const GURL& url,
                                                     ResourceResponse* response,
                                                     bool* defer) {
   DCHECK(!is_deferred_);
@@ -160,49 +97,36 @@ bool DetachableResourceHandler::OnRequestRedirected(int request_id,
   if (!next_handler_)
     return true;
 
-  bool ret = next_handler_->OnRequestRedirected(request_id, url, response,
-                                                &is_deferred_);
+  bool ret = next_handler_->OnRequestRedirected(url, response, &is_deferred_);
   *defer = is_deferred_;
   return ret;
 }
 
-bool DetachableResourceHandler::OnResponseStarted(int request_id,
-                                                  ResourceResponse* response,
+bool DetachableResourceHandler::OnResponseStarted(ResourceResponse* response,
                                                   bool* defer) {
   DCHECK(!is_deferred_);
-  DCHECK(!response_started_);
-  response_started_ = true;
-
-  // Record how long it takes for <a ping> to respond.
-  // http://crbug.com/302816
-  if (GetRequestInfo()->GetResourceType() == ResourceType::PING) {
-    UMA_HISTOGRAM_MEDIUM_TIMES("Net.Ping_ResponseStartedTime",
-                               time_since_start_.Elapsed());
-  }
 
   if (!next_handler_)
     return true;
 
   bool ret =
-      next_handler_->OnResponseStarted(request_id, response, &is_deferred_);
+      next_handler_->OnResponseStarted(response, &is_deferred_);
   *defer = is_deferred_;
   return ret;
 }
 
-bool DetachableResourceHandler::OnWillStart(int request_id, const GURL& url,
-                                            bool* defer) {
+bool DetachableResourceHandler::OnWillStart(const GURL& url, bool* defer) {
   DCHECK(!is_deferred_);
 
   if (!next_handler_)
     return true;
 
-  bool ret = next_handler_->OnWillStart(request_id, url, &is_deferred_);
+  bool ret = next_handler_->OnWillStart(url, &is_deferred_);
   *defer = is_deferred_;
   return ret;
 }
 
-bool DetachableResourceHandler::OnBeforeNetworkStart(int request_id,
-                                                     const GURL& url,
+bool DetachableResourceHandler::OnBeforeNetworkStart(const GURL& url,
                                                      bool* defer) {
   DCHECK(!is_deferred_);
 
@@ -210,13 +134,12 @@ bool DetachableResourceHandler::OnBeforeNetworkStart(int request_id,
     return true;
 
   bool ret =
-      next_handler_->OnBeforeNetworkStart(request_id, url, &is_deferred_);
+      next_handler_->OnBeforeNetworkStart(url, &is_deferred_);
   *defer = is_deferred_;
   return ret;
 }
 
-bool DetachableResourceHandler::OnWillRead(int request_id,
-                                           scoped_refptr<net::IOBuffer>* buf,
+bool DetachableResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                            int* buf_size,
                                            int min_size) {
   if (!next_handler_) {
@@ -228,49 +151,42 @@ bool DetachableResourceHandler::OnWillRead(int request_id,
     return true;
   }
 
-  return next_handler_->OnWillRead(request_id, buf, buf_size, min_size);
+  return next_handler_->OnWillRead(buf, buf_size, min_size);
 }
 
-bool DetachableResourceHandler::OnReadCompleted(int request_id, int bytes_read,
-                                                bool* defer) {
+bool DetachableResourceHandler::OnReadCompleted(int bytes_read, bool* defer) {
   DCHECK(!is_deferred_);
 
   if (!next_handler_)
     return true;
 
   bool ret =
-      next_handler_->OnReadCompleted(request_id, bytes_read, &is_deferred_);
+      next_handler_->OnReadCompleted(bytes_read, &is_deferred_);
   *defer = is_deferred_;
   return ret;
 }
 
 void DetachableResourceHandler::OnResponseCompleted(
-    int request_id,
     const net::URLRequestStatus& status,
     const std::string& security_info,
     bool* defer) {
   // No DCHECK(!is_deferred_) as the request may have been cancelled while
   // deferred.
 
-  status_ = status.status();
-  DCHECK_NE(net::URLRequestStatus::IO_PENDING, status_);
-
   if (!next_handler_)
     return;
 
   is_finished_ = true;
 
-  next_handler_->OnResponseCompleted(request_id, status, security_info,
-                                     &is_deferred_);
+  next_handler_->OnResponseCompleted(status, security_info, &is_deferred_);
   *defer = is_deferred_;
 }
 
-void DetachableResourceHandler::OnDataDownloaded(int request_id,
-                                                 int bytes_downloaded) {
+void DetachableResourceHandler::OnDataDownloaded(int bytes_downloaded) {
   if (!next_handler_)
     return;
 
-  next_handler_->OnDataDownloaded(request_id, bytes_downloaded);
+  next_handler_->OnDataDownloaded(bytes_downloaded);
 }
 
 void DetachableResourceHandler::Resume() {
@@ -289,11 +205,6 @@ void DetachableResourceHandler::CancelAndIgnore() {
 
 void DetachableResourceHandler::CancelWithError(int error_code) {
   controller()->CancelWithError(error_code);
-}
-
-void DetachableResourceHandler::TimedOut() {
-  timed_out_ = true;
-  controller()->Cancel();
 }
 
 }  // namespace content

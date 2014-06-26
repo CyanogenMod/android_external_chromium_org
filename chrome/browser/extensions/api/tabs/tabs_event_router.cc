@@ -23,7 +23,6 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
-#include "extensions/browser/extension_system.h"
 
 using base::DictionaryValue;
 using base::ListValue;
@@ -198,14 +197,14 @@ void TabsEventRouter::TabCreatedAt(WebContents* contents,
   event->user_gesture = EventRouter::USER_GESTURE_NOT_ENABLED;
   event->will_dispatch_callback =
       base::Bind(&WillDispatchTabCreatedEvent, contents, active);
-  ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
+  EventRouter::Get(profile)->BroadcastEvent(event.Pass());
 
   RegisterForTabNotifications(contents);
 }
 
 void TabsEventRouter::TabInsertedAt(WebContents* contents,
-                                       int index,
-                                       bool active) {
+                                    int index,
+                                    bool active) {
   // If tab is new, send created event.
   int tab_id = ExtensionTabUtil::GetTabId(contents);
   if (!GetTabEntry(contents)) {
@@ -417,14 +416,14 @@ void TabsEventRouter::DispatchEvent(
     const std::string& event_name,
     scoped_ptr<base::ListValue> args,
     EventRouter::UserGestureState user_gesture) {
-  if (!profile_->IsSameProfile(profile) ||
-      !ExtensionSystem::Get(profile)->event_router())
+  EventRouter* event_router = EventRouter::Get(profile);
+  if (!profile_->IsSameProfile(profile) || !event_router)
     return;
 
   scoped_ptr<Event> event(new Event(event_name, args.Pass()));
   event->restrict_to_browser_context = profile;
   event->user_gesture = user_gesture;
-  ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
+  event_router->BroadcastEvent(event.Pass());
 }
 
 void TabsEventRouter::DispatchSimpleBrowserEvent(
@@ -470,11 +469,10 @@ void TabsEventRouter::DispatchTabUpdatedEvent(
       base::Bind(&WillDispatchTabUpdatedEvent,
                  contents,
                  changed_properties.get());
-  ExtensionSystem::Get(profile)->event_router()->BroadcastEvent(event.Pass());
+  EventRouter::Get(profile)->BroadcastEvent(event.Pass());
 }
 
-TabsEventRouter::TabEntry* TabsEventRouter::GetTabEntry(
-    const WebContents* contents) {
+TabsEventRouter::TabEntry* TabsEventRouter::GetTabEntry(WebContents* contents) {
   int tab_id = ExtensionTabUtil::GetTabId(contents);
   std::map<int, TabEntry>::iterator i = tab_entries_.find(tab_id);
   if (tab_entries_.end() == i)

@@ -27,8 +27,12 @@ enum AddressType {
 };
 
 // Returns true if |type| should be shown when |field_type| has been requested.
-bool ServerTypeMatchesFieldType(ServerFieldType type,
-                                const AutofillType& field_type);
+// This filters the types that we fill into the page to match the ones the
+// dialog actually cares about, preventing rAc from giving away data that an
+// AutofillProfile or other data source might know about the user which isn't
+// represented in the dialog.
+bool ServerTypeEncompassesFieldType(ServerFieldType type,
+                                    const AutofillType& field_type);
 
 // Returns true if |type| in the given |section| should be used for a
 // site-requested |field|.
@@ -39,12 +43,10 @@ bool ServerTypeMatchesField(DialogSection section,
 // Returns true if the |type| belongs to the CREDIT_CARD field type group.
 bool IsCreditCardType(ServerFieldType type);
 
-// Constructs |inputs| from template data for a given |dialog_section|.
-// |country_country| specifies the country code that the inputs should be built
-// for.
-void BuildInputsForSection(DialogSection dialog_section,
-                           const std::string& country_code,
-                           DetailInputs* inputs);
+// Constructs |inputs| from the array of inputs in |input_template|.
+void BuildInputs(const DetailInput input_template[],
+                 size_t template_size,
+                 DetailInputs* inputs);
 
 // Returns the AutofillMetrics::DIALOG_UI_*_ITEM_ADDED metric corresponding
 // to the |section|.
@@ -55,10 +57,6 @@ AutofillMetrics::DialogUiEvent DialogSectionToUiItemAddedEvent(
 // to the |section|.
 AutofillMetrics::DialogUiEvent DialogSectionToUiSelectionChangedEvent(
     DialogSection section);
-
-// We hardcode some values. In particular, we don't yet allow the user to change
-// the country: http://crbug.com/247518
-base::string16 GetHardcodedValueForType(ServerFieldType type);
 
 // Gets just the |type| attributes from each DetailInput.
 std::vector<ServerFieldType> TypesFromInputs(const DetailInputs& inputs);

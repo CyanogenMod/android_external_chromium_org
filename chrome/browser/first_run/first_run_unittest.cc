@@ -21,25 +21,11 @@ class FirstRunTest : public testing::Test {
   FirstRunTest() : user_data_dir_override_(chrome::DIR_USER_DATA) {}
   virtual ~FirstRunTest() {}
 
-  virtual void SetUp() OVERRIDE {
-    internal::GetFirstRunSentinelFilePath(&sentinel_path_);
-  }
-
-  base::FilePath sentinel_path_;
-
  private:
   base::ScopedPathOverride user_data_dir_override_;
 
   DISALLOW_COPY_AND_ASSIGN(FirstRunTest);
 };
-
-TEST_F(FirstRunTest, RemoveSentinel) {
-  EXPECT_TRUE(internal::CreateSentinel());
-  EXPECT_TRUE(base::PathExists(sentinel_path_));
-
-  EXPECT_TRUE(RemoveSentinel());
-  EXPECT_FALSE(base::PathExists(sentinel_path_));
-}
 
 TEST_F(FirstRunTest, SetupMasterPrefsFromInstallPrefs_VariationsSeed) {
   installer::MasterPreferences install_prefs("{ \"variations_seed\":\"xyz\" }");

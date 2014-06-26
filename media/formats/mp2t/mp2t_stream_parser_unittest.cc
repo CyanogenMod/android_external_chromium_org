@@ -57,9 +57,11 @@ class Mp2tStreamParserTest : public testing::Test {
     return true;
   }
 
-  void OnInit(bool init_ok, base::TimeDelta duration) {
+  void OnInit(bool init_ok,
+              const StreamParser::InitParameters& params) {
     DVLOG(1) << "OnInit: ok=" << init_ok
-             << ", dur=" << duration.InMilliseconds();
+             << ", dur=" << params.duration.InMilliseconds()
+             << ", autoTimestampOffset=" << params.auto_update_timestamp_offset;
   }
 
   bool OnNewConfig(const AudioDecoderConfig& ac,
@@ -67,6 +69,9 @@ class Mp2tStreamParserTest : public testing::Test {
                    const StreamParser::TextTrackConfigMap& tc) {
     DVLOG(1) << "OnNewConfig: audio=" << ac.IsValidConfig()
              << ", video=" << vc.IsValidConfig();
+    // Test streams have both audio and video, verify the configs are valid.
+    EXPECT_TRUE(ac.IsValidConfig());
+    EXPECT_TRUE(vc.IsValidConfig());
     return true;
   }
 
@@ -143,8 +148,6 @@ class Mp2tStreamParserTest : public testing::Test {
   }
 
   bool ParseMpeg2TsFile(const std::string& filename, int append_bytes) {
-    InitializeParser();
-
     scoped_refptr<DecoderBuffer> buffer = ReadTestDataFile(filename);
     EXPECT_TRUE(AppendDataInPieces(buffer->data(),
                                    buffer->data_size(),
@@ -155,6 +158,7 @@ class Mp2tStreamParserTest : public testing::Test {
 
 TEST_F(Mp2tStreamParserTest, UnalignedAppend17) {
   // Test small, non-segment-aligned appends.
+  InitializeParser();
   ParseMpeg2TsFile("bear-1280x720.ts", 17);
   EXPECT_EQ(video_frame_count_, 81);
   parser_->Flush();
@@ -163,10 +167,20 @@ TEST_F(Mp2tStreamParserTest, UnalignedAppend17) {
 
 TEST_F(Mp2tStreamParserTest, UnalignedAppend512) {
   // Test small, non-segment-aligned appends.
+  InitializeParser();
   ParseMpeg2TsFile("bear-1280x720.ts", 512);
   EXPECT_EQ(video_frame_count_, 81);
   parser_->Flush();
   EXPECT_EQ(video_frame_count_, 82);
+}
+
+TEST_F(Mp2tStreamParserTest, AppendAfterFlush512) {
+  InitializeParser();
+  ParseMpeg2TsFile("bear-1280x720.ts", 512);
+  parser_->Flush();
+
+  ParseMpeg2TsFile("bear-1280x720.ts", 512);
+  parser_->Flush();
 }
 
 TEST_F(Mp2tStreamParserTest, TimestampWrapAround) {
@@ -174,6 +188,7 @@ TEST_F(Mp2tStreamParserTest, TimestampWrapAround) {
   // from bear-1280x720.mp4 by applying a time offset of 95442s
   // (close to 2^33 / 90000) which results in timestamps wrap around
   // in the Mpeg2 TS stream.
+  InitializeParser();
   ParseMpeg2TsFile("bear-1280x720_ptswraparound.ts", 512);
   EXPECT_EQ(video_frame_count_, 81);
   EXPECT_GE(video_min_dts_, base::TimeDelta::FromSeconds(95443 - 10));

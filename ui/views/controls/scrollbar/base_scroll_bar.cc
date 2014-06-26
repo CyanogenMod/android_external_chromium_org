@@ -305,11 +305,16 @@ void BaseScrollBar::ShowContextMenuForView(View* source,
   menu->AppendSeparator();
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollPrev);
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollNext);
-  if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(p, gfx::Size()),
-          views::MenuItemView::TOPLEFT, source_type, MenuRunner::HAS_MNEMONICS |
-          views::MenuRunner::CONTEXT_MENU) ==
-      MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(
+          GetWidget(),
+          NULL,
+          gfx::Rect(p, gfx::Size()),
+          MENU_ANCHOR_TOPLEFT,
+          source_type,
+          MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+      MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -388,7 +393,8 @@ void BaseScrollBar::ExecuteCommand(int id) {
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, ScrollBar implementation:
 
-void BaseScrollBar::Update(int viewport_size, int content_size,
+void BaseScrollBar::Update(int viewport_size,
+                           int content_size,
                            int contents_scroll_offset) {
   ScrollBar::Update(viewport_size, content_size, contents_scroll_offset);
 
@@ -404,6 +410,7 @@ void BaseScrollBar::Update(int viewport_size, int content_size,
     contents_scroll_offset = 0;
   if (contents_scroll_offset > content_size)
     contents_scroll_offset = content_size;
+  contents_scroll_offset_ = contents_scroll_offset;
 
   // Thumb Height and Thumb Pos.
   // The height of the thumb is the ratio of the Viewport height to the
@@ -498,7 +505,7 @@ int BaseScrollBar::CalculateThumbPosition(int contents_scroll_offset) const {
 }
 
 int BaseScrollBar::CalculateContentsOffset(int thumb_position,
-                                             bool scroll_to_middle) const {
+                                           bool scroll_to_middle) const {
   if (scroll_to_middle)
     thumb_position = thumb_position - (thumb_->GetSize() / 2);
   return (thumb_position * contents_size_) / GetTrackSize();

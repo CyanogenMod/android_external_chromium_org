@@ -5,83 +5,65 @@
 #include <stdio.h>
 #include <string>
 
-#include "base/message_loop/message_loop.h"
+#include "base/macros.h"
 #include "mojo/examples/compositor_app/compositor_host.h"
-#include "mojo/public/bindings/allocation_scope.h"
-#include "mojo/public/bindings/remote_ptr.h"
-#include "mojo/public/gles2/gles2_cpp.h"
-#include "mojo/public/shell/application.h"
-#include "mojo/public/system/core.h"
-#include "mojo/public/system/macros.h"
-#include "mojo/services/native_viewport/geometry_conversions.h"
-#include "mojom/native_viewport.h"
-#include "mojom/shell.h"
+#include "mojo/public/cpp/application/application_delegate.h"
+#include "mojo/public/cpp/application/application_impl.h"
+#include "mojo/public/cpp/gles2/gles2.h"
+#include "mojo/public/cpp/system/core.h"
+#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
+#include "mojo/services/public/cpp/geometry/geometry_type_converters.h"
+#include "mojo/services/public/interfaces/native_viewport/native_viewport.mojom.h"
 #include "ui/gfx/rect.h"
-
-#if defined(WIN32)
-#if !defined(CDECL)
-#define CDECL __cdecl
-#endif
-#define SAMPLE_APP_EXPORT __declspec(dllexport)
-#else
-#define CDECL
-#define SAMPLE_APP_EXPORT __attribute__((visibility("default")))
-#endif
 
 namespace mojo {
 namespace examples {
 
-class SampleApp : public Application, public NativeViewportClient {
+class SampleApp : public ApplicationDelegate, public NativeViewportClient {
  public:
-  explicit SampleApp(MojoHandle shell_handle) : Application(shell_handle) {
-    InterfacePipe<NativeViewport, AnyInterface> viewport_pipe;
+  SampleApp() {}
+  virtual ~SampleApp() {}
 
-    AllocationScope scope;
-    shell()->Connect("mojo:mojo_native_viewport_service",
-                     viewport_pipe.handle_to_peer.Pass());
-
-    viewport_.reset(viewport_pipe.handle_to_self.Pass(), this);
-    viewport_->Create(gfx::Rect(10, 10, 800, 600));
+  virtual void Initialize(ApplicationImpl* app) OVERRIDE {
+    app->ConnectToService("mojo:mojo_native_viewport_service", &viewport_);
+    viewport_.set_client(this);
+    viewport_->Create(Rect::From(gfx::Rect(10, 10, 800, 600)));
     viewport_->Show();
-    ScopedMessagePipeHandle gles2_handle;
-    ScopedMessagePipeHandle gles2_client_handle;
-    CreateMessagePipe(&gles2_handle, &gles2_client_handle);
 
-    viewport_->CreateGLES2Context(gles2_client_handle.Pass());
-    host_.reset(new CompositorHost(gles2_handle.Pass()));
+    MessagePipe pipe;
+    viewport_->CreateGLES2Context(
+        MakeRequest<CommandBuffer>(pipe.handle0.Pass()));
+    host_.reset(new CompositorHost(pipe.handle1.Pass()));
   }
 
-  virtual void OnCreated() MOJO_OVERRIDE {
+  virtual void OnCreated() OVERRIDE {
   }
 
-  virtual void OnDestroyed() MOJO_OVERRIDE {
+  virtual void OnDestroyed() OVERRIDE {
     base::MessageLoop::current()->Quit();
   }
 
-  virtual void OnBoundsChanged(const Rect& bounds) MOJO_OVERRIDE {
-    host_->SetSize(bounds.size());
+  virtual void OnBoundsChanged(RectPtr bounds) OVERRIDE {
+    host_->SetSize(gfx::Size(bounds->width, bounds->height));
   }
 
-  virtual void OnEvent(const Event& event) MOJO_OVERRIDE {
-    if (!event.location().is_null()) {
-      viewport_->AckEvent(event);
-    }
+  virtual void OnEvent(EventPtr event,
+                       const mojo::Callback<void()>& callback) OVERRIDE {
+    callback.Run();
   }
 
  private:
-  RemotePtr<NativeViewport> viewport_;
+  mojo::GLES2Initializer gles2;
+  NativeViewportPtr viewport_;
   scoped_ptr<CompositorHost> host_;
+  DISALLOW_COPY_AND_ASSIGN(SampleApp);
 };
 
 }  // namespace examples
-}  // namespace mojo
 
-extern "C" SAMPLE_APP_EXPORT MojoResult CDECL MojoMain(
-    MojoHandle shell_handle) {
-  base::MessageLoop loop;
-  mojo::GLES2Initializer gles2;
-
-  mojo::examples::SampleApp app(shell_handle);
-  loop.Run();
-  return MOJO_RESULT_OK;
+// static
+ApplicationDelegate* ApplicationDelegate::Create() {
+  return new examples::SampleApp();
 }
+
+}  // namespace mojo

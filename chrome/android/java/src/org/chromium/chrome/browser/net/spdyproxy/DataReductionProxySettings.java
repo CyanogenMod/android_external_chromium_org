@@ -7,8 +7,18 @@ package org.chromium.chrome.browser.net.spdyproxy;
 import org.chromium.base.CalledByNative;
 import org.chromium.base.ThreadUtils;
 
+import java.text.NumberFormat;
+import java.util.Locale;
+
+/**
+ * Entry point to manage all data reduction proxy configuration details.
+ */
 public class DataReductionProxySettings {
 
+    /**
+     * Data structure to hold the original content length before data reduction and the received
+     * content length after data reduction.
+     */
     public static class ContentLengths {
         private final long mOriginal;
         private final long mReceived;
@@ -34,6 +44,9 @@ public class DataReductionProxySettings {
 
     private static DataReductionProxySettings sSettings;
 
+    /**
+     * Returns a singleton instance of the settings object.
+     */
     public static DataReductionProxySettings getInstance() {
         ThreadUtils.assertOnUiThread();
         if (sSettings == null) {
@@ -49,14 +62,6 @@ public class DataReductionProxySettings {
         // DataReductionProxySettings is a singleton that lives forever and there's no clean
         // shutdown of Chrome on Android
         mNativeDataReductionProxySettings = nativeInit();
-        initDataReductionProxySettings();
-    }
-
-    /**
-     * Initializes the data reduction proxy at Chrome startup.
-     */
-    public void initDataReductionProxySettings() {
-        nativeInitDataReductionProxySettings(mNativeDataReductionProxySettings);
     }
 
     /**
@@ -174,22 +179,28 @@ public class DataReductionProxySettings {
     }
 
     /**
+     * Determines if the data reduction proxy is currently unreachable.
+     * @return true if the data reduction proxy is unreachable.
+     */
+    public boolean isDataReductionProxyUnreachable() {
+        return nativeIsDataReductionProxyUnreachable(mNativeDataReductionProxySettings);
+    }
+
+    /**
      * @return The data reduction settings as a string percentage.
      */
     public String getContentLengthPercentSavings() {
         ContentLengths length = getContentLengths();
-        String percent = "0%";
+
+        double savings = 0;
         if (length.getOriginal() > 0L  && length.getOriginal() > length.getReceived()) {
-            percent = String.format(
-                    "%.0f%%", 100.0 *
-                    (length.getOriginal() - length.getReceived()) / length.getOriginal());
+            savings = (length.getOriginal() - length.getReceived()) / (double) length.getOriginal();
         }
-        return percent;
+        NumberFormat percentageFormatter = NumberFormat.getPercentInstance(Locale.getDefault());
+        return percentageFormatter.format(savings);
     }
 
     private native long nativeInit();
-    private native void nativeInitDataReductionProxySettings(
-            long nativeDataReductionProxySettingsAndroid);
     private native void nativeBypassHostPattern(
             long nativeDataReductionProxySettingsAndroid, String pattern);
     private native void nativeBypassURLPattern(
@@ -217,5 +228,7 @@ public class DataReductionProxySettings {
     private native long[] nativeGetDailyOriginalContentLengths(
             long nativeDataReductionProxySettingsAndroid);
     private native long[] nativeGetDailyReceivedContentLengths(
+            long nativeDataReductionProxySettingsAndroid);
+    private native boolean nativeIsDataReductionProxyUnreachable(
             long nativeDataReductionProxySettingsAndroid);
 }

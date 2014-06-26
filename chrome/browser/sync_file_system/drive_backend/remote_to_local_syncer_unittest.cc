@@ -20,6 +20,7 @@
 #include "chrome/browser/sync_file_system/drive_backend/metadata_database.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_context.h"
 #include "chrome/browser/sync_file_system/drive_backend/sync_engine_initializer.h"
+#include "chrome/browser/sync_file_system/drive_backend/sync_task_manager.h"
 #include "chrome/browser/sync_file_system/fake_remote_change_processor.h"
 #include "chrome/browser/sync_file_system/sync_file_system_test_util.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
@@ -42,8 +43,7 @@ fileapi::FileSystemURL URL(const GURL& origin,
 
 }  // namespace
 
-class RemoteToLocalSyncerTest : public testing::Test,
-                                public SyncEngineContext {
+class RemoteToLocalSyncerTest : public testing::Test {
  public:
   typedef FakeRemoteChangeProcessor::URLToFileChangesMap URLToFileChangesMap;
 
@@ -55,73 +55,82 @@ class RemoteToLocalSyncerTest : public testing::Test,
     ASSERT_TRUE(database_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
 
-    fake_drive_service_.reset(new drive::FakeDriveService);
-    ASSERT_TRUE(fake_drive_service_->LoadAccountMetadataForWapi(
-        "sync_file_system/account_metadata.json"));
-    ASSERT_TRUE(fake_drive_service_->LoadResourceListForWapi(
-        "gdata/empty_feed.json"));
+    scoped_ptr<drive::FakeDriveService>
+        fake_drive_service(new drive::FakeDriveService);
 
-    drive_uploader_.reset(new drive::DriveUploader(
-        fake_drive_service_.get(), base::MessageLoopProxy::current().get()));
-    fake_drive_helper_.reset(new FakeDriveServiceHelper(
-        fake_drive_service_.get(), drive_uploader_.get(),
-        kSyncRootFolderTitle));
-    fake_remote_change_processor_.reset(new FakeRemoteChangeProcessor);
+    scoped_ptr<drive::DriveUploaderInterface>
+        drive_uploader(new drive::DriveUploader(
+            fake_drive_service.get(),
+            base::MessageLoopProxy::current().get()));
+    fake_drive_helper_.reset(
+        new FakeDriveServiceHelper(fake_drive_service.get(),
+                                   drive_uploader.get(),
+                                   kSyncRootFolderTitle));
+    remote_change_processor_.reset(new FakeRemoteChangeProcessor);
+
+    context_.reset(new SyncEngineContext(
+        fake_drive_service.PassAs<drive::DriveServiceInterface>(),
+        drive_uploader.Pass(),
+        NULL,
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current()));
+    context_->SetRemoteChangeProcessor(remote_change_processor_.get());
 
     RegisterSyncableFileSystem();
+
+    sync_task_manager_.reset(new SyncTaskManager(
+        base::WeakPtr<SyncTaskManager::Client>(),
+        10 /* max_parallel_task */,
+        base::MessageLoopProxy::current()));
+    sync_task_manager_->Initialize(SYNC_STATUS_OK);
   }
 
   virtual void TearDown() OVERRIDE {
+    sync_task_manager_.reset();
     RevokeSyncableFileSystem();
-
-    fake_remote_change_processor_.reset();
-    metadata_database_.reset();
     fake_drive_helper_.reset();
-    drive_uploader_.reset();
-    fake_drive_service_.reset();
+    context_.reset();
     base::RunLoop().RunUntilIdle();
   }
 
   void InitializeMetadataDatabase() {
-    SyncEngineInitializer initializer(this,
-                                      base::MessageLoopProxy::current(),
-                                      fake_drive_service_.get(),
-                                      database_dir_.path(),
-                                      in_memory_env_.get());
+    SyncEngineInitializer* initializer =
+        new SyncEngineInitializer(context_.get(),
+                                  database_dir_.path(),
+                                  in_memory_env_.get());
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    initializer.Run(CreateResultReceiver(&status));
+    sync_task_manager_->ScheduleSyncTask(
+        FROM_HERE,
+        scoped_ptr<SyncTask>(initializer),
+        SyncTaskManager::PRIORITY_MED,
+        base::Bind(&RemoteToLocalSyncerTest::DidInitializeMetadataDatabase,
+                   base::Unretained(this),
+                   initializer, &status));
+
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
-    metadata_database_ = initializer.PassMetadataDatabase();
   }
+
+  void DidInitializeMetadataDatabase(SyncEngineInitializer* initializer,
+                                     SyncStatusCode* status_out,
+                                     SyncStatusCode status) {
+    *status_out = status;
+    context_->SetMetadataDatabase(initializer->PassMetadataDatabase());
+  }
+
 
   void RegisterApp(const std::string& app_id,
                    const std::string& app_root_folder_id) {
     SyncStatusCode status = SYNC_STATUS_FAILED;
-    metadata_database_->RegisterApp(app_id, app_root_folder_id,
-                                    CreateResultReceiver(&status));
+    context_->GetMetadataDatabase()->RegisterApp(app_id, app_root_folder_id,
+                                                 CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     EXPECT_EQ(SYNC_STATUS_OK, status);
   }
 
-  virtual drive::DriveServiceInterface* GetDriveService() OVERRIDE {
-    return fake_drive_service_.get();
-  }
-
-  virtual drive::DriveUploaderInterface* GetDriveUploader() OVERRIDE {
-    return drive_uploader_.get();
-  }
-
-  virtual MetadataDatabase* GetMetadataDatabase() OVERRIDE {
-    return metadata_database_.get();
-  }
-
-  virtual RemoteChangeProcessor* GetRemoteChangeProcessor() OVERRIDE {
-    return fake_remote_change_processor_.get();
-  }
-
-  virtual base::SequencedTaskRunner* GetBlockingTaskRunner() OVERRIDE {
-    return base::MessageLoopProxy::current().get();
+  MetadataDatabase* GetMetadataDatabase() {
+    return context_->GetMetadataDatabase();
   }
 
  protected:
@@ -158,21 +167,22 @@ class RemoteToLocalSyncerTest : public testing::Test,
   }
 
   void CreateLocalFolder(const fileapi::FileSystemURL& url) {
-    fake_remote_change_processor_->UpdateLocalFileMetadata(
+    remote_change_processor_->UpdateLocalFileMetadata(
         url, FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                         SYNC_FILE_TYPE_DIRECTORY));
   }
 
   void CreateLocalFile(const fileapi::FileSystemURL& url) {
-    fake_remote_change_processor_->UpdateLocalFileMetadata(
+    remote_change_processor_->UpdateLocalFileMetadata(
         url, FileChange(FileChange::FILE_CHANGE_ADD_OR_UPDATE,
                         SYNC_FILE_TYPE_FILE));
   }
 
   SyncStatusCode RunSyncer() {
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    scoped_ptr<RemoteToLocalSyncer> syncer(new RemoteToLocalSyncer(this));
-    syncer->Run(CreateResultReceiver(&status));
+    scoped_ptr<RemoteToLocalSyncer>
+        syncer(new RemoteToLocalSyncer(context_.get()));
+    syncer->RunExclusive(CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -184,9 +194,12 @@ class RemoteToLocalSyncerTest : public testing::Test,
   }
 
   SyncStatusCode ListChanges() {
-    ListChangesTask list_changes(this);
     SyncStatusCode status = SYNC_STATUS_UNKNOWN;
-    list_changes.Run(CreateResultReceiver(&status));
+    sync_task_manager_->ScheduleSyncTask(
+        FROM_HERE,
+        scoped_ptr<SyncTask>(new ListChangesTask(context_.get())),
+        SyncTaskManager::PRIORITY_MED,
+        CreateResultReceiver(&status));
     base::RunLoop().RunUntilIdle();
     return status;
   }
@@ -198,7 +211,7 @@ class RemoteToLocalSyncerTest : public testing::Test,
   }
 
   void VerifyConsistency() {
-    fake_remote_change_processor_->VerifyConsistency(expected_changes_);
+    remote_change_processor_->VerifyConsistency(expected_changes_);
   }
 
  private:
@@ -206,11 +219,11 @@ class RemoteToLocalSyncerTest : public testing::Test,
   base::ScopedTempDir database_dir_;
   scoped_ptr<leveldb::Env> in_memory_env_;
 
-  scoped_ptr<drive::FakeDriveService> fake_drive_service_;
-  scoped_ptr<drive::DriveUploader> drive_uploader_;
+  scoped_ptr<SyncEngineContext> context_;
   scoped_ptr<FakeDriveServiceHelper> fake_drive_helper_;
-  scoped_ptr<MetadataDatabase> metadata_database_;
-  scoped_ptr<FakeRemoteChangeProcessor> fake_remote_change_processor_;
+  scoped_ptr<FakeRemoteChangeProcessor> remote_change_processor_;
+
+  scoped_ptr<SyncTaskManager> sync_task_manager_;
 
   URLToFileChangesMap expected_changes_;
 
@@ -248,8 +261,7 @@ TEST_F(RemoteToLocalSyncerTest, AddNewFile) {
 
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
@@ -286,8 +298,7 @@ TEST_F(RemoteToLocalSyncerTest, DeleteFile) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
@@ -329,8 +340,7 @@ TEST_F(RemoteToLocalSyncerTest, DeleteNestedFiles) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
@@ -351,7 +361,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFolder) {
 
   // Tracker for the remote file should be lowered.
   EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_TRUE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->HasLowPriorityDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
@@ -376,8 +386,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFile) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFolder) {
@@ -396,8 +405,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFolderOnFolder) {
   RunSyncerUntilIdle();
   VerifyConsistency();
 
-  EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_FALSE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_FALSE(GetMetadataDatabase()->HasDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
@@ -418,7 +426,7 @@ TEST_F(RemoteToLocalSyncerTest, Conflict_CreateFileOnFile) {
 
   // Tracker for the remote file should be lowered.
   EXPECT_FALSE(GetMetadataDatabase()->GetNormalPriorityDirtyTracker(NULL));
-  EXPECT_TRUE(GetMetadataDatabase()->GetLowPriorityDirtyTracker(NULL));
+  EXPECT_TRUE(GetMetadataDatabase()->HasLowPriorityDirtyTracker());
 }
 
 TEST_F(RemoteToLocalSyncerTest, Conflict_CreateNestedFolderOnFile) {

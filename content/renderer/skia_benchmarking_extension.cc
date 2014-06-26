@@ -19,7 +19,6 @@
 #include "third_party/WebKit/public/web/WebArrayBufferConverter.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebKit.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkGraphics.h"
@@ -75,6 +74,9 @@ void SkiaBenchmarking::Install(blink::WebFrame* frame) {
 
   gin::Handle<SkiaBenchmarking> controller =
       gin::CreateHandle(isolate, new SkiaBenchmarking());
+  if (controller.IsEmpty())
+    return;
+
   v8::Handle<v8::Object> global = context->Global();
   v8::Handle<v8::Object> chrome =
       global->Get(gin::StringToV8(isolate, "chrome"))->ToObject();
@@ -129,13 +131,14 @@ void SkiaBenchmarking::Rasterize(gin::Arguments* args) {
   int stop_index = -1;
   bool overdraw = false;
 
+  v8::Handle<v8::Context> context = isolate->GetCurrentContext();
   if (!args->PeekNext().IsEmpty()) {
     v8::Handle<v8::Value> params;
     args->GetNext(&params);
     scoped_ptr<content::V8ValueConverter> converter(
         content::V8ValueConverter::create());
     scoped_ptr<base::Value> params_value(
-        converter->FromV8Value(params, isolate->GetCurrentContext()));
+        converter->FromV8Value(params, context));
 
     const base::DictionaryValue* params_dict = NULL;
     if (params_value.get() && params_value->GetAsDictionary(&params_dict)) {
@@ -201,7 +204,8 @@ void SkiaBenchmarking::Rasterize(gin::Arguments* args) {
   result->Set(v8::String::NewFromUtf8(isolate, "height"),
               v8::Number::New(isolate, snapped_clip.height()));
   result->Set(v8::String::NewFromUtf8(isolate, "data"),
-              blink::WebArrayBufferConverter::toV8Value(&buffer));
+              blink::WebArrayBufferConverter::toV8Value(
+                  &buffer, context->Global(), isolate));
 
   args->Return(result);
 }
@@ -263,10 +267,9 @@ void SkiaBenchmarking::GetOpTimings(gin::Arguments* args) {
   gfx::Rect bounds = picture->LayerRect();
 
   // Measure the total time by drawing straight into a bitmap-backed canvas.
-  skia::RefPtr<SkBaseDevice> device = skia::AdoptRef(SkNEW_ARGS(
-      SkBitmapDevice,
-      (SkBitmap::kARGB_8888_Config, bounds.width(), bounds.height())));
-  SkCanvas bitmap_canvas(device.get());
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(bounds.width(), bounds.height());
+  SkCanvas bitmap_canvas(bitmap);
   bitmap_canvas.clear(SK_ColorTRANSPARENT);
   base::TimeTicks t0 = base::TimeTicks::HighResNow();
   picture->Replay(&bitmap_canvas);

@@ -6,58 +6,14 @@
 #define CHROME_BROWSER_EXTENSIONS_DEV_MODE_BUBBLE_CONTROLLER_H_
 
 #include <string>
+
 #include "chrome/browser/extensions/extension_message_bubble_controller.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "extensions/common/extension.h"
-
-class Browser;
-class ExtensionService;
-
-using extensions::ExtensionMessageBubbleController;
-
-namespace {
-
-class DevModeBubbleDelegate
-    : public ExtensionMessageBubbleController::Delegate {
- public:
-  explicit DevModeBubbleDelegate(ExtensionService* service);
-  virtual ~DevModeBubbleDelegate();
-
-  // ExtensionMessageBubbleController::Delegate methods.
-  virtual bool ShouldIncludeExtension(const std::string& extension_id) OVERRIDE;
-  virtual void AcknowledgeExtension(
-      const std::string& extension_id,
-      ExtensionMessageBubbleController::BubbleAction user_action) OVERRIDE;
-  virtual void PerformAction(const extensions::ExtensionIdList& list) OVERRIDE;
-  virtual base::string16 GetTitle() const OVERRIDE;
-  virtual base::string16 GetMessageBody() const OVERRIDE;
-  virtual base::string16 GetOverflowText(
-      const base::string16& overflow_count) const OVERRIDE;
-  virtual base::string16 GetLearnMoreLabel() const OVERRIDE;
-  virtual GURL GetLearnMoreUrl() const OVERRIDE;
-  virtual base::string16 GetActionButtonLabel() const OVERRIDE;
-  virtual base::string16 GetDismissButtonLabel() const OVERRIDE;
-  virtual bool ShouldShowExtensionList() const OVERRIDE;
-  virtual void LogExtensionCount(size_t count) OVERRIDE;
-  virtual void LogAction(
-      ExtensionMessageBubbleController::BubbleAction action) OVERRIDE;
-
- private:
-  // Our extension service. Weak, not owned by us.
-  ExtensionService* service_;
-
-  DISALLOW_COPY_AND_ASSIGN(DevModeBubbleDelegate);
-};
-
-}  // namespace
 
 namespace extensions {
 
-class DevModeBubble;
+class Extension;
 
-class DevModeBubbleController
-    : public ExtensionMessageBubbleController {
+class DevModeBubbleController : public ExtensionMessageBubbleController {
  public:
   // Clears the list of profiles the bubble has been shown for. Should only be
   // used during testing.

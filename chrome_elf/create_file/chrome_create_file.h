@@ -20,6 +20,9 @@ extern "C" HANDLE WINAPI CreateFileWRedirect(
     DWORD flags_and_attributes,
     HANDLE template_file);
 
+// Returns the count of CreateFile calls redirected so far.
+extern "C" int GetRedirectCount();
+
 // Partial reimplementation of kernel32!CreateFile (very partial: only handles
 // reading and writing to files in the User Data directory).
 HANDLE CreateFileNTDLL(
@@ -34,9 +37,5 @@ HANDLE CreateFileNTDLL(
 // Determines whether or not we should use our version of CreateFile, or the
 // system version (only uses ours if we're writing to the user data directory).
 bool ShouldBypass(LPCWSTR file_name);
-
-// Returns true if |exe_path| points to a Chrome installed in a SxS
-// installation.
-bool IsCanary(LPWSTR exe_path);
 
 #endif  // CHROME_ELF_CREATE_FILE_CHROME_CREATE_FILE_H_

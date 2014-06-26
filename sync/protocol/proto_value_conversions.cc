@@ -205,6 +205,15 @@ base::DictionaryValue* TabNavigationToValue(
   SET_INT32(http_status_code);
   SET_INT32(referrer_policy);
   SET_BOOL(is_restored);
+  SET_REP(navigation_redirect, NavigationRedirectToValue);
+  SET_STR(last_navigation_redirect_url);
+  return value;
+}
+
+base::DictionaryValue* NavigationRedirectToValue(
+    const sync_pb::NavigationRedirect& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_STR(url);
   return value;
 }
 
@@ -223,6 +232,8 @@ base::DictionaryValue* PasswordSpecificsDataToValue(
   SET_BOOL(preferred);
   SET_INT64(date_created);
   SET_BOOL(blacklisted);
+  SET_INT32(type);
+  SET_INT32(times_used);
   return value;
 }
 
@@ -248,6 +259,9 @@ base::DictionaryValue* SyncedNotificationAppInfoToValue(
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR_REP(app_id);
   SET_STR(settings_display_name);
+  SET_STR(app_name);
+  SET_STR(settings_url);
+  SET_STR(info_url);
   SET(icon, SyncedNotificationImageToValue);
   // TODO(petewil): Add fields for the monochrome icon when it is available.
   return value;
@@ -402,6 +416,8 @@ base::DictionaryValue* AppSpecificsToValue(
   SET_STR(app_launch_ordinal);
   SET_STR(page_ordinal);
   SET_ENUM(launch_type, GetLaunchTypeString);
+  SET_STR(bookmark_app_url);
+  SET_STR(bookmark_app_description);
 
   return value;
 }
@@ -425,6 +441,7 @@ base::DictionaryValue* AutofillProfileSpecificsToValue(
   SET_STR_REP(name_first);
   SET_STR_REP(name_middle);
   SET_STR_REP(name_last);
+  SET_STR_REP(name_full);
   SET_STR_REP(email_address);
   SET_STR(company_name);
 
@@ -438,6 +455,7 @@ base::DictionaryValue* AutofillProfileSpecificsToValue(
   SET_STR(address_home_street_address);
   SET_STR(address_home_sorting_code);
   SET_STR(address_home_dependent_locality);
+  SET_STR(address_home_language_code);
 
   SET_STR_REP(phone_home_whole_number);
   return value;
@@ -491,6 +509,14 @@ base::DictionaryValue* FaviconSyncFlagsToValue(
   return value;
 }
 
+base::DictionaryValue* EnhancedBookmarksFlagsToValue(
+    const sync_pb::EnhancedBookmarksFlags& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_BOOL(enabled);
+  SET_STR(extension_id);
+  return value;
+}
+
 }  // namespace
 
 base::DictionaryValue* ExperimentsSpecificsToValue(
@@ -502,7 +528,8 @@ base::DictionaryValue* ExperimentsSpecificsToValue(
   SET_EXPERIMENT_ENABLED_FIELD(pre_commit_update_avoidance);
   SET(favicon_sync, FaviconSyncFlagsToValue);
   SET_EXPERIMENT_ENABLED_FIELD(gcm_channel);
-  SET_EXPERIMENT_ENABLED_FIELD(enhanced_bookmarks);
+  SET(enhanced_bookmarks, EnhancedBookmarksFlagsToValue);
+  SET_EXPERIMENT_ENABLED_FIELD(gcm_invalidations);
   return value;
 }
 
@@ -523,6 +550,7 @@ base::DictionaryValue* ExtensionSpecificsToValue(
   SET_STR(update_url);
   SET_BOOL(enabled);
   SET_BOOL(incognito_enabled);
+  SET_BOOL(remote_install);
   SET_STR(name);
   return value;
 }
@@ -786,6 +814,8 @@ base::StringValue* UniquePositionToStringValue(
   return new base::StringValue(pos.ToDebugString());
 }
 
+}  // namespace
+
 base::DictionaryValue* SyncEntityToValue(const sync_pb::SyncEntity& proto,
                                          bool include_specifics) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -811,6 +841,8 @@ base::DictionaryValue* SyncEntityToValue(const sync_pb::SyncEntity& proto,
   SET_STR(client_defined_unique_tag);
   return value;
 }
+
+namespace {
 
 base::ListValue* SyncEntitiesToValue(
     const ::google::protobuf::RepeatedPtrField<sync_pb::SyncEntity>& entities,
@@ -866,6 +898,15 @@ base::DictionaryValue* DataTypeProgressMarkerToValue(
   return value;
 }
 
+base::DictionaryValue* DataTypeContextToValue(
+    const sync_pb::DataTypeContext& proto) {
+  base::DictionaryValue* value = new base::DictionaryValue();
+  SET_INT32(data_type_id);
+  SET_STR(context);
+  SET_INT64(version);
+  return value;
+}
+
 base::DictionaryValue* GetUpdatesCallerInfoToValue(
     const sync_pb::GetUpdatesCallerInfo& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
@@ -885,6 +926,7 @@ base::DictionaryValue* GetUpdatesMessageToValue(
   SET_BOOL(need_encryption_key);
   SET_BOOL(create_mobile_bookmarks_folder);
   SET_ENUM(get_updates_origin, GetUpdatesOriginString);
+  SET_REP(client_contexts, DataTypeContextToValue);
   return value;
 }
 
@@ -923,6 +965,7 @@ base::DictionaryValue* GetUpdatesResponseToValue(
              SyncEntitiesToValue(proto.entries(), include_specifics));
   SET_INT64(changes_remaining);
   SET_REP(new_progress_marker, DataTypeProgressMarkerToValue);
+  SET_REP(context_mutations, DataTypeContextToValue);
   return value;
 }
 
@@ -1015,7 +1058,7 @@ base::DictionaryValue* DatatypeAssociationStatsToValue(
 base::DictionaryValue* DebugEventInfoToValue(
     const sync_pb::DebugEventInfo& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
-  SET_ENUM(singleton_event, SingletonEventTypeString);
+  SET_ENUM(singleton_event, SingletonDebugEventTypeString);
   SET(sync_cycle_completed_event_info, SyncCycleCompletedEventInfoToValue);
   SET_INT32(nudging_datatype);
   SET_INT32_REP(datatypes_notified_from_server);
@@ -1052,7 +1095,8 @@ base::DictionaryValue* ClientConfigParamsToValue(
   return value;
 }
 
-base::DictionaryValue* AttachmentIdToValue(const sync_pb::AttachmentId& proto) {
+base::DictionaryValue* AttachmentIdProtoToValue(
+    const sync_pb::AttachmentIdProto& proto) {
   base::DictionaryValue* value = new base::DictionaryValue();
   SET_STR(unique_id);
   return value;

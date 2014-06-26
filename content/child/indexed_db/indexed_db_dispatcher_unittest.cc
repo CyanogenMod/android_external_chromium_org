@@ -13,9 +13,11 @@
 #include "content/common/indexed_db/indexed_db_messages.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebData.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
 
+using blink::WebBlobInfo;
 using blink::WebData;
 using blink::WebIDBCallbacks;
 using blink::WebIDBCursor;
@@ -37,16 +39,22 @@ class MockCallbacks : public WebIDBCallbacks {
 
  private:
   bool error_seen_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCallbacks);
 };
 
 class MockDispatcher : public IndexedDBDispatcher {
  public:
-  MockDispatcher(ThreadSafeSender* sender) : IndexedDBDispatcher(sender) {}
+  explicit MockDispatcher(ThreadSafeSender* sender)
+      : IndexedDBDispatcher(sender) {}
 
   virtual bool Send(IPC::Message* msg) OVERRIDE {
     delete msg;
     return true;
   }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockDispatcher);
 };
 
 }  // namespace
@@ -71,6 +79,7 @@ class IndexedDBDispatcherTest : public testing::Test {
 TEST_F(IndexedDBDispatcherTest, ValueSizeTest) {
   const std::vector<char> data(kMaxIDBValueSizeInBytes + 1);
   const WebData value(&data.front(), data.size());
+  const WebVector<WebBlobInfo> web_blob_info;
   const int32 ipc_dummy_id = -1;
   const int64 transaction_id = 1;
   const int64 object_store_id = 2;
@@ -82,8 +91,38 @@ TEST_F(IndexedDBDispatcherTest, ValueSizeTest) {
                                    transaction_id,
                                    object_store_id,
                                    value,
+                                   web_blob_info,
                                    key,
-                                   WebIDBDatabase::AddOrUpdate,
+                                   blink::WebIDBPutModeAddOrUpdate,
+                                   &callbacks,
+                                   WebVector<long long>(),
+                                   WebVector<WebVector<WebIDBKey> >());
+
+  EXPECT_TRUE(callbacks.error_seen());
+}
+
+TEST_F(IndexedDBDispatcherTest, KeyAndValueSizeTest) {
+  const size_t kKeySize = 1024 * 1024;
+
+  const std::vector<char> data(kMaxIDBValueSizeInBytes - kKeySize);
+  const WebData value(&data.front(), data.size());
+  const WebVector<WebBlobInfo> web_blob_info;
+  const IndexedDBKey key(
+      base::string16(kKeySize / sizeof(base::string16::value_type), 'x'));
+
+  const int32 ipc_dummy_id = -1;
+  const int64 transaction_id = 1;
+  const int64 object_store_id = 2;
+
+  MockCallbacks callbacks;
+  IndexedDBDispatcher dispatcher(thread_safe_sender_.get());
+  dispatcher.RequestIDBDatabasePut(ipc_dummy_id,
+                                   transaction_id,
+                                   object_store_id,
+                                   value,
+                                   web_blob_info,
+                                   key,
+                                   blink::WebIDBPutModeAddOrUpdate,
                                    &callbacks,
                                    WebVector<long long>(),
                                    WebVector<WebVector<WebIDBKey> >());
@@ -95,18 +134,23 @@ namespace {
 
 class CursorCallbacks : public WebIDBCallbacks {
  public:
-  CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor) : cursor_(cursor) {}
+  explicit CursorCallbacks(scoped_ptr<WebIDBCursor>* cursor)
+      : cursor_(cursor) {}
 
-  virtual void onSuccess(const WebData&) {}
+  virtual void onSuccess(const WebData&,
+                         const WebVector<WebBlobInfo>&) OVERRIDE {}
   virtual void onSuccess(WebIDBCursor* cursor,
                          const WebIDBKey& key,
                          const WebIDBKey& primaryKey,
-                         const WebData& value) {
+                         const WebData& value,
+                         const WebVector<WebBlobInfo>&) OVERRIDE {
     cursor_->reset(cursor);
   }
 
  private:
   scoped_ptr<WebIDBCursor>* cursor_;
+
+  DISALLOW_COPY_AND_ASSIGN(CursorCallbacks);
 };
 
 }  // namespace
@@ -116,7 +160,8 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
   const int64 transaction_id = 1234;
   const int64 object_store_id = 2;
   const int32 index_id = 3;
-  const WebIDBCursor::Direction direction = WebIDBCursor::Next;
+  const blink::WebIDBCursorDirection direction =
+      blink::WebIDBCursorDirectionNext;
   const bool key_only = false;
 
   MockDispatcher dispatcher(thread_safe_sender_.get());
@@ -134,7 +179,7 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
                                             IndexedDBKeyRange(),
                                             direction,
                                             key_only,
-                                            blink::WebIDBDatabase::NormalTask,
+                                            blink::WebIDBTaskTypeNormal,
                                             new CursorCallbacks(&cursor));
 
     // Verify that the transaction id was captured.
@@ -175,7 +220,7 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
                                             IndexedDBKeyRange(),
                                             direction,
                                             key_only,
-                                            blink::WebIDBDatabase::NormalTask,
+                                            blink::WebIDBTaskTypeNormal,
                                             new CursorCallbacks(&cursor));
 
     // Verify that the transaction id was captured.
@@ -185,8 +230,10 @@ TEST_F(IndexedDBDispatcherTest, CursorTransactionId) {
     int32 ipc_callbacks_id = dispatcher.cursor_transaction_ids_.begin()->first;
 
     // Now simululate a "null cursor" response.
-    dispatcher.OnSuccessValue(
-        dispatcher.CurrentWorkerId(), ipc_callbacks_id, std::string());
+    IndexedDBMsg_CallbacksSuccessValue_Params params;
+    params.ipc_thread_id = dispatcher.CurrentWorkerId();
+    params.ipc_callbacks_id = ipc_callbacks_id;
+    dispatcher.OnSuccessValue(params);
 
     // Ensure the map result was deleted.
     EXPECT_EQ(0UL, dispatcher.cursor_transaction_ids_.size());
@@ -211,6 +258,8 @@ class MockCursor : public WebIDBCursorImpl {
 
  private:
   int reset_count_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCursor);
 };
 
 }  // namespace

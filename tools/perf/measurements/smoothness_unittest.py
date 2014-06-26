@@ -1,10 +1,48 @@
 # Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+import sys
+
 from measurements import smoothness
 from telemetry.core import wpr_modes
+from telemetry.page import page
 from telemetry.page import page_measurement_unittest_base
+# pylint: disable=W0401,W0614
+from telemetry.page.actions.all_page_actions import *
 from telemetry.unittest import options_for_unittests
+
+class FakePlatform(object):
+  def IsRawDisplayFrameRateSupported(self):
+    return False
+  def CanMonitorPower(self):
+    return False
+
+
+class FakeBrowser(object):
+  def __init__(self):
+    self.platform = FakePlatform()
+    self.category_filter = None
+
+  def StartTracing(self, category_filter, _):
+    self.category_filter = category_filter
+
+
+class AnimatedPage(page.Page):
+  def __init__(self, page_set):
+    super(AnimatedPage, self).__init__(
+      url='file://animated_page.html',
+      page_set=page_set, base_dir=page_set.base_dir)
+
+  def RunSmoothness(self, action_runner):
+    action_runner.Wait(1)
+
+
+class FakeTab(object):
+  def __init__(self):
+    self.browser = FakeBrowser()
+
+  def ExecuteJavaScript(self, js):
+    pass
 
 class SmoothnessUnitTest(
       page_measurement_unittest_base.PageMeasurementUnitTestBase):
@@ -14,6 +52,38 @@ class SmoothnessUnitTest(
      that all metrics were added to the results. The test is purely functional,
      i.e. it only checks if the metrics are present and non-zero.
   """
+  def testSyntheticDelayConfiguration(self):
+    test_page = page.Page('http://dummy', None)
+    test_page.synthetic_delays = {
+        'cc.BeginMainFrame': { 'target_duration': 0.012 },
+        'cc.DrawAndSwap': { 'target_duration': 0.012, 'mode': 'alternating' },
+        'gpu.PresentingFrame': { 'target_duration': 0.012 }
+    }
+
+    tab = FakeTab()
+    measurement = smoothness.Smoothness()
+    measurement.WillRunActions(test_page, tab)
+
+    expected_category_filter = [
+        'DELAY(cc.BeginMainFrame;0.012000;static)',
+        'DELAY(cc.DrawAndSwap;0.012000;alternating)',
+        'DELAY(gpu.PresentingFrame;0.012000;static)',
+        'benchmark'
+    ]
+    actual_category_filter = tab.browser.category_filter.split(',')
+    actual_category_filter.sort()
+
+    # FIXME: Put blink.console into the expected above and remove these two
+    # remove entries when the blink.console change has rolled into chromium.
+    actual_category_filter.remove('webkit.console')
+    actual_category_filter.remove('blink.console')
+
+    if expected_category_filter != actual_category_filter:
+      sys.stderr.write("Expected category filter: %s\n" %
+                       repr(expected_category_filter))
+      sys.stderr.write("Actual category filter filter: %s\n" %
+                       repr(actual_category_filter))
+    self.assertEquals(expected_category_filter, actual_category_filter)
 
   def setUp(self):
     self._options = options_for_unittests.GetCopy()
@@ -41,16 +111,24 @@ class SmoothnessUnitTest(
     self.assertEquals(len(mostly_smooth), 1)
     self.assertGreaterEqual(mostly_smooth[0].GetRepresentativeNumber(), 0)
 
-    mean_mouse_wheel_latency = results.FindAllPageSpecificValuesNamed(
-        'mean_mouse_wheel_latency')
-    if mean_mouse_wheel_latency:
-      self.assertEquals(len(mean_mouse_wheel_latency), 1)
+    mean_input_event_latency = results.FindAllPageSpecificValuesNamed(
+        'mean_input_event_latency')
+    if mean_input_event_latency:
+      self.assertEquals(len(mean_input_event_latency), 1)
       self.assertGreater(
-          mean_mouse_wheel_latency[0].GetRepresentativeNumber(), 0)
+          mean_input_event_latency[0].GetRepresentativeNumber(), 0)
 
-    mean_touch_scroll_latency = results.FindAllPageSpecificValuesNamed(
-        'mean_touch_scroll_latency')
-    if mean_touch_scroll_latency:
-      self.assertEquals(len(mean_touch_scroll_latency), 1)
-      self.assertGreater(
-          mean_touch_scroll_latency[0].GetRepresentativeNumber(), 0)
+  def testSmoothnessForPageWithNoGesture(self):
+    ps = self.CreateEmptyPageSet()
+    ps.AddPage(AnimatedPage(ps))
+
+    measurement = smoothness.Smoothness()
+    results = self.RunMeasurement(measurement, ps, options=self._options)
+    self.assertEquals(0, len(results.failures))
+
+    mostly_smooth = results.FindAllPageSpecificValuesNamed('mostly_smooth')
+    self.assertEquals(len(mostly_smooth), 1)
+    self.assertGreaterEqual(mostly_smooth[0].GetRepresentativeNumber(), 0)
+
+  def testCleanUpTrace(self):
+    self.TestTracingCleanedUp(smoothness.Smoothness, self._options)

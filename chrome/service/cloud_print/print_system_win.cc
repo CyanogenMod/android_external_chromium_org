@@ -4,13 +4,17 @@
 
 #include "chrome/service/cloud_print/print_system.h"
 
+#include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/object_watcher.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_hdc.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/cloud_print/cloud_print_cdd_conversion.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/common/crash_keys.h"
 #include "chrome/service/cloud_print/cdd_conversion_win.h"
@@ -268,7 +272,7 @@ class JobSpoolerWin : public PrintSystem::JobSpooler {
       last_page_printed_ = -1;
       // We only support PDF and XPS documents for now.
       if (print_data_mime_type == kContentTypePDF) {
-        scoped_ptr<DEVMODE[]> dev_mode;
+        scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode;
         if (print_ticket_mime_type == kContentTypeJSON) {
           dev_mode = CjtToDevMode(printer_wide, print_ticket);
         } else {
@@ -563,7 +567,13 @@ class PrinterCapsHandler : public ServiceUtilityProcessHost::Client {
     printing::PrinterCapsAndDefaults printer_info;
     if (succeeded) {
       printer_info.caps_mime_type = kContentTypeJSON;
-      printer_info.printer_capabilities = CapabilitiesToCdd(semantic_info);
+      scoped_ptr<base::DictionaryValue> description(
+          PrinterSemanticCapsAndDefaultsToCdd(semantic_info));
+      if (description) {
+        base::JSONWriter::WriteWithOptions(
+            description.get(), base::JSONWriter::OPTIONS_PRETTY_PRINT,
+            &printer_info.printer_capabilities);
+      }
     }
     callback_.Run(succeeded, printer_name, printer_info);
     callback_.Reset();
@@ -658,12 +668,16 @@ class PrintSystemWin : public PrintSystem {
   DISALLOW_COPY_AND_ASSIGN(PrintSystemWin);
 };
 
-PrintSystemWin::PrintSystemWin() : use_cdd_(false) {
+PrintSystemWin::PrintSystemWin() : use_cdd_(true) {
   print_backend_ = printing::PrintBackend::CreateInstance(NULL);
 }
 
 PrintSystem::PrintSystemResult PrintSystemWin::Init() {
-  use_cdd_ = !printing::XPSModule::Init();
+  use_cdd_ = !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableCloudPrintXps);
+
+  if (!use_cdd_)
+    use_cdd_ = !printing::XPSModule::Init();
 
   if (!use_cdd_) {
     HPTPROVIDER provider = NULL;

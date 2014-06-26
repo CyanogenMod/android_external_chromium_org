@@ -14,8 +14,8 @@
 #include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/gestures/gesture_configuration.h"
 #include "ui/gfx/canvas.h"
@@ -25,7 +25,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 const int kAffordanceOuterRadius = 60;
@@ -64,7 +63,7 @@ views::Widget* CreateAffordanceWidget(aura::Window* root_window) {
   params.type = views::Widget::InitParams::TYPE_WINDOW_FRAMELESS;
   params.keep_on_top = true;
   params.accept_events = false;
-  params.can_activate = false;
+  params.activatable = views::Widget::InitParams::ACTIVATABLE_NO;
   params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.context = root_window;
   params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
@@ -188,7 +187,7 @@ class LongPressAffordanceHandler::LongPressAffordanceView
 
  private:
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(2 * (kAffordanceOuterRadius + kAffordanceGlowWidth),
         2 * (kAffordanceOuterRadius + kAffordanceGlowWidth));
   }
@@ -365,5 +364,4 @@ void LongPressAffordanceHandler::OnWindowDestroying(aura::Window* window) {
   StopAffordance();
 }
 
-}  // namespace internal
 }  // namespace ash

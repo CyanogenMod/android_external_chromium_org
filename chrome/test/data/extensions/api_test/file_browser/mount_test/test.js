@@ -5,12 +5,11 @@
 // These have to be sync'd with file_browser_private_apitest.cc
 var expectedVolume1 = {
   volumeId: 'removable:mount_path1',
-  mountPath: '/removable/mount_path1',
+  volumeLabel: 'mount_path1',
   sourcePath: 'device_path1',
   volumeType: 'removable',
   deviceType: 'usb',
   devicePath: 'system_path_prefix1',
-  deviceLabel: 'drive_label1',
   isParentDevice: false,
   isReadOnly: false,
   profile: {profileId: "", displayName: "", isCurrentProfile: true}
@@ -18,12 +17,11 @@ var expectedVolume1 = {
 
 var expectedVolume2 = {
   volumeId: 'removable:mount_path2',
-  mountPath: '/removable/mount_path2',
+  volumeLabel: 'mount_path2',
   sourcePath: 'device_path2',
   volumeType: 'removable',
   deviceType: 'mobile',
   devicePath: 'system_path_prefix2',
-  deviceLabel: 'drive_label2',
   isParentDevice: true,
   isReadOnly: true,
   profile: {profileId: "", displayName: "", isCurrentProfile: true}
@@ -31,12 +29,11 @@ var expectedVolume2 = {
 
 var expectedVolume3 = {
   volumeId: 'removable:mount_path3',
-  mountPath: '/removable/mount_path3',
+  volumeLabel: 'mount_path3',
   sourcePath: 'device_path3',
   volumeType: 'removable',
   deviceType: 'optical',
   devicePath: 'system_path_prefix3',
-  deviceLabel: 'drive_label3',
   isParentDevice: true,
   isReadOnly: false,
   profile: {profileId: "", displayName: "", isCurrentProfile: true}
@@ -44,7 +41,7 @@ var expectedVolume3 = {
 
 var expectedDownloadsVolume = {
   volumeId: /^downloads:Downloads[^\/]*$/,
-  mountPath: /^\/Downloads[^\/]*$/,
+  volumeLabel: '',
   volumeType: 'downloads',
   isReadOnly: false,
   profile: {profileId: "", displayName: "", isCurrentProfile: true}
@@ -52,7 +49,7 @@ var expectedDownloadsVolume = {
 
 var expectedDriveVolume = {
   volumeId: /^drive:drive[^\/]*$/,
-  mountPath: /^\/drive[^\/]*$/,
+  volumeLabel: '',
   sourcePath: /^\/special\/drive[^\/]*$/,
   volumeType: 'drive',
   isReadOnly: false,
@@ -61,7 +58,7 @@ var expectedDriveVolume = {
 
 var expectedArchiveVolume = {
   volumeId: 'archive:archive_mount_path',
-  mountPath: '/archive/archive_mount_path',
+  volumeLabel: 'archive_mount_path',
   sourcePath: /removable\/mount_path3\/archive.zip$/,
   volumeType: 'archive',
   isReadOnly: true,

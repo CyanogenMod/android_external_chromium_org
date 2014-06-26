@@ -10,9 +10,12 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/timer/timer.h"
+#include "content/browser/renderer_host/event_with_latency_info.h"
+#include "content/browser/renderer_host/input/tap_suppression_controller.h"
+#include "content/browser/renderer_host/input/touchpad_tap_suppression_controller.h"
+#include "content/browser/renderer_host/input/touchscreen_tap_suppression_controller.h"
 #include "content/common/content_export.h"
-#include "content/port/browser/event_with_latency_info.h"
-#include "content/port/common/input_event_ack_state.h"
+#include "content/common/input/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/transform.h"
 
@@ -20,9 +23,6 @@ namespace content {
 class GestureEventQueueTest;
 class InputRouter;
 class MockRenderWidgetHost;
-class TouchpadTapSuppressionController;
-class TouchpadTapSuppressionControllerClient;
-class TouchscreenTapSuppressionController;
 
 // Interface with which the GestureEventQueue can forward gesture events, and
 // dispatch gesture event responses.
@@ -40,17 +40,16 @@ class CONTENT_EXPORT GestureEventQueueClient {
 
 // Maintains WebGestureEvents in a queue before forwarding them to the renderer
 // to apply a sequence of filters on them:
-// 1. Zero-velocity fling-starts from touchpad are filtered.
-// 2. The sequence is filtered for bounces. A bounce is when the finger lifts
+// 1. The sequence is filtered for bounces. A bounce is when the finger lifts
 //    from the screen briefly during an in-progress scroll. Ifco this happens,
 //    non-GestureScrollUpdate events are queued until the de-bounce interval
 //    passes or another GestureScrollUpdate event occurs.
-// 3. Unnecessary GestureFlingCancel events are filtered. These are
+// 2. Unnecessary GestureFlingCancel events are filtered. These are
 //    GestureFlingCancels that have no corresponding GestureFlingStart in the
 //    queue.
-// 4. Taps immediately after a GestureFlingCancel (caused by the same tap) are
+// 3. Taps immediately after a GestureFlingCancel (caused by the same tap) are
 //    filtered.
-// 5. Whenever possible, events in the queue are coalesced to have as few events
+// 4. Whenever possible, events in the queue are coalesced to have as few events
 //    as possible and therefore maximize the chance that the event stream can be
 //    handled entirely by the compositor thread.
 // Events in the queue are forwarded to the renderer one by one; i.e., each
@@ -61,13 +60,31 @@ class CONTENT_EXPORT GestureEventQueueClient {
 // http://crbug.com/148443.
 class CONTENT_EXPORT GestureEventQueue {
  public:
+  struct CONTENT_EXPORT Config {
+    Config();
+
+    // Controls touchpad-related tap suppression, disabled by default.
+    TapSuppressionController::Config touchpad_tap_suppression_config;
+
+    // Controls touchscreen-related tap suppression, disabled by default.
+    TapSuppressionController::Config touchscreen_tap_suppression_config;
+
+    // Determines whether non-scroll gesture events are "debounced" during an
+    // active scroll sequence, suppressing brief scroll interruptions.
+    // Zero by default (disabled).
+    base::TimeDelta debounce_interval;
+  };
+
   // Both |client| and |touchpad_client| must outlive the GestureEventQueue.
   GestureEventQueue(GestureEventQueueClient* client,
-                     TouchpadTapSuppressionControllerClient* touchpad_client);
+                    TouchpadTapSuppressionControllerClient* touchpad_client,
+                    const Config& config);
   ~GestureEventQueue();
 
   // Returns |true| if the caller should immediately forward the provided
   // |GestureEventWithLatencyInfo| argument to the renderer.
+  // If this function returns false, then the event may be queued and forwared
+  // at a later point.
   bool ShouldForward(const GestureEventWithLatencyInfo&);
 
   // Indicates that the caller has received an acknowledgement from the renderer
@@ -84,17 +101,18 @@ class CONTENT_EXPORT GestureEventQueue {
   // Returns the |TouchpadTapSuppressionController| instance.
   TouchpadTapSuppressionController* GetTouchpadTapSuppressionController();
 
-  // Returns whether there are any gesture event in the queue.
-  bool HasQueuedGestureEvents() const;
-
   void ForwardGestureEvent(const GestureEventWithLatencyInfo& gesture_event);
 
-  void set_debounce_enabled_for_testing(bool enabled) {
-    debounce_enabled_ = enabled;
+  // Whether the queue is expecting a gesture event ack.
+  bool ExpectingGestureAck() const;
+
+  bool empty() const {
+    return coalesced_gesture_events_.empty() &&
+           debouncing_deferral_queue_.empty();
   }
 
-  void set_debounce_interval_time_ms_for_testing(int interval_time_ms) {
-    debounce_interval_time_ms_ = interval_time_ms;
+  void set_debounce_interval_time_ms_for_testing(int interval_ms) {
+    debounce_interval_ = base::TimeDelta::FromMilliseconds(interval_ms);
   }
 
  private:
@@ -122,10 +140,6 @@ class CONTENT_EXPORT GestureEventQueue {
   // the coalescing queue.
   void MergeOrInsertScrollAndPinchEvent(
       const GestureEventWithLatencyInfo& gesture_event);
-
-  // Sub-filter for removing zero-velocity fling-starts from touchpad.
-  bool ShouldForwardForZeroVelocityFlingStart(
-      const GestureEventWithLatencyInfo& gesture_event) const;
 
   // Sub-filter for removing bounces from in-progress scrolls.
   bool ShouldForwardForBounceReduction(
@@ -158,9 +172,9 @@ class CONTENT_EXPORT GestureEventQueue {
   gfx::Transform GetTransformForEvent(
       const GestureEventWithLatencyInfo& gesture_event) const;
 
-  // Adds |gesture_event| to the |coalesced_gesture_events_|, resetting the
-  // accumulation of |combined_scroll_pinch_|.
-  void EnqueueEvent(const GestureEventWithLatencyInfo& gesture_event);
+  // The number of sent events for which we're awaiting an ack.  These events
+  // remain at the head of the queue until ack'ed.
+  size_t EventsInFlightCount() const;
 
   // The receiver of all forwarded gesture events.
   GestureEventQueueClient* client_;
@@ -176,23 +190,17 @@ class CONTENT_EXPORT GestureEventQueue {
   // for an ACK, so the next gesture ACK should be ignored.
   bool ignore_next_ack_;
 
-  // Transform that holds the combined transform matrix for the current
-  // scroll-pinch sequence at the end of the queue.
-  gfx::Transform combined_scroll_pinch_;
-
   // An object tracking the state of touchpad on the delivery of mouse events to
   // the renderer to filter mouse immediately after a touchpad fling canceling
   // tap.
   // TODO(mohsen): Move touchpad tap suppression out of GestureEventQueue since
   // GEQ is meant to only be used for touchscreen gesture events.
-  scoped_ptr<TouchpadTapSuppressionController>
-      touchpad_tap_suppression_controller_;
+  TouchpadTapSuppressionController touchpad_tap_suppression_controller_;
 
   // An object tracking the state of touchscreen on the delivery of gesture tap
   // events to the renderer to filter taps immediately after a touchscreen fling
   // canceling tap.
-  scoped_ptr<TouchscreenTapSuppressionController>
-      touchscreen_tap_suppression_controller_;
+  TouchscreenTapSuppressionController touchscreen_tap_suppression_controller_;
 
   typedef std::deque<GestureEventWithLatencyInfo> GestureQueue;
 
@@ -210,13 +218,9 @@ class CONTENT_EXPORT GestureEventQueue {
   // Queue of events that have been deferred for debounce.
   GestureQueue debouncing_deferral_queue_;
 
-  // Time window in which to debounce scroll/fling ends.
-  // TODO(rjkroege): Make this dynamically configurable.
-  int debounce_interval_time_ms_;
-
-  // Whether scroll-ending events should be deferred when a scroll is active.
-  // Defaults to true.
-  bool debounce_enabled_;
+  // Time window in which to debounce scroll/fling ends. Note that an interval
+  // of zero effectively disables debouncing.
+  base::TimeDelta debounce_interval_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureEventQueue);
 };

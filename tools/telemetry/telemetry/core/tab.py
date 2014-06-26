@@ -1,15 +1,11 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from telemetry.core import bitmap
+from telemetry.core import video
 from telemetry.core import web_contents
 
 DEFAULT_TAB_TIMEOUT = 60
-
-
-class BoundingBoxNotFoundException(Exception):
-  pass
 
 
 class Tab(web_contents.WebContents):
@@ -23,12 +19,8 @@ class Tab(web_contents.WebContents):
       # Evaluates 1+1 in the tab's JavaScript context.
       tab.Evaluate('1+1')
   """
-  def __init__(self, inspector_backend):
-    super(Tab, self).__init__(inspector_backend)
-    self._previous_tab_contents_bounding_box = None
-
-  def __del__(self):
-    super(Tab, self).__del__()
+  def __init__(self, inspector_backend, backend_list):
+    super(Tab, self).__init__(inspector_backend, backend_list)
 
   @property
   def browser(self):
@@ -57,7 +49,6 @@ class Tab(web_contents.WebContents):
                                              'event_listener_count']]))
     return dom_counters
 
-
   def Activate(self):
     """Brings this tab to the foreground asynchronously.
 
@@ -68,7 +59,14 @@ class Tab(web_contents.WebContents):
     and the page's documentVisibilityState becoming 'visible', and yet more
     delay until the actual tab is visible to the user. None of these delays
     are included in this call."""
-    self._inspector_backend.Activate()
+    self._backend_list.ActivateTab(self._inspector_backend.debugger_url)
+
+  def Close(self):
+    """Closes this tab.
+
+    Not all browsers or browser versions support this method.
+    Be sure to check browser.supports_tab_control."""
+    self._backend_list.CloseTab(self._inspector_backend.debugger_url)
 
   @property
   def screenshot_supported(self):
@@ -106,7 +104,9 @@ class Tab(web_contents.WebContents):
         screen.style.zIndex = '2147483638';
         document.body.appendChild(screen);
         requestAnimationFrame(function() {
-          window.__telemetry_screen_%d = screen;
+          requestAnimationFrame(function() {
+            window.__telemetry_screen_%d = screen;
+          });
         });
       })();
     """ % (color.r, color.g, color.b, color.a, int(color)))
@@ -119,14 +119,19 @@ class Tab(web_contents.WebContents):
       (function() {
         document.body.removeChild(window.__telemetry_screen_%d);
         requestAnimationFrame(function() {
-          window.__telemetry_screen_%d = null;
+          requestAnimationFrame(function() {
+            window.__telemetry_screen_%d = null;
+            console.time('__ClearHighlight.video_capture_start');
+            console.timeEnd('__ClearHighlight.video_capture_start');
+          });
         });
       })();
     """ % (int(color), int(color)))
     self.WaitForJavaScriptExpression(
         '!window.__telemetry_screen_%d' % int(color), 5)
 
-  def StartVideoCapture(self, min_bitrate_mbps):
+  def StartVideoCapture(self, min_bitrate_mbps,
+                        highlight_bitmap=video.HIGHLIGHT_ORANGE_FRAME):
     """Starts capturing video of the tab's contents.
 
     This works by flashing the entire tab contents to a arbitrary color and then
@@ -138,55 +143,13 @@ class Tab(web_contents.WebContents):
           The platform is free to deliver a higher bitrate if it can do so
           without increasing overhead.
     """
-    self.Highlight(bitmap.WEB_PAGE_TEST_ORANGE)
+    self.Highlight(highlight_bitmap)
     self.browser.platform.StartVideoCapture(min_bitrate_mbps)
-    self.ClearHighlight(bitmap.WEB_PAGE_TEST_ORANGE)
+    self.ClearHighlight(highlight_bitmap)
 
-  def _FindHighlightBoundingBox(self, bmp, color, bounds_tolerance=4,
-      color_tolerance=8):
-    """Returns the bounding box of the content highlight of the given color.
-
-    Raises:
-      BoundingBoxNotFoundException if the hightlight could not be found.
-    """
-    content_box, pixel_count = bmp.GetBoundingBox(color,
-        tolerance=color_tolerance)
-
-    if not content_box:
-      return None
-
-    # We assume arbitrarily that tabs are all larger than 200x200. If this
-    # fails it either means that assumption has changed or something is
-    # awry with our bounding box calculation.
-    if content_box[2] < 200 or content_box[3] < 200:
-      raise BoundingBoxNotFoundException('Unexpectedly small tab contents.')
-
-    # TODO(tonyg): Can this threshold be increased?
-    if pixel_count < 0.9 * content_box[2] * content_box[3]:
-      raise BoundingBoxNotFoundException(
-          'Low count of pixels in tab contents matching expected color.')
-
-    # Since Telemetry doesn't know how to resize the window, we assume
-    # that we should always get the same content box for a tab. If this
-    # fails, it means either that assumption has changed or something is
-    # awry with our bounding box calculation. If this assumption changes,
-    # this can be removed.
-    #
-    # TODO(tonyg): This assert doesn't seem to work.
-    if (self._previous_tab_contents_bounding_box and
-        self._previous_tab_contents_bounding_box != content_box):
-      # Check if there's just a minor variation on the bounding box. If it's
-      # just a few pixels, we can assume it's probably due to
-      # compression artifacts.
-      for i in xrange(len(content_box)):
-        bounds_difference = abs(content_box[i] -
-            self._previous_tab_contents_bounding_box[i])
-        if bounds_difference > bounds_tolerance:
-          raise BoundingBoxNotFoundException(
-              'Unexpected change in tab contents box.')
-    self._previous_tab_contents_bounding_box = content_box
-
-    return content_box
+  @property
+  def is_video_capture_running(self):
+    return self.browser.platform.is_video_capture_running
 
   def StopVideoCapture(self):
     """Stops recording video of the tab's contents.
@@ -194,47 +157,19 @@ class Tab(web_contents.WebContents):
     This looks for the initial color flash in the first frame to establish the
     tab content boundaries and then omits all frames displaying the flash.
 
-    Yields:
-      (time_ms, bitmap) tuples representing each video keyframe. Only the first
-      frame in a run of sequential duplicate bitmaps is typically included.
-        time_ms is milliseconds since navigationStart.
-        bitmap is a telemetry.core.Bitmap.
+    Returns:
+      video: A video object which is a telemetry.core.Video
     """
-    frame_generator = self.browser.platform.StopVideoCapture()
+    return self.browser.platform.StopVideoCapture()
 
-    # Flip through frames until we find the initial tab contents flash.
-    content_box = None
-    for _, bmp in frame_generator:
-      content_box = self._FindHighlightBoundingBox(
-          bmp, bitmap.WEB_PAGE_TEST_ORANGE)
-      if content_box:
-        break
+  def WaitForNavigate(self, timeout=DEFAULT_TAB_TIMEOUT):
+    """Waits for the navigation to complete.
 
-    if not content_box:
-      raise BoundingBoxNotFoundException(
-          'Failed to identify tab contents in video capture.')
-
-    # Flip through frames until the flash goes away and emit that as frame 0.
-    timestamp = 0
-    for timestamp, bmp in frame_generator:
-      if not self._FindHighlightBoundingBox(bmp, bitmap.WEB_PAGE_TEST_ORANGE):
-        yield 0, bmp.Crop(*content_box)
-        break
-
-    start_time = timestamp
-    for timestamp, bmp in frame_generator:
-      yield timestamp - start_time, bmp.Crop(*content_box)
-
-  def PerformActionAndWaitForNavigate(
-      self, action_function, timeout=DEFAULT_TAB_TIMEOUT):
-    """Executes action_function, and waits for the navigation to complete.
-
-    action_function must be a Python function that results in a navigation.
+    The current page is expect to be in a navigation.
     This function returns when the navigation is complete or when
     the timeout has been exceeded.
     """
-    self._inspector_backend.PerformActionAndWaitForNavigate(
-        action_function, timeout)
+    self._inspector_backend.WaitForNavigate(timeout)
 
   def Navigate(self, url, script_to_evaluate_on_commit=None,
                timeout=DEFAULT_TAB_TIMEOUT):
@@ -261,6 +196,7 @@ class Tab(web_contents.WebContents):
           renderer, ensuring that even "live" resources in the memory cache are
           cleared.
     """
+    self.browser.platform.FlushDnsCache()
     self.ExecuteJavaScript("""
         if (window.chrome && chrome.benchmarking &&
             chrome.benchmarking.clearCache) {

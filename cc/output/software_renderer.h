@@ -37,13 +37,6 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
   virtual const RendererCapabilitiesImpl& Capabilities() const OVERRIDE;
   virtual void Finish() OVERRIDE;
   virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
-  virtual void GetFramebufferPixels(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
-  virtual void SetVisible(bool visible) OVERRIDE;
-  virtual void SendManagedMemoryStats(
-      size_t bytes_visible,
-      size_t bytes_visible_and_nearby,
-      size_t bytes_allocated) OVERRIDE  {}
   virtual void ReceiveSwapBuffersAck(
       const CompositorFrameAck& ack) OVERRIDE;
   virtual void DiscardBackbuffer() OVERRIDE;
@@ -76,6 +69,8 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
                    OutputSurface* output_surface,
                    ResourceProvider* resource_provider);
 
+  virtual void DidChangeVisibility() OVERRIDE;
+
  private:
   void ClearCanvas(SkColor color);
   void SetClipRect(const gfx::Rect& rect);
@@ -99,7 +94,6 @@ class CC_EXPORT SoftwareRenderer : public DirectRenderer {
                            const DrawQuad* quad);
 
   RendererCapabilitiesImpl capabilities_;
-  bool visible_;
   bool is_scissor_enabled_;
   bool is_backbuffer_discarded_;
   gfx::Rect scissor_rect_;

@@ -37,30 +37,18 @@ class ProfileSyncComponentsFactoryMock : public ProfileSyncComponentsFactory {
                    browser_sync::DataTypeManagerObserver* observer,
                    browser_sync::FailedDataTypesHandler*
                        failed_datatypes_handler));
-  MOCK_METHOD3(CreateSyncBackendHost,
-      browser_sync::SyncBackendHost*(
-          const std::string& name,
-          Profile* profile,
-          const base::WeakPtr<browser_sync::SyncPrefs>& sync_prefs));
-  MOCK_METHOD4(CreateGenericChangeProcessor,
-      browser_sync::GenericChangeProcessor*(
-          ProfileSyncService* profile_sync_service,
-          browser_sync::DataTypeErrorHandler* error_handler,
-          const base::WeakPtr<syncer::SyncableService>& local_service,
-          const base::WeakPtr<syncer::SyncMergeResult>& merge_result));
-  MOCK_METHOD0(CreateSharedChangeProcessor,
-      browser_sync::SharedChangeProcessor*());
+  MOCK_METHOD5(CreateSyncBackendHost,
+               browser_sync::SyncBackendHost*(
+                   const std::string& name,
+                   Profile* profile,
+                   invalidation::InvalidationService* invalidator,
+                   const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+                   const base::FilePath& sync_folder));
   MOCK_METHOD1(GetSyncableServiceForType,
                base::WeakPtr<syncer::SyncableService>(syncer::ModelType));
+  virtual scoped_ptr<syncer::AttachmentService> CreateAttachmentService(
+      syncer::AttachmentService::Delegate* delegate) OVERRIDE;
   MOCK_METHOD2(CreateBookmarkSyncComponents,
-      SyncComponents(ProfileSyncService* profile_sync_service,
-                     browser_sync::DataTypeErrorHandler* error_handler));
-  MOCK_METHOD3(CreatePasswordSyncComponents,
-               SyncComponents(
-                   ProfileSyncService* profile_sync_service,
-                   PasswordStore* password_store,
-                   browser_sync::DataTypeErrorHandler* error_handler));
-  MOCK_METHOD2(CreateSessionSyncComponents,
       SyncComponents(ProfileSyncService* profile_sync_service,
                      browser_sync::DataTypeErrorHandler* error_handler));
 #if defined(ENABLE_THEMES)

@@ -7,7 +7,7 @@
 #include "ash/shell.h"
 #include "ash/wm/lock_state_controller.h"
 #include "base/bind.h"
-#include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/lock/screen_locker.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
@@ -43,8 +43,9 @@ void ScreenLockServiceProvider::OnExported(const std::string& interface_name,
 void ScreenLockServiceProvider::LockScreen(
     dbus::MethodCall* method_call,
     dbus::ExportedObject::ResponseSender response_sender) {
+  // Please add any additional logic to ScreenLocker::HandleLockScreenRequest()
+  // instead of placing it here.
   ScreenLocker::HandleLockScreenRequest();
-  ash::Shell::GetInstance()->lock_state_controller()->OnStartingLock();
   response_sender.Run(dbus::Response::FromMethodCall(method_call));
 }
 

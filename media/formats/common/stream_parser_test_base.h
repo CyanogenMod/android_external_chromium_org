@@ -39,11 +39,18 @@ class StreamParserTestBase {
   //
   std::string ParseFile(const std::string& filename, int append_bytes);
 
- private:
-  void InitializeParser();
-  bool AppendDataInPieces(const uint8* data, size_t length, size_t piece_size);
+  // Similar to ParseFile() except parses the given |data| in a single append of
+  // size |length|.
+  std::string ParseData(const uint8* data, size_t length);
 
-  void OnInitDone(bool success, base::TimeDelta duration);
+  // The last AudioDecoderConfig handed to OnNewConfig().
+  const AudioDecoderConfig& last_audio_config() const {
+    return last_audio_config_;
+  }
+
+ private:
+  bool AppendDataInPieces(const uint8* data, size_t length, size_t piece_size);
+  void OnInitDone(bool success, const StreamParser::InitParameters& params);
   bool OnNewConfig(const AudioDecoderConfig& audio_config,
                    const VideoDecoderConfig& video_config,
                    const StreamParser::TextTrackConfigMap& text_config);
@@ -57,6 +64,7 @@ class StreamParserTestBase {
 
   scoped_ptr<StreamParser> parser_;
   std::stringstream results_stream_;
+  AudioDecoderConfig last_audio_config_;
 
   DISALLOW_COPY_AND_ASSIGN(StreamParserTestBase);
 };

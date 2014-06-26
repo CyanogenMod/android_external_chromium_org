@@ -9,21 +9,24 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/renderer/extensions/object_backed_native_handler.h"
-#include "chrome/renderer/extensions/scoped_persistent.h"
+#include "extensions/renderer/object_backed_native_handler.h"
+#include "extensions/renderer/scoped_persistent.h"
 #include "v8/include/v8.h"
 
 class CastRtpStream;
 class CastUdpTransport;
 
-namespace extensions {
+namespace base {
+class BinaryValue;
+class DictionaryValue;
+}
 
-class ChromeV8Context;
+namespace extensions {
 
 // Native code that handle chrome.webrtc custom bindings.
 class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
  public:
-  explicit CastStreamingNativeHandler(ChromeV8Context* context);
+  explicit CastStreamingNativeHandler(ScriptContext* context);
   virtual ~CastStreamingNativeHandler();
 
  private:
@@ -48,6 +51,10 @@ class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
   void StopCastUdpTransport(
       const v8::FunctionCallbackInfo<v8::Value>& args);
 
+  void ToggleLogging(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetRawEvents(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetStats(const v8::FunctionCallbackInfo<v8::Value>& args);
+
   // Helper method to call the v8 callback function after a session is
   // created.
   void CallCreateCallback(scoped_ptr<CastRtpStream> stream1,
@@ -57,6 +64,11 @@ class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
   void CallStartCallback(int stream_id);
   void CallStopCallback(int stream_id);
   void CallErrorCallback(int stream_id, const std::string& message);
+
+  void CallGetRawEventsCallback(int transport_id,
+                                scoped_ptr<base::BinaryValue> raw_events);
+  void CallGetStatsCallback(int transport_id,
+                            scoped_ptr<base::DictionaryValue> stats);
 
   // Gets the RTP stream or UDP transport indexed by an ID.
   // If not found, returns NULL and throws a V8 exception.
@@ -74,6 +86,12 @@ class CastStreamingNativeHandler : public ObjectBackedNativeHandler {
   base::WeakPtrFactory<CastStreamingNativeHandler> weak_factory_;
 
   extensions::ScopedPersistent<v8::Function> create_callback_;
+
+  typedef std::map<int,
+                   linked_ptr<extensions::ScopedPersistent<v8::Function> > >
+      RtpStreamCallbackMap;
+  RtpStreamCallbackMap get_raw_events_callbacks_;
+  RtpStreamCallbackMap get_stats_callbacks_;
 
   DISALLOW_COPY_AND_ASSIGN(CastStreamingNativeHandler);
 };

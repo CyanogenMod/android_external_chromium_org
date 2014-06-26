@@ -14,6 +14,7 @@
 #include "content/public/common/content_switches.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/native_theme/native_theme_switches.h"
 
 namespace content {
 
@@ -55,27 +56,17 @@ void SetContentCommandLineFlags(int max_render_process_count,
       RenderProcessHost::SetMaxRendererProcessCount(max_render_process_count);
   }
 
-  parsed_command_line->AppendSwitch(switches::kForceCompositingMode);
-  parsed_command_line->AppendSwitch(switches::kAllowWebUICompositing);
   parsed_command_line->AppendSwitch(switches::kEnableThreadedCompositing);
   parsed_command_line->AppendSwitch(
       switches::kEnableCompositingForFixedPosition);
   parsed_command_line->AppendSwitch(switches::kEnableAcceleratedOverflowScroll);
-  parsed_command_line->AppendSwitch(
-      switches::kEnableAcceleratedScrollableFrames);
-  parsed_command_line->AppendSwitch(
-      switches::kEnableCompositedScrollingForFrames);
   parsed_command_line->AppendSwitch(switches::kEnableBeginFrameScheduling);
-  parsed_command_line->AppendSwitch(switches::kEnableDeadlineScheduling);
 
-  parsed_command_line->AppendSwitch(switches::kDisableGestureDebounce);
   parsed_command_line->AppendSwitch(switches::kEnableGestureTapHighlight);
   parsed_command_line->AppendSwitch(switches::kEnablePinch);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayFullscreenVideo);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
   parsed_command_line->AppendSwitch(switches::kEnableOverscrollNotifications);
-  parsed_command_line->AppendSwitchASCII(switches::kTouchAckTimeoutDelayMs,
-                                         "200");
 
   // Run the GPU service as a thread in the browser instead of as a
   // standalone process.

@@ -4,31 +4,31 @@
 
 #include "content/browser/renderer_host/compositing_iosurface_mac.h"
 
+#include <OpenGL/CGLIOSurface.h>
 #include <OpenGL/CGLRenderers.h>
 #include <OpenGL/OpenGL.h>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/platform_thread.h"
+#include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/renderer_host/compositing_iosurface_context_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_shader_programs_mac.h"
 #include "content/browser/renderer_host/compositing_iosurface_transformer_mac.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 #include "content/common/content_constants_internal.h"
-#include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "media/base/video_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gl/gl_context.h"
-#include "ui/gl/io_surface_support_mac.h"
 
 #ifdef NDEBUG
 #define CHECK_GL_ERROR()
@@ -36,11 +36,11 @@
 #else
 #define CHECK_GL_ERROR() do {                                           \
     GLenum gl_error = glGetError();                                     \
-    LOG_IF(ERROR, gl_error != GL_NO_ERROR) << "GL Error :" << gl_error; \
+    LOG_IF(ERROR, gl_error != GL_NO_ERROR) << "GL Error: " << gl_error; \
   } while (0)
 #define CHECK_AND_SAVE_GL_ERROR() do {                                  \
     GLenum gl_error = GetAndSaveGLError();                              \
-    LOG_IF(ERROR, gl_error != GL_NO_ERROR) << "GL Error :" << gl_error; \
+    LOG_IF(ERROR, gl_error != GL_NO_ERROR) << "GL Error: " << gl_error; \
   } while (0)
 #endif
 
@@ -217,13 +217,7 @@ void CompositingIOSurfaceMac::CopyContext::PrepareForAsynchronousReadback() {
 
 
 // static
-CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
-  IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
-  if (!io_surface_support) {
-    LOG(ERROR) << "No IOSurface support";
-    return NULL;
-  }
-
+scoped_refptr<CompositingIOSurfaceMac> CompositingIOSurfaceMac::Create() {
   scoped_refptr<CompositingIOSurfaceContext> offscreen_context =
       CompositingIOSurfaceContext::Get(
           CompositingIOSurfaceContext::kOffscreenContextWindowNumber);
@@ -232,15 +226,12 @@ CompositingIOSurfaceMac* CompositingIOSurfaceMac::Create() {
     return NULL;
   }
 
-  return new CompositingIOSurfaceMac(io_surface_support,
-                                     offscreen_context);
+  return new CompositingIOSurfaceMac(offscreen_context);
 }
 
 CompositingIOSurfaceMac::CompositingIOSurfaceMac(
-    IOSurfaceSupport* io_surface_support,
     const scoped_refptr<CompositingIOSurfaceContext>& offscreen_context)
-    : io_surface_support_(io_surface_support),
-      offscreen_context_(offscreen_context),
+    : offscreen_context_(offscreen_context),
       io_surface_handle_(0),
       scale_factor_(1.f),
       texture_(0),
@@ -251,7 +242,9 @@ CompositingIOSurfaceMac::CompositingIOSurfaceMac(
                      base::Unretained(this),
                      false),
           true),
-      gl_error_(GL_NO_ERROR) {
+      gl_error_(GL_NO_ERROR),
+      eviction_queue_iterator_(eviction_queue_.Get().end()),
+      eviction_has_been_drawn_since_updated_(false) {
   CHECK(offscreen_context_);
 }
 
@@ -264,19 +257,17 @@ CompositingIOSurfaceMac::~CompositingIOSurfaceMac() {
     UnrefIOSurfaceWithContextCurrent();
   }
   offscreen_context_ = NULL;
+  DCHECK(eviction_queue_iterator_ == eviction_queue_.Get().end());
 }
 
 bool CompositingIOSurfaceMac::SetIOSurfaceWithContextCurrent(
     scoped_refptr<CompositingIOSurfaceContext> current_context,
-    uint64 io_surface_handle,
+    IOSurfaceID io_surface_handle,
     const gfx::Size& size,
     float scale_factor) {
-  pixel_io_surface_size_ = size;
-  scale_factor_ = scale_factor;
-  dip_io_surface_size_ = gfx::ToFlooredSize(
-      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor_));
   bool result = MapIOSurfaceToTextureWithContextCurrent(
-      current_context, io_surface_handle);
+      current_context, size, scale_factor, io_surface_handle);
+  EvictionMarkUpdated();
   return result;
 }
 
@@ -292,8 +283,7 @@ int CompositingIOSurfaceMac::GetRendererID() {
 bool CompositingIOSurfaceMac::DrawIOSurface(
     scoped_refptr<CompositingIOSurfaceContext> drawing_context,
     const gfx::Rect& window_rect,
-    float window_scale_factor,
-    bool flush_drawable) {
+    float window_scale_factor) {
   DCHECK_EQ(CGLGetCurrentContext(), drawing_context->cgl_context());
 
   bool has_io_surface = HasIOSurface();
@@ -364,62 +354,29 @@ bool CompositingIOSurfaceMac::DrawIOSurface(
     glClear(GL_COLOR_BUFFER_BIT);
   }
 
-  static bool initialized_workaround = false;
-  static bool force_on_workaround = false;
-  static bool force_off_workaround = false;
-  if (!initialized_workaround) {
-    force_on_workaround = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kForceGLFinishWorkaround);
-    force_off_workaround = CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kDisableGpuDriverBugWorkarounds);
-
-    initialized_workaround = true;
-  }
-
-  bool workaround_needed = false;
-  // http://crbug.com/123409 : work around bugs in graphics driver on
-  // MacBook Air with Intel HD graphics, and possibly on other models,
-  // by forcing the graphics pipeline to be completely drained at this
-  // point. This workaround is not necessary on Mountain Lion.
-  // TODO(ccameron): determine if this is still needed with CoreAnimation.
-  workaround_needed |= base::mac::IsOSLionOrEarlier() &&
-                       drawing_context->IsVendorIntel();
-
-  // http://crbug.com/318877 : work around a bug where the window does
-  // not finish rendering its contents before displaying them on Mavericks
-  // on Retina MacBook Pro when using the Intel HD graphics GPU. Note that
-  // this is not necessary when flushing the drawable because we are in
-  // one of the two following situations:
-  // - we are drawing and underlay, and we will call glFinish() when drawing
-  //   the overlay.
-  // - we are using CoreAnimation, where this bug does not manifest.
-  workaround_needed |= base::mac::IsOSMavericksOrLater() &&
-                       flush_drawable &&
-                       drawing_context->IsVendorIntel();
-
-  const bool use_glfinish_workaround =
-      (workaround_needed || force_on_workaround) && !force_off_workaround;
-  if (use_glfinish_workaround) {
+  bool workaround_needed =
+      GpuDataManagerImpl::GetInstance()->IsDriverBugWorkaroundActive(
+          gpu::FORCE_GL_FINISH_AFTER_COMPOSITING);
+  if (workaround_needed) {
     TRACE_EVENT0("gpu", "glFinish");
     glFinish();
   }
 
-  bool result = true;
-  if (flush_drawable) {
-    TRACE_EVENT0("gpu", "flushBuffer");
-    [drawing_context->nsgl_context() flushBuffer];
-  }
-
   // Check if any of the drawing calls result in an error.
   GetAndSaveGLError();
+  bool result = true;
   if (gl_error_ != GL_NO_ERROR) {
     LOG(ERROR) << "GL error in DrawIOSurface: " << gl_error_;
     result = false;
+    // If there was an error, clear the screen to a light grey to avoid
+    // rendering artifacts. If we're in a really bad way, this too may
+    // generate an error. Clear the GL error afterwards just in case.
+    glClearColor(0.8, 0.8, 0.8, 1.0);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glGetError();
   }
 
-  // Try to finish previous copy requests after flush to get better pipelining.
-  CheckIfAllCopiesAreFinished(false);
-
+  eviction_has_been_drawn_since_updated_ = true;
   return result;
 }
 
@@ -494,15 +451,26 @@ base::Closure CompositingIOSurfaceMac::CopyToVideoFrameWithinContext(
 
 bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
     const scoped_refptr<CompositingIOSurfaceContext>& current_context,
-    uint64 io_surface_handle) {
-  if (io_surface_.get() && io_surface_handle == io_surface_handle_)
+    const gfx::Size pixel_size,
+    float scale_factor,
+    IOSurfaceID io_surface_handle) {
+  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::MapIOSurfaceToTexture");
+
+  if (!io_surface_ || io_surface_handle != io_surface_handle_)
+    UnrefIOSurfaceWithContextCurrent();
+
+  pixel_io_surface_size_ = pixel_size;
+  scale_factor_ = scale_factor;
+  dip_io_surface_size_ = gfx::ToFlooredSize(
+      gfx::ScaleSize(pixel_io_surface_size_, 1.0 / scale_factor_));
+
+  // Early-out if the IOSurface has not changed. Note that because IOSurface
+  // sizes are rounded, the same IOSurface may have two different sizes
+  // associated with it.
+  if (io_surface_ && io_surface_handle == io_surface_handle_)
     return true;
 
-  TRACE_EVENT0("browser", "CompositingIOSurfaceMac::MapIOSurfaceToTexture");
-  UnrefIOSurfaceWithContextCurrent();
-
-  io_surface_.reset(io_surface_support_->IOSurfaceLookup(
-      static_cast<uint32>(io_surface_handle)));
+  io_surface_.reset(IOSurfaceLookup(io_surface_handle));
   // Can fail if IOSurface with that ID was already released by the gpu
   // process.
   if (!io_surface_) {
@@ -514,9 +482,8 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
 
   // Actual IOSurface size is rounded up to reduce reallocations during window
   // resize. Get the actual size to properly map the texture.
-  gfx::Size rounded_size(
-      io_surface_support_->IOSurfaceGetWidth(io_surface_),
-      io_surface_support_->IOSurfaceGetHeight(io_surface_));
+  gfx::Size rounded_size(IOSurfaceGetWidth(io_surface_),
+                         IOSurfaceGetHeight(io_surface_));
 
   glGenTextures(1, &texture_);
   glBindTexture(GL_TEXTURE_RECTANGLE_ARB, texture_);
@@ -524,7 +491,7 @@ bool CompositingIOSurfaceMac::MapIOSurfaceToTextureWithContextCurrent(
   glTexParameterf(GL_TEXTURE_RECTANGLE_ARB, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
   CHECK_AND_SAVE_GL_ERROR();
   GLuint plane = 0;
-  CGLError cgl_error = io_surface_support_->CGLTexImageIOSurface2D(
+  CGLError cgl_error = CGLTexImageIOSurface2D(
       current_context->cgl_context(),
       GL_TEXTURE_RECTANGLE_ARB,
       GL_RGBA,
@@ -574,28 +541,31 @@ void CompositingIOSurfaceMac::UnrefIOSurfaceWithContextCurrent() {
     glDeleteTextures(1, &texture_);
     texture_ = 0;
   }
-
+  pixel_io_surface_size_ = gfx::Size();
+  scale_factor_ = 1;
+  dip_io_surface_size_ = gfx::Size();
   io_surface_.reset();
 
   // Forget the ID, because even if it is still around when we want to use it
   // again, OSX may have reused the same ID for a new tab and we don't want to
   // blit random tab contents.
   io_surface_handle_ = 0;
+
+  EvictionMarkEvicted();
 }
 
 bool CompositingIOSurfaceMac::IsAsynchronousReadbackSupported() {
-  const bool forced_synchronous = CommandLine::ForCurrentProcess()->HasSwitch(
-      switches::kForceSynchronousGLReadPixels);
-  if (forced_synchronous)
-    return false;
   if (!HasAppleFenceExtension() && HasPixelBufferObjectExtension())
     return false;
-  // Using PBO crashes on Intel drivers but not on newer Mountain Lion
-  // systems. See bug http://crbug.com/152225.
-  if (offscreen_context_->IsVendorIntel() &&
-      !base::mac::IsOSMountainLionOrLater())
+  if (GpuDataManagerImpl::GetInstance()->IsDriverBugWorkaroundActive(
+          gpu::DISABLE_ASYNC_READPIXELS)) {
     return false;
+  }
   return true;
+}
+
+bool CompositingIOSurfaceMac::HasBeenPoisoned() const {
+  return offscreen_context_->HasBeenPoisoned();
 }
 
 base::Closure CompositingIOSurfaceMac::CopyToSelectedOutputWithinContext(
@@ -932,5 +902,69 @@ GLenum CompositingIOSurfaceMac::GetAndSaveGLError() {
     gl_error_ = gl_error;
   return gl_error;
 }
+
+void CompositingIOSurfaceMac::EvictionMarkUpdated() {
+  EvictionMarkEvicted();
+  eviction_queue_.Get().push_back(this);
+  eviction_queue_iterator_ = --eviction_queue_.Get().end();
+  eviction_has_been_drawn_since_updated_ = false;
+  EvictionScheduleDoEvict();
+}
+
+void CompositingIOSurfaceMac::EvictionMarkEvicted() {
+  if (eviction_queue_iterator_ == eviction_queue_.Get().end())
+    return;
+  eviction_queue_.Get().erase(eviction_queue_iterator_);
+  eviction_queue_iterator_ = eviction_queue_.Get().end();
+  eviction_has_been_drawn_since_updated_ = false;
+}
+
+// static
+void CompositingIOSurfaceMac::EvictionScheduleDoEvict() {
+  if (eviction_scheduled_)
+    return;
+  if (eviction_queue_.Get().size() <= kMaximumUnevictedSurfaces)
+    return;
+
+  eviction_scheduled_ = true;
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&CompositingIOSurfaceMac::EvictionDoEvict));
+}
+
+// static
+void CompositingIOSurfaceMac::EvictionDoEvict() {
+  eviction_scheduled_ = false;
+  // Walk the list of allocated surfaces from least recently used to most
+  // recently used.
+  for (EvictionQueue::iterator it = eviction_queue_.Get().begin();
+       it != eviction_queue_.Get().end();) {
+    CompositingIOSurfaceMac* surface = *it;
+    ++it;
+
+    // If the number of IOSurfaces allocated is less than the threshold,
+    // stop walking the list of surfaces.
+    if (eviction_queue_.Get().size() <= kMaximumUnevictedSurfaces)
+      break;
+
+    // Don't evict anything that has not yet been drawn.
+    if (!surface->eviction_has_been_drawn_since_updated_)
+      continue;
+
+    // Don't evict anything with pending copy requests.
+    if (!surface->copy_requests_.empty())
+      continue;
+
+    // Evict the surface.
+    surface->UnrefIOSurface();
+  }
+}
+
+// static
+base::LazyInstance<CompositingIOSurfaceMac::EvictionQueue>
+    CompositingIOSurfaceMac::eviction_queue_;
+
+// static
+bool CompositingIOSurfaceMac::eviction_scheduled_ = false;
 
 }  // namespace content

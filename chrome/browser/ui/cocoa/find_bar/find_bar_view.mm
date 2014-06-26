@@ -22,7 +22,7 @@ CGFloat kCurveSize = 8;
     // Give this view its own layer so that it can appear over the web contents
     // view's layer. Layer squashing is not necessary for this view because
     // NSTextField will correctly anti-alias text on 10.8 and beyond.
-    [self cr_setWantsLayer:YES withSquashing:NO];
+    [self cr_setWantsLayer:YES];
   }
   return self;
 }
@@ -142,10 +142,6 @@ CGFloat kCurveSize = 8;
 // Eat drag operations, to prevent drags from going through to the views below.
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)info {
   return NSDragOperationNone;
-}
-
-- (ViewID)viewID {
-  return VIEW_ID_FIND_IN_PAGE;
 }
 
 // Specifies that mouse events over this view should be ignored by the

@@ -16,16 +16,6 @@ const char kAllowHTTPBackgroundPage[] = "allow-http-background-page";
 const char kAllowLegacyExtensionManifests[] =
     "allow-legacy-extension-manifests";
 
-// Allows injecting extensions and user scripts on the extensions gallery
-// site. Normally prevented for security reasons, but can be useful for
-// automation testing of the gallery.
-const char kAllowScriptingGallery[] = "allow-scripting-gallery";
-
-// Enables extensions to be easily installed from sites other than the web
-// store. Without this flag, they can still be installed, but must be manually
-// dragged onto chrome://extensions/.
-const char kEasyOffStoreExtensionInstall[] = "easy-off-store-extension-install";
-
 // Enables extension APIs that are in development.
 const char kEnableExperimentalExtensionApis[] =
     "enable-experimental-extension-apis";
@@ -59,13 +49,23 @@ const char kForceDevModeHighlighting[] = "force-dev-mode-highlighting";
 // Enables setting global commands through the Extensions Commands API.
 const char kGlobalCommands[] = "global-commands";
 
-// Should we prompt the user before allowing external extensions to install?
-// Default is yes.
-const char kPromptForExternalExtensions[] = "prompt-for-external-extensions";
+// Notify the user and require consent for extensions running scripts.
+// Appending --scripts-require-action=1 has the same effect as
+// --enable-scripts-require-action (see below).
+const char kScriptsRequireAction[] = "scripts-require-action";
+// FeatureSwitch and about_flags don't play nice. Feature switch expects either
+// --enable-<feature> or --<feature>=1, but about_flags expects the command
+// line argument to enable it (or a selection). Hack this in, so enabling it
+// in about_flags enables the feature. Appending this flag has the same effect
+// as --scripts-require-action=1.
+const char kEnableScriptsRequireAction[] = "enable-scripts-require-action";
 
 // Makes component extensions appear in chrome://settings/extensions.
 const char kShowComponentExtensionOptions[] =
     "show-component-extension-options";
+
+// Adds the given extension ID to all the permission whitelists.
+const char kWhitelistedExtensionID[] = "whitelisted-extension-id";
 
 }  // namespace switches
 

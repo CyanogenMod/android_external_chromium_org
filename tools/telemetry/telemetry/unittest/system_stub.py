@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -51,8 +51,6 @@ class Override(object):
 
 
 class AdbCommandsModuleStub(object):
-# adb not even found
-# android_browser_finder not returning
   class AdbCommandsStub(object):
     def __init__(self, module, device):
       self._module = module
@@ -73,6 +71,9 @@ class AdbCommandsModuleStub(object):
 
     def IsUserBuild(self):
       return False
+
+    def WaitForDevicePm(self):
+      pass
 
   def __init__(self):
     self.attached_devices = []
@@ -106,6 +107,7 @@ class CloudStorageModuleStub(object):
   def __init__(self):
     self.remote_paths = []
     self.local_file_hashes = {}
+    self.local_hash_files = {}
 
   def List(self, _):
     return self.remote_paths
@@ -113,8 +115,11 @@ class CloudStorageModuleStub(object):
   def Insert(self, bucket, remote_path, local_path):
     pass
 
-  def GetHash(self, file_path):
+  def CalculateHash(self, file_path):
     return self.local_file_hashes[file_path]
+
+  def ReadHash(self, hash_path):
+    return self.local_hash_files[hash_path]
 
 
 class OpenFunctionStub(object):
@@ -142,6 +147,10 @@ class OpenFunctionStub(object):
 
 
 class OsModuleStub(object):
+  class OsEnvironModuleStub(object):
+    def get(self, _):
+      return None
+
   class OsPathModuleStub(object):
     def __init__(self, sys_module):
       self.sys = sys_module
@@ -190,6 +199,7 @@ class OsModuleStub(object):
 
   def __init__(self, sys_module=sys):
     self.path = OsModuleStub.OsPathModuleStub(sys_module)
+    self.environ = OsModuleStub.OsEnvironModuleStub()
     self.display = ':0'
     self.local_app_data = None
     self.program_files = None

@@ -4,6 +4,7 @@
 
 #include "base/files/file_path.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -15,7 +16,7 @@ using extensions::api::file_system::AcceptOption;
 namespace {
 
 void CheckExtensions(const std::vector<base::FilePath::StringType>& expected,
-    std::vector<base::FilePath::StringType>& actual) {
+                     const std::vector<base::FilePath::StringType>& actual) {
   EXPECT_EQ(expected.size(), actual.size());
   if (expected.size() != actual.size())
     return;
@@ -25,9 +26,9 @@ void CheckExtensions(const std::vector<base::FilePath::StringType>& expected,
   }
 }
 
-AcceptOption* BuildAcceptOption(std::string description,
-    std::string mime_types,
-    std::string extensions) {
+AcceptOption* BuildAcceptOption(const std::string& description,
+                                const std::string& mime_types,
+                                const std::string& extensions) {
   AcceptOption* option = new AcceptOption();
 
   if (!description.empty())
@@ -88,8 +89,8 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   // Test that not satisfying the extension will force all types.
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   options.clear();
-  options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption(std::string(), std::string(), "unrelated")));
+  options.push_back(linked_ptr<AcceptOption>(BuildAcceptOption(
+      std::string(), std::string(), "unrelated")));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
       ToStringType(".jso"), &options, &acceptsAllTypes);

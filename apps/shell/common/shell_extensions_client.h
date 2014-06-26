@@ -8,6 +8,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "extensions/common/extensions_client.h"
+#include "extensions/common/permissions/extensions_api_permissions.h"
 
 namespace apps {
 
@@ -19,12 +20,12 @@ class ShellExtensionsClient : public extensions::ExtensionsClient {
 
   // extensions::ExtensionsClient overrides:
   virtual void Initialize() OVERRIDE;
-  virtual const extensions::PermissionsProvider& GetPermissionsProvider() const
-      OVERRIDE;
   virtual const extensions::PermissionMessageProvider&
       GetPermissionMessageProvider() const OVERRIDE;
-  virtual extensions::FeatureProvider* GetFeatureProviderByName(
+  virtual scoped_ptr<extensions::FeatureProvider> CreateFeatureProvider(
       const std::string& name) const OVERRIDE;
+  virtual scoped_ptr<extensions::JSONFeatureProviderSource>
+      CreateFeatureProviderSource(const std::string& name) const OVERRIDE;
   virtual void FilterHostPermissions(
       const extensions::URLPatternSet& hosts,
       extensions::URLPatternSet* new_hosts,
@@ -37,8 +38,16 @@ class ShellExtensionsClient : public extensions::ExtensionsClient {
       const extensions::APIPermissionSet& api_permissions) const OVERRIDE;
   virtual bool IsScriptableURL(const GURL& url, std::string* error) const
       OVERRIDE;
+  virtual bool IsAPISchemaGenerated(const std::string& name) const OVERRIDE;
+  virtual base::StringPiece GetAPISchema(const std::string& name) const
+      OVERRIDE;
+  virtual void RegisterAPISchemaResources(
+      extensions::ExtensionAPI* api) const OVERRIDE;
+  virtual bool ShouldSuppressFatalErrors() const OVERRIDE;
 
  private:
+  const extensions::ExtensionsAPIPermissions extensions_api_permissions_;
+
   ScriptingWhitelist scripting_whitelist_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellExtensionsClient);

@@ -8,8 +8,8 @@
 #include "base/memory/singleton.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_shutdown.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
-#include "chrome/browser/chromeos/login/webui_login_view.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_view.h"
 #include "chrome/browser/chromeos/mobile/mobile_activator.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
@@ -50,9 +50,6 @@ class MobileSetupDialogDelegate : public WebDialogDelegate {
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
   virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
   virtual std::string GetDialogArgs() const OVERRIDE;
-  virtual void OnDialogShown(
-      content::WebUI* webui,
-      content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
   virtual void OnCloseContents(WebContents* source,
                                bool* out_close_dialog) OVERRIDE;
@@ -69,13 +66,13 @@ class MobileSetupDialogDelegate : public WebDialogDelegate {
 
 // static
 void MobileSetupDialog::Show(const std::string& service_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   MobileSetupDialogDelegate::GetInstance()->ShowDialog(service_path);
 }
 
 // static
 MobileSetupDialogDelegate* MobileSetupDialogDelegate::GetInstance() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return Singleton<MobileSetupDialogDelegate>::get();
 }
 
@@ -130,11 +127,6 @@ void MobileSetupDialogDelegate::GetDialogSize(gfx::Size* size) const {
 std::string MobileSetupDialogDelegate::GetDialogArgs() const {
   return std::string();
 }
-
-void MobileSetupDialogDelegate::OnDialogShown(
-    content::WebUI* webui, content::RenderViewHost* render_view_host) {
-}
-
 
 void MobileSetupDialogDelegate::OnDialogClosed(const std::string& json_retval) {
   dialog_window_ = NULL;

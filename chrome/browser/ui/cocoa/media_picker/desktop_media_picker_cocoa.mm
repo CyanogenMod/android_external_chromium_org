@@ -12,16 +12,19 @@ DesktopMediaPickerCocoa::DesktopMediaPickerCocoa() {
 DesktopMediaPickerCocoa::~DesktopMediaPickerCocoa() {
 }
 
-void DesktopMediaPickerCocoa::Show(gfx::NativeWindow context,
+void DesktopMediaPickerCocoa::Show(content::WebContents* web_contents,
+                                   gfx::NativeWindow context,
                                    gfx::NativeWindow parent,
                                    const base::string16& app_name,
+                                   const base::string16& target_name,
                                    scoped_ptr<DesktopMediaList> media_list,
                                    const DoneCallback& done_callback) {
   controller_.reset(
       [[DesktopMediaPickerController alloc] initWithMediaList:media_list.Pass()
                                                        parent:parent
                                                      callback:done_callback
-                                                      appName:app_name]);
+                                                      appName:app_name
+                                                   targetName:target_name]);
   [controller_ showWindow:nil];
 }
 

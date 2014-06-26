@@ -5,9 +5,9 @@
 #include "chrome/browser/chromeos/idle_detector.h"
 
 #include "ash/shell.h"
-#include "ash/wm/user_activity_detector.h"
 #include "base/bind.h"
 #include "base/logging.h"
+#include "ui/wm/core/user_activity_detector.h"
 
 namespace chromeos {
 
@@ -35,11 +35,10 @@ void IdleDetector::Start(const base::TimeDelta& timeout) {
 }
 
 void IdleDetector::ResetTimer() {
-  if (timer_.IsRunning()) {
+  if (timer_.IsRunning())
     timer_.Reset();
-  } else {
+  else
     timer_.Start(FROM_HERE, timeout_, idle_callback_);
-  }
 }
 
 }  // namespace chromeos

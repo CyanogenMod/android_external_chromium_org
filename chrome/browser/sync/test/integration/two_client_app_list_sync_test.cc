@@ -10,13 +10,15 @@
 #include "chrome/browser/sync/test/integration/apps_helper.h"
 #include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_app_list_helper.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service_factory.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_switches.h"
 
 using apps_helper::DisableApp;
@@ -27,6 +29,7 @@ using apps_helper::IncognitoEnableApp;
 using apps_helper::InstallApp;
 using apps_helper::InstallAppsPendingForSync;
 using apps_helper::UninstallApp;
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 
 namespace {
 
@@ -49,14 +52,14 @@ const app_list::AppListSyncableService::SyncItem* GetSyncItem(
 
 class TwoClientAppListSyncTest : public SyncTest {
  public:
-  TwoClientAppListSyncTest() : SyncTest(TWO_CLIENT) {}
+  TwoClientAppListSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
 
   virtual ~TwoClientAppListSyncTest() {}
 
   // SyncTest
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     SyncTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableSyncAppList);
+    command_line->AppendSwitch(app_list::switches::kEnableSyncAppList);
   }
 
   virtual bool SetupClients() OVERRIDE {
@@ -350,7 +353,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, DisableApps) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncer::APP_LIST));
   InstallApp(GetProfile(0), 0);
   InstallApp(verifier(), 0);
-  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameAppsAsVerifier(0));
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
 
@@ -372,7 +375,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, DisableSync) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForAllDatatypes());
   InstallApp(GetProfile(0), 0);
   InstallApp(verifier(), 0);
-  ASSERT_TRUE(GetClient(0)->AwaitCommitActivityCompletion());
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameAppsAsVerifier(0));
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
 
@@ -434,10 +437,10 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, RemoveDefault) {
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
 
   // Flag Default app in Profile 1.
-  extensions::ExtensionSystem::Get(GetProfile(1))->
-      extension_service()->extension_prefs()->
-      UpdateExtensionPref(default_app_id, "was_installed_by_default",
-                          new base::FundamentalValue(true));
+  extensions::ExtensionPrefs::Get(GetProfile(1))
+      ->UpdateExtensionPref(default_app_id,
+                            "was_installed_by_default",
+                            new base::FundamentalValue(true));
 
   // Remove the default app in Profile 0 and verifier, ensure it was removed
   // in Profile 1.
@@ -472,6 +475,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncTest, RemoveDefault) {
   EXPECT_EQ(sync_pb::AppListSpecifics::TYPE_APP, sync_item->item_type);
 }
 
+#if !defined(OS_MACOSX)
+
 class TwoClientAppListSyncFolderTest : public TwoClientAppListSyncTest {
  public:
   TwoClientAppListSyncFolderTest() {}
@@ -479,7 +484,14 @@ class TwoClientAppListSyncFolderTest : public TwoClientAppListSyncTest {
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     TwoClientAppListSyncTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(app_list::switches::kEnableFolderUI);
+  }
+
+  virtual bool SetupClients() OVERRIDE {
+    bool res = TwoClientAppListSyncTest::SetupClients();
+    app_list::AppListSyncableService* verifier_service =
+        app_list::AppListSyncableServiceFactory::GetForProfile(verifier());
+    verifier_service->model()->SetFoldersEnabled(true);
+    return res;
   }
 
  private:
@@ -571,3 +583,5 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppListSyncFolderTest, FolderAddRemove) {
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppListAsVerifier());
 }
+
+#endif  // !defined(OS_MACOSX)

@@ -6,15 +6,17 @@
 
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_util.h"
+#include "base/time/default_tick_clock.h"
 #include "build/build_config.h"
+#include "chrome/browser/apps/chrome_apps_client.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_impl.h"
 #include "chrome/browser/extensions/chrome_extensions_browser_client.h"
 #include "chrome/browser/printing/print_job_manager.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/bookmarks/bookmark_prompt_controller.h"
 #include "chrome/test/base/testing_browser_process_platform_part.h"
+#include "components/network_time/network_time_tracker.h"
 #include "content/public/browser/notification_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -72,6 +74,9 @@ TestingBrowserProcess::TestingBrowserProcess()
       platform_part_(new TestingBrowserProcessPlatformPart()),
       extensions_browser_client_(
           new extensions::ChromeExtensionsBrowserClient) {
+#if defined(ENABLE_EXTENSIONS)
+  apps::AppsClient::Set(ChromeAppsClient::GetInstance());
+#endif
   extensions::ExtensionsBrowserClient::Set(extensions_browser_client_.get());
 }
 
@@ -93,7 +98,15 @@ void TestingBrowserProcess::ResourceDispatcherHostCreated() {
 void TestingBrowserProcess::EndSession() {
 }
 
+MetricsServicesManager* TestingBrowserProcess::GetMetricsServicesManager() {
+  return NULL;
+}
+
 MetricsService* TestingBrowserProcess::metrics_service() {
+  return NULL;
+}
+
+rappor::RapporService* TestingBrowserProcess::rappor_service() {
   return NULL;
 }
 
@@ -231,16 +244,10 @@ message_center::MessageCenter* TestingBrowserProcess::message_center() {
 IntranetRedirectDetector* TestingBrowserProcess::intranet_redirect_detector() {
   return NULL;
 }
-
-AutomationProviderList* TestingBrowserProcess::GetAutomationProviderList() {
-  return NULL;
-}
-
 void TestingBrowserProcess::CreateDevToolsHttpProtocolHandler(
     chrome::HostDesktopType host_desktop_type,
     const std::string& ip,
-    int port,
-    const std::string& frontend_url) {
+    int port) {
 }
 
 unsigned int TestingBrowserProcess::AddRefModule() {
@@ -340,15 +347,6 @@ TestingBrowserProcess::pnacl_component_installer() {
   return NULL;
 }
 
-BookmarkPromptController* TestingBrowserProcess::bookmark_prompt_controller() {
-#if defined(OS_IOS)
-  NOTIMPLEMENTED();
-  return NULL;
-#else
-  return bookmark_prompt_controller_.get();
-#endif
-}
-
 MediaFileSystemRegistry* TestingBrowserProcess::media_file_system_registry() {
 #if defined(OS_IOS) || defined(OS_ANDROID)
   NOTIMPLEMENTED();
@@ -370,11 +368,19 @@ WebRtcLogUploader* TestingBrowserProcess::webrtc_log_uploader() {
 }
 #endif
 
-void TestingBrowserProcess::SetBookmarkPromptController(
-    BookmarkPromptController* controller) {
-#if !defined(OS_IOS)
-  bookmark_prompt_controller_.reset(controller);
-#endif
+network_time::NetworkTimeTracker*
+TestingBrowserProcess::network_time_tracker() {
+  if (!network_time_tracker_) {
+    DCHECK(local_state_);
+    network_time_tracker_.reset(new network_time::NetworkTimeTracker(
+        scoped_ptr<base::TickClock>(new base::DefaultTickClock()),
+        local_state_));
+  }
+  return network_time_tracker_.get();
+}
+
+gcm::GCMDriver* TestingBrowserProcess::gcm_driver() {
+  return NULL;
 }
 
 void TestingBrowserProcess::SetSystemRequestContext(
@@ -393,6 +399,7 @@ void TestingBrowserProcess::SetLocalState(PrefService* local_state) {
     // (assumedly as part of exiting the test and freeing TestingBrowserProcess)
     // any components owned by TestingBrowserProcess that depend on local_state
     // are also freed.
+    network_time_tracker_.reset();
 #if !defined(OS_IOS)
     notification_ui_manager_.reset();
 #endif

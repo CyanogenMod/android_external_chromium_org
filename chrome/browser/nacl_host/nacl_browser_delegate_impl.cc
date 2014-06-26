@@ -12,11 +12,13 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/nacl_host/nacl_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/renderer_host/pepper/chrome_browser_pepper_host_factory.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_paths_internal.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
+#include "chrome/common/pepper_permission_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/site_instance.h"
@@ -32,6 +34,13 @@
 using extensions::SharedModuleInfo;
 
 namespace {
+
+// These are temporarily needed for testing non-sfi mode on ChromeOS without
+// passing command-line arguments to Chrome.
+const char* const kAllowedNonSfiOrigins[] = {
+    "6EAED1924DB611B6EEF2A664BD077BE7EAD33B8F",  // see http://crbug.com/355141
+    "4EB74897CB187C7633357C2FE832E0AD6A44883A"   // see http://crbug.com/355141
+};
 
 // Handles an extension's NaCl process transitioning in or out of idle state by
 // relaying the state to the extension's process manager.
@@ -104,16 +113,19 @@ void OnKeepalive(
 }  // namespace
 
 NaClBrowserDelegateImpl::NaClBrowserDelegateImpl(
-    extensions::InfoMap* extension_info_map)
-    : extension_info_map_(extension_info_map), inverse_debug_patterns_(false) {}
+    ProfileManager* profile_manager)
+    : profile_manager_(profile_manager), inverse_debug_patterns_(false) {
+  DCHECK(profile_manager_);
+  for (size_t i = 0; i < arraysize(kAllowedNonSfiOrigins); ++i) {
+    allowed_nonsfi_origins_.insert(kAllowedNonSfiOrigins[i]);
+  }
+}
 
 NaClBrowserDelegateImpl::~NaClBrowserDelegateImpl() {
 }
 
-void NaClBrowserDelegateImpl::ShowNaClInfobar(int render_process_id,
-                                              int render_view_id,
-                                              int error_id) {
-  DCHECK_EQ(PP_NACL_MANIFEST_MISSING_ARCH, error_id);
+void NaClBrowserDelegateImpl::ShowMissingArchInfobar(int render_process_id,
+                                                     int render_view_id) {
   content::BrowserThread::PostTask(
       content::BrowserThread::UI, FROM_HERE,
       base::Bind(&NaClInfoBarDelegate::Create, render_process_id,
@@ -165,12 +177,16 @@ void NaClBrowserDelegateImpl::SetDebugPatterns(std::string debug_patterns) {
   base::SplitString(debug_patterns, ',', &patterns);
   for (std::vector<std::string>::iterator iter = patterns.begin();
        iter != patterns.end(); ++iter) {
-    URLPattern pattern;
+    // Allow chrome:// schema, which is used to filter out the internal
+    // PNaCl translator. Also allow chrome-extension:// schema (which
+    // can have NaCl modules). The default is to disallow these schema
+    // since they can be dangerous in the context of chrome extension
+    // permissions, but they are okay here, for NaCl GDB avoidance.
+    URLPattern pattern(URLPattern::SCHEME_ALL);
     if (pattern.Parse(*iter) == URLPattern::PARSE_SUCCESS) {
       // If URL pattern has scheme equal to *, Parse method resets valid
       // schemes mask to http and https only, so we need to reset it after
-      // Parse to include chrome-extension scheme that can be used by NaCl
-      // manifest files.
+      // Parse to re-include chrome-extension and chrome schema.
       pattern.SetValidSchemes(URLPattern::SCHEME_ALL);
       debug_patterns_.push_back(pattern);
     }
@@ -201,11 +217,15 @@ bool NaClBrowserDelegateImpl::URLMatchesDebugPatterns(
 // This function is security sensitive.  Be sure to check with a security
 // person before you modify it.
 bool NaClBrowserDelegateImpl::MapUrlToLocalFilePath(
-    const GURL& file_url, bool use_blocking_api, base::FilePath* file_path) {
-  DCHECK(extension_info_map_);
+    const GURL& file_url,
+    bool use_blocking_api,
+    const base::FilePath& profile_directory,
+    base::FilePath* file_path) {
+  scoped_refptr<extensions::InfoMap> extension_info_map =
+      GetExtensionInfoMap(profile_directory);
   // Check that the URL is recognized by the extension system.
   const extensions::Extension* extension =
-      extension_info_map_->extensions().GetExtensionOrAppByURL(file_url);
+      extension_info_map->extensions().GetExtensionOrAppByURL(file_url);
   if (!extension)
     return false;
 
@@ -232,7 +252,7 @@ bool NaClBrowserDelegateImpl::MapUrlToLocalFilePath(
     SharedModuleInfo::ParseImportedPath(path, &new_extension_id,
                                         &new_relative_path);
     const extensions::Extension* new_extension =
-        extension_info_map_->extensions().GetByID(new_extension_id);
+        extension_info_map->extensions().GetByID(new_extension_id);
     if (!new_extension)
       return false;
 
@@ -262,4 +282,24 @@ bool NaClBrowserDelegateImpl::MapUrlToLocalFilePath(
 content::BrowserPpapiHost::OnKeepaliveCallback
 NaClBrowserDelegateImpl::GetOnKeepaliveCallback() {
   return base::Bind(&OnKeepalive);
+}
+
+bool NaClBrowserDelegateImpl::IsNonSfiModeAllowed(
+    const base::FilePath& profile_directory,
+    const GURL& manifest_url) {
+  const extensions::ExtensionSet* extension_set =
+      &GetExtensionInfoMap(profile_directory)->extensions();
+  return chrome::IsExtensionOrSharedModuleWhitelisted(
+      manifest_url, extension_set, allowed_nonsfi_origins_);
+}
+
+scoped_refptr<extensions::InfoMap> NaClBrowserDelegateImpl::GetExtensionInfoMap(
+    const base::FilePath& profile_directory) {
+  // Get the profile associated with the renderer.
+  Profile* profile = profile_manager_->GetProfileByPath(profile_directory);
+  DCHECK(profile);
+  scoped_refptr<extensions::InfoMap> extension_info_map =
+      extensions::ExtensionSystem::Get(profile)->info_map();
+  DCHECK(extension_info_map);
+  return extension_info_map;
 }

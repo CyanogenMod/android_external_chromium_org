@@ -20,6 +20,7 @@
           # converted.
           '<(DEPTH)/ppapi/native_client/tests/ppapi_browser/progress_event_listener.js',
           '<(DEPTH)/ppapi/native_client/tools/browser_tester/browserdata/nacltest.js',
+
           # Files that aren't assosiated with any particular executable.
           'bad/ppapi_bad.html',
           'bad/ppapi_bad.js',
@@ -30,9 +31,20 @@
           'bad/ppapi_bad_manifest_bad_files.nmf',
           'bad/ppapi_bad_manifest_nexe_arch.nmf',
           'crash/ppapi_crash.html',
+          'load_util.js',
           'manifest_file/test_file.txt',
         ],
       },
+      'conditions': [
+        ['target_arch=="ia32" and OS=="linux"', {
+          # Enable nonsfi testing only on ia32-linux environment.
+          # This flag causes test_files to be copied into nonsfi directory,
+          # too.
+          'variables': {
+            'enable_x86_32_nonsfi': 1,
+          },
+        }],
+      ],
     },
     {
       'target_name': 'simple_test',
@@ -67,6 +79,40 @@
           'exit_status/pm_exit_status_test.html',
         ],
       },
+    },
+    {
+      'target_name': 'extension_validation_cache',
+      'type': 'none',
+      'variables': {
+        'nexe_target': 'extension_validation_cache',
+        # The test currently only has the test expectations for the
+        # newlib case (# validation queries/settings), and has also
+        # hardcoded the newlib variant's directory path for the unpacked ext.
+        'build_newlib': 1,
+        'build_glibc': 0,
+        'build_pnacl_newlib': 0,
+        # Need a new directory to not clash with with other extension
+        # tests's files (e.g., manifest.json).
+        'nexe_destination_dir': 'nacl_test_data/extension_vcache_test',
+        'sources': [
+          'simple.cc',
+        ],
+        'test_files': [
+          # TODO(ncbray) move into chrome/test/data/nacl when all tests are
+          # converted.
+          '<(DEPTH)/ppapi/native_client/tools/browser_tester/browserdata/nacltest.js',
+          'extension_validation_cache/extension_validation_cache.html',
+          'extension_validation_cache/extension_validation_cache.js',
+          # Turns the test data directory into an extension.
+          # Use a different nexe_destination_dir to isolate the files.
+          # Note that the .nexe names are embedded in this file.
+          'extension_validation_cache/manifest.json',
+          'load_util.js',
+        ],
+      },
+      'dependencies': [
+        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
+      ],
     },
     {
       'target_name': 'sysconf_nprocessors_onln_test',
@@ -156,7 +202,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -334,7 +380,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -362,7 +408,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -390,7 +436,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -418,7 +464,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -446,7 +492,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -476,7 +522,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
       ],
     },
     {
@@ -513,7 +559,7 @@
       },
       'dependencies': [
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
@@ -558,7 +604,7 @@
       },
       'dependencies': [
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
@@ -598,6 +644,9 @@
         'create_nmf_args_portable': [
           '-xtest_file:test_file.txt',
           '-xnmf says hello world:test_file.txt',
+          # There is no dummy_test_file.txt file intentionally. This is just for
+          # a test case where there is a manifest entry, but no actual file.
+          '-xdummy_test_file:dummy_test_file.txt',
         ],
         'test_files': [
           'manifest_file/irt_manifest_file_test.html',
@@ -605,7 +654,7 @@
       },
       'dependencies': [
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
@@ -615,6 +664,65 @@
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib',
         '<(DEPTH)/native_client/src/trusted/weak_ref/weak_ref.gyp:weak_ref_lib',
         'nacl_ppapi_util',
+      ],
+      'conditions': [
+        ['target_arch=="ia32" and OS=="linux"', {
+          # Enable nonsfi testing only on ia32-linux environment.
+          'variables': {
+            # This is needed to build a non-SFI nexe binary.
+            # Note that this triggers building nexe files for other
+            # architectures, such as x86-32 (based on enable_XXX variables).
+            # As described above, although the tests for pnacl are currently
+            # disabled, but building the binary should work.
+            # We cannot disable building, as enable_XXX variables are also used
+            # to build newlib linked nexes.
+            'build_pnacl_newlib': 1,
+            'enable_x86_32_nonsfi': 1,
+          },
+        }],
+      ],
+    },
+    {
+      'target_name': 'irt_exception_test',
+      'type': 'none',
+      'variables': {
+        'nexe_target': 'irt_exception_test',
+        'build_newlib': 1,
+        'generate_nmf': 1,
+        'nexe_destination_dir': 'nacl_test_data',
+        'build_pnacl_newlib': 1,
+        'link_flags': [
+          '-lppapi',
+          '-lppapi_test_lib',
+          '-lplatform',
+          '-lgio',
+          '-lnacl_exception',
+        ],
+        'sources': [
+          'irt_exception/irt_exception_test.cc',
+        ],
+        'test_files': [
+          # TODO(ncbray) move into chrome/test/data/nacl when all tests are
+          # converted.
+          'irt_exception/irt_exception_test.html',
+        ],
+      },
+      'dependencies': [
+        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
+        '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
+        '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
+        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_exception_lib',
+        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
+        'ppapi_test_lib',
+      ],
+      'conditions': [
+        ['target_arch=="ia32" and OS=="linux"', {
+          # Enable nonsfi testing only on ia32-linux environment.
+          'variables': {
+            'enable_x86_32_nonsfi': 1,
+          },
+        }],
       ],
     },
     {
@@ -646,7 +754,7 @@
       },
       'dependencies': [
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
@@ -692,6 +800,32 @@
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         'ppapi_test_lib',
       ],
+    },
+    {
+      'target_name': 'pnacl_debug_url_test',
+      'type': 'none',
+      'variables': {
+        'nexe_target': 'pnacl_debug_url',
+        'build_pnacl_newlib': 1,
+        'nexe_destination_dir': 'nacl_test_data',
+        # No need to translate these AOT, when we just need the pexe.
+        'enable_x86_32': 0,
+        'enable_x86_64': 0,
+        'enable_arm': 0,
+        'generate_nmf': 0,
+        'sources': [
+          'simple.cc',
+        ],
+        'test_files': [
+          'pnacl_debug_url/pnacl_debug_url.html',
+          'pnacl_debug_url/pnacl_has_debug.nmf',
+          'pnacl_debug_url/pnacl_has_debug_flag_off.nmf',
+          'pnacl_debug_url/pnacl_no_debug.nmf',
+        ],
+      },
+      'dependencies': [
+        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
+      ]
     },
     {
       'target_name': 'pnacl_error_handling_test',
@@ -745,6 +879,7 @@
         'enable_x86_32': 0,
         'enable_x86_64': 0,
         'enable_arm': 0,
+        'generate_nmf': 0,
         'sources': [
           'simple.cc',
         ],
@@ -796,7 +931,7 @@
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_dyncode_private_lib',
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -837,7 +972,7 @@
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_exception_private_lib',
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -869,7 +1004,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -900,7 +1035,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -932,7 +1067,7 @@
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_untrusted.gyp:ppapi_cpp_lib',
+        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
     },
@@ -953,9 +1088,127 @@
             'sources': [
               '<(DEPTH)/native_client/tests/stubout_mode/partly_invalid.c',
             ],
+            'conditions': [
+              ['target_arch=="mipsel"', {
+                'compile_flags': [
+                  '--pnacl-mips-bias',
+                  '-arch', 'mips32',
+                  '--pnacl-allow-translate',
+                ],
+                'link_flags': [
+                  '--pnacl-allow-native',
+                ],
+              }],
+            ],
           },
           'dependencies': [
             '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
+          ],
+        },
+      ],
+    }],
+
+    # Tests for non-SFI mode.
+    ['OS=="linux"', {
+      'targets': [
+        {
+          'target_name': 'nonsfi_libc_free_nexe',
+          'type': 'executable',
+          'product_name': '>(nexe_destination_dir)/libc_free_>(arch_suffix)',
+          'product_extension': 'nexe',
+          'variables': {
+            'arch_suffix': '<(target_arch)',
+            # This is needed, because NaCl's target_default rule is
+            # automatically applied to all the targets in this file, and it
+            # requires nexe_destination_dir, even if it is not important.
+            'nexe_destination_dir': 'nacl_test_data/libc-free',
+          },
+          'sources': [
+            'nonsfi/libc_free.c',
+          ],
+          # Here, we would like to link a relocatable, libc-free executable.
+          # -shared/-fPIC make this binary relocatable. -nostdlib ensures
+          # this is libc-free.
+          # The program does not apply any dynamic relocations at start up,
+          # so it cannot rely on relocations having been applied.
+          # In addition, -fvisibility=hidden avoids creating some types
+          # of relocation.
+          'cflags': [
+            '-fPIC',
+            '-fvisibility=hidden',
+
+            # Stack-Smashing protector does not work with libc-free context.
+            '-fno-stack-protector',
+          ],
+          'cflags!': [
+            # We filter these out because release_extra_cflags or another
+            # such thing might be adding them in, and those options wind up
+            # coming after the -fno-stack-protector we added above.
+            '-fstack-protector',
+            '-fstack-protector-all',
+            '-fprofile-generate',
+            '-finstrument-functions',
+          ],
+          'ldflags': [
+            '-nostdlib',
+            '-shared',
+          ],
+          'ldflags!': [
+            # Explicitly remove the -pthread flag to avoid a link time warning.
+            '-pthread',
+          ],
+          'defines': [
+            # The code depends on NaCl's headers. This is a macro for them.
+            'NACL_LINUX=1',
+          ],
+          # For native_client/src/include/...
+          'include_dirs': [
+            '../../../..',
+          ],
+          'conditions': [
+            # Overwrite suffix for x64 and ia32 to align NaCl's naming
+            # convention.
+            ['target_arch=="x64"', {
+              'variables': {
+                'arch_suffix': 'x86_64',
+              }
+            }],
+            ['target_arch=="ia32"', {
+              'variables': {
+                'arch_suffix': 'x86_32',
+              }
+            }],
+          ],
+        },
+        {
+          'target_name': 'nonsfi_libc_free',
+          'type': 'none',
+          'variables': {
+            'nexe_destination_dir': 'nacl_test_data',
+            'destination_dir': '<(PRODUCT_DIR)/>(nexe_destination_dir)/libc-free',
+            'test_files': [
+              # TODO(ncbray) move into chrome/test/data/nacl when all tests are
+              # converted.
+              '<(DEPTH)/ppapi/native_client/tools/browser_tester/browserdata/nacltest.js',
+              'nonsfi/libc_free.html',
+              'nonsfi/libc_free.nmf',
+              'nonsfi/irt_test.html',
+            ],
+          },
+          'dependencies': [
+            'nonsfi_libc_free_nexe',
+          ],
+          # Because we are still under development for non-SFI mode, the
+          # toolchain is not yet ready, which means ppapi_nacl_common does not
+          # work well for non-SFI mode yet. Instead, we manually set up the
+          # testing environment here.
+          'copies': [
+            {
+              'destination': '>(destination_dir)',
+              'files': [
+                '>@(test_files)',
+              ],
+            },
           ],
         },
       ],

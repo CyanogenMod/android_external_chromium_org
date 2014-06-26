@@ -41,6 +41,7 @@ const int kMissingLicenses = 402;
 const int kDeviceManagementNotAllowed = 403;
 const int kInvalidURL = 404;  // This error is not coming from the GFE.
 const int kInvalidSerialNumber = 405;
+const int kDomainMismatch = 406;
 const int kDeviceIdConflict = 409;
 const int kDeviceNotFound = 410;
 const int kPendingApproval = 412;
@@ -121,6 +122,8 @@ const char* JobTypeToRequestType(DeviceManagementRequestJob::JobType type) {
       return dm_protocol::kValueRequestUnregister;
     case DeviceManagementRequestJob::TYPE_UPLOAD_CERTIFICATE:
       return dm_protocol::kValueRequestUploadCertificate;
+    case DeviceManagementRequestJob::TYPE_DEVICE_STATE_RETRIEVAL:
+      return dm_protocol::kValueRequestDeviceStateRetrieval;
   }
   NOTREACHED() << "Invalid job type " << type;
   return "";
@@ -256,6 +259,9 @@ void DeviceManagementRequestJobImpl::HandleResponse(
       return;
     case kInvalidSerialNumber:
       ReportError(DM_STATUS_SERVICE_INVALID_SERIAL_NUMBER);
+      return;
+    case kDomainMismatch:
+      ReportError(DM_STATUS_SERVICE_DOMAIN_MISMATCH);
       return;
     case kDeprovisioned:
       ReportError(DM_STATUS_SERVICE_DEPROVISIONED);

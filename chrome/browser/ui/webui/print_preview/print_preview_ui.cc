@@ -236,8 +236,8 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddString(
       "printWithCloudPrintWait",
       l10n_util::GetStringFUTF16(
-        IDS_PRINT_PREVIEW_PRINT_WITH_CLOUD_PRINT_WAIT,
-        l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
+          IDS_PRINT_PREVIEW_PRINT_WITH_CLOUD_PRINT_WAIT,
+          l10n_util::GetStringUTF16(IDS_GOOGLE_CLOUD_PRINT)));
   source->AddString(
       "noDestsPromoLearnMoreUrl",
       chrome::kCloudPrintNoDestinationsLearnMoreURL);
@@ -272,9 +272,15 @@ content::WebUIDataSource* CreatePrintPreviewUISource() {
   source->AddLocalizedString("bottom", IDS_PRINT_PREVIEW_BOTTOM_MARGIN_LABEL);
   source->AddLocalizedString("left", IDS_PRINT_PREVIEW_LEFT_MARGIN_LABEL);
   source->AddLocalizedString("right", IDS_PRINT_PREVIEW_RIGHT_MARGIN_LABEL);
+  source->AddLocalizedString("mediaSizeLabel",
+                             IDS_PRINT_PREVIEW_MEDIA_SIZE_LABEL);
   source->AddLocalizedString("destinationSearchTitle",
                              IDS_PRINT_PREVIEW_DESTINATION_SEARCH_TITLE);
   source->AddLocalizedString("userInfo", IDS_PRINT_PREVIEW_USER_INFO);
+  source->AddLocalizedString("accountSelectTitle",
+                             IDS_PRINT_PREVIEW_ACCOUNT_SELECT_TITLE);
+  source->AddLocalizedString("addAccountTitle",
+                             IDS_PRINT_PREVIEW_ADD_ACCOUNT_TITLE);
   source->AddLocalizedString("cloudPrintPromotion",
                              IDS_PRINT_PREVIEW_CLOUD_PRINT_PROMOTION);
   source->AddLocalizedString("searchBoxPlaceholder",
@@ -513,7 +519,7 @@ void PrintPreviewUI::OnDidPreviewPage(int page_number,
   base::FundamentalValue ui_identifier(id_);
   base::FundamentalValue request_id(preview_request_id);
   if (g_testing_delegate)
-    g_testing_delegate->DidRenderPreviewPage(*web_ui()->GetWebContents());
+    g_testing_delegate->DidRenderPreviewPage(web_ui()->GetWebContents());
   web_ui()->CallJavascriptFunction(
       "onDidPreviewPage", number, ui_identifier, request_id);
   if (g_testing_delegate && g_testing_delegate->IsAutoCancelEnabled())

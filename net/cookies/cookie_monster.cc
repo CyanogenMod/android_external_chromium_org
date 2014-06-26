@@ -53,6 +53,7 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
@@ -216,7 +217,7 @@ void SortLeastRecentlyAccessed(
 // Predicate to support PartitionCookieByPriority().
 struct CookiePriorityEqualsTo
     : std::unary_function<const CookieMonster::CookieMap::iterator, bool> {
-  CookiePriorityEqualsTo(CookiePriority priority)
+  explicit CookiePriorityEqualsTo(CookiePriority priority)
     : priority_(priority) {}
 
   bool operator()(const CookieMonster::CookieMap::iterator it) const {
@@ -311,7 +312,7 @@ std::string BuildCookieLine(const CanonicalCookieVector& cookies) {
 CookieMonster::CookieMonster(PersistentCookieStore* store,
                              CookieMonsterDelegate* delegate)
     : initialized_(false),
-      loaded_(false),
+      loaded_(store == NULL),
       store_(store),
       last_access_threshold_(
           TimeDelta::FromSeconds(kDefaultAccessUpdateThresholdSeconds)),
@@ -327,7 +328,7 @@ CookieMonster::CookieMonster(PersistentCookieStore* store,
                              CookieMonsterDelegate* delegate,
                              int last_access_threshold_milliseconds)
     : initialized_(false),
-      loaded_(false),
+      loaded_(store == NULL),
       store_(store),
       last_access_threshold_(base::TimeDelta::FromMilliseconds(
           last_access_threshold_milliseconds)),
@@ -844,7 +845,6 @@ class CookieMonster::DeleteSessionCookiesTask : public DeleteTask<int> {
   virtual ~DeleteSessionCookiesTask() {}
 
  private:
-
   DISALLOW_COPY_AND_ASSIGN(DeleteSessionCookiesTask);
 };
 
@@ -1263,7 +1263,7 @@ bool CookieMonster::DeleteCanonicalCookie(const CanonicalCookie& cookie) {
   return false;
 }
 
-void CookieMonster::SetCookieableSchemes(const char* schemes[],
+void CookieMonster::SetCookieableSchemes(const char* const schemes[],
                                          size_t num_schemes) {
   base::AutoLock autolock(lock_);
 
@@ -1433,6 +1433,11 @@ void CookieMonster::InitStore() {
   store_->Load(base::Bind(&CookieMonster::OnLoaded, this, TimeTicks::Now()));
 }
 
+void CookieMonster::ReportLoaded() {
+  if (delegate_.get())
+    delegate_->OnLoaded();
+}
+
 void CookieMonster::OnLoaded(TimeTicks beginning_time,
                              const std::vector<CanonicalCookie*>& cookies) {
   StoreLoadedCookies(cookies);
@@ -1440,6 +1445,8 @@ void CookieMonster::OnLoaded(TimeTicks beginning_time,
 
   // Invoke the task queue of cookie request.
   InvokeQueue();
+
+  ReportLoaded();
 }
 
 void CookieMonster::OnKeyLoaded(const std::string& key,
@@ -1660,7 +1667,7 @@ int CookieMonster::TrimDuplicateCookiesForKey(
 }
 
 // Note: file must be the last scheme.
-const char* CookieMonster::kDefaultCookieableSchemes[] =
+const char* const CookieMonster::kDefaultCookieableSchemes[] =
     { "http", "https", "ws", "wss", "file" };
 const int CookieMonster::kDefaultCookieableSchemesCount =
     arraysize(kDefaultCookieableSchemes);
@@ -2243,6 +2250,57 @@ void CookieMonster::InitializeHistograms() {
 Time CookieMonster::CurrentTime() {
   return std::max(Time::Now(),
       Time::FromInternalValue(last_time_seen_.ToInternalValue() + 1));
+}
+
+bool CookieMonster::CopyCookiesForKeyToOtherCookieMonster(
+    std::string key,
+    CookieMonster* other) {
+  ScopedVector<CanonicalCookie> duplicated_cookies;
+
+  {
+    base::AutoLock autolock(lock_);
+    DCHECK(other);
+    if (!loaded_)
+      return false;
+
+    for (CookieMapItPair its = cookies_.equal_range(key);
+         its.first != its.second;
+         ++its.first) {
+      CookieMap::iterator curit = its.first;
+      CanonicalCookie* cc = curit->second;
+
+      duplicated_cookies.push_back(cc->Duplicate());
+    }
+  }
+
+  {
+    base::AutoLock autolock(other->lock_);
+    if (!other->loaded_)
+      return false;
+
+    // There must not exist any entries for the key to be copied in |other|.
+    CookieMapItPair its = other->cookies_.equal_range(key);
+    if (its.first != its.second)
+      return false;
+
+    // Store the copied cookies in |other|.
+    for (ScopedVector<CanonicalCookie>::const_iterator it =
+             duplicated_cookies.begin();
+         it != duplicated_cookies.end();
+         ++it) {
+      other->InternalInsertCookie(key, *it, true);
+    }
+
+    // Since the cookies are owned by |other| now, weak clear must be used.
+    duplicated_cookies.weak_clear();
+  }
+
+  return true;
+}
+
+bool CookieMonster::loaded() {
+  base::AutoLock autolock(lock_);
+  return loaded_;
 }
 
 }  // namespace net

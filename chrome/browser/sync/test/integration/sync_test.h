@@ -21,10 +21,19 @@
 #include "sync/test/fake_server/fake_server.h"
 #include "sync/test/local_sync_test_server.h"
 
-
-class CommandLine;
 class Profile;
+class ProfileSyncService;
 class ProfileSyncServiceHarness;
+class P2PInvalidationForwarder;
+
+namespace base {
+class CommandLine;
+}
+
+namespace fake_server {
+class FakeServer;
+class FakeServerInvalidationService;
+}
 
 namespace net {
 class FakeURLFetcherFactory;
@@ -45,9 +54,23 @@ class SyncTest : public InProcessBrowserTest {
     // sanity level tests.
     SINGLE_CLIENT,
 
+    // Tests that use one client profile and are not compatible with
+    // FakeServer.
+    // TODO(pvalenzuela): Delete this value when all SINGLE_CLIENT_LEGACY tests
+    // are compatible with FakeServer and switched to SINGLE_CLIENT. See
+    // crbug.com/323265.
+    SINGLE_CLIENT_LEGACY,
+
     // Tests where two client profiles are synced with the server. Typically
     // functionality level tests.
     TWO_CLIENT,
+
+    // Tests that use two client profiles and are not compatible with
+    // FakeServer.
+    // TODO(pvalenzuela): Delete this value when all TWO_CLIENT_LEGACY tests are
+    // compatible with FakeServer and switched to TWO_CLIENT. See
+    // crbug.com/323265.
+    TWO_CLIENT_LEGACY,
 
     // Tests where three or more client profiles are synced with the server.
     // Typically, these tests create client side races and verify that sync
@@ -87,15 +110,6 @@ class SyncTest : public InProcessBrowserTest {
     ERROR_FREQUENCY_TWO_THIRDS
   };
 
-  // Authentication state used by the python sync server.
-  enum PythonServerAuthState {
-    // Python server processes sync requests normally.
-    AUTHENTICATED_TRUE,
-
-    // Python server responds to sync requests with an authentication error.
-    AUTHENTICATED_FALSE
-  };
-
   // A SyncTest must be associated with a particular test type.
   explicit SyncTest(TestType test_type);
 
@@ -109,7 +123,7 @@ class SyncTest : public InProcessBrowserTest {
   virtual void TearDown() OVERRIDE;
 
   // Sets up command line flags required for sync tests.
-  virtual void SetUpCommandLine(CommandLine* cl) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* cl) OVERRIDE;
 
   // Used to get the number of sync clients used by a test.
   int num_clients() WARN_UNUSED_RESULT { return num_clients_; }
@@ -131,6 +145,12 @@ class SyncTest : public InProcessBrowserTest {
   std::vector<ProfileSyncServiceHarness*>& clients() WARN_UNUSED_RESULT {
     return clients_.get();
   }
+
+  // Returns a ProfileSyncService at the given index.
+  ProfileSyncService* GetSyncService(int index);
+
+  // Returns the set of ProfileSyncServices.
+  std::vector<ProfileSyncService*> GetSyncServices();
 
   // Returns a pointer to the sync profile that is used to verify changes to
   // individual sync profiles. Callee owns the object and manages its lifetime.
@@ -155,6 +175,14 @@ class SyncTest : public InProcessBrowserTest {
 
   // Disable outgoing network connections for the given profile.
   virtual void DisableNetwork(Profile* profile);
+
+  // Sets whether or not the sync clients in this test should respond to
+  // notifications of their own commits.  Real sync clients do not do this, but
+  // many test assertions require this behavior.
+  //
+  // Default is to return true.  Test should override this if they require
+  // different behavior.
+  virtual bool TestUsesSelfNotifications();
 
   // Kicks off encryption for profile |index|.
   bool EnableEncryption(int index);
@@ -197,19 +225,9 @@ class SyncTest : public InProcessBrowserTest {
   // only if ServerSupportsErrorTriggering() returned true.
   void TriggerMigrationDoneError(syncer::ModelTypeSet model_types);
 
-  // Triggers the server to set its birthday to a random value thereby
-  // the server would return a birthday error on next sync.
-  void TriggerBirthdayError();
-
   // Triggers a transient error on the server. Note the server will stay in
   // this state until shut down.
   void TriggerTransientError();
-
-  // Sets / unsets an auth error on the server. Can be used to simulate the case
-  // when the user's gaia password is changed at another location, or their
-  // OAuth2 tokens have expired. The server will stay in this state until
-  // this method is called with a different value.
-  void TriggerAuthState(PythonServerAuthState auth_state);
 
   // Triggers an XMPP auth error on the server.  Note the server will
   // stay in this state until shut down.
@@ -224,16 +242,17 @@ class SyncTest : public InProcessBrowserTest {
   // Triggers the creation the Synced Bookmarks folder on the server.
   void TriggerCreateSyncedBookmarks();
 
-  // Returns the number of default items that every client syncs.
-  int NumberOfDefaultSyncItems() const;
+  // Returns the FakeServer being used for the test or NULL if FakeServer is
+  // not being used.
+  fake_server::FakeServer* GetFakeServer() const;
 
  protected:
   // Add custom switches needed for running the test.
-  virtual void AddTestSwitches(CommandLine* cl);
+  virtual void AddTestSwitches(base::CommandLine* cl);
 
   // Append the command line switches to enable experimental types that aren't
   // on by default yet.
-  virtual void AddOptionalTypesToCommandLine(CommandLine* cl);
+  virtual void AddOptionalTypesToCommandLine(base::CommandLine* cl);
 
   // InProcessBrowserTest override. Destroys all the sync clients and sync
   // profiles created by a test.
@@ -256,12 +275,6 @@ class SyncTest : public InProcessBrowserTest {
   void DisableNotificationsImpl();
   void EnableNotificationsImpl();
 
-  // Set up the test to use the in-process fake server. This must be called
-  // before SetUp().
-  // TODO(pvalenzuela): Remove this method when the C++ fake server becomes
-  // the default server type.
-  void UseFakeServer();
-
   // GAIA account used by the test case.
   std::string username_;
 
@@ -272,7 +285,7 @@ class SyncTest : public InProcessBrowserTest {
   base::FilePath password_file_;
 
   // The FakeServer used in tests with server type IN_PROCESS_FAKE_SERVER.
-  scoped_ptr<syncer::FakeServer> fake_server_;
+  scoped_ptr<fake_server::FakeServer> fake_server_;
 
  private:
   // Helper to ProfileManager::CreateProfile that handles path creation.
@@ -328,6 +341,14 @@ class SyncTest : public InProcessBrowserTest {
   // the default URLFetcher creation mechanism.
   void ClearMockGaiaResponses();
 
+  // Decide which sync server implementation to run against based on the type
+  // of test being run and command line args passed in.
+  void DecideServerType();
+
+  // Sets up the client-side invalidations infrastructure depending on the
+  // value of |server_type_|.
+  void InitializeInvalidations(int index);
+
   // Python sync test server, started on demand.
   syncer::LocalSyncTestServer sync_server_;
 
@@ -360,6 +381,14 @@ class SyncTest : public InProcessBrowserTest {
   // profile with the server.
   ScopedVector<ProfileSyncServiceHarness> clients_;
 
+  // A set of objects to listen for commit activity and broadcast notifications
+  // of this activity to its peer sync clients.
+  ScopedVector<P2PInvalidationForwarder> invalidation_forwarders_;
+
+  // Collection of pointers to FakeServerInvalidation objects for each profile.
+  std::vector<fake_server::FakeServerInvalidationService*>
+      fake_server_invalidation_services_;
+
   // Sync profile against which changes to individual profiles are verified. We
   // don't need a corresponding verifier sync client because the contents of the
   // verifier profile are strictly local, and are not meant to be synced.
@@ -386,10 +415,6 @@ class SyncTest : public InProcessBrowserTest {
 
   // The URLFetcherImplFactory instance used to instantiate |fake_factory_|.
   scoped_ptr<net::URLFetcherImplFactory> factory_;
-
-  // Number of default entries (as determined by the existing entries at setup
-  // time on client 0).
-  size_t number_of_default_sync_items_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncTest);
 };

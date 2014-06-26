@@ -153,6 +153,13 @@ class NonFrontendDataTypeController : public DataTypeController {
   // Record causes of start failure. Called on UI thread.
   virtual void RecordStartFailure(StartResult result);
 
+  // Handles the reporting of unrecoverable error. It records stuff in
+  // UMA and reports to breakpad.
+  // Virtual for testing purpose.
+  virtual void RecordUnrecoverableError(
+      const tracked_objects::Location& from_here,
+      const std::string& message);
+
   // Accessors and mutators used by derived classes.
   ProfileSyncComponentsFactory* profile_sync_factory() const;
   Profile* profile() const;
@@ -161,7 +168,7 @@ class NonFrontendDataTypeController : public DataTypeController {
   void set_state(State state);
 
   virtual AssociatorInterface* associator() const;
-  virtual ChangeProcessor* change_processor() const;
+  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
 
   State state_;
   StartCallback start_callback_;

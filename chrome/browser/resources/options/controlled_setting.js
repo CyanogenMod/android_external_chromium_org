@@ -61,19 +61,9 @@ cr.define('options', function() {
         if (!this.value || String(event.value.value) == this.value) {
           this.controlledBy = event.value.controlledBy;
           if (event.value.extension) {
-            if (this.pref == 'session.restore_on_startup' ||
-                this.pref == 'homepage_is_newtabpage') {
-              // Special case for the restore on startup, which is implied
-              // by the startup pages settings being controlled by an
-              // extension, and same for the home page as NTP, so we don't want
-              // to show two buttons in these cases.
-              // TODO(mad): Find a better way to handle this.
-              this.controlledBy = null;
-            } else {
-              this.extensionId = event.value.extension.id;
-              this.extensionIcon = event.value.extension.icon;
-              this.extensionName = event.value.extension.name;
-            }
+            this.extensionId = event.value.extension.id;
+            this.extensionIcon = event.value.extension.icon;
+            this.extensionName = event.value.extension.name;
           }
         } else {
           this.controlledBy = null;
@@ -142,6 +132,7 @@ cr.define('options', function() {
 
         // Create the DOM tree.
         var content = document.createElement('div');
+        content.classList.add('controlled-setting-bubble-header');
         content.textContent = text;
 
         if (this.controlledBy == 'hasRecommendation' && this.resetHandler_ &&
@@ -173,13 +164,15 @@ cr.define('options', function() {
 
           var manageLink = extensionContainer.querySelector(
               '.controlled-setting-bubble-extension-manage-link');
+          var extensionId = this.extensionId;
           manageLink.onclick = function() {
             uber.invokeMethodOnWindow(
-                window.top, 'showPage', {pageId: 'extensions'});
+                window.top, 'showPage', {pageId: 'extensions',
+                                         path: '?id=' + extensionId});
           };
 
-          var disableButton = extensionContainer.querySelector('button');
-          var extensionId = this.extensionId;
+          var disableButton = extensionContainer.querySelector(
+              '.controlled-setting-bubble-extension-disable-button');
           disableButton.onclick = function() {
             chrome.send('disableExtension', [extensionId]);
           };

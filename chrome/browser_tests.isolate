@@ -41,7 +41,9 @@
     ['OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
         'isolate_dependency_tracked': [
+          '../media/test/data/90rotation.mp4',
           '../media/test/data/bear-320x240-multitrack.webm',
+          '../media/test/data/id3_png_test.mp3',
           '../media/test/data/no_streams.webm',
           '../media/test/data/sfx.ogg',
           '../ppapi/tests/test_case.html',
@@ -49,6 +51,7 @@
           '../testing/test_env.py',
           '../third_party/accessibility-audit/axs_testing.js',
           '<(PRODUCT_DIR)/browser_tests<(EXECUTABLE_SUFFIX)',
+          '<(PRODUCT_DIR)/peerconnection_server<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc.nmf',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib.nmf',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl.nmf',
@@ -72,7 +75,6 @@
           '../third_party/safe_browsing/',
           '../third_party/simplejson/',
           '../third_party/tlslite/',
-          '../tools/swarming_client/',
           '<(PRODUCT_DIR)/nacl_test_data/',
           '<(PRODUCT_DIR)/pnacl/',
           '<(PRODUCT_DIR)/pseudo_locales/',
@@ -107,6 +109,7 @@
         'isolate_dependency_tracked': [
           '<(PRODUCT_DIR)/clearkeycdmadapter.plugin',
           '<(PRODUCT_DIR)/libclearkeycdm.dylib',
+          '<(PRODUCT_DIR)/osmesa.so',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_glibc_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_newlib_x32.nexe',
           '<(PRODUCT_DIR)/ppapi_nacl_tests_pnacl_newlib_x32.nexe',
@@ -136,7 +139,6 @@
           '<(PRODUCT_DIR)/clearkeycdm.dll',
           '<(PRODUCT_DIR)/clearkeycdmadapter.dll',
           '<(PRODUCT_DIR)/ppapi_tests.dll',
-          '<(PRODUCT_DIR)/security_tests.dll',
           'tools/build/repack_locales.py',
         ],
         'isolate_dependency_untracked': [

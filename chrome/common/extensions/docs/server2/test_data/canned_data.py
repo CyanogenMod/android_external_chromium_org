@@ -4,7 +4,7 @@
 
 import json
 
-from extensions_paths import EXTENSIONS
+from extensions_paths import CHROME_EXTENSIONS
 from third_party.json_schema_compiler.json_parse import OrderedDict
 from test_file_system import MoveAllTo, MoveTo
 
@@ -46,7 +46,7 @@ CANNED_BRANCHES = OrderedDict([
 ])
 
 
-CANNED_TEST_FILE_SYSTEM_DATA = MoveTo(EXTENSIONS, {
+CANNED_TEST_FILE_SYSTEM_DATA = MoveTo(CHROME_EXTENSIONS, {
   'api': {
     '_api_features.json': json.dumps({
       'ref_test': { 'dependencies': ['permission:ref_test'] },
@@ -133,7 +133,7 @@ _TEST_WHATS_NEW_JSON = {
 }
 
 
-CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
+CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(CHROME_EXTENSIONS, {
   'trunk': {
     'api': {
       '_api_features.json': json.dumps({
@@ -205,9 +205,9 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
           { 'channel': 'beta',
             'extension_types': ['extension']
           },
-          # whitelist
           { 'channel': 'stable',
-            'extension_types': ['extension']
+            'extension_types': ['extension'],
+            'whitelist': ['aaa']
           },
         ],
         'falseBetaAPI': {
@@ -356,6 +356,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
         'alarms': {
           'channel': 'stable'
         },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['extension', 'platform_app']
+        },
         'bluetooth': {
           'channel': 'dev'
         },
@@ -370,8 +374,7 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
         },
         'declarativeWebRequest': [
           { 'channel': 'beta' },
-          # whitelist
-          { 'channel': 'stable'}
+          { 'channel': 'stable', 'whitelist': ['aaa'] }
         ],
         'downloads': {
           'channel': 'beta'
@@ -486,6 +489,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
         'alarms': {
           'channel': 'stable'
         },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['extension', 'platform_app']
+        },
         'bluetooth': {
           'channel': 'dev'
         },
@@ -500,8 +507,7 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
         },
         'declarativeWebRequest': [
           { 'channel': 'beta' },
-          # whitelist
-          { 'channel': 'stable'}
+          { 'channel': 'stable', 'whitelist': ['aaa'] }
         ],
         'downloads': {
           'channel': 'dev'
@@ -600,6 +606,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
         'alarms': {
           'channel': 'stable'
         },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['extension', 'platform_app']
+        },
         'bluetooth': {
           'channel': 'dev'
         },
@@ -614,8 +624,7 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
         },
         'declarativeWebRequest': [
           { 'channel': 'beta' },
-          # whitelist
-          { 'channel': 'stable'}
+          { 'channel': 'stable', 'whitelist': ['aaa'] }
         ],
         'systemInfo.display': {
           'channel': 'stable'
@@ -653,6 +662,10 @@ CANNED_API_FILE_SYSTEM_DATA = MoveAllTo(EXTENSIONS, {
       '_permission_features.json': json.dumps({
         'alarms': {
           'channel': 'stable'
+        },
+        'appsFirst': {
+          'channel': 'stable',
+          'extension_types': ['platform_app']
         },
         'bookmarks': {
           'channel': 'stable'

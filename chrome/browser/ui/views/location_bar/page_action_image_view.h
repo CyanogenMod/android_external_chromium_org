@@ -49,7 +49,7 @@ class PageActionImageView : public views::ImageView,
   }
 
   // Overridden from views::View:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
@@ -82,7 +82,8 @@ class PageActionImageView : public views::ImageView,
 
  private:
   // Overridden from View.
-  virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
+  virtual void PaintChildren(gfx::Canvas* canvas,
+                             const views::CullSet& cull_set) OVERRIDE;
 
   // Shows the popup, with the given URL.
   void ShowPopupWithURL(const GURL& popup_url,

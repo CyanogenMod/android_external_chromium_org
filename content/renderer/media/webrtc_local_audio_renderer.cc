@@ -102,22 +102,22 @@ void WebRtcLocalAudioRenderer::OnSetFormat(
 
     source_params_ = params;
 
-    sink_params_.Reset(source_params_.format(),
-                       source_params_.channel_layout(),
-                       source_params_.channels(),
-                       source_params_.input_channels(),
-                       source_params_.sample_rate(),
-                       source_params_.bits_per_sample(),
+    sink_params_ = media::AudioParameters(source_params_.format(),
+        source_params_.channel_layout(), source_params_.channels(),
+        source_params_.input_channels(), source_params_.sample_rate(),
+        source_params_.bits_per_sample(),
 #if defined(OS_ANDROID)
-    // On Android, input and output are using same sampling rate. In order to
-    // achieve low latency mode, we  need use buffer size suggested by
-    // AudioManager for the sink paramters which will be used to decide
-    // buffer size for shared memory buffer.
-                       frames_per_buffer_
+        // On Android, input and output use the same sample rate. In order to
+        // use the low latency mode, we need to use the buffer size suggested by
+        // the AudioManager for the sink.  It will later be used to decide
+        // the buffer size of the shared memory buffer.
+        frames_per_buffer_,
 #else
-                       2 * source_params_.frames_per_buffer()
+        2 * source_params_.frames_per_buffer(),
 #endif
-    );
+        // If DUCKING is enabled on the source, it needs to be enabled on the
+        // sink as well.
+        source_params_.effects());
 
     // TODO(henrika): we could add a more dynamic solution here but I prefer
     // a fixed size combined with bad audio at overflow. The alternative is
@@ -287,7 +287,7 @@ void WebRtcLocalAudioRenderer::MaybeStartSink() {
     return;
 
   DVLOG(1) << "WebRtcLocalAudioRenderer::MaybeStartSink() -- Starting sink_.";
-  sink_->InitializeUnifiedStream(sink_params_, this, session_id_);
+  sink_->InitializeWithSessionId(sink_params_, this, session_id_);
   sink_->Start();
   sink_started_ = true;
   UMA_HISTOGRAM_ENUMERATION("Media.LocalRendererSinkStates",

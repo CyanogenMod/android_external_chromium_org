@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/signin/signin_manager.h"
+#include "chrome/browser/signin/chrome_signin_client.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "extensions/common/extension.h"
@@ -62,29 +64,31 @@ TEST_F(BrowserPermissionsPolicyDelegateTest, CanExecuteScriptOnPage) {
 
   content::MockRenderProcessHost signin_process(profile_);
   content::MockRenderProcessHost normal_process(profile_);
-  SigninManager* signin_manager = SigninManagerFactory::GetForProfile(profile_);
-  ASSERT_TRUE(signin_manager);
-  signin_manager->SetSigninProcess(signin_process.GetID());
+  SigninClient* signin_client =
+      ChromeSigninClientFactory::GetForProfile(profile_);
+  ASSERT_TRUE(signin_client);
+  signin_client->SetSigninProcess(signin_process.GetID());
 
   scoped_refptr<const Extension> extension(CreateTestExtension("a"));
   std::string error;
 
   // The same call should succeed with a normal process, but fail with a signin
   // process.
-  EXPECT_TRUE(PermissionsData::CanExecuteScriptOnPage(extension.get(),
-                                                      kSigninUrl,
-                                                      kSigninUrl,
-                                                      -1,
-                                                      NULL,
-                                                      normal_process.GetID(),
-                                                      &error)) << error;
-  EXPECT_FALSE(PermissionsData::CanExecuteScriptOnPage(extension.get(),
-                                                       kSigninUrl,
-                                                       kSigninUrl,
-                                                       -1,
-                                                       NULL,
-                                                       signin_process.GetID(),
-                                                       &error)) << error;
+  const PermissionsData* permissions_data = extension->permissions_data();
+  EXPECT_TRUE(permissions_data->CanAccessPage(extension,
+                                              kSigninUrl,
+                                              kSigninUrl,
+                                              -1,  // no tab id.
+                                              normal_process.GetID(),
+                                              &error))
+      << error;
+  EXPECT_FALSE(permissions_data->CanAccessPage(extension,
+                                               kSigninUrl,
+                                               kSigninUrl,
+                                               -1,  // no tab id.
+                                               signin_process.GetID(),
+                                               &error))
+      << error;
 }
 #endif
 

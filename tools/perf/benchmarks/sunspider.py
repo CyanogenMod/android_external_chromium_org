@@ -1,4 +1,4 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import collections
@@ -56,9 +56,9 @@ class Sunspider(test.Test):
   test = _SunspiderMeasurement
 
   def CreatePageSet(self, options):
-    return page_set.PageSet.FromDict(
-        {
-          'archive_data_file': '../page_sets/data/sunspider.json',
-          'make_javascript_deterministic': False,
-          'pages': [{ 'url': _URL }],
-        }, os.path.abspath(__file__))
+    ps = page_set.PageSet(
+      archive_data_file='../page_sets/data/sunspider.json',
+      make_javascript_deterministic=False,
+      file_path=os.path.abspath(__file__))
+    ps.AddPageWithDefaultRunNavigate(_URL)
+    return ps

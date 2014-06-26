@@ -11,13 +11,15 @@
 #include "base/containers/hash_tables.h"
 #include "base/value_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/permissions/api_permission.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace apps {
 
@@ -260,7 +262,8 @@ const SavedFileEntry* SavedFilesService::GetFileEntry(
 
 void SavedFilesService::ClearQueueIfNoRetainPermission(
     const Extension* extension) {
-  if (!extension->GetActivePermissions()->HasAPIPermission(
+  if (extensions::util::IsEphemeralApp(extension->id(), profile_) ||
+      !extension->permissions_data()->active_permissions()->HasAPIPermission(
           APIPermission::kFileSystemRetainEntries)) {
     ClearQueue(extension);
   }

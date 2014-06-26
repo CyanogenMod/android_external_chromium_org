@@ -11,8 +11,6 @@
 #include "ui/compositor/scoped_layer_animation_settings.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // Time in ms per throbber frame.
@@ -58,7 +56,7 @@ ThrobberView::ThrobberView() {
 ThrobberView::~ThrobberView() {
 }
 
-gfx::Size ThrobberView::GetPreferredSize() {
+gfx::Size ThrobberView::GetPreferredSize() const {
   return gfx::Size(ash::kTrayPopupItemHeight, ash::kTrayPopupItemHeight);
 }
 
@@ -106,5 +104,4 @@ void ThrobberView::ScheduleAnimation(bool start_throbber) {
   layer()->SetOpacity(start_throbber ? 1.0 : 0.0);
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <stdint.h>
+
 #include <sstream>
 #include <string>
 
@@ -20,33 +22,41 @@
 namespace media {
 namespace cast {
 
-static const int64 kStartMillisecond = GG_INT64_C(12345678900000);
+static const int64 kStartMillisecond = INT64_C(12345678900000);
 
 namespace {
 
 class TestEncodedAudioFrameReceiver {
  public:
   explicit TestEncodedAudioFrameReceiver(transport::AudioCodec codec)
-      : codec_(codec), frames_received_(0) {}
+      : codec_(codec), frames_received_(0), rtp_lower_bound_(0) {}
   virtual ~TestEncodedAudioFrameReceiver() {}
 
   int frames_received() const { return frames_received_; }
 
-  void SetRecordedTimeLowerBound(const base::TimeTicks& t) { lower_bound_ = t; }
+  void SetCaptureTimeBounds(const base::TimeTicks& lower_bound,
+                            const base::TimeTicks& upper_bound) {
+    lower_bound_ = lower_bound;
+    upper_bound_ = upper_bound;
+  }
 
-  void SetRecordedTimeUpperBound(const base::TimeTicks& t) { upper_bound_ = t; }
-
-  void FrameEncoded(scoped_ptr<transport::EncodedAudioFrame> encoded_frame,
-                    const base::TimeTicks& recorded_time) {
-    EXPECT_EQ(codec_, encoded_frame->codec);
+  void FrameEncoded(scoped_ptr<transport::EncodedFrame> encoded_frame) {
+    EXPECT_EQ(encoded_frame->dependency, transport::EncodedFrame::KEY);
     EXPECT_EQ(static_cast<uint8>(frames_received_ & 0xff),
               encoded_frame->frame_id);
-    EXPECT_LT(0u, encoded_frame->rtp_timestamp);
+    EXPECT_EQ(encoded_frame->frame_id, encoded_frame->referenced_frame_id);
+    // RTP timestamps should be monotonically increasing and integer multiples
+    // of the fixed frame size.
+    EXPECT_LE(rtp_lower_bound_, encoded_frame->rtp_timestamp);
+    rtp_lower_bound_ = encoded_frame->rtp_timestamp;
+    // Note: In audio_encoder.cc, 100 is the fixed audio frame rate.
+    const int kSamplesPerFrame = kDefaultAudioSamplingRate / 100;
+    EXPECT_EQ(0u, encoded_frame->rtp_timestamp % kSamplesPerFrame);
     EXPECT_TRUE(!encoded_frame->data.empty());
 
-    EXPECT_LE(lower_bound_, recorded_time);
-    lower_bound_ = recorded_time;
-    EXPECT_GT(upper_bound_, recorded_time);
+    EXPECT_LE(lower_bound_, encoded_frame->reference_time);
+    lower_bound_ = encoded_frame->reference_time;
+    EXPECT_GT(upper_bound_, encoded_frame->reference_time);
 
     ++frames_received_;
   }
@@ -54,6 +64,7 @@ class TestEncodedAudioFrameReceiver {
  private:
   const transport::AudioCodec codec_;
   int frames_received_;
+  uint32 rtp_lower_bound_;
   base::TimeTicks lower_bound_;
   base::TimeTicks upper_bound_;
 
@@ -95,11 +106,7 @@ class AudioEncoderTest : public ::testing::TestWithParam<TestScenario> {
         new CastEnvironment(scoped_ptr<base::TickClock>(testing_clock_).Pass(),
                             task_runner_,
                             task_runner_,
-                            task_runner_,
-                            task_runner_,
-                            task_runner_,
-                            task_runner_,
-                            GetDefaultCastSenderLoggingConfig());
+                            task_runner_);
   }
 
   virtual ~AudioEncoderTest() {}
@@ -110,27 +117,26 @@ class AudioEncoderTest : public ::testing::TestWithParam<TestScenario> {
 
     CreateObjectsForCodec(codec);
 
-    receiver_->SetRecordedTimeLowerBound(testing_clock_->NowTicks());
+    // Note: In audio_encoder.cc, 10 ms is the fixed frame duration.
+    const base::TimeDelta frame_duration =
+        base::TimeDelta::FromMilliseconds(10);
+
     for (size_t i = 0; i < scenario.num_durations; ++i) {
-      const base::TimeDelta duration =
-          base::TimeDelta::FromMilliseconds(scenario.durations_in_ms[i]);
-      receiver_->SetRecordedTimeUpperBound(testing_clock_->NowTicks() +
-                                           duration);
-
-      const scoped_ptr<AudioBus> bus(
-          audio_bus_factory_->NextAudioBus(duration));
-
-      const int last_count = release_callback_count_;
-      audio_encoder_->InsertAudio(
-          bus.get(),
-          testing_clock_->NowTicks(),
-          base::Bind(&AudioEncoderTest::IncrementReleaseCallbackCounter,
-                     base::Unretained(this)));
-      task_runner_->RunTasks();
-      EXPECT_EQ(1, release_callback_count_ - last_count)
-          << "Release callback was not invoked once.";
-
-      testing_clock_->Advance(duration);
+      const bool simulate_missing_data = scenario.durations_in_ms[i] < 0;
+      const base::TimeDelta duration = base::TimeDelta::FromMilliseconds(
+          std::abs(scenario.durations_in_ms[i]));
+      receiver_->SetCaptureTimeBounds(
+          testing_clock_->NowTicks() - frame_duration,
+          testing_clock_->NowTicks() + duration);
+      if (simulate_missing_data) {
+        task_runner_->RunTasks();
+        testing_clock_->Advance(duration);
+      } else {
+        audio_encoder_->InsertAudio(audio_bus_factory_->NextAudioBus(duration),
+                                    testing_clock_->NowTicks());
+        task_runner_->RunTasks();
+        testing_clock_->Advance(duration);
+      }
     }
 
     DVLOG(1) << "Received " << receiver_->frames_received()
@@ -155,23 +161,19 @@ class AudioEncoderTest : public ::testing::TestWithParam<TestScenario> {
 
     receiver_.reset(new TestEncodedAudioFrameReceiver(codec));
 
-    audio_encoder_ = new AudioEncoder(
+    audio_encoder_.reset(new AudioEncoder(
         cast_environment_,
         audio_config,
         base::Bind(&TestEncodedAudioFrameReceiver::FrameEncoded,
-                   base::Unretained(receiver_.get())));
-    release_callback_count_ = 0;
+                   base::Unretained(receiver_.get()))));
   }
-
-  void IncrementReleaseCallbackCounter() { ++release_callback_count_; }
 
   base::SimpleTestTickClock* testing_clock_;  // Owned by CastEnvironment.
   scoped_refptr<test::FakeSingleThreadTaskRunner> task_runner_;
   scoped_ptr<TestAudioBusFactory> audio_bus_factory_;
   scoped_ptr<TestEncodedAudioFrameReceiver> receiver_;
-  scoped_refptr<AudioEncoder> audio_encoder_;
+  scoped_ptr<AudioEncoder> audio_encoder_;
   scoped_refptr<CastEnvironment> cast_environment_;
-  int release_callback_count_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioEncoderTest);
 };
@@ -207,6 +209,12 @@ static const int64 kManyCalls_Mixed4[] = {31, 4, 15, 9,  26, 53, 5,  8, 9,
 static const int64 kManyCalls_Mixed5[] = {3, 14, 15, 9, 26, 53, 58, 9, 7,
                                           9, 3,  23, 8, 4,  6,  2,  6, 43};
 
+static const int64 kOneBigUnderrun[] = {10, 10, 10, 10, -1000, 10, 10, 10};
+static const int64 kTwoBigUnderruns[] = {10, 10, 10, 10, -712, 10, 10, 10,
+                                         -1311, 10, 10, 10};
+static const int64 kMixedUnderruns[] = {31, -64, 4, 15, 9, 26, -53, 5,  8, -9,
+                                        7,  9, 32, 38, -4, 62, -64, 3};
+
 INSTANTIATE_TEST_CASE_P(
     AudioEncoderTestScenarios,
     AudioEncoderTest,
@@ -227,7 +235,10 @@ INSTANTIATE_TEST_CASE_P(
         TestScenario(kManyCalls_Mixed2, arraysize(kManyCalls_Mixed2)),
         TestScenario(kManyCalls_Mixed3, arraysize(kManyCalls_Mixed3)),
         TestScenario(kManyCalls_Mixed4, arraysize(kManyCalls_Mixed4)),
-        TestScenario(kManyCalls_Mixed5, arraysize(kManyCalls_Mixed5))));
+        TestScenario(kManyCalls_Mixed5, arraysize(kManyCalls_Mixed5)),
+        TestScenario(kOneBigUnderrun, arraysize(kOneBigUnderrun)),
+        TestScenario(kTwoBigUnderruns, arraysize(kTwoBigUnderruns)),
+        TestScenario(kMixedUnderruns, arraysize(kMixedUnderruns))));
 
 }  // namespace cast
 }  // namespace media

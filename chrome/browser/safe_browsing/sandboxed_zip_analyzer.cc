@@ -8,7 +8,6 @@
 #include "base/command_line.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/common/chrome_utility_messages.h"
 #include "chrome/common/safe_browsing/zip_analyzer.h"
@@ -26,7 +25,7 @@ namespace safe_browsing {
 SandboxedZipAnalyzer::SandboxedZipAnalyzer(
     const base::FilePath& zip_file,
     const ResultCallback& result_callback)
-    : zip_file_(zip_file),
+    : zip_file_name_(zip_file),
       callback_(result_callback),
       callback_called_(false) {
 }
@@ -49,13 +48,10 @@ SandboxedZipAnalyzer::~SandboxedZipAnalyzer() {
 }
 
 void SandboxedZipAnalyzer::AnalyzeInSandbox() {
-  zip_platform_file_ = base::CreatePlatformFile(
-      zip_file_,
-      base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      NULL,   // created
-      NULL);  // error_code
-  if (zip_platform_file_ == base::kInvalidPlatformFileValue) {
-    VLOG(1) << "Could not open zip file: " << zip_file_.value();
+  zip_file_.Initialize(zip_file_name_,
+                       base::File::FLAG_OPEN | base::File::FLAG_READ);
+  if (!zip_file_.IsValid()) {
+    VLOG(1) << "Could not open zip file: " << zip_file_name_.value();
     if (!BrowserThread::PostTask(
             BrowserThread::IO, FROM_HERE,
             base::Bind(&SandboxedZipAnalyzer::OnAnalyzeZipFileFinished, this,
@@ -118,10 +114,7 @@ void SandboxedZipAnalyzer::OnUtilityProcessStarted() {
   }
   utility_process_host_->Send(
       new ChromeUtilityMsg_AnalyzeZipFileForDownloadProtection(
-          IPC::GetFileHandleForProcess(
-              zip_platform_file_,
-              utility_process,
-              true /* close_source_handle */)));
+          IPC::TakeFileHandleForProcess(zip_file_.Pass(), utility_process)));
 }
 
 }  // namespace safe_browsing

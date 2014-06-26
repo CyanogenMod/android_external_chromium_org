@@ -8,18 +8,18 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_bubble_view_observer.h"
 #include "chrome/browser/ui/views/bookmarks/bookmark_sync_promo_view.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/keycodes/keyboard_codes.h"
@@ -39,11 +39,22 @@ using views::GridLayout;
 
 namespace {
 
-// Minimum width of the the bubble.
-const int kMinBubbleWidth = 350;
-
 // Width of the border of a button.
 const int kControlBorderWidth = 2;
+
+// This combobox prevents any lengthy content from stretching the bubble view.
+class UnsizedCombobox : public views::Combobox {
+ public:
+  explicit UnsizedCombobox(ui::ComboboxModel* model) : views::Combobox(model) {}
+  virtual ~UnsizedCombobox() {}
+
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+    return gfx::Size(0, views::Combobox::GetPreferredSize().height());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(UnsizedCombobox);
+};
 
 }  // namespace
 
@@ -89,7 +100,7 @@ BookmarkBubbleView::~BookmarkBubbleView() {
     ApplyEdits();
   } else if (remove_bookmark_) {
     BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
-    const BookmarkNode* node = model->GetMostRecentlyAddedNodeForURL(url_);
+    const BookmarkNode* node = model->GetMostRecentlyAddedUserNodeForURL(url_);
     if (node)
       model->Remove(node->parent(), node->parent()->GetIndexOf(node));
   }
@@ -152,7 +163,7 @@ void BookmarkBubbleView::Init() {
   views::Label* combobox_label = new views::Label(
       l10n_util::GetStringUTF16(IDS_BOOKMARK_BUBBLE_FOLDER_TEXT));
 
-  parent_combobox_ = new views::Combobox(&parent_model_);
+  parent_combobox_ = new UnsizedCombobox(&parent_model_);
   parent_combobox_->set_listener(this);
   parent_combobox_->SetAccessibleName(
       l10n_util::GetStringUTF16(IDS_BOOKMARK_AX_BUBBLE_FOLDER_TEXT));
@@ -258,7 +269,7 @@ BookmarkBubbleView::BookmarkBubbleView(
       parent_model_(
           BookmarkModelFactory::GetForProfile(profile_),
           BookmarkModelFactory::GetForProfile(profile_)->
-              GetMostRecentlyAddedNodeForURL(url)),
+              GetMostRecentlyAddedUserNodeForURL(url)),
       remove_button_(NULL),
       edit_button_(NULL),
       close_button_(NULL),
@@ -267,11 +278,6 @@ BookmarkBubbleView::BookmarkBubbleView(
       sync_promo_view_(NULL),
       remove_bookmark_(false),
       apply_edits_(true) {
-  const SkColor background_color = GetNativeTheme()->GetSystemColor(
-      ui::NativeTheme::kColorId_DialogBackground);
-  set_color(background_color);
-  set_move_with_anchor(true);
-  set_background(views::Background::CreateSolidBackground(background_color));
   set_margins(gfx::Insets(views::kPanelVertMargin, 0, 0, 0));
   // Compensate for built-in vertical padding in the anchor view's image.
   set_anchor_view_insets(gfx::Insets(2, 0, 2, 0));
@@ -281,7 +287,7 @@ base::string16 BookmarkBubbleView::GetTitle() {
   BookmarkModel* bookmark_model =
       BookmarkModelFactory::GetForProfile(profile_);
   const BookmarkNode* node =
-      bookmark_model->GetMostRecentlyAddedNodeForURL(url_);
+      bookmark_model->GetMostRecentlyAddedUserNodeForURL(url_);
   if (node)
     return node->GetTitle();
   else
@@ -289,13 +295,7 @@ base::string16 BookmarkBubbleView::GetTitle() {
   return base::string16();
 }
 
-gfx::Size BookmarkBubbleView::GetMinimumSize() {
-  gfx::Size size(views::BubbleDelegateView::GetPreferredSize());
-  size.SetToMax(gfx::Size(kMinBubbleWidth, 0));
-  return size;
-}
-
-void BookmarkBubbleView::GetAccessibleState(ui::AccessibleViewState* state) {
+void BookmarkBubbleView::GetAccessibleState(ui::AXViewState* state) {
   BubbleDelegateView::GetAccessibleState(state);
   state->name =
       l10n_util::GetStringUTF16(
@@ -321,19 +321,19 @@ void BookmarkBubbleView::HandleButtonPressed(views::Button* sender) {
     // Set this so we remove the bookmark after the window closes.
     remove_bookmark_ = true;
     apply_edits_ = false;
-    StartFade(false);
+    GetWidget()->Close();
   } else if (sender == edit_button_) {
     content::RecordAction(UserMetricsAction("BookmarkBubble_Edit"));
     ShowEditor();
   } else {
     DCHECK_EQ(close_button_, sender);
-    StartFade(false);
+    GetWidget()->Close();
   }
 }
 
 void BookmarkBubbleView::ShowEditor() {
   const BookmarkNode* node = BookmarkModelFactory::GetForProfile(
-      profile_)->GetMostRecentlyAddedNodeForURL(url_);
+      profile_)->GetMostRecentlyAddedUserNodeForURL(url_);
   views::Widget* parent = anchor_widget();
   DCHECK(parent);
 
@@ -352,7 +352,7 @@ void BookmarkBubbleView::ApplyEdits() {
   apply_edits_ = false;
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
-  const BookmarkNode* node = model->GetMostRecentlyAddedNodeForURL(url_);
+  const BookmarkNode* node = model->GetMostRecentlyAddedUserNodeForURL(url_);
   if (node) {
     const base::string16 new_title = title_tf_->text();
     if (new_title != node->GetTitle()) {

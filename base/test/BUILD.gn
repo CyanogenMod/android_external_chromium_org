@@ -2,10 +2,10 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/android/rules.gni")
 import("//build/config/ui.gni")
 
-static_library("test_support_base") {
-  external = true
+source_set("test_support") {
   sources = [
     "expectations/expectation.cc",
     "expectations/expectation.h",
@@ -53,10 +53,13 @@ static_library("test_support_base") {
     "simple_test_clock.h",
     "simple_test_tick_clock.cc",
     "simple_test_tick_clock.h",
+    "statistics_delta_reader.cc",
+    "statistics_delta_reader.h",
     "task_runner_test_template.cc",
     "task_runner_test_template.h",
     "test_file_util.cc",
     "test_file_util.h",
+    "test_file_util_android.cc",
     "test_file_util_linux.cc",
     "test_file_util_mac.cc",
     "test_file_util_posix.cc",
@@ -93,7 +96,7 @@ static_library("test_support_base") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//base:base_i18n",
+    "//base:i18n",
     "//base:base_static",
     "//testing/gmock",
     "//testing/gtest",
@@ -115,8 +118,9 @@ static_library("test_support_base") {
     set_sources_assignment_filter([])
     sources += [ "test_file_util_mac.cc" ]
   }
-  if (toolkit_uses_gtk) {
-    configs += [ "//build/config/linux:gtk" ]
+
+  if (is_android) {
+    deps += [ ":base_unittests_jni_headers" ]
   }
 }
 
@@ -124,29 +128,33 @@ config("perf_test_config") {
   defines = [ "PERF_TEST" ]
 }
 
-static_library("test_support_perf") {
-  external = true
+source_set("test_support_perf") {
   sources = [
     "run_all_perftests.cc",
   ]
   deps = [
+    ":test_support",
     "//base",
     "//testing/gtest",
   ]
 
   direct_dependent_configs = [ ":perf_test_config" ]
-
-  if (toolkit_uses_gtk) {
-    configs += [ "//build/config/linux:gtk" ]
-  }
 }
 
-static_library("run_all_unittests") {
-  external = true
+source_set("run_all_unittests") {
   sources = [
     "run_all_unittests.cc",
   ]
   deps = [
-    ":test_support_base",
+    ":test_support",
   ]
+}
+
+if (is_android) {
+  generate_jni("base_unittests_jni_headers") {
+    sources = [
+      "android/java/src/org/chromium/base/ContentUriTestUtils.java",
+    ]
+    jni_package = "base"
+  }
 }

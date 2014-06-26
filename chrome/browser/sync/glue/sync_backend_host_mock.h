@@ -72,6 +72,8 @@ class SyncBackendHostMock : public SyncBackendHost {
 
   virtual syncer::UserShare* GetUserShare() const OVERRIDE;
 
+  virtual scoped_ptr<syncer::SyncContextProxy> GetSyncContextProxy() OVERRIDE;
+
   virtual Status GetDetailedStatus() OVERRIDE;
 
   virtual syncer::sessions::SyncSessionSnapshot
@@ -92,6 +94,17 @@ class SyncBackendHostMock : public SyncBackendHost {
       syncer::ModelSafeRoutingInfo* out) const OVERRIDE;
 
   virtual SyncedDeviceTracker* GetSyncedDeviceTracker() const OVERRIDE;
+
+  virtual void RequestBufferedProtocolEventsAndEnableForwarding() OVERRIDE;
+  virtual void DisableProtocolEventForwarding() OVERRIDE;
+
+  virtual void EnableDirectoryTypeDebugInfoForwarding() OVERRIDE;
+  virtual void DisableDirectoryTypeDebugInfoForwarding() OVERRIDE;
+
+  virtual void GetAllNodesForTypes(
+      syncer::ModelTypeSet types,
+      base::Callback<void(const std::vector<syncer::ModelType>& type,
+                          ScopedVector<base::ListValue>) > callback) OVERRIDE;
 
   virtual base::MessageLoop* GetSyncLoopForTesting() OVERRIDE;
 

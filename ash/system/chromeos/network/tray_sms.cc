@@ -53,7 +53,6 @@ bool GetMessageFromDictionary(const base::DictionaryValue* message,
 }  // namespace
 
 namespace ash {
-namespace internal {
 
 class TraySms::SmsDefaultView : public TrayItemMore {
  public:
@@ -127,7 +126,7 @@ class TraySms::SmsMessageView : public views::View,
     close_button->SetImage(
         views::CustomButton::STATE_NORMAL,
         ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-            IDR_AURA_WINDOW_CLOSE));
+            IDR_AURA_UBER_TRAY_SMS_DISMISS));
     const int msg_width = owner_->system_tray()->GetSystemBubble()->
         bubble_view()->GetPreferredSize().width() -
             (kNotificationIconWidth + kTrayPopupPaddingHorizontal * 2);
@@ -201,7 +200,7 @@ class TraySms::SmsDetailedView : public TrayDetailsView,
   }
 
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     gfx::Size preferred_size = TrayDetailsView::GetPreferredSize();
     if (preferred_size.height() < kMessageListMinHeight)
       preferred_size.set_height(kMessageListMinHeight);
@@ -417,5 +416,4 @@ void TraySms::Update(bool notify) {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -6,7 +6,6 @@
 
 #include "ui/aura/window_tree_host_mac.h"
 #include "ui/aura/window_tree_host.h"
-#include "ui/aura/window_tree_host_delegate.h"
 
 namespace aura {
 
@@ -21,10 +20,12 @@ WindowTreeHostMac::WindowTreeHostMac(const gfx::Rect& bounds) {
 }
 
 WindowTreeHostMac::~WindowTreeHostMac() {
+  DestroyDispatcher();
 }
 
-RootWindow* WindowTreeHostMac::GetRootWindow() {
-  return delegate_->AsRootWindow();
+EventSource* WindowTreeHostMac::GetEventSource() {
+  NOTIMPLEMENTED();
+  return nil;
 }
 
 gfx::AcceleratedWidget WindowTreeHostMac::GetAcceleratedWidget() {
@@ -71,11 +72,6 @@ void WindowTreeHostMac::ReleaseCapture() {
   NOTIMPLEMENTED();
 }
 
-bool WindowTreeHostMac::QueryMouseLocation(gfx::Point* location_return) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 bool WindowTreeHostMac::ConfineCursorToRootWindow() {
   return false;
 }
@@ -101,10 +97,6 @@ void WindowTreeHostMac::PostNativeEvent(const base::NativeEvent& event) {
 }
 
 void WindowTreeHostMac::OnDeviceScaleFactorChanged(float device_scale_factor) {
-  NOTIMPLEMENTED();
-}
-
-void WindowTreeHostMac::PrepareForShutdown() {
   NOTIMPLEMENTED();
 }
 

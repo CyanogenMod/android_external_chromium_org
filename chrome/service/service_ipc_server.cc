@@ -26,13 +26,13 @@ bool ServiceIPCServer::Init() {
 
 void ServiceIPCServer::CreateChannel() {
   channel_.reset(NULL); // Tear down the existing channel, if any.
-  channel_.reset(new IPC::SyncChannel(
+  channel_ = IPC::SyncChannel::Create(
       channel_handle_,
       IPC::Channel::MODE_NAMED_SERVER,
       this,
       g_service_process->io_thread()->message_loop_proxy().get(),
       true,
-      g_service_process->shutdown_event()));
+      g_service_process->shutdown_event());
   DCHECK(sync_message_filter_.get());
   channel_->AddFilter(sync_message_filter_.get());
 }
@@ -100,6 +100,7 @@ bool ServiceIPCServer::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(ServiceMsg_GetCloudPrintProxyInfo,
                         OnGetCloudPrintProxyInfo)
     IPC_MESSAGE_HANDLER(ServiceMsg_GetHistograms, OnGetHistograms)
+    IPC_MESSAGE_HANDLER(ServiceMsg_GetPrinters, OnGetPrinters)
     IPC_MESSAGE_HANDLER(ServiceMsg_Shutdown, OnShutdown);
     IPC_MESSAGE_HANDLER(ServiceMsg_UpdateAvailable, OnUpdateAvailable);
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -130,6 +131,12 @@ void ServiceIPCServer::OnGetHistograms() {
   std::vector<std::string> deltas;
   histogram_delta_serializer_->PrepareAndSerializeDeltas(&deltas);
   channel_->Send(new ServiceHostMsg_Histograms(deltas));
+}
+
+void ServiceIPCServer::OnGetPrinters() {
+  std::vector<std::string> printers;
+  g_service_process->GetCloudPrintProxy()->GetPrinters(&printers);
+  channel_->Send(new ServiceHostMsg_Printers(printers));
 }
 
 void ServiceIPCServer::OnDisableCloudPrintProxy() {

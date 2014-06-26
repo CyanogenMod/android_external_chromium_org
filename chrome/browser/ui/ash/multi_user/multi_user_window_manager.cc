@@ -10,7 +10,8 @@
 #if defined(OS_CHROMEOS)
 #include "ash/ash_switches.h"
 #include "ash/multi_profile_uma.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
+#include "ash/session/user_info.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "chrome/browser/ui/ash/multi_user/multi_user_window_manager_chromeos.h"
@@ -41,8 +42,11 @@ MultiUserWindowManager* MultiUserWindowManager::CreateInstance() {
       ash::MultiProfileUMA::SESSION_SINGLE_USER_MODE;
   if (!g_instance &&
       ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled()) {
-    g_instance = new MultiUserWindowManagerChromeOS(
-        ash::Shell::GetInstance()->session_state_delegate()->GetUserID(0));
+    g_instance =
+        new MultiUserWindowManagerChromeOS(ash::Shell::GetInstance()
+                                               ->session_state_delegate()
+                                               ->GetUserInfo(0)
+                                               ->GetUserID());
     multi_user_mode_ = MULTI_PROFILE_MODE_SEPARATED;
     mode = ash::MultiProfileUMA::SESSION_SEPARATE_DESKTOP_MODE;
   } else if (ash::Shell::GetInstance()->delegate()->IsMultiProfilesEnabled()) {
@@ -64,6 +68,19 @@ MultiUserWindowManager* MultiUserWindowManager::CreateInstance() {
 MultiUserWindowManager::MultiProfileMode
 MultiUserWindowManager::GetMultiProfileMode() {
   return multi_user_mode_;
+}
+
+// satic
+bool MultiUserWindowManager::ShouldShowAvatar(aura::Window* window) {
+  // Note: In case of the M-31 mode the window manager won't exist.
+  if (GetMultiProfileMode() == MULTI_PROFILE_MODE_SEPARATED) {
+    // If the window is shown on a different desktop than the user, it should
+    // have the avatar icon
+    MultiUserWindowManager* instance = GetInstance();
+    return !instance->IsWindowOnDesktopOfUser(window,
+                                              instance->GetWindowOwner(window));
+  }
+  return false;
 }
 
 // static

@@ -107,8 +107,9 @@ static bool InstallHBitmapPixels(SkBitmap* bitmap, int width, int height,
   const SkAlphaType at = is_opaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
   const SkImageInfo info = SkImageInfo::MakeN32(width, height, at);
   const size_t rowBytes = info.minRowBytes();
-  return bitmap->installPixels(info, data, rowBytes, DeleteHBitmapCallback,
-                               hbitmap);
+  SkColorTable* color_table = NULL;
+  return bitmap->installPixels(info, data, rowBytes, color_table,
+                               DeleteHBitmapCallback, hbitmap);
 }
 
 // We use this static factory function instead of the regular constructor so
@@ -269,10 +270,11 @@ const SkBitmap& BitmapPlatformDevice::onAccessBitmap() {
   return SkBitmapDevice::onAccessBitmap();
 }
 
-SkBaseDevice* BitmapPlatformDevice::onCreateCompatibleDevice(
-    SkBitmap::Config config, int width, int height, bool isOpaque, Usage) {
-  SkASSERT(config == SkBitmap::kARGB_8888_Config);
-  return BitmapPlatformDevice::CreateAndClear(width, height, isOpaque);
+SkBaseDevice* BitmapPlatformDevice::onCreateDevice(const SkImageInfo& info,
+                                                   Usage /*usage*/) {
+  SkASSERT(info.colorType() == kPMColor_SkColorType);
+  return BitmapPlatformDevice::CreateAndClear(info.width(), info.height(),
+                                              info.isOpaque());
 }
 
 // PlatformCanvas impl

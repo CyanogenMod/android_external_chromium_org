@@ -8,11 +8,11 @@
 #include "chrome/common/search_provider.h"
 #include "content/public/renderer/render_view.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "v8/include/v8.h"
 
-using blink::WebFrame;
+using blink::WebLocalFrame;
 using blink::WebView;
 using content::RenderView;
 
@@ -73,22 +73,25 @@ ExternalExtensionWrapper::GetNativeFunctionTemplate(
   if (name->Equals(v8::String::NewFromUtf8(isolate, "NativeAddSearchProvider")))
     return v8::FunctionTemplate::New(isolate, AddSearchProvider);
 
-  if (name->Equals(
-          v8::String::NewFromUtf8(isolate, "NativeIsSearchProviderInstalled")))
+  if (name->Equals(v8::String::NewFromUtf8(
+          isolate, "NativeIsSearchProviderInstalled"))) {
     return v8::FunctionTemplate::New(isolate, IsSearchProviderInstalled);
+  }
 
   return v8::Handle<v8::FunctionTemplate>();
 }
 
 // static
 RenderView* ExternalExtensionWrapper::GetRenderView() {
-  WebFrame* webframe = WebFrame::frameForCurrentContext();
+  WebLocalFrame* webframe = WebLocalFrame::frameForCurrentContext();
   DCHECK(webframe) << "There should be an active frame since we just got "
       "a native function called.";
-  if (!webframe) return NULL;
+  if (!webframe)
+    return NULL;
 
   WebView* webview = webframe->view();
-  if (!webview) return NULL;  // can happen during closing
+  if (!webview)
+    return NULL;  // can happen during closing
 
   return RenderView::FromWebView(webview);
 }
@@ -96,18 +99,25 @@ RenderView* ExternalExtensionWrapper::GetRenderView() {
 // static
 void ExternalExtensionWrapper::AddSearchProvider(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
-  if (!args.Length()) return;
+  if (!args.Length() || !args[0]->IsString())
+    return;
 
-  std::string name(*v8::String::Utf8Value(args[0]));
-  if (name.empty()) return;
+  std::string osdd_string(*v8::String::Utf8Value(args[0]));
+  if (osdd_string.empty())
+    return;
 
   RenderView* render_view = GetRenderView();
-  if (!render_view) return;
+  if (!render_view)
+    return;
 
-  GURL osd_url(name);
-  if (!osd_url.is_empty() && osd_url.is_valid()) {
+  WebLocalFrame* webframe = WebLocalFrame::frameForCurrentContext();
+  if (!webframe)
+    return;
+
+  GURL osdd_url(osdd_string);
+  if (!osdd_url.is_empty() && osdd_url.is_valid()) {
     render_view->Send(new ChromeViewHostMsg_PageHasOSDD(
-        render_view->GetRoutingID(), render_view->GetPageId(), osd_url,
+        render_view->GetRoutingID(), webframe->document().url(), osdd_url,
         search_provider::EXPLICIT_PROVIDER));
   }
 }
@@ -115,16 +125,21 @@ void ExternalExtensionWrapper::AddSearchProvider(
 // static
 void ExternalExtensionWrapper::IsSearchProviderInstalled(
     const v8::FunctionCallbackInfo<v8::Value>& args) {
-  if (!args.Length()) return;
+  if (!args.Length() || !args[0]->IsString())
+    return;
+
   v8::String::Utf8Value utf8name(args[0]);
-  if (!utf8name.length()) return;
+  if (!utf8name.length())
+    return;
 
   std::string name(*utf8name);
   RenderView* render_view = GetRenderView();
-  if (!render_view) return;
+  if (!render_view)
+    return;
 
-  WebFrame* webframe = WebFrame::frameForCurrentContext();
-  if (!webframe) return;
+  WebLocalFrame* webframe = WebLocalFrame::frameForCurrentContext();
+  if (!webframe)
+    return;
 
   search_provider::InstallState install = search_provider::DENIED;
   GURL inquiry_url = GURL(name);

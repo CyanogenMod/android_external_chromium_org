@@ -20,11 +20,11 @@
 #include "base/values.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/extensions/extension_service_unittest.h"
-#include "chrome/browser/google/google_util.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_service_test_base.h"
+#include "chrome/browser/google/google_brand.h"
 #include "chrome/browser/profile_resetter/brandcoded_default_settings.h"
 #include "chrome/browser/profile_resetter/profile_reset_global_error.h"
-#include "chrome/browser/search_engines/template_url_prepopulate_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/search_engines/template_url_service_test_util.h"
@@ -34,6 +34,8 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/search_engines/default_search_manager.h"
+#include "components/search_engines/template_url_prepopulate_data.h"
 #include "content/public/browser/notification_service.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -91,16 +93,10 @@ class MockCallbackTarget {
 
 // Returns the details of the default search provider from |prefs| in a format
 // suitable for usage as |expected_details| in ExpectDetailsMatch().
-scoped_ptr<base::DictionaryValue> GetDefaultSearchProviderDetailsFromPrefs(
+const base::DictionaryValue* GetDefaultSearchProviderDetailsFromPrefs(
     const PrefService* prefs) {
-  const char kDefaultSearchProviderPrefix[] = "default_search_provider";
-  scoped_ptr<base::DictionaryValue> pref_values_with_path_expansion(
-      prefs->GetPreferenceValues());
-  const base::DictionaryValue* dsp_details = NULL;
-  EXPECT_TRUE(pref_values_with_path_expansion->GetDictionary(
-      kDefaultSearchProviderPrefix, &dsp_details));
-  return scoped_ptr<base::DictionaryValue>(
-      dsp_details ? dsp_details->DeepCopy() : new base::DictionaryValue);
+  return prefs->GetDictionary(
+      DefaultSearchManager::kDefaultSearchProviderDataPrefName);
 }
 
 // Verifies that the |details| of a search engine as provided by the delegate
@@ -118,26 +114,13 @@ void ExpectDetailsMatch(const base::DictionaryValue& expected_details,
     const base::Value* expected_value = &it.value();
     const base::Value* actual_value = NULL;
     ASSERT_TRUE(details.Get(it.key(), &actual_value));
-    if (it.key() == "id") {
-      // Ignore ID as it is dynamically assigned by the TemplateURLService.
-    } else if (it.key() == "encodings") {
-      // Encoding list is stored in Prefs as a single string with tokens
-      // delimited by semicolons.
-      std::string expected_encodings;
-      ASSERT_TRUE(expected_value->GetAsString(&expected_encodings));
-      const base::ListValue* actual_encodings_list = NULL;
-      ASSERT_TRUE(actual_value->GetAsList(&actual_encodings_list));
-      std::vector<std::string> actual_encodings_vector;
-      for (base::ListValue::const_iterator it = actual_encodings_list->begin();
-           it != actual_encodings_list->end(); ++it) {
-        std::string encoding;
-        ASSERT_TRUE((*it)->GetAsString(&encoding));
-        actual_encodings_vector.push_back(encoding);
-      }
-      EXPECT_EQ(expected_encodings, JoinString(actual_encodings_vector, ';'));
-    } else {
+
+    // Ignore ID as it is dynamically assigned by the TemplateURLService.
+    // last_modified may get updated during a run, so ignore value differences.
+    if (it.key() != "id" && it.key() != "last_modified") {
       // Everything else is the same format.
-      EXPECT_TRUE(actual_value->Equals(expected_value));
+      EXPECT_TRUE(actual_value->Equals(expected_value))
+          << "Expected: " << *expected_value << ". Actual: " << *actual_value;
     }
   }
 }
@@ -179,14 +162,14 @@ void ServicePendingBrancodedConfigFetch(net::TestURLFetcher* fetcher,
 // ExtensionServiceTestBase sets up a TestingProfile with the ExtensionService,
 // we then add the TemplateURLService, so the ProfileResetter can be exercised.
 class AutomaticProfileResetterDelegateTest
-    : public ExtensionServiceTestBase,
+    : public extensions::ExtensionServiceTestBase,
       public TemplateURLServiceTestUtilBase {
  protected:
   AutomaticProfileResetterDelegateTest() {}
   virtual ~AutomaticProfileResetterDelegateTest() {}
 
   virtual void SetUp() OVERRIDE {
-    ExtensionServiceTestBase::SetUp();
+    extensions::ExtensionServiceTestBase::SetUp();
     ExtensionServiceInitParams params = CreateDefaultInitParams();
     params.pref_file.clear();  // Prescribes a TestingPrefService to be created.
     InitializeExtensionService(params);
@@ -197,7 +180,7 @@ class AutomaticProfileResetterDelegateTest
 
   virtual void TearDown() OVERRIDE {
     resetter_delegate_.reset();
-    ExtensionServiceTestBase::TearDown();
+    extensions::ExtensionServiceTestBase::TearDown();
   }
 
   scoped_ptr<TemplateURL> CreateTestTemplateURL() {
@@ -223,7 +206,7 @@ class AutomaticProfileResetterDelegateTest
     data.input_encodings.push_back("UTF-8");
     data.safe_for_autoreplace = true;
 
-    return scoped_ptr<TemplateURL>(new TemplateURL(profile(), data));
+    return scoped_ptr<TemplateURL>(new TemplateURL(data));
   }
 
   void ExpectNoPendingBrandcodedConfigFetch() {
@@ -371,14 +354,14 @@ TEST_F(AutomaticProfileResetterDelegateTest,
   scoped_ptr<TemplateURL> owned_custom_dsp(CreateTestTemplateURL());
   TemplateURL* custom_dsp = owned_custom_dsp.get();
   template_url_service->Add(owned_custom_dsp.release());
-  template_url_service->SetDefaultSearchProvider(custom_dsp);
+  template_url_service->SetUserSelectedDefaultSearchProvider(custom_dsp);
 
   PrefService* prefs = profile()->GetPrefs();
   ASSERT_TRUE(prefs);
   scoped_ptr<base::DictionaryValue> dsp_details(
       resetter_delegate()->GetDefaultSearchProviderDetails());
-  scoped_ptr<base::DictionaryValue> expected_dsp_details(
-      GetDefaultSearchProviderDetailsFromPrefs(prefs));
+  const base::DictionaryValue* expected_dsp_details =
+      GetDefaultSearchProviderDetailsFromPrefs(prefs);
 
   ExpectDetailsMatch(*expected_dsp_details, *dsp_details);
   EXPECT_FALSE(resetter_delegate()->IsDefaultSearchProviderManaged());
@@ -410,7 +393,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
   // disabled by policy.
   RemoveManagedDefaultSearchPreferences();
   SetManagedDefaultSearchPreferences(
-      true, std::string(), std::string(), std::string(), std::string(),
+      false, std::string(), std::string(), std::string(), std::string(),
       std::string(), std::string(), std::string(), std::string());
 
   dsp_details = resetter_delegate()->GetDefaultSearchProviderDetails();
@@ -446,19 +429,20 @@ TEST_F(AutomaticProfileResetterDelegateTest,
         template_url_service->GetTemplateURLForKeyword(
             base::ASCIIToUTF16(keyword));
     ASSERT_TRUE(search_engine);
-    template_url_service->SetDefaultSearchProvider(prepopulated_engines[i]);
+    template_url_service->SetUserSelectedDefaultSearchProvider(
+        prepopulated_engines[i]);
 
     PrefService* prefs = profile()->GetPrefs();
     ASSERT_TRUE(prefs);
-    scoped_ptr<base::DictionaryValue> expected_dsp_details(
-        GetDefaultSearchProviderDetailsFromPrefs(prefs));
+    const base::DictionaryValue* expected_dsp_details =
+        GetDefaultSearchProviderDetailsFromPrefs(prefs);
     ExpectDetailsMatch(*expected_dsp_details, *details);
   }
 }
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        FetchAndWaitOnDefaultSettingsVanilla) {
-  google_util::BrandForTesting scoped_brand_for_testing((std::string()));
+  google_brand::BrandForTesting scoped_brand_for_testing((std::string()));
 
   // Expect ready_callback to be called just after empty brandcoded settings
   // are loaded, given this is a vanilla build. Fail if it is not called, or
@@ -490,7 +474,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        FetchAndWaitOnDefaultSettingsBranded) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   // Expect ready_callback to be called just after the brandcoded settings are
   // downloaded. Fail if it is not called, or called too early.
@@ -523,7 +507,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        FetchAndWaitOnDefaultSettingsBrandedFailure) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   // Expect ready_callback to be called just after the brandcoded settings have
   // failed to download. Fail if it is not called, or called too early.
@@ -549,7 +533,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 }
 
 TEST_F(AutomaticProfileResetterDelegateTest, TriggerReset) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   PrefService* prefs = profile()->GetPrefs();
   DCHECK(prefs);
@@ -568,7 +552,7 @@ TEST_F(AutomaticProfileResetterDelegateTest, TriggerReset) {
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        TriggerResetWithDefaultSettingsAlreadyLoaded) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   PrefService* prefs = profile()->GetPrefs();
   DCHECK(prefs);
@@ -590,7 +574,7 @@ TEST_F(AutomaticProfileResetterDelegateTest,
 
 TEST_F(AutomaticProfileResetterDelegateTest,
        TriggerResetAndSendFeedback) {
-  google_util::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
+  google_brand::BrandForTesting scoped_brand_for_testing(kTestBrandcode);
 
   PrefService* prefs = profile()->GetPrefs();
   DCHECK(prefs);

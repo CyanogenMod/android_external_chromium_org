@@ -13,11 +13,11 @@
 #include "chrome/browser/password_manager/password_store_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/glue/browser_thread_model_worker.h"
-#include "chrome/browser/sync/glue/change_processor.h"
 #include "chrome/browser/sync/glue/history_model_worker.h"
 #include "chrome/browser/sync/glue/password_model_worker.h"
 #include "chrome/browser/sync/glue/ui_model_worker.h"
 #include "components/password_manager/core/browser/password_store.h"
+#include "components/sync_driver/change_processor.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/internal_api/public/engine/passive_model_worker.h"
 #include "sync/internal_api/public/user_share.h"
@@ -66,7 +66,9 @@ SyncBackendRegistrar::SyncBackendRegistrar(
   sync_thread_ = sync_thread.Pass();
   if (!sync_thread_) {
     sync_thread_.reset(new base::Thread("Chrome_SyncThread"));
-    CHECK(sync_thread_->Start());
+    base::Thread::Options options;
+    options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+    CHECK(sync_thread_->StartWithOptions(options));
   }
 
   workers_[syncer::GROUP_DB] = new DatabaseModelWorker(this);
@@ -94,7 +96,7 @@ SyncBackendRegistrar::SyncBackendRegistrar(
 
   }
 
-  scoped_refptr<PasswordStore> password_store =
+  scoped_refptr<password_manager::PasswordStore> password_store =
       PasswordStoreFactory::GetForProfile(profile, Profile::IMPLICIT_ACCESS);
   if (password_store.get()) {
     workers_[syncer::GROUP_PASSWORD] =
@@ -204,14 +206,12 @@ void SyncBackendRegistrar::ActivateDataType(
     syncer::UserShare* user_share) {
   DVLOG(1) << "Activate: " << syncer::ModelTypeToString(type);
 
-  CHECK(IsOnThreadForGroup(type, group));
   base::AutoLock lock(lock_);
   // Ensure that the given data type is in the PASSIVE group.
   syncer::ModelSafeRoutingInfo::iterator i = routing_info_.find(type);
   DCHECK(i != routing_info_.end());
   DCHECK_EQ(i->second, syncer::GROUP_PASSIVE);
   routing_info_[type] = group;
-  CHECK(IsCurrentThreadSafeForModel(type));
 
   // Add the data type's change processor to the list of change
   // processors so it can receive updates.
@@ -219,7 +219,7 @@ void SyncBackendRegistrar::ActivateDataType(
   processors_[type] = change_processor;
 
   // Start the change processor.
-  change_processor->Start(profile_, user_share);
+  change_processor->Start(user_share);
   DCHECK(GetProcessorUnsafe(type));
 }
 

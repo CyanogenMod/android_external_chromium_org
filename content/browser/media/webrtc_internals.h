@@ -11,7 +11,6 @@
 #include "base/process/process.h"
 #include "base/values.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/browser_child_process_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
@@ -24,8 +23,7 @@ class WebRTCInternalsUIObserver;
 // It collects peer connection infomation from the renderers,
 // forwards the data to WebRTCInternalsUIObserver and
 // sends data collecting commands to the renderers.
-class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
-                                       public NotificationObserver,
+class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
                                        public ui::SelectFileDialog::Listener {
  public:
   static WebRTCInternals* GetInstance();
@@ -104,15 +102,14 @@ class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
   FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest, CallWithAecDump);
   FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest,
                            CallWithAecDumpEnabledThenDisabled);
+  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest, TwoCallsWithAecDump);
+  FRIEND_TEST_ALL_PREFIXES(WebRTCInternalsTest,
+                           AecRecordingFileSelectionCanceled);
 
   WebRTCInternals();
   virtual ~WebRTCInternals();
 
   void SendUpdate(const std::string& command, base::Value* value);
-
-  // BrowserChildProcessObserver implementation.
-  virtual void BrowserChildProcessCrashed(
-      const ChildProcessData& data) OVERRIDE;
 
   // NotificationObserver implementation.
   virtual void Observe(int type,
@@ -123,6 +120,7 @@ class CONTENT_EXPORT WebRTCInternals : public BrowserChildProcessObserver,
   virtual void FileSelected(const base::FilePath& path,
                             int index,
                             void* unused_params) OVERRIDE;
+  virtual void FileSelectionCanceled(void* params) OVERRIDE;
 
   // Called when a renderer exits (including crashes).
   void OnRendererExit(int render_process_id);

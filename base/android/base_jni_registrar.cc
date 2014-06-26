@@ -4,11 +4,13 @@
 
 #include "base/android/base_jni_registrar.h"
 
-#include "base/android/activity_status.h"
+#include "base/android/application_status_listener.h"
 #include "base/android/build_info.h"
 #include "base/android/command_line_android.h"
 #include "base/android/content_uri_utils.h"
 #include "base/android/cpu_features.h"
+#include "base/android/event_log.h"
+#include "base/android/field_trial_list.h"
 #include "base/android/important_file_writer_android.h"
 #include "base/android/java_handler_thread.h"
 #include "base/android/jni_android.h"
@@ -28,11 +30,14 @@ namespace base {
 namespace android {
 
 static RegistrationMethod kBaseRegisteredMethods[] = {
-  { "ActivityStatus", base::android::ActivityStatus::RegisterBindings },
+  { "ApplicationStatusListener",
+      base::android::ApplicationStatusListener::RegisterBindings },
   { "BuildInfo", base::android::BuildInfo::RegisterBindings },
   { "CommandLine", base::android::RegisterCommandLine },
   { "ContentUriUtils", base::RegisterContentUriUtils },
   { "CpuFeatures", base::android::RegisterCpuFeatures },
+  { "EventLog", base::android::RegisterEventLog },
+  { "FieldTrialList", base::android::RegisterFieldTrialList },
   { "ImportantFileWriterAndroid",
     base::android::RegisterImportantFileWriterAndroid },
   { "MemoryPressureListenerAndroid",

@@ -5,6 +5,7 @@
 #ifndef CONTENT_PUBLIC_RENDERER_RENDER_FRAME_H_
 #define CONTENT_PUBLIC_RENDERER_RENDER_FRAME_H_
 
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
@@ -14,6 +15,8 @@ struct WebPreferences;
 
 namespace blink {
 class WebFrame;
+class WebLocalFrame;
+class WebNode;
 class WebPlugin;
 class WebURLRequest;
 struct WebPluginParams;
@@ -22,6 +25,7 @@ struct WebPluginParams;
 namespace content {
 class ContextMenuClient;
 class RenderView;
+class ServiceRegistry;
 struct ContextMenuParams;
 struct WebPluginInfo;
 
@@ -64,6 +68,9 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
   // menu is closed.
   virtual void CancelContextMenu(int request_id) = 0;
 
+  // Gets the node that the context menu was pressed over.
+  virtual blink::WebNode GetContextMenuNode() const = 0;
+
   // Create a new NPAPI/Pepper plugin depending on |info|. Returns NULL if no
   // plugin was found.
   virtual blink::WebPlugin* CreatePlugin(
@@ -72,10 +79,18 @@ class CONTENT_EXPORT RenderFrame : public IPC::Listener,
       const blink::WebPluginParams& params) = 0;
 
   // The client should handle the navigation externally.
-  virtual void LoadURLExternally(
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& request,
-      blink::WebNavigationPolicy policy) = 0;
+  virtual void LoadURLExternally(blink::WebLocalFrame* frame,
+                                 const blink::WebURLRequest& request,
+                                 blink::WebNavigationPolicy policy) = 0;
+
+  // Execute a string of JavaScript in this frame's context.
+  virtual void ExecuteJavaScript(const base::string16& javascript) = 0;
+
+  // Return true if this frame is hidden.
+  virtual bool IsHidden() = 0;
+
+  // Returns the ServiceRegistry for this frame.
+  virtual ServiceRegistry* GetServiceRegistry() = 0;
 
  protected:
   virtual ~RenderFrame() {}

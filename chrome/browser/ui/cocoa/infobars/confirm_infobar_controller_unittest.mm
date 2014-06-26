@@ -7,7 +7,6 @@
 #include "base/mac/scoped_nsobject.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
@@ -15,6 +14,7 @@
 #include "chrome/browser/ui/cocoa/infobars/mock_confirm_infobar_delegate.h"
 #include "chrome/browser/ui/cocoa/run_loop_testing.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #import "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -91,8 +91,8 @@ class ConfirmInfoBarControllerTest : public CocoaProfileTest,
         WebContents::Create(WebContents::CreateParams(profile())));
    InfoBarService::CreateForWebContents(web_contents_.get());
 
-    scoped_ptr<InfoBarDelegate> delegate(
-        new MockConfirmInfoBarDelegate(this));
+   scoped_ptr<infobars::InfoBarDelegate> delegate(
+       new MockConfirmInfoBarDelegate(this));
     infobar_ = new InfoBarCocoa(delegate.Pass());
     infobar_->SetOwner(InfoBarService::FromWebContents(web_contents_.get()));
 

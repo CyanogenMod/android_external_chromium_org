@@ -62,6 +62,14 @@ struct FormatElement {
 //    }
 class Rule {
  public:
+  // The types of fields that describe the rule.
+  enum IdentityField {
+    KEY,
+    NAME,
+    LATIN_NAME,
+    IDENTITY_FIELDS_SIZE
+  };
+
   Rule();
   ~Rule();
 
@@ -80,9 +88,30 @@ class Rule {
   // Parses |json_rule|, which must contain parsed serialized rule.
   void ParseJsonRule(const Json& json_rule);
 
+  // Returns the value of the |identity_field| for this rule, for example, can
+  // return "TX" or "Texas". The |identity_field| parameter should not be
+  // IDENTITY_FIELDS_SIZE.
+  const std::string& GetIdentityField(IdentityField identity_field) const;
+
+  // Returns the key for this rule. For example, can return "TX".
+  const std::string& GetKey() const { return key_; }
+
+  // Returns the name for this rule. For example, the name for "TX" is "Texas".
+  const std::string& GetName() const { return name_; }
+
+  // Returns the latinized version of the name. For example, the latinized
+  // version of "北京市" is "Beijing Shi".
+  const std::string& GetLatinName() const { return latin_name_; }
+
   // Returns the format of the address as it should appear on an envelope.
   const std::vector<std::vector<FormatElement> >& GetFormat() const {
     return format_;
+  }
+
+  // Returns the latinized format of the address as it should appear on an
+  // envelope.
+  const std::vector<std::vector<FormatElement> >& GetLatinFormat() const {
+    return latin_format_;
   }
 
   // Returns the required fields for this rule.
@@ -98,62 +127,60 @@ class Rule {
   // example ["de", "fr", "it"].
   const std::vector<std::string>& GetLanguages() const { return languages_; }
 
+  // Returns all of the languages codes for addresses that adhere to this rule,
+  // for example ["de", "fr", "gsw", "it"].
+  const std::vector<std::string>& GetInputLanguages() const {
+    return input_languages_;
+  }
+
   // Returns the language code of this rule, for example "de".
   const std::string& GetLanguage() const { return language_; }
 
   // Returns the postal code format, for example "\\d{5}([ \\-]\\d{4})?".
   const std::string& GetPostalCodeFormat() const { return postal_code_format_; }
 
-  // The message string identifier for admin area name. If not set, then
-  // INVALID_MESSAGE_ID.
-  int GetAdminAreaNameMessageId() const { return admin_area_name_message_id_; }
-
-  // The error message string identifier for an invalid admin area. If not set,
-  // then INVALID_MESSAGE_ID.
-  int GetInvalidAdminAreaMessageId() const {
-    return invalid_admin_area_message_id_;
+  // A string identifying the type of admin area name for this country, e.g.
+  // "state", "province", or "district".
+  const std::string& GetAdminAreaNameType() const {
+    return admin_area_name_type_;
   }
 
-  // The message string identifier for postal code name. If not set, then
-  // INVALID_MESSAGE_ID.
-  int GetPostalCodeNameMessageId() const {
-    return postal_code_name_message_id_;
+  // A string identifying the type of postal code name for this country, either
+  // "postal" or "zip".
+  const std::string& GetPostalCodeNameType() const {
+    return postal_code_name_type_;
   }
-
-  // The error message string identifier for an invalid postal code. If not set,
-  // then INVALID_MESSAGE_ID.
-  int GetInvalidPostalCodeMessageId() const {
-    return invalid_postal_code_message_id_;
-  }
-
-  // Returns the error message string identifier for an invalid |field|.
-  int GetInvalidFieldMessageId(AddressField field) const;
 
   // Outputs the sub key for a given user input. For example, Texas will map to
   // TX.
+  //
+  // If |keep_input_latin| is true, then does not convert a latinized region
+  // name into a sub key. For example, tOKYo will change to TOKYO. If
+  // |keep_input_latin| is false, then converts a latinized region name into a
+  // sub key. For example, tOKYo becomes 東京都.
+  //
+  // |sub_key| should not be NULL.
   bool CanonicalizeSubKey(const std::string& user_input,
+                          bool keep_input_latin,
                           std::string* sub_key) const;
 
  private:
-  // Finds |target| in |values| and sets |sub_key| to the associated value from
-  // |sub_keys_|, or returns false if |target| is not in |values|.
-  bool GetMatchingSubKey(const std::string& target,
-                         const std::vector<std::string>& values,
-                         std::string* sub_key) const;
-
+  std::string key_;
+  std::string name_;
+  std::string latin_name_;
   std::vector<std::vector<FormatElement> > format_;
+  std::vector<std::vector<FormatElement> > latin_format_;
   std::vector<AddressField> required_;
   std::vector<std::string> sub_keys_;
   std::vector<std::string> sub_names_;
   // The Latin names (when |sub_names_| is not in Latin characters).
   std::vector<std::string> sub_lnames_;
   std::vector<std::string> languages_;
+  std::vector<std::string> input_languages_;
   std::string language_;
   std::string postal_code_format_;
-  int admin_area_name_message_id_;
-  int invalid_admin_area_message_id_;
-  int postal_code_name_message_id_;
-  int invalid_postal_code_message_id_;
+  std::string admin_area_name_type_;
+  std::string postal_code_name_type_;
 
   DISALLOW_COPY_AND_ASSIGN(Rule);
 };

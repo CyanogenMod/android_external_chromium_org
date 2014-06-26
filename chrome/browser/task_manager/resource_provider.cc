@@ -28,24 +28,12 @@ blink::WebCache::ResourceTypeStats Resource::GetWebCoreCacheStats() const {
   return blink::WebCache::ResourceTypeStats();
 }
 
-bool Resource::ReportsFPS() const {
-  return false;
-}
-
-float Resource::GetFPS() const {
-  return 0.0f;
-}
-
 bool Resource::ReportsSqliteMemoryUsed() const {
   return false;
 }
 
 size_t Resource::SqliteMemoryUsedBytes() const {
   return 0;
-}
-
-const extensions::Extension* Resource::GetExtension() const {
-  return NULL;
 }
 
 bool Resource::ReportsV8MemoryStats() const {
@@ -60,20 +48,12 @@ size_t Resource::GetV8MemoryUsed() const {
   return 0;
 }
 
-int Resource::GetNaClDebugStubPort() const {
-  return 0;
-}
-
 bool Resource::CanInspect() const {
   return false;
 }
 
 content::WebContents* Resource::GetWebContents() const {
   return NULL;
-}
-
-bool Resource::IsBackground() const {
-  return false;
 }
 
 }  // namespace task_manager

@@ -15,7 +15,6 @@
 #endif
 
 class GURL;
-class InfoBarDelegate;
 class PluginFinder;
 class PluginMetadata;
 
@@ -28,6 +27,10 @@ namespace content {
 class WebContents;
 }
 
+namespace infobars {
+class InfoBarDelegate;
+}
+
 class PluginObserver : public content::WebContentsObserver,
                        public content::WebContentsUserData<PluginObserver> {
  public:
@@ -38,6 +41,9 @@ class PluginObserver : public content::WebContentsObserver,
       content::RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void PluginCrashed(const base::FilePath& plugin_path,
                              base::ProcessId plugin_pid) OVERRIDE;
+  virtual bool OnMessageReceived(
+      const IPC::Message& message,
+      content::RenderFrameHost* render_frame_host) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:

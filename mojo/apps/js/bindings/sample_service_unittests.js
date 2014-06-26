@@ -6,9 +6,9 @@ define([
     "console",
     "mojo/apps/js/test/hexdump",
     "gin/test/expect",
-    "mojom/sample_service",
-    "mojom/sample_import",
-    "mojom/sample_import2",
+    "mojo/public/interfaces/bindings/tests/sample_service.mojom",
+    "mojo/public/interfaces/bindings/tests/sample_import.mojom",
+    "mojo/public/interfaces/bindings/tests/sample_import2.mojom",
   ], function(console, hexdump, expect, sample, imported, imported2) {
 
   var global = this;
@@ -21,13 +21,13 @@ define([
     bar.alpha = 20;
     bar.beta = 40;
     bar.gamma = 60;
-    bar.type = sample.BarType.BAR_VERTICAL;
+    bar.type = sample.Bar.Type.TYPE_VERTICAL;
 
     var extra_bars = new Array(3);
     for (var i = 0; i < extra_bars.length; ++i) {
       var base = i * 100;
       var type = i % 2 ?
-          sample.BarType.BAR_VERTICAL : sample.BarType.BAR_HORIZONTAL;
+          sample.Bar.Type.TYPE_VERTICAL : sample.Bar.Type.TYPE_HORIZONTAL;
       extra_bars[i] = new sample.Bar();
       extra_bars[i].alpha = base;
       extra_bars[i].beta = base + 20;
@@ -67,13 +67,13 @@ define([
     expect(foo.bar.alpha).toBe(20);
     expect(foo.bar.beta).toBe(40);
     expect(foo.bar.gamma).toBe(60);
-    expect(foo.bar.type).toBe(sample.BarType.BAR_VERTICAL);
+    expect(foo.bar.type).toBe(sample.Bar.Type.TYPE_VERTICAL);
 
     expect(foo.extra_bars.length).toBe(3);
     for (var i = 0; i < foo.extra_bars.length; ++i) {
       var base = i * 100;
       var type = i % 2 ?
-          sample.BarType.BAR_VERTICAL : sample.BarType.BAR_HORIZONTAL;
+          sample.Bar.Type.TYPE_VERTICAL : sample.Bar.Type.TYPE_HORIZONTAL;
       expect(foo.extra_bars[i].alpha).toBe(base);
       expect(foo.extra_bars[i].beta).toBe(base + 20);
       expect(foo.extra_bars[i].gamma).toBe(base + 40);
@@ -91,37 +91,41 @@ define([
   function checkDefaultValues() {
     var bar = new sample.Bar();
     expect(bar.alpha).toBe(255);
+    expect(bar.type).toBe(sample.Bar.Type.TYPE_VERTICAL);
 
     var foo = new sample.Foo();
     expect(foo.name).toBe("Fooby");
     expect(foo.a).toBeTruthy();
+    expect(foo.data).toBeNull();
 
-    expect(foo.data.length).toBe(3);
-    expect(foo.data[0]).toBe(1);
-    expect(foo.data[1]).toBe(2);
-    expect(foo.data[2]).toBe(3);
-
-    var inner = new sample.DefaultsTestInner();
-    expect(inner.names.length).toBe(1);
-    expect(inner.names[0]).toBe("Jim");
-    expect(inner.height).toBe(6*12);
-
-    var full = new sample.DefaultsTest();
-    expect(full.people.length).toBe(1);
-    expect(full.people[0].age).toBe(32);
-    expect(full.people[0].names.length).toBe(2);
-    expect(full.people[0].names[0]).toBe("Bob");
-    expect(full.people[0].names[1]).toBe("Bobby");
-    expect(full.people[0].height).toBe(6*12);
-
-    expect(full.point.x).toBe(7);
-    expect(full.point.y).toBe(15);
-
-    expect(full.shape_masks.length).toBe(1);
-    expect(full.shape_masks[0]).toBe(1 << imported.Shape.SHAPE_RECTANGLE);
-
-    expect(full.thing.shape).toBe(imported.Shape.SHAPE_CIRCLE);
-    expect(full.thing.color).toBe(imported2.Color.COLOR_BLACK);
+    var defaults = new sample.DefaultsTest();
+    expect(defaults.a0).toBe(-12);
+    expect(defaults.a1).toBe(sample.kTwelve);
+    expect(defaults.a2).toBe(1234);
+    expect(defaults.a3).toBe(34567);
+    expect(defaults.a4).toBe(123456);
+    // TODO(vtl): crbug.com/375522
+    // expect(defaults.a5).toBe(3456789012);
+    expect(defaults.a6).toBe(111111111111);
+    // TODO(vtl): crbug.com/375522 (Also, can we get exact values for large
+    // int64/uint64's in JS?)
+    // expect(defaults.a7).toBe(9999999999999999999);
+    expect(defaults.a8).toBe(0x12345);
+    expect(defaults.a9).toBe(-0x12345);
+    expect(defaults.a10).toBe(1234);
+    expect(defaults.a11).toBe(true);
+    expect(defaults.a12).toBe(false);
+    expect(defaults.a13).toBe(123.25);
+    expect(defaults.a14).toBe(1234567890.123);
+    expect(defaults.a15).toBe(1E10);
+    expect(defaults.a16).toBe(-1.2E+20);
+    expect(defaults.a17).toBe(1.23E-20);
+    expect(defaults.a20).toBe(sample.Bar.Type.TYPE_BOTH);
+    expect(defaults.a21).toBeNull();
+    expect(defaults.a22).toBeTruthy();
+    expect(defaults.a22.shape).toBe(imported.Shape.SHAPE_RECTANGLE);
+    expect(defaults.a22.color).toBe(imported2.Color.COLOR_BLACK);
+    expect(defaults.a21).toBeNull();
   }
 
   function ServiceImpl() {
@@ -140,8 +144,10 @@ define([
   }
 
   SimpleMessageReceiver.prototype.accept = function(message) {
-    if (dumpMessageAsHex)
-      console.log(hexdump.dumpArray(message.memory));
+    if (dumpMessageAsHex) {
+      var uint8Array = new Uint8Array(message.buffer.arrayBuffer);
+      console.log(hexdump.dumpArray(uint8Array));
+    }
     // Imagine some IPC happened here.
     var serviceImpl = new ServiceImpl();
     serviceImpl.accept(message);

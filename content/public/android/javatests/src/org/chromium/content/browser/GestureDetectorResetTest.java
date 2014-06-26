@@ -4,9 +4,9 @@
 
 package org.chromium.content.browser;
 
-import junit.framework.Assert;
-
 import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
+import junit.framework.Assert;
 
 import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.UrlUtils;
@@ -31,17 +31,14 @@ public class GestureDetectorResetTest extends ContentShellTestBase {
             "</body></html>");
 
     private static class NodeContentsIsEqualToCriteria implements Criteria {
-        private final ContentView mView;
-        private final TestCallbackHelperContainer mViewClient;
+        private final ContentViewCore mViewCore;
         private final String mNodeId;
         private final String mExpectedContents;
 
         public NodeContentsIsEqualToCriteria(
-                ContentView view,
-                TestCallbackHelperContainer viewClient,
+                ContentViewCore viewCore,
                 String nodeId, String expectedContents) {
-            mView = view;
-            mViewClient = viewClient;
+            mViewCore = viewCore;
             mNodeId = nodeId;
             mExpectedContents = expectedContents;
             assert mExpectedContents != null;
@@ -50,7 +47,7 @@ public class GestureDetectorResetTest extends ContentShellTestBase {
         @Override
         public boolean isSatisfied() {
             try {
-                String contents = DOMUtils.getNodeContents(mView, mViewClient, mNodeId);
+                String contents = DOMUtils.getNodeContents(mViewCore, mNodeId);
                 return mExpectedContents.equals(contents);
             } catch (Throwable e) {
                 Assert.fail("Failed to retrieve node contents: " + e);
@@ -64,20 +61,20 @@ public class GestureDetectorResetTest extends ContentShellTestBase {
 
     private void verifyClicksAreRegistered(
             String disambiguation,
-            ContentView view, TestCallbackHelperContainer viewClient)
+            ContentViewCore contentViewCore)
                     throws InterruptedException, Exception, Throwable {
         // Initially the text on the page should say "not clicked".
         assertTrue("The page contents is invalid " + disambiguation,
                 CriteriaHelper.pollForCriteria(new NodeContentsIsEqualToCriteria(
-                        view, viewClient, "test", "not clicked")));
+                        contentViewCore, "test", "not clicked")));
 
         // Click the button.
-        DOMUtils.clickNode(this, view, viewClient, "button");
+        DOMUtils.clickNode(this, contentViewCore, "button");
 
         // After the click, the text on the page should say "clicked".
         assertTrue("The page contents didn't change after a click " + disambiguation,
                 CriteriaHelper.pollForCriteria(new NodeContentsIsEqualToCriteria(
-                        view, viewClient, "test", "clicked")));
+                        contentViewCore, "test", "clicked")));
     }
 
     /**
@@ -95,14 +92,14 @@ public class GestureDetectorResetTest extends ContentShellTestBase {
         launchContentShellWithUrl(CLICK_TEST_URL);
         assertTrue("Page failed to load", waitForActiveShellToBeDoneLoading());
 
-        final ContentView view = getActivity().getActiveContentView();
+        final ContentViewCore viewCore = getContentViewCore();
         final TestCallbackHelperContainer viewClient =
-                new TestCallbackHelperContainer(view);
+                new TestCallbackHelperContainer(viewCore);
         final OnPageFinishedHelper onPageFinishedHelper =
                 viewClient.getOnPageFinishedHelper();
 
         // Test that the button click works.
-        verifyClicksAreRegistered("on initial load", view, viewClient);
+        verifyClicksAreRegistered("on initial load", viewCore);
 
         // Reload the test page.
         int currentCallCount = onPageFinishedHelper.getCallCount();
@@ -116,14 +113,14 @@ public class GestureDetectorResetTest extends ContentShellTestBase {
                 WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         // Test that the button click still works.
-        verifyClicksAreRegistered("after reload", view, viewClient);
+        verifyClicksAreRegistered("after reload", viewCore);
 
         // Directly navigate to the test page.
         currentCallCount = onPageFinishedHelper.getCallCount();
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                getActivity().getActiveShell().getContentView().loadUrl(
+                getActivity().getActiveShell().getContentViewCore().loadUrl(
                         new LoadUrlParams(CLICK_TEST_URL));
             }
         });
@@ -131,6 +128,6 @@ public class GestureDetectorResetTest extends ContentShellTestBase {
                 WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 
         // Test that the button click still works.
-        verifyClicksAreRegistered("after direct navigation", view, viewClient);
+        verifyClicksAreRegistered("after direct navigation", viewCore);
     }
 }

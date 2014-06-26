@@ -15,6 +15,8 @@ struct AwDrawGLInfo {
   enum Mode {
     kModeDraw,
     kModeProcess,
+    kModeProcessNoContext,
+    kModeSync,
   } mode;
 
   // Input: current clip rect in surface coordinates. Reflects the current state
@@ -50,22 +52,6 @@ struct AwDrawGLInfo {
   // Input: current transformation matrix in surface pixels.
   // Uses the column-based OpenGL matrix format.
   float transform[16];
-
-  // Output: tells the caller what to do next.
-  enum StatusMask {
-    kStatusMaskDone = 0x0,
-    kStatusMaskDraw = 0x1,
-    kStatusMaskInvoke = 0x2,
-  };
-
-  // Output: mask indicating the status after calling the functor.
-  unsigned int status_mask;
-
-  // Output: dirty region to redraw in surface coordinates.
-  float dirty_left;
-  float dirty_top;
-  float dirty_right;
-  float dirty_bottom;
 };
 
 // Function to invoke a direct GL draw into the client's pre-configured
@@ -74,7 +60,7 @@ struct AwDrawGLInfo {
 // call to AwContents.getAwDrawGLViewContext().
 // |draw_info| carries the in and out parameters for this draw.
 // |spare| ignored; pass NULL.
-typedef void (AwDrawGLFunction)(int view_context,
+typedef void (AwDrawGLFunction)(long view_context,
                                 AwDrawGLInfo* draw_info,
                                 void* spare);
 enum AwMapMode {
@@ -84,17 +70,17 @@ enum AwMapMode {
 };
 
 // Called to create a GraphicBuffer
-typedef int AwCreateGraphicBufferFunction(int w, int h);
+typedef long AwCreateGraphicBufferFunction(int w, int h);
 // Called to release a GraphicBuffer
-typedef void AwReleaseGraphicBufferFunction(int buffer_id);
+typedef void AwReleaseGraphicBufferFunction(long buffer_id);
 // Called to map a GraphicBuffer in |mode|.
-typedef int AwMapFunction(int buffer_id, AwMapMode mode, void** vaddr);
+typedef int AwMapFunction(long buffer_id, AwMapMode mode, void** vaddr);
 // Called to unmap a GraphicBuffer
-typedef int AwUnmapFunction(int buffer_id);
+typedef int AwUnmapFunction(long buffer_id);
 // Called to get a native buffer pointer
-typedef void* AwGetNativeBufferFunction(int buffer_id);
+typedef void* AwGetNativeBufferFunction(long buffer_id);
 // Called to get the stride of the buffer
-typedef unsigned int AwGetStrideFunction(int buffer_id);
+typedef unsigned int AwGetStrideFunction(long buffer_id);
 
 // Set of functions used in rendering in hardware mode
 struct AwDrawGLFunctionTable {

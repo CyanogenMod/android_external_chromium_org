@@ -10,9 +10,9 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/scoped_observer.h"
-#include "ui/aura/client/activation_change_observer.h"
 #include "ui/aura/window_observer.h"
 #include "ui/gfx/display_observer.h"
+#include "ui/wm/public/activation_change_observer.h"
 
 namespace aura {
 
@@ -29,7 +29,6 @@ namespace ash {
 class ShelfModel;
 class ShelfItemDelegateManager;
 
-namespace internal {
 // ShelfWindowWatcher creates and handles a ShelfItem for windows that have
 // a ShelfItemDetails property in the default container.
 class ShelfWindowWatcher : public aura::client::ActivationChangeObserver,
@@ -116,9 +115,10 @@ class ShelfWindowWatcher : public aura::client::ActivationChangeObserver,
                                        intptr_t old) OVERRIDE;
 
   // gfx::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
   // Owned by Shell.
   ShelfModel* model_;
@@ -144,7 +144,6 @@ class ShelfWindowWatcher : public aura::client::ActivationChangeObserver,
   DISALLOW_COPY_AND_ASSIGN(ShelfWindowWatcher);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SHELF_SHELF_WINDOW_WATCHER_H_

@@ -7,12 +7,10 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/apps/ephemeral_app_launcher.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/install_tracker.h"
 #include "chrome/browser/extensions/install_tracker_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,8 +19,9 @@
 #include "chrome/browser/ui/app_list/search/webstore/webstore_installer.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/common/chrome_switches.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -75,7 +74,8 @@ WebstoreResult::WebstoreResult(Profile* profile,
       icon_url_(icon_url),
       weak_factory_(this),
       controller_(controller),
-      install_tracker_(NULL) {
+      install_tracker_(NULL),
+      extension_registry_(NULL) {
   set_id(extensions::Extension::GetBaseURLFromExtensionId(app_id_).spec());
   set_relevance(0.0);  // What is the right value to use?
 
@@ -94,11 +94,12 @@ WebstoreResult::WebstoreResult(Profile* profile,
       gfx::Size(kIconSize, kIconSize));
   SetIcon(icon_);
 
-  StartObservingInstall();
+  StartObserving();
 }
 
 WebstoreResult::~WebstoreResult() {
   StopObservingInstall();
+  StopObservingRegistry();
 }
 
 void WebstoreResult::Open(int event_flags) {
@@ -131,8 +132,7 @@ void WebstoreResult::UpdateActions() {
       extensions::util::IsExtensionInstalledPermanently(app_id_, profile_);
 
   if (!is_otr && !is_installed && !is_installing()) {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kEnableEphemeralApps)) {
+    if (EphemeralAppLauncher::IsFeatureEnabled()) {
       actions.push_back(Action(
           l10n_util::GetStringUTF16(IDS_WEBSTORE_RESULT_INSTALL),
           l10n_util::GetStringUTF16(
@@ -183,7 +183,7 @@ void WebstoreResult::StartInstall(bool launch_ephemeral_app) {
             app_id_,
             profile_,
             controller_->GetAppListWindow(),
-            base::Bind(&WebstoreResult::InstallCallback,
+            base::Bind(&WebstoreResult::LaunchCallback,
                        weak_factory_.GetWeakPtr()));
     installer->Start();
     return;
@@ -206,26 +206,39 @@ void WebstoreResult::InstallCallback(bool success, const std::string& error) {
     return;
   }
 
-  // Success handling is continued in OnExtensionInstalled.
+  // Success handling is continued in OnExtensionWillBeInstalled.
   SetPercentDownloaded(100);
 }
 
-void WebstoreResult::StartObservingInstall() {
-  DCHECK(!install_tracker_);
+void WebstoreResult::LaunchCallback(extensions::webstore_install::Result result,
+                                    const std::string& error) {
+  if (result != extensions::webstore_install::SUCCESS)
+    LOG(ERROR) << "Failed to launch app, error=" << error;
+
+  SetIsInstalling(false);
+}
+
+void WebstoreResult::StartObserving() {
+  DCHECK(!install_tracker_ && !extension_registry_);
 
   install_tracker_ = extensions::InstallTrackerFactory::GetForProfile(profile_);
   install_tracker_->AddObserver(this);
+
+  extension_registry_ = extensions::ExtensionRegistry::Get(profile_);
+  extension_registry_->AddObserver(this);
 }
 
 void WebstoreResult::StopObservingInstall() {
   if (install_tracker_)
     install_tracker_->RemoveObserver(this);
-
   install_tracker_ = NULL;
 }
 
-void WebstoreResult::OnBeginExtensionInstall(
-    const ExtensionInstallParams& params) {}
+void WebstoreResult::StopObservingRegistry() {
+  if (extension_registry_)
+    extension_registry_->RemoveObserver(this);
+  extension_registry_ = NULL;
+}
 
 void WebstoreResult::OnDownloadProgress(const std::string& extension_id,
                                         int percent_downloaded) {
@@ -235,33 +248,30 @@ void WebstoreResult::OnDownloadProgress(const std::string& extension_id,
   SetPercentDownloaded(percent_downloaded);
 }
 
-void WebstoreResult::OnInstallFailure(const std::string& extension_id) {}
-
-void WebstoreResult::OnExtensionInstalled(
-    const extensions::Extension* extension) {
+void WebstoreResult::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const extensions::Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
   if (extension->id() != app_id_)
     return;
 
   SetIsInstalling(false);
-  UpdateActions();
-  NotifyItemInstalled();
+
+  if (extensions::util::IsExtensionInstalledPermanently(extension->id(),
+                                                        profile_)) {
+    UpdateActions();
+    NotifyItemInstalled();
+  }
 }
-
-void WebstoreResult::OnExtensionLoaded(
-    const extensions::Extension* extension) {}
-
-void WebstoreResult::OnExtensionUnloaded(
-    const extensions::Extension* extension) {}
-
-void WebstoreResult::OnExtensionUninstalled(
-    const extensions::Extension* extension) {}
-
-void WebstoreResult::OnAppsReordered() {}
-
-void WebstoreResult::OnAppInstalledToAppList(const std::string& extension_id) {}
 
 void WebstoreResult::OnShutdown() {
   StopObservingInstall();
+}
+
+void WebstoreResult::OnShutdown(extensions::ExtensionRegistry* registry) {
+  StopObservingRegistry();
 }
 
 ChromeSearchResultType WebstoreResult::GetType() {

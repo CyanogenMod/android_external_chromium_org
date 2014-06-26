@@ -8,6 +8,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
+#include "base/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
@@ -16,7 +17,6 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/extensions/api/messaging/native_messaging_host_manifest.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "url/gurl.h"
 
@@ -33,29 +33,6 @@ namespace {
 // the native messaging host.
 const char kParentWindowSwitchName[] = "parent-window";
 #endif  // defined(OS_WIN)
-
-base::FilePath GetHostManifestPathFromCommandLine(
-    const std::string& native_host_name) {
-  const std::string& value =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-          switches::kNativeMessagingHosts);
-  if (value.empty())
-    return base::FilePath();
-
-  std::vector<std::string> hosts;
-  base::SplitString(value, ',', &hosts);
-  for (size_t i = 0; i < hosts.size(); ++i) {
-    std::vector<std::string> key_and_value;
-    base::SplitString(hosts[i], '=', &key_and_value);
-    if (key_and_value.size() != 2)
-      continue;
-    if (key_and_value[0] == native_host_name)
-      return base::FilePath::FromUTF8Unsafe(key_and_value[1]);
-  }
-
-  return base::FilePath();
-}
-
 
 // Default implementation on NativeProcessLauncher interface.
 class NativeProcessLauncherImpl : public NativeProcessLauncher {
@@ -87,13 +64,13 @@ class NativeProcessLauncherImpl : public NativeProcessLauncher {
     void PostErrorResult(const LaunchedCallback& callback, LaunchResult error);
     void PostResult(const LaunchedCallback& callback,
                     base::ProcessHandle process_handle,
-                    base::PlatformFile read_file,
-                    base::PlatformFile write_file);
+                    base::File read_file,
+                    base::File write_file);
     void CallCallbackOnIOThread(LaunchedCallback callback,
                                 LaunchResult result,
                                 base::ProcessHandle process_handle,
-                                base::PlatformFile read_file,
-                                base::PlatformFile write_file);
+                                base::File read_file,
+                                base::File write_file);
 
     bool detached_;
 
@@ -122,7 +99,7 @@ NativeProcessLauncherImpl::Core::~Core() {
 }
 
 void NativeProcessLauncherImpl::Core::Detach() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   detached_ = true;
 }
 
@@ -147,15 +124,8 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
   }
 
   std::string error_message;
-  scoped_ptr<NativeMessagingHostManifest> manifest;
-
-  // First check if the manifest location is specified in the command line.
   base::FilePath manifest_path =
-      GetHostManifestPathFromCommandLine(native_host_name);
-  if (manifest_path.empty()) {
-    manifest_path =
-        FindManifest(native_host_name, allow_user_level_hosts_, &error_message);
-  }
+      FindManifest(native_host_name, allow_user_level_hosts_, &error_message);
 
   if (manifest_path.empty()) {
     LOG(ERROR) << "Can't find manifest for native messaging host "
@@ -164,7 +134,8 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
     return;
   }
 
-  manifest = NativeMessagingHostManifest::Load(manifest_path, &error_message);
+  scoped_ptr<NativeMessagingHostManifest> manifest =
+      NativeMessagingHostManifest::Load(manifest_path, &error_message);
 
   if (!manifest) {
     LOG(ERROR) << "Failed to load manifest for native messaging host "
@@ -201,6 +172,17 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
 #endif  // !defined(OS_WIN)
   }
 
+  // In case when the manifest file is there, but the host binary doesn't exist
+  // report the NOT_FOUND error.
+  if (!base::PathExists(host_path)) {
+    LOG(ERROR)
+        << "Found manifest, but not the binary for native messaging host "
+        << native_host_name << ". Host path specified in the manifest: "
+        << host_path.AsUTF8Unsafe();
+    PostErrorResult(callback, RESULT_NOT_FOUND);
+    return;
+  }
+
   CommandLine command_line(host_path);
   command_line.AppendArg(origin.spec());
 
@@ -212,11 +194,11 @@ void NativeProcessLauncherImpl::Core::DoLaunchOnThreadPool(
 #endif  // !defined(OS_WIN)
 
   base::ProcessHandle process_handle;
-  base::PlatformFile read_file;
-  base::PlatformFile write_file;
+  base::File read_file;
+  base::File write_file;
   if (NativeProcessLauncher::LaunchNativeProcess(
           command_line, &process_handle, &read_file, &write_file)) {
-    PostResult(callback, process_handle, read_file, write_file);
+    PostResult(callback, process_handle, read_file.Pass(), write_file.Pass());
   } else {
     PostErrorResult(callback, RESULT_FAILED_TO_START);
   }
@@ -226,18 +208,13 @@ void NativeProcessLauncherImpl::Core::CallCallbackOnIOThread(
     LaunchedCallback callback,
     LaunchResult result,
     base::ProcessHandle process_handle,
-    base::PlatformFile read_file,
-    base::PlatformFile write_file) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-  if (detached_) {
-    if (read_file != base::kInvalidPlatformFileValue)
-      base::ClosePlatformFile(read_file);
-    if (write_file != base::kInvalidPlatformFileValue)
-      base::ClosePlatformFile(write_file);
+    base::File read_file,
+    base::File write_file) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  if (detached_)
     return;
-  }
 
-  callback.Run(result, process_handle, read_file, write_file);
+  callback.Run(result, process_handle, read_file.Pass(), write_file.Pass());
 }
 
 void NativeProcessLauncherImpl::Core::PostErrorResult(
@@ -247,20 +224,19 @@ void NativeProcessLauncherImpl::Core::PostErrorResult(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&NativeProcessLauncherImpl::Core::CallCallbackOnIOThread, this,
                  callback, error, base::kNullProcessHandle,
-                 base::kInvalidPlatformFileValue,
-                 base::kInvalidPlatformFileValue));
+                 Passed(base::File()), Passed(base::File())));
 }
 
 void NativeProcessLauncherImpl::Core::PostResult(
     const LaunchedCallback& callback,
     base::ProcessHandle process_handle,
-    base::PlatformFile read_file,
-    base::PlatformFile write_file) {
+    base::File read_file,
+    base::File write_file) {
   content::BrowserThread::PostTask(
       content::BrowserThread::IO, FROM_HERE,
       base::Bind(&NativeProcessLauncherImpl::Core::CallCallbackOnIOThread, this,
-                 callback, RESULT_SUCCESS, process_handle, read_file,
-                 write_file));
+                 callback, RESULT_SUCCESS, process_handle,
+                 Passed(read_file.Pass()), Passed(write_file.Pass())));
 }
 
 NativeProcessLauncherImpl::NativeProcessLauncherImpl(

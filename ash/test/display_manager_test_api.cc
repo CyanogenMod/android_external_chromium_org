@@ -10,20 +10,20 @@
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
 #include "base/strings/string_split.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/display.h"
 
 namespace ash {
 namespace test {
 typedef std::vector<gfx::Display> DisplayList;
-typedef internal::DisplayInfo DisplayInfo;
+typedef DisplayInfo DisplayInfo;
 typedef std::vector<DisplayInfo> DisplayInfoList;
 
 namespace {
 
 std::vector<DisplayInfo> CreateDisplayInfoListFromString(
     const std::string specs,
-    internal::DisplayManager* display_manager) {
+    DisplayManager* display_manager) {
   std::vector<DisplayInfo> display_info_list;
   std::vector<std::string> parts;
   base::SplitString(specs, ',', &parts);
@@ -41,10 +41,8 @@ std::vector<DisplayInfo> CreateDisplayInfoListFromString(
 
 }  // namespace
 
-DisplayManagerTestApi::DisplayManagerTestApi(
-    internal::DisplayManager* display_manager)
-        : display_manager_(display_manager) {
-}
+DisplayManagerTestApi::DisplayManagerTestApi(DisplayManager* display_manager)
+    : display_manager_(display_manager) {}
 
 DisplayManagerTestApi::~DisplayManagerTestApi() {}
 
@@ -90,6 +88,13 @@ int64 DisplayManagerTestApi::SetFirstDisplayAsInternalDisplay() {
 
 void DisplayManagerTestApi::DisableChangeDisplayUponHostResize() {
   display_manager_->set_change_display_upon_host_resize(false);
+}
+
+void DisplayManagerTestApi::SetAvailableColorProfiles(
+    int64 display_id,
+    const std::vector<ui::ColorCalibrationProfile>& profiles) {
+  display_manager_->display_info_[display_id].set_available_color_profiles(
+      profiles);
 }
 
 }  // namespace test

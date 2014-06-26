@@ -6,6 +6,15 @@ cr.define('extensions', function() {
   'use strict';
 
   /**
+   * Clear all the content of a given element.
+   * @param {HTMLElement} element The element to be cleared.
+   */
+  function clearElement(element) {
+    while (element.firstChild)
+      element.removeChild(element.firstChild);
+  }
+
+  /**
    * Get the url relative to the main extension url. If the url is
    * unassociated with the extension, this will be the full url.
    * @param {string} url The url to make relative.
@@ -139,7 +148,7 @@ cr.define('extensions', function() {
       this.error_ = undefined;
       this.extensionUrl_ = undefined;
       this.currentFrameNode_ = undefined;
-      this.stackTrace_.innerHTML = '';
+      clearElement(this.stackTrace_);
       this.stackTrace_.hidden = true;
     },
 
@@ -364,11 +373,13 @@ cr.define('extensions', function() {
       this.overlayDiv_ = $('extension-error-overlay');
 
       /**
-       * The portion of the overlay which shows the code relating to the error.
-       * @type {HTMLElement}
+       * The portion of the overlay which shows the code relating to the error
+       * and the corresponding line numbers.
+       * @type {ExtensionCode}
        * @private
        */
-      this.codeDiv_ = $('extension-error-overlay-code');
+      this.codeDiv_ =
+          new extensions.ExtensionCode($('extension-error-overlay-code'));
 
       /**
        * The function to show or hide the ExtensionErrorOverlay.
@@ -377,6 +388,8 @@ cr.define('extensions', function() {
        */
       this.setVisible = function(isVisible) {
         showOverlay(isVisible ? this.overlayDiv_ : null);
+        if (isVisible)
+          this.codeDiv_.scrollToError();
       };
 
       /**
@@ -405,7 +418,9 @@ cr.define('extensions', function() {
       if (!this.error_)
         return;
 
-      this.codeDiv_.innerHTML = '';
+      // Remove all previous content.
+      this.codeDiv_.clear();
+
       this.openDevtoolsButton_.hidden = true;
 
       if (this.error_.type == ExtensionErrorOverlay.RUNTIME_ERROR_TYPE_) {
@@ -470,36 +485,10 @@ cr.define('extensions', function() {
       document.querySelector(
           '#extension-error-overlay .extension-error-overlay-title').
               textContent = code.title;
-      this.codeDiv_.innerHTML = '';
 
-      // If there's no code, then display an appropriate message.
-      if (!code) {
-        var span = document.createElement('span');
-        span.textContent =
-            loadTimeData.getString('extensionErrorOverlayNoCodeToDisplay');
-        this.codeDiv_.appendChild(span);
-        return;
-      }
-
-      var createSpan = function(source, isHighlighted) {
-        var span = document.createElement('span');
-        span.className = isHighlighted ? 'highlighted-source' : 'normal-source';
-        source = source.replace(/ /g, '&nbsp;').replace(/\n|\r/g, '<br>');
-        span.innerHTML = source;
-        return span;
-      };
-
-      if (code.beforeHighlight)
-        this.codeDiv_.appendChild(createSpan(code.beforeHighlight, false));
-
-      if (code.highlight) {
-        var highlightSpan = createSpan(code.highlight, true);
-        highlightSpan.title = code.message;
-        this.codeDiv_.appendChild(highlightSpan);
-      }
-
-      if (code.afterHighlight)
-        this.codeDiv_.appendChild(createSpan(code.afterHighlight, false));
+      this.codeDiv_.populate(
+          code,
+          loadTimeData.getString('extensionErrorOverlayNoCodeToDisplay'));
     },
   };
 

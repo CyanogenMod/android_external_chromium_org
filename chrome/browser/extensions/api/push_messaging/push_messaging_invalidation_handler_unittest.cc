@@ -7,17 +7,17 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_handler_delegate.h"
-#include "chrome/browser/invalidation/invalidation_logger.h"
-#include "chrome/browser/invalidation/invalidation_service.h"
+#include "components/invalidation/invalidation_logger.h"
+#include "components/invalidation/invalidation_service.h"
 #include "google/cacheinvalidation/types.pb.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using ::testing::_;
 using ::testing::NotNull;
 using ::testing::SaveArg;
 using ::testing::StrictMock;
+using ::testing::_;
 
 namespace extensions {
 
@@ -36,6 +36,9 @@ class MockInvalidationService : public invalidation::InvalidationService {
   MOCK_CONST_METHOD0(GetInvalidatorState, syncer::InvalidatorState());
   MOCK_CONST_METHOD0(GetInvalidatorClientId, std::string());
   MOCK_METHOD0(GetInvalidationLogger, invalidation::InvalidationLogger*());
+  MOCK_CONST_METHOD1(RequestDetailedStatus,
+                     void(base::Callback<void(const base::DictionaryValue&)>));
+  MOCK_METHOD0(GetIdentityProvider, IdentityProvider*());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockInvalidationService);

@@ -15,10 +15,9 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_pref_service_syncable.h"
@@ -30,12 +29,14 @@
 #include "components/policy/core/common/cloud/mock_user_cloud_policy_store.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/policy/core/common/schema_registry.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_constants.h"
+#include "google_apis/gaia/gaia_oauth_client.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/test_url_fetcher_factory.h"
@@ -46,7 +47,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
-#include "chrome/browser/policy/cloud/user_policy_signin_service_android.h"
+#include "chrome/browser/policy/cloud/user_policy_signin_service_mobile.h"
 #else
 #include "chrome/browser/policy/cloud/user_policy_signin_service.h"
 #endif
@@ -74,14 +75,14 @@ const char kValidTokenResponse[] =
 
 const char kHostedDomainResponse[] =
     "{"
-    "  \"hd\": \"test.com\""
+    "  \"domain\": \"test.com\""
     "}";
 
 class SigninManagerFake : public FakeSigninManager {
  public:
   explicit SigninManagerFake(Profile* profile)
       : FakeSigninManager(profile) {
-    Initialize(profile, NULL);
+    Initialize(NULL);
   }
 
   void ForceSignOut() {
@@ -90,7 +91,7 @@ class SigninManagerFake : public FakeSigninManager {
     SignOut();
   }
 
-  static BrowserContextKeyedService* Build(content::BrowserContext* profile) {
+  static KeyedService* Build(content::BrowserContext* profile) {
     return new SigninManagerFake(static_cast<Profile*>(profile));
   }
 };
@@ -176,7 +177,7 @@ class UserPolicySigninServiceTest : public testing::Test {
     builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
                               SigninManagerFake::Build);
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenServiceWrapper::Build);
+                              BuildFakeProfileOAuth2TokenService);
 
     profile_ = builder.Build().Pass();
     url_factory_.set_remove_fetcher_on_delete(true);
@@ -231,10 +232,15 @@ class UserPolicySigninServiceTest : public testing::Test {
     return static_cast<FakeProfileOAuth2TokenService*>(service);
   }
 
+  // Returns true if a request for policy information is active.  A request
+  // is considered active if there is an active fetcher for an access token
+  // hosted domain information (i.e. the gaia oauth client) or some other
+  // fecther used in the code (id 0).
   bool IsRequestActive() {
     if (!GetTokenService()->GetPendingRequests().empty())
       return true;
-    return url_factory_.GetFetcherByID(0);
+    return url_factory_.GetFetcherByID(0) ||
+        url_factory_.GetFetcherByID(gaia::GaiaOAuthClient::kUrlFetcherId);
   }
 
   void MakeOAuthTokenFetchSucceed() {
@@ -252,7 +258,8 @@ class UserPolicySigninServiceTest : public testing::Test {
 
   void ReportHostedDomainStatus(bool is_hosted_domain) {
     ASSERT_TRUE(IsRequestActive());
-    net::TestURLFetcher* fetcher = url_factory_.GetFetcherByID(0);
+    net::TestURLFetcher* fetcher =
+        url_factory_.GetFetcherByID(gaia::GaiaOAuthClient::kUrlFetcherId);
     fetcher->set_response_code(net::HTTP_OK);
     fetcher->SetResponseString(is_hosted_domain ? kHostedDomainResponse : "{}");
     fetcher->delegate()->OnURLFetchComplete(fetcher);

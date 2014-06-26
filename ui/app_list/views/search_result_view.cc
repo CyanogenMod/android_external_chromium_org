@@ -17,7 +17,6 @@
 #include "ui/gfx/render_text.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/image_view.h"
-#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 
 namespace app_list {
@@ -66,12 +65,10 @@ gfx::RenderText* CreateRenderText(const base::string16& text,
 // static
 const char SearchResultView::kViewClassName[] = "ui/app_list/SearchResultView";
 
-SearchResultView::SearchResultView(SearchResultListView* list_view,
-                                   SearchResultViewDelegate* delegate)
+SearchResultView::SearchResultView(SearchResultListView* list_view)
     : views::CustomButton(this),
       result_(NULL),
       list_view_(list_view),
-      delegate_(delegate),
       icon_(new views::ImageView),
       actions_view_(new SearchResultActionsView(this)),
       progress_bar_(new ProgressBarView) {
@@ -136,7 +133,7 @@ const char* SearchResultView::GetClassName() const {
   return kViewClassName;
 }
 
-gfx::Size SearchResultView::GetPreferredSize() {
+gfx::Size SearchResultView::GetPreferredSize() const {
   return gfx::Size(kPreferredWidth, kPreferredHeight);
 }
 
@@ -188,7 +185,7 @@ bool SearchResultView::OnKeyPressed(const ui::KeyEvent& event) {
       if (actions_view_->IsValidActionIndex(selected)) {
         OnSearchResultActionActivated(selected, event.flags());
       } else {
-        delegate_->SearchResultActivated(this, event.flags());
+        list_view_->SearchResultActivated(this, event.flags());
       }
       return true;
     }
@@ -268,7 +265,7 @@ void SearchResultView::ButtonPressed(views::Button* sender,
                                      const ui::Event& event) {
   DCHECK(sender == this);
 
-  delegate_->SearchResultActivated(this, event.flags());
+  list_view_->SearchResultActivated(this, event.flags());
 }
 
 void SearchResultView::OnIconChanged() {
@@ -315,11 +312,11 @@ void SearchResultView::OnPercentDownloadedChanged() {
 }
 
 void SearchResultView::OnItemInstalled() {
-  delegate_->OnSearchResultInstalled(this);
+  list_view_->OnSearchResultInstalled(this);
 }
 
 void SearchResultView::OnItemUninstalled() {
-  delegate_->OnSearchResultUninstalled(this);
+  list_view_->OnSearchResultUninstalled(this);
 }
 
 void SearchResultView::OnSearchResultActionActivated(size_t index,
@@ -330,7 +327,7 @@ void SearchResultView::OnSearchResultActionActivated(size_t index,
 
   DCHECK_LT(index, result_->actions().size());
 
-  delegate_->SearchResultActionActivated(this, index, event_flags);
+  list_view_->SearchResultActionActivated(this, index, event_flags);
 }
 
 void SearchResultView::ShowContextMenuForView(views::View* source,
@@ -345,10 +342,12 @@ void SearchResultView::ShowContextMenuForView(views::View* source,
     return;
 
   context_menu_runner_.reset(new views::MenuRunner(menu_model));
-  if (context_menu_runner_->RunMenuAt(
-          GetWidget(), NULL, gfx::Rect(point, gfx::Size()),
-          views::MenuItemView::TOPLEFT, source_type,
-          views::MenuRunner::HAS_MNEMONICS) ==
+  if (context_menu_runner_->RunMenuAt(GetWidget(),
+                                      NULL,
+                                      gfx::Rect(point, gfx::Size()),
+                                      views::MENU_ANCHOR_TOPLEFT,
+                                      source_type,
+                                      views::MenuRunner::HAS_MNEMONICS) ==
       views::MenuRunner::MENU_DELETED)
     return;
 }

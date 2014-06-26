@@ -5,11 +5,13 @@
 #include "chrome/test/remoting/remote_desktop_browsertest.h"
 
 #include "base/command_line.h"
+#include "base/file_util.h"
+#include "base/json/json_reader.h"
+#include "base/path_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/test/remoting/key_code_conv.h"
 #include "chrome/test/remoting/page_load_notification_observer.h"
 #include "chrome/test/remoting/waiter.h"
@@ -64,6 +66,20 @@ void RemoteDesktopBrowserTest::VerifyInternetAccess() {
   EXPECT_EQ(GetCurrentURL().host(), "www.google.com");
 }
 
+void RemoteDesktopBrowserTest::OpenClientBrowserPage() {
+  // Open the client browser page in a new tab
+  ui_test_utils::NavigateToURLWithDisposition(
+      browser(),
+      GURL(http_server() + "/clientpage.html"),
+      NEW_FOREGROUND_TAB, ui_test_utils::BROWSER_TEST_WAIT_FOR_TAB);
+
+  // Save this web content for later reference
+  client_web_content_ = browser()->tab_strip_model()->GetActiveWebContents();
+
+  // Go back to the previous tab that has chromoting opened
+  browser()->tab_strip_model()->SelectPreviousTab();
+}
+
 bool RemoteDesktopBrowserTest::HtmlElementVisible(const std::string& name) {
   _ASSERT_TRUE(HtmlElementExists(name));
 
@@ -104,7 +120,7 @@ void RemoteDesktopBrowserTest::InstallChromotingAppUnpacked() {
   installer->set_prompt_for_plugins(false);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_LOADED,
+      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::NotificationService::AllSources());
 
   installer->Load(webapp_unpacked_);
@@ -178,6 +194,8 @@ void RemoteDesktopBrowserTest::LaunchChromotingApp() {
   content::WebContents* web_contents = controller->GetWebContents();
   if (web_contents != active_web_contents())
     web_contents_stack_.push_back(web_contents);
+
+  app_web_content_ = web_contents;
 
   if (is_platform_app()) {
     EXPECT_EQ(GetFirstAppWindowWebContents(), active_web_contents());
@@ -461,6 +479,15 @@ void RemoteDesktopBrowserTest::Cleanup() {
   ASSERT_TRUE(TimeoutWaiter(base::TimeDelta::FromSeconds(2)).Wait());
 }
 
+void RemoteDesktopBrowserTest::SetUpTestForMe2Me() {
+  VerifyInternetAccess();
+  Install();
+  LaunchChromotingApp();
+  Auth();
+  ExpandMe2Me();
+  LoadScript(app_web_content(), FILE_PATH_LITERAL("browser_test.js"));
+}
+
 void RemoteDesktopBrowserTest::Auth() {
   Authorize();
   Authenticate();
@@ -551,6 +578,7 @@ void RemoteDesktopBrowserTest::ParseCommandLine() {
   me2me_pin_ = command_line->GetSwitchValueASCII(kMe2MePin);
   remote_host_name_ = command_line->GetSwitchValueASCII(kRemoteHostName);
   extension_name_ = command_line->GetSwitchValueASCII(kExtensionName);
+  http_server_ = command_line->GetSwitchValueASCII(kHttpServer);
 
   no_cleanup_ = command_line->HasSwitch(kNoCleanup);
   no_install_ = command_line->HasSwitch(kNoInstall);
@@ -623,6 +651,58 @@ std::string RemoteDesktopBrowserTest::ExecuteScriptAndExtractString(
       &result));
 
   return result;
+}
+
+// static
+bool RemoteDesktopBrowserTest::LoadScript(
+    content::WebContents* web_contents,
+    const base::FilePath::StringType& path) {
+  std::string script;
+  base::FilePath src_dir;
+  _ASSERT_TRUE(PathService::Get(base::DIR_EXE, &src_dir));
+  base::FilePath script_path = src_dir.Append(path);
+
+  if (!base::ReadFileToString(script_path, &script)) {
+    LOG(ERROR) << "Failed to load script " << script_path.value();
+    return false;
+  }
+
+  return content::ExecuteScript(web_contents, script);
+}
+
+// static
+void RemoteDesktopBrowserTest::RunJavaScriptTest(
+    content::WebContents* web_contents,
+    const std::string& testName,
+    const std::string& testData) {
+  std::string result;
+  std::string script = "browserTest.runTest(browserTest." + testName + ", " +
+                       testData + ");";
+
+  LOG(INFO) << "Executing " << script;
+
+  ASSERT_TRUE(
+      content::ExecuteScriptAndExtractString(web_contents, script, &result));
+
+  // Read in the JSON
+  base::JSONReader reader;
+  scoped_ptr<base::Value> value;
+  value.reset(reader.Read(result, base::JSON_ALLOW_TRAILING_COMMAS));
+
+  // Convert to dictionary
+  base::DictionaryValue* dict_value = NULL;
+  ASSERT_TRUE(value->GetAsDictionary(&dict_value));
+
+  bool succeeded;
+  std::string error_message;
+  std::string stack_trace;
+
+  // Extract the fields
+  ASSERT_TRUE(dict_value->GetBoolean("succeeded", &succeeded));
+  ASSERT_TRUE(dict_value->GetString("error_message", &error_message));
+  ASSERT_TRUE(dict_value->GetString("stack_trace", &stack_trace));
+
+  EXPECT_TRUE(succeeded) << error_message << "\n" << stack_trace;
 }
 
 void RemoteDesktopBrowserTest::ClickOnControl(const std::string& name) {
@@ -710,6 +790,15 @@ bool RemoteDesktopBrowserTest::IsAuthenticatedInWindow(
     content::WebContents* web_contents) {
   return ExecuteScriptAndExtractBool(
       web_contents, "remoting.identity.isAuthenticated()");
+}
+
+// static
+bool RemoteDesktopBrowserTest::IsHostActionComplete(
+    content::WebContents* client_web_content,
+    std::string host_action_var) {
+  return ExecuteScriptAndExtractBool(
+      client_web_content,
+      host_action_var);
 }
 
 }  // namespace remoting

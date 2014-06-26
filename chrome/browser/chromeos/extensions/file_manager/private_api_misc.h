@@ -9,7 +9,6 @@
 #define CHROME_BROWSER_CHROMEOS_EXTENSIONS_FILE_MANAGER_PRIVATE_API_MISC_H_
 
 #include "chrome/browser/chromeos/extensions/file_manager/private_api_base.h"
-#include "chrome/browser/chromeos/file_manager/zip_file_creator.h"
 #include "google_apis/drive/gdata_errorcode.h"
 
 namespace google_apis {
@@ -30,7 +29,7 @@ class FileBrowserPrivateLogoutUserForReauthenticationFunction
   virtual ~FileBrowserPrivateLogoutUserForReauthenticationFunction() {}
 
   // SyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.getPreferences method.
@@ -44,7 +43,7 @@ class FileBrowserPrivateGetPreferencesFunction
  protected:
   virtual ~FileBrowserPrivateGetPreferencesFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.setPreferences method.
@@ -58,14 +57,13 @@ class FileBrowserPrivateSetPreferencesFunction
  protected:
   virtual ~FileBrowserPrivateSetPreferencesFunction() {}
 
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.zipSelection method.
 // Creates a zip file for the selected files.
 class FileBrowserPrivateZipSelectionFunction
-    : public LoggedAsyncExtensionFunction,
-      public file_manager::ZipFileCreator::Observer {
+    : public LoggedAsyncExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.zipSelection",
                              FILEBROWSERPRIVATE_ZIPSELECTION)
@@ -76,13 +74,10 @@ class FileBrowserPrivateZipSelectionFunction
   virtual ~FileBrowserPrivateZipSelectionFunction();
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
-  // extensions::ZipFileCreator::Delegate overrides.
-  virtual void OnZipDone(bool success) OVERRIDE;
-
- private:
-  scoped_refptr<file_manager::ZipFileCreator> zip_file_creator_;
+  // Receives the result from ZipFileCreator.
+  void OnZipDone(bool success);
 };
 
 // Implements the chrome.fileBrowserPrivate.zoom method.
@@ -98,7 +93,7 @@ class FileBrowserPrivateZoomFunction : public ChromeSyncExtensionFunction {
   virtual ~FileBrowserPrivateZoomFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // Implements the chrome.fileBrowserPrivate.installWebstoreItem method.
@@ -112,7 +107,7 @@ class FileBrowserPrivateInstallWebstoreItemFunction
   virtual ~FileBrowserPrivateInstallWebstoreItemFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   void OnInstallComplete(bool success, const std::string& error);
 
  private:
@@ -129,7 +124,7 @@ class FileBrowserPrivateRequestWebStoreAccessTokenFunction
 
  protected:
   virtual ~FileBrowserPrivateRequestWebStoreAccessTokenFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_ptr<google_apis::AuthServiceInterface> auth_service_;
@@ -149,7 +144,7 @@ class FileBrowserPrivateGetProfilesFunction
   virtual ~FileBrowserPrivateGetProfilesFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileBrowserPrivateVisitDesktopFunction
@@ -162,7 +157,20 @@ class FileBrowserPrivateVisitDesktopFunction
   virtual ~FileBrowserPrivateVisitDesktopFunction() {}
 
   // AsyncExtensionFunction overrides.
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
+};
+
+// Implements the chrome.fileBrowserPrivate.openInspector method.
+class FileBrowserPrivateOpenInspectorFunction
+    : public ChromeSyncExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fileBrowserPrivate.openInspector",
+                             FILEBROWSERPRIVATE_OPENINSPECTOR);
+
+ protected:
+  virtual ~FileBrowserPrivateOpenInspectorFunction() {}
+
+  virtual bool RunSync() OVERRIDE;
 };
 
 }  // namespace extensions

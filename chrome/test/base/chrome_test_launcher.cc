@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "content/public/test/test_launcher.h"
+#include "chrome/test/base/chrome_test_launcher.h"
 
 #include "base/command_line.h"
 #include "base/debug/leak_annotations.h"
@@ -20,17 +20,13 @@
 #include "chrome/test/base/chrome_test_suite.h"
 #include "chrome/test/base/test_switches.h"
 #include "content/public/app/content_main.h"
+#include "content/public/test/test_launcher.h"
 #include "content/public/test/test_utils.h"
 #include "ui/base/test/ui_controls.h"
 
 #if defined(OS_MACOSX)
 #include "chrome/browser/chrome_browser_application_mac.h"
 #endif  // defined(OS_MACOSX)
-
-#if defined(OS_WIN)
-#include "content/public/app/startup_helper_win.h"
-#include "sandbox/win/src/sandbox_types.h"
-#endif  // defined(OS_WIN)
 
 #if defined(USE_AURA)
 #include "ui/aura/test/ui_controls_factory_aura.h"
@@ -52,11 +48,12 @@ namespace {
 
 class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
  public:
-  ChromeTestLauncherDelegate() {}
+  explicit ChromeTestLauncherDelegate(ChromeTestSuiteRunner* runner)
+      : runner_(runner) {}
   virtual ~ChromeTestLauncherDelegate() {}
 
   virtual int RunTestSuite(int argc, char** argv) OVERRIDE {
-    return ChromeTestSuite(argc, argv).Run();
+    return runner_->RunTestSuite(argc, argv);
   }
 
   virtual bool AdjustChildProcessCommandLine(
@@ -83,14 +80,7 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
 
  protected:
   virtual content::ContentMainDelegate* CreateContentMainDelegate() OVERRIDE {
-#if defined(OS_WIN) || defined (OS_LINUX)
     return new ChromeMainDelegate();
-#else
-    // This delegate is only guaranteed to link on linux and windows, so just
-    // bail out if we are on any other platform.
-    NOTREACHED();
-    return NULL;
-#endif
   }
 
   virtual void AdjustDefaultParallelJobs(int* default_jobs) OVERRIDE {
@@ -106,12 +96,17 @@ class ChromeTestLauncherDelegate : public content::TestLauncherDelegate {
   }
 
  private:
+  ChromeTestSuiteRunner* runner_;
+
   DISALLOW_COPY_AND_ASSIGN(ChromeTestLauncherDelegate);
 };
 
 }  // namespace
 
-int LaunchChromeTests(int default_jobs, int argc, char** argv) {
+int LaunchChromeTests(int default_jobs,
+                      ChromeTestSuiteRunner* runner,
+                      int argc,
+                      char** argv) {
 #if defined(OS_MACOSX)
   chrome_browser_application_mac::RegisterBrowserCrApp();
 #endif
@@ -125,6 +120,6 @@ int LaunchChromeTests(int default_jobs, int argc, char** argv) {
   breakpad::SetBreakpadClient(breakpad_client);
 #endif
 
-  ChromeTestLauncherDelegate launcher_delegate;
+  ChromeTestLauncherDelegate launcher_delegate(runner);
   return content::LaunchTests(&launcher_delegate, default_jobs, argc, argv);
 }

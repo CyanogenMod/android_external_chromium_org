@@ -8,17 +8,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/strings/string16.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/existing_user_controller.h"
-#include "chrome/browser/chromeos/login/login_display_host_impl.h"
 #include "chrome/browser/chromeos/login/test/https_forwarder.h"
 #include "chrome/browser/chromeos/login/test/oobe_screen_waiter.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/chromeos/login/webui_login_display.h"
+#include "chrome/browser/chromeos/login/ui/login_display_host_impl.h"
+#include "chrome/browser/chromeos/login/ui/webui_login_display.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/login/wizard_controller.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/common/chrome_paths.h"
@@ -29,12 +30,12 @@
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/policy_map.h"
 #include "components/policy/core/common/policy_types.h"
-#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/test_utils.h"
 #include "google_apis/gaia/fake_gaia.h"
 #include "google_apis/gaia/gaia_switches.h"
+#include "grit/generated_resources.h"
 #include "net/base/url_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -43,6 +44,7 @@
 #include "policy/policy_constants.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 using net::test_server::BasicHttpResponse;
@@ -84,6 +86,7 @@ class FakeSamlIdp {
 
   void SetLoginHTMLTemplate(const std::string& template_file);
   void SetLoginAuthHTMLTemplate(const std::string& template_file);
+  void SetRefreshURL(const GURL& refresh_url);
 
   scoped_ptr<HttpResponse> HandleRequest(const HttpRequest& request);
 
@@ -100,6 +103,7 @@ class FakeSamlIdp {
   std::string login_html_template_;
   std::string login_auth_html_template_;
   GURL gaia_assertion_url_;
+  GURL refresh_url_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSamlIdp);
 };
@@ -130,6 +134,10 @@ void FakeSamlIdp::SetLoginAuthHTMLTemplate(const std::string& template_file) {
   EXPECT_TRUE(base::ReadFileToString(
       html_template_dir_.Append(template_file),
       &login_auth_html_template_));
+}
+
+void FakeSamlIdp::SetRefreshURL(const GURL& refresh_url) {
+  refresh_url_ = refresh_url;
 }
 
 scoped_ptr<HttpResponse> FakeSamlIdp::HandleRequest(
@@ -180,6 +188,8 @@ scoped_ptr<HttpResponse> FakeSamlIdp::BuildHTMLResponse(
   std::string response_html = html_template;
   ReplaceSubstringsAfterOffset(&response_html, 0, "$RelayState", relay_state);
   ReplaceSubstringsAfterOffset(&response_html, 0, "$Post", next_path);
+  ReplaceSubstringsAfterOffset(
+      &response_html, 0, "$Refresh", refresh_url_.spec());
 
   scoped_ptr<BasicHttpResponse> http_response(new BasicHttpResponse());
   http_response->set_code(net::HTTP_OK);
@@ -246,17 +256,7 @@ class SamlTest : public InProcessBrowserTest {
   }
 
   virtual void SetUpOnMainThread() OVERRIDE {
-    FakeGaia::MergeSessionParams params;
-    params.auth_sid_cookie = kTestAuthSIDCookie;
-    params.auth_lsid_cookie = kTestAuthLSIDCookie;
-    params.auth_code = kTestAuthCode;
-    params.refresh_token = kTestRefreshToken;
-    params.access_token = kTestAuthLoginAccessToken;
-    params.gaia_uber_token = kTestGaiaUberToken;
-    params.session_sid_cookie = kTestSessionSIDCookie;
-    params.session_lsid_cookie = kTestSessionLSIDCookie;
-    params.email = kFirstSAMLUserEmail;
-    fake_gaia_.SetMergeSessionParams(params);
+    SetMergeSessionParams(kFirstSAMLUserEmail);
 
     embedded_test_server()->RegisterRequestHandler(
         base::Bind(&FakeGaia::HandleRequest, base::Unretained(&fake_gaia_)));
@@ -278,6 +278,20 @@ class SamlTest : public InProcessBrowserTest {
                                              base::Bind(&chrome::AttemptExit));
       content::RunMessageLoop();
     }
+  }
+
+  void SetMergeSessionParams(const std::string& email) {
+    FakeGaia::MergeSessionParams params;
+    params.auth_sid_cookie = kTestAuthSIDCookie;
+    params.auth_lsid_cookie = kTestAuthLSIDCookie;
+    params.auth_code = kTestAuthCode;
+    params.refresh_token = kTestRefreshToken;
+    params.access_token = kTestAuthLoginAccessToken;
+    params.gaia_uber_token = kTestGaiaUberToken;
+    params.session_sid_cookie = kTestSessionSIDCookie;
+    params.session_lsid_cookie = kTestSessionLSIDCookie;
+    params.email = email;
+    fake_gaia_.SetMergeSessionParams(params);
   }
 
   WebUILoginDisplay* GetLoginDisplay() {
@@ -351,17 +365,29 @@ class SamlTest : public InProcessBrowserTest {
     EXPECT_TRUE(result) << js;
   }
 
-  content::WebUI* GetLoginUI() {
-    return static_cast<chromeos::LoginDisplayHostImpl*>(
-        chromeos::LoginDisplayHostImpl::default_host())->GetOobeUI()->web_ui();
+  std::string WaitForAndGetFatalErrorMessage() {
+    OobeScreenWaiter(OobeDisplay::SCREEN_FATAL_ERROR).Wait();
+    std::string error_message;
+    if (!content::ExecuteScriptAndExtractString(
+          GetLoginUI()->GetWebContents(),
+          "window.domAutomationController.send("
+              "$('fatal-error-message').textContent);",
+          &error_message)) {
+      ADD_FAILURE();
+    }
+    return error_message;
   }
 
-  // Executes Js code in the auth iframe hosted by gaia_auth extension.
+  content::WebUI* GetLoginUI() {
+    return static_cast<LoginDisplayHostImpl*>(
+        LoginDisplayHostImpl::default_host())->GetOobeUI()->web_ui();
+  }
+
+  // Executes JavaScript code in the auth iframe hosted by gaia_auth extension.
   void ExecuteJsInSigninFrame(const std::string& js) {
-    ASSERT_TRUE(content::ExecuteScriptInFrame(
-        GetLoginUI()->GetWebContents(),
-        "//iframe[@id='signin-frame']\n//iframe",
-        js));
+    content::RenderFrameHost* frame =
+        LoginDisplayHostImpl::GetGaiaAuthIframe(GetLoginUI()->GetWebContents());
+    ASSERT_TRUE(content::ExecuteScript(frame, js));
   }
 
   FakeSamlIdp* fake_saml_idp() { return &fake_saml_idp_; }
@@ -477,7 +503,8 @@ IN_PROC_BROWSER_TEST_F(SamlTest, ScrapedNone) {
   SetSignFormField("Email", "fake_user");
   ExecuteJsInSigninFrame("document.getElementById('Submit').click();");
 
-  OobeScreenWaiter(OobeDisplay::SCREEN_FATAL_ERROR).Wait();
+  EXPECT_EQ(l10n_util::GetStringUTF8(IDS_LOGIN_FATAL_ERROR_NO_PASSWORD),
+            WaitForAndGetFatalErrorMessage());
 }
 
 // Types |bob@example.com| into the GAIA login form but then authenticates as
@@ -506,6 +533,21 @@ IN_PROC_BROWSER_TEST_F(SamlTest, UseAutenticatedUserEmailAddress) {
   EXPECT_EQ(kFirstSAMLUserEmail, user->email());
 }
 
+// Verifies that if the authenticated user's e-mail address cannot be retrieved,
+// an error message is shown.
+IN_PROC_BROWSER_TEST_F(SamlTest, FailToRetrieveAutenticatedUserEmailAddress) {
+  fake_saml_idp()->SetLoginHTMLTemplate("saml_login.html");
+  StartSamlAndWaitForIdpPageLoad(kFirstSAMLUserEmail);
+
+  SetMergeSessionParams("");
+  SetSignFormField("Email", "fake_user");
+  SetSignFormField("Password", "fake_password");
+  ExecuteJsInSigninFrame("document.getElementById('Submit').click();");
+
+  EXPECT_EQ(l10n_util::GetStringUTF8(IDS_LOGIN_FATAL_ERROR_NO_EMAIL),
+            WaitForAndGetFatalErrorMessage());
+}
+
 // Tests the password confirm flow: show error on the first failure and
 // fatal error on the second failure.
 IN_PROC_BROWSER_TEST_F(SamlTest, PasswordConfirmFlow) {
@@ -527,21 +569,43 @@ IN_PROC_BROWSER_TEST_F(SamlTest, PasswordConfirmFlow) {
   OobeScreenWaiter(OobeDisplay::SCREEN_CONFIRM_PASSWORD).Wait();
   JsExpect("$('confirm-password').classList.contains('error')");
 
-  // Enter an unknown password 2nd time should go back to confirm password
-  // screen.
+  // Enter an unknown password 2nd time should go back fatal error message.
   SendConfirmPassword("wrong_password");
-  OobeScreenWaiter(OobeDisplay::SCREEN_FATAL_ERROR).Wait();
+  EXPECT_EQ(
+      l10n_util::GetStringUTF8(IDS_LOGIN_FATAL_ERROR_PASSWORD_VERIFICATION),
+      WaitForAndGetFatalErrorMessage());
 }
 
 // Verifies that when GAIA attempts to redirect to a SAML IdP served over http,
-// not https, the redirect is blocked by CSP and an error message is shown.
+// not https, the redirect is blocked and an error message is shown.
 IN_PROC_BROWSER_TEST_F(SamlTest, HTTPRedirectDisallowed) {
   fake_saml_idp()->SetLoginHTMLTemplate("saml_login.html");
 
   WaitForSigninScreen();
   GetLoginDisplay()->ShowSigninScreenForCreds(kHTTPSAMLUserEmail, "");
 
-  OobeScreenWaiter(OobeDisplay::SCREEN_FATAL_ERROR).Wait();
+  const GURL url = embedded_test_server()->base_url().Resolve("/SAML");
+  EXPECT_EQ(l10n_util::GetStringFUTF8(
+                IDS_LOGIN_FATAL_ERROR_TEXT_INSECURE_URL,
+                base::UTF8ToUTF16(url.spec())),
+            WaitForAndGetFatalErrorMessage());
+}
+
+// Verifies that when GAIA attempts to redirect to a page served over http, not
+// https, via an HTML meta refresh, the redirect is blocked and an error message
+// is shown. This guards against regressions of http://crbug.com/359515.
+IN_PROC_BROWSER_TEST_F(SamlTest, MetaRefreshToHTTPDisallowed) {
+  const GURL url = embedded_test_server()->base_url().Resolve("/SSO");
+  fake_saml_idp()->SetLoginHTMLTemplate("saml_login_instant_meta_refresh.html");
+  fake_saml_idp()->SetRefreshURL(url);
+
+  WaitForSigninScreen();
+  GetLoginDisplay()->ShowSigninScreenForCreds(kFirstSAMLUserEmail, "");
+
+  EXPECT_EQ(l10n_util::GetStringFUTF8(
+                IDS_LOGIN_FATAL_ERROR_TEXT_INSECURE_URL,
+                base::UTF8ToUTF16(url.spec())),
+            WaitForAndGetFatalErrorMessage());
 }
 
 class SAMLPolicyTest : public SamlTest {

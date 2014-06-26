@@ -11,6 +11,7 @@
 #include "content/renderer/render_view_impl.h"
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_sync_message.h"
+#include "ipc/message_filter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/web/WebScriptController.h"
 
@@ -26,17 +27,11 @@ MockRenderThread::MockRenderThread()
 }
 
 MockRenderThread::~MockRenderThread() {
-}
-
-void MockRenderThread::VerifyRunJavaScriptMessageSend(
-    const base::string16& expected_alert_message) {
-  const IPC::Message* alert_msg =
-      sink_.GetUniqueMessageMatching(ViewHostMsg_RunJavaScriptMessage::ID);
-  ASSERT_TRUE(alert_msg);
-  PickleIterator iter = IPC::SyncMessage::GetDataIterator(alert_msg);
-  ViewHostMsg_RunJavaScriptMessage::SendParam alert_param;
-  ASSERT_TRUE(IPC::ReadParam(alert_msg, &iter, &alert_param));
-  EXPECT_EQ(expected_alert_message, alert_param.a);
+  while (!filters_.empty()) {
+    scoped_refptr<IPC::MessageFilter> filter = filters_.back();
+    filters_.pop_back();
+    filter->OnFilterRemoved();
+  }
 }
 
 // Called by the Widget. Used to send messages to the browser.
@@ -99,14 +94,14 @@ int MockRenderThread::GenerateRoutingID() {
   return MSG_ROUTING_NONE;
 }
 
-void MockRenderThread::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void MockRenderThread::AddFilter(IPC::MessageFilter* filter) {
   filter->OnFilterAdded(&sink());
   // Add this filter to a vector so the MockRenderThread::RemoveFilter function
   // can check if this filter is added.
   filters_.push_back(make_scoped_refptr(filter));
 }
 
-void MockRenderThread::RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void MockRenderThread::RemoveFilter(IPC::MessageFilter* filter) {
   // Emulate the IPC::ChannelProxy::OnRemoveFilter function.
   for (size_t i = 0; i < filters_.size(); ++i) {
     if (filters_[i].get() == filter) {
@@ -143,7 +138,7 @@ scoped_ptr<base::SharedMemory>
     MockRenderThread::HostAllocateSharedMemoryBuffer(
         size_t buffer_size) {
   scoped_ptr<base::SharedMemory> shared_buf(new base::SharedMemory);
-  if (!shared_buf->CreateAndMapAnonymous(buffer_size)) {
+  if (!shared_buf->CreateAnonymous(buffer_size)) {
     NOTREACHED() << "Cannot map shared memory buffer";
     return scoped_ptr<base::SharedMemory>();
   }
@@ -180,6 +175,10 @@ bool MockRenderThread::ResolveProxy(const GURL& url, std::string* proxy_list) {
   return false;
 }
 
+base::WaitableEvent* MockRenderThread::GetShutdownEvent() {
+  return NULL;
+}
+
 #if defined(OS_WIN)
 void MockRenderThread::PreCacheFont(const LOGFONT& log_font) {
 }
@@ -188,6 +187,10 @@ void MockRenderThread::ReleaseCachedFonts() {
 }
 
 #endif  // OS_WIN
+
+ServiceRegistry* MockRenderThread::GetServiceRegistry() {
+  return NULL;
+}
 
 void MockRenderThread::SendCloseMessage() {
   ViewMsg_Close msg(routing_id_);
@@ -219,11 +222,9 @@ void MockRenderThread::OnCreateWindow(
 
 // The Frame expects to be returned a valid route_id different from its own.
 void MockRenderThread::OnCreateChildFrame(int new_frame_routing_id,
-                                          int64 parent_frame_id,
-                                          int64 frame_id,
                                           const std::string& frame_name,
                                           int* new_render_frame_id) {
-  *new_render_frame_id = new_frame_routing_id_;
+  *new_render_frame_id = new_frame_routing_id_++;
 }
 
 bool MockRenderThread::OnControlMessageReceived(const IPC::Message& msg) {
@@ -241,13 +242,12 @@ bool MockRenderThread::OnMessageReceived(const IPC::Message& msg) {
   sink_.OnMessageReceived(msg);
 
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(MockRenderThread, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(MockRenderThread, msg)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWidget, OnCreateWidget)
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWindow, OnCreateWindow)
     IPC_MESSAGE_HANDLER(FrameHostMsg_CreateChildFrame, OnCreateChildFrame)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 

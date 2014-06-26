@@ -12,21 +12,24 @@
 #include "base/callback_forward.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/api/declarative/rules_registry.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 class Profile;
 
 namespace content {
-class NotificationSource;
+class BrowserContext;
 class NotificationSource;
 }
 
 namespace extensions {
 class ContentRulesRegistry;
+class ExtensionRegistry;
 class RulesRegistry;
 class RulesRegistryStorageDelegate;
 }
@@ -35,8 +38,9 @@ namespace extensions {
 
 // This class owns all RulesRegistries implementations of an ExtensionService.
 // This class lives on the UI thread.
-class RulesRegistryService : public ProfileKeyedAPI,
-                             public content::NotificationObserver {
+class RulesRegistryService : public BrowserContextKeyedAPI,
+                             public content::NotificationObserver,
+                             public ExtensionRegistryObserver {
  public:
   typedef RulesRegistry::WebViewKey WebViewKey;
   struct RulesRegistryKey {
@@ -53,18 +57,19 @@ class RulesRegistryService : public ProfileKeyedAPI,
     }
   };
 
-  explicit RulesRegistryService(Profile* profile);
+  explicit RulesRegistryService(content::BrowserContext* context);
   virtual ~RulesRegistryService();
 
   // Unregisters refptrs to concrete RulesRegistries at other objects that were
   // created by us so that the RulesRegistries can be released.
   virtual void Shutdown() OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<RulesRegistryService>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<RulesRegistryService>*
+      GetFactoryInstance();
 
   // Convenience method to get the RulesRegistryService for a profile.
-  static RulesRegistryService* Get(Profile* profile);
+  static RulesRegistryService* Get(content::BrowserContext* context);
 
   // Registers the default RulesRegistries used in Chromium.
   void EnsureDefaultRulesRegistriesRegistered(const WebViewKey& webview_key);
@@ -92,7 +97,7 @@ class RulesRegistryService : public ProfileKeyedAPI,
   void SimulateExtensionUninstalled(const std::string& extension_id);
 
  private:
-  friend class ProfileKeyedAPIFactory<RulesRegistryService>;
+  friend class BrowserContextKeyedAPIFactory<RulesRegistryService>;
 
   // Maps <event name, webview key> to RuleRegistries that handle these
   // events.
@@ -104,6 +109,16 @@ class RulesRegistryService : public ProfileKeyedAPI,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE;
+
   // Iterates over all registries, and calls |notification_callback| on them
   // with |extension_id| as the argument. If a registry lives on a different
   // thread, the call is posted to that thread, so no guarantee of synchronous
@@ -112,7 +127,7 @@ class RulesRegistryService : public ProfileKeyedAPI,
       void (RulesRegistry::*notification_callback)(const std::string&),
       const std::string& extension_id);
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "RulesRegistryService";
   }
@@ -129,6 +144,10 @@ class RulesRegistryService : public ProfileKeyedAPI,
   ContentRulesRegistry* content_rules_registry_;
 
   content::NotificationRegistrar registrar_;
+
+  // Listen to extension load, unloaded notification.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   Profile* profile_;
 

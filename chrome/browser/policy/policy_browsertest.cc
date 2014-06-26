@@ -35,12 +35,10 @@
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/extensions/api/messaging/native_message_process_host.h"
 #include "chrome/browser/extensions/crx_installer.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/updater/extension_cache_fake.h"
 #include "chrome/browser/extensions/updater/extension_updater.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/media/media_stream_devices_controller.h"
@@ -55,12 +53,11 @@
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
+#include "chrome/browser/translate/chrome_translate_client.h"
+#include "chrome/browser/translate/cld_data_harness.h"
 #include "chrome/browser/translate/translate_service.h"
-#include "chrome/browser/translate/translate_tab_helper.h"
 #include "chrome/browser/ui/bookmarks/bookmark_bar.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -82,6 +79,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/infobar.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
@@ -89,6 +87,9 @@
 #include "components/policy/core/common/policy_pref_names.h"
 #include "components/policy/core/common/policy_service.h"
 #include "components/policy/core/common/policy_service_impl.h"
+#include "components/search_engines/template_url.h"
+#include "components/translate/core/browser/language_state.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
 #include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
@@ -120,6 +121,7 @@
 #include "content/public/test/test_utils.h"
 #include "content/test/net/url_request_failed_job.h"
 #include "content/test/net/url_request_mock_http_job.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/common/constants.h"
@@ -150,6 +152,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/screenshot_taker.h"
 #include "chromeos/audio/cras_audio_handler.h"
+#include "ui/keyboard/keyboard_util.h"
 #endif
 
 #if !defined(OS_MACOSX)
@@ -218,8 +221,8 @@ void RedirectHostsToTestData(const char* const urls[], size_t size) {
   for (size_t i = 0; i < size; ++i) {
     const GURL url(urls[i]);
     EXPECT_TRUE(url.is_valid());
-    filter->AddUrlProtocolHandler(url,
-        URLRequestMockHTTPJob::CreateProtocolHandler(base_path));
+    filter->AddUrlInterceptor(
+        url, URLRequestMockHTTPJob::CreateInterceptor(base_path));
   }
 }
 
@@ -313,7 +316,6 @@ void CheckURLIsBlocked(Browser* browser, const char* spec) {
   EXPECT_TRUE(result);
 }
 
-#if !defined(OS_CHROMEOS)
 // Downloads a file named |file| and expects it to be saved to |dir|, which
 // must be empty.
 void DownloadAndVerifyFile(
@@ -338,8 +340,7 @@ void DownloadAndVerifyFile(
   EXPECT_EQ(base::FilePath(), enumerator.Next());
 }
 
-#else
-
+#if defined(OS_CHROMEOS)
 int CountScreenshots() {
   DownloadPrefs* download_prefs = DownloadPrefs::FromBrowserContext(
       ProfileManager::GetActiveUserProfile());
@@ -367,7 +368,7 @@ bool IsWebGLEnabled(content::WebContents* contents) {
 
 bool IsJavascriptEnabled(content::WebContents* contents) {
   scoped_ptr<base::Value> value = content::ExecuteScriptAndGetValue(
-      contents->GetRenderViewHost(), "123");
+      contents->GetMainFrame(), "123");
   int result = 0;
   if (!value->GetAsInteger(&result))
     EXPECT_EQ(base::Value::TYPE_NULL, value->GetType());
@@ -499,8 +500,7 @@ class WebContentsLoadedOrDestroyedWatcher
   void Wait();
 
   // Overridden WebContentsObserver methods.
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
   virtual void DidStopLoading(
       content::RenderViewHost* render_view_host) OVERRIDE;
 
@@ -522,8 +522,7 @@ void WebContentsLoadedOrDestroyedWatcher::Wait() {
   message_loop_runner_->Run();
 }
 
-void WebContentsLoadedOrDestroyedWatcher::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void WebContentsLoadedOrDestroyedWatcher::WebContentsDestroyed() {
   message_loop_runner_->Quit();
 }
 
@@ -542,8 +541,6 @@ class TestAddAppWindowObserver : public apps::AppWindowRegistry::Observer {
 
   // apps::AppWindowRegistry::Observer:
   virtual void OnAppWindowAdded(apps::AppWindow* app_window) OVERRIDE;
-  virtual void OnAppWindowIconChanged(apps::AppWindow* app_window) OVERRIDE;
-  virtual void OnAppWindowRemoved(apps::AppWindow* app_window) OVERRIDE;
 
   apps::AppWindow* WaitForAppWindow();
 
@@ -568,12 +565,6 @@ TestAddAppWindowObserver::~TestAddAppWindowObserver() {
 void TestAddAppWindowObserver::OnAppWindowAdded(apps::AppWindow* app_window) {
   window_ = app_window;
   run_loop_.Quit();
-}
-
-void TestAddAppWindowObserver::OnAppWindowIconChanged(
-    apps::AppWindow* app_window) {}
-
-void TestAddAppWindowObserver::OnAppWindowRemoved(apps::AppWindow* app_window) {
 }
 
 apps::AppWindow* TestAddAppWindowObserver::WaitForAppWindow() {
@@ -693,7 +684,7 @@ class PolicyTest : public InProcessBrowserTest {
     scoped_refptr<extensions::UnpackedInstaller> installer =
         extensions::UnpackedInstaller::Create(extension_service());
     content::WindowedNotificationObserver observer(
-        expect_success ? chrome::NOTIFICATION_EXTENSION_LOADED
+        expect_success ? chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
                        : chrome::NOTIFICATION_EXTENSION_LOAD_ERROR,
         content::NotificationService::AllSources());
     installer->Load(extension_path);
@@ -711,7 +702,7 @@ class PolicyTest : public InProcessBrowserTest {
 
   void UninstallExtension(const std::string& id, bool expect_success) {
     content::WindowedNotificationObserver observer(
-        expect_success ? chrome::NOTIFICATION_EXTENSION_UNINSTALLED
+        expect_success ? chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED
                        : chrome::NOTIFICATION_EXTENSION_UNINSTALL_NOT_ALLOWED,
         content::NotificationService::AllSources());
     extension_service()->UninstallExtension(id, false, NULL);
@@ -951,7 +942,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   EXPECT_EQ(expected, web_contents->GetURL());
 
   // Verify that searching from the omnibox can be disabled.
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   policies.Set(key::kDefaultSearchProviderEnabled, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false), NULL);
   EXPECT_TRUE(service->GetDefaultSearchProvider());
@@ -960,7 +951,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DefaultSearchProvider) {
   ui_test_utils::SendToOmniboxAndSubmit(location_bar, "should not work");
   // This means that submitting won't trigger any action.
   EXPECT_FALSE(model->CurrentMatch(NULL).destination_url.is_valid());
-  EXPECT_EQ(GURL(content::kAboutBlankURL), web_contents->GetURL());
+  EXPECT_EQ(GURL(url::kAboutBlankURL), web_contents->GetURL());
 }
 
 IN_PROC_BROWSER_TEST_F(PolicyTest, PolicyPreprocessing) {
@@ -1170,7 +1161,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Disable3DAPIs) {
   if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL))
     return;
 
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   // WebGL is enabled by default.
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
@@ -1381,7 +1372,8 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DeveloperToolsDisabled) {
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(true), NULL);
   content::WindowedNotificationObserver close_observer(
       content::NOTIFICATION_WEB_CONTENTS_DESTROYED,
-      content::Source<content::WebContents>(devtools_window->web_contents()));
+      content::Source<content::WebContents>(
+          devtools_window->web_contents_for_test()));
   UpdateProviderPolicy(policies);
   // wait for devtools close
   close_observer.Wait();
@@ -1432,8 +1424,6 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_WebStoreIconHidden) {
   EXPECT_FALSE(ContainsVisibleElement(contents, "chrome-web-store-link"));
 }
 
-// This policy isn't available on Chrome OS.
-#if !defined(OS_CHROMEOS)
 IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verifies that the download directory can be forced by policy.
 
@@ -1449,7 +1439,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verify that downloads end up on the default directory.
   base::FilePath file(FILE_PATH_LITERAL("download-test1.lib"));
   DownloadAndVerifyFile(browser(), initial_dir.path(), file);
-  file_util::DieFileDie(initial_dir.path().Append(file), false);
+  base::DieFileDie(initial_dir.path().Append(file), false);
 
   // Override the download directory with the policy and verify a download.
   base::ScopedTempDir forced_dir;
@@ -1463,9 +1453,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DownloadDirectory) {
   // Verify that the first download location wasn't affected.
   EXPECT_FALSE(base::PathExists(initial_dir.path().Append(file)));
 }
-#endif
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallBlacklistSelective) {
+// Flaky: http://crbug.com/388340
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       DISABLED_ExtensionInstallBlacklistSelective) {
   // Verifies that blacklisted extensions can't be installed.
   ExtensionService* service = extension_service();
   ASSERT_FALSE(service->GetExtensionById(kGoodCrxId, true));
@@ -1566,7 +1557,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
   policies.Set(key::kExtensionInstallForcelist, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER, forcelist.DeepCopy(), NULL);
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
       content::NotificationService::AllSources());
   UpdateProviderPolicy(policies);
   observer.Wait();
@@ -1604,7 +1595,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
   extensions::ExtensionUpdater::CheckParams params;
   params.install_immediately = true;
   content::WindowedNotificationObserver update_observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
       content::NotificationService::AllSources());
   updater->CheckNow(params);
   update_observer.Wait();
@@ -1650,7 +1641,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ExtensionInstallForcelist) {
       chrome::NOTIFICATION_EXTENSION_PROCESS_TERMINATED,
       content::NotificationService::AllSources());
   content::WindowedNotificationObserver extension_loaded_observer(
-      chrome::NOTIFICATION_EXTENSION_LOADED,
+      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::NotificationService::AllSources());
   extensions::ExtensionHost* extension_host =
       extensions::ExtensionSystem::Get(browser()->profile())->
@@ -1707,6 +1698,12 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
   const GURL referrer_url(URLRequestMockHTTPJob::GetMockUrl(
       base::FilePath(FILE_PATH_LITERAL("policy/*"))));
 
+  base::ScopedTempDir download_directory;
+  ASSERT_TRUE(download_directory.CreateUniqueTempDir());
+  DownloadPrefs* download_prefs =
+      DownloadPrefs::FromBrowserContext(browser()->profile());
+  download_prefs->SetDownloadPath(download_directory.path());
+
   const GURL download_page_url(URLRequestMockHTTPJob::GetMockUrl(base::FilePath(
       FILE_PATH_LITERAL("policy/extension_install_sources_test.html"))));
   ui_test_utils::NavigateToURL(browser(), download_page_url);
@@ -1728,7 +1725,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, MAYBE_ExtensionInstallSources) {
   UpdateProviderPolicy(policies);
 
   content::WindowedNotificationObserver observer(
-      chrome::NOTIFICATION_EXTENSION_INSTALLED,
+      chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
       content::NotificationService::AllSources());
   PerformClick(1, 0);
   observer.Wait();
@@ -1758,7 +1755,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, HomepageLocation) {
             browser()->profile()->GetHomePage());
   content::WebContents* contents =
       browser()->tab_strip_model()->GetActiveWebContents();
-  EXPECT_EQ(GURL(content::kAboutBlankURL), contents->GetURL());
+  EXPECT_EQ(GURL(url::kAboutBlankURL), contents->GetURL());
   EXPECT_TRUE(chrome::ExecuteCommand(browser(), IDC_HOME));
   EXPECT_EQ(GURL(chrome::kChromeUIPolicyURL), contents->GetURL());
 
@@ -1823,7 +1820,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Javascript) {
                POLICY_SCOPE_USER, base::Value::CreateBooleanValue(false), NULL);
   UpdateProviderPolicy(policies);
   // Reload the page.
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   EXPECT_FALSE(IsJavascriptEnabled(contents));
   // Developer tools still work when javascript is disabled.
   EXPECT_TRUE(chrome::IsCommandEnabled(browser(), IDC_DEV_TOOLS));
@@ -1834,13 +1831,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, Javascript) {
   EXPECT_TRUE(IsJavascriptEnabled(contents));
 
   // The javascript content setting policy overrides the javascript policy.
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   EXPECT_FALSE(IsJavascriptEnabled(contents));
   policies.Set(key::kDefaultJavaScriptSetting, POLICY_LEVEL_MANDATORY,
                POLICY_SCOPE_USER,
                base::Value::CreateIntegerValue(CONTENT_SETTING_ALLOW), NULL);
   UpdateProviderPolicy(policies);
-  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(url::kAboutBlankURL));
   EXPECT_TRUE(IsJavascriptEnabled(contents));
 }
 
@@ -1871,7 +1868,13 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, SavingBrowserHistoryDisabled) {
 
 // http://crbug.com/241691 PolicyTest.TranslateEnabled is failing regularly.
 IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
-  TranslateService::SetUseInfobar(true);
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
+    return;
+
+  scoped_ptr<test::CldDataHarness> cld_data_scope =
+      test::CreateCldDataHarness();
+  ASSERT_NO_FATAL_FAILURE(cld_data_scope->Init());
 
   // Verifies that translate can be forced enabled or disabled by policy.
 
@@ -1903,10 +1906,10 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
   language_observer1.Wait();
 
   // Verify the translation detected for this tab.
-  TranslateTabHelper* translate_tab_helper =
-      TranslateTabHelper::FromWebContents(contents);
-  ASSERT_TRUE(translate_tab_helper);
-  LanguageState& language_state = translate_tab_helper->GetLanguageState();
+  ChromeTranslateClient* chrome_translate_client =
+      ChromeTranslateClient::FromWebContents(contents);
+  ASSERT_TRUE(chrome_translate_client);
+  LanguageState& language_state = chrome_translate_client->GetLanguageState();
   EXPECT_EQ("fr", language_state.original_language());
   EXPECT_TRUE(language_state.page_needs_translation());
   EXPECT_FALSE(language_state.translation_pending());
@@ -1915,11 +1918,11 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, DISABLED_TranslateEnabled) {
 
   // Verify that the translate infobar showed up.
   ASSERT_EQ(1u, infobar_service->infobar_count());
-  InfoBar* infobar = infobar_service->infobar_at(0);
+  infobars::InfoBar* infobar = infobar_service->infobar_at(0);
   TranslateInfoBarDelegate* translate_infobar_delegate =
       infobar->delegate()->AsTranslateInfoBarDelegate();
   ASSERT_TRUE(translate_infobar_delegate);
-  EXPECT_EQ(TranslateTabHelper::BEFORE_TRANSLATE,
+  EXPECT_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
             translate_infobar_delegate->translate_step());
   EXPECT_EQ("fr", translate_infobar_delegate->original_language_code());
 
@@ -2419,7 +2422,7 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, ScreenMagnifierTypeFull) {
   EXPECT_TRUE(magnification_manager->IsMagnifierEnabled());
 }
 
-IN_PROC_BROWSER_TEST_F(PolicyTest, VirtualKeyboardEnabled) {
+IN_PROC_BROWSER_TEST_F(PolicyTest, AccessibilityVirtualKeyboardEnabled) {
   // Verifies that the on-screen keyboard accessibility feature can be
   // controlled through policy.
   chromeos::AccessibilityManager* accessibility_manager =
@@ -2440,6 +2443,41 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, VirtualKeyboardEnabled) {
   // Verify that the on-screen keyboard cannot be enabled manually anymore.
   accessibility_manager->EnableVirtualKeyboard(true);
   EXPECT_FALSE(accessibility_manager->IsVirtualKeyboardEnabled());
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest, VirtualKeyboardEnabled) {
+  // Verify keyboard disabled by default.
+  EXPECT_FALSE(keyboard::IsKeyboardEnabled());
+  // Verify keyboard can be toggled by default.
+  keyboard::SetTouchKeyboardEnabled(true);
+  EXPECT_TRUE(keyboard::IsKeyboardEnabled());
+  keyboard::SetTouchKeyboardEnabled(false);
+  EXPECT_FALSE(keyboard::IsKeyboardEnabled());
+
+  // Verify enabling the policy takes effect immediately and that that user
+  // cannot disable the keyboard..
+  PolicyMap policies;
+  policies.Set(key::kTouchVirtualKeyboardEnabled,
+               POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateBooleanValue(true),
+               NULL);
+  UpdateProviderPolicy(policies);
+  EXPECT_TRUE(keyboard::IsKeyboardEnabled());
+  keyboard::SetTouchKeyboardEnabled(false);
+  EXPECT_TRUE(keyboard::IsKeyboardEnabled());
+
+  // Verify that disabling the policy takes effect immediately and that the user
+  // cannot enable the keyboard.
+  policies.Set(key::kTouchVirtualKeyboardEnabled,
+               POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               base::Value::CreateBooleanValue(false),
+               NULL);
+  UpdateProviderPolicy(policies);
+  EXPECT_FALSE(keyboard::IsKeyboardEnabled());
+  keyboard::SetTouchKeyboardEnabled(true);
+  EXPECT_FALSE(keyboard::IsKeyboardEnabled());
 }
 
 #endif
@@ -2646,8 +2684,8 @@ IN_PROC_BROWSER_TEST_F(PolicyStatisticsCollectorTest, Startup) {
   // CompleteInitialization() task has executed as well.
   content::RunAllPendingInMessageLoop();
 
-  GURL kAboutHistograms = GURL(std::string(chrome::kAboutScheme) +
-                               std::string(content::kStandardSchemeSeparator) +
+  GURL kAboutHistograms = GURL(std::string(url::kAboutScheme) +
+                               std::string(url::kStandardSchemeSeparator) +
                                std::string(content::kChromeUIHistogramHost));
   ui_test_utils::NavigateToURL(browser(), kAboutHistograms);
   content::WebContents* contents =
@@ -2727,6 +2765,7 @@ class MediaStreamDevicesControllerBrowserTest
   }
 
   void Accept(const content::MediaStreamDevices& devices,
+              content::MediaStreamRequestResult result,
               scoped_ptr<content::MediaStreamUI> ui) {
     if (policy_value_ || request_url_allowed_via_whitelist_) {
       ASSERT_EQ(1U, devices.size());
@@ -2738,7 +2777,7 @@ class MediaStreamDevicesControllerBrowserTest
 
   void FinishAudioTest() {
     content::MediaStreamRequest request(0, 0, 0,
-                                        request_url_.GetOrigin(),
+                                        request_url_.GetOrigin(), false,
                                         content::MEDIA_DEVICE_ACCESS,
                                         std::string(), std::string(),
                                         content::MEDIA_DEVICE_AUDIO_CAPTURE,
@@ -2757,7 +2796,7 @@ class MediaStreamDevicesControllerBrowserTest
     // TODO(raymes): Test MEDIA_DEVICE_OPEN (Pepper) which grants both webcam
     // and microphone permissions at the same time.
     content::MediaStreamRequest request(0, 0, 0,
-                                        request_url_.GetOrigin(),
+                                        request_url_.GetOrigin(), false,
                                         content::MEDIA_DEVICE_ACCESS,
                                         std::string(),
                                         std::string(),
@@ -2794,7 +2833,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
 
   content::BrowserThread::PostTaskAndReply(
       content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&MediaCaptureDevicesDispatcher::OnAudioCaptureDevicesChanged,
+      base::Bind(&MediaCaptureDevicesDispatcher::SetTestAudioCaptureDevices,
                  base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
                  audio_devices),
       base::Bind(&MediaStreamDevicesControllerBrowserTest::FinishAudioTest,
@@ -2827,7 +2866,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
     content::BrowserThread::PostTaskAndReply(
         content::BrowserThread::IO, FROM_HERE,
         base::Bind(
-            &MediaCaptureDevicesDispatcher::OnAudioCaptureDevicesChanged,
+            &MediaCaptureDevicesDispatcher::SetTestAudioCaptureDevices,
             base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
             audio_devices),
         base::Bind(
@@ -2851,7 +2890,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
 
   content::BrowserThread::PostTaskAndReply(
       content::BrowserThread::IO, FROM_HERE,
-      base::Bind(&MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged,
+      base::Bind(&MediaCaptureDevicesDispatcher::SetTestVideoCaptureDevices,
                  base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
                  video_devices),
       base::Bind(&MediaStreamDevicesControllerBrowserTest::FinishVideoTest,
@@ -2883,8 +2922,7 @@ IN_PROC_BROWSER_TEST_P(MediaStreamDevicesControllerBrowserTest,
 
     content::BrowserThread::PostTaskAndReply(
         content::BrowserThread::IO, FROM_HERE,
-        base::Bind(
-            &MediaCaptureDevicesDispatcher::OnVideoCaptureDevicesChanged,
+        base::Bind(&MediaCaptureDevicesDispatcher::SetTestVideoCaptureDevices,
             base::Unretained(MediaCaptureDevicesDispatcher::GetInstance()),
             video_devices),
         base::Bind(
@@ -2978,6 +3016,31 @@ IN_PROC_BROWSER_TEST_F(PolicyTest, NativeMessagingWhitelist) {
       prefs, "host.name"));
   EXPECT_FALSE(extensions::NativeMessageProcessHost::IsHostAllowed(
       prefs, "other.host.name"));
+}
+
+IN_PROC_BROWSER_TEST_F(PolicyTest,
+                       EnableDeprecatedWebPlatformFeatures_ShowModalDialog) {
+  base::ListValue enabled_features;
+  enabled_features.Append(new base::StringValue(
+      "ShowModalDialog_EffectiveUntil20150430"));
+  PolicyMap policies;
+  policies.Set(key::kEnableDeprecatedWebPlatformFeatures,
+               POLICY_LEVEL_MANDATORY,
+               POLICY_SCOPE_USER,
+               enabled_features.DeepCopy(),
+               NULL);
+  UpdateProviderPolicy(policies);
+
+  // Policy only takes effect on new browsers, not existing browsers, so create
+  // a new browser.
+  Browser* browser2 = CreateBrowser(browser()->profile());
+  ui_test_utils::NavigateToURL(browser2, GURL(url::kAboutBlankURL));
+  bool result = false;
+  EXPECT_TRUE(content::ExecuteScriptAndExtractBool(
+      browser2->tab_strip_model()->GetActiveWebContents(),
+      "domAutomationController.send(window.showModalDialog !== undefined);",
+      &result));
+  EXPECT_TRUE(result);
 }
 
 #endif  // !defined(CHROME_OS)

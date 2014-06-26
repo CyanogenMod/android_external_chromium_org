@@ -6,22 +6,28 @@
 
 #include <vector>
 
+#include "ash/accessibility_delegate.h"
 #include "ash/root_window_controller.h"
 #include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/tray/system_tray_item.h"
+#include "ash/system/tray/tray_constants.h"
 #include "ash/test/ash_test_base.h"
 #include "ash/wm/window_util.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
+#include "ui/base/ui_base_types.h"
+#include "ui/compositor/scoped_animation_duration_scale_mode.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/views/widget/widget_delegate.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -135,6 +141,20 @@ class TestNoViewItem : public SystemTrayItem {
   }
 };
 
+class ModalWidgetDelegate : public views::WidgetDelegateView {
+ public:
+  ModalWidgetDelegate() {}
+  virtual ~ModalWidgetDelegate() {}
+
+  virtual views::View* GetContentsView() OVERRIDE { return this; }
+  virtual ui::ModalType GetModalType() const OVERRIDE {
+    return ui::MODAL_TYPE_SYSTEM;
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ModalWidgetDelegate);
+};
+
 }  // namespace
 
 typedef AshTestBase SystemTrayTest;
@@ -173,7 +193,7 @@ TEST_F(SystemTrayTest, SystemTrayColoring) {
 TEST_F(SystemTrayTest, SystemTrayColoringAfterAlignmentChange) {
   SystemTray* tray = GetSystemTray();
   ASSERT_TRUE(tray->GetWidget());
-  internal::ShelfLayoutManager* manager =
+  ShelfLayoutManager* manager =
       Shell::GetPrimaryRootWindowController()->shelf()->shelf_layout_manager();
   manager->SetAlignment(SHELF_ALIGNMENT_BOTTOM);
   // At the beginning the tray coloring is not active.
@@ -293,7 +313,7 @@ TEST_F(SystemTrayTest, SystemTrayNotifications) {
   RunAllPendingInMessageLoop();
   ASSERT_TRUE(test_item->notification_view() != NULL);
 
-  // Show the detailed view, ensure the notificaiton view remains.
+  // Show the detailed view, ensure the notification view remains.
   tray->ShowDetailedView(detailed_item, 0, false, BUBBLE_CREATE_NEW);
   RunAllPendingInMessageLoop();
   ASSERT_TRUE(detailed_item->detailed_view() != NULL);
@@ -343,9 +363,9 @@ TEST_F(SystemTrayTest, BubbleCreationTypesTest) {
 // Tests that the tray is laid out properly and is fully contained within
 // the shelf.
 TEST_F(SystemTrayTest, TrayBoundsInWidget) {
-  internal::ShelfLayoutManager* manager =
+  ShelfLayoutManager* manager =
       Shell::GetPrimaryRootWindowController()->shelf()->shelf_layout_manager();
-  internal::StatusAreaWidget* widget =
+  StatusAreaWidget* widget =
       Shell::GetPrimaryRootWindowController()->shelf()->status_area_widget();
   SystemTray* tray = widget->system_tray();
 
@@ -416,6 +436,73 @@ TEST_F(SystemTrayTest, PersistentBubble) {
     generator.ClickLeftButton();
     ASSERT_TRUE(tray->HasSystemBubble());
   }
+}
+
+#if defined(OS_CHROMEOS)
+// Accessibility/Settings tray items are available only on cros.
+#define MAYBE_WithSystemModal WithSystemModal
+#else
+#define MAYBE_WithSystemModal DISABLED_WithSystemModal
+#endif
+TEST_F(SystemTrayTest, MAYBE_WithSystemModal) {
+  // Check if the accessibility item is created even with system modal
+  // dialog.
+  Shell::GetInstance()->accessibility_delegate()->SetVirtualKeyboardEnabled(
+      true);
+  views::Widget* widget = views::Widget::CreateWindowWithContextAndBounds(
+      new ModalWidgetDelegate(),
+      Shell::GetPrimaryRootWindow(),
+      gfx::Rect(0, 0, 100, 100));
+  widget->Show();
+
+  SystemTray* tray = GetSystemTray();
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+
+  ASSERT_TRUE(tray->HasSystemBubble());
+  const views::View* accessibility =
+      tray->GetSystemBubble()->bubble_view()->GetViewByID(
+          test::kAccessibilityTrayItemViewId);
+  ASSERT_TRUE(accessibility);
+  EXPECT_TRUE(accessibility->visible());
+  EXPECT_FALSE(tray->GetSystemBubble()->bubble_view()->GetViewByID(
+      test::kSettingsTrayItemViewId));
+
+  widget->Close();
+
+  tray->ShowDefaultView(BUBBLE_CREATE_NEW);
+  // System modal is gone. The bubble should now contains settings
+  // as well.
+  accessibility = tray->GetSystemBubble()->bubble_view()->GetViewByID(
+      test::kAccessibilityTrayItemViewId);
+  ASSERT_TRUE(accessibility);
+  EXPECT_TRUE(accessibility->visible());
+
+  const views::View* settings =
+      tray->GetSystemBubble()->bubble_view()->GetViewByID(
+          test::kSettingsTrayItemViewId);
+  ASSERT_TRUE(settings);
+  EXPECT_TRUE(settings->visible());
+}
+
+// Tests that if SetVisible(true) is called while animating to hidden that the
+// tray becomes visible, and stops animating to hidden.
+TEST_F(SystemTrayTest, SetVisibleDuringHideAnimation) {
+  SystemTray* tray = GetSystemTray();
+  ASSERT_TRUE(tray->visible());
+
+  scoped_ptr<ui::ScopedAnimationDurationScaleMode> animation_duration;
+  animation_duration.reset(
+      new ui::ScopedAnimationDurationScaleMode(
+          ui::ScopedAnimationDurationScaleMode::SLOW_DURATION));
+  tray->SetVisible(false);
+  EXPECT_TRUE(tray->visible());
+  EXPECT_EQ(0.0f, tray->layer()->GetTargetOpacity());
+
+  tray->SetVisible(true);
+  animation_duration.reset();
+  tray->layer()->GetAnimator()->StopAnimating();
+  EXPECT_TRUE(tray->visible());
+  EXPECT_EQ(1.0f, tray->layer()->GetTargetOpacity());
 }
 
 }  // namespace test

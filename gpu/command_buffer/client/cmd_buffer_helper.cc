@@ -28,7 +28,8 @@ CommandBufferHelper::CommandBufferHelper(CommandBuffer* command_buffer)
       usable_(true),
       context_lost_(false),
       flush_automatically_(true),
-      last_flush_time_(0) {
+      last_flush_time_(0),
+      flush_generation_(0) {
 }
 
 void CommandBufferHelper::SetAutomaticFlushes(bool enabled) {
@@ -94,7 +95,8 @@ bool CommandBufferHelper::AllocateRingBuffer() {
   }
 
   int32 id = -1;
-  Buffer buffer = command_buffer_->CreateTransferBuffer(ring_buffer_size_, &id);
+  scoped_refptr<Buffer> buffer =
+      command_buffer_->CreateTransferBuffer(ring_buffer_size_, &id);
   if (id < 0) {
     ClearUsable();
     return false;
@@ -103,20 +105,11 @@ bool CommandBufferHelper::AllocateRingBuffer() {
   ring_buffer_ = buffer;
   ring_buffer_id_ = id;
   command_buffer_->SetGetBuffer(id);
-
-  // TODO(gman): Do we really need to call GetState here? We know get & put = 0
-  // Also do we need to check state.num_entries?
-  CommandBuffer::State state = command_buffer_->GetState();
-  entries_ = static_cast<CommandBufferEntry*>(ring_buffer_.ptr);
-  int32 num_ring_buffer_entries =
-      ring_buffer_size_ / sizeof(CommandBufferEntry);
-  if (num_ring_buffer_entries > state.num_entries) {
-    ClearUsable();
-    return false;
-  }
-
-  total_entry_count_ = num_ring_buffer_entries;
-  put_ = state.put_offset;
+  entries_ = static_cast<CommandBufferEntry*>(ring_buffer_->memory());
+  total_entry_count_ = ring_buffer_size_ / sizeof(CommandBufferEntry);
+  // Call to SetGetBuffer(id) above resets get and put offsets to 0.
+  // No need to query it through IPC.
+  put_ = 0;
   CalcImmediateEntries(0);
   return true;
 }
@@ -144,20 +137,12 @@ CommandBufferHelper::~CommandBufferHelper() {
   FreeResources();
 }
 
-bool CommandBufferHelper::FlushSync() {
+bool CommandBufferHelper::WaitForGetOffsetInRange(int32 start, int32 end) {
   if (!usable()) {
     return false;
   }
-
-  // Wrap put_ before flush.
-  if (put_ == total_entry_count_)
-    put_ = 0;
-
-  last_flush_time_ = clock();
-  last_put_sent_ = put_;
-  CommandBuffer::State state = command_buffer_->FlushSync(put_, get_offset());
-  CalcImmediateEntries(0);
-  return state.error == error::kNoError;
+  command_buffer_->WaitForGetOffsetInRange(start, end);
+  return command_buffer_->GetLastError() == gpu::error::kNoError;
 }
 
 void CommandBufferHelper::Flush() {
@@ -169,6 +154,7 @@ void CommandBufferHelper::Flush() {
     last_flush_time_ = clock();
     last_put_sent_ = put_;
     command_buffer_->Flush(put_);
+    ++flush_generation_;
     CalcImmediateEntries(0);
   }
 }
@@ -193,12 +179,12 @@ bool CommandBufferHelper::Finish() {
     return true;
   }
   DCHECK(HaveRingBuffer());
-  do {
-    // Do not loop forever if the flush fails, meaning the command buffer reader
-    // has shutdown.
-    if (!FlushSync())
-      return false;
-  } while (put_ != get_offset());
+  Flush();
+  if (!WaitForGetOffsetInRange(put_, put_))
+    return false;
+  DCHECK_EQ(get_offset(), put_);
+
+  CalcImmediateEntries(0);
 
   return true;
 }
@@ -239,16 +225,10 @@ void CommandBufferHelper::WaitForToken(int32 token) {
   if (token < 0)
     return;
   if (token > token_) return;  // we wrapped
-  while (last_token_read() < token) {
-    if (get_offset() == put_) {
-      LOG(FATAL) << "Empty command buffer while waiting on a token.";
-      return;
-    }
-    // Do not loop forever if the flush fails, meaning the command buffer reader
-    // has shutdown.
-    if (!FlushSync())
-      return;
-  }
+  if (last_token_read() >= token)
+    return;
+  Flush();
+  command_buffer_->WaitForTokenInRange(token, token_);
 }
 
 // Waits for available entries, basically waiting until get >= put + count + 1.
@@ -272,13 +252,12 @@ void CommandBufferHelper::WaitForAvailableEntries(int32 count) {
     int32 curr_get = get_offset();
     if (curr_get > put_ || curr_get == 0) {
       TRACE_EVENT0("gpu", "CommandBufferHelper::WaitForAvailableEntries");
-      while (curr_get > put_ || curr_get == 0) {
-        // Do not loop forever if the flush fails, meaning the command buffer
-        // reader has shutdown.
-        if (!FlushSync())
-          return;
-        curr_get = get_offset();
-      }
+      Flush();
+      if (!WaitForGetOffsetInRange(1, put_))
+        return;
+      curr_get = get_offset();
+      DCHECK_LE(curr_get, put_);
+      DCHECK_NE(0, curr_get);
     }
     // Insert Noops to fill out the buffer.
     int32 num_entries = total_entry_count_ - put_;
@@ -300,13 +279,10 @@ void CommandBufferHelper::WaitForAvailableEntries(int32 count) {
     if (immediate_entry_count_ < count) {
       // Buffer is full.  Need to wait for entries.
       TRACE_EVENT0("gpu", "CommandBufferHelper::WaitForAvailableEntries1");
-      while (immediate_entry_count_ < count) {
-        // Do not loop forever if the flush fails, meaning the command buffer
-        // reader has shutdown.
-        if (!FlushSync())
-          return;
-        CalcImmediateEntries(count);
-      }
+      if (!WaitForGetOffsetInRange(put_ + count + 1, put_))
+        return;
+      CalcImmediateEntries(count);
+      DCHECK_GE(immediate_entry_count_, count);
     }
   }
 }

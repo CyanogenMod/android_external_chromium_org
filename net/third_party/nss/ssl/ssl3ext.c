@@ -295,9 +295,12 @@ ssl3HelloExtensionSender clientHelloSendersTLS[SSL_MAX_EXTENSIONS] = {
     { ssl_use_srtp_xtn,           &ssl3_SendUseSRTPXtn },
     { ssl_channel_id_xtn,         &ssl3_ClientSendChannelIDXtn },
     { ssl_cert_status_xtn,        &ssl3_ClientSendStatusRequestXtn },
-    { ssl_signature_algorithms_xtn, &ssl3_ClientSendSigAlgsXtn },
     { ssl_signed_certificate_timestamp_xtn,
-      &ssl3_ClientSendSignedCertTimestampXtn }
+      &ssl3_ClientSendSignedCertTimestampXtn },
+    /* WebSphere Application Server 7.0 is intolerant to the last extension
+     * being zero-length. It is not intolerant of TLS 1.2, so move
+     * signature_algorithms to the end. */
+    { ssl_signature_algorithms_xtn, &ssl3_ClientSendSigAlgsXtn }
     /* any extra entries will appear as { 0, NULL }    */
 };
 
@@ -2342,18 +2345,16 @@ ssl3_CalculatePaddingExtensionLength(unsigned int clientHelloLength)
 				clientHelloLength;
     unsigned int extensionLength;
 
-    /* This condition should be:
-     *   if (recordLength < 256 || recordLength >= 512) {
-     * It has been changed, temporarily, to test whether 512 byte ClientHellos
-     * are a compatibility problem. */
-    if (recordLength >= 512) {
+    if (recordLength < 256 || recordLength >= 512) {
 	return 0;
     }
 
     extensionLength = 512 - recordLength;
-    /* Extensions take at least four bytes to encode. */
-    if (extensionLength < 4) {
-	extensionLength = 4;
+    /* Extensions take at least four bytes to encode. Always include at least
+     * one byte of data if including the extension. WebSphere Application Server
+     * 7.0 is intolerant to the last extension being zero-length. */
+    if (extensionLength < 4 + 1) {
+	extensionLength = 4 + 1;
     }
 
     return extensionLength;
@@ -2367,7 +2368,7 @@ ssl3_AppendPaddingExtension(sslSocket *ss, unsigned int extensionLen,
 			    PRUint32 maxBytes)
 {
     unsigned int paddingLen = extensionLen - 4;
-    static unsigned char padding[512];
+    static unsigned char padding[256];
 
     if (extensionLen == 0) {
 	return 0;

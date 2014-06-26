@@ -32,11 +32,13 @@ ContextGroup::ContextGroup(
     MailboxManager* mailbox_manager,
     ImageManager* image_manager,
     MemoryTracker* memory_tracker,
+    ShaderTranslatorCache* shader_translator_cache,
     FeatureInfo* feature_info,
     bool bind_generates_resource)
     : mailbox_manager_(mailbox_manager ? mailbox_manager : new MailboxManager),
       image_manager_(image_manager ? image_manager : new ImageManager),
       memory_tracker_(memory_tracker),
+      shader_translator_cache_(shader_translator_cache),
       enforce_gl_minimums_(CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnforceGLMinimums)),
       bind_generates_resource_(bind_generates_resource),
@@ -176,7 +178,8 @@ bool ContextGroup::Initialize(
   texture_manager_.reset(new TextureManager(memory_tracker_.get(),
                                             feature_info_.get(),
                                             max_texture_size,
-                                            max_cube_map_texture_size));
+                                            max_cube_map_texture_size,
+                                            bind_generates_resource_));
   texture_manager_->set_framebuffer_manager(framebuffer_manager_.get());
 
   const GLint kMinTextureImageUnits = 8;
@@ -220,18 +223,24 @@ bool ContextGroup::Initialize(
     return false;
   }
 
-  // TODO(gman): Use workarounds similar to max_texture_size above to implement.
-  if (gfx::GetGLImplementation() == gfx::kGLImplementationOSMesaGL) {
-    // Some shaders in Skia needed more than the min.
-    max_fragment_uniform_vectors_ =
-       std::min(static_cast<uint32>(kMinFragmentUniformVectors * 2),
-                max_fragment_uniform_vectors_);
-    max_varying_vectors_ =
-       std::min(static_cast<uint32>(kMinVaryingVectors * 2),
-                max_varying_vectors_);
+  // Some shaders in Skia need more than the min available vertex and
+  // fragment shader uniform vectors in case of OSMesa GL Implementation
+  if (feature_info_->workarounds().max_fragment_uniform_vectors) {
+    max_fragment_uniform_vectors_ = std::min(
+        max_fragment_uniform_vectors_,
+        static_cast<uint32>(
+            feature_info_->workarounds().max_fragment_uniform_vectors));
+  }
+  if (feature_info_->workarounds().max_varying_vectors) {
+    max_varying_vectors_ = std::min(
+        max_varying_vectors_,
+        static_cast<uint32>(feature_info_->workarounds().max_varying_vectors));
+  }
+  if (feature_info_->workarounds().max_vertex_uniform_vectors) {
     max_vertex_uniform_vectors_ =
-       std::min(static_cast<uint32>(kMinVertexUniformVectors * 2),
-                max_vertex_uniform_vectors_);
+        std::min(max_vertex_uniform_vectors_,
+                 static_cast<uint32>(
+                     feature_info_->workarounds().max_vertex_uniform_vectors));
   }
 
   program_manager_.reset(new ProgramManager(

@@ -34,9 +34,12 @@ ExtensionNotificationObserver::ExtensionNotificationObserver(
     content::NotificationSource source,
     const std::set<std::string>& extension_ids)
     : extension_ids_(extension_ids) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED, source);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED, source);
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED, source);
+  registrar_.Add(
+      this, chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED, source);
+  registrar_.Add(
+      this, chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED, source);
+  registrar_.Add(
+      this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED, source);
 }
 
 ExtensionNotificationObserver::~ExtensionNotificationObserver() {}
@@ -93,7 +96,7 @@ void ExtensionNotificationObserver::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
+    case chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED: {
       const Extension* extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       if (extension_ids_.count(extension->id()))
@@ -101,7 +104,7 @@ void ExtensionNotificationObserver::Observe(
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_LOADED: {
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED: {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       if (extension_ids_.count(extension->id()))
@@ -109,7 +112,7 @@ void ExtensionNotificationObserver::Observe(
       break;
     }
 
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED: {
       UnloadedExtensionInfo* reason =
           content::Details<UnloadedExtensionInfo>(details).ptr();
       if (extension_ids_.count(reason->extension->id())) {

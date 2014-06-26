@@ -17,6 +17,7 @@
 #include "base/process/launch.h"
 #include "base/threading/thread.h"
 #include "chromeos/process_proxy/process_output_watcher.h"
+#include "third_party/cros_system_api/switches/chrome_switches.h"
 
 namespace {
 
@@ -132,8 +133,8 @@ bool ProcessProxy::StopWatching() {
   // Signal Watcher that we are done. We use self-pipe trick to unblock watcher.
   // Anything may be written to the pipe.
   const char message[] = "q";
-  return file_util::WriteFileDescriptor(shutdown_pipe_[PIPE_END_WRITE],
-                                        message, sizeof(message));
+  return base::WriteFileDescriptor(shutdown_pipe_[PIPE_END_WRITE],
+                                   message, sizeof(message));
 }
 
 void ProcessProxy::Close() {
@@ -160,8 +161,8 @@ bool ProcessProxy::Write(const std::string& text) {
   // We don't want to write '\0' to the pipe.
   size_t data_size = text.length() * sizeof(*text.c_str());
   int bytes_written =
-      file_util::WriteFileDescriptor(pt_pair_[PT_MASTER_FD],
-                                     text.c_str(), data_size);
+      base::WriteFileDescriptor(pt_pair_[PT_MASTER_FD],
+                                text.c_str(), data_size);
   return (bytes_written == static_cast<int>(data_size));
 }
 
@@ -223,6 +224,10 @@ bool ProcessProxy::LaunchProcess(const std::string& command, int slave_fd,
   fds_mapping.push_back(std::make_pair(slave_fd, STDOUT_FILENO));
   fds_mapping.push_back(std::make_pair(slave_fd, STDERR_FILENO));
   base::LaunchOptions options;
+  // Do not set NO_NEW_PRIVS on processes if the system is in dev-mode. This
+  // permits sudo in the crosh shell when in developer mode.
+  options.allow_new_privs = base::CommandLine::ForCurrentProcess()->
+      HasSwitch(chromeos::switches::kSystemInDevMode);
   options.fds_to_remap = &fds_mapping;
   options.ctrl_terminal_fd = slave_fd;
   options.environ["TERM"] = "xterm";

@@ -13,20 +13,35 @@
 #include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/common/pref_names.h"
 #include "components/password_manager/core/browser/password_store_change.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/password_manager/core/common/password_manager_pref_names.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 
 using autofill::PasswordForm;
 using content::BrowserThread;
+using password_manager::PasswordStoreChange;
+using password_manager::PasswordStoreChangeList;
+using password_manager::PasswordStoreDefault;
 using std::vector;
+
+namespace {
+
+bool AddLoginToBackend(const scoped_ptr<PasswordStoreX::NativeBackend>& backend,
+                       const PasswordForm& form,
+                       PasswordStoreChangeList* changes) {
+  *changes = backend->AddLogin(form);
+  return (!changes->empty() &&
+          changes->back().type() == PasswordStoreChange::ADD);
+}
+
+}  // namespace
 
 PasswordStoreX::PasswordStoreX(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
     scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
-    LoginDatabase* login_db,
+    password_manager::LoginDatabase* login_db,
     NativeBackend* backend)
     : PasswordStoreDefault(main_thread_runner, db_thread_runner, login_db),
       backend_(backend),
@@ -38,8 +53,7 @@ PasswordStoreX::~PasswordStoreX() {}
 PasswordStoreChangeList PasswordStoreX::AddLoginImpl(const PasswordForm& form) {
   CheckMigration();
   PasswordStoreChangeList changes;
-  if (use_native_backend() && backend_->AddLogin(form)) {
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::ADD, form));
+  if (use_native_backend() && AddLoginToBackend(backend_, form, &changes)) {
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::AddLoginImpl(form);
@@ -51,8 +65,7 @@ PasswordStoreChangeList PasswordStoreX::UpdateLoginImpl(
     const PasswordForm& form) {
   CheckMigration();
   PasswordStoreChangeList changes;
-  if (use_native_backend() && backend_->UpdateLogin(form)) {
-    changes.push_back(PasswordStoreChange(PasswordStoreChange::UPDATE, form));
+  if (use_native_backend() && backend_->UpdateLogin(form, &changes)) {
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::UpdateLoginImpl(form);
@@ -74,26 +87,34 @@ PasswordStoreChangeList PasswordStoreX::RemoveLoginImpl(
 }
 
 PasswordStoreChangeList PasswordStoreX::RemoveLoginsCreatedBetweenImpl(
-    const base::Time& delete_begin,
-    const base::Time& delete_end) {
+    base::Time delete_begin,
+    base::Time delete_end) {
   CheckMigration();
-  vector<PasswordForm*> forms;
   PasswordStoreChangeList changes;
   if (use_native_backend() &&
-      backend_->GetLoginsCreatedBetween(delete_begin, delete_end, &forms) &&
-      backend_->RemoveLoginsCreatedBetween(delete_begin, delete_end)) {
-    for (vector<PasswordForm*>::const_iterator it = forms.begin();
-         it != forms.end(); ++it) {
-      changes.push_back(PasswordStoreChange(PasswordStoreChange::REMOVE,
-                                            **it));
-    }
+      backend_->RemoveLoginsCreatedBetween(
+          delete_begin, delete_end, &changes)) {
     LogStatsForBulkDeletion(changes.size());
     allow_fallback_ = false;
   } else if (allow_default_store()) {
     changes = PasswordStoreDefault::RemoveLoginsCreatedBetweenImpl(delete_begin,
                                                                    delete_end);
   }
-  STLDeleteElements(&forms);
+  return changes;
+}
+
+PasswordStoreChangeList PasswordStoreX::RemoveLoginsSyncedBetweenImpl(
+    base::Time delete_begin,
+    base::Time delete_end) {
+  CheckMigration();
+  PasswordStoreChangeList changes;
+  if (use_native_backend() &&
+      backend_->RemoveLoginsSyncedBetween(delete_begin, delete_end, &changes)) {
+    allow_fallback_ = false;
+  } else if (allow_default_store()) {
+    changes = PasswordStoreDefault::RemoveLoginsSyncedBetweenImpl(delete_begin,
+                                                                  delete_end);
+  }
   return changes;
 }
 
@@ -234,7 +255,8 @@ ssize_t PasswordStoreX::MigrateLogins() {
     // don't somehow end up with some of the passwords in one store and some in
     // another. We'll always have at least one intact store this way.
     for (size_t i = 0; i < forms.size(); ++i) {
-      if (!backend_->AddLogin(*forms[i])) {
+      PasswordStoreChangeList changes;
+      if (!AddLoginToBackend(backend_, *forms[i], &changes)) {
         ok = false;
         break;
       }
@@ -260,42 +282,3 @@ ssize_t PasswordStoreX::MigrateLogins() {
   STLDeleteElements(&forms);
   return result;
 }
-
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-// static
-void PasswordStoreX::RegisterProfilePrefs(
-    user_prefs::PrefRegistrySyncable* registry) {
-  // Normally we should be on the UI thread here, but in tests we might not.
-  registry->RegisterBooleanPref(
-      prefs::kPasswordsUseLocalProfileId,
-      // default: passwords don't use local ids
-      false,
-      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
-}
-
-// static
-bool PasswordStoreX::PasswordsUseLocalProfileId(PrefService* prefs) {
-  // Normally we should be on the UI thread here, but in tests we might not.
-  return prefs->GetBoolean(prefs::kPasswordsUseLocalProfileId);
-}
-
-namespace {
-// This function is a hack to do something not entirely thread safe: the pref
-// service comes from the UI thread, but it's not ref counted. We keep a pointer
-// to it on the DB thread, and need to invoke a method on the UI thread. This
-// function does that for us without requiring ref counting the pref service.
-// TODO(mdm): Fix this if it becomes a problem. Given that this function will
-// be called once ever per profile, it probably will not cause a problem...
-void UISetPasswordsUseLocalProfileId(PrefService* prefs) {
-  prefs->SetBoolean(prefs::kPasswordsUseLocalProfileId, true);
-}
-}  // anonymous namespace
-
-// static
-void PasswordStoreX::SetPasswordsUseLocalProfileId(PrefService* prefs) {
-  // This method should work on any thread, but we expect the DB thread.
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-  BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                          base::Bind(&UISetPasswordsUseLocalProfileId, prefs));
-}
-#endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)

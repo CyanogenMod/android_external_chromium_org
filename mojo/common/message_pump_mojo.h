@@ -7,10 +7,12 @@
 
 #include <map>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_pump.h"
+#include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "mojo/common/mojo_common_export.h"
-#include "mojo/public/system/core_cpp.h"
+#include "mojo/public/cpp/system/core.h"
 
 namespace mojo {
 namespace common {
@@ -23,11 +25,15 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
   MessagePumpMojo();
   virtual ~MessagePumpMojo();
 
+  // Static factory function (for using with |base::Thread::Options|, wrapped
+  // using |base::Bind()|).
+  static scoped_ptr<base::MessagePump> Create();
+
   // Registers a MessagePumpMojoHandler for the specified handle. Only one
   // handler can be registered for a specified handle.
   void AddHandler(MessagePumpMojoHandler* handler,
                   const Handle& handle,
-                  MojoWaitFlags wait_flags,
+                  MojoHandleSignals wait_signals,
                   base::TimeTicks deadline);
 
   void RemoveHandler(const Handle& handle);
@@ -45,10 +51,10 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
 
   // Contains the data needed to track a request to AddHandler().
   struct Handler {
-    Handler() : handler(NULL), wait_flags(MOJO_WAIT_FLAG_NONE), id(0) {}
+    Handler() : handler(NULL), wait_signals(MOJO_HANDLE_SIGNAL_NONE), id(0) {}
 
     MessagePumpMojoHandler* handler;
-    MojoWaitFlags wait_flags;
+    MojoHandleSignals wait_signals;
     base::TimeTicks deadline;
     // See description of |MessagePumpMojo::next_handler_id_| for details.
     int id;
@@ -56,24 +62,32 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
 
   typedef std::map<Handle, Handler> HandleToHandler;
 
+  // Implementation of Run().
+  void DoRunLoop(RunState* run_state, Delegate* delegate);
+
   // Services the set of handles ready. If |block| is true this waits for a
   // handle to become ready, otherwise this does not block.
-  void DoInternalWork(bool block);
+  void DoInternalWork(const RunState& run_state, bool block);
 
   // Removes the first invalid handle. This is called if MojoWaitMany finds an
   // invalid handle.
   void RemoveFirstInvalidHandle(const WaitState& wait_state);
 
-  void SignalControlPipe();
+  void SignalControlPipe(const RunState& run_state);
 
-  WaitState GetWaitState() const;
+  WaitState GetWaitState(const RunState& run_state) const;
 
   // Returns the deadline for the call to MojoWaitMany().
-  MojoDeadline GetDeadlineForWait() const;
+  MojoDeadline GetDeadlineForWait(const RunState& run_state) const;
 
   // If non-NULL we're running (inside Run()). Member is reference to value on
   // stack.
   RunState* run_state_;
+
+  // Lock for accessing |run_state_|. In general the only method that we have to
+  // worry about is ScheduleWork(). All other methods are invoked on the same
+  // thread.
+  base::Lock run_state_lock_;
 
   HandleToHandler handlers_;
 

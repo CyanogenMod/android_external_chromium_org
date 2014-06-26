@@ -15,9 +15,7 @@ SpdyMajorVersion NextProtoToSpdyMajorVersion(NextProto next_proto) {
     case kProtoSPDY3:
     case kProtoSPDY31:
       return SPDY3;
-    // SPDY/4 and HTTP/2 share the same framing for now.
-    case kProtoSPDY4a2:
-    case kProtoHTTP2Draft04:
+    case kProtoSPDY4:
       return SPDY4;
     case kProtoUnknown:
     case kProtoHTTP11:
@@ -78,7 +76,8 @@ void BufferedSpdyFramer::OnSynStream(SpdyStreamId stream_id,
 }
 
 void BufferedSpdyFramer::OnHeaders(SpdyStreamId stream_id,
-                                   bool fin) {
+                                   bool fin,
+                                   bool end) {
   frames_received_++;
   DCHECK(!control_frame_fields_.get());
   control_frame_fields_.reset(new ControlFrameFields());
@@ -140,6 +139,12 @@ bool BufferedSpdyFramer::OnControlFrameHeaderData(SpdyStreamId stream_id,
                             control_frame_fields_->fin,
                             headers);
         break;
+      case PUSH_PROMISE:
+        DCHECK_LT(SPDY3, protocol_version());
+        visitor_->OnPushPromise(control_frame_fields_->stream_id,
+                                control_frame_fields_->promised_stream_id,
+                                headers);
+        break;
       default:
         DCHECK(false) << "Unexpect control frame type: "
                       << control_frame_fields_->type;
@@ -186,8 +191,16 @@ void BufferedSpdyFramer::OnSetting(SpdySettingsIds id,
   visitor_->OnSetting(id, flags, value);
 }
 
-void BufferedSpdyFramer::OnPing(SpdyPingId unique_id) {
-  visitor_->OnPing(unique_id);
+void BufferedSpdyFramer::OnSettingsAck() {
+  visitor_->OnSettingsAck();
+}
+
+void BufferedSpdyFramer::OnSettingsEnd() {
+  visitor_->OnSettingsEnd();
+}
+
+void BufferedSpdyFramer::OnPing(SpdyPingId unique_id, bool is_ack) {
+  visitor_->OnPing(unique_id, is_ack);
 }
 
 void BufferedSpdyFramer::OnRstStream(SpdyStreamId stream_id,
@@ -205,8 +218,20 @@ void BufferedSpdyFramer::OnWindowUpdate(SpdyStreamId stream_id,
 }
 
 void BufferedSpdyFramer::OnPushPromise(SpdyStreamId stream_id,
-                                       SpdyStreamId promised_stream_id) {
-  visitor_->OnPushPromise(stream_id, promised_stream_id);
+                                       SpdyStreamId promised_stream_id,
+                                       bool end) {
+  DCHECK_LT(SPDY3, protocol_version());
+  frames_received_++;
+  DCHECK(!control_frame_fields_.get());
+  control_frame_fields_.reset(new ControlFrameFields());
+  control_frame_fields_->type = PUSH_PROMISE;
+  control_frame_fields_->stream_id = stream_id;
+  control_frame_fields_->promised_stream_id = promised_stream_id;
+
+  InitHeaderStreaming(stream_id);
+}
+
+void BufferedSpdyFramer::OnContinuation(SpdyStreamId stream_id, bool end) {
 }
 
 SpdyMajorVersion BufferedSpdyFramer::protocol_version() {
@@ -273,7 +298,9 @@ SpdyFrame* BufferedSpdyFramer::CreateSynReply(
 SpdyFrame* BufferedSpdyFramer::CreateRstStream(
     SpdyStreamId stream_id,
     SpdyRstStreamStatus status) const {
-  SpdyRstStreamIR rst_ir(stream_id, status, "RST");
+  // RST_STREAM payloads are not part of any SPDY spec.
+  // SpdyFramer will accept them, but don't create them.
+  SpdyRstStreamIR rst_ir(stream_id, status, "");
   return spdy_framer_.SerializeRstStream(rst_ir);
 }
 
@@ -295,8 +322,10 @@ SpdyFrame* BufferedSpdyFramer::CreateSettings(
 }
 
 // TODO(jgraettinger): Eliminate uses of this method (prefer SpdyPingIR).
-SpdyFrame* BufferedSpdyFramer::CreatePingFrame(uint32 unique_id) const {
+SpdyFrame* BufferedSpdyFramer::CreatePingFrame(uint32 unique_id,
+                                               bool is_ack) const {
   SpdyPingIR ping_ir(unique_id);
+  ping_ir.set_is_ack(is_ack);
   return spdy_framer_.SerializePing(ping_ir);
 }
 
@@ -337,6 +366,16 @@ SpdyFrame* BufferedSpdyFramer::CreateDataFrame(SpdyStreamId stream_id,
                      base::StringPiece(data, len));
   data_ir.set_fin((flags & DATA_FLAG_FIN) != 0);
   return spdy_framer_.SerializeData(data_ir);
+}
+
+// TODO(jgraettinger): Eliminate uses of this method (prefer SpdyPushPromiseIR).
+SpdyFrame* BufferedSpdyFramer::CreatePushPromise(
+    SpdyStreamId stream_id,
+    SpdyStreamId promised_stream_id,
+    const SpdyHeaderBlock* headers) {
+  SpdyPushPromiseIR push_promise_ir(stream_id, promised_stream_id);
+  push_promise_ir.set_name_value_block(*headers);
+  return spdy_framer_.SerializePushPromise(push_promise_ir);
 }
 
 SpdyPriority BufferedSpdyFramer::GetHighestPriority() const {

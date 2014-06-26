@@ -8,10 +8,12 @@
 #include "base/stl_util.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/content_settings/tab_specific_content_settings.h"
+#include "chrome/browser/download/download_permission_request.h"
 #include "chrome/browser/download/download_request_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/website_settings/permission_bubble_manager.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
@@ -91,10 +93,16 @@ void DownloadRequestLimiter::TabDownloadState::DidGetUserGesture() {
     return;
   }
 
+  bool promptable = (InfoBarService::FromWebContents(web_contents()) != NULL);
+  if (PermissionBubbleManager::Enabled()) {
+    promptable =
+        (PermissionBubbleManager::FromWebContents(web_contents()) != NULL);
+  }
+
   // See PromptUserForDownload(): if there's no InfoBarService, then
   // DOWNLOADS_NOT_ALLOWED is functionally equivalent to PROMPT_BEFORE_DOWNLOAD.
   if ((status_ != DownloadRequestLimiter::ALLOW_ALL_DOWNLOADS) &&
-      (!InfoBarService::FromWebContents(web_contents()) ||
+      (!promptable ||
        (status_ != DownloadRequestLimiter::DOWNLOADS_NOT_ALLOWED))) {
     // Revert to default status.
     host_->Remove(this, web_contents());
@@ -102,14 +110,12 @@ void DownloadRequestLimiter::TabDownloadState::DidGetUserGesture() {
   }
 }
 
-void DownloadRequestLimiter::TabDownloadState::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void DownloadRequestLimiter::TabDownloadState::WebContentsDestroyed() {
   // Tab closed, no need to handle closing the dialog as it's owned by the
   // WebContents.
 
   NotifyCallbacks(false);
-  // Note that web_contents() is NULL at this point.
-  host_->Remove(this, web_contents);
+  host_->Remove(this, web_contents());
   // WARNING: We've been deleted.
 }
 
@@ -119,6 +125,19 @@ void DownloadRequestLimiter::TabDownloadState::PromptUserForDownload(
   DCHECK(web_contents_);
   if (is_showing_prompt())
     return;
+
+  if (PermissionBubbleManager::Enabled()) {
+    PermissionBubbleManager* bubble_manager =
+        PermissionBubbleManager::FromWebContents(web_contents_);
+    if (bubble_manager) {
+      bubble_manager->AddRequest(new DownloadPermissionRequest(
+          factory_.GetWeakPtr()));
+    } else {
+      Cancel();
+    }
+    return;
+  }
+
   DownloadRequestInfoBarDelegate::Create(
       InfoBarService::FromWebContents(web_contents_), factory_.GetWeakPtr());
 }
@@ -161,6 +180,10 @@ DownloadRequestLimiter::TabDownloadState::TabDownloadState()
       status_(DownloadRequestLimiter::ALLOW_ONE_DOWNLOAD),
       download_count_(0),
       factory_(this) {
+}
+
+bool DownloadRequestLimiter::TabDownloadState::is_showing_prompt() const {
+  return factory_.HasWeakPtrs();
 }
 
 void DownloadRequestLimiter::TabDownloadState::Observe(
@@ -258,7 +281,7 @@ DownloadRequestLimiter::GetDownloadStatus(content::WebContents* web_contents) {
 void DownloadRequestLimiter::CanDownloadOnIOThread(
     int render_process_host_id,
     int render_view_id,
-    int request_id,
+    const GURL& url,
     const std::string& request_method,
     const Callback& callback) {
   // This is invoked on the IO thread. Schedule the task to run on the UI
@@ -267,7 +290,7 @@ void DownloadRequestLimiter::CanDownloadOnIOThread(
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&DownloadRequestLimiter::CanDownload, this,
-                 render_process_host_id, render_view_id, request_id,
+                 render_process_host_id, render_view_id, url,
                  request_method, callback));
 }
 
@@ -292,7 +315,7 @@ DownloadRequestLimiter::GetDownloadState(
 
 void DownloadRequestLimiter::CanDownload(int render_process_host_id,
                                          int render_view_id,
-                                         int request_id,
+                                         const GURL& url,
                                          const std::string& request_method,
                                          const Callback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -318,13 +341,12 @@ void DownloadRequestLimiter::CanDownload(int render_process_host_id,
       factory_.GetWeakPtr(),
       render_process_host_id,
       render_view_id,
-      request_id,
       request_method,
       callback);
 
   originating_contents->GetDelegate()->CanDownload(
       originating_contents->GetRenderViewHost(),
-      request_id,
+      url,
       request_method,
       can_download_callback);
 }
@@ -332,7 +354,6 @@ void DownloadRequestLimiter::CanDownload(int render_process_host_id,
 void DownloadRequestLimiter::OnCanDownloadDecided(
     int render_process_host_id,
     int render_view_id,
-    int request_id,
     const std::string& request_method,
     const Callback& orig_callback, bool allow) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -344,7 +365,6 @@ void DownloadRequestLimiter::OnCanDownloadDecided(
   }
 
   CanDownloadImpl(originating_contents,
-                  request_id,
                   request_method,
                   orig_callback);
 }
@@ -357,7 +377,6 @@ HostContentSettingsMap* DownloadRequestLimiter::GetContentSettings(
 
 void DownloadRequestLimiter::CanDownloadImpl(
     content::WebContents* originating_contents,
-    int request_id,
     const std::string& request_method,
     const Callback& callback) {
   DCHECK(originating_contents);

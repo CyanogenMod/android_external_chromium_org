@@ -99,10 +99,12 @@ GL_FUNCTIONS = [
                'GLbitfield mask, GLenum filter', },
 { 'return_type': 'void',
   'names': ['glBufferData'],
-  'arguments': 'GLenum target, GLsizei size, const void* data, GLenum usage', },
+  'arguments':
+      'GLenum target, GLsizeiptr size, const void* data, GLenum usage', },
 { 'return_type': 'void',
   'names': ['glBufferSubData'],
-  'arguments': 'GLenum target, GLint offset, GLsizei size, const void* data', },
+  'arguments':
+      'GLenum target, GLintptr offset, GLsizeiptr size, const void* data', },
 { 'return_type': 'GLenum',
   'names': ['glCheckFramebufferStatusEXT',
             'glCheckFramebufferStatus'],
@@ -426,6 +428,9 @@ GL_FUNCTIONS = [
 { 'return_type': 'void',
   'names': ['glHint'],
   'arguments': 'GLenum target, GLenum mode', },
+{ 'return_type': 'void',
+  'names': ['glInsertEventMarkerEXT'],
+  'arguments': 'GLsizei length, const char* marker', },
 { 'return_type': 'GLboolean',
   'names': ['glIsBuffer'],
   'arguments': 'GLuint buffer', },
@@ -477,6 +482,9 @@ GL_FUNCTIONS = [
   'names': ['glPolygonOffset'],
   'arguments': 'GLfloat factor, GLfloat units', },
 { 'return_type': 'void',
+  'names': ['glPopGroupMarkerEXT'],
+  'arguments': 'void', },
+{ 'return_type': 'void',
   'known_as': 'glProgramBinary',
   'versions': [{ 'name': 'glProgramBinaryOES' },
                { 'name': 'glProgramBinary',
@@ -489,6 +497,9 @@ GL_FUNCTIONS = [
                  'extensions': ['GL_ARB_get_program_binary'] },
                { 'name': 'glProgramParameteri' }],
   'arguments': 'GLuint program, GLenum pname, GLint value' },
+{ 'return_type': 'void',
+  'names': ['glPushGroupMarkerEXT'],
+  'arguments': 'GLsizei length, const char* marker', },
 { 'return_type': 'void',
   'names': ['glQueryCounter'],
   'arguments': 'GLuint id, GLenum target', },
@@ -743,6 +754,9 @@ GL_FUNCTIONS = [
 { 'return_type': 'GLsync',
   'names': ['glFenceSync'],
   'arguments': 'GLenum condition, GLbitfield flags', },
+{ 'return_type': 'GLboolean',
+  'names': ['glIsSync'],
+  'arguments': 'GLsync sync', },
 { 'return_type': 'void',
   'names': ['glDeleteSync'],
   'arguments': 'GLsync sync', },
@@ -755,19 +769,26 @@ GL_FUNCTIONS = [
   'names': ['glClientWaitSync'],
   'arguments':
     'GLsync sync, GLbitfield flags, GLuint64 timeout', },
+{ 'return_type': 'GLenum',
+  'names': ['glWaitSync'],
+  'arguments':
+    'GLsync sync, GLbitfield flags, GLuint64 timeout', },
 { 'return_type': 'void',
   'known_as': 'glDrawArraysInstancedANGLE',
-  'names': ['glDrawArraysInstancedARB', 'glDrawArraysInstancedANGLE'],
+  'names': ['glDrawArraysInstancedARB', 'glDrawArraysInstancedANGLE',
+            'glDrawArraysInstanced'],
   'arguments': 'GLenum mode, GLint first, GLsizei count, GLsizei primcount', },
 { 'return_type': 'void',
   'known_as': 'glDrawElementsInstancedANGLE',
-  'names': ['glDrawElementsInstancedARB', 'glDrawElementsInstancedANGLE'],
+  'names': ['glDrawElementsInstancedARB', 'glDrawElementsInstancedANGLE',
+            'glDrawElementsInstanced'],
   'arguments':
       'GLenum mode, GLsizei count, GLenum type, const void* indices, '
       'GLsizei primcount', },
 { 'return_type': 'void',
   'known_as': 'glVertexAttribDivisorANGLE',
-  'names': ['glVertexAttribDivisorARB', 'glVertexAttribDivisorANGLE'],
+  'names': ['glVertexAttribDivisorARB', 'glVertexAttribDivisorANGLE',
+            'glVertexAttribDivisor'],
   'arguments':
       'GLuint index, GLuint divisor', },
 { 'return_type': 'void',
@@ -819,19 +840,6 @@ GL_FUNCTIONS = [
                  'gl_versions': ['es1', 'es2'] }],
   'arguments': 'GLenum target, GLsizei numAttachments, '
       'const GLenum* attachments' },
-]
-
-GL_NULLDRAW_FUNCTIONS = [
-{ 'return_type': 'void',
-  'names': ['glClear'],
-  'arguments': 'GLbitfield mask', },
-{ 'return_type': 'void',
-  'names': ['glDrawArrays'],
-  'arguments': 'GLenum mode, GLint first, GLsizei count', },
-{ 'return_type': 'void',
-  'names': ['glDrawElements'],
-  'arguments':
-      'GLenum mode, GLsizei count, GLenum type, const void* indices', },
 ]
 
 OSMESA_FUNCTIONS = [
@@ -906,7 +914,8 @@ EGL_FUNCTIONS = [
       'EGLDisplay dpy, EGLConfig config, EGLint attribute, EGLint* value', },
 { 'return_type': 'EGLImageKHR',
   'versions': [{ 'name': 'eglCreateImageKHR',
-                 'extensions': ['EGL_KHR_image_base'] }],
+                 'extensions':
+                     ['EGL_KHR_image_base', 'EGL_KHR_gl_texture_2D_image'] }],
   'arguments':
       'EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, '
       'const EGLint* attrib_list' },
@@ -1264,7 +1273,7 @@ GLX_FUNCTIONS = [
 ]
 
 FUNCTION_SETS = [
-  [GL_FUNCTIONS, GL_NULLDRAW_FUNCTIONS, 'gl', [
+  [GL_FUNCTIONS, 'gl', [
       'GL/glext.h',
       'GLES2/gl2ext.h',
       # Files below are Chromium-specific and shipped with Chromium sources.
@@ -1272,8 +1281,8 @@ FUNCTION_SETS = [
       'GLES2/gl2chromium.h',
       'GLES2/gl2extchromium.h'
   ], []],
-  [OSMESA_FUNCTIONS, [], 'osmesa', [], []],
-  [EGL_FUNCTIONS, [], 'egl', [
+  [OSMESA_FUNCTIONS, 'osmesa', [], []],
+  [EGL_FUNCTIONS, 'egl', [
       'EGL/eglext.h',
       # Files below are Chromium-specific and shipped with Chromium sources.
       'EGL/eglextchromium.h',
@@ -1283,8 +1292,8 @@ FUNCTION_SETS = [
       'EGL_ANGLE_surface_d3d_texture_2d_share_handle',
     ],
   ],
-  [WGL_FUNCTIONS, [], 'wgl', ['GL/wglext.h'], []],
-  [GLX_FUNCTIONS, [], 'glx', ['GL/glx.h', 'GL/glxext.h'], []],
+  [WGL_FUNCTIONS, 'wgl', ['GL/wglext.h'], []],
+  [GLX_FUNCTIONS, 'glx', ['GL/glx.h', 'GL/glxext.h'], []],
 ]
 
 def GenerateHeader(file, functions, set_name, used_extensions):
@@ -1405,8 +1414,7 @@ def GenerateMockHeader(file, functions, set_name):
   file.write('\n')
 
 
-def GenerateSource(
-  file, functions, nulldraw_functions, set_name, used_extensions):
+def GenerateSource(file, functions, set_name, used_extensions):
   """Generates gl_bindings_autogen_x.cc"""
 
   # Write file header.
@@ -1567,17 +1575,6 @@ namespace gfx {
   file.write('}\n')
   file.write('\n')
 
-  # Write empty stubs for functions that want one.
-  file.write('extern "C" {\n')
-  for func in nulldraw_functions:
-    known_as = func['known_as']
-    return_type = func['return_type']
-    arguments = func['arguments']
-    file.write('\n')
-    file.write('static %s GL_BINDING_CALL Stub_%s(%s) {}\n' %
-        (return_type, known_as, arguments))
-  file.write('}  // extern "C"\n')
-
   # Write logging wrappers for each function.
   file.write('extern "C" {\n')
   for func in functions:
@@ -1656,23 +1653,21 @@ namespace gfx {
   file.write('  g_debugBindingsInitialized = true;\n')
   file.write('}\n')
 
-  # Write function to initialize the nulldraw function pointers.
-  if nulldraw_functions:
-    file.write('\n')
-    file.write('void Driver%s::InitializeNullDrawBindings() {\n' %
-               set_name.upper())
-
-    for func in nulldraw_functions:
-      first_name = func['known_as']
-      file.write('  fn.%sFn = Stub_%s;\n' % (first_name, first_name))
-    file.write('}\n')
-
   # Write function to clear all function pointers.
   file.write('\n')
   file.write("""void Driver%s::ClearBindings() {
   memset(this, 0, sizeof(*this));
 }
 """ % set_name.upper())
+
+  def MakeArgNames(arguments):
+    argument_names = re.sub(
+        r'(const )?[a-zA-Z0-9_]+\** ([a-zA-Z0-9_]+)', r'\2', arguments)
+    argument_names = re.sub(
+        r'(const )?[a-zA-Z0-9_]+\** ([a-zA-Z0-9_]+)', r'\2', argument_names)
+    if argument_names == 'void' or argument_names == '':
+      argument_names = ''
+    return argument_names
 
   # Write GLApiBase functions
   for func in functions:
@@ -1682,12 +1677,7 @@ namespace gfx {
     file.write('\n')
     file.write('%s %sApiBase::%sFn(%s) {\n' %
         (return_type, set_name.upper(), function_name, arguments))
-    argument_names = re.sub(
-        r'(const )?[a-zA-Z0-9_]+\** ([a-zA-Z0-9_]+)', r'\2', arguments)
-    argument_names = re.sub(
-        r'(const )?[a-zA-Z0-9_]+\** ([a-zA-Z0-9_]+)', r'\2', argument_names)
-    if argument_names == 'void' or argument_names == '':
-      argument_names = ''
+    argument_names = MakeArgNames(arguments)
     if return_type == 'void':
       file.write('  driver_->fn.%sFn(%s);\n' %
           (function_name, argument_names))
@@ -1704,12 +1694,7 @@ namespace gfx {
     file.write('\n')
     file.write('%s Trace%sApi::%sFn(%s) {\n' %
         (return_type, set_name.upper(), function_name, arguments))
-    argument_names = re.sub(
-        r'(const )?[a-zA-Z0-9_]+\** ([a-zA-Z0-9_]+)', r'\2', arguments)
-    argument_names = re.sub(
-        r'(const )?[a-zA-Z0-9_]+\** ([a-zA-Z0-9_]+)', r'\2', argument_names)
-    if argument_names == 'void' or argument_names == '':
-      argument_names = ''
+    argument_names = MakeArgNames(arguments)
     file.write('  TRACE_EVENT_BINARY_EFFICIENT0("gpu", "TraceGLAPI::%s")\n' %
                function_name)
     if return_type == 'void':
@@ -1719,6 +1704,37 @@ namespace gfx {
       file.write('  return %s_api_->%sFn(%s);\n' %
           (set_name.lower(), function_name, argument_names))
     file.write('}\n')
+
+  # Write NoContextGLApi functions
+  if set_name.upper() == "GL":
+    for func in functions:
+      function_name = func['known_as']
+      return_type = func['return_type']
+      arguments = func['arguments']
+      file.write('\n')
+      file.write('%s NoContextGLApi::%sFn(%s) {\n' %
+          (return_type, function_name, arguments))
+      argument_names = MakeArgNames(arguments)
+      no_context_error = "Trying to call %s() without current GL context" % function_name
+      file.write('  NOTREACHED() <<  "%s";\n' % no_context_error)
+      file.write('  LOG(ERROR) <<  "%s";\n' % no_context_error)
+      default_value = { 'GLenum': 'static_cast<GLenum>(0)',
+                        'GLuint': '0U',
+                        'GLint': '0',
+                        'GLboolean': 'GL_FALSE',
+                        'GLbyte': '0',
+                        'GLubyte': '0',
+                        'GLbutfield': '0',
+                        'GLushort': '0',
+                        'GLsizei': '0',
+                        'GLfloat': '0.0f',
+                        'GLdouble': '0.0',
+                        'GLsync': 'NULL'}
+      if return_type.endswith('*'):
+        file.write('  return NULL;\n')
+      elif return_type != 'void':
+        file.write('  return %s;\n' % default_value[return_type])
+      file.write('}\n')
 
   file.write('\n')
   file.write('}  // namespace gfx\n')
@@ -1950,17 +1966,10 @@ def FillExtensionsFromHeaders(functions, extension_headers, extra_extensions):
 def ResolveHeader(header, header_paths):
   paths = header_paths.split(':')
 
-  # Always use a path for Chromium-specific extensions. They are extracted
-  # to separate files.
-  paths.append('.')
-  paths.append('../../gpu')
-
-  root = os.path.abspath(os.path.dirname(__file__))
-
   for path in paths:
     result = os.path.join(path, header)
     if not os.path.isabs(path):
-      result = os.path.relpath(os.path.join(root, result), os.getcwd())
+      result = os.path.relpath(os.path.join(os.getcwd(), result), os.getcwd())
     if os.path.exists(result):
       # Always use forward slashes as path separators. Otherwise backslashes
       # may be incorrectly interpreted as escape characters.
@@ -1979,7 +1988,7 @@ def main(argv):
   options, args = parser.parse_args(argv)
 
   if options.inputs:
-    for [_, _, _, headers, _] in FUNCTION_SETS:
+    for [_, _, headers, _] in FUNCTION_SETS:
       for header in headers:
         print ResolveHeader(header, options.header_paths)
     return 0
@@ -1988,15 +1997,11 @@ def main(argv):
   if len(args) >= 1:
     directory = args[0]
 
-  for [functions,
-       nulldraw_functions,
-       set_name,
-       extension_headers,
-       extensions] in FUNCTION_SETS:
+  for [functions, set_name, extension_headers, extensions] in FUNCTION_SETS:
     # Function names can be specified in two ways (list of unique names or list
     # of versions with different binding conditions). Fill in the data to the
     # versions list in case it is missing, so that can be used from here on:
-    for func in functions + nulldraw_functions:
+    for func in functions:
       assert 'versions' in func or 'names' in func, 'Function with no names'
       if 'versions' not in func:
         func['versions'] = [{'name': n} for n in func['names']]
@@ -2025,11 +2030,7 @@ def main(argv):
 
     source_file = open(
         os.path.join(directory, 'gl_bindings_autogen_%s.cc' % set_name), 'wb')
-    GenerateSource(source_file,
-                   functions,
-                   nulldraw_functions,
-                   set_name,
-                   used_extensions)
+    GenerateSource(source_file, functions, set_name, used_extensions)
     source_file.close()
 
   header_file = open(

@@ -13,14 +13,16 @@
 
 namespace net {
 
+class QuicServerId;
+
 class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
  public:
   MockCryptoClientStreamFactory();
   virtual ~MockCryptoClientStreamFactory() {}
 
   virtual QuicCryptoClientStream* CreateQuicCryptoClientStream(
-      const string& server_hostname,
-      QuicSession* session,
+      const QuicServerId& server_id,
+      QuicClientSession* session,
       QuicCryptoClientConfig* crypto_config) OVERRIDE;
 
   void set_handshake_mode(
@@ -28,8 +30,9 @@ class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
     handshake_mode_ = handshake_mode;
   }
 
-  void set_ssl_info(const SSLInfo* ssl_info) {
-    ssl_info_ = ssl_info;
+  void set_proof_verify_details(
+      const ProofVerifyDetails* proof_verify_details) {
+    proof_verify_details_ = proof_verify_details;
   }
 
   MockCryptoClientStream* last_stream() const {
@@ -39,7 +42,9 @@ class MockCryptoClientStreamFactory : public QuicCryptoClientStreamFactory  {
  private:
   MockCryptoClientStream::HandshakeMode handshake_mode_;
   MockCryptoClientStream* last_stream_;
-  const SSLInfo* ssl_info_;
+  const ProofVerifyDetails* proof_verify_details_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockCryptoClientStreamFactory);
 };
 
 }  // namespace net

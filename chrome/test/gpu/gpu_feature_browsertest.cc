@@ -17,17 +17,14 @@
 #include "chrome/test/base/tracing.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/gpu_data_manager.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_test_config.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/gl/gl_implementation.h"
-
-#if defined(OS_MACOSX)
-#include "ui/gl/io_surface_support_mac.h"
-#endif
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -41,13 +38,23 @@ using trace_analyzer::TraceEventVector;
 
 namespace {
 
-const char kSwapBuffersEvent[] = "SwapBuffers";
 const char kAcceleratedCanvasCreationEvent[] = "Canvas2DLayerBridgeCreation";
 const char kWebGLCreationEvent[] = "DrawingBufferCreation";
+
+class FakeContentClient : public content::ContentClient {
+};
 
 class GpuFeatureTest : public InProcessBrowserTest {
  public:
   GpuFeatureTest() : category_patterns_("test_gpu") {}
+
+  virtual void SetUp() OVERRIDE {
+    content::SetContentClient(&content_client_);
+  }
+
+  virtual void TearDown() OVERRIDE {
+    content::SetContentClient(NULL);
+  }
 
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     base::FilePath test_dir;
@@ -107,11 +114,6 @@ class GpuFeatureTest : public InProcessBrowserTest {
     if (gfx::GetGLImplementation() != gfx::kGLImplementationOSMesaGL)
       return;
 #endif
-#if defined(OS_MACOSX)
-    // Bypass tests on Mac OSX 10.5 bots (IOSurfaceSupport is now required).
-    if (!IOSurfaceSupport::Initialize())
-      return;
-#endif
 
     ASSERT_TRUE(tracing::BeginTracing(category_patterns_));
 
@@ -160,6 +162,7 @@ class GpuFeatureTest : public InProcessBrowserTest {
   scoped_ptr<TraceAnalyzer> analyzer_;
   std::string category_patterns_;
   std::string trace_events_json_;
+  FakeContentClient content_client_;
 };
 
 class GpuFeaturePixelTest : public GpuFeatureTest {
@@ -170,92 +173,41 @@ class GpuFeaturePixelTest : public GpuFeatureTest {
   }
 };
 
-#if defined(OS_WIN) || defined(ADDRESS_SANITIZER) || defined(USE_AURA) || \
-    defined(OS_MACOSX)
-// This test is flaky on Windows. http://crbug.com/177113
-// Also fails under AddressSanitizer. http://crbug.com/185178
-// It fundamentally doesn't test the right thing on Aura.
-// http://crbug.com/280675
-// This does not work with software compositing on Mac. http://crbug.com/286038
-#define MAYBE_AcceleratedCompositingAllowed DISABLED_AcceleratedCompositingAllowed
-#else
-#define MAYBE_AcceleratedCompositingAllowed AcceleratedCompositingAllowed
-#endif
-
-IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MAYBE_AcceleratedCompositingAllowed) {
-  EXPECT_FALSE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-      gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING));
-
-  const base::FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunEventTest(url, kSwapBuffersEvent, true);
-}
-
-class AcceleratedCompositingBlockedTest : public GpuFeatureTest {
+class GpuCompositingBlockedTest : public GpuFeatureTest {
  public:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     GpuFeatureTest::SetUpInProcessBrowserTestFixture();
     const std::string json_blacklist =
-      "{\n"
-      "  \"name\": \"gpu blacklist\",\n"
-      "  \"version\": \"1.0\",\n"
-      "  \"entries\": [\n"
-      "    {\n"
-      "      \"id\": 1,\n"
-      "      \"features\": [\n"
-      "        \"accelerated_compositing\"\n"
-      "      ]\n"
-      "    }\n"
-      "  ]\n"
-      "}";
+        "{\n"
+        "  \"name\": \"gpu blacklist\",\n"
+        "  \"version\": \"1.0\",\n"
+        "  \"entries\": [\n"
+        "    {\n"
+        "      \"id\": 1,\n"
+        "      \"features\": [\n"
+        "        \"gpu_compositing\"\n"
+        "      ]\n"
+        "    }\n"
+        "  ]\n"
+        "}";
     SetupBlacklist(json_blacklist);
   }
 };
 
-#if defined(USE_AURA) || defined(OS_MACOSX)
-// Compositing is always on for Aura and Mac.
-#define MAYBE_AcceleratedCompositingBlocked DISABLED_AcceleratedCompositingBlocked
-#else
-#define MAYBE_AcceleratedCompositingBlocked AcceleratedCompositingBlocked
-#endif
-
-IN_PROC_BROWSER_TEST_F(AcceleratedCompositingBlockedTest,
-                       MAYBE_AcceleratedCompositingBlocked) {
+IN_PROC_BROWSER_TEST_F(GpuCompositingBlockedTest, GpuCompositingBlocked) {
   EXPECT_TRUE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
-      gpu::GPU_FEATURE_TYPE_ACCELERATED_COMPOSITING));
-
-  const base::FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunEventTest(url, kSwapBuffersEvent, false);
+      gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING));
 }
 
-class AcceleratedCompositingTest : public GpuFeatureTest {
- public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    GpuFeatureTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kDisableAcceleratedCompositing);
-  }
-};
-
-#if defined(USE_AURA) || defined(OS_MACOSX)
-// Compositing is always on for Aura and Mac.
-#define MAYBE_AcceleratedCompositingDisabled DISABLED_AcceleratedCompositingDisabled
-#else
-#define MAYBE_AcceleratedCompositingDisabled AcceleratedCompositingDisabled
-#endif
-
-IN_PROC_BROWSER_TEST_F(AcceleratedCompositingTest,
-                       MAYBE_AcceleratedCompositingDisabled) {
-// Compositing is always on for Windows Aura.
-  const base::FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunEventTest(url, kSwapBuffersEvent, false);
-}
-
-// Times out: http://crbug.com/166060
-IN_PROC_BROWSER_TEST_F(GpuFeatureTest, DISABLED_WebGLAllowed) {
+IN_PROC_BROWSER_TEST_F(GpuFeatureTest, WebGLAllowed) {
   EXPECT_FALSE(GpuDataManager::GetInstance()->IsFeatureBlacklisted(
       gpu::GPU_FEATURE_TYPE_WEBGL));
 
+  // The below times out: http://crbug.com/166060
+#if 0
   const base::FilePath url(FILE_PATH_LITERAL("feature_webgl.html"));
   RunEventTest(url, kWebGLCreationEvent, true);
+#endif
 }
 
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, WebGLBlocked) {
@@ -296,19 +248,14 @@ IN_PROC_BROWSER_TEST_F(WebGLTest, WebGLDisabled) {
   RunEventTest(url, kWebGLCreationEvent, false);
 }
 
-#if defined(GOOGLE_CHROME_BUILD) && defined(OS_MACOSX)
 // This test is oblivious to the fact that multisample could be blacklisted on
-// some configurations.
-// http://crbug.com/314745
-#define MAYBE_MultisamplingAllowed DISABLED_MultisamplingAllowed
-#else
-#define MAYBE_MultisamplingAllowed MultisamplingAllowed
-#endif
-IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MAYBE_MultisamplingAllowed) {
+// some configurations. Previously disabled on GOOGLE_CHROME_BUILD and
+// on OS_MACOSX: http://crbug.com/314745
+IN_PROC_BROWSER_TEST_F(GpuFeatureTest, DISABLED_MultisamplingAllowed) {
   if (gpu::GPUTestBotConfig::GpuBlacklistedOnBot())
     return;
   // Multisampling is not supported if running on top of osmesa.
-  if (gfx::GetGLImplementation() != gfx::kGLImplementationOSMesaGL)
+  if (gfx::GetGLImplementation() == gfx::kGLImplementationOSMesaGL)
     return;
   // Linux Intel uses mesa driver, where multisampling is not supported.
   // Multisampling is also not supported on virtualized mac os.
@@ -326,7 +273,7 @@ class WebGLMultisamplingTest : public GpuFeatureTest {
  public:
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     GpuFeatureTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kDisableGLMultisampling);
+    command_line->AppendSwitch("disable_multisampling");
   }
 };
 
@@ -430,21 +377,6 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest,
   RunTest(url, "\"SUCCESS\"", false);
 }
 
-class ThreadedCompositorTest : public GpuFeatureTest {
- public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    GpuFeatureTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kEnableThreadedCompositing);
-  }
-};
-
-// http://crbug.com/157985
-IN_PROC_BROWSER_TEST_F(ThreadedCompositorTest, DISABLED_ThreadedCompositor) {
-  const base::FilePath url(FILE_PATH_LITERAL("feature_compositing.html"));
-  RunEventTest(url, kSwapBuffersEvent, true);
-}
-
-
 #if defined(OS_WIN) || defined(OS_CHROMEOS) || defined(OS_MACOSX)
 // http://crbug.com/162343: flaky on Windows and Mac, failing on ChromiumOS.
 #define MAYBE_RafNoDamage DISABLED_RafNoDamage
@@ -490,9 +422,6 @@ IN_PROC_BROWSER_TEST_F(GpuFeatureTest, MAYBE_RafNoDamage) {
 
 #if defined(OS_MACOSX)
 IN_PROC_BROWSER_TEST_F(GpuFeatureTest, IOSurfaceReuse) {
-  if (!IOSurfaceSupport::Initialize())
-    return;
-
   if (gpu::GPUTestBotConfig::GpuBlacklistedOnBot())
     return;
 

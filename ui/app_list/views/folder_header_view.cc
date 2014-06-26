@@ -4,6 +4,8 @@
 
 #include "ui/app_list/views/folder_header_view.h"
 
+#include <algorithm>
+
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
@@ -25,10 +27,9 @@ const int kPreferredWidth = 360;
 const int kPreferredHeight = 48;
 const int kIconDimension = 24;
 const int kPadding = 14;
-const int kFolderNameWidth = 150;
-const int kFolderNameHeight = 30;
 const int kBottomSeparatorWidth = 380;
 const int kBottomSeparatorHeight = 1;
+const int kMaxFolderNameWidth = 300;
 
 const SkColor kHintTextColor = SkColorSetRGB(0xA0, 0xA0, 0xA0);
 
@@ -47,11 +48,6 @@ class FolderHeaderView::FolderNameView : public views::Textfield {
   virtual ~FolderNameView() {
   }
 
-  // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
-    return gfx::Size(kFolderNameWidth, kFolderNameHeight);
-  }
-
  private:
   DISALLOW_COPY_AND_ASSIGN(FolderNameView);
 };
@@ -60,6 +56,9 @@ FolderHeaderView::FolderHeaderView(FolderHeaderViewDelegate* delegate)
     : folder_item_(NULL),
       back_button_(new views::ImageButton(this)),
       folder_name_view_(new FolderNameView),
+      folder_name_placeholder_text_(
+          ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
+              IDS_APP_LIST_FOLDER_NAME_PLACEHOLDER)),
       delegate_(delegate),
       folder_name_visible_(true) {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
@@ -68,12 +67,15 @@ FolderHeaderView::FolderHeaderView(FolderHeaderViewDelegate* delegate)
   back_button_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
       views::ImageButton::ALIGN_MIDDLE);
   AddChildView(back_button_);
+  back_button_->SetFocusable(true);
+  back_button_->SetAccessibleName(
+      ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
+          IDS_APP_LIST_FOLDER_CLOSE_FOLDER_ACCESSIBILE_NAME));
 
   folder_name_view_->SetFontList(
       rb.GetFontList(ui::ResourceBundle::MediumFont));
   folder_name_view_->set_placeholder_text_color(kHintTextColor);
-  folder_name_view_->set_placeholder_text(
-      rb.GetLocalizedString(IDS_APP_LIST_FOLDER_NAME_PLACEHOLDER));
+  folder_name_view_->set_placeholder_text(folder_name_placeholder_text_);
   folder_name_view_->SetBorder(views::Border::NullBorder());
   folder_name_view_->SetBackgroundColor(kContentsBackgroundColor);
   folder_name_view_->set_controller(this);
@@ -94,6 +96,9 @@ void FolderHeaderView::SetFolderItem(AppListFolderItem* folder_item) {
     return;
   folder_item_->AddObserver(this);
 
+  folder_name_view_->SetEnabled(folder_item_->folder_type() !=
+                                AppListFolderItem::FOLDER_TYPE_OEM);
+
   Update();
 }
 
@@ -112,11 +117,38 @@ void FolderHeaderView::Update() {
     return;
 
   folder_name_view_->SetVisible(folder_name_visible_);
-  if (folder_name_visible_)
-    folder_name_view_->SetText(base::UTF8ToUTF16(folder_item_->title()));
+  if (folder_name_visible_) {
+    folder_name_view_->SetText(base::UTF8ToUTF16(folder_item_->name()));
+    UpdateFolderNameAccessibleName();
+  }
+
+  Layout();
 }
 
-gfx::Size FolderHeaderView::GetPreferredSize() {
+void FolderHeaderView::UpdateFolderNameAccessibleName() {
+  // Sets |folder_name_view_|'s accessible name to the placeholder text if
+  // |folder_name_view_| is blank; otherwise, clear the accessible name, the
+  // accessible state's value is set to be folder_name_view_->text() by
+  // TextField.
+  base::string16 accessible_name = folder_name_view_->text().empty()
+                                       ? folder_name_placeholder_text_
+                                       : base::string16();
+  folder_name_view_->SetAccessibleName(accessible_name);
+}
+
+const base::string16& FolderHeaderView::GetFolderNameForTest() {
+  return folder_name_view_->text();
+}
+
+void FolderHeaderView::SetFolderNameForTest(const base::string16& name) {
+  folder_name_view_->SetText(name);
+}
+
+bool FolderHeaderView::IsFolderNameEnabledForTest() const {
+  return folder_name_view_->enabled();
+}
+
+gfx::Size FolderHeaderView::GetPreferredSize() const {
   return gfx::Size(kPreferredWidth, kPreferredHeight);
 }
 
@@ -130,12 +162,25 @@ void FolderHeaderView::Layout() {
   back_button_->SetBoundsRect(back_bounds);
 
   gfx::Rect text_bounds(rect);
-  int text_width = folder_name_view_->GetPreferredSize().width();
+  base::string16 text = folder_item_->name().empty()
+                            ? folder_name_placeholder_text_
+                            : base::UTF8ToUTF16(folder_item_->name());
+  int text_width =
+      gfx::Canvas::GetStringWidth(text, folder_name_view_->GetFontList()) +
+      folder_name_view_->GetCaretBounds().width();
+  text_width = std::min(text_width, kMaxFolderNameWidth);
   text_bounds.set_x(back_bounds.x() + (rect.width() - text_width) / 2);
   text_bounds.set_width(text_width);
   text_bounds.ClampToCenteredSize(gfx::Size(text_bounds.width(),
       folder_name_view_->GetPreferredSize().height()));
   folder_name_view_->SetBoundsRect(text_bounds);
+}
+
+bool FolderHeaderView::OnKeyPressed(const ui::KeyEvent& event) {
+  if (event.key_code() == ui::VKEY_RETURN)
+    delegate_->GiveBackFocusToSearchBox();
+
+  return false;
 }
 
 void FolderHeaderView::OnPaint(gfx::Canvas* canvas) {
@@ -160,9 +205,16 @@ void FolderHeaderView::ContentsChanged(views::Textfield* sender,
     return;
 
   folder_item_->RemoveObserver(this);
-  std::string name = base::UTF16ToUTF8(folder_name_view_->text());
-  folder_item_->SetTitleAndFullName(name, name);
+  // Enforce the maximum folder name length in UI.
+  std::string name = base::UTF16ToUTF8(
+      folder_name_view_->text().substr(0, kMaxFolderNameChars));
+  if (name != folder_item_->name())
+    delegate_->SetItemName(folder_item_, name);
   folder_item_->AddObserver(this);
+
+  UpdateFolderNameAccessibleName();
+
+  Layout();
 }
 
 void FolderHeaderView::ButtonPressed(views::Button* sender,
@@ -173,7 +225,7 @@ void FolderHeaderView::ButtonPressed(views::Button* sender,
 void FolderHeaderView::ItemIconChanged() {
 }
 
-void FolderHeaderView::ItemTitleChanged() {
+void FolderHeaderView::ItemNameChanged() {
   Update();
 }
 
@@ -187,4 +239,3 @@ void FolderHeaderView::ItemPercentDownloadedChanged() {
 }
 
 }  // namespace app_list
-

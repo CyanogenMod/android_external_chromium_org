@@ -8,11 +8,17 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_change_registrar.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/ui/app_list/recommended_apps_observer.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 namespace base {
 class ListValue;
+}
+
+namespace extensions {
+class ExtensionRegistry;
 }
 
 namespace app_list {
@@ -21,6 +27,7 @@ class RecommendedApps;
 
 // Handler for the app launcher start page.
 class StartPageHandler : public content::WebUIMessageHandler,
+                         public extensions::ExtensionRegistryObserver,
                          public RecommendedAppsObserver {
  public:
   StartPageHandler();
@@ -30,6 +37,15 @@ class StartPageHandler : public content::WebUIMessageHandler,
   // content::WebUIMessageHandler overrides:
   virtual void RegisterMessages() OVERRIDE;
 
+  // extensions::ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const extensions::Extension* extension,
+      extensions::UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
   // RecommendedAppsObserver overrdies:
   virtual void OnRecommendedAppsChanged() OVERRIDE;
 
@@ -37,15 +53,8 @@ class StartPageHandler : public content::WebUIMessageHandler,
   void SendRecommendedApps();
 
 #if defined(OS_CHROMEOS)
-  // Returns true if the hotword is enabled.
-  bool HotwordEnabled();
-
   // Called when the pref has been changed.
   void OnHotwordEnabledChanged();
-
-  // Called when the availability of the hotword for NTP is changed. The new
-  // value has to be propagated.
-  void SynchronizeHotwordEnabled();
 #endif
 
   // JS callbacks.
@@ -57,6 +66,10 @@ class StartPageHandler : public content::WebUIMessageHandler,
 
   RecommendedApps* recommended_apps_;  // Not owned.
   PrefChangeRegistrar pref_change_registrar_;
+
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(StartPageHandler);
 };

@@ -5,13 +5,17 @@
 #include <iostream>
 #include <sstream>
 
+#include "base/bind.h"
+#include "base/location.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
+#include "base/values.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/fake_dbus_thread_manager.h"
 #include "chromeos/dbus/mock_shill_manager_client.h"
 #include "chromeos/dbus/mock_shill_profile_client.h"
+#include "chromeos/dbus/shill_client_helper.h"
 #include "chromeos/network/managed_network_configuration_handler_impl.h"
 #include "chromeos/network/network_configuration_handler.h"
 #include "chromeos/network/network_profile_handler.h"
@@ -44,7 +48,6 @@ std::string ValueToString(const base::Value* value) {
   return str.str();
 }
 
-const char kSharedProfilePath[] = "/profile/default";
 const char kUser1[] = "user1";
 const char kUser1ProfilePath[] = "/profile/user1/shill";
 
@@ -131,7 +134,7 @@ class ShillProfileTestClient {
 class TestNetworkProfileHandler : public NetworkProfileHandler {
  public:
   TestNetworkProfileHandler() {
-    Init(NULL /* No NetworkStateHandler */);
+    Init();
   }
   virtual ~TestNetworkProfileHandler() {}
 
@@ -185,7 +188,8 @@ class ManagedNetworkConfigurationHandlerTest : public testing::Test {
     managed_network_configuration_handler_->Init(
         NULL /* no NetworkStateHandler */,
         network_profile_handler_.get(),
-        network_configuration_handler_.get());
+        network_configuration_handler_.get(),
+        NULL /* no DeviceHandler */);
 
     message_loop_.RunUntilIdle();
   }
@@ -208,7 +212,8 @@ class ManagedNetworkConfigurationHandlerTest : public testing::Test {
     network_profile_handler_->
         AddProfileForTest(NetworkProfile(kUser1ProfilePath, kUser1));
     network_profile_handler_->
-        AddProfileForTest(NetworkProfile(kSharedProfilePath, std::string()));
+        AddProfileForTest(NetworkProfile(
+            NetworkProfileHandler::GetSharedProfilePath(), std::string()));
   }
 
   void SetUpEntry(const std::string& path_to_shill_json,
@@ -455,7 +460,7 @@ TEST_F(ManagedNetworkConfigurationHandlerTest, SetPolicyUpdateManagedNewGUID) {
           "policy/shill_policy_on_unmanaged_wifi1.json");
 
   // The passphrase isn't sent again, because it's configured by the user and
-  // Shill doesn't sent it on GetProperties calls.
+  // Shill doesn't send it on GetProperties calls.
   expected_shill_properties->RemoveWithoutPathExpansion(
       shill::kPassphraseProperty, NULL);
 
@@ -480,6 +485,68 @@ TEST_F(ManagedNetworkConfigurationHandlerTest, SetPolicyUpdateManagedNewGUID) {
   message_loop_.RunUntilIdle();
 }
 
+TEST_F(ManagedNetworkConfigurationHandlerTest, SetPolicyUpdateManagedVPN) {
+  InitializeStandardProfiles();
+  SetUpEntry("policy/shill_managed_vpn.json", kUser1ProfilePath, "entry_path");
+
+  scoped_ptr<base::DictionaryValue> expected_shill_properties =
+      test_utils::ReadTestDictionary(
+          "policy/shill_policy_on_managed_vpn.json");
+
+  EXPECT_CALL(*mock_profile_client_,
+              GetProperties(dbus::ObjectPath(kUser1ProfilePath), _, _));
+
+  EXPECT_CALL(
+      *mock_profile_client_,
+      GetEntry(dbus::ObjectPath(kUser1ProfilePath), "entry_path", _, _));
+
+  EXPECT_CALL(*mock_manager_client_,
+              ConfigureServiceForProfile(
+                  dbus::ObjectPath(kUser1ProfilePath),
+                  IsEqualTo(expected_shill_properties.get()),
+                  _, _));
+
+  SetPolicy(::onc::ONC_SOURCE_USER_POLICY, kUser1, "policy/policy_vpn.onc");
+  message_loop_.RunUntilIdle();
+  VerifyAndClearExpectations();
+}
+
+TEST_F(ManagedNetworkConfigurationHandlerTest,
+       SetPolicyUpdateManagedEquivalentSecurity) {
+  InitializeStandardProfiles();
+  SetUpEntry("policy/shill_managed_wifi1_rsn.json",
+             kUser1ProfilePath,
+             "old_entry_path");
+
+  scoped_ptr<base::DictionaryValue> expected_shill_properties =
+      test_utils::ReadTestDictionary(
+          "policy/shill_policy_on_unmanaged_wifi1.json");
+
+  // The passphrase isn't sent again, because it's configured by the user and
+  // Shill doesn't send it on GetProperties calls.
+  expected_shill_properties->RemoveWithoutPathExpansion(
+      shill::kPassphraseProperty, NULL);
+
+  EXPECT_CALL(*mock_profile_client_,
+              GetProperties(dbus::ObjectPath(kUser1ProfilePath), _, _));
+
+  EXPECT_CALL(
+      *mock_profile_client_,
+      GetEntry(dbus::ObjectPath(kUser1ProfilePath), "old_entry_path", _, _));
+
+  // The existing entry must not be deleted because the Security type 'rsa' is
+  // equivalent to 'psk' when identifying networks.
+
+  EXPECT_CALL(
+      *mock_manager_client_,
+      ConfigureServiceForProfile(dbus::ObjectPath(kUser1ProfilePath),
+                                 IsEqualTo(expected_shill_properties.get()),
+                                 _, _));
+
+  SetPolicy(::onc::ONC_SOURCE_USER_POLICY, kUser1, "policy/policy_wifi1.onc");
+  message_loop_.RunUntilIdle();
+}
+
 TEST_F(ManagedNetworkConfigurationHandlerTest, SetPolicyReapplyToManaged) {
   InitializeStandardProfiles();
   SetUpEntry("policy/shill_policy_on_unmanaged_wifi1.json",
@@ -491,7 +558,7 @@ TEST_F(ManagedNetworkConfigurationHandlerTest, SetPolicyReapplyToManaged) {
           "policy/shill_policy_on_unmanaged_wifi1.json");
 
   // The passphrase isn't sent again, because it's configured by the user and
-  // Shill doesn't sent it on GetProperties calls.
+  // Shill doesn't send it on GetProperties calls.
   expected_shill_properties->RemoveWithoutPathExpansion(
       shill::kPassphraseProperty, NULL);
 
@@ -642,6 +709,44 @@ TEST_F(ManagedNetworkConfigurationHandlerTest, LateProfileLoading) {
                   _, _));
 
   InitializeStandardProfiles();
+  message_loop_.RunUntilIdle();
+}
+
+class ManagedNetworkConfigurationHandlerShutdownTest
+    : public ManagedNetworkConfigurationHandlerTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    ManagedNetworkConfigurationHandlerTest::SetUp();
+    ON_CALL(*mock_profile_client_, GetProperties(_, _, _)).WillByDefault(
+        Invoke(&ManagedNetworkConfigurationHandlerShutdownTest::GetProperties));
+  }
+
+  static void GetProperties(
+      const dbus::ObjectPath& profile_path,
+      const ShillClientHelper::DictionaryValueCallbackWithoutStatus& callback,
+      const ShillClientHelper::ErrorCallback& error_callback) {
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(ManagedNetworkConfigurationHandlerShutdownTest::
+                       CallbackWithEmptyDictionary,
+                   callback));
+  }
+
+  static void CallbackWithEmptyDictionary(
+      const ShillClientHelper::DictionaryValueCallbackWithoutStatus& callback) {
+    callback.Run(base::DictionaryValue());
+  }
+};
+
+TEST_F(ManagedNetworkConfigurationHandlerShutdownTest,
+       DuringPolicyApplication) {
+  InitializeStandardProfiles();
+
+  EXPECT_CALL(*mock_profile_client_,
+              GetProperties(dbus::ObjectPath(kUser1ProfilePath), _, _));
+
+  SetPolicy(::onc::ONC_SOURCE_USER_POLICY, kUser1, "policy/policy_wifi1.onc");
+  managed_network_configuration_handler_.reset();
   message_loop_.RunUntilIdle();
 }
 

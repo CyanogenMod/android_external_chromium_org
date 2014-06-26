@@ -1,7 +1,6 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-
 #include "content/browser/tracing/tracing_controller_impl.h"
 
 #include "base/bind.h"
@@ -18,6 +17,10 @@
 #if defined(OS_CHROMEOS)
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/debug_daemon_client.h"
+#endif
+
+#if defined(OS_WIN)
+#include "content/browser/tracing/etw_system_event_consumer_win.h"
 #endif
 
 using base::debug::TraceLog;
@@ -101,7 +104,7 @@ void TracingControllerImpl::ResultFile::WriteTask(
   if (!file_ || !events_str_ptr->data().size())
     return;
 
-  // If there is already a result in the file, then put a commma
+  // If there is already a result in the file, then put a comma
   // before the next batch of results.
   if (has_at_least_one_result_) {
     size_t written = fwrite(",", 1, 1, file_);
@@ -129,9 +132,15 @@ void TracingControllerImpl::ResultFile::CloseTask(
   DCHECK(written == 1);
 
   if (system_trace_) {
+#if defined(OS_WIN)
+    // The Windows kernel events are kept into a JSon format stored as string
+    // and must not be escaped.
+    std::string json_string = system_trace_->data();
+#else
     std::string json_string = base::GetQuotedJSONString(system_trace_->data());
+#endif
 
-    const char* systemTraceHead = ", \"systemTraceEvents\": ";
+    const char* systemTraceHead = ",\n\"systemTraceEvents\": ";
     written = fwrite(systemTraceHead, strlen(systemTraceHead), 1, file_);
     DCHECK(written == 1);
 
@@ -158,7 +167,7 @@ TracingControllerImpl::TracingControllerImpl() :
     maximum_trace_buffer_percent_full_(0),
     // Tracing may have been enabled by ContentMainRunner if kTraceStartup
     // is specified in command line.
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
     is_system_tracing_(false),
 #endif
     is_recording_(TraceLog::GetInstance()->IsEnabled()),
@@ -234,21 +243,27 @@ bool TracingControllerImpl::EnableRecording(
   int trace_options = (options & RECORD_CONTINUOUSLY) ?
       TraceLog::RECORD_CONTINUOUSLY : TraceLog::RECORD_UNTIL_FULL;
   if (options & ENABLE_SAMPLING) {
-    trace_options |=  TraceLog::ENABLE_SAMPLING;
+    trace_options |= TraceLog::ENABLE_SAMPLING;
   }
-#if defined(OS_CHROMEOS)
+
   if (options & ENABLE_SYSTRACE) {
+#if defined(OS_CHROMEOS)
     DCHECK(!is_system_tracing_);
     chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
       StartSystemTracing();
     is_system_tracing_ = true;
-  }
+#elif defined(OS_WIN)
+    DCHECK(!is_system_tracing_);
+    is_system_tracing_ =
+        EtwSystemEventConsumer::GetInstance()->StartSystemTracing();
 #endif
+  }
+
 
   base::Closure on_enable_recording_done_callback =
       base::Bind(&TracingControllerImpl::OnEnableRecordingDone,
                  base::Unretained(this),
-                 category_filter,trace_options, callback);
+                 category_filter, trace_options, callback);
   BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
       base::Bind(&TracingControllerImpl::SetEnabledOnFileThread,
                  base::Unretained(this),
@@ -317,6 +332,25 @@ void TracingControllerImpl::OnDisableRecordingDone(
   // acked below.
   pending_disable_recording_ack_count_ = trace_message_filters_.size() + 1;
   pending_disable_recording_filters_ = trace_message_filters_;
+
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
+  if (is_system_tracing_) {
+    // Disable system tracing.
+    is_system_tracing_ = false;
+    ++pending_disable_recording_ack_count_;
+
+#if defined(OS_CHROMEOS)
+    chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
+      RequestStopSystemTracing(
+          base::Bind(&TracingControllerImpl::OnEndSystemTracingAcked,
+                     base::Unretained(this)));
+#elif defined(OS_WIN)
+    EtwSystemEventConsumer::GetInstance()->StopSystemTracing(
+        base::Bind(&TracingControllerImpl::OnEndSystemTracingAcked,
+                   base::Unretained(this)));
+#endif
+  }
+#endif  // defined(OS_CHROMEOS) || defined(OS_WIN)
 
   // Handle special case of zero child processes by immediately flushing the
   // trace log. Once the flush has completed the caller will be notified that
@@ -425,7 +459,7 @@ void TracingControllerImpl::GetMonitoringStatus(
     TracingController::Options* out_options) {
   *out_enabled = is_monitoring_;
   *out_category_filter =
-    TraceLog::GetInstance()->GetCurrentCategoryFilter().ToString();
+      TraceLog::GetInstance()->GetCurrentCategoryFilter().ToString();
   *out_options = options_;
 }
 
@@ -666,23 +700,6 @@ void TracingControllerImpl::OnDisableRecordingComplete() {
   // received.
   is_recording_ = false;
 
-#if defined(OS_CHROMEOS)
-  if (is_system_tracing_) {
-    // Disable system tracing now that the local trace has shutdown.
-    // This must be done last because we potentially need to push event
-    // records into the system event log for synchronizing system event
-    // timestamps with chrome event timestamps--and since the system event
-    // log is a ring-buffer (on linux) adding them at the end is the only
-    // way we're confident we'll have them in the final result.
-    is_system_tracing_ = false;
-    chromeos::DBusThreadManager::Get()->GetDebugDaemonClient()->
-      RequestStopSystemTracing(
-          base::Bind(&TracingControllerImpl::OnEndSystemTracingAcked,
-                     base::Unretained(this)));
-    return;
-  }
-#endif
-
   // Trigger callback if one is set.
   if (!pending_get_categories_done_callback_.is_null()) {
     pending_get_categories_done_callback_.Run(known_category_groups_);
@@ -707,7 +724,7 @@ void TracingControllerImpl::OnResultFileClosed() {
   result_file_.reset();
 }
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
 void TracingControllerImpl::OnEndSystemTracingAcked(
     const scoped_refptr<base::RefCountedString>& events_str_ptr) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -716,7 +733,8 @@ void TracingControllerImpl::OnEndSystemTracingAcked(
     result_file_->WriteSystemTrace(events_str_ptr);
 
   DCHECK(!is_system_tracing_);
-  OnDisableRecordingComplete();
+  std::vector<std::string> category_groups;
+  OnDisableRecordingAcked(NULL, category_groups);
 }
 #endif
 
@@ -873,21 +891,18 @@ void TracingControllerImpl::OnWatchEventMatched() {
     watch_event_callback_.Run();
 }
 
-void TracingControllerImpl::RegisterTracingUI(TracingUI* tracing_ui)
-{
+void TracingControllerImpl::RegisterTracingUI(TracingUI* tracing_ui) {
   DCHECK(tracing_uis_.find(tracing_ui) == tracing_uis_.end());
   tracing_uis_.insert(tracing_ui);
 }
 
-void TracingControllerImpl::UnregisterTracingUI(TracingUI* tracing_ui)
-{
+void TracingControllerImpl::UnregisterTracingUI(TracingUI* tracing_ui) {
   std::set<TracingUI*>::iterator it = tracing_uis_.find(tracing_ui);
   DCHECK(it != tracing_uis_.end());
   tracing_uis_.erase(it);
 }
 
-void TracingControllerImpl::OnMonitoringStateChanged(bool is_monitoring)
-{
+void TracingControllerImpl::OnMonitoringStateChanged(bool is_monitoring) {
   if (is_monitoring_ == is_monitoring)
     return;
 

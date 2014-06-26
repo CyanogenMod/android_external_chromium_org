@@ -18,21 +18,15 @@ namespace x509_certificate_model {
 std::string GetCertNameOrNickname(
     net::X509Certificate::OSCertHandle cert_handle);
 
-std::string GetNickname(net::X509Certificate::OSCertHandle cert_handle);
-
 std::string GetTokenName(net::X509Certificate::OSCertHandle cert_handle);
 
 std::string GetVersion(net::X509Certificate::OSCertHandle cert_handle);
 
 net::CertType GetType(net::X509Certificate::OSCertHandle cert_handle);
 
-std::string GetEmailAddress(net::X509Certificate::OSCertHandle cert_handle);
-
 void GetUsageStrings(
     net::X509Certificate::OSCertHandle cert_handle,
     std::vector<std::string>* usages);
-
-std::string GetKeyUsageString(net::X509Certificate::OSCertHandle cert_handle);
 
 std::string GetSerialNumberHexified(
     net::X509Certificate::OSCertHandle cert_handle,
@@ -68,18 +62,6 @@ bool GetTimes(net::X509Certificate::OSCertHandle cert_handle,
 std::string GetTitle(net::X509Certificate::OSCertHandle cert_handle);
 std::string GetIssuerName(net::X509Certificate::OSCertHandle cert_handle);
 std::string GetSubjectName(net::X509Certificate::OSCertHandle cert_handle);
-
-void GetEmailAddresses(net::X509Certificate::OSCertHandle cert_handle,
-                       std::vector<std::string>* email_addresses);
-
-void GetNicknameStringsFromCertList(const net::CertificateList& certs,
-                                    const std::string& cert_expired,
-                                    const std::string& cert_not_yet_valid,
-                                    std::vector<std::string>* nick_names);
-
-// Returns the PKCS#11 attribute CKA_ID for a certificate as an upper-case
-// hex string, or the empty string if none is found.
-std::string GetPkcs11Id(net::X509Certificate::OSCertHandle cert_handle);
 
 struct Extension {
   std::string name;
@@ -124,8 +106,6 @@ std::string ProcessSubjectPublicKeyInfo(
 
 std::string ProcessRawBitsSignatureWrap(
     net::X509Certificate::OSCertHandle cert_handle);
-
-void RegisterDynamicOids();
 
 // Format a buffer as |hex_separator| separated string, with 16 bytes on each
 // line separated using |line_separator|.

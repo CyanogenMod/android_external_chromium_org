@@ -6,13 +6,13 @@
 
 #include "ash/shell.h"
 #include "ash/wm/mru_window_tracker.h"
-#include "ash/wm/window_cycle_controller.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
-#include "ui/aura/client/activation_client.h"
 #include "ui/aura/window.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/focus/focus_search.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
 
@@ -23,8 +23,6 @@ bool HasFocusableWindow() {
 }
 
 }  // namespace
-
-namespace internal {
 
 FocusCycler::FocusCycler() : widget_activating_(NULL) {
 }
@@ -77,13 +75,12 @@ void FocusCycler::RotateFocus(Direction direction) {
 
     if (index == browser_index) {
       // Activate the most recently active browser window.
-      ash::Shell::GetInstance()->window_cycle_controller()->HandleCycleWindow(
-          WindowCycleController::FORWARD, false);
-
-      // Rotate pane focus within that window.
-      aura::Window* window = ash::wm::GetActiveWindow();
-      if (!window)
+      MruWindowTracker::WindowList mru_windows(
+          Shell::GetInstance()->mru_window_tracker()->BuildMruWindowList());
+      if (mru_windows.empty())
         break;
+      aura::Window* window = mru_windows.front();
+      wm::GetWindowState(window)->Activate();
       views::Widget* widget = views::Widget::GetWidgetForNativeWindow(window);
       if (!widget)
         break;
@@ -109,7 +106,5 @@ bool FocusCycler::FocusWidget(views::Widget* widget) {
   widget_activating_ = NULL;
   return widget->IsActive();
 }
-
-}  // namespace internal
 
 }  // namespace ash

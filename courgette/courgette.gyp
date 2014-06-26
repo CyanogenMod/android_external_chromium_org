@@ -121,20 +121,11 @@
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
             }],
-          ],
-        }],
-        [ 'toolkit_uses_gtk == 1', {
-          'dependencies': [
-            # Workaround for gyp bug 69.
-            # Needed to handle the #include chain:
-            #   base/test_suite.h
-            #   gtk/gtk.h
-            '../build/linux/system.gyp:gtk',
           ],
         }],
       ],
@@ -155,17 +146,6 @@
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
         '../testing/gtest.gyp:gtest',
-      ],
-      'conditions': [
-        [ 'toolkit_uses_gtk == 1', {
-          'dependencies': [
-            # Workaround for gyp bug 69.
-            # Needed to handle the #include chain:
-            #   base/test_suite.h
-            #   gtk/gtk.h
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
       ],
     },
   ],

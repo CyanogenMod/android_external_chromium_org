@@ -20,29 +20,33 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/media_galleries/fileapi/iapps_finder.h"
 #include "chrome/browser/media_galleries/fileapi/picasa_finder.h"
+#include "chrome/browser/media_galleries/imported_media_gallery_registry.h"
 #include "chrome/browser/media_galleries/media_file_system_registry.h"
 #include "chrome/browser/media_galleries/media_galleries_histograms.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/permissions/media_galleries_permission.h"
 #include "chrome/common/pref_names.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/storage_monitor/media_storage_util.h"
 #include "components/storage_monitor/storage_monitor.h"
-#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/permissions/api_permission.h"
+#include "extensions/common/permissions/media_galleries_permission.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/bytes_formatting.h"
 
 using base::DictionaryValue;
 using base::ListValue;
 using extensions::ExtensionPrefs;
+using storage_monitor::MediaStorageUtil;
+using storage_monitor::StorageInfo;
+using storage_monitor::StorageMonitor;
 
 namespace {
 
@@ -92,10 +96,12 @@ int NumberExtensionsUsingMediaGalleries(Profile* profile) {
   const extensions::ExtensionSet* extensions = extension_service->extensions();
   for (extensions::ExtensionSet::const_iterator i = extensions->begin();
        i != extensions->end(); ++i) {
-    if (extensions::PermissionsData::HasAPIPermission(
-            *i, extensions::APIPermission::kMediaGalleries) ||
-        extensions::PermissionsData::HasAPIPermission(
-            *i, extensions::APIPermission::kMediaGalleriesPrivate)) {
+    const extensions::PermissionsData* permissions_data =
+        (*i)->permissions_data();
+    if (permissions_data->HasAPIPermission(
+            extensions::APIPermission::kMediaGalleries) ||
+        permissions_data->HasAPIPermission(
+            extensions::APIPermission::kMediaGalleriesPrivate)) {
       count++;
     }
   }
@@ -273,8 +279,8 @@ base::DictionaryValue* CreateGalleryPrefInfoDictionary(
 bool HasAutoDetectedGalleryPermission(const extensions::Extension& extension) {
   extensions::MediaGalleriesPermission::CheckParam param(
       extensions::MediaGalleriesPermission::kAllAutoDetectedPermission);
-  return extensions::PermissionsData::CheckAPIPermissionWithParam(
-      &extension, extensions::APIPermission::kMediaGalleries, &param);
+  return extension.permissions_data()->CheckAPIPermissionWithParam(
+      extensions::APIPermission::kMediaGalleries, &param);
 }
 
 // Retrieves the MediaGalleryPermission from the given dictionary; DCHECKs on
@@ -293,14 +299,6 @@ bool GetMediaGalleryPermissionFromDictionary(
   return false;
 }
 
-base::string16 GetDisplayNameForDevice(uint64 storage_size_in_bytes,
-                                       const base::string16& name) {
-  DCHECK(!name.empty());
-  return (storage_size_in_bytes == 0) ?
-      name :
-      ui::FormatBytes(storage_size_in_bytes) + base::ASCIIToUTF16(" ") + name;
-}
-
 // For a device with |device_name| and a relative path |sub_folder|, construct
 // a display name. If |sub_folder| is empty, then just return |device_name|.
 base::string16 GetDisplayNameForSubFolder(const base::string16& device_name,
@@ -312,20 +310,9 @@ base::string16 GetDisplayNameForSubFolder(const base::string16& device_name,
           device_name);
 }
 
-base::string16 GetFullProductName(const base::string16& vendor_name,
-                                  const base::string16& model_name) {
-  if (vendor_name.empty() && model_name.empty())
-    return base::string16();
-
-  base::string16 product_name;
-  if (vendor_name.empty())
-    product_name = model_name;
-  else if (model_name.empty())
-    product_name = vendor_name;
-  else if (!vendor_name.empty() && !model_name.empty())
-    product_name = vendor_name + base::UTF8ToUTF16(", ") + model_name;
-
-  return product_name;
+void InitializeImportedMediaGalleryRegistryOnFileThread() {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
+  ImportedMediaGalleryRegistry::GetInstance()->Initialize();
 }
 
 }  // namespace
@@ -377,19 +364,12 @@ base::string16 MediaGalleryPrefInfo::GetGalleryDisplayName() const {
 #endif
   }
 
-  base::string16 name = display_name;
-  if (name.empty())
-    name = volume_label;
-  if (name.empty())
-    name = GetFullProductName(vendor_name, model_name);
-  if (name.empty())
-    name = l10n_util::GetStringUTF16(IDS_MEDIA_GALLERIES_UNLABELED_DEVICE);
-
-  name = GetDisplayNameForDevice(total_size_in_bytes, name);
-
+  StorageInfo info(device_id,
+                   MediaStorageUtil::FindDevicePathById(device_id).value(),
+                   volume_label, vendor_name, model_name, total_size_in_bytes);
+  base::string16 name = info.GetDisplayNameWithOverride(display_name, true);
   if (!path.empty())
     name = GetDisplayNameForSubFolder(name, path);
-
   return name;
 }
 
@@ -437,7 +417,7 @@ MediaGalleriesPreferences::~MediaGalleriesPreferences() {
 }
 
 void MediaGalleriesPreferences::EnsureInitialized(base::Closure callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   if (IsInitialized()) {
     if (!callback.is_null())
@@ -546,7 +526,7 @@ void MediaGalleriesPreferences::AddDefaultGalleries() {
     base::FilePath relative_path;
     StorageInfo info;
     if (MediaStorageUtil::GetDeviceInfoFromPath(path, &info, &relative_path)) {
-      AddGalleryInternal(info.device_id(), info.name(), relative_path,
+      AddGalleryInternal(info.device_id(), base::string16(), relative_path,
                          MediaGalleryPrefInfo::kAutoDetected,
                          info.storage_label(), info.vendor_name(),
                          info.model_name(), info.total_size_in_bytes(),
@@ -604,7 +584,7 @@ void MediaGalleriesPreferences::OnStorageMonitorInit(
 }
 
 void MediaGalleriesPreferences::OnFinderDeviceID(const std::string& device_id) {
-  if (!device_id.empty() && !UpdateDeviceIDForSingletonType(device_id)) {
+  if (!device_id.empty()) {
     std::string gallery_name;
     if (StorageInfo::IsIPhotoDevice(device_id))
       gallery_name = kIPhotoGalleryName;
@@ -612,13 +592,25 @@ void MediaGalleriesPreferences::OnFinderDeviceID(const std::string& device_id) {
       gallery_name = kITunesGalleryName;
     else if (StorageInfo::IsPicasaDevice(device_id))
       gallery_name = kPicasaGalleryName;
-    else
-      NOTREACHED();
 
-    AddGalleryInternal(device_id, base::ASCIIToUTF16(gallery_name),
-                       base::FilePath(), MediaGalleryPrefInfo::kAutoDetected,
-                       base::string16(), base::string16(), base::string16(), 0,
-                       base::Time(), false, 0, 0, 0, kCurrentPrefsVersion);
+    if (!gallery_name.empty()) {
+      pre_initialization_callbacks_waiting_++;
+      content::BrowserThread::PostTaskAndReply(
+          content::BrowserThread::FILE,
+          FROM_HERE,
+          base::Bind(&InitializeImportedMediaGalleryRegistryOnFileThread),
+          base::Bind(
+              &MediaGalleriesPreferences::OnInitializationCallbackReturned,
+              weak_factory_.GetWeakPtr()));
+    }
+
+    if (!UpdateDeviceIDForSingletonType(device_id)) {
+      DCHECK(!gallery_name.empty());
+      AddGalleryInternal(device_id, base::ASCIIToUTF16(gallery_name),
+                         base::FilePath(), MediaGalleryPrefInfo::kAutoDetected,
+                         base::string16(), base::string16(), base::string16(),
+                         0, base::Time(), false, 0, 0, 0, kCurrentPrefsVersion);
+    }
   }
 
   OnInitializationCallbackReturned();
@@ -676,6 +668,18 @@ bool MediaGalleriesPreferences::LookUpGalleryByPath(
     const base::FilePath& path,
     MediaGalleryPrefInfo* gallery_info) const {
   DCHECK(IsInitialized());
+
+  // First check if the path matches an imported gallery.
+  for (MediaGalleriesPrefInfoMap::const_iterator it =
+           known_galleries_.begin(); it != known_galleries_.end(); ++it) {
+    const std::string& device_id = it->second.device_id;
+    if (iapps::PathIndicatesIPhotoLibrary(device_id, path) ||
+        iapps::PathIndicatesITunesLibrary(device_id, path)) {
+      *gallery_info = it->second;
+      return true;
+    }
+  }
+
   StorageInfo info;
   base::FilePath relative_path;
   if (!MediaStorageUtil::GetDeviceInfoFromPath(path, &info, &relative_path)) {
@@ -1039,7 +1043,8 @@ MediaGalleryPrefIdSet MediaGalleriesPreferences::GalleriesForExtension(
     } else {
       MediaGalleriesPrefInfoMap::const_iterator gallery =
           known_galleries_.find(it->pref_id);
-      DCHECK(gallery != known_galleries_.end());
+      // TODO(tommycli): Change to DCHECK after fixing http://crbug.com/374330.
+      CHECK(gallery != known_galleries_.end());
       if (!gallery->second.IsBlackListedType()) {
         result.insert(it->pref_id);
       } else {

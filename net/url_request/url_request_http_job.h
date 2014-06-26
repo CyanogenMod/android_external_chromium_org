@@ -107,6 +107,7 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   virtual bool GetResponseCookies(std::vector<std::string>* cookies) OVERRIDE;
   virtual int GetResponseCode() const OVERRIDE;
   virtual Filter* SetupFilter() const OVERRIDE;
+  virtual bool CopyFragmentOnRedirect(const GURL& location) const OVERRIDE;
   virtual bool IsSafeRedirect(const GURL& location) OVERRIDE;
   virtual bool NeedsAuth() OVERRIDE;
   virtual void GetAuthChallengeInfo(scoped_refptr<AuthChallengeInfo>*) OVERRIDE;
@@ -122,6 +123,8 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
       HttpRequestHeaders* headers) const OVERRIDE;
   virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual void DoneReading() OVERRIDE;
+  virtual void DoneReadingRedirectResponse() OVERRIDE;
+
   virtual HostPortPair GetSocketAddress() const OVERRIDE;
   virtual void NotifyURLRequestDestroyed() OVERRIDE;
 
@@ -187,9 +190,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
 
   bool read_in_progress_;
 
-  // An URL for an SDCH dictionary as suggested in a Get-Dictionary HTTP header.
-  GURL sdch_dictionary_url_;
-
   scoped_ptr<HttpTransaction> transaction_;
 
   // This is used to supervise traffic and enforce exponential
@@ -245,7 +245,6 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   base::TimeTicks receive_headers_end_;
 
   scoped_ptr<HttpFilterContext> filter_context_;
-  base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
   CompletionCallback on_headers_received_callback_;
 
@@ -253,6 +252,11 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   // This prevents modifications of headers that are shared with the underlying
   // layers of the network stack.
   scoped_refptr<HttpResponseHeaders> override_response_headers_;
+
+  // The network delegate can mark a URL as safe for redirection.
+  // The reference fragment of the original URL is not appended to the redirect
+  // URL when the redirect URL is equal to |allowed_unsafe_redirect_url_|.
+  GURL allowed_unsafe_redirect_url_;
 
   // Flag used to verify that |this| is not deleted while we are awaiting
   // a callback from the NetworkDelegate. Used as a fail-fast mechanism.
@@ -262,6 +266,8 @@ class NET_EXPORT_PRIVATE URLRequestHttpJob : public URLRequestJob {
   bool awaiting_callback_;
 
   const HttpUserAgentSettings* http_user_agent_settings_;
+
+  base::WeakPtrFactory<URLRequestHttpJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequestHttpJob);
 };

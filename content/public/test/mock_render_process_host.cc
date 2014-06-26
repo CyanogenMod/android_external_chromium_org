@@ -19,15 +19,14 @@
 namespace content {
 
 MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
-    : transport_dib_(NULL),
-      bad_msg_count_(0),
+    : bad_msg_count_(0),
       factory_(NULL),
       id_(ChildProcessHostImpl::GenerateChildProcessUniqueId()),
       browser_context_(browser_context),
       prev_routing_id_(0),
       fast_shutdown_started_(false),
       deletion_callback_called_(false),
-      is_guest_(false) {
+      is_isolated_guest_(false) {
   // Child process security operations can't be unit tested unless we add
   // ourselves as an existing child process.
   ChildProcessSecurityPolicyImpl::GetInstance()->Add(GetID());
@@ -37,7 +36,6 @@ MockRenderProcessHost::MockRenderProcessHost(BrowserContext* browser_context)
 
 MockRenderProcessHost::~MockRenderProcessHost() {
   ChildProcessSecurityPolicyImpl::GetInstance()->Remove(GetID());
-  delete transport_dib_;
   if (factory_)
     factory_->Remove(this);
 
@@ -103,8 +101,8 @@ int MockRenderProcessHost::VisibleWidgetCount() const {
   return 1;
 }
 
-bool MockRenderProcessHost::IsGuest() const {
-  return is_guest_;
+bool MockRenderProcessHost::IsIsolatedGuest() const {
+  return is_isolated_guest_;
 }
 
 StoragePartition* MockRenderProcessHost::GetStoragePartition() const {
@@ -139,32 +137,6 @@ bool MockRenderProcessHost::Send(IPC::Message* msg) {
   sink_.OnMessageReceived(*msg);
   delete msg;
   return true;
-}
-
-TransportDIB* MockRenderProcessHost::MapTransportDIB(TransportDIB::Id dib_id) {
-#if defined(OS_WIN)
-  HANDLE duped;
-  DuplicateHandle(GetCurrentProcess(), dib_id.handle, GetCurrentProcess(),
-                  &duped, 0, TRUE, DUPLICATE_SAME_ACCESS);
-  return TransportDIB::Map(duped);
-#elif defined(TOOLKIT_GTK)
-  return TransportDIB::Map(dib_id.shmkey);
-#elif defined(OS_ANDROID)
-  // On Android, Handles and Ids are the same underlying type.
-  return TransportDIB::Map(dib_id);
-#else
-  // On POSIX, TransportDIBs are always created in the browser, so we cannot map
-  // one from a dib_id.
-  return TransportDIB::Create(100 * 100 * 4, 0);
-#endif
-}
-
-TransportDIB* MockRenderProcessHost::GetTransportDIB(TransportDIB::Id dib_id) {
-  if (transport_dib_)
-    return transport_dib_;
-
-  transport_dib_ = MapTransportDIB(dib_id);
-  return transport_dib_;
 }
 
 int MockRenderProcessHost::GetID() const {
@@ -248,6 +220,13 @@ base::TimeDelta MockRenderProcessHost::GetChildProcessIdleTime() const {
 void MockRenderProcessHost::ResumeRequestsForView(int route_id) {
 }
 
+void MockRenderProcessHost::NotifyTimezoneChange() {
+}
+
+ServiceRegistry* MockRenderProcessHost::GetServiceRegistry() {
+  return NULL;
+}
+
 void MockRenderProcessHost::FilterURL(bool empty_allowed, GURL* url) {
   RenderProcessHostImpl::FilterURL(this, empty_allowed, url);
 }
@@ -261,6 +240,14 @@ void MockRenderProcessHost::DisableAecDump() {
 
 void MockRenderProcessHost::SetWebRtcLogMessageCallback(
     base::Callback<void(const std::string&)> callback) {
+}
+
+RenderProcessHost::WebRtcStopRtpDumpCallback
+MockRenderProcessHost::StartRtpDump(
+    bool incoming,
+    bool outgoing,
+    const WebRtcRtpPacketCallback& packet_callback) {
+  return WebRtcStopRtpDumpCallback();
 }
 #endif
 

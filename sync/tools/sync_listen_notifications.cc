@@ -15,6 +15,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
 #include "base/threading/thread.h"
+#include "components/invalidation/non_blocking_invalidator.h"
 #include "jingle/notifier/base/notification_method.h"
 #include "jingle/notifier/base/notifier_options.h"
 #include "net/base/host_port_pair.h"
@@ -27,7 +28,6 @@
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator.h"
-#include "sync/notifier/non_blocking_invalidator.h"
 #include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/tools/null_invalidation_state_tracker.h"
 
@@ -65,6 +65,10 @@ class NotificationPrinter : public InvalidationHandler {
       LOG(INFO) << "Remote invalidation: "
                 << invalidation_map.ToString();
     }
+  }
+
+  virtual std::string GetOwnerName() const OVERRIDE {
+    return "NotificationPrinter";
   }
 
  private:
@@ -188,8 +192,7 @@ int SyncListenNotificationsMain(int argc, char* argv[]) {
           base::RandBytesAsString(8),
           null_invalidation_state_tracker.GetSavedInvalidations(),
           null_invalidation_state_tracker.GetBootstrapData(),
-          WeakHandle<InvalidationStateTracker>(
-              null_invalidation_state_tracker.AsWeakPtr()),
+          &null_invalidation_state_tracker,
           kClientInfo,
           notifier_options.request_context_getter));
 

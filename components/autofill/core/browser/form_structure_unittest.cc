@@ -125,7 +125,8 @@ TEST(FormStructureTest, AutofillCount) {
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
   EXPECT_EQ(1U, form_structure->autofill_count());
 
-  // Add a field with should_autocomplete=false.
+  // Add a field with should_autocomplete=false. This should not be considered a
+  // fillable field.
   field.label = ASCIIToUTF16("address1");
   field.name = ASCIIToUTF16("address1");
   field.form_control_type = "text";
@@ -134,11 +135,7 @@ TEST(FormStructureTest, AutofillCount) {
 
   form_structure.reset(new FormStructure(form));
   form_structure->DetermineHeuristicTypes(TestAutofillMetrics());
-  // DetermineHeuristicTypes also assign field type for fields with
-  // autocomplete=off thus autofill_count includes them. This is a bug,
-  // and they should not be counted. See http://crbug.com/176432 for details.
-  // TODO(benquan): change it to EXPECT_EQ(1U, ... when the bug is fixed.
-  EXPECT_EQ(2U, form_structure->autofill_count());
+  EXPECT_EQ(1U, form_structure->autofill_count());
 }
 
 TEST(FormStructureTest, SourceURL) {
@@ -1474,13 +1471,17 @@ TEST(FormStructureTest, EncodeQueryRequest) {
   forms.push_back(new FormStructure(form));
   std::vector<std::string> encoded_signatures;
   std::string encoded_xml;
-  const char * const kSignature1 = "11337937696949187602";
-  const char * const kResponse1 =
-      "<\?xml version=\"1.0\" encoding=\"UTF-8\"\?><autofillquery "
-      "clientversion=\"6.1.1715.1442/en (GGLL)\" accepts=\"e\"><form "
-      "signature=\"11337937696949187602\"><field signature=\"412125936\"/>"
-      "<field signature=\"1917667676\"/><field signature=\"2226358947\"/>"
-      "<field signature=\"747221617\"/><field signature=\"4108155786\"/></form>"
+  const char kSignature1[] = "11337937696949187602";
+  const char kResponse1[] =
+      "<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
+      "<autofillquery clientversion=\"6.1.1715.1442/en (GGLL)\">"
+      "<form signature=\"11337937696949187602\">"
+      "<field signature=\"412125936\"/>"
+      "<field signature=\"1917667676\"/>"
+      "<field signature=\"2226358947\"/>"
+      "<field signature=\"747221617\"/>"
+      "<field signature=\"4108155786\"/>"
+      "</form>"
       "</autofillquery>";
   ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms.get(),
                                                 &encoded_signatures,
@@ -1511,20 +1512,31 @@ TEST(FormStructureTest, EncodeQueryRequest) {
                                                 &encoded_xml));
   ASSERT_EQ(2U, encoded_signatures.size());
   EXPECT_EQ(kSignature1, encoded_signatures[0]);
-  const char * const kSignature2 = "8308881815906226214";
+  const char kSignature2[] = "8308881815906226214";
   EXPECT_EQ(kSignature2, encoded_signatures[1]);
-  const char * const kResponse2 =
-      "<\?xml version=\"1.0\" encoding=\"UTF-8\"\?><autofillquery "
-      "clientversion=\"6.1.1715.1442/en (GGLL)\" accepts=\"e\"><form "
-      "signature=\"11337937696949187602\"><field signature=\"412125936\"/>"
-      "<field signature=\"1917667676\"/><field signature=\"2226358947\"/>"
-      "<field signature=\"747221617\"/><field signature=\"4108155786\"/></form>"
-      "<form signature=\"8308881815906226214\"><field signature=\"412125936\"/>"
-      "<field signature=\"1917667676\"/><field signature=\"2226358947\"/>"
-      "<field signature=\"747221617\"/><field signature=\"4108155786\"/><field "
-      "signature=\"509334676\"/><field signature=\"509334676\"/><field "
-      "signature=\"509334676\"/><field signature=\"509334676\"/><field "
-      "signature=\"509334676\"/></form></autofillquery>";
+  const char kResponse2[] =
+      "<\?xml version=\"1.0\" encoding=\"UTF-8\"\?>"
+      "<autofillquery clientversion=\"6.1.1715.1442/en (GGLL)\">"
+      "<form signature=\"11337937696949187602\">"
+      "<field signature=\"412125936\"/>"
+      "<field signature=\"1917667676\"/>"
+      "<field signature=\"2226358947\"/>"
+      "<field signature=\"747221617\"/>"
+      "<field signature=\"4108155786\"/>"
+      "</form>"
+      "<form signature=\"8308881815906226214\">"
+      "<field signature=\"412125936\"/>"
+      "<field signature=\"1917667676\"/>"
+      "<field signature=\"2226358947\"/>"
+      "<field signature=\"747221617\"/>"
+      "<field signature=\"4108155786\"/>"
+      "<field signature=\"509334676\"/>"
+      "<field signature=\"509334676\"/>"
+      "<field signature=\"509334676\"/>"
+      "<field signature=\"509334676\"/>"
+      "<field signature=\"509334676\"/>"
+      "</form>"
+      "</autofillquery>";
   EXPECT_EQ(kResponse2, encoded_xml);
 
   FormData malformed_form(form);
@@ -2330,18 +2342,61 @@ TEST(FormStructureTest, SkipFieldTest) {
   std::vector<std::string> encoded_signatures;
   std::string encoded_xml;
 
-  const char * const kSignature = "18006745212084723782";
-  const char * const kResponse =
-      "<\?xml version=\"1.0\" encoding=\"UTF-8\"?><autofillquery "
-      "clientversion=\"6.1.1715.1442/en (GGLL)\" accepts=\"e\"><form "
-      "signature=\"18006745212084723782\"><field signature=\"239111655\"/>"
-      "<field signature=\"420638584\"/></form></autofillquery>";
+  const char kSignature[] = "18006745212084723782";
+  const char kResponse[] =
+      "<\?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+      "<autofillquery clientversion=\"6.1.1715.1442/en (GGLL)\">"
+      "<form signature=\"18006745212084723782\">"
+      "<field signature=\"239111655\"/>"
+      "<field signature=\"420638584\"/>"
+      "</form>"
+      "</autofillquery>";
   ASSERT_TRUE(FormStructure::EncodeQueryRequest(forms.get(),
                                                 &encoded_signatures,
                                                 &encoded_xml));
   ASSERT_EQ(1U, encoded_signatures.size());
   EXPECT_EQ(kSignature, encoded_signatures[0]);
   EXPECT_EQ(kResponse, encoded_xml);
+}
+
+TEST(FormStructureTest, PossibleValues) {
+  FormData form_data;
+  FormFieldData field;
+  field.autocomplete_attribute = "billing country";
+  field.option_contents.push_back(ASCIIToUTF16("Down Under"));
+  field.option_values.push_back(ASCIIToUTF16("AU"));
+  field.option_contents.push_back(ASCIIToUTF16("Fr"));
+  field.option_values.push_back(ASCIIToUTF16(""));
+  field.option_contents.push_back(ASCIIToUTF16("Germany"));
+  field.option_values.push_back(ASCIIToUTF16("GRMNY"));
+  form_data.fields.push_back(field);
+  FormStructure form_structure(form_data);
+
+  bool unused;
+  form_structure.ParseFieldTypesFromAutocompleteAttributes(&unused, &unused);
+
+  // All values in <option> value= or contents are returned, set to upper case.
+  std::set<base::string16> possible_values =
+      form_structure.PossibleValues(ADDRESS_BILLING_COUNTRY);
+  EXPECT_EQ(5U, possible_values.size());
+  EXPECT_EQ(1U, possible_values.count(ASCIIToUTF16("AU")));
+  EXPECT_EQ(1U, possible_values.count(ASCIIToUTF16("FR")));
+  EXPECT_EQ(1U, possible_values.count(ASCIIToUTF16("DOWN UNDER")));
+  EXPECT_EQ(1U, possible_values.count(ASCIIToUTF16("GERMANY")));
+  EXPECT_EQ(1U, possible_values.count(ASCIIToUTF16("GRMNY")));
+  EXPECT_EQ(0U, possible_values.count(ASCIIToUTF16("Fr")));
+  EXPECT_EQ(0U, possible_values.count(ASCIIToUTF16("DE")));
+
+  // No field for the given type; empty value set.
+  EXPECT_EQ(0U, form_structure.PossibleValues(ADDRESS_HOME_COUNTRY).size());
+
+  // A freeform input (<input>) allows any value (overriding other <select>s).
+  FormFieldData freeform_field;
+  freeform_field.autocomplete_attribute = "billing country";
+  form_data.fields.push_back(freeform_field);
+  FormStructure form_structure2(form_data);
+  form_structure2.ParseFieldTypesFromAutocompleteAttributes(&unused, &unused);
+  EXPECT_EQ(0U, form_structure2.PossibleValues(ADDRESS_BILLING_COUNTRY).size());
 }
 
 }  // namespace autofill

@@ -26,6 +26,7 @@
 #include "webkit/browser/quota/quota_database.h"
 #include "webkit/browser/quota/quota_manager_proxy.h"
 #include "webkit/browser/quota/quota_temporary_storage_evictor.h"
+#include "webkit/browser/quota/storage_monitor.h"
 #include "webkit/browser/quota/usage_tracker.h"
 #include "webkit/common/quota/quota_types.h"
 
@@ -63,14 +64,14 @@ const int64 QuotaManager::kPerHostPersistentQuotaLimit = 10 * 1024 * kMBytes;
 
 const char QuotaManager::kDatabaseName[] = "QuotaManager";
 
+const int QuotaManager::kThresholdOfErrorsToBeBlacklisted = 3;
+
 // Preserve kMinimumPreserveForSystem disk space for system book-keeping
 // when returning the quota to unlimited apps/extensions.
 // TODO(kinuko): This should be like 10% of the actual disk space.
 // For now we simply use a constant as getting the disk size needs
 // platform-dependent code. (http://crbug.com/178976)
-const int64 QuotaManager::kMinimumPreserveForSystem = 1024 * kMBytes;
-
-const int QuotaManager::kThresholdOfErrorsToBeBlacklisted = 3;
+int64 QuotaManager::kMinimumPreserveForSystem = 1024 * kMBytes;
 
 const int QuotaManager::kEvictionIntervalInMilliSeconds =
     30 * kMinutesInMilliSeconds;
@@ -227,8 +228,14 @@ void DispatchTemporaryGlobalQuotaCallback(
 
 int64 CalculateQuotaWithDiskSpace(
     int64 available_disk_space, int64 usage, int64 quota) {
-  if (available_disk_space < QuotaManager::kMinimumPreserveForSystem ||
-      quota < usage) {
+  if (available_disk_space < QuotaManager::kMinimumPreserveForSystem) {
+    LOG(WARNING)
+        << "Running out of disk space for profile."
+        << " QuotaManager starts forbidding further quota consumption.";
+    return usage;
+  }
+
+  if (quota < usage) {
     // No more space; cap the quota to the current usage.
     return usage;
   }
@@ -808,6 +815,7 @@ QuotaManager::QuotaManager(bool is_incognito,
     desired_available_space_(-1),
     special_storage_policy_(special_storage_policy),
     get_disk_space_fn_(&CallSystemGetAmountOfFreeDiskSpace),
+    storage_monitor_(new StorageMonitor(this)),
     weak_factory_(this) {
 }
 
@@ -1159,20 +1167,40 @@ bool QuotaManager::ResetUsageTracker(StorageType type) {
   switch (type) {
     case kStorageTypeTemporary:
       temporary_usage_tracker_.reset(new UsageTracker(
-          clients_, kStorageTypeTemporary, special_storage_policy_.get()));
+          clients_, kStorageTypeTemporary, special_storage_policy_.get(),
+          storage_monitor_.get()));
       return true;
     case kStorageTypePersistent:
       persistent_usage_tracker_.reset(new UsageTracker(
-          clients_, kStorageTypePersistent, special_storage_policy_.get()));
+          clients_, kStorageTypePersistent, special_storage_policy_.get(),
+          storage_monitor_.get()));
       return true;
     case kStorageTypeSyncable:
       syncable_usage_tracker_.reset(new UsageTracker(
-          clients_, kStorageTypeSyncable, special_storage_policy_.get()));
+          clients_, kStorageTypeSyncable, special_storage_policy_.get(),
+          storage_monitor_.get()));
       return true;
     default:
       NOTREACHED();
   }
   return true;
+}
+
+void QuotaManager::AddStorageObserver(
+    StorageObserver* observer, const StorageObserver::MonitorParams& params) {
+  DCHECK(observer);
+  storage_monitor_->AddObserver(observer, params);
+}
+
+void QuotaManager::RemoveStorageObserver(StorageObserver* observer) {
+  DCHECK(observer);
+  storage_monitor_->RemoveObserver(observer);
+}
+
+void QuotaManager::RemoveStorageObserverForFilter(
+    StorageObserver* observer, const StorageObserver::Filter& filter) {
+  DCHECK(observer);
+  storage_monitor_->RemoveObserverForFilter(observer, filter);
 }
 
 QuotaManager::~QuotaManager() {
@@ -1202,11 +1230,14 @@ void QuotaManager::LazyInitialize() {
       profile_path_.AppendASCII(kDatabaseName)));
 
   temporary_usage_tracker_.reset(new UsageTracker(
-      clients_, kStorageTypeTemporary, special_storage_policy_.get()));
+      clients_, kStorageTypeTemporary, special_storage_policy_.get(),
+      storage_monitor_.get()));
   persistent_usage_tracker_.reset(new UsageTracker(
-      clients_, kStorageTypePersistent, special_storage_policy_.get()));
+      clients_, kStorageTypePersistent, special_storage_policy_.get(),
+      storage_monitor_.get()));
   syncable_usage_tracker_.reset(new UsageTracker(
-      clients_, kStorageTypeSyncable, special_storage_policy_.get()));
+      clients_, kStorageTypeSyncable, special_storage_policy_.get(),
+      storage_monitor_.get()));
 
   int64* temporary_quota_override = new int64(-1);
   int64* desired_available_space = new int64(-1);

@@ -23,6 +23,11 @@ const char kSyncService[] = "chromiumsync";
 // Service name for remoting.
 const char kRemotingService[] = "chromoting";
 
+// OAuth scopes.
+const char kOAuth1LoginScope[] = "https://www.google.com/accounts/OAuthLogin";
+const char kOAuthWrapBridgeUserInfoScope[] =
+    "https://www.googleapis.com/auth/userinfo.email";
+
 // Service/scope names for device management (cloud-based policy) server.
 const char kDeviceManagementServiceOAuth[] =
     "https://www.googleapis.com/auth/chromeosdevicemanagement";
@@ -34,11 +39,16 @@ const char kAnyApiOAuth2Scope[] = "https://www.googleapis.com/auth/any-api";
 const char kChromeSyncOAuth2Scope[] =
     "https://www.googleapis.com/auth/chromesync";
 // OAuth2 scope for access to the Chrome Sync APIs for managed profiles.
-const char kChromeSyncManagedOAuth2Scope[] =
+const char kChromeSyncSupervisedOAuth2Scope[] =
     "https://www.googleapis.com/auth/chromesync_playpen";
 // OAuth2 scope for access to Google Talk APIs (XMPP).
 const char kGoogleTalkOAuth2Scope[] =
     "https://www.googleapis.com/auth/googletalk";
+
+const char kGoogleUserInfoEmail[] =
+    "https://www.googleapis.com/auth/userinfo.email";
+const char kGoogleUserInfoProfile[] =
+    "https://www.googleapis.com/auth/userinfo.profile";
 
 // Used to mint uber auth tokens when needed.
 const char kGaiaSid[] = "sid";

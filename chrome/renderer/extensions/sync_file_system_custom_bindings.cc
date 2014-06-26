@@ -6,17 +6,17 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/renderer/extensions/chrome_v8_context.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "extensions/renderer/script_context.h"
+#include "third_party/WebKit/public/web/WebDOMFileSystem.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "v8/include/v8.h"
 #include "webkit/common/fileapi/file_system_util.h"
 
 namespace extensions {
 
 SyncFileSystemCustomBindings::SyncFileSystemCustomBindings(
-    Dispatcher* dispatcher, ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher, context) {
+    ScriptContext* context)
+    : ObjectBackedNativeHandler(context) {
   RouteFunction(
       "GetSyncFileSystemObject",
       base::Bind(&SyncFileSystemCustomBindings::GetSyncFileSystemObject,
@@ -49,12 +49,14 @@ void SyncFileSystemCustomBindings::GetSyncFileSystemObject(
     return;
   }
 
-  blink::WebFrame* webframe =
-      blink::WebFrame::frameForContext(context()->v8_context());
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForContext(context()->v8_context());
   args.GetReturnValue().Set(
-    webframe->createFileSystem(blink::WebFileSystemTypeExternal,
-                               blink::WebString::fromUTF8(name),
-                               blink::WebString::fromUTF8(root_url)));
+      blink::WebDOMFileSystem::create(webframe,
+                                      blink::WebFileSystemTypeExternal,
+                                      blink::WebString::fromUTF8(name),
+                                      GURL(root_url))
+          .toV8Value(args.Holder(), args.GetIsolate()));
 }
 
 }  // namespace extensions

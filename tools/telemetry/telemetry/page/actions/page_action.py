@@ -1,8 +1,8 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import telemetry.core.timeline.bounds as timeline_bounds
+import re
 
 class PageActionNotSupported(Exception):
   pass
@@ -10,103 +10,107 @@ class PageActionNotSupported(Exception):
 class PageActionFailed(Exception):
   pass
 
-class PageActionInvalidTimelineMarker(Exception):
-  pass
 
 class PageAction(object):
   """Represents an action that a user might try to perform to a page."""
-  _next_timeline_marker_id = 0
 
   def __init__(self, attributes=None):
     if attributes:
       for k, v in attributes.iteritems():
         setattr(self, k, v)
-    self._timeline_marker_base_name = None
-    self._timeline_marker_id = None
 
-  def CustomizeBrowserOptionsForPageSet(self, options):
-    """Override to add action-specific options to the BrowserOptions
-    object. These options will be set for the whole page set.
-
-    If the browser is not being restarted for every page in the page set then
-    all browser options required for the action must be set here. This, however,
-    requires that they do not conflict with options require by other actions
-    used up by the page set.
-    """
-    pass
-
-  def CustomizeBrowserOptionsForSinglePage(self, options):
-    """Override to add action-specific options to the BrowserOptions
-    object. These options will be set for just the page calling the action
-
-    This will only take effect if the browser is restarted for the page calling
-    the action, so should only be used in tests that restart the browser for
-    each page.
-    """
-    pass
-
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     """Override to do action-specific setup before
     Test.WillRunAction is called."""
     pass
 
-  def RunAction(self, page, tab, previous_action):
+  def RunAction(self, tab):
     raise NotImplementedError()
 
-  def RunsPreviousAction(self):
-    """Some actions require some initialization to be performed before the
-    previous action. For example, wait for href change needs to record the old
-    href before the previous action changes it. Therefore, we allow actions to
-    run the previous action. An action that does this should override this to
-    return True in order to prevent the previous action from being run twice."""
-    return False
-
-  def CleanUp(self, page, tab):
+  def CleanUp(self, tab):
     pass
 
-  def CanBeBound(self):
-    """If this class implements BindMeasurementJavaScript, override CanBeBound
-    to return True so that a test knows it can bind measurements."""
-    return False
 
-  def BindMeasurementJavaScript(
-      self, tab, start_js, stop_js):  # pylint: disable=W0613
-    """Let this action determine when measurements should start and stop.
+def EvaluateCallbackWithElement(
+    tab, callback_js, selector=None, text=None, element_function=None,
+    wait=False, timeout_in_seconds=60):
+  """Evaluates the JavaScript callback with the given element.
 
-    A measurement can call this method to provide the action
-    with JavaScript code that starts and stops measurements. The action
-    determines when to execute the provided JavaScript code, for more accurate
-    timings.
+  The element may be selected via selector, text, or element_function.
+  Only one of these arguments must be specified.
 
-    Args:
-      tab: The tab to do everything on.
-      start_js: JavaScript code that starts measurements.
-      stop_js: JavaScript code that stops measurements.
-    """
-    raise Exception('This action cannot be bound.')
+  Returns:
+    The callback's return value, if any. The return value must be
+    convertible to JSON.
 
-  @staticmethod
-  def ResetNextTimelineMarkerId():
-    PageAction._next_timeline_marker_id = 0
+  Args:
+    tab: A telemetry.core.Tab object.
+    callback_js: The JavaScript callback to call (as string).
+        The callback receive 2 parameters: the element, and information
+        string about what method was used to retrieve the element.
+        Example: '''
+          function(element, info) {
+            if (!element) {
+              throw Error('Can not find element: ' + info);
+            }
+            element.click()
+          }'''
+    selector: A CSS selector describing the element.
+    text: The element must contains this exact text.
+    element_function: A JavaScript function (as string) that is used
+        to retrieve the element. For example:
+        '(function() { return foo.element; })()'.
+    wait: Whether to wait for the return value to be true.
+    timeout_in_seconds: The timeout for wait (if waiting).
+  """
+  count = 0
+  info_msg = ''
+  if element_function is not None:
+    count = count + 1
+    info_msg = 'using element_function "%s"' % re.escape(element_function)
+  if selector is not None:
+    count = count + 1
+    info_msg = 'using selector "%s"' % _EscapeSelector(selector)
+    element_function = 'document.querySelector(\'%s\')' % _EscapeSelector(
+        selector)
+  if text is not None:
+    count = count + 1
+    info_msg = 'using exact text match "%s"' % re.escape(text)
+    element_function = '''
+        (function() {
+          function _findElement(element, text) {
+            if (element.innerHTML == text) {
+              return element;
+            }
 
-  def _SetTimelineMarkerBaseName(self, name):
-    self._timeline_marker_base_name = name
-    self._timeline_marker_id = PageAction._next_timeline_marker_id
-    PageAction._next_timeline_marker_id += 1
+            var childNodes = element.childNodes;
+            for (var i = 0, len = childNodes.length; i < len; ++i) {
+              var found = _findElement(childNodes[i], text);
+              if (found) {
+                return found;
+              }
+            }
+            return null;
+          }
+          return _findElement(document, '%s');
+        })()''' % text
 
-  def _GetUniqueTimelineMarkerName(self):
-    if self._timeline_marker_base_name:
-      return \
-        '%s_%d' % (self._timeline_marker_base_name, self._timeline_marker_id)
-    else:
-      return None
+  if count != 1:
+    raise PageActionFailed(
+        'Must specify 1 way to retrieve element, but %s was specified.' % count)
 
-  def GetActiveRangeOnTimeline(self, timeline):
-    active_range = timeline_bounds.Bounds()
+  code = '''
+      (function() {
+        var element = %s;
+        var callback = %s;
+        return callback(element, '%s');
+      })()''' % (element_function, callback_js, info_msg)
 
-    if self._GetUniqueTimelineMarkerName():
-      active_range.AddEvent(
-          timeline.GetEventOfName(self._GetUniqueTimelineMarkerName(),
-                                  True, True))
+  if wait:
+    tab.WaitForJavaScriptExpression(code, timeout_in_seconds)
+    return True
+  else:
+    return tab.EvaluateJavaScript(code)
 
-    return active_range
+def _EscapeSelector(selector):
+  return selector.replace('\'', '\\\'')

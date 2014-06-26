@@ -8,9 +8,9 @@
 #include <set>
 #include <string>
 
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "base/scoped_observer.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/url_pattern_set.h"
 
@@ -23,11 +23,13 @@ class WebContents;
 namespace extensions {
 
 class Extension;
+class ExtensionRegistry;
 
 // Responsible for granting and revoking tab-specific permissions to extensions
 // with the activeTab or tabCapture permission.
-class ActiveTabPermissionGranter : public content::WebContentsObserver,
-                                   public content::NotificationObserver {
+class ActiveTabPermissionGranter
+    : public content::WebContentsObserver,
+      public extensions::ExtensionRegistryObserver {
  public:
   ActiveTabPermissionGranter(content::WebContents* web_contents,
                              int tab_id,
@@ -43,13 +45,13 @@ class ActiveTabPermissionGranter : public content::WebContentsObserver,
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void WebContentsDestroyed(content::WebContents* web_contents)
-      OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // extensions::ExtensionRegistryObserver implementation.
+  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE;
 
   // Clears any tab-specific permissions for all extensions on |tab_id_| and
   // notifies renderers.
@@ -63,7 +65,8 @@ class ActiveTabPermissionGranter : public content::WebContentsObserver,
   ExtensionSet granted_extensions_;
 
   // Listen to extension unloaded notifications.
-  content::NotificationRegistrar registrar_;
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ActiveTabPermissionGranter);
 };

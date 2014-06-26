@@ -130,7 +130,8 @@ bool WASAPIAudioOutputStream::Open() {
 
   // Create an IAudioClient interface for the default rendering IMMDevice.
   ScopedComPtr<IAudioClient> audio_client;
-  if (device_id_.empty()) {
+  if (device_id_.empty() ||
+      CoreAudioUtil::DeviceIsDefault(eRender, device_role_, device_id_)) {
     audio_client = CoreAudioUtil::CreateDefaultClient(eRender, device_role_);
   } else {
     ScopedComPtr<IMMDevice> device(CoreAudioUtil::CreateDevice(device_id_));
@@ -251,8 +252,7 @@ void WASAPIAudioOutputStream::Start(AudioSourceCallback* callback) {
   // Start streaming data between the endpoint buffer and the audio engine.
   HRESULT hr = audio_client_->Start();
   if (FAILED(hr)) {
-    LOG_GETLASTERROR(ERROR)
-        << "Failed to start output streaming: " << std::hex << hr;
+    PLOG(ERROR) << "Failed to start output streaming: " << std::hex << hr;
     StopThread();
     callback->OnError(this);
   }
@@ -267,8 +267,7 @@ void WASAPIAudioOutputStream::Stop() {
   // Stop output audio streaming.
   HRESULT hr = audio_client_->Stop();
   if (FAILED(hr)) {
-    LOG_GETLASTERROR(ERROR)
-        << "Failed to stop output streaming: " << std::hex << hr;
+    PLOG(ERROR) << "Failed to stop output streaming: " << std::hex << hr;
     source_->OnError(this);
   }
 
@@ -279,8 +278,7 @@ void WASAPIAudioOutputStream::Stop() {
   // Flush all pending data and reset the audio clock stream position to 0.
   hr = audio_client_->Reset();
   if (FAILED(hr)) {
-    LOG_GETLASTERROR(ERROR)
-        << "Failed to reset streaming: " << std::hex << hr;
+    PLOG(ERROR) << "Failed to reset streaming: " << std::hex << hr;
     callback->OnError(this);
   }
 

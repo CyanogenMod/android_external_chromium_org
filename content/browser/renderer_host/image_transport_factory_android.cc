@@ -38,15 +38,6 @@ class CmdBufferImageTransportFactory : public ImageTransportFactoryAndroid {
   CmdBufferImageTransportFactory();
   virtual ~CmdBufferImageTransportFactory();
 
-  virtual uint32_t InsertSyncPoint() OVERRIDE;
-  virtual void WaitSyncPoint(uint32_t sync_point) OVERRIDE;
-  virtual uint32_t CreateTexture() OVERRIDE;
-  virtual void DeleteTexture(uint32_t id) OVERRIDE;
-  virtual void AcquireTexture(
-      uint32 texture_id, const signed char* mailbox_name) OVERRIDE;
-  virtual gpu::gles2::GLES2Interface* GetContextGL() OVERRIDE {
-    return context_->GetImplementation();
-  }
   virtual GLHelper* GetGLHelper() OVERRIDE;
   virtual uint32 GetChannelID() OVERRIDE {
     return BrowserGpuChannelHostFactory::instance()->GetGpuChannelId();
@@ -82,13 +73,15 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
       3 * full_screen_texture_size_in_bytes, kDefaultMaxTransferBufferSize);
   limits.mapped_memory_reclaim_limit =
       WebGraphicsContext3DCommandBufferImpl::kNoLimit;
+  bool lose_context_when_out_of_memory = false;
   context_.reset(
       new WebGraphicsContext3DCommandBufferImpl(0,  // offscreen
                                                 url,
                                                 gpu_channel_host.get(),
                                                 attrs,
-                                                false,
-                                                limits));
+                                                lose_context_when_out_of_memory,
+                                                limits,
+                                                NULL));
   context_->setContextLostCallback(context_lost_listener_.get());
   if (context_->makeContextCurrent())
     context_->pushGroupMarkerEXT(
@@ -98,49 +91,6 @@ CmdBufferImageTransportFactory::CmdBufferImageTransportFactory() {
 
 CmdBufferImageTransportFactory::~CmdBufferImageTransportFactory() {
   context_->setContextLostCallback(NULL);
-}
-
-uint32_t CmdBufferImageTransportFactory::InsertSyncPoint() {
-  if (!context_->makeContextCurrent()) {
-    LOG(ERROR) << "Failed to make helper context current.";
-    return 0;
-  }
-  return context_->insertSyncPoint();
-}
-
-void CmdBufferImageTransportFactory::WaitSyncPoint(uint32_t sync_point) {
-  if (!context_->makeContextCurrent()) {
-    LOG(ERROR) << "Failed to make helper context current.";
-    return;
-  }
-  context_->waitSyncPoint(sync_point);
-}
-
-uint32_t CmdBufferImageTransportFactory::CreateTexture() {
-  if (!context_->makeContextCurrent()) {
-    LOG(ERROR) << "Failed to make helper context current.";
-    return false;
-  }
-  return context_->createTexture();
-}
-
-void CmdBufferImageTransportFactory::DeleteTexture(uint32_t id) {
-  if (!context_->makeContextCurrent()) {
-    LOG(ERROR) << "Failed to make helper context current.";
-    return;
-  }
-  context_->deleteTexture(id);
-}
-
-void CmdBufferImageTransportFactory::AcquireTexture(
-    uint32 texture_id, const signed char* mailbox_name) {
-  if (!context_->makeContextCurrent()) {
-    LOG(ERROR) << "Failed to make helper context current.";
-    return;
-  }
-  context_->bindTexture(GL_TEXTURE_2D, texture_id);
-  context_->consumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox_name);
-  context_->shallowFlushCHROMIUM();
 }
 
 GLHelper* CmdBufferImageTransportFactory::GetGLHelper() {

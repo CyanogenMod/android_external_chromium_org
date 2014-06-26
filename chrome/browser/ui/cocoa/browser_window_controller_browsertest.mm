@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 
 #import "base/mac/mac_util.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
@@ -18,7 +19,6 @@
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#import "chrome/browser/ui/cocoa/browser/avatar_base_controller.h"
 #include "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller_private.h"
 #import "chrome/browser/ui/cocoa/fast_resize_view.h"
@@ -26,6 +26,7 @@
 #import "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
+#import "chrome/browser/ui/cocoa/profiles/avatar_base_controller.h"
 #import "chrome/browser/ui/cocoa/tab_contents/overlayable_contents_controller.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
@@ -34,18 +35,9 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #import "testing/gtest_mac.h"
 
 namespace {
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-enum {
-  NSWindowDocumentVersionsButton = 6,
-  NSWindowFullScreenButton
-};
-#endif  // MAC_OS_X_VERSION_10_7
 
 void CreateProfileCallback(const base::Closure& quit_closure,
                            Profile* profile,
@@ -142,9 +134,9 @@ class BrowserWindowControllerTest : public InProcessBrowserTest {
     return height;
   }
 
-  void SetDevToolsWindowContentsInsets(
-      DevToolsWindow* window, int left, int top, int right, int bottom) {
-    window->SetContentsInsets(left, top, right, bottom);
+  void SetDevToolsWindowContentsBounds(
+      DevToolsWindow* window, const gfx::Rect& bounds) {
+    window->SetInspectedPageBounds(bounds);
   }
 
  private:
@@ -303,9 +295,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest, SheetPosition) {
   // we'll create the shortcut window without the bookmark bar.
   chrome::ToggleBookmarkBarWhenVisible(browser()->profile());
   // Open application mode window.
-  gfx::Rect initial_bounds(0, 0, 400, 400);
-  OpenAppShortcutWindow(browser()->profile(), GURL("about:blank"),
-                        initial_bounds);
+  OpenAppShortcutWindow(browser()->profile(), GURL("about:blank"));
   Browser* popup_browser = BrowserList::GetInstance(
       chrome::GetActiveDesktop())->GetLastActive();
   NSWindow* popupWindow = popup_browser->window()->GetNativeWindow();
@@ -339,9 +329,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
   EXPECT_FALSE(
       [[controller() infoBarContainerController] shouldSuppressTopInfoBarTip]);
 
-  gfx::Rect initial_bounds(0, 0, 400, 400);
-  OpenAppShortcutWindow(browser()->profile(), GURL("about:blank"),
-                        initial_bounds);
+  OpenAppShortcutWindow(browser()->profile(), GURL("about:blank"));
   Browser* popup_browser = BrowserList::GetInstance(
       chrome::HOST_DESKTOP_TYPE_NATIVE)->GetLastActive();
   NSWindow* popupWindow = popup_browser->window()->GetNativeWindow();
@@ -360,17 +348,17 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 // visible.
 IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
                        AllowOverlappingViewsHistoryOverlay) {
-  content::WebContentsView* web_contents_view =
-      browser()->tab_strip_model()->GetActiveWebContents()->GetView();
-  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+  content::WebContents* web_contents =
+      browser()->tab_strip_model()->GetActiveWebContents();
+  EXPECT_TRUE(web_contents->GetAllowOverlappingViews());
 
   base::scoped_nsobject<HistoryOverlayController> overlay(
       [[HistoryOverlayController alloc] initForMode:kHistoryOverlayModeBack]);
-  [overlay showPanelForView:web_contents_view->GetNativeView()];
-  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+  [overlay showPanelForView:web_contents->GetNativeView()];
+  EXPECT_TRUE(web_contents->GetAllowOverlappingViews());
 
   overlay.reset();
-  EXPECT_TRUE(web_contents_view->GetAllowOverlappingViews());
+  EXPECT_TRUE(web_contents->GetAllowOverlappingViews());
 }
 
 // Tests that status bubble's base frame does move when devTools are docked.
@@ -380,7 +368,7 @@ IN_PROC_BROWSER_TEST_F(BrowserWindowControllerTest,
 
   DevToolsWindow* devtools_window = DevToolsWindow::OpenDevToolsWindowForTest(
       browser(), true);
-  SetDevToolsWindowContentsInsets(devtools_window, 10, 10, 10, 10);
+  SetDevToolsWindowContentsBounds(devtools_window, gfx::Rect(10, 10, 100, 100));
 
   NSPoint originWithDevTools = [controller() statusBubbleBaseFrame].origin;
   EXPECT_FALSE(NSEqualPoints(origin, originWithDevTools));

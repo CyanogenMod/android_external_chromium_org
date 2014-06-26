@@ -2,25 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/signin/signin_tracker.h"
+#include "components/signin/core/browser/signin_tracker.h"
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/fake_auth_status_provider.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/fake_signin_manager.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/signin/signin_tracker_factory.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/notification_service.h"
+#include "components/signin/core/browser/fake_auth_status_provider.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "google_apis/gaia/google_service_auth_error.h"
@@ -54,8 +54,9 @@ class SigninTrackerTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     TestingProfile::Builder builder;
     builder.AddTestingFactory(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                              FakeProfileOAuth2TokenServiceWrapper::Build);
-
+                              BuildFakeProfileOAuth2TokenService);
+    builder.AddTestingFactory(SigninManagerFactory::GetInstance(),
+                              FakeSigninManagerBase::Build);
     profile_ = builder.Build();
 
     fake_oauth2_token_service_ =
@@ -63,10 +64,10 @@ class SigninTrackerTest : public testing::Test {
             ProfileOAuth2TokenServiceFactory::GetForProfile(profile_.get()));
 
     mock_signin_manager_ = static_cast<FakeSigninManagerForTesting*>(
-        SigninManagerFactory::GetInstance()->SetTestingFactoryAndUse(
-            profile_.get(), FakeSigninManagerBase::Build));
+        SigninManagerFactory::GetForProfile(profile_.get()));
 
-    tracker_.reset(new SigninTracker(profile_.get(), &observer_));
+    tracker_ =
+        SigninTrackerFactory::CreateForProfile(profile_.get(), &observer_);
   }
   virtual void TearDown() OVERRIDE {
     tracker_.reset();
@@ -81,23 +82,24 @@ class SigninTrackerTest : public testing::Test {
   MockObserver observer_;
 };
 
+#if !defined(OS_CHROMEOS)
 TEST_F(SigninTrackerTest, SignInFails) {
-  // SIGNIN_FAILED notification should result in a SigninFailed callback.
   const GoogleServiceAuthError error(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+
+  // Signin failure should result in a SigninFailed callback.
   EXPECT_CALL(observer_, SigninSuccess()).Times(0);
   EXPECT_CALL(observer_, SigninFailed(error));
 
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_GOOGLE_SIGNIN_FAILED,
-      content::Source<Profile>(profile_.get()),
-      content::Details<const GoogleServiceAuthError>(&error));
+  mock_signin_manager_->FailSignin(error);
 }
+#endif  // !defined(OS_CHROMEOS)
 
 TEST_F(SigninTrackerTest, SignInSucceeds) {
   EXPECT_CALL(observer_, SigninSuccess());
   EXPECT_CALL(observer_, SigninFailed(_)).Times(0);
 
   mock_signin_manager_->SetAuthenticatedUsername("user@gmail.com");
-  fake_oauth2_token_service_->IssueRefreshToken("refresh_token");
+  fake_oauth2_token_service_->IssueRefreshTokenForUser(
+      "user@gmail.com", "refresh_token");
 }

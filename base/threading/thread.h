@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/message_loop/timer_slack.h"
 #include "base/threading/platform_thread.h"
 
 namespace base {
@@ -44,6 +45,9 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
     // This is ignored if message_pump_factory.is_null() is false.
     MessageLoop::Type message_loop_type;
 
+    // Specify timer slack for thread message loop.
+    TimerSlack timer_slack;
+
     // Used to create the MessagePump for the MessageLoop. The callback is Run()
     // on the thread. If message_pump_factory.is_null(), then a MessagePump
     // appropriate for |message_loop_type| is created. Setting this forces the
@@ -58,7 +62,7 @@ class BASE_EXPORT Thread : PlatformThread::Delegate {
 
   // Constructor.
   // name is a display string to identify the thread.
-  explicit Thread(const char* name);
+  explicit Thread(const std::string& name);
 
   // Destroys the thread, stopping it if necessary.
   //

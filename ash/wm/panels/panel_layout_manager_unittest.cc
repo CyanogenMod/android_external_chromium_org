@@ -23,6 +23,7 @@
 #include "ash/test/shell_test_api.h"
 #include "ash/test/test_shelf_delegate.h"
 #include "ash/wm/mru_window_tracker.h"
+#include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
@@ -30,16 +31,15 @@
 #include "base/i18n/rtl.h"
 #include "base/run_loop.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/views/corewm/corewm_switches.h"
+#include "ui/events/event_utils.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 using aura::test::WindowIsAbove;
 
@@ -61,22 +61,24 @@ class PanelLayoutManagerTest : public test::AshTestBase {
     return CreateTestWindowInShellWithBounds(bounds);
   }
 
-  aura::Window* CreatePanelWindow(const gfx::Rect& bounds) {
+  aura::Window* CreatePanelWindowWithDelegate(aura::WindowDelegate* delegate,
+                                              const gfx::Rect& bounds) {
     aura::Window* window = CreateTestWindowInShellWithDelegateAndType(
-        NULL, ui::wm::WINDOW_TYPE_PANEL, 0, bounds);
+        delegate, ui::wm::WINDOW_TYPE_PANEL, 0, bounds);
     test::TestShelfDelegate* shelf_delegate =
         test::TestShelfDelegate::instance();
     shelf_delegate->AddShelfItem(window);
-    PanelLayoutManager* manager = static_cast<PanelLayoutManager*>(
-        GetPanelContainer(window)->layout_manager());
-    manager->Relayout();
     shelf_view_test()->RunMessageLoopUntilAnimationsDone();
     return window;
   }
 
+  aura::Window* CreatePanelWindow(const gfx::Rect& bounds) {
+    return CreatePanelWindowWithDelegate(NULL, bounds);
+  }
+
   aura::Window* GetPanelContainer(aura::Window* panel) {
     return Shell::GetContainer(panel->GetRootWindow(),
-                               internal::kShellWindowId_PanelContainer);
+                               kShellWindowId_PanelContainer);
   }
 
   views::Widget* GetCalloutWidgetForPanel(aura::Window* panel) {
@@ -115,9 +117,7 @@ class PanelLayoutManagerTest : public test::AshTestBase {
     EXPECT_FALSE(window1_bounds.Intersects(window2_bounds));
   }
 
-  // TODO(dcheng): This should be const, but GetScreenBoundsOfItemIconForWindow
-  // takes a non-const Window. We can probably fix that.
-  void IsPanelAboveLauncherIcon(aura::Window* panel) {
+  void IsPanelAboveLauncherIcon(const aura::Window* panel) {
     // Waits until all shelf view animations are done.
     shelf_view_test()->RunMessageLoopUntilAnimationsDone();
 
@@ -232,16 +232,16 @@ class PanelLayoutManagerTest : public test::AshTestBase {
     shell->SetShelfAlignment(alignment, root_window);
   }
 
-  ShelfAlignment GetAlignment(aura::Window* root_window) {
+  ShelfAlignment GetAlignment(const aura::Window* root_window) {
     ash::Shell* shell = ash::Shell::GetInstance();
     return shell->GetShelfAlignment(root_window);
   }
 
   void SetShelfAutoHideBehavior(aura::Window* window,
                                 ShelfAutoHideBehavior behavior) {
-    internal::ShelfLayoutManager* shelf =
-        RootWindowController::ForWindow(window)->shelf()->
-        shelf_layout_manager();
+    ShelfLayoutManager* shelf = RootWindowController::ForWindow(window)
+                                    ->shelf()
+                                    ->shelf_layout_manager();
     shelf->SetAutoHideBehavior(behavior);
     ShelfView* shelf_view = GetShelfView(Shelf::ForWindow(window));
     test::ShelfViewTestAPI test_api(shelf_view);
@@ -250,13 +250,13 @@ class PanelLayoutManagerTest : public test::AshTestBase {
 
   void SetShelfVisibilityState(aura::Window* window,
                                ShelfVisibilityState visibility_state) {
-    internal::ShelfLayoutManager* shelf =
-        RootWindowController::ForWindow(window)->shelf()->
-        shelf_layout_manager();
+    ShelfLayoutManager* shelf = RootWindowController::ForWindow(window)
+                                    ->shelf()
+                                    ->shelf_layout_manager();
     shelf->SetState(visibility_state);
   }
 
-  internal::ShelfView* GetShelfView(Shelf* shelf) {
+  ShelfView* GetShelfView(Shelf* shelf) {
     return test::ShelfTestAPI(shelf).shelf_view();
   }
 
@@ -573,12 +573,12 @@ TEST_F(PanelLayoutManagerTest, MinimizeRestorePanel) {
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(IsPanelCalloutVisible(window.get()));
   // Minimize the panel, callout should be hidden.
-  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  wm::GetWindowState(window.get())->Minimize();
   RunAllPendingInMessageLoop();
   EXPECT_FALSE(IsPanelCalloutVisible(window.get()));
-  // Restore the pantel; panel should not be activated by default but callout
+  // Restore the panel; panel should not be activated by default but callout
   // should be visible.
-  window->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_NORMAL);
+  wm::GetWindowState(window.get())->Unminimize();
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(IsPanelCalloutVisible(window.get()));
   // Activate the window, ensure callout is visible.
@@ -610,10 +610,10 @@ TEST_F(PanelLayoutManagerTest, PanelMoveBetweenMultipleDisplays) {
   EXPECT_EQ(root_windows[1], p1_d2->GetRootWindow());
   EXPECT_EQ(root_windows[1], p2_d2->GetRootWindow());
 
-  EXPECT_EQ(internal::kShellWindowId_PanelContainer, p1_d1->parent()->id());
-  EXPECT_EQ(internal::kShellWindowId_PanelContainer, p2_d1->parent()->id());
-  EXPECT_EQ(internal::kShellWindowId_PanelContainer, p1_d2->parent()->id());
-  EXPECT_EQ(internal::kShellWindowId_PanelContainer, p2_d2->parent()->id());
+  EXPECT_EQ(kShellWindowId_PanelContainer, p1_d1->parent()->id());
+  EXPECT_EQ(kShellWindowId_PanelContainer, p2_d1->parent()->id());
+  EXPECT_EQ(kShellWindowId_PanelContainer, p1_d2->parent()->id());
+  EXPECT_EQ(kShellWindowId_PanelContainer, p2_d2->parent()->id());
 
   // Test a panel on 1st display.
   // Clicking on the same display has no effect.
@@ -746,7 +746,7 @@ TEST_F(PanelLayoutManagerTest, PanelsHideAndRestoreWithShelf) {
   scoped_ptr<aura::Window> w2(CreatePanelWindow(bounds));
   scoped_ptr<aura::Window> w3;
   // Minimize w2.
-  w2->SetProperty(aura::client::kShowStateKey, ui::SHOW_STATE_MINIMIZED);
+  wm::GetWindowState(w2.get())->Minimize();
   RunAllPendingInMessageLoop();
   EXPECT_TRUE(w1->IsVisible());
   EXPECT_FALSE(w2->IsVisible());
@@ -786,8 +786,74 @@ TEST_F(PanelLayoutManagerTest, PanelsHideAndRestoreWithShelf) {
   EXPECT_TRUE(w3->IsVisible());
 }
 
+// Verifies that touches along the attached edge of a panel do not
+// target the panel itself.
+TEST_F(PanelLayoutManagerTest, TouchHitTestPanel) {
+  aura::test::TestWindowDelegate delegate;
+  scoped_ptr<aura::Window> w(
+      CreatePanelWindowWithDelegate(&delegate, gfx::Rect(0, 0, 200, 200)));
+  ui::EventTarget* root = w->GetRootWindow();
+  ui::EventTargeter* targeter = root->GetEventTargeter();
+
+  // Note that the constants used in the touch locations below are
+  // arbitrarily-selected small numbers which will ensure the point is
+  // within the default extended region surrounding the panel. This value
+  // is calculated as
+  // kResizeOutsideBoundsSize * kResizeOutsideBoundsScaleForTouch
+  // in src/ash/root_window_controller.cc.
+
+  // Hit test outside the right edge with a bottom-aligned shelf.
+  SetAlignment(Shell::GetPrimaryRootWindow(), SHELF_ALIGNMENT_BOTTOM);
+  gfx::Rect bounds(w->bounds());
+  ui::TouchEvent touch(ui::ET_TOUCH_PRESSED,
+                       gfx::Point(bounds.right() + 3, bounds.y() + 2),
+                       0, ui::EventTimeForNow());
+  ui::EventTarget* target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_EQ(w.get(), target);
+
+  // Hit test outside the bottom edge with a bottom-aligned shelf.
+  touch.set_location(gfx::Point(bounds.x() + 6, bounds.bottom() + 5));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_NE(w.get(), target);
+
+  // Hit test outside the bottom edge with a right-aligned shelf.
+  SetAlignment(Shell::GetPrimaryRootWindow(), SHELF_ALIGNMENT_RIGHT);
+  bounds = w->bounds();
+  touch.set_location(gfx::Point(bounds.x() + 6, bounds.bottom() + 5));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_EQ(w.get(), target);
+
+  // Hit test outside the right edge with a right-aligned shelf.
+  touch.set_location(gfx::Point(bounds.right() + 3, bounds.y() + 2));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_NE(w.get(), target);
+
+  // Hit test outside the top edge with a left-aligned shelf.
+  SetAlignment(Shell::GetPrimaryRootWindow(), SHELF_ALIGNMENT_LEFT);
+  bounds = w->bounds();
+  touch.set_location(gfx::Point(bounds.x() + 4, bounds.y() - 6));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_EQ(w.get(), target);
+
+  // Hit test outside the left edge with a left-aligned shelf.
+  touch.set_location(gfx::Point(bounds.x() - 1, bounds.y() + 5));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_NE(w.get(), target);
+
+  // Hit test outside the left edge with a top-aligned shelf.
+  SetAlignment(Shell::GetPrimaryRootWindow(), SHELF_ALIGNMENT_TOP);
+  bounds = w->bounds();
+  touch.set_location(gfx::Point(bounds.x() - 1, bounds.y() + 5));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_EQ(w.get(), target);
+
+  // Hit test outside the top edge with a top-aligned shelf.
+  touch.set_location(gfx::Point(bounds.x() + 4, bounds.y() - 6));
+  target = targeter->FindTargetForEvent(root, &touch);
+  EXPECT_NE(w.get(), target);
+}
+
 INSTANTIATE_TEST_CASE_P(LtrRtl, PanelLayoutManagerTextDirectionTest,
                         testing::Bool());
 
-}  // namespace internal
 }  // namespace ash

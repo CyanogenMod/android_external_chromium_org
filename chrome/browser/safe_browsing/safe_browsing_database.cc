@@ -66,9 +66,6 @@ const base::FilePath::CharType kIPBlacklistDBFile[] =
 // this.
 const base::FilePath::CharType kBrowseDBFile[] = FILE_PATH_LITERAL(" Bloom");
 
-// The maximum staleness for a cached entry.
-const int kMaxStalenessMinutes = 45;
-
 // Maximum number of entries we allow in any of the whitelists.
 // If a whitelist on disk contains more entries then all lookups to
 // the whitelist will be considered a match.
@@ -131,10 +128,7 @@ void BrowseFullHashesToCheck(const GURL& url,
   for (size_t i = 0; i < hosts.size(); ++i) {
     for (size_t j = 0; j < paths.size(); ++j) {
       const std::string& path = paths[j];
-      SBFullHash full_hash;
-      crypto::SHA256HashString(hosts[i] + path, &full_hash,
-                               sizeof(full_hash));
-      full_hashes->push_back(full_hash);
+      full_hashes->push_back(SBFullHashForString(hosts[i] + path));
 
       // We may have /foo as path-prefix in the whitelist which should
       // also match with /foo/bar and /foo?bar.  Hence, for every path
@@ -142,9 +136,8 @@ void BrowseFullHashesToCheck(const GURL& url,
       if (include_whitelist_hashes &&
           path.size() > 1 &&
           path[path.size() - 1] == '/') {
-        crypto::SHA256HashString(hosts[i] + path.substr(0, path.size() - 1),
-                                 &full_hash, sizeof(full_hash));
-        full_hashes->push_back(full_hash);
+        full_hashes->push_back(
+            SBFullHashForString(hosts[i] + path.substr(0, path.size() - 1)));
       }
     }
   }
@@ -197,34 +190,25 @@ bool MatchAddPrefixes(SafeBrowsingStore* store,
 //
 // For efficiency reasons the code walks |prefix_hits| and
 // |full_hashes| in parallel, so they must be sorted by prefix.
-void GetCachedFullHashesForBrowse(const std::vector<SBPrefix>& prefix_hits,
-                                  const std::vector<SBAddFullHash>& full_hashes,
-                                  std::vector<SBFullHashResult>* full_hits,
-                                  base::Time last_update) {
-  const base::Time expire_time =
-      base::Time::Now() - base::TimeDelta::FromMinutes(kMaxStalenessMinutes);
+void GetCachedFullHashesForBrowse(
+    const std::vector<SBPrefix>& prefix_hits,
+    const std::vector<SBFullHashCached>& full_hashes,
+    std::vector<SBFullHashResult>* full_hits) {
+  const base::Time now = base::Time::Now();
 
   std::vector<SBPrefix>::const_iterator piter = prefix_hits.begin();
-  std::vector<SBAddFullHash>::const_iterator hiter = full_hashes.begin();
+  std::vector<SBFullHashCached>::const_iterator hiter = full_hashes.begin();
 
   while (piter != prefix_hits.end() && hiter != full_hashes.end()) {
-    if (*piter < hiter->full_hash.prefix) {
+    if (*piter < hiter->hash.prefix) {
       ++piter;
-    } else if (hiter->full_hash.prefix < *piter) {
+    } else if (hiter->hash.prefix < *piter) {
       ++hiter;
     } else {
-      if (expire_time < last_update ||
-          expire_time.ToTimeT() < hiter->received) {
+      if (now <= hiter->expire_after) {
         SBFullHashResult result;
-        const int list_bit = GetListIdBit(hiter->chunk_id);
-        DCHECK(list_bit == safe_browsing_util::MALWARE ||
-               list_bit == safe_browsing_util::PHISH);
-        const safe_browsing_util::ListType list_id =
-            static_cast<safe_browsing_util::ListType>(list_bit);
-        if (!safe_browsing_util::GetListName(list_id, &result.list_name))
-          continue;
-        result.add_chunk_id = DecodeChunkId(hiter->chunk_id);
-        result.hash = hiter->full_hash;
+        result.list_id = hiter->list_id;
+        result.hash = hiter->hash;
         full_hits->push_back(result);
       }
 
@@ -264,6 +248,9 @@ void GetChunkRanges(const std::vector<int>& chunks,
 void UpdateChunkRanges(SafeBrowsingStore* store,
                        const std::vector<std::string>& listnames,
                        std::vector<SBListChunkRanges>* lists) {
+  if (!store)
+    return;
+
   DCHECK_GT(listnames.size(), 0U);
   DCHECK_LE(listnames.size(), 2U);
   std::vector<int> add_chunks;
@@ -291,39 +278,26 @@ void UpdateChunkRanges(SafeBrowsingStore* store,
   }
 }
 
-// Helper for deleting chunks left over from obsolete lists.
-void DeleteChunksFromStore(SafeBrowsingStore* store, int listid){
-  std::vector<int> add_chunks;
-  size_t adds_deleted = 0;
-  store->GetAddChunks(&add_chunks);
-  for (std::vector<int>::const_iterator iter = add_chunks.begin();
-       iter != add_chunks.end(); ++iter) {
-    if (GetListIdBit(*iter) == GetListIdBit(listid)) {
-      adds_deleted++;
-      store->DeleteAddChunk(*iter);
-    }
-  }
-  if (adds_deleted > 0)
-    UMA_HISTOGRAM_COUNTS("SB2.DownloadBinhashAddsDeleted", adds_deleted);
-
-  std::vector<int> sub_chunks;
-  size_t subs_deleted = 0;
-  store->GetSubChunks(&sub_chunks);
-  for (std::vector<int>::const_iterator iter = sub_chunks.begin();
-       iter != sub_chunks.end(); ++iter) {
-    if (GetListIdBit(*iter) == GetListIdBit(listid)) {
-      subs_deleted++;
-      store->DeleteSubChunk(*iter);
-    }
-  }
-  if (subs_deleted > 0)
-    UMA_HISTOGRAM_COUNTS("SB2.DownloadBinhashSubsDeleted", subs_deleted);
+void UpdateChunkRangesForLists(SafeBrowsingStore* store,
+                               const std::string& listname0,
+                               const std::string& listname1,
+                               std::vector<SBListChunkRanges>* lists) {
+  std::vector<std::string> listnames;
+  listnames.push_back(listname0);
+  listnames.push_back(listname1);
+  UpdateChunkRanges(store, listnames, lists);
 }
 
-// Order |SBAddFullHash| on the prefix part.  |SBAddPrefixLess()| from
-// safe_browsing_store.h orders on both chunk-id and prefix.
-bool SBAddFullHashPrefixLess(const SBAddFullHash& a, const SBAddFullHash& b) {
-  return a.full_hash.prefix < b.full_hash.prefix;
+void UpdateChunkRangesForList(SafeBrowsingStore* store,
+                              const std::string& listname,
+                              std::vector<SBListChunkRanges>* lists) {
+  UpdateChunkRanges(store, std::vector<std::string>(1, listname), lists);
+}
+
+// Order |SBFullHashCached| items on the prefix part.
+bool SBFullHashCachedPrefixLess(const SBFullHashCached& a,
+                                const SBFullHashCached& b) {
+  return a.hash.prefix < b.hash.prefix;
 }
 
 // This code always checks for non-zero file size.  This helper makes
@@ -450,8 +424,7 @@ SafeBrowsingStore* SafeBrowsingDatabaseNew::GetStore(const int list_id) {
   if (list_id == safe_browsing_util::PHISH ||
       list_id == safe_browsing_util::MALWARE) {
     return browse_store_.get();
-  } else if (list_id == safe_browsing_util::BINURL ||
-             list_id == safe_browsing_util::BINHASH) {
+  } else if (list_id == safe_browsing_util::BINURL) {
     return download_store_.get();
   } else if (list_id == safe_browsing_util::CSDWHITELIST) {
     return csd_whitelist_store_.get();
@@ -516,23 +489,23 @@ SafeBrowsingDatabaseNew::~SafeBrowsingDatabaseNew() {
 
 void SafeBrowsingDatabaseNew::Init(const base::FilePath& filename_base) {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
-  // Ensure we haven't been run before.
-  DCHECK(browse_filename_.empty());
-  DCHECK(download_filename_.empty());
-  DCHECK(csd_whitelist_filename_.empty());
-  DCHECK(download_whitelist_filename_.empty());
-  DCHECK(extension_blacklist_filename_.empty());
-  DCHECK(side_effect_free_whitelist_filename_.empty());
-  DCHECK(ip_blacklist_filename_.empty());
 
-  browse_filename_ = BrowseDBFilename(filename_base);
-  browse_prefix_set_filename_ = PrefixSetForFilename(browse_filename_);
+  // This should not be run multiple times.
+  DCHECK(filename_base_.empty());
+
+  filename_base_ = filename_base;
+
+  // TODO(shess): The various stores are really only necessary while doing
+  // updates, or when querying a store directly (see |ContainsDownloadUrl()|).
+  // The store variables are also tested to see if a list is enabled.  Perhaps
+  // the stores could be refactored into an update object so that they are only
+  // live in memory while being actively used.  The sense of enabled probably
+  // belongs in protocol_manager or database_manager.
 
   browse_store_->Init(
-      browse_filename_,
+      BrowseDBFilename(filename_base_),
       base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                  base::Unretained(this)));
-  DVLOG(1) << "Init browse store: " << browse_filename_.value();
 
   {
     // NOTE: There is no need to grab the lock in this function, since
@@ -540,27 +513,23 @@ void SafeBrowsingDatabaseNew::Init(const base::FilePath& filename_base) {
     // threads.  Then again, that means there is no possibility of
     // contention on the lock...
     base::AutoLock locked(lookup_lock_);
-    full_browse_hashes_.clear();
-    pending_browse_hashes_.clear();
+    cached_browse_hashes_.clear();
     LoadPrefixSet();
   }
 
   if (download_store_.get()) {
-    download_filename_ = DownloadDBFilename(filename_base);
     download_store_->Init(
-        download_filename_,
+        DownloadDBFilename(filename_base_),
         base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                    base::Unretained(this)));
-    DVLOG(1) << "Init download store: " << download_filename_.value();
   }
 
   if (csd_whitelist_store_.get()) {
-    csd_whitelist_filename_ = CsdWhitelistDBFilename(filename_base);
     csd_whitelist_store_->Init(
-        csd_whitelist_filename_,
+        CsdWhitelistDBFilename(filename_base_),
         base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                    base::Unretained(this)));
-    DVLOG(1) << "Init csd whitelist store: " << csd_whitelist_filename_.value();
+
     std::vector<SBAddFullHash> full_hashes;
     if (csd_whitelist_store_->GetAddFullHashes(&full_hashes)) {
       LoadWhitelist(full_hashes, &csd_whitelist_);
@@ -572,13 +541,11 @@ void SafeBrowsingDatabaseNew::Init(const base::FilePath& filename_base) {
   }
 
   if (download_whitelist_store_.get()) {
-    download_whitelist_filename_ = DownloadWhitelistDBFilename(filename_base);
     download_whitelist_store_->Init(
-        download_whitelist_filename_,
+        DownloadWhitelistDBFilename(filename_base_),
         base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                    base::Unretained(this)));
-    DVLOG(1) << "Init download whitelist store: "
-             << download_whitelist_filename_.value();
+
     std::vector<SBAddFullHash> full_hashes;
     if (download_whitelist_store_->GetAddFullHashes(&full_hashes)) {
       LoadWhitelist(full_hashes, &download_whitelist_);
@@ -590,38 +557,28 @@ void SafeBrowsingDatabaseNew::Init(const base::FilePath& filename_base) {
   }
 
   if (extension_blacklist_store_.get()) {
-    extension_blacklist_filename_ = ExtensionBlacklistDBFilename(filename_base);
     extension_blacklist_store_->Init(
-        extension_blacklist_filename_,
+        ExtensionBlacklistDBFilename(filename_base_),
         base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                    base::Unretained(this)));
-    DVLOG(1) << "Init extension blacklist store: "
-             << extension_blacklist_filename_.value();
   }
 
   if (side_effect_free_whitelist_store_.get()) {
-    side_effect_free_whitelist_filename_ =
-        SideEffectFreeWhitelistDBFilename(filename_base);
-    side_effect_free_whitelist_prefix_set_filename_ =
-        PrefixSetForFilename(side_effect_free_whitelist_filename_);
+    const base::FilePath side_effect_free_whitelist_filename =
+        SideEffectFreeWhitelistDBFilename(filename_base_);
+    const base::FilePath side_effect_free_whitelist_prefix_set_filename =
+        PrefixSetForFilename(side_effect_free_whitelist_filename);
     side_effect_free_whitelist_store_->Init(
-        side_effect_free_whitelist_filename_,
+        side_effect_free_whitelist_filename,
         base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                    base::Unretained(this)));
-    DVLOG(1) << "Init side-effect free whitelist store: "
-             << side_effect_free_whitelist_filename_.value();
 
-    // If there is no database, the filter cannot be used.
-    base::File::Info db_info;
-    if (base::GetFileInfo(side_effect_free_whitelist_filename_, &db_info)
-        && db_info.size != 0) {
+    // Only use the prefix set if database is present and non-empty.
+    if (GetFileSizeOrZero(side_effect_free_whitelist_filename)) {
       const base::TimeTicks before = base::TimeTicks::Now();
-      side_effect_free_whitelist_prefix_set_.reset(
+      side_effect_free_whitelist_prefix_set_ =
           safe_browsing::PrefixSet::LoadFile(
-              side_effect_free_whitelist_prefix_set_filename_));
-      DVLOG(1) << "SafeBrowsingDatabaseNew read side-effect free whitelist "
-               << "prefix set in "
-               << (base::TimeTicks::Now() - before).InMilliseconds() << " ms";
+              side_effect_free_whitelist_prefix_set_filename);
       UMA_HISTOGRAM_TIMES("SB2.SideEffectFreeWhitelistPrefixSetLoad",
                           base::TimeTicks::Now() - before);
       if (!side_effect_free_whitelist_prefix_set_.get())
@@ -631,22 +588,22 @@ void SafeBrowsingDatabaseNew::Init(const base::FilePath& filename_base) {
     // Delete any files of the side-effect free sidelist that may be around
     // from when it was previously enabled.
     SafeBrowsingStoreFile::DeleteStore(
-        SideEffectFreeWhitelistDBFilename(filename_base));
+        SideEffectFreeWhitelistDBFilename(filename_base_));
+    base::DeleteFile(
+        PrefixSetForFilename(SideEffectFreeWhitelistDBFilename(filename_base_)),
+        false);
   }
 
   if (ip_blacklist_store_.get()) {
-    ip_blacklist_filename_ = IpBlacklistDBFilename(filename_base);
     ip_blacklist_store_->Init(
-        ip_blacklist_filename_,
+        IpBlacklistDBFilename(filename_base_),
         base::Bind(&SafeBrowsingDatabaseNew::HandleCorruptDatabase,
                    base::Unretained(this)));
-    DVLOG(1) << "SafeBrowsingDatabaseNew read ip blacklist: "
-             << ip_blacklist_filename_.value();
+
     std::vector<SBAddFullHash> full_hashes;
     if (ip_blacklist_store_->GetAddFullHashes(&full_hashes)) {
       LoadIpBlacklist(full_hashes);
     } else {
-      DVLOG(1) << "Unable to load full hashes from the IP blacklist.";
       LoadIpBlacklist(std::vector<SBAddFullHash>());  // Clear the list.
     }
   }
@@ -664,8 +621,7 @@ bool SafeBrowsingDatabaseNew::ResetDatabase() {
   // Reset objects in memory.
   {
     base::AutoLock locked(lookup_lock_);
-    full_browse_hashes_.clear();
-    pending_browse_hashes_.clear();
+    cached_browse_hashes_.clear();
     prefix_miss_cache_.clear();
     browse_prefix_set_.reset();
     side_effect_free_whitelist_prefix_set_.reset();
@@ -677,17 +633,13 @@ bool SafeBrowsingDatabaseNew::ResetDatabase() {
   return true;
 }
 
-// TODO(lzheng): Remove matching_list, it is not used anywhere.
 bool SafeBrowsingDatabaseNew::ContainsBrowseUrl(
     const GURL& url,
-    std::string* matching_list,
     std::vector<SBPrefix>* prefix_hits,
-    std::vector<SBFullHashResult>* full_hits,
-    base::Time last_update) {
+    std::vector<SBFullHashResult>* cache_hits) {
   // Clear the results first.
-  matching_list->clear();
   prefix_hits->clear();
-  full_hits->clear();
+  cache_hits->clear();
 
   std::vector<SBFullHash> full_hashes;
   BrowseFullHashesToCheck(url, false, &full_hashes);
@@ -706,8 +658,8 @@ bool SafeBrowsingDatabaseNew::ContainsBrowseUrl(
 
   size_t miss_count = 0;
   for (size_t i = 0; i < full_hashes.size(); ++i) {
-    const SBPrefix prefix = full_hashes[i].prefix;
-    if (browse_prefix_set_->Exists(prefix)) {
+    if (browse_prefix_set_->Exists(full_hashes[i])) {
+      const SBPrefix prefix = full_hashes[i].prefix;
       prefix_hits->push_back(prefix);
       if (prefix_miss_cache_.count(prefix) > 0)
         ++miss_count;
@@ -718,15 +670,10 @@ bool SafeBrowsingDatabaseNew::ContainsBrowseUrl(
   if (miss_count == prefix_hits->size())
     return false;
 
-  // Find the matching full-hash results.  |full_browse_hashes_| are from the
-  // database, |pending_browse_hashes_| are from GetHash requests between
-  // updates.
+  // Find matching cached gethash responses.
   std::sort(prefix_hits->begin(), prefix_hits->end());
+  GetCachedFullHashesForBrowse(*prefix_hits, cached_browse_hashes_, cache_hits);
 
-  GetCachedFullHashesForBrowse(*prefix_hits, full_browse_hashes_,
-                               full_hits, last_update);
-  GetCachedFullHashesForBrowse(*prefix_hits, pending_browse_hashes_,
-                               full_hits, last_update);
   return true;
 }
 
@@ -745,21 +692,6 @@ bool SafeBrowsingDatabaseNew::ContainsDownloadUrl(
                           safe_browsing_util::BINURL % 2,
                           prefixes,
                           prefix_hits);
-}
-
-bool SafeBrowsingDatabaseNew::ContainsDownloadHashPrefix(
-    const SBPrefix& prefix) {
-  DCHECK_EQ(creation_loop_, base::MessageLoop::current());
-
-  // Ignore this check when download store is not available.
-  if (!download_store_.get())
-    return false;
-
-  std::vector<SBPrefix> prefix_hits;
-  return MatchAddPrefixes(download_store_.get(),
-                          safe_browsing_util::BINHASH % 2,
-                          std::vector<SBPrefix>(1, prefix),
-                          &prefix_hits);
 }
 
 bool SafeBrowsingDatabaseNew::ContainsCsdWhitelistedUrl(const GURL& url) {
@@ -792,7 +724,6 @@ bool SafeBrowsingDatabaseNew::ContainsExtensionPrefixes(
 
 bool SafeBrowsingDatabaseNew::ContainsSideEffectFreeWhitelistUrl(
     const GURL& url) {
-  SBFullHash full_hash;
   std::string host;
   std::string path;
   std::string query;
@@ -800,7 +731,7 @@ bool SafeBrowsingDatabaseNew::ContainsSideEffectFreeWhitelistUrl(
   std::string url_to_check = host + path;
   if (!query.empty())
     url_to_check +=  "?" + query;
-  crypto::SHA256HashString(url_to_check, &full_hash, sizeof(full_hash));
+  SBFullHash full_hash = SBFullHashForString(url_to_check);
 
   // This function can be called on any thread, so lock against any changes
   base::AutoLock locked(lookup_lock_);
@@ -811,23 +742,18 @@ bool SafeBrowsingDatabaseNew::ContainsSideEffectFreeWhitelistUrl(
   if (!side_effect_free_whitelist_prefix_set_.get())
     return false;
 
-  return side_effect_free_whitelist_prefix_set_->Exists(full_hash.prefix);
+  return side_effect_free_whitelist_prefix_set_->Exists(full_hash);
 }
 
 bool SafeBrowsingDatabaseNew::ContainsMalwareIP(const std::string& ip_address) {
   net::IPAddressNumber ip_number;
-  if (!net::ParseIPLiteralToNumber(ip_address, &ip_number)) {
-    DVLOG(2) << "Unable to parse IP address: '" << ip_address << "'";
+  if (!net::ParseIPLiteralToNumber(ip_address, &ip_number))
     return false;
-  }
-  if (ip_number.size() == net::kIPv4AddressSize) {
+  if (ip_number.size() == net::kIPv4AddressSize)
     ip_number = net::ConvertIPv4NumberToIPv6Number(ip_number);
-  }
-  if (ip_number.size() != net::kIPv6AddressSize) {
-    DVLOG(2) << "Unable to convert IPv4 address to IPv6: '"
-             << ip_address << "'";
+  if (ip_number.size() != net::kIPv6AddressSize)
     return false;  // better safe than sorry.
-  }
+
   // This function can be called from any thread.
   base::AutoLock locked(lookup_lock_);
   for (IPBlacklist::const_iterator it = ip_blacklist_.begin();
@@ -854,10 +780,8 @@ bool SafeBrowsingDatabaseNew::ContainsMalwareIP(const std::string& ip_address) {
 
 bool SafeBrowsingDatabaseNew::ContainsDownloadWhitelistedString(
     const std::string& str) {
-  SBFullHash hash;
-  crypto::SHA256HashString(str, &hash, sizeof(hash));
   std::vector<SBFullHash> hashes;
-  hashes.push_back(hash);
+  hashes.push_back(SBFullHashForString(str));
   return ContainsWhitelistedHashes(download_whitelist_, hashes);
 }
 
@@ -869,158 +793,85 @@ bool SafeBrowsingDatabaseNew::ContainsWhitelistedHashes(
     return true;
   for (std::vector<SBFullHash>::const_iterator it = hashes.begin();
        it != hashes.end(); ++it) {
-    if (std::binary_search(whitelist.first.begin(), whitelist.first.end(), *it))
+    if (std::binary_search(whitelist.first.begin(), whitelist.first.end(),
+                           *it, SBFullHashLess)) {
       return true;
+    }
   }
   return false;
 }
 
-// Helper to insert entries for all of the prefixes or full hashes in
-// |entry| into the store.
-void SafeBrowsingDatabaseNew::InsertAdd(int chunk_id, SBPrefix host,
-                                        const SBEntry* entry, int list_id) {
-  DCHECK_EQ(creation_loop_, base::MessageLoop::current());
-
-  SafeBrowsingStore* store = GetStore(list_id);
-  if (!store) return;
-
-  STATS_COUNTER("SB.HostInsert", 1);
-  const int encoded_chunk_id = EncodeChunkId(chunk_id, list_id);
-  const int count = entry->prefix_count();
-
-  DCHECK(!entry->IsSub());
-  if (!count) {
-    // No prefixes, use host instead.
-    STATS_COUNTER("SB.PrefixAdd", 1);
-    store->WriteAddPrefix(encoded_chunk_id, host);
-  } else if (entry->IsPrefix()) {
-    // Prefixes only.
-    for (int i = 0; i < count; i++) {
-      const SBPrefix prefix = entry->PrefixAt(i);
-      STATS_COUNTER("SB.PrefixAdd", 1);
-      store->WriteAddPrefix(encoded_chunk_id, prefix);
-    }
-  } else {
-    // Prefixes and hashes.
-    const base::Time receive_time = base::Time::Now();
-    for (int i = 0; i < count; ++i) {
-      const SBFullHash full_hash = entry->FullHashAt(i);
-      const SBPrefix prefix = full_hash.prefix;
-
-      STATS_COUNTER("SB.PrefixAdd", 1);
-      store->WriteAddPrefix(encoded_chunk_id, prefix);
-
-      STATS_COUNTER("SB.PrefixAddFull", 1);
-      store->WriteAddHash(encoded_chunk_id, receive_time, full_hash);
-    }
-  }
-}
-
-// Helper to iterate over all the entries in the hosts in |chunks| and
-// add them to the store.
-void SafeBrowsingDatabaseNew::InsertAddChunks(
+// Helper to insert add-chunk entries.
+void SafeBrowsingDatabaseNew::InsertAddChunk(
+    SafeBrowsingStore* store,
     const safe_browsing_util::ListType list_id,
-    const SBChunkList& chunks) {
+    const SBChunkData& chunk_data) {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
+  DCHECK(store);
 
-  SafeBrowsingStore* store = GetStore(list_id);
-  if (!store) return;
-
-  for (SBChunkList::const_iterator citer = chunks.begin();
-       citer != chunks.end(); ++citer) {
-    const int chunk_id = citer->chunk_number;
-
-    // The server can give us a chunk that we already have because
-    // it's part of a range.  Don't add it again.
-    const int encoded_chunk_id = EncodeChunkId(chunk_id, list_id);
-    if (store->CheckAddChunk(encoded_chunk_id))
-      continue;
-
-    store->SetAddChunk(encoded_chunk_id);
-    for (std::deque<SBChunkHost>::const_iterator hiter = citer->hosts.begin();
-         hiter != citer->hosts.end(); ++hiter) {
-      // NOTE: Could pass |encoded_chunk_id|, but then inserting add
-      // chunks would look different from inserting sub chunks.
-      InsertAdd(chunk_id, hiter->host, hiter->entry, list_id);
-    }
-  }
-}
-
-// Helper to insert entries for all of the prefixes or full hashes in
-// |entry| into the store.
-void SafeBrowsingDatabaseNew::InsertSub(int chunk_id, SBPrefix host,
-                                        const SBEntry* entry, int list_id) {
-  DCHECK_EQ(creation_loop_, base::MessageLoop::current());
-
-  SafeBrowsingStore* store = GetStore(list_id);
-  if (!store) return;
-
-  STATS_COUNTER("SB.HostDelete", 1);
+  // The server can give us a chunk that we already have because
+  // it's part of a range.  Don't add it again.
+  const int chunk_id = chunk_data.ChunkNumber();
   const int encoded_chunk_id = EncodeChunkId(chunk_id, list_id);
-  const int count = entry->prefix_count();
+  if (store->CheckAddChunk(encoded_chunk_id))
+    return;
 
-  DCHECK(entry->IsSub());
-  if (!count) {
-    // No prefixes, use host instead.
-    STATS_COUNTER("SB.PrefixSub", 1);
-    const int add_chunk_id = EncodeChunkId(entry->chunk_id(), list_id);
-    store->WriteSubPrefix(encoded_chunk_id, add_chunk_id, host);
-  } else if (entry->IsPrefix()) {
-    // Prefixes only.
-    for (int i = 0; i < count; i++) {
-      const SBPrefix prefix = entry->PrefixAt(i);
-      const int add_chunk_id =
-          EncodeChunkId(entry->ChunkIdAtPrefix(i), list_id);
-
-      STATS_COUNTER("SB.PrefixSub", 1);
-      store->WriteSubPrefix(encoded_chunk_id, add_chunk_id, prefix);
+  store->SetAddChunk(encoded_chunk_id);
+  if (chunk_data.IsPrefix()) {
+    const size_t c = chunk_data.PrefixCount();
+    for (size_t i = 0; i < c; ++i) {
+      STATS_COUNTER("SB.PrefixAdd", 1);
+      store->WriteAddPrefix(encoded_chunk_id, chunk_data.PrefixAt(i));
     }
   } else {
-    // Prefixes and hashes.
-    for (int i = 0; i < count; ++i) {
-      const SBFullHash full_hash = entry->FullHashAt(i);
-      const int add_chunk_id =
-          EncodeChunkId(entry->ChunkIdAtPrefix(i), list_id);
-
-      STATS_COUNTER("SB.PrefixSub", 1);
-      store->WriteSubPrefix(encoded_chunk_id, add_chunk_id, full_hash.prefix);
-
-      STATS_COUNTER("SB.PrefixSubFull", 1);
-      store->WriteSubHash(encoded_chunk_id, add_chunk_id, full_hash);
+    const size_t c = chunk_data.FullHashCount();
+    for (size_t i = 0; i < c; ++i) {
+      STATS_COUNTER("SB.PrefixAddFull", 1);
+      store->WriteAddHash(encoded_chunk_id, chunk_data.FullHashAt(i));
     }
   }
 }
 
-// Helper to iterate over all the entries in the hosts in |chunks| and
-// add them to the store.
-void SafeBrowsingDatabaseNew::InsertSubChunks(
-    safe_browsing_util::ListType list_id,
-    const SBChunkList& chunks) {
+// Helper to insert sub-chunk entries.
+void SafeBrowsingDatabaseNew::InsertSubChunk(
+    SafeBrowsingStore* store,
+    const safe_browsing_util::ListType list_id,
+    const SBChunkData& chunk_data) {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
+  DCHECK(store);
 
-  SafeBrowsingStore* store = GetStore(list_id);
-  if (!store) return;
+  // The server can give us a chunk that we already have because
+  // it's part of a range.  Don't add it again.
+  const int chunk_id = chunk_data.ChunkNumber();
+  const int encoded_chunk_id = EncodeChunkId(chunk_id, list_id);
+  if (store->CheckSubChunk(encoded_chunk_id))
+    return;
 
-  for (SBChunkList::const_iterator citer = chunks.begin();
-       citer != chunks.end(); ++citer) {
-    const int chunk_id = citer->chunk_number;
-
-    // The server can give us a chunk that we already have because
-    // it's part of a range.  Don't add it again.
-    const int encoded_chunk_id = EncodeChunkId(chunk_id, list_id);
-    if (store->CheckSubChunk(encoded_chunk_id))
-      continue;
-
-    store->SetSubChunk(encoded_chunk_id);
-    for (std::deque<SBChunkHost>::const_iterator hiter = citer->hosts.begin();
-         hiter != citer->hosts.end(); ++hiter) {
-      InsertSub(chunk_id, hiter->host, hiter->entry, list_id);
+  store->SetSubChunk(encoded_chunk_id);
+  if (chunk_data.IsPrefix()) {
+    const size_t c = chunk_data.PrefixCount();
+    for (size_t i = 0; i < c; ++i) {
+      STATS_COUNTER("SB.PrefixSub", 1);
+      const int add_chunk_id = chunk_data.AddChunkNumberAt(i);
+      const int encoded_add_chunk_id = EncodeChunkId(add_chunk_id, list_id);
+      store->WriteSubPrefix(encoded_chunk_id, encoded_add_chunk_id,
+                            chunk_data.PrefixAt(i));
+    }
+  } else {
+    const size_t c = chunk_data.FullHashCount();
+    for (size_t i = 0; i < c; ++i) {
+      STATS_COUNTER("SB.PrefixSubFull", 1);
+      const int add_chunk_id = chunk_data.AddChunkNumberAt(i);
+      const int encoded_add_chunk_id = EncodeChunkId(add_chunk_id, list_id);
+      store->WriteSubHash(encoded_chunk_id, encoded_add_chunk_id,
+                          chunk_data.FullHashAt(i));
     }
   }
 }
 
-void SafeBrowsingDatabaseNew::InsertChunks(const std::string& list_name,
-                                           const SBChunkList& chunks) {
+void SafeBrowsingDatabaseNew::InsertChunks(
+    const std::string& list_name,
+    const std::vector<SBChunkData*>& chunks) {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
 
   if (corruption_detected_ || chunks.empty())
@@ -1028,20 +879,26 @@ void SafeBrowsingDatabaseNew::InsertChunks(const std::string& list_name,
 
   const base::TimeTicks before = base::TimeTicks::Now();
 
+  // TODO(shess): The caller should just pass list_id.
   const safe_browsing_util::ListType list_id =
       safe_browsing_util::GetListId(list_name);
-  DVLOG(2) << list_name << ": " << list_id;
 
   SafeBrowsingStore* store = GetStore(list_id);
   if (!store) return;
 
   change_detected_ = true;
 
+  // TODO(shess): I believe that the list is always add or sub.  Can this use
+  // that productively?
   store->BeginChunk();
-  if (chunks.front().is_add) {
-    InsertAddChunks(list_id, chunks);
-  } else {
-    InsertSubChunks(list_id, chunks);
+  for (size_t i = 0; i < chunks.size(); ++i) {
+    if (chunks[i]->IsAdd()) {
+      InsertAddChunk(store, list_id, *chunks[i]);
+    } else if (chunks[i]->IsSub()) {
+      InsertSubChunk(store, list_id, *chunks[i]);
+    } else {
+      NOTREACHED();
+    }
   }
   store->FinishChunk();
 
@@ -1079,7 +936,10 @@ void SafeBrowsingDatabaseNew::DeleteChunks(
 
 void SafeBrowsingDatabaseNew::CacheHashResults(
     const std::vector<SBPrefix>& prefixes,
-    const std::vector<SBFullHashResult>& full_hits) {
+    const std::vector<SBFullHashResult>& full_hits,
+    const base::TimeDelta& cache_lifetime) {
+  const base::Time expire_after = base::Time::Now() + cache_lifetime;
+
   // This is called on the I/O thread, lock against updates.
   base::AutoLock locked(lookup_lock_);
 
@@ -1088,28 +948,26 @@ void SafeBrowsingDatabaseNew::CacheHashResults(
     return;
   }
 
-  // TODO(shess): SBFullHashResult and SBAddFullHash are very similar.
-  // Refactor to make them identical.
-  const base::Time now = base::Time::Now();
-  const size_t orig_size = pending_browse_hashes_.size();
+  const size_t orig_size = cached_browse_hashes_.size();
   for (std::vector<SBFullHashResult>::const_iterator iter = full_hits.begin();
        iter != full_hits.end(); ++iter) {
-    const int list_id = safe_browsing_util::GetListId(iter->list_name);
-    if (list_id == safe_browsing_util::MALWARE ||
-        list_id == safe_browsing_util::PHISH) {
-      int encoded_chunk_id = EncodeChunkId(iter->add_chunk_id, list_id);
-      SBAddFullHash add_full_hash(encoded_chunk_id, now, iter->hash);
-      pending_browse_hashes_.push_back(add_full_hash);
+    if (iter->list_id == safe_browsing_util::MALWARE ||
+        iter->list_id == safe_browsing_util::PHISH) {
+      SBFullHashCached cached_hash;
+      cached_hash.hash = iter->hash;
+      cached_hash.list_id = iter->list_id;
+      cached_hash.expire_after = expire_after;
+      cached_browse_hashes_.push_back(cached_hash);
     }
   }
 
   // Sort new entries then merge with the previously-sorted entries.
-  std::vector<SBAddFullHash>::iterator
-      orig_end = pending_browse_hashes_.begin() + orig_size;
-  std::sort(orig_end, pending_browse_hashes_.end(), SBAddFullHashPrefixLess);
-  std::inplace_merge(pending_browse_hashes_.begin(),
-                     orig_end, pending_browse_hashes_.end(),
-                     SBAddFullHashPrefixLess);
+  std::vector<SBFullHashCached>::iterator
+      orig_end = cached_browse_hashes_.begin() + orig_size;
+  std::sort(orig_end, cached_browse_hashes_.end(), SBFullHashCachedPrefixLess);
+  std::inplace_merge(cached_browse_hashes_.begin(),
+                     orig_end, cached_browse_hashes_.end(),
+                     SBFullHashCachedPrefixLess);
 }
 
 bool SafeBrowsingDatabaseNew::UpdateStarted(
@@ -1163,75 +1021,32 @@ bool SafeBrowsingDatabaseNew::UpdateStarted(
     return false;
   }
 
-  std::vector<std::string> browse_listnames;
-  browse_listnames.push_back(safe_browsing_util::kMalwareList);
-  browse_listnames.push_back(safe_browsing_util::kPhishingList);
-  UpdateChunkRanges(browse_store_.get(), browse_listnames, lists);
+  UpdateChunkRangesForLists(browse_store_.get(),
+                            safe_browsing_util::kMalwareList,
+                            safe_browsing_util::kPhishingList,
+                            lists);
 
-  if (download_store_.get()) {
-    // This store used to contain kBinHashList in addition to
-    // kBinUrlList.  Strip the stale data before generating the chunk
-    // ranges to request.  UpdateChunkRanges() will traverse the chunk
-    // list, so this is very cheap if there are no kBinHashList chunks.
-    const int listid =
-        safe_browsing_util::GetListId(safe_browsing_util::kBinHashList);
-    DeleteChunksFromStore(download_store_.get(), listid);
+  // NOTE(shess): |download_store_| used to contain kBinHashList, which has been
+  // deprecated.  Code to delete the list from the store shows ~15k hits/day as
+  // of Feb 2014, so it has been removed.  Everything _should_ be resilient to
+  // extra data of that sort.
+  UpdateChunkRangesForList(download_store_.get(),
+                           safe_browsing_util::kBinUrlList, lists);
 
-    // The above marks the chunks for deletion, but they are not
-    // actually deleted until the database is rewritten.  The
-    // following code removes the kBinHashList part of the request
-    // before continuing so that UpdateChunkRanges() doesn't break.
-    std::vector<std::string> download_listnames;
-    download_listnames.push_back(safe_browsing_util::kBinUrlList);
-    download_listnames.push_back(safe_browsing_util::kBinHashList);
-    UpdateChunkRanges(download_store_.get(), download_listnames, lists);
-    DCHECK_EQ(lists->back().name,
-              std::string(safe_browsing_util::kBinHashList));
-    lists->pop_back();
+  UpdateChunkRangesForList(csd_whitelist_store_.get(),
+                           safe_browsing_util::kCsdWhiteList, lists);
 
-    // TODO(shess): This problem could also be handled in
-    // BeginUpdate() by detecting the chunks to delete and rewriting
-    // the database before it's used.  When I implemented that, it
-    // felt brittle, it might be easier to just wait for some future
-    // format change.
-  }
+  UpdateChunkRangesForList(download_whitelist_store_.get(),
+                           safe_browsing_util::kDownloadWhiteList, lists);
 
-  if (csd_whitelist_store_.get()) {
-    std::vector<std::string> csd_whitelist_listnames;
-    csd_whitelist_listnames.push_back(safe_browsing_util::kCsdWhiteList);
-    UpdateChunkRanges(csd_whitelist_store_.get(),
-                      csd_whitelist_listnames, lists);
-  }
+  UpdateChunkRangesForList(extension_blacklist_store_.get(),
+                           safe_browsing_util::kExtensionBlacklist, lists);
 
-  if (download_whitelist_store_.get()) {
-    std::vector<std::string> download_whitelist_listnames;
-    download_whitelist_listnames.push_back(
-        safe_browsing_util::kDownloadWhiteList);
-    UpdateChunkRanges(download_whitelist_store_.get(),
-                      download_whitelist_listnames, lists);
-  }
+  UpdateChunkRangesForList(side_effect_free_whitelist_store_.get(),
+                           safe_browsing_util::kSideEffectFreeWhitelist, lists);
 
-  if (extension_blacklist_store_) {
-    UpdateChunkRanges(
-        extension_blacklist_store_.get(),
-        std::vector<std::string>(1, safe_browsing_util::kExtensionBlacklist),
-        lists);
-  }
-
-  if (side_effect_free_whitelist_store_) {
-    UpdateChunkRanges(
-        side_effect_free_whitelist_store_.get(),
-        std::vector<std::string>(
-            1, safe_browsing_util::kSideEffectFreeWhitelist),
-        lists);
-  }
-
-  if (ip_blacklist_store_) {
-    UpdateChunkRanges(
-        ip_blacklist_store_.get(),
-        std::vector<std::string>(1, safe_browsing_util::kIPBlacklist),
-        lists);
-  }
+  UpdateChunkRangesForList(ip_blacklist_store_.get(),
+                           safe_browsing_util::kIPBlacklist, lists);
 
   corruption_detected_ = false;
   change_detected_ = false;
@@ -1306,7 +1121,7 @@ void SafeBrowsingDatabaseNew::UpdateFinished(bool update_succeeded) {
 
   if (download_store_) {
     int64 size_bytes = UpdateHashPrefixStore(
-        download_filename_,
+        DownloadDBFilename(filename_base_),
         download_store_.get(),
         FAILURE_DOWNLOAD_DATABASE_UPDATE_FINISH);
     UMA_HISTOGRAM_COUNTS("SB2.DownloadDatabaseKilobytes",
@@ -1314,16 +1129,16 @@ void SafeBrowsingDatabaseNew::UpdateFinished(bool update_succeeded) {
   }
 
   UpdateBrowseStore();
-  UpdateWhitelistStore(csd_whitelist_filename_,
+  UpdateWhitelistStore(CsdWhitelistDBFilename(filename_base_),
                        csd_whitelist_store_.get(),
                        &csd_whitelist_);
-  UpdateWhitelistStore(download_whitelist_filename_,
+  UpdateWhitelistStore(DownloadWhitelistDBFilename(filename_base_),
                        download_whitelist_store_.get(),
                        &download_whitelist_);
 
   if (extension_blacklist_store_) {
     int64 size_bytes = UpdateHashPrefixStore(
-        extension_blacklist_filename_,
+        ExtensionBlacklistDBFilename(filename_base_),
         extension_blacklist_store_.get(),
         FAILURE_EXTENSION_BLACKLIST_UPDATE_FINISH);
     UMA_HISTOGRAM_COUNTS("SB2.ExtensionBlacklistKilobytes",
@@ -1344,15 +1159,11 @@ void SafeBrowsingDatabaseNew::UpdateWhitelistStore(
   if (!store)
     return;
 
-  // For the whitelists, we don't cache and save full hashes since all
-  // hashes are already full.
-  std::vector<SBAddFullHash> empty_add_hashes;
-
-  // Note: prefixes will not be empty.  The current data store implementation
+  // Note: |builder| will not be empty.  The current data store implementation
   // stores all full-length hashes as both full and prefix hashes.
-  SBAddPrefixes prefixes;
+  safe_browsing::PrefixSetBuilder builder;
   std::vector<SBAddFullHash> full_hashes;
-  if (!store->FinishUpdate(empty_add_hashes, &prefixes, &full_hashes)) {
+  if (!store->FinishUpdate(&builder, &full_hashes)) {
     RecordFailure(FAILURE_WHITELIST_DATABASE_UPDATE_FINISH);
     WhitelistEverything(whitelist);
     return;
@@ -1369,19 +1180,13 @@ int64 SafeBrowsingDatabaseNew::UpdateHashPrefixStore(
     const base::FilePath& store_filename,
     SafeBrowsingStore* store,
     FailureType failure_type) {
-  // We don't cache and save full hashes.
-  std::vector<SBAddFullHash> empty_add_hashes;
-
   // These results are not used after this call. Simply ignore the
   // returned value after FinishUpdate(...).
-  SBAddPrefixes add_prefixes_result;
+  safe_browsing::PrefixSetBuilder builder;
   std::vector<SBAddFullHash> add_full_hashes_result;
 
-  if (!store->FinishUpdate(empty_add_hashes,
-                           &add_prefixes_result,
-                           &add_full_hashes_result)) {
+  if (!store->FinishUpdate(&builder, &add_full_hashes_result))
     RecordFailure(failure_type);
-  }
 
 #if defined(OS_MACOSX)
   base::mac::SetFileBackupExclusion(store_filename);
@@ -1391,16 +1196,6 @@ int64 SafeBrowsingDatabaseNew::UpdateHashPrefixStore(
 }
 
 void SafeBrowsingDatabaseNew::UpdateBrowseStore() {
-  // Copy out the pending add hashes.  Copy rather than swapping in
-  // case |ContainsBrowseURL()| is called before the new filter is complete.
-  std::vector<SBAddFullHash> pending_add_hashes;
-  {
-    base::AutoLock locked(lookup_lock_);
-    pending_add_hashes.insert(pending_add_hashes.end(),
-                              pending_browse_hashes_.begin(),
-                              pending_browse_hashes_.end());
-  }
-
   // Measure the amount of IO during the filter build.
   base::IoCounters io_before, io_after;
   base::ProcessHandle handle = base::Process::Current().handle();
@@ -1420,51 +1215,38 @@ void SafeBrowsingDatabaseNew::UpdateBrowseStore() {
 
   const base::TimeTicks before = base::TimeTicks::Now();
 
-  SBAddPrefixes add_prefixes;
+  // TODO(shess): Perhaps refactor to let builder accumulate full hashes on the
+  // fly?  Other clients use the SBAddFullHash vector, but AFAICT they only use
+  // the SBFullHash portion.  It would need an accessor on PrefixSet.
+  safe_browsing::PrefixSetBuilder builder;
   std::vector<SBAddFullHash> add_full_hashes;
-  if (!browse_store_->FinishUpdate(pending_add_hashes,
-                                   &add_prefixes, &add_full_hashes)) {
+  if (!browse_store_->FinishUpdate(&builder, &add_full_hashes)) {
     RecordFailure(FAILURE_BROWSE_DATABASE_UPDATE_FINISH);
     return;
   }
 
-  // TODO(shess): If |add_prefixes| were sorted by the prefix, it
-  // could be passed directly to |PrefixSet()|, removing the need for
-  // |prefixes|.  For now, |prefixes| is useful while debugging
-  // things.
-  std::vector<SBPrefix> prefixes;
-  prefixes.reserve(add_prefixes.size());
-  for (SBAddPrefixes::const_iterator iter = add_prefixes.begin();
-       iter != add_prefixes.end(); ++iter) {
-    prefixes.push_back(iter->prefix);
+  std::vector<SBFullHash> full_hash_results;
+  for (size_t i = 0; i < add_full_hashes.size(); ++i) {
+    full_hash_results.push_back(add_full_hashes[i].full_hash);
   }
 
-  std::sort(prefixes.begin(), prefixes.end());
   scoped_ptr<safe_browsing::PrefixSet>
-      prefix_set(new safe_browsing::PrefixSet(prefixes));
-
-  // This needs to be in sorted order by prefix for efficient access.
-  std::sort(add_full_hashes.begin(), add_full_hashes.end(),
-            SBAddFullHashPrefixLess);
+      prefix_set(builder.GetPrefixSet(full_hash_results));
 
   // Swap in the newly built filter and cache.
   {
     base::AutoLock locked(lookup_lock_);
-    full_browse_hashes_.swap(add_full_hashes);
 
     // TODO(shess): If |CacheHashResults()| is posted between the
     // earlier lock and this clear, those pending hashes will be lost.
     // It could be fixed by only removing hashes which were collected
     // at the earlier point.  I believe that is fail-safe as-is (the
     // hash will be fetched again).
-    pending_browse_hashes_.clear();
+    cached_browse_hashes_.clear();
     prefix_miss_cache_.clear();
     browse_prefix_set_.swap(prefix_set);
   }
 
-  DVLOG(1) << "SafeBrowsingDatabaseImpl built prefix set in "
-           << (base::TimeTicks::Now() - before).InMilliseconds()
-           << " ms total.  prefix count: " << add_prefixes.size();
   UMA_HISTOGRAM_LONG_TIMES("SB2.BuildFilter", base::TimeTicks::Now() - before);
 
   // Persist the prefix set to disk.  Since only this thread changes
@@ -1487,45 +1269,27 @@ void SafeBrowsingDatabaseNew::UpdateBrowseStore() {
                                           io_before.WriteOperationCount));
   }
 
-  int64 file_size = GetFileSizeOrZero(browse_prefix_set_filename_);
-  UMA_HISTOGRAM_COUNTS("SB2.PrefixSetKilobytes",
-                       static_cast<int>(file_size / 1024));
-  file_size = GetFileSizeOrZero(browse_filename_);
+  const base::FilePath browse_filename = BrowseDBFilename(filename_base_);
+  const int64 file_size = GetFileSizeOrZero(browse_filename);
   UMA_HISTOGRAM_COUNTS("SB2.BrowseDatabaseKilobytes",
                        static_cast<int>(file_size / 1024));
 
 #if defined(OS_MACOSX)
-  base::mac::SetFileBackupExclusion(browse_filename_);
+  base::mac::SetFileBackupExclusion(browse_filename);
 #endif
 }
 
 void SafeBrowsingDatabaseNew::UpdateSideEffectFreeWhitelistStore() {
-  std::vector<SBAddFullHash> empty_add_hashes;
-  SBAddPrefixes add_prefixes;
+  safe_browsing::PrefixSetBuilder builder;
   std::vector<SBAddFullHash> add_full_hashes_result;
 
   if (!side_effect_free_whitelist_store_->FinishUpdate(
-          empty_add_hashes,
-          &add_prefixes,
-          &add_full_hashes_result)) {
+          &builder, &add_full_hashes_result)) {
     RecordFailure(FAILURE_SIDE_EFFECT_FREE_WHITELIST_UPDATE_FINISH);
     return;
   }
-
-  // TODO(shess): If |add_prefixes| were sorted by the prefix, it
-  // could be passed directly to |PrefixSet()|, removing the need for
-  // |prefixes|.  For now, |prefixes| is useful while debugging
-  // things.
-  std::vector<SBPrefix> prefixes;
-  prefixes.reserve(add_prefixes.size());
-  for (SBAddPrefixes::const_iterator iter = add_prefixes.begin();
-       iter != add_prefixes.end(); ++iter) {
-    prefixes.push_back(iter->prefix);
-  }
-
-  std::sort(prefixes.begin(), prefixes.end());
   scoped_ptr<safe_browsing::PrefixSet>
-      prefix_set(new safe_browsing::PrefixSet(prefixes));
+      prefix_set(builder.GetPrefixSetNoHashes());
 
   // Swap in the newly built prefix set.
   {
@@ -1533,12 +1297,13 @@ void SafeBrowsingDatabaseNew::UpdateSideEffectFreeWhitelistStore() {
     side_effect_free_whitelist_prefix_set_.swap(prefix_set);
   }
 
+  const base::FilePath side_effect_free_whitelist_filename =
+      SideEffectFreeWhitelistDBFilename(filename_base_);
+  const base::FilePath side_effect_free_whitelist_prefix_set_filename =
+      PrefixSetForFilename(side_effect_free_whitelist_filename);
   const base::TimeTicks before = base::TimeTicks::Now();
   const bool write_ok = side_effect_free_whitelist_prefix_set_->WriteFile(
-      side_effect_free_whitelist_prefix_set_filename_);
-  DVLOG(1) << "SafeBrowsingDatabaseNew wrote side-effect free whitelist prefix "
-           << "set in " << (base::TimeTicks::Now() - before).InMilliseconds()
-           << " ms";
+      side_effect_free_whitelist_prefix_set_filename);
   UMA_HISTOGRAM_TIMES("SB2.SideEffectFreePrefixSetWrite",
                       base::TimeTicks::Now() - before);
 
@@ -1547,38 +1312,33 @@ void SafeBrowsingDatabaseNew::UpdateSideEffectFreeWhitelistStore() {
 
   // Gather statistics.
   int64 file_size = GetFileSizeOrZero(
-      side_effect_free_whitelist_prefix_set_filename_);
+      side_effect_free_whitelist_prefix_set_filename);
   UMA_HISTOGRAM_COUNTS("SB2.SideEffectFreeWhitelistPrefixSetKilobytes",
                        static_cast<int>(file_size / 1024));
-  file_size = GetFileSizeOrZero(side_effect_free_whitelist_filename_);
+  file_size = GetFileSizeOrZero(side_effect_free_whitelist_filename);
   UMA_HISTOGRAM_COUNTS("SB2.SideEffectFreeWhitelistDatabaseKilobytes",
                        static_cast<int>(file_size / 1024));
 
 #if defined(OS_MACOSX)
-  base::mac::SetFileBackupExclusion(side_effect_free_whitelist_filename_);
+  base::mac::SetFileBackupExclusion(side_effect_free_whitelist_filename);
   base::mac::SetFileBackupExclusion(
-      side_effect_free_whitelist_prefix_set_filename_);
+      side_effect_free_whitelist_prefix_set_filename);
 #endif
 }
 
 void SafeBrowsingDatabaseNew::UpdateIpBlacklistStore() {
-  // For the IP blacklist, we don't cache and save full hashes since all
-  // hashes are already full.
-  std::vector<SBAddFullHash> empty_add_hashes;
-
   // Note: prefixes will not be empty.  The current data store implementation
   // stores all full-length hashes as both full and prefix hashes.
-  SBAddPrefixes prefixes;
+  safe_browsing::PrefixSetBuilder builder;
   std::vector<SBAddFullHash> full_hashes;
-  if (!ip_blacklist_store_->FinishUpdate(empty_add_hashes,
-                                         &prefixes, &full_hashes)) {
+  if (!ip_blacklist_store_->FinishUpdate(&builder, &full_hashes)) {
     RecordFailure(FAILURE_IP_BLACKLIST_UPDATE_FINISH);
     LoadIpBlacklist(std::vector<SBAddFullHash>());  // Clear the list.
     return;
   }
 
 #if defined(OS_MACOSX)
-  base::mac::SetFileBackupExclusion(ip_blacklist_filename_);
+  base::mac::SetFileBackupExclusion(IpBlacklistDBFilename(filename_base_));
 #endif
 
   LoadIpBlacklist(full_hashes);
@@ -1599,6 +1359,11 @@ void SafeBrowsingDatabaseNew::OnHandleCorruptDatabase() {
   RecordFailure(FAILURE_DATABASE_CORRUPT_HANDLER);
   corruption_detected_ = true;  // Stop updating the database.
   ResetDatabase();
+
+  // NOTE(shess): ResetDatabase() should remove the corruption, so this should
+  // only happen once.  If you are here because you are hitting this after a
+  // restart, then I would be very interested in working with you to figure out
+  // what is happening, since it may affect real users.
   DLOG(FATAL) << "SafeBrowsing database was corrupt and reset";
 }
 
@@ -1606,24 +1371,25 @@ void SafeBrowsingDatabaseNew::OnHandleCorruptDatabase() {
 // real error-handling.
 void SafeBrowsingDatabaseNew::LoadPrefixSet() {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
-  DCHECK(!browse_prefix_set_filename_.empty());
+  DCHECK(!filename_base_.empty());
 
-  // If there is no database, the filter cannot be used.
-  base::File::Info db_info;
-  if (!base::GetFileInfo(browse_filename_, &db_info) || db_info.size == 0)
+  const base::FilePath browse_filename = BrowseDBFilename(filename_base_);
+  const base::FilePath browse_prefix_set_filename =
+      PrefixSetForFilename(browse_filename);
+
+  // Only use the prefix set if database is present and non-empty.
+  if (!GetFileSizeOrZero(browse_filename))
     return;
 
   // Cleanup any stale bloom filter (no longer used).
-  // TODO(shess): Track failure to delete?
-  base::FilePath bloom_filter_filename =
-      BloomFilterForFilename(browse_filename_);
+  // TODO(shess): Track existence to drive removal of this code?
+  const base::FilePath bloom_filter_filename =
+      BloomFilterForFilename(browse_filename);
   base::DeleteFile(bloom_filter_filename, false);
 
   const base::TimeTicks before = base::TimeTicks::Now();
-  browse_prefix_set_.reset(safe_browsing::PrefixSet::LoadFile(
-      browse_prefix_set_filename_));
-  DVLOG(1) << "SafeBrowsingDatabaseNew read prefix set in "
-           << (base::TimeTicks::Now() - before).InMilliseconds() << " ms";
+  browse_prefix_set_ = safe_browsing::PrefixSet::LoadFile(
+      browse_prefix_set_filename);
   UMA_HISTOGRAM_TIMES("SB2.PrefixSetLoad", base::TimeTicks::Now() - before);
 
   if (!browse_prefix_set_.get())
@@ -1632,6 +1398,18 @@ void SafeBrowsingDatabaseNew::LoadPrefixSet() {
 
 bool SafeBrowsingDatabaseNew::Delete() {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
+  DCHECK(!filename_base_.empty());
+
+  // TODO(shess): This is a mess.  SafeBrowsingFileStore::Delete() closes the
+  // store before calling DeleteStore().  DeleteStore() deletes transient files
+  // in addition to the main file.  Probably all of these should be converted to
+  // a helper which calls Delete() if the store exists, else DeleteStore() on
+  // the generated filename.
+
+  // TODO(shess): Determine if the histograms are useful in any way.  I cannot
+  // recall any action taken as a result of their values, in which case it might
+  // make more sense to histogram an overall thumbs-up/-down and just dig deeper
+  // if something looks wrong.
 
   const bool r1 = browse_store_->Delete();
   if (!r1)
@@ -1651,32 +1429,42 @@ bool SafeBrowsingDatabaseNew::Delete() {
   if (!r4)
     RecordFailure(FAILURE_DATABASE_STORE_DELETE);
 
-  base::FilePath bloom_filter_filename =
-      BloomFilterForFilename(browse_filename_);
+  const base::FilePath browse_filename = BrowseDBFilename(filename_base_);
+  const base::FilePath bloom_filter_filename =
+      BloomFilterForFilename(browse_filename);
   const bool r5 = base::DeleteFile(bloom_filter_filename, false);
   if (!r5)
     RecordFailure(FAILURE_DATABASE_FILTER_DELETE);
 
-  const bool r6 = base::DeleteFile(browse_prefix_set_filename_, false);
+  const base::FilePath browse_prefix_set_filename =
+      PrefixSetForFilename(browse_filename);
+  const bool r6 = base::DeleteFile(browse_prefix_set_filename, false);
   if (!r6)
     RecordFailure(FAILURE_BROWSE_PREFIX_SET_DELETE);
 
-  const bool r7 = base::DeleteFile(extension_blacklist_filename_, false);
+  const base::FilePath extension_blacklist_filename =
+      ExtensionBlacklistDBFilename(filename_base_);
+  const bool r7 = base::DeleteFile(extension_blacklist_filename, false);
   if (!r7)
     RecordFailure(FAILURE_EXTENSION_BLACKLIST_DELETE);
 
-  const bool r8 = base::DeleteFile(side_effect_free_whitelist_filename_,
-                                    false);
+  const base::FilePath side_effect_free_whitelist_filename =
+      SideEffectFreeWhitelistDBFilename(filename_base_);
+  const bool r8 = base::DeleteFile(side_effect_free_whitelist_filename,
+                                   false);
   if (!r8)
     RecordFailure(FAILURE_SIDE_EFFECT_FREE_WHITELIST_DELETE);
 
+  const base::FilePath side_effect_free_whitelist_prefix_set_filename =
+      PrefixSetForFilename(side_effect_free_whitelist_filename);
   const bool r9 = base::DeleteFile(
-      side_effect_free_whitelist_prefix_set_filename_,
+      side_effect_free_whitelist_prefix_set_filename,
       false);
   if (!r9)
     RecordFailure(FAILURE_SIDE_EFFECT_FREE_WHITELIST_PREFIX_SET_DELETE);
 
-  const bool r10 = base::DeleteFile(ip_blacklist_filename_, false);
+  const bool r10 = base::DeleteFile(IpBlacklistDBFilename(filename_base_),
+                                    false);
   if (!r10)
     RecordFailure(FAILURE_IP_BLACKLIST_DELETE);
 
@@ -1689,18 +1477,24 @@ void SafeBrowsingDatabaseNew::WritePrefixSet() {
   if (!browse_prefix_set_.get())
     return;
 
+  const base::FilePath browse_filename = BrowseDBFilename(filename_base_);
+  const base::FilePath browse_prefix_set_filename =
+      PrefixSetForFilename(browse_filename);
+
   const base::TimeTicks before = base::TimeTicks::Now();
   const bool write_ok = browse_prefix_set_->WriteFile(
-      browse_prefix_set_filename_);
-  DVLOG(1) << "SafeBrowsingDatabaseNew wrote prefix set in "
-           << (base::TimeTicks::Now() - before).InMilliseconds() << " ms";
+      browse_prefix_set_filename);
   UMA_HISTOGRAM_TIMES("SB2.PrefixSetWrite", base::TimeTicks::Now() - before);
+
+  const int64 file_size = GetFileSizeOrZero(browse_prefix_set_filename);
+  UMA_HISTOGRAM_COUNTS("SB2.PrefixSetKilobytes",
+                       static_cast<int>(file_size / 1024));
 
   if (!write_ok)
     RecordFailure(FAILURE_BROWSE_PREFIX_SET_WRITE);
 
 #if defined(OS_MACOSX)
-  base::mac::SetFileBackupExclusion(browse_prefix_set_filename_);
+  base::mac::SetFileBackupExclusion(browse_prefix_set_filename);
 #endif
 }
 
@@ -1725,13 +1519,11 @@ void SafeBrowsingDatabaseNew::LoadWhitelist(
        it != full_hashes.end(); ++it) {
     new_whitelist.push_back(it->full_hash);
   }
-  std::sort(new_whitelist.begin(), new_whitelist.end());
+  std::sort(new_whitelist.begin(), new_whitelist.end(), SBFullHashLess);
 
-  SBFullHash kill_switch;
-  crypto::SHA256HashString(kWhitelistKillSwitchUrl, &kill_switch,
-                           sizeof(kill_switch));
+  SBFullHash kill_switch = SBFullHashForString(kWhitelistKillSwitchUrl);
   if (std::binary_search(new_whitelist.begin(), new_whitelist.end(),
-                         kill_switch)) {
+                         kill_switch, SBFullHashLess)) {
     // The kill switch is whitelisted hence we whitelist all URLs.
     WhitelistEverything(whitelist);
   } else {
@@ -1745,7 +1537,6 @@ void SafeBrowsingDatabaseNew::LoadIpBlacklist(
     const std::vector<SBAddFullHash>& full_hashes) {
   DCHECK_EQ(creation_loop_, base::MessageLoop::current());
   IPBlacklist new_blacklist;
-  DVLOG(2) << "Writing IP blacklist of size: " << full_hashes.size();
   for (std::vector<SBAddFullHash>::const_iterator it = full_hashes.begin();
        it != full_hashes.end();
        ++it) {
@@ -1756,7 +1547,6 @@ void SafeBrowsingDatabaseNew::LoadIpBlacklist(
     std::string hashed_ip_prefix(full_hash, base::kSHA1Length);
     size_t prefix_size = static_cast<uint8>(full_hash[base::kSHA1Length]);
     if (prefix_size > kMaxIpPrefixSize || prefix_size < kMinIpPrefixSize) {
-      DVLOG(2) << "Invalid IP prefix size in IP blacklist: " << prefix_size;
       RecordFailure(FAILURE_IP_BLACKLIST_UPDATE_INVALID);
       new_blacklist.clear();  // Load empty blacklist.
       break;
@@ -1784,10 +1574,12 @@ void SafeBrowsingDatabaseNew::LoadIpBlacklist(
 }
 
 bool SafeBrowsingDatabaseNew::IsMalwareIPMatchKillSwitchOn() {
-  SBFullHash malware_kill_switch;
-  crypto::SHA256HashString(kMalwareIPKillSwitchUrl, &malware_kill_switch,
-                           sizeof(malware_kill_switch));
+  SBFullHash malware_kill_switch = SBFullHashForString(kMalwareIPKillSwitchUrl);
   std::vector<SBFullHash> full_hashes;
   full_hashes.push_back(malware_kill_switch);
   return ContainsWhitelistedHashes(csd_whitelist_, full_hashes);
+}
+
+bool SafeBrowsingDatabaseNew::IsCsdWhitelistKillSwitchOn() {
+  return csd_whitelist_.second;
 }

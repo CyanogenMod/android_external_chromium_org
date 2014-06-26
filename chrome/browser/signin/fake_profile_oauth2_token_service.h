@@ -14,7 +14,7 @@
 #if defined(OS_ANDROID)
 #include "chrome/browser/signin/android_profile_oauth2_token_service.h"
 #else
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #endif
 
 // Helper class to simplify writing unittests that depend on an instance of
@@ -60,7 +60,7 @@ class FakeProfileOAuth2TokenService
 
   // Overriden to make sure it works on Android.
   virtual bool RefreshTokenIsAvailable(
-      const std::string& account_id) OVERRIDE;
+      const std::string& account_id) const OVERRIDE;
 
   // Overriden to make sure it works on iOS.
   virtual void LoadCredentials(const std::string& primary_account_id) OVERRIDE;
@@ -82,6 +82,9 @@ class FakeProfileOAuth2TokenService
   void IssueRefreshTokenForUser(const std::string& account_id,
                                 const std::string& token);
 
+  // Fire OnRefreshTokensLoaded on all observers.
+  void IssueAllRefreshTokensLoaded();
+
   // Gets a list of active requests (can be used by tests to validate that the
   // correct request has been issued).
   std::vector<PendingRequest> GetPendingRequests();
@@ -90,6 +93,10 @@ class FakeProfileOAuth2TokenService
   void IssueAllTokensForAccount(const std::string& account_id,
                                 const std::string& access_token,
                                 const base::Time& expiration);
+
+  void IssueErrorForAllPendingRequestsForAccount(
+      const std::string& account_id,
+      const GoogleServiceAuthError& error);
 
   void IssueTokenForScope(const ScopeSet& scopes,
                           const std::string& access_token,
@@ -116,12 +123,15 @@ class FakeProfileOAuth2TokenService
                                 const std::string& client_secret,
                                 const ScopeSet& scopes) OVERRIDE;
 
+  virtual OAuth2AccessTokenFetcher* CreateAccessTokenFetcher(
+      const std::string& account_id,
+      net::URLRequestContextGetter* getter,
+      OAuth2AccessTokenConsumer* consumer) OVERRIDE;
+
   virtual void InvalidateOAuth2Token(const std::string& account_id,
                                      const std::string& client_id,
                                      const ScopeSet& scopes,
                                      const std::string& access_token) OVERRIDE;
-
-  virtual std::string GetRefreshToken(const std::string& account_id) OVERRIDE;
 
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
 
@@ -138,6 +148,8 @@ class FakeProfileOAuth2TokenService
                         const std::string& access_token,
                         const base::Time& expiration);
 
+  std::string GetRefreshToken(const std::string& account_id) const;
+
   std::vector<PendingRequest> pending_requests_;
 
   // Maps account ids to their refresh token strings.
@@ -147,6 +159,8 @@ class FakeProfileOAuth2TokenService
   // |FetchOAuth2Token| on the current run loop. There is no need to call
   // |IssueTokenForScope| in this case.
   bool auto_post_fetch_response_on_message_loop_;
+
+  base::WeakPtrFactory<FakeProfileOAuth2TokenService> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeProfileOAuth2TokenService);
 };

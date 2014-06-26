@@ -1,5 +1,6 @@
 include_rules = [
-  "+mojo/system/embedder",
+  "+dbus",
+  "+mojo/embedder",
   "+net",
   "+ui/gl",
 ]

@@ -8,7 +8,7 @@
 #import <Cocoa/Cocoa.h>
 #include <vector>
 
-#include "apps/app_window.h"
+#include "apps/size_constraints.h"
 #include "apps/ui/native_app_window.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
@@ -16,6 +16,10 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "extensions/common/draggable_region.h"
 #include "ui/gfx/rect.h"
+
+namespace apps {
+class AppWindow;
+}
 
 class ExtensionKeybindingRegistryCocoa;
 class NativeAppWindowCocoa;
@@ -97,18 +101,20 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   // Called when the window is zoomed (maximized or de-maximized).
   void WindowWillZoom();
 
+  // Called when the window enters fullscreen.
+  void WindowDidEnterFullscreen();
+
+  // Called when the window exits fullscreen.
+  void WindowDidExitFullscreen();
+
   // Called to handle a key event.
   bool HandledByExtensionCommand(NSEvent* event);
-
-  // Called to handle a mouse event.
-  void HandleMouseEvent(NSEvent* event);
 
   // Returns true if |point| in local Cocoa coordinate system falls within
   // the draggable region.
   bool IsWithinDraggableRegion(NSPoint point) const;
 
   NSRect restored_bounds() const { return restored_bounds_; }
-  bool use_system_drag() const { return use_system_drag_; }
 
  protected:
   // NativeAppWindow implementation.
@@ -125,6 +131,9 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   virtual void HandleKeyboardEvent(
       const content::NativeWebKeyboardEvent& event) OVERRIDE;
   virtual bool IsFrameless() const OVERRIDE;
+  virtual bool HasFrameColor() const OVERRIDE;
+  virtual SkColor ActiveFrameColor() const OVERRIDE;
+  virtual SkColor InactiveFrameColor() const OVERRIDE;
   virtual gfx::Insets GetFrameInsets() const OVERRIDE;
 
   // These are used to simulate Mac-style hide/show. Since windows can be hidden
@@ -132,8 +141,11 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   // differentiate the reason a window was hidden.
   virtual void ShowWithApp() OVERRIDE;
   virtual void HideWithApp() OVERRIDE;
-  // Calls setContent[Min|Max]Size with the current size constraints.
-  virtual void UpdateWindowMinMaxSize() OVERRIDE;
+  virtual void UpdateShelfMenu() OVERRIDE;
+  virtual gfx::Size GetContentMinimumSize() const OVERRIDE;
+  virtual gfx::Size GetContentMaximumSize() const OVERRIDE;
+  virtual void SetContentSizeConstraints(const gfx::Size& min_size,
+                                         const gfx::Size& max_size) OVERRIDE;
 
   // WebContentsObserver implementation.
   virtual void RenderViewCreated(content::RenderViewHost* rvh) OVERRIDE;
@@ -153,28 +165,15 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   virtual ~NativeAppWindowCocoa();
 
   ShellNSWindow* window() const;
-
-  content::WebContents* web_contents() const {
-    return app_window_->web_contents();
-  }
-  const extensions::Extension* extension() const {
-    return app_window_->extension();
-  }
+  content::WebContents* WebContents() const;
 
   // Returns the WindowStyleMask based on the type of window frame.
-  // Specifically, this includes NSResizableWindowMask if the window is
-  // resizable, and does not include NSTexturedBackgroundWindowMask when a
-  // native frame is used.
+  // This includes NSResizableWindowMask if the window is resizable.
   NSUInteger GetWindowStyleMask() const;
 
   void InstallView();
   void UninstallView();
-  void InstallDraggableRegionViews();
-  void UpdateDraggableRegionsForSystemDrag(
-      const std::vector<extensions::DraggableRegion>& regions,
-      const extensions::DraggableRegion* draggable_area);
-  void UpdateDraggableRegionsForCustomDrag(
-      const std::vector<extensions::DraggableRegion>& regions);
+  void UpdateDraggableRegionViews();
 
   // Cache |restored_bounds_| only if the window is currently restored.
   void UpdateRestoredBounds();
@@ -186,9 +185,6 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
 
   bool has_frame_;
 
-  // Whether this window is hidden according to the app.window API. This is set
-  // by Hide, Show, and ShowInactive.
-  bool is_hidden_;
   // Whether this window last became hidden due to a request to hide the entire
   // app, e.g. via the dock menu or Cmd+H. This is set by Hide/ShowWithApp.
   bool is_hidden_with_app_;
@@ -197,27 +193,22 @@ class NativeAppWindowCocoa : public apps::NativeAppWindow,
   bool is_fullscreen_;
   NSRect restored_bounds_;
 
+  bool is_resizable_;
   bool shows_resize_controls_;
   bool shows_fullscreen_controls_;
+
+  apps::SizeConstraints size_constraints_;
+
+  bool has_frame_color_;
+  SkColor active_frame_color_;
+  SkColor inactive_frame_color_;
 
   base::scoped_nsobject<NativeAppWindowController> window_controller_;
   NSInteger attention_request_id_;  // identifier from requestUserAttention
 
-  // Indicates whether system drag or custom drag should be used, depending on
-  // the complexity of draggable regions.
-  bool use_system_drag_;
-
   // For system drag, the whole window is draggable and the non-draggable areas
   // have to been explicitly excluded.
-  std::vector<gfx::Rect> system_drag_exclude_areas_;
-
-  // For custom drag, the whole window is non-draggable and the draggable region
-  // has to been explicitly provided.
-  scoped_ptr<SkRegion> draggable_region_;  // used in custom drag.
-
-  // Mouse location since the last mouse event, in screen coordinates. This is
-  // used in custom drag to compute the window movement.
-  NSPoint last_mouse_location_;
+  std::vector<extensions::DraggableRegion> draggable_regions_;
 
   // The Extension Command Registry used to determine which keyboard events to
   // handle.

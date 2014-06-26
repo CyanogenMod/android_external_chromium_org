@@ -118,7 +118,8 @@ void TabSpecificContentSettings::CookiesRead(int render_process_id,
                                              const GURL& url,
                                              const GURL& frame_url,
                                              const net::CookieList& cookie_list,
-                                             bool blocked_by_policy) {
+                                             bool blocked_by_policy,
+                                             bool is_for_blocking_resource) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   TabSpecificContentSettings* settings =
       GetForFrame(render_process_id, render_frame_id);
@@ -131,6 +132,7 @@ void TabSpecificContentSettings::CookiesRead(int render_process_id,
       render_frame_id,
       url,
       frame_url,
+      is_for_blocking_resource,
       prerender::PrerenderContents::COOKIE_EVENT_SEND,
       &cookie_list);
 }
@@ -155,6 +157,7 @@ void TabSpecificContentSettings::CookieChanged(
       render_frame_id,
       url,
       frame_url,
+      false /*is_critical_request*/,
       prerender::PrerenderContents::COOKIE_EVENT_CHANGE,
       NULL);
 }
@@ -636,7 +639,8 @@ void TabSpecificContentSettings::RenderFrameForInterstitialPageCreated(
 }
 
 bool TabSpecificContentSettings::OnMessageReceived(
-    const IPC::Message& message) {
+    const IPC::Message& message,
+    content::RenderFrameHost* render_frame_host) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(TabSpecificContentSettings, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_ContentBlocked, OnContentBlocked)

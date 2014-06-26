@@ -20,7 +20,9 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "skia/ext/opacity_draw_filter.h"
+#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
@@ -35,7 +37,7 @@ namespace cc {
 
 namespace {
 
-class OnDemandRasterTaskImpl : public internal::Task {
+class OnDemandRasterTaskImpl : public Task {
  public:
   OnDemandRasterTaskImpl(PicturePileImpl* picture_pile,
                          SkCanvas* canvas,
@@ -49,10 +51,15 @@ class OnDemandRasterTaskImpl : public internal::Task {
     DCHECK(canvas_);
   }
 
-  // Overridden from internal::Task:
-  virtual void RunOnWorkerThread(unsigned thread_index) OVERRIDE {
+  // Overridden from Task:
+  virtual void RunOnWorkerThread() OVERRIDE {
     TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
-    picture_pile_->RasterDirect(canvas_, content_rect_, contents_scale_, NULL);
+
+    PicturePileImpl* picture_pile = picture_pile_->GetCloneForDrawingOnThread(
+        RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
+    DCHECK(picture_pile);
+
+    picture_pile->RasterDirect(canvas_, content_rect_, contents_scale_, NULL);
   }
 
  protected:
@@ -108,7 +115,6 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
                                    OutputSurface* output_surface,
                                    ResourceProvider* resource_provider)
     : DirectRenderer(client, settings, output_surface, resource_provider),
-      visible_(true),
       is_scissor_enabled_(false),
       is_backbuffer_discarded_(false),
       output_device_(output_surface->software_device()),
@@ -122,7 +128,7 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = settings_->use_map_image;
+  capabilities_.using_map_image = true;
   capabilities_.using_shared_memory_resources = true;
 
   capabilities_.allow_rasterize_on_demand = true;
@@ -177,8 +183,8 @@ void SoftwareRenderer::EnsureScissorTestDisabled() {
   // clipRect on the current SkCanvas. This is done by setting clipRect to
   // the viewport's dimensions.
   is_scissor_enabled_ = false;
-  SkBaseDevice* device = current_canvas_->getDevice();
-  SetClipRect(gfx::Rect(device->width(), device->height()));
+  SkISize size = current_canvas_->getDeviceSize();
+  SetClipRect(gfx::Rect(size.width(), size.height()));
 }
 
 void SoftwareRenderer::Finish() {}
@@ -284,7 +290,7 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
                                        quad->IsRightEdge();
     if (settings_->allow_antialiasing && all_four_edges_are_exterior)
       current_paint_.setAntiAlias(true);
-    current_paint_.setFilterBitmap(true);
+    current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   }
 
   if (quad->ShouldDrawWithBlending()) {
@@ -384,12 +390,12 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
                "SoftwareRenderer::DrawPictureQuad");
 
   // Create and run on-demand raster task for tile.
-  scoped_refptr<internal::Task> on_demand_raster_task(
+  scoped_refptr<Task> on_demand_raster_task(
       new OnDemandRasterTaskImpl(quad->picture_pile,
                                  current_canvas_,
                                  quad->content_rect,
                                  quad->contents_scale));
-  RunOnDemandRasterTask(on_demand_raster_task.get());
+  client_->RunOnDemandRasterTask(on_demand_raster_task.get());
 
   current_canvas_->setDrawFilter(NULL);
 }
@@ -448,8 +454,7 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
     SkMatrix matrix;
     matrix.setRectToRect(sk_uv_rect, quad_rect, SkMatrix::kFill_ScaleToFit);
     skia::RefPtr<SkShader> shader = skia::AdoptRef(
-        SkShader::CreateBitmapShader(*bitmap, tile_mode, tile_mode));
-    shader->setLocalMatrix(matrix);
+        SkShader::CreateBitmapShader(*bitmap, tile_mode, tile_mode, &matrix));
     SkPaint paint;
     paint.setStyle(SkPaint::kFill_Style);
     paint.setShader(shader.get());
@@ -482,7 +487,7 @@ void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
       QuadVertexRect(), quad->rect, quad->visible_rect);
 
   SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
-  current_paint_.setFilterBitmap(true);
+  current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   current_canvas_->drawBitmapRectToRect(
       *lock.sk_bitmap(),
       &uv_rect,
@@ -525,33 +530,28 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     // TODO(ajuma): Apply the filter in the same pass as the content where
     // possible (e.g. when there's no origin offset). See crbug.com/308201.
     if (filter) {
-      bool is_opaque = false;
-      skia::RefPtr<SkBaseDevice> device =
-          skia::AdoptRef(new SkBitmapDevice(SkBitmap::kARGB_8888_Config,
-                                            content_texture->size().width(),
-                                            content_texture->size().height(),
-                                            is_opaque));
-      SkCanvas canvas(device.get());
-      SkPaint paint;
-      paint.setImageFilter(filter.get());
-      canvas.clear(SK_ColorTRANSPARENT);
-      canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
-                       SkIntToScalar(-quad->rect.origin().y()));
-      canvas.drawSprite(*content, 0, 0, &paint);
-      bool will_change_pixels = false;
-      filter_bitmap = device->accessBitmap(will_change_pixels);
+      SkImageInfo info = SkImageInfo::MakeN32Premul(
+          content_texture->size().width(), content_texture->size().height());
+      if (filter_bitmap.allocPixels(info)) {
+        SkCanvas canvas(filter_bitmap);
+        SkPaint paint;
+        paint.setImageFilter(filter.get());
+        canvas.clear(SK_ColorTRANSPARENT);
+        canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
+                         SkIntToScalar(-quad->rect.origin().y()));
+        canvas.drawSprite(*content, 0, 0, &paint);
+      }
     }
   }
 
   skia::RefPtr<SkShader> shader;
   if (filter_bitmap.isNull()) {
     shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-        *content, content_tile_mode, content_tile_mode));
+        *content, content_tile_mode, content_tile_mode, &content_mat));
   } else {
     shader = skia::AdoptRef(SkShader::CreateBitmapShader(
-        filter_bitmap, content_tile_mode, content_tile_mode));
+        filter_bitmap, content_tile_mode, content_tile_mode, &content_mat));
   }
-  shader->setLocalMatrix(content_mat);
   current_paint_.setShader(shader.get());
 
   if (quad->mask_resource_id) {
@@ -573,16 +573,18 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     SkMatrix mask_mat;
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
 
-    skia::RefPtr<SkShader> mask_shader = skia::AdoptRef(
-        SkShader::CreateBitmapShader(*mask, mask_tile_mode, mask_tile_mode));
-    mask_shader->setLocalMatrix(mask_mat);
+    skia::RefPtr<SkShader> mask_shader =
+        skia::AdoptRef(SkShader::CreateBitmapShader(
+            *mask, mask_tile_mode, mask_tile_mode, &mask_mat));
 
     SkPaint mask_paint;
     mask_paint.setShader(mask_shader.get());
 
+    SkLayerRasterizer::Builder builder;
+    builder.addLayer(mask_paint);
+
     skia::RefPtr<SkLayerRasterizer> mask_rasterizer =
-        skia::AdoptRef(new SkLayerRasterizer);
-    mask_rasterizer->addLayer(mask_paint);
+        skia::AdoptRef(builder.detachRasterizer());
 
     current_paint_.setRasterizer(mask_rasterizer.get());
     current_canvas_->drawRect(dest_visible_rect, current_paint_);
@@ -642,24 +644,8 @@ void SoftwareRenderer::EnsureBackbuffer() {
   is_backbuffer_discarded_ = false;
 }
 
-void SoftwareRenderer::GetFramebufferPixels(void* pixels,
-                                            const gfx::Rect& rect) {
-  TRACE_EVENT0("cc", "SoftwareRenderer::GetFramebufferPixels");
-  SkBitmap subset_bitmap;
-  gfx::Rect frame_rect(rect);
-  frame_rect += current_viewport_rect_.OffsetFromOrigin();
-  output_device_->CopyToBitmap(frame_rect, &subset_bitmap);
-  subset_bitmap.copyPixelsTo(pixels,
-                             4 * frame_rect.width() * frame_rect.height(),
-                             4 * frame_rect.width());
-}
-
-void SoftwareRenderer::SetVisible(bool visible) {
-  if (visible_ == visible)
-    return;
-  visible_ = visible;
-
-  if (visible_)
+void SoftwareRenderer::DidChangeVisibility() {
+  if (visible())
     EnsureBackbuffer();
   else
     DiscardBackbuffer();

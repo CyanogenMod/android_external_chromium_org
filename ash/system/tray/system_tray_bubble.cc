@@ -53,7 +53,7 @@ class TrayPopupItemContainer : public views::View {
     }
     views::BoxLayout* layout = new views::BoxLayout(
         views::BoxLayout::kVertical, 0, 0, 0);
-    layout->set_spread_blank_space(true);
+    layout->set_main_axis_alignment(views::BoxLayout::MAIN_AXIS_ALIGNMENT_FILL);
     SetLayoutManager(layout);
     SetPaintToLayer(view->layer() != NULL);
     if (view->layer())
@@ -127,8 +127,6 @@ class AnimationObserverDeleteLayer : public ui::ImplicitAnimationObserver {
 
 }  // namespace
 
-namespace internal {
-
 // SystemTrayBubble
 
 SystemTrayBubble::SystemTrayBubble(
@@ -158,7 +156,7 @@ void SystemTrayBubble::UpdateView(
   if (bubble_type != bubble_type_) {
     base::TimeDelta swipe_duration =
         base::TimeDelta::FromMilliseconds(kSwipeDelayMS);
-    scoped_layer.reset(bubble_view_->RecreateLayer());
+    scoped_layer = bubble_view_->RecreateLayer();
     // Keep the reference to layer as we need it after releasing it.
     ui::Layer* layer = scoped_layer.get();
     DCHECK(layer);
@@ -267,7 +265,7 @@ void SystemTrayBubble::InitView(views::View* anchor,
 
   if (bubble_view_->CanActivate()) {
     bubble_view_->NotifyAccessibilityEvent(
-        ui::AccessibilityTypes::EVENT_ALERT, true);
+        ui::AX_EVENT_ALERT, true);
   }
 }
 
@@ -352,6 +350,13 @@ bool SystemTrayBubble::ShouldShowShelf() const {
 
 void SystemTrayBubble::CreateItemViews(user::LoginStatus login_status) {
   std::vector<views::View*> item_views;
+  // If a system modal dialog is present, create the same tray as
+  // in locked state.
+  if (Shell::GetInstance()->IsSystemModalWindowOpen() &&
+      login_status != user::LOGGED_IN_NONE) {
+    login_status = user::LOGGED_IN_LOCKED;
+  }
+
   views::View* focus_view = NULL;
   for (size_t i = 0; i < items_.size(); ++i) {
     views::View* view = NULL;
@@ -384,5 +389,4 @@ void SystemTrayBubble::CreateItemViews(user::LoginStatus login_status) {
     focus_view->RequestFocus();
 }
 
-}  // namespace internal
 }  // namespace ash

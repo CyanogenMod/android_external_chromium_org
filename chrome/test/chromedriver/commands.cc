@@ -21,6 +21,7 @@
 #include "chrome/test/chromedriver/capabilities.h"
 #include "chrome/test/chromedriver/chrome/chrome.h"
 #include "chrome/test/chromedriver/chrome/status.h"
+#include "chrome/test/chromedriver/chrome/version.h"
 #include "chrome/test/chromedriver/logging.h"
 #include "chrome/test/chromedriver/session.h"
 #include "chrome/test/chromedriver/session_thread_map.h"
@@ -55,7 +56,7 @@ void ExecuteCreateSession(
   if (new_id.empty())
     new_id = GenerateId();
   scoped_ptr<Session> session(new Session(new_id));
-  scoped_ptr<base::Thread> thread(new base::Thread(new_id.c_str()));
+  scoped_ptr<base::Thread> thread(new base::Thread(new_id));
   if (!thread->Start()) {
     callback.Run(
         Status(kUnknownError, "failed to start a thread for the new session"),
@@ -178,8 +179,9 @@ void ExecuteSessionCommandOnSessionThread(
       }
     }
     if (status.IsError()) {
-      status.AddDetails(
-          "Session info: chrome=" + session->chrome->GetVersion());
+      const BrowserInfo* browser_info = session->chrome->GetBrowserInfo();
+      status.AddDetails("Session info: " + browser_info->browser_name + "=" +
+                        browser_info->browser_version);
     }
   }
 

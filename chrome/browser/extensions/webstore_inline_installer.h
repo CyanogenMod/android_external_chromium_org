@@ -47,8 +47,8 @@ class WebstoreInlineInstaller
   virtual bool ShouldShowPostInstallUI() const OVERRIDE;
   virtual bool ShouldShowAppInstalledBubble() const OVERRIDE;
   virtual content::WebContents* GetWebContents() const OVERRIDE;
-  virtual scoped_ptr<ExtensionInstallPrompt::Prompt>
-      CreateInstallPrompt() const OVERRIDE;
+  virtual scoped_refptr<ExtensionInstallPrompt::Prompt> CreateInstallPrompt()
+      const OVERRIDE;
   virtual bool CheckInlineInstallPermitted(
       const base::DictionaryValue& webstore_data,
       std::string* error) const OVERRIDE;
@@ -58,8 +58,7 @@ class WebstoreInlineInstaller
 
  private:
   // content::WebContentsObserver interface implementation.
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // Checks whether the install is initiated by a page in a verified site
   // (which is at least a domain, but can also have a port or a path).

@@ -17,24 +17,24 @@ URLsModifiedDetails::~URLsModifiedDetails() {}
 
 URLsDeletedDetails::URLsDeletedDetails()
     : all_history(false),
-      archived(false) {
+      expired(false) {
 }
 
 URLsDeletedDetails::~URLsDeletedDetails() {}
 
 KeywordSearchUpdatedDetails::KeywordSearchUpdatedDetails(
-    const GURL& url,
-    TemplateURLID keyword_id,
+    const URLRow& url_row,
+    KeywordID keyword_id,
     const base::string16& term)
-    : url(url),
+    : url_row(url_row),
       keyword_id(keyword_id),
       term(term) {
 }
 
 KeywordSearchUpdatedDetails::~KeywordSearchUpdatedDetails() {}
 
-KeywordSearchDeletedDetails::KeywordSearchDeletedDetails(const GURL& url)
-    : url(url) {
+KeywordSearchDeletedDetails::KeywordSearchDeletedDetails(URLID url_row_id)
+    : url_row_id(url_row_id) {
 }
 
 KeywordSearchDeletedDetails::~KeywordSearchDeletedDetails() {}

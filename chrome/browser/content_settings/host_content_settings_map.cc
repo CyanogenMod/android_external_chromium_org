@@ -23,17 +23,19 @@
 #include "chrome/browser/content_settings/content_settings_provider.h"
 #include "chrome/browser/content_settings/content_settings_rule.h"
 #include "chrome/browser/content_settings/content_settings_utils.h"
+#include "chrome/browser/extensions/api/content_settings/content_settings_service.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/common/constants.h"
 #include "net/base/net_errors.h"
 #include "net/base/static_cookie_policy.h"
@@ -119,7 +121,8 @@ void HostContentSettingsMap::RegisterExtensionService(
 
   content_settings::ObservableProvider* custom_extension_provider =
       new content_settings::CustomExtensionProvider(
-          extension_service->GetContentSettingsStore(),
+          extensions::ContentSettingsService::Get(
+              extension_service->GetBrowserContext())->content_settings_store(),
           is_off_the_record_);
   custom_extension_provider->AddObserver(this);
   content_settings_providers_[CUSTOM_EXTENSION_PROVIDER] =
@@ -546,6 +549,11 @@ bool HostContentSettingsMap::ShouldAllowAllContent(
       content_type == CONTENT_SETTINGS_TYPE_MIDI_SYSEX) {
     return false;
   }
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS)
+  if (content_type == CONTENT_SETTINGS_TYPE_PROTECTED_MEDIA_IDENTIFIER) {
+    return false;
+  }
+#endif
   if (secondary_url.SchemeIs(content::kChromeUIScheme) &&
       content_type == CONTENT_SETTINGS_TYPE_COOKIES &&
       primary_url.SchemeIsSecure()) {

@@ -31,13 +31,25 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
 
     Args:
       columns: A list of require columns, e.g., ['pid', 'pss'].
-      pid: If nont None, returns only the information of the process
+      pid: If not None, returns only the information of the process
          with the pid.
     """
     args = ['ps']
     args.extend(['-p', str(pid)] if pid != None else ['-e'])
     for c in columns:
       args.extend(['-o', c + '='])
+    return self._RunCommand(args).splitlines()
+
+  def _GetTopOutput(self, pid, columns):
+    """Returns output of the 'top' command as a list of lines.
+
+    Args:
+      pid: pid of process to examine.
+      columns: A list of require columns, e.g., ['idlew', 'vsize'].
+    """
+    args = ['top']
+    args.extend(['-pid', str(pid), '-l', '1', '-s', '0', '-stats',
+        ','.join(columns)])
     return self._RunCommand(args).splitlines()
 
   def GetChildPids(self, pid):
@@ -56,11 +68,14 @@ class PosixPlatformBackend(desktop_platform_backend.DesktopPlatformBackend):
     command = self._GetPsOutput(['command'], pid)
     return command[0] if command else None
 
-  def GetFlushUtilityName(self):
-    return 'clear_system_cache'
-
   def CanLaunchApplication(self, application):
     return bool(distutils.spawn.find_executable(application))
+
+  def IsApplicationRunning(self, application):
+    ps_output = self._GetPsOutput(['command'])
+    application_re = re.compile(
+        '(.*%s|^)%s(\s|$)' % (os.path.sep, application))
+    return any(application_re.match(cmd) for cmd in ps_output)
 
   def LaunchApplication(
       self, application, parameters=None, elevate_privilege=False):

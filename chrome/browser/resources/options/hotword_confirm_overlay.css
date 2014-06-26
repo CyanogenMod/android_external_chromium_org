@@ -6,3 +6,7 @@
 #hotword-confirm-overlay {
   width: 500px;
 }
+
+#audio-logging-bar input {
+  bottom: 6px;
+}

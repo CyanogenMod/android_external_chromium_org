@@ -35,10 +35,13 @@ namespace content {
 // webrtc::VideoEncoder class for WebRTC.  Internally, VEA methods are
 // trampolined to a private RTCVideoEncoder::Impl instance.  The Impl class runs
 // on the worker thread queried from the |gpu_factories_|, which is presently
-// the media thread.  RTCVideoEncoder itself is run and destroyed on the thread
-// it is constructed on, which is presently the libjingle worker thread.
-// Callbacks from the Impl due to its VEA::Client notifications are also posted
-// back to RTCVideoEncoder on this thread.
+// the media thread.  RTCVideoEncoder is sychronized by webrtc::VideoSender.
+// webrtc::VideoEncoder methods do not run concurrently. RTCVideoEncoder is run
+// and destroyed on the thread it is constructed on, which is presently the
+// libjingle worker thread. Encode is run on ViECaptureThread. SetRates and
+// SetChannelParameters are run on ProcessThread or the libjingle worker thread.
+// Callbacks from the Impl due to its VEA::Client notifications are posted back
+// to RTCVideoEncoder on the libjingle worker thread.
 class CONTENT_EXPORT RTCVideoEncoder
     : NON_EXPORTED_BASE(public webrtc::VideoEncoder) {
  public:
@@ -69,7 +72,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Return an encoded output buffer to WebRTC.
   void ReturnEncodedImage(scoped_ptr<webrtc::EncodedImage> image,
-                          int32 bitstream_buffer_id);
+                          int32 bitstream_buffer_id,
+                          uint16 picture_id);
 
   void NotifyError(int32_t error);
 
@@ -100,7 +104,8 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   // Weak pointer factory for posting back VEA::Client notifications to
   // RTCVideoEncoder.
-  base::WeakPtrFactory<RTCVideoEncoder> weak_this_factory_;
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<RTCVideoEncoder> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RTCVideoEncoder);
 };

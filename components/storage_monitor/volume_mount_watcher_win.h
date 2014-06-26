@@ -20,6 +20,8 @@
 #include "components/storage_monitor/storage_info.h"
 #include "components/storage_monitor/storage_monitor.h"
 
+namespace storage_monitor {
+
 class TestVolumeMountWatcherWin;
 
 // This class watches the volume mount points and sends notifications to
@@ -46,6 +48,9 @@ class VolumeMountWatcherWin {
   // Processes DEV_BROADCAST_VOLUME messages and triggers a
   // notification if appropriate.
   void OnWindowMessage(UINT event_type, LPARAM data);
+
+  // Processes SHCNE_MEDIAINSERTED (and REMOVED).
+  void OnMediaChange(WPARAM wparam, LPARAM lparam);
 
   // Set the volume notifications object to be used when new
   // removable volumes are found.
@@ -115,5 +120,7 @@ class VolumeMountWatcherWin {
 
   DISALLOW_COPY_AND_ASSIGN(VolumeMountWatcherWin);
 };
+
+}  // namespace storage_monitor
 
 #endif  // COMPONENTS_STORAGE_MONITOR_VOLUME_MOUNT_WATCHER_WIN_H_

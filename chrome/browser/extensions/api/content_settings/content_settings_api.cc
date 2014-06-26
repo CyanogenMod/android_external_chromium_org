@@ -10,23 +10,22 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_api_constants.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_helpers.h"
+#include "chrome/browser/extensions/api/content_settings/content_settings_service.h"
 #include "chrome/browser/extensions/api/content_settings/content_settings_store.h"
 #include "chrome/browser/extensions/api/preference/preference_api_constants.h"
 #include "chrome/browser/extensions/api/preference/preference_helpers.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/api/content_settings.h"
 #include "content/public/browser/plugin_service.h"
-#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_prefs_scope.h"
 #include "extensions/common/error_utils.h"
 
 using content::BrowserThread;
@@ -61,7 +60,7 @@ namespace extensions {
 namespace helpers = content_settings_helpers;
 namespace keys = content_settings_api_constants;
 
-bool ContentSettingsContentSettingClearFunction::RunImpl() {
+bool ContentSettingsContentSettingClearFunction::RunSync() {
   ContentSettingsType content_type;
   EXTENSION_FUNCTION_VALIDATE(RemoveContentType(args_.get(), &content_type));
 
@@ -88,15 +87,14 @@ bool ContentSettingsContentSettingClearFunction::RunImpl() {
     }
   }
 
-  ContentSettingsStore* store = extensions::ExtensionSystem::Get(GetProfile())
-                                    ->extension_service()
-                                    ->GetContentSettingsStore();
+  ContentSettingsStore* store =
+      ContentSettingsService::Get(GetProfile())->content_settings_store();
   store->ClearContentSettingsForExtension(extension_id(), scope);
 
   return true;
 }
 
-bool ContentSettingsContentSettingGetFunction::RunImpl() {
+bool ContentSettingsContentSettingGetFunction::RunSync() {
   ContentSettingsType content_type;
   EXTENSION_FUNCTION_VALIDATE(RemoveContentType(args_.get(), &content_type));
 
@@ -170,7 +168,7 @@ bool ContentSettingsContentSettingGetFunction::RunImpl() {
   return true;
 }
 
-bool ContentSettingsContentSettingSetFunction::RunImpl() {
+bool ContentSettingsContentSettingSetFunction::RunSync() {
   ContentSettingsType content_type;
   EXTENSION_FUNCTION_VALIDATE(RemoveContentType(args_.get(), &content_type));
 
@@ -240,16 +238,15 @@ bool ContentSettingsContentSettingSetFunction::RunImpl() {
     return false;
   }
 
-  ContentSettingsStore* store = extensions::ExtensionSystem::Get(GetProfile())
-                                    ->extension_service()
-                                    ->GetContentSettingsStore();
+  ContentSettingsStore* store =
+      ContentSettingsService::Get(GetProfile())->content_settings_store();
   store->SetExtensionContentSetting(extension_id(), primary_pattern,
                                     secondary_pattern, content_type,
                                     resource_identifier, setting, scope);
   return true;
 }
 
-bool ContentSettingsContentSettingGetResourceIdentifiersFunction::RunImpl() {
+bool ContentSettingsContentSettingGetResourceIdentifiersFunction::RunAsync() {
   ContentSettingsType content_type;
   EXTENSION_FUNCTION_VALIDATE(RemoveContentType(args_.get(), &content_type));
 

@@ -9,9 +9,8 @@ from telemetry.page.actions import page_action
 class PinchAction(GestureAction):
   def __init__(self, attributes=None):
     super(PinchAction, self).__init__(attributes)
-    self._SetTimelineMarkerBaseName('PinchAction::RunAction')
 
-  def WillRunAction(self, page, tab):
+  def WillRunAction(self, tab):
     for js_file in ['gesture_common.js', 'pinch.js']:
       with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
         js = f.read()
@@ -22,10 +21,20 @@ class PinchAction(GestureAction):
       raise page_action.PageActionNotSupported(
           'Synthetic pinch not supported for this browser')
 
+    # TODO(dominikg): Remove once JS interface changes have rolled into stable.
+    if not tab.EvaluateJavaScript('chrome.gpuBenchmarking.newPinchInterface'):
+      raise page_action.PageActionNotSupported(
+          'This version of the browser doesn\'t support the new JS interface '
+          'for pinch gestures.')
+
     if (GestureAction.GetGestureSourceTypeFromOptions(tab) ==
         'chrome.gpuBenchmarking.MOUSE_INPUT'):
       raise page_action.PageActionNotSupported(
           'Pinch page action does not support mouse input')
+
+    if not GestureAction.IsGestureSourceTypeSupported(tab, 'touch'):
+      raise page_action.PageActionNotSupported(
+          'Touch input not supported for this browser')
 
     done_callback = 'function() { window.__pinchActionDone = true; }'
     tab.ExecuteJavaScript("""
@@ -33,26 +42,43 @@ class PinchAction(GestureAction):
         window.__pinchAction = new __PinchAction(%s);"""
         % done_callback)
 
-  def RunGesture(self, page, tab, previous_action):
-    zoom_in = True
-    if hasattr(self, 'zoom_in'):
-      zoom_in = self.zoom_in
+  @staticmethod
+  def _GetDefaultScaleFactorForPage(tab):
+    current_scale_factor = tab.EvaluateJavaScript(
+        'window.outerWidth / window.innerWidth')
+    return 3.0 / current_scale_factor
 
-    pixels_to_move = 4000
-    if hasattr(self, 'pixels_to_move'):
-      pixels_to_move = self.pixels_to_move
+  def RunGesture(self, tab):
+    left_anchor_percentage = getattr(self, 'left_anchor_percentage', 0.5)
+    top_anchor_percentage = getattr(self, 'top_anchor_percentage', 0.5)
+    scale_factor = getattr(self, 'scale_factor',
+                           PinchAction._GetDefaultScaleFactorForPage(tab))
+    speed = getattr(self, 'speed_in_pixels_per_second', 800)
 
-    tab.ExecuteJavaScript('window.__pinchAction.start(%s, %f)'
-                          % ("true" if zoom_in else "false", pixels_to_move))
+    if hasattr(self, 'element_function'):
+      tab.ExecuteJavaScript("""
+          (%s)(function(element) { window.__pinchAction.start(
+             { element: element,
+               left_anchor_percentage: %s,
+               top_anchor_percentage: %s,
+               scale_factor: %s,
+               speed: %s })
+             });""" % (self.element_function,
+                       left_anchor_percentage,
+                       top_anchor_percentage,
+                       scale_factor,
+                       speed))
+    else:
+      tab.ExecuteJavaScript("""
+          window.__pinchAction.start(
+          { element: document.body,
+            left_anchor_percentage: %s,
+            top_anchor_percentage: %s,
+            scale_factor: %s,
+            speed: %s });"""
+        % (left_anchor_percentage,
+           top_anchor_percentage,
+           scale_factor,
+           speed))
 
     tab.WaitForJavaScriptExpression('window.__pinchActionDone', 60)
-
-  def CanBeBound(self):
-    return True
-
-  def BindMeasurementJavaScript(self, tab, start_js, stop_js):
-    # Make the pinch action start and stop measurement automatically.
-    tab.ExecuteJavaScript("""
-        window.__pinchAction.beginMeasuringHook = function() { %s };
-        window.__pinchAction.endMeasuringHook = function() { %s };
-    """ % (start_js, stop_js))

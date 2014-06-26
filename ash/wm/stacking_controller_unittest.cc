@@ -8,14 +8,13 @@
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/aura/window_event_dispatcher.h"
+#include "ui/wm/core/window_util.h"
 
 using aura::Window;
 
 namespace ash {
-namespace internal {
 
 class StackingControllerTest : public test::AshTestBase {
  public:
@@ -49,7 +48,7 @@ TEST_F(StackingControllerTest, TransientParent) {
 
   // Window with a transient parent.
   scoped_ptr<Window> w1(CreateTestWindow());
-  views::corewm::AddTransientChild(w2.get(), w1.get());
+  ::wm::AddTransientChild(w2.get(), w1.get());
   w1->SetBounds(gfx::Rect(10, 11, 250, 251));
   ParentWindowInPrimaryRootWindow(w1.get());
   w1->Show();
@@ -60,5 +59,4 @@ TEST_F(StackingControllerTest, TransientParent) {
   EXPECT_EQ(launcher, w1->parent());
 }
 
-}  // namespace internal
 }  // namespace ash

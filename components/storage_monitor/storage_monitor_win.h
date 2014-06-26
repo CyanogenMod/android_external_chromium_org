@@ -14,6 +14,8 @@ namespace base {
 class FilePath;
 }
 
+namespace storage_monitor {
+
 class PortableDeviceWatcherWin;
 class TestStorageMonitorWin;
 class VolumeMountWatcherWin;
@@ -48,6 +50,8 @@ class StorageMonitorWin : public StorageMonitor {
   class PortableDeviceNotifications;
   friend class TestStorageMonitorWin;
 
+  void MediaChangeNotificationRegister();
+
   // Gets the removable storage information given a |device_path|. On success,
   // returns true and fills in |info|.
   bool GetDeviceInfo(const base::FilePath& device_path,
@@ -60,6 +64,7 @@ class StorageMonitorWin : public StorageMonitor {
                            LPARAM lparam);
 
   void OnDeviceChange(UINT event_type, LPARAM data);
+  void OnMediaChange(WPARAM wparam, LPARAM lparam);
 
   // The window class of |window_|.
   ATOM window_class_;
@@ -67,6 +72,9 @@ class StorageMonitorWin : public StorageMonitor {
   // The handle of the module that contains the window procedure of |window_|.
   HMODULE instance_;
   HWND window_;
+
+  // The handle of a registration for shell notifications.
+  ULONG shell_change_notify_id_;
 
   // The volume mount point watcher, used to manage the mounted devices.
   scoped_ptr<VolumeMountWatcherWin> volume_mount_watcher_;
@@ -77,5 +85,7 @@ class StorageMonitorWin : public StorageMonitor {
 
   DISALLOW_COPY_AND_ASSIGN(StorageMonitorWin);
 };
+
+}  // namespace storage_monitor
 
 #endif  // COMPONENTS_STORAGE_MONITOR_STORAGE_MONITOR_WIN_H_

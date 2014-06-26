@@ -13,8 +13,6 @@ namespace switches {
 
 extern const char kAllowHTTPBackgroundPage[];
 extern const char kAllowLegacyExtensionManifests[];
-extern const char kAllowScriptingGallery[];
-extern const char kEasyOffStoreExtensionInstall[];
 extern const char kEnableExperimentalExtensionApis[];
 extern const char kEnableOverrideBookmarksUI[];
 extern const char kErrorConsole[];
@@ -24,11 +22,13 @@ extern const char kExtensionProcess[];
 extern const char kExtensionsOnChromeURLs[];
 extern const char kForceDevModeHighlighting[];
 extern const char kGlobalCommands[];
-extern const char kPromptForExternalExtensions[];
+extern const char kScriptsRequireAction[];
+extern const char kEnableScriptsRequireAction[];
 extern const char kShowComponentExtensionOptions[];
+extern const char kWhitelistedExtensionID[];
 
 }  // namespace switches
 
 }  // namespace extensions
 
-#endif // EXTENSIONS_COMMON_SWITCHES_H_
+#endif  // EXTENSIONS_COMMON_SWITCHES_H_

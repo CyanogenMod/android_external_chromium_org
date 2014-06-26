@@ -11,8 +11,9 @@
 #include "base/strings/string_util.h"
 #include "base/threading/worker_pool.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/api/networking_private/networking_private_crypto.h"
+#include "chrome/browser/extensions/api/networking_private/networking_private_credentials_getter.h"
 #include "chrome/common/extensions/api/networking_private.h"
+#include "chrome/common/extensions/api/networking_private/networking_private_crypto.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/utility_process_host.h"
 
@@ -49,15 +50,41 @@ class CryptoVerifyImpl : public NetworkingPrivateServiceClient::CryptoVerify {
   virtual void VerifyDestination(scoped_ptr<base::ListValue> args,
                                  bool* verified,
                                  std::string* error) OVERRIDE {
-    using extensions::api::networking_private::VerifyDestination::Params;
+    using api::networking_private::VerifyDestination::Params;
     scoped_ptr<Params> params = Params::Create(*args);
     *verified = VerifyDestination(params->properties);
+  }
+
+  virtual void VerifyAndEncryptCredentials(
+      scoped_ptr<base::ListValue> args,
+      const VerifyAndEncryptCredentialsCallback& callback) OVERRIDE {
+    using api::networking_private::VerifyAndEncryptCredentials::Params;
+    scoped_ptr<Params> params = Params::Create(*args);
+    std::string public_key;
+
+    if (!VerifyDestination(params->properties)) {
+      callback.Run("", "VerifyError");
+      return;
+    }
+
+    if (!base::Base64Decode(params->properties.public_key, &public_key)) {
+      callback.Run("", "DecodeError");
+      return;
+    }
+
+    scoped_ptr<NetworkingPrivateCredentialsGetter> credentials_getter(
+        NetworkingPrivateCredentialsGetter::Create());
+
+    // Start getting credentials. On Windows |callback| will be called
+    // asynchronously on a different thread after |credentials_getter|
+    // is deleted.
+    credentials_getter->Start(params->network_guid, public_key, callback);
   }
 
   virtual void VerifyAndEncryptData(scoped_ptr<base::ListValue> args,
                                     std::string* base64_encoded_ciphertext,
                                     std::string* error) OVERRIDE {
-    using extensions::api::networking_private::VerifyAndEncryptData::Params;
+    using api::networking_private::VerifyAndEncryptData::Params;
     scoped_ptr<Params> params = Params::Create(*args);
 
     if (!VerifyDestination(params->properties)) {
@@ -72,13 +99,15 @@ class CryptoVerifyImpl : public NetworkingPrivateServiceClient::CryptoVerify {
     }
 
     NetworkingPrivateCrypto crypto;
-    std::string ciphertext;
-    if (!crypto.EncryptByteString(public_key, params->data, &ciphertext)) {
+    std::vector<uint8> public_key_data(public_key.begin(), public_key.end());
+    std::vector<uint8> ciphertext;
+    if (!crypto.EncryptByteString(public_key_data, params->data, &ciphertext)) {
       *error = "EncryptError";
       return;
     }
 
-    base::Base64Encode(ciphertext, base64_encoded_ciphertext);
+    base::Base64Encode(std::string(ciphertext.begin(), ciphertext.end()),
+                       base64_encoded_ciphertext);
   }
 };
 
@@ -88,6 +117,18 @@ void ShutdownServicesOnWorkerThread(
     scoped_ptr<NetworkingPrivateServiceClient::CryptoVerify> crypto_verify) {
   DCHECK(wifi_service.get());
   DCHECK(crypto_verify.get());
+}
+
+// Forwards call back from VerifyAndEncryptCredentials on random thread to
+// |callback| on correct |callback_loop_proxy|.
+void AfterVerifyAndEncryptCredentialsRelay(
+    const NetworkingPrivateServiceClient::CryptoVerify::
+        VerifyAndEncryptCredentialsCallback& callback,
+    scoped_refptr<base::MessageLoopProxy> callback_loop_proxy,
+    const std::string& key_data,
+    const std::string& error) {
+  callback_loop_proxy->PostTask(FROM_HERE,
+                                base::Bind(callback, key_data, error));
 }
 
 }  // namespace
@@ -107,6 +148,12 @@ NetworkingPrivateServiceClient::NetworkingPrivateServiceClient(
   task_runner_->PostTask(
     FROM_HERE,
     base::Bind(
+        &WiFiService::Initialize,
+        base::Unretained(wifi_service_.get()),
+        task_runner_));
+  task_runner_->PostTask(
+    FROM_HERE,
+    base::Bind(
         &WiFiService::SetEventObservers,
         base::Unretained(wifi_service_.get()),
         base::MessageLoopProxy::current(),
@@ -117,12 +164,6 @@ NetworkingPrivateServiceClient::NetworkingPrivateServiceClient(
             &NetworkingPrivateServiceClient::
                 OnNetworkListChangedEventOnUIThread,
             weak_factory_.GetWeakPtr())));
-  task_runner_->PostTask(
-    FROM_HERE,
-    base::Bind(
-        &WiFiService::Initialize,
-        base::Unretained(wifi_service_.get()),
-        task_runner_));
   net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
 }
 
@@ -143,7 +184,7 @@ NetworkingPrivateServiceClient::ServiceCallbacks::ServiceCallbacks() {}
 NetworkingPrivateServiceClient::ServiceCallbacks::~ServiceCallbacks() {}
 
 void NetworkingPrivateServiceClient::Shutdown() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
   // Clear callbacks map to release callbacks from UI thread.
   callbacks_map_.Clear();
@@ -275,7 +316,8 @@ void NetworkingPrivateServiceClient::GetVisibleNetworks(
       base::Bind(&WiFiService::GetVisibleNetworks,
                  base::Unretained(wifi_service_.get()),
                  network_type,
-                 networks),
+                 networks,
+                 false),
       base::Bind(&NetworkingPrivateServiceClient::AfterGetVisibleNetworks,
                  weak_factory_.GetWeakPtr(),
                  service_callbacks->id,
@@ -409,6 +451,29 @@ void NetworkingPrivateServiceClient::VerifyDestination(
                  service_callbacks->id,
                  base::Owned(result),
                  base::Owned(error)));
+}
+
+void NetworkingPrivateServiceClient::VerifyAndEncryptCredentials(
+    scoped_ptr<base::ListValue> args,
+    const StringResultCallback& callback,
+    const CryptoErrorCallback& error_callback) {
+  ServiceCallbacks* service_callbacks = AddServiceCallbacks();
+  service_callbacks->crypto_error_callback = error_callback;
+  service_callbacks->verify_and_encrypt_credentials_callback = callback;
+
+  CryptoVerify::VerifyAndEncryptCredentialsCallback callback_relay(base::Bind(
+      &AfterVerifyAndEncryptCredentialsRelay,
+      base::Bind(
+          &NetworkingPrivateServiceClient::AfterVerifyAndEncryptCredentials,
+          weak_factory_.GetWeakPtr(),
+          service_callbacks->id),
+      base::MessageLoopProxy::current()));
+
+  task_runner_->PostTask(FROM_HERE,
+                         base::Bind(&CryptoVerify::VerifyAndEncryptCredentials,
+                                    base::Unretained(crypto_verify_.get()),
+                                    base::Passed(&args),
+                                    callback_relay));
 }
 
 void NetworkingPrivateServiceClient::VerifyAndEncryptData(
@@ -545,6 +610,25 @@ void NetworkingPrivateServiceClient::AfterVerifyDestination(
   RemoveServiceCallbacks(callback_id);
 }
 
+void NetworkingPrivateServiceClient::AfterVerifyAndEncryptCredentials(
+    ServiceCallbacksID callback_id,
+    const std::string& encrypted_data,
+    const std::string& error) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  ServiceCallbacks* service_callbacks = callbacks_map_.Lookup(callback_id);
+  DCHECK(service_callbacks);
+  if (!error.empty()) {
+    DCHECK(!service_callbacks->crypto_error_callback.is_null());
+    service_callbacks->crypto_error_callback.Run(error, error);
+  } else {
+    DCHECK(
+        !service_callbacks->verify_and_encrypt_credentials_callback.is_null());
+    service_callbacks->verify_and_encrypt_credentials_callback.Run(
+        encrypted_data);
+  }
+  RemoveServiceCallbacks(callback_id);
+}
+
 void NetworkingPrivateServiceClient::AfterVerifyAndEncryptData(
     ServiceCallbacksID callback_id,
     const std::string* result,
@@ -563,7 +647,7 @@ void NetworkingPrivateServiceClient::AfterVerifyAndEncryptData(
 
 void NetworkingPrivateServiceClient::OnNetworksChangedEventOnUIThread(
     const std::vector<std::string>& network_guids) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   FOR_EACH_OBSERVER(Observer,
                     network_events_observers_,
                     OnNetworksChangedEvent(network_guids));
@@ -571,7 +655,7 @@ void NetworkingPrivateServiceClient::OnNetworksChangedEventOnUIThread(
 
 void NetworkingPrivateServiceClient::OnNetworkListChangedEventOnUIThread(
     const std::vector<std::string>& network_guids) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   FOR_EACH_OBSERVER(Observer,
                     network_events_observers_,
                     OnNetworkListChangedEvent(network_guids));

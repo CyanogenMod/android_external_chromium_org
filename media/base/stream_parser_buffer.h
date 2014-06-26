@@ -5,6 +5,8 @@
 #ifndef MEDIA_BASE_STREAM_PARSER_BUFFER_H_
 #define MEDIA_BASE_STREAM_PARSER_BUFFER_H_
 
+#include <deque>
+
 #include "media/base/decoder_buffer.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/media_export.h"
@@ -21,6 +23,7 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
   typedef StreamParser::TrackId TrackId;
 
   static scoped_refptr<StreamParserBuffer> CreateEOSBuffer();
+
   static scoped_refptr<StreamParserBuffer> CopyFrom(
       const uint8* data, int data_size, bool is_keyframe, Type type,
       TrackId track_id);
@@ -33,7 +36,7 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
   // Decode timestamp. If not explicitly set, or set to kNoTimestamp(), the
   // value will be taken from the normal timestamp.
   base::TimeDelta GetDecodeTimestamp() const;
-  void SetDecodeTimestamp(const base::TimeDelta& timestamp);
+  void SetDecodeTimestamp(base::TimeDelta timestamp);
 
   // Gets/sets the ID of the decoder config associated with this buffer.
   int GetConfigId() const;
@@ -47,12 +50,36 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
   // meaningless for EOS buffers.
   TrackId track_id() const { return track_id_; }
 
-  // Buffers to be exhausted before using the data in this DecoderBuffer.  Used
-  // to implement the Audio Splice Frame Algorithm per the MSE specification.
-  const std::vector<scoped_refptr<StreamParserBuffer> >& GetFadeOutPreroll()
-      const;
-  void SetFadeOutPreroll(
-      const std::vector<scoped_refptr<StreamParserBuffer> >& fade_out_preroll);
+  // Converts this buffer to a splice buffer.  |pre_splice_buffers| must not
+  // have any EOS buffers, must not have any splice buffers, nor must have any
+  // buffer with preroll.
+  //
+  // |pre_splice_buffers| will be deep copied and each copy's splice_timestamp()
+  // will be set to this buffer's splice_timestamp().  A copy of |this|, with a
+  // splice_timestamp() of kNoTimestamp(), will be added to the end of
+  // |splice_buffers_|.
+  //
+  // See the Audio Splice Frame Algorithm in the MSE specification for details.
+  typedef StreamParser::BufferQueue BufferQueue;
+  void ConvertToSpliceBuffer(const BufferQueue& pre_splice_buffers);
+  const BufferQueue& splice_buffers() const { return splice_buffers_; }
+
+  // Specifies a buffer which must be decoded prior to this one to ensure this
+  // buffer can be accurately decoded.  The given buffer must be of the same
+  // type, must not be a splice buffer, must not have any discard padding, and
+  // must not be an end of stream buffer.  |preroll| is not copied.
+  //
+  // It's expected that this preroll buffer will be discarded entirely post
+  // decoding.  As such it's discard_padding() will be set to kInfiniteDuration.
+  //
+  // All future timestamp, decode timestamp, config id, or track id changes to
+  // this buffer will be applied to the preroll buffer as well.
+  void SetPrerollBuffer(const scoped_refptr<StreamParserBuffer>& preroll);
+  const scoped_refptr<StreamParserBuffer>& preroll_buffer() {
+    return preroll_buffer_;
+  }
+
+  virtual void set_timestamp(base::TimeDelta timestamp) OVERRIDE;
 
  private:
   StreamParserBuffer(const uint8* data, int data_size,
@@ -66,8 +93,8 @@ class MEDIA_EXPORT StreamParserBuffer : public DecoderBuffer {
   int config_id_;
   Type type_;
   TrackId track_id_;
-
-  std::vector<scoped_refptr<StreamParserBuffer> > fade_out_preroll_;
+  BufferQueue splice_buffers_;
+  scoped_refptr<StreamParserBuffer> preroll_buffer_;
 
   DISALLOW_COPY_AND_ASSIGN(StreamParserBuffer);
 };

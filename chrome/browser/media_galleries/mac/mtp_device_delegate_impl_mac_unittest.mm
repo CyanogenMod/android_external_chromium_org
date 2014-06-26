@@ -11,6 +11,7 @@
 #include "base/mac/cocoa_protocols.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/sys_string_conversions.h"
@@ -23,19 +24,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSObject (ICCameraDeviceDelegateLionAPI)
-- (void)deviceDidBecomeReadyWithCompleteContentCatalog:(ICDevice*)device;
-- (void)didDownloadFile:(ICCameraFile*)file
-                  error:(NSError*)error
-                options:(NSDictionary*)options
-            contextInfo:(void*)contextInfo;
-@end
-
-#endif  // 10.6
 
 namespace {
 
@@ -102,8 +90,8 @@ const char kTestFileContents[] = "test";
   saveAsFilename += ".jpg";
   base::FilePath toBeSaved = saveDir.Append(saveAsFilename);
   ASSERT_EQ(static_cast<int>(strlen(kTestFileContents)),
-            file_util::WriteFile(toBeSaved, kTestFileContents,
-                                 strlen(kTestFileContents)));
+            base::WriteFile(toBeSaved, kTestFileContents,
+                            strlen(kTestFileContents)));
 
   NSMutableDictionary* returnOptions =
       [NSMutableDictionary dictionaryWithDictionary:options];
@@ -174,7 +162,8 @@ class MTPDeviceDelegateImplMacTest : public testing::Test {
         content::BrowserThread::IO));
     ASSERT_TRUE(io_thread_->Start());
 
-    TestStorageMonitor* monitor = TestStorageMonitor::CreateAndInstall();
+    storage_monitor::TestStorageMonitor* monitor =
+        storage_monitor::TestStorageMonitor::CreateAndInstall();
     manager_.SetNotifications(monitor->receiver());
 
     camera_ = [MockMTPICCameraDevice alloc];
@@ -190,7 +179,7 @@ class MTPDeviceDelegateImplMacTest : public testing::Test {
 
     delegate_->CancelPendingTasksAndDeleteDelegate();
 
-    TestStorageMonitor::Destroy();
+    storage_monitor::TestStorageMonitor::Destroy();
 
     io_thread_->Stop();
   }
@@ -297,7 +286,7 @@ class MTPDeviceDelegateImplMacTest : public testing::Test {
   scoped_ptr<content::TestBrowserThread> file_thread_;
   scoped_ptr<content::TestBrowserThread> io_thread_;
   base::ScopedTempDir temp_dir_;
-  ImageCaptureDeviceManager manager_;
+  storage_monitor::ImageCaptureDeviceManager manager_;
   MockMTPICCameraDevice* camera_;
 
   // This object needs special deletion inside the above |task_runner_|.

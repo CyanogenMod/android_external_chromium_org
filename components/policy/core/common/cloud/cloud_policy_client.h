@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -112,7 +113,8 @@ class POLICY_EXPORT CloudPolicyClient {
       const std::string& auth_token,
       const std::string& client_id,
       bool is_auto_enrollment,
-      const std::string& requisition);
+      const std::string& requisition,
+      const std::string& current_state_key);
 
   // Sets information about a policy invalidation. Subsequent fetch operations
   // will use the given info, and callers can use fetched_invalidation_version
@@ -171,6 +173,11 @@ class POLICY_EXPORT CloudPolicyClient {
 
   // FetchPolicy() calls won't request the given policy namespace anymore.
   void RemoveNamespaceToFetch(const PolicyNamespaceKey& policy_ns_key);
+
+  // Configures a set of device state keys to transfer to the server in the next
+  // policy fetch. If the fetch is successful, the keys will be cleared so they
+  // are only uploaded once.
+  void SetStateKeysToUpload(const std::vector<std::string>& keys);
 
   // Whether the client is registered with the device management service.
   bool is_registered() const { return !dm_token_.empty(); }
@@ -261,6 +268,7 @@ class POLICY_EXPORT CloudPolicyClient {
   const std::string verification_key_hash_;
   const UserAffiliation user_affiliation_;
   NamespaceSet namespaces_to_fetch_;
+  std::vector<std::string> state_keys_to_upload_;
 
   std::string dm_token_;
   DeviceMode device_mode_;

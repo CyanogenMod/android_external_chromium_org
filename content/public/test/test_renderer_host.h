@@ -72,7 +72,9 @@ class RenderViewHostTester {
   // Gives tests access to RenderViewHostImpl::CreateRenderView.
   virtual bool CreateRenderView(const base::string16& frame_name,
                                 int opener_route_id,
-                                int32 max_page_id) = 0;
+                                int proxy_routing_id,
+                                int32 max_page_id,
+                                bool created_with_opener) = 0;
 
   // Calls OnMsgNavigate on the RenderViewHost with the given information,
   // setting the rest of the parameters in the message to the "typical" values.
@@ -87,8 +89,9 @@ class RenderViewHostTester {
   virtual void SendNavigateWithTransition(int page_id, const GURL& url,
                                           PageTransition transition) = 0;
 
-  // Calls OnMsgShouldCloseACK on the RenderViewHost with the given parameter.
-  virtual void SendShouldCloseACK(bool proceed) = 0;
+  // Calls OnBeforeUnloadACK on the main RenderFrameHost with the given
+  // parameter.
+  virtual void SendBeforeUnloadACK(bool proceed) = 0;
 
   // If set, future loads will have |mime_type| set as the mime type.
   // If not set, the mime type will default to "text/html".

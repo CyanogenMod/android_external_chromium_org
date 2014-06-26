@@ -24,13 +24,13 @@ static bool HandleViewSource(GURL* url, BrowserContext* browser_context) {
     // Bug 26129: limit view-source to view the content and not any
     // other kind of 'active' url scheme like 'javascript' or 'data'.
     static const char* const default_allowed_sub_schemes[] = {
-      kHttpScheme,
-      kHttpsScheme,
-      kFtpScheme,
-      kChromeDevToolsScheme,
-      kChromeUIScheme,
-      kFileScheme,
-      kFileSystemScheme
+        url::kHttpScheme,
+        url::kHttpsScheme,
+        url::kFtpScheme,
+        kChromeDevToolsScheme,
+        kChromeUIScheme,
+        url::kFileScheme,
+        url::kFileSystemScheme
     };
 
     // Merge all the schemes for which view-source is allowed by default, with
@@ -50,7 +50,7 @@ static bool HandleViewSource(GURL* url, BrowserContext* browser_context) {
     }
 
     if (!is_sub_scheme_allowed) {
-      *url = GURL(kAboutBlankURL);
+      *url = GURL(url::kAboutBlankURL);
       return false;
     }
 
@@ -65,11 +65,10 @@ static bool ReverseViewSource(GURL* url, BrowserContext* browser_context) {
   if (url->SchemeIs(kViewSourceScheme))
     return false;
 
-  url_canon::Replacements<char> repl;
+  url::Replacements<char> repl;
   repl.SetScheme(kViewSourceScheme,
-                 url_parse::Component(0, strlen(kViewSourceScheme)));
-  repl.SetPath(url->spec().c_str(),
-      url_parse::Component(0, url->spec().size()));
+                 url::Component(0, strlen(kViewSourceScheme)));
+  repl.SetPath(url->spec().c_str(), url::Component(0, url->spec().size()));
   *url = url->ReplaceComponents(repl);
   return true;
 }

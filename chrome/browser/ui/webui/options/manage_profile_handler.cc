@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/command_line.h"
 #include "base/prefs/pref_service.h"
 #include "base/prefs/scoped_user_pref_update.h"
 #include "base/strings/string_number_conversions.h"
@@ -17,25 +16,27 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/gaia_info_update_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
-#include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
 #include "chrome/browser/profiles/profile_shortcut_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/webui/options/options_handlers_helper.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/common/url_constants.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
+#include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/generated_resources.h"
+#include "grit/google_chrome_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/webui/web_ui_util.h"
 
@@ -48,8 +49,8 @@ namespace options {
 
 namespace {
 
-const char kCreateProfileIconGridName[] = "create-profile-icon-grid";
-const char kManageProfileIconGridName[] = "manage-profile-icon-grid";
+const char kCreateProfileIdentifier[] = "create";
+const char kManageProfileIdentifier[] = "manage";
 
 // Given |args| from the WebUI, parses value 0 as a FilePath |profile_file_path|
 // and returns true on success.
@@ -85,21 +86,25 @@ void ManageProfileHandler::GetLocalizedValues(
         IDS_PROFILES_MANAGE_DUPLICATE_NAME_ERROR },
     { "manageProfilesIconLabel", IDS_PROFILES_MANAGE_ICON_LABEL },
     { "manageProfilesExistingSupervisedUser",
-        IDS_PROFILES_CREATE_EXISTING_MANAGED_USER_ERROR },
+        IDS_PROFILES_CREATE_EXISTING_SUPERVISED_USER_ERROR },
     { "manageProfilesManagedSignedInLabel",
-        IDS_PROFILES_CREATE_MANAGED_SIGNED_IN_LABEL },
+        IDS_PROFILES_CREATE_SUPERVISED_SIGNED_IN_LABEL },
     { "manageProfilesManagedNotSignedInLabel",
-        IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LABEL },
+        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LABEL },
     { "manageProfilesManagedAccountDetailsOutOfDate",
-        IDS_PROFILES_CREATE_MANAGED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
+        IDS_PROFILES_CREATE_SUPERVISED_ACCOUNT_DETAILS_OUT_OF_DATE_LABEL },
     { "manageProfilesManagedSignInAgainLink",
-        IDS_PROFILES_CREATE_MANAGED_ACCOUNT_SIGN_IN_AGAIN_LINK },
+        IDS_PROFILES_CREATE_SUPERVISED_SIGN_IN_AGAIN_LINK },
     { "manageProfilesManagedNotSignedInLink",
-        IDS_PROFILES_CREATE_MANAGED_NOT_SIGNED_IN_LINK },
+        IDS_PROFILES_CREATE_SUPERVISED_NOT_SIGNED_IN_LINK },
     { "deleteProfileTitle", IDS_PROFILES_DELETE_TITLE },
     { "deleteProfileOK", IDS_PROFILES_DELETE_OK_BUTTON_LABEL },
     { "deleteProfileMessage", IDS_PROFILES_DELETE_MESSAGE },
-    { "deleteManagedProfileAddendum", IDS_PROFILES_DELETE_MANAGED_ADDENDUM },
+    { "deleteManagedProfileAddendum", IDS_PROFILES_DELETE_SUPERVISED_ADDENDUM },
+    { "disconnectManagedProfileTitle",
+        IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TITLE },
+    { "disconnectManagedProfileOK",
+        IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_OK_BUTTON_LABEL },
     { "createProfileTitle", IDS_PROFILES_CREATE_TITLE },
     { "createProfileInstructions", IDS_PROFILES_CREATE_INSTRUCTIONS },
     { "createProfileConfirm", IDS_PROFILES_CREATE_CONFIRM },
@@ -107,9 +112,9 @@ void ManageProfileHandler::GetLocalizedValues(
     { "createProfileShortcutButton", IDS_PROFILES_CREATE_SHORTCUT_BUTTON },
     { "removeProfileShortcutButton", IDS_PROFILES_REMOVE_SHORTCUT_BUTTON },
     { "importExistingManagedUserLink",
-        IDS_PROFILES_IMPORT_EXISTING_MANAGED_USER_LINK },
+        IDS_PROFILES_IMPORT_EXISTING_SUPERVISED_USER_LINK },
     { "signInToImportManagedUsers",
-        IDS_PROFILES_IMPORT_MANAGED_USER_NOT_SIGNED_IN },
+        IDS_PROFILES_IMPORT_SUPERVISED_USER_NOT_SIGNED_IN },
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -121,10 +126,7 @@ void ManageProfileHandler::GetLocalizedValues(
   localized_strings->SetBoolean("profileShortcutsEnabled",
                                 ProfileShortcutManager::IsFeatureEnabled());
 
-  localized_strings->SetBoolean(
-      "disableCreateExistingManagedUsers",
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableCreateExistingManagedUsers));
+  GenerateSignedinUserSpecificStrings(localized_strings);
 }
 
 void ManageProfileHandler::InitializeHandler() {
@@ -134,8 +136,8 @@ void ManageProfileHandler::InitializeHandler() {
   Profile* profile = Profile::FromWebUI(web_ui());
   pref_change_registrar_.Init(profile->GetPrefs());
   pref_change_registrar_.Add(
-      prefs::kManagedUserCreationAllowed,
-      base::Bind(&ManageProfileHandler::OnCreateManagedUserPrefChange,
+      prefs::kSupervisedUserCreationAllowed,
+      base::Bind(&ManageProfileHandler::OnCreateSupervisedUserPrefChange,
                  base::Unretained(this)));
   ProfileSyncService* service =
       ProfileSyncServiceFactory::GetForProfile(profile);
@@ -145,8 +147,8 @@ void ManageProfileHandler::InitializeHandler() {
 }
 
 void ManageProfileHandler::InitializePage() {
-  SendProfileNames();
-  OnCreateManagedUserPrefChange();
+  SendExistingProfileNames();
+  OnCreateSupervisedUserPrefChange();
 }
 
 void ManageProfileHandler::RegisterMessages() {
@@ -179,6 +181,13 @@ void ManageProfileHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("removeProfileShortcut",
       base::Bind(&ManageProfileHandler::RemoveProfileShortcut,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("refreshGaiaPicture",
+      base::Bind(&ManageProfileHandler::RefreshGaiaPicture,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(
+      "showDisconnectManagedProfileDialog",
+      base::Bind(&ManageProfileHandler::ShowDisconnectManagedProfileDialog,
+                 base::Unretained(this)));
 }
 
 void ManageProfileHandler::Uninitialize() {
@@ -190,9 +199,9 @@ void ManageProfileHandler::Observe(
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   if (type == chrome::NOTIFICATION_PROFILE_CACHED_INFO_CHANGED) {
-    SendProfileNames();
-    base::StringValue value(kManageProfileIconGridName);
-    SendProfileIcons(value);
+    SendExistingProfileNames();
+    base::StringValue value(kManageProfileIdentifier);
+    SendProfileIconsAndNames(value);
   }
 }
 
@@ -200,12 +209,50 @@ void ManageProfileHandler::OnStateChanged() {
   RequestCreateProfileUpdate(NULL);
 }
 
+void ManageProfileHandler::GenerateSignedinUserSpecificStrings(
+    base::DictionaryValue* dictionary) {
+  std::string username;
+  std::string domain_name;
+
+#if !defined(OS_CHROMEOS)
+  Profile* profile = Profile::FromWebUI(web_ui());
+  DCHECK(profile);
+  SigninManagerBase* manager = SigninManagerFactory::GetForProfile(profile);
+  if (manager) {
+    username = manager->GetAuthenticatedUsername();
+    // If there is no one logged in or if the profile name is empty then the
+    // domain name is empty. This happens in browser tests.
+    if (!username.empty()) {
+      domain_name = "<span id=disconnect-managed-profile-domain-name>" +
+                    gaia::ExtractDomainName(username) + "</span>";
+    }
+  }
+#endif
+
+  dictionary->SetString(
+      "disconnectManagedProfileDomainInformation",
+      l10n_util::GetStringFUTF16(
+          IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_DOMAIN_INFORMATION,
+          base::ASCIIToUTF16(domain_name)));
+
+  dictionary->SetString(
+      "disconnectManagedProfileText",
+      l10n_util::GetStringFUTF16(
+          IDS_PROFILES_DISCONNECT_MANAGED_PROFILE_TEXT,
+          base::UTF8ToUTF16(username),
+          base::UTF8ToUTF16(chrome::kSyncGoogleDashboardURL)));
+}
+
 void ManageProfileHandler::RequestDefaultProfileIcons(
     const base::ListValue* args) {
-  base::StringValue create_value(kCreateProfileIconGridName);
-  base::StringValue manage_value(kManageProfileIconGridName);
-  SendProfileIcons(manage_value);
-  SendProfileIcons(create_value);
+  std::string mode;
+  bool ok = args->GetString(0, &mode);
+  DCHECK(ok);
+  DCHECK(mode == kCreateProfileIdentifier || mode == kManageProfileIdentifier);
+  if (ok) {
+    base::StringValue value(mode);
+    SendProfileIconsAndNames(value);
+  }
 }
 
 void ManageProfileHandler::RequestNewProfileDefaults(
@@ -216,15 +263,17 @@ void ManageProfileHandler::RequestNewProfileDefaults(
 
   base::DictionaryValue profile_info;
   profile_info.SetString("name", cache.ChooseNameForNewProfile(icon_index));
-  profile_info.SetString("iconURL", cache.GetDefaultAvatarIconUrl(icon_index));
+  profile_info.SetString("iconURL",
+      profiles::GetDefaultAvatarIconUrl(icon_index));
 
   web_ui()->CallJavascriptFunction(
       "ManageProfileOverlay.receiveNewProfileDefaults", profile_info);
 }
 
-void ManageProfileHandler::SendProfileIcons(
-    const base::StringValue& icon_grid) {
+void ManageProfileHandler::SendProfileIconsAndNames(
+    const base::StringValue& mode) {
   base::ListValue image_url_list;
+  base::ListValue default_name_list;
 
   // First add the GAIA picture if it's available.
   const ProfileInfoCache& cache =
@@ -237,22 +286,24 @@ void ManageProfileHandler::SendProfileIcons(
     if (icon) {
       gfx::Image icon2 = profiles::GetAvatarIconForWebUI(*icon, true);
       gaia_picture_url_ = webui::GetBitmapDataUrl(icon2.AsBitmap());
-      image_url_list.Append(new base::StringValue(gaia_picture_url_));
+      image_url_list.AppendString(gaia_picture_url_);
+      default_name_list.AppendString(std::string());
     }
   }
 
-  // Next add the default avatar icons.
-  for (size_t i = 0; i < ProfileInfoCache::GetDefaultAvatarIconCount(); i++) {
-    std::string url = ProfileInfoCache::GetDefaultAvatarIconUrl(i);
-    image_url_list.Append(new base::StringValue(url));
+  // Next add the default avatar icons and names.
+  for (size_t i = 0; i < profiles::GetDefaultAvatarIconCount(); i++) {
+    std::string url = profiles::GetDefaultAvatarIconUrl(i);
+    image_url_list.AppendString(url);
+    default_name_list.AppendString(cache.ChooseNameForNewProfile(i));
   }
 
   web_ui()->CallJavascriptFunction(
-      "ManageProfileOverlay.receiveDefaultProfileIcons", icon_grid,
-      image_url_list);
+      "ManageProfileOverlay.receiveDefaultProfileIconsAndNames", mode,
+      image_url_list, default_name_list);
 }
 
-void ManageProfileHandler::SendProfileNames() {
+void ManageProfileHandler::SendExistingProfileNames() {
   const ProfileInfoCache& cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
   base::DictionaryValue profile_name_dict;
@@ -261,8 +312,16 @@ void ManageProfileHandler::SendProfileNames() {
         base::UTF16ToUTF8(cache.GetNameOfProfileAtIndex(i)), true);
   }
 
-  web_ui()->CallJavascriptFunction("ManageProfileOverlay.receiveProfileNames",
-                                   profile_name_dict);
+  web_ui()->CallJavascriptFunction(
+      "ManageProfileOverlay.receiveExistingProfileNames", profile_name_dict);
+}
+
+void ManageProfileHandler::ShowDisconnectManagedProfileDialog(
+    const base::ListValue* args) {
+  base::DictionaryValue replacements;
+  GenerateSignedinUserSpecificStrings(&replacements);
+  web_ui()->CallJavascriptFunction(
+      "ManageProfileOverlay.showDisconnectManagedProfileDialog", replacements);
 }
 
 void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
@@ -300,7 +359,7 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
       // below.
       ProfileMetrics::LogProfileSwitchGaia(ProfileMetrics::GAIA_OPT_IN);
     }
-  } else if (cache.IsDefaultAvatarIconUrl(icon_url, &new_icon_index)) {
+  } else if (profiles::IsDefaultAvatarIconUrl(icon_url, &new_icon_index)) {
     ProfileMetrics::LogProfileAvatarSelection(new_icon_index);
     PrefService* pref_service = profile->GetPrefs();
     // Updating the profile preference will cause the cache to be updated for
@@ -310,7 +369,7 @@ void ManageProfileHandler::SetProfileIconAndName(const base::ListValue* args) {
   }
   ProfileMetrics::LogProfileUpdate(profile_file_path);
 
-  if (profile->IsManaged())
+  if (profile->IsSupervised())
     return;
 
   base::string16 new_profile_name;
@@ -373,13 +432,14 @@ void ManageProfileHandler::ProfileIconSelectionChanged(
     return;
 
   base::StringValue gaia_name_value(gaia_name);
+  base::StringValue mode_value(kManageProfileIdentifier);
   web_ui()->CallJavascriptFunction("ManageProfileOverlay.setProfileName",
-                                   gaia_name_value);
+                                   gaia_name_value, mode_value);
 }
 
 void ManageProfileHandler::RequestHasProfileShortcuts(
     const base::ListValue* args) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   DCHECK(ProfileShortcutManager::IsFeatureEnabled());
 
   base::FilePath profile_file_path;
@@ -418,19 +478,20 @@ void ManageProfileHandler::RequestCreateProfileUpdate(
   web_ui()->CallJavascriptFunction("CreateProfileOverlay.updateSignedInStatus",
                                    base::StringValue(username),
                                    base::FundamentalValue(has_error));
-  OnCreateManagedUserPrefChange();
+
+  OnCreateSupervisedUserPrefChange();
 }
 
-void ManageProfileHandler::OnCreateManagedUserPrefChange() {
+void ManageProfileHandler::OnCreateSupervisedUserPrefChange() {
   PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
   base::FundamentalValue allowed(
-      prefs->GetBoolean(prefs::kManagedUserCreationAllowed));
+      prefs->GetBoolean(prefs::kSupervisedUserCreationAllowed));
   web_ui()->CallJavascriptFunction(
       "CreateProfileOverlay.updateManagedUsersAllowed", allowed);
 }
 
 void ManageProfileHandler::OnHasProfileShortcuts(bool has_shortcuts) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   const base::FundamentalValue has_shortcuts_value(has_shortcuts);
   web_ui()->CallJavascriptFunction(
@@ -467,6 +528,10 @@ void ManageProfileHandler::RemoveProfileShortcut(const base::ListValue* args) {
 
   // Update the UI buttons.
   OnHasProfileShortcuts(false);
+}
+
+void ManageProfileHandler::RefreshGaiaPicture(const base::ListValue* args) {
+  profiles::UpdateGaiaProfilePhotoIfNeeded(Profile::FromWebUI(web_ui()));
 }
 
 }  // namespace options

@@ -8,14 +8,22 @@
 #include <string>
 
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/strings/string16.h"
 #include "base/time/time.h"
+#include "components/translate/content/renderer/renderer_cld_data_provider.h"
 #include "components/translate/core/common/translate_errors.h"
 #include "content/public/renderer/render_view_observer.h"
+#include "url/gurl.h"
 
 namespace blink {
 class WebDocument;
 class WebFrame;
+}
+
+namespace content {
+class RendererCldDataProvider;
 }
 
 // This class deals with page translation.
@@ -27,16 +35,21 @@ class TranslateHelper : public content::RenderViewObserver {
   virtual ~TranslateHelper();
 
   // Informs us that the page's text has been extracted.
-  void PageCaptured(int page_id, const base::string16& contents);
+  void PageCaptured(const base::string16& contents);
+
+  // Lets the translation system know that we are preparing to navigate to
+  // the specified URL. If there is anything that can or should be done before
+  // this URL loads, this is the time to prepare for it.
+  void PrepareForUrl(const GURL& url);
 
  protected:
   // The following methods are protected so they can be overridden in
   // unit-tests.
-  void OnTranslatePage(int page_id,
+  void OnTranslatePage(int page_seq_no,
                        const std::string& translate_script,
                        const std::string& source_lang,
                        const std::string& target_lang);
-  void OnRevertTranslation(int page_id);
+  void OnRevertTranslation(int page_seq_no);
 
   // Returns true if the translate library is available, meaning the JavaScript
   // has already been injected in that page.
@@ -111,6 +124,9 @@ class TranslateHelper : public content::RenderViewObserver {
   // RenderViewObserver implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
+  // Informs us that the page's text has been extracted.
+  void PageCapturedImpl(int page_seq_no, const base::string16& contents);
+
   // Cancels any translation that is currently being performed.  This does not
   // revert existing translations.
   void CancelPendingTranslation();
@@ -118,11 +134,11 @@ class TranslateHelper : public content::RenderViewObserver {
   // Checks if the current running page translation is finished or errored and
   // notifies the browser accordingly.  If the translation has not terminated,
   // posts a task to check again later.
-  void CheckTranslateStatus();
+  void CheckTranslateStatus(int page_seq_no);
 
   // Called by TranslatePage to do the actual translation.  |count| is used to
   // limit the number of retries.
-  void TranslatePageImpl(int count);
+  void TranslatePageImpl(int page_seq_no, int count);
 
   // Sends a message to the browser to notify it that the translation failed
   // with |error|.
@@ -132,9 +148,28 @@ class TranslateHelper : public content::RenderViewObserver {
   // if the page is being closed.
   blink::WebFrame* GetMainFrame();
 
-  // ID to represent a page which TranslateHelper captured and determined a
-  // content language.
-  int page_id_;
+  // Do not ask for CLD data any more.
+  void CancelCldDataPolling();
+
+  // Invoked when PageCaptured is called prior to obtaining CLD data. This
+  // method stores the page ID into deferred_page_id_ and COPIES the contents
+  // of the page, then sets deferred_page_capture_ to true. When CLD data is
+  // eventually received (in OnCldDataAvailable), any deferred request will be
+  // "resurrected" and allowed to proceed automatically, assuming that the
+  // page ID has not changed.
+  void DeferPageCaptured(const int page_id, const base::string16& contents);
+
+  // Start polling for CLD data.
+  // Polling will automatically halt as soon as the renderer obtains a
+  // reference to the data file.
+  void SendCldDataRequest(const int delay_millis, const int next_delay_millis);
+
+  // Callback triggered when CLD data becomes available.
+  void OnCldDataAvailable();
+
+  // An ever-increasing sequence number of the current page, used to match up
+  // translation requests with responses.
+  int page_seq_no_;
 
   // The states associated with the current translation.
   bool translation_pending_;
@@ -147,6 +182,27 @@ class TranslateHelper : public content::RenderViewObserver {
 
   // Method factory used to make calls to TranslatePageImpl.
   base::WeakPtrFactory<TranslateHelper> weak_method_factory_;
+
+  // Provides CLD data for this process.
+  scoped_ptr<translate::RendererCldDataProvider> cld_data_provider_;
+
+  // Whether or not polling for CLD2 data has started.
+  bool cld_data_polling_started_;
+
+  // Whether or not CancelCldDataPolling has been called.
+  bool cld_data_polling_canceled_;
+
+  // Whether or not a PageCaptured event arrived prior to CLD data becoming
+  // available. If true, deferred_contents_ contains the most recent contents.
+  bool deferred_page_capture_;
+
+  // The ID of the page most recently reported to PageCaptured if
+  // deferred_page_capture_ is true.
+  int deferred_page_seq_no_;
+
+  // The contents of the page most recently reported to PageCaptured if
+  // deferred_page_capture_ is true.
+  base::string16 deferred_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateHelper);
 };

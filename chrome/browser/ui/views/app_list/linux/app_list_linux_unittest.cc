@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/views/app_list/linux/app_list_linux.h"
 
+#include "base/logging.h"
 #include "chrome/browser/ui/app_list/app_list_positioner.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/display.h"
@@ -52,7 +53,7 @@ class AppListLinuxUnitTest : public testing::Test {
     display_.set_work_area(
         gfx::Rect(0, kMenuBarSize, kScreenWidth, kScreenHeight - kMenuBarSize));
     cursor_ = gfx::Point();
-    shelf_edge_ = AppListPositioner::SCREEN_EDGE_UNKNOWN;
+    center_window_ = false;
   }
 
   // Set the display work area.
@@ -63,7 +64,6 @@ class AppListLinuxUnitTest : public testing::Test {
   // Sets up the test environment with the shelf along a given edge of the
   // work area.
   void PlaceShelf(AppListPositioner::ScreenEdge edge) {
-    shelf_edge_ = edge;
     switch (edge) {
       case AppListPositioner::SCREEN_EDGE_LEFT:
         display_.set_work_area(gfx::Rect(kShelfSize,
@@ -102,18 +102,54 @@ class AppListLinuxUnitTest : public testing::Test {
     cursor_ = gfx::Point(x, y);
   }
 
+  void EnableWindowCentering() {
+    center_window_ = true;
+  }
+
+  AppListPositioner::ScreenEdge ShelfEdge() const {
+    return AppListLinux::ShelfLocationInDisplay(display_);
+  }
+
   gfx::Point DoFindAnchorPoint() const {
     return AppListLinux::FindAnchorPoint(gfx::Size(kWindowWidth, kWindowHeight),
                                          display_,
                                          cursor_,
-                                         shelf_edge_);
+                                         ShelfEdge(),
+                                         center_window_);
   }
 
  private:
   gfx::Display display_;
   gfx::Point cursor_;
-  AppListPositioner::ScreenEdge shelf_edge_;
+  bool center_window_;
 };
+
+TEST_F(AppListLinuxUnitTest, ShelfLocationInDisplay) {
+  SetWorkArea(0, 0, kScreenWidth, kScreenHeight);
+  EXPECT_EQ(AppListPositioner::SCREEN_EDGE_UNKNOWN, ShelfEdge());
+
+  // The BOTTOM, LEFT and RIGHT tests test the case where there are two bars:
+  // one at the top and one at the bottom/left/right. The bigger one should be
+  // chosen, so TOP should not win in these cases.
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_BOTTOM);
+  EXPECT_EQ(AppListPositioner::SCREEN_EDGE_BOTTOM, ShelfEdge());
+
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_TOP);
+  EXPECT_EQ(AppListPositioner::SCREEN_EDGE_TOP, ShelfEdge());
+
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_LEFT);
+  EXPECT_EQ(AppListPositioner::SCREEN_EDGE_LEFT, ShelfEdge());
+
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_RIGHT);
+  EXPECT_EQ(AppListPositioner::SCREEN_EDGE_RIGHT, ShelfEdge());
+
+  // Bar at top and bottom, same size. Top should win.
+  SetWorkArea(0,
+              kMenuBarSize,
+              kScreenWidth,
+              kScreenHeight - kMenuBarSize - kMenuBarSize);
+  EXPECT_EQ(AppListPositioner::SCREEN_EDGE_TOP, ShelfEdge());
+}
 
 TEST_F(AppListLinuxUnitTest, FindAnchorPointNoShelf) {
   // Position the app list when there is no shelf on the display.
@@ -209,5 +245,15 @@ TEST_F(AppListLinuxUnitTest, FindAnchorPointMouseOnShelf) {
   PlaceCursor(kScreenWidth - kWindowNearEdge, kScreenHeight - kCursorOnShelf);
   EXPECT_EQ(gfx::Point(kScreenWidth - kWindowWidth / 2,
                        kScreenHeight - kShelfSize - kWindowHeight / 2),
+            DoFindAnchorPoint());
+}
+
+TEST_F(AppListLinuxUnitTest, FindAnchorPointCentered) {
+  // Cursor on the top shelf; enable centered app list mode.
+  PlaceShelf(AppListPositioner::SCREEN_EDGE_TOP);
+  PlaceCursor(0, 0);
+  EnableWindowCentering();
+  // Expect the app list to be in the center of the screen (ignore the cursor).
+  EXPECT_EQ(gfx::Point(kScreenWidth / 2, kScreenHeight / 2),
             DoFindAnchorPoint());
 }

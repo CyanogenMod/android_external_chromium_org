@@ -14,6 +14,7 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/strings/string16.h"
 #include "base/win/scoped_handle.h"
@@ -40,12 +41,12 @@ class InstallUtil {
   static void TriggerActiveSetupCommand();
 
   // Launches given exe as admin on Vista.
-  static bool ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code);
+  static bool ExecuteExeAsAdmin(const base::CommandLine& cmd, DWORD* exit_code);
 
   // Reads the uninstall command for Chromium from registry and returns it.
   // If system_install is true the command is read from HKLM, otherwise
   // from HKCU.
-  static CommandLine GetChromeUninstallCmd(
+  static base::CommandLine GetChromeUninstallCmd(
       bool system_install,
       BrowserDistribution::Type distribution_type);
 
@@ -105,19 +106,21 @@ class InstallUtil {
   // by either --chrome-sxs or the executable path).
   static bool IsChromeSxSProcess();
 
-  // Populates |path| with the path to |file| in the sentinel directory. This is
-  // the application directory for user-level installs, and the default user
-  // data dir for system-level installs. Returns false on error.
-  static bool GetSentinelFilePath(const base::FilePath::CharType* file,
-                                  BrowserDistribution* dist,
-                                  base::FilePath* path);
+  // Returns true if the sentinel file exists (or the path cannot be obtained).
+  static bool IsFirstRunSentinelPresent();
+
+  // Populates |path| with EULA sentinel file path. Returns false on error.
+  static bool GetEULASentinelFilePath(base::FilePath* path);
 
   // Deletes the registry key at path key_path under the key given by root_key.
-  static bool DeleteRegistryKey(HKEY root_key, const base::string16& key_path);
+  static bool DeleteRegistryKey(HKEY root_key,
+                                const base::string16& key_path,
+                                REGSAM wow64_access);
 
   // Deletes the registry value named value_name at path key_path under the key
   // given by reg_root.
   static bool DeleteRegistryValue(HKEY reg_root, const base::string16& key_path,
+                                  REGSAM wow64_access,
                                   const base::string16& value_name);
 
   // An interface to a predicate function for use by DeleteRegistryKeyIf and
@@ -143,6 +146,7 @@ class InstallUtil {
       HKEY root_key,
       const base::string16& key_to_delete_path,
       const base::string16& key_to_test_path,
+      REGSAM wow64_access,
       const wchar_t* value_name,
       const RegistryValuePredicate& predicate);
 
@@ -152,6 +156,7 @@ class InstallUtil {
   static ConditionalDeleteResult DeleteRegistryValueIf(
       HKEY root_key,
       const wchar_t* key_path,
+      REGSAM wow64_access,
       const wchar_t* value_name,
       const RegistryValuePredicate& predicate);
 
@@ -173,7 +178,7 @@ class InstallUtil {
   // Composes |program| and |arguments| into |command_line|.
   static void MakeUninstallCommand(const base::string16& program,
                                    const base::string16& arguments,
-                                   CommandLine* command_line);
+                                   base::CommandLine* command_line);
 
   // Returns a string in the form YYYYMMDD of the current date.
   static base::string16 GetCurrentDate();
@@ -190,13 +195,12 @@ class InstallUtil {
     bool EvaluatePath(const base::FilePath& path) const;
 
    protected:
-    static bool OpenForInfo(const base::FilePath& path,
-                            base::win::ScopedHandle* handle);
-    static bool GetInfo(const base::win::ScopedHandle& handle,
+    static bool OpenForInfo(const base::FilePath& path, base::File* file);
+    static bool GetInfo(const base::File& file,
                         BY_HANDLE_FILE_INFORMATION* info);
 
     base::FilePath path_to_match_;
-    base::win::ScopedHandle file_handle_;
+    base::File file_;
     BY_HANDLE_FILE_INFORMATION file_info_;
 
    private:

@@ -6,8 +6,9 @@
 import posixpath
 import unittest
 
-from extensions_paths import PUBLIC_TEMPLATES
+from extensions_paths import PUBLIC_TEMPLATES, SERVER2
 from local_file_system import LocalFileSystem
+from test_file_system import TestFileSystem
 from object_store_creator import ObjectStoreCreator
 from path_canonicalizer import PathCanonicalizer
 from special_paths import SITE_VERIFICATION_FILE
@@ -110,6 +111,32 @@ class PathCanonicalizerTest(unittest.TestCase):
     self._AssertIdentity(SITE_VERIFICATION_FILE)
     self._AssertRedirect(SITE_VERIFICATION_FILE,
                          posixpath.splitext(SITE_VERIFICATION_FILE)[0])
+
+  def testDotSeparated(self):
+    self._AssertIdentity('extensions/devtools_inspectedWindow')
+    self._AssertRedirect('extensions/devtools_inspectedWindow',
+                         'extensions/devtools.inspectedWindow')
+
+  def testUnderscoreSeparated(self):
+    file_system = TestFileSystem({
+      'pepper_dev': {
+        'c': {
+          'index.html': ''
+        }
+      },
+      'pepper_stable': {
+        'c': {
+          'index.html': ''
+        }
+      }
+    })
+    self._path_canonicalizer = PathCanonicalizer(
+        file_system,
+        ObjectStoreCreator.ForTest(),
+        ('.html', '.md'))
+    self._AssertIdentity('pepper_stable/c/index')
+    self._AssertRedirect('pepper_stable/c/index',
+                         'pepper_stable/c/index.html')
 
   def _AssertIdentity(self, path):
     self._AssertRedirect(path, path)

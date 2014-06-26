@@ -12,8 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/common/extensions/extension_icon_set.h"
 #include "content/public/browser/url_data_source.h"
+#include "extensions/common/extension_icon_set.h"
 #include "extensions/common/extension_resource.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -110,7 +110,7 @@ class ExtensionIconSource : public content::URLDataSource,
   // FaviconService callback
   void OnFaviconDataAvailable(
       int request_id,
-      const chrome::FaviconBitmapResult& bitmap_result);
+      const favicon_base::FaviconRawBitmapResult& bitmap_result);
 
   // ImageLoader callback
   void OnImageLoaded(int request_id, const gfx::Image& image);

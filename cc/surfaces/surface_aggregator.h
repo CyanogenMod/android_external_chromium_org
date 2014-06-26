@@ -10,6 +10,7 @@
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/quads/render_pass.h"
+#include "cc/surfaces/surface_id.h"
 #include "cc/surfaces/surfaces_export.h"
 
 namespace cc {
@@ -24,18 +25,18 @@ class CC_SURFACES_EXPORT SurfaceAggregator {
   explicit SurfaceAggregator(SurfaceManager* manager);
   ~SurfaceAggregator();
 
-  scoped_ptr<CompositorFrame> Aggregate(int surface_id);
+  scoped_ptr<CompositorFrame> Aggregate(SurfaceId surface_id);
 
  private:
-  DelegatedFrameData* GetReferencedDataForSurfaceID(int surface_id);
+  DelegatedFrameData* GetReferencedDataForSurfaceId(SurfaceId surface_id);
   RenderPass::Id RemapPassId(RenderPass::Id surface_local_pass_id,
                              int surface_id);
 
   void HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
                          RenderPass* dest_pass);
-  void CopySharedQuadState(const SharedQuadState& source_sqs,
+  void CopySharedQuadState(const SharedQuadState* source_sqs,
                            const gfx::Transform& content_to_target_transform,
-                           SharedQuadStateList* dest_sqs_list);
+                           RenderPass* dest_render_pass);
   void CopyQuadsToPass(const QuadList& source_quad_list,
                        const SharedQuadStateList& source_shared_quad_state_list,
                        const gfx::Transform& content_to_target_transform,

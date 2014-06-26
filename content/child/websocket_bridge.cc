@@ -17,7 +17,7 @@
 #include "content/common/websocket_messages.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
-#include "url/gurl.h"
+#include "third_party/WebKit/public/platform/WebSerializedOrigin.h"
 #include "third_party/WebKit/public/platform/WebSocketHandle.h"
 #include "third_party/WebKit/public/platform/WebSocketHandleClient.h"
 #include "third_party/WebKit/public/platform/WebSocketHandshakeRequestInfo.h"
@@ -25,7 +25,10 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
+using blink::WebSerializedOrigin;
 using blink::WebSocketHandle;
 using blink::WebSocketHandleClient;
 using blink::WebString;
@@ -41,7 +44,9 @@ const unsigned short kAbnormalShutdownOpCode = 1006;
 }  // namespace
 
 WebSocketBridge::WebSocketBridge()
-    : channel_id_(kInvalidChannelId), client_(NULL) {}
+    : channel_id_(kInvalidChannelId),
+      render_frame_id_(MSG_ROUTING_NONE),
+      client_(NULL) {}
 
 WebSocketBridge::~WebSocketBridge() {
   if (channel_id_ != kInvalidChannelId) {
@@ -106,6 +111,7 @@ void WebSocketBridge::DidStartOpeningHandshake(
     request_to_pass.addHeaderField(WebString::fromLatin1(header.first),
                                    WebString::fromLatin1(header.second));
   }
+  request_to_pass.setHeadersText(WebString::fromLatin1(request.headers_text));
   client_->didStartOpeningHandshake(this, request_to_pass);
 }
 
@@ -122,6 +128,7 @@ void WebSocketBridge::DidFinishOpeningHandshake(
     response_to_pass.addHeaderField(WebString::fromLatin1(header.first),
                                     WebString::fromLatin1(header.second));
   }
+  response_to_pass.setHeadersText(WebString::fromLatin1(response.headers_text));
   client_->didFinishOpeningHandshake(this, response_to_pass);
 }
 
@@ -203,7 +210,7 @@ void WebSocketBridge::DidStartClosingHandshake() {
 void WebSocketBridge::connect(
     const WebURL& url,
     const WebVector<WebString>& protocols,
-    const WebString& origin,
+    const WebSerializedOrigin& origin,
     WebSocketHandleClient* client) {
   DCHECK_EQ(kInvalidChannelId, channel_id_);
   WebSocketDispatcher* dispatcher =
@@ -214,17 +221,14 @@ void WebSocketBridge::connect(
   std::vector<std::string> protocols_to_pass;
   for (size_t i = 0; i < protocols.size(); ++i)
     protocols_to_pass.push_back(protocols[i].utf8());
-  GURL origin_to_pass(origin.utf8());
+  url::Origin origin_to_pass(origin);
 
-  DVLOG(1) << "Bridge#" << channel_id_ << " Connect("
-           << url << ", (" << JoinString(protocols_to_pass, ", ") << "), "
-           << origin_to_pass << ")";
+  DVLOG(1) << "Bridge#" << channel_id_ << " Connect(" << url << ", ("
+           << JoinString(protocols_to_pass, ", ") << "), "
+           << origin_to_pass.string() << ")";
 
-  ChildThread::current()->Send(
-      new WebSocketHostMsg_AddChannelRequest(channel_id_,
-                                             url,
-                                             protocols_to_pass,
-                                             origin_to_pass));
+  ChildThread::current()->Send(new WebSocketHostMsg_AddChannelRequest(
+      channel_id_, url, protocols_to_pass, origin_to_pass, render_frame_id_));
 }
 
 void WebSocketBridge::send(bool fin,

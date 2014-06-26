@@ -9,8 +9,13 @@
 #include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_messages.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "ui/aura/window.h"
+#include "ui/base/layout.h"
 #include "ui/compositor/layer.h"
+#include "ui/compositor/layer_animation_observer.h"
+#include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
@@ -61,14 +66,58 @@ class ImageLayerDelegate : public ui::LayerDelegate {
   DISALLOW_COPY_AND_ASSIGN(ImageLayerDelegate);
 };
 
+// Responsible for fading out and deleting the layer of the overlay window.
+class OverlayDismissAnimator
+    : public ui::LayerAnimationObserver {
+ public:
+  // Takes ownership of the layer.
+  explicit OverlayDismissAnimator(scoped_ptr<ui::Layer> layer)
+      : layer_(layer.Pass()) {
+    CHECK(layer_.get());
+  }
+
+  // Starts the fadeout animation on the layer. When the animation finishes,
+  // the object deletes itself along with the layer.
+  void Animate() {
+    DCHECK(layer_.get());
+    ui::LayerAnimator* animator = layer_->GetAnimator();
+    // This makes SetOpacity() animate with default duration (which could be
+    // zero, e.g. when running tests).
+    ui::ScopedLayerAnimationSettings settings(animator);
+    animator->AddObserver(this);
+    layer_->SetOpacity(0);
+  }
+
+  // Overridden from ui::LayerAnimationObserver
+  virtual void OnLayerAnimationEnded(
+      ui::LayerAnimationSequence* sequence) OVERRIDE {
+    delete this;
+  }
+
+  virtual void OnLayerAnimationAborted(
+      ui::LayerAnimationSequence* sequence) OVERRIDE {
+    delete this;
+  }
+
+  virtual void OnLayerAnimationScheduled(
+      ui::LayerAnimationSequence* sequence) OVERRIDE {}
+
+ private:
+  virtual ~OverlayDismissAnimator() {}
+
+  scoped_ptr<ui::Layer> layer_;
+
+  DISALLOW_COPY_AND_ASSIGN(OverlayDismissAnimator);
+};
+
 OverscrollNavigationOverlay::OverscrollNavigationOverlay(
     WebContentsImpl* web_contents)
     : web_contents_(web_contents),
       image_delegate_(NULL),
       loading_complete_(false),
       received_paint_update_(false),
-      slide_direction_(SLIDE_UNKNOWN),
-      need_paint_update_(true) {
+      pending_entry_id_(0),
+      slide_direction_(SLIDE_UNKNOWN) {
 }
 
 OverscrollNavigationOverlay::~OverscrollNavigationOverlay() {
@@ -77,11 +126,21 @@ OverscrollNavigationOverlay::~OverscrollNavigationOverlay() {
 void OverscrollNavigationOverlay::StartObserving() {
   loading_complete_ = false;
   received_paint_update_ = false;
+  overlay_dismiss_layer_.reset();
+  pending_entry_id_ = 0;
   Observe(web_contents_);
 
   // Make sure the overlay window is on top.
   if (window_.get() && window_->parent())
     window_->parent()->StackChildAtTop(window_.get());
+
+  // Assumes the navigation has been initiated.
+  NavigationEntry* pending_entry =
+      web_contents_->GetController().GetPendingEntry();
+  // Save id of the pending entry to identify when it loads and paints later.
+  // Under some circumstances navigation can leave a null pending entry -
+  // see comments in NavigationControllerImpl::NavigateToPendingEntry().
+  pending_entry_id_ = pending_entry ? pending_entry->GetUniqueID() : 0;
 }
 
 void OverscrollNavigationOverlay::SetOverlayWindow(
@@ -102,29 +161,32 @@ void OverscrollNavigationOverlay::SetOverlayWindow(
   }
 }
 
-void OverscrollNavigationOverlay::SetupForTesting() {
-  need_paint_update_ = false;
-}
-
 void OverscrollNavigationOverlay::StopObservingIfDone() {
-  // If there is a screenshot displayed in the overlay window, then wait for
-  // the navigated page to complete loading and some paint update before
-  // hiding the overlay.
-  // If there is no screenshot in the overlay window, then hide this view
-  // as soon as there is any new painting notification.
-  if ((need_paint_update_ && !received_paint_update_) ||
-      (image_delegate_->has_image() && !loading_complete_)) {
+  // Normally we dismiss the overlay once we receive a paint update, however
+  // for in-page navigations DidFirstVisuallyNonEmptyPaint() does not get
+  // called, and we rely on loading_complete_ for those cases.
+  if (!received_paint_update_ && !loading_complete_)
     return;
-  }
 
   // If a slide is in progress, then do not destroy the window or the slide.
   if (window_slider_.get() && window_slider_->IsSlideInProgress())
     return;
 
+  // The layer to be animated by OverlayDismissAnimator
+  scoped_ptr<ui::Layer> overlay_dismiss_layer;
+  if (overlay_dismiss_layer_)
+    overlay_dismiss_layer = overlay_dismiss_layer_.Pass();
+  else if (window_.get())
+    overlay_dismiss_layer = window_->AcquireLayer();
   Observe(NULL);
   window_slider_.reset();
   window_.reset();
   image_delegate_ = NULL;
+  if (overlay_dismiss_layer.get()) {
+    // OverlayDismissAnimator deletes overlay_dismiss_layer and itself when the
+    // animation completes.
+    (new OverlayDismissAnimator(overlay_dismiss_layer.Pass()))->Animate();
+  }
 }
 
 ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
@@ -136,8 +198,7 @@ ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
   if (entry && entry->screenshot().get()) {
     std::vector<gfx::ImagePNGRep> image_reps;
     image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-        ui::GetImageScale(
-            ui::GetScaleFactorForNativeView(window_.get()))));
+        ui::GetScaleFactorForNativeView(window_.get())));
     image = gfx::Image(image_reps);
   }
   if (!layer_delegate_)
@@ -147,17 +208,6 @@ ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
   ui::Layer* layer = new ui::Layer(ui::LAYER_TEXTURED);
   layer->set_delegate(layer_delegate_.get());
   return layer;
-}
-
-void OverscrollNavigationOverlay::OnUpdateRect(
-    const ViewHostMsg_UpdateRect_Params& params) {
-  if (loading_complete_ &&
-      ViewHostMsg_UpdateRect_Flags::is_repaint_ack(params.flags)) {
-    // This is a paint update after the page has been loaded. So do not wait for
-    // a 'first non-empty' paint update.
-    received_paint_update_ = true;
-    StopObservingIfDone();
-  }
 }
 
 ui::Layer* OverscrollNavigationOverlay::CreateBackLayer() {
@@ -174,7 +224,25 @@ ui::Layer* OverscrollNavigationOverlay::CreateFrontLayer() {
   return CreateSlideLayer(1);
 }
 
-void OverscrollNavigationOverlay::OnWindowSlideComplete() {
+void OverscrollNavigationOverlay::OnWindowSlideCompleting() {
+  if (slide_direction_ == SLIDE_UNKNOWN)
+    return;
+
+  // Perform the navigation.
+  if (slide_direction_ == SLIDE_BACK)
+    web_contents_->GetController().GoBack();
+  else if (slide_direction_ == SLIDE_FRONT)
+    web_contents_->GetController().GoForward();
+  else
+    NOTREACHED();
+
+  // Reset state and wait for the new navigation page to complete
+  // loading/painting.
+  StartObserving();
+}
+
+void OverscrollNavigationOverlay::OnWindowSlideCompleted(
+    scoped_ptr<ui::Layer> layer) {
   if (slide_direction_ == SLIDE_UNKNOWN) {
     window_slider_.reset();
     StopObservingIfDone();
@@ -185,21 +253,12 @@ void OverscrollNavigationOverlay::OnWindowSlideComplete() {
   image_delegate_->SetImage(layer_delegate_->image());
   window_->layer()->SetTransform(gfx::Transform());
   window_->SchedulePaintInRect(gfx::Rect(window_->bounds().size()));
-
-  SlideDirection direction = slide_direction_;
   slide_direction_ = SLIDE_UNKNOWN;
-
-  // Reset state and wait for the new navigation page to complete
-  // loading/painting.
-  StartObserving();
-
-  // Perform the navigation.
-  if (direction == SLIDE_BACK)
-    web_contents_->GetController().GoBack();
-  else if (direction == SLIDE_FRONT)
-    web_contents_->GetController().GoForward();
-  else
-    NOTREACHED();
+  // We may end up dismissing the overlay before it has a chance to repaint, so
+  // set the slider layer to be the one animated by OverlayDismissAnimator.
+  if (layer.get())
+    overlay_dismiss_layer_ = layer.Pass();
+  StopObservingIfDone();
 }
 
 void OverscrollNavigationOverlay::OnWindowSlideAborted() {
@@ -207,33 +266,37 @@ void OverscrollNavigationOverlay::OnWindowSlideAborted() {
 }
 
 void OverscrollNavigationOverlay::OnWindowSliderDestroyed() {
-  // The slider has just been destroyed. Release the ownership.
-  WindowSlider* slider ALLOW_UNUSED = window_slider_.release();
-  StopObservingIfDone();
+  // We only want to take an action here if WindowSlider is being destroyed
+  // outside of OverscrollNavigationOverlay. If window_slider_.get() is NULL,
+  // then OverscrollNavigationOverlay is the one destroying WindowSlider, and
+  // we don't need to do anything.
+  // This check prevents StopObservingIfDone() being called multiple times
+  // (including recursively) for a single event.
+  if (window_slider_.get()) {
+    // The slider has just been destroyed. Release the ownership.
+    WindowSlider* slider ALLOW_UNUSED = window_slider_.release();
+    StopObservingIfDone();
+  }
 }
 
-void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint(int32 page_id) {
-  received_paint_update_ = true;
-  StopObservingIfDone();
+void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint() {
+  int visible_entry_id =
+      web_contents_->GetController().GetVisibleEntry()->GetUniqueID();
+  if (visible_entry_id == pending_entry_id_ || !pending_entry_id_) {
+    received_paint_update_ = true;
+    StopObservingIfDone();
+  }
 }
 
 void OverscrollNavigationOverlay::DidStopLoading(RenderViewHost* host) {
-  loading_complete_ = true;
-  if (!received_paint_update_) {
-    // Force a repaint after the page is loaded.
-    RenderViewHostImpl* view = static_cast<RenderViewHostImpl*>(host);
-    view->ScheduleComposite();
+  // Use the last committed entry rather than the active one, in case a
+  // pending entry has been created.
+  int committed_entry_id =
+      web_contents_->GetController().GetLastCommittedEntry()->GetUniqueID();
+  if (committed_entry_id == pending_entry_id_ || !pending_entry_id_) {
+    loading_complete_ = true;
+    StopObservingIfDone();
   }
-  StopObservingIfDone();
-}
-
-bool OverscrollNavigationOverlay::OnMessageReceived(
-    const IPC::Message& message) {
-  CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  IPC_BEGIN_MESSAGE_MAP(OverscrollNavigationOverlay, message)
-    IPC_MESSAGE_HANDLER(ViewHostMsg_UpdateRect, OnUpdateRect)
-  IPC_END_MESSAGE_MAP()
-  return false;
 }
 
 }  // namespace content

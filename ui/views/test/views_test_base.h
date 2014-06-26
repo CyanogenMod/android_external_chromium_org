@@ -8,23 +8,20 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/platform_test.h"
 #include "ui/views/test/test_views_delegate.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/scoped_ole_initializer.h"
 #endif
 
-namespace aura {
-namespace test {
-class AuraTestHelper;
-}
-}
-
 namespace views {
+
+class ViewsTestHelper;
 
 // A base class for views unit test. It creates a message loop necessary
 // to drive UI events and takes care of OLE initialization for windows.
-class ViewsTestBase : public testing::Test {
+class ViewsTestBase : public PlatformTest {
  public:
   ViewsTestBase();
   virtual ~ViewsTestBase();
@@ -55,8 +52,7 @@ class ViewsTestBase : public testing::Test {
  private:
   base::MessageLoopForUI message_loop_;
   scoped_ptr<TestViewsDelegate> views_delegate_;
-  scoped_ptr<aura::test::AuraTestHelper> aura_test_helper_;
-  scoped_ptr<views::corewm::WMState> wm_state_;
+  scoped_ptr<ViewsTestHelper> test_helper_;
   bool setup_called_;
   bool teardown_called_;
 

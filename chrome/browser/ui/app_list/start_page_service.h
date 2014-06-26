@@ -12,7 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/strings/string16.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/app_list/speech_ui_model_observer.h"
 
@@ -29,7 +29,7 @@ class StartPageObserver;
 
 // StartPageService collects data to be displayed in app list's start page
 // and hosts the start page contents.
-class StartPageService : public BrowserContextKeyedService {
+class StartPageService : public KeyedService {
  public:
   typedef std::vector<scoped_refptr<const extensions::Extension> >
       ExtensionList;
@@ -39,7 +39,12 @@ class StartPageService : public BrowserContextKeyedService {
   void AddObserver(StartPageObserver* observer);
   void RemoveObserver(StartPageObserver* observer);
 
+  void AppListShown();
+  void AppListHidden();
   void ToggleSpeechRecognition();
+
+  // Returns true if the hotword is enabled in the app-launcher.
+  bool HotwordEnabled();
 
   // They return essentially the same web contents but might return NULL when
   // some flag disables the feature.
@@ -68,7 +73,10 @@ class StartPageService : public BrowserContextKeyedService {
   explicit StartPageService(Profile* profile);
   virtual ~StartPageService();
 
-  // BrowserContextKeyedService overrides:
+  void LoadContents();
+  void UnloadContents();
+
+  // KeyedService overrides:
   virtual void Shutdown() OVERRIDE;
 
   Profile* profile_;

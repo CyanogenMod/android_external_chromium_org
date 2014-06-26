@@ -7,10 +7,10 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -47,15 +47,15 @@ bool MediaStreamInfoBarDelegate::Create(
   if (!infobar_service) {
     // Deny the request if there is no place to show the infobar, e.g. when
     // the request comes from a background extension page.
-    controller->Deny(false);
+    controller->Deny(false, content::MEDIA_DEVICE_INVALID_STATE);
     return false;
   }
 
-  scoped_ptr<InfoBar> infobar(ConfirmInfoBarDelegate::CreateInfoBar(
-      scoped_ptr<ConfirmInfoBarDelegate>(
+  scoped_ptr<infobars::InfoBar> infobar(
+      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
           new MediaStreamInfoBarDelegate(controller.Pass()))));
   for (size_t i = 0; i < infobar_service->infobar_count(); ++i) {
-    InfoBar* old_infobar = infobar_service->infobar_at(i);
+    infobars::InfoBar* old_infobar = infobar_service->infobar_at(i);
     if (old_infobar->delegate()->AsMediaStreamInfoBarDelegate()) {
       infobar_service->ReplaceInfoBar(old_infobar, infobar.Pass());
       return true;
@@ -78,7 +78,7 @@ void MediaStreamInfoBarDelegate::InfoBarDismissed() {
   // we don't want WebRTC to be waiting for an answer that will never come.
   UMA_HISTOGRAM_ENUMERATION("Media.DevicePermissionActions",
                             kCancel, kPermissionActionsMax);
-  controller_->Deny(false);
+  controller_->Deny(false, content::MEDIA_DEVICE_PERMISSION_DISMISSED);
 }
 
 int MediaStreamInfoBarDelegate::GetIconID() const {
@@ -86,7 +86,8 @@ int MediaStreamInfoBarDelegate::GetIconID() const {
       IDR_INFOBAR_MEDIA_STREAM_CAMERA : IDR_INFOBAR_MEDIA_STREAM_MIC;
 }
 
-InfoBarDelegate::Type MediaStreamInfoBarDelegate::GetInfoBarType() const {
+infobars::InfoBarDelegate::Type MediaStreamInfoBarDelegate::GetInfoBarType()
+    const {
   return PAGE_ACTION_TYPE;
 }
 
@@ -127,7 +128,7 @@ bool MediaStreamInfoBarDelegate::Accept() {
 bool MediaStreamInfoBarDelegate::Cancel() {
   UMA_HISTOGRAM_ENUMERATION("Media.DevicePermissionActions",
                             kDeny, kPermissionActionsMax);
-  controller_->Deny(true);
+  controller_->Deny(true, content::MEDIA_DEVICE_PERMISSION_DENIED);
   return true;
 }
 
@@ -137,13 +138,12 @@ base::string16 MediaStreamInfoBarDelegate::GetLinkText() const {
 
 bool MediaStreamInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
-      google_util::AppendGoogleLocaleParam(
-          GURL(chrome::kMediaAccessLearnMoreUrl)),
-      content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK,
-      false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL(chrome::kMediaAccessLearnMoreUrl),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
 
   return false;  // Do not dismiss the info bar.
 }

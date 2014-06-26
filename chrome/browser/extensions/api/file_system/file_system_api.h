@@ -5,13 +5,12 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_FILE_SYSTEM_FILE_SYSTEM_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_FILE_SYSTEM_FILE_SYSTEM_API_H_
 
+#include <vector>
+
+#include "base/files/file_path.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/file_system.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
-
-namespace base {
-class FilePath;
-}
 
 namespace extensions {
 class ExtensionPrefs;
@@ -30,6 +29,8 @@ void SetLastChooseEntryDirectory(ExtensionPrefs* prefs,
                                  const std::string& extension_id,
                                  const base::FilePath& path);
 
+std::vector<base::FilePath> GetGrayListedDirectories();
+
 }  // namespace file_system_api
 
 class FileSystemGetDisplayPathFunction : public ChromeSyncExtensionFunction {
@@ -39,7 +40,7 @@ class FileSystemGetDisplayPathFunction : public ChromeSyncExtensionFunction {
 
  protected:
   virtual ~FileSystemGetDisplayPathFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileSystemEntryFunction : public ChromeAsyncExtensionFunction {
@@ -52,7 +53,7 @@ class FileSystemEntryFunction : public ChromeAsyncExtensionFunction {
   // will ensure the files exist, creating them if necessary, and also check
   // that none of the files are links. If it succeeds it proceeds to
   // RegisterFileSystemsAndSendResponse, otherwise to HandleWritableFileError.
-  void CheckWritableFiles(const std::vector<base::FilePath>& path);
+  void PrepareFilesForWritableApp(const std::vector<base::FilePath>& path);
 
   // This will finish the choose file process. This is either called directly
   // from FilesSelected, or from WritableFileChecker. It is called on the UI
@@ -87,7 +88,7 @@ class FileSystemGetWritableEntryFunction : public FileSystemEntryFunction {
 
  protected:
   virtual ~FileSystemGetWritableEntryFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void CheckPermissionAndSendResponse();
@@ -104,7 +105,7 @@ class FileSystemIsWritableEntryFunction : public ChromeSyncExtensionFunction {
 
  protected:
   virtual ~FileSystemIsWritableEntryFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileSystemChooseEntryFunction : public FileSystemEntryFunction {
@@ -144,7 +145,7 @@ class FileSystemChooseEntryFunction : public FileSystemEntryFunction {
   class FilePicker;
 
   virtual ~FileSystemChooseEntryFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   void ShowPicker(const ui::SelectFileDialog::FileTypeInfo& file_type_info,
                   ui::SelectFileDialog::Type picker_type);
 
@@ -156,12 +157,13 @@ class FileSystemChooseEntryFunction : public FileSystemEntryFunction {
   void FilesSelected(const std::vector<base::FilePath>& path);
   void FileSelectionCanceled();
 
-  // Check if the chosen directory is or is an ancestor of a sensitive
-  // directory. If so, show a dialog to confirm that the user wants to open the
-  // directory. Calls OnDirectoryAccessConfirmed if the directory isn't
-  // sensitive or the user chooses to open it. Otherwise, calls
-  // FileSelectionCanceled.
+  // Check if |check_path|, the canonicalized form of the chosen directory
+  // |paths|, is or is an ancestor of a sensitive directory. If so, show a
+  // dialog to confirm that the user wants to open the directory.
+  // Calls OnDirectoryAccessConfirmed if the directory isn't sensitive or the
+  // user chooses to open it. Otherwise, calls FileSelectionCanceled.
   void ConfirmDirectoryAccessOnFileThread(
+      const base::FilePath& check_path,
       const std::vector<base::FilePath>& paths,
       content::WebContents* web_contents);
   void OnDirectoryAccessConfirmed(const std::vector<base::FilePath>& paths);
@@ -175,7 +177,7 @@ class FileSystemRetainEntryFunction : public ChromeAsyncExtensionFunction {
 
  protected:
   virtual ~FileSystemRetainEntryFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   // Retains the file entry referenced by |entry_id| in apps::SavedFilesService.
@@ -197,7 +199,7 @@ class FileSystemIsRestorableFunction : public ChromeSyncExtensionFunction {
 
  protected:
   virtual ~FileSystemIsRestorableFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class FileSystemRestoreEntryFunction : public FileSystemEntryFunction {
@@ -206,7 +208,7 @@ class FileSystemRestoreEntryFunction : public FileSystemEntryFunction {
 
  protected:
   virtual ~FileSystemRestoreEntryFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 }  // namespace extensions

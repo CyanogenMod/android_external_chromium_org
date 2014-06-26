@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import os
@@ -7,11 +7,36 @@ from telemetry.page.actions.gesture_action import GestureAction
 from telemetry.page.actions import page_action
 
 class ScrollAction(GestureAction):
-  def __init__(self, attributes=None):
-    super(ScrollAction, self).__init__(attributes)
-    self._SetTimelineMarkerBaseName('ScrollAction::RunAction')
+  # TODO(chrishenry): Ignore attributes, to be deleted when usage in
+  # other repo is cleaned up.
+  def __init__(self, attributes=None,
+               selector=None, text=None, element_function=None,
+               left_start_ratio=0.5, top_start_ratio=0.5, direction='down',
+               distance=None, distance_expr=None,
+               speed_in_pixels_per_second=800, use_touch=False):
+    super(ScrollAction, self).__init__()
+    if direction not in ['down', 'up', 'left', 'right']:
+      raise page_action.PageActionNotSupported(
+          'Invalid scroll direction: %s' % self.direction)
+    self.automatically_record_interaction = False
+    self._selector = selector
+    self._text = text
+    self._element_function = element_function
+    self._left_start_ratio = left_start_ratio
+    self._top_start_ratio = top_start_ratio
+    self._direction = direction
+    self._speed = speed_in_pixels_per_second
+    self._use_touch = use_touch
 
-  def WillRunAction(self, page, tab):
+    self._distance_func = 'null'
+    if distance:
+      assert not distance_expr
+      distance_expr = str(distance)
+    if distance_expr:
+      self._distance_func = ('function() { return 0 + %s; }' %
+                             distance_expr)
+
+  def WillRunAction(self, tab):
     for js_file in ['gesture_common.js', 'scroll.js']:
       with open(os.path.join(os.path.dirname(__file__), js_file)) as f:
         js = f.read()
@@ -23,12 +48,8 @@ class ScrollAction(GestureAction):
           'Synthetic scroll not supported for this browser')
 
     # Fail if this action requires touch and we can't send touch events.
-    # TODO(dominikg): Query synthetic gesture target to check if touch is
-    #                 supported.
-    if hasattr(self, 'scroll_requires_touch'):
-      if (self.scroll_requires_touch and not
-          tab.EvaluateJavaScript(
-            'chrome.gpuBenchmarking.smoothScrollBySendsTouch()')):
+    if self._use_touch:
+      if not GestureAction.IsGestureSourceTypeSupported(tab, 'touch'):
         raise page_action.PageActionNotSupported(
             'Touch scroll not supported for this browser')
 
@@ -37,78 +58,40 @@ class ScrollAction(GestureAction):
         raise page_action.PageActionNotSupported(
             'Scroll requires touch on this page but mouse input was requested')
 
-    distance_func = 'null'
-    if hasattr(self, 'scroll_distance_function'):
-      distance_func = self.scroll_distance_function
-
     done_callback = 'function() { window.__scrollActionDone = true; }'
     tab.ExecuteJavaScript("""
         window.__scrollActionDone = false;
         window.__scrollAction = new __ScrollAction(%s, %s);"""
-        % (done_callback, distance_func))
+        % (done_callback, self._distance_func))
 
-  def RunGesture(self, page, tab, previous_action):
-    # scrollable_element_function is a function that passes the scrollable
-    # element on the page to a callback. For example:
-    #   function (callback) {
-    #     callback(document.getElementById('foo'));
-    #   }
-    left_start_percentage = 0.5
-    top_start_percentage = 0.5
-    direction = 'down'
-    speed = 800
+  def RunGesture(self, tab):
+    if (self._selector is None and self._text is None and
+        self._element_function is None):
+      self._element_function = 'document.body'
+
     gesture_source_type = GestureAction.GetGestureSourceTypeFromOptions(tab)
-    if hasattr(self, 'left_start_percentage'):
-      left_start_percentage = self.left_start_percentage
-    if hasattr(self, 'top_start_percentage'):
-      top_start_percentage = self.top_start_percentage
-    if hasattr(self, 'direction'):
-      direction = self.direction
-      if direction not in ['down', 'up', 'left', 'right']:
-        raise page_action.PageActionNotSupported(
-            'Invalid scroll direction: %s' % direction)
-    if hasattr(self, 'speed'):
-      speed = self.speed
-    if hasattr(self, 'scroll_requires_touch') and self.scroll_requires_touch:
+    if self._use_touch:
       gesture_source_type = 'chrome.gpuBenchmarking.TOUCH_INPUT'
-    if hasattr(self, 'scrollable_element_function'):
-      tab.ExecuteJavaScript("""
-          (%s)(function(element) { window.__scrollAction.start(
-             { element: element,
-               left_start_percentage: %s,
-               top_start_percentage: %s,
-               direction: '%s',
-               speed: %s,
-               gesture_source_type: %s })
-             });""" % (self.scrollable_element_function,
-                       left_start_percentage,
-                       top_start_percentage,
-                       direction,
-                       speed,
-                       gesture_source_type))
-    else:
-      tab.ExecuteJavaScript("""
-          window.__scrollAction.start(
-          { element: document.body,
-            left_start_percentage: %s,
-            top_start_percentage: %s,
+
+    code = '''
+        function(element, info) {
+          if (!element) {
+            throw Error('Cannot find element: ' + info);
+          }
+          window.__scrollAction.start({
+            element: element,
+            left_start_ratio: %s,
+            top_start_ratio: %s,
             direction: '%s',
             speed: %s,
-            gesture_source_type: %s });"""
-        % (left_start_percentage,
-           top_start_percentage,
-           direction,
-           speed,
-           gesture_source_type))
-
+            gesture_source_type: %s
+          });
+        }''' % (self._left_start_ratio,
+                self._top_start_ratio,
+                self._direction,
+                self._speed,
+                gesture_source_type)
+    page_action.EvaluateCallbackWithElement(
+        tab, code, selector=self._selector, text=self._text,
+        element_function=self._element_function)
     tab.WaitForJavaScriptExpression('window.__scrollActionDone', 60)
-
-  def CanBeBound(self):
-    return True
-
-  def BindMeasurementJavaScript(self, tab, start_js, stop_js):
-    # Make the scroll action start and stop measurement automatically.
-    tab.ExecuteJavaScript("""
-        window.__scrollAction.beginMeasuringHook = function() { %s };
-        window.__scrollAction.endMeasuringHook = function() { %s };
-    """ % (start_js, stop_js))

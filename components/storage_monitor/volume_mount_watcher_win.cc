@@ -8,6 +8,7 @@
 
 #include <dbt.h>
 #include <fileapi.h>
+#include <shlobj.h>
 #include <winioctl.h>
 
 #include "base/bind_helpers.h"
@@ -26,6 +27,8 @@
 #include "content/public/browser/user_metrics.h"
 
 using content::BrowserThread;
+
+namespace storage_monitor {
 
 namespace {
 
@@ -172,9 +175,8 @@ bool GetDeviceDetails(const base::FilePath& device_path, StorageInfo* info) {
 
   // TODO(gbillock): if volume_label.empty(), get the vendor/model information
   // for the volume.
-  *info = StorageInfo(device_id, base::string16(), mount_point,
-                      volume_label, base::string16(), base::string16(),
-                      total_size_in_bytes);
+  *info = StorageInfo(device_id, mount_point, volume_label, base::string16(),
+                      base::string16(), total_size_in_bytes);
   return true;
 }
 
@@ -470,6 +472,30 @@ void VolumeMountWatcherWin::OnWindowMessage(UINT event_type, LPARAM data) {
   }
 }
 
+void VolumeMountWatcherWin::OnMediaChange(WPARAM wparam, LPARAM lparam) {
+  if (lparam == SHCNE_MEDIAINSERTED || lparam == SHCNE_MEDIAREMOVED) {
+    struct _ITEMIDLIST* pidl = *reinterpret_cast<struct _ITEMIDLIST**>(
+        wparam);
+    wchar_t sPath[MAX_PATH];
+    if (!SHGetPathFromIDList(pidl, sPath)) {
+      DVLOG(1) << "MediaInserted: SHGetPathFromIDList failed";
+      return;
+    }
+    switch (lparam) {
+      case SHCNE_MEDIAINSERTED: {
+        std::vector<base::FilePath> paths;
+        paths.push_back(base::FilePath(sPath));
+        AddDevicesOnUIThread(paths);
+        break;
+      }
+      case SHCNE_MEDIAREMOVED: {
+        HandleDeviceDetachEventOnUIThread(sPath);
+        break;
+      }
+    }
+  }
+}
+
 void VolumeMountWatcherWin::SetNotifications(
     StorageMonitor::Receiver* notifications) {
   notifications_ = notifications;
@@ -526,3 +552,5 @@ void VolumeMountWatcherWin::EjectDevice(
       FROM_HERE,
       base::Bind(&EjectDeviceInThreadPool, device, callback, task_runner_, 0));
 }
+
+}  // namespace storage_monitor

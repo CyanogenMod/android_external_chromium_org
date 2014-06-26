@@ -4,24 +4,73 @@
 
 #include "device/bluetooth/bluetooth_gatt_descriptor.h"
 
+#include <vector>
+
+#include "base/lazy_instance.h"
 #include "base/logging.h"
+#include "base/macros.h"
 
 namespace device {
+namespace {
 
-using bluetooth_utils::UUID;
+struct UUIDs {
+  UUIDs() : uuids_(MakeUUIDVector()) {}
 
-const UUID BluetoothGattDescriptor::
-    kCharacteristicExtendedPropertiesUuid("0x2900");
-const UUID BluetoothGattDescriptor::
-    kCharacteristicUserDescriptionUuid("0x2901");
-const UUID BluetoothGattDescriptor::
-    kClientCharacteristicConfigurationUuid("0x2902");
-const UUID BluetoothGattDescriptor::
-    kServerCharacteristicConfigurationUuid("0x2903");
-const UUID BluetoothGattDescriptor::
-    kCharacteristicPresentationFormatUuid("0x2904");
-const UUID BluetoothGattDescriptor::
-    kCharacteristicAggregateFormatUuid("0x2905");
+  const std::vector<BluetoothUUID> uuids_;
+
+ private:
+  static std::vector<BluetoothUUID> MakeUUIDVector() {
+    std::vector<BluetoothUUID> uuids;
+    static const char* const strings[] = {
+        "0x2900", "0x2901", "0x2902", "0x2903", "0x2904", "0x2905"
+    };
+
+    for (size_t i = 0; i < arraysize(strings); ++i)
+      uuids.push_back(BluetoothUUID(strings[i]));
+
+    return uuids;
+  }
+};
+
+base::LazyInstance<const UUIDs>::Leaky g_uuids = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
+// static
+const BluetoothUUID&
+BluetoothGattDescriptor::CharacteristicExtendedPropertiesUuid() {
+  return g_uuids.Get().uuids_[0];
+}
+
+// static
+const BluetoothUUID&
+BluetoothGattDescriptor::CharacteristicUserDescriptionUuid() {
+  return g_uuids.Get().uuids_[1];
+}
+
+// static
+const BluetoothUUID&
+BluetoothGattDescriptor::ClientCharacteristicConfigurationUuid() {
+  return g_uuids.Get().uuids_[2];
+}
+
+// static
+const BluetoothUUID&
+BluetoothGattDescriptor::ServerCharacteristicConfigurationUuid() {
+  return g_uuids.Get().uuids_[3];
+}
+
+// static
+const BluetoothUUID&
+BluetoothGattDescriptor::CharacteristicPresentationFormatUuid() {
+  return g_uuids.Get().uuids_[4];
+}
+
+// static
+const BluetoothUUID&
+BluetoothGattDescriptor::CharacteristicAggregateFormatUuid() {
+  return g_uuids.Get().uuids_[5];
+}
 
 BluetoothGattDescriptor::BluetoothGattDescriptor() {
 }
@@ -31,8 +80,9 @@ BluetoothGattDescriptor::~BluetoothGattDescriptor() {
 
 // static
 BluetoothGattDescriptor* BluetoothGattDescriptor::Create(
-    const bluetooth_utils::UUID& uuid,
-    const std::vector<uint8>& value) {
+    const BluetoothUUID& uuid,
+    const std::vector<uint8>& value,
+    BluetoothGattCharacteristic::Permissions permissions) {
   LOG(ERROR) << "Creating local GATT characteristic descriptors currently not "
              << "supported.";
   return NULL;

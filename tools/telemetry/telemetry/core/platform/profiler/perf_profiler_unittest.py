@@ -19,7 +19,8 @@ class TestPerfProfiler(unittest.TestCase):
 
     profile_file = os.path.join(
         util.GetUnittestDataDir(), 'perf_report_output.txt')
-    perf_report_output = open(profile_file, 'r').read()
+    with open(profile_file) as f:
+      perf_report_output = f.read()
 
     mock_popen = simple_mock.MockObject()
     mock_popen.ExpectCall('communicate').WillReturn([perf_report_output])
@@ -27,7 +28,7 @@ class TestPerfProfiler(unittest.TestCase):
     mock_subprocess = simple_mock.MockObject()
     mock_subprocess.ExpectCall(
         'Popen').WithArgs(simple_mock.DONT_CARE).WillReturn(mock_popen)
-    setattr(mock_subprocess, 'PIPE', simple_mock.MockObject())
+    mock_subprocess.SetAttribute('PIPE', simple_mock.MockObject())
 
     real_subprocess = perf_profiler.subprocess
     perf_profiler.subprocess = mock_subprocess

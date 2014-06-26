@@ -4,52 +4,52 @@
 
 #include "ui/wm/test/wm_test_helper.h"
 
-#include "ui/aura/client/default_activation_client.h"
 #include "ui/aura/client/default_capture_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_focus_client.h"
-#include "ui/views/corewm/compound_event_filter.h"
-#include "ui/views/corewm/input_method_event_filter.h"
+#include "ui/aura/window.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/wm/core/compound_event_filter.h"
+#include "ui/wm/core/default_activation_client.h"
+#include "ui/wm/core/input_method_event_filter.h"
 
 namespace wm {
 
-WMTestHelper::WMTestHelper(const gfx::Size& default_window_size) {
-  aura::Env::CreateInstance();
-  root_window_.reset(new aura::RootWindow(
-      aura::RootWindow::CreateParams(
-          gfx::Rect(default_window_size))));
-  root_window_->host()->InitHost();
-  aura::client::SetWindowTreeClient(root_window_->window(), this);
+WMTestHelper::WMTestHelper(const gfx::Size& default_window_size,
+                           ui::ContextFactory* context_factory) {
+  ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(NULL);
+  aura::Env::CreateInstance(true);
+  aura::Env::GetInstance()->set_context_factory(context_factory);
+  host_.reset(aura::WindowTreeHost::Create(gfx::Rect(default_window_size)));
+  host_->InitHost();
+  aura::client::SetWindowTreeClient(host_->window(), this);
 
   focus_client_.reset(new aura::test::TestFocusClient);
-  aura::client::SetFocusClient(root_window_->window(), focus_client_.get());
+  aura::client::SetFocusClient(host_->window(), focus_client_.get());
 
-  root_window_event_filter_ = new views::corewm::CompoundEventFilter;
-  // Pass ownership of the filter to the root_window.
-  root_window_->window()->SetEventFilter(root_window_event_filter_);
+  root_window_event_filter_.reset(new wm::CompoundEventFilter);
+  host_->window()->AddPreTargetHandler(root_window_event_filter_.get());
 
-  input_method_filter_.reset(new views::corewm::InputMethodEventFilter(
-      root_window_->host()->GetAcceleratedWidget()));
-  input_method_filter_->SetInputMethodPropertyInRootWindow(
-      root_window_->window());
+  input_method_filter_.reset(new wm::InputMethodEventFilter(
+      host_->GetAcceleratedWidget()));
+  input_method_filter_->SetInputMethodPropertyInRootWindow(host_->window());
   root_window_event_filter_->AddHandler(input_method_filter_.get());
 
-  activation_client_.reset(
-      new aura::client::DefaultActivationClient(root_window_->window()));
+  new wm::DefaultActivationClient(host_->window());
 
   capture_client_.reset(
-      new aura::client::DefaultCaptureClient(root_window_->window()));
+      new aura::client::DefaultCaptureClient(host_->window()));
 }
 
 WMTestHelper::~WMTestHelper() {
   root_window_event_filter_->RemoveHandler(input_method_filter_.get());
+  ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(NULL);
 }
 
 aura::Window* WMTestHelper::GetDefaultParent(aura::Window* context,
                                              aura::Window* window,
                                              const gfx::Rect& bounds) {
-  return root_window_->window();
+  return host_->window();
 }
 
 }  // namespace wm

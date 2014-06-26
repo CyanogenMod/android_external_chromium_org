@@ -20,9 +20,7 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
 #include "chrome/browser/history/history_notifications.h"
@@ -42,6 +40,8 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/url_data_source.h"
@@ -58,15 +58,14 @@
 #include "ui/base/resource/resource_bundle.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_mode_navigation_observer.h"
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_navigation_observer.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #endif
 
 #if defined(OS_ANDROID)
-#include "chrome/browser/ui/android/tab_model/tab_model.h"
-#include "chrome/browser/ui/android/tab_model/tab_model_list.h"
+#include "chrome/browser/android/chromium_application.h"
 #endif
 
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
@@ -185,8 +184,8 @@ content::WebUIDataSource* CreateHistoryUIHTMLSource(Profile* profile) {
   source->SetDefaultResource(IDR_HISTORY_HTML);
   source->SetUseJsonJSFormatV2();
   source->DisableDenyXFrameOptions();
-  source->AddBoolean("isManagedProfile", profile->IsManaged());
-  source->AddBoolean("showDeleteVisitUI", !profile->IsManaged());
+  source->AddBoolean("isManagedProfile", profile->IsSupervised());
+  source->AddBoolean("showDeleteVisitUI", !profile->IsSupervised());
 
   return source;
 }
@@ -312,7 +311,7 @@ void BrowsingHistoryHandler::HistoryEntry::SetUrlAndTitle(
 
 scoped_ptr<base::DictionaryValue> BrowsingHistoryHandler::HistoryEntry::ToValue(
     BookmarkModel* bookmark_model,
-    ManagedUserService* managed_user_service,
+    SupervisedUserService* supervised_user_service,
     const ProfileSyncService* sync_service) const {
   scoped_ptr<base::DictionaryValue> result(new base::DictionaryValue());
   SetUrlAndTitle(result.get());
@@ -366,9 +365,9 @@ scoped_ptr<base::DictionaryValue> BrowsingHistoryHandler::HistoryEntry::ToValue(
   result->SetString("deviceType", device_type);
 
 #if defined(ENABLE_MANAGED_USERS)
-  if (managed_user_service) {
-    const ManagedModeURLFilter* url_filter =
-        managed_user_service->GetURLFilterForUIThread();
+  if (supervised_user_service) {
+    const SupervisedUserURLFilter* url_filter =
+        supervised_user_service->GetURLFilterForUIThread();
     int filtering_behavior =
         url_filter->GetFilteringBehaviorForURL(url.GetWithEmptyPath());
     result->SetInteger("hostFilteringBehavior", filtering_behavior);
@@ -386,10 +385,13 @@ bool BrowsingHistoryHandler::HistoryEntry::SortByTimeDescending(
   return entry1.time > entry2.time;
 }
 
-BrowsingHistoryHandler::BrowsingHistoryHandler() {}
+BrowsingHistoryHandler::BrowsingHistoryHandler()
+    : has_pending_delete_request_(false),
+      weak_factory_(this) {
+}
 
 BrowsingHistoryHandler::~BrowsingHistoryHandler() {
-  history_request_consumer_.CancelAllRequests();
+  query_task_tracker_.TryCancelAll();
   web_history_request_.reset();
 }
 
@@ -432,7 +434,7 @@ bool BrowsingHistoryHandler::ExtractIntegerValueAtIndex(
 
 void BrowsingHistoryHandler::WebHistoryTimeout() {
   // TODO(dubroy): Communicate the failure to the front end.
-  if (!history_request_consumer_.HasPendingRequests())
+  if (!query_task_tracker_.HasTrackedTasks())
     ReturnResultsToFrontEnd();
 
   UMA_HISTOGRAM_ENUMERATION(
@@ -445,7 +447,7 @@ void BrowsingHistoryHandler::QueryHistory(
   Profile* profile = Profile::FromWebUI(web_ui());
 
   // Anything in-flight is invalid.
-  history_request_consumer_.CancelAllRequests();
+  query_task_tracker_.TryCancelAll();
   web_history_request_.reset();
 
   query_results_.clear();
@@ -454,10 +456,12 @@ void BrowsingHistoryHandler::QueryHistory(
   HistoryService* hs = HistoryServiceFactory::GetForProfile(
       profile, Profile::EXPLICIT_ACCESS);
   hs->QueryHistory(search_text,
-      options,
-      &history_request_consumer_,
-      base::Bind(&BrowsingHistoryHandler::QueryComplete,
-                 base::Unretained(this), search_text, options));
+                   options,
+                   base::Bind(&BrowsingHistoryHandler::QueryComplete,
+                              base::Unretained(this),
+                              search_text,
+                              options),
+                   &query_task_tracker_);
 
   history::WebHistoryService* web_history =
       WebHistoryServiceFactory::GetForProfile(profile);
@@ -529,7 +533,10 @@ void BrowsingHistoryHandler::HandleQueryHistory(const base::ListValue* args) {
 
 void BrowsingHistoryHandler::HandleRemoveVisits(const base::ListValue* args) {
   Profile* profile = Profile::FromWebUI(web_ui());
+  // TODO(davidben): history.js is not aware of this failure and will still
+  // override |deleteCompleteCallback_|.
   if (delete_task_tracker_.HasTrackedTasks() ||
+      has_pending_delete_request_ ||
       !profile->GetPrefs()->GetBoolean(prefs::kAllowDeletingBrowserHistory)) {
     web_ui()->CallJavascriptFunction("deleteFailed");
     return;
@@ -612,10 +619,11 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const base::ListValue* args) {
       &delete_task_tracker_);
 
   if (web_history) {
-    web_history_delete_request_ = web_history->ExpireHistory(
+    has_pending_delete_request_ = true;
+    web_history->ExpireHistory(
         expire_list,
         base::Bind(&BrowsingHistoryHandler::RemoveWebHistoryComplete,
-                   base::Unretained(this)));
+                   weak_factory_.GetWeakPtr()));
   }
 
 #if defined(ENABLE_EXTENSIONS)
@@ -635,11 +643,8 @@ void BrowsingHistoryHandler::HandleRemoveVisits(const base::ListValue* args) {
 void BrowsingHistoryHandler::HandleClearBrowsingData(
     const base::ListValue* args) {
 #if defined(OS_ANDROID)
-  Profile* profile = Profile::FromWebUI(web_ui());
-  const TabModel* tab_model =
-      TabModelList::GetTabModelWithProfile(profile);
-  if (tab_model)
-    tab_model->OpenClearBrowsingData();
+  chrome::android::ChromiumApplication::OpenClearBrowsingData(
+      web_ui()->GetWebContents());
 #else
   // TODO(beng): This is an improper direct dependency on Browser. Route this
   // through some sort of delegate.
@@ -706,10 +711,11 @@ void BrowsingHistoryHandler::MergeDuplicateResults(
 void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
   Profile* profile = Profile::FromWebUI(web_ui());
   BookmarkModel* bookmark_model = BookmarkModelFactory::GetForProfile(profile);
-  ManagedUserService* managed_user_service = NULL;
+  SupervisedUserService* supervised_user_service = NULL;
 #if defined(ENABLE_MANAGED_USERS)
-  if (profile->IsManaged())
-    managed_user_service = ManagedUserServiceFactory::GetForProfile(profile);
+  if (profile->IsSupervised())
+    supervised_user_service =
+        SupervisedUserServiceFactory::GetForProfile(profile);
 #endif
   ProfileSyncService* sync_service =
       ProfileSyncServiceFactory::GetInstance()->GetForProfile(profile);
@@ -738,7 +744,7 @@ void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
   for (std::vector<BrowsingHistoryHandler::HistoryEntry>::iterator it =
            query_results_.begin(); it != query_results_.end(); ++it) {
     scoped_ptr<base::Value> value(
-        it->ToValue(bookmark_model, managed_user_service, sync_service));
+        it->ToValue(bookmark_model, supervised_user_service, sync_service));
     results_value.Append(value.release());
   }
 
@@ -752,7 +758,6 @@ void BrowsingHistoryHandler::ReturnResultsToFrontEnd() {
 void BrowsingHistoryHandler::QueryComplete(
     const base::string16& search_text,
     const history::QueryOptions& options,
-    HistoryService::Handle request_handle,
     history::QueryResults* results) {
   DCHECK_EQ(0U, query_results_.size());
   query_results_.reserve(results->size());
@@ -877,7 +882,7 @@ void BrowsingHistoryHandler::WebHistoryQueryComplete(
     NOTREACHED() << "Failed to parse JSON response.";
   }
   results_info_value_.SetBoolean("hasSyncedResults", results_value != NULL);
-  if (!history_request_consumer_.HasPendingRequests())
+  if (!query_task_tracker_.HasTrackedTasks())
     ReturnResultsToFrontEnd();
 }
 
@@ -886,14 +891,12 @@ void BrowsingHistoryHandler::RemoveComplete() {
 
   // Notify the page that the deletion request is complete, but only if a web
   // history delete request is not still pending.
-  if (!(web_history_delete_request_.get() &&
-        web_history_delete_request_->is_pending())) {
+  if (!has_pending_delete_request_)
     web_ui()->CallJavascriptFunction("deleteComplete");
-  }
 }
 
-void BrowsingHistoryHandler::RemoveWebHistoryComplete(
-    history::WebHistoryService::Request* request, bool success) {
+void BrowsingHistoryHandler::RemoveWebHistoryComplete(bool success) {
+  has_pending_delete_request_ = false;
   // TODO(dubroy): Should we handle failure somehow? Delete directives will
   // ensure that the visits are eventually deleted, so maybe it's not necessary.
   if (!delete_task_tracker_.HasTrackedTasks())
@@ -999,12 +1002,6 @@ HistoryUI::HistoryUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   // Set up the chrome://history-frame/ source.
   Profile* profile = Profile::FromWebUI(web_ui);
   content::WebUIDataSource::Add(profile, CreateHistoryUIHTMLSource(profile));
-}
-
-// static
-const GURL HistoryUI::GetHistoryURLWithSearchText(const base::string16& text) {
-  return GURL(std::string(chrome::kChromeUIHistoryURL) + "#q=" +
-              net::EscapeQueryParamValue(base::UTF16ToUTF8(text), true));
 }
 
 // static

@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/file_util.h"
 #include "base/prefs/testing_pref_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -13,6 +14,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
+#include "chrome/browser/profiles/profile_avatar_downloader.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/test/base/testing_browser_process.h"
@@ -116,8 +119,6 @@ void ProfileInfoCacheTest::ResetCache() {
   testing_profile_manager_.DeleteProfileInfoCache();
 }
 
-namespace {
-
 TEST_F(ProfileInfoCacheTest, AddProfiles) {
   EXPECT_EQ(0u, GetCache()->GetNumberOfProfiles());
 
@@ -128,12 +129,12 @@ TEST_F(ProfileInfoCacheTest, AddProfiles) {
     base::string16 profile_name =
         ASCIIToUTF16(base::StringPrintf("name_%ud", i));
     const SkBitmap* icon = rb.GetImageNamed(
-        ProfileInfoCache::GetDefaultAvatarIconResourceIDAtIndex(
+        profiles::GetDefaultAvatarIconResourceIDAtIndex(
             i)).ToSkBitmap();
-    std::string managed_user_id = i == 3 ? "TEST_ID" : "";
+    std::string supervised_user_id = i == 3 ? "TEST_ID" : "";
 
     GetCache()->AddProfileToCache(profile_path, profile_name, base::string16(),
-                                  i, managed_user_id);
+                                  i, supervised_user_id);
     GetCache()->SetBackgroundStatusOfProfileAtIndex(i, true);
     base::string16 gaia_name = ASCIIToUTF16(base::StringPrintf("gaia_%ud", i));
     GetCache()->SetGAIANameOfProfileAtIndex(i, gaia_name);
@@ -145,9 +146,10 @@ TEST_F(ProfileInfoCacheTest, AddProfiles) {
         GetCache()->GetAvatarIconOfProfileAtIndex(i).ToSkBitmap();
     EXPECT_EQ(icon->width(), actual_icon->width());
     EXPECT_EQ(icon->height(), actual_icon->height());
-    EXPECT_EQ(i == 3, GetCache()->ProfileIsManagedAtIndex(i));
+    EXPECT_EQ(i == 3, GetCache()->ProfileIsSupervisedAtIndex(i));
     EXPECT_EQ(i == 3, GetCache()->IsOmittedProfileAtIndex(i));
-    EXPECT_EQ(managed_user_id, GetCache()->GetManagedUserIdOfProfileAtIndex(i));
+    EXPECT_EQ(supervised_user_id,
+              GetCache()->GetSupervisedUserIdOfProfileAtIndex(i));
   }
 
   // Reset the cache and test the it reloads correctly.
@@ -281,78 +283,59 @@ TEST_F(ProfileInfoCacheTest, BackgroundModeStatus) {
   EXPECT_FALSE(GetCache()->GetBackgroundStatusOfProfileAtIndex(1));
 }
 
-TEST_F(ProfileInfoCacheTest, HasMigrated) {
-  GetCache()->AddProfileToCache(
-      GetProfilePath("path_1"), ASCIIToUTF16("name_1"),
-      base::string16(), 0, std::string());
-  GetCache()->AddProfileToCache(
-      GetProfilePath("path_2"), ASCIIToUTF16("name_2"),
-      base::string16(), 0, std::string());
-
-  // Sanity check.
-  EXPECT_FALSE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(0));
-  EXPECT_FALSE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(1));
-
-  // Set migrated state for 2nd profile.
-  GetCache()->SetHasMigratedToGAIAInfoOfProfileAtIndex(1, true);
-  EXPECT_FALSE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(0));
-  EXPECT_TRUE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(1));
-
-  // Set migrated state for 1st profile.
-  GetCache()->SetHasMigratedToGAIAInfoOfProfileAtIndex(0, true);
-  EXPECT_TRUE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(0));
-  EXPECT_TRUE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(1));
-
-  // Unset migrated state for 2nd profile.
-  GetCache()->SetHasMigratedToGAIAInfoOfProfileAtIndex(1, false);
-  EXPECT_TRUE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(0));
-  EXPECT_FALSE(GetCache()->GetHasMigratedToGAIAInfoOfProfileAtIndex(1));
-}
-
 TEST_F(ProfileInfoCacheTest, ProfileActiveTime) {
   GetCache()->AddProfileToCache(
       GetProfilePath("path_1"), ASCIIToUTF16("name_1"),
       base::string16(), 0, std::string());
   EXPECT_EQ(base::Time(), GetCache()->GetProfileActiveTimeAtIndex(0));
+  // Before & After times are artificially shifted because just relying upon
+  // the system time can yield problems due to inaccuracies in the
+  // underlying storage system (which uses a double with only 52 bits of
+  // precision to store the 64-bit "time" number).  http://crbug.com/346827
   base::Time before = base::Time::Now();
+  before -= base::TimeDelta::FromSeconds(1);
   GetCache()->SetProfileActiveTimeAtIndex(0);
   base::Time after = base::Time::Now();
+  after += base::TimeDelta::FromSeconds(1);
   EXPECT_LE(before, GetCache()->GetProfileActiveTimeAtIndex(0));
   EXPECT_GE(after, GetCache()->GetProfileActiveTimeAtIndex(0));
 }
 
 TEST_F(ProfileInfoCacheTest, GAIAName) {
   GetCache()->AddProfileToCache(
-      GetProfilePath("path_1"), ASCIIToUTF16("name_1"),
+      GetProfilePath("path_1"), ASCIIToUTF16("Person 1"),
       base::string16(), 0, std::string());
-  base::string16 profile_name(ASCIIToUTF16("profile name 2"));
+  base::string16 profile_name(ASCIIToUTF16("Person 2"));
   GetCache()->AddProfileToCache(
       GetProfilePath("path_2"), profile_name, base::string16(), 0,
       std::string());
 
+  int index1 = GetCache()->GetIndexOfProfileWithPath(GetProfilePath("path_1"));
+  int index2 = GetCache()->GetIndexOfProfileWithPath(GetProfilePath("path_2"));
+
   // Sanity check.
-  EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(0).empty());
-  EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(1).empty());
-  EXPECT_FALSE(GetCache()->IsUsingGAIANameOfProfileAtIndex(0));
-  EXPECT_FALSE(GetCache()->IsUsingGAIANameOfProfileAtIndex(1));
+  EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(index1).empty());
+  EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(index2).empty());
 
-  // Set GAIA name.
+  // Set GAIA name. This re-sorts the cache.
   base::string16 gaia_name(ASCIIToUTF16("Pat Smith"));
-  GetCache()->SetGAIANameOfProfileAtIndex(1, gaia_name);
-  EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(0).empty());
-  EXPECT_EQ(gaia_name, GetCache()->GetGAIANameOfProfileAtIndex(1));
-  EXPECT_EQ(profile_name, GetCache()->GetNameOfProfileAtIndex(1));
+  GetCache()->SetGAIANameOfProfileAtIndex(index2, gaia_name);
+  index1 = GetCache()->GetIndexOfProfileWithPath(GetProfilePath("path_1"));
+  index2 = GetCache()->GetIndexOfProfileWithPath(GetProfilePath("path_2"));
 
-  // Use GAIA name as profile name.
-  GetCache()->SetIsUsingGAIANameOfProfileAtIndex(1, true);
+  // Since there is a GAIA name, we use that as a display name.
+  EXPECT_TRUE(GetCache()->GetGAIANameOfProfileAtIndex(index1).empty());
+  EXPECT_EQ(gaia_name, GetCache()->GetGAIANameOfProfileAtIndex(index2));
+  EXPECT_EQ(gaia_name, GetCache()->GetNameOfProfileAtIndex(index2));
 
-  EXPECT_EQ(gaia_name, GetCache()->GetNameOfProfileAtIndex(1));
-  EXPECT_EQ(gaia_name, GetCache()->GetGAIANameOfProfileAtIndex(1));
+  // Don't use GAIA name as profile name. This re-sorts the cache.
+  base::string16 custom_name(ASCIIToUTF16("Custom name"));
+  GetCache()->SetNameOfProfileAtIndex(index2, custom_name);
+  index1 = GetCache()->GetIndexOfProfileWithPath(GetProfilePath("path_1"));
+  index2 = GetCache()->GetIndexOfProfileWithPath(GetProfilePath("path_2"));
 
-  // Don't use GAIA name as profile name.
-  GetCache()->SetIsUsingGAIANameOfProfileAtIndex(1, false);
-  EXPECT_EQ(profile_name, GetCache()->GetNameOfProfileAtIndex(1));
-  EXPECT_EQ(gaia_name, GetCache()->GetGAIANameOfProfileAtIndex(1));
+  EXPECT_EQ(custom_name, GetCache()->GetNameOfProfileAtIndex(index2));
+  EXPECT_EQ(gaia_name, GetCache()->GetGAIANameOfProfileAtIndex(index2));
 }
 
 TEST_F(ProfileInfoCacheTest, GAIAPicture) {
@@ -370,7 +353,7 @@ TEST_F(ProfileInfoCacheTest, GAIAPicture) {
   EXPECT_FALSE(GetCache()->IsUsingGAIAPictureOfProfileAtIndex(1));
 
   // The profile icon should be the default one.
-  int id = ProfileInfoCache::GetDefaultAvatarIconResourceIDAtIndex(0);
+  int id = profiles::GetDefaultAvatarIconResourceIDAtIndex(0);
   const gfx::Image& profile_image(
       ResourceBundle::GetSharedInstance().GetImageNamed(id));
   EXPECT_TRUE(gfx::test::IsEqual(
@@ -428,27 +411,27 @@ TEST_F(ProfileInfoCacheTest, PersistGAIAPicture) {
     gaia_image, *GetCache()->GetGAIAPictureOfProfileAtIndex(0)));
 }
 
-TEST_F(ProfileInfoCacheTest, SetManagedUserId) {
+TEST_F(ProfileInfoCacheTest, SetSupervisedUserId) {
   GetCache()->AddProfileToCache(
       GetProfilePath("test"), ASCIIToUTF16("Test"),
       base::string16(), 0, std::string());
-  EXPECT_FALSE(GetCache()->ProfileIsManagedAtIndex(0));
+  EXPECT_FALSE(GetCache()->ProfileIsSupervisedAtIndex(0));
 
-  GetCache()->SetManagedUserIdOfProfileAtIndex(0, "TEST_ID");
-  EXPECT_TRUE(GetCache()->ProfileIsManagedAtIndex(0));
-  EXPECT_EQ("TEST_ID", GetCache()->GetManagedUserIdOfProfileAtIndex(0));
+  GetCache()->SetSupervisedUserIdOfProfileAtIndex(0, "TEST_ID");
+  EXPECT_TRUE(GetCache()->ProfileIsSupervisedAtIndex(0));
+  EXPECT_EQ("TEST_ID", GetCache()->GetSupervisedUserIdOfProfileAtIndex(0));
 
   ResetCache();
-  EXPECT_TRUE(GetCache()->ProfileIsManagedAtIndex(0));
+  EXPECT_TRUE(GetCache()->ProfileIsSupervisedAtIndex(0));
 
-  GetCache()->SetManagedUserIdOfProfileAtIndex(0, std::string());
-  EXPECT_FALSE(GetCache()->ProfileIsManagedAtIndex(0));
-  EXPECT_EQ("", GetCache()->GetManagedUserIdOfProfileAtIndex(0));
+  GetCache()->SetSupervisedUserIdOfProfileAtIndex(0, std::string());
+  EXPECT_FALSE(GetCache()->ProfileIsSupervisedAtIndex(0));
+  EXPECT_EQ("", GetCache()->GetSupervisedUserIdOfProfileAtIndex(0));
 }
 
 TEST_F(ProfileInfoCacheTest, EmptyGAIAInfo) {
   base::string16 profile_name = ASCIIToUTF16("name_1");
-  int id = ProfileInfoCache::GetDefaultAvatarIconResourceIDAtIndex(0);
+  int id = profiles::GetDefaultAvatarIconResourceIDAtIndex(0);
   const gfx::Image& profile_image(
       ResourceBundle::GetSharedInstance().GetImageNamed(id));
 
@@ -459,7 +442,6 @@ TEST_F(ProfileInfoCacheTest, EmptyGAIAInfo) {
   // Set empty GAIA info.
   GetCache()->SetGAIANameOfProfileAtIndex(0, base::string16());
   GetCache()->SetGAIAPictureOfProfileAtIndex(0, NULL);
-  GetCache()->SetIsUsingGAIANameOfProfileAtIndex(0, true);
   GetCache()->SetIsUsingGAIAPictureOfProfileAtIndex(0, true);
 
   // Verify that the profile name and picture are not empty.
@@ -468,23 +450,24 @@ TEST_F(ProfileInfoCacheTest, EmptyGAIAInfo) {
       profile_image, GetCache()->GetAvatarIconOfProfileAtIndex(0)));
 }
 
-TEST_F(ProfileInfoCacheTest, CreateManagedTestingProfile) {
+TEST_F(ProfileInfoCacheTest, CreateSupervisedTestingProfile) {
   testing_profile_manager_.CreateTestingProfile("default");
-  base::string16 managed_user_name = ASCIIToUTF16("Supervised User");
+  base::string16 supervised_user_name = ASCIIToUTF16("Supervised User");
   testing_profile_manager_.CreateTestingProfile(
       "test1", scoped_ptr<PrefServiceSyncable>(),
-      managed_user_name, 0, "TEST_ID", TestingProfile::TestingFactories());
+      supervised_user_name, 0, "TEST_ID", TestingProfile::TestingFactories());
   for (size_t i = 0; i < GetCache()->GetNumberOfProfiles(); i++) {
-    bool is_managed =
-        GetCache()->GetNameOfProfileAtIndex(i) == managed_user_name;
-    EXPECT_EQ(is_managed, GetCache()->ProfileIsManagedAtIndex(i));
-    std::string managed_user_id = is_managed ? "TEST_ID" : "";
-    EXPECT_EQ(managed_user_id, GetCache()->GetManagedUserIdOfProfileAtIndex(i));
+    bool is_supervised =
+        GetCache()->GetNameOfProfileAtIndex(i) == supervised_user_name;
+    EXPECT_EQ(is_supervised, GetCache()->ProfileIsSupervisedAtIndex(i));
+    std::string supervised_user_id = is_supervised ? "TEST_ID" : "";
+    EXPECT_EQ(supervised_user_id,
+              GetCache()->GetSupervisedUserIdOfProfileAtIndex(i));
   }
 
-  // Managed profiles have a custom theme, which needs to be deleted on the FILE
-  // thread. Reset the profile manager now so everything is deleted while we
-  // still have a FILE thread.
+  // Supervised profiles have a custom theme, which needs to be deleted on the
+  // FILE thread. Reset the profile manager now so everything is deleted while
+  // we still have a FILE thread.
   TestingBrowserProcess::GetGlobal()->SetProfileManager(NULL);
 }
 
@@ -521,4 +504,50 @@ TEST_F(ProfileInfoCacheTest, AddStubProfile) {
     ASSERT_FALSE(names[i].empty());
 }
 
-}  // namespace
+TEST_F(ProfileInfoCacheTest, DownloadHighResAvatarTest) {
+  EXPECT_EQ(0U, GetCache()->GetNumberOfProfiles());
+  base::FilePath path_1 = GetProfilePath("path_1");
+  GetCache()->AddProfileToCache(path_1, ASCIIToUTF16("name_1"),
+                                base::string16(), 0, std::string());
+  EXPECT_EQ(1U, GetCache()->GetNumberOfProfiles());
+
+  // We haven't downloaded any high-res avatars yet.
+  EXPECT_EQ(0U, GetCache()->cached_avatar_images_.size());
+  EXPECT_EQ(0U, GetCache()->avatar_images_downloads_in_progress_.size());
+  EXPECT_FALSE(GetCache()->GetHighResAvatarOfProfileAtIndex(0));
+
+  // Simulate downloading a high-res avatar.
+  const size_t kIconIndex = 0;
+  ProfileAvatarDownloader avatar_downloader(
+      kIconIndex, GetCache()->GetPathOfProfileAtIndex(0), GetCache());
+
+  // Put a real bitmap into "bitmap".  2x2 bitmap of green 32 bit pixels.
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
+  bitmap.allocPixels();
+  bitmap.eraseColor(SK_ColorGREEN);
+
+  avatar_downloader.OnFetchComplete(
+      GURL("http://www.google.com/avatar.png"), &bitmap);
+
+  std::string file_name =
+      profiles::GetDefaultAvatarIconFileNameAtIndex(kIconIndex);
+
+  // The file should have been cached and saved.
+  EXPECT_EQ(0U, GetCache()->avatar_images_downloads_in_progress_.size());
+  EXPECT_EQ(1U, GetCache()->cached_avatar_images_.size());
+  EXPECT_TRUE(GetCache()->GetHighResAvatarOfProfileAtIndex(0));
+  EXPECT_EQ(GetCache()->cached_avatar_images_[file_name],
+      GetCache()->GetHighResAvatarOfProfileAtIndex(0));
+
+  // Make sure everything has completed, and the file has been written to disk.
+  base::RunLoop().RunUntilIdle();
+
+  // Clean up.
+  base::FilePath icon_path =
+      profiles::GetPathOfHighResAvatarAtIndex(kIconIndex);
+  EXPECT_NE(std::string::npos, icon_path.MaybeAsASCII().find(file_name));
+  EXPECT_TRUE(base::PathExists(icon_path));
+  EXPECT_TRUE(base::DeleteFile(icon_path, true));
+  EXPECT_FALSE(base::PathExists(icon_path));
+}

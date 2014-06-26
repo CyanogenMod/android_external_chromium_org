@@ -51,8 +51,6 @@ def GetEnvironment(host_obj, testing, extra_env_vars=None):
   if extra_env_vars:
     init_env.update(extra_env_vars)
   envsetup_cmd = '. build/android/envsetup.sh'
-  if host_obj.target_arch:
-    envsetup_cmd += ' --target-arch=%s' % host_obj.target_arch
   if testing:
     # Skip envsetup to avoid presubmit dependence on android deps.
     print 'Testing mode - skipping "%s"' % envsetup_cmd
@@ -70,7 +68,9 @@ def GetEnvironment(host_obj, testing, extra_env_vars=None):
     sys.exit(1)
   env = json.loads(json_env)
   env['GYP_DEFINES'] = env.get('GYP_DEFINES', '') + \
-      ' fastbuild=1 use_goma=1 gomadir=%s' % bb_utils.GOMA_DIR
+      ' OS=android fastbuild=1 use_goma=1 gomadir=%s' % bb_utils.GOMA_DIR
+  if host_obj.target_arch:
+    env['GYP_DEFINES'] += ' target_arch=%s' % host_obj.target_arch
   extra_gyp = host_obj.extra_gyp_defines
   if extra_gyp:
     env['GYP_DEFINES'] += ' %s' % extra_gyp
@@ -118,11 +118,14 @@ def GetBotStepMap():
   std_host_tests = ['check_webview_licenses', 'findbugs']
   std_build_steps = ['compile', 'zip_build']
   std_test_steps = ['extract_build']
-  std_tests = ['ui', 'unit']
+  std_tests = ['ui', 'unit', 'mojo']
+  telemetry_tests = ['telemetry_perf_unittests']
   flakiness_server = (
       '--flakiness-server=%s' % constants.UPSTREAM_FLAKINESS_SERVER)
   experimental = ['--experimental']
-
+  bisect_chrome_output_dir = os.path.abspath(
+      os.path.join(os.path.dirname(__file__), os.pardir, os.pardir, os.pardir,
+                   os.pardir, 'bisect', 'src', 'out'))
   B = BotConfig
   H = (lambda steps, extra_args=None, extra_gyp=None, target_arch=None :
        HostConfig('build/android/buildbot/bb_host_steps.py', steps, extra_args,
@@ -138,6 +141,8 @@ def GetBotStepMap():
       B('main-clang-builder',
         H(compile_step, extra_gyp='clang=1 component=shared_library')),
       B('main-clobber', H(compile_step)),
+      B('main-tests-rel', H(std_test_steps), T(std_tests + telemetry_tests,
+                                               [flakiness_server])),
       B('main-tests', H(std_test_steps), T(std_tests, [flakiness_server])),
 
       # Other waterfalls
@@ -146,7 +151,7 @@ def GetBotStepMap():
         T(std_tests, ['--asan', '--asan-symbolize'])),
       B('blink-try-builder', H(compile_step)),
       B('chromedriver-fyi-tests-dbg', H(std_test_steps),
-        T(['chromedriver'], ['--install=ChromiumTestShell'])),
+        T(['chromedriver'], ['--install=ChromeShell', '--skip-wipe'])),
       B('fyi-x86-builder-dbg',
         H(compile_step + std_host_tests, experimental, target_arch='x86')),
       B('fyi-builder-dbg',
@@ -161,11 +166,15 @@ def GetBotStepMap():
       B('fyi-component-builder-tests-dbg',
         H(compile_step, extra_gyp='component=shared_library'),
         T(std_tests, ['--experimental', flakiness_server])),
-      B('gpu-builder-tests-dbg', H(compile_step), T(['gpu'])),
+      B('gpu-builder-tests-dbg',
+        H(compile_step),
+        T(['gpu'], ['--install=ContentShell'])),
       # Pass empty T([]) so that logcat monitor and device status check are run.
-      B('perf-bisect-builder-tests-dbg', H(['bisect_perf_regression']), T([])),
+      B('perf-bisect-builder-tests-dbg',
+        H(['bisect_perf_regression']),
+        T([], ['--chrome-output-dir', bisect_chrome_output_dir])),
       B('perf-tests-rel', H(std_test_steps),
-        T([], ['--install=ChromiumTestShell'])),
+        T([], ['--install=ChromeShell'])),
       B('webkit-latest-webkit-tests', H(std_test_steps),
         T(['webkit_layout', 'webkit'], ['--auto-reconnect'])),
       B('webkit-latest-contentshell', H(compile_step),
@@ -198,6 +207,7 @@ def GetBotStepMap():
       ('try-clang-builder', 'main-clang-builder'),
       ('try-fyi-builder-dbg', 'fyi-builder-dbg'),
       ('try-x86-builder-dbg', 'x86-builder-dbg'),
+      ('try-tests-rel', 'main-tests-rel'),
       ('try-tests', 'main-tests'),
       ('try-fyi-tests', 'fyi-tests'),
       ('webkit-latest-tests', 'main-tests'),
@@ -269,6 +279,17 @@ def RunBotCommands(options, commands, env):
 
 
 def main(argv):
+  proc = subprocess.Popen(
+      ['/bin/hostname', '-f'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+  hostname_stdout, hostname_stderr = proc.communicate()
+  if proc.returncode == 0:
+    print 'Running on: ' + hostname_stdout
+  else:
+    print >> sys.stderr, 'WARNING: failed to run hostname'
+    print >> sys.stderr, hostname_stdout
+    print >> sys.stderr, hostname_stderr
+    sys.exit(1)
+
   parser = GetRunBotOptParser()
   options, args = parser.parse_args(argv[1:])
   if args:

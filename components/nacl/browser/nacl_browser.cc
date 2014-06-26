@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_proxy.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/path_service.h"
@@ -26,12 +27,6 @@ const base::FilePath::CharType kValidationCacheFileName[] =
     FILE_PATH_LITERAL("nacl_validation_cache.bin");
 
 const bool kValidationCacheEnabledByDefault = true;
-
-enum ValidationCacheStatus {
-  CACHE_MISS = 0,
-  CACHE_HIT,
-  CACHE_MAX
-};
 
 // Keep the cache bounded to an arbitrary size.  If it's too small, useful
 // entries could be evicted when multiple .nexes are loaded at once.  On the
@@ -88,7 +83,7 @@ void ReadCache(const base::FilePath& filename, std::string* data) {
 }
 
 void WriteCache(const base::FilePath& filename, const Pickle* pickle) {
-  file_util::WriteFile(filename, static_cast<const char*>(pickle->data()),
+  base::WriteFile(filename, static_cast<const char*>(pickle->data()),
                        pickle->size());
 }
 
@@ -99,13 +94,15 @@ void RemoveCache(const base::FilePath& filename,
                                    callback);
 }
 
-void LogCacheQuery(ValidationCacheStatus status) {
-  UMA_HISTOGRAM_ENUMERATION("NaCl.ValidationCache.Query", status, CACHE_MAX);
+void LogCacheQuery(nacl::NaClBrowser::ValidationCacheStatus status) {
+  UMA_HISTOGRAM_ENUMERATION("NaCl.ValidationCache.Query", status,
+                            nacl::NaClBrowser::CACHE_MAX);
 }
 
-void LogCacheSet(ValidationCacheStatus status) {
+void LogCacheSet(nacl::NaClBrowser::ValidationCacheStatus status) {
   // Bucket zero is reserved for future use.
-  UMA_HISTOGRAM_ENUMERATION("NaCl.ValidationCache.Set", status, CACHE_MAX);
+  UMA_HISTOGRAM_ENUMERATION("NaCl.ValidationCache.Set", status,
+                            nacl::NaClBrowser::CACHE_MAX);
 }
 
 // Crash throttling parameters.
@@ -116,37 +113,30 @@ const int64 kCrashesIntervalInSeconds = 120;
 
 namespace nacl {
 
-base::PlatformFile OpenNaClExecutableImpl(const base::FilePath& file_path) {
+base::File OpenNaClExecutableImpl(const base::FilePath& file_path) {
   // Get a file descriptor. On Windows, we need 'GENERIC_EXECUTE' in order to
   // memory map the executable.
   // IMPORTANT: This file descriptor must not have write access - that could
   // allow a NaCl inner sandbox escape.
-  base::PlatformFile file;
-  base::PlatformFileError error_code;
-  file = base::CreatePlatformFile(
-      file_path,
-      (base::PLATFORM_FILE_OPEN |
-       base::PLATFORM_FILE_READ |
-       base::PLATFORM_FILE_EXECUTE),  // Windows only flag.
-      NULL,
-      &error_code);
-  if (error_code != base::PLATFORM_FILE_OK)
-    return base::kInvalidPlatformFileValue;
+  base::File file(file_path,
+                  (base::File::FLAG_OPEN |
+                   base::File::FLAG_READ |
+                   base::File::FLAG_EXECUTE));  // Windows only flag.
+  if (!file.IsValid())
+    return file.Pass();
 
   // Check that the file does not reference a directory. Returning a descriptor
   // to an extension directory could allow an outer sandbox escape. openat(...)
   // could be used to traverse into the file system.
-  base::PlatformFileInfo file_info;
-  if (!base::GetPlatformFileInfo(file, &file_info) || file_info.is_directory) {
-    base::ClosePlatformFile(file);
-    return base::kInvalidPlatformFileValue;
-  }
-  return file;
+  base::File::Info file_info;
+  if (!file.GetInfo(&file_info) || file_info.is_directory)
+    return base::File();
+
+  return file.Pass();
 }
 
 NaClBrowser::NaClBrowser()
     : weak_factory_(this),
-      irt_platform_file_(base::kInvalidPlatformFileValue),
       irt_filepath_(),
       irt_state_(NaClResourceUninitialized),
       validation_cache_file_path_(),
@@ -178,8 +168,6 @@ void NaClBrowser::EarlyStartup() {
 }
 
 NaClBrowser::~NaClBrowser() {
-  if (irt_platform_file_ != base::kInvalidPlatformFileValue)
-    base::ClosePlatformFile(irt_platform_file_);
 }
 
 void NaClBrowser::InitIrtFilePath() {
@@ -230,11 +218,11 @@ bool NaClBrowser::IsOk() const {
   return ok_;
 }
 
-base::PlatformFile NaClBrowser::IrtFile() const {
+const base::File& NaClBrowser::IrtFile() const {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   CHECK_EQ(irt_state_, NaClResourceReady);
-  CHECK_NE(irt_platform_file_, base::kInvalidPlatformFileValue);
-  return irt_platform_file_;
+  CHECK(irt_file_.IsValid());
+  return irt_file_;
 }
 
 void NaClBrowser::EnsureAllResourcesAvailable() {
@@ -249,28 +237,27 @@ void NaClBrowser::EnsureIrtAvailable() {
   if (IsOk() && irt_state_ == NaClResourceUninitialized) {
     irt_state_ = NaClResourceRequested;
     // TODO(ncbray) use blocking pool.
-    if (!base::FileUtilProxy::CreateOrOpen(
-            content::BrowserThread::GetMessageLoopProxyForThread(
-                content::BrowserThread::FILE)
-                .get(),
-            irt_filepath_,
-            base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-            base::Bind(&NaClBrowser::OnIrtOpened,
-                       weak_factory_.GetWeakPtr()))) {
+    scoped_ptr<base::FileProxy> file_proxy(new base::FileProxy(
+        content::BrowserThread::GetMessageLoopProxyForThread(
+                content::BrowserThread::FILE).get()));
+    base::FileProxy* proxy = file_proxy.get();
+    if (!proxy->CreateOrOpen(irt_filepath_,
+                             base::File::FLAG_OPEN | base::File::FLAG_READ,
+                             base::Bind(&NaClBrowser::OnIrtOpened,
+                                        weak_factory_.GetWeakPtr(),
+                                        Passed(&file_proxy)))) {
       LOG(ERROR) << "Internal error, NaCl disabled.";
       MarkAsFailed();
     }
   }
 }
 
-void NaClBrowser::OnIrtOpened(base::File::Error error_code,
-                              base::PassPlatformFile file,
-                              bool created) {
+void NaClBrowser::OnIrtOpened(scoped_ptr<base::FileProxy> file_proxy,
+                              base::File::Error error_code) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
   DCHECK_EQ(irt_state_, NaClResourceRequested);
-  DCHECK(!created);
-  if (error_code == base::File::FILE_OK) {
-    irt_platform_file_ = file.ReleaseValue();
+  if (file_proxy->IsValid()) {
+    irt_file_ = file_proxy->TakeFile();
   } else {
     LOG(ERROR) << "Failed to open NaCl IRT file \""
                << irt_filepath_.LossyDisplayName()
@@ -281,15 +268,15 @@ void NaClBrowser::OnIrtOpened(base::File::Error error_code,
   CheckWaiting();
 }
 
-void NaClBrowser::FireGdbDebugStubPortOpened(int port) {
-  content::BrowserThread::PostTask(
-      content::BrowserThread::IO,
-      FROM_HERE,
-      base::Bind(debug_stub_port_listener_, port));
-}
-
-bool NaClBrowser::HasGdbDebugStubPortListener() {
-  return !debug_stub_port_listener_.is_null();
+void NaClBrowser::SetProcessGdbDebugStubPort(int process_id, int port) {
+  gdb_debug_stub_port_map_[process_id] = port;
+  if (port != kGdbDebugStubPortUnknown &&
+      !debug_stub_port_listener_.is_null()) {
+    content::BrowserThread::PostTask(
+        content::BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(debug_stub_port_listener_, port));
+  }
 }
 
 void NaClBrowser::SetGdbDebugStubPortListener(
@@ -299,6 +286,14 @@ void NaClBrowser::SetGdbDebugStubPortListener(
 
 void NaClBrowser::ClearGdbDebugStubPortListener() {
   debug_stub_port_listener_.Reset();
+}
+
+int NaClBrowser::GetProcessGdbDebugStubPort(int process_id) {
+  GdbDebugStubPortMap::iterator i = gdb_debug_stub_port_map_.find(process_id);
+  if (i != gdb_debug_stub_port_map_.end()) {
+    return i->second;
+  }
+  return kGdbDebugStubPortUnused;
 }
 
 void NaClBrowser::InitValidationCacheFilePath() {
@@ -541,6 +536,10 @@ void NaClBrowser::PersistValidationCache() {
                    base::Owned(pickle)));
   }
   validation_cache_is_modified_ = false;
+}
+
+void NaClBrowser::OnProcessEnd(int process_id) {
+  gdb_debug_stub_port_map_.erase(process_id);
 }
 
 void NaClBrowser::OnProcessCrashed() {

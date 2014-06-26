@@ -18,6 +18,7 @@ namespace net {
 
 class HttpCache;
 class IOBuffer;
+class QuicServerId;
 
 // DiskCacheBasedQuicServerInfo fetches information about a QUIC server from
 // our standard disk cache. Since the information is defined to be
@@ -26,12 +27,14 @@ class NET_EXPORT_PRIVATE DiskCacheBasedQuicServerInfo
     : public QuicServerInfo,
       public NON_EXPORTED_BASE(base::NonThreadSafe) {
  public:
-  DiskCacheBasedQuicServerInfo(const std::string& hostname,
+  DiskCacheBasedQuicServerInfo(const QuicServerId& server_id,
                                HttpCache* http_cache);
 
   // QuicServerInfo implementation.
   virtual void Start() OVERRIDE;
   virtual int WaitForDataReady(const CompletionCallback& callback) OVERRIDE;
+  virtual bool IsDataReady() OVERRIDE;
+  virtual bool IsReadyToPersist() OVERRIDE;
   virtual void Persist() OVERRIDE;
 
  private:
@@ -88,7 +91,7 @@ class NET_EXPORT_PRIVATE DiskCacheBasedQuicServerInfo
   bool ready_;
   bool found_entry_;  // Controls the behavior of DoCreateOrOpen.
   std::string new_data_;
-  const std::string hostname_;
+  const QuicServerId server_id_;
   HttpCache* const http_cache_;
   disk_cache::Backend* backend_;
   disk_cache::Entry* entry_;

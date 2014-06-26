@@ -27,7 +27,6 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/net/service_providers_win.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_switches.h"
 #include "content/public/browser/notification_service.h"
 #include "crypto/sha2.h"
 #include "grit/generated_resources.h"
@@ -384,7 +383,7 @@ ModuleEnumerator::ModuleStatus ModuleEnumerator::Match(
           location_hash == blacklisted.location)) {
     // We have a name match against the blacklist (and possibly location match
     // also), so check version.
-    Version module_version(UTF16ToASCII(module.version));
+    Version module_version(base::UTF16ToASCII(module.version));
     Version version_min(blacklisted.version_from);
     Version version_max(blacklisted.version_to);
     bool version_ok = !version_min.IsValid() && !version_max.IsValid();
@@ -644,7 +643,7 @@ void ModuleEnumerator::PreparePathMappings() {
   for (std::vector<base::string16>::const_iterator variable = env_vars.begin();
        variable != env_vars.end(); ++variable) {
     std::string path;
-    if (environment->GetVar(WideToASCII(*variable).c_str(), &path)) {
+    if (environment->GetVar(base::UTF16ToASCII(*variable).c_str(), &path)) {
       path_mapping_.push_back(
           std::make_pair(base::i18n::ToLower(base::UTF8ToUTF16(path)) + L"\\",
                          L"%" + base::i18n::ToLower(*variable) + L"%"));
@@ -812,13 +811,6 @@ base::string16 ModuleEnumerator::GetSubjectNameFromDigitalSignature(
 // static
 EnumerateModulesModel* EnumerateModulesModel::GetInstance() {
   return Singleton<EnumerateModulesModel>::get();
-}
-
-// static
-void EnumerateModulesModel::RecordLearnMoreStat(bool from_menu) {
-  UMA_HISTOGRAM_ENUMERATION("ConflictingModule.UserSelection",
-      from_menu ? ACTION_MENU_LEARN_MORE : ACTION_BUBBLE_LEARN_MORE,
-      ACTION_BOUNDARY);
 }
 
 bool EnumerateModulesModel::ShouldShowConflictWarning() const {
@@ -994,8 +986,7 @@ void EnumerateModulesModel::MaybePostScanningTask() {
     done = true;
 
     const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
-    if (cmd_line.HasSwitch(switches::kConflictingModulesCheck) ||
-        base::win::GetVersion() == base::win::VERSION_XP) {
+    if (base::win::GetVersion() == base::win::VERSION_XP) {
       check_modules_timer_.Start(FROM_HERE,
           base::TimeDelta::FromMilliseconds(kModuleCheckDelayMs),
           this, &EnumerateModulesModel::ScanNow);
@@ -1035,18 +1026,6 @@ void EnumerateModulesModel::DoneScanning() {
 
   content::NotificationService::current()->Notify(
       chrome::NOTIFICATION_MODULE_LIST_ENUMERATED,
-      content::Source<EnumerateModulesModel>(this),
-      content::NotificationService::NoDetails());
-
-  // Command line flag must be enabled for the notification to get sent out.
-  // Otherwise we'd get the badge (while the feature is disabled) when we
-  // navigate to about:conflicts and find confirmed matches.
-  const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
-  if (!cmd_line.HasSwitch(switches::kConflictingModulesCheck))
-    return;
-
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_MODULE_INCOMPATIBILITY_BADGE_CHANGE,
       content::Source<EnumerateModulesModel>(this),
       content::NotificationService::NoDetails());
 }

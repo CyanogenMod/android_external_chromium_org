@@ -15,6 +15,7 @@ AllJsLoadTest.prototype = {
 
   /** @inheritDoc */
   extraLibraries: [
+    'base.js',
     'browser_globals.gtestjs',
     // All of our Javascript files should be listed here unless they are
     // only used by JSCompiler
@@ -56,6 +57,7 @@ AllJsLoadTest.prototype = {
     'remoting.js',
     'session_connector.js',
     'server_log_entry.js',
+    'smart_reconnector.js',
     'stats_accumulator.js',
     'toolbar.js',
     'ui_mode.js',

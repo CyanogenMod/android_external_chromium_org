@@ -2,112 +2,37 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 import collections
-import itertools
 
-from metrics import Metric
-from telemetry.core.timeline import bounds
-from telemetry.page import page_measurement
-
-TRACING_MODE = 'tracing-mode'
-TIMELINE_MODE = 'timeline-mode'
+from telemetry.web_perf.metrics import timeline_based_metric
 
 
-class MissingFramesError(page_measurement.MeasurementFailure):
+class LoadTimesTimelineMetric(timeline_based_metric.TimelineBasedMetric):
   def __init__(self):
-    super(MissingFramesError, self).__init__(
-        'No frames found in trace. Unable to normalize results.')
-
-
-class TimelineMetric(Metric):
-  def __init__(self, mode):
-    """ Initializes a TimelineMetric object.
-    """
-    super(TimelineMetric, self).__init__()
-    assert mode in (TRACING_MODE, TIMELINE_MODE)
-    self._mode = mode
-    self._model = None
-    self._renderer_process = None
-    self._actions = []
-    self._action_ranges = []
-
-  def Start(self, page, tab):
-    """Starts gathering timeline data.
-
-    mode: TRACING_MODE or TIMELINE_MODE
-    """
-    self._model = None
-    if self._mode == TRACING_MODE:
-      if not tab.browser.supports_tracing:
-        raise Exception('Not supported')
-      tab.browser.StartTracing()
-    else:
-      assert self._mode == TIMELINE_MODE
-      tab.StartTimelineRecording()
-
-  def Stop(self, page, tab):
-    if self._mode == TRACING_MODE:
-      trace_result = tab.browser.StopTracing()
-      self._model = trace_result.AsTimelineModel()
-      self._renderer_process = self._model.GetRendererProcessFromTab(tab)
-      self._action_ranges = [ action.GetActiveRangeOnTimeline(self._model)
-                              for action in self._actions ]
-      # Make sure no action ranges overlap
-      for combo in itertools.combinations(self._action_ranges, 2):
-        assert not combo[0].Intersects(combo[1])
-    else:
-      tab.StopTimelineRecording()
-      self._model = tab.timeline_model
-      self._renderer_process = self._model.GetAllProcesses()[0]
-
-  def AddActionToIncludeInMetric(self, action):
-    self._actions.append(action)
-
-  @property
-  def model(self):
-    return self._model
-
-  @model.setter
-  def model(self, model):
-    self._model = model
-
-  @property
-  def renderer_process(self):
-    return self._renderer_process
-
-  @renderer_process.setter
-  def renderer_process(self, p):
-    self._renderer_process = p
-
-  def AddResults(self, tab, results):
-    return
-
-
-class LoadTimesTimelineMetric(TimelineMetric):
-  def __init__(self, mode):
-    super(LoadTimesTimelineMetric, self).__init__(mode)
+    super(LoadTimesTimelineMetric, self).__init__()
     self.report_main_thread_only = True
 
-  def AddResults(self, _, results):
-    assert self._model
+  def AddResults(self, model, renderer_thread, interaction_records, results):
+    assert model
+    assert len(interaction_records) == 1, (
+      'LoadTimesTimelineMetric cannot compute metrics for more than 1 time '
+      'range.')
+    interaction_record = interaction_records[0]
     if self.report_main_thread_only:
-      if self._mode == TRACING_MODE:
-        thread_filter = 'CrRendererMain'
-      else:
-        thread_filter = 'thread 0'
+      thread_filter = 'CrRendererMain'
     else:
       thread_filter = None
 
     events_by_name = collections.defaultdict(list)
+    renderer_process = renderer_thread.parent
 
-    for thread in self.renderer_process.threads.itervalues():
+    for thread in renderer_process.threads.itervalues():
 
       if thread_filter and not thread.name in thread_filter:
         continue
 
       thread_name = thread.name.replace('/','_')
-      events = thread.all_slices
-
-      for e in events:
+      for e in thread.IterAllSlicesInRange(interaction_record.start,
+                                           interaction_record.end):
         events_by_name[e.name].append(e)
 
       for event_name, event_group in events_by_name.iteritems():
@@ -123,7 +48,7 @@ class LoadTimesTimelineMetric(TimelineMetric):
         results.Add(full_name + '_max', 'ms', biggest_jank)
         results.Add(full_name + '_avg', 'ms', total / len(times))
 
-    for counter_name, counter in self.renderer_process.counters.iteritems():
+    for counter_name, counter in renderer_process.counters.iteritems():
       total = sum(counter.totals)
 
       # Results objects cannot contain the '.' character, so remove that here.
@@ -132,7 +57,6 @@ class LoadTimesTimelineMetric(TimelineMetric):
       results.Add(sanitized_counter_name, 'count', total)
       results.Add(sanitized_counter_name + '_avg', 'count',
                   total / float(len(counter.totals)))
-
 
 # We want to generate a consistant picture of our thread usage, despite
 # having several process configurations (in-proc-gpu/single-proc).
@@ -204,16 +128,17 @@ def ThreadCpuTimeResultName(thread_category):
   return "thread_" + thread_category + "_cpu_time_per_frame"
 
 def ThreadDetailResultName(thread_category, detail):
-  return "thread_" + thread_category + "|" + detail
+  detail_sanitized = detail.replace('.','_')
+  return "thread_" + thread_category + "|" + detail_sanitized
 
 
 class ResultsForThread(object):
-  def __init__(self, model, action_ranges, name):
+  def __init__(self, model, record_ranges, name):
     self.model = model
     self.toplevel_slices = []
     self.all_slices = []
     self.name = name
-    self.action_ranges = action_ranges
+    self.record_ranges = record_ranges
 
   @property
   def clock_time(self):
@@ -241,8 +166,8 @@ class ResultsForThread(object):
   def SlicesInActions(self, slices):
     slices_in_actions = []
     for event in slices:
-      for action_range in self.action_ranges:
-        if action_range.Contains(bounds.Bounds.CreateFromEvent(event)):
+      for record_range in self.record_ranges:
+        if record_range.ContainsInterval(event.start, event.end):
           slices_in_actions.append(event)
           break
     return slices_in_actions
@@ -252,12 +177,8 @@ class ResultsForThread(object):
     self.toplevel_slices.extend(self.SlicesInActions(thread.toplevel_slices))
 
   def AddResults(self, num_frames, results):
-    clock_report_name = ThreadTimeResultName(self.name)
-    cpu_report_name  = ThreadCpuTimeResultName(self.name)
-    clock_per_frame = (float(self.clock_time) / num_frames) if num_frames else 0
-    cpu_per_frame   = (float(self.cpu_time) / num_frames) if num_frames else 0
-    results.Add(clock_report_name, 'ms', clock_per_frame)
-    results.Add(cpu_report_name, 'ms', cpu_per_frame)
+    cpu_per_frame = (float(self.cpu_time) / num_frames) if num_frames else 0
+    results.Add(ThreadCpuTimeResultName(self.name), 'ms', cpu_per_frame)
 
   def AddDetailedResults(self, num_frames, results):
     slices_by_category = collections.defaultdict(list)
@@ -271,16 +192,18 @@ class ResultsForThread(object):
       results.Add(ThreadDetailResultName(self.name, category),
                   'ms', self_time_result)
     all_measured_time = sum(all_self_times)
-    all_action_time = sum([action.bounds for action in self.action_ranges])
+    all_action_time = \
+        sum([record_range.bounds for record_range in self.record_ranges])
     idle_time = max(0, all_action_time - all_measured_time)
     idle_time_result = (float(idle_time) / num_frames) if num_frames else 0
     results.Add(ThreadDetailResultName(self.name, "idle"),
                 'ms', idle_time_result)
 
 
-class ThreadTimesTimelineMetric(TimelineMetric):
+class ThreadTimesTimelineMetric(timeline_based_metric.TimelineBasedMetric):
   def __init__(self):
-    super(ThreadTimesTimelineMetric, self).__init__(TRACING_MODE)
+    super(ThreadTimesTimelineMetric, self).__init__()
+    # Minimal traces, for minimum noise in CPU-time measurements.
     self.results_to_report = AllThreads
     self.details_to_report = NoThreads
 
@@ -291,28 +214,24 @@ class ThreadTimesTimelineMetric(TimelineMetric):
         count += 1
     return count
 
-  def AddResults(self, tab, results):
-    # We need at least one action or we won't count any slices.
-    assert len(self._action_ranges) > 0
-
+  def AddResults(self, model, _, interaction_records, results):
     # Set up each thread category for consistant results.
     thread_category_results = {}
     for name in TimelineThreadCategories.values():
-      thread_category_results[name] = ResultsForThread(self._model,
-                                                       self._action_ranges,
-                                                       name)
+      thread_category_results[name] = ResultsForThread(
+        model, [r.GetBounds() for r in interaction_records], name)
 
     # Group the slices by their thread category.
-    for thread in self._model.GetAllThreads():
+    for thread in model.GetAllThreads():
       thread_category = ThreadCategoryName(thread.name)
       thread_category_results[thread_category].AppendThreadSlices(thread)
 
     # Group all threads.
-    for thread in self._model.GetAllThreads():
+    for thread in model.GetAllThreads():
       thread_category_results['total_all'].AppendThreadSlices(thread)
 
     # Also group fast-path threads.
-    for thread in self._model.GetAllThreads():
+    for thread in model.GetAllThreads():
       if ThreadCategoryName(thread.name) in FastPathThreads:
         thread_category_results['total_fast_path'].AppendThreadSlices(thread)
 

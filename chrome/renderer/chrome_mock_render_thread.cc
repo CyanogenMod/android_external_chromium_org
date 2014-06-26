@@ -7,11 +7,11 @@
 #include <vector>
 
 #include "base/values.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/renderer/mock_printer.h"
+#include "chrome/renderer/printing/mock_printer.h"
+#include "extensions/common/extension_messages.h"
 #include "ipc/ipc_sync_message.h"
-#include "printing/print_job_constants.h"
 #include "printing/page_range.h"
+#include "printing/print_job_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_CHROMEOS)
@@ -53,8 +53,7 @@ bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
 
   // Some messages we do special handling.
   bool handled = true;
-  bool msg_is_ok = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(ChromeMockRenderThread, msg, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(ChromeMockRenderThread, msg)
     IPC_MESSAGE_HANDLER(ExtensionHostMsg_OpenChannelToExtension,
                         OnOpenChannelToExtension)
 #if defined(ENABLE_PRINTING)
@@ -80,7 +79,7 @@ bool ChromeMockRenderThread::OnMessageReceived(const IPC::Message& msg) {
 #endif  // defined(OS_CHROMEOS)
 #endif  // defined(ENABLE_PRINTING)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
+  IPC_END_MESSAGE_MAP()
   return handled;
 }
 

@@ -146,6 +146,7 @@ void LauncherContextMenu::Init() {
         AddItem(
             MENU_PIN,
             l10n_util::GetStringUTF16(IDS_LAUNCHER_CONTEXT_MENU_PIN));
+        AddItem(MENU_INSTALL, l10n_util::GetStringUTF16(IDS_APP_INSTALL_TITLE));
       }
       if (controller_->IsOpen(item_.id)) {
         AddItem(MENU_CLOSE,
@@ -156,11 +157,12 @@ void LauncherContextMenu::Init() {
     if (item_.type == ash::TYPE_APP_SHORTCUT ||
         item_.type == ash::TYPE_WINDOWED_APP ||
         item_.type == ash::TYPE_PLATFORM_APP) {
-      std::string app_id = controller_->GetAppIDForShelfID(item_.id);
-      if (!app_id.empty()) {
+      const extensions::MenuItem::ExtensionKey app_key(
+          controller_->GetAppIDForShelfID(item_.id));
+      if (!app_key.empty()) {
         int index = 0;
         extension_items_->AppendExtensionItems(
-            app_id, base::string16(), &index);
+            app_key, base::string16(), &index);
         AddSeparator(ui::NORMAL_SEPARATOR);
       }
     }
@@ -170,9 +172,9 @@ void LauncherContextMenu::Init() {
   // fullscreen because it is confusing when the preference appears not to
   // apply.
   if (!IsFullScreenMode() &&
-        controller_->CanUserModifyShelfAutoHideBehavior(root_window_)) {
+      controller_->CanUserModifyShelfAutoHideBehavior(root_window_)) {
     AddCheckItemWithStringId(MENU_AUTO_HIDE,
-                              IDS_ASH_SHELF_CONTEXT_MENU_AUTO_HIDE);
+                             IDS_ASH_SHELF_CONTEXT_MENU_AUTO_HIDE);
   }
   if (ash::ShelfWidget::ShelfAlignmentAllowed()) {
     AddSubMenuWithStringId(MENU_ALIGNMENT_MENU,
@@ -259,6 +261,20 @@ bool LauncherContextMenu::IsCommandIdEnabled(int command_id) const {
   }
 }
 
+bool LauncherContextMenu::IsCommandIdVisible(int command_id) const {
+  if (item_.type != ash::TYPE_PLATFORM_APP)
+    return true;
+
+  switch (command_id) {
+    case MENU_PIN:
+      return !controller_->CanInstall(item_.id);
+    case MENU_INSTALL:
+      return controller_->CanInstall(item_.id);
+    default:
+      return true;
+  }
+}
+
 bool LauncherContextMenu::GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) {
@@ -283,6 +299,9 @@ void LauncherContextMenu::ExecuteCommand(int command_id, int event_flags) {
       break;
     case MENU_PIN:
       controller_->TogglePinned(item_.id);
+      break;
+    case MENU_INSTALL:
+      controller_->Install(item_.id);
       break;
     case LAUNCH_TYPE_PINNED_TAB:
       controller_->SetLaunchType(item_.id, extensions::LAUNCH_TYPE_PINNED);

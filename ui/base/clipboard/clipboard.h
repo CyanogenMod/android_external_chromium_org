@@ -20,10 +20,6 @@
 #include "ui/base/clipboard/clipboard_types.h"
 #include "ui/base/ui_base_export.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
-#endif
-
 #if defined(OS_WIN)
 #include <objidl.h>
 #elif defined(OS_ANDROID)
@@ -45,15 +41,16 @@ class MessageWindow;
 }  // namespace win
 }  // namespace base
 
+// TODO(dcheng): Temporary until the IPC layer doesn't use WriteObjects().
+namespace content {
+class ClipboardMessageFilter;
+}
+
 namespace gfx {
 class Size;
 }
 
 class SkBitmap;
-
-#if defined(TOOLKIT_GTK)
-typedef struct _GtkClipboard GtkClipboard;
-#endif
 
 #ifdef __OBJC__
 @class NSString;
@@ -63,6 +60,7 @@ class NSString;
 
 namespace ui {
 class ClipboardTest;
+class ScopedClipboardWriter;
 
 class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
  public:
@@ -83,7 +81,7 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     std::string Serialize() const;
     static FormatType Deserialize(const std::string& serialization);
 
-#if defined(OS_WIN) || defined(USE_AURA)
+#if defined(USE_AURA)
     // FormatType can be used in a set on some platforms.
     bool operator<(const FormatType& other) const;
 #endif
@@ -98,10 +96,10 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     FormatType& operator=(const FormatType& other);
 #endif
 
+    bool Equals(const FormatType& other) const;
+
    private:
     friend class Clipboard;
-
-    bool Equals(const FormatType& other) const;
 
     // Platform-specific glue used internally by the Clipboard class. Each
     // plaform should define,at least one of each of the following:
@@ -124,11 +122,6 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     explicit FormatType(NSString* native_format);
     NSString* ToNSString() const { return data_; }
     NSString* data_;
-#elif defined(TOOLKIT_GTK)
-    explicit FormatType(const std::string& native_format);
-    explicit FormatType(const GdkAtom& native_format);
-    const GdkAtom& ToGdkAtom() const { return data_; }
-    GdkAtom data_;
 #elif defined(OS_ANDROID)
     explicit FormatType(const std::string& native_format);
     const std::string& data() const { return data_; }
@@ -140,6 +133,8 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
     // Copyable and assignable, since this is essentially an opaque value type.
   };
 
+  // TODO(dcheng): Make this private once the IPC layer no longer needs to
+  // serialize this information.
   // ObjectType designates the type of data to be stored in the clipboard. This
   // designation is shared across all OSes. The system-specific designation
   // is defined by FormatType. A single ObjectType might be represented by
@@ -212,12 +207,6 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // all clipboards, except on Windows. (Previous code leaks the IO thread
   // clipboard, so it shouldn't be a problem.)
   static void DestroyClipboardForCurrentThread();
-
-  // Write a bunch of objects to the system clipboard. Copies are made of the
-  // contents of |objects|.
-  // Note: If you're thinking about calling this, you should probably be using
-  // ScopedClipboardWriter instead.
-  void WriteObjects(ClipboardType type, const ObjectMap& objects);
 
   // Returns a sequence number which uniquely identifies clipboard state.
   // This can be used to version the data on the clipboard and determine
@@ -313,9 +302,17 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   FRIEND_TEST_ALL_PREFIXES(ClipboardTest, SharedBitmapTest);
   FRIEND_TEST_ALL_PREFIXES(ClipboardTest, EmptyHTMLTest);
   friend class ClipboardTest;
+  // For access to WriteObjects().
+  // TODO(dcheng): Remove the temporary exception for content.
+  friend class content::ClipboardMessageFilter;
+  friend class ScopedClipboardWriter;
 
   Clipboard();
   ~Clipboard();
+
+  // Write a bunch of objects to the system clipboard. Copies are made of the
+  // contents of |objects|.
+  void WriteObjects(ClipboardType type, const ObjectMap& objects);
 
   void DispatchObject(ObjectType type, const ObjectMapParams& params);
 
@@ -361,30 +358,6 @@ class UI_BASE_EXPORT Clipboard : NON_EXPORTED_BASE(public base::ThreadChecker) {
   // Mark this as mutable so const methods can still do lazy initialization.
   mutable scoped_ptr<base::win::MessageWindow> clipboard_owner_;
 
-#elif defined(TOOLKIT_GTK)
-  // The public API is via WriteObjects() which dispatches to multiple
-  // Write*() calls, but on GTK we must write all the clipboard types
-  // in a single GTK call.  To support this we store the current set
-  // of data we intend to put on the clipboard on clipboard_data_ as
-  // WriteObjects is running, and then at the end call SetGtkClipboard
-  // which replaces whatever is on the system clipboard with the
-  // contents of clipboard_data_.
-
- public:
-  typedef std::map<std::string, std::pair<char*, size_t> > TargetMap;
-
- private:
-  // Write changes to gtk clipboard.
-  void SetGtkClipboard(ClipboardType type);
-  // Insert a mapping into clipboard_data_.
-  void InsertMapping(const char* key, char* data, size_t data_len);
-
-  // Find the gtk clipboard for the passed type enum.
-  GtkClipboard* LookupBackingClipboard(ClipboardType type) const;
-
-  TargetMap* clipboard_data_;
-  GtkClipboard* clipboard_;
-  GtkClipboard* primary_selection_;
 #elif defined(USE_CLIPBOARD_AURAX11)
  private:
   // We keep our implementation details private because otherwise we bring in

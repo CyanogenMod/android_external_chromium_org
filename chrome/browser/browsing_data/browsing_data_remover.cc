@@ -11,17 +11,17 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/logging.h"
-#include "base/platform_file.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/chrome_notification_types.h"
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 #include "chrome/browser/content_settings/host_content_settings_map.h"
+#include "chrome/browser/domain_reliability/service_factory.h"
 #include "chrome/browser/download/download_prefs.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/extensions/activity_log/activity_log.h"
@@ -31,6 +31,10 @@
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/io_thread.h"
 #include "chrome/browser/media/media_device_id_salt.h"
+#if defined(ENABLE_WEBRTC)
+#include "chrome/browser/media/webrtc_log_list.h"
+#include "chrome/browser/media/webrtc_log_util.h"
+#endif
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/browser/net/predictor.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
@@ -51,6 +55,7 @@
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/domain_reliability/service.h"
 #include "components/password_manager/core/browser/password_store.h"
 #if defined(OS_CHROMEOS)
 #include "chromeos/attestation/attestation_constants.h"
@@ -71,6 +76,7 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/user_metrics.h"
 #include "net/base/net_errors.h"
+#include "net/base/sdch_manager.h"
 #include "net/cookies/cookie_store.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/http/http_cache.h"
@@ -89,6 +95,9 @@ using content::BrowserThread;
 using content::DOMStorageContext;
 
 bool BrowsingDataRemover::is_removing_ = false;
+
+BrowsingDataRemover::CompletionInhibitor*
+    BrowsingDataRemover::completion_inhibitor_ = NULL;
 
 // Helper to create callback for BrowsingDataRemover::DoesOriginMatchMask.
 // Static.
@@ -182,6 +191,7 @@ BrowsingDataRemover::BrowsingDataRemover(Profile* profile,
       waiting_for_clear_cache_(false),
       waiting_for_clear_content_licenses_(false),
       waiting_for_clear_cookies_count_(0),
+      waiting_for_clear_domain_reliability_monitor_(false),
       waiting_for_clear_form_(false),
       waiting_for_clear_history_(false),
       waiting_for_clear_hostname_resolution_cache_(false),
@@ -195,6 +205,9 @@ BrowsingDataRemover::BrowsingDataRemover(Profile* profile,
       waiting_for_clear_pnacl_cache_(false),
       waiting_for_clear_server_bound_certs_(false),
       waiting_for_clear_storage_partition_data_(false),
+#if defined(ENABLE_WEBRTC)
+      waiting_for_clear_webrtc_logs_(false),
+#endif
       remove_mask_(0),
       remove_origin_(GURL()),
       origin_set_mask_(0),
@@ -301,7 +314,8 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
           base::Bind(&BrowsingDataRemover::ClearNetworkPredictorOnIOThread,
-                     base::Unretained(this)));
+                     base::Unretained(this),
+                     profile_->GetNetworkPredictor()));
     }
 
     // As part of history deletion we also delete the auto-generated keywords.
@@ -375,6 +389,18 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
         data_manager->Refresh();
     }
 
+#if defined(ENABLE_WEBRTC)
+    waiting_for_clear_webrtc_logs_ = true;
+    BrowserThread::PostTaskAndReply(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(
+            &WebRtcLogUtil::DeleteOldAndRecentWebRtcLogFiles,
+            WebRtcLogList::GetWebRtcLogDirectoryForProfile(profile_->GetPath()),
+            delete_begin_),
+        base::Bind(&BrowsingDataRemover::OnClearedWebRtcLogs,
+                   base::Unretained(this)));
+#endif
   }
 
   if ((remove_mask & REMOVE_DOWNLOADS) && may_delete_history) {
@@ -495,8 +521,9 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
 
   if (remove_mask & REMOVE_PASSWORDS) {
     content::RecordAction(UserMetricsAction("ClearBrowsingData_Passwords"));
-    PasswordStore* password_store = PasswordStoreFactory::GetForProfile(
-        profile_, Profile::EXPLICIT_ACCESS).get();
+    password_manager::PasswordStore* password_store =
+        PasswordStoreFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS)
+            .get();
 
     if (password_store)
       password_store->RemoveLoginsCreatedBetween(delete_begin_, delete_end_);
@@ -639,6 +666,10 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
   }
 #endif
 
+  // Remove omnibox zero-suggest cache results.
+  if ((remove_mask & (REMOVE_CACHE | REMOVE_COOKIES)))
+    prefs->SetString(prefs::kZeroSuggestCachedResults, std::string());
+
   // Always wipe accumulated network related data (TransportSecurityState and
   // HttpServerPropertiesManager data).
   waiting_for_clear_networking_history_ = true;
@@ -646,6 +677,25 @@ void BrowsingDataRemover::RemoveImpl(int remove_mask,
       delete_begin_,
       base::Bind(&BrowsingDataRemover::OnClearedNetworkingHistory,
                  base::Unretained(this)));
+
+  if (remove_mask & (REMOVE_COOKIES | REMOVE_HISTORY)) {
+    domain_reliability::DomainReliabilityService* service =
+      domain_reliability::DomainReliabilityServiceFactory::
+          GetForBrowserContext(profile_);
+    if (service) {
+      domain_reliability::DomainReliabilityClearMode mode;
+      if (remove_mask & REMOVE_COOKIES)
+        mode = domain_reliability::CLEAR_CONTEXTS;
+      else
+        mode = domain_reliability::CLEAR_BEACONS;
+
+      waiting_for_clear_domain_reliability_monitor_ = true;
+      service->ClearBrowsingData(
+          mode,
+          base::Bind(&BrowsingDataRemover::OnClearedDomainReliabilityMonitor,
+                     base::Unretained(this)));
+    }
+  }
 }
 
 void BrowsingDataRemover::AddObserver(Observer* observer) {
@@ -698,6 +748,7 @@ bool BrowsingDataRemover::AllDone() {
          !waiting_for_clear_autofill_origin_urls_ &&
          !waiting_for_clear_cache_ && !waiting_for_clear_nacl_cache_ &&
          !waiting_for_clear_cookies_count_ && !waiting_for_clear_history_ &&
+         !waiting_for_clear_domain_reliability_monitor_ &&
          !waiting_for_clear_logged_in_predictor_ &&
          !waiting_for_clear_networking_history_ &&
          !waiting_for_clear_server_bound_certs_ &&
@@ -707,6 +758,9 @@ bool BrowsingDataRemover::AllDone() {
          !waiting_for_clear_hostname_resolution_cache_ &&
          !waiting_for_clear_network_predictor_ &&
          !waiting_for_clear_platform_keys_ &&
+#if defined(ENABLE_WEBRTC)
+         !waiting_for_clear_webrtc_logs_ &&
+#endif
          !waiting_for_clear_storage_partition_data_;
 }
 
@@ -722,14 +776,7 @@ void BrowsingDataRemover::OnKeywordsLoaded() {
   NotifyAndDeleteIfDone();
 }
 
-void BrowsingDataRemover::NotifyAndDeleteIfDone() {
-  // TODO(brettw) http://crbug.com/305259: This should also observe session
-  // clearing (what about other things such as passwords, etc.?) and wait for
-  // them to complete before continuing.
-
-  if (!AllDone())
-    return;
-
+void BrowsingDataRemover::NotifyAndDelete() {
   set_removing(false);
 
   // Send global notification, then notify any explicit observers.
@@ -745,6 +792,24 @@ void BrowsingDataRemover::NotifyAndDeleteIfDone() {
   // History requests aren't happy if you delete yourself from the callback.
   // As such, we do a delete later.
   base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+}
+
+void BrowsingDataRemover::NotifyAndDeleteIfDone() {
+  // TODO(brettw) http://crbug.com/305259: This should also observe session
+  // clearing (what about other things such as passwords, etc.?) and wait for
+  // them to complete before continuing.
+
+  if (!AllDone())
+    return;
+
+  if (completion_inhibitor_) {
+    completion_inhibitor_->OnBrowsingDataRemoverWouldComplete(
+        this,
+        base::Bind(&BrowsingDataRemover::NotifyAndDelete,
+                   base::Unretained(this)));
+  } else {
+    NotifyAndDelete();
+  }
 }
 
 void BrowsingDataRemover::OnClearedHostnameResolutionCache() {
@@ -807,14 +872,13 @@ void BrowsingDataRemover::OnClearedNetworkPredictor() {
   NotifyAndDeleteIfDone();
 }
 
-void BrowsingDataRemover::ClearNetworkPredictorOnIOThread() {
+void BrowsingDataRemover::ClearNetworkPredictorOnIOThread(
+    chrome_browser_net::Predictor* predictor) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK(predictor);
 
-  chrome_browser_net::Predictor* predictor = profile_->GetNetworkPredictor();
-  if (predictor) {
-    predictor->DiscardInitialNavigationHistory();
-    predictor->DiscardAllResults();
-  }
+  predictor->DiscardInitialNavigationHistory();
+  predictor->DiscardAllResults();
 
   // Notify the UI thread that we are done.
   BrowserThread::PostTask(
@@ -862,12 +926,27 @@ void BrowsingDataRemover::DoClearCache(int rv) {
             (next_cache_state_ == STATE_CREATE_MAIN)
                 ? main_context_getter_.get()
                 : media_context_getter_.get();
-        net::HttpTransactionFactory* factory =
-            getter->GetURLRequestContext()->http_transaction_factory();
+        net::HttpCache* http_cache =
+            getter->GetURLRequestContext()->http_transaction_factory()->
+                GetCache();
 
         next_cache_state_ = (next_cache_state_ == STATE_CREATE_MAIN) ?
                                 STATE_DELETE_MAIN : STATE_DELETE_MEDIA;
-        rv = factory->GetCache()->GetBackend(
+
+        // Clear QUIC server information from memory and the disk cache.
+        http_cache->GetSession()->quic_stream_factory()->
+            ClearCachedStatesInCryptoConfig();
+
+        // Clear SDCH dictionary state.
+        net::SdchManager* sdch_manager =
+            getter->GetURLRequestContext()->sdch_manager();
+        // The test is probably overkill, since chrome should always have an
+        // SdchManager.  But in general the URLRequestContext  is *not*
+        // guaranteed to have an SdchManager, so checking is wise.
+        if (sdch_manager)
+          sdch_manager->ClearData();
+
+        rv = http_cache->GetBackend(
             &cache_, base::Bind(&BrowsingDataRemover::DoClearCache,
                                 base::Unretained(this)));
         break;
@@ -1075,5 +1154,19 @@ void BrowsingDataRemover::OnClearedAutofillOriginURLs() {
 void BrowsingDataRemover::OnClearedStoragePartitionData() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   waiting_for_clear_storage_partition_data_ = false;
+  NotifyAndDeleteIfDone();
+}
+
+#if defined(ENABLE_WEBRTC)
+void BrowsingDataRemover::OnClearedWebRtcLogs() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  waiting_for_clear_webrtc_logs_ = false;
+  NotifyAndDeleteIfDone();
+}
+#endif
+
+void BrowsingDataRemover::OnClearedDomainReliabilityMonitor() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  waiting_for_clear_domain_reliability_monitor_ = false;
   NotifyAndDeleteIfDone();
 }

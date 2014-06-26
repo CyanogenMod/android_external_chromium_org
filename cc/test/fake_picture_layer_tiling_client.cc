@@ -6,26 +6,14 @@
 
 #include <limits>
 
+#include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/fake_tile_manager.h"
 
 namespace cc {
 
-class FakeInfinitePicturePileImpl : public PicturePileImpl {
- public:
-  FakeInfinitePicturePileImpl() {
-    gfx::Size size(std::numeric_limits<int>::max(),
-                   std::numeric_limits<int>::max());
-    Resize(size);
-    recorded_region_ = Region(gfx::Rect(size));
-  }
-
- protected:
-  virtual ~FakeInfinitePicturePileImpl() {}
-};
-
 FakePictureLayerTilingClient::FakePictureLayerTilingClient()
     : tile_manager_(new FakeTileManager(&tile_manager_client_)),
-      pile_(new FakeInfinitePicturePileImpl()),
+      pile_(FakePicturePileImpl::CreateInfiniteFilledPile()),
       twin_tiling_(NULL),
       allow_create_tile_(true),
       max_tiles_for_interest_area_(10000),
@@ -34,9 +22,11 @@ FakePictureLayerTilingClient::FakePictureLayerTilingClient()
 
 FakePictureLayerTilingClient::FakePictureLayerTilingClient(
     ResourceProvider* resource_provider)
-    : tile_manager_(
-          new FakeTileManager(&tile_manager_client_, resource_provider)),
-      pile_(new FakeInfinitePicturePileImpl()),
+    : resource_pool_(
+          ResourcePool::Create(resource_provider, GL_TEXTURE_2D, RGBA_8888)),
+      tile_manager_(
+          new FakeTileManager(&tile_manager_client_, resource_pool_.get())),
+      pile_(FakePicturePileImpl::CreateInfiniteFilledPile()),
       twin_tiling_(NULL),
       allow_create_tile_(true),
       max_tiles_for_interest_area_(10000),
@@ -51,7 +41,7 @@ scoped_refptr<Tile> FakePictureLayerTilingClient::CreateTile(
   if (!allow_create_tile_)
     return scoped_refptr<Tile>();
   return tile_manager_->CreateTile(
-      pile_.get(), tile_size_, rect, gfx::Rect(), 1, 0, 0, Tile::USE_LCD_TEXT);
+      pile_.get(), tile_size_, rect, gfx::Rect(), 1, 0, 0, 0);
 }
 
 void FakePictureLayerTilingClient::SetTileSize(const gfx::Size& tile_size) {

@@ -17,10 +17,10 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/chromeos/app_mode/kiosk_app_manager.h"
-#include "chrome/browser/chromeos/login/login_display.h"
-#include "chrome/browser/chromeos/login/login_performer.h"
+#include "chrome/browser/chromeos/login/auth/login_performer.h"
 #include "chrome/browser/chromeos/login/login_utils.h"
-#include "chrome/browser/chromeos/login/user.h"
+#include "chrome/browser/chromeos/login/ui/login_display.h"
+#include "chrome/browser/chromeos/login/users/user.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "content/public/browser/notification_observer.h"
@@ -32,6 +32,7 @@ namespace chromeos {
 
 class CrosSettings;
 class LoginDisplayHost;
+class UserContext;
 
 namespace login {
 class NetworkStateHelper;
@@ -80,24 +81,23 @@ class ExistingUserController : public LoginDisplay::Delegate,
   virtual void CompleteLogin(const UserContext& user_context) OVERRIDE;
   virtual base::string16 GetConnectedNetworkName() OVERRIDE;
   virtual bool IsSigninInProgress() const OVERRIDE;
-  virtual void Login(const UserContext& user_context) OVERRIDE;
+  virtual void Login(const UserContext& user_context,
+                     const SigninSpecifics& specifics) OVERRIDE;
   virtual void MigrateUserData(const std::string& old_password) OVERRIDE;
-  virtual void LoginAsRetailModeUser() OVERRIDE;
-  virtual void LoginAsGuest() OVERRIDE;
-  virtual void LoginAsPublicAccount(const std::string& username) OVERRIDE;
-  virtual void LoginAsKioskApp(const std::string& app_id,
-                               bool diagnostic_mode) OVERRIDE;
   virtual void OnSigninScreenReady() OVERRIDE;
-  virtual void OnUserSelected(const std::string& username) OVERRIDE;
   virtual void OnStartEnterpriseEnrollment() OVERRIDE;
   virtual void OnStartKioskEnableScreen() OVERRIDE;
-  virtual void OnStartDeviceReset() OVERRIDE;
   virtual void OnStartKioskAutolaunchScreen() OVERRIDE;
   virtual void ResetPublicSessionAutoLoginTimer() OVERRIDE;
   virtual void ResyncUserData() OVERRIDE;
   virtual void SetDisplayEmail(const std::string& email) OVERRIDE;
   virtual void ShowWrongHWIDScreen() OVERRIDE;
   virtual void Signout() OVERRIDE;
+
+  virtual void LoginAsRetailModeUser();
+  virtual void LoginAsGuest();
+  virtual void LoginAsPublicAccount(const std::string& username);
+  virtual void LoginAsKioskApp(const std::string& app_id, bool diagnostic_mode);
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -305,6 +305,8 @@ class ExistingUserController : public LoginDisplay::Delegate,
 
   scoped_ptr<CrosSettings::ObserverSubscription> show_user_names_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> allow_new_user_subscription_;
+  scoped_ptr<CrosSettings::ObserverSubscription>
+      allow_supervised_user_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> allow_guest_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription> users_subscription_;
   scoped_ptr<CrosSettings::ObserverSubscription>

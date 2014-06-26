@@ -13,10 +13,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/views/constrained_window_views.h"
-#include "components/web_modal/web_contents_modal_dialog_manager.h"
-#include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
@@ -52,15 +49,13 @@ void ShowProfileSigninConfirmationDialog(
 
 ProfileSigninConfirmationDialogViews::ProfileSigninConfirmationDialogViews(
     Browser* browser,
-    Profile* profile,
     const std::string& username,
     ui::ProfileSigninConfirmationDelegate* delegate)
-  : browser_(browser),
-    profile_(profile),
-    username_(username),
-    delegate_(delegate),
-    prompt_for_new_profile_(true),
-    continue_signin_button_(NULL) {
+    : browser_(browser),
+      username_(username),
+      delegate_(delegate),
+      prompt_for_new_profile_(true),
+      continue_signin_button_(NULL) {
 }
 
 ProfileSigninConfirmationDialogViews::~ProfileSigninConfirmationDialogViews() {}
@@ -73,7 +68,7 @@ void ProfileSigninConfirmationDialogViews::ShowDialog(
     ui::ProfileSigninConfirmationDelegate* delegate) {
   ProfileSigninConfirmationDialogViews* dialog =
       new ProfileSigninConfirmationDialogViews(
-          browser, profile, username, delegate);
+          browser, username, delegate);
   ui::CheckShouldPromptForNewProfile(
       profile,
       // This callback is guaranteed to be invoked, and once it is, the dialog
@@ -146,7 +141,7 @@ void ProfileSigninConfirmationDialogViews::OnClosed() {
 }
 
 ui::ModalType ProfileSigninConfirmationDialogViews::GetModalType() const {
-  return ui::MODAL_TYPE_WINDOW;
+  return ui::MODAL_TYPE_CHILD;
 }
 
 void ProfileSigninConfirmationDialogViews::ViewHierarchyChanged(

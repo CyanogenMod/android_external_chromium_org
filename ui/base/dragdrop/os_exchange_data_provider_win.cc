@@ -10,18 +10,26 @@
 #include "base/files/file_path.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/logging.h"
-#include "base/memory/scoped_handle.h"
 #include "base/pickle.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_hglobal.h"
 #include "grit/ui_strings.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
+#include "ui/base/dragdrop/file_info.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
 namespace ui {
+
+static const OSExchangeData::CustomFormat& GetRendererTaintCustomType() {
+  CR_DEFINE_STATIC_LOCAL(
+      ui::OSExchangeData::CustomFormat,
+      format,
+      (ui::Clipboard::GetFormatType("chromium/x-renderer-taint")));
+  return format;
+}
 
 // Creates a new STGMEDIUM object to hold the specified text. The caller
 // owns the resulting object. The "Bytes" version does not NULL terminate, the
@@ -55,7 +63,7 @@ static STGMEDIUM* GetStorageForFileDescriptor(const base::FilePath& path);
 // some sort of sequential data (why not just use an array?). See comments
 // throughout.
 //
-class FormatEtcEnumerator : public IEnumFORMATETC {
+class FormatEtcEnumerator FINAL : public IEnumFORMATETC {
  public:
   FormatEtcEnumerator(DataObjectImpl::StoredData::const_iterator begin,
                       DataObjectImpl::StoredData::const_iterator end);
@@ -269,6 +277,16 @@ OSExchangeData::Provider* OSExchangeDataProviderWin::Clone() const {
   return new OSExchangeDataProviderWin(data_object());
 }
 
+void OSExchangeDataProviderWin::MarkOriginatedFromRenderer() {
+  STGMEDIUM* storage = GetStorageForString(std::string());
+  data_->contents_.push_back(new DataObjectImpl::StoredDataInfo(
+      GetRendererTaintCustomType().ToFormatEtc(), storage));
+}
+
+bool OSExchangeDataProviderWin::DidOriginateFromRenderer() const {
+  return HasCustomFormat(GetRendererTaintCustomType());
+}
+
 void OSExchangeDataProviderWin::SetString(const base::string16& data) {
   STGMEDIUM* storage = GetStorageForString(data);
   data_->contents_.push_back(new DataObjectImpl::StoredDataInfo(
@@ -334,7 +352,7 @@ void OSExchangeDataProviderWin::SetFilename(const base::FilePath& path) {
 }
 
 void OSExchangeDataProviderWin::SetFilenames(
-    const std::vector<OSExchangeData::FileInfo>& filenames) {
+    const std::vector<FileInfo>& filenames) {
   for (size_t i = 0; i < filenames.size(); ++i) {
     STGMEDIUM* storage = GetStorageForFileName(filenames[i].path);
     DataObjectImpl::StoredDataInfo* info = new DataObjectImpl::StoredDataInfo(
@@ -421,14 +439,13 @@ bool OSExchangeDataProviderWin::GetFilename(base::FilePath* path) const {
 }
 
 bool OSExchangeDataProviderWin::GetFilenames(
-    std::vector<OSExchangeData::FileInfo>* filenames) const {
+    std::vector<FileInfo>* filenames) const {
   std::vector<base::string16> filenames_local;
   bool success = ClipboardUtil::GetFilenames(source_object_, &filenames_local);
   if (success) {
     for (size_t i = 0; i < filenames_local.size(); ++i)
       filenames->push_back(
-          OSExchangeData::FileInfo(base::FilePath(filenames_local[i]),
-                                   base::FilePath()));
+          FileInfo(base::FilePath(filenames_local[i]), base::FilePath()));
   }
   return success;
 }
@@ -477,8 +494,11 @@ bool OSExchangeDataProviderWin::HasString() const {
   return ClipboardUtil::HasPlainText(source_object_);
 }
 
-bool OSExchangeDataProviderWin::HasURL() const {
-  return (ClipboardUtil::HasUrl(source_object_) ||
+bool OSExchangeDataProviderWin::HasURL(
+    OSExchangeData::FilenameToURLPolicy policy) const {
+  return (ClipboardUtil::HasUrl(
+              source_object_,
+              policy == OSExchangeData::CONVERT_FILENAMES ? true : false) ||
           HasPlainTextURL(source_object_));
 }
 
@@ -517,12 +537,6 @@ void OSExchangeDataProviderWin::SetDownloadFileInfo(
   data_->contents_.push_back(info);
 }
 
-void OSExchangeDataProviderWin::SetInDragLoop(bool in_drag_loop) {
-  data_->set_in_drag_loop(in_drag_loop);
-}
-
-#if defined(USE_AURA)
-
 void OSExchangeDataProviderWin::SetDragImage(
     const gfx::ImageSkia& image,
     const gfx::Vector2d& cursor_offset) {
@@ -537,8 +551,6 @@ const gfx::ImageSkia& OSExchangeDataProviderWin::GetDragImage() const {
 const gfx::Vector2d& OSExchangeDataProviderWin::GetDragImageOffset() const {
   return drag_image_offset_;
 }
-
-#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // DataObjectImpl, IDataObject implementation:
@@ -881,7 +893,7 @@ template <typename T>
 static STGMEDIUM* GetStorageForString(const std::basic_string<T>& data) {
   return GetStorageForBytes(
       data.c_str(),
-      (data.size() + 1) * sizeof(std::basic_string<T>::value_type));
+      (data.size() + 1) * sizeof(typename std::basic_string<T>::value_type));
 }
 
 static void GetInternetShortcutFileContents(const GURL& url,

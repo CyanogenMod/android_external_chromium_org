@@ -9,12 +9,16 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "content/public/common/page_transition_types.h"
 
+namespace base {
+class CommandLine;
+}
+
 namespace content {
 class WebContents;
 }
 
 class Browser;
-class CommandLine;
+class ExtensionTestMessageListener;
 
 namespace extensions {
 class Extension;
@@ -23,15 +27,22 @@ class PlatformAppBrowserTest : public ExtensionApiTest {
  public:
   PlatformAppBrowserTest();
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 
   // Gets the first app window that is found for a given browser.
   static apps::AppWindow* GetFirstAppWindowForBrowser(Browser* browser);
 
  protected:
   // Runs the app named |name| out of the platform_apps subdirectory. Waits
-  // until it is launched.
-  const Extension* LoadAndLaunchPlatformApp(const char* name);
+  // for the provided listener to be satisifed.
+  const Extension* LoadAndLaunchPlatformApp(
+      const char* name,
+      ExtensionTestMessageListener* listener);
+
+  // Runs the app named |name| out of the platform_apps subdirectory. Waits
+  // until the given message is received from the app.
+  const Extension* LoadAndLaunchPlatformApp(const char* name,
+                                            const std::string& message);
 
   // Installs the app named |name| out of the platform_apps subdirectory.
   const Extension* InstallPlatformApp(const char* name);
@@ -96,11 +107,18 @@ class PlatformAppBrowserTest : public ExtensionApiTest {
       const gfx::Rect& current_screen_bounds,
       const gfx::Size& minimum_size,
       gfx::Rect* bounds);
+
+  // Load a simple test app and create a window. The window must be closed by
+  // the caller in order to terminate the test - use CloseAppWindow().
+  // |window_create_options| are the options that will be passed to
+  // chrome.app.window.create() in the test app.
+  apps::AppWindow* CreateTestAppWindow(
+      const std::string& window_create_options);
 };
 
 class ExperimentalPlatformAppBrowserTest : public PlatformAppBrowserTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 };
 
 }  // namespace extensions

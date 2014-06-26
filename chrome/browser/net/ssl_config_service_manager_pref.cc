@@ -174,9 +174,7 @@ class SSLConfigServiceManagerPref
   BooleanPrefMember rev_checking_required_local_anchors_;
   StringPrefMember ssl_version_min_;
   StringPrefMember ssl_version_max_;
-  BooleanPrefMember channel_id_enabled_;
   BooleanPrefMember ssl_record_splitting_disabled_;
-  BooleanPrefMember unrestricted_ssl3_fallback_enabled_;
 
   // The cached list of disabled SSL cipher suites.
   std::vector<uint16> disabled_cipher_suites_;
@@ -206,14 +204,8 @@ SSLConfigServiceManagerPref::SSLConfigServiceManagerPref(
       prefs::kSSLVersionMin, local_state, local_state_callback);
   ssl_version_max_.Init(
       prefs::kSSLVersionMax, local_state, local_state_callback);
-  channel_id_enabled_.Init(
-      prefs::kEnableOriginBoundCerts, local_state, local_state_callback);
   ssl_record_splitting_disabled_.Init(
       prefs::kDisableSSLRecordSplitting, local_state, local_state_callback);
-  unrestricted_ssl3_fallback_enabled_.Init(
-      prefs::kEnableUnrestrictedSSL3Fallback,
-      local_state,
-      local_state_callback);
 
   local_state_change_registrar_.Init(local_state);
   local_state_change_registrar_.Add(
@@ -240,12 +232,8 @@ void SSLConfigServiceManagerPref::RegisterPrefs(PrefRegistrySimple* registry) {
       SSLProtocolVersionToString(default_config.version_max);
   registry->RegisterStringPref(prefs::kSSLVersionMin, version_min_str);
   registry->RegisterStringPref(prefs::kSSLVersionMax, version_max_str);
-  registry->RegisterBooleanPref(prefs::kEnableOriginBoundCerts,
-                                default_config.channel_id_enabled);
   registry->RegisterBooleanPref(prefs::kDisableSSLRecordSplitting,
                                 !default_config.false_start_enabled);
-  registry->RegisterBooleanPref(prefs::kEnableUnrestrictedSSL3Fallback,
-      default_config.unrestricted_ssl3_fallback_enabled);
   registry->RegisterListPref(prefs::kCipherSuiteBlacklist);
 }
 
@@ -277,13 +265,18 @@ void SSLConfigServiceManagerPref::OnPreferenceChanged(
 
 void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
     net::SSLConfig* config) {
-  config->rev_checking_enabled = rev_checking_enabled_.GetValue();
+  // rev_checking_enabled was formerly a user-settable preference, but now
+  // it is managed-only.
+  if (rev_checking_enabled_.IsManaged())
+    config->rev_checking_enabled = rev_checking_enabled_.GetValue();
+  else
+    config->rev_checking_enabled = false;
   config->rev_checking_required_local_anchors =
       rev_checking_required_local_anchors_.GetValue();
   std::string version_min_str = ssl_version_min_.GetValue();
   std::string version_max_str = ssl_version_max_.GetValue();
-  config->version_min = net::SSLConfigService::default_version_min();
-  config->version_max = net::SSLConfigService::default_version_max();
+  config->version_min = net::kDefaultSSLVersionMin;
+  config->version_max = net::kDefaultSSLVersionMax;
   uint16 version_min = SSLProtocolVersionFromString(version_min_str);
   uint16 version_max = SSLProtocolVersionFromString(version_max_str);
   if (version_min) {
@@ -301,11 +294,8 @@ void SSLConfigServiceManagerPref::GetSSLConfigFromPrefs(
     config->version_max = std::min(supported_version_max, version_max);
   }
   config->disabled_cipher_suites = disabled_cipher_suites_;
-  config->channel_id_enabled = channel_id_enabled_.GetValue();
   // disabling False Start also happens to disable record splitting.
   config->false_start_enabled = !ssl_record_splitting_disabled_.GetValue();
-  config->unrestricted_ssl3_fallback_enabled =
-      unrestricted_ssl3_fallback_enabled_.GetValue();
 }
 
 void SSLConfigServiceManagerPref::OnDisabledCipherSuitesChange(

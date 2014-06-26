@@ -19,10 +19,7 @@ class Label;
 }
 
 namespace ash {
-
 class SystemTrayItem;
-
-namespace internal {
 
 // Base-class for items in the tray. It makes sure the widget is updated
 // correctly when the visibility/size of the tray item changes. It also adds
@@ -45,8 +42,8 @@ class ASH_EXPORT TrayItemView : public views::View,
 
   // Overridden from views::View.
   virtual void SetVisible(bool visible) OVERRIDE;
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
 
  protected:
   // Makes sure the widget relayouts after the size/visibility of the view
@@ -57,7 +54,7 @@ class ASH_EXPORT TrayItemView : public views::View,
   // returns GetPreferredSize. But since this class overrides GetPreferredSize
   // for animation purposes, we allow a different way to get this size, and do
   // not allow GetPreferredSize to be overridden.
-  virtual gfx::Size DesiredSize();
+  virtual gfx::Size DesiredSize() const;
 
   // The default animation duration is 200ms. But each view can customize this.
   virtual int GetAnimationDurationMS();
@@ -79,7 +76,6 @@ class ASH_EXPORT TrayItemView : public views::View,
   DISALLOW_COPY_AND_ASSIGN(TrayItemView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_ITEM_VIEW_H_

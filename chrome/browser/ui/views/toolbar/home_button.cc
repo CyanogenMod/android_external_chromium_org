@@ -7,6 +7,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/views/settings_api_bubble_helper_views.h"
 #include "chrome/common/pref_names.h"
 #include "components/user_prefs/user_prefs.h"
 #include "grit/generated_resources.h"
@@ -65,8 +66,7 @@ void HomePageUndoBubble::ShowBubble(Browser* browser,
                                                   undo_value_is_ntp,
                                                   undo_url,
                                                   anchor_view);
-  views::BubbleDelegateView::CreateBubble(home_page_undo_bubble_);
-  home_page_undo_bubble_->StartFade(true);
+  views::BubbleDelegateView::CreateBubble(home_page_undo_bubble_)->Show();
 }
 
 void HomePageUndoBubble::HideBubble() {
@@ -154,7 +154,7 @@ bool HomeButton::GetDropFormats(
 }
 
 bool HomeButton::CanDrop(const OSExchangeData& data) {
-  return data.HasURL();
+  return data.HasURL(ui::OSExchangeData::CONVERT_FILENAMES);
 }
 
 int HomeButton::OnDragUpdated(const ui::DropTargetEvent& event) {
@@ -178,4 +178,9 @@ int HomeButton::OnPerformDrop(const ui::DropTargetEvent& event) {
     HomePageUndoBubble::ShowBubble(browser_, old_is_ntp, old_homepage, this);
   }
   return ui::DragDropTypes::DRAG_NONE;
+}
+
+void HomeButton::NotifyClick(const ui::Event& event) {
+  ToolbarButton::NotifyClick(event);
+  extensions::MaybeShowExtensionControlledHomeNotification(browser_);
 }

@@ -5,7 +5,6 @@
 #include "chrome/browser/chromeos/policy/auto_enrollment_client.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/guid.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -14,23 +13,24 @@
 #include "base/metrics/sparse_histogram.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
-#include "base/strings/string_number_conversions.h"
+#include "base/prefs/scoped_user_pref_update.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/policy/device_cloud_policy_manager_chromeos.h"
+#include "chrome/browser/chromeos/policy/server_backed_device_state.h"
+#include "chrome/common/chrome_content_client.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/chromeos_switches.h"
-#include "components/policy/core/browser/browser_policy_connector.h"
 #include "components/policy/core/common/cloud/device_management_service.h"
 #include "components/policy/core/common/cloud/system_policy_request_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/common/content_client.h"
 #include "crypto/sha2.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "url/gurl.h"
 
 using content::BrowserThread;
 
 namespace em = enterprise_management;
+
+namespace policy {
 
 namespace {
 
@@ -41,77 +41,77 @@ const char kUMARequestStatus[] = "Enterprise.AutoEnrollmentRequestStatus";
 const char kUMANetworkErrorCode[] =
     "Enterprise.AutoEnrollmentRequestNetworkErrorCode";
 
-// The modulus value is sent in an int64 field in the protobuf, whose maximum
-// value is 2^63-1. So 2^64 and 2^63 can't be represented as moduli and the
-// max is 2^62 (when the moduli are restricted to powers-of-2).
-const int kMaximumPower = 62;
-
-// Returns the int value of the |switch_name| argument, clamped to the [0, 62]
-// interval. Returns 0 if the argument doesn't exist or isn't an int value.
-int GetSanitizedArg(const std::string& switch_name) {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switch_name))
-    return 0;
-  std::string value = command_line->GetSwitchValueASCII(switch_name);
-  int int_value;
-  if (!base::StringToInt(value, &int_value)) {
-    LOG(ERROR) << "Switch \"" << switch_name << "\" is not a valid int. "
-               << "Defaulting to 0.";
-    return 0;
-  }
-  if (int_value < 0) {
-    LOG(ERROR) << "Switch \"" << switch_name << "\" can't be negative. "
-               << "Using 0";
-    return 0;
-  }
-  if (int_value > kMaximumPower) {
-    LOG(ERROR) << "Switch \"" << switch_name << "\" can't be greater than "
-               << kMaximumPower << ". Using " << kMaximumPower;
-    return kMaximumPower;
-  }
-  return int_value;
-}
-
 // Returns the power of the next power-of-2 starting at |value|.
 int NextPowerOf2(int64 value) {
-  for (int i = 0; i <= kMaximumPower; ++i) {
+  for (int i = 0; i <= AutoEnrollmentClient::kMaximumPower; ++i) {
     if ((GG_INT64_C(1) << i) >= value)
       return i;
   }
   // No other value can be represented in an int64.
-  return kMaximumPower + 1;
+  return AutoEnrollmentClient::kMaximumPower + 1;
+}
+
+// Sets or clears a value in a dictionary.
+void UpdateDict(base::DictionaryValue* dict,
+                const char* pref_path,
+                bool set_or_clear,
+                base::Value* value) {
+  scoped_ptr<base::Value> scoped_value(value);
+  if (set_or_clear)
+    dict->Set(pref_path, scoped_value.release());
+  else
+    dict->Remove(pref_path, NULL);
+}
+
+// Converts a restore mode enum value from the DM protocol into the
+// corresponding prefs string constant.
+std::string ConvertRestoreMode(
+    em::DeviceStateRetrievalResponse::RestoreMode restore_mode) {
+  switch (restore_mode) {
+    case em::DeviceStateRetrievalResponse::RESTORE_MODE_NONE:
+      return std::string();
+    case em::DeviceStateRetrievalResponse::RESTORE_MODE_REENROLLMENT_REQUESTED:
+      return kDeviceStateRestoreModeReEnrollmentRequested;
+    case em::DeviceStateRetrievalResponse::RESTORE_MODE_REENROLLMENT_ENFORCED:
+      return kDeviceStateRestoreModeReEnrollmentEnforced;
+  }
+
+  NOTREACHED() << "Bad restore mode " << restore_mode;
+  return std::string();
 }
 
 }  // namespace
 
-namespace policy {
-
 AutoEnrollmentClient::AutoEnrollmentClient(
-    const base::Closure& callback,
+    const ProgressCallback& callback,
     DeviceManagementService* service,
     PrefService* local_state,
     scoped_refptr<net::URLRequestContextGetter> system_request_context,
-    const std::string& serial_number,
+    const std::string& server_backed_state_key,
+    bool retrieve_device_state,
     int power_initial,
     int power_limit)
-    : completion_callback_(callback),
-      should_auto_enroll_(false),
+    : progress_callback_(callback),
+      state_(AUTO_ENROLLMENT_STATE_IDLE),
+      has_server_state_(false),
+      device_state_available_(false),
       device_id_(base::GenerateGUID()),
-      power_initial_(power_initial),
+      server_backed_state_key_(server_backed_state_key),
+      retrieve_device_state_(retrieve_device_state),
+      current_power_(power_initial),
       power_limit_(power_limit),
-      requests_sent_(0),
+      modulus_updates_received_(0),
       device_management_service_(service),
       local_state_(local_state) {
   request_context_ = new SystemPolicyRequestContext(
-      system_request_context,
-      content::GetUserAgent(
-          GURL(device_management_service_->GetServerUrl())));
+      system_request_context, GetUserAgent());
 
-  DCHECK_LE(power_initial_, power_limit_);
-  DCHECK(!completion_callback_.is_null());
-  if (!serial_number.empty())
-    serial_number_hash_ = crypto::SHA256HashString(serial_number);
-  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
+  DCHECK_LE(current_power_, power_limit_);
+  DCHECK(!progress_callback_.is_null());
+  if (!server_backed_state_key_.empty()) {
+    server_backed_state_key_hash_ =
+        crypto::SHA256HashString(server_backed_state_key_);
+  }
 }
 
 AutoEnrollmentClient::~AutoEnrollmentClient() {
@@ -125,87 +125,35 @@ void AutoEnrollmentClient::RegisterPrefs(PrefRegistrySimple* registry) {
 }
 
 // static
-bool AutoEnrollmentClient::IsDisabled() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  // Do not communicate auto-enrollment data to the server if
-  // 1. we are running integration or perf tests with telemetry.
-  // 2. modulus configuration is not present.
-  return command_line->HasSwitch(
-             chromeos::switches::kOobeSkipPostLogin) ||
-         (!command_line->HasSwitch(
-             chromeos::switches::kEnterpriseEnrollmentInitialModulus) &&
-         !command_line->HasSwitch(
-             chromeos::switches::kEnterpriseEnrollmentModulusLimit));
-}
-
-// static
-AutoEnrollmentClient* AutoEnrollmentClient::Create(
-    const base::Closure& completion_callback) {
-  // The client won't do anything if |service| is NULL.
-  DeviceManagementService* service = NULL;
-  if (IsDisabled()) {
-    VLOG(1) << "Auto-enrollment is disabled";
-  } else {
-    BrowserPolicyConnector* connector =
-        g_browser_process->browser_policy_connector();
-    service = connector->device_management_service();
-    service->ScheduleInitialization(0);
-  }
-
-  int power_initial = GetSanitizedArg(
-      chromeos::switches::kEnterpriseEnrollmentInitialModulus);
-  int power_limit = GetSanitizedArg(
-      chromeos::switches::kEnterpriseEnrollmentModulusLimit);
-  if (power_initial > power_limit) {
-    LOG(ERROR) << "Initial auto-enrollment modulus is larger than the limit, "
-               << "clamping to the limit.";
-    power_initial = power_limit;
-  }
-
-  return new AutoEnrollmentClient(
-      completion_callback,
-      service,
-      g_browser_process->local_state(),
-      g_browser_process->system_request_context(),
-      DeviceCloudPolicyManagerChromeOS::GetMachineID(),
-      power_initial,
-      power_limit);
-}
-
-// static
 void AutoEnrollmentClient::CancelAutoEnrollment() {
   PrefService* local_state = g_browser_process->local_state();
   local_state->SetBoolean(prefs::kShouldAutoEnroll, false);
+  local_state->ClearPref(prefs::kServerBackedDeviceState);
   local_state->CommitPendingWrite();
 }
 
 void AutoEnrollmentClient::Start() {
+  // (Re-)register the network change observer.
+  net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
+  net::NetworkChangeNotifier::AddNetworkChangeObserver(this);
+
   // Drop the previous job and reset state.
   request_job_.reset();
-  should_auto_enroll_ = false;
-  time_start_ = base::Time();  // reset to null.
+  state_ = AUTO_ENROLLMENT_STATE_PENDING;
+  time_start_ = base::Time::Now();
+  modulus_updates_received_ = 0;
+  has_server_state_ = false;
+  device_state_available_ = false;
 
-  if (GetCachedDecision()) {
-    VLOG(1) << "AutoEnrollmentClient: using cached decision: "
-            << should_auto_enroll_;
-  } else if (device_management_service_) {
-    if (serial_number_hash_.empty()) {
-      LOG(ERROR) << "Failed to get the hash of the serial number, "
-                 << "will not attempt to auto-enroll.";
-    } else {
-      time_start_ = base::Time::Now();
-      SendRequest(power_initial_);
-      // Don't invoke the callback now.
-      return;
-    }
-  }
+  NextStep();
+}
 
-  // Auto-enrollment can't even start, so we're done.
-  OnProtocolDone();
+void AutoEnrollmentClient::Retry() {
+  RetryStep();
 }
 
 void AutoEnrollmentClient::CancelAndDeleteSoon() {
-  if (time_start_.is_null()) {
+  if (time_start_.is_null() || !request_job_) {
     // The client isn't running, just delete it.
     delete this;
   } else {
@@ -213,40 +161,29 @@ void AutoEnrollmentClient::CancelAndDeleteSoon() {
     // anymore. Wait until the protocol completes to measure the extra time
     // needed.
     time_extra_start_ = base::Time::Now();
-    completion_callback_.Reset();
+    progress_callback_.Reset();
   }
 }
 
 void AutoEnrollmentClient::OnNetworkChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
-  if (GetCachedDecision()) {
-    // A previous request already obtained a definitive response from the
-    // server, so there is no point in retrying; it will get the same decision.
-    return;
-  }
-
   if (type != net::NetworkChangeNotifier::CONNECTION_NONE &&
-      !completion_callback_.is_null() &&
-      !request_job_ &&
-      device_management_service_ &&
-      !serial_number_hash_.empty()) {
-    VLOG(1) << "Retrying auto enrollment check after network changed";
-    time_start_ = base::Time::Now();
-    SendRequest(power_initial_);
+      !progress_callback_.is_null()) {
+    RetryStep();
   }
 }
 
 bool AutoEnrollmentClient::GetCachedDecision() {
-  const PrefService::Preference* should_enroll_pref =
+  const PrefService::Preference* has_server_state_pref =
       local_state_->FindPreference(prefs::kShouldAutoEnroll);
   const PrefService::Preference* previous_limit_pref =
       local_state_->FindPreference(prefs::kAutoEnrollmentPowerLimit);
-  bool should_auto_enroll = false;
+  bool has_server_state = false;
   int previous_limit = -1;
 
-  if (!should_enroll_pref ||
-      should_enroll_pref->IsDefaultValue() ||
-      !should_enroll_pref->GetValue()->GetAsBoolean(&should_auto_enroll) ||
+  if (!has_server_state_pref ||
+      has_server_state_pref->IsDefaultValue() ||
+      !has_server_state_pref->GetValue()->GetAsBoolean(&has_server_state) ||
       !previous_limit_pref ||
       previous_limit_pref->IsDefaultValue() ||
       !previous_limit_pref->GetValue()->GetAsInteger(&previous_limit) ||
@@ -254,27 +191,77 @@ bool AutoEnrollmentClient::GetCachedDecision() {
     return false;
   }
 
-  should_auto_enroll_ = should_auto_enroll;
+  has_server_state_ = has_server_state;
   return true;
 }
 
-void AutoEnrollmentClient::SendRequest(int power) {
-  if (power < 0 || power > power_limit_ || serial_number_hash_.empty()) {
-    NOTREACHED();
-    OnRequestDone();
-    return;
+bool AutoEnrollmentClient::RetryStep() {
+  // If there is a pending request job, let it finish.
+  if (request_job_)
+    return true;
+
+  if (GetCachedDecision()) {
+    // The bucket download check has completed already. If it came back
+    // positive, then device state should be (re-)downloaded.
+    if (has_server_state_) {
+      if (retrieve_device_state_ && !device_state_available_ &&
+          SendDeviceStateRequest()) {
+        return true;
+      }
+    }
+  } else {
+    // Start bucket download.
+    if (SendBucketDownloadRequest())
+      return true;
   }
 
-  requests_sent_++;
+  return false;
+}
+
+void AutoEnrollmentClient::ReportProgress(AutoEnrollmentState state) {
+  state_ = state;
+  if (progress_callback_.is_null()) {
+    base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE, this);
+  } else {
+    progress_callback_.Run(state_);
+  }
+}
+
+void AutoEnrollmentClient::NextStep() {
+  if (!RetryStep()) {
+    // Protocol finished successfully, report result.
+    bool trigger_enrollment = false;
+    if (retrieve_device_state_) {
+      const base::DictionaryValue* device_state_dict =
+          local_state_->GetDictionary(prefs::kServerBackedDeviceState);
+      std::string restore_mode;
+      device_state_dict->GetString(kDeviceStateRestoreMode, &restore_mode);
+      trigger_enrollment =
+          (restore_mode == kDeviceStateRestoreModeReEnrollmentRequested ||
+           restore_mode == kDeviceStateRestoreModeReEnrollmentEnforced);
+    } else {
+      trigger_enrollment = has_server_state_;
+    }
+
+    ReportProgress(trigger_enrollment ? AUTO_ENROLLMENT_STATE_TRIGGER_ENROLLMENT
+                                      : AUTO_ENROLLMENT_STATE_NO_ENROLLMENT);
+  }
+}
+
+bool AutoEnrollmentClient::SendBucketDownloadRequest() {
+  if (server_backed_state_key_hash_.empty())
+    return false;
 
   // Only power-of-2 moduli are supported for now. These are computed by taking
-  // the lower |power| bits of the hash.
+  // the lower |current_power_| bits of the hash.
   uint64 remainder = 0;
-  for (int i = 0; 8 * i < power; ++i) {
-    uint64 byte = serial_number_hash_[31 - i] & 0xff;
+  for (int i = 0; 8 * i < current_power_; ++i) {
+    uint64 byte = server_backed_state_key_hash_[31 - i] & 0xff;
     remainder = remainder | (byte << (8 * i));
   }
-  remainder = remainder & ((GG_UINT64_C(1) << power) - 1);
+  remainder = remainder & ((GG_UINT64_C(1) << current_power_) - 1);
+
+  ReportProgress(AUTO_ENROLLMENT_STATE_PENDING);
 
   request_job_.reset(
       device_management_service_->CreateJob(
@@ -284,29 +271,76 @@ void AutoEnrollmentClient::SendRequest(int power) {
   em::DeviceAutoEnrollmentRequest* request =
       request_job_->GetRequest()->mutable_auto_enrollment_request();
   request->set_remainder(remainder);
-  request->set_modulus(GG_INT64_C(1) << power);
-  request_job_->Start(base::Bind(&AutoEnrollmentClient::OnRequestCompletion,
-                                 base::Unretained(this)));
+  request->set_modulus(GG_INT64_C(1) << current_power_);
+  request_job_->Start(
+      base::Bind(&AutoEnrollmentClient::HandleRequestCompletion,
+                 base::Unretained(this),
+                 &AutoEnrollmentClient::OnBucketDownloadRequestCompletion));
+  return true;
 }
 
-void AutoEnrollmentClient::OnRequestCompletion(
+bool AutoEnrollmentClient::SendDeviceStateRequest() {
+  ReportProgress(AUTO_ENROLLMENT_STATE_PENDING);
+
+  request_job_.reset(
+      device_management_service_->CreateJob(
+          DeviceManagementRequestJob::TYPE_DEVICE_STATE_RETRIEVAL,
+          request_context_.get()));
+  request_job_->SetClientID(device_id_);
+  em::DeviceStateRetrievalRequest* request =
+      request_job_->GetRequest()->mutable_device_state_retrieval_request();
+  request->set_server_backed_state_key(server_backed_state_key_);
+  request_job_->Start(
+      base::Bind(&AutoEnrollmentClient::HandleRequestCompletion,
+                 base::Unretained(this),
+                 &AutoEnrollmentClient::OnDeviceStateRequestCompletion));
+  return true;
+}
+
+void AutoEnrollmentClient::HandleRequestCompletion(
+    RequestCompletionHandler handler,
     DeviceManagementStatus status,
     int net_error,
     const em::DeviceManagementResponse& response) {
-  if (status != DM_STATUS_SUCCESS || !response.has_auto_enrollment_response()) {
+  UMA_HISTOGRAM_SPARSE_SLOWLY(kUMARequestStatus, status);
+  if (status != DM_STATUS_SUCCESS) {
     LOG(ERROR) << "Auto enrollment error: " << status;
-    UMA_HISTOGRAM_SPARSE_SLOWLY(kUMARequestStatus, status);
     if (status == DM_STATUS_REQUEST_FAILED)
       UMA_HISTOGRAM_SPARSE_SLOWLY(kUMANetworkErrorCode, -net_error);
-    // The client will retry if a network change is detected.
-    OnRequestDone();
+    request_job_.reset();
+
+    // Abort if CancelAndDeleteSoon has been called meanwhile.
+    if (progress_callback_.is_null()) {
+      base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE, this);
+    } else {
+      ReportProgress(status == DM_STATUS_REQUEST_FAILED
+                         ? AUTO_ENROLLMENT_STATE_CONNECTION_ERROR
+                         : AUTO_ENROLLMENT_STATE_SERVER_ERROR);
+    }
     return;
   }
 
+  bool progress = (this->*handler)(status, net_error, response);
+  request_job_.reset();
+  if (progress)
+    NextStep();
+  else
+    ReportProgress(AUTO_ENROLLMENT_STATE_SERVER_ERROR);
+}
+
+bool AutoEnrollmentClient::OnBucketDownloadRequestCompletion(
+    DeviceManagementStatus status,
+    int net_error,
+    const em::DeviceManagementResponse& response) {
+  bool progress = false;
   const em::DeviceAutoEnrollmentResponse& enrollment_response =
       response.auto_enrollment_response();
-  if (enrollment_response.has_expected_modulus()) {
+  if (!response.has_auto_enrollment_response()) {
+    LOG(ERROR) << "Server failed to provide auto-enrollment response.";
+  } else if (enrollment_response.has_expected_modulus()) {
     // Server is asking us to retry with a different modulus.
+    modulus_updates_received_++;
+
     int64 modulus = enrollment_response.expected_modulus();
     int power = NextPowerOf2(modulus);
     if ((GG_INT64_C(1) << power) != modulus) {
@@ -314,7 +348,7 @@ void AutoEnrollmentClient::OnRequestCompletion(
                    << "modulus. Using the closest power-of-2 instead "
                    << "(" << modulus << " vs 2^" << power << ")";
     }
-    if (requests_sent_ >= 2) {
+    if (modulus_updates_received_ >= 2) {
       LOG(ERROR) << "Auto enrollment error: already retried with an updated "
                  << "modulus but the server asked for a new one again: "
                  << power;
@@ -324,44 +358,76 @@ void AutoEnrollmentClient::OnRequestCompletion(
                  << power_limit_ << ").";
     } else {
       // Retry at most once with the modulus that the server requested.
-      if (power <= power_initial_) {
+      if (power <= current_power_) {
         LOG(WARNING) << "Auto enrollment: the server asked to use a modulus ("
                      << power << ") that isn't larger than the first used ("
-                     << power_initial_ << "). Retrying anyway.";
+                     << current_power_ << "). Retrying anyway.";
       }
       // Remember this value, so that eventual retries start with the correct
       // modulus.
-      power_initial_ = power;
-      SendRequest(power);
-      return;
+      current_power_ = power;
+      return true;
     }
   } else {
     // Server should have sent down a list of hashes to try.
-    should_auto_enroll_ = IsSerialInProtobuf(enrollment_response.hash());
+    has_server_state_ = IsIdHashInProtobuf(enrollment_response.hash());
     // Cache the current decision in local_state, so that it is reused in case
     // the device reboots before enrolling.
-    local_state_->SetBoolean(prefs::kShouldAutoEnroll, should_auto_enroll_);
+    local_state_->SetBoolean(prefs::kShouldAutoEnroll, has_server_state_);
     local_state_->SetInteger(prefs::kAutoEnrollmentPowerLimit, power_limit_);
     local_state_->CommitPendingWrite();
-    VLOG(1) << "Auto enrollment complete, should_auto_enroll = "
-            << should_auto_enroll_;
+    VLOG(1) << "Auto enrollment check complete, has_server_state_ = "
+            << has_server_state_;
+    progress = true;
   }
 
-  // Auto-enrollment done.
-  UMA_HISTOGRAM_SPARSE_SLOWLY(kUMARequestStatus, DM_STATUS_SUCCESS);
-  OnProtocolDone();
+  // Bucket download done, update UMA.
+  UpdateBucketDownloadTimingHistograms();
+  return progress;
 }
 
-bool AutoEnrollmentClient::IsSerialInProtobuf(
+bool AutoEnrollmentClient::OnDeviceStateRequestCompletion(
+    DeviceManagementStatus status,
+    int net_error,
+    const enterprise_management::DeviceManagementResponse& response) {
+  bool progress = false;
+  if (!response.has_device_state_retrieval_response()) {
+    LOG(ERROR) << "Server failed to provide auto-enrollment response.";
+  } else {
+    const em::DeviceStateRetrievalResponse& state_response =
+        response.device_state_retrieval_response();
+    {
+      DictionaryPrefUpdate dict(local_state_, prefs::kServerBackedDeviceState);
+      UpdateDict(dict.Get(),
+                 kDeviceStateManagementDomain,
+                 state_response.has_management_domain(),
+                 new base::StringValue(state_response.management_domain()));
+
+      std::string restore_mode =
+          ConvertRestoreMode(state_response.restore_mode());
+      UpdateDict(dict.Get(),
+                 kDeviceStateRestoreMode,
+                 !restore_mode.empty(),
+                 new base::StringValue(restore_mode));
+    }
+    local_state_->CommitPendingWrite();
+    device_state_available_ = true;
+    progress = true;
+  }
+
+  return progress;
+}
+
+bool AutoEnrollmentClient::IsIdHashInProtobuf(
       const google::protobuf::RepeatedPtrField<std::string>& hashes) {
   for (int i = 0; i < hashes.size(); ++i) {
-    if (hashes.Get(i) == serial_number_hash_)
+    if (hashes.Get(i) == server_backed_state_key_hash_)
       return true;
   }
   return false;
 }
 
-void AutoEnrollmentClient::OnProtocolDone() {
+void AutoEnrollmentClient::UpdateBucketDownloadTimingHistograms() {
   // The mininum time can't be 0, must be at least 1.
   static const base::TimeDelta kMin = base::TimeDelta::FromMilliseconds(1);
   static const base::TimeDelta kMax = base::TimeDelta::FromMinutes(5);
@@ -381,21 +447,6 @@ void AutoEnrollmentClient::OnProtocolDone() {
   // measure the ratio of users that succeeded without needing a delay to the
   // total users going through OOBE.
   UMA_HISTOGRAM_CUSTOM_TIMES(kUMAExtraTime, delta, kMin, kMax, kBuckets);
-
-  if (!completion_callback_.is_null())
-    completion_callback_.Run();
-
-  OnRequestDone();
-}
-
-void AutoEnrollmentClient::OnRequestDone() {
-  request_job_.reset();
-  time_start_ = base::Time();
-
-  if (completion_callback_.is_null()) {
-    // CancelAndDeleteSoon() was invoked before.
-    base::MessageLoopProxy::current()->DeleteSoon(FROM_HERE, this);
-  }
 }
 
 }  // namespace policy

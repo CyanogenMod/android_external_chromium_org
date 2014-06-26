@@ -43,11 +43,10 @@
 #include "content/public/browser/url_data_source.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "ui/base/l10n/time_format.h"
 #include "ui/gfx/image/image.h"
 
@@ -135,7 +134,8 @@ base::DictionaryValue* CreateDownloadItemValue(
   file_value->SetString("file_url",
                         net::FilePathToFileURL(download_path).spec());
 
-  DownloadedByExtension* by_ext = DownloadedByExtension::Get(download_item);
+  extensions::DownloadedByExtension* by_ext =
+      extensions::DownloadedByExtension::Get(download_item);
   if (by_ext) {
     file_value->SetString("by_ext_id", by_ext->id());
     file_value->SetString("by_ext_name", by_ext->name());
@@ -384,7 +384,7 @@ void DownloadsDOMHandler::HandleDrag(const base::ListValue* args) {
 
   gfx::Image* icon = g_browser_process->icon_manager()->LookupIconFromFilepath(
       file->GetTargetFilePath(), IconLoader::NORMAL);
-  gfx::NativeView view = web_contents->GetView()->GetNativeView();
+  gfx::NativeView view = web_contents->GetNativeView();
   {
     // Enable nested tasks during DnD, while |DragDownload()| blocks.
     base::MessageLoop::ScopedNestableTaskAllower allow(

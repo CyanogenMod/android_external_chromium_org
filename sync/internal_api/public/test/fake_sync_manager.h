@@ -10,8 +10,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/observer_list.h"
 #include "sync/internal_api/public/sync_manager.h"
+#include "sync/internal_api/public/test/null_sync_context_proxy.h"
 #include "sync/internal_api/public/test/test_user_share.h"
-#include "sync/notifier/invalidator_registrar.h"
 
 namespace base {
 class SequencedTaskRunner;
@@ -68,6 +68,9 @@ class FakeSyncManager : public SyncManager {
   // Posts a method to update the invalidator state on the sync thread.
   virtual void OnInvalidatorStateChange(InvalidatorState state) OVERRIDE;
 
+  // Returns this class name for logging purposes.
+  virtual std::string GetOwnerName() const OVERRIDE;
+
   // Block until the sync thread has finished processing any pending messages.
   void WaitForSyncThread();
 
@@ -93,7 +96,6 @@ class FakeSyncManager : public SyncManager {
       scoped_ptr<UnrecoverableErrorHandler> unrecoverable_error_handler,
       ReportUnrecoverableErrorFunction report_unrecoverable_error_function,
       CancelationSignal* cancelation_signal) OVERRIDE;
-  virtual void ThrowUnrecoverableError() OVERRIDE;
   virtual ModelTypeSet InitialSyncEndedTypes() OVERRIDE;
   virtual ModelTypeSet GetTypesWithEmptyProgressMarkerToken(
       ModelTypeSet types) OVERRIDE;
@@ -116,11 +118,23 @@ class FakeSyncManager : public SyncManager {
   virtual void SaveChanges() OVERRIDE;
   virtual void ShutdownOnSyncThread() OVERRIDE;
   virtual UserShare* GetUserShare() OVERRIDE;
+  virtual syncer::SyncContextProxy* GetSyncContextProxy() OVERRIDE;
   virtual const std::string cache_guid() OVERRIDE;
   virtual bool ReceivedExperiment(Experiments* experiments) OVERRIDE;
   virtual bool HasUnsyncedItems() OVERRIDE;
   virtual SyncEncryptionHandler* GetEncryptionHandler() OVERRIDE;
+  virtual ScopedVector<syncer::ProtocolEvent>
+      GetBufferedProtocolEvents() OVERRIDE;
+  virtual scoped_ptr<base::ListValue> GetAllNodesForType(
+      syncer::ModelType type) OVERRIDE;
   virtual void RefreshTypes(ModelTypeSet types) OVERRIDE;
+  virtual void RegisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) OVERRIDE;
+  virtual void UnregisterDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) OVERRIDE;
+  virtual bool HasDirectoryTypeDebugInfoObserver(
+      syncer::TypeDebugInfoObserver* observer) OVERRIDE;
+  virtual void RequestEmitDebugInfo() OVERRIDE;
 
  private:
   scoped_refptr<base::SequencedTaskRunner> sync_task_runner_;
@@ -142,9 +156,6 @@ class FakeSyncManager : public SyncManager {
   // The set of types that have been enabled.
   ModelTypeSet enabled_types_;
 
-  // Faked invalidator state.
-  InvalidatorRegistrar registrar_;
-
   // The types for which a refresh was most recently requested.
   ModelTypeSet last_refresh_request_types_;
 
@@ -154,6 +165,8 @@ class FakeSyncManager : public SyncManager {
   scoped_ptr<FakeSyncEncryptionHandler> fake_encryption_handler_;
 
   TestUserShare test_user_share_;
+
+  NullSyncContextProxy null_sync_context_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeSyncManager);
 };

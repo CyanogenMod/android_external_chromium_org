@@ -53,13 +53,6 @@ void GetPropertiesCallback(
     const std::string& service_path,
     DBusMethodCallStatus call_status,
     const base::DictionaryValue& properties) {
-  // Get the correct name from WifiHex if necessary.
-  scoped_ptr<base::DictionaryValue> properties_copy(properties.DeepCopy());
-  std::string name =
-      shill_property_util::GetNameFromProperties(service_path, properties);
-  if (!name.empty()) {
-    properties_copy->SetStringWithoutPathExpansion(shill::kNameProperty, name);
-  }
   if (call_status != DBUS_METHOD_CALL_SUCCESS) {
     // Because network services are added and removed frequently, we will see
     // failures regularly, so don't log these.
@@ -67,9 +60,18 @@ void GetPropertiesCallback(
                                       service_path,
                                       network_handler::kDBusFailedError,
                                       network_handler::kDBusFailedErrorMessage);
-  } else if (!callback.is_null()) {
-    callback.Run(service_path, *properties_copy.get());
+    return;
   }
+  if (callback.is_null())
+    return;
+
+  // Get the correct name from WifiHex if necessary.
+  scoped_ptr<base::DictionaryValue> properties_copy(properties.DeepCopy());
+  std::string name =
+      shill_property_util::GetNameFromProperties(service_path, properties);
+  if (!name.empty())
+    properties_copy->SetStringWithoutPathExpansion(shill::kNameProperty, name);
+  callback.Run(service_path, *properties_copy.get());
 }
 
 void SetNetworkProfileErrorCallback(
@@ -84,25 +86,13 @@ void SetNetworkProfileErrorCallback(
       dbus_error_name, dbus_error_message);
 }
 
-bool IsPassphrase(const std::string& key) {
-  return key == shill::kEapPrivateKeyPasswordProperty ||
-      key == shill::kEapPasswordProperty ||
-      key == shill::kL2tpIpsecPasswordProperty ||
-      key == shill::kOpenVPNPasswordProperty ||
-      key == shill::kPassphraseProperty ||
-      key == shill::kOpenVPNOTPProperty ||
-      key == shill::kEapPrivateKeyProperty ||
-      key == shill::kEapPinProperty ||
-      key == shill::kApnPasswordProperty;
-}
-
 void LogConfigProperties(const std::string& desc,
                          const std::string& path,
                          const base::DictionaryValue& properties) {
   for (base::DictionaryValue::Iterator iter(properties);
        !iter.IsAtEnd(); iter.Advance()) {
     std::string v = "******";
-    if (!IsPassphrase(iter.key()))
+    if (!shill_property_util::IsPassphraseKey(iter.key()))
       base::JSONWriter::Write(&iter.value(), &v);
     NET_LOG_DEBUG(desc,  path + "." + iter.key() + "=" + v);
   }
@@ -184,8 +174,6 @@ class NetworkConfigurationHandler::ProfileEntryDeleter
     // Run the callback if this is the last pending deletion.
     if (!callback_.is_null())
       callback_.Run();
-    // Request NetworkStateHandler manager update to update ServiceCompleteList.
-    owner_->network_state_handler_->UpdateManagerProperties();
     owner_->ProfileEntryDeleterCompleted(service_path_);  // Deletes this.
   }
 
@@ -219,6 +207,7 @@ void NetworkConfigurationHandler::GetProperties(
     const std::string& service_path,
     const network_handler::DictionaryResultCallback& callback,
     const network_handler::ErrorCallback& error_callback) const {
+  NET_LOG_USER("GetProperties", service_path);
   DBusThreadManager::Get()->GetShillServiceClient()->GetProperties(
       dbus::ObjectPath(service_path),
       base::Bind(&GetPropertiesCallback,
@@ -266,7 +255,7 @@ void NetworkConfigurationHandler::ClearProperties(
       dbus::ObjectPath(service_path),
       names,
       base::Bind(&NetworkConfigurationHandler::ClearPropertiesSuccessCallback,
-                 AsWeakPtr(), service_path, names, callback, error_callback),
+                 AsWeakPtr(), service_path, names, callback),
       base::Bind(&NetworkConfigurationHandler::ClearPropertiesErrorCallback,
                  AsWeakPtr(), service_path, error_callback));
 }
@@ -279,15 +268,17 @@ void NetworkConfigurationHandler::CreateConfiguration(
       DBusThreadManager::Get()->GetShillManagerClient();
   std::string type;
   properties.GetStringWithoutPathExpansion(shill::kTypeProperty, &type);
+  DCHECK(!type.empty());
   if (NetworkTypePattern::Ethernet().MatchesType(type)) {
     InvokeErrorCallback(
-        "" /* no service path */,
+        shill_property_util::GetNetworkIdFromProperties(properties),
         error_callback,
-        "ConfigureServiceForProfile is not implemented for Ethernet");
+        "ConfigureServiceForProfile: Invalid type: " + type);
     return;
   }
 
-  NET_LOG_USER("CreateConfiguration", type);
+  NET_LOG_USER("CreateConfiguration: " + type,
+               shill_property_util::GetNetworkIdFromProperties(properties));
   LogConfigProperties("Configure", type, properties);
 
   std::string profile;
@@ -402,37 +393,23 @@ void NetworkConfigurationHandler::ClearPropertiesSuccessCallback(
     const std::string& service_path,
     const std::vector<std::string>& names,
     const base::Closure& callback,
-    const network_handler::ErrorCallback& error_callback,
     const base::ListValue& result) {
   const std::string kClearPropertiesFailedError("Error.ClearPropertiesFailed");
   DCHECK(names.size() == result.GetSize())
       << "Incorrect result size from ClearProperties.";
 
-  bool some_failed = false;
   for (size_t i = 0; i < result.GetSize(); ++i) {
     bool success = false;
     result.GetBoolean(i, &success);
     if (!success) {
+      // If a property was cleared that has never been set, the clear will fail.
+      // We do not track which properties have been set, so just log the error.
       NET_LOG_ERROR("ClearProperties Failed: " + names[i], service_path);
-      some_failed = true;
     }
   }
 
-  if (some_failed) {
-    if (!error_callback.is_null()) {
-      scoped_ptr<base::DictionaryValue> error_data(
-          network_handler::CreateErrorData(
-              service_path, kClearPropertiesFailedError,
-              base::StringPrintf("Errors: %" PRIuS, result.GetSize())));
-      error_data->Set("errors", result.DeepCopy());
-      scoped_ptr<base::ListValue> name_list(new base::ListValue);
-      name_list->AppendStrings(names);
-      error_data->Set("names", name_list.release());
-      error_callback.Run(kClearPropertiesFailedError, error_data.Pass());
-    }
-  } else if (!callback.is_null()) {
+  if (!callback.is_null())
     callback.Run();
-  }
   network_state_handler_->RequestUpdateForNetwork(service_path);
 }
 

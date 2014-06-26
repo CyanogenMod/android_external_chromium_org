@@ -11,32 +11,51 @@
 #include "ash/shell.h"
 #include "ash/wm/window_properties.h"
 #include "ash/wm/window_state.h"
-#include "ui/aura/client/activation_client.h"
+#include "ash/wm/wm_event.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size.h"
-#include "ui/views/corewm/window_util.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/window_util.h"
+#include "ui/wm/public/activation_client.h"
 
 namespace ash {
 namespace wm {
 
+namespace {
+
+// Returns the default width of a snapped window.
+int GetDefaultSnappedWindowWidth(aura::Window* window) {
+  const float kSnappedWidthWorkspaceRatio = 0.5f;
+
+  int work_area_width =
+      ScreenUtil::GetDisplayWorkAreaBoundsInParent(window).width();
+  int min_width = window->delegate() ?
+      window->delegate()->GetMinimumSize().width() : 0;
+  int ideal_width =
+      static_cast<int>(work_area_width * kSnappedWidthWorkspaceRatio);
+  return std::min(work_area_width, std::max(ideal_width, min_width));
+}
+
+}  // namespace
+
 // TODO(beng): replace many of these functions with the corewm versions.
 void ActivateWindow(aura::Window* window) {
-  views::corewm::ActivateWindow(window);
+  ::wm::ActivateWindow(window);
 }
 
 void DeactivateWindow(aura::Window* window) {
-  views::corewm::DeactivateWindow(window);
+  ::wm::DeactivateWindow(window);
 }
 
 bool IsActiveWindow(aura::Window* window) {
-  return views::corewm::IsActiveWindow(window);
+  return ::wm::IsActiveWindow(window);
 }
 
 aura::Window* GetActiveWindow() {
@@ -45,11 +64,11 @@ aura::Window* GetActiveWindow() {
 }
 
 aura::Window* GetActivatableWindow(aura::Window* window) {
-  return views::corewm::GetActivatableWindow(window);
+  return ::wm::GetActivatableWindow(window);
 }
 
 bool CanActivateWindow(aura::Window* window) {
-  return views::corewm::CanActivateWindow(window);
+  return ::wm::CanActivateWindow(window);
 }
 
 bool IsWindowMinimized(aura::Window* window) {
@@ -57,25 +76,27 @@ bool IsWindowMinimized(aura::Window* window) {
 }
 
 void CenterWindow(aura::Window* window) {
-  wm::WindowState* window_state = wm::GetWindowState(window);
-  if (!window_state->IsNormalShowState())
-    return;
-  const gfx::Display display =
-      Shell::GetScreen()->GetDisplayNearestWindow(window);
-  gfx::Rect center = display.work_area();
-  gfx::Size size = window->bounds().size();
-  if (window_state->IsSnapped()) {
-    if (window_state->HasRestoreBounds())
-      size = window_state->GetRestoreBoundsInScreen().size();
-    center.ClampToCenteredSize(size);
-    window_state->SetRestoreBoundsInScreen(center);
-    window_state->Restore();
-  } else {
-    center = ScreenUtil::ConvertRectFromScreen(window->parent(),
-        center);
-    center.ClampToCenteredSize(size);
-    window->SetBounds(center);
-  }
+  wm::WMEvent event(wm::WM_EVENT_CENTER);
+  wm::GetWindowState(window)->OnWMEvent(&event);
+}
+
+gfx::Rect GetDefaultLeftSnappedWindowBoundsInParent(aura::Window* window) {
+  gfx::Rect work_area_in_parent(ScreenUtil::GetDisplayWorkAreaBoundsInParent(
+      window));
+  return gfx::Rect(work_area_in_parent.x(),
+                   work_area_in_parent.y(),
+                   GetDefaultSnappedWindowWidth(window),
+                   work_area_in_parent.height());
+}
+
+gfx::Rect GetDefaultRightSnappedWindowBoundsInParent(aura::Window* window) {
+  gfx::Rect work_area_in_parent(ScreenUtil::GetDisplayWorkAreaBoundsInParent(
+      window));
+  int width = GetDefaultSnappedWindowWidth(window);
+  return gfx::Rect(work_area_in_parent.right() - width,
+                   work_area_in_parent.y(),
+                   width,
+                   work_area_in_parent.height());
 }
 
 void AdjustBoundsSmallerThan(const gfx::Size& max_size, gfx::Rect* bounds) {
@@ -139,10 +160,10 @@ void ReparentTransientChildrenOfChild(aura::Window* child,
                                       aura::Window* old_parent,
                                       aura::Window* new_parent) {
   for (size_t i = 0;
-       i < views::corewm::GetTransientChildren(child).size();
+       i < ::wm::GetTransientChildren(child).size();
        ++i) {
     ReparentChildWithTransientChildren(
-        views::corewm::GetTransientChildren(child)[i],
+        ::wm::GetTransientChildren(child)[i],
         old_parent,
         new_parent);
   }

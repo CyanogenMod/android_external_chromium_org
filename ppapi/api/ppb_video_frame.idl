@@ -10,7 +10,8 @@
 [generate_thunk]
 
 label Chrome {
-  [channel=dev] M34 = 0.1
+  [channel=dev] M34 = 0.1,
+  M35 = 0.1
 };
 
 enum PP_VideoFrame_Format {
@@ -25,26 +26,22 @@ enum PP_VideoFrame_Format {
   PP_VIDEOFRAME_FORMAT_YV12 = 1,
 
   /**
-   * 16bpp YVU planar 1x1 Y, 2x1 VU samples.
+   * 12bpp YUV planar 1x1 Y, 2x2 UV samples.
    */
-  PP_VIDEOFRAME_FORMAT_YV16 = 2,
+  PP_VIDEOFRAME_FORMAT_I420 = 2,
 
   /**
-   * 12bpp YVU planar 1x1 Y, 2x2 UV samples.
+   * 32bpp BGRA.
    */
-  PP_VIDEOFRAME_FORMAT_I420 = 3,
+  PP_VIDEOFRAME_FORMAT_BGRA = 3,
 
   /**
-   * 20bpp YVU planar 1x1 Y, 2x2 VU, 1x1 A samples.
+   * The last format.
    */
-  PP_VIDEOFRAME_FORMAT_YV12A = 4,
-
-  /**
-   * JPEG color range version of YV12.
-   */
-  PP_VIDEOFRAME_FORMAT_YV12J = 5
+  PP_VIDEOFRAME_FORMAT_LAST = PP_VIDEOFRAME_FORMAT_BGRA
 };
 
+[version=0.1]
 interface PPB_VideoFrame {
   /**
    * Determines if a resource is a VideoFrame resource.

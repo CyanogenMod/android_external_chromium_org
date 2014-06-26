@@ -25,6 +25,9 @@ struct MEDIA_EXPORT H264NALU {
   enum Type {
     kUnspecified = 0,
     kNonIDRSlice = 1,
+    kSliceDataA = 2,
+    kSliceDataB = 3,
+    kSliceDataC = 4,
     kIDRSlice = 5,
     kSEIMessage = 6,
     kSPS = 7,
@@ -32,6 +35,14 @@ struct MEDIA_EXPORT H264NALU {
     kAUD = 9,
     kEOSeq = 10,
     kEOStream = 11,
+    kFiller = 12,
+    kSPSExt = 13,
+    kReserved14 = 14,
+    kReserved15 = 15,
+    kReserved16 = 16,
+    kReserved17 = 17,
+    kReserved18 = 18,
+    kCodedSliceAux = 19,
     kCodedSliceExtension = 20,
   };
 
@@ -53,7 +64,12 @@ struct MEDIA_EXPORT H264SPS {
   H264SPS();
 
   int profile_idc;
-  int constraint_setx_flag;
+  bool constraint_set0_flag;
+  bool constraint_set1_flag;
+  bool constraint_set2_flag;
+  bool constraint_set3_flag;
+  bool constraint_set4_flag;
+  bool constraint_set5_flag;
   int level_idc;
   int seq_parameter_set_id;
 
@@ -88,10 +104,15 @@ struct MEDIA_EXPORT H264SPS {
   int frame_crop_right_offset;
   int frame_crop_top_offset;
   int frame_crop_bottom_offset;
+
   bool vui_parameters_present_flag;
-  int chroma_array_type;
   int sar_width;    // Set to 0 when not specified.
   int sar_height;   // Set to 0 when not specified.
+  bool bitstream_restriction_flag;
+  int max_num_reorder_frames;
+  int max_dec_frame_buffering;
+
+  int chroma_array_type;
 };
 
 struct MEDIA_EXPORT H264PPS {
@@ -343,6 +364,11 @@ class MEDIA_EXPORT H264Parser {
   Result ParseScalingList(int size, int* scaling_list, bool* use_default);
   Result ParseSPSScalingLists(H264SPS* sps);
   Result ParsePPSScalingLists(const H264SPS& sps, H264PPS* pps);
+
+  // Parse optional VUI parameters in SPS (see spec).
+  Result ParseVUIParameters(H264SPS* sps);
+  // Set |hrd_parameters_present| to true only if they are present.
+  Result ParseAndIgnoreHRDParameters(bool* hrd_parameters_present);
 
   // Parse reference picture lists' modifications (see spec).
   Result ParseRefPicListModifications(H264SliceHeader* shdr);

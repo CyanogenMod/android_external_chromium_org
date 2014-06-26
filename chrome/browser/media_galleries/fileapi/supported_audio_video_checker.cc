@@ -48,11 +48,9 @@ class SupportedAudioVideoExtensions {
 base::LazyInstance<SupportedAudioVideoExtensions> g_audio_video_extensions =
     LAZY_INSTANCE_INITIALIZER;
 
-base::PlatformFile OpenOnFileThread(const base::FilePath& path) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
-  return base::CreatePlatformFile(
-      path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      NULL /*created*/, NULL /*error_code*/);
+base::File OpenOnFileThread(const base::FilePath& path) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
+  return base::File(path, base::File::FLAG_OPEN | base::File::FLAG_READ);
 }
 
 }  // namespace
@@ -66,7 +64,7 @@ bool SupportedAudioVideoChecker::SupportsFileType(const base::FilePath& path) {
 
 void SupportedAudioVideoChecker::StartPreWriteValidation(
     const fileapi::CopyOrMoveFileValidator::ResultCallback& result_callback) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
   DCHECK(callback_.is_null());
   callback_ = result_callback;
 
@@ -84,13 +82,13 @@ SupportedAudioVideoChecker::SupportedAudioVideoChecker(
       weak_factory_(this) {
 }
 
-void SupportedAudioVideoChecker::OnFileOpen(const base::PlatformFile& file) {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::IO));
-  if (file == base::kInvalidPlatformFileValue) {
+void SupportedAudioVideoChecker::OnFileOpen(base::File file) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::IO);
+  if (!file.IsValid()) {
     callback_.Run(base::File::FILE_ERROR_SECURITY);
     return;
   }
 
-  safe_checker_ = new SafeAudioVideoChecker(file, callback_);
+  safe_checker_ = new SafeAudioVideoChecker(file.Pass(), callback_);
   safe_checker_->Start();
 }

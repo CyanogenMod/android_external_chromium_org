@@ -54,7 +54,6 @@ void DecoratedTextfield::SetEditable(bool editable) {
     return;
 
   editable_ = editable;
-  UpdateBorder();
   UpdateBackground();
   SetEnabled(editable);
   IconChanged();
@@ -107,7 +106,7 @@ views::View* DecoratedTextfield::GetEventHandlerForRect(const gfx::Rect& rect) {
   return this;
 }
 
-gfx::Size DecoratedTextfield::GetPreferredSize() {
+gfx::Size DecoratedTextfield::GetPreferredSize() const {
   static const int height =
       views::LabelButton(NULL, base::string16()).GetPreferredSize().height();
   const gfx::Size size = views::Textfield::GetPreferredSize();
@@ -121,11 +120,13 @@ void DecoratedTextfield::Layout() {
     gfx::Rect bounds = GetContentsBounds();
     gfx::Size icon_size = icon_view_->GetPreferredSize();
     int x = base::i18n::IsRTL() ?
-        kTextfieldIconPadding :
-        bounds.right() - icon_size.width() - kTextfieldIconPadding;
+        bounds.x() - icon_size.width() - kTextfieldIconPadding :
+        bounds.right() + kTextfieldIconPadding;
     // Vertically centered.
     int y = bounds.y() + (bounds.height() - icon_size.height()) / 2;
-    icon_view_->SetBounds(x, y, icon_size.width(), icon_size.height());
+    gfx::Rect icon_bounds(x, y, icon_size.width(), icon_size.height());
+    icon_bounds.set_x(GetMirroredXForRect(icon_bounds));
+    icon_view_->SetBoundsRect(icon_bounds);
   }
 }
 
@@ -144,12 +145,23 @@ void DecoratedTextfield::UpdateBorder() {
     border->SetColor(kWarningColor);
   else if (!editable_)
     border->SetColor(SK_ColorTRANSPARENT);
+
+  // Adjust the border insets to include the icon and its padding.
+  if (icon_view_ && icon_view_->visible()) {
+    int w = icon_view_->GetPreferredSize().width() + 2 * kTextfieldIconPadding;
+    gfx::Insets insets = border->GetInsets();
+    int left = insets.left() + (base::i18n::IsRTL() ? w : 0);
+    int right = insets.right() + (base::i18n::IsRTL() ? 0 : w);
+    border->SetInsets(insets.top(), left, insets.bottom(), right);
+  }
+
   SetBorder(border.PassAs<views::Border>());
 }
 
 void DecoratedTextfield::IconChanged() {
   // Don't show the icon if nothing else is showing.
   icon_view_->SetVisible(editable_ || !text().empty());
+  UpdateBorder();
   Layout();
 }
 

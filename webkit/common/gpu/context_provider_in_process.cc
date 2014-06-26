@@ -48,7 +48,8 @@ scoped_refptr<ContextProviderInProcess> ContextProviderInProcess::Create(
 
 // static
 scoped_refptr<ContextProviderInProcess>
-ContextProviderInProcess::CreateOffscreen() {
+ContextProviderInProcess::CreateOffscreen(
+    bool lose_context_when_out_of_memory) {
   blink::WebGraphicsContext3D::Attributes attributes;
   attributes.depth = false;
   attributes.stencil = true;
@@ -58,7 +59,8 @@ ContextProviderInProcess::CreateOffscreen() {
 
   return Create(
       WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
-          attributes), "Offscreen");
+          attributes, lose_context_when_out_of_memory),
+      "Offscreen");
 }
 
 ContextProviderInProcess::ContextProviderInProcess(
@@ -162,6 +164,13 @@ void ContextProviderInProcess::VerifyContexts() {
     OnLostContext();
 }
 
+void ContextProviderInProcess::DeleteCachedResources() {
+  DCHECK(context_thread_checker_.CalledOnValidThread());
+
+  if (gr_context_)
+    gr_context_->FreeGpuResources();
+}
+
 void ContextProviderInProcess::OnLostContext() {
   DCHECK(context_thread_checker_.CalledOnValidThread());
   {
@@ -172,6 +181,8 @@ void ContextProviderInProcess::OnLostContext() {
   }
   if (!lost_context_callback_.is_null())
     base::ResetAndReturn(&lost_context_callback_).Run();
+  if (gr_context_)
+    gr_context_->OnLostContext();
 }
 
 bool ContextProviderInProcess::DestroyedOnMainThread() {

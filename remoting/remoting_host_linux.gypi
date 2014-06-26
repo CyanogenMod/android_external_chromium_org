@@ -13,7 +13,8 @@
           '<!(echo <(deb_filename) | sed -e "s/.deb$/.changes/")',
           '<(PRODUCT_DIR)/remoting_me2me_host.debug',
           '<(PRODUCT_DIR)/remoting_start_host.debug',
-          '<(PRODUCT_DIR)/remoting_native_messaging_host.debug',
+          '<(PRODUCT_DIR)/native_messaging_host.debug',
+          '<(PRODUCT_DIR)/remote_assistance_host.debug',
         ]
       },
       'targets': [
@@ -88,28 +89,25 @@
               'actions': [
                 {
                   'action_name': 'dump_symbols',
-                  'variables': {
-                    'plugin_file': '<(host_plugin_prefix)remoting_host_plugin.<(host_plugin_extension)',
-                  },
                   'inputs': [
                     '<(DEPTH)/build/linux/dump_app_syms',
                     '<(PRODUCT_DIR)/dump_syms',
-                    '<(PRODUCT_DIR)/<(plugin_file)',
+                    '<(PRODUCT_DIR)/remoting_me2me_host',
                   ],
                   'outputs': [
-                    '<(PRODUCT_DIR)/<(plugin_file).breakpad.<(target_arch)',
+                    '<(PRODUCT_DIR)/remoting_me2me_host.breakpad.<(target_arch)',
                   ],
                   'action': ['<(DEPTH)/build/linux/dump_app_syms',
                              '<(PRODUCT_DIR)/dump_syms',
                              '<(linux_strip_binary)',
-                             '<(PRODUCT_DIR)/<(plugin_file)',
+                             '<(PRODUCT_DIR)/remoting_me2me_host',
                              '<@(_outputs)'],
                   'message': 'Dumping breakpad symbols to <(_outputs)',
                   'process_outputs_as_sources': 1,
                 },
               ],
               'dependencies': [
-                'remoting_host_plugin',
+                'remoting_me2me_host',
                 '../breakpad/breakpad.gyp:dump_syms',
               ],
             }],  # 'linux_dump_symbols==1'
@@ -127,7 +125,7 @@
             'host/setup/start_host.cc',
           ],
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],

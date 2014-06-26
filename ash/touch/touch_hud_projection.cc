@@ -15,7 +15,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 const int kPointRadius = 20;
 const SkColor kProjectionFillColor = SkColorSetRGB(0xF5, 0xF5, 0xDC);
@@ -91,8 +90,7 @@ class TouchPointView : public views::View,
         gradient_colors_,
         gradient_pos_,
         arraysize(gradient_colors_),
-        SkShader::kMirror_TileMode,
-        NULL);
+        SkShader::kMirror_TileMode);
     fill_paint_.setShader(shader);
     shader->unref();
     canvas->DrawCircle(circle_center_, SkIntToScalar(kPointRadius),
@@ -185,5 +183,4 @@ void TouchHudProjection::UnsetHudForRootWindowController(
   controller->set_touch_hud_projection(NULL);
 }
 
-}  // namespace internal
 }  // namespace ash

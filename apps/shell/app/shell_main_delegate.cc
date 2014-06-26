@@ -4,14 +4,15 @@
 
 #include "apps/shell/app/shell_main_delegate.h"
 
+#include "apps/shell/browser/default_shell_browser_main_delegate.h"
 #include "apps/shell/browser/shell_content_browser_client.h"
 #include "apps/shell/common/shell_content_client.h"
 #include "apps/shell/renderer/shell_content_renderer_client.h"
+#include "apps/shell/renderer/shell_renderer_main_delegate.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_main_runner.h"
 #include "content/public/common/content_switches.h"
 #include "extensions/common/extension_paths.h"
@@ -50,7 +51,6 @@ bool ShellMainDelegate::BasicStartupComplete(int* exit_code) {
   content_client_.reset(new ShellContentClient);
   SetContentClient(content_client_.get());
 
-  chrome::RegisterPathProvider();
 #if defined(OS_CHROMEOS)
   chromeos::RegisterPathProvider();
 #endif
@@ -67,14 +67,25 @@ void ShellMainDelegate::PreSandboxStartup() {
 }
 
 content::ContentBrowserClient* ShellMainDelegate::CreateContentBrowserClient() {
-  browser_client_.reset(new apps::ShellContentBrowserClient);
+  browser_client_.reset(
+      new apps::ShellContentBrowserClient(CreateShellBrowserMainDelegate()));
   return browser_client_.get();
 }
 
 content::ContentRendererClient*
 ShellMainDelegate::CreateContentRendererClient() {
-  renderer_client_.reset(new ShellContentRendererClient);
+  renderer_client_.reset(
+      new ShellContentRendererClient(CreateShellRendererMainDelegate()));
   return renderer_client_.get();
+}
+
+ShellBrowserMainDelegate* ShellMainDelegate::CreateShellBrowserMainDelegate() {
+  return new DefaultShellBrowserMainDelegate();
+}
+
+scoped_ptr<ShellRendererMainDelegate>
+ShellMainDelegate::CreateShellRendererMainDelegate() {
+  return scoped_ptr<ShellRendererMainDelegate>();
 }
 
 // static
@@ -89,21 +100,10 @@ bool ShellMainDelegate::ProcessNeedsResourceBundle(
 }
 
 void ShellMainDelegate::InitializeResourceBundle() {
-  ui::ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
-
-  // The extensions system needs manifest data from the Chrome PAK file.
-  // TODO(jamescook): app_shell needs its own manifest data file.
-  base::FilePath resources_pack_path;
-  PathService::Get(chrome::FILE_RESOURCES_PACK, &resources_pack_path);
-  ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      resources_pack_path, ui::SCALE_FACTOR_NONE);
-  // The dev tool needs shell_devtools_discovery_page.html from
-  // content_shell.pak file.
-  base::FilePath pak_file, pak_dir;
+  base::FilePath pak_dir;
   PathService::Get(base::DIR_MODULE, &pak_dir);
-  pak_file = pak_dir.Append(FILE_PATH_LITERAL("content_shell.pak"));
-  ResourceBundle::GetSharedInstance().AddDataPackFromPath(
-      pak_file, ui::SCALE_FACTOR_NONE);
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(
+      pak_dir.AppendASCII("app_shell.pak"));
 }
 
 }  // namespace apps

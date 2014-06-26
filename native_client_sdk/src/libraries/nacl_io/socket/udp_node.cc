@@ -9,6 +9,7 @@
 
 #include <algorithm>
 
+#include "nacl_io/log.h"
 #include "nacl_io/pepper_interface.h"
 #include "nacl_io/socket/packet.h"
 #include "nacl_io/socket/udp_event_emitter.h"
@@ -160,20 +161,26 @@ void UdpNode::Destroy() {
   SocketNode::Destroy();
 }
 
-UdpEventEmitter* UdpNode::GetEventEmitter() { return emitter_.get(); }
+UdpEventEmitter* UdpNode::GetEventEmitter() {
+  return emitter_.get();
+}
 
 Error UdpNode::Init(int open_flags) {
   Error err = SocketNode::Init(open_flags);
   if (err != 0)
     return err;
 
-  if (UDPInterface() == NULL)
+  if (UDPInterface() == NULL) {
+    LOG_ERROR("Got NULL interface: UDP");
     return EACCES;
+  }
 
   socket_resource_ =
       UDPInterface()->Create(filesystem_->ppapi()->GetInstance());
-  if (0 == socket_resource_)
+  if (0 == socket_resource_) {
+    LOG_ERROR("Unable to create UDP resource.");
     return EACCES;
+  }
 
   return 0;
 }

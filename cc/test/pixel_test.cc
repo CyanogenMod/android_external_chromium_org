@@ -5,6 +5,7 @@
 #include "cc/test/pixel_test.h"
 
 #include "base/command_line.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
 #include "cc/base/switches.h"
@@ -14,6 +15,7 @@
 #include "cc/output/gl_renderer.h"
 #include "cc/output/output_surface_client.h"
 #include "cc/output/software_renderer.h"
+#include "cc/resources/raster_worker_pool.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/test/fake_output_surface_client.h"
@@ -22,6 +24,7 @@
 #include "cc/test/pixel_test_software_output_device.h"
 #include "cc/test/pixel_test_utils.h"
 #include "cc/test/test_in_process_context_provider.h"
+#include "cc/test/test_shared_bitmap_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
@@ -34,12 +37,10 @@ PixelTest::PixelTest()
 PixelTest::~PixelTest() {}
 
 bool PixelTest::RunPixelTest(RenderPassList* pass_list,
-                             OffscreenContextOption provide_offscreen_context,
                              const base::FilePath& ref_file,
                              const PixelComparator& comparator) {
   return RunPixelTestWithReadbackTarget(pass_list,
                                         pass_list->back(),
-                                        provide_offscreen_context,
                                         ref_file,
                                         comparator);
 }
@@ -47,7 +48,6 @@ bool PixelTest::RunPixelTest(RenderPassList* pass_list,
 bool PixelTest::RunPixelTestWithReadbackTarget(
     RenderPassList* pass_list,
     RenderPass* target,
-    OffscreenContextOption provide_offscreen_context,
     const base::FilePath& ref_file,
     const PixelComparator& comparator) {
   base::RunLoop run_loop;
@@ -57,31 +57,17 @@ bool PixelTest::RunPixelTestWithReadbackTarget(
                  base::Unretained(this),
                  run_loop.QuitClosure())));
 
-  scoped_refptr<ContextProvider> offscreen_contexts;
-  switch (provide_offscreen_context) {
-    case NoOffscreenContext:
-      break;
-    case WithOffscreenContext:
-      offscreen_contexts = new TestInProcessContextProvider;
-      CHECK(offscreen_contexts->BindToCurrentThread());
-      break;
-  }
-
   float device_scale_factor = 1.f;
   gfx::Rect device_viewport_rect =
       gfx::Rect(device_viewport_size_) + external_device_viewport_offset_;
   gfx::Rect device_clip_rect = external_device_clip_rect_.IsEmpty()
                                    ? device_viewport_rect
                                    : external_device_clip_rect_;
-  bool allow_partial_swap = true;
-
   renderer_->DecideRenderPassAllocationsForFrame(*pass_list);
   renderer_->DrawFrame(pass_list,
-                       offscreen_contexts.get(),
                        device_scale_factor,
                        device_viewport_rect,
                        device_clip_rect,
-                       allow_partial_swap,
                        disable_picture_quad_image_filtering_);
 
   // Wait for the readback to complete.
@@ -117,14 +103,18 @@ bool PixelTest::PixelsMatchReference(const base::FilePath& ref_file,
 }
 
 void PixelTest::SetUpGLRenderer(bool use_skia_gpu_backend) {
+  enable_pixel_output_.reset(new gfx::DisableNullDrawGLBindings);
+
   output_surface_.reset(
       new PixelTestOutputSurface(new TestInProcessContextProvider));
   output_surface_->BindToClient(output_surface_client_.get());
 
-  resource_provider_ =
-      ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
+  shared_bitmap_manager_.reset(new TestSharedBitmapManager());
+  resource_provider_ = ResourceProvider::Create(
+      output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1, false);
 
-  texture_mailbox_deleter_ = make_scoped_ptr(new TextureMailboxDeleter);
+  texture_mailbox_deleter_ = make_scoped_ptr(
+      new TextureMailboxDeleter(base::MessageLoopProxy::current()));
 
   renderer_ = GLRenderer::Create(this,
                                  &settings_,
@@ -157,15 +147,41 @@ void PixelTest::EnableExternalStencilTest() {
       ->set_has_external_stencil_test(true);
 }
 
+void PixelTest::RunOnDemandRasterTask(Task* on_demand_raster_task) {
+  TaskGraphRunner task_graph_runner;
+  NamespaceToken on_demand_task_namespace =
+      task_graph_runner.GetNamespaceToken();
+
+  // Construct a task graph that contains this single raster task.
+  TaskGraph graph;
+  graph.nodes.push_back(
+      TaskGraph::Node(on_demand_raster_task,
+                      RasterWorkerPool::kOnDemandRasterTaskPriority,
+                      0u));
+
+  // Schedule task and wait for task graph runner to finish running it.
+  task_graph_runner.ScheduleTasks(on_demand_task_namespace, &graph);
+  task_graph_runner.RunUntilIdle();
+
+  // Collect task now that it has finished running.
+  Task::Vector completed_tasks;
+  task_graph_runner.CollectCompletedTasks(on_demand_task_namespace,
+                                          &completed_tasks);
+  DCHECK_EQ(1u, completed_tasks.size());
+  DCHECK_EQ(completed_tasks[0], on_demand_raster_task);
+}
+
 void PixelTest::SetUpSoftwareRenderer() {
   scoped_ptr<SoftwareOutputDevice> device(new PixelTestSoftwareOutputDevice());
   output_surface_.reset(new PixelTestOutputSurface(device.Pass()));
   output_surface_->BindToClient(output_surface_client_.get());
-  resource_provider_ =
-      ResourceProvider::Create(output_surface_.get(), NULL, 0, false, 1);
-  renderer_ = SoftwareRenderer::Create(
-      this, &settings_, output_surface_.get(), resource_provider_.get())
-                  .PassAs<DirectRenderer>();
+  shared_bitmap_manager_.reset(new TestSharedBitmapManager());
+  resource_provider_ = ResourceProvider::Create(
+      output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1, false);
+  renderer_ =
+      SoftwareRenderer::Create(
+          this, &settings_, output_surface_.get(), resource_provider_.get())
+          .PassAs<DirectRenderer>();
 }
 
 }  // namespace cc

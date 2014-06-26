@@ -17,6 +17,7 @@ class CC_EXPORT SolidColorScrollbarLayerImpl : public ScrollbarLayerImplBase {
       int id,
       ScrollbarOrientation orientation,
       int thumb_thickness,
+      int track_start,
       bool is_left_side_vertical_scrollbar,
       bool is_overlay);
   virtual ~SolidColorScrollbarLayerImpl();
@@ -26,15 +27,16 @@ class CC_EXPORT SolidColorScrollbarLayerImpl : public ScrollbarLayerImplBase {
       OVERRIDE;
   virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
 
-  virtual void AppendQuads(QuadSink* quad_sink,
+  virtual void AppendQuads(RenderPass* render_pass,
+                           const OcclusionTracker<LayerImpl>& occlusion_tracker,
                            AppendQuadsData* append_quads_data) OVERRIDE;
-
 
  protected:
   SolidColorScrollbarLayerImpl(LayerTreeImpl* tree_impl,
                                int id,
                                ScrollbarOrientation orientation,
                                int thumb_thickness,
+                               int track_start,
                                bool is_left_side_vertical_scrollbar,
                                bool is_overlay);
 
@@ -47,6 +49,7 @@ class CC_EXPORT SolidColorScrollbarLayerImpl : public ScrollbarLayerImplBase {
 
  private:
   int thumb_thickness_;
+  int track_start_;
   SkColor color_;
 };
 

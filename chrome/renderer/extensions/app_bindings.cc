@@ -11,21 +11,21 @@
 #include "base/values.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/renderer/extensions/chrome_v8_context.h"
-#include "chrome/renderer/extensions/console.h"
-#include "chrome/renderer/extensions/dispatcher.h"
-#include "chrome/renderer/extensions/extension_helper.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "extensions/common/extension_messages.h"
 #include "extensions/common/extension_set.h"
 #include "extensions/common/manifest.h"
-#include "grit/renderer_resources.h"
+#include "extensions/renderer/console.h"
+#include "extensions/renderer/dispatcher.h"
+#include "extensions/renderer/extension_helper.h"
+#include "extensions/renderer/script_context.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "v8/include/v8.h"
 
 using blink::WebFrame;
+using blink::WebLocalFrame;
 using content::V8ValueConverter;
 
 namespace extensions {
@@ -57,9 +57,10 @@ const char* kInvalidCallbackIdError = "Invalid callbackId";
 
 }  // namespace
 
-AppBindings::AppBindings(Dispatcher* dispatcher, ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher, context),
-      ChromeV8ExtensionHandler(context) {
+AppBindings::AppBindings(Dispatcher* dispatcher, ScriptContext* context)
+    : ObjectBackedNativeHandler(context),
+      ChromeV8ExtensionHandler(context),
+      dispatcher_(dispatcher) {
   RouteFunction("GetIsInstalled",
       base::Bind(&AppBindings::GetIsInstalled, base::Unretained(this)));
   RouteFunction("GetDetails",
@@ -110,7 +111,7 @@ void AppBindings::GetDetailsForFrame(
       v8::Local<v8::Object>::Cast(args[0])->CreationContext();
   CHECK(!context.IsEmpty());
 
-  WebFrame* target_frame = WebFrame::frameForContext(context);
+  WebLocalFrame* target_frame = WebLocalFrame::frameForContext(context);
   if (!target_frame) {
     console::Error(args.GetIsolate()->GetCallingContext(),
                    "Could not find frame for specified object.");

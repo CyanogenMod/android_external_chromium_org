@@ -1,4 +1,4 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,7 +11,6 @@ import sys
 
 from telemetry.core import browser_finder
 from telemetry.core import profile_types
-from telemetry.core import repeat_options
 from telemetry.core import util
 from telemetry.core import wpr_modes
 from telemetry.core.platform.profiler import profiler_finder
@@ -43,19 +42,16 @@ class BrowserFinderOptions(optparse.Values):
     self.profiler = None
     self.verbosity = 0
 
-    self.page_filter = None
-    self.page_filter_exclude = None
-    self.page_label_filter = None
-    self.page_label_filter_exclude = None
-
     self.report_root_metrics = False
 
-    self.repeat_options = repeat_options.RepeatOptions()
     self.browser_options = BrowserOptions()
     self.output_file = None
     self.skip_navigate_on_repeat = False
 
     self.android_rndis = False
+
+  def __repr__(self):
+    return str(sorted(self.__dict__.items()))
 
   def Copy(self):
     return copy.deepcopy(self)
@@ -98,41 +94,21 @@ class BrowserFinderOptions(optparse.Values):
         help='The identity file to use when ssh\'ing into the ChromeOS device')
     parser.add_option_group(group)
 
-    # Page set options
-    group = optparse.OptionGroup(parser, 'Page set options')
-    group.add_option('--pageset-shuffle', action='store_true',
-        dest='pageset_shuffle',
-        help='Shuffle the order of pages within a pageset.')
-    group.add_option('--pageset-shuffle-order-file',
-        dest='pageset_shuffle_order_file', default=None,
-        help='Filename of an output of a previously run test on the current ' +
-        'pageset. The tests will run in the same order again, overriding ' +
-        'what is specified by --page-repeat and --pageset-repeat.')
-    parser.add_option_group(group)
-
-    group = optparse.OptionGroup(parser, 'Web Page Replay options')
-    group.add_option('--allow-live-sites',
-        dest='allow_live_sites', action='store_true',
-        help='Run against live sites if the Web Page Replay archives don\'t '
-             'exist. Without this flag, the test will just fail instead '
-             'of running against live sites.')
-    parser.add_option_group(group)
-
     # Debugging options
     group = optparse.OptionGroup(parser, 'When things go wrong')
     profiler_choices = profiler_finder.GetAllAvailableProfilers()
     group.add_option(
-      '--profiler', default=None, type='choice',
-      choices=profiler_choices,
-      help=('Record profiling data using this tool. Supported values: ' +
-            ', '.join(profiler_choices)))
+        '--profiler', default=None, type='choice',
+        choices=profiler_choices,
+        help='Record profiling data using this tool. Supported values: ' +
+             ', '.join(profiler_choices))
     group.add_option(
-      '--interactive', dest='interactive', action='store_true',
-      help=('Let the user interact with the page; the actions specified for '
-            'the page are not run.'))
+        '--interactive', dest='interactive', action='store_true',
+        help='Let the user interact with the page; the actions specified for '
+             'the page are not run.')
     group.add_option(
-      '-v', '--verbose', action='count', dest='verbosity',
-      help='Increase verbosity level (repeat as needed)')
+        '-v', '--verbose', action='count', dest='verbosity',
+        help='Increase verbosity level (repeat as needed)')
     group.add_option('--print-bootstrap-deps',
                      action='store_true',
                      help='Output bootstrap deps list.')
@@ -146,8 +122,8 @@ class BrowserFinderOptions(optparse.Values):
         '(specially important for dashboards / continuous builds). '
         'This option prevents Telemetry from tweaking such platform settings.')
     group.add_option(
-      '--report-root-metrics', action='store_true',dest='report_root_metrics',
-      help='Enable metrics that require root access to record.')
+        '--report-root-metrics', action='store_true',dest='report_root_metrics',
+        help='Enable metrics that require root access to record.')
     group.add_option('--android-rndis', dest='android_rndis', default=False,
         action='store_true', help='Use RNDIS forwarding on Android.')
     group.add_option('--no-android-rndis', dest='android_rndis',
@@ -155,11 +131,8 @@ class BrowserFinderOptions(optparse.Values):
         ' [default]')
     parser.add_option_group(group)
 
-    # Repeat options.
-    self.repeat_options.AddCommandLineOptions(parser)
-
     # Browser options.
-    self.browser_options.AddCommandLineOptions(parser)
+    self.browser_options.AddCommandLineArgs(parser)
 
     real_parse = parser.parse_args
     def ParseArgs(args=None):
@@ -189,9 +162,6 @@ class BrowserFinderOptions(optparse.Values):
         sys.stdout.write('  %s\n' % '\n  '.join(types))
         sys.exit(0)
 
-      # Parse repeat options.
-      self.repeat_options.UpdateFromParseResults(self, parser)
-
       # Parse browser options.
       self.browser_options.UpdateFromParseResults(self)
 
@@ -211,8 +181,6 @@ class BrowserOptions(object):
   def __init__(self):
     self.browser_type = None
     self.show_stdout = False
-
-    self.warn_if_no_flash = True
 
     # When set to True, the browser will use the default profile.  Telemetry
     # will not provide an alternate profile directory.
@@ -234,7 +202,25 @@ class BrowserOptions(object):
     # performance measurements.
     self.disable_component_extensions_with_background_pages = True
 
-  def AddCommandLineOptions(self, parser):
+    self.platform = None
+
+    # Whether to use the new code path for choosing an ephemeral port for
+    # DevTools. The bots set this to true. When Chrome 37 reaches stable,
+    # remove this setting and the old code path. http://crbug.com/379980
+    self.use_devtools_active_port = False
+
+  def __repr__(self):
+    return str(sorted(self.__dict__.items()))
+
+  @classmethod
+  def AddCommandLineArgs(cls, parser):
+
+    ############################################################################
+    # Please do not add any more options here without first discussing with    #
+    # a telemetry owner. This is not the right place for platform-specific     #
+    # options.                                                                 #
+    ############################################################################
+
     group = optparse.OptionGroup(parser, 'Browser options')
     profile_choices = profile_types.GetProfileTypes()
     group.add_option('--profile-type',
@@ -263,6 +249,11 @@ class BrowserOptions(object):
     group.add_option('--show-stdout',
         action='store_true',
         help='When possible, will display the stdout of the process')
+    # This hidden option is to be removed, and the older code path deleted,
+    # once Chrome 37 reaches Stable. http://crbug.com/379980
+    group.add_option('--use-devtools-active-port',
+        action='store_true',
+        help=optparse.SUPPRESS_HELP)
     parser.add_option_group(group)
 
     group = optparse.OptionGroup(parser, 'Compatibility options')
@@ -293,6 +284,7 @@ class BrowserOptions(object):
         'profile_type',
         'show_stdout',
         'synthetic_gesture_source_type',
+        'use_devtools_active_port',
         ]
     for o in browser_options_list:
       a = getattr(finder_options, o, None)
@@ -316,12 +308,17 @@ class BrowserOptions(object):
       self.dont_override_profile = True
 
     if self.profile_dir and self.profile_type != 'clean':
-      raise Exception("It's illegal to specify both --profile-type and"
-          " --profile-dir.")
+      logging.critical(
+          "It's illegal to specify both --profile-type and --profile-dir.\n"
+          "For more information see: http://goo.gl/ngdGD5")
+      sys.exit(1)
 
     if self.profile_dir and not os.path.isdir(self.profile_dir):
-      raise Exception("Directory specified by --profile-dir (%s) doesn't"
-          " exist or isn't a directory." % (self.profile_dir))
+      logging.critical(
+          "Directory specified by --profile-dir (%s) doesn't exist "
+          "or isn't a directory.\n"
+          "For more information see: http://goo.gl/ngdGD5" % self.profile_dir)
+      sys.exit(1)
 
     if not self.profile_dir:
       self.profile_dir = profile_types.GetProfileDir(self.profile_type)

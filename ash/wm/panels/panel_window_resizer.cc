@@ -19,9 +19,9 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/screen.h"
@@ -32,11 +32,9 @@ namespace ash {
 namespace {
 const int kPanelSnapToLauncherDistance = 30;
 
-internal::PanelLayoutManager* GetPanelLayoutManager(
-    aura::Window* panel_container) {
-  DCHECK(panel_container->id() == internal::kShellWindowId_PanelContainer);
-  return static_cast<internal::PanelLayoutManager*>(
-      panel_container->layout_manager());
+PanelLayoutManager* GetPanelLayoutManager(aura::Window* panel_container) {
+  DCHECK(panel_container->id() == kShellWindowId_PanelContainer);
+  return static_cast<PanelLayoutManager*>(panel_container->layout_manager());
 }
 
 }  // namespace
@@ -74,8 +72,8 @@ void PanelWindowResizer::Drag(const gfx::Point& location, int event_flags) {
       GetPanelLayoutManager(panel_container_)->FinishDragging();
     aura::Window* dst_root = Shell::GetInstance()->display_controller()->
         GetRootWindowForDisplayId(dst_display.id());
-    panel_container_ = Shell::GetContainer(
-        dst_root, internal::kShellWindowId_PanelContainer);
+    panel_container_ =
+        Shell::GetContainer(dst_root, kShellWindowId_PanelContainer);
 
     // The panel's parent already knows that the drag is in progress for this
     // panel.
@@ -124,9 +122,8 @@ PanelWindowResizer::PanelWindowResizer(WindowResizer* next_window_resizer,
       was_attached_(window_state->panel_attached()),
       weak_ptr_factory_(this) {
   DCHECK(details().is_resizable);
-  panel_container_ = Shell::GetContainer(
-      GetTarget()->GetRootWindow(),
-      internal::kShellWindowId_PanelContainer);
+  panel_container_ = Shell::GetContainer(GetTarget()->GetRootWindow(),
+                                         kShellWindowId_PanelContainer);
   initial_panel_container_ = panel_container_;
 }
 
@@ -134,7 +131,7 @@ bool PanelWindowResizer::AttachToLauncher(const gfx::Rect& bounds,
                                           gfx::Point* offset) {
   bool should_attach = false;
   if (panel_container_) {
-    internal::PanelLayoutManager* panel_layout_manager =
+    PanelLayoutManager* panel_layout_manager =
         GetPanelLayoutManager(panel_container_);
     gfx::Rect launcher_bounds = ScreenUtil::ConvertRectFromScreen(
         GetTarget()->parent(),
@@ -181,7 +178,6 @@ void PanelWindowResizer::StartedDragging() {
     GetPanelLayoutManager(panel_container_)->StartDragging(GetTarget());
   if (!was_attached_) {
     // Attach the panel while dragging placing it in front of other panels.
-    window_state_->set_continue_drag_after_reparent(true);
     window_state_->set_panel_attached(true);
     // We use root window coordinates to ensure that during the drag the panel
     // is reparented to a container in the root window that has that window.

@@ -8,9 +8,8 @@ TestNaClBrowserDelegate::TestNaClBrowserDelegate() {}
 
 TestNaClBrowserDelegate::~TestNaClBrowserDelegate() {}
 
-void TestNaClBrowserDelegate::ShowNaClInfobar(int render_process_id,
-                                              int render_view_id,
-                                              int error_id) {}
+void TestNaClBrowserDelegate::ShowMissingArchInfobar(int render_process_id,
+                                                     int render_view_id) {}
 
 bool TestNaClBrowserDelegate::DialogsAreSuppressed() {
   return false;
@@ -41,9 +40,11 @@ ppapi::host::HostFactory* TestNaClBrowserDelegate::CreatePpapiHostFactory(
   return NULL;
 }
 
-bool TestNaClBrowserDelegate::MapUrlToLocalFilePath(const GURL& url,
-                                                    bool use_blocking_api,
-                                                    base::FilePath* file_path) {
+bool TestNaClBrowserDelegate::MapUrlToLocalFilePath(
+    const GURL& url,
+    bool use_blocking_api,
+    const base::FilePath& profile_directory,
+    base::FilePath* file_path) {
   return false;
 }
 
@@ -57,4 +58,10 @@ bool TestNaClBrowserDelegate::URLMatchesDebugPatterns(
 content::BrowserPpapiHost::OnKeepaliveCallback
 TestNaClBrowserDelegate::GetOnKeepaliveCallback() {
   return content::BrowserPpapiHost::OnKeepaliveCallback();
+}
+
+bool TestNaClBrowserDelegate::IsNonSfiModeAllowed(
+    const base::FilePath& profile_directory,
+    const GURL& manifest_url) {
+  return false;
 }

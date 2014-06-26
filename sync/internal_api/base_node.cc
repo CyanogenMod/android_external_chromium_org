@@ -40,24 +40,6 @@ static int64 IdToMetahandle(syncable::BaseTransaction* trans,
   return entry.GetMetahandle();
 }
 
-static bool EndsWithSpace(const std::string& string) {
-  return !string.empty() && *string.rbegin() == ' ';
-}
-
-// In the reverse direction, if a server name matches the pattern of a
-// server-illegal name followed by one or more spaces, remove the trailing
-// space.
-static void ServerNameToSyncAPIName(const std::string& server_name,
-                                    std::string* out) {
-  CHECK(out);
-  int length_to_copy = server_name.length();
-  if (IsNameServerIllegalAfterTrimming(server_name) &&
-      EndsWithSpace(server_name)) {
-    --length_to_copy;
-  }
-  *out = std::string(server_name.c_str(), length_to_copy);
-}
-
 BaseNode::BaseNode() : password_data_(new sync_pb::PasswordSpecificsData) {}
 
 BaseNode::~BaseNode() {}
@@ -306,6 +288,16 @@ const sync_pb::EntitySpecifics& BaseNode::GetEntitySpecifics() const {
 
 ModelType BaseNode::GetModelType() const {
   return GetEntry()->GetModelType();
+}
+
+const syncer::AttachmentIdList BaseNode::GetAttachmentIds() const {
+  AttachmentIdList result;
+  const sync_pb::AttachmentMetadata& metadata =
+      GetEntry()->GetAttachmentMetadata();
+  for (int i = 0; i < metadata.record_size(); ++i) {
+    result.push_back(AttachmentId::CreateFromProto(metadata.record(i).id()));
+  }
+  return result;
 }
 
 void BaseNode::SetUnencryptedSpecifics(

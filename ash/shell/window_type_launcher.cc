@@ -6,7 +6,7 @@
 
 #include "ash/root_window_controller.h"
 #include "ash/screensaver/screensaver_view.h"
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell/example_factory.h"
@@ -16,12 +16,13 @@
 #include "ash/shell_window_ids.h"
 #include "ash/system/status_area_widget.h"
 #include "ash/system/web_notification/web_notification_tray.h"
+#include "ash/test/child_modal_window.h"
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "content/public/browser/browser_thread.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/gfx/canvas.h"
 #include "ui/message_center/message_center.h"
@@ -29,11 +30,10 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
-#include "ui/views/corewm/shadow_types.h"
 #include "ui/views/examples/examples_window_with_content.h"
 #include "ui/views/layout/grid_layout.h"
-#include "ui/views/test/child_modal_window.h"
 #include "ui/views/widget/widget.h"
+#include "ui/wm/core/shadow_types.h"
 
 using views::MenuItemView;
 using views::MenuRunner;
@@ -76,7 +76,7 @@ class ModalWindow : public views::WidgetDelegateView,
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     canvas->FillRect(GetLocalBounds(), color_);
   }
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(200, 200);
   }
   virtual void Layout() OVERRIDE {
@@ -148,7 +148,7 @@ class NonModalTransient : public views::WidgetDelegateView {
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     canvas->FillRect(GetLocalBounds(), color_);
   }
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(250, 250);
   }
 
@@ -195,8 +195,8 @@ void InitWindowTypeLauncher() {
           Shell::GetPrimaryRootWindow(),
           gfx::Rect(120, 150, 300, 410));
   widget->GetNativeView()->SetName("WindowTypeLauncher");
-  views::corewm::SetShadowType(widget->GetNativeView(),
-                               views::corewm::SHADOW_TYPE_RECTANGULAR);
+  wm::SetShadowType(widget->GetNativeView(),
+                               wm::SHADOW_TYPE_RECTANGULAR);
   widget->Show();
 }
 
@@ -323,7 +323,7 @@ void WindowTypeLauncher::ButtonPressed(views::Button* sender,
     ModalWindow::OpenModalWindow(GetWidget()->GetNativeView(),
                                  ui::MODAL_TYPE_WINDOW);
   } else if (sender == child_modal_button_) {
-    views::test::CreateChildModalParent(
+    ash::test::CreateChildModalParent(
         GetWidget()->GetNativeView()->GetRootWindow());
   } else if (sender == transient_button_) {
     NonModalTransient::OpenNonModalTransient(GetWidget()->GetNativeView());
@@ -387,13 +387,16 @@ void WindowTypeLauncher::ShowContextMenuForView(
                        MenuItemView::NORMAL);
   // MenuRunner takes ownership of root.
   menu_runner_.reset(new MenuRunner(root));
-  if (menu_runner_->RunMenuAt(GetWidget(), NULL,
-        gfx::Rect(point, gfx::Size()),
-        MenuItemView::TOPLEFT,
-        source_type,
-        MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-        MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(
+          GetWidget(),
+          NULL,
+          gfx::Rect(point, gfx::Size()),
+          views::MENU_ANCHOR_TOPLEFT,
+          source_type,
+          MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+      MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 }  // namespace shell

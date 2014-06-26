@@ -12,23 +12,23 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/metrics/metrics_services_manager.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_infobar_delegates.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/tab_modal_confirm_dialog.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/webplugininfo.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -119,6 +119,72 @@ void ConfirmInstallDialogDelegate::OnlyWeakObserversLeft() {
   Cancel();
 }
 #endif  // defined(ENABLE_PLUGIN_INSTALLATION)
+
+// ReloadPluginInfoBarDelegate -------------------------------------------------
+
+class ReloadPluginInfoBarDelegate : public ConfirmInfoBarDelegate {
+ public:
+  static void Create(InfoBarService* infobar_service,
+                     content::NavigationController* controller,
+                     const base::string16& message);
+
+ private:
+  ReloadPluginInfoBarDelegate(content::NavigationController* controller,
+                              const base::string16& message);
+  virtual ~ReloadPluginInfoBarDelegate();
+
+  // ConfirmInfobarDelegate:
+  virtual int GetIconID() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual int GetButtons() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+
+  content::NavigationController* controller_;
+  base::string16 message_;
+};
+
+// static
+void ReloadPluginInfoBarDelegate::Create(
+    InfoBarService* infobar_service,
+    content::NavigationController* controller,
+    const base::string16& message) {
+  infobar_service->AddInfoBar(
+      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
+          new ReloadPluginInfoBarDelegate(controller, message))));
+}
+
+ReloadPluginInfoBarDelegate::ReloadPluginInfoBarDelegate(
+    content::NavigationController* controller,
+    const base::string16& message)
+    : controller_(controller),
+      message_(message) {}
+
+ReloadPluginInfoBarDelegate::~ReloadPluginInfoBarDelegate(){ }
+
+int ReloadPluginInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_PLUGIN_CRASHED;
+}
+
+base::string16 ReloadPluginInfoBarDelegate::GetMessageText() const {
+  return message_;
+}
+
+int ReloadPluginInfoBarDelegate::GetButtons() const {
+  return BUTTON_OK;
+}
+
+base::string16 ReloadPluginInfoBarDelegate::GetButtonLabel(
+    InfoBarButton button) const {
+  DCHECK_EQ(BUTTON_OK, button);
+  return l10n_util::GetStringUTF16(IDS_RELOAD_PAGE_WITH_PLUGIN);
+}
+
+bool ReloadPluginInfoBarDelegate::Accept() {
+  controller_->Reload(true);
+  return true;
+}
+
 }  // namespace
 
 // PluginObserver -------------------------------------------------------------
@@ -205,7 +271,7 @@ void PluginObserver::RenderFrameCreated(
   // where we have instances on both Ash and Native desktop.
 
   // We will do both tests. Both have some factor of unreliability.
-  aura::Window* window = web_contents()->GetView()->GetNativeView();
+  aura::Window* window = web_contents()->GetNativeView();
   if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH ||
       chrome::GetHostDesktopTypeForNativeView(window) ==
       chrome::HOST_DESKTOP_TYPE_ASH) {
@@ -257,20 +323,36 @@ void PluginObserver::PluginCrashed(const base::FilePath& plugin_path,
   UMA_HISTOGRAM_COUNTS("Plugin.ShowCrashedInfobar", 1);
 #endif
 
-  SimpleAlertInfoBarDelegate::Create(
+  ReloadPluginInfoBarDelegate::Create(
       InfoBarService::FromWebContents(web_contents()),
-      IDR_INFOBAR_PLUGIN_CRASHED, infobar_text, true);
+      &web_contents()->GetController(),
+      infobar_text);
 }
 
-bool PluginObserver::OnMessageReceived(const IPC::Message& message) {
+bool PluginObserver::OnMessageReceived(
+      const IPC::Message& message,
+      content::RenderFrameHost* render_frame_host) {
   IPC_BEGIN_MESSAGE_MAP(PluginObserver, message)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_BlockedOutdatedPlugin,
                         OnBlockedOutdatedPlugin)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_BlockedUnauthorizedPlugin,
                         OnBlockedUnauthorizedPlugin)
+    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_NPAPINotSupported,
+                        OnNPAPINotSupported)
 #if defined(ENABLE_PLUGIN_INSTALLATION)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_FindMissingPlugin,
                         OnFindMissingPlugin)
+#endif
+
+    IPC_MESSAGE_UNHANDLED(return false)
+  IPC_END_MESSAGE_MAP()
+
+  return true;
+}
+
+bool PluginObserver::OnMessageReceived(const IPC::Message& message) {
+  IPC_BEGIN_MESSAGE_MAP(PluginObserver, message)
+#if defined(ENABLE_PLUGIN_INSTALLATION)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_RemovePluginPlaceholderHost,
                         OnRemovePluginPlaceholderHost)
 #endif
@@ -278,8 +360,6 @@ bool PluginObserver::OnMessageReceived(const IPC::Message& message) {
                         OnOpenAboutPlugins)
     IPC_MESSAGE_HANDLER(ChromeViewHostMsg_CouldNotLoadPlugin,
                         OnCouldNotLoadPlugin)
-    IPC_MESSAGE_HANDLER(ChromeViewHostMsg_NPAPINotSupported,
-                        OnNPAPINotSupported)
 
     IPC_MESSAGE_UNHANDLED(return false)
   IPC_END_MESSAGE_MAP()
@@ -378,7 +458,8 @@ void PluginObserver::OnOpenAboutPlugins() {
 }
 
 void PluginObserver::OnCouldNotLoadPlugin(const base::FilePath& plugin_path) {
-  g_browser_process->metrics_service()->LogPluginLoadingError(plugin_path);
+  g_browser_process->GetMetricsServicesManager()->OnPluginLoadingError(
+      plugin_path);
   base::string16 plugin_name =
       PluginService::GetInstance()->GetPluginDisplayNameByPath(plugin_path);
   SimpleAlertInfoBarDelegate::Create(

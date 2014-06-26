@@ -8,6 +8,11 @@
 #include <string>
 #include <vector>
 
+#if defined(OS_NACL)
+#include <sys/mount.h>
+#include <nacl_io/nacl_io.h>
+#endif
+
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/json/json_reader.h"
@@ -21,13 +26,15 @@
 #include "base/values.h"
 #include "crypto/random.h"
 #include "jingle/glue/thread_wrapper.h"
-#include "media/base/media.h"
+#include "media/base/yuv_convert.h"
 #include "net/socket/ssl_server_socket.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/cpp/dev/url_util_dev.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/rect.h"
+#include "ppapi/cpp/var_array_buffer.h"
+#include "ppapi/cpp/var_dictionary.h"
 #include "remoting/base/constants.h"
 #include "remoting/base/util.h"
 #include "remoting/client/chromoting_client.h"
@@ -35,16 +42,19 @@
 #include "remoting/client/frame_consumer_proxy.h"
 #include "remoting/client/plugin/delegating_signal_strategy.h"
 #include "remoting/client/plugin/media_source_video_renderer.h"
+#include "remoting/client/plugin/normalizing_input_filter_cros.h"
+#include "remoting/client/plugin/normalizing_input_filter_mac.h"
 #include "remoting/client/plugin/pepper_audio_player.h"
 #include "remoting/client/plugin/pepper_input_handler.h"
 #include "remoting/client/plugin/pepper_port_allocator.h"
-#include "remoting/client/plugin/pepper_token_fetcher.h"
 #include "remoting/client/plugin/pepper_view.h"
 #include "remoting/client/software_video_renderer.h"
+#include "remoting/client/token_fetcher_proxy.h"
 #include "remoting/protocol/connection_to_host.h"
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/libjingle_transport_factory.h"
 #include "third_party/libjingle/source/talk/base/helpers.h"
+#include "third_party/libjingle/source/talk/base/ssladapter.h"
 #include "url/gurl.h"
 
 // Windows defines 'PostMessage', so we have to undef it.
@@ -172,7 +182,8 @@ logging::LogMessageHandlerFunction g_logging_old_handler = NULL;
 const char ChromotingInstance::kApiFeatures[] =
     "highQualityScaling injectKeyEvent sendClipboardItem remapKey trapKey "
     "notifyClientResolution pauseVideo pauseAudio asyncPin thirdPartyAuth "
-    "pinlessAuth extensionMessage allowMouseLock mediaSourceRendering";
+    "pinlessAuth extensionMessage allowMouseLock mediaSourceRendering "
+    "videoControl";
 
 const char ChromotingInstance::kRequestedCapabilities[] = "";
 const char ChromotingInstance::kSupportedCapabilities[] = "desktopShape";
@@ -203,11 +214,28 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
       context_(plugin_task_runner_.get()),
       input_tracker_(&mouse_input_filter_),
       key_mapper_(&input_tracker_),
-      normalizing_input_filter_(CreateNormalizingInputFilter(&key_mapper_)),
-      input_handler_(this, normalizing_input_filter_.get()),
+      input_handler_(this),
       use_async_pin_dialog_(false),
       use_media_source_rendering_(false),
       weak_factory_(this) {
+#if defined(OS_NACL)
+  // In NaCl global resources need to be initialized differently because they
+  // are not shared with Chrome.
+  thread_task_runner_handle_.reset(
+      new base::ThreadTaskRunnerHandle(plugin_task_runner_));
+  thread_wrapper_.reset(
+      new jingle_glue::JingleThreadWrapper(plugin_task_runner_));
+  media::InitializeCPUSpecificYUVConversions();
+#else
+  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
+#endif
+
+#if defined(OS_NACL)
+  nacl_io_init_ppapi(pp_instance, pp::Module::Get()->get_browser_interface());
+  mount("", "/etc", "memfs", 0, "");
+  mount("", "/usr", "memfs", 0, "");
+#endif
+
   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE | PP_INPUTEVENT_CLASS_WHEEL);
   RequestFilteringInputEvents(PP_INPUTEVENT_CLASS_KEYBOARD);
 
@@ -219,7 +247,12 @@ ChromotingInstance::ChromotingInstance(PP_Instance pp_instance)
   char random_seed[kRandomSeedSize];
   crypto::RandBytes(random_seed, sizeof(random_seed));
   talk_base::InitRandom(random_seed, sizeof(random_seed));
-#endif  // defined(USE_OPENSSL)
+#else
+  // Libjingle's SSL implementation is not really used, but it has to be
+  // initialized for NSS builds to make sure that RNG is initialized in NSS,
+  // because libjingle uses it.
+  talk_base::InitializeSSL();
+#endif  // !defined(USE_OPENSSL)
 
   // Send hello message.
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
@@ -262,25 +295,15 @@ bool ChromotingInstance::Init(uint32_t argc,
 
   VLOG(1) << "Started ChromotingInstance::Init";
 
-  // Check to make sure the media library is initialized.
-  // http://crbug.com/91521.
-  if (!media::IsMediaLibraryInitialized()) {
-    LOG(ERROR) << "Media library not initialized.";
-    return false;
-  }
-
-  // Check that the calling content is part of an app or extension.
+  // Check that the calling content is part of an app or extension. This is only
+  // necessary for non-PNaCl version of the plugin. Also PPB_URLUtil_Dev doesn't
+  // work in NaCl at the moment so the check fails in NaCl builds.
+#if !defined(OS_NACL)
   if (!IsCallerAppOrExtension()) {
     LOG(ERROR) << "Not an app or extension";
     return false;
   }
-
-  // Enable support for SSL server sockets, which must be done as early as
-  // possible, preferably before any NSS SSL sockets (client or server) have
-  // been created.
-  // It's possible that the hosting process has already made use of SSL, in
-  // which case, there may be a slight race.
-  net::EnableSSLServerSockets();
+#endif
 
   // Start all the threads.
   context_.Start();
@@ -328,6 +351,8 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
     HandleNotifyClientResolution(*data);
   } else if (method == "pauseVideo") {
     HandlePauseVideo(*data);
+  } else if (method == "videoControl") {
+    HandleVideoControl(*data);
   } else if (method == "pauseAudio") {
     HandlePauseAudio(*data);
   } else if (method == "useAsyncPinDialog") {
@@ -344,11 +369,16 @@ void ChromotingInstance::HandleMessage(const pp::Var& message) {
     HandleAllowMouseLockMessage();
   } else if (method == "enableMediaSourceRendering") {
     HandleEnableMediaSourceRendering();
+  } else if (method == "sendMouseInputWhenUnfocused") {
+    HandleSendMouseInputWhenUnfocused();
   }
 }
 
 void ChromotingInstance::DidChangeFocus(bool has_focus) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
+
+  if (!IsConnected())
+    return;
 
   input_handler_.DidChangeFocus(has_focus);
 }
@@ -422,12 +452,12 @@ void ChromotingInstance::FetchThirdPartyToken(
     const GURL& token_url,
     const std::string& host_public_key,
     const std::string& scope,
-    base::WeakPtr<PepperTokenFetcher> pepper_token_fetcher) {
+    base::WeakPtr<TokenFetcherProxy> token_fetcher_proxy) {
   // Once the Session object calls this function, it won't continue the
   // authentication until the callback is called (or connection is canceled).
   // So, it's impossible to reach this with a callback already registered.
-  DCHECK(!pepper_token_fetcher_.get());
-  pepper_token_fetcher_ = pepper_token_fetcher;
+  DCHECK(!token_fetcher_proxy_.get());
+  token_fetcher_proxy_ = token_fetcher_proxy;
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   data->SetString("tokenUrl", token_url.spec());
   data->SetString("hostPublicKey", host_public_key);
@@ -507,7 +537,10 @@ protocol::CursorShapeStub* ChromotingInstance::GetCursorShapeStub() {
 scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>
 ChromotingInstance::GetTokenFetcher(const std::string& host_public_key) {
   return scoped_ptr<protocol::ThirdPartyClientAuthenticator::TokenFetcher>(
-      new PepperTokenFetcher(weak_factory_.GetWeakPtr(), host_public_key));
+      new TokenFetcherProxy(
+          base::Bind(&ChromotingInstance::FetchThirdPartyToken,
+                     weak_factory_.GetWeakPtr()),
+          host_public_key));
 }
 
 void ChromotingInstance::InjectClipboardEvent(
@@ -625,14 +658,36 @@ void ChromotingInstance::HandleConnect(const base::DictionaryValue& data) {
     }
   }
 
+#if defined(OS_NACL)
+  std::string key_filter;
+  if (!data.GetString("keyFilter", &key_filter)) {
+    NOTREACHED();
+    normalizing_input_filter_.reset(new protocol::InputFilter(&key_mapper_));
+  } else if (key_filter == "mac") {
+    normalizing_input_filter_.reset(
+        new NormalizingInputFilterMac(&key_mapper_));
+  } else if (key_filter == "cros") {
+    normalizing_input_filter_.reset(
+        new NormalizingInputFilterCros(&key_mapper_));
+  } else {
+    DCHECK(key_filter.empty());
+    normalizing_input_filter_.reset(new protocol::InputFilter(&key_mapper_));
+  }
+#elif defined(OS_MACOSX)
+  normalizing_input_filter_.reset(new NormalizingInputFilterMac(&key_mapper_));
+#elif defined(OS_CHROMEOS)
+  normalizing_input_filter_.reset(new NormalizingInputFilterCros(&key_mapper_));
+#else
+  normalizing_input_filter_.reset(new protocol::InputFilter(&key_mapper_));
+#endif
+  input_handler_.set_input_stub(normalizing_input_filter_.get());
+
   ConnectWithConfig(config, local_jid);
 }
 
 void ChromotingInstance::ConnectWithConfig(const ClientConfig& config,
                                            const std::string& local_jid) {
   DCHECK(plugin_task_runner_->BelongsToCurrentThread());
-
-  jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
 
   if (use_media_source_rendering_) {
     video_renderer_.reset(new MediaSourceVideoRenderer(this));
@@ -683,7 +738,7 @@ void ChromotingInstance::ConnectWithConfig(const ClientConfig& config,
   scoped_ptr<protocol::TransportFactory> transport_factory(
       new protocol::LibjingleTransportFactory(
           signal_strategy_.get(), port_allocator.Pass(),
-          NetworkSettings(NetworkSettings::NAT_TRAVERSAL_ENABLED)));
+          NetworkSettings(NetworkSettings::NAT_TRAVERSAL_FULL)));
 
   // Kick off the connection.
   client_->Start(signal_strategy_.get(), transport_factory.Pass());
@@ -788,7 +843,7 @@ void ChromotingInstance::HandleSendClipboardItem(
   protocol::ClipboardEvent event;
   event.set_mime_type(mime_type);
   event.set_data(item);
-  host_connection_->clipboard_stub()->InjectClipboardEvent(event);
+  host_connection_->clipboard_forwarder()->InjectClipboardEvent(event);
 }
 
 void ChromotingInstance::HandleNotifyClientResolution(
@@ -825,16 +880,30 @@ void ChromotingInstance::HandleNotifyClientResolution(
 }
 
 void ChromotingInstance::HandlePauseVideo(const base::DictionaryValue& data) {
-  bool pause = false;
-  if (!data.GetBoolean("pause", &pause)) {
+  if (!data.HasKey("pause")) {
     LOG(ERROR) << "Invalid pauseVideo.";
     return;
+  }
+  HandleVideoControl(data);
+}
+
+void ChromotingInstance::HandleVideoControl(const base::DictionaryValue& data) {
+  protocol::VideoControl video_control;
+  bool pause_video = false;
+  if (data.GetBoolean("pause", &pause_video)) {
+    video_control.set_enable(!pause_video);
+  }
+  bool lossless_encode = false;
+  if (data.GetBoolean("losslessEncode", &lossless_encode)) {
+    video_control.set_lossless_encode(lossless_encode);
+  }
+  bool lossless_color = false;
+  if (data.GetBoolean("losslessColor", &lossless_color)) {
+    video_control.set_lossless_color(lossless_color);
   }
   if (!IsConnected()) {
     return;
   }
-  protocol::VideoControl video_control;
-  video_control.set_enable(!pause);
   host_connection_->host_stub()->ControlVideo(video_control);
 }
 
@@ -874,9 +943,9 @@ void ChromotingInstance::HandleOnThirdPartyTokenFetched(
     LOG(ERROR) << "Invalid onThirdPartyTokenFetched data.";
     return;
   }
-  if (pepper_token_fetcher_.get()) {
-    pepper_token_fetcher_->OnTokenFetched(token, shared_secret);
-    pepper_token_fetcher_.reset();
+  if (token_fetcher_proxy_.get()) {
+    token_fetcher_proxy_->OnTokenFetched(token, shared_secret);
+    token_fetcher_proxy_.reset();
   } else {
     LOG(WARNING) << "Ignored OnThirdPartyTokenFetched without a pending fetch.";
   }
@@ -921,6 +990,10 @@ void ChromotingInstance::HandleAllowMouseLockMessage() {
 
 void ChromotingInstance::HandleEnableMediaSourceRendering() {
   use_media_source_rendering_ = true;
+}
+
+void ChromotingInstance::HandleSendMouseInputWhenUnfocused() {
+  input_handler_.set_send_mouse_input_when_unfocused(true);
 }
 
 ChromotingStats* ChromotingInstance::GetStats() {
@@ -1123,14 +1196,15 @@ void ChromotingInstance::OnMediaSourceReset(const std::string& format) {
   PostLegacyJsonMessage("mediaSourceReset", data.Pass());
 }
 
-void ChromotingInstance::OnMediaSourceData(uint8_t* buffer,
-                                           size_t buffer_size) {
+void ChromotingInstance::OnMediaSourceData(uint8_t* buffer, size_t buffer_size,
+                                           bool keyframe) {
   pp::VarArrayBuffer array_buffer(buffer_size);
   void* data_ptr = array_buffer.Map();
   memcpy(data_ptr, buffer, buffer_size);
   array_buffer.Unmap();
   pp::VarDictionary data_dictionary;
   data_dictionary.Set(pp::Var("buffer"), array_buffer);
+  data_dictionary.Set(pp::Var("keyframe"), keyframe);
   PostChromotingMessage("mediaSourceData", data_dictionary);
 }
 

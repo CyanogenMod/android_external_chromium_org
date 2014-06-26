@@ -76,7 +76,7 @@ class SafeBrowsingDatabaseManager
     safe_browsing_util::ListType check_type;  // See comment in constructor.
     std::vector<SBThreatType> expected_threats;
     std::vector<SBPrefix> prefix_hits;
-    std::vector<SBFullHashResult> full_hits;
+    std::vector<SBFullHashResult> cache_hits;
 
     // Vends weak pointers for TimeoutCallback().  If the response is
     // received before the timeout fires, factory is destructed and
@@ -106,10 +106,6 @@ class SafeBrowsingDatabaseManager
     virtual void OnCheckDownloadUrlResult(const std::vector<GURL>& url_chain,
                                           SBThreatType threat_type) {}
 
-    // Called when the result of checking a download binary hash is known.
-    virtual void OnCheckDownloadHashResult(const std::string& hash,
-                                           SBThreatType threat_type) {}
-
     // Called when the result of checking a set of extensions is known.
     virtual void OnCheckExtensionsResult(
         const std::set<std::string>& threats) {}
@@ -137,10 +133,6 @@ class SafeBrowsingDatabaseManager
   // Result will be passed to callback in |client|.
   virtual bool CheckDownloadUrl(const std::vector<GURL>& url_chain,
                                 Client* client);
-
-  // Check if the prefix for |full_hash| is in safebrowsing binhash add lists.
-  // Result will be passed to callback in |client|.
-  virtual bool CheckDownloadHash(const std::string& full_hash, Client* client);
 
   // Check which prefixes in |extension_ids| are in the safebrowsing blacklist.
   // Returns true if not, false if further checks need to be made in which case
@@ -181,19 +173,18 @@ class SafeBrowsingDatabaseManager
   // Check if the CSD malware IP matching kill switch is turned on.
   virtual bool IsMalwareKillSwitchOn();
 
+  // Check if the CSD whitelist kill switch is turned on.
+  virtual bool IsCsdWhitelistKillSwitchOn();
+
   // Called on the IO thread to cancel a pending check if the result is no
   // longer needed.
   void CancelCheck(Client* client);
 
   // Called on the IO thread when the SafeBrowsingProtocolManager has received
   // the full hash results for prefix hits detected in the database.
-  void HandleGetHashResults(
-      SafeBrowsingCheck* check,
-      const std::vector<SBFullHashResult>& full_hashes,
-      bool can_cache);
-
-  // Called on the IO thread to release memory.
-  void PurgeMemory();
+  void HandleGetHashResults(SafeBrowsingCheck* check,
+                            const std::vector<SBFullHashResult>& full_hashes,
+                            const base::TimeDelta& cache_lifetime);
 
   // Log the user perceived delay caused by SafeBrowsing. This delay is the time
   // delta starting from when we would have started reading data from the
@@ -223,6 +214,7 @@ class SafeBrowsingDatabaseManager
   friend class SafeBrowsingServiceTest;
   friend class SafeBrowsingServiceTestHelper;
   friend class SafeBrowsingDatabaseManagerTest;
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingDatabaseManagerTest, GetUrlThreatType);
 
   typedef std::set<SafeBrowsingCheck*> CurrentChecks;
   typedef std::vector<SafeBrowsingCheck*> GetHashRequestors;
@@ -243,6 +235,19 @@ class SafeBrowsingDatabaseManager
     base::TimeTicks start;  // When check was queued.
   };
 
+  // Return the threat type from the first result in |full_hashes| which matches
+  // |hash|, or SAFE if none match.
+  static SBThreatType GetHashThreatType(
+      const SBFullHash& hash,
+      const std::vector<SBFullHashResult>& full_hashes);
+
+  // Given a URL, compare all the possible host + path full hashes to the set of
+  // provided full hashes.  Returns the threat type of the matching result from
+  // |full_hashes|, or SAFE if none match.
+  static SBThreatType GetUrlThreatType(
+      const GURL& url,
+      const std::vector<SBFullHashResult>& full_hashes);
+
   // Called to stop operations on the io_thread. This may be called multiple
   // times during the life of the DatabaseManager. Should be called on IO
   // thread.
@@ -257,14 +262,6 @@ class SafeBrowsingDatabaseManager
   // Note that this is only needed outside the db thread, since functions on the
   // db thread can call GetDatabase() directly.
   bool MakeDatabaseAvailable();
-
-  // Called on the IO thread to try to close the database, freeing the memory
-  // associated with it.  The database will be automatically reopened as needed.
-  //
-  // NOTE: Actual database closure is asynchronous, and until it happens, the IO
-  // thread is not allowed to access it; may not actually trigger a close if one
-  // is already pending or doing so would cause problems.
-  void CloseDatabase();
 
   // Should only be called on db thread as SafeBrowsingDatabase is not
   // threadsafe.
@@ -290,13 +287,12 @@ class SafeBrowsingDatabaseManager
   void DatabaseLoadComplete();
 
   // Called on the database thread to add/remove chunks and host keys.
-  // Callee will free the data when it's done.
-  void AddDatabaseChunks(const std::string& list, SBChunkList* chunks,
+  void AddDatabaseChunks(const std::string& list,
+                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
                          AddChunksCallback callback);
 
-  void DeleteDatabaseChunks(std::vector<SBChunkDelete>* chunk_deletes);
-
-  static SBThreatType GetThreatTypeFromListname(const std::string& list_name);
+  void DeleteDatabaseChunks(
+      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes);
 
   void NotifyClientBlockingComplete(Client* client, bool proceed);
 
@@ -309,10 +305,6 @@ class SafeBrowsingDatabaseManager
   // database is a synchronous operation.
   void OnResetDatabase();
 
-  // Store in-memory the GetHash response. Runs on the database thread.
-  void CacheHashResults(const std::vector<SBPrefix>& prefixes,
-                        const std::vector<SBFullHashResult>& full_hashes);
-
   // Internal worker function for processing full hashes.
   void OnHandleGetHashResults(SafeBrowsingCheck* check,
                               const std::vector<SBFullHashResult>& full_hashes);
@@ -321,9 +313,6 @@ class SafeBrowsingDatabaseManager
   // finds a match in |full_hashes|.
   bool HandleOneCheck(SafeBrowsingCheck* check,
                       const std::vector<SBFullHashResult>& full_hashes);
-
-  // Checks the download hash on safe_browsing_thread_.
-  void CheckDownloadHashOnSBThread(SafeBrowsingCheck* check);
 
   // Invoked by CheckDownloadUrl. It checks the download URL on
   // safe_browsing_thread_.
@@ -335,9 +324,6 @@ class SafeBrowsingDatabaseManager
 
   // Calls the Client's callback on IO thread after CheckDownloadUrl finishes.
   void CheckDownloadUrlDone(SafeBrowsingCheck* check);
-
-  // Calls the Client's callback on IO thread after CheckDownloadHash finishes.
-  void CheckDownloadHashDone(SafeBrowsingCheck* check);
 
   // Checks all extension ID hashes on safe_browsing_thread_.
   void CheckExtensionIDsOnSBThread(SafeBrowsingCheck* check);
@@ -356,10 +342,11 @@ class SafeBrowsingDatabaseManager
   virtual void UpdateStarted() OVERRIDE;
   virtual void UpdateFinished(bool success) OVERRIDE;
   virtual void GetChunks(GetChunksCallback callback) OVERRIDE;
-  virtual void AddChunks(const std::string& list, SBChunkList* chunks,
+  virtual void AddChunks(const std::string& list,
+                         scoped_ptr<ScopedVector<SBChunkData> > chunks,
                          AddChunksCallback callback) OVERRIDE;
   virtual void DeleteChunks(
-      std::vector<SBChunkDelete>* delete_chunks) OVERRIDE;
+      scoped_ptr<std::vector<SBChunkDelete> > chunk_deletes) OVERRIDE;
 
   scoped_refptr<SafeBrowsingService> sb_service_;
 

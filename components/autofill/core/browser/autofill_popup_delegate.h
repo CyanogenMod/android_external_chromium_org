@@ -7,10 +7,6 @@
 
 #include "base/strings/string16.h"
 
-namespace ui {
-class MouseEvent;
-}
-
 namespace autofill {
 
 // An interface for interaction with AutofillPopupController. Will be notified
@@ -23,13 +19,10 @@ class AutofillPopupDelegate {
   // Called when the Autofill popup is hidden.
   virtual void OnPopupHidden() = 0;
 
-  // Called when the Autofill popup recieves a click outside of the popup view
-  // to determine if the event should be reposted to the native window manager.
-  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) = 0;
-
   // Called when the autofill suggestion indicated by |identifier| has been
   // temporarily selected (e.g., hovered).
-  virtual void DidSelectSuggestion(int identifier) = 0;
+  virtual void DidSelectSuggestion(const base::string16& value,
+                                   int identifier) = 0;
 
   // Inform the delegate that a row in the popup has been chosen.
   virtual void DidAcceptSuggestion(const base::string16& value,

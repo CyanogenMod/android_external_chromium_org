@@ -19,7 +19,6 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/media_stream_request.h"
 
-class AudioStreamIndicator;
 class DesktopStreamsRegistry;
 class MediaStreamCaptureIndicator;
 class Profile;
@@ -113,10 +112,8 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver,
   void DisableDeviceEnumerationForTesting();
 
   // Overridden from content::MediaObserver:
-  virtual void OnAudioCaptureDevicesChanged(
-      const content::MediaStreamDevices& devices) OVERRIDE;
-  virtual void OnVideoCaptureDevicesChanged(
-      const content::MediaStreamDevices& devices) OVERRIDE;
+  virtual void OnAudioCaptureDevicesChanged() OVERRIDE;
+  virtual void OnVideoCaptureDevicesChanged() OVERRIDE;
   virtual void OnMediaRequestStateChanged(
       int render_process_id,
       int render_view_id,
@@ -124,23 +121,27 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver,
       const GURL& security_origin,
       const content::MediaStreamDevice& device,
       content::MediaRequestState state) OVERRIDE;
-  virtual void OnAudioStreamPlayingChanged(
-      int render_process_id,
-      int render_view_id,
-      int stream_id,
-      bool is_playing,
-      float power_dBFS,
-      bool clipped) OVERRIDE;
   virtual void OnCreatingAudioStream(int render_process_id,
                                      int render_frame_id) OVERRIDE;
+  virtual void OnAudioStreamPlaying(
+      int render_process_id,
+      int render_frame_id,
+      int stream_id,
+      const ReadPowerAndClipCallback& power_read_callback) OVERRIDE;
+  virtual void OnAudioStreamStopped(
+      int render_process_id,
+      int render_frame_id,
+      int stream_id) OVERRIDE;
 
   scoped_refptr<MediaStreamCaptureIndicator> GetMediaStreamCaptureIndicator();
-
-  scoped_refptr<AudioStreamIndicator> GetAudioStreamIndicator();
 
   DesktopStreamsRegistry* GetDesktopStreamsRegistry();
 
   bool IsDesktopCaptureInProgress();
+
+  // Only for testing.
+  void SetTestAudioCaptureDevices(const content::MediaStreamDevices& devices);
+  void SetTestVideoCaptureDevices(const content::MediaStreamDevices& devices);
 
  private:
   friend struct DefaultSingletonTraits<MediaCaptureDevicesDispatcher>;
@@ -194,11 +195,12 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver,
   void ProcessQueuedAccessRequest(content::WebContents* web_contents);
   void OnAccessRequestResponse(content::WebContents* web_contents,
                                const content::MediaStreamDevices& devices,
+                               content::MediaStreamRequestResult result,
                                scoped_ptr<content::MediaStreamUI> ui);
 
   // Called by the MediaObserver() functions, executed on UI thread.
-  void UpdateAudioDevicesOnUIThread(const content::MediaStreamDevices& devices);
-  void UpdateVideoDevicesOnUIThread(const content::MediaStreamDevices& devices);
+  void NotifyAudioDevicesChangedOnUIThread();
+  void NotifyVideoDevicesChangedOnUIThread();
   void UpdateMediaRequestStateOnUIThread(
       int render_process_id,
       int render_view_id,
@@ -209,18 +211,14 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver,
   void OnCreatingAudioStreamOnUIThread(int render_process_id,
                                        int render_frame_id);
 
-  // A list of cached audio capture devices.
-  content::MediaStreamDevices audio_devices_;
+  // Only for testing, a list of cached audio capture devices.
+  content::MediaStreamDevices test_audio_devices_;
 
-  // A list of cached video capture devices.
-  content::MediaStreamDevices video_devices_;
+  // Only for testing, a list of cached video capture devices.
+  content::MediaStreamDevices test_video_devices_;
 
   // A list of observers for the device update notifications.
   ObserverList<Observer> observers_;
-
-  // Flag to indicate if device enumeration has been done/doing.
-  // Only accessed on UI thread.
-  bool devices_enumerated_;
 
   // Flag used by unittests to disable device enumeration.
   bool is_device_enumeration_disabled_;
@@ -228,8 +226,6 @@ class MediaCaptureDevicesDispatcher : public content::MediaObserver,
   RequestsQueues pending_requests_;
 
   scoped_refptr<MediaStreamCaptureIndicator> media_stream_capture_indicator_;
-
-  scoped_refptr<AudioStreamIndicator> audio_stream_indicator_;
 
   scoped_ptr<DesktopStreamsRegistry> desktop_streams_registry_;
 

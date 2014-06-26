@@ -14,16 +14,17 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/time.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/gfx/display_observer.h"
 #include "ui/gfx/point.h"
 
 namespace aura {
 class Display;
-class RootWindow;
+class WindowTreeHost;
 }
 
 namespace base {
@@ -37,7 +38,8 @@ class Insets;
 }
 
 namespace ash {
-namespace internal {
+class AshWindowTreeHost;
+struct AshWindowTreeHostInitParams;
 class CursorWindowController;
 class DisplayInfo;
 class DisplayManager;
@@ -45,16 +47,19 @@ class FocusActivationStore;
 class MirrorWindowController;
 class RootWindowController;
 class VirtualKeyboardWindowController;
-}
 
 // DisplayController owns and maintains RootWindows for each attached
 // display, keeping them in sync with display configuration changes.
 class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
-                                     public aura::RootWindowObserver,
-                                     public internal::DisplayManager::Delegate {
+                                     public aura::WindowTreeHostObserver,
+                                     public DisplayManager::Delegate {
  public:
   class ASH_EXPORT Observer {
    public:
+    // Invoked only once after all displays are initialized
+    // after startup.
+    virtual void OnDisplaysInitialized() {}
+
     // Invoked when the display configuration change is requested,
     // but before the change is applied to aura/ash.
     virtual void OnDisplayConfigurationChanging() {}
@@ -77,24 +82,24 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // TODO(oshima): Move this out from DisplayController;
   static int64 GetPrimaryDisplayId();
 
-  internal::CursorWindowController* cursor_window_controller() {
+  CursorWindowController* cursor_window_controller() {
     return cursor_window_controller_.get();
   }
 
-  internal::MirrorWindowController* mirror_window_controller() {
+  MirrorWindowController* mirror_window_controller() {
     return mirror_window_controller_.get();
   }
 
-  internal::VirtualKeyboardWindowController*
-      virtual_keyboard_window_controller() {
+  VirtualKeyboardWindowController* virtual_keyboard_window_controller() {
     return virtual_keyboard_window_controller_.get();
   }
 
-  // Initializes primary display.
-  void InitPrimaryDisplay();
+  // Create a WindowTreeHost for the primary display. This replaces
+  // |initial_bounds| in |init_params|.
+  void CreatePrimaryHost(const AshWindowTreeHostInitParams& init_params);
 
-  // Initialize secondary displays.
-  void InitSecondaryDisplays();
+  // Initializes all displays.
+  void InitDisplays();
 
   // Add/Remove observers.
   void AddObserver(Observer* observer);
@@ -129,7 +134,7 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
 
   // Returns all oot window controllers. In non extended desktop
   // mode, this return a RootWindowController for the primary root window only.
-  std::vector<internal::RootWindowController*> GetAllRootWindowControllers();
+  std::vector<RootWindowController*> GetAllRootWindowControllers();
 
   // Gets/Sets/Clears the overscan insets for the specified |display_id|. See
   // display_manager.h for the details.
@@ -143,18 +148,18 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // Sets the work area's |insets| to the display assigned to |window|.
   bool UpdateWorkAreaOfDisplayNearestWindow(const aura::Window* window,
                                             const gfx::Insets& insets);
-  // aura::DisplayObserver overrides:
-  virtual void OnDisplayBoundsChanged(
-      const gfx::Display& display) OVERRIDE;
+  // gfx::DisplayObserver overrides:
   virtual void OnDisplayAdded(const gfx::Display& display) OVERRIDE;
   virtual void OnDisplayRemoved(const gfx::Display& display) OVERRIDE;
+  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
+                                       uint32_t metrics) OVERRIDE;
 
-  // RootWindowObserver overrides:
-  virtual void OnWindowTreeHostResized(const aura::RootWindow* root) OVERRIDE;
+  // aura::WindowTreeHostObserver overrides:
+  virtual void OnHostResized(const aura::WindowTreeHost* host) OVERRIDE;
 
   // aura::DisplayManager::Delegate overrides:
-  virtual void CreateOrUpdateNonDesktopDisplay(
-      const internal::DisplayInfo& info) OVERRIDE;
+  virtual void CreateOrUpdateNonDesktopDisplay(const DisplayInfo& info)
+      OVERRIDE;
   virtual void CloseNonDesktopDisplay() OVERRIDE;
   virtual void PreDisplayConfigurationChange(bool clear_focus) OVERRIDE;
   virtual void PostDisplayConfigurationChange() OVERRIDE;
@@ -162,14 +167,18 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
  private:
   FRIEND_TEST_ALL_PREFIXES(DisplayControllerTest, BoundsUpdated);
   FRIEND_TEST_ALL_PREFIXES(DisplayControllerTest, SecondaryDisplayLayout);
-  friend class internal::DisplayManager;
-  friend class internal::MirrorWindowController;
+  friend class DisplayManager;
+  friend class MirrorWindowController;
 
-  // Creates a root window for |display| and stores it in the |root_windows_|
-  // map.
-  aura::RootWindow* AddRootWindowForDisplay(const gfx::Display& display);
+  // Creates a WindowTreeHost for |display| and stores it in the
+  // |window_tree_hosts_| map.
+  AshWindowTreeHost* AddWindowTreeHostForDisplay(
+      const gfx::Display& display,
+      const AshWindowTreeHostInitParams& params);
 
   void OnFadeOutForSwapDisplayFinished();
+
+  void SetMirrorModeAfterAnimation(bool mirror);
 
   void UpdateHostWindowNames();
 
@@ -193,26 +202,29 @@ class ASH_EXPORT DisplayController : public gfx::DisplayObserver,
   // change the display configuration.
   scoped_ptr<DisplayChangeLimiter> limiter_;
 
-  // The mapping from display ID to its root window.
-  std::map<int64, aura::Window*> root_windows_;
+  typedef std::map<int64, AshWindowTreeHost*> WindowTreeHostMap;
+  // The mapping from display ID to its window tree host.
+  WindowTreeHostMap window_tree_hosts_;
 
   ObserverList<Observer> observers_;
 
-  // Store the primary root window temporarily while replacing
+  // Store the primary window tree host temporarily while replacing
   // display.
-  aura::Window* primary_root_window_for_replace_;
+  AshWindowTreeHost* primary_tree_host_for_replace_;
 
-  scoped_ptr<internal::FocusActivationStore> focus_activation_store_;
+  scoped_ptr<FocusActivationStore> focus_activation_store_;
 
-  scoped_ptr<internal::CursorWindowController> cursor_window_controller_;
-  scoped_ptr<internal::MirrorWindowController> mirror_window_controller_;
-  scoped_ptr<internal::VirtualKeyboardWindowController>
+  scoped_ptr<CursorWindowController> cursor_window_controller_;
+  scoped_ptr<MirrorWindowController> mirror_window_controller_;
+  scoped_ptr<VirtualKeyboardWindowController>
       virtual_keyboard_window_controller_;
 
   // Stores the curent cursor location (in native coordinates) used to
   // restore the cursor location when display configuration
   // changed.
   gfx::Point cursor_location_in_native_coords_for_restore_;
+
+  base::WeakPtrFactory<DisplayController> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DisplayController);
 };

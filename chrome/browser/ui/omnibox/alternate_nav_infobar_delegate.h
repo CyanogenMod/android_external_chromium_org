@@ -7,9 +7,13 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
-#include "chrome/browser/infobars/infobar_delegate.h"
+#include "components/infobars/core/infobar_delegate.h"
 
-class AlternateNavInfoBarDelegate : public InfoBarDelegate {
+namespace content {
+class WebContents;
+}
+
+class AlternateNavInfoBarDelegate : public infobars::InfoBarDelegate {
  public:
   virtual ~AlternateNavInfoBarDelegate();
 
@@ -31,7 +35,7 @@ class AlternateNavInfoBarDelegate : public InfoBarDelegate {
                               const GURL& search_url);
 
   // Returns an alternate nav infobar that owns |delegate|.
-  static scoped_ptr<InfoBar> CreateInfoBar(
+  static scoped_ptr<infobars::InfoBar> CreateInfoBar(
       scoped_ptr<AlternateNavInfoBarDelegate> delegate);
 
   // InfoBarDelegate:

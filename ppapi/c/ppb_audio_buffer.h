@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_audio_buffer.idl modified Thu Feb  6 15:31:48 2014. */
+/* From ppb_audio_buffer.idl modified Tue Mar 25 18:29:27 2014. */
 
 #ifndef PPAPI_C_PPB_AUDIO_BUFFER_H_
 #define PPAPI_C_PPB_AUDIO_BUFFER_H_
@@ -14,7 +14,9 @@
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_time.h"
 
-#define PPB_AUDIOBUFFER_INTERFACE_0_1 "PPB_AudioBuffer;0.1" /* dev */
+#define PPB_AUDIOBUFFER_INTERFACE_0_1 "PPB_AudioBuffer;0.1"
+#define PPB_AUDIOBUFFER_INTERFACE PPB_AUDIOBUFFER_INTERFACE_0_1
+
 /**
  * @file
  * Defines the <code>PPB_AudioBuffer</code> interface.
@@ -32,7 +34,13 @@
 typedef enum {
   PP_AUDIOBUFFER_SAMPLERATE_UNKNOWN = 0,
   PP_AUDIOBUFFER_SAMPLERATE_8000 = 8000,
-  PP_AUDIOBUFFER_SAMPLERATE_44100 = 44100
+  PP_AUDIOBUFFER_SAMPLERATE_16000 = 16000,
+  PP_AUDIOBUFFER_SAMPLERATE_22050 = 22050,
+  PP_AUDIOBUFFER_SAMPLERATE_32000 = 32000,
+  PP_AUDIOBUFFER_SAMPLERATE_44100 = 44100,
+  PP_AUDIOBUFFER_SAMPLERATE_48000 = 48000,
+  PP_AUDIOBUFFER_SAMPLERATE_96000 = 96000,
+  PP_AUDIOBUFFER_SAMPLERATE_192000 = 192000
 } PP_AudioBuffer_SampleRate;
 
 /**
@@ -51,7 +59,7 @@ typedef enum {
  * @addtogroup Interfaces
  * @{
  */
-struct PPB_AudioBuffer_0_1 { /* dev */
+struct PPB_AudioBuffer_0_1 {
   /**
    * Determines if a resource is an AudioBuffer resource.
    *
@@ -138,6 +146,8 @@ struct PPB_AudioBuffer_0_1 { /* dev */
    */
   uint32_t (*GetDataBufferSize)(PP_Resource buffer);
 };
+
+typedef struct PPB_AudioBuffer_0_1 PPB_AudioBuffer;
 /**
  * @}
  */

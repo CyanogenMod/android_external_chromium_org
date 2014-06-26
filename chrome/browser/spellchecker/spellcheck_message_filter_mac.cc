@@ -103,7 +103,8 @@ void SpellingRequest::RequestCheck(
   document_tag_ = document_tag;
   markers_ = markers;
 
-  // Send the remote query out.
+  // Send the remote query out. The barrier owns |this|, ensuring it is deleted
+  // after completion.
   completion_barrier_ =
       BarrierClosure(2,
                      base::Bind(&SpellingRequest::OnCheckCompleted,
@@ -155,6 +156,7 @@ void SpellingRequest::OnCheckCompleted() {
   destination_->Release();
 
   // Object is self-managed - at this point, its life span is over.
+  // No need to delete, since the OnCheckCompleted callback owns |this|.
 }
 
 void SpellingRequest::OnRemoteCheckCompleted(
@@ -198,10 +200,10 @@ void SpellCheckMessageFilterMac::OverrideThreadForMessage(
     *thread = BrowserThread::UI;
 }
 
-bool SpellCheckMessageFilterMac::OnMessageReceived(const IPC::Message& message,
-                                                   bool* message_was_ok) {
+bool SpellCheckMessageFilterMac::OnMessageReceived(
+    const IPC::Message& message) {
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(SpellCheckMessageFilterMac, message, *message_was_ok)
+  IPC_BEGIN_MESSAGE_MAP(SpellCheckMessageFilterMac, message)
     IPC_MESSAGE_HANDLER(SpellCheckHostMsg_CheckSpelling,
                         OnCheckSpelling)
     IPC_MESSAGE_HANDLER(SpellCheckHostMsg_FillSuggestionList,

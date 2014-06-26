@@ -6,10 +6,13 @@
 
 #include "base/message_loop/message_loop.h"
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#include "chrome/browser/bookmarks/bookmark_node_data.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_drag_drop.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node_data.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "components/user_prefs/user_prefs.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -25,18 +28,20 @@ void DragBookmarks(Profile* profile,
                    ui::DragDropTypes::DragEventSource source) {
   DCHECK(!nodes.empty());
 
-  // Set up our OLE machinery
+  // Set up our OLE machinery.
   ui::OSExchangeData data;
   BookmarkNodeData drag_data(nodes);
-  drag_data.Write(profile, &data);
+  drag_data.Write(profile->GetPath(), &data);
 
   // Allow nested message loop so we get DnD events as we drag this around.
   bool was_nested = base::MessageLoop::current()->IsNested();
   base::MessageLoop::current()->SetNestableTasksAllowed(true);
 
-  int operation = ui::DragDropTypes::DRAG_COPY |
-                  ui::DragDropTypes::DRAG_MOVE |
-                  ui::DragDropTypes::DRAG_LINK;
+  int operation = ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK;
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
+  if (bookmark_utils::CanAllBeEditedByUser(model->client(), nodes))
+    operation |= ui::DragDropTypes::DRAG_MOVE;
+
   views::Widget* widget = views::Widget::GetWidgetForNativeView(view);
 
   if (widget) {
@@ -53,10 +58,14 @@ void DragBookmarks(Profile* profile,
 int GetBookmarkDragOperation(content::BrowserContext* browser_context,
                              const BookmarkNode* node) {
   PrefService* prefs = user_prefs::UserPrefs::Get(browser_context);
+  Profile* profile = Profile::FromBrowserContext(browser_context);
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
 
   int move = ui::DragDropTypes::DRAG_MOVE;
-  if (!prefs->GetBoolean(prefs::kEditBookmarksEnabled))
+  if (!prefs->GetBoolean(prefs::kEditBookmarksEnabled) ||
+      !model->client()->CanBeEditedByUser(node)) {
     move = ui::DragDropTypes::DRAG_NONE;
+  }
   if (node->is_url())
     return ui::DragDropTypes::DRAG_COPY | ui::DragDropTypes::DRAG_LINK | move;
   return ui::DragDropTypes::DRAG_COPY | move;
@@ -80,16 +89,30 @@ int GetBookmarkDropOperation(Profile* profile,
                              const BookmarkNodeData& data,
                              const BookmarkNode* parent,
                              int index) {
-  if (data.IsFromProfile(profile) && data.size() > 1)
+  const base::FilePath& profile_path = profile->GetPath();
+
+  if (data.IsFromProfilePath(profile_path) && data.size() > 1)
     // Currently only accept one dragged node at a time.
     return ui::DragDropTypes::DRAG_NONE;
 
   if (!IsValidBookmarkDropLocation(profile, data, parent, index))
     return ui::DragDropTypes::DRAG_NONE;
 
-  if (data.GetFirstNode(profile))
-    // User is dragging from this profile: move.
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
+  if (!model->client()->CanBeEditedByUser(parent))
+    return ui::DragDropTypes::DRAG_NONE;
+
+  const BookmarkNode* dragged_node =
+      data.GetFirstNode(model, profile->GetPath());
+  if (dragged_node) {
+    // User is dragging from this profile.
+    if (!model->client()->CanBeEditedByUser(dragged_node)) {
+      // Do a copy instead of a move when dragging bookmarks that the user can't
+      // modify.
+      return ui::DragDropTypes::DRAG_COPY;
+    }
     return ui::DragDropTypes::DRAG_MOVE;
+  }
 
   // User is dragging from another app, copy.
   return GetPreferredBookmarkDropOperation(event.source_operations(),
@@ -108,8 +131,13 @@ bool IsValidBookmarkDropLocation(Profile* profile,
   if (!data.is_valid())
     return false;
 
-  if (data.IsFromProfile(profile)) {
-    std::vector<const BookmarkNode*> nodes = data.GetNodes(profile);
+  BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
+  if (!model->client()->CanBeEditedByUser(drop_parent))
+    return false;
+
+  const base::FilePath& profile_path = profile->GetPath();
+  if (data.IsFromProfilePath(profile_path)) {
+    std::vector<const BookmarkNode*> nodes = data.GetNodes(model, profile_path);
     for (size_t i = 0; i < nodes.size(); ++i) {
       // Don't allow the drop if the user is attempting to drop on one of the
       // nodes being dragged.
@@ -125,7 +153,7 @@ bool IsValidBookmarkDropLocation(Profile* profile,
     }
     return true;
   }
-  // From the same profile, always accept.
+  // From another profile, always accept.
   return true;
 }
 

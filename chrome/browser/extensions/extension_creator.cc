@@ -10,15 +10,15 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/memory/scoped_handle.h"
 #include "base/strings/string_util.h"
 #include "chrome/browser/extensions/extension_creator_filter.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "crypto/rsa_private_key.h"
 #include "crypto/signature_creator.h"
 #include "extensions/common/crx_file.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/file_util.h"
 #include "extensions/common/id_util.h"
 #include "grit/generated_resources.h"
 #include "third_party/zlib/google/zip.h"
@@ -109,12 +109,11 @@ bool ExtensionCreator::ValidateManifest(const base::FilePath& extension_dir,
     create_flags |= Extension::REQUIRE_MODERN_MANIFEST_VERSION;
 
   scoped_refptr<Extension> extension(
-      extension_file_util::LoadExtension(
-          extension_dir,
-          extension_id,
-          Manifest::INTERNAL,
-          create_flags,
-          &error_message_));
+      file_util::LoadExtension(extension_dir,
+                               extension_id,
+                               Manifest::INTERNAL,
+                               create_flags,
+                               &error_message_));
   return !!extension.get();
 }
 
@@ -180,7 +179,7 @@ crypto::RSAPrivateKey* ExtensionCreator::GenerateKey(const base::FilePath&
   }
 
   if (!output_private_key_path.empty()) {
-    if (-1 == file_util::WriteFile(output_private_key_path,
+    if (-1 == base::WriteFile(output_private_key_path,
         pem_output.c_str(), pem_output.size())) {
       error_message_ =
           l10n_util::GetStringUTF8(IDS_EXTENSION_PRIVATE_KEY_FAILED_TO_OUTPUT);
@@ -213,7 +212,7 @@ bool ExtensionCreator::SignZip(const base::FilePath& zip_path,
                                std::vector<uint8>* signature) {
   scoped_ptr<crypto::SignatureCreator> signature_creator(
       crypto::SignatureCreator::Create(private_key));
-  ScopedStdioHandle zip_handle(base::OpenFile(zip_path, "rb"));
+  base::ScopedFILE zip_handle(base::OpenFile(zip_path, "rb"));
   size_t buffer_size = 1 << 16;
   scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   int bytes_read = -1;
@@ -225,7 +224,7 @@ bool ExtensionCreator::SignZip(const base::FilePath& zip_path,
       return false;
     }
   }
-  zip_handle.Close();
+  zip_handle.reset();
 
   if (!signature_creator->Final(signature)) {
     error_message_ =
@@ -241,7 +240,7 @@ bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
                                 const base::FilePath& crx_path) {
   if (base::PathExists(crx_path))
     base::DeleteFile(crx_path, false);
-  ScopedStdioHandle crx_handle(base::OpenFile(crx_path, "wb"));
+  base::ScopedFILE crx_handle(base::OpenFile(crx_path, "wb"));
   if (!crx_handle.get()) {
     error_message_ = l10n_util::GetStringUTF8(IDS_EXTENSION_SHARING_VIOLATION);
     return false;
@@ -273,7 +272,7 @@ bool ExtensionCreator::WriteCRX(const base::FilePath& zip_path,
   size_t buffer_size = 1 << 16;
   scoped_ptr<uint8[]> buffer(new uint8[buffer_size]);
   size_t bytes_read = 0;
-  ScopedStdioHandle zip_handle(base::OpenFile(zip_path, "rb"));
+  base::ScopedFILE zip_handle(base::OpenFile(zip_path, "rb"));
   while ((bytes_read = fread(buffer.get(), 1, buffer_size,
                              zip_handle.get())) > 0) {
     if (fwrite(buffer.get(), sizeof(char), bytes_read, crx_handle.get()) !=

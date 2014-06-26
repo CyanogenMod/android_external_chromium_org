@@ -10,6 +10,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/shared_memory.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "content/common/content_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
@@ -49,7 +50,7 @@ namespace content {
 
 class BrowserPlugin;
 class BrowserPluginManager;
-class RenderFrameImpl;
+class RenderFrameProxy;
 
 class CONTENT_EXPORT ChildFrameCompositingHelper
     : public base::RefCounted<ChildFrameCompositingHelper>,
@@ -59,7 +60,7 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
       const base::WeakPtr<BrowserPlugin>& browser_plugin);
   static ChildFrameCompositingHelper* CreateCompositingHelperForRenderFrame(
       blink::WebFrame* frame,
-      RenderFrameImpl* render_frame,
+      RenderFrameProxy* render_frame_proxy,
       int host_routing_id);
 
   void CopyFromCompositingSurface(int request_id,
@@ -76,7 +77,8 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
   void OnCompositorFrameSwapped(scoped_ptr<cc::CompositorFrame> frame,
                                 int route_id,
                                 uint32 output_surface_id,
-                                int host_id);
+                                int host_id,
+                                base::SharedMemoryHandle handle);
   void UpdateVisibility(bool);
   void ChildFrameGone();
 
@@ -92,7 +94,7 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
   ChildFrameCompositingHelper(
       const base::WeakPtr<BrowserPlugin>& browser_plugin,
       blink::WebFrame* frame,
-      RenderFrameImpl* render_frame,
+      RenderFrameProxy* render_frame_proxy,
       int host_routing_id);
 
   enum SwapBuffersType {
@@ -155,7 +157,7 @@ class CONTENT_EXPORT ChildFrameCompositingHelper
   // other member objects, as they may access this pointer during their
   // destruction.
   base::WeakPtr<BrowserPlugin> browser_plugin_;
-  RenderFrameImpl* render_frame_;
+  RenderFrameProxy* render_frame_proxy_;
 
   scoped_refptr<cc::DelegatedFrameResourceCollection> resource_collection_;
   scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;

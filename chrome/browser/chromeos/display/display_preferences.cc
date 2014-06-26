@@ -7,7 +7,6 @@
 #include "ash/display/display_layout_store.h"
 #include "ash/display/display_manager.h"
 #include "ash/display/display_pref_util.h"
-#include "ash/display/resolution_notification_controller.h"
 #include "ash/shell.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
@@ -18,9 +17,8 @@
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/common/pref_names.h"
-#include "chromeos/display/output_configurator.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/insets.h"
@@ -63,7 +61,37 @@ void InsetsToValue(const gfx::Insets& insets, base::DictionaryValue* value) {
   value->SetInteger(kInsetsRightKey, insets.right());
 }
 
-ash::internal::DisplayManager* GetDisplayManager() {
+std::string ColorProfileToString(ui::ColorCalibrationProfile profile) {
+  switch (profile) {
+    case ui::COLOR_PROFILE_STANDARD:
+      return "standard";
+    case ui::COLOR_PROFILE_DYNAMIC:
+      return "dynamic";
+    case ui::COLOR_PROFILE_MOVIE:
+      return "movie";
+    case ui::COLOR_PROFILE_READING:
+      return "reading";
+    case ui::NUM_COLOR_PROFILES:
+      break;
+  }
+  NOTREACHED();
+  return "";
+}
+
+ui::ColorCalibrationProfile StringToColorProfile(std::string value) {
+  if (value == "standard")
+    return ui::COLOR_PROFILE_STANDARD;
+  else if (value == "dynamic")
+    return ui::COLOR_PROFILE_DYNAMIC;
+  else if (value == "movie")
+    return ui::COLOR_PROFILE_MOVIE;
+  else if (value == "reading")
+    return ui::COLOR_PROFILE_READING;
+  NOTREACHED();
+  return ui::COLOR_PROFILE_STANDARD;
+}
+
+ash::DisplayManager* GetDisplayManager() {
   return ash::Shell::GetInstance()->display_manager();
 }
 
@@ -79,8 +107,7 @@ bool UserCanSaveDisplayPreference() {
 
 void LoadDisplayLayouts() {
   PrefService* local_state = g_browser_process->local_state();
-  ash::internal::DisplayLayoutStore* layout_store =
-      GetDisplayManager()->layout_store();
+  ash::DisplayLayoutStore* layout_store = GetDisplayManager()->layout_store();
 
   const base::DictionaryValue* layouts = local_state->GetDictionary(
       prefs::kSecondaryDisplays);
@@ -142,11 +169,17 @@ void LoadDisplayProperties() {
     gfx::Insets insets;
     if (ValueToInsets(*dict_value, &insets))
       insets_to_set = &insets;
+
+    ui::ColorCalibrationProfile color_profile = ui::COLOR_PROFILE_STANDARD;
+    std::string color_profile_name;
+    if (dict_value->GetString("color_profile_name", &color_profile_name))
+      color_profile = StringToColorProfile(color_profile_name);
     GetDisplayManager()->RegisterDisplayProperty(id,
                                                  rotation,
                                                  ui_scale,
                                                  insets_to_set,
-                                                 resolution_in_pixels);
+                                                 resolution_in_pixels,
+                                                 color_profile);
   }
 }
 
@@ -181,7 +214,7 @@ void StoreCurrentDisplayLayoutPrefs() {
 }
 
 void StoreCurrentDisplayProperties() {
-  ash::internal::DisplayManager* display_manager = GetDisplayManager();
+  ash::DisplayManager* display_manager = GetDisplayManager();
   PrefService* local_state = g_browser_process->local_state();
 
   DictionaryPrefUpdate update(local_state, prefs::kDisplayProperties);
@@ -191,7 +224,7 @@ void StoreCurrentDisplayProperties() {
   for (size_t i = 0; i < num; ++i) {
     const gfx::Display& display = display_manager->GetDisplayAt(i);
     int64 id = display.id();
-    ash::internal::DisplayInfo info = display_manager->GetDisplayInfo(id);
+    ash::DisplayInfo info = display_manager->GetDisplayInfo(id);
 
     scoped_ptr<base::DictionaryValue> property_value(
         new base::DictionaryValue());
@@ -199,16 +232,19 @@ void StoreCurrentDisplayProperties() {
     property_value->SetInteger(
         "ui-scale",
         static_cast<int>(info.configured_ui_scale() * 1000));
-    ash::internal::DisplayMode mode;
+    ash::DisplayMode mode;
     if (!display.IsInternal() &&
         display_manager->GetSelectedModeForDisplayId(id, &mode) &&
         !mode.native) {
       property_value->SetInteger("width", mode.size.width());
       property_value->SetInteger("height", mode.size.height());
     }
-
     if (!info.overscan_insets_in_dip().empty())
       InsetsToValue(info.overscan_insets_in_dip(), property_value.get());
+    if (info.color_profile() != ui::COLOR_PROFILE_STANDARD) {
+      property_value->SetString(
+          "color_profile_name", ColorProfileToString(info.color_profile()));
+    }
     pref_data->Set(base::Int64ToString(id), property_value.release());
   }
 }
@@ -246,7 +282,7 @@ void StoreDisplayPowerState(DisplayPowerState power_state) {
 
 void StoreCurrentDisplayPowerState() {
   StoreDisplayPowerState(
-      ash::Shell::GetInstance()->output_configurator()->power_state());
+      ash::Shell::GetInstance()->display_configurator()->power_state());
 }
 
 }  // namespace
@@ -268,10 +304,10 @@ void StoreDisplayPrefs() {
 
   // Do not store prefs when the confirmation dialog is shown.
   if (!UserCanSaveDisplayPreference() ||
-      ash::Shell::GetInstance()->resolution_notification_controller()->
-          DoesNotificationTimeout()) {
+      !ash::Shell::GetInstance()->ShouldSaveDisplaySettings()) {
     return;
   }
+
   StoreCurrentDisplayLayoutPrefs();
   StoreCurrentDisplayProperties();
 }
@@ -289,7 +325,7 @@ void LoadDisplayPreferences(bool first_run_after_boot) {
     std::string value = local_state->GetString(prefs::kDisplayPowerState);
     chromeos::DisplayPowerState power_state;
     if (GetDisplayPowerStateFromString(value, &power_state)) {
-      ash::Shell::GetInstance()->output_configurator()->SetInitialDisplayPower(
+      ash::Shell::GetInstance()->display_configurator()->SetInitialDisplayPower(
           power_state);
     }
   }

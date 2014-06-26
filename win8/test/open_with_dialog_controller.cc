@@ -90,7 +90,7 @@ class OpenWithDialogController::Context {
   HRESULT automation_result_;
   std::vector<base::string16> automation_choices_;
   base::WeakPtrFactory<Context> weak_ptr_factory_;
-  DISALLOW_COPY_AND_ASSIGN(OpenWithDialogController::Context);
+  DISALLOW_COPY_AND_ASSIGN(Context);
 };
 
 OpenWithDialogController::Context::Context()
@@ -167,7 +167,7 @@ void OpenWithDialogController::Context::OnTimeout() {
   DCHECK(thread_checker_.CalledOnValidThread());
   // This is a LOG rather than a DLOG since it represents something that needs
   // to be investigated and fixed.
-  LOG(ERROR) << __FUNCTION__ " state: " << state_;
+  LOG(ERROR) << __FUNCTION__ << " state: " << state_;
 
   state_ = CONTEXT_FINISHED;
   NotifyClientAndDie();

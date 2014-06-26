@@ -367,7 +367,10 @@
 
             # included by allocator_shim.cc
             'debugallocation_shim.cc',
-
+          ],
+        }],
+        ['OS=="win" or profiling!=1', {
+          'sources!': [
             # cpuprofiler
             '<(tcmalloc_dir)/src/base/thread_lister.c',
             '<(tcmalloc_dir)/src/base/thread_lister.h',
@@ -407,11 +410,6 @@
               '-Wl,-u_Z21InitialMallocHook_NewPKvm,-u_Z22InitialMallocHook_MMapPKvS0_miiil,-u_Z22InitialMallocHook_SbrkPKvl',
               '-Wl,-u_ZN15HeapLeakChecker12IgnoreObjectEPKv,-u_ZN15HeapLeakChecker14UnIgnoreObjectEPKv',
           ]},
-        }],
-        # Need to distinguish a non-SDK build for Android WebView
-        # due to differences in C include files.
-        ['OS=="android" and android_webview_build==1', {
-          'defines': ['ANDROID_NON_SDK_BUILD'],
         }],
         [ 'use_vtable_verify==1', {
           'cflags': [

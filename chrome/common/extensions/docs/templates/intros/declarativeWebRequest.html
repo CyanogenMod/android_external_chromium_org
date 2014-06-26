@@ -2,8 +2,8 @@
 
 <p>
 You must declare the "declarativeWebRequest" permission in the
-<a href="manifest.html">extension manifest</a> to use this API,
-along with <a href="declare_permissions.html">host permissions</a>.
+<a href="manifest">extension manifest</a> to use this API,
+along with <a href="declare_permissions">host permissions</a>.
 </p>
 
 <pre data-filename="manifest.json">
@@ -51,7 +51,7 @@ The extension cannot set up a rule to redirect "http://www.google.com" to
 
 <p>
 The Declarative Web Request API follows the concepts of the <a
-  href="events.html#declarative">Declarative API</a>. You can register rules to
+  href="events#declarative">Declarative API</a>. You can register rules to
 the <code>chrome.declarativeWebRequest.onRequest</code> event object.
 </p>
 
@@ -126,8 +126,8 @@ chrome.declarativeWebRequest.onRequest.addRules([rule2]);
 individually because each of these operations recreates internal data
 structures.  This re-creation is computationally expensive but facilitates a
 very fast URL matching algorithm for hundreds of thousands of URLs. The
-<a href="events.html#performance">Performance section</a> of the $ref:[events
-Events] API provides further performance tips.
+<a href="events#performance">Performance section</a> of the
+$(ref:events Events) API provides further performance tips.
 </p>
 
 
@@ -135,8 +135,8 @@ Events] API provides further performance tips.
 
 <p>
 The Declarative Web Request API follows the
-<a href="webRequest.html#life_cycle">Life cycle model for web requests</a> of
-the <a href="webRequest.html">Web Request API</a>. This means that conditions
+<a href="webRequest#life_cycle">Life cycle model for web requests</a> of
+the <a href="webRequest">Web Request API</a>. This means that conditions
 can only be tested at specific stages of a web request and, likewise, actions
 can also only be executed at specific stages. The following tables list the
 request stages that are compatible with conditions and actions.
@@ -180,10 +180,10 @@ request stages that are compatible with conditions and actions.
   <tr><td>EditRequestCookie<td><td>✓<td><td>
   <tr><td>EditResponseCookie<td><td><td>✓<td>
   <tr><td>IgnoreRules<td>✓<td>✓<td>✓<td>✓
-  <tr><td>RedirectByRegEx<td>✓<td><td><td>
-  <tr><td>RedirectRequest<td>✓<td><td><td>
-  <tr><td>RedirectToEmptyDocument<td>✓<td><td><td>
-  <tr><td>RedirectToTransparentImage<td>✓<td><td><td>
+  <tr><td>RedirectByRegEx<td>✓<td><td>✓<td>
+  <tr><td>RedirectRequest<td>✓<td><td>✓<td>
+  <tr><td>RedirectToEmptyDocument<td>✓<td><td>✓<td>
+  <tr><td>RedirectToTransparentImage<td>✓<td><td>✓<td>
   <tr><td>RemoveRequestCookie<td><td>✓<td><td>
   <tr><td>RemoveRequestHeader<td><td>✓<td><td>
   <tr><td>RemoveResponseCookie<td><td><td>✓<td>
@@ -198,21 +198,26 @@ request stages that are compatible with conditions and actions.
 "stages" attribute.
 </p>
 <p>
+<strong>Note:</strong> Redirects initiated by a redirect action use the original
+request method for the redirect, with one exception: If the redirect is
+initiated at the onHeadersReceived stage, then the redirect will be issued using
+the GET method.
+</p>
+<p>
 <strong>Example:</strong> It is possible to combine a
 <code>new chrome.declarativeWebRequest.RequestMatcher({contentType: ["image/jpeg"]})</code>
 condition with a <code>new chrome.declarativeWebRequest.CancelRequest()</code>
 action because both of them can be evaluated in the onHeadersReceived stage.
 It is, however, impossible to combine the request matcher with a
-<code>new chrome.declarativeWebRequest.RedirectToTransparentImage()</code>
-because redirects cannot be executed any more by the time the content
-type has been determined.
+<code>new chrome.declarativeWebRequest.SetRequestHeader()</code>
+because request headers cannot be set any more by the time the content type has been terminated.
 </p>
 
 <h2 id="precedences">Using priorities to override rules</h2>
 
 <p>
 Rules can be associated with priorities as described in the
-<a href="events.html#declarative">Events API</a>. This mechanism can be used
+<a href="events#declarative">Events API</a>. This mechanism can be used
 to express exceptions. The following example will block all requests to
 images named "evil.jpg" except on the server "myserver.com".
 </p>

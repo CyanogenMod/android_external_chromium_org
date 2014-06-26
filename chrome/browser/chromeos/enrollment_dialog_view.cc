@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_finder.h"
@@ -15,6 +14,7 @@
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "content/public/common/page_transition_types.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/common/constants.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -57,7 +57,7 @@ class EnrollmentDialogView : public views::DialogDelegateView {
   virtual base::string16 GetWindowTitle() const OVERRIDE;
 
   // views::View overrides
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  private:
   EnrollmentDialogView(const std::string& network_name,
@@ -142,7 +142,7 @@ base::string16 EnrollmentDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_NETWORK_ENROLLMENT_HANDLER_TITLE);
 }
 
-gfx::Size EnrollmentDialogView::GetPreferredSize() {
+gfx::Size EnrollmentDialogView::GetPreferredSize() const {
   return gfx::Size(kDefaultWidth, kDefaultHeight);
 }
 

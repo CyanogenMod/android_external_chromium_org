@@ -18,16 +18,15 @@
 #include "chrome/browser/drive/drive_api_service.h"
 #include "chrome/browser/drive/drive_api_util.h"
 #include "chrome/browser/drive/drive_uploader.h"
-#include "chrome/browser/drive/gdata_wapi_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/sync_file_system/drive_backend/drive_backend_constants.h"
 #include "chrome/browser/sync_file_system/drive_backend_v1/drive_file_sync_util.h"
 #include "chrome/browser/sync_file_system/logger.h"
 #include "chrome/browser/sync_file_system/syncable_file_system_util.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -126,8 +125,10 @@ void EntryAdapterForEnsureTitleUniqueness(
 void UploadResultAdapter(const APIUtil::ResourceEntryCallback& callback,
                          google_apis::GDataErrorCode error,
                          const GURL& upload_location,
-                         scoped_ptr<google_apis::ResourceEntry> entry) {
-  callback.Run(error, entry.Pass());
+                         scoped_ptr<google_apis::FileResource> entry) {
+  callback.Run(error, entry ?
+               drive::util::ConvertFileResourceToResourceEntry(*entry) :
+               scoped_ptr<google_apis::ResourceEntry>());
 }
 
 std::string GetMimeTypeFromTitle(const std::string& title) {
@@ -167,25 +168,15 @@ APIUtil::APIUtil(Profile* profile,
       content::BrowserThread::GetBlockingPool();
   scoped_refptr<base::SequencedTaskRunner> task_runner(
       blocking_pool->GetSequencedTaskRunner(blocking_pool->GetSequenceToken()));
-  if (IsDriveAPIDisabled()) {
-    drive_service_.reset(new drive::GDataWapiService(
-        oauth_service_,
-        profile->GetRequestContext(),
-        task_runner.get(),
-        GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
-        GURL(google_apis::GDataWapiUrlGenerator::kBaseDownloadUrlForProduction),
-        std::string() /* custom_user_agent */));
-  } else {
-    drive_service_.reset(new drive::DriveAPIService(
-        oauth_service_,
-        profile->GetRequestContext(),
-        task_runner.get(),
-        GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
-        GURL(google_apis::DriveApiUrlGenerator::kBaseDownloadUrlForProduction),
-        GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
-        std::string() /* custom_user_agent */));
-  }
-
+  DCHECK(!IsDriveAPIDisabled());
+  drive_service_.reset(new drive::DriveAPIService(
+      oauth_service_,
+      profile->GetRequestContext(),
+      task_runner.get(),
+      GURL(google_apis::DriveApiUrlGenerator::kBaseUrlForProduction),
+      GURL(google_apis::DriveApiUrlGenerator::kBaseDownloadUrlForProduction),
+      GURL(google_apis::GDataWapiUrlGenerator::kBaseUrlForProduction),
+      std::string() /* custom_user_agent */));
   drive_service_->Initialize(signin_manager_->GetAuthenticatedAccountId());
   drive_service_->AddObserver(this);
   has_initialized_token_ = drive_service_->HasRefreshToken();
@@ -321,7 +312,7 @@ void APIUtil::DidGetDirectory(const std::string& parent_resource_id,
                               google_apis::GDataErrorCode error,
                               scoped_ptr<google_apis::ResourceList> feed) {
   DCHECK(CalledOnValidThread());
-  DCHECK(IsStringASCII(directory_name));
+  DCHECK(base::IsStringASCII(directory_name));
 
   if (error != google_apis::HTTP_SUCCESS) {
     DVLOG(2) << "Error on getting Drive directory: " << error;
@@ -370,7 +361,7 @@ void APIUtil::DidCreateDirectory(const std::string& parent_resource_id,
                                  const std::string& title,
                                  const ResourceIdCallback& callback,
                                  google_apis::GDataErrorCode error,
-                                 scoped_ptr<google_apis::ResourceEntry> entry) {
+                                 scoped_ptr<google_apis::FileResource> entry) {
   DCHECK(CalledOnValidThread());
 
   if (error != google_apis::HTTP_SUCCESS &&
@@ -437,9 +428,9 @@ void APIUtil::GetResourceEntry(const std::string& resource_id,
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Getting ResourceEntry for: " << resource_id;
 
-  drive_service_->GetResourceEntry(
+  drive_service_->GetFileResource(
       resource_id,
-      base::Bind(&APIUtil::DidGetResourceEntry, AsWeakPtr(), callback));
+      base::Bind(&APIUtil::DidGetFileResource, AsWeakPtr(), callback));
 }
 
 void APIUtil::DidGetLargestChangeStamp(
@@ -472,7 +463,7 @@ void APIUtil::SearchByTitle(const std::string& title,
   drive_service_->SearchByTitle(
       title,
       directory_resource_id,
-      base::Bind(&APIUtil::DidGetResourceList, AsWeakPtr(), callback));
+      base::Bind(&APIUtil::DidGetFileList, AsWeakPtr(), callback));
 }
 
 void APIUtil::ListFiles(const std::string& directory_resource_id,
@@ -481,7 +472,9 @@ void APIUtil::ListFiles(const std::string& directory_resource_id,
   DVLOG(2) << "Listing resources in the directory [" << directory_resource_id
            << "]";
 
-  drive_service_->GetResourceListInDirectory(directory_resource_id, callback);
+  drive_service_->GetFileListInDirectory(
+      directory_resource_id,
+      base::Bind(&APIUtil::DidGetFileList, AsWeakPtr(), callback));
 }
 
 void APIUtil::ListChanges(int64 start_changestamp,
@@ -491,7 +484,7 @@ void APIUtil::ListChanges(int64 start_changestamp,
 
   drive_service_->GetChangeList(
       start_changestamp,
-      base::Bind(&APIUtil::DidGetResourceList, AsWeakPtr(), callback));
+      base::Bind(&APIUtil::DidGetChangeList, AsWeakPtr(), callback));
 }
 
 void APIUtil::ContinueListing(const GURL& next_link,
@@ -501,7 +494,7 @@ void APIUtil::ContinueListing(const GURL& next_link,
 
   drive_service_->GetRemainingFileList(
       next_link,
-      base::Bind(&APIUtil::DidGetResourceList, AsWeakPtr(), callback));
+      base::Bind(&APIUtil::DidGetFileList, AsWeakPtr(), callback));
 }
 
 void APIUtil::DownloadFile(const std::string& resource_id,
@@ -553,9 +546,9 @@ void APIUtil::UploadExistingFile(const std::string& resource_id,
                                  const UploadFileCallback& callback) {
   DCHECK(CalledOnValidThread());
   DVLOG(2) << "Uploading existing file [" << resource_id << "]";
-  drive_service_->GetResourceEntry(
+  drive_service_->GetFileResource(
       resource_id,
-      base::Bind(&APIUtil::DidGetResourceEntry,
+      base::Bind(&APIUtil::DidGetFileResource,
                  AsWeakPtr(),
                  base::Bind(&APIUtil::UploadExistingFileInternal,
                             AsWeakPtr(),
@@ -591,9 +584,9 @@ void APIUtil::DeleteFile(const std::string& resource_id,
 
   // Load actual remote_file_md5 to check for conflict before deletion.
   if (!remote_file_md5.empty()) {
-    drive_service_->GetResourceEntry(
+    drive_service_->GetFileResource(
         resource_id,
-        base::Bind(&APIUtil::DidGetResourceEntry,
+        base::Bind(&APIUtil::DidGetFileResource,
                    AsWeakPtr(),
                    base::Bind(&APIUtil::DeleteFileInternal,
                               AsWeakPtr(),
@@ -686,27 +679,44 @@ void APIUtil::OnConnectionTypeChanged(
   CancelAllUploads(google_apis::GDATA_NO_CONNECTION);
 }
 
-void APIUtil::DidGetResourceList(
-    const ResourceListCallback& callback,
-    google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceList> resource_list) {
+void APIUtil::DidGetFileList(const ResourceListCallback& callback,
+                             google_apis::GDataErrorCode error,
+                             scoped_ptr<google_apis::FileList> file_list) {
   DCHECK(CalledOnValidThread());
 
   if (error != google_apis::HTTP_SUCCESS) {
-    DVLOG(2) << "Error on listing resource: " << error;
+    DVLOG(2) << "Error on listing files: " << error;
     callback.Run(error, scoped_ptr<google_apis::ResourceList>());
     return;
   }
 
-  DVLOG(2) << "Got resource list";
-  DCHECK(resource_list);
-  callback.Run(error, resource_list.Pass());
+  DVLOG(2) << "Got file list";
+  DCHECK(file_list);
+  callback.Run(error, drive::util::ConvertFileListToResourceList(*file_list));
 }
 
-void APIUtil::DidGetResourceEntry(
+void APIUtil::DidGetChangeList(
+    const ResourceListCallback& callback,
+    google_apis::GDataErrorCode error,
+    scoped_ptr<google_apis::ChangeList> change_list) {
+  DCHECK(CalledOnValidThread());
+
+  if (error != google_apis::HTTP_SUCCESS) {
+    DVLOG(2) << "Error on listing changes: " << error;
+    callback.Run(error, scoped_ptr<google_apis::ResourceList>());
+    return;
+  }
+
+  DVLOG(2) << "Got change list";
+  DCHECK(change_list);
+  callback.Run(error,
+               drive::util::ConvertChangeListToResourceList(*change_list));
+}
+
+void APIUtil::DidGetFileResource(
     const ResourceEntryCallback& callback,
     google_apis::GDataErrorCode error,
-    scoped_ptr<google_apis::ResourceEntry> entry) {
+    scoped_ptr<google_apis::FileResource> entry) {
   DCHECK(CalledOnValidThread());
 
   if (error != google_apis::HTTP_SUCCESS) {
@@ -714,16 +724,17 @@ void APIUtil::DidGetResourceEntry(
     callback.Run(error, scoped_ptr<google_apis::ResourceEntry>());
     return;
   }
+  DCHECK(entry);
 
-  if (entry->deleted()) {
+  if (entry->labels().is_trashed()) {
     DVLOG(2) << "Got resource entry, the entry was trashed.";
-    callback.Run(google_apis::HTTP_NOT_FOUND, entry.Pass());
+    callback.Run(google_apis::HTTP_NOT_FOUND,
+                 drive::util::ConvertFileResourceToResourceEntry(*entry));
     return;
   }
 
   DVLOG(2) << "Got resource entry";
-  DCHECK(entry);
-  callback.Run(error, entry.Pass());
+  callback.Run(error, drive::util::ConvertFileResourceToResourceEntry(*entry));
 }
 
 void APIUtil::DidGetTemporaryFileForDownload(
@@ -739,9 +750,9 @@ void APIUtil::DidGetTemporaryFileForDownload(
                  local_file->Pass());
     return;
   }
-  drive_service_->GetResourceEntry(
+  drive_service_->GetFileResource(
       resource_id,
-      base::Bind(&APIUtil::DidGetResourceEntry,
+      base::Bind(&APIUtil::DidGetFileResource,
                  AsWeakPtr(),
                  base::Bind(&APIUtil::DownloadFileInternal,
                             AsWeakPtr(),

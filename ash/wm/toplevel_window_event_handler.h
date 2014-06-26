@@ -13,10 +13,10 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/client/window_move_client.h"
 #include "ui/events/event_handler.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
+#include "ui/wm/public/window_move_client.h"
 
 namespace aura {
 class Window;
@@ -83,10 +83,10 @@ class ASH_EXPORT ToplevelWindowEventHandler
   // Called for mouse exits to hide window resize shadows.
   void HandleMouseExited(aura::Window* target, ui::LocatedEvent* event);
 
-  // Sets |window|'s show type to |new_show_type|. Called after the drag has
+  // Sets |window|'s state type to |new_state_type|. Called after the drag has
   // been completed for fling gestures.
-  void SetWindowShowTypeFromGesture(aura::Window* window,
-                                    wm::WindowShowType new_show_type);
+  void SetWindowStateTypeFromGesture(aura::Window* window,
+                                    wm::WindowStateType new_state_type);
 
   // Invoked from ScopedWindowResizer if the window is destroyed.
   void ResizerWindowDestroyed();

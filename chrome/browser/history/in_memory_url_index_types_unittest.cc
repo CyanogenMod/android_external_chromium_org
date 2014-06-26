@@ -69,7 +69,7 @@ TEST_F(InMemoryURLIndexTypesTest, StaticFunctions) {
   string_vec = String16VectorFromString16(string_c, false, &actual_starts_c);
   ASSERT_EQ(8U, string_vec.size());
   // Note that we stop collecting words and word starts at kMaxSignificantChars.
-  size_t expected_starts_c[] = {1, 7, 16, 22, 32, 43};
+  size_t expected_starts_c[] = {1, 7, 16, 22, 32, 43, 52, 55};
   EXPECT_TRUE(IntArraysEqual(expected_starts_c, arraysize(expected_starts_c),
                              actual_starts_c));
 
@@ -132,13 +132,13 @@ TEST_F(InMemoryURLIndexTypesTest, OffsetsAndTermMatches) {
   matches_a.push_back(history::TermMatch(3, 10, 1));
   matches_a.push_back(history::TermMatch(4, 14, 5));
   std::vector<size_t> offsets = OffsetsFromTermMatches(matches_a);
-  const size_t expected_offsets_a[] = {1, 4, 9, 10, 14};
+  const size_t expected_offsets_a[] = {1, 3, 4, 7, 9, 10, 10, 11, 14, 19};
   ASSERT_EQ(offsets.size(), arraysize(expected_offsets_a));
   for (size_t i = 0; i < offsets.size(); ++i)
     EXPECT_EQ(expected_offsets_a[i], offsets[i]);
 
   // Test ReplaceOffsetsInTermMatches
-  offsets[2] = base::string16::npos;
+  offsets[4] = base::string16::npos;  // offset of third term
   history::TermMatches matches_b =
       ReplaceOffsetsInTermMatches(matches_a, offsets);
   const size_t expected_offsets_b[] = {1, 4, 10, 14};

@@ -9,6 +9,7 @@
 #include "base/file_util.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/browser/browser_plugin/browser_plugin_guest.h"
 #include "content/browser/download/drag_download_util.h"
 #include "content/browser/frame_host/interstitial_page_impl.h"
 #include "content/browser/frame_host/navigation_entry_impl.h"
@@ -18,6 +19,7 @@
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
+#include "content/browser/web_contents/aura/gesture_nav_simple.h"
 #include "content/browser/web_contents/aura/image_window_delegate.h"
 #include "content/browser/web_contents/aura/overscroll_navigation_overlay.h"
 #include "content/browser/web_contents/aura/shadow_layer_delegate.h"
@@ -40,17 +42,15 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/drop_data.h"
-#include "net/base/net_util.h"
+#include "net/base/filename_util.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/client/drag_drop_client.h"
-#include "ui/aura/client/drag_drop_delegate.h"
 #include "ui/aura/client/window_tree_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
-#include "ui/aura/root_window_observer.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_observer.h"
+#include "ui/aura/window_tree_host.h"
+#include "ui/aura/window_tree_host_observer.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/custom_data_helper.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -67,9 +67,11 @@
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/public/drag_drop_client.h"
+#include "ui/wm/public/drag_drop_delegate.h"
 
 namespace content {
-WebContentsViewPort* CreateWebContentsView(
+WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
     RenderViewHostDelegateView** render_view_host_delegate_view) {
@@ -97,13 +99,26 @@ bool ShouldNavigateBack(const NavigationController& controller,
          controller.CanGoBack();
 }
 
+// Update the |web contents| to be |visible|.
+void UpdateWebContentsVisibility(WebContentsImpl* web_contents, bool visible) {
+  if (visible) {
+    if (!web_contents->should_normally_be_visible())
+      web_contents->WasShown();
+  } else {
+    if (web_contents->should_normally_be_visible())
+      web_contents->WasHidden();
+  }
+}
+
 RenderWidgetHostViewAura* ToRenderWidgetHostViewAura(
     RenderWidgetHostView* view) {
   if (!view || RenderViewHostFactory::has_factory())
     return NULL;  // Can't cast to RenderWidgetHostViewAura in unit tests.
-  RenderProcessHostImpl* process = static_cast<RenderProcessHostImpl*>(
-      view->GetRenderWidgetHost()->GetProcess());
-  if (process->IsGuest())
+
+  RenderViewHost* rvh = RenderViewHost::From(view->GetRenderWidgetHost());
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      rvh ? WebContents::FromRenderViewHost(rvh) : NULL);
+  if (BrowserPluginGuest::IsGuest(web_contents))
     return NULL;
   return static_cast<RenderWidgetHostViewAura*>(view);
 }
@@ -131,8 +146,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
     if (entry && entry->screenshot().get()) {
       std::vector<gfx::ImagePNGRep> image_reps;
       image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-          ui::GetImageScale(
-              ui::GetScaleFactorForNativeView(web_contents_window()))));
+          ui::GetScaleFactorForNativeView(web_contents_window())));
       image = gfx::Image(image_reps);
     }
     SetImage(image);
@@ -158,7 +172,7 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
       web_contents_window()->delegate()->OnGestureEvent(event);
   }
 
-  WebContents* web_contents_;
+  WebContentsImpl* web_contents_;
 
   // The window is displayed both during the gesture, and after the gesture
   // while the navigation is in progress. During the gesture, it is necessary to
@@ -173,52 +187,20 @@ class OverscrollWindowDelegate : public ImageWindowDelegate {
 
 // Listens to all mouse drag events during a drag and drop and sends them to
 // the renderer.
-class WebDragSourceAura : public base::MessageLoopForUI::Observer,
-                          public NotificationObserver {
+class WebDragSourceAura : public NotificationObserver {
  public:
   WebDragSourceAura(aura::Window* window, WebContentsImpl* contents)
       : window_(window),
         contents_(contents) {
-    base::MessageLoopForUI::current()->AddObserver(this);
     registrar_.Add(this,
                    NOTIFICATION_WEB_CONTENTS_DISCONNECTED,
                    Source<WebContents>(contents));
   }
 
   virtual ~WebDragSourceAura() {
-    base::MessageLoopForUI::current()->RemoveObserver(this);
   }
 
-  // MessageLoop::Observer implementation:
-  virtual base::EventStatus WillProcessEvent(
-      const base::NativeEvent& event) OVERRIDE {
-    return base::EVENT_CONTINUE;
-  }
-  virtual void DidProcessEvent(const base::NativeEvent& event) OVERRIDE {
-    if (!contents_)
-      return;
-    ui::EventType type = ui::EventTypeFromNative(event);
-    RenderViewHost* rvh = NULL;
-    switch (type) {
-      case ui::ET_MOUSE_DRAGGED:
-        rvh = contents_->GetRenderViewHost();
-        if (rvh) {
-          gfx::Point screen_loc_in_pixel = ui::EventLocationFromNative(event);
-          gfx::Point screen_loc = ConvertViewPointToDIP(rvh->GetView(),
-              screen_loc_in_pixel);
-          gfx::Point client_loc = screen_loc;
-          aura::Window* window = rvh->GetView()->GetNativeView();
-          aura::Window::ConvertPointToTarget(window->GetRootWindow(),
-              window, &client_loc);
-          contents_->DragSourceMovedTo(client_loc.x(), client_loc.y(),
-              screen_loc.x(), screen_loc.y());
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
+  // NotificationObserver:
   virtual void Observe(int type,
       const NotificationSource& source,
       const NotificationDetails& details) OVERRIDE {
@@ -245,23 +227,26 @@ class WebDragSourceAura : public base::MessageLoopForUI::Observer,
   DISALLOW_COPY_AND_ASSIGN(WebDragSourceAura);
 };
 
-#if defined(OS_WIN)
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
 // Fill out the OSExchangeData with a file contents, synthesizing a name if
 // necessary.
 void PrepareDragForFileContents(const DropData& drop_data,
                                 ui::OSExchangeData::Provider* provider) {
-  base::FilePath file_name(drop_data.file_description_filename);
+  base::FilePath file_name =
+      base::FilePath::FromUTF16Unsafe(drop_data.file_description_filename);
   // Images without ALT text will only have a file extension so we need to
   // synthesize one from the provided extension and URL.
   if (file_name.BaseName().RemoveExtension().empty()) {
-    const base::string16 extension = file_name.Extension();
+    const base::FilePath::StringType extension = file_name.Extension();
     // Retrieve the name from the URL.
-    file_name = base::FilePath(net::GetSuggestedFilename(
-        drop_data.url, "", "", "", "", "")).ReplaceExtension(extension);
+    file_name = net::GenerateFileName(drop_data.url, "", "", "", "", "")
+                    .ReplaceExtension(extension);
   }
   provider->SetFileContents(file_name, drop_data.file_contents);
 }
+#endif
 
+#if defined(OS_WIN)
 void PrepareDragForDownload(
     const DropData& drop_data,
     ui::OSExchangeData::Provider* provider,
@@ -311,7 +296,7 @@ void PrepareDragForDownload(
   scoped_refptr<DragDownloadFile> download_file =
       new DragDownloadFile(
           download_path,
-          scoped_ptr<net::FileStream>(),
+          base::File(),
           download_url,
           Referrer(page_url, drop_data.referrer_policy),
           page_encoding,
@@ -320,17 +305,68 @@ void PrepareDragForDownload(
                                                      download_file.get());
   provider->SetDownloadFileInfo(file_download);
 }
-#endif
+#endif  // defined(OS_WIN)
+
+// Returns the CustomFormat to store file system files.
+const ui::OSExchangeData::CustomFormat& GetFileSystemFileCustomFormat() {
+  static const char kFormatString[] = "chromium/x-file-system-files";
+  CR_DEFINE_STATIC_LOCAL(ui::OSExchangeData::CustomFormat,
+                         format,
+                         (ui::Clipboard::GetFormatType(kFormatString)));
+  return format;
+}
+
+// Writes file system files to the pickle.
+void WriteFileSystemFilesToPickle(
+    const std::vector<DropData::FileSystemFileInfo>& file_system_files,
+    Pickle* pickle) {
+  pickle->WriteUInt64(file_system_files.size());
+  for (size_t i = 0; i < file_system_files.size(); ++i) {
+    pickle->WriteString(file_system_files[i].url.spec());
+    pickle->WriteInt64(file_system_files[i].size);
+  }
+}
+
+// Reads file system files from the pickle.
+bool ReadFileSystemFilesFromPickle(
+    const Pickle& pickle,
+    std::vector<DropData::FileSystemFileInfo>* file_system_files) {
+  PickleIterator iter(pickle);
+
+  uint64 num_files = 0;
+  if (!pickle.ReadUInt64(&iter, &num_files))
+    return false;
+  file_system_files->resize(num_files);
+
+  for (uint64 i = 0; i < num_files; ++i) {
+    std::string url_string;
+    int64 size = 0;
+    if (!pickle.ReadString(&iter, &url_string) ||
+        !pickle.ReadInt64(&iter, &size))
+      return false;
+
+    GURL url(url_string);
+    if (!url.is_valid())
+      return false;
+
+    (*file_system_files)[i].url = url;
+    (*file_system_files)[i].size = size;
+  }
+  return true;
+}
 
 // Utility to fill a ui::OSExchangeDataProvider object from DropData.
 void PrepareDragData(const DropData& drop_data,
                      ui::OSExchangeData::Provider* provider,
                      WebContentsImpl* web_contents) {
+  provider->MarkOriginatedFromRenderer();
 #if defined(OS_WIN)
   // Put download before file contents to prefer the download of a image over
   // its thumbnail link.
   if (!drop_data.download_metadata.empty())
     PrepareDragForDownload(drop_data, provider, web_contents);
+#endif
+#if (!defined(OS_CHROMEOS) && defined(USE_X11)) || defined(OS_WIN)
   // We set the file contents before the URL because the URL also sets file
   // contents (to a .URL shortcut).  We want to prefer file content data over
   // a shortcut so we add it first.
@@ -343,18 +379,12 @@ void PrepareDragData(const DropData& drop_data,
     provider->SetURL(drop_data.url, drop_data.url_title);
   if (!drop_data.html.string().empty())
     provider->SetHtml(drop_data.html.string(), drop_data.html_base_url);
-  if (!drop_data.filenames.empty()) {
-    std::vector<ui::OSExchangeData::FileInfo> filenames;
-    for (std::vector<DropData::FileInfo>::const_iterator it =
-             drop_data.filenames.begin();
-         it != drop_data.filenames.end(); ++it) {
-      filenames.push_back(
-          ui::OSExchangeData::FileInfo(
-              base::FilePath::FromUTF8Unsafe(base::UTF16ToUTF8(it->path)),
-              base::FilePath::FromUTF8Unsafe(
-                  base::UTF16ToUTF8(it->display_name))));
-    }
-    provider->SetFilenames(filenames);
+  if (!drop_data.filenames.empty())
+    provider->SetFilenames(drop_data.filenames);
+  if (!drop_data.file_system_files.empty()) {
+    Pickle pickle;
+    WriteFileSystemFilesToPickle(drop_data.file_system_files, &pickle);
+    provider->SetPickledData(GetFileSystemFileCustomFormat(), pickle);
   }
   if (!drop_data.custom_data.empty()) {
     Pickle pickle;
@@ -366,6 +396,8 @@ void PrepareDragData(const DropData& drop_data,
 
 // Utility to fill a DropData object from ui::OSExchangeData.
 void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
+  drop_data->did_originate_from_renderer = data.DidOriginateFromRenderer();
+
   base::string16 plain_text;
   data.GetString(&plain_text);
   if (!plain_text.empty())
@@ -388,18 +420,14 @@ void PrepareDropData(DropData* drop_data, const ui::OSExchangeData& data) {
   if (html_base_url.is_valid())
     drop_data->html_base_url = html_base_url;
 
-  std::vector<ui::OSExchangeData::FileInfo> files;
-  if (data.GetFilenames(&files) && !files.empty()) {
-    for (std::vector<ui::OSExchangeData::FileInfo>::const_iterator
-             it = files.begin(); it != files.end(); ++it) {
-      drop_data->filenames.push_back(
-          DropData::FileInfo(
-              base::UTF8ToUTF16(it->path.AsUTF8Unsafe()),
-              base::UTF8ToUTF16(it->display_name.AsUTF8Unsafe())));
-    }
-  }
+  data.GetFilenames(&drop_data->filenames);
 
   Pickle pickle;
+  std::vector<DropData::FileSystemFileInfo> file_system_files;
+  if (data.GetPickledData(GetFileSystemFileCustomFormat(), &pickle) &&
+      ReadFileSystemFilesFromPickle(pickle, &file_system_files))
+    drop_data->file_system_files = file_system_files;
+
   if (data.GetPickledData(ui::Clipboard::GetWebCustomDataFormatType(), &pickle))
     ui::ReadCustomDataIntoMap(
         pickle.data(), pickle.size(), &drop_data->custom_data);
@@ -445,11 +473,11 @@ int ConvertAuraEventFlagsToWebInputEventModifiers(int aura_event_flags) {
 }  // namespace
 
 class WebContentsViewAura::WindowObserver
-    : public aura::WindowObserver, public aura::RootWindowObserver {
+    : public aura::WindowObserver, public aura::WindowTreeHostObserver {
  public:
   explicit WindowObserver(WebContentsViewAura* view)
       : view_(view),
-        parent_(NULL) {
+        host_window_(NULL) {
     view_->window_->AddObserver(this);
 
 #if defined(OS_WIN)
@@ -460,14 +488,13 @@ class WebContentsViewAura::WindowObserver
 
   virtual ~WindowObserver() {
     view_->window_->RemoveObserver(this);
-    if (view_->window_->GetDispatcher())
-      view_->window_->GetDispatcher()->RemoveRootWindowObserver(this);
-    if (parent_)
-      parent_->RemoveObserver(this);
-
+    if (view_->window_->GetHost())
+      view_->window_->GetHost()->RemoveObserver(this);
+    if (host_window_)
+      host_window_->RemoveObserver(this);
 #if defined(OS_WIN)
-    if (parent_) {
-      const aura::Window::Windows& children = parent_->children();
+    if (host_window_) {
+      const aura::Window::Windows& children = host_window_->children();
       for (size_t i = 0; i < children.size(); ++i)
         children[i]->RemoveObserver(this);
     }
@@ -491,19 +518,19 @@ class WebContentsViewAura::WindowObserver
   // going to be deprecated in a year, this is ok for now. The test for this is
   // PrintPreviewTest.WindowedNPAPIPluginHidden.
   virtual void OnWindowAdded(aura::Window* new_window) OVERRIDE {
-    if (new_window != view_->window_) {
+    if (!new_window->Contains(view_->window_.get())) {
       // Skip the case when the parent moves to the root window.
-      if (new_window != parent_) {
+      if (new_window != host_window_) {
         // Observe sibling windows of the WebContents, or children of the root
         // window.
-        if (new_window->parent() == parent_ ||
+        if (new_window->parent() == host_window_ ||
             new_window->parent() == view_->window_->GetRootWindow()) {
           new_window->AddObserver(this);
         }
       }
     }
 
-    if (new_window->parent() == parent_) {
+    if (new_window->parent() == host_window_) {
       UpdateConstrainedWindows(NULL);
     }
   }
@@ -519,7 +546,7 @@ class WebContentsViewAura::WindowObserver
   virtual void OnWindowVisibilityChanged(aura::Window* window,
                                          bool visible) OVERRIDE {
     if (window == view_->window_ ||
-        window->parent() == parent_ ||
+        window->parent() == host_window_ ||
         window->parent() == view_->window_->GetRootWindow()) {
       UpdateConstrainedWindows(NULL);
     }
@@ -530,12 +557,18 @@ class WebContentsViewAura::WindowObserver
                                      aura::Window* parent) OVERRIDE {
     if (window != view_->window_)
       return;
-    if (parent_)
-      parent_->RemoveObserver(this);
+
+    aura::Window* host_window =
+        window->GetProperty(aura::client::kHostWindowKey);
+    if (!host_window)
+      host_window = parent;
+
+    if (host_window_)
+      host_window_->RemoveObserver(this);
 
 #if defined(OS_WIN)
-    if (parent_) {
-      const aura::Window::Windows& children = parent_->children();
+    if (host_window_) {
+      const aura::Window::Windows& children = host_window_->children();
       for (size_t i = 0; i < children.size(); ++i)
         children[i]->RemoveObserver(this);
 
@@ -546,29 +579,29 @@ class WebContentsViewAura::WindowObserver
     }
 
     // When we get parented to the root window, the code below will watch the
-    // parent, aka root window. Since we already watch the root window on
+    // host window, aka root window. Since we already watch the root window on
     // Windows, unregister first so that the debug check doesn't fire.
-    if (parent && parent == window->GetRootWindow())
-      parent->RemoveObserver(this);
+    if (host_window && host_window == window->GetRootWindow())
+      host_window->RemoveObserver(this);
 
     // We need to undo the above if we were parented to the root window and then
     // got parented to another window. At that point, the code before the ifdef
     // would have stopped watching the root window.
     if (window->GetRootWindow() &&
-        parent != window->GetRootWindow() &&
+        host_window != window->GetRootWindow() &&
         !window->GetRootWindow()->HasObserver(this)) {
       window->GetRootWindow()->AddObserver(this);
     }
 #endif
 
-    parent_ = parent;
-    if (parent) {
-      parent->AddObserver(this);
+    host_window_ = host_window;
+    if (host_window) {
+      host_window->AddObserver(this);
 #if defined(OS_WIN)
-      if (parent != window->GetRootWindow()) {
-        const aura::Window::Windows& children = parent->children();
+      if (host_window != window->GetRootWindow()) {
+        const aura::Window::Windows& children = host_window->children();
         for (size_t i = 0; i < children.size(); ++i) {
-          if (children[i] != view_->window_)
+          if (!children[i]->Contains(view_->window_.get()))
             children[i]->AddObserver(this);
         }
       }
@@ -579,7 +612,7 @@ class WebContentsViewAura::WindowObserver
   virtual void OnWindowBoundsChanged(aura::Window* window,
                                      const gfx::Rect& old_bounds,
                                      const gfx::Rect& new_bounds) OVERRIDE {
-    if (window == parent_ || window == view_->window_) {
+    if (window == host_window_ || window == view_->window_) {
       SendScreenRects();
       if (view_->touch_editable_)
         view_->touch_editable_->UpdateEditingController();
@@ -590,9 +623,16 @@ class WebContentsViewAura::WindowObserver
     }
   }
 
+  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+    if (window == host_window_) {
+      host_window_->RemoveObserver(this);
+      host_window_ = NULL;
+    }
+  }
+
   virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE {
     if (window == view_->window_) {
-      window->GetDispatcher()->AddRootWindowObserver(this);
+      window->GetHost()->AddObserver(this);
 #if defined(OS_WIN)
       if (!window->GetRootWindow()->HasObserver(this))
         window->GetRootWindow()->AddObserver(this);
@@ -600,27 +640,30 @@ class WebContentsViewAura::WindowObserver
     }
   }
 
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window) OVERRIDE {
+  virtual void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                              aura::Window* new_root) OVERRIDE {
     if (window == view_->window_) {
-      window->GetDispatcher()->RemoveRootWindowObserver(this);
+      window->GetHost()->RemoveObserver(this);
 #if defined(OS_WIN)
       window->GetRootWindow()->RemoveObserver(this);
 
       const aura::Window::Windows& root_children =
           window->GetRootWindow()->children();
       for (size_t i = 0; i < root_children.size(); ++i) {
-        if (root_children[i] != view_->window_ && root_children[i] != parent_)
+        if (root_children[i] != view_->window_ &&
+            root_children[i] != host_window_) {
           root_children[i]->RemoveObserver(this);
+        }
       }
 #endif
     }
   }
 
-  // Overridden RootWindowObserver:
-  virtual void OnWindowTreeHostMoved(const aura::RootWindow* root,
-                                     const gfx::Point& new_origin) OVERRIDE {
+  // Overridden WindowTreeHostObserver:
+  virtual void OnHostMoved(const aura::WindowTreeHost* host,
+                           const gfx::Point& new_origin) OVERRIDE {
     TRACE_EVENT1("ui",
-                 "WebContentsViewAura::WindowObserver::OnWindowTreeHostMoved",
+                 "WebContentsViewAura::WindowObserver::OnHostMoved",
                  "new_origin", new_origin.ToString());
 
     // This is for the desktop case (i.e. Aura desktop).
@@ -641,10 +684,10 @@ class WebContentsViewAura::WindowObserver
       return;
 
     std::vector<gfx::Rect> constrained_windows;
-    if (parent_) {
-      const aura::Window::Windows& children = parent_->children();
+    if (host_window_) {
+      const aura::Window::Windows& children = host_window_->children();
       for (size_t i = 0; i < children.size(); ++i) {
-        if (children[i] != view_->window_ &&
+        if (!children[i]->Contains(view_->window_.get()) &&
             children[i] != exclude &&
             children[i]->IsVisible()) {
           constrained_windows.push_back(children[i]->GetBoundsInRootWindow());
@@ -670,9 +713,9 @@ class WebContentsViewAura::WindowObserver
 
   WebContentsViewAura* view_;
 
-  // We cache the old parent so that we can unregister when it's not the parent
-  // anymore.
-  aura::Window* parent_;
+  // The parent window that hosts the constrained windows. We cache the old host
+  // view so that we can unregister when it's not the parent anymore.
+  aura::Window* host_window_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowObserver);
 };
@@ -702,15 +745,11 @@ WebContentsViewAura::~WebContentsViewAura() {
     return;
 
   window_observer_.reset();
+  window_->RemoveObserver(this);
 
   // Window needs a valid delegate during its destructor, so we explicitly
   // delete it here.
   window_.reset();
-}
-
-void WebContentsViewAura::SetupOverlayWindowForTesting() {
-  if (navigation_overlay_)
-    navigation_overlay_->SetupForTesting();
 }
 
 void WebContentsViewAura::SetTouchEditableForTest(
@@ -740,6 +779,26 @@ void WebContentsViewAura::EndDrag(blink::WebDragOperationsMask ops) {
     return;
   web_contents_->DragSourceEndedAt(client_loc.x(), client_loc.y(),
       screen_loc.x(), screen_loc.y(), ops);
+}
+
+void WebContentsViewAura::InstallOverscrollControllerDelegate(
+    RenderWidgetHostViewAura* view) {
+  const std::string value = CommandLine::ForCurrentProcess()->
+      GetSwitchValueASCII(switches::kOverscrollHistoryNavigation);
+  if (value == "0") {
+    navigation_overlay_.reset();
+    return;
+  }
+  if (value == "2") {
+    navigation_overlay_.reset();
+    if (!gesture_nav_simple_)
+      gesture_nav_simple_.reset(new GestureNavSimple(web_contents_));
+    view->overscroll_controller()->set_delegate(gesture_nav_simple_.get());
+    return;
+  }
+  view->overscroll_controller()->set_delegate(this);
+  if (!navigation_overlay_)
+    navigation_overlay_.reset(new OverscrollNavigationOverlay(web_contents_));
 }
 
 void WebContentsViewAura::PrepareOverscrollWindow() {
@@ -943,10 +1002,6 @@ void WebContentsViewAura::GetContainerBounds(gfx::Rect *out) const {
   *out = window_->GetBoundsInScreen();
 }
 
-void WebContentsViewAura::OnTabCrashed(base::TerminationStatus status,
-                                       int error_code) {
-}
-
 void WebContentsViewAura::SizeContents(const gfx::Size& size) {
   gfx::Rect bounds = window_->bounds();
   if (bounds.size() != size) {
@@ -999,7 +1054,7 @@ gfx::Rect WebContentsViewAura::GetViewBounds() const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// WebContentsViewAura, WebContentsViewPort implementation:
+// WebContentsViewAura, WebContentsView implementation:
 
 void WebContentsViewAura::CreateView(
     const gfx::Size& initial_size, gfx::NativeView context) {
@@ -1007,12 +1062,13 @@ void WebContentsViewAura::CreateView(
   // if the bookmark bar is not shown and you create a new tab). The right
   // value is set shortly after this, so its safe to ignore.
 
-  aura::Env::CreateInstance();
+  aura::Env::CreateInstance(true);
   window_.reset(new aura::Window(this));
   window_->set_owned_by_parent(false);
   window_->SetType(ui::wm::WINDOW_TYPE_CONTROL);
   window_->SetTransparent(false);
   window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
+  window_->AddObserver(this);
   aura::Window* root_window = context ? context->GetRootWindow() : NULL;
   if (root_window) {
     // There are places where there is no context currently because object
@@ -1036,7 +1092,7 @@ void WebContentsViewAura::CreateView(
   // The use cases for WindowObserver do not apply to Browser Plugins:
   // 1) guests do not support NPAPI plugins.
   // 2) guests' window bounds are supposed to come from its embedder.
-  if (!web_contents_->GetRenderProcessHost()->IsGuest())
+  if (!BrowserPluginGuest::IsGuest(web_contents_))
     window_observer_.reset(new WindowObserver(this));
 
   // delegate_->GetDragDestDelegate() creates a new delegate on every call.
@@ -1046,7 +1102,7 @@ void WebContentsViewAura::CreateView(
     drag_dest_delegate_ = delegate_->GetDragDestDelegate();
 }
 
-RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
+RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForWidget(
     RenderWidgetHost* render_widget_host) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
@@ -1055,11 +1111,12 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
     // view twice), we check for the RVH Factory, which will be set when we're
     // making special ones (which go along with the special views).
     DCHECK(RenderViewHostFactory::has_factory());
-    return render_widget_host->GetView();
+    return static_cast<RenderWidgetHostViewBase*>(
+        render_widget_host->GetView());
   }
 
-  RenderWidgetHostView* view =
-      RenderWidgetHostView::CreateViewForWidget(render_widget_host);
+  RenderWidgetHostViewAura* view =
+      new RenderWidgetHostViewAura(render_widget_host);
   view->InitAsChild(NULL);
   GetNativeView()->AddChild(view->GetNativeView());
 
@@ -1076,25 +1133,23 @@ RenderWidgetHostView* WebContentsViewAura::CreateViewForWidget(
   // We listen to drag drop events in the newly created view's window.
   aura::client::SetDragDropDelegate(view->GetNativeView(), this);
 
-  if (host_impl->overscroll_controller() &&
+  if (view->overscroll_controller() &&
       (!web_contents_->GetDelegate() ||
        web_contents_->GetDelegate()->CanOverscrollContent())) {
-    host_impl->overscroll_controller()->set_delegate(this);
-    if (!navigation_overlay_)
-      navigation_overlay_.reset(new OverscrollNavigationOverlay(web_contents_));
+    InstallOverscrollControllerDelegate(view);
   }
 
   AttachTouchEditableToRenderView();
   return view;
 }
 
-RenderWidgetHostView* WebContentsViewAura::CreateViewForPopupWidget(
+RenderWidgetHostViewBase* WebContentsViewAura::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return RenderWidgetHostViewPort::CreateViewForWidget(render_widget_host);
+  return new RenderWidgetHostViewAura(render_widget_host);
 }
 
 void WebContentsViewAura::SetPageTitle(const base::string16& title) {
-  window_->set_title(title);
+  window_->SetTitle(title);
 }
 
 void WebContentsViewAura::RenderViewCreated(RenderViewHost* host) {
@@ -1107,12 +1162,12 @@ void WebContentsViewAura::RenderViewSwappedIn(RenderViewHost* host) {
 }
 
 void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
-  RenderViewHostImpl* host = static_cast<RenderViewHostImpl*>(
-      web_contents_->GetRenderViewHost());
-  if (host) {
-    host->SetOverscrollControllerEnabled(enabled);
+  RenderWidgetHostViewAura* view =
+      ToRenderWidgetHostViewAura(web_contents_->GetRenderWidgetHostView());
+  if (view) {
+    view->SetOverscrollControllerEnabled(enabled);
     if (enabled)
-      host->overscroll_controller()->set_delegate(this);
+      InstallOverscrollControllerDelegate(view);
   }
 
   if (!enabled)
@@ -1126,23 +1181,13 @@ void WebContentsViewAura::SetOverscrollControllerEnabled(bool enabled) {
 
 void WebContentsViewAura::ShowContextMenu(RenderFrameHost* render_frame_host,
                                           const ContextMenuParams& params) {
-  if (touch_editable_)
+  if (touch_editable_) {
     touch_editable_->EndTouchEditing(false);
+  }
   if (delegate_) {
     delegate_->ShowContextMenu(render_frame_host, params);
     // WARNING: we may have been deleted during the call to ShowContextMenu().
   }
-}
-
-void WebContentsViewAura::ShowPopupMenu(const gfx::Rect& bounds,
-                                        int item_height,
-                                        double item_font_size,
-                                        int selected_item,
-                                        const std::vector<MenuItem>& items,
-                                        bool right_aligned,
-                                        bool allow_multiple_selection) {
-  // External popup menus are only used on Mac and Android.
-  NOTIMPLEMENTED();
 }
 
 void WebContentsViewAura::StartDragging(
@@ -1165,10 +1210,8 @@ void WebContentsViewAura::StartDragging(
 
   ui::OSExchangeData data(provider);  // takes ownership of |provider|.
 
-  if (!image.isNull()) {
-    drag_utils::SetDragImageOnDataObject(image,
-        gfx::Size(image.width(), image.height()), image_offset, &data);
-  }
+  if (!image.isNull())
+    drag_utils::SetDragImageOnDataObject(image, image_offset, &data);
 
   scoped_ptr<WebDragSourceAura> drag_source(
       new WebDragSourceAura(GetNativeView(), web_contents_));
@@ -1236,8 +1279,6 @@ void WebContentsViewAura::OnOverscrollUpdate(float delta_x, float delta_y) {
     return;
 
   aura::Window* target = GetWindowToAnimateForOverscroll();
-  ui::ScopedLayerAnimationSettings settings(target->layer()->GetAnimator());
-  settings.SetPreemptionStrategy(ui::LayerAnimator::IMMEDIATELY_SET_NEW_TARGET);
   gfx::Vector2d translate = GetTranslationForOverscroll(delta_x, delta_y);
   gfx::Transform transform;
 
@@ -1307,12 +1348,12 @@ void WebContentsViewAura::OnImplicitAnimationsCompleted() {
 
   if (ShouldNavigateForward(web_contents_->GetController(),
                             completed_overscroll_gesture_)) {
-    PrepareOverscrollNavigationOverlay();
     web_contents_->GetController().GoForward();
+    PrepareOverscrollNavigationOverlay();
   } else if (ShouldNavigateBack(web_contents_->GetController(),
                                 completed_overscroll_gesture_)) {
-    PrepareOverscrollNavigationOverlay();
     web_contents_->GetController().GoBack();
+    PrepareOverscrollNavigationOverlay();
   } else {
     if (touch_editable_)
       touch_editable_->OverscrollCompleted();
@@ -1394,7 +1435,7 @@ void WebContentsViewAura::OnDeviceScaleFactorChanged(
     float device_scale_factor) {
 }
 
-void WebContentsViewAura::OnWindowDestroying() {
+void WebContentsViewAura::OnWindowDestroying(aura::Window* window) {
   // This means the destructor is going to be called soon. If there is an
   // overscroll gesture in progress (i.e. |overscroll_window_| is not NULL),
   // then destroying it in the WebContentsViewAura destructor can trigger other
@@ -1404,14 +1445,10 @@ void WebContentsViewAura::OnWindowDestroying() {
   overscroll_window_.reset();
 }
 
-void WebContentsViewAura::OnWindowDestroyed() {
+void WebContentsViewAura::OnWindowDestroyed(aura::Window* window) {
 }
 
 void WebContentsViewAura::OnWindowTargetVisibilityChanged(bool visible) {
-  if (visible)
-    web_contents_->WasShown();
-  else
-    web_contents_->WasHidden();
 }
 
 bool WebContentsViewAura::HasHitTestMask() const {
@@ -1419,10 +1456,6 @@ bool WebContentsViewAura::HasHitTestMask() const {
 }
 
 void WebContentsViewAura::GetHitTestMask(gfx::Path* mask) const {
-}
-
-void WebContentsViewAura::DidRecreateLayer(ui::Layer *old_layer,
-                                           ui::Layer *new_layer) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1455,17 +1488,25 @@ void WebContentsViewAura::OnMouseEvent(ui::MouseEvent* event) {
 // WebContentsViewAura, aura::client::DragDropDelegate implementation:
 
 void WebContentsViewAura::OnDragEntered(const ui::DropTargetEvent& event) {
-  if (drag_dest_delegate_)
-    drag_dest_delegate_->DragInitialize(web_contents_);
-
+  current_rvh_for_drag_ = web_contents_->GetRenderViewHost();
   current_drop_data_.reset(new DropData());
 
   PrepareDropData(current_drop_data_.get(), event.data());
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
 
+  // Give the delegate an opportunity to cancel the drag.
+  if (!web_contents_->GetDelegate()->CanDragEnter(web_contents_,
+                                                  *current_drop_data_.get(),
+                                                  op)) {
+    current_drop_data_.reset(NULL);
+    return;
+  }
+
+  if (drag_dest_delegate_)
+    drag_dest_delegate_->DragInitialize(web_contents_);
+
   gfx::Point screen_pt =
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint();
-  current_rvh_for_drag_ = web_contents_->GetRenderViewHost();
   web_contents_->GetRenderViewHost()->DragTargetDragEnter(
       *current_drop_data_.get(), event.location(), screen_pt, op,
       ConvertAuraEventFlagsToWebInputEventModifiers(event.flags()));
@@ -1480,6 +1521,9 @@ int WebContentsViewAura::OnDragUpdated(const ui::DropTargetEvent& event) {
   DCHECK(current_rvh_for_drag_);
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     OnDragEntered(event);
+
+  if (!current_drop_data_)
+    return ui::DragDropTypes::DRAG_NONE;
 
   blink::WebDragOperationsMask op = ConvertToWeb(event.source_operations());
   gfx::Point screen_pt =
@@ -1499,6 +1543,9 @@ void WebContentsViewAura::OnDragExited() {
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     return;
 
+  if (!current_drop_data_)
+    return;
+
   web_contents_->GetRenderViewHost()->DragTargetDragLeave();
   if (drag_dest_delegate_)
     drag_dest_delegate_->OnDragLeave();
@@ -1511,6 +1558,9 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
   if (current_rvh_for_drag_ != web_contents_->GetRenderViewHost())
     OnDragEntered(event);
 
+  if (!current_drop_data_)
+    return ui::DragDropTypes::DRAG_NONE;
+
   web_contents_->GetRenderViewHost()->DragTargetDrop(
       event.location(),
       gfx::Screen::GetScreenFor(GetNativeView())->GetCursorScreenPoint(),
@@ -1519,6 +1569,24 @@ int WebContentsViewAura::OnPerformDrop(const ui::DropTargetEvent& event) {
     drag_dest_delegate_->OnDrop();
   current_drop_data_.reset();
   return ConvertFromWeb(current_drag_op_);
+}
+
+void WebContentsViewAura::OnWindowParentChanged(aura::Window* window,
+                                                aura::Window* parent) {
+  // On Windows we will get called with a parent of NULL as part of the shut
+  // down process. As such we do only change the visibility when a parent gets
+  // set.
+  if (parent)
+    UpdateWebContentsVisibility(web_contents_, window->IsVisible());
+}
+
+void WebContentsViewAura::OnWindowVisibilityChanged(aura::Window* window,
+                                                    bool visible) {
+  // Ignore any visibility changes in the hierarchy below.
+  if (window != window_.get() && window_->Contains(window))
+    return;
+
+  UpdateWebContentsVisibility(web_contents_, visible);
 }
 
 }  // namespace content

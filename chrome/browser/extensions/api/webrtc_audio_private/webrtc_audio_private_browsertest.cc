@@ -74,8 +74,13 @@ class AudioWaitingExtensionTest : public ExtensionApiTest {
 class WebrtcAudioPrivateTest : public AudioWaitingExtensionTest {
  public:
   WebrtcAudioPrivateTest()
-      : enumeration_event_(false, false),
-        source_url_("chrome-extension://fakeid012345678/fakepage.html") {
+      : enumeration_event_(false, false) {
+  }
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    AudioWaitingExtensionTest::SetUpOnMainThread();
+    // Needs to happen after chrome's schemes are added.
+    source_url_ = GURL("chrome-extension://fakeid012345678/fakepage.html");
   }
 
  protected:
@@ -117,8 +122,8 @@ class WebrtcAudioPrivateTest : public AudioWaitingExtensionTest {
       AudioDeviceNames* device_names) {
     AudioManager* audio_manager = AudioManager::Get();
 
-    if (!audio_manager->GetTaskRunner()->BelongsToCurrentThread()) {
-      audio_manager->GetTaskRunner()->PostTask(
+    if (!audio_manager->GetWorkerTaskRunner()->BelongsToCurrentThread()) {
+      audio_manager->GetWorkerTaskRunner()->PostTask(
           FROM_HERE,
           base::Bind(&WebrtcAudioPrivateTest::GetAudioDeviceNames, this,
                      EnumerationFunc, device_names));
@@ -348,8 +353,7 @@ IN_PROC_BROWSER_TEST_F(WebrtcAudioPrivateTest, GetAssociatedSink) {
 
 IN_PROC_BROWSER_TEST_F(WebrtcAudioPrivateTest, TriggerEvent) {
   WebrtcAudioPrivateEventService* service =
-      WebrtcAudioPrivateEventService::GetFactoryInstance()->GetForProfile(
-          profile());
+      WebrtcAudioPrivateEventService::GetFactoryInstance()->Get(profile());
 
   // Just trigger, without any extension listening.
   service->OnDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE);
@@ -406,6 +410,9 @@ IN_PROC_BROWSER_TEST_F(HangoutServicesBrowserTest,
   title_watcher.AlsoWaitForTitle(base::ASCIIToUTF16("failure"));
   base::string16 result = title_watcher.WaitAndGetTitle();
   EXPECT_EQ(base::ASCIIToUTF16("success"), result);
+
+  g_browser_process->webrtc_log_uploader()->OverrideUploadWithBufferForTesting(
+      NULL);
 }
 #endif  // defined(GOOGLE_CHROME_BUILD) || defined(ENABLE_HANGOUT_SERVICES_EXTENSION)
 

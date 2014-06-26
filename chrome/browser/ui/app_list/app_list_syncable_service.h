@@ -9,7 +9,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/sync/glue/sync_start_util.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "sync/api/string_ordinal.h"
@@ -19,6 +19,7 @@
 #include "sync/api/syncable_service.h"
 #include "sync/protocol/app_list_specifics.pb.h"
 
+class DriveAppProvider;
 class ExtensionAppModelBuilder;
 class Profile;
 
@@ -38,7 +39,7 @@ class AppListModel;
 
 // Keyed Service that owns, stores, and syncs an AppListModel for a profile.
 class AppListSyncableService : public syncer::SyncableService,
-                               public BrowserContextKeyedService,
+                               public KeyedService,
                                public content::NotificationObserver {
  public:
   struct SyncItem {
@@ -63,17 +64,26 @@ class AppListSyncableService : public syncer::SyncableService,
 
   // Adds |item| to |sync_items_| and |model_|. If a sync item already exists,
   // updates the existing sync item instead.
-  void AddItem(scoped_ptr<AppListItem> item);
+  void AddItem(scoped_ptr<AppListItem> app_item);
 
   // Removes sync item matching |id|.
   void RemoveItem(const std::string& id);
 
+  // Called when properties of an item may have changed, e.g. default/oem state.
+  void UpdateItem(AppListItem* app_item);
+
   // Returns the existing sync item matching |id| or NULL.
   const SyncItem* GetSyncItem(const std::string& id) const;
 
+  // Sets the name of the folder for OEM apps.
+  void SetOemFolderName(const std::string& name);
+
   Profile* profile() { return profile_; }
   AppListModel* model() { return model_.get(); }
-  size_t GetNumSyncItemsForTest() { return sync_items_.size(); }
+  size_t GetNumSyncItemsForTest() const { return sync_items_.size(); }
+  const std::string& GetOemFolderNameForTest() const {
+    return oem_folder_name_;
+  }
 
   // syncer::SyncableService
   virtual syncer::SyncMergeResult MergeDataAndStartSyncing(
@@ -91,6 +101,9 @@ class AppListSyncableService : public syncer::SyncableService,
  private:
   class ModelObserver;
   typedef std::map<std::string, SyncItem*> SyncItemMap;
+
+  // KeyedService
+  virtual void Shutdown() OVERRIDE;
 
   // content::NotificationObserver
   virtual void Observe(int type,
@@ -129,8 +142,9 @@ class AppListSyncableService : public syncer::SyncableService,
   // Removes sync item matching |id|.
   void RemoveSyncItem(const std::string& id);
 
-  // Updates folder items that may get created during initial sync.
-  void ResolveFolderPositions();
+  // Updates folder items that may get created during initial sync. If
+  // oem_at_end is true then move any OEM folder to the end of the list.
+  void ResolveFolderPositions(bool move_oem_to_end);
 
   // Removes any empty SyncItem folders and deletes them from sync. Called
   // after a sync item is removed (which may result in an empty folder).
@@ -166,6 +180,14 @@ class AppListSyncableService : public syncer::SyncableService,
   // Deletes a SyncItem matching |specifics|.
   void DeleteSyncItemSpecifics(const sync_pb::AppListSpecifics& specifics);
 
+  // Creates the OEM folder and sets its name if necessary. Returns the OEM
+  // folder id.
+  std::string FindOrCreateOemFolder();
+
+  // Returns true if an extension matching |id| exists and was installed by
+  // an OEM (extension->was_installed_by_oem() is true).
+  bool AppIsOem(const std::string& id);
+
   Profile* profile_;
   extensions::ExtensionSystem* extension_system_;
   content::NotificationRegistrar registrar_;
@@ -176,6 +198,10 @@ class AppListSyncableService : public syncer::SyncableService,
   scoped_ptr<syncer::SyncErrorFactory> sync_error_handler_;
   SyncItemMap sync_items_;
   syncer::SyncableService::StartSyncFlare flare_;
+  std::string oem_folder_name_;
+
+  // Provides integration with Drive apps.
+  scoped_ptr<DriveAppProvider> drive_app_provider_;
 
   DISALLOW_COPY_AND_ASSIGN(AppListSyncableService);
 };

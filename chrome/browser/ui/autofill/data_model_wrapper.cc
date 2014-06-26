@@ -9,12 +9,13 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/ui/autofill/autofill_dialog_common.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_i18n_input.h"
 #include "chrome/browser/ui/autofill/autofill_dialog_models.h"
 #include "components/autofill/content/browser/wallet/full_wallet.h"
 #include "components/autofill/content/browser/wallet/wallet_address.h"
 #include "components/autofill/content/browser/wallet/wallet_items.h"
+#include "components/autofill/core/browser/address_i18n.h"
+#include "components/autofill/core/browser/autofill_country.h"
 #include "components/autofill/core/browser/autofill_data_model.h"
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_profile.h"
@@ -28,17 +29,12 @@
 
 namespace autofill {
 
-using base::ASCIIToUTF16;
-using base::UTF16ToUTF8;
-
 DataModelWrapper::~DataModelWrapper() {}
 
 void DataModelWrapper::FillInputs(DetailInputs* inputs) {
   for (size_t i = 0; i < inputs->size(); ++i) {
-    DetailInput* input = &(*inputs)[i];
-    input->initial_value = common::GetHardcodedValueForType(input->type);
-    if (input->initial_value.empty())
-      input->initial_value = GetInfo(AutofillType(input->type));
+    (*inputs)[i].initial_value =
+        GetInfoForDisplay(AutofillType((*inputs)[i].type));
   }
 }
 
@@ -60,25 +56,24 @@ bool DataModelWrapper::GetDisplayText(
     return false;
 
   // Format the address.
-  ::i18n::addressinput::AddressData address_data;
-  i18ninput::CreateAddressData(
-      base::Bind(&DataModelWrapper::GetInfo, base::Unretained(this)),
-      &address_data);
+  scoped_ptr< ::i18n::addressinput::AddressData> address_data =
+      i18n::CreateAddressData(
+          base::Bind(&DataModelWrapper::GetInfo, base::Unretained(this)));
+  address_data->language_code = GetLanguageCode();
   std::vector<std::string> lines;
-  address_data.FormatForDisplay(&lines);
+  address_data->FormatForDisplay(&lines);
 
   // Email and phone number aren't part of address formatting.
   base::string16 non_address_info;
   base::string16 email = GetInfoForDisplay(AutofillType(EMAIL_ADDRESS));
   if (!email.empty())
-    non_address_info += ASCIIToUTF16("\n") + email;
+    non_address_info += base::ASCIIToUTF16("\n") + email;
 
-  non_address_info += ASCIIToUTF16("\n") + phone;
+  non_address_info += base::ASCIIToUTF16("\n") + phone;
 
   // The separator is locale-specific.
   std::string compact_separator =
-      ::i18n::addressinput::GetCompactAddressLinesSeparator(
-          g_browser_process->GetApplicationLocale());
+      ::i18n::addressinput::GetCompactAddressLinesSeparator(GetLanguageCode());
   *vertically_compact =
       base::UTF8ToUTF16(JoinString(lines, compact_separator)) +
           non_address_info;
@@ -141,17 +136,25 @@ base::string16 AutofillProfileWrapper::GetInfoForDisplay(
 
     // If there is no user-defined formatting at all, add some standard
     // formatting.
-    if (ContainsOnlyChars(phone_number, ASCIIToUTF16("0123456789"))) {
-      std::string region = UTF16ToASCII(
+    if (base::ContainsOnlyChars(phone_number,
+                                base::ASCIIToUTF16("0123456789"))) {
+      std::string region = base::UTF16ToASCII(
           GetInfo(AutofillType(HTML_TYPE_COUNTRY_CODE, HTML_MODE_NONE)));
       i18n::PhoneObject phone(phone_number, region);
-      return phone.GetFormattedNumber();
+      base::string16 formatted_number = phone.GetFormattedNumber();
+      // Formatting may fail.
+      if (!formatted_number.empty())
+        return formatted_number;
     }
 
     return phone_number;
   }
 
   return DataModelWrapper::GetInfoForDisplay(type);
+}
+
+const std::string& AutofillProfileWrapper::GetLanguageCode() const {
+  return profile_->language_code();
 }
 
 size_t AutofillProfileWrapper::GetVariantForType(const AutofillType& type)
@@ -212,6 +215,11 @@ bool AutofillCreditCardWrapper::GetDisplayText(
   return true;
 }
 
+const std::string& AutofillCreditCardWrapper::GetLanguageCode() const {
+  // Formatting a credit card for display does not depend on language code.
+  return base::EmptyString();
+}
+
 // WalletAddressWrapper
 
 WalletAddressWrapper::WalletAddressWrapper(
@@ -243,6 +251,10 @@ bool WalletAddressWrapper::GetDisplayText(
 
   return DataModelWrapper::GetDisplayText(vertically_compact,
                                           horizontally_compact);
+}
+
+const std::string& WalletAddressWrapper::GetLanguageCode() const {
+  return address_->language_code();
 }
 
 // WalletInstrumentWrapper
@@ -293,10 +305,15 @@ bool WalletInstrumentWrapper::GetDisplayText(
 
   // TODO(estade): descriptive_name() is user-provided. Should we use it or
   // just type + last 4 digits?
-  base::string16 line1 = instrument_->descriptive_name() + ASCIIToUTF16("\n");
+  base::string16 line1 =
+      instrument_->descriptive_name() + base::ASCIIToUTF16("\n");
   *vertically_compact = line1 + *vertically_compact;
   *horizontally_compact = line1 + *horizontally_compact;
   return true;
+}
+
+const std::string& WalletInstrumentWrapper::GetLanguageCode() const {
+  return instrument_->address().language_code();
 }
 
 // FullWalletBillingWrapper
@@ -311,10 +328,7 @@ FullWalletBillingWrapper::~FullWalletBillingWrapper() {}
 
 base::string16 FullWalletBillingWrapper::GetInfo(const AutofillType& type)
     const {
-  return full_wallet_->GetInfo(
-      g_browser_process->GetApplicationLocale(),
-      AutofillType(AutofillType::GetEquivalentBillingFieldType(
-          type.GetStorableType())));
+  return full_wallet_->GetInfo(g_browser_process->GetApplicationLocale(), type);
 }
 
 bool FullWalletBillingWrapper::GetDisplayText(
@@ -326,6 +340,12 @@ bool FullWalletBillingWrapper::GetDisplayText(
 
   return DataModelWrapper::GetDisplayText(vertically_compact,
                                           horizontally_compact);
+}
+
+const std::string& FullWalletBillingWrapper::GetLanguageCode() const {
+  // Can be NULL if there are required actions.
+  return full_wallet_->billing_address() ?
+      full_wallet_->billing_address()->language_code() : base::EmptyString();
 }
 
 // FullWalletShippingWrapper
@@ -342,6 +362,41 @@ base::string16 FullWalletShippingWrapper::GetInfo(
     const AutofillType& type) const {
   return full_wallet_->shipping_address()->GetInfo(
       type, g_browser_process->GetApplicationLocale());
+}
+
+const std::string& FullWalletShippingWrapper::GetLanguageCode() const {
+  // Can be NULL if there are required actions or shipping address is not
+  // required.
+  return full_wallet_->shipping_address() ?
+      full_wallet_->shipping_address()->language_code() : base::EmptyString();
+}
+
+// I18nAddressDataWrapper
+
+I18nAddressDataWrapper::I18nAddressDataWrapper(
+    const ::i18n::addressinput::AddressData* address)
+    : address_(address) {}
+
+I18nAddressDataWrapper::~I18nAddressDataWrapper() {}
+
+base::string16 I18nAddressDataWrapper::GetInfo(const AutofillType& type) const {
+  ::i18n::addressinput::AddressField field;
+  if (!i18ninput::FieldForType(type.GetStorableType(), &field))
+    return base::string16();
+
+  if (field == ::i18n::addressinput::STREET_ADDRESS)
+    return base::string16();
+
+  if (field == ::i18n::addressinput::COUNTRY) {
+    return AutofillCountry(address_->country_code,
+                           g_browser_process->GetApplicationLocale()).name();
+  }
+
+  return base::UTF8ToUTF16(address_->GetFieldValue(field));
+}
+
+const std::string& I18nAddressDataWrapper::GetLanguageCode() const {
+  return address_->language_code;
 }
 
 }  // namespace autofill

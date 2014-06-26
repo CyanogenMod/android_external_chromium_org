@@ -4,7 +4,7 @@
 
 #include "chrome/browser/android/provider/bookmark_model_observer_task.h"
 
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "content/public/browser/browser_thread.h"
 
 using content::BrowserThread;
@@ -47,16 +47,22 @@ void BookmarkModelObserverTask::BookmarkNodeAdded(BookmarkModel* model,
                                                   int index) {
 }
 
-void BookmarkModelObserverTask::BookmarkNodeRemoved(BookmarkModel* model,
-                                                    const BookmarkNode* parent,
-                                                    int old_index,
-                                                    const BookmarkNode* node) {
+void BookmarkModelObserverTask::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int old_index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
 }
 
-void BookmarkModelObserverTask::BookmarkAllNodesRemoved(BookmarkModel* model) {}
+void BookmarkModelObserverTask::BookmarkAllUserNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
+}
 
 void BookmarkModelObserverTask::BookmarkNodeChanged(BookmarkModel* model,
-                                                    const BookmarkNode* node) {}
+                                                    const BookmarkNode* node) {
+}
 
 void BookmarkModelObserverTask::BookmarkNodeFaviconChanged(
     BookmarkModel* model,

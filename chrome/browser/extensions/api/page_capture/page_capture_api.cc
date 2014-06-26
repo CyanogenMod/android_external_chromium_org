@@ -10,7 +10,6 @@
 #include "base/file_util.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/child_process_security_policy.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -18,6 +17,7 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension_messages.h"
 
 using content::BrowserThread;
 using content::ChildProcessSecurityPolicy;
@@ -54,7 +54,7 @@ void PageCaptureSaveAsMHTMLFunction::SetTestDelegate(TestDelegate* delegate) {
   test_delegate_ = delegate;
 }
 
-bool PageCaptureSaveAsMHTMLFunction::RunImpl() {
+bool PageCaptureSaveAsMHTMLFunction::RunAsync() {
   params_ = SaveAsMHTML::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
@@ -89,7 +89,7 @@ bool PageCaptureSaveAsMHTMLFunction::OnMessageReceived(
 }
 
 void PageCaptureSaveAsMHTMLFunction::CreateTemporaryFile() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   bool success = base::CreateTemporaryFile(&mhtml_path_);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
@@ -115,7 +115,7 @@ void PageCaptureSaveAsMHTMLFunction::TemporaryFileCreated(bool success) {
     return;
   }
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!success) {
     ReturnFailure(kTemporaryFileError);
     return;
@@ -151,7 +151,7 @@ void PageCaptureSaveAsMHTMLFunction::MHTMLGenerated(
 }
 
 void PageCaptureSaveAsMHTMLFunction::ReturnFailure(const std::string& error) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   error_ = error;
 
@@ -161,7 +161,7 @@ void PageCaptureSaveAsMHTMLFunction::ReturnFailure(const std::string& error) {
 }
 
 void PageCaptureSaveAsMHTMLFunction::ReturnSuccess(int64 file_size) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   WebContents* web_contents = GetWebContents();
   if (!web_contents || !render_view_host()) {

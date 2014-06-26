@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 #include "ash/accelerators/accelerator_controller.h"
+
 #include "ash/accelerators/accelerator_table.h"
 #include "ash/accessibility_delegate.h"
 #include "ash/ash_switches.h"
-#include "ash/caps_lock_delegate.h"
 #include "ash/display/display_manager.h"
 #include "ash/ime_control_delegate.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/brightness_control_delegate.h"
@@ -18,16 +19,20 @@
 #include "ash/test/display_manager_test_api.h"
 #include "ash/test/test_screenshot_delegate.h"
 #include "ash/test/test_shell_delegate.h"
+#include "ash/test/test_volume_control_delegate.h"
 #include "ash/volume_control_delegate.h"
 #include "ash/wm/window_state.h"
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/client/aura_constants.h"
+#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
 #include "ui/events/event.h"
+#include "ui/events/event_processor.h"
 #include "ui/gfx/screen.h"
+#include "ui/views/widget/widget.h"
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
@@ -40,15 +45,18 @@ namespace {
 
 class TestTarget : public ui::AcceleratorTarget {
  public:
-  TestTarget() : accelerator_pressed_count_(0) {}
+  TestTarget() : accelerator_pressed_count_(0), accelerator_repeat_count_(0) {}
   virtual ~TestTarget() {}
 
   int accelerator_pressed_count() const {
     return accelerator_pressed_count_;
   }
 
-  void set_accelerator_pressed_count(int accelerator_pressed_count) {
-    accelerator_pressed_count_ = accelerator_pressed_count;
+  int accelerator_repeat_count() const { return accelerator_repeat_count_; }
+
+  void reset() {
+    accelerator_pressed_count_ = 0;
+    accelerator_repeat_count_ = 0;
   }
 
   // Overridden from ui::AcceleratorTarget:
@@ -57,6 +65,7 @@ class TestTarget : public ui::AcceleratorTarget {
 
  private:
   int accelerator_pressed_count_;
+  int accelerator_repeat_count_;
 
   DISALLOW_COPY_AND_ASSIGN(TestTarget);
 };
@@ -67,55 +76,6 @@ class ReleaseAccelerator : public ui::Accelerator {
       : ui::Accelerator(keycode, modifiers) {
     set_type(ui::ET_KEY_RELEASED);
   }
-};
-
-class DummyVolumeControlDelegate : public VolumeControlDelegate {
- public:
-  explicit DummyVolumeControlDelegate(bool consume)
-      : consume_(consume),
-        handle_volume_mute_count_(0),
-        handle_volume_down_count_(0),
-        handle_volume_up_count_(0) {
-  }
-  virtual ~DummyVolumeControlDelegate() {}
-
-  virtual bool HandleVolumeMute(const ui::Accelerator& accelerator) OVERRIDE {
-    ++handle_volume_mute_count_;
-    last_accelerator_ = accelerator;
-    return consume_;
-  }
-  virtual bool HandleVolumeDown(const ui::Accelerator& accelerator) OVERRIDE {
-    ++handle_volume_down_count_;
-    last_accelerator_ = accelerator;
-    return consume_;
-  }
-  virtual bool HandleVolumeUp(const ui::Accelerator& accelerator) OVERRIDE {
-    ++handle_volume_up_count_;
-    last_accelerator_ = accelerator;
-    return consume_;
-  }
-
-  int handle_volume_mute_count() const {
-    return handle_volume_mute_count_;
-  }
-  int handle_volume_down_count() const {
-    return handle_volume_down_count_;
-  }
-  int handle_volume_up_count() const {
-    return handle_volume_up_count_;
-  }
-  const ui::Accelerator& last_accelerator() const {
-    return last_accelerator_;
-  }
-
- private:
-  const bool consume_;
-  int handle_volume_mute_count_;
-  int handle_volume_down_count_;
-  int handle_volume_up_count_;
-  ui::Accelerator last_accelerator_;
-
-  DISALLOW_COPY_AND_ASSIGN(DummyVolumeControlDelegate);
 };
 
 class DummyBrightnessControlDelegate : public BrightnessControlDelegate {
@@ -173,9 +133,8 @@ class DummyImeControlDelegate : public ImeControlDelegate {
   }
   virtual ~DummyImeControlDelegate() {}
 
-  virtual bool HandleNextIme() OVERRIDE {
+  virtual void HandleNextIme() OVERRIDE {
     ++handle_next_ime_count_;
-    return consume_;
   }
   virtual bool HandlePreviousIme(const ui::Accelerator& accelerator) OVERRIDE {
     ++handle_previous_ime_count_;
@@ -261,7 +220,10 @@ class DummyKeyboardBrightnessControlDelegate
 };
 
 bool TestTarget::AcceleratorPressed(const ui::Accelerator& accelerator) {
-  ++accelerator_pressed_count_;
+  if (accelerator.IsRepeat())
+    ++accelerator_repeat_count_;
+  else
+    ++accelerator_pressed_count_;
   return true;
 }
 
@@ -283,7 +245,6 @@ class AcceleratorControllerTest : public test::AshTestBase {
   }
 
   static AcceleratorController* GetController();
-  static bool ProcessWithContext(const ui::Accelerator& accelerator);
 
   // Several functions to access ExitWarningHandler (as friend).
   static void StubForTest(ExitWarningHandler* ewh) {
@@ -313,13 +274,6 @@ AcceleratorController* AcceleratorControllerTest::GetController() {
   return Shell::GetInstance()->accelerator_controller();
 }
 
-bool AcceleratorControllerTest::ProcessWithContext(
-    const ui::Accelerator& accelerator) {
-  AcceleratorController* controller = GetController();
-  controller->context()->UpdateContext(accelerator);
-  return controller->Process(accelerator);
-}
-
 #if !defined(OS_WIN)
 // Double press of exit shortcut => exiting
 TEST_F(AcceleratorControllerTest, ExitWarningHandlerTestDoublePress) {
@@ -331,12 +285,12 @@ TEST_F(AcceleratorControllerTest, ExitWarningHandlerTestDoublePress) {
   StubForTest(ewh);
   EXPECT_TRUE(is_idle(ewh));
   EXPECT_FALSE(is_ui_shown(ewh));
-  EXPECT_TRUE(ProcessWithContext(press));
-  EXPECT_FALSE(ProcessWithContext(release));
+  EXPECT_TRUE(GetController()->Process(press));
+  EXPECT_FALSE(GetController()->Process(release));
   EXPECT_FALSE(is_idle(ewh));
   EXPECT_TRUE(is_ui_shown(ewh));
-  EXPECT_TRUE(ProcessWithContext(press));  // second press before timer.
-  EXPECT_FALSE(ProcessWithContext(release));
+  EXPECT_TRUE(GetController()->Process(press));  // second press before timer.
+  EXPECT_FALSE(GetController()->Process(release));
   SimulateTimerExpired(ewh);
   EXPECT_TRUE(is_exiting(ewh));
   EXPECT_FALSE(is_ui_shown(ewh));
@@ -353,8 +307,8 @@ TEST_F(AcceleratorControllerTest, ExitWarningHandlerTestSinglePress) {
   StubForTest(ewh);
   EXPECT_TRUE(is_idle(ewh));
   EXPECT_FALSE(is_ui_shown(ewh));
-  EXPECT_TRUE(ProcessWithContext(press));
-  EXPECT_FALSE(ProcessWithContext(release));
+  EXPECT_TRUE(GetController()->Process(press));
+  EXPECT_FALSE(GetController()->Process(release));
   EXPECT_FALSE(is_idle(ewh));
   EXPECT_TRUE(is_ui_shown(ewh));
   SimulateTimerExpired(ewh);
@@ -384,7 +338,7 @@ TEST_F(AcceleratorControllerTest, Register) {
   GetController()->Register(accelerator_a, &target);
 
   // The registered accelerator is processed.
-  EXPECT_TRUE(ProcessWithContext(accelerator_a));
+  EXPECT_TRUE(GetController()->Process(accelerator_a));
   EXPECT_EQ(1, target.accelerator_pressed_count());
 }
 
@@ -397,7 +351,7 @@ TEST_F(AcceleratorControllerTest, RegisterMultipleTarget) {
 
   // If multiple targets are registered with the same accelerator, the target
   // registered later processes the accelerator.
-  EXPECT_TRUE(ProcessWithContext(accelerator_a));
+  EXPECT_TRUE(GetController()->Process(accelerator_a));
   EXPECT_EQ(0, target1.accelerator_pressed_count());
   EXPECT_EQ(1, target2.accelerator_pressed_count());
 }
@@ -412,13 +366,13 @@ TEST_F(AcceleratorControllerTest, Unregister) {
   // Unregistering a different accelerator does not affect the other
   // accelerator.
   GetController()->Unregister(accelerator_b, &target);
-  EXPECT_TRUE(ProcessWithContext(accelerator_a));
+  EXPECT_TRUE(GetController()->Process(accelerator_a));
   EXPECT_EQ(1, target.accelerator_pressed_count());
 
   // The unregistered accelerator is no longer processed.
-  target.set_accelerator_pressed_count(0);
+  target.reset();
   GetController()->Unregister(accelerator_a, &target);
-  EXPECT_FALSE(ProcessWithContext(accelerator_a));
+  EXPECT_FALSE(GetController()->Process(accelerator_a));
   EXPECT_EQ(0, target.accelerator_pressed_count());
 }
 
@@ -434,12 +388,12 @@ TEST_F(AcceleratorControllerTest, UnregisterAll) {
   GetController()->UnregisterAll(&target1);
 
   // All the accelerators registered for |target1| are no longer processed.
-  EXPECT_FALSE(ProcessWithContext(accelerator_a));
-  EXPECT_FALSE(ProcessWithContext(accelerator_b));
+  EXPECT_FALSE(GetController()->Process(accelerator_a));
+  EXPECT_FALSE(GetController()->Process(accelerator_b));
   EXPECT_EQ(0, target1.accelerator_pressed_count());
 
   // UnregisterAll with a different target does not affect the other target.
-  EXPECT_TRUE(ProcessWithContext(accelerator_c));
+  EXPECT_TRUE(GetController()->Process(accelerator_c));
   EXPECT_EQ(1, target2.accelerator_pressed_count());
 }
 
@@ -449,12 +403,12 @@ TEST_F(AcceleratorControllerTest, Process) {
   GetController()->Register(accelerator_a, &target1);
 
   // The registered accelerator is processed.
-  EXPECT_TRUE(ProcessWithContext(accelerator_a));
+  EXPECT_TRUE(GetController()->Process(accelerator_a));
   EXPECT_EQ(1, target1.accelerator_pressed_count());
 
   // The non-registered accelerator is not processed.
   const ui::Accelerator accelerator_b(ui::VKEY_B, ui::EF_NONE);
-  EXPECT_FALSE(ProcessWithContext(accelerator_b));
+  EXPECT_FALSE(GetController()->Process(accelerator_b));
 }
 
 TEST_F(AcceleratorControllerTest, IsRegistered) {
@@ -469,9 +423,6 @@ TEST_F(AcceleratorControllerTest, IsRegistered) {
 }
 
 TEST_F(AcceleratorControllerTest, WindowSnap) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kAshMultipleSnapWindowWidths);
-
   scoped_ptr<aura::Window> window(
       CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
   const ui::Accelerator dummy;
@@ -482,27 +433,15 @@ TEST_F(AcceleratorControllerTest, WindowSnap) {
 
   {
     GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    gfx::Rect snap_left = window->bounds();
-    GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_left.ToString());
-    GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_left.ToString());
-
-    // It should cycle back to the first snapped position.
-    GetController()->PerformAction(WINDOW_SNAP_LEFT, dummy);
-    EXPECT_EQ(window->bounds().ToString(), snap_left.ToString());
+    gfx::Rect expected_bounds = wm::GetDefaultLeftSnappedWindowBoundsInParent(
+        window.get());
+    EXPECT_EQ(expected_bounds.ToString(), window->bounds().ToString());
   }
   {
     GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    gfx::Rect snap_right = window->bounds();
-    GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_right.ToString());
-    GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_NE(window->bounds().ToString(), snap_right.ToString());
-
-    // It should cycle back to the first snapped position.
-    GetController()->PerformAction(WINDOW_SNAP_RIGHT, dummy);
-    EXPECT_EQ(window->bounds().ToString(), snap_right.ToString());
+    gfx::Rect expected_bounds = wm::GetDefaultRightSnappedWindowBoundsInParent(
+        window.get());
+    EXPECT_EQ(expected_bounds.ToString(), window->bounds().ToString());
   }
   {
     gfx::Rect normal_bounds = window_state->GetRestoreBoundsInParent();
@@ -561,81 +500,112 @@ TEST_F(AcceleratorControllerTest, CenterWindowAccelerator) {
   // Add the window to docked container and try to center it.
   window->SetBounds(gfx::Rect(0, 0, 20, 20));
   aura::Window* docked_container = Shell::GetContainer(
-      window->GetRootWindow(), internal::kShellWindowId_DockedContainer);
+      window->GetRootWindow(), kShellWindowId_DockedContainer);
   docked_container->AddChild(window.get());
   gfx::Rect docked_bounds = window->GetBoundsInScreen();
   GetController()->PerformAction(WINDOW_POSITION_CENTER, dummy);
   // It should not get centered and should remain docked.
-  EXPECT_EQ(internal::kShellWindowId_DockedContainer, window->parent()->id());
+  EXPECT_EQ(kShellWindowId_DockedContainer, window->parent()->id());
   EXPECT_EQ(docked_bounds.ToString(), window->GetBoundsInScreen().ToString());
 }
 
-TEST_F(AcceleratorControllerTest, ControllerContext) {
-  ui::Accelerator accelerator_a(ui::VKEY_A, ui::EF_NONE);
-  ui::Accelerator accelerator_a2(ui::VKEY_A, ui::EF_NONE);
-  ui::Accelerator accelerator_b(ui::VKEY_B, ui::EF_NONE);
-
+TEST_F(AcceleratorControllerTest, AutoRepeat) {
+  ui::Accelerator accelerator_a(ui::VKEY_A, ui::EF_CONTROL_DOWN);
   accelerator_a.set_type(ui::ET_KEY_PRESSED);
-  accelerator_a2.set_type(ui::ET_KEY_RELEASED);
+  TestTarget target_a;
+  GetController()->Register(accelerator_a, &target_a);
+  ui::Accelerator accelerator_b(ui::VKEY_B, ui::EF_CONTROL_DOWN);
   accelerator_b.set_type(ui::ET_KEY_PRESSED);
+  TestTarget target_b;
+  GetController()->Register(accelerator_b, &target_b);
 
-  EXPECT_FALSE(GetController()->context()->repeated());
-  EXPECT_EQ(ui::ET_UNKNOWN,
-            GetController()->context()->previous_accelerator().type());
+  aura::test::EventGenerator& generator = GetEventGenerator();
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
+  generator.ReleaseKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
 
-  GetController()->context()->UpdateContext(accelerator_a);
-  EXPECT_FALSE(GetController()->context()->repeated());
-  EXPECT_EQ(ui::ET_UNKNOWN,
-            GetController()->context()->previous_accelerator().type());
+  EXPECT_EQ(1, target_a.accelerator_pressed_count());
+  EXPECT_EQ(0, target_a.accelerator_repeat_count());
 
-  GetController()->context()->UpdateContext(accelerator_a2);
-  EXPECT_FALSE(GetController()->context()->repeated());
-  EXPECT_EQ(ui::ET_KEY_PRESSED,
-            GetController()->context()->previous_accelerator().type());
+  // Long press should generate one
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN | ui::EF_IS_REPEAT);
+  EXPECT_EQ(2, target_a.accelerator_pressed_count());
+  EXPECT_EQ(1, target_a.accelerator_repeat_count());
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN | ui::EF_IS_REPEAT);
+  EXPECT_EQ(2, target_a.accelerator_pressed_count());
+  EXPECT_EQ(2, target_a.accelerator_repeat_count());
+  generator.ReleaseKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
+  EXPECT_EQ(2, target_a.accelerator_pressed_count());
+  EXPECT_EQ(2, target_a.accelerator_repeat_count());
 
-  GetController()->context()->UpdateContext(accelerator_a2);
-  EXPECT_TRUE(GetController()->context()->repeated());
-  EXPECT_EQ(ui::ET_KEY_RELEASED,
-            GetController()->context()->previous_accelerator().type());
+  // Long press was intercepted by another key press.
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN | ui::EF_IS_REPEAT);
+  generator.PressKey(ui::VKEY_B, ui::EF_CONTROL_DOWN);
+  generator.ReleaseKey(ui::VKEY_B, ui::EF_CONTROL_DOWN);
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
+  generator.PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN | ui::EF_IS_REPEAT);
+  generator.ReleaseKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
 
-  GetController()->context()->UpdateContext(accelerator_b);
-  EXPECT_FALSE(GetController()->context()->repeated());
-  EXPECT_EQ(ui::ET_KEY_RELEASED,
-            GetController()->context()->previous_accelerator().type());
+  EXPECT_EQ(1, target_b.accelerator_pressed_count());
+  EXPECT_EQ(0, target_b.accelerator_repeat_count());
+  EXPECT_EQ(4, target_a.accelerator_pressed_count());
+  EXPECT_EQ(4, target_a.accelerator_repeat_count());
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
-// crbug.com/314674
-#define MAYBE_SuppressToggleMaximized DISABLED_SuppressToggleMaximized
-#else
-#define MAYBE_SuppressToggleMaximized SuppressToggleMaximized
-#endif
+TEST_F(AcceleratorControllerTest, Previous) {
+  aura::test::EventGenerator& generator = GetEventGenerator();
+  generator.PressKey(ui::VKEY_VOLUME_MUTE, ui::EF_NONE);
+  generator.ReleaseKey(ui::VKEY_VOLUME_MUTE, ui::EF_NONE);
 
-TEST_F(AcceleratorControllerTest, MAYBE_SuppressToggleMaximized) {
-  scoped_ptr<aura::Window> window(
-      CreateTestWindowInShellWithBounds(gfx::Rect(5, 5, 20, 20)));
-  wm::ActivateWindow(window.get());
-  const ui::Accelerator accelerator(ui::VKEY_A, ui::EF_NONE);
-  const ui::Accelerator empty_accelerator;
+  EXPECT_EQ(ui::VKEY_VOLUME_MUTE,
+            GetController()->previous_accelerator_for_test().key_code());
+  EXPECT_EQ(ui::EF_NONE,
+            GetController()->previous_accelerator_for_test().modifiers());
 
-  wm::WindowState* window_state = wm::GetWindowState(window.get());
+  generator.PressKey(ui::VKEY_TAB, ui::EF_CONTROL_DOWN);
+  generator.ReleaseKey(ui::VKEY_TAB, ui::EF_CONTROL_DOWN);
+
+  EXPECT_EQ(ui::VKEY_TAB,
+            GetController()->previous_accelerator_for_test().key_code());
+  EXPECT_EQ(ui::EF_CONTROL_DOWN,
+            GetController()->previous_accelerator_for_test().modifiers());
+}
+
+TEST_F(AcceleratorControllerTest, DontRepeatToggleFullscreen) {
+  const AcceleratorData accelerators[] = {
+      {true, ui::VKEY_J, ui::EF_ALT_DOWN, TOGGLE_FULLSCREEN},
+      {true, ui::VKEY_K, ui::EF_ALT_DOWN, TOGGLE_FULLSCREEN},
+  };
+  GetController()->RegisterAccelerators(accelerators, arraysize(accelerators));
+
+  views::Widget::InitParams params(views::Widget::InitParams::TYPE_WINDOW);
+  params.context = CurrentContext();
+  params.bounds = gfx::Rect(5, 5, 20, 20);
+  views::Widget* widget = new views::Widget;
+  widget->Init(params);
+  widget->Show();
+  widget->Activate();
+  widget->GetNativeView()->SetProperty(aura::client::kCanMaximizeKey, true);
+
+  aura::test::EventGenerator& generator = GetEventGenerator();
+  wm::WindowState* window_state = wm::GetWindowState(widget->GetNativeView());
 
   // Toggling not suppressed.
-  GetController()->context()->UpdateContext(accelerator);
-  GetController()->PerformAction(TOGGLE_MAXIMIZED, accelerator);
-  EXPECT_TRUE(window_state->IsMaximized());
+  generator.PressKey(ui::VKEY_J, ui::EF_ALT_DOWN);
+  EXPECT_TRUE(window_state->IsFullscreen());
 
   // The same accelerator - toggling suppressed.
-  GetController()->context()->UpdateContext(accelerator);
-  GetController()->PerformAction(TOGGLE_MAXIMIZED, accelerator);
-  EXPECT_TRUE(window_state->IsMaximized());
+  generator.PressKey(ui::VKEY_J, ui::EF_ALT_DOWN | ui::EF_IS_REPEAT);
+  EXPECT_TRUE(window_state->IsFullscreen());
 
-  // Suppressed but not for gesture events.
-  GetController()->PerformAction(TOGGLE_MAXIMIZED, empty_accelerator);
-  EXPECT_FALSE(window_state->IsMaximized());
+  // Different accelerator.
+  generator.PressKey(ui::VKEY_K, ui::EF_ALT_DOWN);
+  EXPECT_FALSE(window_state->IsFullscreen());
 }
 
-#if defined(OS_WIN) && defined(USE_AURA)
+// TODO(oshima): Fix this test to use EventGenerator.
+#if defined(OS_WIN)
 // crbug.com/317592
 #define MAYBE_ProcessOnce DISABLED_ProcessOnce
 #else
@@ -649,36 +619,42 @@ TEST_F(AcceleratorControllerTest, MAYBE_ProcessOnce) {
   GetController()->Register(accelerator_a, &target);
 
   // The accelerator is processed only once.
-  aura::WindowEventDispatcher* dispatcher =
-      Shell::GetPrimaryRootWindow()->GetDispatcher();
+  ui::EventProcessor* dispatcher =
+      Shell::GetPrimaryRootWindow()->GetHost()->event_processor();
 #if defined(OS_WIN)
   MSG msg1 = { NULL, WM_KEYDOWN, ui::VKEY_A, 0 };
-  ui::TranslatedKeyEvent key_event1(msg1, false);
+  ui::KeyEvent key_event1(msg1, false);
+  key_event1.SetTranslated(true);
   ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&key_event1);
   EXPECT_TRUE(key_event1.handled() || details.dispatcher_destroyed);
 
   MSG msg2 = { NULL, WM_CHAR, L'A', 0 };
-  ui::TranslatedKeyEvent key_event2(msg2, true);
+  ui::KeyEvent key_event2(msg2, true);
+  key_event2.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event2);
   EXPECT_FALSE(key_event2.handled() || details.dispatcher_destroyed);
 
   MSG msg3 = { NULL, WM_KEYUP, ui::VKEY_A, 0 };
-  ui::TranslatedKeyEvent key_event3(msg3, false);
+  ui::KeyEvent key_event3(msg3, false);
+  key_event3.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event3);
   EXPECT_FALSE(key_event3.handled() || details.dispatcher_destroyed);
 #elif defined(USE_X11)
   ui::ScopedXI2Event key_event;
   key_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
-  ui::TranslatedKeyEvent key_event1(key_event, false);
+  ui::KeyEvent key_event1(key_event, false);
+  key_event1.SetTranslated(true);
   ui::EventDispatchDetails details = dispatcher->OnEventFromSource(&key_event1);
   EXPECT_TRUE(key_event1.handled() || details.dispatcher_destroyed);
 
-  ui::TranslatedKeyEvent key_event2(key_event, true);
+  ui::KeyEvent key_event2(key_event, true);
+  key_event2.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event2);
   EXPECT_FALSE(key_event2.handled() || details.dispatcher_destroyed);
 
   key_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
-  ui::TranslatedKeyEvent key_event3(key_event, false);
+  ui::KeyEvent key_event3(key_event, false);
+  key_event3.SetTranslated(true);
   details = dispatcher->OnEventFromSource(&key_event3);
   EXPECT_FALSE(key_event3.handled() || details.dispatcher_destroyed);
 #endif
@@ -688,13 +664,13 @@ TEST_F(AcceleratorControllerTest, MAYBE_ProcessOnce) {
 
 TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   // CycleBackward
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_TAB, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN)));
   // CycleForward
-  EXPECT_TRUE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_TAB, ui::EF_ALT_DOWN)));
+  EXPECT_TRUE(
+      GetController()->Process(ui::Accelerator(ui::VKEY_TAB, ui::EF_ALT_DOWN)));
   // CycleLinear
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_NONE)));
 
 #if defined(OS_CHROMEOS)
@@ -703,154 +679,61 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   {
     test::TestScreenshotDelegate* delegate = GetScreenshotDelegate();
     delegate->set_can_take_screenshot(false);
-    EXPECT_TRUE(ProcessWithContext(
+    EXPECT_TRUE(GetController()->Process(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1,
-                        ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
+    EXPECT_TRUE(
+        GetController()->Process(ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
+    EXPECT_TRUE(GetController()->Process(ui::Accelerator(
+        ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
 
     delegate->set_can_take_screenshot(true);
     EXPECT_EQ(0, delegate->handle_take_screenshot_count());
-    EXPECT_TRUE(ProcessWithContext(
+    EXPECT_TRUE(GetController()->Process(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
     EXPECT_EQ(1, delegate->handle_take_screenshot_count());
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
+    EXPECT_TRUE(
+        GetController()->Process(ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
     EXPECT_EQ(2, delegate->handle_take_screenshot_count());
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1,
-                        ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
+    EXPECT_TRUE(GetController()->Process(ui::Accelerator(
+        ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
     EXPECT_EQ(2, delegate->handle_take_screenshot_count());
   }
 #endif
-  // DisableCapsLock
-  {
-    CapsLockDelegate* delegate = Shell::GetInstance()->caps_lock_delegate();
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    // Handled only on key release.
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-
-    // Do not handle when a shift pressed with other keys.
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    // Do not handle when a shift pressed with other keys, and shift is
-    // released first.
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_A, ui::EF_SHIFT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-
-    // Do not consume shift keyup when caps lock is off.
-    delegate->SetCapsLockEnabled(false);
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_RSHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-    EXPECT_FALSE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_SHIFT, ui::EF_NONE)));
-  }
-  // ToggleCapsLock
-  {
-    CapsLockDelegate* delegate = Shell::GetInstance()->caps_lock_delegate();
-    delegate->SetCapsLockEnabled(true);
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_FALSE(delegate->IsCapsLockEnabled());
-    EXPECT_FALSE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_TRUE(ProcessWithContext(
-        ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_ALT_DOWN)));
-    EXPECT_TRUE(delegate->IsCapsLockEnabled());
-  }
   const ui::Accelerator volume_mute(ui::VKEY_VOLUME_MUTE, ui::EF_NONE);
   const ui::Accelerator volume_down(ui::VKEY_VOLUME_DOWN, ui::EF_NONE);
   const ui::Accelerator volume_up(ui::VKEY_VOLUME_UP, ui::EF_NONE);
   {
-    DummyVolumeControlDelegate* delegate =
-        new DummyVolumeControlDelegate(false);
+    TestVolumeControlDelegate* delegate =
+        new TestVolumeControlDelegate(false);
     ash::Shell::GetInstance()->system_tray_delegate()->SetVolumeControlDelegate(
         scoped_ptr<VolumeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_volume_mute_count());
-    EXPECT_FALSE(ProcessWithContext(volume_mute));
+    EXPECT_FALSE(GetController()->Process(volume_mute));
     EXPECT_EQ(1, delegate->handle_volume_mute_count());
     EXPECT_EQ(volume_mute, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_down_count());
-    EXPECT_FALSE(ProcessWithContext(volume_down));
+    EXPECT_FALSE(GetController()->Process(volume_down));
     EXPECT_EQ(1, delegate->handle_volume_down_count());
     EXPECT_EQ(volume_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_up_count());
-    EXPECT_FALSE(ProcessWithContext(volume_up));
+    EXPECT_FALSE(GetController()->Process(volume_up));
     EXPECT_EQ(1, delegate->handle_volume_up_count());
     EXPECT_EQ(volume_up, delegate->last_accelerator());
   }
   {
-    DummyVolumeControlDelegate* delegate = new DummyVolumeControlDelegate(true);
+    TestVolumeControlDelegate* delegate = new TestVolumeControlDelegate(true);
     ash::Shell::GetInstance()->system_tray_delegate()->SetVolumeControlDelegate(
         scoped_ptr<VolumeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_volume_mute_count());
-    EXPECT_TRUE(ProcessWithContext(volume_mute));
+    EXPECT_TRUE(GetController()->Process(volume_mute));
     EXPECT_EQ(1, delegate->handle_volume_mute_count());
     EXPECT_EQ(volume_mute, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_down_count());
-    EXPECT_TRUE(ProcessWithContext(volume_down));
+    EXPECT_TRUE(GetController()->Process(volume_down));
     EXPECT_EQ(1, delegate->handle_volume_down_count());
     EXPECT_EQ(volume_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_up_count());
-    EXPECT_TRUE(ProcessWithContext(volume_up));
+    EXPECT_TRUE(GetController()->Process(volume_up));
     EXPECT_EQ(1, delegate->handle_volume_up_count());
     EXPECT_EQ(volume_up, delegate->last_accelerator());
   }
@@ -860,28 +743,16 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   const ui::Accelerator brightness_down(ui::VKEY_BRIGHTNESS_DOWN, ui::EF_NONE);
   const ui::Accelerator brightness_up(ui::VKEY_BRIGHTNESS_UP, ui::EF_NONE);
   {
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
-    DummyBrightnessControlDelegate* delegate =
-        new DummyBrightnessControlDelegate(true);
-    GetController()->SetBrightnessControlDelegate(
-        scoped_ptr<BrightnessControlDelegate>(delegate).Pass());
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
-  }
-  // Enable internal display.
-  EnableInternalDisplay();
-  {
     DummyBrightnessControlDelegate* delegate =
         new DummyBrightnessControlDelegate(false);
     GetController()->SetBrightnessControlDelegate(
         scoped_ptr<BrightnessControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_brightness_down_count());
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
+    EXPECT_FALSE(GetController()->Process(brightness_down));
     EXPECT_EQ(1, delegate->handle_brightness_down_count());
     EXPECT_EQ(brightness_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_brightness_up_count());
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
+    EXPECT_FALSE(GetController()->Process(brightness_up));
     EXPECT_EQ(1, delegate->handle_brightness_up_count());
     EXPECT_EQ(brightness_up, delegate->last_accelerator());
   }
@@ -891,11 +762,11 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
     GetController()->SetBrightnessControlDelegate(
         scoped_ptr<BrightnessControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_brightness_down_count());
-    EXPECT_TRUE(ProcessWithContext(brightness_down));
+    EXPECT_TRUE(GetController()->Process(brightness_down));
     EXPECT_EQ(1, delegate->handle_brightness_down_count());
     EXPECT_EQ(brightness_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_brightness_up_count());
-    EXPECT_TRUE(ProcessWithContext(brightness_up));
+    EXPECT_TRUE(GetController()->Process(brightness_up));
     EXPECT_EQ(1, delegate->handle_brightness_up_count());
     EXPECT_EQ(brightness_up, delegate->last_accelerator());
   }
@@ -906,18 +777,18 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   const ui::Accelerator alt_brightness_up(ui::VKEY_BRIGHTNESS_UP,
                                           ui::EF_ALT_DOWN);
   {
-    EXPECT_TRUE(ProcessWithContext(alt_brightness_down));
-    EXPECT_TRUE(ProcessWithContext(alt_brightness_up));
+    EXPECT_TRUE(GetController()->Process(alt_brightness_down));
+    EXPECT_TRUE(GetController()->Process(alt_brightness_up));
     DummyKeyboardBrightnessControlDelegate* delegate =
         new DummyKeyboardBrightnessControlDelegate(false);
     GetController()->SetKeyboardBrightnessControlDelegate(
         scoped_ptr<KeyboardBrightnessControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_keyboard_brightness_down_count());
-    EXPECT_FALSE(ProcessWithContext(alt_brightness_down));
+    EXPECT_FALSE(GetController()->Process(alt_brightness_down));
     EXPECT_EQ(1, delegate->handle_keyboard_brightness_down_count());
     EXPECT_EQ(alt_brightness_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_keyboard_brightness_up_count());
-    EXPECT_FALSE(ProcessWithContext(alt_brightness_up));
+    EXPECT_FALSE(GetController()->Process(alt_brightness_up));
     EXPECT_EQ(1, delegate->handle_keyboard_brightness_up_count());
     EXPECT_EQ(alt_brightness_up, delegate->last_accelerator());
   }
@@ -927,11 +798,11 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
     GetController()->SetKeyboardBrightnessControlDelegate(
         scoped_ptr<KeyboardBrightnessControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_keyboard_brightness_down_count());
-    EXPECT_TRUE(ProcessWithContext(alt_brightness_down));
+    EXPECT_TRUE(GetController()->Process(alt_brightness_down));
     EXPECT_EQ(1, delegate->handle_keyboard_brightness_down_count());
     EXPECT_EQ(alt_brightness_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_keyboard_brightness_up_count());
-    EXPECT_TRUE(ProcessWithContext(alt_brightness_up));
+    EXPECT_TRUE(GetController()->Process(alt_brightness_up));
     EXPECT_EQ(1, delegate->handle_keyboard_brightness_up_count());
     EXPECT_EQ(alt_brightness_up, delegate->last_accelerator());
   }
@@ -939,11 +810,11 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
 
 #if !defined(NDEBUG)
   // ToggleDesktopBackgroundMode
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_B, ui::EF_CONTROL_DOWN | ui::EF_ALT_DOWN)));
 #if !defined(OS_LINUX)
   // ToggleDesktopFullScreen (not implemented yet on Linux)
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_F11, ui::EF_CONTROL_DOWN)));
 #endif  // OS_LINUX
 #endif  // !NDEBUG
@@ -955,7 +826,7 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
   StubForTest(ewh);
   EXPECT_TRUE(is_idle(ewh));
   EXPECT_FALSE(is_ui_shown(ewh));
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_Q, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
   EXPECT_FALSE(is_idle(ewh));
   EXPECT_TRUE(is_ui_shown(ewh));
@@ -966,35 +837,35 @@ TEST_F(AcceleratorControllerTest, GlobalAccelerators) {
 #endif
 
   // New tab
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_T, ui::EF_CONTROL_DOWN)));
 
   // New incognito window
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_N, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
 
   // New window
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_N, ui::EF_CONTROL_DOWN)));
 
   // Restore tab
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_T, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
 
   // Show task manager
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_SHIFT_DOWN)));
 
 #if defined(OS_CHROMEOS)
   // Open file manager
-  EXPECT_TRUE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_M, ui::EF_SHIFT_DOWN  | ui::EF_ALT_DOWN)));
+  EXPECT_TRUE(GetController()->Process(
+      ui::Accelerator(ui::VKEY_M, ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN)));
 
   // Lock screen
   // NOTE: Accelerators that do not work on the lock screen need to be
   // tested before the sequence below is invoked because it causes a side
   // effect of locking the screen.
-  EXPECT_TRUE(ProcessWithContext(
+  EXPECT_TRUE(GetController()->Process(
       ui::Accelerator(ui::VKEY_L, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
 #endif
 }
@@ -1005,33 +876,36 @@ TEST_F(AcceleratorControllerTest, GlobalAcceleratorsToggleAppList) {
   EXPECT_FALSE(ash::Shell::GetInstance()->GetAppListTargetVisibility());
 
   // The press event should not open the AppList, the release should instead.
-  EXPECT_FALSE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
-  EXPECT_TRUE(ProcessWithContext(
-      ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_FALSE(
+      GetController()->Process(ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_EQ(ui::VKEY_LWIN,
+            GetController()->previous_accelerator_for_test().key_code());
+
+  EXPECT_TRUE(
+      GetController()->Process(ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
   EXPECT_TRUE(ash::Shell::GetInstance()->GetAppListTargetVisibility());
 
   // When spoken feedback is on, the AppList should not toggle.
   delegate->ToggleSpokenFeedback(A11Y_NOTIFICATION_NONE);
-  EXPECT_FALSE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
-  EXPECT_FALSE(ProcessWithContext(
-      ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_FALSE(
+      GetController()->Process(ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_FALSE(
+      GetController()->Process(ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
   delegate->ToggleSpokenFeedback(A11Y_NOTIFICATION_NONE);
   EXPECT_TRUE(ash::Shell::GetInstance()->GetAppListTargetVisibility());
 
-  EXPECT_FALSE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
-  EXPECT_TRUE(ProcessWithContext(
-      ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_FALSE(
+      GetController()->Process(ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_TRUE(
+      GetController()->Process(ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
   EXPECT_FALSE(ash::Shell::GetInstance()->GetAppListTargetVisibility());
 
   // When spoken feedback is on, the AppList should not toggle.
   delegate->ToggleSpokenFeedback(A11Y_NOTIFICATION_NONE);
-  EXPECT_FALSE(ProcessWithContext(
-      ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
-  EXPECT_FALSE(ProcessWithContext(
-      ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_FALSE(
+      GetController()->Process(ui::Accelerator(ui::VKEY_LWIN, ui::EF_NONE)));
+  EXPECT_FALSE(
+      GetController()->Process(ReleaseAccelerator(ui::VKEY_LWIN, ui::EF_NONE)));
   delegate->ToggleSpokenFeedback(A11Y_NOTIFICATION_NONE);
   EXPECT_FALSE(ash::Shell::GetInstance()->GetAppListTargetVisibility());
 }
@@ -1045,28 +919,28 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     const ui::Accelerator wide_half_1(ui::VKEY_DBE_SBCSCHAR, ui::EF_NONE);
     const ui::Accelerator wide_half_2(ui::VKEY_DBE_DBCSCHAR, ui::EF_NONE);
     const ui::Accelerator hangul(ui::VKEY_HANGUL, ui::EF_NONE);
-    EXPECT_FALSE(ProcessWithContext(control_space));
-    EXPECT_FALSE(ProcessWithContext(convert));
-    EXPECT_FALSE(ProcessWithContext(non_convert));
-    EXPECT_FALSE(ProcessWithContext(wide_half_1));
-    EXPECT_FALSE(ProcessWithContext(wide_half_2));
-    EXPECT_FALSE(ProcessWithContext(hangul));
+    EXPECT_FALSE(GetController()->Process(control_space));
+    EXPECT_FALSE(GetController()->Process(convert));
+    EXPECT_FALSE(GetController()->Process(non_convert));
+    EXPECT_FALSE(GetController()->Process(wide_half_1));
+    EXPECT_FALSE(GetController()->Process(wide_half_2));
+    EXPECT_FALSE(GetController()->Process(hangul));
     DummyImeControlDelegate* delegate = new DummyImeControlDelegate(true);
     GetController()->SetImeControlDelegate(
         scoped_ptr<ImeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_previous_ime_count());
-    EXPECT_TRUE(ProcessWithContext(control_space));
+    EXPECT_TRUE(GetController()->Process(control_space));
     EXPECT_EQ(1, delegate->handle_previous_ime_count());
     EXPECT_EQ(0, delegate->handle_switch_ime_count());
-    EXPECT_TRUE(ProcessWithContext(convert));
+    EXPECT_TRUE(GetController()->Process(convert));
     EXPECT_EQ(1, delegate->handle_switch_ime_count());
-    EXPECT_TRUE(ProcessWithContext(non_convert));
+    EXPECT_TRUE(GetController()->Process(non_convert));
     EXPECT_EQ(2, delegate->handle_switch_ime_count());
-    EXPECT_TRUE(ProcessWithContext(wide_half_1));
+    EXPECT_TRUE(GetController()->Process(wide_half_1));
     EXPECT_EQ(3, delegate->handle_switch_ime_count());
-    EXPECT_TRUE(ProcessWithContext(wide_half_2));
+    EXPECT_TRUE(GetController()->Process(wide_half_2));
     EXPECT_EQ(4, delegate->handle_switch_ime_count());
-    EXPECT_TRUE(ProcessWithContext(hangul));
+    EXPECT_TRUE(GetController()->Process(hangul));
     EXPECT_EQ(5, delegate->handle_switch_ime_count());
   }
 
@@ -1083,11 +957,11 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     GetController()->SetImeControlDelegate(
         scoped_ptr<ImeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_next_ime_count());
-    EXPECT_FALSE(ProcessWithContext(shift_alt_press));
-    EXPECT_TRUE(ProcessWithContext(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(1, delegate->handle_next_ime_count());
-    EXPECT_FALSE(ProcessWithContext(alt_shift_press));
-    EXPECT_TRUE(ProcessWithContext(alt_shift));
+    EXPECT_FALSE(GetController()->Process(alt_shift_press));
+    EXPECT_FALSE(GetController()->Process(alt_shift));
     EXPECT_EQ(2, delegate->handle_next_ime_count());
 
     // We should NOT switch IME when e.g. Shift+Alt+X is pressed and X is
@@ -1098,10 +972,10 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     const ReleaseAccelerator shift_alt_x(ui::VKEY_X,
                                          ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
 
-    EXPECT_FALSE(ProcessWithContext(shift_alt_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_x_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_x));
-    EXPECT_FALSE(ProcessWithContext(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_x_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_x));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(2, delegate->handle_next_ime_count());
 
     // But we _should_ if X is either VKEY_RETURN or VKEY_SPACE.
@@ -1113,10 +987,10 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
         ui::VKEY_RETURN,
         ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
 
-    EXPECT_FALSE(ProcessWithContext(shift_alt_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_return_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_return));
-    EXPECT_TRUE(ProcessWithContext(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_return_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_return));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(3, delegate->handle_next_ime_count());
 
     const ui::Accelerator shift_alt_space_press(
@@ -1126,10 +1000,10 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
         ui::VKEY_SPACE,
         ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
 
-    EXPECT_FALSE(ProcessWithContext(shift_alt_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_space_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_space));
-    EXPECT_TRUE(ProcessWithContext(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_space_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_space));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(4, delegate->handle_next_ime_count());
   }
 
@@ -1145,11 +1019,11 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     GetController()->SetImeControlDelegate(
         scoped_ptr<ImeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_next_ime_count());
-    EXPECT_FALSE(ProcessWithContext(shift_alt_press));
-    EXPECT_TRUE(ProcessWithContext(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(1, delegate->handle_next_ime_count());
-    EXPECT_FALSE(ProcessWithContext(alt_shift_press));
-    EXPECT_TRUE(ProcessWithContext(alt_shift));
+    EXPECT_FALSE(GetController()->Process(alt_shift_press));
+    EXPECT_FALSE(GetController()->Process(alt_shift));
     EXPECT_EQ(2, delegate->handle_next_ime_count());
 
     // We should NOT switch IME when e.g. Shift+Alt+X is pressed and X is
@@ -1160,10 +1034,10 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAccelerators) {
     const ReleaseAccelerator shift_alt_x(ui::VKEY_X,
                                          ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
 
-    EXPECT_FALSE(ProcessWithContext(shift_alt_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_x_press));
-    EXPECT_FALSE(ProcessWithContext(shift_alt_x));
-    EXPECT_FALSE(ProcessWithContext(shift_alt));
+    EXPECT_FALSE(GetController()->Process(shift_alt_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_x_press));
+    EXPECT_FALSE(GetController()->Process(shift_alt_x));
+    EXPECT_FALSE(GetController()->Process(shift_alt));
     EXPECT_EQ(2, delegate->handle_next_ime_count());
   }
 #endif
@@ -1176,11 +1050,11 @@ TEST_F(AcceleratorControllerTest, ImeGlobalAcceleratorsWorkaround139556) {
   const ui::Accelerator shift_alt_return_press(
       ui::VKEY_RETURN,
       ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
-  EXPECT_FALSE(ProcessWithContext(shift_alt_return_press));
+  EXPECT_FALSE(GetController()->Process(shift_alt_return_press));
   const ui::Accelerator shift_alt_space_press(
       ui::VKEY_SPACE,
       ui::EF_SHIFT_DOWN | ui::EF_ALT_DOWN);
-  EXPECT_FALSE(ProcessWithContext(shift_alt_space_press));
+  EXPECT_FALSE(GetController()->Process(shift_alt_space_press));
 }
 
 TEST_F(AcceleratorControllerTest, ReservedAccelerators) {
@@ -1249,53 +1123,38 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
   {
     test::TestScreenshotDelegate* delegate = GetScreenshotDelegate();
     delegate->set_can_take_screenshot(false);
-    EXPECT_TRUE(ProcessWithContext(
+    EXPECT_TRUE(GetController()->Process(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1,
-                        ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
+    EXPECT_TRUE(
+        GetController()->Process(ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
+    EXPECT_TRUE(GetController()->Process(ui::Accelerator(
+        ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
     delegate->set_can_take_screenshot(true);
     EXPECT_EQ(0, delegate->handle_take_screenshot_count());
-    EXPECT_TRUE(ProcessWithContext(
+    EXPECT_TRUE(GetController()->Process(
         ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_CONTROL_DOWN)));
     EXPECT_EQ(1, delegate->handle_take_screenshot_count());
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
+    EXPECT_TRUE(
+        GetController()->Process(ui::Accelerator(ui::VKEY_PRINT, ui::EF_NONE)));
     EXPECT_EQ(2, delegate->handle_take_screenshot_count());
-    EXPECT_TRUE(ProcessWithContext(
-        ui::Accelerator(ui::VKEY_MEDIA_LAUNCH_APP1,
-        ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
+    EXPECT_TRUE(GetController()->Process(ui::Accelerator(
+        ui::VKEY_MEDIA_LAUNCH_APP1, ui::EF_SHIFT_DOWN | ui::EF_CONTROL_DOWN)));
     EXPECT_EQ(2, delegate->handle_take_screenshot_count());
   }
   // Brightness
   const ui::Accelerator brightness_down(ui::VKEY_BRIGHTNESS_DOWN, ui::EF_NONE);
   const ui::Accelerator brightness_up(ui::VKEY_BRIGHTNESS_UP, ui::EF_NONE);
   {
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
-    DummyBrightnessControlDelegate* delegate =
-        new DummyBrightnessControlDelegate(true);
-    GetController()->SetBrightnessControlDelegate(
-        scoped_ptr<BrightnessControlDelegate>(delegate).Pass());
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
-  }
-  EnableInternalDisplay();
-  {
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
     DummyBrightnessControlDelegate* delegate =
         new DummyBrightnessControlDelegate(false);
     GetController()->SetBrightnessControlDelegate(
         scoped_ptr<BrightnessControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_brightness_down_count());
-    EXPECT_FALSE(ProcessWithContext(brightness_down));
+    EXPECT_FALSE(GetController()->Process(brightness_down));
     EXPECT_EQ(1, delegate->handle_brightness_down_count());
     EXPECT_EQ(brightness_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_brightness_up_count());
-    EXPECT_FALSE(ProcessWithContext(brightness_up));
+    EXPECT_FALSE(GetController()->Process(brightness_up));
     EXPECT_EQ(1, delegate->handle_brightness_up_count());
     EXPECT_EQ(brightness_up, delegate->last_accelerator());
   }
@@ -1305,11 +1164,11 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
     GetController()->SetBrightnessControlDelegate(
         scoped_ptr<BrightnessControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_brightness_down_count());
-    EXPECT_TRUE(ProcessWithContext(brightness_down));
+    EXPECT_TRUE(GetController()->Process(brightness_down));
     EXPECT_EQ(1, delegate->handle_brightness_down_count());
     EXPECT_EQ(brightness_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_brightness_up_count());
-    EXPECT_TRUE(ProcessWithContext(brightness_up));
+    EXPECT_TRUE(GetController()->Process(brightness_up));
     EXPECT_EQ(1, delegate->handle_brightness_up_count());
     EXPECT_EQ(brightness_up, delegate->last_accelerator());
   }
@@ -1318,40 +1177,40 @@ TEST_F(AcceleratorControllerTest, DisallowedAtModalWindow) {
   const ui::Accelerator volume_down(ui::VKEY_VOLUME_DOWN, ui::EF_NONE);
   const ui::Accelerator volume_up(ui::VKEY_VOLUME_UP, ui::EF_NONE);
   {
-    EXPECT_TRUE(ProcessWithContext(volume_mute));
-    EXPECT_TRUE(ProcessWithContext(volume_down));
-    EXPECT_TRUE(ProcessWithContext(volume_up));
-    DummyVolumeControlDelegate* delegate =
-        new DummyVolumeControlDelegate(false);
+    EXPECT_TRUE(GetController()->Process(volume_mute));
+    EXPECT_TRUE(GetController()->Process(volume_down));
+    EXPECT_TRUE(GetController()->Process(volume_up));
+    TestVolumeControlDelegate* delegate =
+        new TestVolumeControlDelegate(false);
     ash::Shell::GetInstance()->system_tray_delegate()->SetVolumeControlDelegate(
         scoped_ptr<VolumeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_volume_mute_count());
-    EXPECT_FALSE(ProcessWithContext(volume_mute));
+    EXPECT_FALSE(GetController()->Process(volume_mute));
     EXPECT_EQ(1, delegate->handle_volume_mute_count());
     EXPECT_EQ(volume_mute, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_down_count());
-    EXPECT_FALSE(ProcessWithContext(volume_down));
+    EXPECT_FALSE(GetController()->Process(volume_down));
     EXPECT_EQ(1, delegate->handle_volume_down_count());
     EXPECT_EQ(volume_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_up_count());
-    EXPECT_FALSE(ProcessWithContext(volume_up));
+    EXPECT_FALSE(GetController()->Process(volume_up));
     EXPECT_EQ(1, delegate->handle_volume_up_count());
     EXPECT_EQ(volume_up, delegate->last_accelerator());
   }
   {
-    DummyVolumeControlDelegate* delegate = new DummyVolumeControlDelegate(true);
+    TestVolumeControlDelegate* delegate = new TestVolumeControlDelegate(true);
     ash::Shell::GetInstance()->system_tray_delegate()->SetVolumeControlDelegate(
         scoped_ptr<VolumeControlDelegate>(delegate).Pass());
     EXPECT_EQ(0, delegate->handle_volume_mute_count());
-    EXPECT_TRUE(ProcessWithContext(volume_mute));
+    EXPECT_TRUE(GetController()->Process(volume_mute));
     EXPECT_EQ(1, delegate->handle_volume_mute_count());
     EXPECT_EQ(volume_mute, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_down_count());
-    EXPECT_TRUE(ProcessWithContext(volume_down));
+    EXPECT_TRUE(GetController()->Process(volume_down));
     EXPECT_EQ(1, delegate->handle_volume_down_count());
     EXPECT_EQ(volume_down, delegate->last_accelerator());
     EXPECT_EQ(0, delegate->handle_volume_up_count());
-    EXPECT_TRUE(ProcessWithContext(volume_up));
+    EXPECT_TRUE(GetController()->Process(volume_up));
     EXPECT_EQ(1, delegate->handle_volume_up_count());
     EXPECT_EQ(volume_up, delegate->last_accelerator());
   }
@@ -1377,7 +1236,7 @@ TEST_F(AcceleratorControllerTest, DisallowedWithNoWindow) {
   for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
     delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
     GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
-    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_NONE);
+    EXPECT_NE(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_WINDOW_NEEDED);
   }
 
   // Don't alert if we have a minimized window either.
@@ -1385,7 +1244,7 @@ TEST_F(AcceleratorControllerTest, DisallowedWithNoWindow) {
   for (size_t i = 0; i < kActionsNeedingWindowLength; ++i) {
     delegate->TriggerAccessibilityAlert(A11Y_ALERT_NONE);
     GetController()->PerformAction(kActionsNeedingWindow[i], dummy);
-    EXPECT_EQ(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_NONE);
+    EXPECT_NE(delegate->GetLastAccessibilityAlert(), A11Y_ALERT_WINDOW_NEEDED);
   }
 }
 

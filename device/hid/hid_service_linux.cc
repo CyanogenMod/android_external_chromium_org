@@ -1,135 +1,89 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <libudev.h>
-#include <string>
-#include <vector>
+#include "device/hid/hid_service_linux.h"
 
-#include "base/basictypes.h"
+#include <linux/hidraw.h>
+#include <sys/ioctl.h>
+#include <stdint.h>
+
+#include <string>
+
 #include "base/bind.h"
-#include "base/callback.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/memory/scoped_vector.h"
-#include "base/platform_file.h"
+#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
-#include "base/threading/thread_restrictions.h"
-#include "device/hid/hid_connection.h"
 #include "device/hid/hid_connection_linux.h"
 #include "device/hid/hid_device_info.h"
-#include "device/hid/hid_service_linux.h"
+#include "device/hid/hid_report_descriptor.h"
+#include "device/udev_linux/udev.h"
 
 namespace device {
 
 namespace {
 
-const char kUdevName[] = "udev";
-const char kUdevActionAdd[] = "add";
-const char kUdevActionRemove[] = "remove";
 const char kHIDSubSystem[] = "hid";
-
+const char kHidrawSubsystem[] = "hidraw";
 const char kHIDID[] = "HID_ID";
 const char kHIDName[] = "HID_NAME";
 const char kHIDUnique[] = "HID_UNIQ";
 
-} // namespace
+}  // namespace
 
 HidServiceLinux::HidServiceLinux() {
-  udev_.reset(udev_new());
-  if (!udev_) {
-    LOG(ERROR) << "Failed to create udev.";
-    return;
-  }
-  monitor_.reset(udev_monitor_new_from_netlink(udev_.get(), kUdevName));
-  if (!monitor_) {
-    LOG(ERROR) << "Failed to create udev monitor.";
-    return;
-  }
-  int ret = udev_monitor_filter_add_match_subsystem_devtype(
-      monitor_.get(),
-      kHIDSubSystem,
-      NULL);
-  if (ret != 0) {
-    LOG(ERROR) << "Failed to add udev monitor filter.";
-    return;
+  DeviceMonitorLinux* monitor = DeviceMonitorLinux::GetInstance();
+  monitor->AddObserver(this);
+  monitor->Enumerate(
+      base::Bind(&HidServiceLinux::OnDeviceAdded, base::Unretained(this)));
+}
+
+scoped_refptr<HidConnection> HidServiceLinux::Connect(
+    const HidDeviceId& device_id) {
+  HidDeviceInfo device_info;
+  if (!GetDeviceInfo(device_id, &device_info))
+    return NULL;
+
+  ScopedUdevDevicePtr device =
+      DeviceMonitorLinux::GetInstance()->GetDeviceFromPath(
+          device_info.device_id);
+
+  if (device) {
+    std::string dev_node;
+    if (!FindHidrawDevNode(device.get(), &dev_node)) {
+      LOG(ERROR) << "Cannot open HID device as hidraw device.";
+      return NULL;
+    }
+    return new HidConnectionLinux(device_info, dev_node);
   }
 
-  ret = udev_monitor_enable_receiving(monitor_.get());
-  if (ret != 0) {
-    LOG(ERROR) << "Failed to start udev monitoring.";
-    return;
-  }
-
-  monitor_fd_ = udev_monitor_get_fd(monitor_.get());
-  if (monitor_fd_ <= 0) {
-    LOG(ERROR) << "Failed to start udev monitoring.";
-    return;
-  }
-
-  if (!base::MessageLoopForIO::current()->WatchFileDescriptor(
-      monitor_fd_,
-      true,
-      base::MessageLoopForIO::WATCH_READ,
-      &monitor_watcher_,
-      this))
-    return;
-
-  Enumerate();
+  return NULL;
 }
 
 HidServiceLinux::~HidServiceLinux() {
-  monitor_watcher_.StopWatchingFileDescriptor();
-  close(monitor_fd_);
+  if (DeviceMonitorLinux::HasInstance())
+    DeviceMonitorLinux::GetInstance()->RemoveObserver(this);
 }
 
-void HidServiceLinux::Enumerate() {
-  scoped_ptr<udev_enumerate, UdevEnumerateDeleter> enumerate(
-      udev_enumerate_new(udev_.get()));
-
-  if (!enumerate) {
-    LOG(ERROR) << "Failed to enumerate devices.";
-    return;
-  }
-
-  if (udev_enumerate_add_match_subsystem(enumerate.get(), kHIDSubSystem)) {
-    LOG(ERROR) << "Failed to enumerate devices.";
-    return;
-  }
-
-  if (udev_enumerate_scan_devices(enumerate.get()) != 0) {
-    LOG(ERROR) << "Failed to enumerate devices.";
-    return;
-  }
-
-  // This list is managed by |enumerate|.
-  udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate.get());
-  for (udev_list_entry* i = devices; i != NULL;
-      i = udev_list_entry_get_next(i)) {
-    ScopedUdevDevicePtr hid_dev(
-        udev_device_new_from_syspath(udev_.get(), udev_list_entry_get_name(i)));
-    if (hid_dev) {
-      PlatformDeviceAdd(hid_dev.get());
-    }
-  }
-
-  initialized_ = true;
-}
-
-void HidServiceLinux::PlatformDeviceAdd(udev_device* device) {
+void HidServiceLinux::OnDeviceAdded(udev_device* device) {
   if (!device)
     return;
 
-  const char* device_id = udev_device_get_syspath(device);
-  if (!device_id)
+  const char* device_path = udev_device_get_syspath(device);
+  if (!device_path)
+    return;
+  const char* subsystem = udev_device_get_subsystem(device);
+  if (!subsystem || strcmp(subsystem, kHIDSubSystem) != 0)
     return;
 
-
   HidDeviceInfo device_info;
-  device_info.device_id = device_id;
+  device_info.device_id = device_path;
 
-  uint32 int_property = 0;
+  uint32_t int_property = 0;
   const char* str_property = NULL;
 
   const char* hid_id = udev_device_get_property_value(device, kHIDID);
@@ -158,54 +112,91 @@ void HidServiceLinux::PlatformDeviceAdd(udev_device* device) {
   if (str_property != NULL)
     device_info.product_name = str_property;
 
+  std::string dev_node;
+  if (!FindHidrawDevNode(device, &dev_node)) {
+    LOG(ERROR) << "Cannot find device node for HID device.";
+    return;
+  }
+
+  int flags = base::File::FLAG_OPEN | base::File::FLAG_READ;
+
+  base::File device_file(base::FilePath(dev_node), flags);
+  if (!device_file.IsValid()) {
+    LOG(ERROR) << "Cannot open '" << dev_node << "': "
+        << base::File::ErrorToString(device_file.error_details());
+    return;
+  }
+
+  int desc_size = 0;
+  int res = ioctl(device_file.GetPlatformFile(), HIDIOCGRDESCSIZE, &desc_size);
+  if (res < 0) {
+    PLOG(ERROR) << "Failed to get report descriptor size";
+    device_file.Close();
+    return;
+  }
+
+  hidraw_report_descriptor rpt_desc;
+  rpt_desc.size = desc_size;
+
+  res = ioctl(device_file.GetPlatformFile(), HIDIOCGRDESC, &rpt_desc);
+  if (res < 0) {
+    PLOG(ERROR) << "Failed to get report descriptor";
+    device_file.Close();
+    return;
+  }
+
+  device_file.Close();
+
+  HidReportDescriptor report_descriptor(rpt_desc.value, rpt_desc.size);
+  report_descriptor.GetTopLevelCollections(&device_info.usages);
+
   AddDevice(device_info);
 }
 
-void HidServiceLinux::PlatformDeviceRemove(udev_device* raw_dev) {
-  // The returned the device is not referenced.
-  udev_device* hid_dev =
-      udev_device_get_parent_with_subsystem_devtype(raw_dev, "hid", NULL);
-
-  if (!hid_dev)
-    return;
-
-  const char* device_id = NULL;
-  device_id = udev_device_get_syspath(hid_dev);
-  if (device_id == NULL)
-    return;
-
-  RemoveDevice(device_id);
+void HidServiceLinux::OnDeviceRemoved(udev_device* device) {
+  const char* device_path = udev_device_get_syspath(device);;
+  if (device_path)
+    RemoveDevice(device_path);
 }
 
-scoped_refptr<HidConnection> HidServiceLinux::Connect(std::string device_id) {
-  if (!ContainsKey(devices_, device_id))
-    return NULL;
-  ScopedUdevDevicePtr hid_device(
-      udev_device_new_from_syspath(udev_.get(), device_id.c_str()));
-  if (hid_device) {
-    scoped_refptr<HidConnectionLinux> connection =
-        new HidConnectionLinux(devices_[device_id], hid_device.Pass());
-    if (connection->initialized())
-      return connection;
+bool HidServiceLinux::FindHidrawDevNode(udev_device* parent,
+                                        std::string* result) {
+  udev* udev = udev_device_get_udev(parent);
+  if (!udev) {
+    return false;
   }
-  return NULL;
-}
-
-void HidServiceLinux::OnFileCanReadWithoutBlocking(int fd) {
-  DCHECK_EQ(monitor_fd_, fd);
-
-  ScopedUdevDevicePtr dev(udev_monitor_receive_device(monitor_.get()));
-  if (!dev)
-    return;
-
-  std::string action(udev_device_get_action(dev.get()));
-  if (action == kUdevActionAdd) {
-    PlatformDeviceAdd(dev.get());
-  } else if (action == kUdevActionRemove) {
-    PlatformDeviceRemove(dev.get());
+  ScopedUdevEnumeratePtr enumerate(udev_enumerate_new(udev));
+  if (!enumerate) {
+    return false;
   }
+  if (udev_enumerate_add_match_subsystem(enumerate.get(), kHidrawSubsystem)) {
+    return false;
+  }
+  if (udev_enumerate_scan_devices(enumerate.get())) {
+    return false;
+  }
+  std::string parent_path(udev_device_get_devpath(parent));
+  if (parent_path.length() == 0 || *parent_path.rbegin() != '/')
+    parent_path += '/';
+  udev_list_entry* devices = udev_enumerate_get_list_entry(enumerate.get());
+  for (udev_list_entry* i = devices; i != NULL;
+       i = udev_list_entry_get_next(i)) {
+    ScopedUdevDevicePtr hid_dev(
+        udev_device_new_from_syspath(udev, udev_list_entry_get_name(i)));
+    const char* raw_path = udev_device_get_devnode(hid_dev.get());
+    std::string device_path = udev_device_get_devpath(hid_dev.get());
+    if (raw_path &&
+        !device_path.compare(0, parent_path.length(), parent_path)) {
+      std::string sub_path = device_path.substr(parent_path.length());
+      if (sub_path.substr(0, sizeof(kHidrawSubsystem) - 1) ==
+          kHidrawSubsystem) {
+        *result = raw_path;
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
-void HidServiceLinux::OnFileCanWriteWithoutBlocking(int fd) {}
-
-} // namespace dev
+}  // namespace device

@@ -31,11 +31,10 @@ class SharedWorkerDevToolsAgent {
   void SaveDevToolsAgentState(const blink::WebString& state);
 
  private:
-  void OnAttach();
-  void OnReattach(const std::string&);
+  void OnAttach(const std::string& host_id);
+  void OnReattach(const std::string& host_id, const std::string& state);
   void OnDetach();
   void OnDispatchOnInspectorBackend(const std::string& message);
-  void OnPauseWorkerContextOnStart();
   void OnResumeWorkerContext();
 
   bool Send(IPC::Message* message);

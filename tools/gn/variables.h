@@ -123,29 +123,17 @@ extern const char kDirectDependentConfigs[];
 extern const char kDirectDependentConfigs_HelpShort[];
 extern const char kDirectDependentConfigs_Help[];
 
-extern const char kExternal[];
-extern const char kExternal_HelpShort[];
-extern const char kExternal_Help[];
-
 extern const char kForwardDependentConfigsFrom[];
 extern const char kForwardDependentConfigsFrom_HelpShort[];
 extern const char kForwardDependentConfigsFrom_Help[];
 
-extern const char kGypFile[];
-extern const char kGypFile_HelpShort[];
-extern const char kGypFile_Help[];
-
-extern const char kGypHeader[];
-extern const char kGypHeader_HelpShort[];
-extern const char kGypHeader_Help[];
-
-extern const char kHardDep[];
-extern const char kHardDep_HelpShort[];
-extern const char kHardDep_Help[];
-
 extern const char kIncludeDirs[];
 extern const char kIncludeDirs_HelpShort[];
 extern const char kIncludeDirs_Help[];
+
+extern const char kInputs[];
+extern const char kInputs_HelpShort[];
+extern const char kInputs_Help[];
 
 extern const char kLdflags[];
 extern const char kLdflags_HelpShort[];
@@ -159,6 +147,10 @@ extern const char kLibs[];
 extern const char kLibs_HelpShort[];
 extern const char kLibs_Help[];
 
+extern const char kOutputExtension[];
+extern const char kOutputExtension_HelpShort[];
+extern const char kOutputExtension_Help[];
+
 extern const char kOutputName[];
 extern const char kOutputName_HelpShort[];
 extern const char kOutputName_Help[];
@@ -167,17 +159,21 @@ extern const char kOutputs[];
 extern const char kOutputs_HelpShort[];
 extern const char kOutputs_Help[];
 
+extern const char kPublic[];
+extern const char kPublic_HelpShort[];
+extern const char kPublic_Help[];
+
 extern const char kScript[];
 extern const char kScript_HelpShort[];
 extern const char kScript_Help[];
 
-extern const char kSourcePrereqs[];
-extern const char kSourcePrereqs_HelpShort[];
-extern const char kSourcePrereqs_Help[];
-
 extern const char kSources[];
 extern const char kSources_HelpShort[];
 extern const char kSources_Help[];
+
+extern const char kVisibility[];
+extern const char kVisibility_HelpShort[];
+extern const char kVisibility_Help[];
 
 // -----------------------------------------------------------------------------
 

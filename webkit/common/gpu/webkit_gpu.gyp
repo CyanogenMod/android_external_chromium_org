@@ -10,6 +10,7 @@
     ['OS != "ios"', {
       'targets': [
         {
+          # GN version: //webkit/common/gpu
           'target_name': 'webkit_gpu',
           'type': '<(component)',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -21,6 +22,7 @@
             '<(DEPTH)/gpu/gpu.gyp:command_buffer_service',
             '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
             '<(DEPTH)/gpu/gpu.gyp:gles2_implementation',
+            '<(DEPTH)/gpu/gpu.gyp:gl_in_process_context',
             '<(DEPTH)/gpu/skia_bindings/skia_bindings.gyp:gpu_skia_bindings',
             '<(DEPTH)/skia/skia.gyp:skia',
             '<(DEPTH)/third_party/WebKit/public/blink.gyp:blink_minimal',
@@ -36,6 +38,8 @@
             'context_provider_web_context.h',
             'grcontext_for_webgraphicscontext3d.cc',
             'grcontext_for_webgraphicscontext3d.h',
+            'webgraphicscontext3d_impl.cc',
+            'webgraphicscontext3d_impl.h',
             'webgraphicscontext3d_in_process_command_buffer_impl.cc',
             'webgraphicscontext3d_in_process_command_buffer_impl.h',
           ],

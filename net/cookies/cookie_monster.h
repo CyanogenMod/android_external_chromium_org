@@ -187,11 +187,6 @@ class NET_EXPORT CookieMonster : public CookieStore {
       const CookieOptions& options,
       const GetCookieListCallback& callback);
 
-  // Invokes GetAllCookiesForURLWithOptions with options set to include HTTP
-  // only cookies.
-  void GetAllCookiesForURLAsync(const GURL& url,
-                                const GetCookieListCallback& callback);
-
   // Deletes all of the cookies.
   void DeleteAllAsync(const DeleteCallback& callback);
 
@@ -213,7 +208,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // Resets the list of cookieable schemes to the supplied schemes.
   // If this this method is called, it must be called before first use of
   // the instance (i.e. as part of the instance initialization process).
-  void SetCookieableSchemes(const char* schemes[], size_t num_schemes);
+  void SetCookieableSchemes(const char* const schemes[], size_t num_schemes);
 
   // Resets the list of cookieable schemes to kDefaultCookieableSchemes with or
   // without 'file' being included.
@@ -256,6 +251,12 @@ class NET_EXPORT CookieMonster : public CookieStore {
       const GURL& url,
       const CookieOptions& options,
       const GetCookiesCallback& callback) OVERRIDE;
+
+  // Invokes GetAllCookiesForURLWithOptions with options set to include HTTP
+  // only cookies.
+  virtual void GetAllCookiesForURLAsync(
+      const GURL& url,
+      const GetCookieListCallback& callback) OVERRIDE;
 
   // Deletes all cookies with that might apply to |url| that has |cookie_name|.
   virtual void DeleteCookieAsync(
@@ -303,8 +304,21 @@ class NET_EXPORT CookieMonster : public CookieStore {
   bool IsCookieableScheme(const std::string& scheme);
 
   // The default list of schemes the cookie monster can handle.
-  static const char* kDefaultCookieableSchemes[];
+  static const char* const kDefaultCookieableSchemes[];
   static const int kDefaultCookieableSchemesCount;
+
+  // Copies all keys for the given |key| to another cookie monster |other|.
+  // Both |other| and |this| must be loaded for this operation to succeed.
+  // Furthermore, there may not be any cookies stored in |other| for |key|.
+  // Returns false if any of these conditions is not met.
+  bool CopyCookiesForKeyToOtherCookieMonster(std::string key,
+                                             CookieMonster* other);
+
+  // Find the key (for lookup in cookies_) based on the given domain.
+  // See comment on keys before the CookieMap typedef.
+  std::string GetKey(const std::string& domain) const;
+
+  bool loaded();
 
  private:
   // For queueing the cookie monster calls.
@@ -454,6 +468,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
         InitStore();
       } else {
         loaded_ = true;
+        ReportLoaded();
       }
       initialized_ = true;
     }
@@ -462,6 +477,9 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // Initializes the backing store and reads existing cookies from it.
   // Should only be called by InitIfNecessary().
   void InitStore();
+
+  // Reports to the delegate that the cookie monster was loaded.
+  void ReportLoaded();
 
   // Stores cookies loaded from the backing store and invokes any deferred
   // calls. |beginning_time| should be the moment PersistentCookieStore::Load
@@ -574,10 +592,6 @@ class NET_EXPORT CookieMonster : public CookieStore {
                                 DeletionCause cause,
                                 CookieItVector::iterator cookie_its_begin,
                                 CookieItVector::iterator cookie_its_end);
-
-  // Find the key (for lookup in cookies_) based on the given domain.
-  // See comment on keys before the CookieMap typedef.
-  std::string GetKey(const std::string& domain) const;
 
   bool HasCookieableScheme(const GURL& url);
 
@@ -719,6 +733,9 @@ class NET_EXPORT CookieMonsterDelegate
   virtual void OnCookieChanged(const CanonicalCookie& cookie,
                                bool removed,
                                ChangeCause cause) = 0;
+  // Indicates that the cookie store has fully loaded.
+  virtual void OnLoaded() = 0;
+
  protected:
   friend class base::RefCountedThreadSafe<CookieMonsterDelegate>;
   virtual ~CookieMonsterDelegate() {}

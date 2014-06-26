@@ -81,7 +81,7 @@ class ExtensionRendererState::TabObserver
 };
 
 ExtensionRendererState::TabObserver::TabObserver() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   registrar_.Add(this,
                  content::NOTIFICATION_WEB_CONTENTS_RENDER_VIEW_HOST_CREATED,
                  content::NotificationService::AllBrowserContextsAndSources());
@@ -92,7 +92,7 @@ ExtensionRendererState::TabObserver::TabObserver() {
 }
 
 ExtensionRendererState::TabObserver::~TabObserver() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 }
 
 void ExtensionRendererState::TabObserver::Observe(
@@ -189,21 +189,21 @@ void ExtensionRendererState::Shutdown() {
 
 void ExtensionRendererState::SetTabAndWindowId(
     int render_process_host_id, int routing_id, int tab_id, int window_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   RenderId render_id(render_process_host_id, routing_id);
   map_[render_id] = TabAndWindowId(tab_id, window_id);
 }
 
 void ExtensionRendererState::ClearTabAndWindowId(
     int render_process_host_id, int routing_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   RenderId render_id(render_process_host_id, routing_id);
   map_.erase(render_id);
 }
 
 bool ExtensionRendererState::GetTabAndWindowId(
     const  content::ResourceRequestInfo* info, int* tab_id, int* window_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   int render_process_id;
   if (info->GetProcessType() == content::PROCESS_TYPE_PLUGIN) {
     render_process_id = info->GetOriginPID();
@@ -222,38 +222,62 @@ bool ExtensionRendererState::GetTabAndWindowId(
 }
 
 bool ExtensionRendererState::IsWebViewRenderer(int render_process_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  for (WebViewInfoMap::iterator i = webview_info_map_.begin();
-       i != webview_info_map_.end(); ++i) {
-    if (i->first.first == render_process_id)
-      return true;
-  }
-  return false;
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  return webview_partition_id_map_.find(render_process_id) !=
+         webview_partition_id_map_.end();
 }
 
 void ExtensionRendererState::AddWebView(int guest_process_id,
                                         int guest_routing_id,
                                         const WebViewInfo& webview_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   RenderId render_id(guest_process_id, guest_routing_id);
   webview_info_map_[render_id] = webview_info;
+  WebViewPartitionIDMap::iterator iter =
+      webview_partition_id_map_.find(guest_process_id);
+  if (iter != webview_partition_id_map_.end()) {
+    ++iter->second.web_view_count;
+    return;
+  }
+  WebViewPartitionInfo partition_info(1, webview_info.partition_id);
+  webview_partition_id_map_[guest_process_id] = partition_info;
 }
 
 void ExtensionRendererState::RemoveWebView(int guest_process_id,
                                            int guest_routing_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   RenderId render_id(guest_process_id, guest_routing_id);
   webview_info_map_.erase(render_id);
+  WebViewPartitionIDMap::iterator iter =
+      webview_partition_id_map_.find(guest_process_id);
+  if (iter != webview_partition_id_map_.end() &&
+      iter->second.web_view_count > 1) {
+    --iter->second.web_view_count;
+    return;
+  }
+  webview_partition_id_map_.erase(guest_process_id);
 }
 
 bool ExtensionRendererState::GetWebViewInfo(int guest_process_id,
                                             int guest_routing_id,
                                             WebViewInfo* webview_info) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   RenderId render_id(guest_process_id, guest_routing_id);
   WebViewInfoMap::iterator iter = webview_info_map_.find(render_id);
   if (iter != webview_info_map_.end()) {
     *webview_info = iter->second;
+    return true;
+  }
+  return false;
+}
+
+bool ExtensionRendererState::GetWebViewPartitionID(int guest_process_id,
+                                                   std::string* partition_id) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  WebViewPartitionIDMap::iterator iter =
+      webview_partition_id_map_.find(guest_process_id);
+  if (iter != webview_partition_id_map_.end()) {
+    *partition_id = iter->second.partition_id;
     return true;
   }
   return false;

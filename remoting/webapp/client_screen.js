@@ -71,44 +71,19 @@ remoting.disconnect = function() {
   } else {
     remoting.setMode(remoting.AppMode.CLIENT_SESSION_FINISHED_ME2ME);
   }
-  remoting.clientSession.disconnect(true);
+  remoting.clientSession.disconnect(remoting.Error.NONE);
   remoting.clientSession = null;
   console.log('Disconnected.');
 };
 
 /**
- * Sends a Ctrl-Alt-Del sequence to the remoting client.
- *
- * @return {void} Nothing.
- */
-remoting.sendCtrlAltDel = function() {
-  if (remoting.clientSession) {
-    console.log('Sending Ctrl-Alt-Del.');
-    remoting.clientSession.sendCtrlAltDel();
-  }
-};
-
-/**
- * Sends a Print Screen keypress to the remoting client.
- *
- * @return {void} Nothing.
- */
-remoting.sendPrintScreen = function() {
-  if (remoting.clientSession) {
-    console.log('Sending Print Screen.');
-    remoting.clientSession.sendPrintScreen();
-  }
-};
-
-/**
  * Callback function called when the state of the client plugin changes. The
- * current state is available via the |state| member variable.
+ * current and previous states are available via the |state| member variable.
  *
- * @param {number} oldState The previous state of the plugin.
- * @param {number} newState The current state of the plugin.
+ * @param {remoting.ClientSession.StateEvent} state
  */
-function onClientStateChange_(oldState, newState) {
-  switch (newState) {
+function onClientStateChange_(state) {
+  switch (state.current) {
     case remoting.ClientSession.State.CLOSED:
       console.log('Connection closed by host');
       if (remoting.clientSession.getMode() ==
@@ -129,14 +104,16 @@ function onClientStateChange_(oldState, newState) {
       break;
 
     default:
-      console.error('Unexpected client plugin state: ' + newState);
+      console.error('Unexpected client plugin state: ' + state.current);
       // This should only happen if the web-app and client plugin get out of
       // sync, so MISSING_PLUGIN is a suitable error.
       showConnectError_(remoting.Error.MISSING_PLUGIN);
       break;
   }
-  remoting.clientSession.disconnect(false);
-  remoting.clientSession.removePlugin();
+
+  remoting.clientSession.removeEventListener('stateChanged',
+                                             onClientStateChange_);
+  remoting.clientSession.cleanup();
   remoting.clientSession = null;
 }
 
@@ -332,10 +309,8 @@ remoting.connectMe2MeHostVersionAcknowledged_ = function(host) {
 /** @param {remoting.ClientSession} clientSession */
 remoting.onConnected = function(clientSession) {
   remoting.clientSession = clientSession;
-  remoting.clientSession.setOnStateChange(onClientStateChange_);
+  remoting.clientSession.addEventListener('stateChanged', onClientStateChange_);
   setConnectionInterruptedButtonsText_();
-  var connectedTo = document.getElementById('connected-to');
-  connectedTo.innerText = remoting.connector.getHostDisplayName();
   document.getElementById('access-code-entry').value = '';
   remoting.setMode(remoting.AppMode.IN_SESSION);
   remoting.toolbar.center();
@@ -394,7 +369,7 @@ remoting.onExtensionMessage = function(type, data) {
 remoting.ensureSessionConnector_ = function() {
   if (!remoting.connector) {
     remoting.connector = new remoting.SessionConnector(
-        document.getElementById('client-plugin-container'),
+        document.getElementById('video-container'),
         remoting.onConnected,
         showConnectError_, remoting.onExtensionMessage);
   }

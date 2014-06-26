@@ -5,11 +5,11 @@
 #include "content/shell/browser/shell_web_contents_view_delegate.h"
 
 #include "base/command_line.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/common/context_menu_params.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
@@ -174,14 +174,14 @@ void ShellWebContentsViewDelegate::ShowContextMenu(
 #else
   gfx::Point screen_point(params.x, params.y);
   POINT point = screen_point.ToPOINT();
-  ClientToScreen(web_contents_->GetView()->GetNativeView(), &point);
+  ClientToScreen(web_contents_->GetNativeView(), &point);
 
   int selection =
       TrackPopupMenu(sub_menu,
                      TPM_LEFTALIGN | TPM_RIGHTBUTTON | TPM_RETURNCMD,
                      point.x, point.y,
                      0,
-                     web_contents_->GetView()->GetContentNativeView(),
+                     web_contents_->GetContentNativeView(),
                      NULL);
 
   MenuItemSelected(selection);
@@ -192,16 +192,16 @@ void ShellWebContentsViewDelegate::ShowContextMenu(
 void ShellWebContentsViewDelegate::MenuItemSelected(int selection) {
   switch (selection) {
     case ShellContextMenuItemCutId:
-      web_contents_->GetRenderViewHost()->Cut();
+      web_contents_->Cut();
       break;
     case ShellContextMenuItemCopyId:
-      web_contents_->GetRenderViewHost()->Copy();
+      web_contents_->Copy();
       break;
     case ShellContextMenuItemPasteId:
-      web_contents_->GetRenderViewHost()->Paste();
+      web_contents_->Paste();
       break;
     case ShellContextMenuItemDeleteId:
-      web_contents_->GetRenderViewHost()->Delete();
+      web_contents_->Delete();
       break;
     case ShellContextMenuItemOpenLinkId: {
       ShellBrowserContext* browser_context =
@@ -215,15 +215,15 @@ void ShellWebContentsViewDelegate::MenuItemSelected(int selection) {
     }
     case ShellContextMenuItemBackId:
       web_contents_->GetController().GoToOffset(-1);
-      web_contents_->GetView()->Focus();
+      web_contents_->Focus();
       break;
     case ShellContextMenuItemForwardId:
       web_contents_->GetController().GoToOffset(1);
-      web_contents_->GetView()->Focus();
+      web_contents_->Focus();
       break;
     case ShellContextMenuItemReloadId:
       web_contents_->GetController().Reload(false);
-      web_contents_->GetView()->Focus();
+      web_contents_->Focus();
       break;
     case ShellContextMenuItemInspectId: {
       ShellDevToolsFrontend::Show(web_contents_);

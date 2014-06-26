@@ -5,43 +5,36 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_PAGE_ACTION_CONTROLLER_H_
 #define CHROME_BROWSER_EXTENSIONS_PAGE_ACTION_CONTROLLER_H_
 
-#include <set>
 #include <string>
 
-#include "base/observer_list.h"
 #include "chrome/browser/extensions/location_bar_controller.h"
-#include "content/public/browser/web_contents_observer.h"
 
-class ExtensionService;
 class Profile;
 
 namespace extensions {
+class ExtensionRegistry;
 
-// A LocationBarController which populates the location bar with icons based
-// on the page_action extension API.
-class PageActionController : public LocationBarController,
-                             public content::WebContentsObserver {
+// A LocationBarControllerProvider which populates the location bar with icons
+// based on the page_action extension API.
+// TODO(rdevlin.cronin): This isn't really a controller.
+class PageActionController : public LocationBarController::ActionProvider {
  public:
   explicit PageActionController(content::WebContents* web_contents);
   virtual ~PageActionController();
 
-  // LocationBarController implementation.
-  virtual std::vector<ExtensionAction*> GetCurrentActions() const OVERRIDE;
-  virtual Action OnClicked(const std::string& extension_id,
-                           int mouse_button) OVERRIDE;
-  virtual void NotifyChange() OVERRIDE;
-
-  // content::WebContentsObserver implementation.
-  virtual void DidNavigateMainFrame(
-      const content::LoadCommittedDetails& details,
-      const content::FrameNavigateParams& params) OVERRIDE;
+  // LocationBarController::Provider implementation.
+  virtual ExtensionAction* GetActionForExtension(const Extension* extension)
+      OVERRIDE;
+  virtual LocationBarController::Action OnClicked(
+      const Extension* extension) OVERRIDE;
+  virtual void OnNavigated() OVERRIDE;
 
  private:
-  // Gets the Profile for the web contents.
-  Profile* profile() const;
+  // Returns the associated Profile.
+  Profile* GetProfile();
 
-  // Gets the ExtensionService for the web contents.
-  ExtensionService* GetExtensionService() const;
+  // The associated WebContents.
+  content::WebContents* web_contents_;
 
   DISALLOW_COPY_AND_ASSIGN(PageActionController);
 };

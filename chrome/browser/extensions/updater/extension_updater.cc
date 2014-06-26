@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <set>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/logging.h"
@@ -20,6 +19,7 @@
 #include "chrome/browser/extensions/api/module/module.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/updater/extension_downloader.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
@@ -28,8 +28,8 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "crypto/sha2.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
-#include "extensions/browser/pending_extension_manager.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -52,7 +52,7 @@ namespace {
 const int kStartupWaitSeconds = 60 * 5;
 
 // For sanity checking on update frequency - enforced in release mode only.
-#ifdef NDEBUG
+#if defined(NDEBUG)
 const int kMinUpdateFrequencySeconds = 30;
 #endif
 const int kMaxUpdateFrequencySeconds = 60 * 60 * 24 * 7;  // 7 days
@@ -102,16 +102,14 @@ ExtensionUpdater::FetchedCRXFile::FetchedCRXFile(
     const std::string& i,
     const base::FilePath& p,
     bool file_ownership_passed,
-    const GURL& u,
     const std::set<int>& request_ids)
     : extension_id(i),
       path(p),
       file_ownership_passed(file_ownership_passed),
-      download_url(u),
       request_ids(request_ids) {}
 
 ExtensionUpdater::FetchedCRXFile::FetchedCRXFile()
-    : path(), file_ownership_passed(true), download_url() {}
+    : path(), file_ownership_passed(true) {}
 
 ExtensionUpdater::FetchedCRXFile::~FetchedCRXFile() {}
 
@@ -143,18 +141,18 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
       will_check_soon_(false), extension_prefs_(extension_prefs),
       prefs_(prefs), profile_(profile),
       next_request_id_(0),
+      extension_registry_observer_(this),
       crx_install_is_running_(false),
       extension_cache_(cache) {
   DCHECK_GE(frequency_seconds_, 5);
   DCHECK_LE(frequency_seconds_, kMaxUpdateFrequencySeconds);
-#ifdef NDEBUG
+#if defined(NDEBUG)
   // In Release mode we enforce that update checks don't happen too often.
   frequency_seconds_ = std::max(frequency_seconds_, kMinUpdateFrequencySeconds);
 #endif
   frequency_seconds_ = std::min(frequency_seconds_, kMaxUpdateFrequencySeconds);
 
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
-                 content::NotificationService::AllBrowserContextsAndSources());
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile));
 }
 
 ExtensionUpdater::~ExtensionUpdater() {
@@ -193,12 +191,13 @@ TimeDelta ExtensionUpdater::DetermineFirstCheckDelay() {
                                           kStartupWaitSeconds * 8));
   }
 
-  // Read the persisted next check time, and use that if it isn't too soon.
-  // Otherwise pick something random.
+  // Read the persisted next check time, and use that if it isn't too soon
+  // or too late. Otherwise pick something random.
   Time saved_next = Time::FromInternalValue(prefs_->GetInt64(
       pref_names::kNextUpdateCheck));
   Time earliest = now + TimeDelta::FromSeconds(kStartupWaitSeconds);
-  if (saved_next >= earliest) {
+  Time latest = now + TimeDelta::FromSeconds(frequency_seconds_);
+  if (saved_next >= earliest && saved_next <= latest) {
     return saved_next - now;
   } else {
     return TimeDelta::FromSeconds(RandInt(kStartupWaitSeconds,
@@ -484,8 +483,7 @@ void ExtensionUpdater::OnExtensionDownloadFinished(
 
   VLOG(2) << download_url << " written to " << path.value();
 
-  FetchedCRXFile fetched(id, path, file_ownership_passed, download_url,
-                         request_ids);
+  FetchedCRXFile fetched(id, path, file_ownership_passed, request_ids);
   fetched_crx_files_.push(fetched);
 
   // MaybeInstallCRXFile() removes extensions from |in_progress_ids_| after
@@ -559,7 +557,6 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
     if (service_->UpdateExtension(crx_file.extension_id,
                                   crx_file.path,
                                   crx_file.file_ownership_passed,
-                                  crx_file.download_url,
                                   &installer)) {
       crx_install_is_running_ = true;
       current_crx_file_ = crx_file;
@@ -568,7 +565,7 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
           it != crx_file.request_ids.end(); ++it) {
         InProgressCheck& request = requests_in_progress_[*it];
         if (request.install_immediately) {
-          installer->set_install_wait_for_idle(false);
+          installer->set_install_immediately(true);
           break;
         }
       }
@@ -599,36 +596,32 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
 void ExtensionUpdater::Observe(int type,
                                const content::NotificationSource& source,
                                const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_CRX_INSTALLER_DONE: {
-      // No need to listen for CRX_INSTALLER_DONE anymore.
-      registrar_.Remove(this,
-                        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
-                        source);
-      crx_install_is_running_ = false;
+  DCHECK_EQ(type, chrome::NOTIFICATION_CRX_INSTALLER_DONE);
 
-      const FetchedCRXFile& crx_file = current_crx_file_;
-      for (std::set<int>::const_iterator it = crx_file.request_ids.begin();
-          it != crx_file.request_ids.end(); ++it) {
-        InProgressCheck& request = requests_in_progress_[*it];
-        request.in_progress_ids_.remove(crx_file.extension_id);
-        NotifyIfFinished(*it);
-      }
+  registrar_.Remove(this,
+                    chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+                    source);
+  crx_install_is_running_ = false;
 
-      // If any files are available to update, start one.
-      MaybeInstallCRXFile();
-      break;
-    }
-    case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
-      const Extension* extension =
-          content::Details<const InstalledExtensionInfo>(details)->extension;
-      if (extension)
-        throttle_info_.erase(extension->id());
-      break;
-    }
-    default:
-      NOTREACHED();
+  const FetchedCRXFile& crx_file = current_crx_file_;
+  for (std::set<int>::const_iterator it = crx_file.request_ids.begin();
+      it != crx_file.request_ids.end(); ++it) {
+    InProgressCheck& request = requests_in_progress_[*it];
+    request.in_progress_ids_.remove(crx_file.extension_id);
+    NotifyIfFinished(*it);
   }
+
+  // If any files are available to update, start one.
+  MaybeInstallCRXFile();
+}
+
+void ExtensionUpdater::OnExtensionWillBeInstalled(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    bool is_update,
+    bool from_ephemeral,
+    const std::string& old_name) {
+  throttle_info_.erase(extension->id());
 }
 
 void ExtensionUpdater::NotifyStarted() {

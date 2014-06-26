@@ -4,8 +4,9 @@
 
 #include "android_webview/native/aw_dev_tools_server.h"
 
-#include "android_webview/browser/in_process_view_renderer.h"
+#include "android_webview/native/aw_contents.h"
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -16,9 +17,9 @@
 #include "content/public/browser/devtools_http_handler_delegate.h"
 #include "content/public/browser/devtools_target.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/user_agent.h"
 #include "jni/AwDevToolsServer_jni.h"
 #include "net/socket/unix_domain_socket_posix.h"
-#include "webkit/common/user_agent/user_agent_util.h"
 
 using content::DevToolsAgentHost;
 using content::RenderViewHost;
@@ -39,11 +40,12 @@ class Target : public content::DevToolsTarget {
   explicit Target(WebContents* web_contents);
 
   virtual std::string GetId() const OVERRIDE { return id_; }
+  virtual std::string GetParentId() const OVERRIDE { return std::string(); }
   virtual std::string GetType() const OVERRIDE { return kTargetTypePage; }
   virtual std::string GetTitle() const OVERRIDE { return title_; }
   virtual std::string GetDescription() const OVERRIDE { return description_; }
-  virtual GURL GetUrl() const OVERRIDE { return url_; }
-  virtual GURL GetFaviconUrl() const OVERRIDE { return GURL(); }
+  virtual GURL GetURL() const OVERRIDE { return url_; }
+  virtual GURL GetFaviconURL() const OVERRIDE { return GURL(); }
   virtual base::TimeTicks GetLastActivityTime() const OVERRIDE {
     return last_activity_time_;
   }
@@ -137,8 +139,9 @@ std::string AwDevToolsServerDelegate::GetDiscoveryPageHTML() {
 }
 
 std::string GetViewDescription(WebContents* web_contents) {
-  android_webview::BrowserViewRenderer* bvr
-      = android_webview::InProcessViewRenderer::FromWebContents(web_contents);
+  const android_webview::BrowserViewRenderer* bvr =
+      android_webview::AwContents::FromWebContents(web_contents)
+          ->GetBrowserViewRenderer();
   if (!bvr) return "";
   base::DictionaryValue description;
   description.SetBoolean("attached", bvr->IsAttachedToWindow());
@@ -177,9 +180,9 @@ void AwDevToolsServer::Start() {
           base::StringPrintf(kSocketNameFormat, getpid()),
           "",
           base::Bind(&content::CanUserConnectToDevTools)),
-      base::StringPrintf(kFrontEndURL,
-                         webkit_glue::GetWebKitRevision().c_str()),
-      new AwDevToolsServerDelegate());
+      base::StringPrintf(kFrontEndURL, content::GetWebKitRevision().c_str()),
+      new AwDevToolsServerDelegate(),
+      base::FilePath());
 }
 
 void AwDevToolsServer::Stop() {
@@ -199,19 +202,19 @@ bool RegisterAwDevToolsServer(JNIEnv* env) {
   return RegisterNativesImpl(env);
 }
 
-static jint InitRemoteDebugging(JNIEnv* env,
+static jlong InitRemoteDebugging(JNIEnv* env,
                                 jobject obj) {
   AwDevToolsServer* server = new AwDevToolsServer();
-  return reinterpret_cast<jint>(server);
+  return reinterpret_cast<intptr_t>(server);
 }
 
-static void DestroyRemoteDebugging(JNIEnv* env, jobject obj, jint server) {
+static void DestroyRemoteDebugging(JNIEnv* env, jobject obj, jlong server) {
   delete reinterpret_cast<AwDevToolsServer*>(server);
 }
 
 static void SetRemoteDebuggingEnabled(JNIEnv* env,
                                       jobject obj,
-                                      jint server,
+                                      jlong server,
                                       jboolean enabled) {
   AwDevToolsServer* devtools_server =
       reinterpret_cast<AwDevToolsServer*>(server);

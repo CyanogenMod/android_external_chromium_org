@@ -10,32 +10,22 @@ class InspectorRuntime(object):
         'Runtime',
         self._OnNotification,
         self._OnClose)
+    self._contexts_enabled = False
+    self._max_context_id = None
 
   def _OnNotification(self, msg):
-    pass
+    if (self._contexts_enabled and
+        msg['method'] == 'Runtime.executionContextCreated'):
+      self._max_context_id = max(self._max_context_id,
+                                 msg['params']['context']['id'])
 
   def _OnClose(self):
     pass
 
-  def Execute(self, expr, timeout=60):
-    """Executes expr in javascript. Does not return the result.
+  def Execute(self, expr, context_id, timeout):
+    self.Evaluate(expr + '; 0;', context_id, timeout)
 
-    If the expression failed to evaluate, EvaluateException will be raised.
-    """
-    self.Evaluate(expr + '; 0;', timeout)
-
-  def Evaluate(self, expr, timeout=60):
-    """Evalutes expr in javascript and returns the JSONized result.
-
-    Consider using Execute for cases where the result of the expression is not
-    needed.
-
-    If evaluation throws in javascript, a python EvaluateException will
-    be raised.
-
-    If the result of the evaluation cannot be JSONized, then an
-    EvaluationException will be raised.
-    """
+  def Evaluate(self, expr, context_id, timeout):
     request = {
       'method': 'Runtime.evaluate',
       'params': {
@@ -43,6 +33,9 @@ class InspectorRuntime(object):
         'returnByValue': True
         }
       }
+    if context_id is not None:
+      self.EnableAllContexts()
+      request['params']['contextId'] = context_id
     res = self._inspector_backend.SyncRequest(request, timeout)
     if 'error' in res:
       raise exceptions.EvaluateException(res['error']['message'])
@@ -54,3 +47,11 @@ class InspectorRuntime(object):
     if res['result']['result']['type'] == 'undefined':
       return None
     return res['result']['result']['value']
+
+  def EnableAllContexts(self):
+    """Allow access to iframes."""
+    if not self._contexts_enabled:
+      self._contexts_enabled = True
+      self._inspector_backend.SyncRequest({'method': 'Runtime.enable'},
+                                          timeout=30)
+    return self._max_context_id

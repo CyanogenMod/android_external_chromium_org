@@ -110,7 +110,7 @@ NetExportMessageHandler::~NetExportMessageHandler() {
 }
 
 void NetExportMessageHandler::RegisterMessages() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   web_ui()->RegisterMessageCallback(
       "getExportNetLogInfo",
@@ -141,9 +141,16 @@ void NetExportMessageHandler::OnGetExportNetLogInfo(
 }
 
 void NetExportMessageHandler::OnStartNetLog(const base::ListValue* list) {
+  bool strip_private_data = false;
+  if (!list->GetBoolean(0, &strip_private_data)) {
+    NOTREACHED() << "Failed to convert argument 1";
+    return;
+  }
   ProcessNetLogCommand(weak_ptr_factory_.GetWeakPtr(),
                        net_log_temp_file_,
-                       NetLogTempFile::DO_START);
+                       (strip_private_data ?
+                            NetLogTempFile::DO_START_STRIP_PRIVATE_DATA :
+                            NetLogTempFile::DO_START));
 }
 
 void NetExportMessageHandler::OnStopNetLog(const base::ListValue* list) {
@@ -177,7 +184,7 @@ void NetExportMessageHandler::ProcessNetLogCommand(
     return;
   }
 
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE_USER_BLOCKING));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE_USER_BLOCKING);
   net_log_temp_file->ProcessCommand(command);
   SendExportNetLogInfo(net_export_message_handler, net_log_temp_file);
 }
@@ -185,7 +192,7 @@ void NetExportMessageHandler::ProcessNetLogCommand(
 // static
 base::FilePath NetExportMessageHandler::GetNetLogFileName(
     NetLogTempFile* net_log_temp_file) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE_USER_BLOCKING));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE_USER_BLOCKING);
   base::FilePath net_export_file_path;
   net_log_temp_file->GetFilePath(&net_export_file_path);
   return net_export_file_path;
@@ -195,7 +202,7 @@ base::FilePath NetExportMessageHandler::GetNetLogFileName(
 void NetExportMessageHandler::SendExportNetLogInfo(
     base::WeakPtr<NetExportMessageHandler> net_export_message_handler,
     NetLogTempFile* net_log_temp_file) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE_USER_BLOCKING));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE_USER_BLOCKING);
   base::Value* value = net_log_temp_file->GetState();
   if (!BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
@@ -211,7 +218,7 @@ void NetExportMessageHandler::SendExportNetLogInfo(
 void NetExportMessageHandler::SendEmail(const base::FilePath& file_to_send) {
   if (file_to_send.empty())
     return;
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
 #if defined(OS_ANDROID)
   std::string email;
@@ -229,7 +236,7 @@ void NetExportMessageHandler::SendEmail(const base::FilePath& file_to_send) {
 
 void NetExportMessageHandler::OnExportNetLogInfoChanged(base::Value* arg) {
   scoped_ptr<base::Value> value(arg);
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   web_ui()->CallJavascriptFunction(
       "NetExportView.getInstance().onExportNetLogInfoChanged", *arg);
 }

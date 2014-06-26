@@ -4,40 +4,42 @@
 
 #include "mojo/shell/run.h"
 
-#include "base/command_line.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop.h"
+#include "mojo/service_manager/service_manager.h"
 #include "mojo/shell/context.h"
 #include "mojo/shell/keep_alive.h"
-#include "mojo/shell/service_manager.h"
-#include "mojo/shell/switches.h"
-#include "url/gurl.h"
 
 namespace mojo {
 namespace shell {
 
-void Run(Context* context) {
+class StubServiceProvider : public InterfaceImpl<ServiceProvider> {
+ private:
+  virtual void ConnectToService(const mojo::String& service_name,
+                                ScopedMessagePipeHandle client_handle)
+      MOJO_OVERRIDE {
+  }
+};
+
+
+void Run(Context* context, const std::vector<GURL>& app_urls) {
   KeepAlive keep_alive(context);
 
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  CommandLine::StringVector args = command_line.GetArgs();
-
-  if (args.empty()) {
-    LOG(ERROR) << "No app path specified.";
+  if (app_urls.empty()) {
+    LOG(ERROR) << "No app path specified";
     return;
   }
 
-  for (CommandLine::StringVector::const_iterator it = args.begin();
-       it != args.end(); ++it) {
-    GURL url(*it);
-    if (url.scheme() == "mojo" && !command_line.HasSwitch(switches::kOrigin)) {
-      LOG(ERROR) << "mojo: url passed with no --origin specified.";
-      return;
-    }
-    ScopedMessagePipeHandle no_handle;
-    context->service_manager()->Connect(GURL(*it), no_handle.Pass());
+  for (std::vector<GURL>::const_iterator it = app_urls.begin();
+       it != app_urls.end();
+       ++it) {
+    // TODO(davemoore): These leak...need refs to them.
+    StubServiceProvider* stub_sp = new StubServiceProvider;
+    ServiceProviderPtr spp;
+    BindToProxy(stub_sp, &spp);
+
+    context->service_manager()->ConnectToApplication(
+        *it, GURL(), spp.Pass());
   }
-  // TODO(davemoore): Currently we leak |service_manager|.
 }
 
 }  // namespace shell

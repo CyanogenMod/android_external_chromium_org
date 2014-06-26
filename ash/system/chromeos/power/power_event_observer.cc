@@ -4,17 +4,16 @@
 
 #include "ash/system/chromeos/power/power_event_observer.h"
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/wm/power_button_controller.h"
-#include "ash/wm/user_activity_detector.h"
 #include "base/prefs/pref_service.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/display/output_configurator.h"
+#include "ui/display/chromeos/display_configurator.h"
+#include "ui/wm/core/user_activity_detector.h"
 
 namespace ash {
-namespace internal {
 
 PowerEventObserver::PowerEventObserver()
     : screen_locked_(false) {
@@ -52,11 +51,11 @@ void PowerEventObserver::SuspendImminent() {
   }
 
   shell->user_activity_detector()->OnDisplayPowerChanging();
-  shell->output_configurator()->SuspendDisplays();
+  shell->display_configurator()->SuspendDisplays();
 }
 
-void PowerEventObserver::SystemResumed(const base::TimeDelta& sleep_duration) {
-  Shell::GetInstance()->output_configurator()->ResumeDisplays();
+void PowerEventObserver::SuspendDone(const base::TimeDelta& sleep_duration) {
+  Shell::GetInstance()->display_configurator()->ResumeDisplays();
   Shell::GetInstance()->system_tray_notifier()->NotifyRefreshClock();
 }
 
@@ -80,5 +79,4 @@ void PowerEventObserver::ScreenIsUnlocked() {
   screen_locked_ = false;
 }
 
-}  // namespace internal
 }  // namespace ash

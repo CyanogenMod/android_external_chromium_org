@@ -13,8 +13,13 @@
 namespace app_list {
 
 APP_LIST_EXPORT extern const SkColor kContentsBackgroundColor;
+APP_LIST_EXPORT extern const SkColor kContentsSwitcherBackgroundColor;
 APP_LIST_EXPORT extern const SkColor kSearchBoxBackground;
 APP_LIST_EXPORT extern const SkColor kTopSeparatorColor;
+APP_LIST_EXPORT extern const SkColor kBottomSeparatorColor;
+
+APP_LIST_EXPORT extern const SkColor kDialogSeparatorColor;
+APP_LIST_EXPORT extern const SkColor kDialogSubtitleColor;
 
 APP_LIST_EXPORT extern const SkColor kHighlightedColor;
 APP_LIST_EXPORT extern const SkColor kSelectedColor;
@@ -30,6 +35,8 @@ APP_LIST_EXPORT extern const SkColor kResultURLTextColor;
 
 APP_LIST_EXPORT extern const SkColor kGridTitleColor;
 APP_LIST_EXPORT extern const SkColor kGridTitleHoverColor;
+
+APP_LIST_EXPORT extern const SkColor kStartPageBorderColor;
 
 APP_LIST_EXPORT extern const SkColor kFolderBubbleColor;
 
@@ -47,7 +54,11 @@ APP_LIST_EXPORT extern const int kPreferredIconDimension;
 APP_LIST_EXPORT extern const int kExperimentalPreferredCols;
 APP_LIST_EXPORT extern const int kExperimentalPreferredRows;
 
+APP_LIST_EXPORT extern const int kReorderDroppingCircleRadius;
+
+APP_LIST_EXPORT extern size_t kMaxFolderItems;
 APP_LIST_EXPORT extern const size_t kNumFolderTopItems;
+APP_LIST_EXPORT extern const size_t kMaxFolderNameChars;
 
 APP_LIST_EXPORT extern const ui::ResourceBundle::FontStyle kItemTextFontStyle;
 

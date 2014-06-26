@@ -13,8 +13,8 @@
 #include "ash/system/user/login_status.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/ui_base_types.h"
 
 class SkBitmap;
@@ -28,16 +28,6 @@ namespace gfx {
 class Point;
 }
 
-namespace views {
-class Widget;
-
-namespace corewm {
-class InputMethodEventFilter;
-class RootWindowEventFilter;
-class ScopedCaptureClient;
-}
-}
-
 namespace keyboard {
 class KeyboardController;
 }
@@ -46,13 +36,18 @@ namespace ui {
 class EventHandler;
 }
 
+namespace views {
+class Widget;
+}
+
+namespace wm {
+class InputMethodEventFilter;
+class RootWindowEventFilter;
+class ScopedCaptureClient;
+}
+
 namespace ash {
-class ShelfWidget;
-class StackingController;
-class SystemTray;
-
-namespace internal {
-
+class AshWindowTreeHost;
 class AlwaysOnTopController;
 class AnimatingDesktopController;
 class DesktopBackgroundWidgetController;
@@ -61,15 +56,19 @@ class PanelLayoutManager;
 class RootWindowLayoutManager;
 class ScreenDimmer;
 class ShelfLayoutManager;
+class ShelfWidget;
+class StackingController;
 class StatusAreaWidget;
 class SystemBackgroundController;
 class SystemModalContainerLayoutManager;
+class SystemTray;
 class TouchHudDebug;
 class TouchHudProjection;
 class WorkspaceController;
 
 #if defined(OS_CHROMEOS)
 class BootSplashScreen;
+class AccessibilityObserver;
 #endif
 
 // This class maintains the per root window state for ash. This class
@@ -78,39 +77,43 @@ class BootSplashScreen;
 // indirectly owned and deleted by |DisplayController|.
 // The RootWindowController for particular root window is stored in
 // its property (RootWindowSettings) and can be obtained using
-// |GetRootWindowController(aura::RootWindow*)| function.
+// |GetRootWindowController(aura::WindowEventDispatcher*)| function.
 class ASH_EXPORT RootWindowController : public ShellObserver {
  public:
-
   // Creates and Initialize the RootWindowController for primary display.
-  static void CreateForPrimaryDisplay(aura::RootWindow* root_window);
+  static void CreateForPrimaryDisplay(AshWindowTreeHost* host);
 
   // Creates and Initialize the RootWindowController for secondary displays.
-  static void CreateForSecondaryDisplay(aura::RootWindow* root_window);
+  static void CreateForSecondaryDisplay(AshWindowTreeHost* host);
 
   // Creates and Initialize the RootWindowController for virtual
   // keyboard displays.
-  static void CreateForVirtualKeyboardDisplay(aura::RootWindow* root_window);
+  static void CreateForVirtualKeyboardDisplay(AshWindowTreeHost* host);
 
   // Returns a RootWindowController that has a shelf for given
   // |window|. This returns the RootWindowController for the |window|'s
   // root window when multiple shelf mode is enabled, or the primary
   // RootWindowController otherwise.
-  static RootWindowController* ForShelf(aura::Window* window);
+  static RootWindowController* ForShelf(const aura::Window* window);
 
   // Returns a RootWindowController of the window's root window.
   static RootWindowController* ForWindow(const aura::Window* window);
 
   // Returns the RootWindowController of the target root window.
-  static internal::RootWindowController* ForTargetRootWindow();
+  static RootWindowController* ForTargetRootWindow();
 
   // Returns container which contains a given |window|.
   static aura::Window* GetContainerForWindow(aura::Window* window);
 
   virtual ~RootWindowController();
 
-  aura::Window* root_window() { return dispatcher()->window(); }
-  aura::WindowEventDispatcher* dispatcher() { return root_window_.get(); }
+  AshWindowTreeHost* ash_host() { return ash_host_.get(); }
+  const AshWindowTreeHost* ash_host() const { return ash_host_.get(); }
+
+  aura::WindowTreeHost* GetHost();
+  const aura::WindowTreeHost* GetHost() const;
+  aura::Window* GetRootWindow();
+  const aura::Window* GetRootWindow() const;
 
   RootWindowLayoutManager* root_window_layout() { return root_window_layout_; }
 
@@ -232,8 +235,11 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   // Deactivate virtual keyboard on current root window controller.
   void DeactivateKeyboard(keyboard::KeyboardController* keyboard_controller);
 
+  // Tests if a window is associated with the virtual keyboard.
+  bool IsVirtualKeyboardWindow(aura::Window* window);
+
  private:
-  explicit RootWindowController(aura::RootWindow* root_window);
+  explicit RootWindowController(AshWindowTreeHost* host);
   enum RootWindowType {
     PRIMARY,
     SECONDARY,
@@ -265,7 +271,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   virtual void OnLoginStateChanged(user::LoginStatus status) OVERRIDE;
   virtual void OnTouchHudProjectionToggled(bool enabled) OVERRIDE;
 
-  scoped_ptr<aura::RootWindow> root_window_;
+  scoped_ptr<AshWindowTreeHost> ash_host_;
   RootWindowLayoutManager* root_window_layout_;
 
   scoped_ptr<StackingController> stacking_controller_;
@@ -287,8 +293,12 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
   PanelLayoutManager* panel_layout_manager_;
 
   scoped_ptr<SystemBackgroundController> system_background_;
+
 #if defined(OS_CHROMEOS)
   scoped_ptr<BootSplashScreen> boot_splash_screen_;
+  // Responsible for initializing TouchExplorationController when spoken
+  // feedback is on.
+  scoped_ptr<AccessibilityObserver> cros_accessibility_observer_;
 #endif
 
   scoped_ptr<ScreenDimmer> screen_dimmer_;
@@ -305,7 +315,7 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 
   scoped_ptr<DesktopBackgroundWidgetController> wallpaper_controller_;
   scoped_ptr<AnimatingDesktopController> animating_wallpaper_controller_;
-  scoped_ptr<views::corewm::ScopedCaptureClient> capture_client_;
+  scoped_ptr< ::wm::ScopedCaptureClient> capture_client_;
 
   DISALLOW_COPY_AND_ASSIGN(RootWindowController);
 };
@@ -315,7 +325,6 @@ class ASH_EXPORT RootWindowController : public ShellObserver {
 ASH_EXPORT RootWindowController* GetRootWindowController(
     const aura::Window* root_window);
 
-}  // namespace internal
-}  // ash
+}  // namespace ash
 
-#endif  //  ASH_ROOT_WINDOW_CONTROLLER_H_
+#endif  // ASH_ROOT_WINDOW_CONTROLLER_H_

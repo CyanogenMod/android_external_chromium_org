@@ -21,21 +21,16 @@
 // this directory. One API may implement one or more actual interfaces.
 //
 // For PROXIED_APIs, these also correspond to *_Proxy objects. The proxied ones
-// define factory functions for each of these classes. UNPROXIED_APIs are ones
-// that exist in the webkit/plugins/ppapi/*_impl.h, but not in the proxy.
+// define factory functions for each of these classes.
 PROXIED_API(PPB_Audio)
 PROXIED_API(PPB_Core)
 PROXIED_API(PPB_Graphics3D)
 PROXIED_API(PPB_ImageData)
 PROXIED_API(PPB_Instance)
 
-// AudioConfig isn't proxied in the normal way, we have only local classes and
-// serialize it to a struct when we need it on the host side.
-UNPROXIED_API(PPB_AudioConfig)
-
 // Interfaces
 // ----------
-// Enumerates interfaces as (api_name, interface_name, interface_struct).
+// Enumerates interfaces as (interface_name, interface_struct).
 //
 // The api_name corresponds to the class in the list above for the object
 // that implements the API. Some things may be special and aren't implemented
@@ -51,6 +46,7 @@ UNPROXIED_API(PPB_AudioConfig)
 // Note: Core is special and is registered manually.
 PROXIED_IFACE(PPB_AUDIO_INTERFACE_1_0, PPB_Audio_1_0)
 PROXIED_IFACE(PPB_AUDIO_INTERFACE_1_1, PPB_Audio_1_1)
+PROXIED_IFACE(PPB_AUDIOBUFFER_INTERFACE_0_1, PPB_AudioBuffer_0_1)
 PROXIED_IFACE(PPB_FILEREF_INTERFACE_1_0, PPB_FileRef_1_0)
 PROXIED_IFACE(PPB_FILEREF_INTERFACE_1_1, PPB_FileRef_1_1)
 PROXIED_IFACE(PPB_FILEREF_INTERFACE_1_2, PPB_FileRef_1_2)
@@ -76,6 +72,10 @@ PROXIED_IFACE(PPB_MOUSE_INPUT_EVENT_INTERFACE_1_1, PPB_MouseInputEvent_1_1)
 PROXIED_IFACE(PPB_WHEEL_INPUT_EVENT_INTERFACE_1_0, PPB_WheelInputEvent_1_0)
 PROXIED_IFACE(PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0, PPB_TouchInputEvent_1_0)
 PROXIED_IFACE(PPB_FULLSCREEN_INTERFACE_1_0, PPB_Fullscreen_1_0)
+PROXIED_IFACE(PPB_MEDIASTREAMAUDIOTRACK_INTERFACE_0_1,
+              PPB_MediaStreamAudioTrack_0_1)
+PROXIED_IFACE(PPB_MEDIASTREAMVIDEOTRACK_INTERFACE_0_1,
+              PPB_MediaStreamVideoTrack_0_1)
 PROXIED_IFACE(PPB_MESSAGING_INTERFACE_1_0, PPB_Messaging_1_0)
 PROXIED_IFACE(PPB_MOUSECURSOR_INTERFACE_1_0, PPB_MouseCursor_1_0)
 PROXIED_IFACE(PPB_MOUSELOCK_INTERFACE_1_0, PPB_MouseLock_1_0)
@@ -93,11 +93,13 @@ PROXIED_IFACE(PPB_URLREQUESTINFO_INTERFACE_1_0, PPB_URLRequestInfo_1_0)
 PROXIED_IFACE(PPB_URLRESPONSEINFO_INTERFACE_1_0, PPB_URLResponseInfo_1_0)
 PROXIED_IFACE(PPB_VAR_ARRAY_INTERFACE_1_0, PPB_VarArray_1_0)
 PROXIED_IFACE(PPB_VAR_DICTIONARY_INTERFACE_1_0, PPB_VarDictionary_1_0)
+PROXIED_IFACE(PPB_VIDEOFRAME_INTERFACE_0_1, PPB_VideoFrame_0_1)
 PROXIED_IFACE(PPB_WEBSOCKET_INTERFACE_1_0, PPB_WebSocket_1_0)
 
 // Note: PPB_Var and PPB_VarArrayBuffer are special and registered manually.
 PROXIED_IFACE(PPB_VIEW_INTERFACE_1_0, PPB_View_1_0)
 PROXIED_IFACE(PPB_VIEW_INTERFACE_1_1, PPB_View_1_1)
+PROXIED_IFACE(PPB_VIEW_INTERFACE_1_2, PPB_View_1_2)
 
 // This has no corresponding _Proxy object since it does no IPC.
 PROXIED_IFACE(PPB_AUDIO_CONFIG_INTERFACE_1_0, PPB_AudioConfig_1_0)

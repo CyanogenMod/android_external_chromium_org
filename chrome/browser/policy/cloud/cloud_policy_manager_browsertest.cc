@@ -27,9 +27,9 @@
 #include "chrome/browser/chromeos/policy/user_cloud_policy_manager_factory_chromeos.h"
 #else
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
+#include "components/signin/core/browser/signin_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -129,7 +129,8 @@ class CloudPolicyManagerTest : public InProcessBrowserTest {
         em::DeviceRegisterRequest::BROWSER;
 #endif
     policy_manager()->core()->client()->Register(
-        registration_type, "bogus", std::string(), false, std::string());
+        registration_type, "bogus", std::string(), false, std::string(),
+        std::string());
     run_loop.Run();
     Mock::VerifyAndClearExpectations(&observer);
     policy_manager()->core()->client()->RemoveObserver(&observer);

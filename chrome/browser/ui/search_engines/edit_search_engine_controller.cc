@@ -7,10 +7,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/common/net/url_fixer_upper.h"
+#include "components/search_engines/template_url.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/user_metrics.h"
 #include "url/gurl.h"
 
@@ -28,7 +28,7 @@ EditSearchEngineController::EditSearchEngineController(
 
 bool EditSearchEngineController::IsTitleValid(
     const base::string16& title_input) const {
-  return !CollapseWhitespace(title_input, true).empty();
+  return !base::CollapseWhitespace(title_input, true).empty();
 }
 
 bool EditSearchEngineController::IsURLValid(
@@ -43,27 +43,31 @@ bool EditSearchEngineController::IsURLValid(
   // TemplateURLRef::IsValid() when its owner is NULL.
   TemplateURLData data;
   data.SetURL(url);
-  TemplateURL t_url(profile_, data);
+  TemplateURL t_url(data);
   const TemplateURLRef& template_ref = t_url.url_ref();
-  if (!template_ref.IsValid())
+  TemplateURLService* service =
+      TemplateURLServiceFactory::GetForProfile(profile_);
+  if (!template_ref.IsValid(service->search_terms_data()))
     return false;
 
   // If this is going to be the default search engine, it must support
   // replacement.
-  if (!template_ref.SupportsReplacement() &&
-      (template_url_ == TemplateURLServiceFactory::GetForProfile(profile_)->
-          GetDefaultSearchProvider()))
+  if (!template_ref.SupportsReplacement(service->search_terms_data()) &&
+      template_url_ &&
+      template_url_ == service->GetDefaultSearchProvider())
     return false;
 
   // Replace any search term with a placeholder string and make sure the
   // resulting URL is valid.
   return GURL(template_ref.ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")))).is_valid();
+      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")),
+      service->search_terms_data())).is_valid();
 }
 
 bool EditSearchEngineController::IsKeywordValid(
     const base::string16& keyword_input) const {
-  base::string16 keyword_input_trimmed(CollapseWhitespace(keyword_input, true));
+  base::string16 keyword_input_trimmed(
+      base::CollapseWhitespace(keyword_input, true));
   if (keyword_input_trimmed.empty())
     return false;  // Do not allow empty keyword.
   const TemplateURL* turl_with_keyword =
@@ -122,9 +126,9 @@ void EditSearchEngineController::CleanUpCancelledAdd() {
 std::string EditSearchEngineController::GetFixedUpURL(
     const std::string& url_input) const {
   std::string url;
-  TrimWhitespace(TemplateURLRef::DisplayURLToURLRef(
-                     base::UTF8ToUTF16(url_input)),
-                 TRIM_ALL, &url);
+  base::TrimWhitespace(TemplateURLRef::DisplayURLToURLRef(
+                           base::UTF8ToUTF16(url_input)),
+                       base::TRIM_ALL, &url);
   if (url.empty())
     return url;
 
@@ -133,11 +137,12 @@ std::string EditSearchEngineController::GetFixedUpURL(
   // we need to replace the search terms before testing for the scheme.
   TemplateURLData data;
   data.SetURL(url);
-  TemplateURL t_url(profile_, data);
+  TemplateURL t_url(data);
   std::string expanded_url(t_url.url_ref().ReplaceSearchTerms(
-      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x"))));
-  url_parse::Parsed parts;
-  std::string scheme(URLFixerUpper::SegmentURL(expanded_url, &parts));
+      TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")),
+      TemplateURLServiceFactory::GetForProfile(profile_)->search_terms_data()));
+  url::Parsed parts;
+  std::string scheme(url_fixer::SegmentURL(expanded_url, &parts));
   if (!parts.scheme.is_valid())
     url.insert(0, scheme + "://");
 

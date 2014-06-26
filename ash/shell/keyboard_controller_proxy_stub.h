@@ -30,10 +30,11 @@ class KeyboardControllerProxyStub : public keyboard::KeyboardControllerProxy {
   virtual void RequestAudioInput(content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
       const content::MediaResponseCallback& callback) OVERRIDE;
+  virtual void LoadSystemKeyboard() OVERRIDE;
+  virtual void ReloadKeyboardIfNeeded() OVERRIDE;
 
   aura::test::TestWindowDelegate delegate_;
   scoped_ptr<aura::Window> keyboard_;
-
   DISALLOW_COPY_AND_ASSIGN(KeyboardControllerProxyStub);
 };
 

@@ -16,16 +16,6 @@
 
 namespace media {
 
-namespace {
-
-// Noop callback for (sync) Initialize.
-// TODO(yhirano): This function should go away when
-// MidiManager::Initialize() becomes asynchronous. See http://crbug.com/339746.
-void Noop(bool result) {
-}
-
-}  // namespace
-
 MidiManagerUsb::MidiManagerUsb(scoped_ptr<UsbMidiDevice::Factory> factory)
     : device_factory_(factory.Pass()) {
 }
@@ -33,12 +23,13 @@ MidiManagerUsb::MidiManagerUsb(scoped_ptr<UsbMidiDevice::Factory> factory)
 MidiManagerUsb::~MidiManagerUsb() {
 }
 
-bool MidiManagerUsb::Initialize() {
-  Initialize(base::Bind(Noop));
-  return true;
+void MidiManagerUsb::StartInitialization() {
+  Initialize(
+      base::Bind(&MidiManager::CompleteInitialization, base::Unretained(this)));
 }
 
-void MidiManagerUsb::Initialize(base::Callback<void(bool result)> callback) {
+void MidiManagerUsb::Initialize(
+    base::Callback<void(MidiResult result)> callback) {
   initialize_callback_ = callback;
   // This is safe because EnumerateDevices cancels the operation on destruction.
   device_factory_->EnumerateDevices(
@@ -60,28 +51,28 @@ void MidiManagerUsb::ReceiveUsbMidiData(UsbMidiDevice* device,
                                         int endpoint_number,
                                         const uint8* data,
                                         size_t size,
-                                        double timestamp) {
+                                        base::TimeTicks time) {
   if (!input_stream_)
     return;
   input_stream_->OnReceivedData(device,
                                 endpoint_number,
                                 data,
                                 size,
-                                timestamp);
+                                time);
 }
 
 void MidiManagerUsb::OnReceivedData(size_t jack_index,
                                     const uint8* data,
                                     size_t size,
-                                    double timestamp) {
-  ReceiveMidiData(jack_index, data, size, timestamp);
+                                    base::TimeTicks time) {
+  ReceiveMidiData(jack_index, data, size, time);
 }
 
 
 void MidiManagerUsb::OnEnumerateDevicesDone(bool result,
                                             UsbMidiDevice::Devices* devices) {
   if (!result) {
-    initialize_callback_.Run(false);
+    initialize_callback_.Run(MIDI_INITIALIZATION_ERROR);
     return;
   }
   devices->swap(devices_);
@@ -95,7 +86,7 @@ void MidiManagerUsb::OnEnumerateDevicesDone(bool result,
                                      descriptor.size(),
                                      &jacks);
     if (!parse_result) {
-      initialize_callback_.Run(false);
+      initialize_callback_.Run(MIDI_INITIALIZATION_ERROR);
       return;
     }
     std::vector<UsbMidiJack> input_jacks;
@@ -113,7 +104,7 @@ void MidiManagerUsb::OnEnumerateDevicesDone(bool result,
     }
     input_stream_.reset(new UsbMidiInputStream(input_jacks, this));
   }
-  initialize_callback_.Run(true);
+  initialize_callback_.Run(MIDI_OK);
 }
 
 }  // namespace media

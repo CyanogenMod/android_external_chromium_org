@@ -41,7 +41,6 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
                           const CompletionCallback& callback) OVERRIDE;
   virtual UploadProgress GetUploadProgress() const OVERRIDE;
   virtual int ReadResponseHeaders(const CompletionCallback& callback) OVERRIDE;
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual int ReadResponseBody(IOBuffer* buf,
                                int buf_len,
                                const CompletionCallback& callback) OVERRIDE;
@@ -119,6 +118,8 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   const HttpRequestInfo* request_info_;
   // The request body to send, if any, owned by the caller.
   UploadDataStream* request_body_stream_;
+  // Time the request was issued.
+  base::Time request_time_;
   // The priority of the request.
   RequestPriority priority_;
   // |response_info_| is the HTTP response data object which is filled in
@@ -163,6 +164,8 @@ class NET_EXPORT_PRIVATE QuicHttpStream :
   BoundNetLog stream_net_log_;
 
   base::WeakPtrFactory<QuicHttpStream> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicHttpStream);
 };
 
 }  // namespace net

@@ -7,7 +7,6 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/platform_file.h"
 #include "content/public/renderer/content_renderer_client.h"
 
 namespace blink {
@@ -16,19 +15,14 @@ class WebPlugin;
 struct WebPluginParams;
 }
 
-namespace WebTestRunner {
-class WebTestProxyBase;
-}
-
 namespace content {
 
 class MockWebClipboardImpl;
 class ShellRenderProcessObserver;
+class WebTestProxyBase;
 
 class ShellContentRendererClient : public ContentRendererClient {
  public:
-  static ShellContentRendererClient* Get();
-
   ShellContentRendererClient();
   virtual ~ShellContentRendererClient();
 
@@ -38,7 +32,7 @@ class ShellContentRendererClient : public ContentRendererClient {
   virtual void RenderViewCreated(RenderView* render_view) OVERRIDE;
   virtual bool OverrideCreatePlugin(
       RenderFrame* render_frame,
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin) OVERRIDE;
   virtual blink::WebMediaStreamCenter* OverrideCreateWebMediaStreamCenter(
@@ -52,12 +46,9 @@ class ShellContentRendererClient : public ContentRendererClient {
       double sample_rate) OVERRIDE;
   virtual blink::WebClipboard* OverrideWebClipboard() OVERRIDE;
   virtual blink::WebThemeEngine* OverrideThemeEngine() OVERRIDE;
-  virtual bool AllowBrowserPlugin(
-      blink::WebPluginContainer* container) OVERRIDE;
 
  private:
-   void WebTestProxyCreated(RenderView* render_view,
-                            WebTestRunner::WebTestProxyBase* proxy);
+  void WebTestProxyCreated(RenderView* render_view, WebTestProxyBase* proxy);
 
   scoped_ptr<ShellRenderProcessObserver> shell_observer_;
   scoped_ptr<MockWebClipboardImpl> clipboard_;

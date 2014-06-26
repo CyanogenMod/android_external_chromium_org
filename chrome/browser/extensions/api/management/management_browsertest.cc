@@ -10,7 +10,6 @@
 #include "base/stl_util.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_test_message_listener.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
@@ -25,6 +24,8 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/test/net/url_request_prepackaged_interceptor.h"
+#include "extensions/browser/extension_host.h"
+#include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/pref_names.h"
@@ -425,8 +426,12 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, ExternalUrlUpdate) {
   // of external_extensions.json before this test function starts.
 
   EXPECT_TRUE(pending_extension_manager->AddFromExternalUpdateUrl(
-      kExtensionId, GURL("http://localhost/autoupdate/manifest"),
-      Manifest::EXTERNAL_PREF_DOWNLOAD, Extension::NO_FLAGS, false));
+      kExtensionId,
+      std::string(),
+      GURL("http://localhost/autoupdate/manifest"),
+      Manifest::EXTERNAL_PREF_DOWNLOAD,
+      Extension::NO_FLAGS,
+      false));
 
   // Run autoupdate and make sure version 2 of the extension was installed.
   service->updater()->CheckNow(params);
@@ -441,15 +446,20 @@ IN_PROC_BROWSER_TEST_F(ExtensionManagementTest, ExternalUrlUpdate) {
 
   UninstallExtension(kExtensionId);
 
-  extensions::ExtensionPrefs* extension_prefs = service->extension_prefs();
+  extensions::ExtensionPrefs* extension_prefs =
+      extensions::ExtensionPrefs::Get(browser()->profile());
   EXPECT_TRUE(extension_prefs->IsExternalExtensionUninstalled(kExtensionId))
       << "Uninstalling should set kill bit on externaly installed extension.";
 
   // Try to install the extension again from an external source. It should fail
   // because of the killbit.
   EXPECT_FALSE(pending_extension_manager->AddFromExternalUpdateUrl(
-      kExtensionId, GURL("http://localhost/autoupdate/manifest"),
-      Manifest::EXTERNAL_PREF_DOWNLOAD, Extension::NO_FLAGS, false));
+      kExtensionId,
+      std::string(),
+      GURL("http://localhost/autoupdate/manifest"),
+      Manifest::EXTERNAL_PREF_DOWNLOAD,
+      Extension::NO_FLAGS,
+      false));
   EXPECT_FALSE(pending_extension_manager->IsIdPending(kExtensionId))
       << "External reinstall of a killed extension shouldn't work.";
   EXPECT_TRUE(extension_prefs->IsExternalExtensionUninstalled(kExtensionId))

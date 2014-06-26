@@ -8,6 +8,7 @@ import xml.dom.minidom as xml
 from xml.parsers.expat import ExpatError
 
 from appengine_url_fetcher import AppEngineUrlFetcher
+from appengine_wrappers import IsDownloadError
 from docs_server_utils import StringIdentity
 from file_system import (
     FileNotFoundError, FileSystem, FileSystemError, StatInfo)
@@ -94,45 +95,44 @@ def _CreateStatInfo(html):
 
   return StatInfo(parent_version, child_versions)
 
-class _AsyncFetchFuture(object):
-  def __init__(self, paths, fetcher, args=None):
-    def apply_args(path):
-      return path if args is None else '%s?%s' % (path, args)
-    # A list of tuples of the form (path, Future).
-    self._fetches = [(path, fetcher.FetchAsync(apply_args(path)))
-                     for path in paths]
-    self._value = {}
-    self._error = None
+def _GetAsyncFetchCallback(paths, fetcher, args=None, skip_not_found=False):
+  def apply_args(path):
+    return path if args is None else '%s?%s' % (path, args)
 
-  def _ListDir(self, directory):
+  def list_dir(directory):
     dom = xml.parseString(directory)
     files = [elem.childNodes[0].data for elem in dom.getElementsByTagName('a')]
     if '..' in files:
       files.remove('..')
     return files
 
-  def Get(self):
-    for path, future in self._fetches:
+  # A list of tuples of the form (path, Future).
+  fetches = [(path, fetcher.FetchAsync(apply_args(path))) for path in paths]
+
+  def resolve():
+    value = {}
+    for path, future in fetches:
       try:
         result = future.Get()
       except Exception as e:
-        raise FileSystemError('Error fetching %s for Get: %s' %
-            (path, traceback.format_exc()))
-
+        if skip_not_found and IsDownloadError(e): continue
+        exc_type = FileNotFoundError if IsDownloadError(e) else FileSystemError
+        raise exc_type('%s fetching %s for Get: %s' %
+                       (type(e).__name__, path, traceback.format_exc()))
       if result.status_code == 404:
+        if skip_not_found: continue
         raise FileNotFoundError('Got 404 when fetching %s for Get, content %s' %
             (path, result.content))
       if result.status_code != 200:
         raise FileSystemError('Got %s when fetching %s for Get, content %s' %
             (result.status_code, path, result.content))
-
       if path.endswith('/'):
-        self._value[path] = self._ListDir(result.content)
+        value[path] = list_dir(result.content)
       else:
-        self._value[path] = result.content
-    if self._error is not None:
-      raise self._error
-    return self._value
+        value[path] = result.content
+    return value
+
+  return resolve
 
 class SubversionFileSystem(FileSystem):
   '''Class to fetch resources from src.chromium.org.
@@ -155,46 +155,56 @@ class SubversionFileSystem(FileSystem):
     self._svn_path = svn_path
     self._revision = revision
 
-  def Read(self, paths):
+  def Read(self, paths, skip_not_found=False):
     args = None
     if self._revision is not None:
       # |fetcher| gets from svn.chromium.org which uses p= for version.
       args = 'p=%s' % self._revision
-    return Future(delegate=_AsyncFetchFuture(paths,
-                                             self._file_fetcher,
-                                             args=args))
+    return Future(callback=_GetAsyncFetchCallback(
+        paths,
+        self._file_fetcher,
+        args=args,
+        skip_not_found=skip_not_found))
 
   def Refresh(self):
     return Future(value=())
 
   def Stat(self, path):
+    return self.StatAsync(path).Get()
+
+  def StatAsync(self, path):
     directory, filename = posixpath.split(path)
     if self._revision is not None:
       # |stat_fetch| uses viewvc which uses pathrev= for version.
       directory += '?pathrev=%s' % self._revision
 
-    try:
-      result = self._stat_fetcher.Fetch(directory)
-    except Exception as e:
-      raise FileSystemError('Error fetching %s for Stat: %s' %
-          (path, traceback.format_exc()))
+    result_future = self._stat_fetcher.FetchAsync(directory)
+    def resolve():
+      try:
+        result = result_future.Get()
+      except Exception as e:
+        exc_type = FileNotFoundError if IsDownloadError(e) else FileSystemError
+        raise exc_type('%s fetching %s for Stat: %s' %
+                       (type(e).__name__, path, traceback.format_exc()))
 
-    if result.status_code == 404:
-      raise FileNotFoundError('Got 404 when fetching %s for Stat, content %s' %
-          (path, result.content))
-    if result.status_code != 200:
-      raise FileNotFoundError('Got %s when fetching %s for Stat, content %s' %
-          (result.status_code, path, result.content))
+      if result.status_code == 404:
+        raise FileNotFoundError('Got 404 when fetching %s for Stat, '
+                                'content %s' % (path, result.content))
+      if result.status_code != 200:
+        raise FileNotFoundError('Got %s when fetching %s for Stat, content %s' %
+                                (result.status_code, path, result.content))
 
-    stat_info = _CreateStatInfo(result.content)
-    if stat_info.version is None:
-      raise FileSystemError('Failed to find version of dir %s' % directory)
-    if path == '' or path.endswith('/'):
-      return stat_info
-    if filename not in stat_info.child_versions:
-      raise FileNotFoundError(
-          '%s from %s was not in child versions for Stat' % (filename, path))
-    return StatInfo(stat_info.child_versions[filename])
+      stat_info = _CreateStatInfo(result.content)
+      if stat_info.version is None:
+        raise FileSystemError('Failed to find version of dir %s' % directory)
+      if path == '' or path.endswith('/'):
+        return stat_info
+      if filename not in stat_info.child_versions:
+        raise FileNotFoundError(
+            '%s from %s was not in child versions for Stat' % (filename, path))
+      return StatInfo(stat_info.child_versions[filename])
+
+    return Future(callback=resolve)
 
   def GetIdentity(self):
     # NOTE: no revision here, since it would mess up the caching of reads. It

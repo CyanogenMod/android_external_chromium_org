@@ -52,15 +52,27 @@ void PutFileTrackerToBatch(const FileTracker& tracker,
              value);
 }
 
+void PutFileMetadataDeletionToBatch(const std::string& file_id,
+                                    leveldb::WriteBatch* batch) {
+  if (batch)
+    batch->Delete(kFileMetadataKeyPrefix + file_id);
+}
+
+void PutFileTrackerDeletionToBatch(int64 tracker_id,
+                                   leveldb::WriteBatch* batch) {
+  if (batch)
+    batch->Delete(kFileTrackerKeyPrefix + base::Int64ToString(tracker_id));
+}
+
 void PopulateFileDetailsByFileResource(
     const google_apis::FileResource& file_resource,
     FileDetails* details) {
   details->clear_parent_folder_ids();
-  for (ScopedVector<google_apis::ParentReference>::const_iterator itr =
+  for (std::vector<google_apis::ParentReference>::const_iterator itr =
            file_resource.parents().begin();
        itr != file_resource.parents().end();
        ++itr) {
-    details->add_parent_folder_ids((*itr)->file_id());
+    details->add_parent_folder_ids(itr->file_id());
   }
   details->set_title(file_resource.title());
 
@@ -170,23 +182,6 @@ std::string GetMimeTypeFromTitle(const base::FilePath& title) {
   return mime_type;
 }
 
-scoped_ptr<google_apis::ResourceEntry> GetOldestCreatedFolderResource(
-    ScopedVector<google_apis::ResourceEntry> candidates) {
-  scoped_ptr<google_apis::ResourceEntry> oldest;
-  for (size_t i = 0; i < candidates.size(); ++i) {
-    google_apis::ResourceEntry* entry = candidates[i];
-    if (!entry->is_folder() || entry->deleted())
-      continue;
-
-    if (!oldest || oldest->published_time() > entry->published_time()) {
-      oldest.reset(entry);
-      candidates[i] = NULL;
-    }
-  }
-
-  return oldest.Pass();
-}
-
 SyncStatusCode GDataErrorCodeToSyncStatusCode(
     google_apis::GDataErrorCode error) {
   // NOTE: Please update DriveFileSyncService::UpdateServiceState when you add
@@ -252,6 +247,12 @@ SyncStatusCode GDataErrorCodeToSyncStatusCode(
             "Got unexpected error: %d",
             static_cast<int>(error));
   return SYNC_STATUS_FAILED;
+}
+
+scoped_ptr<FileTracker> CloneFileTracker(const FileTracker* obj) {
+  if (!obj)
+    return scoped_ptr<FileTracker>();
+  return scoped_ptr<FileTracker>(new FileTracker(*obj));
 }
 
 }  // namespace drive_backend

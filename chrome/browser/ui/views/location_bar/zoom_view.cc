@@ -10,7 +10,7 @@
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
@@ -20,7 +20,6 @@ ZoomView::ZoomView(LocationBarView::Delegate* location_bar_delegate)
     : location_bar_delegate_(location_bar_delegate) {
   SetAccessibilityFocusable(true);
   Update(NULL);
-  LocationBarView::InitTouchableLocationBarChildView(this);
 }
 
 ZoomView::~ZoomView() {
@@ -41,9 +40,9 @@ void ZoomView::Update(ZoomController* zoom_controller) {
   SetVisible(true);
 }
 
-void ZoomView::GetAccessibleState(ui::AccessibleViewState* state) {
+void ZoomView::GetAccessibleState(ui::AXViewState* state) {
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_ZOOM);
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->role = ui::AX_ROLE_BUTTON;
 }
 
 bool ZoomView::GetTooltipText(const gfx::Point& p,

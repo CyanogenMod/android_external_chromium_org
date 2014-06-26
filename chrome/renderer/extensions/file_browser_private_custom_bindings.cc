@@ -9,17 +9,16 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "chrome/renderer/extensions/chrome_v8_context.h"
-#include "grit/renderer_resources.h"
-#include "third_party/WebKit/public/platform/WebFileSystem.h"
-#include "third_party/WebKit/public/platform/WebFileSystemType.h"
+#include "extensions/renderer/script_context.h"
 #include "third_party/WebKit/public/platform/WebString.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebDOMFileSystem.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 namespace extensions {
 
 FileBrowserPrivateCustomBindings::FileBrowserPrivateCustomBindings(
-    Dispatcher* dispatcher, ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher, context) {
+    ScriptContext* context)
+    : ObjectBackedNativeHandler(context) {
   RouteFunction(
       "GetFileSystem",
        base::Bind(&FileBrowserPrivateCustomBindings::GetFileSystem,
@@ -34,14 +33,15 @@ void FileBrowserPrivateCustomBindings::GetFileSystem(
   std::string name(*v8::String::Utf8Value(args[0]));
   std::string root_url(*v8::String::Utf8Value(args[1]));
 
-  blink::WebFrame* webframe =
-      blink::WebFrame::frameForContext(context()->v8_context());
+  blink::WebLocalFrame* webframe =
+      blink::WebLocalFrame::frameForContext(context()->v8_context());
   DCHECK(webframe);
   args.GetReturnValue().Set(
-      webframe->createFileSystem(
-          blink::WebFileSystemTypeExternal,
-          blink::WebString::fromUTF8(name.c_str()),
-          blink::WebString::fromUTF8(root_url.c_str())));
+      blink::WebDOMFileSystem::create(webframe,
+                                      blink::WebFileSystemTypeExternal,
+                                      blink::WebString::fromUTF8(name),
+                                      GURL(root_url))
+          .toV8Value(args.Holder(), args.GetIsolate()));
 }
 
 }  // namespace extensions

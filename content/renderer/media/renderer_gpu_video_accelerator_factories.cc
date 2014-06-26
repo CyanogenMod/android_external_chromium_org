@@ -14,12 +14,31 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
+#include "media/video/video_decode_accelerator.h"
+#include "media/video/video_encode_accelerator.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 
 namespace content {
 
-RendererGpuVideoAcceleratorFactories::~RendererGpuVideoAcceleratorFactories() {}
+// static
+scoped_refptr<RendererGpuVideoAcceleratorFactories>
+RendererGpuVideoAcceleratorFactories::Create(
+    GpuChannelHost* gpu_channel_host,
+    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+    const scoped_refptr<ContextProviderCommandBuffer>& context_provider) {
+  scoped_refptr<RendererGpuVideoAcceleratorFactories> factories =
+      new RendererGpuVideoAcceleratorFactories(
+          gpu_channel_host, message_loop_proxy, context_provider);
+  // Post task from outside constructor, since AddRef()/Release() is unsafe from
+  // within.
+  message_loop_proxy->PostTask(
+      FROM_HERE,
+      base::Bind(&RendererGpuVideoAcceleratorFactories::BindContext,
+                 factories));
+  return factories;
+}
+
 RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
     GpuChannelHost* gpu_channel_host,
     const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
@@ -28,6 +47,14 @@ RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
       gpu_channel_host_(gpu_channel_host),
       context_provider_(context_provider),
       thread_safe_sender_(ChildThread::current()->thread_safe_sender()) {}
+
+RendererGpuVideoAcceleratorFactories::~RendererGpuVideoAcceleratorFactories() {}
+
+void RendererGpuVideoAcceleratorFactories::BindContext() {
+  DCHECK(task_runner_->BelongsToCurrentThread());
+  if (!context_provider_->BindToCurrentThread())
+    context_provider_ = NULL;
+}
 
 WebGraphicsContext3DCommandBufferImpl*
 RendererGpuVideoAcceleratorFactories::GetContext3d() {
@@ -43,29 +70,32 @@ RendererGpuVideoAcceleratorFactories::GetContext3d() {
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
-RendererGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator(
-    media::VideoCodecProfile profile,
-    media::VideoDecodeAccelerator::Client* client) {
+RendererGpuVideoAcceleratorFactories::CreateVideoDecodeAccelerator() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
   if (context && context->GetCommandBufferProxy()) {
     return gpu_channel_host_->CreateVideoDecoder(
-        context->GetCommandBufferProxy()->GetRouteID(), profile, client);
+        context->GetCommandBufferProxy()->GetRouteID());
   }
 
   return scoped_ptr<media::VideoDecodeAccelerator>();
 }
 
 scoped_ptr<media::VideoEncodeAccelerator>
-RendererGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator(
-    media::VideoEncodeAccelerator::Client* client) {
+RendererGpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  return gpu_channel_host_->CreateVideoEncoder(client);
+  WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
+  if (context && context->GetCommandBufferProxy()) {
+    return gpu_channel_host_->CreateVideoEncoder(
+        context->GetCommandBufferProxy()->GetRouteID());
+  }
+
+  return scoped_ptr<media::VideoEncodeAccelerator>();
 }
 
-uint32 RendererGpuVideoAcceleratorFactories::CreateTextures(
+bool RendererGpuVideoAcceleratorFactories::CreateTextures(
     int32 count,
     const gfx::Size& size,
     std::vector<uint32>* texture_ids,
@@ -76,7 +106,7 @@ uint32 RendererGpuVideoAcceleratorFactories::CreateTextures(
 
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
   if (!context)
-    return 0;
+    return false;
 
   gpu::gles2::GLES2Implementation* gles2 = context->GetImplementation();
   texture_ids->resize(count);
@@ -106,13 +136,13 @@ uint32 RendererGpuVideoAcceleratorFactories::CreateTextures(
                                   texture_mailboxes->at(i).name);
   }
 
-  // We need a glFlush here to guarantee the decoder (in the GPU process) can
-  // use the texture ids we return here.  Since textures are expected to be
-  // reused, this should not be unacceptably expensive.
-  gles2->Flush();
+  // We need ShallowFlushCHROMIUM() here to order the command buffer commands
+  // with respect to IPC to the GPU process, to guarantee that the decoder in
+  // the GPU process can use these textures as soon as it receives IPC
+  // notification of them.
+  gles2->ShallowFlushCHROMIUM();
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
-
-  return gles2->InsertSyncPointCHROMIUM();
+  return true;
 }
 
 void RendererGpuVideoAcceleratorFactories::DeleteTexture(uint32 texture_id) {
@@ -170,12 +200,22 @@ void RendererGpuVideoAcceleratorFactories::ReadPixels(
   gles2->FramebufferTexture2D(
       GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tmp_texture, 0);
   gles2->PixelStorei(GL_PACK_ALIGNMENT, 4);
+
 #if SK_B32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_R32_SHIFT == 16 && \
     SK_A32_SHIFT == 24
   GLenum skia_format = GL_BGRA_EXT;
+  GLenum read_format = GL_BGRA_EXT;
+  GLint supported_format = 0;
+  GLint supported_type = 0;
+  gles2->GetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &supported_format);
+  gles2->GetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &supported_type);
+  if (supported_format != GL_BGRA_EXT || supported_type != GL_UNSIGNED_BYTE) {
+    read_format = GL_RGBA;
+  }
 #elif SK_R32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_B32_SHIFT == 16 && \
     SK_A32_SHIFT == 24
   GLenum skia_format = GL_RGBA;
+  GLenum read_format = GL_RGBA;
 #else
 #error Unexpected Skia ARGB_8888 layout!
 #endif
@@ -183,11 +223,28 @@ void RendererGpuVideoAcceleratorFactories::ReadPixels(
                     visible_rect.y(),
                     visible_rect.width(),
                     visible_rect.height(),
-                    skia_format,
+                    read_format,
                     GL_UNSIGNED_BYTE,
                     pixels.pixelRef()->pixels());
   gles2->DeleteFramebuffers(1, &fb);
   gles2->DeleteTextures(1, &tmp_texture);
+
+  if (skia_format != read_format) {
+    DCHECK(read_format == GL_RGBA);
+    int pixel_count = visible_rect.width() * visible_rect.height();
+    uint32_t* pixels_ptr = static_cast<uint32_t*>(pixels.pixelRef()->pixels());
+    for (int i = 0; i < pixel_count; ++i) {
+        uint32_t r = pixels_ptr[i] & 0xFF;
+        uint32_t g = (pixels_ptr[i] >> 8) & 0xFF;
+        uint32_t b = (pixels_ptr[i] >> 16) & 0xFF;
+        uint32_t a = (pixels_ptr[i] >> 24) & 0xFF;
+        pixels_ptr[i] = (r << SK_R32_SHIFT) |
+                        (g << SK_G32_SHIFT) |
+                        (b << SK_B32_SHIFT) |
+                        (a << SK_A32_SHIFT);
+    }
+  }
+
   DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
 }
 

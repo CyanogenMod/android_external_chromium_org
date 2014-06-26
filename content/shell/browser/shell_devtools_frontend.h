@@ -16,7 +16,8 @@
 
 namespace content {
 
-GURL GetDevToolsPathAsURL(const std::string& settings);
+GURL GetDevToolsPathAsURL(const std::string& settings,
+                          const std::string& frontend_url);
 
 class RenderViewHost;
 class Shell;
@@ -27,7 +28,8 @@ class ShellDevToolsFrontend : public WebContentsObserver,
  public:
   static ShellDevToolsFrontend* Show(WebContents* inspected_contents);
   static ShellDevToolsFrontend* Show(WebContents* inspected_contents,
-                                     const std::string& settings);
+                                     const std::string& settings,
+                                     const std::string& frontend_url);
   void Activate();
   void Focus();
   void InspectElementAt(int x, int y);
@@ -41,8 +43,9 @@ class ShellDevToolsFrontend : public WebContentsObserver,
 
   // WebContentsObserver overrides
   virtual void RenderViewCreated(RenderViewHost* render_view_host) OVERRIDE;
-  virtual void DocumentOnLoadCompletedInMainFrame(int32 page_id) OVERRIDE;
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void DocumentOnLoadCompletedInMainFrame() OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
   // DevToolsFrontendHostDelegate implementation
   virtual void DispatchOnEmbedder(const std::string& message) OVERRIDE {}

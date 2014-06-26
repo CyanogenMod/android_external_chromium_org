@@ -36,7 +36,7 @@ bool IsUnsupportedNetworkProviderUrl(const GURL& url) {
 }
 
 // Loads access tokens and other necessary data on the UI thread, and
-// calls back to the originator on the originating threaad.
+// calls back to the originator on the originating thread.
 class TokenLoadingJob : public base::RefCountedThreadSafe<TokenLoadingJob> {
  public:
   TokenLoadingJob(
@@ -119,7 +119,7 @@ static void SetAccessTokenOnUIThread(const GURL& server_url,
                               prefs::kGeolocationAccessToken);
   base::DictionaryValue* access_token_dictionary = update.Get();
   access_token_dictionary->SetWithoutPathExpansion(
-      server_url.spec(), base::Value::CreateStringValue(token));
+      server_url.spec(), new base::StringValue(token));
 }
 
 void ChromeAccessTokenStore::SaveAccessToken(

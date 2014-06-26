@@ -9,6 +9,7 @@
 #include "base/run_loop.h"
 #include "base/test/test_timeouts.h"
 #include "base/time/time.h"
+#include "jingle/glue/thread_wrapper.h"
 #include "net/socket/socket.h"
 #include "net/socket/stream_socket.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -94,6 +95,7 @@ class JingleSessionTest : public testing::Test {
  public:
   JingleSessionTest() {
     message_loop_.reset(new base::MessageLoopForIO());
+    jingle_glue::JingleThreadWrapper::EnsureForCurrentMessageLoop();
   }
 
   // Helper method that handles OnIncomingSession().
@@ -103,6 +105,10 @@ class JingleSessionTest : public testing::Test {
     host_session_->SetEventHandler(&host_session_event_handler_);
 
     session->set_config(SessionConfig::ForTest());
+  }
+
+  void DeleteSession() {
+    host_session_.reset();
   }
 
   void OnClientChannelCreated(scoped_ptr<net::StreamSocket> socket) {
@@ -132,7 +138,7 @@ class JingleSessionTest : public testing::Test {
     client_session_.reset();
   }
 
-  void CreateSessionManagers(int auth_round_trips,
+  void CreateSessionManagers(int auth_round_trips, int messages_till_start,
                         FakeAuthenticator::Action auth_action) {
     host_signal_strategy_.reset(new FakeSignalStrategy(kHostJid));
     client_signal_strategy_.reset(new FakeSignalStrategy(kClientJid));
@@ -153,7 +159,8 @@ class JingleSessionTest : public testing::Test {
     host_server_->Init(host_signal_strategy_.get(), &host_server_listener_);
 
     scoped_ptr<AuthenticatorFactory> factory(
-        new FakeHostAuthenticatorFactory(auth_round_trips, auth_action, true));
+        new FakeHostAuthenticatorFactory(auth_round_trips,
+          messages_till_start, auth_action, true));
     host_server_->set_authenticator_factory(factory.Pass());
 
     EXPECT_CALL(client_server_listener_, OnSessionManagerReady())
@@ -167,6 +174,11 @@ class JingleSessionTest : public testing::Test {
         new JingleSessionManager(client_transport.Pass()));
     client_server_->Init(client_signal_strategy_.get(),
                          &client_server_listener_);
+  }
+
+  void CreateSessionManagers(int auth_round_trips,
+                             FakeAuthenticator::Action auth_action) {
+    CreateSessionManagers(auth_round_trips, 0, auth_action);
   }
 
   void CloseSessionManager() {
@@ -196,6 +208,9 @@ class JingleSessionTest : public testing::Test {
       EXPECT_CALL(host_session_event_handler_,
                   OnSessionStateChange(Session::CONNECTED))
           .Times(AtMost(1));
+      EXPECT_CALL(host_session_event_handler_,
+                  OnSessionStateChange(Session::AUTHENTICATING))
+          .Times(AtMost(1));
       if (expect_fail) {
         EXPECT_CALL(host_session_event_handler_,
                     OnSessionStateChange(Session::FAILED))
@@ -216,6 +231,9 @@ class JingleSessionTest : public testing::Test {
 
       EXPECT_CALL(client_session_event_handler_,
                   OnSessionStateChange(Session::CONNECTED))
+          .Times(AtMost(1));
+      EXPECT_CALL(client_session_event_handler_,
+                  OnSessionStateChange(Session::AUTHENTICATING))
           .Times(AtMost(1));
       if (expect_fail) {
         EXPECT_CALL(client_session_event_handler_,
@@ -373,6 +391,60 @@ TEST_F(JingleSessionTest, TestStreamChannel) {
   tester.Start();
   message_loop_->Run();
   tester.CheckResults();
+}
+
+TEST_F(JingleSessionTest, DeleteSessionOnIncomingConnection) {
+  CreateSessionManagers(3, FakeAuthenticator::ACCEPT);
+
+  EXPECT_CALL(host_server_listener_, OnIncomingSession(_, _))
+      .WillOnce(DoAll(
+          WithArg<0>(Invoke(this, &JingleSessionTest::SetHostSession)),
+          SetArgumentPointee<1>(protocol::SessionManager::ACCEPT)));
+
+  EXPECT_CALL(host_session_event_handler_,
+      OnSessionStateChange(Session::CONNECTED))
+      .Times(AtMost(1));
+
+  EXPECT_CALL(host_session_event_handler_,
+      OnSessionStateChange(Session::AUTHENTICATING))
+      .WillOnce(InvokeWithoutArgs(this, &JingleSessionTest::DeleteSession));
+
+  scoped_ptr<Authenticator> authenticator(new FakeAuthenticator(
+      FakeAuthenticator::CLIENT, 3, FakeAuthenticator::ACCEPT, true));
+
+  client_session_ = client_server_->Connect(
+      kHostJid, authenticator.Pass(),
+      CandidateSessionConfig::CreateDefault());
+
+  base::RunLoop().RunUntilIdle();
+}
+
+TEST_F(JingleSessionTest, DeleteSessionOnAuth) {
+  // Same as the previous test, but set messages_till_started to 2 in
+  // CreateSessionManagers so that the session will goes into the
+  // AUTHENTICATING state after two message exchanges.
+  CreateSessionManagers(3, 2, FakeAuthenticator::ACCEPT);
+
+  EXPECT_CALL(host_server_listener_, OnIncomingSession(_, _))
+      .WillOnce(DoAll(
+          WithArg<0>(Invoke(this, &JingleSessionTest::SetHostSession)),
+          SetArgumentPointee<1>(protocol::SessionManager::ACCEPT)));
+
+  EXPECT_CALL(host_session_event_handler_,
+      OnSessionStateChange(Session::CONNECTED))
+      .Times(AtMost(1));
+
+  EXPECT_CALL(host_session_event_handler_,
+      OnSessionStateChange(Session::AUTHENTICATING))
+      .WillOnce(InvokeWithoutArgs(this, &JingleSessionTest::DeleteSession));
+
+  scoped_ptr<Authenticator> authenticator(new FakeAuthenticator(
+      FakeAuthenticator::CLIENT, 3, FakeAuthenticator::ACCEPT, true));
+
+  client_session_ = client_server_->Connect(
+      kHostJid, authenticator.Pass(),
+      CandidateSessionConfig::CreateDefault());
+  base::RunLoop().RunUntilIdle();
 }
 
 // Verify that data can be sent over a multiplexed channel.

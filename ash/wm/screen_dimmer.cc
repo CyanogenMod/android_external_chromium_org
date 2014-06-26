@@ -6,15 +6,13 @@
 
 #include "ash/shell.h"
 #include "base/time/time.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // Opacity for |dimming_layer_| when it's dimming the screen.
@@ -65,5 +63,4 @@ void ScreenDimmer::OnWindowBoundsChanged(aura::Window* root,
     dimming_layer_->SetBounds(gfx::Rect(root->bounds().size()));
 }
 
-}  // namespace internal
 }  // namespace ash

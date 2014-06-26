@@ -27,14 +27,12 @@
 #ifndef NET_BASE_FILE_STREAM_CONTEXT_H_
 #define NET_BASE_FILE_STREAM_CONTEXT_H_
 
+#include "base/files/file.h"
 #include "base/message_loop/message_loop.h"
-#include "base/platform_file.h"
+#include "base/move.h"
 #include "base/task_runner.h"
 #include "net/base/completion_callback.h"
 #include "net/base/file_stream.h"
-#include "net/base/file_stream_metrics.h"
-#include "net/base/file_stream_whence.h"
-#include "net/base/net_log.h"
 
 #if defined(OS_POSIX)
 #include <errno.h>
@@ -59,38 +57,23 @@ class FileStream::Context {
   // file_stream_context_{win,posix}.cc.
   ////////////////////////////////////////////////////////////////////////////
 
-  Context(const BoundNetLog& bound_net_log,
-          const scoped_refptr<base::TaskRunner>& task_runner);
-  Context(base::PlatformFile file,
-          const BoundNetLog& bound_net_log,
-          int open_flags,
-          const scoped_refptr<base::TaskRunner>& task_runner);
+  explicit Context(const scoped_refptr<base::TaskRunner>& task_runner);
+  Context(base::File file, const scoped_refptr<base::TaskRunner>& task_runner);
 #if defined(OS_WIN)
   virtual ~Context();
 #elif defined(OS_POSIX)
   ~Context();
 #endif
 
-  int64 GetFileSize() const;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback);
 
-  int ReadAsync(IOBuffer* buf,
-                int buf_len,
-                const CompletionCallback& callback);
-  int ReadSync(char* buf, int buf_len);
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback);
 
-  int WriteAsync(IOBuffer* buf,
-                 int buf_len,
-                 const CompletionCallback& callback);
-  int WriteSync(const char* buf, int buf_len);
-
-  int Truncate(int64 bytes);
-
-  ////////////////////////////////////////////////////////////////////////////
-  // Inline methods.
-  ////////////////////////////////////////////////////////////////////////////
-
-  void set_record_uma(bool value) { record_uma_ = value; }
-  base::PlatformFile file() const { return file_; }
+  const base::File& file() const { return file_; }
   bool async_in_progress() const { return async_in_progress_; }
 
   ////////////////////////////////////////////////////////////////////////////
@@ -102,28 +85,19 @@ class FileStream::Context {
   // not closed yet.
   void Orphan();
 
-  void OpenAsync(const base::FilePath& path,
-                 int open_flags,
-                 const CompletionCallback& callback);
-  int OpenSync(const base::FilePath& path, int open_flags);
+  void Open(const base::FilePath& path,
+            int open_flags,
+            const CompletionCallback& callback);
 
-  void CloseSync();
+  void Close(const CompletionCallback& callback);
 
-  void CloseAsync(const CompletionCallback& callback);
+  void Seek(base::File::Whence whence,
+            int64 offset,
+            const Int64CompletionCallback& callback);
 
-  void SeekAsync(Whence whence,
-                 int64 offset,
-                 const Int64CompletionCallback& callback);
-  int64 SeekSync(Whence whence, int64 offset);
-
-  void FlushAsync(const CompletionCallback& callback);
-  int FlushSync();
+  void Flush(const CompletionCallback& callback);
 
  private:
-  ////////////////////////////////////////////////////////////////////////////
-  // Platform-independent methods implemented in file_stream_context.cc.
-  ////////////////////////////////////////////////////////////////////////////
-
   struct IOResult {
     IOResult();
     IOResult(int64 result, int os_error);
@@ -134,53 +108,39 @@ class FileStream::Context {
   };
 
   struct OpenResult {
+    MOVE_ONLY_TYPE_FOR_CPP_03(OpenResult, RValue)
+   public:
     OpenResult();
-    OpenResult(base::PlatformFile file, IOResult error_code);
-    base::PlatformFile file;
+    OpenResult(base::File file, IOResult error_code);
+    // C++03 move emulation of this type.
+    OpenResult(RValue other);
+    OpenResult& operator=(RValue other);
+
+    base::File file;
     IOResult error_code;
   };
 
-  // Log the error from |result| to |bound_net_log_|.
-  void RecordError(const IOResult& result, FileErrorSource source) const;
-
-  void BeginOpenEvent(const base::FilePath& path);
+  ////////////////////////////////////////////////////////////////////////////
+  // Platform-independent methods implemented in file_stream_context.cc.
+  ////////////////////////////////////////////////////////////////////////////
 
   OpenResult OpenFileImpl(const base::FilePath& path, int open_flags);
 
-  void ProcessOpenError(const IOResult& result);
+  IOResult CloseFileImpl();
+
+  IOResult FlushFileImpl();
+
   void OnOpenCompleted(const CompletionCallback& callback,
                        OpenResult open_result);
 
   void CloseAndDelete();
-  void OnCloseCompleted();
 
   Int64CompletionCallback IntToInt64(const CompletionCallback& callback);
 
-  // Called when asynchronous Seek() is completed.
-  // Reports error if needed and calls callback.
-  void ProcessAsyncResult(const Int64CompletionCallback& callback,
-                          FileErrorSource source,
-                          const IOResult& result);
-
-  // Called when asynchronous Open() or Seek()
-  // is completed. |result| contains the result or a network error code.
-  void OnAsyncCompleted(const Int64CompletionCallback& callback, int64 result);
-
-  ////////////////////////////////////////////////////////////////////////////
-  // Helper stuff which is platform-dependent but is used in the platform-
-  // independent code implemented in file_stream_context.cc. These helpers were
-  // introduced solely to implement as much of the Context methods as
-  // possible independently from platform.
-  ////////////////////////////////////////////////////////////////////////////
-
-#if defined(OS_WIN)
-  int GetLastErrno() { return GetLastError(); }
-  void OnAsyncFileOpened();
-#elif defined(OS_POSIX)
-  int GetLastErrno() { return errno; }
-  void OnAsyncFileOpened() {}
-  void CancelIo(base::PlatformFile) {}
-#endif
+  // Called when Open() or Seek() completes. |result| contains the result or a
+  // network error code.
+  void OnAsyncCompleted(const Int64CompletionCallback& callback,
+                        const IOResult& result);
 
   ////////////////////////////////////////////////////////////////////////////
   // Platform-dependent methods implemented in
@@ -188,13 +148,9 @@ class FileStream::Context {
   ////////////////////////////////////////////////////////////////////////////
 
   // Adjusts the position from where the data is read.
-  IOResult SeekFileImpl(Whence whence, int64 offset);
+  IOResult SeekFileImpl(base::File::Whence whence, int64 offset);
 
-  // Flushes all data written to the stream.
-  IOResult FlushFileImpl();
-
-  // Closes the file.
-  IOResult CloseFileImpl();
+  void OnFileOpened();
 
 #if defined(OS_WIN)
   void IOCompletionIsPending(const CompletionCallback& callback, IOBuffer* buf);
@@ -214,18 +170,15 @@ class FileStream::Context {
   IOResult WriteFileImpl(scoped_refptr<IOBuffer> buf, int buf_len);
 #endif
 
-  base::PlatformFile file_;
-  bool record_uma_;
+  base::File file_;
   bool async_in_progress_;
   bool orphaned_;
-  BoundNetLog bound_net_log_;
   scoped_refptr<base::TaskRunner> task_runner_;
 
 #if defined(OS_WIN)
   base::MessageLoopForIO::IOContext io_context_;
   CompletionCallback callback_;
   scoped_refptr<IOBuffer> in_flight_buf_;
-  FileErrorSource error_source_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(Context);
@@ -234,4 +187,3 @@ class FileStream::Context {
 }  // namespace net
 
 #endif  // NET_BASE_FILE_STREAM_CONTEXT_H_
-

@@ -7,18 +7,16 @@
 #include "base/command_line.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_sync_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/pref_names.h"
 #include "extensions/common/extension.h"
-
-#if defined(OS_WIN)
-#include "win8/util/win8_util.h"
-#endif
 
 #if defined(USE_ASH)
 #include "ash/shell.h"
@@ -68,12 +66,6 @@ LaunchType GetLaunchType(const ExtensionPrefs* prefs,
       result = LAUNCH_TYPE_REGULAR;
 #endif
 
-#if defined(OS_WIN)
-    // We don't support app windows in Windows 8 single window Metro mode.
-    if (win8::IsSingleWindowMetroMode() && result == LAUNCH_TYPE_WINDOW)
-      result = LAUNCH_TYPE_REGULAR;
-#endif  // OS_WIN
-
   return result;
 }
 
@@ -89,7 +81,9 @@ void SetLaunchType(ExtensionService* service,
                    LaunchType launch_type) {
   DCHECK(launch_type >= LAUNCH_TYPE_FIRST && launch_type < NUM_LAUNCH_TYPES);
 
-  service->extension_prefs()->UpdateExtensionPref(extension_id, kPrefLaunchType,
+  ExtensionPrefs::Get(service->profile())->UpdateExtensionPref(
+      extension_id,
+      kPrefLaunchType,
       new base::FundamentalValue(static_cast<int>(launch_type)));
 
   // Sync the launch type.

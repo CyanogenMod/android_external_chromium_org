@@ -12,6 +12,7 @@
 #include "chrome/browser/chromeos/drive/file_system/download_operation.h"
 #include "chrome/browser/chromeos/drive/file_system/operation_observer.h"
 #include "chrome/browser/chromeos/drive/file_write_watcher.h"
+#include "chrome/browser/chromeos/drive/job_scheduler.h"
 #include "chrome/browser/drive/event_logger.h"
 #include "content/public/browser/browser_thread.h"
 
@@ -19,6 +20,22 @@ using content::BrowserThread;
 
 namespace drive {
 namespace file_system {
+
+namespace {
+
+FileError OpenCacheFileForWrite(
+    internal::ResourceMetadata* metadata,
+    internal::FileCache* cache,
+    const std::string& local_id,
+    scoped_ptr<base::ScopedClosureRunner>* file_closer,
+    ResourceEntry* entry) {
+  FileError error = cache->OpenForWrite(local_id, file_closer);
+  if (error != FILE_ERROR_OK)
+    return error;
+  return metadata->GetResourceEntryById(local_id, entry);
+}
+
+}  // namespace
 
 GetFileForSavingOperation::GetFileForSavingOperation(
     EventLogger* logger,
@@ -101,15 +118,18 @@ void GetFileForSavingOperation::GetFileForSavingAfterDownload(
   }
 
   const std::string& local_id = entry->local_id();
+  ResourceEntry* entry_ptr = entry.get();
   scoped_ptr<base::ScopedClosureRunner>* file_closer =
       new scoped_ptr<base::ScopedClosureRunner>;
   base::PostTaskAndReplyWithResult(
       blocking_task_runner_.get(),
       FROM_HERE,
-      base::Bind(&internal::FileCache::OpenForWrite,
-                 base::Unretained(cache_),
+      base::Bind(&OpenCacheFileForWrite,
+                 metadata_,
+                 cache_,
                  local_id,
-                 file_closer),
+                 file_closer,
+                 entry_ptr),
       base::Bind(&GetFileForSavingOperation::GetFileForSavingAfterOpenForWrite,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback,

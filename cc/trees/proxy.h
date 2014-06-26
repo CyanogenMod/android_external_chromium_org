@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
 #include "cc/base/cc_export.h"
@@ -24,6 +25,7 @@ class Vector2d;
 
 namespace cc {
 
+class LayerTreeDebugState;
 class OutputSurface;
 struct RendererCapabilities;
 
@@ -39,14 +41,12 @@ class CC_EXPORT Proxy {
   bool IsMainThread() const;
   bool IsImplThread() const;
   bool IsMainThreadBlocked() const;
-#ifndef NDEBUG
+#if DCHECK_IS_ON
   void SetMainThreadBlocked(bool is_main_thread_blocked);
   void SetCurrentThreadIsImplThread(bool is_impl_thread);
 #endif
 
   virtual ~Proxy();
-
-  virtual bool CompositeAndReadback(void* pixels, const gfx::Rect& rect) = 0;
 
   virtual void FinishAllRendering() = 0;
 
@@ -57,11 +57,6 @@ class CC_EXPORT Proxy {
   virtual void SetLayerTreeHostClientReady() = 0;
 
   virtual void SetVisible(bool visible) = 0;
-
-  // Attempts to recreate the context and renderer synchronously after the
-  // output surface is lost. Calls
-  // LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted with the result.
-  virtual void CreateAndInitializeOutputSurface() = 0;
 
   virtual const RendererCapabilities& GetRendererCapabilities() const = 0;
 
@@ -94,13 +89,13 @@ class CC_EXPORT Proxy {
   // Maximum number of sub-region texture updates supported for each commit.
   virtual size_t MaxPartialTextureUpdates() const = 0;
 
-  virtual void AcquireLayerTextures() = 0;
-
   virtual scoped_ptr<base::Value> AsValue() const = 0;
+
+  virtual void SetDebugState(const LayerTreeDebugState& debug_state) = 0;
 
   // Testing hooks
   virtual bool CommitPendingForTesting() = 0;
-  virtual scoped_ptr<base::Value> SchedulerStateAsValueForTesting();
+  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting();
 
  protected:
   explicit Proxy(
@@ -112,7 +107,8 @@ class CC_EXPORT Proxy {
  private:
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner_;
-#ifndef NDEBUG
+#if DCHECK_IS_ON
+  const base::PlatformThreadId main_thread_id_;
   bool impl_thread_is_overridden_;
   bool is_main_thread_blocked_;
 #endif
@@ -120,7 +116,7 @@ class CC_EXPORT Proxy {
   DISALLOW_COPY_AND_ASSIGN(Proxy);
 };
 
-#ifndef NDEBUG
+#if DCHECK_IS_ON
 class DebugScopedSetMainThreadBlocked {
  public:
   explicit DebugScopedSetMainThreadBlocked(Proxy* proxy) : proxy_(proxy) {

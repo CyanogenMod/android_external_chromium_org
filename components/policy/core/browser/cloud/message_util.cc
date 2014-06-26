@@ -5,7 +5,7 @@
 #include "components/policy/core/browser/cloud/message_util.h"
 
 #include "base/logging.h"
-#include "grit/component_strings.h"
+#include "grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace policy {
@@ -42,6 +42,8 @@ int GetIDSForDMStatus(DeviceManagementStatus status) {
       return IDS_POLICY_DM_STATUS_SERVICE_MISSING_LICENSES;
     case DM_STATUS_SERVICE_DEPROVISIONED:
       return IDS_POLICY_DM_STATUS_SERVICE_DEPROVISIONED;
+    case DM_STATUS_SERVICE_DOMAIN_MISMATCH:
+      return IDS_POLICY_DM_STATUS_SERVICE_DOMAIN_MISMATCH;
     case DM_STATUS_SERVICE_POLICY_NOT_FOUND:
       return IDS_POLICY_DM_STATUS_SERVICE_POLICY_NOT_FOUND;
   }

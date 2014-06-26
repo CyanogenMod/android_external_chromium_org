@@ -51,8 +51,12 @@ static NSWindow* alwaysInactiveWindow = nil;
 
 - (id)initWithActiveControls:(BOOL)_hasActiveControls
 {
-    self = [super init];
-    hasActiveControls = _hasActiveControls;
+    if ((self = [super initWithContentRect:NSMakeRect(0, 0, 100, 100)
+                                 styleMask:0
+                                   backing:NSBackingStoreBuffered
+                                     defer:YES])) {
+        hasActiveControls = _hasActiveControls;
+    }
     return self;
 }
 
@@ -63,7 +67,7 @@ static NSWindow* alwaysInactiveWindow = nil;
 
 @end
 
-namespace WebTestRunner {
+namespace content {
 
 namespace {
 
@@ -79,7 +83,7 @@ ThemeTrackEnableState stateToHIEnableState(WebThemeEngine::State state)
     }
 }
 
-}
+}  // namespace
 
 void WebTestThemeEngineMac::paintScrollbarThumb(
     WebCanvas* canvas,
@@ -170,4 +174,4 @@ void WebTestThemeEngineMac::paintNSScrollerScrollbarThumb(
     [NSGraphicsContext restoreGraphicsState];
 }
 
-}
+}  // namespace content

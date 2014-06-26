@@ -6,6 +6,7 @@ cr.define('options', function() {
   var OptionsPage = options.OptionsPage;
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var RepeatingButton = cr.ui.RepeatingButton;
+  var HotwordSearchSettingIndicator = options.HotwordSearchSettingIndicator;
 
   //
   // BrowserOptions class
@@ -18,6 +19,16 @@ cr.define('options', function() {
 
   cr.addSingletonGetter(BrowserOptions);
 
+  /**
+   * @param {HTMLElement} section The section to show or hide.
+   * @return {boolean} Whether the section should be shown.
+   * @private
+   */
+  BrowserOptions.shouldShowSection_ = function(section) {
+    // If the section is hidden or hiding, it should be shown.
+    return section.style.height == '' || section.style.height == '0px';
+  };
+
   BrowserOptions.prototype = {
     __proto__: options.OptionsPage.prototype,
 
@@ -27,6 +38,14 @@ cr.define('options', function() {
      * @private
      */
     signedIn_: false,
+
+    /**
+     * Indicates whether signing out is allowed or whether a complete profile
+     * wipe is required to remove the current enterprise account.
+     * @type {boolean}
+     * @private
+     */
+    signoutAllowed_: true,
 
     /**
      * Keeps track of whether |onShowHomeButtonChanged_| has been called. See
@@ -45,6 +64,14 @@ cr.define('options', function() {
      */
     initializationComplete_: false,
 
+    /**
+     * When a section is waiting to change its height, this will be a number.
+     * Otherwise it'll be null.
+     * @type {?number}
+     * @private
+     */
+    sectionHeightChangeTimeout_: null,
+
     /** @override */
     initializePage: function() {
       OptionsPage.prototype.initializePage.call(this);
@@ -57,21 +84,32 @@ cr.define('options', function() {
 
       window.addEventListener('message', this.handleWindowMessage_.bind(this));
 
-      $('advanced-settings-expander').onclick = function() {
-        self.toggleSectionWithAnimation_(
-            $('advanced-settings'),
-            $('advanced-settings-container'));
+      if (loadTimeData.getBoolean('allowAdvancedSettings')) {
+        $('advanced-settings-expander').onclick = function() {
+          var showAdvanced =
+              BrowserOptions.shouldShowSection_($('advanced-settings'));
+          if (showAdvanced) {
+            chrome.send('coreOptionsUserMetricsAction',
+                        ['Options_ShowAdvancedSettings']);
+          }
+          self.toggleSectionWithAnimation_(
+              $('advanced-settings'),
+              $('advanced-settings-container'));
 
-        // If the link was focused (i.e., it was activated using the keyboard)
-        // and it was used to show the section (rather than hiding it), focus
-        // the first element in the container.
-        if (document.activeElement === $('advanced-settings-expander') &&
-                $('advanced-settings').style.height === '') {
-          var focusElement = $('advanced-settings-container').querySelector(
-              'button, input, list, select, a[href]');
-          if (focusElement)
-            focusElement.focus();
-        }
+          // If the link was focused (i.e., it was activated using the keyboard)
+          // and it was used to show the section (rather than hiding it), focus
+          // the first element in the container.
+          if (document.activeElement === $('advanced-settings-expander') &&
+              showAdvanced) {
+            var focusElement = $('advanced-settings-container').querySelector(
+                'button, input, list, select, a[href]');
+            if (focusElement)
+              focusElement.focus();
+          }
+        };
+      } else {
+        $('advanced-settings-expander').hidden = true;
+        $('advanced-settings').hidden = true;
       }
 
       $('advanced-settings').addEventListener('webkitTransitionEnd',
@@ -87,12 +125,16 @@ cr.define('options', function() {
       this.updateSyncState_(loadTimeData.getValue('syncData'));
 
       $('start-stop-sync').onclick = function(event) {
-        if (self.signedIn_)
-          SyncSetupOverlay.showStopSyncingUI();
-        else if (cr.isChromeOS)
+        if (self.signedIn_) {
+          if (self.signoutAllowed_)
+            SyncSetupOverlay.showStopSyncingUI();
+          else
+            chrome.send('showDisconnectManagedProfileDialog');
+        } else if (cr.isChromeOS) {
           SyncSetupOverlay.showSetupUI();
-        else
+        } else {
           SyncSetupOverlay.startSignIn();
+        }
       };
       $('customize-sync').onclick = function(event) {
         SyncSetupOverlay.showSetupUI();
@@ -137,18 +179,27 @@ cr.define('options', function() {
 
       $('change-home-page').onclick = function(event) {
         OptionsPage.navigateToPage('homePageOverlay');
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_Homepage_ShowSettings']);
       };
 
+      var hotwordIndicator = $('hotword-search-setting-indicator');
+      HotwordSearchSettingIndicator.decorate(hotwordIndicator);
+      hotwordIndicator.disabledOnErrorSection = $('hotword-search-enable');
       chrome.send('requestHotwordAvailable');
 
       if ($('set-wallpaper')) {
         $('set-wallpaper').onclick = function(event) {
           chrome.send('openWallpaperManager');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_OpenWallpaperManager']);
         };
       }
 
       $('themes-gallery').onclick = function(event) {
         window.open(loadTimeData.getString('themesGalleryURL'));
+        chrome.send('coreOptionsUserMetricsAction',
+                    ['Options_ThemesGallery']);
       };
       $('themes-reset').onclick = function(event) {
         chrome.send('themesReset');
@@ -168,9 +219,13 @@ cr.define('options', function() {
       if (cr.isChromeOS) {
         $('keyboard-settings-button').onclick = function(evt) {
           OptionsPage.navigateToPage('keyboard-overlay');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_ShowKeyboardSettings']);
         };
         $('pointer-settings-button').onclick = function(evt) {
           OptionsPage.navigateToPage('pointer-overlay');
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_ShowTouchpadSettings']);
         };
       }
 
@@ -182,16 +237,11 @@ cr.define('options', function() {
       };
       $('default-search-engine').addEventListener('change',
           this.setDefaultSearchEngine_);
-      // Without this, the bubble would overlap the uber frame navigation pane
-      // and would not get mouse event as explained in crbug.com/311421.
-      document.querySelector(
-          '#default-search-engine + .controlled-setting-indicator').location =
-              cr.ui.ArrowLocation.TOP_START;
 
       // Users section.
       if (loadTimeData.valueExists('profilesInfo')) {
-        $('sync-users-section').hidden = false;
         $('profiles-section').hidden = false;
+        this.maybeShowUserSection_();
 
         var profilesList = $('profiles-list');
         options.browser_options.ProfileList.decorate(profilesList);
@@ -247,10 +297,6 @@ cr.define('options', function() {
             '#enable-screen-lock + span > .controlled-setting-indicator').
             setAttribute('textshared',
                          loadTimeData.getString('screenLockShared'));
-
-        $('hotword-app-list').hidden =
-            !loadTimeData.getBoolean('shouldShowAppListHotword');
-
       } else {
         $('import-data').onclick = function(event) {
           ImportDataOverlay.show();
@@ -263,6 +309,10 @@ cr.define('options', function() {
           };
         }
       }
+
+      // Date and time section (CrOS only).
+      if ($('set-time-button'))
+        $('set-time-button').onclick = this.handleSetTime_.bind(this);
 
       // Default browser section.
       if (!cr.isChromeOS) {
@@ -366,6 +416,26 @@ cr.define('options', function() {
         };
       }
 
+      // Device control section.
+      if (cr.isChromeOS &&
+          loadTimeData.getBoolean('consumerManagementEnabled')) {
+        $('device-control-section').hidden = false;
+
+        $('consumer-management-section').onclick = function(event) {
+          // If either button is clicked.
+          if (event.target.tagName == 'BUTTON')
+            OptionsPage.navigateToPage('consumer-management-overlay');
+        };
+      }
+
+      // Easy Unlock section.
+      if (loadTimeData.getBoolean('easyUnlockEnabled')) {
+        $('easy-unlock-section').hidden = false;
+        $('easy-unlock-setup-button').onclick = function(event) {
+          chrome.send('launchEasyUnlockSetup');
+        };
+      }
+
       // Web Content section.
       $('fontSettingsCustomizeFontsButton').onclick = function(event) {
         OptionsPage.navigateToPage('fonts');
@@ -398,14 +468,13 @@ cr.define('options', function() {
       $('downloadLocationChangeButton').onclick = function(event) {
         chrome.send('selectDownloadLocation');
       };
-      if (!cr.isChromeOS) {
-        $('autoOpenFileTypesResetToDefault').onclick = function(event) {
-          chrome.send('autoOpenFileTypesAction');
-        };
-      } else {
+      if (cr.isChromeOS) {
         $('disable-drive-row').hidden =
             UIAccountTweaks.loggedInAsLocallyManagedUser();
       }
+      $('autoOpenFileTypesResetToDefault').onclick = function(event) {
+        chrome.send('autoOpenFileTypesAction');
+      };
 
       // HTTPS/SSL section.
       if (cr.isWindows || cr.isMac) {
@@ -420,29 +489,8 @@ cr.define('options', function() {
         };
       }
 
-      // Cloud Print section.
-      // 'cloudPrintProxyEnabled' is true for Chrome branded builds on
-      // certain platforms, or could be enabled by a lab.
-      if (!cr.isChromeOS) {
-        $('cloudPrintConnectorSetupButton').onclick = function(event) {
-          if ($('cloudPrintManageButton').style.display == 'none') {
-            // Disable the button, set its text to the intermediate state.
-            $('cloudPrintConnectorSetupButton').textContent =
-              loadTimeData.getString('cloudPrintConnectorEnablingButton');
-            $('cloudPrintConnectorSetupButton').disabled = true;
-            chrome.send('showCloudPrintSetupDialog');
-          } else {
-            chrome.send('disableCloudPrintConnector');
-          }
-        };
-      }
-      $('cloudPrintManageButton').onclick = function(event) {
-        chrome.send('showCloudPrintManagePage');
-      };
-
       if (loadTimeData.getBoolean('cloudPrintShowMDnsOptions')) {
         $('cloudprint-options-mdns').hidden = false;
-        $('cloudprint-options-nomdns').hidden = true;
         $('cloudPrintDevicesPageButton').onclick = function() {
           chrome.send('showCloudPrintDevicesPage');
         };
@@ -457,17 +505,24 @@ cr.define('options', function() {
         Preferences.getInstance().addEventListener(
             'settings.accessibility',
             updateAccessibilitySettingsButton);
-        $('accessibility-settings-button').onclick = function(event) {
+        $('accessibility-learn-more').onclick = function(unused_event) {
+          window.open(loadTimeData.getString('accessibilityLearnMoreURL'));
+          chrome.send('coreOptionsUserMetricsAction',
+                      ['Options_AccessibilityLearnMore']);
+        };
+        $('accessibility-settings-button').onclick = function(unused_event) {
           window.open(loadTimeData.getString('accessibilitySettingsURL'));
         };
-        $('accessibility-spoken-feedback-check').onchange = function(event) {
+        $('accessibility-spoken-feedback-check').onchange = function(
+            unused_event) {
           chrome.send('spokenFeedbackChange',
                       [$('accessibility-spoken-feedback-check').checked]);
           updateAccessibilitySettingsButton();
         };
         updateAccessibilitySettingsButton();
 
-        $('accessibility-high-contrast-check').onchange = function(event) {
+        $('accessibility-high-contrast-check').onchange = function(
+            unused_event) {
           chrome.send('highContrastChange',
                       [$('accessibility-high-contrast-check').checked]);
         };
@@ -494,6 +549,7 @@ cr.define('options', function() {
       if (cr.isChromeOS) {
         $('factory-reset-restart').onclick = function(event) {
           OptionsPage.navigateToPage('factoryResetData');
+          chrome.send('onPowerwashDialogShow');
         };
       }
 
@@ -519,6 +575,33 @@ cr.define('options', function() {
       };
       $('reset-profile-settings-section').hidden =
           !loadTimeData.getBoolean('enableResetProfileSettings');
+
+      // Extension controlled UI.
+      this.addExtensionControlledBox_('search-section-content',
+                                      'search-engine-controlled',
+                                      true);
+      this.addExtensionControlledBox_('extension-controlled-container',
+                                      'homepage-controlled',
+                                      true);
+      this.addExtensionControlledBox_('startup-section-content',
+                                      'startpage-controlled',
+                                      false);
+      this.addExtensionControlledBox_('newtab-section-content',
+                                      'newtab-controlled',
+                                      false);
+      this.addExtensionControlledBox_('proxy-section-content',
+                                      'proxy-controlled',
+                                      true);
+
+      document.body.addEventListener('click', function(e) {
+        var button = findAncestor(e.target, function(el) {
+          return el.tagName == 'BUTTON' &&
+                 el.dataset.extensionId !== undefined &&
+                 el.dataset.extensionId.length;
+        });
+        if (button)
+          chrome.send('disableExtension', [button.dataset.extensionId]);
+      });
     },
 
     /** @override */
@@ -572,6 +655,35 @@ cr.define('options', function() {
     },
 
     /**
+     * Animatedly changes height |from| a px number |to| a px number.
+     * @param {HTMLElement} section The section to animate.
+     * @param {HTMLElement} container The container of |section|.
+     * @param {boolean} showing Whether to go from 0 -> container height or
+     *     container height -> 0.
+     * @private
+     */
+    animatedSectionHeightChange_: function(section, container, showing) {
+      // If the section is already animating, dispatch a synthetic transition
+      // end event as the upcoming code will cancel the current one.
+      if (section.classList.contains('sliding'))
+        cr.dispatchSimpleEvent(section, 'webkitTransitionEnd');
+
+      this.addTransitionEndListener_(section);
+
+      section.hidden = false;
+      section.style.height = (showing ? 0 : container.offsetHeight) + 'px';
+      section.classList.add('sliding');
+
+      if (this.sectionHeightChangeTimeout_ !== null)
+        clearTimeout(this.sectionHeightChangeTimeout_);
+
+      this.sectionHeightChangeTimeout_ = setTimeout(function() {
+        section.style.height = (showing ? container.offsetHeight : 0) + 'px';
+        this.sectionHeightChangeTimeout_ = null;
+      });
+    },
+
+    /**
      * Shows the given section.
      * @param {HTMLElement} section The section to be shown.
      * @param {HTMLElement} container The container for the section. Must be
@@ -580,30 +692,15 @@ cr.define('options', function() {
      * @private
      */
     showSection_: function(section, container, animate) {
-      if (animate)
-        this.addTransitionEndListener_(section);
-
-      // Unhide
-      section.hidden = false;
-      section.style.height = '0px';
-
-      var expander = function() {
-        // Reveal the section using a WebKit transition if animating.
-        if (animate) {
-          section.classList.add('sliding');
-          section.style.height = container.offsetHeight + 'px';
-        } else {
-          section.style.height = 'auto';
-        }
-      };
-
       // Delay starting the transition if animating so that hidden change will
       // be processed.
-      if (animate)
-        setTimeout(expander, 0);
-      else
-        expander();
-      },
+      if (animate) {
+        this.animatedSectionHeightChange_(section, container, true);
+      } else {
+        section.hidden = false;
+        section.style.height = 'auto';
+      }
+    },
 
     /**
      * Shows the given section, with animation.
@@ -613,33 +710,29 @@ cr.define('options', function() {
      * @private
      */
     showSectionWithAnimation_: function(section, container) {
-      this.showSection_(section, container, /*animate */ true);
+      this.showSection_(section, container, /* animate */ true);
     },
 
     /**
-     * See showSectionWithAnimation_.
+     * Hides the given |section| with animation.
+     * @param {HTMLElement} section The section to be hidden.
+     * @param {HTMLElement} container The container for the section. Must be
+     *     inside of |section|.
+     * @private
      */
     hideSectionWithAnimation_: function(section, container) {
-      this.addTransitionEndListener_(section);
-
-      // Before we start hiding the section, we need to set
-      // the height to a pixel value.
-      section.style.height = container.offsetHeight + 'px';
-
-      // Delay starting the transition so that the height change will be
-      // processed.
-      setTimeout(function() {
-        // Hide the section using a WebKit transition.
-        section.classList.add('sliding');
-        section.style.height = '0px';
-      }, 0);
+      this.animatedSectionHeightChange_(section, container, false);
     },
 
     /**
-     * See showSectionWithAnimation_.
+     * Toggles the visibility of |section| in an animated way.
+     * @param {HTMLElement} section The section to be toggled.
+     * @param {HTMLElement} container The container for the section. Must be
+     *     inside of |section|.
+     * @private
      */
     toggleSectionWithAnimation_: function(section, container) {
-      if (section.style.height == '')
+      if (BrowserOptions.shouldShowSection_(section))
         this.showSectionWithAnimation_(section, container);
       else
         this.hideSectionWithAnimation_(section, container);
@@ -656,7 +749,10 @@ cr.define('options', function() {
     scrollToSection_: function(section) {
       var advancedSettings = $('advanced-settings');
       var container = $('advanced-settings-container');
-      if (advancedSettings.hidden && section.parentNode == container) {
+      var expander = $('advanced-settings-expander');
+      if (!expander.hidden &&
+          advancedSettings.hidden &&
+          section.parentNode == container) {
         this.showSection_($('advanced-settings'),
                           $('advanced-settings-container'),
                           /* animate */ false);
@@ -709,16 +805,22 @@ cr.define('options', function() {
 
     /**
      * Called after an animation transition has ended.
+     * @param {Event} The webkitTransitionEnd event. NOTE: May be synthetic.
      * @private
      */
     onTransitionEnd_: function(event) {
-      if (event.propertyName != 'height')
+      if (event.propertyName && event.propertyName != 'height') {
+        // If not a synthetic event or a real transition we care about, bail.
         return;
+      }
 
       var section = event.target;
-
-      // Disable WebKit transitions.
       section.classList.remove('sliding');
+
+      if (!event.propertyName) {
+        // Only real transitions past this point.
+        return;
+      }
 
       if (section.style.height == '0px') {
         // Hide the content so it can't get tab focus.
@@ -731,9 +833,10 @@ cr.define('options', function() {
       }
     },
 
+    /** @private */
     updateAdvancedSettingsExpander_: function() {
       var expander = $('advanced-settings-expander');
-      if ($('advanced-settings').style.height == '0px')
+      if (BrowserOptions.shouldShowSection_($('advanced-settings')))
         expander.textContent = loadTimeData.getString('showAdvancedSettings');
       else
         expander.textContent = loadTimeData.getString('hideAdvancedSettings');
@@ -749,22 +852,25 @@ cr.define('options', function() {
       if (!syncData.signinAllowed &&
           (!syncData.supervisedUser || !cr.isChromeOS)) {
         $('sync-section').hidden = true;
+        this.maybeShowUserSection_();
         return;
       }
 
       $('sync-section').hidden = false;
+      this.maybeShowUserSection_();
 
-      var subSection = $('sync-section').firstChild;
-      while (subSection) {
-        if (subSection.nodeType == Node.ELEMENT_NODE)
-          subSection.hidden = syncData.supervisedUser;
-        subSection = subSection.nextSibling;
-      }
+      if (cr.isChromeOS && syncData.supervisedUser) {
+        var subSection = $('sync-section').firstChild;
+        while (subSection) {
+          if (subSection.nodeType == Node.ELEMENT_NODE)
+            subSection.hidden = true;
+          subSection = subSection.nextSibling;
+        }
 
-      if (syncData.supervisedUser) {
         $('account-picture-wrapper').hidden = false;
         $('sync-general').hidden = false;
         $('sync-status').hidden = true;
+
         return;
       }
 
@@ -801,8 +907,8 @@ cr.define('options', function() {
       // Disable the "sign in" button if we're currently signing in, or if we're
       // already signed in and signout is not allowed.
       var signInButton = $('start-stop-sync');
-      signInButton.disabled = syncData.setupInProgress ||
-                              !syncData.signoutAllowed;
+      signInButton.disabled = syncData.setupInProgress;
+      this.signoutAllowed_ = syncData.signoutAllowed;
       if (!syncData.signoutAllowed)
         $('start-stop-sync-indicator').setAttribute('controlled-by', 'policy');
       else
@@ -852,28 +958,27 @@ cr.define('options', function() {
       customizeSyncButton.disabled =
           syncData.hasUnrecoverableError ||
           (!syncData.setupCompleted && !$('sync-action-link').hidden);
+    },
 
-      // Move #enable-auto-login-checkbox to a different location on CrOS.
-      if (cr.isChromeOs) {
-        $('sync-general').insertBefore($('sync-status').nextSibling,
-                                       $('enable-auto-login-checkbox'));
-      }
-      $('enable-auto-login-checkbox').hidden = !syncData.autoLoginVisible;
+    /**
+     * Update the UI depending on whether the current profile has a pairing for
+     * Easy Unlock.
+     * @param {boolean} hasPairing True if the current profile has a pairing.
+     */
+    updateEasyUnlock_: function(hasPairing) {
+      $('easy-unlock-setup').hidden = hasPairing;
+      $('easy-unlock-enable').hidden = !hasPairing;
     },
 
     /**
      * Update the UI depending on whether the current profile manages any
      * supervised users.
-     * @param {boolean} value True if the current profile manages any supervised
+     * @param {boolean} show True if the current profile manages any supervised
      *     users.
      */
-    updateManagesSupervisedUsers_: function(value) {
-      if (value) {
-        $('sync-users-section').hidden = false;
-        $('profiles-supervised-dashboard-tip').hidden = false;
-      } else {
-        $('profiles-supervised-dashboard-tip').hidden = true;
-      }
+    updateManagesSupervisedUsers_: function(show) {
+      $('profiles-supervised-dashboard-tip').hidden = !show;
+      this.maybeShowUserSection_();
     },
 
     /**
@@ -907,10 +1012,15 @@ cr.define('options', function() {
 
     /**
      * Activates the Hotword section from the System settings page.
+     * @param {boolean} opt_enabled Current preference state for hotwording.
+     * @param {string} opt_error The error message to display.
      * @private
      */
-    showHotwordSection_: function() {
+    showHotwordSection_: function(opt_enabled, opt_error) {
       $('hotword-search').hidden = false;
+      $('hotword-search-setting-indicator').setError(opt_error);
+      if (opt_enabled && opt_error)
+        $('hotword-search-setting-indicator').updateBasedOnError();
     },
 
     /**
@@ -1129,7 +1239,8 @@ cr.define('options', function() {
      *         name: "Profile Name",
      *         iconURL: "chrome://path/to/icon/image",
      *         filePath: "/path/to/profile/data/on/disk",
-     *         isCurrentProfile: false
+     *         isCurrentProfile: false,
+     *         isManaged: false
      *       };
      * @private
      */
@@ -1217,6 +1328,15 @@ cr.define('options', function() {
              'There should always be a current profile, but none found.');
     },
 
+    /**
+     * Propmpts user to confirm deletion of the profile for this browser
+     * window.
+     * @private
+     */
+    deleteCurrentProfile_: function() {
+      ManageProfileOverlay.showDeleteDialog(this.getCurrentProfile_());
+    },
+
     setNativeThemeButtonEnabled_: function(enabled) {
       var button = $('themes-native-button');
       if (button)
@@ -1256,6 +1376,20 @@ cr.define('options', function() {
         picture.src = 'chrome://userimage/' + this.username_ + '?id=' +
             Date.now();
       }
+    },
+
+    setWallpaperManaged_: function(managed) {
+      var button = $('set-wallpaper');
+      button.disabled = !!managed;
+
+      // Create a synthetic pref change event decorated as
+      // CoreOptionsHandler::CreateValueForPref() does.
+      var event = new Event('wallpaper');
+      if (managed)
+        event.value = { controlledBy: 'policy' };
+      else
+        event.value = {};
+      $('wallpaper-indicator').handlePrefChange(event);
     },
 
     /**
@@ -1377,9 +1511,6 @@ cr.define('options', function() {
      * @private
      */
     setAutoOpenFileTypesDisplayed_: function(display) {
-      if (cr.isChromeOS)
-        return;
-
       if ($('advanced-settings').hidden) {
         // If the Advanced section is hidden, don't animate the transition.
         $('auto-open-file-types-section').hidden = !display;
@@ -1397,46 +1528,19 @@ cr.define('options', function() {
     },
 
     /**
-     * Set the enabled state for the proxy settings button.
+     * Set the enabled state for the proxy settings button and its associated
+     * message when extension controlled.
+     * @param {boolean} disabled Whether the button should be disabled.
+     * @param {boolean} extensionControlled Whether the proxy is extension
+     *     controlled.
      * @private
      */
-    setupProxySettingsSection_: function(disabled, extensionControlled) {
+    setupProxySettingsButton_: function(disabled, extensionControlled) {
       if (!cr.isChromeOS) {
         $('proxiesConfigureButton').disabled = disabled;
         $('proxiesLabel').textContent =
             loadTimeData.getString(extensionControlled ?
                 'proxiesLabelExtension' : 'proxiesLabelSystem');
-      }
-    },
-
-    /**
-     * Set the Cloud Print proxy UI to enabled, disabled, or processing.
-     * @private
-     */
-    setupCloudPrintConnectorSection_: function(disabled, label, allowed) {
-      if (!cr.isChromeOS) {
-        $('cloudPrintConnectorLabel').textContent = label;
-        if (disabled || !allowed) {
-          $('cloudPrintConnectorSetupButton').textContent =
-            loadTimeData.getString('cloudPrintConnectorDisabledButton');
-          $('cloudPrintManageButton').style.display = 'none';
-        } else {
-          $('cloudPrintConnectorSetupButton').textContent =
-            loadTimeData.getString('cloudPrintConnectorEnabledButton');
-          $('cloudPrintManageButton').style.display = 'inline';
-        }
-        $('cloudPrintConnectorSetupButton').disabled = !allowed;
-      }
-    },
-
-    /**
-     * @private
-     */
-    removeCloudPrintConnectorSection_: function() {
-     if (!cr.isChromeOS) {
-        var connectorSectionElm = $('cloud-print-connector-section');
-        if (connectorSectionElm)
-          connectorSectionElm.parentNode.removeChild(connectorSectionElm);
       }
     },
 
@@ -1471,6 +1575,92 @@ cr.define('options', function() {
     showMouseControls_: function(show) {
       $('mouse-settings').hidden = !show;
     },
+
+    /**
+     * Adds hidden warning boxes for settings potentially controlled by
+     * extensions.
+     * @param {string} parentDiv The div name to append the bubble to.
+     * @param {string} bubbleId The ID to use for the bubble.
+     * @param {boolean} first Add as first node if true, otherwise last.
+     * @private
+     */
+    addExtensionControlledBox_: function(parentDiv, bubbleId, first) {
+      var bubble = $('extension-controlled-warning-template').cloneNode(true);
+      bubble.id = bubbleId;
+      var parent = $(parentDiv);
+      if (first)
+        parent.insertBefore(bubble, parent.firstChild);
+      else
+        parent.appendChild(bubble);
+    },
+
+    /**
+     * Adds a bubble showing that an extension is controlling a particular
+     * setting.
+     * @param {string} parentDiv The div name to append the bubble to.
+     * @param {string} bubbleId The ID to use for the bubble.
+     * @param {string} extensionId The ID of the controlling extension.
+     * @param {string} extensionName The name of the controlling extension.
+     * @private
+     */
+    toggleExtensionControlledBox_: function(
+        parentDiv, bubbleId, extensionId, extensionName) {
+      var bubble = $(bubbleId);
+      assert(bubble);
+      bubble.hidden = extensionId.length == 0;
+      if (bubble.hidden)
+        return;
+
+      // Set the extension image.
+      var div = bubble.firstElementChild;
+      div.style.backgroundImage =
+          'url(chrome://extension-icon/' + extensionId + '/24/1)';
+
+      // Set the bubble label.
+      var label = loadTimeData.getStringF('extensionControlled', extensionName);
+      var docFrag = parseHtmlSubset('<div>' + label + '</div>', ['B', 'DIV']);
+      div.innerHTML = docFrag.firstChild.innerHTML;
+
+      // Wire up the button to disable the right extension.
+      var button = div.nextElementSibling;
+      button.dataset.extensionId = extensionId;
+    },
+
+    /**
+     * Toggles the warning boxes that show which extension is controlling
+     * various settings of Chrome.
+     * @param {object} details A dictionary of ID+name pairs for each of the
+     *     settings controlled by an extension.
+     * @private
+     */
+    toggleExtensionIndicators_: function(details) {
+      this.toggleExtensionControlledBox_('search-section-content',
+                                         'search-engine-controlled',
+                                         details.searchEngine.id,
+                                         details.searchEngine.name);
+      this.toggleExtensionControlledBox_('extension-controlled-container',
+                                         'homepage-controlled',
+                                         details.homePage.id,
+                                         details.homePage.name);
+      this.toggleExtensionControlledBox_('startup-section-content',
+                                         'startpage-controlled',
+                                         details.startUpPage.id,
+                                         details.startUpPage.name);
+      this.toggleExtensionControlledBox_('newtab-section-content',
+                                         'newtab-controlled',
+                                         details.newTabPage.id,
+                                         details.newTabPage.name);
+      this.toggleExtensionControlledBox_('proxy-section-content',
+                                         'proxy-controlled',
+                                         details.proxy.id,
+                                         details.proxy.name);
+
+      // The proxy section contains just the warning box and nothing else, so
+      // if we're hiding the proxy warning box, we should also hide its header
+      // section.
+      $('proxy-section').hidden = details.proxy.id.length == 0;
+    },
+
 
     /**
      * Show/hide touchpad-related settings.
@@ -1576,12 +1766,44 @@ cr.define('options', function() {
      */
     showImagerPickerOverlay_: function() {
       OptionsPage.navigateToPage('changePicture');
-    }
+    },
+
+    /**
+     * Shows (or not) the "User" section of the settings page based on whether
+     * any of the sub-sections are present (or not).
+     * @private
+     */
+    maybeShowUserSection_: function() {
+      $('sync-users-section').hidden =
+          $('profiles-section').hidden &&
+          $('sync-section').hidden &&
+          $('profiles-supervised-dashboard-tip').hidden;
+    },
+
+    /**
+     * Updates the date and time section with time sync information.
+     * @param {boolean} canSetTime Whether the system time can be set.
+     * @private
+     */
+    setCanSetTime_: function(canSetTime) {
+      // If the time has been network-synced, it cannot be set manually.
+      $('time-synced-explanation').hidden = canSetTime;
+      $('set-time').hidden = !canSetTime;
+    },
+
+    /**
+     * Handle the 'set date and time' button click.
+     * @private
+     */
+    handleSetTime_: function() {
+      chrome.send('showSetTime');
+    },
   };
 
   //Forward public APIs to private implementations.
   [
     'addBluetoothDevice',
+    'deleteCurrentProfile',
     'enableCertificateButton',
     'enableFactoryResetSection',
     'getCurrentProfile',
@@ -1589,11 +1811,13 @@ cr.define('options', function() {
     'hideBluetoothSettings',
     'notifyInitializationComplete',
     'removeBluetoothDevice',
-    'removeCloudPrintConnectorSection',
     'scrollToSection',
     'setAccountPictureManaged',
+    'setWallpaperManaged',
     'setAutoOpenFileTypesDisplayed',
     'setBluetoothState',
+    'setCanSetTime',
+    'setConsumerManagementEnrollmentStatus',
     'setFontSize',
     'setNativeThemeButtonEnabled',
     'setHighContrastCheckboxState',
@@ -1603,9 +1827,8 @@ cr.define('options', function() {
     'setSpokenFeedbackCheckboxState',
     'setThemesResetButtonEnabled',
     'setVirtualKeyboardCheckboxState',
-    'setupCloudPrintConnectorSection',
     'setupPageZoomSelector',
-    'setupProxySettingsSection',
+    'setupProxySettingsButton',
     'showBluetoothSettings',
     'showCreateProfileError',
     'showCreateProfileSuccess',
@@ -1615,9 +1838,11 @@ cr.define('options', function() {
     'showManagedUserImportSuccess',
     'showMouseControls',
     'showTouchpadControls',
+    'toggleExtensionIndicators',
     'updateAccountPicture',
     'updateAutoLaunchState',
     'updateDefaultBrowserState',
+    'updateEasyUnlock',
     'updateManagesSupervisedUsers',
     'updateSearchEngines',
     'updateStartupPages',
@@ -1637,6 +1862,17 @@ cr.define('options', function() {
     // TODO(jhawkins): Investigate the use case for this method.
     BrowserOptions.getLoggedInUsername = function() {
       return BrowserOptions.getInstance().username_;
+    };
+
+    /**
+     * Shows enroll or unenroll button based on the enrollment status.
+     * @param {boolean} isEnrolled Whether the device is enrolled.
+     */
+    BrowserOptions.setConsumerManagementEnrollmentStatus =
+        function(isEnrolled) {
+      $('consumer-management-enroll').hidden = isEnrolled;
+      $('consumer-management-unenroll').hidden = !isEnrolled;
+      ConsumerManagementOverlay.setEnrollmentStatus(isEnrolled);
     };
   }
 

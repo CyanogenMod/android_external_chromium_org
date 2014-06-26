@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <gdk/gdk.h>
-#include <gdk/gdkx.h>
 #include <gtk/gtk.h>
 #include <map>
 #include <set>
@@ -21,33 +19,14 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "chrome/browser/ui/libgtk2ui/gtk2_signal.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/select_file_dialog_impl.h"
 #include "grit/ui_strings.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window_observer.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace {
-
-const char kAuraTransientParent[] = "aura-transient-parent";
-
-// Set |dialog| as transient for |parent|, which will keep it on top and center
-// it above |parent|.
-void SetGtkTransientForAura(GtkWidget* dialog, aura::Window* parent) {
-  gtk_widget_realize(dialog);
-  GdkWindow* gdk_window = gtk_widget_get_window(dialog);
-
-  // TODO(erg): Check to make sure we're using X11 if wayland or some other
-  // display server ever happens. Otherwise, this will crash.
-  XSetTransientForHint(GDK_WINDOW_XDISPLAY(gdk_window),
-                       GDK_WINDOW_XID(gdk_window),
-                       parent->GetDispatcher()->host()->GetAcceleratedWidget());
-
-  // We also set the |parent| as a property of |dialog|, so that we can unlink
-  // the two later.
-  g_object_set_data(G_OBJECT(dialog), kAuraTransientParent, parent);
-}
 
 // Makes sure that .jpg also shows .JPG.
 gboolean FileFilterCaseInsensitive(const GtkFileFilterInfo* file_info,
@@ -74,6 +53,9 @@ class SelectFileDialogImplGTK : public SelectFileDialogImpl,
 
  protected:
   virtual ~SelectFileDialogImplGTK();
+
+  // BaseShellDialog implementation:
+  virtual bool IsRunning(gfx::NativeWindow parent_window) const OVERRIDE;
 
   // SelectFileDialog implementation.
   // |params| is user data we pass back via the Listener interface.
@@ -172,6 +154,9 @@ class SelectFileDialogImplGTK : public SelectFileDialogImpl,
   // All our dialogs.
   std::set<GtkWidget*> dialogs_;
 
+  // The set of all parent windows for which we are currently running dialogs.
+  std::set<aura::Window*> parents_;
+
   DISALLOW_COPY_AND_ASSIGN(SelectFileDialogImplGTK);
 };
 
@@ -195,9 +180,17 @@ SelectFileDialogImplGTK::SelectFileDialogImplGTK(Listener* listener,
 }
 
 SelectFileDialogImplGTK::~SelectFileDialogImplGTK() {
+  for (std::set<aura::Window*>::iterator iter = parents_.begin();
+       iter != parents_.end(); ++iter) {
+    (*iter)->RemoveObserver(this);
+  }
   while (dialogs_.begin() != dialogs_.end()) {
     gtk_widget_destroy(*(dialogs_.begin()));
   }
+}
+
+bool SelectFileDialogImplGTK::IsRunning(gfx::NativeWindow parent_window) const {
+  return parents_.find(parent_window) != parents_.end();
 }
 
 bool SelectFileDialogImplGTK::HasMultipleFileTypeChoicesImpl() {
@@ -208,10 +201,9 @@ void SelectFileDialogImplGTK::OnWindowDestroying(aura::Window* window) {
   // Remove the |parent| property associated with the |dialog|.
   for (std::set<GtkWidget*>::iterator it = dialogs_.begin();
        it != dialogs_.end(); ++it) {
-    aura::Window* parent = reinterpret_cast<aura::Window*>(
-      g_object_get_data(G_OBJECT(*it), kAuraTransientParent));
+    aura::Window* parent = GetAuraTransientParent(*it);
     if (parent == window)
-      g_object_set_data(G_OBJECT(*it), kAuraTransientParent, NULL);
+      ClearAuraTransientParent(*it);
   }
 
   std::set<aura::Window*>::iterator iter = parents_.find(window);
@@ -525,8 +517,7 @@ void SelectFileDialogImplGTK::FileDialogDestroyed(GtkWidget* dialog) {
   // windows got destroyed, or 2) when the parent tab has been opened by
   // 'Open Link in New Tab' context menu on a downloadable item and
   // the tab has no content (see the comment in SelectFile as well).
-  aura::Window* parent = reinterpret_cast<aura::Window*>(
-      g_object_get_data(G_OBJECT(dialog), kAuraTransientParent));
+  aura::Window* parent = GetAuraTransientParent(dialog);
   if (!parent)
     return;
   std::set<aura::Window*>::iterator iter = parents_.find(parent);

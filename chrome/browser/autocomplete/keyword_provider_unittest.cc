@@ -7,10 +7,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/keyword_provider.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_browser_process.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/search_engines/search_engines_switches.h"
+#include "components/search_engines/template_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -81,8 +82,8 @@ void KeywordProviderTest::RunTest(
     SCOPED_TRACE(keyword_cases[i].input);
     AutocompleteInput input(keyword_cases[i].input, base::string16::npos,
                             base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, true,
-                            false, true, AutocompleteInput::ALL_MATCHES);
+                            metrics::OmniboxEventProto::INVALID_SPEC, true,
+                            false, true, true, NULL);
     kw_provider_->Start(input, false);
     EXPECT_TRUE(kw_provider_->done());
     matches = kw_provider_->matches();
@@ -259,7 +260,7 @@ TEST_F(KeywordProviderTest, AddKeyword) {
   base::string16 keyword(ASCIIToUTF16("foo"));
   data.SetKeyword(keyword);
   data.SetURL("http://www.google.com/foo?q={searchTerms}");
-  TemplateURL* template_url = new TemplateURL(NULL, data);
+  TemplateURL* template_url = new TemplateURL(data);
   model_->Add(template_url);
   ASSERT_TRUE(template_url == model_->GetTemplateURLForKeyword(keyword));
 }
@@ -321,11 +322,10 @@ TEST_F(KeywordProviderTest, GetSubstitutingTemplateURLForInput) {
       base::string16::npos },
   };
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); i++) {
-    AutocompleteInput input(ASCIIToUTF16(cases[i].text),
-                            cases[i].cursor_position, base::string16(), GURL(),
-                            AutocompleteInput::INVALID_SPEC, false, false,
-                            cases[i].allow_exact_keyword_match,
-                            AutocompleteInput::ALL_MATCHES);
+    AutocompleteInput input(
+        ASCIIToUTF16(cases[i].text), cases[i].cursor_position, base::string16(),
+        GURL(), metrics::OmniboxEventProto::INVALID_SPEC, false, false,
+        cases[i].allow_exact_keyword_match, true, NULL);
     const TemplateURL* url =
         KeywordProvider::GetSubstitutingTemplateURLForInput(model_.get(),
                                                             &input);

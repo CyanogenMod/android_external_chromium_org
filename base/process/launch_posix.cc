@@ -26,6 +26,7 @@
 #include "base/debug/stack_trace.h"
 #include "base/file_util.h"
 #include "base/files/dir_reader_posix.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/posix/eintr_wrapper.h"
@@ -36,6 +37,10 @@
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
+
+#if defined(OS_LINUX)
+#include <sys/prctl.h>
+#endif
 
 #if defined(OS_CHROMEOS)
 #include <sys/ioctl.h>
@@ -287,8 +292,12 @@ bool LaunchProcess(const std::vector<std::string>& argv,
 
   scoped_ptr<char*[]> argv_cstr(new char*[argv.size() + 1]);
   scoped_ptr<char*[]> new_environ;
+  char* const empty_environ = NULL;
+  char* const* old_environ = GetEnvironment();
+  if (options.clear_environ)
+    old_environ = &empty_environ;
   if (!options.environ.empty())
-    new_environ = AlterEnvironment(GetEnvironment(), options.environ);
+    new_environ = AlterEnvironment(old_environ, options.environ);
 
   sigset_t full_sigset;
   sigfillset(&full_sigset);
@@ -332,14 +341,13 @@ bool LaunchProcess(const std::vector<std::string>& argv,
     // If a child process uses the readline library, the process block forever.
     // In BSD like OSes including OS X it is safe to assign /dev/null as stdin.
     // See http://crbug.com/56596.
-    int null_fd = HANDLE_EINTR(open("/dev/null", O_RDONLY));
-    if (null_fd < 0) {
+    base::ScopedFD null_fd(HANDLE_EINTR(open("/dev/null", O_RDONLY)));
+    if (!null_fd.is_valid()) {
       RAW_LOG(ERROR, "Failed to open /dev/null");
       _exit(127);
     }
 
-    file_util::ScopedFD null_fd_closer(&null_fd);
-    int new_fd = HANDLE_EINTR(dup2(null_fd, STDIN_FILENO));
+    int new_fd = HANDLE_EINTR(dup2(null_fd.get(), STDIN_FILENO));
     if (new_fd != STDIN_FILENO) {
       RAW_LOG(ERROR, "Failed to dup /dev/null for stdin");
       _exit(127);
@@ -377,6 +385,8 @@ bool LaunchProcess(const std::vector<std::string>& argv,
 
 #if defined(OS_MACOSX)
     RestoreDefaultExceptionHandler();
+    if (!options.replacement_bootstrap_name.empty())
+      ReplaceBootstrapPort(options.replacement_bootstrap_name);
 #endif  // defined(OS_MACOSX)
 
     ResetChildSignalHandlersToDefaults();
@@ -415,7 +425,7 @@ bool LaunchProcess(const std::vector<std::string>& argv,
       }
     }
 
-    if (!options.environ.empty())
+    if (!options.environ.empty() || options.clear_environ)
       SetEnvironment(new_environ.get());
 
     // fd_shuffle1 is mutated by this call because it cannot malloc.
@@ -423,6 +433,20 @@ bool LaunchProcess(const std::vector<std::string>& argv,
       _exit(127);
 
     CloseSuperfluousFds(fd_shuffle2);
+
+    // Set NO_NEW_PRIVS by default. Since NO_NEW_PRIVS only exists in kernel
+    // 3.5+, do not check the return value of prctl here.
+#if defined(OS_LINUX)
+#ifndef PR_SET_NO_NEW_PRIVS
+#define PR_SET_NO_NEW_PRIVS 38
+#endif
+    if (!options.allow_new_privs) {
+      if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) && errno != EINVAL) {
+        // Only log if the error is not EINVAL (i.e. not supported).
+        RAW_LOG(FATAL, "prctl(PR_SET_NO_NEW_PRIVS) failed");
+      }
+    }
+#endif
 
     for (size_t i = 0; i < argv.size(); i++)
       argv_cstr[i] = const_cast<char*>(argv[i].c_str());

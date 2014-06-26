@@ -5,12 +5,10 @@
 #include "content/browser/compositor/browser_compositor_output_surface.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/location.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
-#include "ui/compositor/compositor_switches.h"
 
 namespace content {
 
@@ -40,6 +38,9 @@ BrowserCompositorOutputSurface::BrowserCompositorOutputSurface(
 
 BrowserCompositorOutputSurface::~BrowserCompositorOutputSurface() {
   DCHECK(CalledOnValidThread());
+  if (reflector_)
+    reflector_->DetachFromOutputSurface();
+  DCHECK(!reflector_);
   if (!HasClient())
     return;
   output_surface_map_->Remove(surface_id_);
@@ -47,16 +48,7 @@ BrowserCompositorOutputSurface::~BrowserCompositorOutputSurface() {
 }
 
 void BrowserCompositorOutputSurface::Initialize() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(switches::kUIMaxFramesPending)) {
-    std::string string_value = command_line->GetSwitchValueASCII(
-        switches::kUIMaxFramesPending);
-    int int_value;
-    if (base::StringToInt(string_value, &int_value))
-      capabilities_.max_frames_pending = int_value;
-    else
-      LOG(ERROR) << "Trouble parsing --" << switches::kUIMaxFramesPending;
-  }
+  capabilities_.max_frames_pending = 1;
   capabilities_.adjust_deadline_for_parent = false;
 
   DetachFromThread();
@@ -71,16 +63,17 @@ bool BrowserCompositorOutputSurface::BindToClient(
 
   output_surface_map_->AddWithID(this, surface_id_);
   if (reflector_)
-    reflector_->OnSourceSurfaceReady(surface_id_);
+    reflector_->OnSourceSurfaceReady(this);
   vsync_manager_->AddObserver(this);
   return true;
 }
 
-void BrowserCompositorOutputSurface::Reshape(const gfx::Size& size,
-                                             float scale_factor) {
-  OutputSurface::Reshape(size, scale_factor);
-  if (reflector_.get())
-    reflector_->OnReshape(size);
+void BrowserCompositorOutputSurface::OnSwapBuffersComplete() {
+  // On Mac, delay acknowledging the swap to the output surface client until
+  // it has been drawn.
+#if !defined(OS_MACOSX)
+  cc::OutputSurface::OnSwapBuffersComplete();
+#endif
 }
 
 void BrowserCompositorOutputSurface::OnUpdateVSyncParameters(
@@ -102,5 +95,11 @@ void BrowserCompositorOutputSurface::OnUpdateVSyncParametersFromGpu(
 void BrowserCompositorOutputSurface::SetReflector(ReflectorImpl* reflector) {
   reflector_ = reflector;
 }
+
+#if defined(OS_MACOSX)
+void BrowserCompositorOutputSurface::OnSurfaceDisplayed() {
+  cc::OutputSurface::OnSwapBuffersComplete();
+}
+#endif
 
 }  // namespace content

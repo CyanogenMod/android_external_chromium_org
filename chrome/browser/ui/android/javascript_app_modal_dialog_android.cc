@@ -45,7 +45,7 @@ int JavascriptAppModalDialogAndroid::GetAppModalDialogButtons() const {
 }
 
 void JavascriptAppModalDialogAndroid::ShowAppModalDialog() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   JNIEnv* env = AttachCurrentThread();
   // Keep a strong ref to the parent window while we make the call to java to
@@ -157,10 +157,11 @@ bool JavascriptAppModalDialogAndroid::RegisterJavascriptAppModalDialog(
 }
 
 JavascriptAppModalDialogAndroid::~JavascriptAppModalDialogAndroid() {
-  JNIEnv* env = AttachCurrentThread();
   // In case the dialog is still displaying, tell it to close itself.
   // This can happen if you trigger a dialog but close the Tab before it's
   // shown, and then accept the dialog.
-  if (!dialog_jobject_.is_null())
+  if (!dialog_jobject_.is_null()) {
+    JNIEnv* env = AttachCurrentThread();
     Java_JavascriptAppModalDialog_dismiss(env, dialog_jobject_.obj());
+  }
 }

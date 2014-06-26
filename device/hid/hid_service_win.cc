@@ -1,20 +1,16 @@
-// Copyright (c) 2014 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "device/hid/hid_service_win.h"
 
 #include <cstdlib>
-#include <string>
 
-#include "base/callback_helpers.h"
-#include "base/lazy_instance.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/files/file.h"
 #include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
-#include "device/hid/hid_connection.h"
 #include "device/hid/hid_connection_win.h"
-#include "device/hid/hid_service.h"
+#include "device/hid/hid_device_info.h"
 #include "net/base/io_buffer.h"
 
 #if defined(OS_WIN)
@@ -49,11 +45,12 @@ const char kHIDClass[] = "HIDClass";
 }  // namespace
 
 HidServiceWin::HidServiceWin() {
-  initialized_ = Enumerate();
+  Enumerate();
 }
+
 HidServiceWin::~HidServiceWin() {}
 
-bool HidServiceWin::Enumerate() {
+void HidServiceWin::Enumerate() {
   BOOL res;
   HDEVINFO device_info_set;
   SP_DEVINFO_DATA devinfo_data;
@@ -70,15 +67,15 @@ bool HidServiceWin::Enumerate() {
       DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
 
   if (device_info_set == INVALID_HANDLE_VALUE)
-    return false;
+    return;
 
   for (int device_index = 0;
-      SetupDiEnumDeviceInterfaces(device_info_set,
-                                  NULL,
-                                  &GUID_DEVINTERFACE_HID,
-                                  device_index,
-                                  &device_interface_data);
-      device_index++) {
+       SetupDiEnumDeviceInterfaces(device_info_set,
+                                   NULL,
+                                   &GUID_DEVINTERFACE_HID,
+                                   device_index,
+                                   &device_interface_data);
+       ++device_index) {
     DWORD required_size = 0;
 
     // Determime the required size of detail struct.
@@ -89,9 +86,9 @@ bool HidServiceWin::Enumerate() {
                                      &required_size,
                                      NULL);
 
-    scoped_ptr_malloc<SP_DEVICE_INTERFACE_DETAIL_DATA_A>
+    scoped_ptr<SP_DEVICE_INTERFACE_DETAIL_DATA_A, base::FreeDeleter>
         device_interface_detail_data(
-            reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(
+            static_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(
                 malloc(required_size)));
     device_interface_detail_data->cbSize =
         sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
@@ -131,7 +128,7 @@ bool HidServiceWin::Enumerate() {
                                                 sizeof(driver_name) - 1,
                                                 NULL);
         if (res) {
-          // Found the drive.
+          // Found the driver.
           break;
         }
       }
@@ -142,25 +139,36 @@ bool HidServiceWin::Enumerate() {
 
     PlatformAddDevice(device_interface_detail_data->DevicePath);
   }
-
-  return true;
 }
 
-void HidServiceWin::PlatformAddDevice(std::string device_path) {
+void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
   HidDeviceInfo device_info;
   device_info.device_id = device_path;
 
   // Try to open the device.
   base::win::ScopedHandle device_handle(
       CreateFileA(device_path.c_str(),
-                  0,
+                  GENERIC_WRITE | GENERIC_READ,
                   FILE_SHARE_READ | FILE_SHARE_WRITE,
                   NULL,
                   OPEN_EXISTING,
                   FILE_FLAG_OVERLAPPED,
                   0));
-  if (!device_handle.IsValid())
-    return;
+
+  if (!device_handle.IsValid() &&
+      GetLastError() == base::File::FILE_ERROR_ACCESS_DENIED) {
+    base::win::ScopedHandle device_handle(
+      CreateFileA(device_path.c_str(),
+      GENERIC_READ,
+      FILE_SHARE_READ,
+      NULL,
+      OPEN_EXISTING,
+      FILE_FLAG_OVERLAPPED,
+      0));
+
+    if (!device_handle.IsValid())
+      return;
+  }
 
   // Get VID/PID pair.
   HIDD_ATTRIBUTES attrib = {0};
@@ -181,11 +189,12 @@ void HidServiceWin::PlatformAddDevice(std::string device_path) {
       preparsed_data) {
     HIDP_CAPS capabilities;
     if (HidP_GetCaps(preparsed_data, &capabilities) == HIDP_STATUS_SUCCESS) {
-      device_info.usage = capabilities.Usage;
-      device_info.usage_page = capabilities.UsagePage;
       device_info.input_report_size = capabilities.InputReportByteLength;
       device_info.output_report_size = capabilities.OutputReportByteLength;
       device_info.feature_report_size = capabilities.FeatureReportByteLength;
+      device_info.usages.push_back(HidUsageAndPage(
+        capabilities.Usage,
+        static_cast<HidUsageAndPage::Page>(capabilities.UsagePage)));
     }
     // Detect if the device supports report ids.
     if (capabilities.NumberInputValueCaps > 0) {
@@ -197,28 +206,27 @@ void HidServiceWin::PlatformAddDevice(std::string device_path) {
         device_info.has_report_id = (value_caps[0].ReportID != 0);
       }
     }
+    if (!device_info.has_report_id && capabilities.NumberInputButtonCaps > 0)
+    {
+      scoped_ptr<HIDP_BUTTON_CAPS[]> button_caps(
+        new HIDP_BUTTON_CAPS[capabilities.NumberInputButtonCaps]);
+      USHORT button_caps_length = capabilities.NumberInputButtonCaps;
+      if (HidP_GetButtonCaps(HidP_Input,
+                             &button_caps[0],
+                             &button_caps_length,
+                             preparsed_data) == HIDP_STATUS_SUCCESS) {
+        device_info.has_report_id = (button_caps[0].ReportID != 0);
+      }
+    }
+
     HidD_FreePreparsedData(preparsed_data);
   }
 
-  // Get the serial number
-  wchar_t str_property[512] = { 0 };
-  if (HidD_GetSerialNumberString(device_handle.Get(),
-                                 str_property,
-                                 sizeof(str_property))) {
-    device_info.serial_number = base::SysWideToUTF8(str_property);
-  }
-
-  if (HidD_GetProductString(device_handle.Get(),
-                            str_property,
-                            sizeof(str_property))) {
-    device_info.product_name = base::SysWideToUTF8(str_property);
-  }
-
-  HidService::AddDevice(device_info);
+  AddDevice(device_info);
 }
 
-void HidServiceWin::PlatformRemoveDevice(std::string device_path) {
-  HidService::RemoveDevice(device_path);
+void HidServiceWin::PlatformRemoveDevice(const std::string& device_path) {
+  RemoveDevice(device_path);
 }
 
 void HidServiceWin::GetDevices(std::vector<HidDeviceInfo>* devices) {
@@ -226,12 +234,14 @@ void HidServiceWin::GetDevices(std::vector<HidDeviceInfo>* devices) {
   HidService::GetDevices(devices);
 }
 
-scoped_refptr<HidConnection> HidServiceWin::Connect(std::string device_id) {
-  if (!ContainsKey(devices_, device_id)) return NULL;
-  scoped_refptr<HidConnectionWin> connection(
-      new HidConnectionWin(devices_[device_id]));
+scoped_refptr<HidConnection> HidServiceWin::Connect(
+    const HidDeviceId& device_id) {
+  HidDeviceInfo device_info;
+  if (!GetDeviceInfo(device_id, &device_info))
+    return NULL;
+  scoped_refptr<HidConnectionWin> connection(new HidConnectionWin(device_info));
   if (!connection->available()) {
-    LOG_GETLASTERROR(ERROR) << "Failed to open device.";
+    PLOG(ERROR) << "Failed to open device.";
     return NULL;
   }
   return connection;

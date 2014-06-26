@@ -8,15 +8,16 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
+#include "base/time/time.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/owner_key_util.h"
 #include "chrome/browser/chromeos/settings/session_manager_operation.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "crypto/rsa_private_key.h"
-#include "policy/proto/device_management_backend.pb.h"
 
 namespace em = enterprise_management;
 
@@ -34,13 +35,6 @@ int kMaxLoadRetries = (1000 * 60 * 10) / kLoadRetryDelayMs;
 }  // namespace
 
 namespace chromeos {
-
-OwnerKey::OwnerKey(scoped_ptr<std::vector<uint8> > public_key,
-                   scoped_ptr<crypto::RSAPrivateKey> private_key)
-    : public_key_(public_key.Pass()),
-      private_key_(private_key.Pass()) {}
-
-OwnerKey::~OwnerKey() {}
 
 DeviceSettingsService::Observer::~Observer() {}
 
@@ -73,20 +67,12 @@ DeviceSettingsService* DeviceSettingsService::Get() {
 DeviceSettingsService::DeviceSettingsService()
     : session_manager_client_(NULL),
       store_status_(STORE_SUCCESS),
-      waiting_for_tpm_token_(true),
-      owner_key_loaded_with_tpm_token_(false),
       load_retries_left_(kMaxLoadRetries),
       weak_factory_(this) {
-  if (TPMTokenLoader::IsInitialized()) {
-    waiting_for_tpm_token_ = !TPMTokenLoader::Get()->IsTPMTokenReady();
-    TPMTokenLoader::Get()->AddObserver(this);
-  }
 }
 
 DeviceSettingsService::~DeviceSettingsService() {
   DCHECK(pending_operations_.empty());
-  if (TPMTokenLoader::IsInitialized())
-    TPMTokenLoader::Get()->RemoveObserver(this);
 }
 
 void DeviceSettingsService::SetSessionManager(
@@ -116,8 +102,8 @@ void DeviceSettingsService::UnsetSessionManager() {
   owner_key_util_ = NULL;
 }
 
-scoped_refptr<OwnerKey> DeviceSettingsService::GetOwnerKey() {
-  return owner_key_;
+scoped_refptr<PublicKey> DeviceSettingsService::GetPublicKey() {
+  return public_key_;
 }
 
 void DeviceSettingsService::Load() {
@@ -127,13 +113,38 @@ void DeviceSettingsService::Load() {
 void DeviceSettingsService::SignAndStore(
     scoped_ptr<em::ChromeDeviceSettingsProto> new_settings,
     const base::Closure& callback) {
-  Enqueue(
-      new SignAndStoreSettingsOperation(
-          base::Bind(&DeviceSettingsService::HandleCompletedOperation,
-                     weak_factory_.GetWeakPtr(),
-                     callback),
-          new_settings.Pass(),
-          username_));
+  scoped_ptr<em::PolicyData> new_policy = AssemblePolicy(*new_settings);
+  if (!new_policy) {
+    HandleError(STORE_POLICY_ERROR, callback);
+    return;
+  }
+
+  EnqueueSignAndStore(new_policy.Pass(), callback);
+}
+
+void DeviceSettingsService::SetManagementSettings(
+    em::PolicyData::ManagementMode management_mode,
+    const std::string& request_token,
+    const std::string& device_id,
+    const base::Closure& callback) {
+  if (!CheckManagementModeTransition(management_mode)) {
+    LOG(ERROR) << "Invalid management mode transition: current mode = "
+               << GetManagementMode() << ", new mode = " << management_mode;
+    HandleError(STORE_POLICY_ERROR, callback);
+    return;
+  }
+
+  scoped_ptr<em::PolicyData> policy = AssemblePolicy(*device_settings_);
+  if (!policy) {
+    HandleError(STORE_POLICY_ERROR, callback);
+    return;
+  }
+
+  policy->set_management_mode(management_mode);
+  policy->set_request_token(request_token);
+  policy->set_device_id(device_id);
+
+  EnqueueSignAndStore(policy.Pass(), callback);
 }
 
 void DeviceSettingsService::Store(scoped_ptr<em::PolicyFetchResponse> policy,
@@ -148,21 +159,17 @@ void DeviceSettingsService::Store(scoped_ptr<em::PolicyFetchResponse> policy,
 
 DeviceSettingsService::OwnershipStatus
     DeviceSettingsService::GetOwnershipStatus() {
-  if (owner_key_.get())
-    return owner_key_->public_key() ? OWNERSHIP_TAKEN : OWNERSHIP_NONE;
-
+  if (public_key_)
+    return public_key_->is_loaded() ? OWNERSHIP_TAKEN : OWNERSHIP_NONE;
   return OWNERSHIP_UNKNOWN;
 }
 
 void DeviceSettingsService::GetOwnershipStatusAsync(
     const OwnershipStatusCallback& callback) {
-  if (owner_key_.get()) {
+  if (public_key_) {
     // If there is a key, report status immediately.
     base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(
-            callback,
-            owner_key_->public_key() ? OWNERSHIP_TAKEN : OWNERSHIP_NONE));
+        FROM_HERE, base::Bind(callback, GetOwnershipStatus()));
   } else {
     // If the key hasn't been loaded yet, enqueue the callback to be fired when
     // the next SessionManagerOperation completes. If no operation is pending,
@@ -174,33 +181,17 @@ void DeviceSettingsService::GetOwnershipStatusAsync(
 }
 
 bool DeviceSettingsService::HasPrivateOwnerKey() {
-  return owner_key_.get() && owner_key_->private_key();
+  return delegate_ && delegate_->IsOwner();
 }
 
-void DeviceSettingsService::IsCurrentUserOwnerAsync(
-    const IsCurrentUserOwnerCallback& callback) {
-  if (owner_key_loaded_with_tpm_token_) {
-    // If the current owner key was loaded while the certificates were loaded,
-    // or the certificate loader is not initialized, in which case the private
-    // key cannot be set, report status immediately.
-    base::MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(callback, HasPrivateOwnerKey()));
-  } else {
-    // If the key hasn't been loaded with the known certificates, enqueue the
-    // callback to be fired when the next SessionManagerOperation completes in
-    // an environment where the certificates are loaded. There is no need to
-    // start a new operation, as the reload operation will be started when the
-    // certificates are loaded.
-    pending_is_current_user_owner_callbacks_.push_back(callback);
-  }
-}
-
-void DeviceSettingsService::SetUsername(const std::string& username) {
+void DeviceSettingsService::InitOwner(
+    const std::string& username,
+    const base::WeakPtr<PrivateKeyDelegate>& delegate) {
+  if (!username_.empty())
+    return;
   username_ = username;
+  delegate_ = delegate;
 
-  // The private key may have become available, so force a key reload.
-  owner_key_ = NULL;
   EnsureReload(true);
 }
 
@@ -222,7 +213,7 @@ void DeviceSettingsService::OwnerKeySet(bool success) {
     return;
   }
 
-  owner_key_ = NULL;
+  public_key_ = NULL;
   EnsureReload(true);
 }
 
@@ -233,14 +224,6 @@ void DeviceSettingsService::PropertyChangeComplete(bool success) {
   }
 
   EnsureReload(false);
-}
-
-void DeviceSettingsService::OnTPMTokenReady() {
-  waiting_for_tpm_token_ = false;
-
-  // TPMTokenLoader initializes the TPM and NSS database which is necessary to
-  // determine ownership. Force a reload once we know these are initialized.
-  EnsureReload(true);
 }
 
 void DeviceSettingsService::Enqueue(SessionManagerOperation* operation) {
@@ -256,22 +239,39 @@ void DeviceSettingsService::EnqueueLoad(bool force_key_load) {
                      weak_factory_.GetWeakPtr(),
                      base::Closure()));
   operation->set_force_key_load(force_key_load);
+  operation->set_username(username_);
+  operation->set_delegate(delegate_);
+  Enqueue(operation);
+}
+
+void DeviceSettingsService::EnqueueSignAndStore(
+    scoped_ptr<em::PolicyData> policy,
+    const base::Closure& callback) {
+  SignAndStoreSettingsOperation* operation = new SignAndStoreSettingsOperation(
+      base::Bind(&DeviceSettingsService::HandleCompletedOperation,
+                 weak_factory_.GetWeakPtr(),
+                 callback),
+      policy.Pass());
+  operation->set_delegate(delegate_);
   Enqueue(operation);
 }
 
 void DeviceSettingsService::EnsureReload(bool force_key_load) {
-  if (!pending_operations_.empty())
+  if (!pending_operations_.empty()) {
+    pending_operations_.front()->set_username(username_);
+    pending_operations_.front()->set_delegate(delegate_);
     pending_operations_.front()->RestartLoad(force_key_load);
-  else
+  } else {
     EnqueueLoad(force_key_load);
+  }
 }
 
 void DeviceSettingsService::StartNextOperation() {
   if (!pending_operations_.empty() &&
       session_manager_client_ &&
       owner_key_util_.get()) {
-    pending_operations_.front()->Start(session_manager_client_,
-                                       owner_key_util_, owner_key_);
+    pending_operations_.front()->Start(
+        session_manager_client_, owner_key_util_, public_key_);
   }
 }
 
@@ -283,19 +283,16 @@ void DeviceSettingsService::HandleCompletedOperation(
   store_status_ = status;
 
   OwnershipStatus ownership_status = OWNERSHIP_UNKNOWN;
-  bool is_owner = false;
-  scoped_refptr<OwnerKey> new_key(operation->owner_key());
+  scoped_refptr<PublicKey> new_key(operation->public_key());
   if (new_key.get()) {
-    ownership_status =
-        new_key->public_key() ? OWNERSHIP_TAKEN : OWNERSHIP_NONE;
-    is_owner = (new_key->private_key() != NULL);
+    ownership_status = new_key->is_loaded() ? OWNERSHIP_TAKEN : OWNERSHIP_NONE;
   } else {
     NOTREACHED() << "Failed to determine key status.";
   }
 
   bool new_owner_key = false;
-  if (owner_key_.get() != new_key.get()) {
-    owner_key_ = new_key;
+  if (public_key_.get() != new_key.get()) {
+    public_key_ = new_key;
     new_owner_key = true;
   }
 
@@ -305,7 +302,7 @@ void DeviceSettingsService::HandleCompletedOperation(
     load_retries_left_ = kMaxLoadRetries;
   } else if (status != STORE_KEY_UNAVAILABLE) {
     LOG(ERROR) << "Session manager operation failed: " << status;
-    // Validation errors can be temprary if the rtc has went on holiday for a
+    // Validation errors can be temporary if the rtc has gone on holiday for a
     // short while. So we will retry such loads for up to 10 minutes.
     if (status == STORE_TEMP_VALIDATION_ERROR) {
       if (load_retries_left_ > 0) {
@@ -316,6 +313,10 @@ void DeviceSettingsService::HandleCompletedOperation(
             FROM_HERE,
             base::Bind(&DeviceSettingsService::Load, base::Unretained(this)),
             base::TimeDelta::FromMilliseconds(kLoadRetryDelayMs));
+      } else {
+        // Once we've given up retrying, the validation error is not temporary
+        // anymore.
+        store_status_ = STORE_VALIDATION_ERROR;
       }
     }
   }
@@ -337,17 +338,6 @@ void DeviceSettingsService::HandleCompletedOperation(
     iter->Run(ownership_status);
   }
 
-  if (!waiting_for_tpm_token_) {
-    owner_key_loaded_with_tpm_token_ = true;
-    std::vector<IsCurrentUserOwnerCallback> is_owner_callbacks;
-    is_owner_callbacks.swap(pending_is_current_user_owner_callbacks_);
-    for (std::vector<IsCurrentUserOwnerCallback>::iterator iter(
-             is_owner_callbacks.begin());
-         iter != is_owner_callbacks.end(); ++iter) {
-      iter->Run(is_owner);
-    }
-  }
-
   // The completion callback happens after the notification so clients can
   // filter self-triggered updates.
   if (!callback.is_null())
@@ -359,6 +349,79 @@ void DeviceSettingsService::HandleCompletedOperation(
   delete operation;
 
   StartNextOperation();
+}
+
+void DeviceSettingsService::HandleError(Status status,
+                                        const base::Closure& callback) {
+  store_status_ = status;
+
+  LOG(ERROR) << "Session manager operation failed: " << status;
+
+  FOR_EACH_OBSERVER(Observer, observers_, DeviceSettingsUpdated());
+
+  // The completion callback happens after the notification so clients can
+  // filter self-triggered updates.
+  if (!callback.is_null())
+    callback.Run();
+}
+
+scoped_ptr<em::PolicyData> DeviceSettingsService::AssemblePolicy(
+    const em::ChromeDeviceSettingsProto& settings) const {
+  scoped_ptr<em::PolicyData> policy(new em::PolicyData());
+  if (policy_data_) {
+    // Preserve management settings.
+    if (policy_data_->has_management_mode())
+      policy->set_management_mode(policy_data_->management_mode());
+    if (policy_data_->has_request_token())
+      policy->set_request_token(policy_data_->request_token());
+    if (policy_data_->has_device_id())
+      policy->set_device_id(policy_data_->device_id());
+  } else {
+    // If there's no previous policy data, this is the first time the device
+    // setting is set. We set the management mode to NOT_MANAGED initially.
+    policy->set_management_mode(em::PolicyData::NOT_MANAGED);
+  }
+  policy->set_policy_type(policy::dm_protocol::kChromeDevicePolicyType);
+  policy->set_timestamp((base::Time::Now() - base::Time::UnixEpoch()).
+                        InMilliseconds());
+  policy->set_username(username_);
+  if (!settings.SerializeToString(policy->mutable_policy_value()))
+    return scoped_ptr<em::PolicyData>();
+
+  return policy.Pass();
+}
+
+em::PolicyData::ManagementMode DeviceSettingsService::GetManagementMode()
+    const {
+  if (policy_data_ && policy_data_->has_management_mode())
+    return policy_data_->management_mode();
+  return em::PolicyData::NOT_MANAGED;
+}
+
+bool DeviceSettingsService::CheckManagementModeTransition(
+    em::PolicyData::ManagementMode new_mode) const {
+  em::PolicyData::ManagementMode current_mode = GetManagementMode();
+
+  // Mode is not changed.
+  if (current_mode == new_mode)
+    return true;
+
+  switch (current_mode) {
+    case em::PolicyData::NOT_MANAGED:
+      // For consumer management enrollment.
+      return new_mode == em::PolicyData::CONSUMER_MANAGED;
+
+    case em::PolicyData::ENTERPRISE_MANAGED:
+      // Management mode cannot be set when it is currently ENTERPRISE_MANAGED.
+      return false;
+
+    case em::PolicyData::CONSUMER_MANAGED:
+      // For consumer management unenrollment.
+      return new_mode == em::PolicyData::NOT_MANAGED;
+  }
+
+  NOTREACHED();
+  return false;
 }
 
 ScopedTestDeviceSettingsService::ScopedTestDeviceSettingsService() {

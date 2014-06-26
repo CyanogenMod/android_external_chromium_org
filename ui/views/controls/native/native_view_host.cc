@@ -5,6 +5,7 @@
 #include "ui/views/controls/native/native_view_host.h"
 
 #include "base/logging.h"
+#include "ui/base/cursor/cursor.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host_wrapper.h"
@@ -15,16 +16,6 @@ namespace views {
 // static
 const char NativeViewHost::kViewClassName[] = "NativeViewHost";
 const char kWidgetNativeViewHostKey[] = "WidgetNativeViewHost";
-
-#if defined(USE_AURA)
-// Views implementation draws the focus.
-// TODO(oshima): Eliminate this flag and consolidate
-// the focus border code.
-const bool NativeViewHost::kRenderNativeControlFocus = false;
-#else
-// static
-const bool NativeViewHost::kRenderNativeControlFocus = true;
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // NativeViewHost, public:
@@ -47,8 +38,7 @@ void NativeViewHost::Attach(gfx::NativeView native_view) {
   // be seen as focused when the native view receives focus.
   if (!focus_view_)
     focus_view_ = this;
-  native_wrapper_->NativeViewWillAttach();
-  Widget::ReparentNativeView(native_view_, GetWidget()->GetNativeView());
+  native_wrapper_->AttachNativeView();
   Layout();
 
   Widget* widget = Widget::GetWidgetForNativeView(native_view);
@@ -74,7 +64,7 @@ void NativeViewHost::NativeViewDestroyed() {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeViewHost, View overrides:
 
-gfx::Size NativeViewHost::GetPreferredSize() {
+gfx::Size NativeViewHost::GetPreferredSize() const {
   return preferred_size_;
 }
 
@@ -182,7 +172,7 @@ const char* NativeViewHost::GetClassName() const {
 
 void NativeViewHost::OnFocus() {
   native_wrapper_->SetFocus();
-  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_FOCUS, true);
+  NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, true);
 }
 
 gfx::NativeViewAccessible NativeViewHost::GetNativeViewAccessible() {
@@ -194,6 +184,10 @@ gfx::NativeViewAccessible NativeViewHost::GetNativeViewAccessible() {
   }
 
   return View::GetNativeViewAccessible();
+}
+
+gfx::NativeCursor NativeViewHost::GetCursor(const ui::MouseEvent& event) {
+  return native_wrapper_->GetCursor(event.x(), event.y());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -225,6 +219,5 @@ void NativeViewHost::ClearFocus() {
       return;
   }
 }
-
 
 }  // namespace views

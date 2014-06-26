@@ -25,14 +25,12 @@ namespace media {
 class MediaLog;
 }
 
-namespace webkit {
-class WebLayerImpl;
-}
 
 namespace content {
 class MediaStreamAudioRenderer;
-class MediaStreamClient;
+class MediaStreamRendererFactory;
 class VideoFrameProvider;
+class WebLayerImpl;
 class WebMediaPlayerDelegate;
 
 // WebMediaPlayerMS delegates calls from WebCore::MediaPlayerPrivate to
@@ -59,8 +57,8 @@ class WebMediaPlayerMS
   WebMediaPlayerMS(blink::WebFrame* frame,
                    blink::WebMediaPlayerClient* client,
                    base::WeakPtr<WebMediaPlayerDelegate> delegate,
-                   MediaStreamClient* media_stream_client,
-                   media::MediaLog* media_log);
+                   media::MediaLog* media_log,
+                   scoped_ptr<MediaStreamRendererFactory> factory);
   virtual ~WebMediaPlayerMS();
 
   virtual void load(LoadType load_type,
@@ -75,7 +73,7 @@ class WebMediaPlayerMS
   virtual void setRate(double rate);
   virtual void setVolume(double volume);
   virtual void setPreload(blink::WebMediaPlayer::Preload preload);
-  virtual const blink::WebTimeRanges& buffered();
+  virtual blink::WebTimeRanges buffered() const;
   virtual double maxTimeSeekable() const;
 
   // Methods for painting.
@@ -100,7 +98,7 @@ class WebMediaPlayerMS
   virtual blink::WebMediaPlayer::NetworkState networkState() const;
   virtual blink::WebMediaPlayer::ReadyState readyState() const;
 
-  virtual bool didLoadingProgress() const;
+  virtual bool didLoadingProgress();
 
   virtual bool hasSingleSecurityOrigin() const;
   virtual bool didPassCORSAccessCheck() const;
@@ -150,32 +148,32 @@ class WebMediaPlayerMS
 
   base::WeakPtr<WebMediaPlayerDelegate> delegate_;
 
-  MediaStreamClient* media_stream_client_;
-
   // Specify content:: to disambiguate from cc::.
   scoped_refptr<content::VideoFrameProvider> video_frame_provider_;
   bool paused_;
 
   // |current_frame_| is updated only on main thread. The object it holds
   // can be freed on the compositor thread if it is the last to hold a
-  // reference but media::VideoFrame is a thread-safe ref-pointer.
+  // reference but media::VideoFrame is a thread-safe ref-pointer. It is
+  // however read on the compositing thread so locking is required around all
+  // modifications on the main thread, and all reads on the compositing thread.
   scoped_refptr<media::VideoFrame> current_frame_;
   // |current_frame_used_| is updated on both main and compositing thread.
   // It's used to track whether |current_frame_| was painted for detecting
   // when to increase |dropped_frame_count_|.
   bool current_frame_used_;
+  // |current_frame_lock_| protects |current_frame_used_| and |current_frame_|.
   base::Lock current_frame_lock_;
   bool pending_repaint_;
 
-  scoped_ptr<webkit::WebLayerImpl> video_weblayer_;
+  scoped_ptr<WebLayerImpl> video_weblayer_;
 
   // A pointer back to the compositor to inform it about state changes. This is
   // not NULL while the compositor is actively using this webmediaplayer.
   cc::VideoFrameProvider::Client* video_frame_provider_client_;
 
   bool received_first_frame_;
-  bool sequence_started_;
-  base::TimeDelta start_time_;
+  base::TimeDelta current_time_;
   unsigned total_frame_count_;
   unsigned dropped_frame_count_;
   media::SkCanvasVideoRenderer video_renderer_;
@@ -183,6 +181,8 @@ class WebMediaPlayerMS
   scoped_refptr<MediaStreamAudioRenderer> audio_renderer_;
 
   scoped_refptr<media::MediaLog> media_log_;
+
+  scoped_ptr<MediaStreamRendererFactory> renderer_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebMediaPlayerMS);
 };

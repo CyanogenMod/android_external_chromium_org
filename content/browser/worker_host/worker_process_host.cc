@@ -36,6 +36,7 @@
 #include "content/browser/renderer_host/render_view_host_delegate.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/socket_stream_dispatcher_host.h"
+#include "content/browser/renderer_host/websocket_dispatcher_host.h"
 #include "content/browser/resource_context_impl.h"
 #include "content/browser/worker_host/worker_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
@@ -47,6 +48,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "ipc/ipc_switches.h"
 #include "net/base/mime_util.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
@@ -58,26 +60,45 @@
 
 #if defined(OS_WIN)
 #include "content/common/sandbox_win.h"
-#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #endif
 
 namespace content {
 namespace {
 
-#if defined(OS_WIN)
 // NOTE: changes to this class need to be reviewed by the security team.
 class WorkerSandboxedProcessLauncherDelegate
     : public content::SandboxedProcessLauncherDelegate {
  public:
-  WorkerSandboxedProcessLauncherDelegate() {}
+  WorkerSandboxedProcessLauncherDelegate(ChildProcessHost* host,
+                                         bool debugging_child)
+#if defined(OS_POSIX)
+      : ipc_fd_(host->TakeClientFileDescriptor()),
+        debugging_child_(debugging_child)
+#endif  // OS_POSIX
+  {}
+
   virtual ~WorkerSandboxedProcessLauncherDelegate() {}
 
+#if defined(OS_WIN)
   virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
                               bool* success) {
     AddBaseHandleClosePolicy(policy);
   }
-};
+#elif defined(OS_POSIX)
+  virtual bool ShouldUseZygote() OVERRIDE {
+    return !debugging_child_;
+  }
+  virtual int GetIpcFd() OVERRIDE {
+    return ipc_fd_;
+  }
 #endif  // OS_WIN
+
+ private:
+#if defined(OS_POSIX)
+  int ipc_fd_;
+  bool debugging_child_;
+#endif  // OS_POSIX
+};
 
 // Notifies RenderViewHost that one or more worker objects crashed.
 void WorkerCrashCallback(int render_process_unique_id, int render_frame_id) {
@@ -183,7 +204,7 @@ bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
     switches::kDisableFileSystem,
     switches::kDisableSeccompFilterSandbox,
     switches::kEnableExperimentalWebPlatformFeatures,
-    switches::kEnableServiceWorker,
+    switches::kEnablePreciseMemoryInfo,
 #if defined(OS_MACOSX)
     switches::kEnableSandboxLogging,
 #endif
@@ -193,9 +214,8 @@ bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
   cmd_line->CopySwitchesFrom(*CommandLine::ForCurrentProcess(), kSwitchNames,
                              arraysize(kSwitchNames));
 
+bool debugging_child = false;
 #if defined(OS_POSIX)
-  bool use_zygote = true;
-
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kWaitForDebuggerChildren)) {
     // Look to pass-on the kWaitForDebugger flag.
@@ -203,31 +223,14 @@ bool WorkerProcessHost::Init(int render_process_id, int render_frame_id) {
         switches::kWaitForDebuggerChildren);
     if (value.empty() || value == switches::kWorkerProcess) {
       cmd_line->AppendSwitch(switches::kWaitForDebugger);
-      use_zygote = false;
-    }
-  }
-
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDebugChildren)) {
-    // Look to pass-on the kDebugOnStart flag.
-    std::string value = CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-        switches::kDebugChildren);
-    if (value.empty() || value == switches::kWorkerProcess) {
-      // launches a new xterm, and runs the worker process in gdb, reading
-      // optional commands from gdb_chrome file in the working directory.
-      cmd_line->PrependWrapper("xterm -e gdb -x gdb_chrome --args");
-      use_zygote = false;
+      debugging_child = true;
     }
   }
 #endif
 
   process_->Launch(
-#if defined(OS_WIN)
-      new WorkerSandboxedProcessLauncherDelegate,
-      false,
-#elif defined(OS_POSIX)
-      use_zygote,
-      base::EnvironmentMap(),
-#endif
+      new WorkerSandboxedProcessLauncherDelegate(process_->GetHost(),
+                                                 debugging_child),
       cmd_line);
 
   ChildProcessSecurityPolicyImpl::GetInstance()->AddWorker(
@@ -261,6 +264,7 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
       partition_.appcache_service(),
       blob_storage_context,
       partition_.filesystem_context(),
+      partition_.service_worker_context(),
       get_contexts_callback);
   process_->AddFilter(resource_message_filter);
 
@@ -303,12 +307,26 @@ void WorkerProcessHost::CreateMessageFilters(int render_process_id) {
           resource_context_);
   socket_stream_dispatcher_host_ = socket_stream_dispatcher_host;
   process_->AddFilter(socket_stream_dispatcher_host);
+
+  WebSocketDispatcherHost::GetRequestContextCallback
+      websocket_request_context_callback(
+          base::Bind(&WorkerProcessHost::GetRequestContext,
+                     base::Unretained(this),
+                     ResourceType::SUB_RESOURCE));
+
+  process_->AddFilter(new WebSocketDispatcherHost(
+      render_process_id, websocket_request_context_callback));
+
   process_->AddFilter(new WorkerDevToolsMessageFilter(process_->GetData().id));
   process_->AddFilter(
-      new IndexedDBDispatcherHost(partition_.indexed_db_context()));
+      new IndexedDBDispatcherHost(process_->GetData().id,
+                                  url_request_context,
+                                  partition_.indexed_db_context(),
+                                  blob_storage_context));
 }
 
-void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
+void WorkerProcessHost::CreateWorker(const WorkerInstance& instance,
+                                     bool pause_on_start) {
   ChildProcessSecurityPolicyImpl::GetInstance()->GrantRequestURL(
       process_->GetData().id, instance.url());
 
@@ -319,6 +337,7 @@ void WorkerProcessHost::CreateWorker(const WorkerInstance& instance) {
   params.name = instance.name();
   params.content_security_policy = instance.content_security_policy();
   params.security_policy_type = instance.security_policy_type();
+  params.pause_on_start = pause_on_start;
   params.route_id = instance.worker_route_id();
   Send(new WorkerProcessMsg_CreateWorker(params));
 
@@ -353,9 +372,8 @@ void WorkerProcessHost::OnProcessLaunched() {
 }
 
 bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
-  bool msg_is_ok = true;
   bool handled = true;
-  IPC_BEGIN_MESSAGE_MAP_EX(WorkerProcessHost, message, msg_is_ok)
+  IPC_BEGIN_MESSAGE_MAP(WorkerProcessHost, message)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextClosed,
                         OnWorkerContextClosed)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextDestroyed,
@@ -367,19 +385,13 @@ bool WorkerProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerConnected,
                         OnWorkerConnected)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
-    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowFileSystem, OnAllowFileSystem)
+    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_RequestFileSystemAccessSync,
+                        OnRequestFileSystemAccessSync)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_ForceKillWorker,
                         OnForceKillWorkerProcess)
     IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP_EX()
-
-  if (!msg_is_ok) {
-    NOTREACHED();
-    RecordAction(base::UserMetricsAction("BadMessageTerminate_WPH"));
-    base::KillProcess(
-        process_->GetData().handle, RESULT_CODE_KILLED_BAD_MESSAGE, false);
-  }
+  IPC_END_MESSAGE_MAP()
 
   return handled;
 }
@@ -460,9 +472,9 @@ void WorkerProcessHost::OnAllowDatabase(int worker_route_id,
       GetRenderFrameIDsForWorker(worker_route_id));
 }
 
-void WorkerProcessHost::OnAllowFileSystem(int worker_route_id,
-                                          const GURL& url,
-                                          bool* result) {
+void WorkerProcessHost::OnRequestFileSystemAccessSync(int worker_route_id,
+                                                      const GURL& url,
+                                                      bool* result) {
   *result = GetContentClient()->browser()->AllowWorkerFileSystem(
       url, resource_context_, GetRenderFrameIDsForWorker(worker_route_id));
 }
@@ -490,12 +502,12 @@ void WorkerProcessHost::RelayMessage(
     WorkerInstance* instance) {
   if (message.type() == WorkerMsg_Connect::ID) {
     // Crack the SharedWorker Connect message to setup routing for the port.
-    int sent_message_port_id;
-    int new_routing_id;
-    if (!WorkerMsg_Connect::Read(
-            &message, &sent_message_port_id, &new_routing_id)) {
+    WorkerMsg_Connect::Param params;
+    if (!WorkerMsg_Connect::Read(&message, &params))
       return;
-    }
+
+    int sent_message_port_id = params.a;
+    int new_routing_id = params.b;
     new_routing_id = worker_message_filter_->GetNextRoutingID();
     MessagePortService::GetInstance()->UpdateMessagePort(
         sent_message_port_id,

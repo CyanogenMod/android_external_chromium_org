@@ -1,11 +1,8 @@
-# Copyright (c) 2013 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import time
-
 # pylint: disable=W0613
-
 
 # pylint: disable=W0212
 class OSVersion(str):
@@ -25,6 +22,18 @@ class OSVersion(str):
 
   def __ge__(self, other):
     return self._sortable_name >= other._sortable_name
+
+
+XP =           OSVersion('xp',            5.1)
+VISTA =        OSVersion('vista',         6.0)
+WIN7 =         OSVersion('win7',          6.1)
+WIN8 =         OSVersion('win8',          6.2)
+
+LEOPARD =      OSVersion('leopard',      10.5)
+SNOWLEOPARD =  OSVersion('snowleopard',  10.6)
+LION =         OSVersion('lion',         10.7)
+MOUNTAINLION = OSVersion('mountainlion', 10.8)
+MAVERICKS =    OSVersion('mavericks',    10.9)
 
 
 class PlatformBackend(object):
@@ -94,6 +103,9 @@ class PlatformBackend(object):
   def FlushSystemCacheForDirectory(self, directory, ignoring=None):
     raise NotImplementedError()
 
+  def FlushDnsCache(self):
+    pass
+
   def LaunchApplication(
       self, application, parameters=None, elevate_privilege=False):
     raise NotImplementedError()
@@ -113,22 +125,18 @@ class PlatformBackend(object):
   def StartVideoCapture(self, min_bitrate_mbps):
     raise NotImplementedError()
 
+  @property
+  def is_video_capture_running(self):
+    return False
+
   def StopVideoCapture(self):
     raise NotImplementedError()
 
-  def CanMonitorPowerSync(self):
-    return self.CanMonitorPowerAsync()
-
-  def MonitorPowerSync(self, duration_ms):
-    self.StartMonitoringPowerAsync()
-    time.sleep(duration_ms / 1000.)
-    return self.StopMonitoringPowerAsync()
-
-  def CanMonitorPowerAsync(self):
+  def CanMonitorPower(self):
     return False
 
-  def StartMonitoringPowerAsync(self):
+  def StartMonitoringPower(self, browser):
     raise NotImplementedError()
 
-  def StopMonitoringPowerAsync(self):
+  def StopMonitoringPower(self):
     raise NotImplementedError()

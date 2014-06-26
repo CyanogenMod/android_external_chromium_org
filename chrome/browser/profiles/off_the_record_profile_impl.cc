@@ -20,14 +20,9 @@
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/extensions/api/web_request/web_request_api.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
-#include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
 #include "chrome/browser/io_thread.h"
-#include "chrome/browser/media/chrome_midi_permission_context.h"
-#include "chrome/browser/media/chrome_midi_permission_context_factory.h"
 #include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
@@ -41,7 +36,7 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/host_zoom_map.h"
@@ -74,10 +69,19 @@
 #include "chrome/browser/policy/cloud/user_cloud_policy_manager_factory.h"
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/guest_view/guest_view_manager.h"
+#endif
+
+#if defined(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/api/web_request/web_request_api.h"
+#endif
+
 using content::BrowserThread;
 using content::DownloadManagerDelegate;
 using content::HostZoomMap;
 
+#if defined(ENABLE_EXTENSIONS)
 namespace {
 
 void NotifyOTRProfileCreatedOnIOThread(void* original_profile,
@@ -93,17 +97,24 @@ void NotifyOTRProfileDestroyedOnIOThread(void* original_profile,
 }
 
 }  // namespace
+#endif
 
 OffTheRecordProfileImpl::OffTheRecordProfileImpl(Profile* real_profile)
     : profile_(real_profile),
       prefs_(PrefServiceSyncable::IncognitoFromProfile(real_profile)),
-      io_data_(this),
       start_time_(Time::Now()) {
   // Register on BrowserContext.
   user_prefs::UserPrefs::Set(this, prefs_);
 }
 
 void OffTheRecordProfileImpl::Init() {
+  // The construction of OffTheRecordProfileIOData::Handle needs the profile
+  // type returned by this->GetProfileType().  Since GetProfileType() is a
+  // virtual member function, we cannot call the function defined in the most
+  // derived class (e.g. GuestSessionProfile) until a ctor finishes.  Thus,
+  // we have to instantiate OffTheRecordProfileIOData::Handle here after a ctor.
+  InitIoData();
+
 #if defined(ENABLE_CONFIGURATION_POLICY) && !defined(OS_CHROMEOS)
   // Because UserCloudPolicyManager is in a component, it cannot access
   // GetOriginalProfile. Instead, we have to inject this relation here.
@@ -139,12 +150,14 @@ void OffTheRecordProfileImpl::Init() {
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->RegisterResourceContext(
       PluginPrefs::GetForProfile(this).get(),
-      io_data_.GetResourceContextNoInit());
+      io_data_->GetResourceContextNoInit());
 #endif
 
+#if defined(ENABLE_EXTENSIONS)
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NotifyOTRProfileCreatedOnIOThread, profile_, this));
+#endif
 }
 
 OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
@@ -152,15 +165,17 @@ OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
 
 #if defined(ENABLE_PLUGINS)
   ChromePluginServiceFilter::GetInstance()->UnregisterResourceContext(
-    io_data_.GetResourceContextNoInit());
+      io_data_->GetResourceContextNoInit());
 #endif
 
   BrowserContextDependencyManager::GetInstance()->DestroyBrowserContextServices(
       this);
 
+#if defined(ENABLE_EXTENSIONS)
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&NotifyOTRProfileDestroyedOnIOThread, profile_, this));
+#endif
 
   if (host_content_settings_map_.get())
     host_content_settings_map_->ShutdownOnUIThread();
@@ -171,6 +186,10 @@ OffTheRecordProfileImpl::~OffTheRecordProfileImpl() {
   // Clears any data the network stack contains that may be related to the
   // OTR session.
   g_browser_process->io_thread()->ChangedToOnTheRecord();
+}
+
+void OffTheRecordProfileImpl::InitIoData() {
+  io_data_.reset(new OffTheRecordProfileIOData::Handle(this));
 }
 
 void OffTheRecordProfileImpl::InitHostZoomMap() {
@@ -204,6 +223,10 @@ void OffTheRecordProfileImpl::UseSystemProxy() {
 std::string OffTheRecordProfileImpl::GetProfileName() {
   // Incognito profile should not return the profile name.
   return std::string();
+}
+
+Profile::ProfileType OffTheRecordProfileImpl::GetProfileType() const {
+  return INCOGNITO_PROFILE;
 }
 
 base::FilePath OffTheRecordProfileImpl::GetPath() const {
@@ -245,8 +268,8 @@ ExtensionSpecialStoragePolicy*
   return GetOriginalProfile()->GetExtensionSpecialStoragePolicy();
 }
 
-bool OffTheRecordProfileImpl::IsManaged() {
-  return GetOriginalProfile()->IsManaged();
+bool OffTheRecordProfileImpl::IsSupervised() {
+  return GetOriginalProfile()->IsSupervised();
 }
 
 PrefService* OffTheRecordProfileImpl::GetPrefs() {
@@ -267,8 +290,10 @@ net::URLRequestContextGetter* OffTheRecordProfileImpl::GetRequestContext() {
 }
 
 net::URLRequestContextGetter* OffTheRecordProfileImpl::CreateRequestContext(
-    content::ProtocolHandlerMap* protocol_handlers) {
-  return io_data_.CreateMainRequestContextGetter(protocol_handlers).get();
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::URLRequestInterceptorScopedVector request_interceptors) {
+  return io_data_->CreateMainRequestContextGetter(
+      protocol_handlers, request_interceptors.Pass()).get();
 }
 
 net::URLRequestContextGetter*
@@ -296,85 +321,30 @@ net::URLRequestContextGetter*
 OffTheRecordProfileImpl::GetMediaRequestContextForStoragePartition(
     const base::FilePath& partition_path,
     bool in_memory) {
-  return io_data_.GetIsolatedAppRequestContextGetter(partition_path, in_memory)
+  return io_data_->GetIsolatedAppRequestContextGetter(partition_path, in_memory)
       .get();
-}
-
-void OffTheRecordProfileImpl::RequestMidiSysExPermission(
-      int render_process_id,
-      int render_view_id,
-      int bridge_id,
-      const GURL& requesting_frame,
-      const MidiSysExPermissionCallback& callback) {
-  ChromeMidiPermissionContext* context =
-      ChromeMidiPermissionContextFactory::GetForProfile(this);
-  context->RequestMidiSysExPermission(render_process_id,
-                                      render_view_id,
-                                      bridge_id,
-                                      requesting_frame,
-                                      callback);
-}
-
-void OffTheRecordProfileImpl::CancelMidiSysExPermissionRequest(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    const GURL& requesting_frame) {
-  ChromeMidiPermissionContext* context =
-      ChromeMidiPermissionContextFactory::GetForProfile(this);
-  context->CancelMidiSysExPermissionRequest(
-      render_process_id, render_view_id, bridge_id, requesting_frame);
-}
-
-void OffTheRecordProfileImpl::RequestProtectedMediaIdentifierPermission(
-    int render_process_id,
-    int render_view_id,
-    int bridge_id,
-    int group_id,
-    const GURL& requesting_frame,
-    const ProtectedMediaIdentifierPermissionCallback& callback) {
-#if defined(OS_ANDROID)
-  ProtectedMediaIdentifierPermissionContext* context =
-      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
-  context->RequestProtectedMediaIdentifierPermission(render_process_id,
-                                                     render_view_id,
-                                                     bridge_id,
-                                                     group_id,
-                                                     requesting_frame,
-                                                     callback);
-#else
-  NOTIMPLEMENTED();
-  callback.Run(false);
-#endif  // defined(OS_ANDROID)
-}
-
-void OffTheRecordProfileImpl::CancelProtectedMediaIdentifierPermissionRequests(
-    int group_id) {
-#if defined(OS_ANDROID)
-  ProtectedMediaIdentifierPermissionContext* context =
-      ProtectedMediaIdentifierPermissionContextFactory::GetForProfile(this);
-  context->CancelProtectedMediaIdentifierPermissionRequests(group_id);
-#else
-  NOTIMPLEMENTED();
-#endif  // defined(OS_ANDROID)
 }
 
 net::URLRequestContextGetter*
     OffTheRecordProfileImpl::GetRequestContextForExtensions() {
-  return io_data_.GetExtensionsRequestContextGetter().get();
+  return io_data_->GetExtensionsRequestContextGetter().get();
 }
 
 net::URLRequestContextGetter*
-    OffTheRecordProfileImpl::CreateRequestContextForStoragePartition(
-        const base::FilePath& partition_path,
-        bool in_memory,
-        content::ProtocolHandlerMap* protocol_handlers) {
-  return io_data_.CreateIsolatedAppRequestContextGetter(
-                      partition_path, in_memory, protocol_handlers).get();
+OffTheRecordProfileImpl::CreateRequestContextForStoragePartition(
+    const base::FilePath& partition_path,
+    bool in_memory,
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::URLRequestInterceptorScopedVector request_interceptors) {
+  return io_data_->CreateIsolatedAppRequestContextGetter(
+      partition_path,
+      in_memory,
+      protocol_handlers,
+      request_interceptors.Pass()).get();
 }
 
 content::ResourceContext* OffTheRecordProfileImpl::GetResourceContext() {
-  return io_data_.GetResourceContext();
+  return io_data_->GetResourceContext();
 }
 
 net::SSLConfigService* OffTheRecordProfileImpl::GetSSLConfigService() {
@@ -396,14 +366,24 @@ HostContentSettingsMap* OffTheRecordProfileImpl::GetHostContentSettingsMap() {
   return host_content_settings_map_.get();
 }
 
-content::GeolocationPermissionContext*
-    OffTheRecordProfileImpl::GetGeolocationPermissionContext() {
-  return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
+content::BrowserPluginGuestManager*
+    OffTheRecordProfileImpl::GetGuestManager() {
+#if defined(ENABLE_EXTENSIONS)
+  return GuestViewManager::FromBrowserContext(this);
+#else
+  return NULL;
+#endif
 }
 
 quota::SpecialStoragePolicy*
     OffTheRecordProfileImpl::GetSpecialStoragePolicy() {
   return GetExtensionSpecialStoragePolicy();
+}
+
+content::PushMessagingService*
+OffTheRecordProfileImpl::GetPushMessagingService() {
+  // TODO(johnme): Support push messaging in incognito if possible.
+  return NULL;
 }
 
 bool OffTheRecordProfileImpl::IsSameProfile(Profile* profile) {
@@ -473,6 +453,11 @@ chrome_browser_net::Predictor* OffTheRecordProfileImpl::GetNetworkPredictor() {
   return NULL;
 }
 
+DevToolsNetworkController*
+OffTheRecordProfileImpl::GetDevToolsNetworkController() {
+  return io_data_->GetDevToolsNetworkController();
+}
+
 void OffTheRecordProfileImpl::ClearNetworkingHistorySince(
     base::Time time,
     const base::Closure& completion) {
@@ -496,6 +481,10 @@ class GuestSessionProfile : public OffTheRecordProfileImpl {
  public:
   explicit GuestSessionProfile(Profile* real_profile)
       : OffTheRecordProfileImpl(real_profile) {
+  }
+
+  virtual ProfileType GetProfileType() const OVERRIDE {
+    return GUEST_PROFILE;
   }
 
   virtual void InitChromeOSPreferences() OVERRIDE {

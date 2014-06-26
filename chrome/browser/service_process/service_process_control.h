@@ -23,7 +23,9 @@
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 
+namespace base {
 class CommandLine;
+}
 
 namespace cloud_print {
 struct CloudPrintProxyInfo;
@@ -58,13 +60,17 @@ class ServiceProcessControl : public IPC::Sender,
     SERVICE_EVENT_INFO_REPLY,
     SERVICE_EVENT_HISTOGRAMS_REQUEST,
     SERVICE_EVENT_HISTOGRAMS_REPLY,
+    SERVICE_PRINTERS_REQUEST,
+    SERVICE_PRINTERS_REPLY,
     SERVICE_EVENT_MAX,
   };
 
   typedef IDMap<ServiceProcessControl>::iterator iterator;
   typedef std::queue<IPC::Message> MessageQueue;
   typedef base::Callback<void(const cloud_print::CloudPrintProxyInfo&)>
-      CloudPrintProxyInfoHandler;
+      CloudPrintProxyInfoCallback;
+  typedef base::Callback<void(const std::vector<std::string>&)>
+      PrintersCallback;
 
   // Returns the singleton instance of this class.
   static ServiceProcessControl* GetInstance();
@@ -116,7 +122,7 @@ class ServiceProcessControl : public IPC::Sender,
   // reply from service. The method resets any previous callback.
   // This call starts service if needed.
   bool GetCloudPrintProxyInfo(
-      const CloudPrintProxyInfoHandler& cloud_print_status_callback);
+      const CloudPrintProxyInfoCallback& cloud_print_status_callback);
 
   // Send request for histograms collected in service process.
   // Returns true if request was sent, and callback will be called in case of
@@ -126,13 +132,21 @@ class ServiceProcessControl : public IPC::Sender,
   bool GetHistograms(const base::Closure& cloud_print_status_callback,
                      const base::TimeDelta& timeout);
 
+  // Send request for printers available for cloud print proxy.
+  // The callback gets the information when received.
+  // Returns true if request was sent. Callback will be called only in case of
+  // reply from service. The method resets any previous callback.
+  // This call starts service if needed.
+  bool GetPrinters(const PrintersCallback& enumerate_printers_callback);
+
  private:
   // This class is responsible for launching the service process on the
   // PROCESS_LAUNCHER thread.
   class Launcher
       : public base::RefCountedThreadSafe<ServiceProcessControl::Launcher> {
    public:
-    Launcher(ServiceProcessControl* process, CommandLine* cmd_line);
+    Launcher(ServiceProcessControl* process,
+             scoped_ptr<base::CommandLine> cmd_line);
     // Execute the command line to start the process asynchronously. After the
     // command is executed |task| is called with the process handle on the UI
     // thread.
@@ -152,7 +166,7 @@ class ServiceProcessControl : public IPC::Sender,
     void Notify();
     void CloseProcessHandle();
     ServiceProcessControl* process_;
-    scoped_ptr<CommandLine> cmd_line_;
+    scoped_ptr<base::CommandLine> cmd_line_;
     base::Closure notify_task_;
     bool launched_;
     uint32 retry_count_;
@@ -173,6 +187,7 @@ class ServiceProcessControl : public IPC::Sender,
   void OnCloudPrintProxyInfo(
       const cloud_print::CloudPrintProxyInfo& proxy_info);
   void OnHistograms(const std::vector<std::string>& pickled_histograms);
+  void OnPrinters(const std::vector<std::string>& printers);
 
   // Runs callback provided in |GetHistograms()|.
   void RunHistogramsCallback();
@@ -187,7 +202,7 @@ class ServiceProcessControl : public IPC::Sender,
   void ConnectInternal();
 
   // Takes ownership of the pointer. Split out for testing.
-  void SetChannel(IPC::ChannelProxy* channel);
+  void SetChannel(scoped_ptr<IPC::ChannelProxy> channel);
 
   static void RunAllTasksHelper(TaskList* task_list);
 
@@ -202,9 +217,13 @@ class ServiceProcessControl : public IPC::Sender,
   // Callbacks that get invoked when there was a connection failure.
   TaskList connect_failure_tasks_;
 
+  // Callback that gets invoked when a printers is received from
+  // the cloud print proxy.
+  PrintersCallback printers_callback_;
+
   // Callback that gets invoked when a status message is received from
   // the cloud print proxy.
-  CloudPrintProxyInfoHandler cloud_print_info_callback_;
+  CloudPrintProxyInfoCallback cloud_print_info_callback_;
 
   // Callback that gets invoked when a message with histograms is received from
   // the service process.

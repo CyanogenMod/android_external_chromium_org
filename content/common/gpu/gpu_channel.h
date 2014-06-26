@@ -38,18 +38,19 @@ class ImageManager;
 }
 }
 
+namespace IPC {
+class MessageFilter;
+}
+
 namespace content {
 class DevToolsGpuAgent;
 class GpuChannelManager;
 class GpuChannelMessageFilter;
-class GpuVideoEncodeAccelerator;
 class GpuWatchdog;
 
 // Encapsulates an IPC channel between the GPU process and one renderer
 // process. On the renderer side there's a corresponding GpuChannelHost.
-class GpuChannel : public IPC::Listener,
-                   public IPC::Sender,
-                   public base::RefCountedThreadSafe<GpuChannel> {
+class GpuChannel : public IPC::Listener, public IPC::Sender {
  public:
   // Takes ownership of the renderer process handle.
   GpuChannel(GpuChannelManager* gpu_channel_manager,
@@ -58,8 +59,9 @@ class GpuChannel : public IPC::Listener,
              gpu::gles2::MailboxManager* mailbox_manager,
              int client_id,
              bool software);
+  virtual ~GpuChannel();
 
-  bool Init(base::MessageLoopProxy* io_message_loop,
+  void Init(base::MessageLoopProxy* io_message_loop,
             base::WaitableEvent* shutdown_event);
 
   // Get the GpuChannelManager that owns this channel.
@@ -74,7 +76,9 @@ class GpuChannel : public IPC::Listener,
   int TakeRendererFileDescriptor();
 #endif  // defined(OS_POSIX)
 
-  base::ProcessId renderer_pid() const { return channel_->peer_pid(); }
+  base::ProcessId renderer_pid() const { return channel_->GetPeerPID(); }
+
+  int client_id() const { return client_id_; }
 
   scoped_refptr<base::MessageLoopProxy> io_message_loop() const {
     return io_message_loop_;
@@ -103,11 +107,11 @@ class GpuChannel : public IPC::Listener,
   // other channels.
   void StubSchedulingChanged(bool scheduled);
 
-  void CreateViewCommandBuffer(
+  bool CreateViewCommandBuffer(
       const gfx::GLSurfaceHandle& window,
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
-      int32* route_id);
+      int32 route_id);
 
   void CreateImage(
       gfx::PluginWindowHandle window,
@@ -122,14 +126,11 @@ class GpuChannel : public IPC::Listener,
   void LoseAllContexts();
   void MarkAllContextsLost();
 
-  // Destroy channel and all contained contexts.
-  void DestroySoon();
+  // Called to add a listener for a particular message routing ID.
+  // Returns true if succeeded.
+  bool AddRoute(int32 route_id, IPC::Listener* listener);
 
-  // Generate a route ID guaranteed to be unique for this channel.
-  int32 GenerateRouteID();
-
-  // Called to add/remove a listener for a particular message routing ID.
-  void AddRoute(int32 route_id, IPC::Listener* listener);
+  // Called to remove a listener for a particular message routing ID.
   void RemoveRoute(int32 route_id);
 
   gpu::PreemptionFlag* GetPreemptionFlag();
@@ -144,14 +145,12 @@ class GpuChannel : public IPC::Listener,
 
   void CacheShader(const std::string& key, const std::string& shader);
 
-  void AddFilter(IPC::ChannelProxy::MessageFilter* filter);
-  void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter);
+  void AddFilter(IPC::MessageFilter* filter);
+  void RemoveFilter(IPC::MessageFilter* filter);
 
- protected:
-  virtual ~GpuChannel();
+  uint64 GetMemoryUsage();
 
  private:
-  friend class base::RefCountedThreadSafe<GpuChannel>;
   friend class GpuChannelMessageFilter;
 
   void OnDestroy();
@@ -164,11 +163,10 @@ class GpuChannel : public IPC::Listener,
   void OnCreateOffscreenCommandBuffer(
       const gfx::Size& size,
       const GPUCreateCommandBufferConfig& init_params,
-      int32* route_id);
+      int32 route_id,
+      bool* succeeded);
   void OnDestroyCommandBuffer(int32 route_id);
-  void OnCreateVideoEncoder(int32* route_id);
-  void OnDestroyVideoEncoder(int32 route_id);
-  void OnDevToolsStartEventsRecording(int32* route_id);
+  void OnDevToolsStartEventsRecording(int32 route_id, bool* succeeded);
   void OnDevToolsStopEventsRecording();
 
   // Decrement the count of unhandled IPC messages and defer preemption.
@@ -212,15 +210,11 @@ class GpuChannel : public IPC::Listener,
   typedef IDMap<GpuCommandBufferStub, IDMapOwnPointer> StubMap;
   StubMap stubs_;
 
-  typedef IDMap<GpuVideoEncodeAccelerator, IDMapOwnPointer> EncoderMap;
-  EncoderMap video_encoders_;
-
   bool log_messages_;  // True if we should log sent and received messages.
   gpu::gles2::DisallowedFeatures disallowed_features_;
   GpuWatchdog* watchdog_;
   bool software_;
   bool handle_messages_scheduled_;
-  bool processed_get_state_fast_;
   IPC::Message* currently_processing_message_;
 
   base::WeakPtrFactory<GpuChannel> weak_factory_;

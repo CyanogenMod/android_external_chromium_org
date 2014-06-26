@@ -7,15 +7,16 @@
 #include "base/command_line.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/notifications/sync_notifier/chrome_notifier_service.h"
+#include "chrome/browser/notifications/sync_notifier/synced_notification_app_info_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 namespace notifier {
 
 // static
 ChromeNotifierService* ChromeNotifierServiceFactory::GetForProfile(
-    Profile* profile, Profile::ServiceAccessType sat) {
+    Profile* profile, Profile::ServiceAccessType service_access_type) {
   return static_cast<ChromeNotifierService*>(
       GetInstance()->GetServiceForBrowserContext(profile, true));
 }
@@ -45,14 +46,18 @@ bool ChromeNotifierServiceFactory::UseSyncedNotifications(
 
 ChromeNotifierServiceFactory::ChromeNotifierServiceFactory()
     : BrowserContextKeyedServiceFactory(
-        "ChromeNotifierService",
-        BrowserContextDependencyManager::GetInstance()) {}
+          "ChromeNotifierService",
+          BrowserContextDependencyManager::GetInstance()) {
+  // Mark this service as depending on the SyncedNotificationAppInfoService.
+  // Marking it provides a guarantee that the other service will alwasys be
+  // running whenever the ChromeNotifierServiceFactory is.
+  DependsOn(SyncedNotificationAppInfoServiceFactory::GetInstance());
+}
 
 ChromeNotifierServiceFactory::~ChromeNotifierServiceFactory() {
 }
 
-BrowserContextKeyedService*
-ChromeNotifierServiceFactory::BuildServiceInstanceFor(
+KeyedService* ChromeNotifierServiceFactory::BuildServiceInstanceFor(
     content::BrowserContext* profile) const {
   NotificationUIManager* notification_manager =
       g_browser_process->notification_ui_manager();

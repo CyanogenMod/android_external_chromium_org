@@ -34,7 +34,8 @@ class CHROMEOS_EXPORT UpdateEngineClient : public DBusClient {
     UPDATE_STATUS_VERIFYING,
     UPDATE_STATUS_FINALIZING,
     UPDATE_STATUS_UPDATED_NEED_REBOOT,
-    UPDATE_STATUS_REPORTING_ERROR_EVENT
+    UPDATE_STATUS_REPORTING_ERROR_EVENT,
+    UPDATE_STATUS_ATTEMPTING_ROLLBACK
   };
 
   // The status of the ongoing update attempt.
@@ -83,6 +84,17 @@ class CHROMEOS_EXPORT UpdateEngineClient : public DBusClient {
 
   // Reboots if update has been performed.
   virtual void RebootAfterUpdate() = 0;
+
+  // Starts Rollback.
+  virtual void Rollback() = 0;
+
+  // Called once CanRollbackCheck() is complete. Takes one parameter:
+  // - bool: the result of the rollback availability check.
+  typedef base::Callback<void(bool can_rollback)> RollbackCheckCallback;
+
+  // Checks if Rollback is available and calls |callback| when completed.
+  virtual void CanRollbackCheck(
+      const RollbackCheckCallback& callback) = 0;
 
   // Called once GetChannel() is complete. Takes one parameter;
   // - string: the channel name like "beta-channel".

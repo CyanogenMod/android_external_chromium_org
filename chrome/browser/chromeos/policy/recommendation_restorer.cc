@@ -5,7 +5,6 @@
 #include "chrome/browser/chromeos/policy/recommendation_restorer.h"
 
 #include "ash/shell.h"
-#include "ash/wm/user_activity_detector.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/location.h"
@@ -20,6 +19,7 @@
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "ui/wm/core/user_activity_detector.h"
 
 namespace policy {
 
@@ -34,24 +34,30 @@ RecommendationRestorer::RecommendationRestorer(Profile* profile)
     return;
 
   pref_change_registrar_.Init(profile->GetPrefs());
-  pref_change_registrar_.Add(prefs::kLargeCursorEnabled,
-                             base::Bind(&RecommendationRestorer::Restore,
-                                        base::Unretained(this), true));
-  pref_change_registrar_.Add(prefs::kSpokenFeedbackEnabled,
-                             base::Bind(&RecommendationRestorer::Restore,
-                                        base::Unretained(this), true));
-  pref_change_registrar_.Add(prefs::kHighContrastEnabled,
-                             base::Bind(&RecommendationRestorer::Restore,
-                                        base::Unretained(this), true));
-  pref_change_registrar_.Add(prefs::kScreenMagnifierEnabled,
-                             base::Bind(&RecommendationRestorer::Restore,
-                                        base::Unretained(this), true));
-  pref_change_registrar_.Add(prefs::kScreenMagnifierType,
-                             base::Bind(&RecommendationRestorer::Restore,
-                                        base::Unretained(this), true));
-  pref_change_registrar_.Add(prefs::kVirtualKeyboardEnabled,
-                             base::Bind(&RecommendationRestorer::Restore,
-                                        base::Unretained(this), true));
+  pref_change_registrar_.Add(
+      prefs::kAccessibilityLargeCursorEnabled,
+      base::Bind(
+          &RecommendationRestorer::Restore, base::Unretained(this), true));
+  pref_change_registrar_.Add(
+      prefs::kAccessibilitySpokenFeedbackEnabled,
+      base::Bind(
+          &RecommendationRestorer::Restore, base::Unretained(this), true));
+  pref_change_registrar_.Add(
+      prefs::kAccessibilityHighContrastEnabled,
+      base::Bind(
+          &RecommendationRestorer::Restore, base::Unretained(this), true));
+  pref_change_registrar_.Add(
+      prefs::kAccessibilityScreenMagnifierEnabled,
+      base::Bind(
+          &RecommendationRestorer::Restore, base::Unretained(this), true));
+  pref_change_registrar_.Add(
+      prefs::kAccessibilityScreenMagnifierType,
+      base::Bind(
+          &RecommendationRestorer::Restore, base::Unretained(this), true));
+  pref_change_registrar_.Add(
+      prefs::kAccessibilityVirtualKeyboardEnabled,
+      base::Bind(
+          &RecommendationRestorer::Restore, base::Unretained(this), true));
 
   notification_registrar_.Add(this, chrome::NOTIFICATION_LOGIN_USER_CHANGED,
                               content::NotificationService::AllSources());
@@ -103,7 +109,7 @@ void RecommendationRestorer::Restore(bool allow_delay,
     allow_delay = false;
   } else if (allow_delay && ash::Shell::HasInstance()) {
     // Skip the delay if there has been no user input since the browser started.
-    const ash::UserActivityDetector* user_activity_detector =
+    const wm::UserActivityDetector* user_activity_detector =
         ash::Shell::GetInstance()->user_activity_detector();
     allow_delay = !user_activity_detector->last_activity_time().is_null();
   }
@@ -115,12 +121,12 @@ void RecommendationRestorer::Restore(bool allow_delay,
 }
 
 void RecommendationRestorer::RestoreAll() {
-  Restore(false, prefs::kLargeCursorEnabled);
-  Restore(false, prefs::kSpokenFeedbackEnabled);
-  Restore(false, prefs::kHighContrastEnabled);
-  Restore(false, prefs::kScreenMagnifierEnabled);
-  Restore(false, prefs::kScreenMagnifierType);
-  Restore(false, prefs::kVirtualKeyboardEnabled);
+  Restore(false, prefs::kAccessibilityLargeCursorEnabled);
+  Restore(false, prefs::kAccessibilitySpokenFeedbackEnabled);
+  Restore(false, prefs::kAccessibilityHighContrastEnabled);
+  Restore(false, prefs::kAccessibilityScreenMagnifierEnabled);
+  Restore(false, prefs::kAccessibilityScreenMagnifierType);
+  Restore(false, prefs::kAccessibilityVirtualKeyboardEnabled);
 }
 
 void RecommendationRestorer::StartTimer() {
@@ -128,7 +134,7 @@ void RecommendationRestorer::StartTimer() {
   // active, causing it to fire only when the user remains idle for
   // |kRestoreDelayInMs|.
   if (ash::Shell::HasInstance()) {
-    ash::UserActivityDetector* user_activity_detector =
+    wm::UserActivityDetector* user_activity_detector =
         ash::Shell::GetInstance()->user_activity_detector();
     if (!user_activity_detector->HasObserver(this))
       user_activity_detector->AddObserver(this);

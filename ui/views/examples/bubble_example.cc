@@ -83,8 +83,6 @@ void BubbleExample::CreateExampleView(View* container) {
   container->AddChildView(align_to_edge_);
   persistent_ = new LabelButton(this, ASCIIToUTF16("Persistent"));
   container->AddChildView(persistent_);
-  fade_in_ = new LabelButton(this, ASCIIToUTF16("Fade In"));
-  container->AddChildView(fade_in_);
 }
 
 void BubbleExample::ButtonPressed(Button* sender, const ui::Event& event) {
@@ -107,19 +105,14 @@ void BubbleExample::ButtonPressed(Button* sender, const ui::Event& event) {
   else if (sender == small_shadow_)
     bubble->set_shadow(BubbleBorder::SMALL_SHADOW);
 
-  if (sender == persistent_) {
+  if (sender == persistent_)
     bubble->set_close_on_deactivate(false);
-    bubble->set_move_with_anchor(true);
-  }
 
   BubbleDelegateView::CreateBubble(bubble);
   if (sender == align_to_edge_)
     bubble->SetAlignment(BubbleBorder::ALIGN_EDGE_TO_ANCHOR_EDGE);
 
-  if (sender == fade_in_)
-    bubble->StartFade(true);
-  else
-    bubble->GetWidget()->Show();
+  bubble->GetWidget()->Show();
 }
 
 }  // namespace examples

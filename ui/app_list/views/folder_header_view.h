@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "ui/app_list/app_list_export.h"
 #include "ui/app_list/app_list_item_observer.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
@@ -22,11 +23,15 @@ class AppListFolderItem;
 class AppListFolderView;
 class FolderHeaderViewDelegate;
 
+namespace test {
+class FolderHeaderViewTest;
+}
+
 // FolderHeaderView contains a back button and an editable folder name field.
-class FolderHeaderView : public views::View,
-                         public views::TextfieldController,
-                         public views::ButtonListener,
-                         public AppListItemObserver {
+class APP_LIST_EXPORT FolderHeaderView : public views::View,
+                                         public views::TextfieldController,
+                                         public views::ButtonListener,
+                                         public AppListItemObserver {
  public:
   explicit FolderHeaderView(FolderHeaderViewDelegate* delegate);
   virtual ~FolderHeaderView();
@@ -36,16 +41,28 @@ class FolderHeaderView : public views::View,
   void OnFolderItemRemoved();
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
  private:
   class FolderNameView;
+  friend class test::FolderHeaderViewTest;
 
   // Updates UI.
   void Update();
 
+  // Updates the accessible name of the folder name control.
+  void UpdateFolderNameAccessibleName();
+
+  // Gets and sets the folder name for test.
+  const base::string16& GetFolderNameForTest();
+  void SetFolderNameForTest(const base::string16& name);
+
+  // Returns true if folder name is enabled, only for testing use.
+  bool IsFolderNameEnabledForTest() const;
+
   // views::View overrides:
   virtual void Layout() OVERRIDE;
+  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   // views::TextfieldController overrides:
@@ -58,7 +75,7 @@ class FolderHeaderView : public views::View,
 
   // AppListItemObserver overrides:
   virtual void ItemIconChanged() OVERRIDE;
-  virtual void ItemTitleChanged() OVERRIDE;
+  virtual void ItemNameChanged() OVERRIDE;
   virtual void ItemHighlightedChanged() OVERRIDE;
   virtual void ItemIsInstallingChanged() OVERRIDE;
   virtual void ItemPercentDownloadedChanged() OVERRIDE;
@@ -67,6 +84,8 @@ class FolderHeaderView : public views::View,
 
   views::ImageButton* back_button_;  // Owned by views hierarchy.
   FolderNameView* folder_name_view_;  // Owned by views hierarchy.
+
+  const base::string16 folder_name_placeholder_text_;
 
   FolderHeaderViewDelegate* delegate_;
 

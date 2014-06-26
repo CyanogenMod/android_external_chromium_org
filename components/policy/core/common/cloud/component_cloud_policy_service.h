@@ -121,7 +121,7 @@ class POLICY_EXPORT ComponentCloudPolicyService
 
   void InitializeIfReady();
   void OnBackendInitialized(scoped_ptr<PolicyBundle> initial_policy);
-  void SetCurrentSchema();
+  void ReloadSchema();
   void OnPolicyUpdated(scoped_ptr<PolicyBundle> policy);
 
   Delegate* delegate_;
@@ -151,7 +151,12 @@ class POLICY_EXPORT ComponentCloudPolicyService
   scoped_refptr<SchemaMap> current_schema_map_;
 #endif  // !defined(OS_ANDROID) && !defined(OS_IOS)
 
-  // Contains all the current policies for components.
+  // Contains all the policies loaded from the store, before having been
+  // filtered by the |current_schema_map_|.
+  scoped_ptr<PolicyBundle> unfiltered_policy_;
+
+  // Contains all the current policies for components, filtered by the
+  // |current_schema_map_|.
   PolicyBundle policy_;
 
   // Whether the backend has started initializing asynchronously. Used to

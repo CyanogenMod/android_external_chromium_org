@@ -8,6 +8,7 @@
 #include <set>
 
 #include "base/files/file.h"
+#include "base/scoped_observer.h"
 #include "chrome/browser/extensions/api/developer_private/entry_picker.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "chrome/browser/extensions/chrome_extension_function.h"
@@ -16,20 +17,22 @@
 #include "chrome/browser/extensions/extension_uninstall_dialog.h"
 #include "chrome/browser/extensions/pack_extension_job.h"
 #include "chrome/browser/extensions/requirements_checker.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/render_view_host.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 #include "webkit/browser/fileapi/file_system_context.h"
 #include "webkit/browser/fileapi/file_system_operation.h"
 
-class ExtensionService;
+class Profile;
 
 namespace extensions {
 
 class ExtensionError;
+class ExtensionRegistry;
 class ExtensionSystem;
 class ManagementPolicy;
 
@@ -56,6 +59,7 @@ typedef std::vector<linked_ptr<developer::ItemInspectView> >
     ItemInspectViewList;
 
 class DeveloperPrivateEventRouter : public content::NotificationObserver,
+                                    public ExtensionRegistryObserver,
                                     public ErrorConsole::Observer {
  public:
   explicit DeveloperPrivateEventRouter(Profile* profile);
@@ -66,15 +70,35 @@ class DeveloperPrivateEventRouter : public content::NotificationObserver,
   void RemoveExtensionId(const std::string& extension_id);
 
  private:
-  // content::NotificationObserver implementation
+  // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // ErrorConsole::Observer implementation
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionWillBeInstalled(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      bool is_update,
+      bool from_ephemeral,
+      const std::string& old_name) OVERRIDE;
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE;
+
+  // ErrorConsole::Observer implementation.
   virtual void OnErrorAdded(const ExtensionError* error) OVERRIDE;
 
   content::NotificationRegistrar registrar_;
+
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   Profile* profile_;
 
@@ -90,13 +114,16 @@ class DeveloperPrivateEventRouter : public content::NotificationObserver,
 };
 
 // The profile-keyed service that manages the DeveloperPrivate API.
-class DeveloperPrivateAPI : public BrowserContextKeyedService,
+class DeveloperPrivateAPI : public BrowserContextKeyedAPI,
                             public EventRouter::Observer {
  public:
-  // Convenience method to get the DeveloperPrivateAPI for a profile.
-  static DeveloperPrivateAPI* Get(Profile* profile);
+  static BrowserContextKeyedAPIFactory<DeveloperPrivateAPI>*
+      GetFactoryInstance();
 
-  explicit DeveloperPrivateAPI(Profile* profile);
+  // Convenience method to get the DeveloperPrivateAPI for a profile.
+  static DeveloperPrivateAPI* Get(content::BrowserContext* context);
+
+  explicit DeveloperPrivateAPI(content::BrowserContext* context);
   virtual ~DeveloperPrivateAPI();
 
   void SetLastUnpackedDirectory(const base::FilePath& path);
@@ -105,7 +132,7 @@ class DeveloperPrivateAPI : public BrowserContextKeyedService,
     return last_unpacked_directory_;
   }
 
-  // BrowserContextKeyedService implementation
+  // KeyedService implementation
   virtual void Shutdown() OVERRIDE;
 
   // EventRouter::Observer implementation.
@@ -113,6 +140,13 @@ class DeveloperPrivateAPI : public BrowserContextKeyedService,
   virtual void OnListenerRemoved(const EventListenerInfo& details) OVERRIDE;
 
  private:
+  friend class BrowserContextKeyedAPIFactory<DeveloperPrivateAPI>;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "DeveloperPrivateAPI"; }
+  static const bool kServiceRedirectedInIncognito = true;
+  static const bool kServiceIsNULLWhileTesting = true;
+
   void RegisterNotifications();
 
   Profile* profile_;
@@ -125,7 +159,6 @@ class DeveloperPrivateAPI : public BrowserContextKeyedService,
   scoped_ptr<DeveloperPrivateEventRouter> developer_private_event_router_;
 
   DISALLOW_COPY_AND_ASSIGN(DeveloperPrivateAPI);
-
 };
 
 namespace api {
@@ -139,7 +172,7 @@ class DeveloperPrivateAutoUpdateFunction : public ChromeSyncExtensionFunction {
   virtual ~DeveloperPrivateAutoUpdateFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class DeveloperPrivateGetItemsInfoFunction
@@ -152,7 +185,7 @@ class DeveloperPrivateGetItemsInfoFunction
   virtual ~DeveloperPrivateGetItemsInfoFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_ptr<developer::ItemInfo> CreateItemInfo(const Extension& item,
@@ -192,7 +225,7 @@ class DeveloperPrivateInspectFunction : public ChromeSyncExtensionFunction {
   virtual ~DeveloperPrivateInspectFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class DeveloperPrivateAllowFileAccessFunction
@@ -205,7 +238,7 @@ class DeveloperPrivateAllowFileAccessFunction
   virtual ~DeveloperPrivateAllowFileAccessFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class DeveloperPrivateAllowIncognitoFunction
@@ -218,7 +251,7 @@ class DeveloperPrivateAllowIncognitoFunction
   virtual ~DeveloperPrivateAllowIncognitoFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class DeveloperPrivateReloadFunction : public ChromeSyncExtensionFunction {
@@ -230,7 +263,7 @@ class DeveloperPrivateReloadFunction : public ChromeSyncExtensionFunction {
   virtual ~DeveloperPrivateReloadFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class DeveloperPrivateShowPermissionsDialogFunction
@@ -245,7 +278,7 @@ class DeveloperPrivateShowPermissionsDialogFunction
   virtual ~DeveloperPrivateShowPermissionsDialogFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
   // Overridden from ExtensionInstallPrompt::Delegate
   virtual void InstallUIProceed() OVERRIDE;
@@ -253,7 +286,6 @@ class DeveloperPrivateShowPermissionsDialogFunction
 
   scoped_ptr<ExtensionInstallPrompt> prompt_;
   std::string extension_id_;
-
 };
 
 class DeveloperPrivateEnableFunction
@@ -269,10 +301,10 @@ class DeveloperPrivateEnableFunction
   virtual ~DeveloperPrivateEnableFunction();
 
   // Callback for requirements checker.
-  void OnRequirementsChecked(std::string extension_id,
+  void OnRequirementsChecked(const std::string& extension_id,
                              std::vector<std::string> requirements_errors);
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
  private:
   scoped_ptr<RequirementsChecker> requirements_checker_;
@@ -282,7 +314,7 @@ class DeveloperPrivateChooseEntryFunction : public ChromeAsyncExtensionFunction,
                                             public EntryPickerClient {
  protected:
   virtual ~DeveloperPrivateChooseEntryFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
   bool ShowPicker(ui::SelectFileDialog::Type picker_type,
                   const base::FilePath& last_directory,
                   const base::string16& select_title,
@@ -303,7 +335,7 @@ class DeveloperPrivateLoadUnpackedFunction
 
  protected:
   virtual ~DeveloperPrivateLoadUnpackedFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // EntryPickerCLient implementation.
   virtual void FileSelected(const base::FilePath& path) OVERRIDE;
@@ -318,7 +350,7 @@ class DeveloperPrivateChoosePathFunction
 
  protected:
   virtual ~DeveloperPrivateChoosePathFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   // EntryPickerClient functions.
   virtual void FileSelected(const base::FilePath& path) OVERRIDE;
@@ -343,7 +375,7 @@ class DeveloperPrivatePackDirectoryFunction
 
  protected:
   virtual ~DeveloperPrivatePackDirectoryFunction();
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   scoped_refptr<PackExtensionJob> pack_job_;
@@ -361,7 +393,7 @@ class DeveloperPrivateIsProfileManagedFunction
   virtual ~DeveloperPrivateIsProfileManagedFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class DeveloperPrivateLoadDirectoryFunction
@@ -376,7 +408,7 @@ class DeveloperPrivateLoadDirectoryFunction
   virtual ~DeveloperPrivateLoadDirectoryFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
   void ClearExistingDirectoryContent(const base::FilePath& project_path);
 
@@ -433,7 +465,7 @@ class DeveloperPrivateRequestFileSourceFunction
   virtual ~DeveloperPrivateRequestFileSourceFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void LaunchCallback(const base::DictionaryValue& results);
@@ -451,7 +483,7 @@ class DeveloperPrivateOpenDevToolsFunction
   virtual ~DeveloperPrivateOpenDevToolsFunction();
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 };
 
 }  // namespace api

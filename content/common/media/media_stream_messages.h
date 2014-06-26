@@ -23,6 +23,9 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::MediaStreamType,
 IPC_ENUM_TRAITS_MAX_VALUE(content::VideoFacingMode,
                           content::NUM_MEDIA_VIDEO_FACING_MODE - 1)
 
+IPC_ENUM_TRAITS_MAX_VALUE(content::MediaStreamRequestResult,
+                          content::NUM_MEDIA_REQUEST_RESULTS - 1)
+
 IPC_STRUCT_TRAITS_BEGIN(content::StreamOptions::Constraint)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(value)
@@ -63,8 +66,9 @@ IPC_MESSAGE_ROUTED4(MediaStreamMsg_StreamGenerated,
                     content::StreamDeviceInfoArray /* video_device_list */)
 
 // The browser has failed to generate a stream.
-IPC_MESSAGE_ROUTED1(MediaStreamMsg_StreamGenerationFailed,
-                    int /* request id */)
+IPC_MESSAGE_ROUTED2(MediaStreamMsg_StreamGenerationFailed,
+                    int /* request id */,
+                    content::MediaStreamRequestResult /* result */)
 
 // The browser reports that a media device has been stopped. Stopping was
 // triggered from the browser process.
@@ -97,23 +101,15 @@ IPC_MESSAGE_CONTROL2(MediaStreamMsg_GetSourcesACK,
                      int /* request id */,
                      content::StreamDeviceInfoArray /* device_list */)
 
-// The browser hands over a file handle to the renderer to use for AEC dump.
-// TODO(grunell): This should not belong to media stream. Change when
-// refactoring MediaStreamDependencyFactory.
-IPC_MESSAGE_CONTROL1(MediaStreamMsg_EnableAecDump,
-                     IPC::PlatformFileForTransit /* file_handle */)
-
-// Tell the renderer to disable AEC dump.
-IPC_MESSAGE_CONTROL0(MediaStreamMsg_DisableAecDump)
-
 // Messages sent from the renderer to the browser.
 
 // Request a new media stream.
-IPC_MESSAGE_CONTROL4(MediaStreamHostMsg_GenerateStream,
+IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_GenerateStream,
                      int /* render view id */,
                      int /* request id */,
                      content::StreamOptions /* components */,
-                     GURL /* security origin */)
+                     GURL /* security origin */,
+                     bool /* user_gesture */)
 
 // Request to cancel the request for a new media stream.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_CancelGenerateStream,
@@ -130,15 +126,14 @@ IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_GetSources,
                      int /* request id */,
                      GURL /* origin */)
 
-
 // Request to enumerate devices.
-// Used by Pepper.
-// TODO(vrk,wjia): Move this to pepper code.
-IPC_MESSAGE_CONTROL4(MediaStreamHostMsg_EnumerateDevices,
+// Used by Pepper and WebRTC.
+IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_EnumerateDevices,
                      int /* render view id */,
                      int /* request id */,
                      content::MediaStreamType /* type */,
-                     GURL /* security origin */)
+                     GURL /* security origin */,
+                     bool /* hide_labels_if_no_access */)
 
 // Request to stop enumerating devices.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_CancelEnumerateDevices,

@@ -21,13 +21,10 @@ class FakeProxy : public Proxy {
 
   void SetLayerTreeHost(LayerTreeHost* host);
 
-  virtual bool CompositeAndReadback(void* pixels,
-                                    const gfx::Rect& rect) OVERRIDE;
   virtual void FinishAllRendering() OVERRIDE {}
   virtual bool IsStarted() const OVERRIDE;
   virtual void SetLayerTreeHostClientReady() OVERRIDE {}
   virtual void SetVisible(bool visible) OVERRIDE {}
-  virtual void CreateAndInitializeOutputSurface() OVERRIDE;
   virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
   virtual void SetNeedsAnimate() OVERRIDE {}
   virtual void SetNeedsUpdateLayers() OVERRIDE {}
@@ -43,7 +40,7 @@ class FakeProxy : public Proxy {
   virtual void Stop() OVERRIDE {}
   virtual void ForceSerializeOnSwapBuffers() OVERRIDE {}
   virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
-  virtual void AcquireLayerTextures() OVERRIDE {}
+  virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE {}
   virtual bool CommitPendingForTesting() OVERRIDE;
   virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
 

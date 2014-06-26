@@ -15,6 +15,7 @@ build is clobbered.
 """
 
 import difflib
+import errno
 import logging
 import optparse
 import os
@@ -57,13 +58,13 @@ def set_up_landmines(target, new_landmines):
                                  landmine_utils.platform() == 'ios')
 
   landmines_path = os.path.join(out_dir, '.landmines')
-  if not os.path.exists(out_dir):
+  try:
     os.makedirs(out_dir)
+  except OSError as e:
+    if e.errno == errno.EEXIST:
+      pass
 
-  if not os.path.exists(landmines_path):
-    with open(landmines_path, 'w') as f:
-      f.writelines(new_landmines)
-  else:
+  if os.path.exists(landmines_path):
     triggered = os.path.join(out_dir, '.landmines_triggered')
     with open(landmines_path, 'r') as f:
       old_landmines = f.readlines()
@@ -78,6 +79,8 @@ def set_up_landmines(target, new_landmines):
     elif os.path.exists(triggered):
       # Remove false triggered landmines.
       os.remove(triggered)
+  with open(landmines_path, 'w') as f:
+    f.writelines(new_landmines)
 
 
 def process_options():
@@ -113,7 +116,7 @@ def process_options():
 def main():
   landmine_scripts = process_options()
 
-  if landmine_utils.builder() == 'dump_dependency_json':
+  if landmine_utils.builder() in ('dump_dependency_json', 'eclipse'):
     return 0
 
   for target in ('Debug', 'Release', 'Debug_x64', 'Release_x64'):

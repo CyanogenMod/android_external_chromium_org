@@ -15,17 +15,20 @@
 #include "chrome/browser/ui/omnibox/location_bar.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
 #include "ui/base/window_open_disposition.h"
 
 using base::ASCIIToUTF16;
+using metrics::OmniboxEventProto;
 
 IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
   ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
 
   // The results depend on the TemplateURLService being loaded. Make sure it is
   // loaded so that the autocomplete results are consistent.
+  Profile* profile = browser()->profile();
   ui_test_utils::WaitForTemplateURLServiceToLoad(
-      TemplateURLServiceFactory::GetForProfile(browser()->profile()));
+      TemplateURLServiceFactory::GetForProfile(profile));
 
   AutocompleteController* autocomplete_controller =
       GetAutocompleteController(browser());
@@ -33,10 +36,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
   // Test that our extension's keyword is suggested to us when we partially type
   // it.
   {
-    autocomplete_controller->Start(
-        AutocompleteInput(ASCIIToUTF16("keywor"), base::string16::npos,
-                          base::string16(), GURL(), AutocompleteInput::NTP,
-                          true, false, true, AutocompleteInput::ALL_MATCHES));
+    autocomplete_controller->Start(AutocompleteInput(
+        ASCIIToUTF16("keywor"), base::string16::npos, base::string16(), GURL(),
+        OmniboxEventProto::NTP, true, false, true, true, profile));
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
 
@@ -55,11 +57,10 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
 
   // Test that our extension can send suggestions back to us.
   {
-    autocomplete_controller->Start(
-        AutocompleteInput(ASCIIToUTF16("keyword suggestio"),
-                          base::string16::npos, base::string16(), GURL(),
-                          AutocompleteInput::NTP, true, false, true,
-                          AutocompleteInput::ALL_MATCHES));
+    autocomplete_controller->Start(AutocompleteInput(
+        ASCIIToUTF16("keyword suggestio"), base::string16::npos,
+        base::string16(), GURL(), OmniboxEventProto::NTP, true, false, true,
+        true, profile));
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
 
@@ -154,8 +155,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, Basic) {
 
 IN_PROC_BROWSER_TEST_F(OmniboxApiTest, OnInputEntered) {
   ASSERT_TRUE(RunExtensionTest("omnibox")) << message_;
+  Profile* profile = browser()->profile();
   ui_test_utils::WaitForTemplateURLServiceToLoad(
-      TemplateURLServiceFactory::GetForProfile(browser()->profile()));
+      TemplateURLServiceFactory::GetForProfile(profile));
 
   LocationBar* location_bar = GetLocationBar(browser());
   OmniboxView* omnibox_view = location_bar->GetOmniboxView();
@@ -166,10 +168,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, OnInputEntered) {
   omnibox_view->SetUserText(ASCIIToUTF16("keyword command"));
   omnibox_view->OnAfterPossibleChange();
 
-  autocomplete_controller->Start(
-      AutocompleteInput(ASCIIToUTF16("keyword command"), base::string16::npos,
-                        base::string16(), GURL(), AutocompleteInput::NTP,
-                        true, false, true, AutocompleteInput::ALL_MATCHES));
+  autocomplete_controller->Start(AutocompleteInput(
+      ASCIIToUTF16("keyword command"), base::string16::npos, base::string16(),
+      GURL(), OmniboxEventProto::NTP, true, false, true, true, profile));
   omnibox_view->model()->AcceptInput(CURRENT_TAB, false);
   WaitForAutocompleteDone(autocomplete_controller);
   EXPECT_TRUE(autocomplete_controller->done());
@@ -181,10 +182,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, OnInputEntered) {
   WaitForAutocompleteDone(autocomplete_controller);
   EXPECT_TRUE(autocomplete_controller->done());
 
-  autocomplete_controller->Start(
-      AutocompleteInput(ASCIIToUTF16("keyword newtab"), base::string16::npos,
-                        base::string16(), GURL(), AutocompleteInput::NTP,
-                        true, false, true, AutocompleteInput::ALL_MATCHES));
+  autocomplete_controller->Start(AutocompleteInput(
+      ASCIIToUTF16("keyword newtab"), base::string16::npos, base::string16(),
+      GURL(), OmniboxEventProto::NTP, true, false, true, true, profile));
   omnibox_view->model()->AcceptInput(NEW_FOREGROUND_TAB, false);
   WaitForAutocompleteDone(autocomplete_controller);
   EXPECT_TRUE(autocomplete_controller->done());
@@ -196,9 +196,9 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, OnInputEntered) {
 // http://crbug.com/100927
 // Test is flaky: http://crbug.com/101219
 IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_IncognitoSplitMode) {
+  Profile* profile = browser()->profile();
   ResultCatcher catcher_incognito;
-  catcher_incognito.RestrictToProfile(
-      browser()->profile()->GetOffTheRecordProfile());
+  catcher_incognito.RestrictToProfile(profile->GetOffTheRecordProfile());
 
   ASSERT_TRUE(RunExtensionTestIncognito("omnibox")) << message_;
 
@@ -218,11 +218,10 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_IncognitoSplitMode) {
 
   // Test that we get the incognito-specific suggestions.
   {
-    autocomplete_controller->Start(
-        AutocompleteInput(ASCIIToUTF16("keyword suggestio"),
-                          base::string16::npos, base::string16(), GURL(),
-                          AutocompleteInput::NTP, true, false, true,
-                          AutocompleteInput::ALL_MATCHES));
+    autocomplete_controller->Start(AutocompleteInput(
+        ASCIIToUTF16("keyword suggestio"), base::string16::npos,
+        base::string16(), GURL(), OmniboxEventProto::NTP, true, false, true,
+        true, profile));
     WaitForAutocompleteDone(autocomplete_controller);
     EXPECT_TRUE(autocomplete_controller->done());
 
@@ -241,11 +240,10 @@ IN_PROC_BROWSER_TEST_F(OmniboxApiTest, DISABLED_IncognitoSplitMode) {
   // incognito context.
   {
     ResultCatcher catcher;
-    autocomplete_controller->Start(
-        AutocompleteInput(ASCIIToUTF16("keyword command incognito"),
-                          base::string16::npos, base::string16(), GURL(),
-                          AutocompleteInput::NTP, true, false, true,
-                          AutocompleteInput::ALL_MATCHES));
+    autocomplete_controller->Start(AutocompleteInput(
+        ASCIIToUTF16("keyword command incognito"), base::string16::npos,
+        base::string16(), GURL(), OmniboxEventProto::NTP, true, false, true,
+        true, profile));
     location_bar->AcceptInput();
     EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   }

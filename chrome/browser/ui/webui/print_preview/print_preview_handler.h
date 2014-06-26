@@ -15,10 +15,10 @@
 #include "content/public/browser/web_ui_message_handler.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
 #include "chrome/browser/local_discovery/privet_local_printer_lister.h"
 #include "chrome/browser/local_discovery/service_discovery_shared_client.h"
-#endif  // ENABLE_MDNS
+#endif  // ENABLE_SERVICE_DISCOVERY
 
 class PrintSystemTaskProxy;
 
@@ -35,15 +35,10 @@ namespace gfx {
 class Size;
 }
 
-namespace printing {
-struct PageSizeMargins;
-class PrintBackend;
-}
-
 // The handler for Javascript messages related to the print preview dialog.
 class PrintPreviewHandler
     : public content::WebUIMessageHandler,
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
       public local_discovery::PrivetLocalPrinterLister::Delegate,
       public local_discovery::PrivetLocalPrintOperation::Delegate,
 #endif
@@ -80,7 +75,7 @@ class PrintPreviewHandler
   // dialog.
   void ShowSystemDialog();
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   // PrivetLocalPrinterLister::Delegate implementation.
   virtual void LocalPrinterChanged(
       bool added,
@@ -97,14 +92,13 @@ class PrintPreviewHandler
   virtual void OnPrivetPrintingError(
       const local_discovery::PrivetLocalPrintOperation* print_operation,
         int http_code) OVERRIDE;
-#endif  // ENABLE_MDNS
+#endif  // ENABLE_SERVICE_DISCOVERY
   int regenerate_preview_request_count() const {
     return regenerate_preview_request_count_;
   }
 
  private:
   class AccessTokenService;
-  struct CUPSPrinterColorModels;
 
   static bool PrivetPrintingEnabled();
 
@@ -247,37 +241,35 @@ class PrintPreviewHandler
       base::DictionaryValue* settings) const;
 #endif
 
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   void OnPrivetCapabilities(const base::DictionaryValue* capabilities);
-
-
   void PrivetCapabilitiesUpdateClient(
       scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
   void PrivetLocalPrintUpdateClient(
       std::string print_ticket,
+      std::string capabilities,
       gfx::Size page_size,
       scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
   bool PrivetUpdateClient(
       scoped_ptr<local_discovery::PrivetHTTPClient> http_client);
   void StartPrivetLocalPrint(const std::string& print_ticket,
+                             const std::string& capabilities,
                              const gfx::Size& page_size);
   void SendPrivetCapabilitiesError(const std::string& id);
   void PrintToPrivetPrinter(const std::string& printer_name,
                             const std::string& print_ticket,
+                            const std::string& capabilities,
                             const gfx::Size& page_size);
   bool CreatePrivetHTTP(
       const std::string& name,
       const local_discovery::PrivetHTTPAsynchronousFactory::ResultCallback&
-      callback);
+          callback);
   void FillPrinterDescription(
       const std::string& name,
       const local_discovery::DeviceDescription& description,
       bool has_local_printing,
       base::DictionaryValue* printer_value);
 #endif
-
-  // Pointer to current print system.
-  scoped_refptr<printing::PrintBackend> print_backend_;
 
   // The underlying dialog object.
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
@@ -303,12 +295,7 @@ class PrintPreviewHandler
   // Holds token service to get OAuth2 access tokens.
   scoped_ptr<AccessTokenService> token_service_;
 
-#if defined(USE_CUPS)
-  // The color capabilities from the last printer queried.
-  scoped_ptr<CUPSPrinterColorModels> cups_printer_color_models_;
-#endif
-
-#if defined(ENABLE_MDNS)
+#if defined(ENABLE_SERVICE_DISCOVERY)
   scoped_refptr<local_discovery::ServiceDiscoverySharedClient>
       service_discovery_client_;
   scoped_ptr<local_discovery::PrivetLocalPrinterLister> printer_lister_;
@@ -316,7 +303,7 @@ class PrintPreviewHandler
   scoped_ptr<local_discovery::PrivetHTTPAsynchronousFactory>
       privet_http_factory_;
   scoped_ptr<local_discovery::PrivetHTTPResolution> privet_http_resolution_;
-  scoped_ptr<local_discovery::PrivetHTTPClient> privet_http_client_;
+  scoped_ptr<local_discovery::PrivetV1HTTPClient> privet_http_client_;
   scoped_ptr<local_discovery::PrivetJSONOperation>
       privet_capabilities_operation_;
   scoped_ptr<local_discovery::PrivetLocalPrintOperation>

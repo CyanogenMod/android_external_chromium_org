@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/prefs/pref_change_registrar.h"
@@ -15,7 +15,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/profiles/profile_helper.h"
 #include "chrome/browser/chromeos/proxy_cros_settings_parser.h"
@@ -24,6 +25,7 @@
 #include "chrome/browser/ui/webui/chromeos/ui_account_tweaks.h"
 #include "chrome/browser/ui/webui/options/chromeos/accounts_options_handler.h"
 #include "chrome/common/pref_names.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
@@ -35,14 +37,14 @@ namespace options {
 namespace {
 
 // List of settings that should be changeable by all users.
-const char* kNonOwnerSettings[] = {
+const char* kNonPrivilegedSettings[] = {
     kSystemTimezone
 };
 
-// Returns true if |pref| should be only available to the owner.
-bool IsSettingOwnerOnly(const std::string& pref) {
-  const char** end = kNonOwnerSettings + arraysize(kNonOwnerSettings);
-  return std::find(kNonOwnerSettings, end, pref) == end;
+// Returns true if |pref| can be controlled (e.g. by policy or owner).
+bool IsSettingPrivileged(const std::string& pref) {
+  const char** end = kNonPrivilegedSettings + arraysize(kNonPrivilegedSettings);
+  return std::find(kNonPrivilegedSettings, end, pref) == end;
 }
 
 // Creates a user info dictionary to be stored in the |ListValue| that is
@@ -86,6 +88,9 @@ const char kSelectNetworkMessage[] = "selectNetwork";
 }  // namespace
 
 CoreChromeOSOptionsHandler::CoreChromeOSOptionsHandler() {
+  notification_registrar_.Add(this,
+                              chrome::NOTIFICATION_OWNERSHIP_STATUS_CHANGED,
+                              content::NotificationService::AllSources());
 }
 
 CoreChromeOSOptionsHandler::~CoreChromeOSOptionsHandler() {
@@ -120,6 +125,27 @@ void CoreChromeOSOptionsHandler::InitializeHandler() {
                                  g_browser_process->local_state());
 }
 
+void CoreChromeOSOptionsHandler::Observe(
+    int type,
+    const content::NotificationSource& source,
+    const content::NotificationDetails& details) {
+  // The only expected notification for now is this one.
+  DCHECK(type == chrome::NOTIFICATION_OWNERSHIP_STATUS_CHANGED);
+
+  // Finish this asynchronously because the notification has to tricle in to all
+  // Chrome components before we can reliably read the status on the other end.
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+      base::Bind(&CoreChromeOSOptionsHandler::NotifyOwnershipChanged,
+                 base::Unretained(this)));
+}
+
+void CoreChromeOSOptionsHandler::NotifyOwnershipChanged() {
+  for (SubscriptionMap::iterator it = pref_subscription_map_.begin();
+       it != pref_subscription_map_.end(); ++it) {
+    NotifySettingsChanged(it->first);
+  }
+}
+
 base::Value* CoreChromeOSOptionsHandler::FetchPref(
     const std::string& pref_name) {
   if (proxy_cros_settings_parser::IsProxyPref(pref_name)) {
@@ -149,18 +175,19 @@ base::Value* CoreChromeOSOptionsHandler::FetchPref(
     dict->Set("value", CreateUsersWhitelist(pref_value));
   else
     dict->Set("value", pref_value->DeepCopy());
-  policy::BrowserPolicyConnectorChromeOS* connector =
-      g_browser_process->platform_part()->browser_policy_connector_chromeos();
-  if (connector->IsEnterpriseManaged()) {
-    dict->SetBoolean("disabled", true);
-    dict->SetString("controlledBy", "policy");
-  } else {
-    bool controlled_by_owner = IsSettingOwnerOnly(pref_name) &&
-        !ProfileHelper::IsOwnerProfile(Profile::FromWebUI(web_ui()));
-    dict->SetBoolean("disabled", controlled_by_owner);
-    if (controlled_by_owner)
-      dict->SetString("controlledBy", "owner");
+
+  std::string controlled_by;
+  if (IsSettingPrivileged(pref_name)) {
+    policy::BrowserPolicyConnectorChromeOS* connector =
+        g_browser_process->platform_part()->browser_policy_connector_chromeos();
+    if (connector->IsEnterpriseManaged())
+      controlled_by = "policy";
+    else if (!ProfileHelper::IsOwnerProfile(Profile::FromWebUI(web_ui())))
+      controlled_by = "owner";
   }
+  dict->SetBoolean("disabled", !controlled_by.empty());
+  if (!controlled_by.empty())
+    dict->SetString("controlledBy", controlled_by);
   return dict;
 }
 

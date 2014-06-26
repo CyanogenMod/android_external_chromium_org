@@ -5,16 +5,9 @@
 import base64
 import posixpath
 
-from appengine_wrappers import GetAppVersion, urlfetch
+from appengine_wrappers import urlfetch
+from environment import GetAppVersion
 from future import Future
-
-
-class _AsyncFetchDelegate(object):
-  def __init__(self, rpc):
-    self._rpc = rpc
-
-  def Get(self):
-    return self._rpc.get_result()
 
 
 def _MakeHeaders(username, password):
@@ -49,7 +42,7 @@ class AppEngineUrlFetcher(object):
     urlfetch.make_fetch_call(rpc,
                              self._FromBasePath(url),
                              headers=_MakeHeaders(username, password))
-    return Future(delegate=_AsyncFetchDelegate(rpc))
+    return Future(callback=lambda: rpc.get_result())
 
   def _FromBasePath(self, url):
     assert not url.startswith('/'), url

@@ -8,11 +8,11 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/test/base/in_process_browser_test.h"
-#include "chrome/test/base/javascript_test_observer.h"
+#include "content/public/test/javascript_test_observer.h"
 
 // A helper base class that decodes structured automation messages of the form:
 // {"type": type_name, ...}
-class StructuredMessageHandler : public TestMessageHandler {
+class StructuredMessageHandler : public content::TestMessageHandler {
  public:
   virtual MessageResponse HandleMessage(const std::string& json) OVERRIDE;
 
@@ -62,9 +62,9 @@ class NaClBrowserTestBase : public InProcessBrowserTest {
   NaClBrowserTestBase();
   virtual ~NaClBrowserTestBase();
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE;
+  virtual void SetUpOnMainThread() OVERRIDE;
 
   // What variant are we running - newlib, glibc, pnacl, etc?
   // This is used to compute what directory we're pulling data from, but it can
@@ -85,7 +85,7 @@ class NaClBrowserTestBase : public InProcessBrowserTest {
   // Load a URL and listen to automation events with a given handler.
   // Returns true if the test glue function correctly.  (The handler should
   // seperately indicate if the test failed.)
-  bool RunJavascriptTest(const GURL& url, TestMessageHandler* handler);
+  bool RunJavascriptTest(const GURL& url, content::TestMessageHandler* handler);
 
   // Run a simple test that checks that a nexe loads correctly.  Useful for
   // setting up other tests, such as checking that UMA data was logged.
@@ -98,7 +98,10 @@ class NaClBrowserTestBase : public InProcessBrowserTest {
   // these tests having a stronger affinity with the Chrome repo. This method
   // provides a compatibility layer to simplify turning nacl_integration tests
   // into browser tests.
-  void RunNaClIntegrationTest(const base::FilePath::StringType& url_fragment);
+  // |full_url| is true if the full URL is given, otherwise it is a
+  // relative URL.
+  void RunNaClIntegrationTest(const base::FilePath::StringType& url,
+                              bool full_url = false);
 
  private:
   bool StartTestServer();
@@ -123,17 +126,29 @@ class NaClBrowserTestPnacl : public NaClBrowserTestBase {
   virtual bool IsAPnaclTest() OVERRIDE;
 };
 
+class NaClBrowserTestPnaclNonSfi : public NaClBrowserTestBase {
+ public:
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  virtual base::FilePath::StringType Variant() OVERRIDE;
+};
+
 // Class used to test that when --disable-pnacl is specified the PNaCl mime
 // type is not available.
 class NaClBrowserTestPnaclDisabled : public NaClBrowserTestBase {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
 
   virtual base::FilePath::StringType Variant() OVERRIDE;
 
   virtual bool IsAPnaclTest() OVERRIDE;
 
   virtual bool IsPnaclDisabled() OVERRIDE;
+};
+
+class NaClBrowserTestNonSfiMode : public NaClBrowserTestBase {
+ public:
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+  virtual base::FilePath::StringType Variant() OVERRIDE;
 };
 
 // A NaCl browser test only using static files.
@@ -143,33 +158,52 @@ class NaClBrowserTestStatic : public NaClBrowserTestBase {
   virtual bool GetDocumentRoot(base::FilePath* document_root) OVERRIDE;
 };
 
+// A NaCl browser test that loads from an unpacked chrome extension.
+// The directory of the unpacked extension files is determined by
+// the tester's document root.
+class NaClBrowserTestNewlibExtension : public NaClBrowserTestNewlib {
+ public:
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
+};
+
 // PNaCl tests take a long time on windows debug builds
 // and sometimes time out.  Disable until it is made faster:
 // https://code.google.com/p/chromium/issues/detail?id=177555
 #if (defined(OS_WIN) && !defined(NDEBUG))
-#define MAYBE_PNACL(test_name) DISABLED_##test_name
+#  define MAYBE_PNACL(test_name) DISABLED_##test_name
 #else
-#define MAYBE_PNACL(test_name) test_name
+#  define MAYBE_PNACL(test_name) test_name
 #endif
 
-#if defined(ARCH_CPU_ARM_FAMILY)
-
-// There is no support for Glibc on ARM NaCl.
-#define NACL_BROWSER_TEST_F(suite, name, body) \
-IN_PROC_BROWSER_TEST_F(suite##Newlib, name) \
-body
-
+// NaCl glibc tests are included for x86 only, as there is no glibc support
+// for other architectures (ARM/MIPS).
+#if defined(ARCH_CPU_X86_FAMILY)
+#  define MAYBE_GLIBC(test_name) test_name
 #else
+#  define MAYBE_GLIBC(test_name) DISABLED_##test_name
+#endif
 
-// Otherwise, we have Glibc, Newlib and Pnacl tests
+// ASan does not work with libc-free context, so disable the test.
+#if defined(OS_LINUX) && !defined(ADDRESS_SANITIZER)
+#  define MAYBE_NONSFI(test_case) test_case
+#else
+#  define MAYBE_NONSFI(test_case) DISABLED_##test_case
+#endif
+
+// Currently, translation from pexe to non-sfi nexe is supported only for
+// x86-32 binary.
+#if defined(OS_LINUX) && defined(ARCH_CPU_X86)
+#  define MAYBE_PNACL_NONSFI(test_case) test_case
+#else
+#  define MAYBE_PNACL_NONSFI(test_case) DISABLED_##test_case
+#endif
+
 #define NACL_BROWSER_TEST_F(suite, name, body) \
 IN_PROC_BROWSER_TEST_F(suite##Newlib, name) \
 body \
-IN_PROC_BROWSER_TEST_F(suite##GLibc, name) \
+IN_PROC_BROWSER_TEST_F(suite##GLibc, MAYBE_GLIBC(name)) \
 body \
 IN_PROC_BROWSER_TEST_F(suite##Pnacl, MAYBE_PNACL(name)) \
 body
-
-#endif
 
 #endif  // CHROME_TEST_NACL_NACL_BROWSERTEST_UTIL_H_

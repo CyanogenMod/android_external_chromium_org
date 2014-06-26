@@ -9,11 +9,10 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/i18n/rtl.h"
 #include "base/process/kill.h"
 #include "base/strings/string16.h"
+#include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/common/content_export.h"
-#include "content/public/common/javascript_message_type.h"
 #include "content/public/common/media_stream_request.h"
 #include "content/public/common/page_transition_types.h"
 #include "net/base/load_states.h"
@@ -22,7 +21,6 @@
 
 class GURL;
 class SkBitmap;
-class WebKeyboardEvent;
 struct ViewHostMsg_CreateWindow_Params;
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 struct ViewMsg_PostMessage_Params;
@@ -55,6 +53,7 @@ class SessionStorageNamespace;
 class SiteInstance;
 class WebContents;
 class WebContentsImpl;
+struct AXEventNotificationDetails;
 struct FileChooserParams;
 struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
@@ -74,56 +73,13 @@ struct RendererPreferences;
 //  listener here to serve that need.
 class CONTENT_EXPORT RenderViewHostDelegate {
  public:
-  // RendererManagerment -------------------------------------------------------
-  // Functions for managing switching of Renderers. For WebContents, this is
-  // implemented by the RenderFrameHostManager.
-
-  class CONTENT_EXPORT RendererManagement {
-   public:
-    // Notification whether we should close the page, after an explicit call to
-    // AttemptToClosePage.  This is called before a cross-site request or before
-    // a tab/window is closed (as indicated by the first parameter) to allow the
-    // appropriate renderer to approve or deny the request.  |proceed| indicates
-    // whether the user chose to proceed.  |proceed_time| is the time when the
-    // request was allowed to proceed.
-    virtual void ShouldClosePage(
-        bool for_cross_site_transition,
-        bool proceed,
-        const base::TimeTicks& proceed_time) = 0;
-
-    // The |pending_render_view_host| is ready to commit a page.  The delegate
-    // should ensure that the old RenderViewHost runs its unload handler first
-    // and determine whether a RenderViewHost transfer is needed.
-    // |cross_site_transferring_request| is NULL if a request is not being
-    // transferred between renderers.
-    virtual void OnCrossSiteResponse(
-        RenderViewHost* pending_render_view_host,
-        const GlobalRequestID& global_request_id,
-        scoped_ptr<CrossSiteTransferringRequest>
-            cross_site_transferring_request,
-        const std::vector<GURL>& transfer_url_chain,
-        const Referrer& referrer,
-        PageTransition page_transition,
-        int64 frame_id,
-        bool should_replace_current_entry) = 0;
-
-   protected:
-    virtual ~RendererManagement() {}
-  };
-
-  // ---------------------------------------------------------------------------
-
   // Returns the current delegate associated with a feature. May return NULL if
   // there is no corresponding delegate.
   virtual RenderViewHostDelegateView* GetDelegateView();
-  virtual RendererManagement* GetRendererManagementDelegate();
 
   // This is used to give the delegate a chance to filter IPC messages.
   virtual bool OnMessageReceived(RenderViewHost* render_view_host,
                                  const IPC::Message& message);
-
-  // Gets the URL that is currently being displayed, if there is one.
-  virtual const GURL& GetURL() const;
 
   // Return this object cast to a WebContents, if it is one. If the object is
   // not a WebContents, returns NULL. DEPRECATED: Be sure to include brettw or
@@ -156,24 +112,11 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                            int32 page_id,
                            const PageState& state) {}
 
-  // The page's title was changed and should be updated.
-  virtual void UpdateTitle(RenderViewHost* render_view_host,
-                           int32 page_id,
-                           const base::string16& title,
-                           base::i18n::TextDirection title_direction) {}
-
-  // The page's encoding was changed and should be updated.
-  virtual void UpdateEncoding(RenderViewHost* render_view_host,
-                              const std::string& encoding) {}
-
   // The destination URL has changed should be updated
   virtual void UpdateTargetURL(int32 page_id, const GURL& url) {}
 
   // The page is trying to close the RenderView's representation in the client.
   virtual void Close(RenderViewHost* render_view_host) {}
-
-  // The RenderViewHost has been swapped out.
-  virtual void SwappedOut(RenderViewHost* render_view_host) {}
 
   // The page is trying to move the RenderView's representation in the client.
   virtual void RequestMove(const gfx::Rect& new_bounds) {}
@@ -181,51 +124,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // The pending page load was canceled.
   virtual void DidCancelLoading() {}
 
-  // The RenderView made progress loading a page's top frame.
-  // |progress| is a value between 0 (nothing loaded) to 1.0 (top frame
-  // entirely loaded).
-  virtual void DidChangeLoadProgress(double progress) {}
-
-  // The RenderView set its opener to null, disowning it for the lifetime of
-  // the window.
-  virtual void DidDisownOpener(RenderViewHost* rvh) {}
-
-  // Another page accessed the initial empty document of this RenderView,
-  // which means it is no longer safe to display a pending URL without
-  // risking a URL spoof.
-  virtual void DidAccessInitialDocument() {}
-
   // The RenderView's main frame document element is ready. This happens when
   // the document has finished parsing.
   virtual void DocumentAvailableInMainFrame(RenderViewHost* render_view_host) {}
-
-  // The onload handler in the RenderView's main frame has completed.
-  virtual void DocumentOnLoadCompletedInMainFrame(
-      RenderViewHost* render_view_host,
-      int32 page_id) {}
-
-  // The page wants to open a URL with the specified disposition.
-  virtual void RequestOpenURL(RenderViewHost* rvh,
-                              const GURL& url,
-                              const Referrer& referrer,
-                              WindowOpenDisposition disposition,
-                              int64 source_frame_id,
-                              bool is_redirect,
-                              bool user_gesture) {}
-
-  // The page wants to transfer the request to a new renderer.
-  // |redirect_chain| contains any redirect URLs (excluding |url|) that happened
-  // before the transfer.
-  virtual void RequestTransferURL(
-      const GURL& url,
-      const std::vector<GURL>& redirect_chain,
-      const Referrer& referrer,
-      PageTransition page_transition,
-      WindowOpenDisposition disposition,
-      int64 source_frame_id,
-      const GlobalRequestID& old_request_id,
-      bool is_redirect,
-      bool user_gesture) {}
 
   // The page wants to close the active view in this tab.
   virtual void RouteCloseEvent(RenderViewHost* rvh) {}
@@ -234,26 +135,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual void RouteMessageEvent(
       RenderViewHost* rvh,
       const ViewMsg_PostMessage_Params& params) {}
-
-  // A javascript message, confirmation or prompt should be shown.
-  virtual void RunJavaScriptMessage(RenderViewHost* rvh,
-                                    const base::string16& message,
-                                    const base::string16& default_prompt,
-                                    const GURL& frame_url,
-                                    JavaScriptMessageType type,
-                                    IPC::Message* reply_msg,
-                                    bool* did_suppress_message) {}
-
-  virtual void RunBeforeUnloadConfirm(RenderViewHost* rvh,
-                                      const base::string16& message,
-                                      bool is_reload,
-                                      IPC::Message* reply_msg) {}
-
-  // A message was added to to the console.
-  virtual bool AddMessageToConsole(int32 level,
-                                   const base::string16& message,
-                                   int32 line_no,
-                                   const base::string16& source_id);
 
   // Return a dummy RendererPreferences object that will be used by the renderer
   // associated with the owning RenderViewHost.
@@ -397,12 +278,23 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
       SiteInstance* instance);
 
+  // Returns a copy of the map of all session storage namespaces related
+  // to this view.
+  virtual SessionStorageNamespaceMap GetSessionStorageNamespaceMap();
+
+  // Returns true if the RenderViewHost will never be visible.
+  virtual bool IsNeverVisible();
+
   // Returns the FrameTree the render view should use. Guaranteed to be constant
   // for the lifetime of the render view.
   //
   // TODO(ajwong): Remove once the main frame RenderFrameHost is no longer
   // created by the RenderViewHost.
   virtual FrameTree* GetFrameTree();
+
+  // Invoked when an accessibility event is received from the renderer.
+  virtual void AccessibilityEventReceived(
+      const std::vector<AXEventNotificationDetails>& details) {}
 
  protected:
   virtual ~RenderViewHostDelegate() {}

@@ -4,12 +4,11 @@
 
 #include "ash/system/user/tray_user_separator.h"
 
-#include "ash/session_state_delegate.h"
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
 #include "ui/views/view.h"
 
 namespace ash {
-namespace internal {
 
 TrayUserSeparator::TrayUserSeparator(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
@@ -44,5 +43,4 @@ void TrayUserSeparator::DestroyDefaultView() {
   separator_shown_ = false;
 }
 
-}  // namespace internal
 }  // namespace ash

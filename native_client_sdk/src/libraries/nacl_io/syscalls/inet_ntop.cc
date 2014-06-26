@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "nacl_io/ossocket.h"
-#if defined(PROVIDES_SOCKET_API) && !defined(__GLIBC__)
+#if defined(PROVIDES_SOCKET_API) && !defined(__GLIBC__) && !defined(__BIONIC__)
 
 #include <errno.h>
 #include <string.h>
@@ -43,10 +43,10 @@ const char* inet_ntop(int af, const void* src, char* dst, socklen_t size) {
     for (int i = 0; i < 8; i++) {
       host_tuples[i] = ntohs(tuples[i]);
       if (host_tuples[i] == 0) {
-         if (zero_run_start == -1)
-           zero_run_start = i;
+        if (zero_run_start == -1)
+          zero_run_start = i;
       } else if (zero_run_start != -1 && zero_run_end == -1) {
-         zero_run_end = i;
+        zero_run_end = i;
       }
     }
 
@@ -64,13 +64,12 @@ const char* inet_ntop(int af, const void* src, char* dst, socklen_t size) {
     if (zero_run_start == 0 &&
         (zero_run_end == 6 ||
          (zero_run_end == 5 && host_tuples[zero_run_end] == 0xffff))) {
-
       if (zero_run_end == 5) {
         strcpy(dst, "::ffff:");
       } else {
         strcpy(dst, "::");
       }
-      inet_ntop(AF_INET, host_tuples+6, dst+strlen(dst), INET_ADDRSTRLEN);
+      inet_ntop(AF_INET, host_tuples + 6, dst + strlen(dst), INET_ADDRSTRLEN);
     } else {
       std::stringstream output;
       for (int i = 0; i < 8; i++) {
@@ -95,4 +94,4 @@ const char* inet_ntop(int af, const void* src, char* dst, socklen_t size) {
 
 EXTERN_C_END
 
-#endif  // defined(PROVIDES_SOCKET_API) && !defined(__GLIBC__)
+#endif  // defined(PROVIDES_SOCKET_API) && !defined(__GLIBC__) ...

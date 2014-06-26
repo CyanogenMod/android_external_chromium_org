@@ -55,7 +55,8 @@ class KernelProxyTest : public ::testing::Test {
   KernelProxyTest() {}
 
   void SetUp() {
-    ki_init(&kp_);
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init(&kp_));
     // Unmount the passthrough FS and mount a memfs.
     EXPECT_EQ(0, kp_.umount("/"));
     EXPECT_EQ(0, kp_.mount("", "/", "memfs", 0, NULL));
@@ -529,18 +530,36 @@ TEST_F(KernelProxyTest, Lstat) {
   EXPECT_EQ(ENOENT, errno);
 }
 
+TEST_F(KernelProxyTest, UseAfterClose) {
+  int fd = ki_open("/dummy", O_CREAT | O_WRONLY);
+  ASSERT_GT(fd, -1);
+  EXPECT_EQ(5, ki_write(fd, "hello", 5));
+  EXPECT_EQ(0, ki_close(fd));
+  EXPECT_EQ(-1, ki_write(fd, "hello", 5));
+  EXPECT_EQ(EBADF, errno);
+}
+
 namespace {
 
 StringMap_t g_string_map;
+bool g_fs_ioctl_called;
+int g_fs_dev;
 
 class KernelProxyMountTest_Filesystem : public MemFs {
  public:
-  using MemFs::Init;
-
   virtual Error Init(const FsInitArgs& args) {
+    MemFs::Init(args);
+
     g_string_map = args.string_map;
+    g_fs_dev = args.dev;
+
     if (g_string_map.find("false") != g_string_map.end())
       return EINVAL;
+    return 0;
+  }
+
+  virtual Error Filesystem_VIoctl(int request, va_list arglist) {
+    g_fs_ioctl_called = true;
     return 0;
   }
 
@@ -559,13 +578,33 @@ class KernelProxyMountTest : public ::testing::Test {
  public:
   KernelProxyMountTest() {}
 
-  void SetUp() { ki_init(&kp_); }
+  void SetUp() {
+    g_string_map.clear();
+    g_fs_dev = -1;
+    g_fs_ioctl_called = false;
 
-  void TearDown() { ki_uninit(); }
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init(&kp_));
+  }
+
+  void TearDown() {
+    g_string_map.clear();
+    ki_uninit();
+  }
 
  private:
   KernelProxyMountTest_KernelProxy kp_;
 };
+
+// Helper function for calling ki_ioctl without having
+// to construct a va_list.
+int ki_ioctl_wrapper(int fd, int request, ...) {
+  va_list ap;
+  va_start(ap, request);
+  int rtn = ki_ioctl(fd, request, ap);
+  va_end(ap);
+  return rtn;
+}
 
 }  // namespace
 
@@ -579,6 +618,20 @@ TEST_F(KernelProxyMountTest, MountInit) {
   int res2 = ki_mount("/", "/mnt2", "initfs", 0, "true,bar=foo,x=y");
   EXPECT_NE(-1, res2);
   EXPECT_EQ("y", g_string_map["x"]);
+}
+
+TEST_F(KernelProxyMountTest, MountAndIoctl) {
+  ASSERT_EQ(0, ki_mount("/", "/mnt1", "initfs", 0, ""));
+  ASSERT_NE(-1, g_fs_dev);
+
+  char path[100];
+  snprintf(path, 100, "dev/fs/%d", g_fs_dev);
+
+  int fd = ki_open(path, O_RDONLY);
+  ASSERT_GT(fd, -1);
+
+  EXPECT_EQ(0, ki_ioctl_wrapper(fd, 0xdeadbeef));
+  EXPECT_EQ(true, g_fs_ioctl_called);
 }
 
 namespace {
@@ -653,7 +706,10 @@ class KernelProxyMMapTest : public ::testing::Test {
  public:
   KernelProxyMMapTest() {}
 
-  void SetUp() { ki_init(&kp_); }
+  void SetUp() {
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init(&kp_));
+  }
 
   void TearDown() { ki_uninit(); }
 
@@ -728,7 +784,8 @@ class KernelProxyErrorTest : public ::testing::Test {
   KernelProxyErrorTest() {}
 
   void SetUp() {
-    ki_init(&kp_);
+    ASSERT_EQ(0, ki_push_state_for_testing());
+    ASSERT_EQ(0, ki_init(&kp_));
     // Unmount the passthrough FS and mount a testfs.
     EXPECT_EQ(0, kp_.umount("/"));
     EXPECT_EQ(0, kp_.mount("", "/", "testfs", 0, NULL));

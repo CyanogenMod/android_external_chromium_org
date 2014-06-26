@@ -16,20 +16,16 @@
 #include "url/gurl.h"
 
 class Browser;
-class CommandLine;
 class Profile;
 class StartupBrowserCreator;
 
 namespace base {
+class CommandLine;
 class FilePath;
 }
 
 namespace content {
 class WebContents;
-}
-
-namespace gfx {
-class Rect;
 }
 
 namespace internals {
@@ -45,10 +41,10 @@ class StartupBrowserCreatorImpl {
   // second one is always called when the browser starts even if it is not
   // the first run.  |is_first_run| indicates that this is a new profile.
   StartupBrowserCreatorImpl(const base::FilePath& cur_dir,
-                            const CommandLine& command_line,
+                            const base::CommandLine& command_line,
                             chrome::startup::IsFirstRun is_first_run);
   StartupBrowserCreatorImpl(const base::FilePath& cur_dir,
-                            const CommandLine& command_line,
+                            const base::CommandLine& command_line,
                             StartupBrowserCreator* browser_creator,
                             chrome::startup::IsFirstRun is_first_run);
   ~StartupBrowserCreatorImpl();
@@ -82,9 +78,6 @@ class StartupBrowserCreatorImpl {
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, RestorePinnedTabs);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, AppIdSwitch);
-
-  // Extracts optional application window size passed in command line.
-  void ExtractOptionalAppWindowSize(gfx::Rect* bounds);
 
   // If the process was launched with the web application command line flags,
   // e.g. --app=http://www.google.com/ or --app_id=... return true.
@@ -152,14 +145,8 @@ class StartupBrowserCreatorImpl {
   // that case.
   void CheckPreferencesBackup(Profile* profile);
 
-  // Function to open startup urls in an existing Browser instance for the
-  // profile passed in. Returns true on success.
-  static bool OpenStartupURLsInExistingBrowser(
-      Profile* profile,
-      const std::vector<GURL>& startup_urls);
-
   const base::FilePath cur_dir_;
-  const CommandLine& command_line_;
+  const base::CommandLine& command_line_;
   Profile* profile_;
   StartupBrowserCreator* browser_creator_;
   bool is_first_run_;

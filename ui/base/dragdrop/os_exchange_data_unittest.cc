@@ -8,13 +8,19 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
+#include "ui/events/platform/platform_event_source.h"
 #include "url/gurl.h"
 
 namespace ui {
 
 class OSExchangeDataTest : public PlatformTest {
+ public:
+  OSExchangeDataTest()
+      : event_source_(ui::PlatformEventSource::CreateDefault()) {}
+
  private:
   base::MessageLoopForUI message_loop_;
+  scoped_ptr<PlatformEventSource> event_source_;
 };
 
 TEST_F(OSExchangeDataTest, StringDataGetAndSet) {
@@ -82,6 +88,7 @@ TEST_F(OSExchangeDataTest, TestPickledData) {
   EXPECT_EQ(2, value);
 }
 
+#if defined(USE_AURA)
 TEST_F(OSExchangeDataTest, TestHTML) {
   OSExchangeData data;
   GURL url("http://www.google.com/");
@@ -96,5 +103,6 @@ TEST_F(OSExchangeDataTest, TestHTML) {
   EXPECT_TRUE(copy.GetHtml(&read_html, &url));
   EXPECT_EQ(html, read_html);
 }
+#endif
 
 }  // namespace ui

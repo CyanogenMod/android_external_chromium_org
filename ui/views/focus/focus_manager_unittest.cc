@@ -2,36 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/views/focus/focus_manager.h"
+
 #include <utility>
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
+#include "ui/aura/client/focus_client.h"
+#include "ui/aura/window.h"
 #include "ui/base/accelerators/accelerator.h"
+#include "ui/base/ime/dummy_text_input_client.h"
+#include "ui/base/ime/text_input_focus_manager.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/controls/button/label_button.h"
-#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/focus/focus_manager_factory.h"
 #include "ui/views/focus/focus_manager_test.h"
 #include "ui/views/focus/widget_focus_manager.h"
 #include "ui/views/widget/widget.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/client/focus_client.h"
-#include "ui/aura/window.h"
-#endif
-
 namespace views {
-
-void FocusNativeView(gfx::NativeView view) {
-#if defined(USE_AURA)
-  aura::client::GetFocusClient(view)->FocusWindow(view);
-#elif defined(OS_WIN)
-  SetFocus(view);
-#else
-#error
-#endif
-}
 
 enum FocusTestEventType {
   ON_FOCUS = 0,
@@ -66,6 +58,8 @@ class SimpleTestView : public View {
 
  private:
   std::vector<FocusTestEvent>* event_list_;
+
+  DISALLOW_COPY_AND_ASSIGN(SimpleTestView);
 };
 
 // Tests that the appropriate Focus related methods are called when a View
@@ -148,14 +142,14 @@ TEST_F(FocusManagerTest, WidgetFocusChangeListener) {
 
   widget_listener.ClearFocusChanges();
   gfx::NativeView native_view1 = widget1->GetNativeView();
-  FocusNativeView(native_view1);
+  aura::client::GetFocusClient(native_view1)->FocusWindow(native_view1);
   ASSERT_EQ(2, static_cast<int>(widget_listener.focus_changes().size()));
   EXPECT_EQ(native_view1, widget_listener.focus_changes()[0].second);
   EXPECT_EQ(native_view1, widget_listener.focus_changes()[1].second);
 
   widget_listener.ClearFocusChanges();
   gfx::NativeView native_view2 = widget2->GetNativeView();
-  FocusNativeView(native_view2);
+  aura::client::GetFocusClient(native_view2)->FocusWindow(native_view2);
   ASSERT_EQ(2, static_cast<int>(widget_listener.focus_changes().size()));
   EXPECT_EQ(NativeViewPair(native_view1, native_view2),
             widget_listener.focus_changes()[0]);
@@ -566,25 +560,6 @@ class FocusManagerDtorTest : public FocusManagerTest {
   DtorTrackVector dtor_tracker_;
 };
 
-#if !defined(USE_AURA)
-TEST_F(FocusManagerDtorTest, FocusManagerDestructedLast) {
-  // Setup views hierarchy.
-  GetContentsView()->AddChildView(new Textfield());
-  GetContentsView()->AddChildView(new LabelButtonDtorTracked(
-      base::ASCIIToUTF16("button"), &dtor_tracker_));
-
-  // Close the window.
-  GetWidget()->Close();
-  RunPendingMessages();
-
-  // Test window, button and focus manager should all be destructed.
-  ASSERT_EQ(3, static_cast<int>(dtor_tracker_.size()));
-
-  // Focus manager should be the last one to destruct.
-  ASSERT_STREQ("FocusManagerDtorTracked", dtor_tracker_[2].c_str());
-}
-#endif
-
 namespace {
 
 class FocusInAboutToRequestFocusFromTabTraversalView : public View {
@@ -799,14 +774,70 @@ TEST_F(FocusManagerTest, StoreFocusedView) {
   View view;
   GetFocusManager()->SetFocusedView(&view);
   GetFocusManager()->StoreFocusedView(false);
+  EXPECT_EQ(NULL, GetFocusManager()->GetFocusedView());
   EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
   EXPECT_EQ(&view, GetFocusManager()->GetStoredFocusView());
 
   // Repeat with |true|.
   GetFocusManager()->SetFocusedView(&view);
   GetFocusManager()->StoreFocusedView(true);
+  EXPECT_EQ(NULL, GetFocusManager()->GetFocusedView());
   EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
   EXPECT_EQ(&view, GetFocusManager()->GetStoredFocusView());
+}
+
+class TextInputTestView : public View {
+ public:
+  TextInputTestView() {}
+
+  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE {
+    return &text_input_client_;
+  }
+
+ private:
+  ui::DummyTextInputClient text_input_client_;
+
+  DISALLOW_COPY_AND_ASSIGN(TextInputTestView);
+};
+
+TEST_F(FocusManagerTest, TextInputClient) {
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
+  cmd_line->AppendSwitch(switches::kEnableTextInputFocusManager);
+
+  View* view = new TextInputTestView;
+  ui::TextInputClient* text_input_client = view->GetTextInputClient();
+  view->SetFocusable(true);
+  GetContentsView()->AddChildView(view);
+  ui::TextInputFocusManager* text_input_focus_manager =
+      ui::TextInputFocusManager::GetInstance();
+
+  GetFocusManager()->SetFocusedView(view);
+  EXPECT_EQ(view, GetFocusManager()->GetFocusedView());
+  EXPECT_EQ(text_input_client,
+            text_input_focus_manager->GetFocusedTextInputClient());
+  GetFocusManager()->StoreFocusedView(false);
+  EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
+  EXPECT_EQ(text_input_client,
+            text_input_focus_manager->GetFocusedTextInputClient());
+
+  // Repeat with |true|.
+  GetFocusManager()->SetFocusedView(view);
+  EXPECT_EQ(view, GetFocusManager()->GetFocusedView());
+  EXPECT_EQ(text_input_client,
+            text_input_focus_manager->GetFocusedTextInputClient());
+  GetFocusManager()->StoreFocusedView(true);
+  EXPECT_TRUE(GetFocusManager()->RestoreFocusedView());
+  EXPECT_EQ(text_input_client,
+            text_input_focus_manager->GetFocusedTextInputClient());
+
+  // Focus the view twice in a row.
+  GetFocusManager()->SetFocusedView(view);
+  EXPECT_EQ(text_input_client,
+            text_input_focus_manager->GetFocusedTextInputClient());
+  ui::TextInputFocusManager::GetInstance()->FocusTextInputClient(NULL);
+  GetFocusManager()->SetFocusedView(view);
+  EXPECT_EQ(text_input_client,
+            text_input_focus_manager->GetFocusedTextInputClient());
 }
 
 namespace {

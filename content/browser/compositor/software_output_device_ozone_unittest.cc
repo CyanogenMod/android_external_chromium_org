@@ -7,18 +7,43 @@
 #include "cc/output/software_frame_data.h"
 #include "content/browser/compositor/software_output_device_ozone.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/test/context_factories_for_test.h"
-#include "ui/gfx/ozone/surface_factory_ozone.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/ozone/public/surface_factory_ozone.h"
+#include "ui/ozone/public/surface_ozone_canvas.h"
 
 namespace {
 
-class MockSurfaceFactoryOzone : public gfx::SurfaceFactoryOzone {
+class MockSurfaceOzone : public ui::SurfaceOzoneCanvas {
+ public:
+  MockSurfaceOzone() {}
+  virtual ~MockSurfaceOzone() {}
+
+  // ui::SurfaceOzoneCanvas overrides:
+  virtual void ResizeCanvas(const gfx::Size& size) OVERRIDE {
+    surface_ = skia::AdoptRef(SkSurface::NewRaster(
+        SkImageInfo::MakeN32Premul(size.width(), size.height())));
+  }
+  virtual skia::RefPtr<SkCanvas> GetCanvas() OVERRIDE {
+    return skia::SharePtr(surface_->getCanvas());
+  }
+  virtual void PresentCanvas(const gfx::Rect& damage) OVERRIDE {}
+  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() OVERRIDE {
+    return scoped_ptr<gfx::VSyncProvider>();
+  }
+
+ private:
+  skia::RefPtr<SkSurface> surface_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockSurfaceOzone);
+};
+
+class MockSurfaceFactoryOzone : public ui::SurfaceFactoryOzone {
  public:
   MockSurfaceFactoryOzone() {}
   virtual ~MockSurfaceFactoryOzone() {}
@@ -29,33 +54,17 @@ class MockSurfaceFactoryOzone : public gfx::SurfaceFactoryOzone {
 
   virtual void ShutdownHardware() OVERRIDE {}
   virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE { return 1; }
-  virtual gfx::AcceleratedWidget RealizeAcceleratedWidget(
-      gfx::AcceleratedWidget w) OVERRIDE { return w; }
   virtual bool LoadEGLGLES2Bindings(
       AddGLLibraryCallback add_gl_library,
       SetGLGetProcAddressProcCallback set_gl_get_proc_address) OVERRIDE {
     return false;
   }
-  virtual bool AttemptToResizeAcceleratedWidget(
-      gfx::AcceleratedWidget w, const gfx::Rect& bounds) OVERRIDE {
-    device_ = skia::AdoptRef(new SkBitmapDevice(SkBitmap::kARGB_8888_Config,
-                                                bounds.width(),
-                                                bounds.height(),
-                                                true));
-    canvas_ = skia::AdoptRef(new SkCanvas(device_.get()));
-    return true;
+  virtual scoped_ptr<ui::SurfaceOzoneCanvas> CreateCanvasForWidget(
+      gfx::AcceleratedWidget widget) OVERRIDE {
+    return make_scoped_ptr<ui::SurfaceOzoneCanvas>(new MockSurfaceOzone());
   }
-  virtual SkCanvas* GetCanvasForWidget(gfx::AcceleratedWidget w) OVERRIDE {
-    return canvas_.get();
-  }
-  virtual scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider(
-      gfx::AcceleratedWidget w) OVERRIDE {
-    return scoped_ptr<gfx::VSyncProvider>();
-  }
- private:
-  skia::RefPtr<SkBitmapDevice> device_;
-  skia::RefPtr<SkCanvas> canvas_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(MockSurfaceFactoryOzone);
 };
 
@@ -71,16 +80,18 @@ class SoftwareOutputDeviceOzoneTest : public testing::Test {
 
  protected:
   scoped_ptr<content::SoftwareOutputDeviceOzone> output_device_;
+  bool enable_pixel_output_;
 
  private:
   scoped_ptr<ui::Compositor> compositor_;
   scoped_ptr<base::MessageLoop> message_loop_;
-  scoped_ptr<gfx::SurfaceFactoryOzone> surface_factory_;
+  scoped_ptr<ui::SurfaceFactoryOzone> surface_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SoftwareOutputDeviceOzoneTest);
 };
 
-SoftwareOutputDeviceOzoneTest::SoftwareOutputDeviceOzoneTest() {
+SoftwareOutputDeviceOzoneTest::SoftwareOutputDeviceOzoneTest()
+    : enable_pixel_output_(false) {
   message_loop_.reset(new base::MessageLoopForUI);
 }
 
@@ -88,20 +99,20 @@ SoftwareOutputDeviceOzoneTest::~SoftwareOutputDeviceOzoneTest() {
 }
 
 void SoftwareOutputDeviceOzoneTest::SetUp() {
-  ui::InitializeContextFactoryForTests(false);
-  ui::Compositor::Initialize();
+  ui::ContextFactory* context_factory =
+      ui::InitializeContextFactoryForTests(enable_pixel_output_);
 
   surface_factory_.reset(new MockSurfaceFactoryOzone());
-  gfx::SurfaceFactoryOzone::SetInstance(surface_factory_.get());
 
   const gfx::Size size(500, 400);
   compositor_.reset(new ui::Compositor(
-      gfx::SurfaceFactoryOzone::GetInstance()->GetAcceleratedWidget()));
+      ui::SurfaceFactoryOzone::GetInstance()->GetAcceleratedWidget(),
+      context_factory));
   compositor_->SetScaleAndSize(1.0f, size);
 
   output_device_.reset(new content::SoftwareOutputDeviceOzone(
       compositor_.get()));
-  output_device_->Resize(size);
+  output_device_->Resize(size, 1.f);
 }
 
 void SoftwareOutputDeviceOzoneTest::TearDown() {
@@ -109,39 +120,24 @@ void SoftwareOutputDeviceOzoneTest::TearDown() {
   compositor_.reset();
   surface_factory_.reset();
   ui::TerminateContextFactoryForTests();
-  ui::Compositor::Terminate();
 }
 
-TEST_F(SoftwareOutputDeviceOzoneTest, CheckClipAfterBeginPaint) {
-  gfx::Rect damage(10, 10, 100, 100);
-  SkCanvas* canvas = output_device_->BeginPaint(damage);
+class SoftwareOutputDeviceOzonePixelTest
+    : public SoftwareOutputDeviceOzoneTest {
+ protected:
+  virtual void SetUp() OVERRIDE;
+};
 
-  SkIRect sk_bounds;
-  canvas->getClipDeviceBounds(&sk_bounds);
-
-  EXPECT_EQ(damage.ToString(), gfx::SkIRectToRect(sk_bounds).ToString());
-}
-
-TEST_F(SoftwareOutputDeviceOzoneTest, CheckClipAfterSecondBeginPaint) {
-  gfx::Rect damage(10, 10, 100, 100);
-  SkCanvas* canvas = output_device_->BeginPaint(damage);
-
-  cc::SoftwareFrameData frame;
-  output_device_->EndPaint(&frame);
-
-  damage = gfx::Rect(100, 100, 100, 100);
-  canvas = output_device_->BeginPaint(damage);
-  SkIRect sk_bounds;
-  canvas->getClipDeviceBounds(&sk_bounds);
-
-  EXPECT_EQ(damage.ToString(), gfx::SkIRectToRect(sk_bounds).ToString());
+void SoftwareOutputDeviceOzonePixelTest::SetUp() {
+  enable_pixel_output_ = true;
+  SoftwareOutputDeviceOzoneTest::SetUp();
 }
 
 TEST_F(SoftwareOutputDeviceOzoneTest, CheckCorrectResizeBehavior) {
   gfx::Rect damage(0, 0, 100, 100);
   gfx::Size size(200, 100);
   // Reduce size.
-  output_device_->Resize(size);
+  output_device_->Resize(size, 1.f);
 
   SkCanvas* canvas = output_device_->BeginPaint(damage);
   gfx::Size canvas_size(canvas->getDeviceSize().width(),
@@ -150,7 +146,7 @@ TEST_F(SoftwareOutputDeviceOzoneTest, CheckCorrectResizeBehavior) {
 
   size.SetSize(1000, 500);
   // Increase size.
-  output_device_->Resize(size);
+  output_device_->Resize(size, 1.f);
 
   canvas = output_device_->BeginPaint(damage);
   canvas_size.SetSize(canvas->getDeviceSize().width(),
@@ -159,9 +155,11 @@ TEST_F(SoftwareOutputDeviceOzoneTest, CheckCorrectResizeBehavior) {
 
 }
 
-TEST_F(SoftwareOutputDeviceOzoneTest, CheckCopyToBitmap) {
-  const gfx::Rect area(6, 4);
-  output_device_->Resize(area.size());
+TEST_F(SoftwareOutputDeviceOzonePixelTest, CheckCopyToBitmap) {
+  const int width = 6;
+  const int height = 4;
+  const gfx::Rect area(width, height);
+  output_device_->Resize(area.size(), 1.f);
   SkCanvas* canvas = output_device_->BeginPaint(area);
 
   // Clear the background to black.
@@ -173,23 +171,25 @@ TEST_F(SoftwareOutputDeviceOzoneTest, CheckCopyToBitmap) {
   // Draw a white rectangle.
   gfx::Rect damage(area.width() / 2, area.height() / 2);
   canvas = output_device_->BeginPaint(damage);
+  canvas->clipRect(gfx::RectToSkRect(damage), SkRegion::kReplace_Op);
 
   canvas->drawColor(SK_ColorWHITE);
 
   output_device_->EndPaint(&frame);
 
-  SkBitmap bitmap;
-  output_device_->CopyToBitmap(area, &bitmap);
+  SkPMColor pixels[width * height];
+  output_device_->CopyToPixels(area, pixels);
 
-  SkAutoLockPixels pixel_lock(bitmap);
   // Check that the copied bitmap contains the same pixel values as what we
   // painted.
+  const SkPMColor white = SkPreMultiplyColor(SK_ColorWHITE);
+  const SkPMColor black = SkPreMultiplyColor(SK_ColorBLACK);
   for (int i = 0; i < area.height(); ++i) {
     for (int j = 0; j < area.width(); ++j) {
       if (j < damage.width() && i < damage.height())
-        EXPECT_EQ(SK_ColorWHITE, bitmap.getColor(j, i));
+        EXPECT_EQ(white, pixels[i * area.width() + j]);
       else
-        EXPECT_EQ(SK_ColorBLACK, bitmap.getColor(j, i));
+        EXPECT_EQ(black, pixels[i * area.width() + j]);
     }
   }
 }

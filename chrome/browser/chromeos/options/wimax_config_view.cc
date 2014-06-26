@@ -104,7 +104,7 @@ void WimaxConfigView::UpdateErrorLabel() {
         GetNetworkState(service_path_);
     if (wimax && wimax->connection_state() == shill::kStateFailure)
       error_msg = ash::network_connect::ErrorString(
-          wimax->error(), wimax->path());
+          wimax->last_error(), wimax->path());
   }
   if (!error_msg.empty()) {
     error_label_->SetText(error_msg);
@@ -204,11 +204,11 @@ void WimaxConfigView::Init() {
       GetNetworkState(service_path_);
   DCHECK(wimax && wimax->type() == shill::kTypeWimax);
 
-  WifiConfigView::ParseWiFiEAPUIProperty(
+  WifiConfigView::ParseEAPUIProperty(
       &save_credentials_ui_data_, wimax, ::onc::eap::kSaveCredentials);
-  WifiConfigView::ParseWiFiEAPUIProperty(
+  WifiConfigView::ParseEAPUIProperty(
       &identity_ui_data_, wimax, ::onc::eap::kIdentity);
-  WifiConfigView::ParseWiFiUIProperty(
+  WifiConfigView::ParseUIProperty(
       &passphrase_ui_data_, wimax, ::onc::wifi::kPassphrase);
 
   views::GridLayout* layout = views::GridLayout::CreatePanel(this);
@@ -324,14 +324,16 @@ void WimaxConfigView::Init() {
     share_network_checkbox_ = new views::Checkbox(
         l10n_util::GetStringUTF16(
             IDS_OPTIONS_SETTINGS_INTERNET_OPTIONS_SHARE_NETWORK));
-    if (LoginState::Get()->IsUserAuthenticated()) {
-      share_network_checkbox_->SetChecked(false);  // Default to unshared
-      share_network_checkbox_->SetEnabled(true);
-    } else {
-      // Not logged in, must be shared
-      share_network_checkbox_->SetChecked(true);
-      share_network_checkbox_->SetEnabled(false);
-    }
+
+    bool share_network_checkbox_value = false;
+    bool share_network_checkbox_enabled = false;
+    ChildNetworkConfigView::GetShareStateForLoginState(
+        &share_network_checkbox_value,
+        &share_network_checkbox_enabled);
+
+    share_network_checkbox_->SetChecked(share_network_checkbox_value);
+    share_network_checkbox_->SetEnabled(share_network_checkbox_enabled);
+
     layout->SkipColumns(1);
     layout->AddView(share_network_checkbox_);
   }

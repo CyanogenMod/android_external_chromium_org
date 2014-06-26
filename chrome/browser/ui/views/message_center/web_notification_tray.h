@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_VIEWS_MESSAGE_CENTER_WEB_NOTIFICATION_TRAY_H_
 
 #include "base/memory/weak_ptr.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/status_icons/status_icon_menu_model.h"
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "chrome/browser/ui/views/message_center/message_center_widget_delegate.h"
@@ -17,6 +18,11 @@
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/views/widget/widget_observer.h"
 
+#if defined(OS_WIN)
+#include "base/threading/thread.h"
+#endif
+
+class PrefService;
 class StatusIcon;
 
 namespace message_center {
@@ -43,7 +49,7 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
                             public base::SupportsWeakPtr<WebNotificationTray>,
                             public StatusIconMenuModel::Delegate {
  public:
-  WebNotificationTray();
+  explicit WebNotificationTray(PrefService* local_state);
   virtual ~WebNotificationTray();
 
   message_center::MessageCenter* message_center();
@@ -65,6 +71,8 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
   // This shows a platform-specific balloon informing the user of the existence
   // of the message center in the status tray area.
   void DisplayFirstRunBalloon();
+
+  void EnforceStatusIconVisible();
 #endif
 
   // StatusIconMenuModel::Delegate implementation.
@@ -86,6 +94,7 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
                            ManyMessageCenterNotifications);
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, ManyPopupNotifications);
   FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, ManuallyCloseMessageCenter);
+  FRIEND_TEST_ALL_PREFIXES(WebNotificationTrayTest, StatusIconBehavior);
 
   PositionInfo GetPositionInfo();
 
@@ -95,17 +104,24 @@ class WebNotificationTray : public message_center::MessageCenterTrayDelegate,
   void AddQuietModeMenu(StatusIcon* status_icon);
   MessageCenterWidgetDelegate* GetMessageCenterWidgetDelegateForTest();
 
+#if defined(OS_WIN)
+  // This member variable keeps track of whether EnforceStatusIconVisible has
+  // been invoked on this machine, so the user still has control after we try
+  // promoting it the first time.
+  scoped_ptr<BooleanPrefMember> did_force_tray_visible_;
+#endif
+
   MessageCenterWidgetDelegate* message_center_delegate_;
   scoped_ptr<message_center::MessagePopupCollection> popup_collection_;
 
   StatusIcon* status_icon_;
   StatusIconMenuModel* status_icon_menu_;
-  bool message_center_visible_;
   scoped_ptr<MessageCenterTray> message_center_tray_;
   gfx::Point mouse_click_point_;
 
   bool should_update_tray_content_;
   bool last_quiet_mode_state_;
+  base::string16 title_;
 
   DISALLOW_COPY_AND_ASSIGN(WebNotificationTray);
 };

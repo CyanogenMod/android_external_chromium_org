@@ -10,7 +10,9 @@
 
 #include "base/basictypes.h"
 #include "base/containers/hash_tables.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "tools/gn/err.h"
 #include "tools/gn/pattern.h"
 #include "tools/gn/source_dir.h"
@@ -18,9 +20,11 @@
 
 class FunctionCallNode;
 class ImportManager;
+class Item;
 class ParseNode;
 class Settings;
 class TargetManager;
+class Template;
 
 // Scope for the script execution.
 //
@@ -36,6 +40,9 @@ class TargetManager;
 class Scope {
  public:
   typedef base::hash_map<base::StringPiece, Value> KeyValueMap;
+  // Holds an owning list of scoped_ptrs of Items (since we can't make a vector
+  // of scoped_ptrs).
+  typedef ScopedVector< scoped_ptr<Item> > ItemVector;
 
   // Allows code to provide values for built-in variables. This class will
   // automatically register itself on construction and deregister itself on
@@ -56,6 +63,37 @@ class Scope {
 
    protected:
     Scope* scope_;
+  };
+
+  // Options for configuring scope merges.
+  struct MergeOptions {
+    // Defaults to all false, which are the things least likely to cause errors.
+    MergeOptions()
+        : clobber_existing(false),
+          skip_private_vars(false),
+          mark_used(false) {
+    }
+
+    // When set, all existing avlues in the destination scope will be
+    // overwritten.
+    //
+    // When false, it will be an error to merge a variable into another scope
+    // where a variable with the same name is already set. The exception is
+    // if both of the variables have the same value (which happens if you
+    // somehow multiply import the same file, for example). This case will be
+    // ignored since there is nothing getting lost.
+    bool clobber_existing;
+
+    // When true, private variables (names beginning with an underscore) will
+    // be copied to the destination scope. When false, private values will be
+    // skipped.
+    bool skip_private_vars;
+
+    // When set, values copied to the destination scope will be marked as used
+    // so won't trigger an unused variable warning. You want this when doing an
+    // import, for example, or files that don't need a variable from the .gni
+    // file will throw an error.
+    bool mark_used;
   };
 
   // Creates an empty toplevel scope.
@@ -86,6 +124,30 @@ class Scope {
                         bool counts_as_used);
   const Value* GetValue(const base::StringPiece& ident) const;
 
+  // Returns the requested value as a mutable one if possible. If the value
+  // is not found in a mutable scope, then returns null. Note that the value
+  // could still exist in a const scope, so GetValue() could still return
+  // non-null in this case.
+  //
+  // Say you have a local scope that then refers to the const root scope from
+  // the master build config. You can't change the values from the master
+  // build config (it's read-only so it can be read from multiple threads
+  // without locking). Read-only operations would work on values from the root
+  // scope, but write operations would only work on values in the derived
+  // scope(s).
+  //
+  // Be careful when calling this. It's not normally correct to modify values,
+  // but you should instead do a new Set each time.
+  //
+  // Consider this code:
+  //   a = 5
+  //    {
+  //       a = 6
+  //    }
+  // The 6 should get set on the nested scope rather than modify the value
+  // in the outer one.
+  Value* GetMutableValue(const base::StringPiece& ident, bool counts_as_used);
+
   // Same as GetValue, but if the value exists in a parent scope, we'll copy
   // it to the current scope. If the return value is non-null, the value is
   // guaranteed to be set in the current scope. Generatlly this will be used
@@ -103,12 +165,20 @@ class Scope {
                   const Value& v,
                   const ParseNode* set_node);
 
+  // Removes the value with the given identifier if it exists on the current
+  // scope. This does not search recursive scopes. Does nothing if not found.
+  void RemoveIdentifier(const base::StringPiece& ident);
+
+  // Removes from this scope all identifiers and templates that are considered
+  // private.
+  void RemovePrivateIdentifiers();
+
   // Templates associated with this scope. A template can only be set once, so
-  // AddTemplate will fail and return NULL if a rule with that name already
+  // AddTemplate will fail and return false if a rule with that name already
   // exists. GetTemplate returns NULL if the rule doesn't exist, and it will
   // check all containing scoped rescursively.
-  bool AddTemplate(const std::string& name, const FunctionCallNode* decl);
-  const FunctionCallNode* GetTemplate(const std::string& name) const;
+  bool AddTemplate(const std::string& name, const Template* templ);
+  const Template* GetTemplate(const std::string& name) const;
 
   // Marks the given identifier as (un)used in the current scope.
   void MarkUsed(const base::StringPiece& ident);
@@ -134,20 +204,23 @@ class Scope {
   // copied, neither will the reference to the containing scope (this is why
   // it's "non-recursive").
   //
-  // It is an error to merge a variable into a scope that already has something
-  // with that name in scope (meaning in that scope or in any of its containing
-  // scopes). If this happens, the error will be set and the function will
-  // return false.
-  //
   // This is used in different contexts. When generating the error, the given
   // parse node will be blamed, and the given desc will be used to describe
   // the operation that doesn't support doing this. For example, desc_for_err
   // would be "import" when doing an import, and the error string would say
   // something like "The import contains...".
   bool NonRecursiveMergeTo(Scope* dest,
+                           const MergeOptions& options,
                            const ParseNode* node_for_err,
                            const char* desc_for_err,
                            Err* err) const;
+
+  // Constructs a scope that is a copy of the current one. Nested scopes will
+  // be collapsed until we reach a const containing scope. Private values will
+  // be included. The resulting closure will reference the const containing
+  // scope as its containing scope (since we assume the const scope won't
+  // change, we don't have to copy its values).
+  scoped_ptr<Scope> MakeClosure() const;
 
   // Makes an empty scope with the given name. Returns NULL if the name is
   // already set.
@@ -187,6 +260,26 @@ class Scope {
   // an empty dir if no containing scope has a source dir set.
   const SourceDir& GetSourceDir() const;
   void set_source_dir(const SourceDir& d) { source_dir_ = d; }
+
+  // The item collector is where Items (Targets, Configs, etc.) go that have
+  // been defined. If a scope can generate items, this non-owning pointer will
+  // point to the storage for such items. The creator of this scope will be
+  // responsible for setting up the collector and then dealing with the
+  // collected items once execution of the context is complete.
+  //
+  // The items in a scope are collected as we go and then dispatched at the end
+  // of execution of a scope so that we can query the previously-generated
+  // targets (like getting the outputs).
+  //
+  // This can be null if the current scope can not generate items (like for
+  // imports and such).
+  //
+  // When retrieving the collector, the non-const scopes are recursively
+  // queried. The collector is not copied for closures, etc.
+  void set_item_collector(ItemVector* collector) {
+    item_collector_ = collector;
+  }
+  ItemVector* GetItemCollector();
 
   // Properties are opaque pointers that code can use to set state on a Scope
   // that it can retrieve later.
@@ -243,10 +336,11 @@ class Scope {
   // scope's filter.
   scoped_ptr<PatternList> sources_assignment_filter_;
 
-  // Non-owning pointers, the function calls are owned by the input file which
-  // should be kept around by the input file manager.
-  typedef std::map<std::string, const FunctionCallNode*> TemplateMap;
+  // Owning pointers, must be deleted.
+  typedef std::map<std::string, scoped_refptr<const Template> > TemplateMap;
   TemplateMap templates_;
+
+  ItemVector* item_collector_;
 
   // Opaque pointers. See SetProperty() above.
   typedef std::map<const void*, void*> PropertyMap;

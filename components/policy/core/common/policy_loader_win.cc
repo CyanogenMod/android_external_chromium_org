@@ -292,7 +292,7 @@ void ParsePolicy(const RegistryDict* gpo_dict,
 
 // Collects stats about the enterprise environment that can be used to decide
 // how to parse the existing policy information.
-void CollectEntepriseUMAs() {
+void CollectEnterpriseUMAs() {
   // Collect statistics about the windows suite.
   UMA_HISTOGRAM_ENUMERATION("EnterpriseCheck.OSType",
                             base::win::OSInfo::GetInstance()->version_type(),
@@ -301,7 +301,7 @@ void CollectEntepriseUMAs() {
   // Get the computer's domain status.
   LPWSTR domain;
   NETSETUP_JOIN_STATUS join_status;
-  if(NERR_Success != ::NetGetJoinInformation(NULL, &domain, &join_status)) {
+  if (NERR_Success != ::NetGetJoinInformation(NULL, &domain, &join_status)) {
     UMA_HISTOGRAM_ENUMERATION("EnterpriseCheck.DomainCheckFailed",
                               DOMAIN_CHECK_ERROR_GET_JOIN_INFO,
                               DOMAIN_CHECK_ERROR_LAST);
@@ -377,7 +377,7 @@ scoped_ptr<PolicyLoaderWin> PolicyLoaderWin::Create(
 void PolicyLoaderWin::InitOnBackgroundThread() {
   is_initialized_ = true;
   SetupWatches();
-  CollectEntepriseUMAs();
+  CollectEnterpriseUMAs();
 }
 
 scoped_ptr<PolicyBundle> PolicyLoaderWin::Load() {
@@ -394,6 +394,10 @@ scoped_ptr<PolicyBundle> PolicyLoaderWin::Load() {
     { POLICY_SCOPE_MACHINE, HKEY_LOCAL_MACHINE },
     { POLICY_SCOPE_USER,    HKEY_CURRENT_USER  },
   };
+
+  bool is_enterprise = base::win::IsEnrolledToDomain();
+  VLOG(1) << "Reading policy from the registry is "
+          << (is_enterprise ? "enabled." : "disabled.");
 
   // Load policy data for the different scopes/levels and merge them.
   scoped_ptr<PolicyBundle> bundle(new PolicyBundle());
@@ -421,9 +425,9 @@ scoped_ptr<PolicyBundle> PolicyLoaderWin::Load() {
     // timeout on it more aggressively. For now, there's no justification for
     // the additional effort this would introduce.
 
-    if (!ReadPolicyFromGPO(scope, &gpo_dict, &status)) {
-      VLOG(1) << "Failed to read GPO files for " << scope
-              << " falling back to registry.";
+    if (is_enterprise || !ReadPolicyFromGPO(scope, &gpo_dict, &status)) {
+      VLOG_IF(1, !is_enterprise) << "Failed to read GPO files for " << scope
+                                 << " falling back to registry.";
       gpo_dict.ReadRegistry(kScopes[i].hive, chrome_policy_key_);
     }
 

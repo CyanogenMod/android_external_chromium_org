@@ -8,10 +8,10 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_state.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/rect.h"
-#include "ui/views/corewm/window_util.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
 
@@ -131,8 +131,8 @@ void VideoDetector::MaybeNotifyObservers(aura::Window* window,
   // http://crbug.com/340666
   bool fullscreen_window_exists = false;
   std::vector<aura::Window*> containers =
-      Shell::GetContainersFromAllRootWindows(
-          internal::kShellWindowId_DefaultContainer, NULL);
+      Shell::GetContainersFromAllRootWindows(kShellWindowId_DefaultContainer,
+                                             NULL);
   for (std::vector<aura::Window*>::const_iterator container =
        containers.begin(); container != containers.end(); ++container) {
     const aura::Window::Windows& windows = (*container)->children();

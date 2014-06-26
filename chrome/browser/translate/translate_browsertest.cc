@@ -7,15 +7,16 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
-#include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/browser/translate/translate_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/infobar.h"
+#include "components/translate/core/browser/translate_infobar_delegate.h"
+#include "components/translate/core/browser/translate_manager.h"
 #include "components/translate/core/browser/translate_script.h"
 #include "components/translate/core/common/translate_switches.h"
 #include "content/public/browser/notification_service.h"
@@ -52,10 +53,6 @@ class TranslateBrowserTest : public InProcessBrowserTest {
                       SSLOptions(SSLOptions::CERT_OK),
                       base::FilePath(kTranslateRoot)),
         infobar_service_(NULL) {}
-
-  virtual void SetUpOnMainThread() OVERRIDE {
-    TranslateService::SetUseInfobar(true);
-  }
 
   virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     ASSERT_TRUE(https_server_.Start());
@@ -96,13 +93,14 @@ class TranslateBrowserTest : public InProcessBrowserTest {
       // |kTranslateSecurityOrigin| flag specified in SetUpCommandLine().
       // This infobar appears in all tests of TranslateBrowserTest and can be
       // ignored here.
-      ConfirmInfoBarDelegate* confirm = infobar_service_->infobar_at(i)->
-          delegate()->AsConfirmInfoBarDelegate();
-      if (confirm)
+      if (infobar_service_->infobar_at(i)->delegate()->
+              AsConfirmInfoBarDelegate()) {
         continue;
+      }
 
-      TranslateInfoBarDelegate* translate = infobar_service_->infobar_at(i)->
-          delegate()->AsTranslateInfoBarDelegate();
+      TranslateInfoBarDelegate* translate =
+          infobar_service_->infobar_at(i)->delegate()->
+              AsTranslateInfoBarDelegate();
       if (translate) {
         EXPECT_FALSE(delegate) << "multiple infobars are shown unexpectedly";
         delegate = translate;
@@ -125,11 +123,9 @@ class TranslateBrowserTest : public InProcessBrowserTest {
 };
 
 IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, TranslateInIsolatedWorld) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
     return;
-#endif
 
   net::TestURLFetcherFactory factory;
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
@@ -190,15 +186,13 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, TranslateInIsolatedWorld) {
 
   // Wait for the page title is changed after the test finished.
   const base::string16 result = watcher.WaitAndGetTitle();
-  EXPECT_EQ("PASS", UTF16ToASCII(result));
+  EXPECT_EQ("PASS", base::UTF16ToASCII(result));
 }
 
 IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTag) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
     return;
-#endif
 
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -220,7 +214,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTag) {
 
   // Wait for the page title is changed after the test finished.
   const base::string16 result = watcher.WaitAndGetTitle();
-  EXPECT_EQ("PASS", UTF16ToASCII(result));
+  EXPECT_EQ("PASS", base::UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
   translate = GetExistingTranslateInfoBarDelegate();
@@ -229,11 +223,9 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTag) {
 
 IN_PROC_BROWSER_TEST_F(TranslateBrowserTest,
                        IgnoreRefreshMetaTagInCaseInsensitive) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
     return;
-#endif
 
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -255,7 +247,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest,
 
   // Wait for the page title is changed after the test finished.
   const base::string16 result = watcher.WaitAndGetTitle();
-  EXPECT_EQ("PASS", UTF16ToASCII(result));
+  EXPECT_EQ("PASS", base::UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
   translate = GetExistingTranslateInfoBarDelegate();
@@ -263,11 +255,9 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTagAtOnload) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
     return;
-#endif
 
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -289,7 +279,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTagAtOnload) {
 
   // Wait for the page title is changed after the test finished.
   const base::string16 result = watcher.WaitAndGetTitle();
-  EXPECT_EQ("PASS", UTF16ToASCII(result));
+  EXPECT_EQ("PASS", base::UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
   translate = GetExistingTranslateInfoBarDelegate();
@@ -297,11 +287,9 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, IgnoreRefreshMetaTagAtOnload) {
 }
 
 IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocation) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
     return;
-#endif
 
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -323,7 +311,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocation) {
 
   // Wait for the page title is changed after the test finished.
   const base::string16 result = watcher.WaitAndGetTitle();
-  EXPECT_EQ("PASS", UTF16ToASCII(result));
+  EXPECT_EQ("PASS", base::UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
   translate = GetExistingTranslateInfoBarDelegate();
@@ -331,11 +319,9 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocation) {
 }
 
 IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocationAtOnload) {
-#if defined(OS_WIN) && defined(USE_ASH)
-  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+  // TODO(port): Test corresponding bubble translate UX: http://crbug.com/383235
+  if (TranslateService::IsTranslateBubbleEnabled())
     return;
-#endif
 
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
@@ -357,7 +343,7 @@ IN_PROC_BROWSER_TEST_F(TranslateBrowserTest, UpdateLocationAtOnload) {
 
   // Wait for the page title is changed after the test finished.
   const base::string16 result = watcher.WaitAndGetTitle();
-  EXPECT_EQ("PASS", UTF16ToASCII(result));
+  EXPECT_EQ("PASS", base::UTF16ToASCII(result));
 
   // Check if there is no Translate infobar.
   translate = GetExistingTranslateInfoBarDelegate();

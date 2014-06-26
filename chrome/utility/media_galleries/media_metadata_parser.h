@@ -5,9 +5,17 @@
 #ifndef CHROME_UTILITY_MEDIA_GALLERIES_MEDIA_METADATA_PARSER_H_
 #define CHROME_UTILITY_MEDIA_GALLERIES_MEDIA_METADATA_PARSER_H_
 
+#include <string>
+#include <vector>
+
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/common/extensions/api/media_galleries.h"
+#include "chrome/common/media_galleries/metadata_types.h"
+
+namespace base {
+class Thread;
+}
 
 namespace media {
 class DataSource;
@@ -23,11 +31,15 @@ namespace metadata {
 class MediaMetadataParser {
  public:
   typedef extensions::api::media_galleries::MediaMetadata MediaMetadata;
-  typedef base::Callback<void(scoped_ptr<MediaMetadata>)> MetadataCallback;
+  typedef base::Callback<
+      void(const MediaMetadata& metadata,
+           const std::vector<AttachedImage>& attached_images)>
+  MetadataCallback;
 
   // Does not take ownership of |source|. Caller is responsible for ensuring
   // that |source| outlives this object.
-  MediaMetadataParser(media::DataSource* source, const std::string& mime_type);
+  MediaMetadataParser(media::DataSource* source, const std::string& mime_type,
+                      bool get_attached_images);
 
   ~MediaMetadataParser();
 
@@ -35,13 +47,18 @@ class MediaMetadataParser {
   void Start(const MetadataCallback& callback);
 
  private:
-  void PopulateAudioVideoMetadata();
+  // Only accessed on |media_thread_| from this class.
+  media::DataSource* const source_;
 
-  media::DataSource* source_;
+  const std::string mime_type_;
 
-  MetadataCallback callback_;
+  bool get_attached_images_;
 
-  scoped_ptr<MediaMetadata> metadata_;
+  // Thread that blocking media parsing operations run on while the main thread
+  // handles messages from the browser process.
+  // TODO(tommycli): Replace with a reference to a WorkerPool if we ever use
+  // this class in batch mode.
+  scoped_ptr<base::Thread> media_thread_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaMetadataParser);
 };

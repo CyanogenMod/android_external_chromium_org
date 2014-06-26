@@ -140,6 +140,8 @@ class MockDaemonControllerDelegate : public DaemonController::Delegate {
   // DaemonController::Delegate interface.
   virtual DaemonController::State GetState() OVERRIDE;
   virtual scoped_ptr<base::DictionaryValue> GetConfig() OVERRIDE;
+  virtual void InstallHost(
+      const DaemonController::CompletionCallback& done) OVERRIDE;
   virtual void SetConfigAndStart(
       scoped_ptr<base::DictionaryValue> config,
       bool consent,
@@ -166,6 +168,11 @@ DaemonController::State MockDaemonControllerDelegate::GetState() {
 
 scoped_ptr<base::DictionaryValue> MockDaemonControllerDelegate::GetConfig() {
   return scoped_ptr<base::DictionaryValue>(new base::DictionaryValue());
+}
+
+void MockDaemonControllerDelegate::InstallHost(
+    const DaemonController::CompletionCallback& done) {
+  done.Run(DaemonController::RESULT_OK);
 }
 
 void MockDaemonControllerDelegate::SetConfigAndStart(
@@ -244,12 +251,12 @@ class Me2MeNativeMessagingHostTest : public testing::Test {
 
   // Each test creates two unidirectional pipes: "input" and "output".
   // Me2MeNativeMessagingHost reads from input_read_handle and writes to
-  // output_write_handle. The unittest supplies data to input_write_handle, and
+  // output_write_file. The unittest supplies data to input_write_handle, and
   // verifies output from output_read_handle.
   //
   // unittest -> [input] -> Me2MeNativeMessagingHost -> [output] -> unittest
-  base::PlatformFile input_write_handle_;
-  base::PlatformFile output_read_handle_;
+  base::File input_write_file_;
+  base::File output_read_file_;
 
   // Message loop of the test thread.
   scoped_ptr<base::MessageLoop> test_message_loop_;
@@ -270,11 +277,11 @@ Me2MeNativeMessagingHostTest::Me2MeNativeMessagingHostTest() {}
 Me2MeNativeMessagingHostTest::~Me2MeNativeMessagingHostTest() {}
 
 void Me2MeNativeMessagingHostTest::SetUp() {
-  base::PlatformFile input_read_handle;
-  base::PlatformFile output_write_handle;
+  base::File input_read_file;
+  base::File output_write_file;
 
-  ASSERT_TRUE(MakePipe(&input_read_handle, &input_write_handle_));
-  ASSERT_TRUE(MakePipe(&output_read_handle_, &output_write_handle));
+  ASSERT_TRUE(MakePipe(&input_read_file, &input_write_file_));
+  ASSERT_TRUE(MakePipe(&output_read_file_, &output_write_file));
 
   test_message_loop_.reset(new base::MessageLoop());
   test_run_loop_.reset(new base::RunLoop());
@@ -301,11 +308,11 @@ void Me2MeNativeMessagingHostTest::SetUp() {
 void Me2MeNativeMessagingHostTest::StartHost() {
   DCHECK(host_task_runner_->RunsTasksOnCurrentThread());
 
-  base::PlatformFile input_read_handle;
-  base::PlatformFile output_write_handle;
+  base::File input_read_file;
+  base::File output_write_file;
 
-  ASSERT_TRUE(MakePipe(&input_read_handle, &input_write_handle_));
-  ASSERT_TRUE(MakePipe(&output_read_handle_, &output_write_handle));
+  ASSERT_TRUE(MakePipe(&input_read_file, &input_write_file_));
+  ASSERT_TRUE(MakePipe(&output_read_file_, &output_write_file));
 
   daemon_controller_delegate_ = new MockDaemonControllerDelegate();
   scoped_refptr<DaemonController> daemon_controller(
@@ -317,10 +324,12 @@ void Me2MeNativeMessagingHostTest::StartHost() {
           new MockPairingRegistryDelegate()));
 
   scoped_ptr<NativeMessagingChannel> channel(
-      new NativeMessagingChannel(input_read_handle, output_write_handle));
+      new NativeMessagingChannel(input_read_file.Pass(),
+                                 output_write_file.Pass()));
 
   host_.reset(new Me2MeNativeMessagingHost(
         false,
+        0,
         channel.Pass(),
         daemon_controller,
         pairing_registry,
@@ -359,7 +368,7 @@ void Me2MeNativeMessagingHostTest::ExitTest() {
 void Me2MeNativeMessagingHostTest::TearDown() {
   // Closing the write-end of the input will send an EOF to the native
   // messaging reader. This will trigger a host shutdown.
-  base::ClosePlatformFile(input_write_handle_);
+  input_write_file_.Close();
 
   // Start a new RunLoop and Wait until the host finishes shutting down.
   test_run_loop_.reset(new base::RunLoop());
@@ -370,22 +379,22 @@ void Me2MeNativeMessagingHostTest::TearDown() {
   EXPECT_FALSE(response);
 
   // The It2MeMe2MeNativeMessagingHost dtor closes the handles that are passed
-  // to it. So the only handle left to close is |output_read_handle_|.
-  base::ClosePlatformFile(output_read_handle_);
+  // to it. So the only handle left to close is |output_read_file_|.
+  output_read_file_.Close();
 }
 
 scoped_ptr<base::DictionaryValue>
 Me2MeNativeMessagingHostTest::ReadMessageFromOutputPipe() {
   uint32 length;
-  int read_result = base::ReadPlatformFileAtCurrentPos(
-      output_read_handle_, reinterpret_cast<char*>(&length), sizeof(length));
+  int read_result = output_read_file_.ReadAtCurrentPos(
+      reinterpret_cast<char*>(&length), sizeof(length));
   if (read_result != sizeof(length)) {
     return scoped_ptr<base::DictionaryValue>();
   }
 
   std::string message_json(length, '\0');
-  read_result = base::ReadPlatformFileAtCurrentPos(
-      output_read_handle_, string_as_array(&message_json), length);
+  read_result = output_read_file_.ReadAtCurrentPos(
+      string_as_array(&message_json), length);
   if (read_result != static_cast<int>(length)) {
     return scoped_ptr<base::DictionaryValue>();
   }
@@ -405,11 +414,9 @@ void Me2MeNativeMessagingHostTest::WriteMessageToInputPipe(
   base::JSONWriter::Write(&message, &message_json);
 
   uint32 length = message_json.length();
-  base::WritePlatformFileAtCurrentPos(input_write_handle_,
-                                      reinterpret_cast<char*>(&length),
+  input_write_file_.WriteAtCurrentPos(reinterpret_cast<char*>(&length),
                                       sizeof(length));
-  base::WritePlatformFileAtCurrentPos(input_write_handle_, message_json.data(),
-                                      length);
+  input_write_file_.WriteAtCurrentPos(message_json.data(), length);
 }
 
 void Me2MeNativeMessagingHostTest::TestBadRequest(const base::Value& message) {

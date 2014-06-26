@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,25 +11,18 @@
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/browser/ui/sync/sync_promo_ui.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/infobars/core/infobar.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
@@ -70,8 +63,7 @@ class AutoLoginRedirector : public UbertokenConsumer,
   virtual void OnUbertokenFailure(const GoogleServiceAuthError& error) OVERRIDE;
 
   // Implementation of content::WebContentsObserver
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   // Redirect tab to MergeSession URL, logging the user in and navigating
   // to the desired page.
@@ -104,8 +96,7 @@ AutoLoginRedirector::AutoLoginRedirector(
 AutoLoginRedirector::~AutoLoginRedirector() {
 }
 
-void AutoLoginRedirector::WebContentsDestroyed(
-    content::WebContents* web_contents) {
+void AutoLoginRedirector::WebContentsDestroyed() {
   // The WebContents that started this has been destroyed. The request must be
   // cancelled and this object must be deleted.
   ubertoken_fetcher_.reset();
@@ -162,15 +153,33 @@ AutoLoginInfoBarDelegate::AutoLoginInfoBarDelegate(const Params& params,
                                                    Profile* profile)
     : ConfirmInfoBarDelegate(),
       params_(params),
+      profile_(profile),
       button_pressed_(false) {
   RecordHistogramAction(SHOWN);
-  registrar_.Add(this, chrome::NOTIFICATION_GOOGLE_SIGNED_OUT,
-                 content::Source<Profile>(profile));
+
+  // The AutoLogin infobar is shown in incognito mode on Android, so a
+  // SigninManager isn't guaranteed to exist for |profile_|.
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile_);
+  if (signin_manager)
+    signin_manager->AddObserver(this);
 }
 
 AutoLoginInfoBarDelegate::~AutoLoginInfoBarDelegate() {
+  // The AutoLogin infobar is shown in incognito mode on Android, so a
+  // SigninManager isn't guaranteed to exist for |profile_|.
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetInstance()->GetForProfile(profile_);
+  if (signin_manager)
+    signin_manager->RemoveObserver(this);
+
   if (!button_pressed_)
     RecordHistogramAction(IGNORED);
+}
+
+void AutoLoginInfoBarDelegate::RecordHistogramAction(Actions action) {
+  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Regular", action,
+                            HISTOGRAM_BOUNDING_VALUE);
 }
 
 void AutoLoginInfoBarDelegate::InfoBarDismissed() {
@@ -182,7 +191,8 @@ int AutoLoginInfoBarDelegate::GetIconID() const {
   return IDR_INFOBAR_AUTOLOGIN;
 }
 
-InfoBarDelegate::Type AutoLoginInfoBarDelegate::GetInfoBarType() const {
+infobars::InfoBarDelegate::Type AutoLoginInfoBarDelegate::GetInfoBarType()
+    const {
   return PAGE_ACTION_TYPE;
 }
 
@@ -204,30 +214,25 @@ base::string16 AutoLoginInfoBarDelegate::GetButtonLabel(
 
 bool AutoLoginInfoBarDelegate::Accept() {
   // AutoLoginRedirector deletes itself.
-  new AutoLoginRedirector(web_contents(), params_.header.args);
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
+  new AutoLoginRedirector(web_contents, params_.header.args);
   RecordHistogramAction(ACCEPTED);
   button_pressed_ = true;
   return true;
 }
 
 bool AutoLoginInfoBarDelegate::Cancel() {
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
   PrefService* pref_service = Profile::FromBrowserContext(
-      web_contents()->GetBrowserContext())->GetPrefs();
+      web_contents->GetBrowserContext())->GetPrefs();
   pref_service->SetBoolean(prefs::kAutologinEnabled, false);
   RecordHistogramAction(REJECTED);
   button_pressed_ = true;
   return true;
 }
 
-void AutoLoginInfoBarDelegate::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_GOOGLE_SIGNED_OUT, type);
+void AutoLoginInfoBarDelegate::GoogleSignedOut(const std::string& username) {
   infobar()->RemoveSelf();
-}
-
-void AutoLoginInfoBarDelegate::RecordHistogramAction(Actions action) {
-  UMA_HISTOGRAM_ENUMERATION("AutoLogin.Regular", action,
-                            HISTOGRAM_BOUNDING_VALUE);
 }

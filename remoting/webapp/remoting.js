@@ -14,6 +14,14 @@ var remoting = remoting || {};
  */
 remoting.isAppsV2 = false;
 
+
+/**
+ * @type {base.EventSource} An event source object for handling global events.
+ *    This is an interim hack.  Eventually, we should move functionalities
+ *    away from the remoting namespace and into smaller objects.
+ */
+remoting.testEvents;
+
 /**
  * Show the authorization consent UI and register a one-shot event handler to
  * continue the authorization process.
@@ -53,19 +61,23 @@ remoting.init = function() {
     migrateLocalToChromeStorage_();
   }
 
-  remoting.logExtensionInfo_();
+  console.log(remoting.getExtensionInfo());
   l10n.localize();
 
   // Create global objects.
   remoting.settings = new remoting.Settings();
   if (remoting.isAppsV2) {
     remoting.identity = new remoting.Identity(consentRequired_);
+    remoting.fullscreen = new remoting.FullscreenAppsV2();
+    remoting.windowFrame = new remoting.WindowFrame(
+        document.getElementById('title-bar'));
   } else {
     remoting.oauth2 = new remoting.OAuth2();
     if (!remoting.oauth2.isAuthenticated()) {
       document.getElementById('auth-dialog').hidden = false;
     }
     remoting.identity = remoting.oauth2;
+    remoting.fullscreen = new remoting.FullscreenAppsV1();
   }
   remoting.stats = new remoting.ConnectionStats(
       document.getElementById('statistics'));
@@ -82,6 +94,14 @@ remoting.init = function() {
   var sandbox = /** @type {HTMLIFrameElement} */
       document.getElementById('wcs-sandbox');
   remoting.wcsSandbox = new remoting.WcsSandboxContainer(sandbox.contentWindow);
+  var menuFeedback = new remoting.Feedback(
+      document.getElementById('help-feedback-main'),
+      document.getElementById('help-main'),
+      document.getElementById('send-feedback-main'));
+  var toolbarFeedback = new remoting.Feedback(
+      document.getElementById('help-feedback-toolbar'),
+      document.getElementById('help-toolbar'),
+      document.getElementById('send-feedback-toolbar'));
 
   /** @param {remoting.Error} error */
   var onGetEmailError = function(error) {
@@ -138,6 +158,14 @@ remoting.init = function() {
     };
     isWindowed_(onIsWindowed);
   }
+
+  remoting.testEvents = new base.EventSource();
+
+  /** @enum {string} */
+  remoting.testEvents.Names = {
+    uiModeChanged: 'uiModeChanged'
+  };
+  remoting.testEvents.defineEvents(base.values(remoting.testEvents.Names));
 };
 
 /**
@@ -151,29 +179,6 @@ function isIT2MeSupported_() {
 }
 
 /**
- * Create an instance of the NPAPI plugin.
- * @param {Element} container The element to add the plugin to.
- * @return {remoting.HostPlugin} The new plugin instance or null if it failed to
- *     load.
- */
-remoting.createNpapiPlugin = function(container) {
-  var plugin = document.createElement('embed');
-  plugin.type = remoting.settings.PLUGIN_MIMETYPE;
-  // Hiding the plugin means it doesn't load, so make it size zero instead.
-  plugin.width = 0;
-  plugin.height = 0;
-  container.appendChild(plugin);
-
-  // Verify if the plugin was loaded successfully.
-  if (!plugin.hasOwnProperty('REQUESTED_ACCESS_CODE')) {
-    container.removeChild(plugin);
-    return null;
-  }
-
-  return /** @type {remoting.HostPlugin} */ (plugin);
-};
-
-/**
  * Returns true if the current platform is fully supported. It's only used when
  * we detect that host native messaging components are not installed. In that
  * case the result of this function determines if the webapp should show the
@@ -184,6 +189,11 @@ remoting.createNpapiPlugin = function(container) {
 remoting.isMe2MeInstallable = function() {
   /** @type {string} */
   var platform = navigator.platform;
+  // The chromoting host is currently not installable on ChromeOS.
+  // For Linux, we have a install package for Ubuntu but not other distros.
+  // Since we cannot tell from javascript alone the Linux distro the client is
+  // on, we don't show the daemon-control UI for Linux unless the host is
+  // installed.
   return platform == 'Win32' || platform == 'MacIntel';
 }
 
@@ -280,18 +290,29 @@ remoting.updateLocalHostState = function() {
 };
 
 /**
- * Log information about the current extension.
- * The extension manifest is parsed to extract this info.
+ * @return {string} Information about the current extension.
  */
-remoting.logExtensionInfo_ = function() {
+remoting.getExtensionInfo = function() {
   var v2OrLegacy = remoting.isAppsV2 ? " (v2)" : " (legacy)";
   var manifest = chrome.runtime.getManifest();
   if (manifest && manifest.version) {
     var name = chrome.i18n.getMessage('PRODUCT_NAME');
-    console.log(name + ' version: ' + manifest.version + v2OrLegacy);
+    return name + ' version: ' + manifest.version + v2OrLegacy;
   } else {
-    console.error('Failed to get product version. Corrupt manifest?');
+    return 'Failed to get product version. Corrupt manifest?';
   }
+};
+
+/**
+ * Returns Chrome version.
+ * @return {string?}
+ */
+remoting.getChromeVersion = function() {
+  var match = new RegExp('Chrome/([0-9.]*)').exec(navigator.userAgent);
+  if (match && (match.length >= 2)) {
+    return match[1];
+  }
+  return null;
 };
 
 /**

@@ -5,56 +5,39 @@
 #ifndef CHROME_BROWSER_DEVTOOLS_DEVTOOLS_WINDOW_H_
 #define CHROME_BROWSER_DEVTOOLS_DEVTOOLS_WINDOW_H_
 
-#include <string>
-#include <vector>
-
-#include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
-#include "base/strings/string16.h"
 #include "chrome/browser/devtools/devtools_contents_resizing_strategy.h"
-#include "chrome/browser/devtools/devtools_embedder_message_dispatcher.h"
-#include "chrome/browser/devtools/devtools_file_helper.h"
-#include "chrome/browser/devtools/devtools_file_system_indexer.h"
 #include "chrome/browser/devtools/devtools_toggle_action.h"
-#include "content/public/browser/devtools_client_host.h"
-#include "content/public/browser/devtools_frontend_host_delegate.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "chrome/browser/devtools/devtools_ui_bindings.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "ui/gfx/size.h"
+#include "content/public/browser/web_contents_observer.h"
 
 class Browser;
 class BrowserWindow;
 class DevToolsControllerTest;
-class Profile;
-
-namespace base {
-class Value;
-}
+class DevToolsEventForwarder;
 
 namespace content {
 class DevToolsAgentHost;
-class DevToolsClientHost;
-struct FileChooserParams;
+struct NativeWebKeyboardEvent;
 class RenderViewHost;
-class WebContents;
-}
-
-namespace IPC {
-class Message;
 }
 
 namespace user_prefs {
 class PrefRegistrySyncable;
 }
 
-class DevToolsWindow : private content::NotificationObserver,
-                       private content::WebContentsDelegate,
-                       private content::DevToolsFrontendHostDelegate,
-                       private DevToolsEmbedderMessageDispatcher::Delegate {
+class DevToolsWindow : public DevToolsUIBindings::Delegate,
+                       public content::WebContentsDelegate {
  public:
-  typedef base::Callback<void(bool)> InfoBarCallback;
+  class ObserverWithAccessor : public content::WebContentsObserver {
+   public:
+    explicit ObserverWithAccessor(content::WebContents* web_contents);
+    virtual ~ObserverWithAccessor();
+    content::WebContents* GetWebContents();
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(ObserverWithAccessor);
+  };
 
   static const char kDevToolsApp[];
 
@@ -68,13 +51,21 @@ class DevToolsWindow : private content::NotificationObserver,
   static DevToolsWindow* GetInstanceForInspectedRenderViewHost(
       content::RenderViewHost* inspected_rvh);
 
-  // Return the DevToolsWindow for the given WebContents if one exists and is
-  // docked, otherwise NULL. This method will return only fully initialized
-  // window ready to be presented in UI.
+  // Return the DevToolsWindow for the given WebContents if one exists,
+  // otherwise NULL.
+  static DevToolsWindow* GetInstanceForInspectedWebContents(
+      content::WebContents* inspected_web_contents);
+
+  // Return the docked DevTools WebContents for the given inspected WebContents
+  // if one exists and should be shown in browser window, otherwise NULL.
+  // This method will return only fully initialized window ready to be
+  // presented in UI.
+  // If |out_strategy| is not NULL, it will contain resizing strategy.
   // For immediately-ready-to-use but maybe not yet fully initialized DevTools
   // use |GetInstanceForInspectedRenderViewHost| instead.
-  static DevToolsWindow* GetDockedInstanceForInspectedTab(
-      content::WebContents* inspected_tab);
+  static content::WebContents* GetInTabWebContents(
+      content::WebContents* inspected_tab,
+      DevToolsContentsResizingStrategy* out_strategy);
 
   static bool IsDevToolsWindow(content::RenderViewHost* window_rvh);
 
@@ -112,26 +103,15 @@ class DevToolsWindow : private content::NotificationObserver,
   static void InspectElement(
       content::RenderViewHost* inspected_rvh, int x, int y);
 
-  // content::DevToolsFrontendHostDelegate:
-  virtual void InspectedContentsClosing() OVERRIDE;
-
-  content::WebContents* web_contents() { return web_contents_; }
-  Browser* browser() { return browser_; }  // For tests.
-
-  content::RenderViewHost* GetRenderViewHost();
-
-  // Inspected WebContents is placed over DevTools WebContents in docked mode.
-  // The following method returns the resizing strategy of inspected
-  // WebContents relative to DevTools WebContents.
-  const DevToolsContentsResizingStrategy& GetContentsResizingStrategy() const;
-
-  // Minimum size of the docked DevTools WebContents. This includes
-  // the overlaying inspected WebContents size.
-  gfx::Size GetMinimumSize() const;
+  Browser* browser_for_test() { return browser_; }
+  content::WebContents* web_contents_for_test() { return main_web_contents_; }
 
   // Sets closure to be called after load is done. If already loaded, calls
   // closure immediately.
   void SetLoadCompletedCallback(const base::Closure& closure);
+
+  // Forwards an unhandled keyboard event to the DevTools frontend.
+  bool ForwardKeyboardEvent(const content::NativeWebKeyboardEvent& event);
 
   // BeforeUnload interception ////////////////////////////////////////////////
 
@@ -247,28 +227,27 @@ class DevToolsWindow : private content::NotificationObserver,
   static DevToolsWindow* FindDevToolsWindow(content::DevToolsAgentHost*);
   static DevToolsWindow* AsDevToolsWindow(content::RenderViewHost*);
   static DevToolsWindow* CreateDevToolsWindowForWorker(Profile* profile);
-  static bool FindInspectedBrowserAndTabIndex(
-      content::WebContents* inspected_web_contents, Browser**, int* tab);
   static DevToolsWindow* ToggleDevToolsWindow(
       content::RenderViewHost* inspected_rvh,
       bool force_open,
       const DevToolsToggleAction& action);
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
   // content::WebContentsDelegate:
   virtual content::WebContents* OpenURLFromTab(
       content::WebContents* source,
       const content::OpenURLParams& params) OVERRIDE;
+  virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
   virtual void AddNewContents(content::WebContents* source,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
+  virtual void WebContentsCreated(content::WebContents* source_contents,
+                                  int opener_render_frame_id,
+                                  const base::string16& frame_name,
+                                  const GURL& target_url,
+                                  content::WebContents* new_contents) OVERRIDE;
   virtual void CloseContents(content::WebContents* source) OVERRIDE;
   virtual void ContentsZoomChange(bool zoom_in) OVERRIDE;
   virtual void BeforeUnloadFired(content::WebContents* tab,
@@ -295,60 +274,21 @@ class DevToolsWindow : private content::NotificationObserver,
       content::WebContents* source,
       const blink::WebGestureEvent& event) OVERRIDE;
 
-  // content::DevToolsFrontendHostDelegate override:
-  virtual void DispatchOnEmbedder(const std::string& message) OVERRIDE;
-
-  // DevToolsEmbedderMessageDispatcher::Delegate overrides:
+  // content::DevToolsUIBindings::Delegate overrides
   virtual void ActivateWindow() OVERRIDE;
-  virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
   virtual void CloseWindow() OVERRIDE;
-  virtual void SetContentsInsets(
-      int left, int top, int right, int bottom) OVERRIDE;
+  virtual void SetInspectedPageBounds(const gfx::Rect& rect) OVERRIDE;
   virtual void SetContentsResizingStrategy(
       const gfx::Insets& insets, const gfx::Size& min_size) OVERRIDE;
   virtual void InspectElementCompleted() OVERRIDE;
   virtual void MoveWindow(int x, int y) OVERRIDE;
   virtual void SetIsDocked(bool is_docked) OVERRIDE;
   virtual void OpenInNewTab(const std::string& url) OVERRIDE;
-  virtual void SaveToFile(const std::string& url,
-                          const std::string& content,
-                          bool save_as) OVERRIDE;
-  virtual void AppendToFile(const std::string& url,
-                            const std::string& content) OVERRIDE;
-  virtual void RequestFileSystems() OVERRIDE;
-  virtual void AddFileSystem() OVERRIDE;
-  virtual void RemoveFileSystem(const std::string& file_system_path) OVERRIDE;
-  virtual void UpgradeDraggedFileSystemPermissions(
-      const std::string& file_system_url) OVERRIDE;
-  virtual void IndexPath(int request_id,
-                         const std::string& file_system_path) OVERRIDE;
-  virtual void StopIndexing(int request_id) OVERRIDE;
-  virtual void SearchInPath(int request_id,
-                            const std::string& file_system_path,
-                            const std::string& query) OVERRIDE;
-  virtual void ZoomIn() OVERRIDE;
-  virtual void ZoomOut() OVERRIDE;
-  virtual void ResetZoom() OVERRIDE;
-
-  // DevToolsFileHelper callbacks.
-  void FileSavedAs(const std::string& url);
-  void CanceledFileSaveAs(const std::string& url);
-  void AppendedTo(const std::string& url);
-  void FileSystemsLoaded(
-      const std::vector<DevToolsFileHelper::FileSystem>& file_systems);
-  void FileSystemAdded(const DevToolsFileHelper::FileSystem& file_system);
-  void IndexingTotalWorkCalculated(int request_id,
-                                   const std::string& file_system_path,
-                                   int total_work);
-  void IndexingWorked(int request_id,
-                      const std::string& file_system_path,
-                      int worked);
-  void IndexingDone(int request_id, const std::string& file_system_path);
-  void SearchCompleted(int request_id,
-                       const std::string& file_system_path,
-                       const std::vector<std::string>& file_paths);
-  void ShowDevToolsConfirmInfoBar(const base::string16& message,
-                                  const InfoBarCallback& callback);
+  virtual void SetWhitelistedShortcuts(const std::string& message) OVERRIDE;
+  virtual void InspectedContentsClosing() OVERRIDE;
+  virtual void OnLoadCompleted() OVERRIDE;
+  virtual InfoBarService* GetInfoBarService() OVERRIDE;
+  virtual void RenderProcessGone() OVERRIDE;
 
   void CreateDevToolsBrowser();
   BrowserWindow* GetInspectedBrowserWindow();
@@ -357,48 +297,32 @@ class DevToolsWindow : private content::NotificationObserver,
   void DoAction(const DevToolsToggleAction& action);
   void LoadCompleted();
   void SetIsDockedAndShowImmediatelyForTest(bool is_docked);
-  void UpdateTheme();
-  void AddDevToolsExtensionsToClient();
-  void CallClientFunction(const std::string& function_name,
-                          const base::Value* arg1,
-                          const base::Value* arg2,
-                          const base::Value* arg3);
   void UpdateBrowserToolbar();
+  void UpdateBrowserWindow();
   content::WebContents* GetInspectedWebContents();
-  void DocumentOnLoadCompletedInMainFrame();
 
-  class InspectedWebContentsObserver;
-  scoped_ptr<InspectedWebContentsObserver> inspected_contents_observer_;
-  class FrontendWebContentsObserver;
-  friend class FrontendWebContentsObserver;
-  scoped_ptr<FrontendWebContentsObserver> frontend_contents_observer_;
+  scoped_ptr<ObserverWithAccessor> inspected_contents_observer_;
 
   Profile* profile_;
-  content::WebContents* web_contents_;
+  content::WebContents* main_web_contents_;
+  content::WebContents* toolbox_web_contents_;
+  DevToolsUIBindings* bindings_;
   Browser* browser_;
   bool is_docked_;
-  bool can_dock_;
+  const bool can_dock_;
   LoadState load_state_;
   DevToolsToggleAction action_on_load_;
   bool ignore_set_is_docked_;
-  content::NotificationRegistrar registrar_;
-  scoped_ptr<content::DevToolsClientHost> frontend_host_;
-  scoped_ptr<DevToolsFileHelper> file_helper_;
-  scoped_refptr<DevToolsFileSystemIndexer> file_system_indexer_;
-  typedef std::map<
-      int,
-      scoped_refptr<DevToolsFileSystemIndexer::FileSystemIndexingJob> >
-      IndexingJobsMap;
-  IndexingJobsMap indexing_jobs_;
   DevToolsContentsResizingStrategy contents_resizing_strategy_;
   // True if we're in the process of handling a beforeunload event originating
   // from the inspected webcontents, see InterceptPageBeforeUnload for details.
   bool intercepted_page_beforeunload_;
   base::Closure load_completed_callback_;
 
-  scoped_ptr<DevToolsEmbedderMessageDispatcher> embedder_message_dispatcher_;
-  base::WeakPtrFactory<DevToolsWindow> weak_factory_;
   base::TimeTicks inspect_element_start_time_;
+  scoped_ptr<DevToolsEventForwarder> event_forwarder_;
+
+  friend class DevToolsEventForwarder;
   DISALLOW_COPY_AND_ASSIGN(DevToolsWindow);
 };
 

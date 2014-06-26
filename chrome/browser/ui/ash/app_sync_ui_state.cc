@@ -7,6 +7,7 @@
 #include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
@@ -16,10 +17,9 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "extensions/browser/extension_system.h"
-#include "extensions/browser/pending_extension_manager.h"
 
 #if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #endif
 
 namespace {
@@ -76,7 +76,7 @@ void AppSyncUIState::StartObserving() {
   DCHECK(!sync_service_);
 
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_));
 
   sync_service_ = ProfileSyncServiceFactory::GetForProfile(profile_);
@@ -140,7 +140,7 @@ void AppSyncUIState::OnMaxSyncingTimer() {
 void AppSyncUIState::Observe(int type,
                              const content::NotificationSource& source,
                              const content::NotificationDetails& details) {
-  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_LOADED, type);
+  DCHECK_EQ(chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED, type);
   CheckAppSync();
 }
 

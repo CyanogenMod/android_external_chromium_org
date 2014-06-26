@@ -5,11 +5,11 @@
 #include "ui/views/corewm/tooltip_aura.h"
 
 #include "base/strings/utf_string_conversions.h"
+#include "ui/aura/test/aura_test_base.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/text_elider.h"
 #include "ui/gfx/text_utils.h"
-#include "ui/views/test/views_test_base.h"
 
 using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
@@ -17,7 +17,7 @@ using base::UTF8ToUTF16;
 namespace views {
 namespace corewm {
 
-typedef ViewsTestBase TooltipAuraTest;
+typedef aura::test::AuraTestBase TooltipAuraTest;
 
 TEST_F(TooltipAuraTest, TrimTooltipToFitTests) {
   const gfx::FontList font_list;
@@ -86,8 +86,8 @@ TEST_F(TooltipAuraTest, TrimTooltipToFitTests) {
   EXPECT_NEAR(max_pixel_width, width, 5);
   EXPECT_EQ(1, line_count);
   EXPECT_EQ(gfx::ElideText(UTF8ToUTF16(std::string('a', max_pixel_width)),
-                           font_list,
-                           max_pixel_width, gfx::ELIDE_AT_END), tooltip);
+                           font_list, max_pixel_width, gfx::ELIDE_TAIL),
+            tooltip);
 #endif
 
   // Normal small tooltip should stay as is.

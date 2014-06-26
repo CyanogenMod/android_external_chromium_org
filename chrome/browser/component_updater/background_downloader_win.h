@@ -5,8 +5,6 @@
 #ifndef CHROME_BROWSER_COMPONENT_UPDATER_BACKGROUND_DOWNLOADER_WIN_H_
 #define CHROME_BROWSER_COMPONENT_UPDATER_BACKGROUND_DOWNLOADER_WIN_H_
 
-#include "chrome/browser/component_updater/crx_downloader.h"
-
 #include <windows.h>
 #include <bits.h>
 
@@ -14,6 +12,11 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "base/win/scoped_comptr.h"
+#include "chrome/browser/component_updater/crx_downloader.h"
+
+namespace base {
+class FilePath;
+}
 
 namespace component_updater {
 
@@ -28,8 +31,7 @@ class BackgroundDownloader : public CrxDownloader {
   friend class CrxDownloader;
   BackgroundDownloader(scoped_ptr<CrxDownloader> successor,
                        net::URLRequestContextGetter* context_getter,
-                       scoped_refptr<base::SequencedTaskRunner> task_runner,
-                       const DownloadCallback& download_callback);
+                       scoped_refptr<base::SequencedTaskRunner> task_runner);
   virtual ~BackgroundDownloader();
 
  private:
@@ -69,6 +71,10 @@ class BackgroundDownloader : public CrxDownloader {
   // has not been making progress toward completion.
   bool IsStuck();
 
+  // Makes the downloaded file available to the caller by renaming the
+  // temporary file to its destination and removing it from the BITS queue.
+  HRESULT CompleteJob();
+
   net::URLRequestContextGetter* context_getter_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
@@ -86,7 +92,11 @@ class BackgroundDownloader : public CrxDownloader {
   // Contains the time when the BITS job is last seen making progress.
   base::Time job_stuck_begin_time_;
 
+  // True if EndDownload was called.
   bool is_completed_;
+
+  // Contains the path of the downloaded file if the download was successful.
+  base::FilePath response_;
 
   DISALLOW_COPY_AND_ASSIGN(BackgroundDownloader);
 };
@@ -94,4 +104,3 @@ class BackgroundDownloader : public CrxDownloader {
 }  // namespace component_updater
 
 #endif  // CHROME_BROWSER_COMPONENT_UPDATER_BACKGROUND_DOWNLOADER_WIN_H_
-

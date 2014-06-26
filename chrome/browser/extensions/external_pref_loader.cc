@@ -126,8 +126,8 @@ void ExternalPrefLoader::LoadOnFileThread() {
     if (!prefs->empty())
       LOG(WARNING) << "You are using an old-style extension deployment method "
                       "(external_extensions.json), which will soon be "
-                      "deprecated. (see http://code.google.com/chrome/"
-                      "extensions/external_extensions.html )";
+                      "deprecated. (see http://developer.chrome.com/"
+                      "extensions/external_extensions.html)";
 
     ReadStandaloneExtensionPrefFiles(prefs.get());
   }
@@ -164,7 +164,7 @@ void ExternalPrefLoader::ReadExternalExtensionPrefFile(
 
   if (IsOptionSet(ENSURE_PATH_CONTROLLED_BY_ADMIN)) {
 #if defined(OS_MACOSX)
-    if (!file_util::VerifyPathControlledByAdmin(json_file)) {
+    if (!base::VerifyPathControlledByAdmin(json_file)) {
       LOG(ERROR) << "Can not read external extensions source.  The file "
                  << json_file.value() << " and every directory in its path, "
                  << "must be owned by root, have group \"admin\", and not be "
@@ -175,7 +175,7 @@ void ExternalPrefLoader::ReadExternalExtensionPrefFile(
     }
 #else
     // The only platform that uses this check is Mac OS.  If you add one,
-    // you need to implement file_util::VerifyPathControlledByAdmin() for
+    // you need to implement base::VerifyPathControlledByAdmin() for
     // that platform.
     NOTREACHED();
 #endif  // defined(OS_MACOSX)
@@ -210,7 +210,7 @@ void ExternalPrefLoader::ReadStandaloneExtensionPrefFiles(
 
     std::string id =
 #if defined(OS_WIN)
-        WideToASCII(
+        base::UTF16ToASCII(
             extension_candidate_path.RemoveExtension().BaseName().value());
 #elif defined(OS_POSIX)
         extension_candidate_path.RemoveExtension().BaseName().value().c_str();
@@ -251,4 +251,4 @@ const base::FilePath ExternalTestingLoader::GetBaseCrxFilePath() {
   return fake_base_path_;
 }
 
-}  // extensions
+}  // namespace extensions

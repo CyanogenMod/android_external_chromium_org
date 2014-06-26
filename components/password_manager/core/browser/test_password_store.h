@@ -16,8 +16,10 @@ namespace content {
 class BrowserContext;
 }
 
+namespace password_manager {
+
 // A very simple PasswordStore implementation that keeps all of the passwords
-// in memory and does all it's manipulations on the main thread. Since this
+// in memory and does all its manipulations on the main thread. Since this
 // is only used for testing, only the parts of the interface that are needed
 // for testing have been implemented.
 class TestPasswordStore : public PasswordStore {
@@ -27,8 +29,13 @@ class TestPasswordStore : public PasswordStore {
   typedef std::map<std::string /* signon_realm */,
                    std::vector<autofill::PasswordForm> > PasswordMap;
 
-  PasswordMap stored_passwords();
+  const PasswordMap& stored_passwords() const;
   void Clear();
+
+  // Returns true if no passwords are stored in the store. Note that this is not
+  // as simple as asking whether stored_passwords().empty(), because the map can
+  // have entries of size 0.
+  bool IsEmpty() const;
 
  protected:
   virtual ~TestPasswordStore();
@@ -53,7 +60,11 @@ class TestPasswordStore : public PasswordStore {
   // Unused portions of PasswordStore interface
   virtual void ReportMetricsImpl() OVERRIDE {}
   virtual PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
-      const base::Time& begin, const base::Time& end) OVERRIDE;
+      base::Time begin,
+      base::Time end) OVERRIDE;
+  virtual PasswordStoreChangeList RemoveLoginsSyncedBetweenImpl(
+      base::Time delete_begin,
+      base::Time delete_end) OVERRIDE;
   virtual void GetAutofillableLoginsImpl(
       PasswordStore::GetLoginsRequest* request) OVERRIDE {}
   virtual void GetBlacklistLoginsImpl(
@@ -68,5 +79,7 @@ class TestPasswordStore : public PasswordStore {
 
   DISALLOW_COPY_AND_ASSIGN(TestPasswordStore);
 };
+
+}  // namespace password_manager
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_TEST_PASSWORD_STORE_H_

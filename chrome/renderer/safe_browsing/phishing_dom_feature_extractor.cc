@@ -19,7 +19,7 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebElementCollection.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 namespace safe_browsing {
@@ -178,15 +178,15 @@ void PhishingDOMFeatureExtractor::ExtractFeaturesWithTimeout() {
 
     for (; !cur_element.isNull();
          cur_element = cur_frame_data_->elements.nextItem()) {
-      if (cur_element.hasTagName("a")) {
+      if (cur_element.hasHTMLTagName("a")) {
         HandleLink(cur_element);
-      } else if (cur_element.hasTagName("form")) {
+      } else if (cur_element.hasHTMLTagName("form")) {
         HandleForm(cur_element);
-      } else if (cur_element.hasTagName("img")) {
+      } else if (cur_element.hasHTMLTagName("img")) {
         HandleImage(cur_element);
-      } else if (cur_element.hasTagName("input")) {
+      } else if (cur_element.hasHTMLTagName("input")) {
         HandleInput(cur_element);
-      } else if (cur_element.hasTagName("script")) {
+      } else if (cur_element.hasHTMLTagName("script")) {
         HandleScript(cur_element);
       }
 

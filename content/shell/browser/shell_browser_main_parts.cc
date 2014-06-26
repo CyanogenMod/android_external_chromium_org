@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
-#include "cc/base/switches.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
@@ -23,8 +22,8 @@
 #include "content/shell/browser/shell_net_log.h"
 #include "content/shell/common/shell_switches.h"
 #include "grit/net_resources.h"
+#include "net/base/filename_util.h"
 #include "net/base/net_module.h"
-#include "net/base/net_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "url/gurl.h"
 #include "webkit/browser/quota/quota_manager.h"
@@ -42,9 +41,9 @@
 
 #if defined(USE_AURA) && defined(USE_X11)
 #include "ui/events/x/touch_factory_x11.h"
-#if !defined(OS_CHROMEOS)
-#include "ui/base/ime/input_method_initializer.h"
 #endif
+#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(OS_LINUX)
+#include "ui/base/ime/input_method_initializer.h"
 #endif
 
 namespace content {
@@ -109,15 +108,12 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 }
 
 void ShellBrowserMainParts::PreEarlyInitialization() {
-#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(USE_X11)
+#if !defined(OS_CHROMEOS) && defined(USE_AURA) && defined(OS_LINUX)
   ui::InitializeInputMethodForTesting();
 #endif
 #if defined(OS_ANDROID)
   net::NetworkChangeNotifier::SetFactory(
       new net::NetworkChangeNotifierFactoryAndroid());
-
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      cc::switches::kCompositeToMailbox);
 #endif
 }
 

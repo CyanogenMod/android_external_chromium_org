@@ -19,7 +19,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/metro.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
-#include "chrome/browser/favicon/favicon_util.h"
 #include "chrome/common/chrome_paths.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
@@ -108,9 +107,9 @@ bool CreateSiteSpecificLogo(const SkBitmap& bitmap,
     return false;
 
   *logo_path = logo_dir.Append(tile_id).ReplaceExtension(L".png");
-  return file_util::WriteFile(*logo_path,
-                              reinterpret_cast<char*>(&logo_png[0]),
-                              logo_png.size()) > 0;
+  return base::WriteFile(*logo_path,
+                         reinterpret_cast<char*>(&logo_png[0]),
+                         logo_png.size()) > 0;
 }
 
 // Get the path to the backup logo. If the backup logo already exists in
@@ -179,7 +178,7 @@ PinPageTaskRunner::PinPageTaskRunner(const base::string16& title,
       favicon_(favicon) {}
 
 void PinPageTaskRunner::Run() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   content::BrowserThread::PostTask(
       content::BrowserThread::FILE,
@@ -188,7 +187,7 @@ void PinPageTaskRunner::Run() {
 }
 
 void PinPageTaskRunner::RunOnFileThread() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::FILE);
 
   base::string16 tile_id = GenerateTileId(url_);
   base::FilePath logo_dir = GetTileImagesDir();
@@ -277,7 +276,7 @@ MetroPinTabHelper::FaviconChooser::FaviconChooser(
           best_candidate_(history_bitmap) {}
 
 void MetroPinTabHelper::FaviconChooser::UseChosenCandidate() {
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   scoped_refptr<PinPageTaskRunner> runner(
       new PinPageTaskRunner(title_, url_, best_candidate_));
   runner->Run();
@@ -290,7 +289,7 @@ void MetroPinTabHelper::FaviconChooser::UpdateCandidate(
     const std::vector<SkBitmap>& bitmaps) {
   const int kMaxIconSize = 32;
 
-  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
   std::set<int>::iterator iter = in_progress_requests_.find(id);
   // Check that this request is one of ours.
@@ -419,7 +418,6 @@ void MetroPinTabHelper::DidNavigateMainFrame(
 }
 
 void MetroPinTabHelper::DidUpdateFaviconURL(
-    int32 page_id,
     const std::vector<content::FaviconURL>& candidates) {
   favicon_url_candidates_ = candidates;
 }

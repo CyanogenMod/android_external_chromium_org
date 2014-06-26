@@ -7,63 +7,90 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
-#include "base/values.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "base/scoped_observer.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_function.h"
-#include "extensions/common/extension.h"
-
-class Profile;
+#include "extensions/browser/extension_registry_observer.h"
 
 namespace content {
+class BrowserContext;
 class StreamHandle;
 }
 
 namespace extensions {
+class ExtensionRegistry;
 
-class StreamsPrivateAPI : public ProfileKeyedAPI,
-                          public content::NotificationObserver {
+class StreamsPrivateAPI : public BrowserContextKeyedAPI,
+                          public ExtensionRegistryObserver {
  public:
-  // Convenience method to get the StreamsPrivateAPI for a profile.
-  static StreamsPrivateAPI* Get(Profile* profile);
+  // Convenience method to get the StreamsPrivateAPI for a BrowserContext.
+  static StreamsPrivateAPI* Get(content::BrowserContext* context);
 
-  explicit StreamsPrivateAPI(Profile* profile);
+  explicit StreamsPrivateAPI(content::BrowserContext* context);
   virtual ~StreamsPrivateAPI();
 
+  // Send the onExecuteMimeTypeHandler event to |extension_id|.
+  // |web_contents| is used to determine the tabId where the document is being
+  // opened. The data for the document will be readable from |stream|, and
+  // should be |expected_content_size| bytes long. If the viewer is being opened
+  // in a BrowserPlugin, specify a non-empty |view_id| of the plugin.
   void ExecuteMimeTypeHandler(const std::string& extension_id,
-                              const content::WebContents* web_contents,
+                              content::WebContents* web_contents,
                               scoped_ptr<content::StreamHandle> stream,
+                              const std::string& view_id,
                               int64 expected_content_size);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<StreamsPrivateAPI>* GetFactoryInstance();
+  void AbortStream(const std::string& extension_id,
+                   const GURL& stream_url,
+                   const base::Closure& callback);
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<StreamsPrivateAPI>* GetFactoryInstance();
 
  private:
-  friend class ProfileKeyedAPIFactory<StreamsPrivateAPI>;
+  friend class BrowserContextKeyedAPIFactory<StreamsPrivateAPI>;
   typedef std::map<std::string,
                    std::map<GURL,
                             linked_ptr<content::StreamHandle> > > StreamMap;
 
-  // ProfileKeyedAPI implementation.
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "StreamsPrivateAPI";
   }
   static const bool kServiceIsNULLWhileTesting = true;
   static const bool kServiceRedirectedInIncognito = true;
 
-  Profile* const profile_;
-  content::NotificationRegistrar registrar_;
+  content::BrowserContext* const browser_context_;
   StreamMap streams_;
   base::WeakPtrFactory<StreamsPrivateAPI> weak_ptr_factory_;
+
+  // Listen to extension unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
+};
+
+class StreamsPrivateAbortFunction : public UIThreadExtensionFunction {
+ public:
+  StreamsPrivateAbortFunction();
+  DECLARE_EXTENSION_FUNCTION("streamsPrivate.abort", STREAMSPRIVATE_ABORT)
+
+ protected:
+  virtual ~StreamsPrivateAbortFunction() {}
+
+  // ExtensionFunction:
+  virtual ExtensionFunction::ResponseAction Run() OVERRIDE;
+
+ private:
+  void OnClose();
+
+  std::string stream_url_;
 };
 
 }  // namespace extensions

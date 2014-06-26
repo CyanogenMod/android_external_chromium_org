@@ -11,6 +11,7 @@
 #include <algorithm>
 
 #include "nacl_io/kernel_handle.h"
+#include "nacl_io/log.h"
 #include "nacl_io/pepper_interface.h"
 #include "nacl_io/socket/tcp_node.h"
 #include "nacl_io/stream/stream_fs.h"
@@ -287,8 +288,10 @@ Error TcpNode::Init(int open_flags) {
   if (err != 0)
     return err;
 
-  if (TCPInterface() == NULL)
+  if (TCPInterface() == NULL) {
+    LOG_ERROR("Got NULL interface: TCP");
     return EACCES;
+  }
 
   if (socket_resource_ != 0) {
     // TCP sockets that are contructed with an existing socket_resource_
@@ -299,15 +302,19 @@ Error TcpNode::Init(int open_flags) {
   } else {
     socket_resource_ =
         TCPInterface()->Create(filesystem_->ppapi()->GetInstance());
-    if (0 == socket_resource_)
+    if (0 == socket_resource_) {
+      LOG_ERROR("Unable to create TCP resource.");
       return EACCES;
+    }
     SetStreamFlags(SSF_CAN_CONNECT);
   }
 
   return 0;
 }
 
-EventEmitter* TcpNode::GetEventEmitter() { return emitter_.get(); }
+EventEmitter* TcpNode::GetEventEmitter() {
+  return emitter_.get();
+}
 
 void TcpNode::SetError_Locked(int pp_error_num) {
   SocketNode::SetError_Locked(pp_error_num);
@@ -318,7 +325,7 @@ Error TcpNode::GetSockOpt(int lvl, int optname, void* optval, socklen_t* len) {
   if (lvl == IPPROTO_TCP && optname == TCP_NODELAY) {
     AUTO_LOCK(node_lock_);
     int value = tcp_nodelay_;
-    socklen_t value_len = sizeof(value);
+    socklen_t value_len = static_cast<socklen_t>(sizeof(value));
     int copy_bytes = std::min(value_len, *len);
     memcpy(optval, &value, copy_bytes);
     *len = value_len;
@@ -345,7 +352,7 @@ Error TcpNode::SetSockOpt(int lvl,
                           const void* optval,
                           socklen_t len) {
   if (lvl == IPPROTO_TCP && optname == TCP_NODELAY) {
-    if (len < sizeof(int))
+    if (static_cast<size_t>(len) < sizeof(int))
       return EINVAL;
     AUTO_LOCK(node_lock_);
     tcp_nodelay_ = *static_cast<const int*>(optval) != 0;
@@ -481,6 +488,7 @@ Error TcpNode::Shutdown(int how) {
   AUTO_LOCK(node_lock_);
   if (!IsConnected())
     return ENOTCONN;
+
   {
     AUTO_LOCK(emitter_->GetLock());
     emitter_->SetError_Locked();

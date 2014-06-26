@@ -107,13 +107,13 @@ void AddDefaultFieldValue(ModelType datatype,
     case FAVICON_TRACKING:
       specifics->mutable_favicon_tracking();
       break;
-    case MANAGED_USER_SETTINGS:
+    case SUPERVISED_USER_SETTINGS:
       specifics->mutable_managed_user_setting();
       break;
-    case MANAGED_USERS:
+    case SUPERVISED_USERS:
       specifics->mutable_managed_user();
       break;
-    case MANAGED_USER_SHARED_SETTINGS:
+    case SUPERVISED_USER_SHARED_SETTINGS:
       specifics->mutable_managed_user_shared_setting();
       break;
     case ARTICLES:
@@ -135,59 +135,41 @@ ModelType GetModelTypeFromSpecificsFieldNumber(int field_number) {
 }
 
 int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
-  if (!ProtocolTypes().Has(model_type)) {
-    NOTREACHED() << "Only protocol types have field values.";
-    return 0;
-  }
+  DCHECK(ProtocolTypes().Has(model_type))
+      << "Only protocol types have field values.";
   switch (model_type) {
     case BOOKMARKS:
       return sync_pb::EntitySpecifics::kBookmarkFieldNumber;
-      break;
     case PASSWORDS:
       return sync_pb::EntitySpecifics::kPasswordFieldNumber;
-      break;
     case PREFERENCES:
       return sync_pb::EntitySpecifics::kPreferenceFieldNumber;
-      break;
     case AUTOFILL:
       return sync_pb::EntitySpecifics::kAutofillFieldNumber;
-      break;
     case AUTOFILL_PROFILE:
       return sync_pb::EntitySpecifics::kAutofillProfileFieldNumber;
-      break;
     case THEMES:
       return sync_pb::EntitySpecifics::kThemeFieldNumber;
-      break;
     case TYPED_URLS:
       return sync_pb::EntitySpecifics::kTypedUrlFieldNumber;
-      break;
     case EXTENSIONS:
       return sync_pb::EntitySpecifics::kExtensionFieldNumber;
-      break;
     case NIGORI:
       return sync_pb::EntitySpecifics::kNigoriFieldNumber;
-      break;
     case SEARCH_ENGINES:
       return sync_pb::EntitySpecifics::kSearchEngineFieldNumber;
-      break;
     case SESSIONS:
       return sync_pb::EntitySpecifics::kSessionFieldNumber;
-      break;
     case APPS:
       return sync_pb::EntitySpecifics::kAppFieldNumber;
-      break;
     case APP_LIST:
       return sync_pb::EntitySpecifics::kAppListFieldNumber;
-      break;
     case APP_SETTINGS:
       return sync_pb::EntitySpecifics::kAppSettingFieldNumber;
-      break;
     case EXTENSION_SETTINGS:
       return sync_pb::EntitySpecifics::kExtensionSettingFieldNumber;
-      break;
     case APP_NOTIFICATIONS:
       return sync_pb::EntitySpecifics::kAppNotificationFieldNumber;
-      break;
     case HISTORY_DELETE_DIRECTIVES:
       return sync_pb::EntitySpecifics::kHistoryDeleteDirectiveFieldNumber;
     case SYNCED_NOTIFICATIONS:
@@ -196,25 +178,21 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       return sync_pb::EntitySpecifics::kSyncedNotificationAppInfoFieldNumber;
     case DEVICE_INFO:
       return sync_pb::EntitySpecifics::kDeviceInfoFieldNumber;
-      break;
     case EXPERIMENTS:
       return sync_pb::EntitySpecifics::kExperimentsFieldNumber;
-      break;
     case PRIORITY_PREFERENCES:
       return sync_pb::EntitySpecifics::kPriorityPreferenceFieldNumber;
-      break;
     case DICTIONARY:
       return sync_pb::EntitySpecifics::kDictionaryFieldNumber;
-      break;
     case FAVICON_IMAGES:
       return sync_pb::EntitySpecifics::kFaviconImageFieldNumber;
     case FAVICON_TRACKING:
       return sync_pb::EntitySpecifics::kFaviconTrackingFieldNumber;
-    case MANAGED_USER_SETTINGS:
+    case SUPERVISED_USER_SETTINGS:
       return sync_pb::EntitySpecifics::kManagedUserSettingFieldNumber;
-    case MANAGED_USERS:
+    case SUPERVISED_USERS:
       return sync_pb::EntitySpecifics::kManagedUserFieldNumber;
-    case MANAGED_USER_SHARED_SETTINGS:
+    case SUPERVISED_USER_SHARED_SETTINGS:
       return sync_pb::EntitySpecifics::kManagedUserSharedSettingFieldNumber;
     case ARTICLES:
       return sync_pb::EntitySpecifics::kArticleFieldNumber;
@@ -222,9 +200,6 @@ int GetSpecificsFieldNumberFromModelType(ModelType model_type) {
       NOTREACHED() << "No known extension for model type.";
       return 0;
   }
-  NOTREACHED() << "Needed for linux_keep_shadow_stacks because of "
-               << "http://gcc.gnu.org/bugzilla/show_bug.cgi?id=20681";
-  return 0;
 }
 
 FullModelTypeSet ToFullModelTypeSet(ModelTypeSet in) {
@@ -338,13 +313,13 @@ ModelType GetModelTypeFromSpecifics(const sync_pb::EntitySpecifics& specifics) {
     return FAVICON_TRACKING;
 
   if (specifics.has_managed_user_setting())
-    return MANAGED_USER_SETTINGS;
+    return SUPERVISED_USER_SETTINGS;
 
   if (specifics.has_managed_user())
-    return MANAGED_USERS;
+    return SUPERVISED_USERS;
 
   if (specifics.has_managed_user_shared_setting())
-    return MANAGED_USER_SHARED_SETTINGS;
+    return SUPERVISED_USER_SHARED_SETTINGS;
 
   if (specifics.has_article())
     return ARTICLES;
@@ -401,13 +376,13 @@ ModelTypeSet EncryptableUserTypes() {
   // Priority preferences are not encrypted because they might be synced before
   // encryption is ready.
   encryptable_user_types.Remove(PRIORITY_PREFERENCES);
-  // Managed user settings are not encrypted since they are set server-side.
-  encryptable_user_types.Remove(MANAGED_USER_SETTINGS);
-  // Managed users are not encrypted since they are managed server-side.
-  encryptable_user_types.Remove(MANAGED_USERS);
-  // Managed user shared settings are not encrypted since they are managed
+  // Supervised user settings are not encrypted since they are set server-side.
+  encryptable_user_types.Remove(SUPERVISED_USER_SETTINGS);
+  // Supervised users are not encrypted since they are managed server-side.
+  encryptable_user_types.Remove(SUPERVISED_USERS);
+  // Supervised user shared settings are not encrypted since they are managed
   // server-side and shared between manager and supervised user.
-  encryptable_user_types.Remove(MANAGED_USER_SHARED_SETTINGS);
+  encryptable_user_types.Remove(SUPERVISED_USER_SHARED_SETTINGS);
   // Proxy types have no sync representation and are therefore not encrypted.
   // Note however that proxy types map to one or more protocol types, which
   // may or may not be encrypted themselves.
@@ -447,9 +422,8 @@ ModelTypeSet CoreTypes() {
 
   // The following are low priority core types.
   result.Put(SYNCED_NOTIFICATIONS);
-  result.Put(MANAGED_USER_SHARED_SETTINGS);
-  // TODO(petewil): Add synced notification app info once crbug.com/339094 is
-  // fixed.
+  result.Put(SYNCED_NOTIFICATION_APP_INFO);
+  result.Put(SUPERVISED_USER_SHARED_SETTINGS);
 
   return result;
 }
@@ -459,8 +433,24 @@ ModelTypeSet PriorityCoreTypes() {
   result.PutAll(ControlTypes());
 
   // The following are non-control core types.
-  result.Put(MANAGED_USERS);
+  result.Put(SUPERVISED_USERS);
+  result.Put(SUPERVISED_USER_SETTINGS);
 
+  return result;
+}
+
+ModelTypeSet BackupTypes() {
+  ModelTypeSet result;
+  result.Put(BOOKMARKS);
+  result.Put(PREFERENCES);
+  result.Put(THEMES);
+  result.Put(EXTENSIONS);
+  result.Put(SEARCH_ENGINES);
+  result.Put(APPS);
+  result.Put(APP_LIST);
+  result.Put(APP_SETTINGS);
+  result.Put(EXTENSION_SETTINGS);
+  result.Put(PRIORITY_PREFERENCES);
   return result;
 }
 
@@ -523,11 +513,11 @@ const char* ModelTypeToString(ModelType model_type) {
       return "Favicon Images";
     case FAVICON_TRACKING:
       return "Favicon Tracking";
-    case MANAGED_USER_SETTINGS:
+    case SUPERVISED_USER_SETTINGS:
       return "Managed User Settings";
-    case MANAGED_USERS:
+    case SUPERVISED_USERS:
       return "Managed Users";
-    case MANAGED_USER_SHARED_SETTINGS:
+    case SUPERVISED_USER_SHARED_SETTINGS:
       return "Managed User Shared Settings";
     case ARTICLES:
       return "Articles";
@@ -598,15 +588,15 @@ int ModelTypeToHistogramInt(ModelType model_type) {
       return 24;
     case PROXY_TABS:
       return 25;
-    case MANAGED_USER_SETTINGS:
+    case SUPERVISED_USER_SETTINGS:
       return 26;
-    case MANAGED_USERS:
+    case SUPERVISED_USERS:
       return 27;
     case ARTICLES:
       return 28;
     case APP_LIST:
       return 29;
-    case MANAGED_USER_SHARED_SETTINGS:
+    case SUPERVISED_USER_SHARED_SETTINGS:
       return 30;
     case SYNCED_NOTIFICATION_APP_INFO:
       return 31;
@@ -696,11 +686,11 @@ ModelType ModelTypeFromString(const std::string& model_type_string) {
   else if (model_type_string == "Favicon Tracking")
     return FAVICON_TRACKING;
   else if (model_type_string == "Managed User Settings")
-    return MANAGED_USER_SETTINGS;
+    return SUPERVISED_USER_SETTINGS;
   else if (model_type_string == "Managed Users")
-    return MANAGED_USERS;
+    return SUPERVISED_USERS;
   else if (model_type_string == "Managed User Shared Settings")
-    return MANAGED_USER_SHARED_SETTINGS;
+    return SUPERVISED_USER_SHARED_SETTINGS;
   else if (model_type_string == "Articles")
     return ARTICLES;
   else if (model_type_string == "Tabs")
@@ -720,6 +710,30 @@ std::string ModelTypeSetToString(ModelTypeSet model_types) {
     result += ModelTypeToString(it.Get());
   }
   return result;
+}
+
+ModelTypeSet ModelTypeSetFromString(const std::string& model_types_string) {
+  std::string working_copy = model_types_string;
+  ModelTypeSet model_types;
+  while (!working_copy.empty()) {
+    // Remove any leading spaces.
+    working_copy = working_copy.substr(working_copy.find_first_not_of(' '));
+    if (working_copy.empty())
+      break;
+    std::string type_str;
+    size_t end = working_copy.find(',');
+    if (end == std::string::npos) {
+      end = working_copy.length() - 1;
+      type_str = working_copy;
+    } else {
+      type_str = working_copy.substr(0, end);
+    }
+    syncer::ModelType type = ModelTypeFromString(type_str);
+    if (IsRealDataType(type))
+      model_types.Put(type);
+    working_copy = working_copy.substr(end + 1);
+  }
+  return model_types;
 }
 
 base::ListValue* ModelTypeSetToValue(ModelTypeSet model_types) {
@@ -795,11 +809,11 @@ std::string ModelTypeToRootTag(ModelType type) {
       return "google_chrome_favicon_images";
     case FAVICON_TRACKING:
       return "google_chrome_favicon_tracking";
-    case MANAGED_USER_SETTINGS:
+    case SUPERVISED_USER_SETTINGS:
       return "google_chrome_managed_user_settings";
-    case MANAGED_USERS:
+    case SUPERVISED_USERS:
       return "google_chrome_managed_users";
-    case MANAGED_USER_SHARED_SETTINGS:
+    case SUPERVISED_USER_SHARED_SETTINGS:
       return "google_chrome_managed_user_shared_settings";
     case ARTICLES:
       return "google_chrome_articles";
@@ -842,9 +856,9 @@ const char kPriorityPreferenceNotificationType[] = "PRIORITY_PREFERENCE";
 const char kDictionaryNotificationType[] = "DICTIONARY";
 const char kFaviconImageNotificationType[] = "FAVICON_IMAGE";
 const char kFaviconTrackingNotificationType[] = "FAVICON_TRACKING";
-const char kManagedUserSettingNotificationType[] = "MANAGED_USER_SETTING";
-const char kManagedUserNotificationType[] = "MANAGED_USER";
-const char kManagedUserSharedSettingNotificationType[] =
+const char kSupervisedUserSettingNotificationType[] = "MANAGED_USER_SETTING";
+const char kSupervisedUserNotificationType[] = "MANAGED_USER";
+const char kSupervisedUserSharedSettingNotificationType[] =
     "MANAGED_USER_SHARED_SETTING";
 const char kArticleNotificationType[] = "ARTICLE";
 }  // namespace
@@ -927,14 +941,14 @@ bool RealModelTypeToNotificationType(ModelType model_type,
     case FAVICON_TRACKING:
       *notification_type = kFaviconTrackingNotificationType;
       return true;
-    case MANAGED_USER_SETTINGS:
-      *notification_type = kManagedUserSettingNotificationType;
+    case SUPERVISED_USER_SETTINGS:
+      *notification_type = kSupervisedUserSettingNotificationType;
       return true;
-    case MANAGED_USERS:
-      *notification_type = kManagedUserNotificationType;
+    case SUPERVISED_USERS:
+      *notification_type = kSupervisedUserNotificationType;
       return true;
-    case MANAGED_USER_SHARED_SETTINGS:
-      *notification_type = kManagedUserSharedSettingNotificationType;
+    case SUPERVISED_USER_SHARED_SETTINGS:
+      *notification_type = kSupervisedUserSharedSettingNotificationType;
       return true;
     case ARTICLES:
       *notification_type = kArticleNotificationType;
@@ -1023,14 +1037,15 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
   } else if (notification_type == kFaviconTrackingNotificationType) {
     *model_type = FAVICON_TRACKING;
     return true;
-  } else if (notification_type == kManagedUserSettingNotificationType) {
-    *model_type = MANAGED_USER_SETTINGS;
+  } else if (notification_type == kSupervisedUserSettingNotificationType) {
+    *model_type = SUPERVISED_USER_SETTINGS;
     return true;
-  } else if (notification_type == kManagedUserNotificationType) {
-    *model_type = MANAGED_USERS;
+  } else if (notification_type == kSupervisedUserNotificationType) {
+    *model_type = SUPERVISED_USERS;
     return true;
-  } else if (notification_type == kManagedUserSharedSettingNotificationType) {
-    *model_type = MANAGED_USER_SHARED_SETTINGS;
+  } else if (notification_type ==
+      kSupervisedUserSharedSettingNotificationType) {
+    *model_type = SUPERVISED_USER_SHARED_SETTINGS;
     return true;
   } else if (notification_type == kArticleNotificationType) {
     *model_type = ARTICLES;
@@ -1042,6 +1057,10 @@ bool NotificationTypeToRealModelType(const std::string& notification_type,
 
 bool IsRealDataType(ModelType model_type) {
   return model_type >= FIRST_REAL_MODEL_TYPE && model_type < MODEL_TYPE_COUNT;
+}
+
+bool IsProxyType(ModelType model_type) {
+  return model_type >= FIRST_PROXY_TYPE && model_type <= LAST_PROXY_TYPE;
 }
 
 bool IsActOnceDataType(ModelType model_type) {

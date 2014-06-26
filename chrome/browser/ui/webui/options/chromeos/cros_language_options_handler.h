@@ -71,7 +71,7 @@ class CrosLanguageOptionsHandler
   // The return value will look like:
   // [{'id': '_ext_ime_nejguenhnsnjnwychcnsdsdjketest',
   //   'displayName': 'Sample IME'},  ...]
-  static base::ListValue* ConvertInputMethodDescriptosToIMEList(
+  static base::ListValue* ConvertInputMethodDescriptorsToIMEList(
       const input_method::InputMethodDescriptors& descriptors);
 
  private:
@@ -95,7 +95,7 @@ class CrosLanguageOptionsHandler
   void InputMethodOptionsOpenCallback(const base::ListValue* args);
 
   // ComponentExtensionIMEManager::Observer override.
-  virtual void OnInitialized() OVERRIDE;
+  virtual void OnImeComponentExtensionInitialized() OVERRIDE;
 
   // Gets the list of languages with |descriptors| based on
   // |base_language_codes|.
@@ -109,6 +109,10 @@ class CrosLanguageOptionsHandler
 
   // OptionsPageUIHandler implementation.
   virtual void InitializePage() OVERRIDE;
+
+  // Adds the name of the extension that provides the IME to each entry in the
+  // |list| of extension IMEs.
+  void AddImeProvider(base::ListValue* list);
 
   // True if the component extension list was appended into input method list.
   bool composition_extension_appended_;

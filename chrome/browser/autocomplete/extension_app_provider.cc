@@ -11,15 +11,18 @@
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_ui_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
 #include "chrome/browser/ui/webui/ntp/core_app_launcher_handler.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
+#include "components/history/core/browser/url_database.h"
+#include "components/metrics/proto/omnibox_input_type.pb.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_set.h"
@@ -33,9 +36,11 @@ ExtensionAppProvider::ExtensionAppProvider(
   // Notifications of extensions loading and unloading always come from the
   // non-incognito profile, but we need to see them regardless, as the incognito
   // windows can be affected.
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNINSTALLED,
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_UNINSTALLED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   RefreshAppList();
 }
@@ -45,10 +50,9 @@ void ExtensionAppProvider::LaunchAppFromOmnibox(
     const AutocompleteMatch& match,
     Profile* profile,
     WindowOpenDisposition disposition) {
-  ExtensionService* service =
-      extensions::ExtensionSystem::Get(profile)->extension_service();
   const extensions::Extension* extension =
-      service->GetInstalledApp(match.destination_url);
+      extensions::ExtensionRegistry::Get(profile)
+          ->enabled_extensions().GetAppByURL(match.destination_url);
   // While the Omnibox popup is open, the extension can be updated, changing
   // its URL and leaving us with no extension being found. In this case, we
   // ignore the request.
@@ -103,8 +107,8 @@ void ExtensionAppProvider::Start(const AutocompleteInput& input,
                                  bool minimal_changes) {
   matches_.clear();
 
-  if ((input.type() == AutocompleteInput::INVALID) ||
-      (input.type() == AutocompleteInput::FORCED_QUERY))
+  if ((input.type() == metrics::OmniboxInputType::INVALID) ||
+      (input.type() == metrics::OmniboxInputType::FORCED_QUERY))
     return;
 
   if (input.text().empty())
@@ -130,8 +134,8 @@ void ExtensionAppProvider::Start(const AutocompleteInput& input,
           std::search(url.begin(), url.end(),
                       input.text().begin(), input.text().end(),
                       base::CaseInsensitiveCompare<base::char16>());
-      matches_url = url_iter != url.end() &&
-          input.type() != AutocompleteInput::FORCED_QUERY;
+      matches_url = (url_iter != url.end()) &&
+          (input.type() != metrics::OmniboxInputType::FORCED_QUERY);
       url_match_index = matches_url ?
           static_cast<size_t>(url_iter - url.begin()) : base::string16::npos;
     }
@@ -157,7 +161,7 @@ void ExtensionAppProvider::RefreshAppList() {
   for (extensions::ExtensionSet::const_iterator iter = extensions->begin();
        iter != extensions->end(); ++iter) {
     const extensions::Extension* app = iter->get();
-    if (!app->ShouldDisplayInAppLauncher())
+    if (!extensions::ui_util::ShouldDisplayInAppLauncher(app, profile_))
       continue;
     // Note: Apps that appear in the NTP only are not added here since this
     // provider is currently only used in the app launcher.
@@ -188,10 +192,11 @@ void ExtensionAppProvider::Observe(int type,
   RefreshAppList();
 }
 
-int ExtensionAppProvider::CalculateRelevance(AutocompleteInput::Type type,
-                                             int input_length,
-                                             int target_length,
-                                             const GURL& url) {
+int ExtensionAppProvider::CalculateRelevance(
+    metrics::OmniboxInputType::Type type,
+    int input_length,
+    int target_length,
+    const GURL& url) {
   // If you update the algorithm here, please remember to update the tables in
   // autocomplete.h also.
   const int kMaxRelevance = 1425;

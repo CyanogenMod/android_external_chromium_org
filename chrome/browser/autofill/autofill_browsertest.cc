@@ -16,9 +16,6 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -28,17 +25,17 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "components/autofill/content/browser/autofill_driver_impl.h"
+#include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_profile.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
 #include "components/autofill/core/browser/credit_card.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/personal_data_manager_observer.h"
 #include "components/autofill/core/browser/validation.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
+#include "components/infobars/core/infobar_manager.h"
 #include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
@@ -56,22 +53,25 @@ namespace autofill {
 
 class WindowedPersonalDataManagerObserver
     : public PersonalDataManagerObserver,
-      public content::NotificationObserver {
+      public infobars::InfoBarManager::Observer {
  public:
   explicit WindowedPersonalDataManagerObserver(Browser* browser)
       : alerted_(false),
         has_run_message_loop_(false),
         browser_(browser),
-        infobar_service_(NULL) {
+        infobar_service_(InfoBarService::FromWebContents(
+            browser_->tab_strip_model()->GetActiveWebContents())) {
     PersonalDataManagerFactory::GetForProfile(browser_->profile())->
         AddObserver(this);
-    registrar_.Add(this, chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED,
-                   content::NotificationService::AllSources());
+    infobar_service_->AddObserver(this);
   }
 
   virtual ~WindowedPersonalDataManagerObserver() {
-    if (infobar_service_ && (infobar_service_->infobar_count() > 0))
+    infobar_service_->RemoveObserver(this);
+
+    if (infobar_service_->infobar_count() > 0) {
       infobar_service_->RemoveInfoBar(infobar_service_->infobar_at(0));
+    }
   }
 
   void Wait() {
@@ -96,13 +96,8 @@ class WindowedPersonalDataManagerObserver
     OnPersonalDataChanged();
   }
 
-  // content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {
-    EXPECT_EQ(chrome::NOTIFICATION_TAB_CONTENTS_INFOBAR_ADDED, type);
-    infobar_service_ = InfoBarService::FromWebContents(
-        browser_->tab_strip_model()->GetActiveWebContents());
+  // infobars::InfoBarManager::Observer:
+  virtual void OnInfoBarAdded(infobars::InfoBar* infobar) OVERRIDE {
     ConfirmInfoBarDelegate* infobar_delegate =
         infobar_service_->infobar_at(0)->delegate()->AsConfirmInfoBarDelegate();
     ASSERT_TRUE(infobar_delegate);
@@ -113,7 +108,6 @@ class WindowedPersonalDataManagerObserver
   bool alerted_;
   bool has_run_message_loop_;
   Browser* browser_;
-  content::NotificationRegistrar registrar_;
   InfoBarService* infobar_service_;
 };
 
@@ -123,16 +117,16 @@ class AutofillTest : public InProcessBrowserTest {
 
   virtual void SetUpOnMainThread() OVERRIDE {
     // Don't want Keychain coming up on Mac.
-    test::DisableSystemServices(browser()->profile());
+    test::DisableSystemServices(browser()->profile()->GetPrefs());
   }
 
   virtual void CleanUpOnMainThread() OVERRIDE {
     // Make sure to close any showing popups prior to tearing down the UI.
     content::WebContents* web_contents =
         browser()->tab_strip_model()->GetActiveWebContents();
-    AutofillManager* autofill_manager =
-        AutofillDriverImpl::FromWebContents(web_contents)->autofill_manager();
-    autofill_manager->delegate()->HideAutofillPopup();
+    AutofillManager* autofill_manager = ContentAutofillDriver::FromWebContents(
+                                            web_contents)->autofill_manager();
+    autofill_manager->client()->HideAutofillPopup();
   }
 
   PersonalDataManager* personal_data_manager() {
@@ -168,7 +162,10 @@ class AutofillTest : public InProcessBrowserTest {
   // The function returns after the PersonalDataManager is updated.
   void FillFormAndSubmit(const std::string& filename, const FormMap& data) {
     GURL url = test_server()->GetURL("files/autofill/" + filename);
-    ui_test_utils::NavigateToURL(browser(), url);
+    chrome::NavigateParams params(browser(), url,
+                                  content::PAGE_TRANSITION_LINK);
+    params.disposition = NEW_FOREGROUND_TAB;
+    ui_test_utils::NavigateToURL(&params);
 
     std::string js;
     for (FormMap::const_iterator i = data.begin(); i != data.end(); ++i) {
@@ -382,7 +379,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, FillProfileCrazyCharacters) {
   SetProfiles(&profiles);
   ASSERT_EQ(profiles.size(), personal_data_manager()->GetProfiles().size());
   for (size_t i = 0; i < profiles.size(); ++i)
-    ASSERT_EQ(profiles[i], *personal_data_manager()->GetProfiles()[i]);
+    EXPECT_EQ(profiles[i], *personal_data_manager()->GetProfiles()[i]);
 
   std::vector<CreditCard> cards;
   CreditCard card1;
@@ -433,7 +430,7 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, FillProfileCrazyCharacters) {
   SetCards(&cards);
   ASSERT_EQ(cards.size(), personal_data_manager()->GetCreditCards().size());
   for (size_t i = 0; i < cards.size(); ++i)
-    ASSERT_EQ(cards[i], *personal_data_manager()->GetCreditCards()[i]);
+    EXPECT_EQ(cards[i], *personal_data_manager()->GetCreditCards()[i]);
 }
 
 // Test filling in invalid values for profiles are saved as-is. Phone
@@ -488,10 +485,9 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, InvalidCreditCardNumberIsNotAggregated) {
   std::string card("4408 0412 3456 7890");
   ASSERT_FALSE(autofill::IsValidCreditCardNumber(ASCIIToUTF16(card)));
   SubmitCreditCard("Bob Smith", card.c_str(), "12", "2014");
-  ASSERT_EQ(0u,
-            InfoBarService::FromWebContents(
-                browser()->tab_strip_model()->GetActiveWebContents())->
-                    infobar_count());
+  InfoBarService* infobar_service = InfoBarService::FromWebContents(
+      browser()->tab_strip_model()->GetActiveWebContents());
+  ASSERT_EQ(0u, infobar_service->infobar_count());
 }
 
 // Test whitespaces and separator chars are stripped for valid CC numbers.
@@ -675,10 +671,9 @@ IN_PROC_BROWSER_TEST_F(AutofillTest, CCInfoNotStoredWhenAutocompleteOff) {
   data["CREDIT_CARD_EXP_4_DIGIT_YEAR"] = "2014";
   FillFormAndSubmit("cc_autocomplete_off_test.html", data);
 
-  ASSERT_EQ(0u,
-            InfoBarService::FromWebContents(
-                browser()->tab_strip_model()->GetActiveWebContents())->
-                    infobar_count());
+  InfoBarService* infobar_service = InfoBarService::FromWebContents(
+      browser()->tab_strip_model()->GetActiveWebContents());
+  ASSERT_EQ(0u, infobar_service->infobar_count());
 }
 
 // Test profile not aggregated if email found in non-email field.

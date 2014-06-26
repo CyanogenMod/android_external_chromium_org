@@ -20,15 +20,17 @@
 
 class MediaFileSystemRegistryTest;
 class MediaGalleriesPlatformAppBrowserTest;
-class MediaGalleriesPrivateApiTest;
-class RemovableStorageObserver;
 class SystemStorageApiTest;
 class SystemStorageEjectApiTest;
-class TransientDeviceIds;
 
 namespace device {
 class MediaTransferProtocolManager;
 }
+
+namespace storage_monitor {
+
+class RemovableStorageObserver;
+class TransientDeviceIds;
 
 // Base class for platform-specific instances watching for removable storage
 // attachments/detachments.
@@ -139,7 +141,6 @@ class StorageMonitor {
  protected:
   friend class ::MediaFileSystemRegistryTest;
   friend class ::MediaGalleriesPlatformAppBrowserTest;
-  friend class ::MediaGalleriesPrivateApiTest;
   friend class ::SystemStorageApiTest;
   friend class ::SystemStorageEjectApiTest;
 
@@ -187,5 +188,7 @@ class StorageMonitor {
 
   scoped_ptr<TransientDeviceIds> transient_device_ids_;
 };
+
+}  // namespace storage_monitor
 
 #endif  // COMPONENTS_STORAGE_MONITOR_STORAGE_MONITOR_H_

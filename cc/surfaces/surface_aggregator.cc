@@ -24,9 +24,9 @@ SurfaceAggregator::SurfaceAggregator(SurfaceManager* manager)
 
 SurfaceAggregator::~SurfaceAggregator() {}
 
-DelegatedFrameData* SurfaceAggregator::GetReferencedDataForSurfaceID(
-    int surface_id) {
-  Surface* referenced_surface = manager_->GetSurfaceForID(surface_id);
+DelegatedFrameData* SurfaceAggregator::GetReferencedDataForSurfaceId(
+    SurfaceId surface_id) {
+  Surface* referenced_surface = manager_->GetSurfaceForId(surface_id);
   if (!referenced_surface)
     return NULL;  // Invalid surface id, skip this quad.
   CompositorFrame* referenced_frame = referenced_surface->GetEligibleFrame();
@@ -74,16 +74,16 @@ RenderPass::Id SurfaceAggregator::RemapPassId(
 
 void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
                                           RenderPass* dest_pass) {
-  int surface_id = surface_quad->surface_id;
+  SurfaceId surface_id = surface_quad->surface_id;
   // If this surface's id is already in our referenced set then it creates
   // a cycle in the graph and should be dropped.
-  if (referenced_surfaces_.count(surface_id))
+  if (referenced_surfaces_.count(surface_id.id))
     return;
   DelegatedFrameData* referenced_data =
-      GetReferencedDataForSurfaceID(surface_id);
+      GetReferencedDataForSurfaceId(surface_id);
   if (!referenced_data)
     return;
-  std::set<int>::iterator it = referenced_surfaces_.insert(surface_id).first;
+  std::set<int>::iterator it = referenced_surfaces_.insert(surface_id.id).first;
 
   const RenderPassList& referenced_passes = referenced_data->render_pass_list;
   for (size_t j = 0; j + 1 < referenced_passes.size(); ++j) {
@@ -91,7 +91,7 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
 
     scoped_ptr<RenderPass> copy_pass(RenderPass::Create());
 
-    RenderPass::Id remapped_pass_id = RemapPassId(source.id, surface_id);
+    RenderPass::Id remapped_pass_id = RemapPassId(source.id, surface_id.id);
 
     copy_pass->SetAll(remapped_pass_id,
                       source.output_rect,
@@ -111,7 +111,7 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
                     source.shared_quad_state_list,
                     gfx::Transform(),
                     copy_pass.get(),
-                    surface_id);
+                    surface_id.id);
 
     dest_pass_list_->push_back(copy_pass.Pass());
   }
@@ -125,16 +125,18 @@ void SurfaceAggregator::HandleSurfaceQuad(const SurfaceDrawQuad* surface_quad,
                   last_pass.shared_quad_state_list,
                   surface_quad->quadTransform(),
                   dest_pass,
-                  surface_id);
+                  surface_id.id);
 
   referenced_surfaces_.erase(it);
 }
 
 void SurfaceAggregator::CopySharedQuadState(
-    const SharedQuadState& source_sqs,
+    const SharedQuadState* source_sqs,
     const gfx::Transform& content_to_target_transform,
-    SharedQuadStateList* dest_sqs_list) {
-  scoped_ptr<SharedQuadState> copy_shared_quad_state = source_sqs.Copy();
+    RenderPass* dest_render_pass) {
+  SharedQuadState* copy_shared_quad_state =
+      dest_render_pass->CreateAndAppendSharedQuadState();
+  copy_shared_quad_state->CopyFrom(source_sqs);
   // content_to_target_transform contains any transformation that may exist
   // between the context that these quads are being copied from (i.e. the
   // surface's draw transform when aggregated from within a surface) to the
@@ -143,7 +145,6 @@ void SurfaceAggregator::CopySharedQuadState(
   // transform is not identity.
   copy_shared_quad_state->content_to_target_transform.ConcatTransform(
       content_to_target_transform);
-  dest_sqs_list->push_back(copy_shared_quad_state.Pass());
 }
 
 void SurfaceAggregator::CopyQuadsToPass(
@@ -167,9 +168,8 @@ void SurfaceAggregator::CopyQuadsToPass(
       HandleSurfaceQuad(surface_quad, dest_pass);
     } else {
       if (quad->shared_quad_state != last_copied_source_shared_quad_state) {
-        CopySharedQuadState(*quad->shared_quad_state,
-                            content_to_target_transform,
-                            &dest_pass->shared_quad_state_list);
+        CopySharedQuadState(
+            quad->shared_quad_state, content_to_target_transform, dest_pass);
         last_copied_source_shared_quad_state = quad->shared_quad_state;
       }
       if (quad->material == DrawQuad::RENDER_PASS) {
@@ -215,8 +215,8 @@ void SurfaceAggregator::CopyPasses(const RenderPassList& source_pass_list,
   }
 }
 
-scoped_ptr<CompositorFrame> SurfaceAggregator::Aggregate(int surface_id) {
-  Surface* surface = manager_->GetSurfaceForID(surface_id);
+scoped_ptr<CompositorFrame> SurfaceAggregator::Aggregate(SurfaceId surface_id) {
+  Surface* surface = manager_->GetSurfaceForId(surface_id);
   if (!surface)
     return scoped_ptr<CompositorFrame>();
   CompositorFrame* root_surface_frame = surface->GetEligibleFrame();
@@ -231,10 +231,10 @@ scoped_ptr<CompositorFrame> SurfaceAggregator::Aggregate(int surface_id) {
   const RenderPassList& source_pass_list =
       root_surface_frame->delegated_frame_data->render_pass_list;
 
-  std::set<int>::iterator it = referenced_surfaces_.insert(surface_id).first;
+  std::set<int>::iterator it = referenced_surfaces_.insert(surface_id.id).first;
 
   dest_pass_list_ = &frame->delegated_frame_data->render_pass_list;
-  CopyPasses(source_pass_list, surface_id);
+  CopyPasses(source_pass_list, surface_id.id);
 
   referenced_surfaces_.erase(it);
   DCHECK(referenced_surfaces_.empty());

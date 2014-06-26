@@ -9,6 +9,7 @@
 #include "base/values.h"
 #include "chrome/browser/extensions/api/serial/serial_connection.h"
 #include "chrome/browser/extensions/api/serial/serial_event_dispatcher.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/api/serial.h"
 #include "content/public/browser/browser_thread.h"
 #include "device/serial/serial_device_enumerator.h"
@@ -56,7 +57,7 @@ SerialAsyncApiFunction::SerialAsyncApiFunction()
 SerialAsyncApiFunction::~SerialAsyncApiFunction() {}
 
 bool SerialAsyncApiFunction::PrePrepare() {
-  manager_ = ApiResourceManager<SerialConnection>::Get(GetProfile());
+  manager_ = ApiResourceManager<SerialConnection>::Get(browser_context());
   DCHECK(manager_);
   return true;
 }
@@ -82,29 +83,13 @@ bool SerialGetDevicesFunction::Prepare() {
 }
 
 void SerialGetDevicesFunction::Work() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
-  device::SerialDeviceInfoList devices;
   scoped_ptr<device::SerialDeviceEnumerator> enumerator =
       device::SerialDeviceEnumerator::Create();
-  enumerator->GetDevices(&devices);
-
-  std::vector<linked_ptr<serial::DeviceInfo> > out_devices;
-  for (device::SerialDeviceInfoList::const_iterator iter = devices.begin();
-       iter != devices.end();
-       ++iter) {
-    linked_ptr<device::SerialDeviceInfo> device = *iter;
-    linked_ptr<serial::DeviceInfo> info(new serial::DeviceInfo);
-    info->path = device->path;
-    if (device->vendor_id)
-      info->vendor_id.reset(new int(static_cast<int>(*device->vendor_id)));
-    if (device->product_id)
-      info->product_id.reset(new int(static_cast<int>(*device->product_id)));
-    info->display_name.reset(device->display_name.release());
-    out_devices.push_back(info);
-  }
-
-  results_ = serial::GetDevices::Results::Create(out_devices);
+  mojo::Array<device::SerialDeviceInfoPtr> devices = enumerator->GetDevices();
+  results_ = serial::GetDevices::Results::Create(
+      devices.To<std::vector<linked_ptr<serial::DeviceInfo> > >());
 }
 
 SerialConnectFunction::SerialConnectFunction() {}
@@ -134,14 +119,14 @@ bool SerialConnectFunction::Prepare() {
   if (options->stop_bits == serial::STOP_BITS_NONE)
     options->stop_bits = kDefaultStopBits;
 
-  serial_event_dispatcher_ = SerialEventDispatcher::Get(GetProfile());
+  serial_event_dispatcher_ = SerialEventDispatcher::Get(browser_context());
   DCHECK(serial_event_dispatcher_);
 
   return true;
 }
 
 void SerialConnectFunction::AsyncWorkStart() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   connection_ = CreateSerialConnection(params_->path, extension_->id());
   connection_->Open(base::Bind(&SerialConnectFunction::OnConnected, this));
 }
@@ -166,7 +151,7 @@ void SerialConnectFunction::OnConnected(bool success) {
 }
 
 void SerialConnectFunction::FinishConnect() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!connection_) {
     error_ = kErrorConnectFailed;
   } else {
@@ -297,7 +282,7 @@ bool SerialSetPausedFunction::Prepare() {
   params_ = serial::SetPaused::Params::Create(*args_);
   EXTENSION_FUNCTION_VALIDATE(params_.get());
 
-  serial_event_dispatcher_ = SerialEventDispatcher::Get(GetProfile());
+  serial_event_dispatcher_ = SerialEventDispatcher::Get(browser_context());
   DCHECK(serial_event_dispatcher_);
   return true;
 }
@@ -424,3 +409,24 @@ void SerialSetControlSignalsFunction::Work() {
 }  // namespace api
 
 }  // namespace extensions
+
+namespace mojo {
+
+// static
+linked_ptr<extensions::api::serial::DeviceInfo>
+TypeConverter<device::SerialDeviceInfoPtr,
+              linked_ptr<extensions::api::serial::DeviceInfo> >::
+    ConvertTo(const device::SerialDeviceInfoPtr& device) {
+  linked_ptr<extensions::api::serial::DeviceInfo> info(
+      new extensions::api::serial::DeviceInfo);
+  info->path = device->path;
+  if (device->has_vendor_id)
+    info->vendor_id.reset(new int(static_cast<int>(device->vendor_id)));
+  if (device->has_product_id)
+    info->product_id.reset(new int(static_cast<int>(device->product_id)));
+  if (device->display_name)
+    info->display_name.reset(new std::string(device->display_name));
+  return info;
+}
+
+}  // namespace mojo

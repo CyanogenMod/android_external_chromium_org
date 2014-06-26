@@ -12,9 +12,11 @@
 #include "base/synchronization/lock.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/password_manager/chrome_password_manager_client.h"
-#include "chrome/browser/password_manager/password_manager.h"
 #include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/tab_contents/tab_util.h"
+#include "chrome/browser/ui/login/login_interstitial_delegate.h"
+#include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
@@ -24,6 +26,7 @@
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "net/base/auth.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_util.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/url_request.h"
@@ -118,12 +121,13 @@ void LoginHandler::SetPasswordForm(const autofill::PasswordForm& form) {
   password_form_ = form;
 }
 
-void LoginHandler::SetPasswordManager(PasswordManager* password_manager) {
+void LoginHandler::SetPasswordManager(
+    password_manager::PasswordManager* password_manager) {
   password_manager_ = password_manager;
 }
 
 WebContents* LoginHandler::GetWebContentsForLogin() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(
       render_process_host_id_, render_frame_id_);
@@ -132,9 +136,23 @@ WebContents* LoginHandler::GetWebContentsForLogin() const {
 
 void LoginHandler::SetAuth(const base::string16& username,
                            const base::string16& password) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (TestAndSetAuthHandled())
+  scoped_ptr<password_manager::BrowserSavePasswordProgressLogger> logger;
+  if (password_manager_ && password_manager_->client()->IsLoggingActive()) {
+    logger.reset(new password_manager::BrowserSavePasswordProgressLogger(
+        password_manager_->client()));
+    logger->LogMessage(
+        autofill::SavePasswordProgressLogger::STRING_SET_AUTH_METHOD);
+  }
+
+  bool already_handled = TestAndSetAuthHandled();
+  if (logger) {
+    logger->LogBoolean(
+        autofill::SavePasswordProgressLogger::STRING_AUTHENTICATION_HANDLED,
+        already_handled);
+  }
+  if (already_handled)
     return;
 
   // Tell the password manager the credentials were submitted / accepted.
@@ -142,6 +160,11 @@ void LoginHandler::SetAuth(const base::string16& username,
     password_form_.username_value = username;
     password_form_.password_value = password;
     password_manager_->ProvisionallySavePassword(password_form_);
+    if (logger) {
+      logger->LogPasswordForm(
+          autofill::SavePasswordProgressLogger::STRING_LOGINHANDLER_FORM,
+          password_form_);
+    }
   }
 
   // Calling NotifyAuthSupplied() directly instead of posting a task
@@ -185,7 +208,7 @@ void LoginHandler::CancelAuth() {
 void LoginHandler::Observe(int type,
                            const content::NotificationSource& source,
                            const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(type == chrome::NOTIFICATION_AUTH_SUPPLIED ||
          type == chrome::NOTIFICATION_AUTH_CANCELLED);
 
@@ -235,7 +258,7 @@ LoginHandler::~LoginHandler() {
   SetModel(NULL);
 }
 
-void LoginHandler::SetModel(LoginModel* model) {
+void LoginHandler::SetModel(password_manager::LoginModel* model) {
   if (login_model_)
     login_model_->RemoveObserver(this);
   login_model_ = model;
@@ -244,7 +267,7 @@ void LoginHandler::SetModel(LoginModel* model) {
 }
 
 void LoginHandler::NotifyAuthNeeded() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (WasAuthHandled())
     return;
 
@@ -282,7 +305,7 @@ void LoginHandler::ReleaseSoon() {
 }
 
 void LoginHandler::AddObservers() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // This is probably OK; we need to listen to everything and we break out of
   // the Observe() if we aren't handling the same auth_info().
@@ -294,14 +317,14 @@ void LoginHandler::AddObservers() {
 }
 
 void LoginHandler::RemoveObservers() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   registrar_.reset();
 }
 
 void LoginHandler::NotifyAuthSupplied(const base::string16& username,
                                       const base::string16& password) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(WasAuthHandled());
 
   WebContents* requesting_contents = GetWebContentsForLogin();
@@ -321,7 +344,7 @@ void LoginHandler::NotifyAuthSupplied(const base::string16& username,
 }
 
 void LoginHandler::NotifyAuthCancelled() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(WasAuthHandled());
 
   content::NotificationService* service =
@@ -350,7 +373,7 @@ bool LoginHandler::TestAndSetAuthHandled() {
 // Calls SetAuth from the IO loop.
 void LoginHandler::SetAuthDeferred(const base::string16& username,
                                    const base::string16& password) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (request_) {
     request_->SetAuth(net::AuthCredentials(username, password));
@@ -360,7 +383,7 @@ void LoginHandler::SetAuthDeferred(const base::string16& username,
 
 // Calls CancelAuth from the IO loop.
 void LoginHandler::CancelAuthDeferred() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (request_) {
     request_->CancelAuth();
@@ -372,9 +395,19 @@ void LoginHandler::CancelAuthDeferred() {
 
 // Closes the view_contents from the UI loop.
 void LoginHandler::CloseContentsDeferred() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   CloseDialog();
+
+  WebContents* requesting_contents = GetWebContentsForLogin();
+  if (!requesting_contents)
+    return;
+  // If a (blank) login interstitial was displayed, proceed so that the
+  // navigation is committed.
+  content::InterstitialPage* interstitial_page =
+      requesting_contents->GetInterstitialPage();
+  if (interstitial_page)
+    interstitial_page->Proceed();
 }
 
 // Helper to create a PasswordForm and stuff it into a vector as input
@@ -412,21 +445,13 @@ void MakeInputForPasswordManager(
   handler->SetPasswordForm(dialog_form);
 }
 
-// This callback is run on the UI thread and creates a constrained window with
-// a LoginView to prompt the user.  The response will be sent to LoginHandler,
-// which then routes it to the net::URLRequest on the I/O thread.
-void LoginDialogCallback(const GURL& request_url,
-                         net::AuthChallengeInfo* auth_info,
-                         LoginHandler* handler) {
+void ShowLoginPrompt(const GURL& request_url,
+                     net::AuthChallengeInfo* auth_info,
+                     LoginHandler* handler) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   WebContents* parent_contents = handler->GetWebContentsForLogin();
-  if (!parent_contents || handler->WasAuthHandled()) {
-    // The request may have been cancelled, or it may be for a renderer
-    // not hosted by a tab (e.g. an extension). Cancel just in case
-    // (cancelling twice is a no-op).
-    handler->CancelAuth();
+  if (!parent_contents)
     return;
-  }
-
   prerender::PrerenderContents* prerender_contents =
       prerender::PrerenderContents::FromWebContents(parent_contents);
   if (prerender_contents) {
@@ -434,7 +459,7 @@ void LoginDialogCallback(const GURL& request_url,
     return;
   }
 
-  PasswordManager* password_manager =
+  password_manager::PasswordManager* password_manager =
       ChromePasswordManagerClient::GetManagerFromWebContents(parent_contents);
   if (!password_manager) {
     // Same logic as above.
@@ -464,15 +489,56 @@ void LoginDialogCallback(const GURL& request_url,
   handler->BuildViewForPasswordManager(password_manager, explanation);
 }
 
+// This callback is run on the UI thread and creates a constrained window with
+// a LoginView to prompt the user. If the prompt is triggered because of
+// a cross origin navigation in the main frame, a blank interstitial is first
+// created which in turn creates the LoginView. Otherwise, a LoginView is
+// directly in this callback. In both cases, the response will be sent to
+// LoginHandler, which then routes it to the net::URLRequest on the I/O thread.
+void LoginDialogCallback(const GURL& request_url,
+                         net::AuthChallengeInfo* auth_info,
+                         LoginHandler* handler,
+                         bool is_main_frame) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  WebContents* parent_contents = handler->GetWebContentsForLogin();
+  if (!parent_contents || handler->WasAuthHandled()) {
+    // The request may have been cancelled, or it may be for a renderer
+    // not hosted by a tab (e.g. an extension). Cancel just in case
+    // (cancelling twice is a no-op).
+    handler->CancelAuth();
+    return;
+  }
+
+  if (is_main_frame &&
+      parent_contents->GetVisibleURL().GetOrigin() != request_url.GetOrigin()) {
+    // Show a blank interstitial for main-frame, cross origin requests
+    // so that the correct URL is shown in the omnibox.
+    base::Closure callback = base::Bind(&ShowLoginPrompt,
+                                        request_url,
+                                        make_scoped_refptr(auth_info),
+                                        make_scoped_refptr(handler));
+    // This is owned by the interstitial it creates.
+    new LoginInterstitialDelegate(parent_contents,
+                                  request_url,
+                                  callback);
+  } else {
+    ShowLoginPrompt(request_url,
+                    auth_info,
+                    handler);
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Public API
 
 LoginHandler* CreateLoginPrompt(net::AuthChallengeInfo* auth_info,
                                 net::URLRequest* request) {
+  bool is_main_frame = (request->load_flags() & net::LOAD_MAIN_FRAME) != 0;
   LoginHandler* handler = LoginHandler::Create(auth_info, request);
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&LoginDialogCallback, request->url(),
-                 make_scoped_refptr(auth_info), make_scoped_refptr(handler)));
+                 make_scoped_refptr(auth_info), make_scoped_refptr(handler),
+                 is_main_frame));
   return handler;
 }

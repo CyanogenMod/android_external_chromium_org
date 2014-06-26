@@ -8,13 +8,9 @@
 #include "base/synchronization/lock.h"
 #include "content/browser/android/in_process/synchronous_input_event_filter.h"
 #include "content/renderer/android/synchronous_compositor_factory.h"
-#include "content/renderer/media/android/stream_texture_factory_android_synchronous_impl.h"
+#include "content/renderer/media/android/stream_texture_factory_synchronous_impl.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "webkit/common/gpu/context_provider_web_context.h"
-
-namespace gfx {
-class GLSurface;
-}
 
 namespace gpu {
 class GLInProcessContext;
@@ -40,17 +36,12 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
       OVERRIDE;
   virtual InputHandlerManagerClient* GetInputHandlerManagerClient() OVERRIDE;
   virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      GetOffscreenContextProviderForMainThread() OVERRIDE;
-  // This is called on both renderer main thread (offscreen context creation
-  // path shared between cross-process and in-process platforms) and renderer
-  // compositor impl thread (InitializeHwDraw) in order to support Android
-  // WebView synchronously enable and disable hardware mode multiple times in
-  // the same task. This is ok because in-process WGC3D creation may happen on
-  // any thread and is lightweight.
-  virtual scoped_refptr<cc::ContextProvider>
-      GetOffscreenContextProviderForCompositorThread() OVERRIDE;
-  virtual scoped_ptr<StreamTextureFactory> CreateStreamTextureFactory(
+      GetSharedOffscreenContextProviderForMainThread() OVERRIDE;
+  virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
       int view_id) OVERRIDE;
+  virtual blink::WebGraphicsContext3D* CreateOffscreenGraphicsContext3D(
+      const blink::WebGraphicsContext3D::Attributes& attributes) OVERRIDE;
+
 
   SynchronousInputEventFilter* synchronous_input_event_filter() {
     return &synchronous_input_event_filter_;
@@ -62,29 +53,21 @@ class SynchronousCompositorFactoryImpl : public SynchronousCompositorFactory {
   void CompositorReleasedHardwareDraw();
 
   scoped_refptr<cc::ContextProvider>
-      CreateOnscreenContextProviderForCompositorThread(
-          scoped_refptr<gfx::GLSurface> surface);
+      CreateOnscreenContextProviderForCompositorThread();
+  gpu::GLInProcessContext* GetShareContext();
 
  private:
-  void ReleaseGlobalHardwareResources();
   bool CanCreateMainThreadContext();
   scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
       TryCreateStreamTextureFactory();
 
   SynchronousInputEventFilter synchronous_input_event_filter_;
 
-  // Only guards construction and destruction of
-  // |offscreen_context_for_compositor_thread_|, not usage.
-  base::Lock offscreen_context_for_compositor_thread_lock_;
   scoped_refptr<webkit::gpu::ContextProviderWebContext>
       offscreen_context_for_main_thread_;
-  // This is a pointer to the context owned by
-  // |offscreen_context_for_main_thread_|.
-  gpu::GLInProcessContext* wrapped_gl_context_for_main_thread_;
-  gpu::GLInProcessContext* wrapped_gl_context_for_compositor_thread_;
-  scoped_refptr<cc::ContextProvider> offscreen_context_for_compositor_thread_;
 
   scoped_refptr<gpu::InProcessCommandBuffer::Service> service_;
+  scoped_ptr<gpu::GLInProcessContext> share_context_;
   scoped_refptr<StreamTextureFactorySynchronousImpl::ContextProvider>
       video_context_provider_;
 

@@ -11,7 +11,7 @@
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/canvas.h"
 
 namespace {
@@ -81,7 +81,7 @@ void FillRoundRect(gfx::Canvas* canvas,
     p[1].iset(x, y + h);
   }
   skia::RefPtr<SkShader> s = skia::AdoptRef(SkGradientShader::CreateLinear(
-      p, colors, points, count, SkShader::kClamp_TileMode, NULL));
+      p, colors, points, count, SkShader::kClamp_TileMode));
   paint.setShader(s.get());
 
   canvas->DrawPath(path, paint);
@@ -178,12 +178,12 @@ bool ProgressBar::GetTooltipText(const gfx::Point& p,
   return !tooltip_text_.empty();
 }
 
-void ProgressBar::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PROGRESSBAR;
-  state->state = ui::AccessibilityTypes::STATE_READONLY;
+void ProgressBar::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_PROGRESS_INDICATOR;
+  state->AddStateFlag(ui::AX_STATE_READ_ONLY);
 }
 
-gfx::Size ProgressBar::GetPreferredSize() {
+gfx::Size ProgressBar::GetPreferredSize() const {
   gfx::Size pref_size(100, 11);
   gfx::Insets insets = GetInsets();
   pref_size.Enlarge(insets.width(), insets.height());
@@ -228,7 +228,7 @@ void ProgressBar::OnPaint(gfx::Canvas* canvas) {
           kCornerRadius,
           0,
           &inner_path);
-      canvas->ClipPath(inner_path);
+      canvas->ClipPath(inner_path, false);
 
       const SkColor bar_colors[] = {
         kBarTopColor,
@@ -300,7 +300,7 @@ void ProgressBar::OnPaint(gfx::Canvas* canvas) {
         skia::RefPtr<SkShader> s =
             skia::AdoptRef(SkGradientShader::CreateLinear(
                 p, highlight_colors, highlight_points,
-                arraysize(highlight_colors), SkShader::kClamp_TileMode, NULL));
+                arraysize(highlight_colors), SkShader::kClamp_TileMode));
         paint.setShader(s.get());
         paint.setXfermodeMode(SkXfermode::kSrcOver_Mode);
         canvas->DrawRect(gfx::Rect(highlight_left, 0,

@@ -86,25 +86,27 @@ bool ReadGURL(PickleIterator* iter, bool warn_only, GURL* url) {
   return true;
 }
 
+void LogDeserializationWarning(int version,
+                               std::string signon_realm,
+                               bool warn_only) {
+  if (warn_only) {
+    LOG(WARNING) << "Failed to deserialize version " << version
+                 << " KWallet entry (realm: " << signon_realm
+                 << ") with native architecture size; will try alternate "
+                 << "size.";
+  } else {
+    LOG(ERROR) << "Failed to deserialize version " << version
+               << " KWallet entry (realm: " << signon_realm << ")";
+  }
+}
+
 }  // namespace
 
-NativeBackendKWallet::NativeBackendKWallet(LocalProfileId id,
-                                           PrefService* prefs)
+NativeBackendKWallet::NativeBackendKWallet(LocalProfileId id)
     : profile_id_(id),
-      prefs_(prefs),
       kwallet_proxy_(NULL),
       app_name_(l10n_util::GetStringUTF8(IDS_PRODUCT_NAME)) {
-  // TODO(mdm): after a few more releases, remove the code which is now dead due
-  // to the true || here, and simplify this code. We don't do it yet to make it
-  // easier to revert if necessary.
-  if (true || PasswordStoreX::PasswordsUseLocalProfileId(prefs)) {
-    folder_name_ = GetProfileSpecificFolderName();
-    // We already did the migration previously. Don't try again.
-    migrate_tried_ = true;
-  } else {
-    folder_name_ = kKWalletFolder;
-    migrate_tried_ = false;
-  }
+  folder_name_ = GetProfileSpecificFolderName();
 }
 
 NativeBackendKWallet::~NativeBackendKWallet() {
@@ -263,52 +265,71 @@ NativeBackendKWallet::InitResult NativeBackendKWallet::InitWallet() {
   return INIT_SUCCESS;
 }
 
-bool NativeBackendKWallet::AddLogin(const PasswordForm& form) {
+password_manager::PasswordStoreChangeList NativeBackendKWallet::AddLogin(
+    const PasswordForm& form) {
   int wallet_handle = WalletHandle();
   if (wallet_handle == kInvalidKWalletHandle)
-    return false;
+    return password_manager::PasswordStoreChangeList();
 
-  PasswordFormList forms;
-  GetLoginsList(&forms, form.signon_realm, wallet_handle);
+  ScopedVector<autofill::PasswordForm> forms;
+  GetLoginsList(&forms.get(), form.signon_realm, wallet_handle);
 
   // We search for a login to update, rather than unconditionally appending the
   // login, because in some cases (especially involving sync) we can be asked to
   // add a login that already exists. In these cases we want to just update.
   bool updated = false;
+  password_manager::PasswordStoreChangeList changes;
   for (size_t i = 0; i < forms.size(); ++i) {
     // Use the more restrictive removal comparison, so that we never have
     // duplicate logins that would all be removed together by RemoveLogin().
     if (CompareForms(form, *forms[i], false)) {
+      changes.push_back(password_manager::PasswordStoreChange(
+          password_manager::PasswordStoreChange::REMOVE, *forms[i]));
       *forms[i] = form;
       updated = true;
     }
   }
   if (!updated)
     forms.push_back(new PasswordForm(form));
+  changes.push_back(password_manager::PasswordStoreChange(
+      password_manager::PasswordStoreChange::ADD, form));
 
-  bool ok = SetLoginsList(forms, form.signon_realm, wallet_handle);
+  bool ok = SetLoginsList(forms.get(), form.signon_realm, wallet_handle);
+  if (!ok)
+    changes.clear();
 
-  STLDeleteElements(&forms);
-  return ok;
+  return changes;
 }
 
-bool NativeBackendKWallet::UpdateLogin(const PasswordForm& form) {
+bool NativeBackendKWallet::UpdateLogin(
+    const PasswordForm& form,
+    password_manager::PasswordStoreChangeList* changes) {
+  DCHECK(changes);
+  changes->clear();
   int wallet_handle = WalletHandle();
   if (wallet_handle == kInvalidKWalletHandle)
     return false;
 
-  PasswordFormList forms;
-  GetLoginsList(&forms, form.signon_realm, wallet_handle);
+  ScopedVector<autofill::PasswordForm> forms;
+  GetLoginsList(&forms.get(), form.signon_realm, wallet_handle);
 
+  bool updated = false;
   for (size_t i = 0; i < forms.size(); ++i) {
-    if (CompareForms(form, *forms[i], true))
+    if (CompareForms(form, *forms[i], true)) {
       *forms[i] = form;
+      updated = true;
+    }
+  }
+  if (!updated)
+    return true;
+
+  if (SetLoginsList(forms.get(), form.signon_realm, wallet_handle)) {
+    changes->push_back(password_manager::PasswordStoreChange(
+        password_manager::PasswordStoreChange::UPDATE, form));
+    return true;
   }
 
-  bool ok = SetLoginsList(forms, form.signon_realm, wallet_handle);
-
-  STLDeleteElements(&forms);
-  return ok;
+  return false;
 }
 
 bool NativeBackendKWallet::RemoveLogin(const PasswordForm& form) {
@@ -336,93 +357,18 @@ bool NativeBackendKWallet::RemoveLogin(const PasswordForm& form) {
 }
 
 bool NativeBackendKWallet::RemoveLoginsCreatedBetween(
-    const base::Time& delete_begin,
-    const base::Time& delete_end) {
-  int wallet_handle = WalletHandle();
-  if (wallet_handle == kInvalidKWalletHandle)
-    return false;
+    base::Time delete_begin,
+    base::Time delete_end,
+    password_manager::PasswordStoreChangeList* changes) {
+  return RemoveLoginsBetween(
+      delete_begin, delete_end, CREATION_TIMESTAMP, changes);
+}
 
-  // We could probably also use readEntryList here.
-  std::vector<std::string> realm_list;
-  {
-    dbus::MethodCall method_call(kKWalletInterface, "entryList");
-    dbus::MessageWriter builder(&method_call);
-    builder.AppendInt32(wallet_handle);  // handle
-    builder.AppendString(folder_name_);  // folder
-    builder.AppendString(app_name_);     // appid
-    scoped_ptr<dbus::Response> response(
-        kwallet_proxy_->CallMethodAndBlock(
-            &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
-    if (!response.get()) {
-      LOG(ERROR) << "Error contacting kwalletd (entryList)";
-      return false;
-    }
-    dbus::MessageReader reader(response.get());
-    dbus::MessageReader array(response.get());
-    if (!reader.PopArray(&array)) {
-      LOG(ERROR) << "Error reading response from kwalletd (entryList): "
-                 << response->ToString();
-      return false;
-    }
-    while (array.HasMoreData()) {
-      std::string realm;
-      if (!array.PopString(&realm)) {
-        LOG(ERROR) << "Error reading response from kwalletd (entryList): "
-                   << response->ToString();
-        return false;
-      }
-      realm_list.push_back(realm);
-    }
-  }
-
-  bool ok = true;
-  for (size_t i = 0; i < realm_list.size(); ++i) {
-    const std::string& signon_realm = realm_list[i];
-    dbus::MethodCall method_call(kKWalletInterface, "readEntry");
-    dbus::MessageWriter builder(&method_call);
-    builder.AppendInt32(wallet_handle);  // handle
-    builder.AppendString(folder_name_);  // folder
-    builder.AppendString(signon_realm);  // key
-    builder.AppendString(app_name_);     // appid
-    scoped_ptr<dbus::Response> response(
-        kwallet_proxy_->CallMethodAndBlock(
-            &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
-    if (!response.get()) {
-      LOG(ERROR) << "Error contacting kwalletd (readEntry)";
-      continue;
-    }
-    dbus::MessageReader reader(response.get());
-    uint8_t* bytes = NULL;
-    size_t length = 0;
-    if (!reader.PopArrayOfBytes(&bytes, &length)) {
-      LOG(ERROR) << "Error reading response from kwalletd (readEntry): "
-                 << response->ToString();
-      continue;
-    }
-    if (!bytes || !CheckSerializedValue(bytes, length, signon_realm))
-      continue;
-
-    // Can't we all just agree on whether bytes are signed or not? Please?
-    Pickle pickle(reinterpret_cast<const char*>(bytes), length);
-    PasswordFormList all_forms;
-    DeserializeValue(signon_realm, pickle, &all_forms);
-
-    PasswordFormList kept_forms;
-    kept_forms.reserve(all_forms.size());
-    for (size_t i = 0; i < all_forms.size(); ++i) {
-      if (delete_begin <= all_forms[i]->date_created &&
-          (delete_end.is_null() || all_forms[i]->date_created < delete_end)) {
-        delete all_forms[i];
-      } else {
-        kept_forms.push_back(all_forms[i]);
-      }
-    }
-
-    if (!SetLoginsList(kept_forms, signon_realm, wallet_handle))
-      ok = false;
-    STLDeleteElements(&kept_forms);
-  }
-  return ok;
+bool NativeBackendKWallet::RemoveLoginsSyncedBetween(
+    base::Time delete_begin,
+    base::Time delete_end,
+    password_manager::PasswordStoreChangeList* changes) {
+  return RemoveLoginsBetween(delete_begin, delete_end, SYNC_TIMESTAMP, changes);
 }
 
 bool NativeBackendKWallet::GetLogins(const PasswordForm& form,
@@ -431,15 +377,6 @@ bool NativeBackendKWallet::GetLogins(const PasswordForm& form,
   if (wallet_handle == kInvalidKWalletHandle)
     return false;
   return GetLoginsList(forms, form.signon_realm, wallet_handle);
-}
-
-bool NativeBackendKWallet::GetLoginsCreatedBetween(const base::Time& get_begin,
-                                                   const base::Time& get_end,
-                                                   PasswordFormList* forms) {
-  int wallet_handle = WalletHandle();
-  if (wallet_handle == kInvalidKWalletHandle)
-    return false;
-  return GetLoginsList(forms, get_begin, get_end, wallet_handle);
 }
 
 bool NativeBackendKWallet::GetAutofillableLogins(PasswordFormList* forms) {
@@ -502,7 +439,7 @@ bool NativeBackendKWallet::GetLoginsList(PasswordFormList* forms,
       return false;
     }
     dbus::MessageReader reader(response.get());
-    uint8_t* bytes = NULL;
+    const uint8_t* bytes = NULL;
     size_t length = 0;
     if (!reader.PopArrayOfBytes(&bytes, &length)) {
       LOG(ERROR) << "Error reading response from kwalletd (readEntry): "
@@ -542,28 +479,6 @@ bool NativeBackendKWallet::GetLoginsList(PasswordFormList* forms,
       forms->push_back(all_forms[i]);
     else
       delete all_forms[i];
-  }
-
-  return true;
-}
-
-bool NativeBackendKWallet::GetLoginsList(PasswordFormList* forms,
-                                         const base::Time& begin,
-                                         const base::Time& end,
-                                         int wallet_handle) {
-  PasswordFormList all_forms;
-  if (!GetAllLogins(&all_forms, wallet_handle))
-    return false;
-
-  // We have to read all the entries, and then filter them here.
-  forms->reserve(forms->size() + all_forms.size());
-  for (size_t i = 0; i < all_forms.size(); ++i) {
-    if (begin <= all_forms[i]->date_created &&
-        (end.is_null() || all_forms[i]->date_created < end)) {
-      forms->push_back(all_forms[i]);
-    } else {
-      delete all_forms[i];
-    }
   }
 
   return true;
@@ -610,7 +525,7 @@ bool NativeBackendKWallet::GetAllLogins(PasswordFormList* forms,
       continue;
     }
     dbus::MessageReader reader(response.get());
-    uint8_t* bytes = NULL;
+    const uint8_t* bytes = NULL;
     size_t length = 0;
     if (!reader.PopArrayOfBytes(&bytes, &length)) {
       LOG(ERROR) << "Error reading response from kwalletd (readEntry): "
@@ -688,6 +603,106 @@ bool NativeBackendKWallet::SetLoginsList(const PasswordFormList& forms,
   return ret == 0;
 }
 
+bool NativeBackendKWallet::RemoveLoginsBetween(
+    base::Time delete_begin,
+    base::Time delete_end,
+    TimestampToCompare date_to_compare,
+    password_manager::PasswordStoreChangeList* changes) {
+  DCHECK(changes);
+  changes->clear();
+  int wallet_handle = WalletHandle();
+  if (wallet_handle == kInvalidKWalletHandle)
+    return false;
+
+  // We could probably also use readEntryList here.
+  std::vector<std::string> realm_list;
+  {
+    dbus::MethodCall method_call(kKWalletInterface, "entryList");
+    dbus::MessageWriter builder(&method_call);
+    builder.AppendInt32(wallet_handle);  // handle
+    builder.AppendString(folder_name_);  // folder
+    builder.AppendString(app_name_);     // appid
+    scoped_ptr<dbus::Response> response(kwallet_proxy_->CallMethodAndBlock(
+        &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
+    if (!response.get()) {
+      LOG(ERROR) << "Error contacting kwalletd (entryList)";
+      return false;
+    }
+    dbus::MessageReader reader(response.get());
+    dbus::MessageReader array(response.get());
+    if (!reader.PopArray(&array)) {
+      LOG(ERROR) << "Error reading response from kwalletd (entryList): "
+                 << response->ToString();
+      return false;
+    }
+    while (array.HasMoreData()) {
+      std::string realm;
+      if (!array.PopString(&realm)) {
+        LOG(ERROR) << "Error reading response from kwalletd (entryList): "
+                   << response->ToString();
+        return false;
+      }
+      realm_list.push_back(realm);
+    }
+  }
+
+  bool ok = true;
+  for (size_t i = 0; i < realm_list.size(); ++i) {
+    const std::string& signon_realm = realm_list[i];
+    dbus::MethodCall method_call(kKWalletInterface, "readEntry");
+    dbus::MessageWriter builder(&method_call);
+    builder.AppendInt32(wallet_handle);  // handle
+    builder.AppendString(folder_name_);  // folder
+    builder.AppendString(signon_realm);  // key
+    builder.AppendString(app_name_);     // appid
+    scoped_ptr<dbus::Response> response(kwallet_proxy_->CallMethodAndBlock(
+        &method_call, dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
+    if (!response.get()) {
+      LOG(ERROR) << "Error contacting kwalletd (readEntry)";
+      continue;
+    }
+    dbus::MessageReader reader(response.get());
+    const uint8_t* bytes = NULL;
+    size_t length = 0;
+    if (!reader.PopArrayOfBytes(&bytes, &length)) {
+      LOG(ERROR) << "Error reading response from kwalletd (readEntry): "
+                 << response->ToString();
+      continue;
+    }
+    if (!bytes || !CheckSerializedValue(bytes, length, signon_realm))
+      continue;
+
+    // Can't we all just agree on whether bytes are signed or not? Please?
+    Pickle pickle(reinterpret_cast<const char*>(bytes), length);
+    PasswordFormList all_forms;
+    DeserializeValue(signon_realm, pickle, &all_forms);
+
+    PasswordFormList kept_forms;
+    kept_forms.reserve(all_forms.size());
+    base::Time autofill::PasswordForm::*date_member =
+        date_to_compare == CREATION_TIMESTAMP
+            ? &autofill::PasswordForm::date_created
+            : &autofill::PasswordForm::date_synced;
+    for (size_t i = 0; i < all_forms.size(); ++i) {
+      if (delete_begin <= all_forms[i]->*date_member &&
+          (delete_end.is_null() || all_forms[i]->*date_member < delete_end)) {
+        changes->push_back(password_manager::PasswordStoreChange(
+            password_manager::PasswordStoreChange::REMOVE, *all_forms[i]));
+        delete all_forms[i];
+      } else {
+        kept_forms.push_back(all_forms[i]);
+      }
+    }
+
+    if (!SetLoginsList(kept_forms, signon_realm, wallet_handle)) {
+      ok = false;
+      changes->clear();
+    }
+    STLDeleteElements(&kept_forms);
+  }
+  return ok;
+}
+
 // static
 void NativeBackendKWallet::SerializeValue(const PasswordFormList& forms,
                                           Pickle* pickle) {
@@ -708,13 +723,19 @@ void NativeBackendKWallet::SerializeValue(const PasswordFormList& forms,
     pickle->WriteBool(form->preferred);
     pickle->WriteBool(form->blacklisted_by_user);
     pickle->WriteInt64(form->date_created.ToTimeT());
+    pickle->WriteInt(form->type);
+    pickle->WriteInt(form->times_used);
+    autofill::SerializeFormData(form->form_data, pickle);
+    pickle->WriteInt64(form->date_synced.ToInternalValue());
   }
 }
 
 // static
 bool NativeBackendKWallet::DeserializeValueSize(const std::string& signon_realm,
                                                 const PickleIterator& init_iter,
-                                                bool size_32, bool warn_only,
+                                                int version,
+                                                bool size_32,
+                                                bool warn_only,
                                                 PasswordFormList* forms) {
   PickleIterator iter = init_iter;
 
@@ -756,6 +777,7 @@ bool NativeBackendKWallet::DeserializeValueSize(const std::string& signon_realm,
 
     int scheme = 0;
     int64 date_created = 0;
+    int type = 0;
     // Note that these will be read back in the order listed due to
     // short-circuit evaluation. This is important.
     if (!iter.ReadInt(&scheme) ||
@@ -770,18 +792,31 @@ bool NativeBackendKWallet::DeserializeValueSize(const std::string& signon_realm,
         !iter.ReadBool(&form->preferred) ||
         !iter.ReadBool(&form->blacklisted_by_user) ||
         !iter.ReadInt64(&date_created)) {
-      if (warn_only) {
-        LOG(WARNING) << "Failed to deserialize version 0 KWallet entry "
-                     << "(realm: " << signon_realm << ") with native "
-                     << "architecture size; will try alternate size.";
-      } else {
-        LOG(ERROR) << "Failed to deserialize KWallet entry "
-                   << "(realm: " << signon_realm << ")";
-      }
+      LogDeserializationWarning(version, signon_realm, warn_only);
       return false;
     }
     form->scheme = static_cast<PasswordForm::Scheme>(scheme);
     form->date_created = base::Time::FromTimeT(date_created);
+
+    if (version > 1) {
+      if (!iter.ReadInt(&type) ||
+          !iter.ReadInt(&form->times_used) ||
+          !autofill::DeserializeFormData(&iter, &form->form_data)) {
+        LogDeserializationWarning(version, signon_realm, false);
+        return false;
+      }
+      form->type = static_cast<PasswordForm::Type>(type);
+    }
+
+    if (version > 2) {
+      int64 date_synced = 0;
+      if (!iter.ReadInt64(&date_synced)) {
+        LogDeserializationWarning(version, signon_realm, false);
+        return false;
+      }
+      form->date_synced = base::Time::FromInternalValue(date_synced);
+    }
+
     forms->push_back(form.release());
   }
 
@@ -802,21 +837,22 @@ void NativeBackendKWallet::DeserializeValue(const std::string& signon_realm,
     return;
   }
 
-  if (version == kPickleVersion) {
+  if (version > 0) {
     // In current pickles, we expect 64-bit sizes. Failure is an error.
-    DeserializeValueSize(signon_realm, iter, false, false, forms);
+    DeserializeValueSize(signon_realm, iter, version, false, false, forms);
     return;
   }
 
   const size_t saved_forms_size = forms->size();
   const bool size_32 = sizeof(size_t) == sizeof(uint32_t);
-  if (!DeserializeValueSize(signon_realm, iter, size_32, true, forms)) {
+  if (!DeserializeValueSize(
+          signon_realm, iter, version, size_32, true, forms)) {
     // We failed to read the pickle using the native architecture of the system.
     // Try again with the opposite architecture. Note that we do this even on
     // 32-bit machines, in case we're reading a 64-bit pickle. (Probably rare,
     // since mostly we expect upgrades, not downgrades, but both are possible.)
     forms->resize(saved_forms_size);
-    DeserializeValueSize(signon_realm, iter, !size_32, false, forms);
+    DeserializeValueSize(signon_realm, iter, version, !size_32, false, forms);
   }
 }
 
@@ -901,10 +937,6 @@ int NativeBackendKWallet::WalletHandle() {
     }
   }
 
-  // Successful initialization. Try migration if necessary.
-  if (!migrate_tried_)
-    MigrateToProfileSpecificLogins();
-
   return handle;
 }
 
@@ -912,60 +944,4 @@ std::string NativeBackendKWallet::GetProfileSpecificFolderName() const {
   // Originally, the folder name was always just "Chrome Form Data".
   // Now we use it to distinguish passwords for different profiles.
   return base::StringPrintf("%s (%d)", kKWalletFolder, profile_id_);
-}
-
-void NativeBackendKWallet::MigrateToProfileSpecificLogins() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::DB));
-
-  DCHECK(!migrate_tried_);
-  DCHECK_EQ(folder_name_, kKWalletFolder);
-
-  // Record the fact that we've attempted migration already right away, so that
-  // we don't get recursive calls back to MigrateToProfileSpecificLogins().
-  migrate_tried_ = true;
-
-  // First get all the logins, using the old folder name.
-  int wallet_handle = WalletHandle();
-  if (wallet_handle == kInvalidKWalletHandle)
-    return;
-  PasswordFormList forms;
-  if (!GetAllLogins(&forms, wallet_handle))
-    return;
-
-  // Now switch to a profile-specific folder name.
-  folder_name_ = GetProfileSpecificFolderName();
-
-  // Try to add all the logins with the new folder name.
-  // This could be done more efficiently by grouping by signon realm and using
-  // SetLoginsList(), but we do this for simplicity since it is only done once.
-  // Note, however, that we do need another call to WalletHandle() to create
-  // this folder if necessary.
-  bool ok = true;
-  for (size_t i = 0; i < forms.size(); ++i) {
-    if (!AddLogin(*forms[i]))
-      ok = false;
-    delete forms[i];
-  }
-  if (forms.empty()) {
-    // If there were no logins to migrate, we do an extra call to WalletHandle()
-    // for its side effect of attempting to create the profile-specific folder.
-    // This is not strictly necessary, but it's safe and helps in testing.
-    wallet_handle = WalletHandle();
-    if (wallet_handle == kInvalidKWalletHandle)
-      ok = false;
-  }
-
-  if (ok) {
-    // All good! Keep the new app string and set a persistent pref.
-    // NOTE: We explicitly don't delete the old passwords yet. They are
-    // potentially shared with other profiles and other user data dirs!
-    // Each other profile must be able to migrate the shared data as well,
-    // so we must leave it alone. After a few releases, we'll add code to
-    // delete them, and eventually remove this migration code.
-    // TODO(mdm): follow through with the plan above.
-    PasswordStoreX::SetPasswordsUseLocalProfileId(prefs_);
-  } else {
-    // We failed to migrate for some reason. Use the old folder name.
-    folder_name_ = kKWalletFolder;
-  }
 }

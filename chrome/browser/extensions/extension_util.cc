@@ -5,21 +5,53 @@
 #include "chrome/browser/extensions/extension_util.h"
 
 #include "base/command_line.h"
+#include "base/logging.h"
+#include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_sync_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/extensions/sync_helper.h"
 #include "content/public/browser/site_instance.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
+#include "extensions/browser/extension_util.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/features/simple_feature.h"
 #include "extensions/common/manifest.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
+#include "grit/theme_resources.h"
+#include "ui/base/resource/resource_bundle.h"
 
 namespace extensions {
 namespace util {
+
+namespace {
+// The entry into the ExtensionPrefs for allowing an extension to script on
+// all urls without explicit permission.
+const char kExtensionAllowedOnAllUrlsPrefName[] =
+    "extension_can_script_all_urls";
+
+// Returns true if |extension_id| for an external component extension should
+// always be enabled in incognito windows.
+bool IsWhitelistedForIncognito(const std::string& extension_id) {
+  static const char* kExtensionWhitelist[] = {
+    "D5736E4B5CF695CB93A2FB57E4FDC6E5AFAB6FE2",  // http://crbug.com/312900
+    "D57DE394F36DC1C3220E7604C575D29C51A6C495",  // http://crbug.com/319444
+    "3F65507A3B39259B38C8173C6FFA3D12DF64CCE9"   // http://crbug.com/371562
+  };
+
+  return extensions::SimpleFeature::IsIdInList(
+      extension_id,
+      std::set<std::string>(
+          kExtensionWhitelist,
+          kExtensionWhitelist + arraysize(kExtensionWhitelist)));
+}
+}  // namespace
 
 bool IsIncognitoEnabled(const std::string& extension_id,
                         content::BrowserContext* context) {
@@ -32,8 +64,10 @@ bool IsIncognitoEnabled(const std::string& extension_id,
     // work in incognito mode.
     if (extension->location() == Manifest::COMPONENT)
       return true;
-    if (extension->force_incognito_enabled())
+    if (extension->location() == Manifest::EXTERNAL_COMPONENT &&
+        IsWhitelistedForIncognito(extension_id)) {
       return true;
+    }
   }
 
   return ExtensionPrefs::Get(context)->IsIncognitoEnabled(extension_id);
@@ -63,7 +97,7 @@ void SetIsIncognitoEnabled(const std::string& extension_id,
     }
   }
 
-  ExtensionPrefs* extension_prefs = service->extension_prefs();
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Get(service->profile());
   // Broadcast unloaded and loaded events to update browser state. Only bother
   // if the value changed and the extension is actually enabled, since there is
   // no UI otherwise.
@@ -129,11 +163,30 @@ void SetAllowFileAccess(const std::string& extension_id,
   if (allow == AllowFileAccess(extension_id, context))
     return;
 
-  service->extension_prefs()->SetAllowFileAccess(extension_id, allow);
+  ExtensionPrefs::Get(context)->SetAllowFileAccess(extension_id, allow);
 
   bool extension_is_enabled = service->extensions()->Contains(extension_id);
   if (extension_is_enabled)
     service->ReloadExtension(extension_id);
+}
+
+bool AllowedScriptingOnAllUrls(const std::string& extension_id,
+                               content::BrowserContext* context) {
+  bool allowed = false;
+  return ExtensionPrefs::Get(context)->ReadPrefAsBoolean(
+             extension_id,
+             kExtensionAllowedOnAllUrlsPrefName,
+             &allowed) &&
+         allowed;
+}
+
+void SetAllowedScriptingOnAllUrls(const std::string& extension_id,
+                                  content::BrowserContext* context,
+                                  bool allowed) {
+  ExtensionPrefs::Get(context)->UpdateExtensionPref(
+      extension_id,
+      kExtensionAllowedOnAllUrlsPrefName,
+      allowed ? new base::FundamentalValue(true) : NULL);
 }
 
 bool IsAppLaunchable(const std::string& extension_id,
@@ -146,6 +199,18 @@ bool IsAppLaunchableWithoutEnabling(const std::string& extension_id,
                                     content::BrowserContext* context) {
   return ExtensionRegistry::Get(context)->GetExtensionById(
       extension_id, ExtensionRegistry::ENABLED) != NULL;
+}
+
+bool ShouldSyncExtension(const Extension* extension,
+                         content::BrowserContext* context) {
+  return sync_helper::IsSyncableExtension(extension) &&
+         !ExtensionPrefs::Get(context)->DoNotSync(extension->id());
+}
+
+bool ShouldSyncApp(const Extension* app, content::BrowserContext* context) {
+  return sync_helper::IsSyncableApp(app) &&
+         !util::IsEphemeralApp(app->id(), context) &&
+         !ExtensionPrefs::Get(context)->DoNotSync(app->id());
 }
 
 bool IsExtensionIdle(const std::string& extension_id,
@@ -166,11 +231,66 @@ bool IsExtensionIdle(const std::string& extension_id,
   return process_manager->GetRenderViewHostsForExtension(extension_id).empty();
 }
 
-bool IsExtensionInstalledPermanently(const std::string& extension_id,
-                                     content::BrowserContext* context) {
+GURL GetSiteForExtensionId(const std::string& extension_id,
+                           content::BrowserContext* context) {
+  return content::SiteInstance::GetSiteForURL(
+      context, Extension::GetBaseURLFromExtensionId(extension_id));
+}
+
+scoped_ptr<base::DictionaryValue> GetExtensionInfo(const Extension* extension) {
+  DCHECK(extension);
+  scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
+
+  dict->SetString("id", extension->id());
+  dict->SetString("name", extension->name());
+
+  GURL icon = extensions::ExtensionIconSource::GetIconURL(
+      extension,
+      extension_misc::EXTENSION_ICON_SMALLISH,
+      ExtensionIconSet::MATCH_BIGGER,
+      false,  // Not grayscale.
+      NULL);  // Don't set bool if exists.
+  dict->SetString("icon", icon.spec());
+
+  return dict.Pass();
+}
+
+bool HasIsolatedStorage(const ExtensionInfo& info) {
+  if (!info.extension_manifest.get())
+    return false;
+
+  std::string error;
+  scoped_refptr<const Extension> extension(Extension::Create(
+      info.extension_path,
+      info.extension_location,
+      *info.extension_manifest,
+      Extension::NO_FLAGS,
+      info.extension_id,
+      &error));
+  if (!extension.get())
+    return false;
+
+  return AppIsolationInfo::HasIsolatedStorage(extension.get());
+}
+
+bool SiteHasIsolatedStorage(const GURL& extension_site_url,
+                            content::BrowserContext* context) {
   const Extension* extension = ExtensionRegistry::Get(context)->
-      GetExtensionById(extension_id, ExtensionRegistry::EVERYTHING);
-  return extension && !extension->is_ephemeral();
+      enabled_extensions().GetExtensionOrAppByURL(extension_site_url);
+  if (!extension)
+    return false;
+
+  return AppIsolationInfo::HasIsolatedStorage(extension);
+}
+
+const gfx::ImageSkia& GetDefaultAppIcon() {
+  return *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      IDR_APP_DEFAULT_ICON);
+}
+
+const gfx::ImageSkia& GetDefaultExtensionIcon() {
+  return *ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      IDR_EXTENSION_DEFAULT_ICON);
 }
 
 }  // namespace util

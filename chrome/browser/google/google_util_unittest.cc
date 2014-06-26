@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "chrome/browser/google/google_url_tracker.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/common/chrome_switches.h"
+#include "components/google/core/browser/google_switches.h"
+#include "components/google/core/browser/google_url_tracker.h"
+#include "components/google/core/browser/google_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using google_util::IsGoogleDomainUrl;
@@ -289,7 +289,7 @@ TEST(GoogleUtilTest, GoogleDomains) {
                                  google_util::DISALLOW_NON_STANDARD_PORTS));
 }
 
-TEST(GoogleUtilTest, GoogleBaseURL) {
+TEST(GoogleUtilTest, GoogleBaseURLNotSpecified) {
   // When no command-line flag is specified, no input to
   // StartsWithCommandLineGoogleBaseURL() should return true.
   EXPECT_FALSE(StartsWithBaseURL(std::string()));
@@ -333,4 +333,75 @@ TEST(GoogleUtilTest, GoogleBaseURL) {
   EXPECT_TRUE(IsHomePage("https://www.foo.com/webhp"));
   EXPECT_FALSE(IsHomePage("http://www.foo.com/xyz"));
   EXPECT_TRUE(IsSearch("http://www.foo.com/search?q=a"));
+}
+
+TEST(GoogleUtilTest, GoogleBaseURLDisallowQuery) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "http://www.foo.com/?q=");
+  EXPECT_FALSE(google_util::CommandLineGoogleBaseURL().is_valid());
+}
+
+TEST(GoogleUtilTest, GoogleBaseURLDisallowRef) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "http://www.foo.com/#q=");
+  EXPECT_FALSE(google_util::CommandLineGoogleBaseURL().is_valid());
+}
+
+TEST(GoogleUtilTest, GoogleBaseURLFixup) {
+  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kGoogleBaseURL,
+                                                      "www.foo.com");
+  ASSERT_TRUE(google_util::CommandLineGoogleBaseURL().is_valid());
+  EXPECT_EQ("http://www.foo.com/",
+            google_util::CommandLineGoogleBaseURL().spec());
+}
+
+TEST(GoogleUtilTest, YoutubeDomains) {
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://www.youtube.com"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://youtube.com"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://youtube.com/path/main.html"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_FALSE(IsYoutubeDomainUrl(GURL("http://notyoutube.com"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+
+  // TLD checks.
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://www.youtube.ca"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://www.youtube.co.uk"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_FALSE(IsYoutubeDomainUrl(GURL("http://www.youtube.notrealtld"),
+                                  google_util::ALLOW_SUBDOMAIN,
+                                  google_util::DISALLOW_NON_STANDARD_PORTS));
+
+  // Subdomain checks.
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://images.youtube.com"),
+                                 google_util::ALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_FALSE(IsYoutubeDomainUrl(GURL("http://images.youtube.com"),
+                                  google_util::DISALLOW_SUBDOMAIN,
+                                  google_util::DISALLOW_NON_STANDARD_PORTS));
+
+  // Port and scheme checks.
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://www.youtube.com:80"),
+                                 google_util::DISALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("https://www.youtube.com:443"),
+                                 google_util::DISALLOW_SUBDOMAIN,
+                                 google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_FALSE(IsYoutubeDomainUrl(GURL("http://www.youtube.com:123"),
+                                  google_util::DISALLOW_SUBDOMAIN,
+                                  google_util::DISALLOW_NON_STANDARD_PORTS));
+  EXPECT_TRUE(IsYoutubeDomainUrl(GURL("http://www.youtube.com:123"),
+                                 google_util::DISALLOW_SUBDOMAIN,
+                                 google_util::ALLOW_NON_STANDARD_PORTS));
+  EXPECT_FALSE(IsYoutubeDomainUrl(GURL("file://www.youtube.com"),
+                                  google_util::DISALLOW_SUBDOMAIN,
+                                  google_util::DISALLOW_NON_STANDARD_PORTS));
 }

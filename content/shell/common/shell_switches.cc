@@ -27,6 +27,9 @@ const char kDumpRenderTree[] = "dump-render-tree";
 // Enable accelerated 2D canvas.
 const char kEnableAccelerated2DCanvas[] = "enable-accelerated-2d-canvas";
 
+// Enable font antialiasing for pixel tests.
+const char kEnableFontAntialiasing[] = "enable-font-antialiasing";
+
 // Enables the leak detection of loading webpages. This allows us to check
 // whether or not reloading a webpage releases web-related objects correctly.
 const char kEnableLeakDetection[] = "enable-leak-detection";
@@ -36,7 +39,12 @@ const char kEncodeBinary[] = "encode-binary";
 
 // Exposes the window.internals object to JavaScript for interactive development
 // and debugging of layout tests that rely on it.
-const char kExposeInternalsForTesting[]     = "expose-internals-for-testing";
+const char kExposeInternalsForTesting[] = "expose-internals-for-testing";
+
+// Registers additional font files on Windows (for fonts outside the usual
+// %WINDIR%\Fonts location). Multiple files can be used by separating them
+// with a semicolon (;).
+const char kRegisterFontFiles[] = "register-font-files";
 
 // This makes us disable some web-platform runtime features so that we test
 // content_shell as if it was a stable release. It is only followed when

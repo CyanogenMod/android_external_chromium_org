@@ -13,6 +13,7 @@
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/test/chromedriver/chrome/device_metrics.h"
 #include "chrome/test/chromedriver/chrome/devtools_client_impl.h"
 #include "chrome/test/chromedriver/chrome/log.h"
 #include "chrome/test/chromedriver/chrome/status.h"
@@ -67,20 +68,24 @@ const WebViewInfo* WebViewsInfo::GetForId(const std::string& id) const {
 DevToolsHttpClient::DevToolsHttpClient(
     const NetAddress& address,
     scoped_refptr<URLRequestContextGetter> context_getter,
-    const SyncWebSocketFactory& socket_factory)
+    const SyncWebSocketFactory& socket_factory,
+    scoped_ptr<DeviceMetrics> device_metrics)
     : context_getter_(context_getter),
       socket_factory_(socket_factory),
       server_url_("http://" + address.ToString()),
       web_socket_url_prefix_(base::StringPrintf(
-          "ws://%s/devtools/page/", address.ToString().c_str())) {}
+          "ws://%s/devtools/page/", address.ToString().c_str())),
+      device_metrics_(device_metrics.Pass()) {}
 
 DevToolsHttpClient::~DevToolsHttpClient() {}
 
 Status DevToolsHttpClient::Init(const base::TimeDelta& timeout) {
   base::TimeTicks deadline = base::TimeTicks::Now() + timeout;
-  std::string devtools_version;
+  std::string browser_version;
+  std::string blink_version;
+
   while (true) {
-    Status status = GetVersion(&devtools_version);
+    Status status = GetVersion(&browser_version, &blink_version);
     if (status.IsOk())
       break;
     if (status.code() != kChromeNotReachable ||
@@ -90,37 +95,53 @@ Status DevToolsHttpClient::Init(const base::TimeDelta& timeout) {
     base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(50));
   }
 
-  int kToTBuildNo = 9999;
-  if (devtools_version.empty()) {
-    // Content Shell has an empty product version and a fake user agent.
-    // There's no way to detect the actual version, so assume it is tip of tree.
-    version_ = "content shell";
-    build_no_ = kToTBuildNo;
+  // |blink_version| is should look something like "537.36 (@159105)", and for
+  // this example |blink_revision| should be 159105
+  size_t before = blink_version.find('@');
+  size_t after = blink_version.find(')');
+  if (before == std::string::npos || after == std::string::npos) {
+    return Status(kUnknownError,
+                  "unrecognized Blink version: " + blink_version);
+  }
+
+  std::string blink_revision_string = blink_version.substr(before + 1,
+                                                           after - before - 1);
+  int blink_revision_int;
+  if (!base::StringToInt(blink_revision_string, &blink_revision_int)) {
+    return Status(kUnknownError,
+                  "unrecognized Blink revision: " + blink_revision_string);
+  }
+
+  browser_info_.blink_revision = blink_revision_int;
+
+  if (browser_version.empty()) {
+    browser_info_.browser_name = "content shell";
     return Status(kOk);
   }
-  if (devtools_version.find("Version/") == 0u) {
-    version_ = "webview";
-    build_no_ = kToTBuildNo;
+  if (browser_version.find("Version/") == 0u) {
+    browser_info_.browser_name = "webview";
     return Status(kOk);
   }
   std::string prefix = "Chrome/";
-  if (devtools_version.find(prefix) != 0u) {
+  if (browser_version.find(prefix) != 0u) {
     return Status(kUnknownError,
-                  "unrecognized Chrome version: " + devtools_version);
+                  "unrecognized Chrome version: " + browser_version);
   }
 
-  std::string stripped_version = devtools_version.substr(prefix.length());
+  std::string stripped_version = browser_version.substr(prefix.length());
   int temp_build_no;
   std::vector<std::string> version_parts;
   base::SplitString(stripped_version, '.', &version_parts);
   if (version_parts.size() != 4 ||
       !base::StringToInt(version_parts[2], &temp_build_no)) {
     return Status(kUnknownError,
-                  "unrecognized Chrome version: " + devtools_version);
+                  "unrecognized Chrome version: " + browser_version);
   }
 
-  version_ = stripped_version;
-  build_no_ = temp_build_no;
+  browser_info_.browser_name = "chrome";
+  browser_info_.browser_version = stripped_version;
+  browser_info_.build_no = temp_build_no;
+
   return Status(kOk);
 }
 
@@ -174,21 +195,22 @@ Status DevToolsHttpClient::ActivateWebView(const std::string& id) {
   return Status(kOk);
 }
 
-const std::string& DevToolsHttpClient::version() const {
-  return version_;
+const BrowserInfo* DevToolsHttpClient::browser_info() {
+  return &browser_info_;
 }
 
-int DevToolsHttpClient::build_no() const {
-  return build_no_;
+const DeviceMetrics* DevToolsHttpClient::device_metrics() {
+  return device_metrics_.get();
 }
 
-Status DevToolsHttpClient::GetVersion(std::string* version) {
+Status DevToolsHttpClient::GetVersion(std::string* browser_version,
+                                      std::string* blink_version) {
   std::string data;
   if (!FetchUrlAndLog(
           server_url_ + "/json/version", context_getter_.get(), &data))
     return Status(kChromeNotReachable);
 
-  return internal::ParseVersionInfo(data, version);
+  return internal::ParseVersionInfo(data, browser_version, blink_version);
 }
 
 Status DevToolsHttpClient::CloseFrontends(const std::string& for_client_id) {
@@ -233,7 +255,7 @@ Status DevToolsHttpClient::CloseFrontends(const std::string& for_client_id) {
         *it,
         base::Bind(&FakeCloseFrontends)));
     scoped_ptr<WebViewImpl> web_view(
-        new WebViewImpl(*it, build_no_, client.Pass()));
+        new WebViewImpl(*it, &browser_info_, client.Pass(), NULL));
 
     status = web_view->ConnectIfNecessary();
     // Ignore disconnected error, because the debugger might have closed when
@@ -331,18 +353,23 @@ Status ParseWebViewsInfo(const std::string& data,
 }
 
 Status ParseVersionInfo(const std::string& data,
-                        std::string* version) {
+                        std::string* browser_version,
+                        std::string* blink_version) {
   scoped_ptr<base::Value> value(base::JSONReader::Read(data));
   if (!value.get())
     return Status(kUnknownError, "version info not in JSON");
   base::DictionaryValue* dict;
   if (!value->GetAsDictionary(&dict))
     return Status(kUnknownError, "version info not a dictionary");
-  if (!dict->GetString("Browser", version)) {
+  if (!dict->GetString("Browser", browser_version)) {
     return Status(
         kUnknownError,
         "Chrome version must be >= " + GetMinimumSupportedChromeVersion(),
         Status(kUnknownError, "version info doesn't include string 'Browser'"));
+  }
+  if (!dict->GetString("WebKit-Version", blink_version)) {
+    return Status(kUnknownError,
+                  "version info doesn't include string 'WebKit-Version'");
   }
   return Status(kOk);
 }

@@ -27,9 +27,8 @@ class AppInstaller::WebContentsObserver
 
  protected:
   // content::WebContentsObserver implementation.
-  virtual void WebContentsDestroyed(
-      content::WebContents* web_contents) OVERRIDE {
-    parent_->OnWebContentsDestroyed(web_contents);
+  virtual void WebContentsDestroyed() OVERRIDE {
+    parent_->OnWebContentsDestroyed(web_contents());
   }
 
  private:
@@ -63,9 +62,9 @@ const GURL& AppInstaller::GetRequestorURL() const {
   return GURL::EmptyGURL();
 }
 
-scoped_ptr<ExtensionInstallPrompt::Prompt>
+scoped_refptr<ExtensionInstallPrompt::Prompt>
 AppInstaller::CreateInstallPrompt() const {
-  scoped_ptr<ExtensionInstallPrompt::Prompt> prompt(
+  scoped_refptr<ExtensionInstallPrompt::Prompt> prompt(
       new ExtensionInstallPrompt::Prompt(
           ExtensionInstallPrompt::INLINE_INSTALL_PROMPT));
 
@@ -73,7 +72,7 @@ AppInstaller::CreateInstallPrompt() const {
                           show_user_count(),
                           average_rating(),
                           rating_count());
-  return prompt.Pass();
+  return prompt;
 }
 
 bool AppInstaller::ShouldShowPostInstallUI() const {

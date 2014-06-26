@@ -11,16 +11,18 @@
 #include "base/debug/alias.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/field_trial.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
-#include "chrome/browser/metrics/metrics_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/logging_chrome.h"
+#include "content/public/browser/notification_service.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -52,6 +54,13 @@ void NullPointerCrash(int line_number) {
   base::debug::DumpWithoutCrashing();
 #endif
 }
+
+#if !defined(OS_ANDROID) || !defined(NDEBUG)
+// TODO(rtenneti): Enabled crashing, after getting data.
+NOINLINE void StartupCrash() {
+  NullPointerCrash(__LINE__);
+}
+#endif  // OS_ANDROID
 
 NOINLINE void ShutdownCrash() {
   NullPointerCrash(__LINE__);
@@ -409,6 +418,8 @@ bool ThreadWatcher::IsVeryUnresponsive() {
 // static
 ThreadWatcherList* ThreadWatcherList::g_thread_watcher_list_ = NULL;
 // static
+bool ThreadWatcherList::g_stopped_ = false;
+// static
 const int ThreadWatcherList::kSleepSeconds = 1;
 // static
 const int ThreadWatcherList::kUnresponsiveSeconds = 2;
@@ -416,6 +427,8 @@ const int ThreadWatcherList::kUnresponsiveSeconds = 2;
 const int ThreadWatcherList::kUnresponsiveCount = 9;
 // static
 const int ThreadWatcherList::kLiveThreadsThreshold = 2;
+// static, non-const for tests.
+int ThreadWatcherList::g_initialize_delay_seconds = 120;
 
 ThreadWatcherList::CrashDataThresholds::CrashDataThresholds(
     uint32 live_threads_threshold,
@@ -441,12 +454,16 @@ void ThreadWatcherList::StartWatchingAll(const CommandLine& command_line) {
   ThreadWatcherObserver::SetupNotifications(
       base::TimeDelta::FromSeconds(kSleepSeconds * unresponsive_threshold));
 
+  WatchDogThread::PostTask(
+      FROM_HERE,
+      base::Bind(&ThreadWatcherList::SetStopped, false));
+
   WatchDogThread::PostDelayedTask(
       FROM_HERE,
       base::Bind(&ThreadWatcherList::InitializeAndStartWatching,
                  unresponsive_threshold,
                  crash_on_hang_threads),
-      base::TimeDelta::FromSeconds(120));
+      base::TimeDelta::FromSeconds(g_initialize_delay_seconds));
 }
 
 // static
@@ -568,11 +585,18 @@ void ThreadWatcherList::ParseCommandLine(
     return;
   }
 
+  const char* kFieldTrialName = "ThreadWatcher";
+
+  // Nothing else to be done if the trial has already been set (i.e., when
+  // StartWatchingAll() has been already called once).
+  if (base::FieldTrialList::TrialExists(kFieldTrialName))
+    return;
+
   // Set up a field trial for 100% of the users to crash if either UI or IO
   // thread is not responsive for 30 seconds (or 15 pings).
   scoped_refptr<base::FieldTrial> field_trial(
       base::FieldTrialList::FactoryGetFieldTrial(
-          "ThreadWatcher", 100, "default_hung_threads",
+          kFieldTrialName, 100, "default_hung_threads",
           2014, 10, 30, base::FieldTrial::SESSION_RANDOMIZED, NULL));
   int hung_thread_group = field_trial->AppendGroup("hung_thread", 100);
   if (field_trial->group() == hung_thread_group) {
@@ -633,13 +657,20 @@ void ThreadWatcherList::InitializeAndStartWatching(
     const CrashOnHangThreadMap& crash_on_hang_threads) {
   DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
 
-  ThreadWatcherList* thread_watcher_list = new ThreadWatcherList();
-  CHECK(thread_watcher_list);
-
+  // Disarm the startup timebomb, even if stop has been called.
   BrowserThread::PostTask(
       BrowserThread::UI,
       FROM_HERE,
       base::Bind(&StartupTimeBomb::DisarmStartupTimeBomb));
+
+  // This method is deferred in relationship to its StopWatchingAll()
+  // counterpart. If a previous initialization has already happened, or if
+  // stop has been called, there's nothing left to do here.
+  if (g_thread_watcher_list_ || g_stopped_)
+    return;
+
+  ThreadWatcherList* thread_watcher_list = new ThreadWatcherList();
+  CHECK(thread_watcher_list);
 
   const base::TimeDelta kSleepTime =
       base::TimeDelta::FromSeconds(kSleepSeconds);
@@ -698,6 +729,9 @@ void ThreadWatcherList::DeleteAll() {
   }
 
   DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
+
+  SetStopped(true);
+
   if (!g_thread_watcher_list_)
     return;
 
@@ -723,6 +757,12 @@ ThreadWatcher* ThreadWatcherList::Find(const BrowserThread::ID& thread_id) {
   return it->second;
 }
 
+// static
+void ThreadWatcherList::SetStopped(bool stopped) {
+  DCHECK(WatchDogThread::CurrentlyOnWatchDogThread());
+  g_stopped_ = stopped;
+}
+
 // ThreadWatcherObserver methods and members.
 //
 // static
@@ -746,7 +786,34 @@ void ThreadWatcherObserver::SetupNotifications(
     const base::TimeDelta& wakeup_interval) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   ThreadWatcherObserver* observer = new ThreadWatcherObserver(wakeup_interval);
-  MetricsService::SetUpNotifications(&observer->registrar_, observer);
+  observer->registrar_.Add(
+      observer,
+      chrome::NOTIFICATION_BROWSER_OPENED,
+      content::NotificationService::AllBrowserContextsAndSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_BROWSER_CLOSED,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_TAB_PARENTED,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_TAB_CLOSING,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_LOAD_START,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_LOAD_STOP,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_RENDERER_PROCESS_CLOSED,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           content::NOTIFICATION_RENDER_WIDGET_HOST_HANG,
+                           content::NotificationService::AllSources());
+  observer->registrar_.Add(observer,
+                           chrome::NOTIFICATION_OMNIBOX_OPENED_URL,
+                           content::NotificationService::AllSources());
 }
 
 // static
@@ -852,18 +919,47 @@ class StartupWatchDogThread : public base::Watchdog {
   // alarming.
   explicit StartupWatchDogThread(const base::TimeDelta& duration)
       : base::Watchdog(duration, "Startup watchdog thread", true) {
+#if defined(OS_ANDROID)
+    // TODO(rtenneti): Delete this code, after getting data.
+    start_time_clock_= base::Time::Now();
+    start_time_monotonic_ = base::TimeTicks::Now();
+    start_time_thread_now_ = base::TimeTicks::IsThreadNowSupported()
+        ? base::TimeTicks::ThreadNow() : base::TimeTicks::Now();
+#endif  // OS_ANDROID
   }
 
   // Alarm is called if the time expires after an Arm() without someone calling
   // Disarm(). When Alarm goes off, in release mode we get the crash dump
   // without crashing and in debug mode we break into the debugger.
   virtual void Alarm() OVERRIDE {
-#ifndef NDEBUG
-    DCHECK(false);
-#else
-    base::debug::DumpWithoutCrashing();
-#endif
+#if !defined(NDEBUG)
+    StartupCrash();
+    return;
+#elif !defined(OS_ANDROID)
+    WatchDogThread::PostTask(FROM_HERE, base::Bind(&StartupCrash));
+    return;
+#else  // Android release: gather stats to figure out when to crash.
+    // TODO(rtenneti): Delete this code, after getting data.
+    UMA_HISTOGRAM_TIMES("StartupTimeBomb.Alarm.TimeDuration",
+                        base::Time::Now() - start_time_clock_);
+    UMA_HISTOGRAM_TIMES("StartupTimeBomb.Alarm.TimeTicksDuration",
+                        base::TimeTicks::Now() - start_time_monotonic_);
+    if (base::TimeTicks::IsThreadNowSupported()) {
+      UMA_HISTOGRAM_TIMES(
+          "StartupTimeBomb.Alarm.ThreadNowDuration",
+          base::TimeTicks::ThreadNow() - start_time_thread_now_);
+    }
+    return;
+#endif  // OS_ANDROID
   }
+
+ private:
+#if defined(OS_ANDROID)
+  // TODO(rtenneti): Delete this code, after getting data.
+  base::Time start_time_clock_;
+  base::TimeTicks start_time_monotonic_;
+  base::TimeTicks start_time_thread_now_;
+#endif  // OS_ANDROID
 
   DISALLOW_COPY_AND_ASSIGN(StartupWatchDogThread);
 };
@@ -885,6 +981,7 @@ class ShutdownWatchDogThread : public base::Watchdog {
     ShutdownCrash();
   }
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(ShutdownWatchDogThread);
 };
 }  // namespace

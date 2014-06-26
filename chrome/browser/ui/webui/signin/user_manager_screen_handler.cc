@@ -5,13 +5,15 @@
 #include "chrome/browser/ui/webui/signin/user_manager_screen_handler.h"
 
 #include "base/bind.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/extensions/api/screenlock_private/screenlock_private_api.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/profiles/profile_info_cache.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
-#include "chrome/browser/profiles/profile_info_util.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_window.h"
 #include "chrome/browser/profiles/profiles_state.h"
@@ -19,21 +21,25 @@
 #include "chrome/browser/ui/browser_dialogs.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "content/public/browser/web_ui.h"
 #include "google_apis/gaia/gaia_auth_fetcher.h"
 #include "google_apis/gaia/gaia_constants.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/webui/web_ui_util.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_util.h"
 
 #if defined(ENABLE_MANAGED_USERS)
-#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
 #endif
 
 namespace {
@@ -58,6 +64,7 @@ const char kJsApiUserManagerAuthLaunchUser[] = "authenticatedLaunchUser";
 const char kJsApiUserManagerLaunchGuest[] = "launchGuest";
 const char kJsApiUserManagerLaunchUser[] = "launchUser";
 const char kJsApiUserManagerRemoveUser[] = "removeUser";
+const char kJsApiUserManagerAttemptUnlock[] = "attemptUnlock";
 
 const size_t kAvatarIconSize = 180;
 
@@ -98,10 +105,18 @@ std::string GetAvatarImageAtIndex(
       info_cache.IsUsingGAIAPictureOfProfileAtIndex(index) &&
       info_cache.GetGAIAPictureOfProfileAtIndex(index);
 
-  gfx::Image icon = profiles::GetSizedAvatarIconWithBorder(
-      info_cache.GetAvatarIconOfProfileAtIndex(index),
-      is_gaia_picture, kAvatarIconSize, kAvatarIconSize);
-  return webui::GetBitmapDataUrl(icon.AsBitmap());
+  // If the avatar is too small (i.e. the old-style low resolution avatar),
+  // it will be pixelated when displayed in the User Manager, so we should
+  // return the placeholder avatar instead.
+  gfx::Image avatar_image = info_cache.GetAvatarIconOfProfileAtIndex(index);
+  if (avatar_image.Width() <= profiles::kAvatarIconWidth ||
+      avatar_image.Height() <= profiles::kAvatarIconHeight ) {
+    avatar_image = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
+        profiles::GetPlaceholderAvatarIconResourceID());
+  }
+  gfx::Image resized_image = profiles::GetSizedAvatarIcon(
+      avatar_image, is_gaia_picture, kAvatarIconSize, kAvatarIconSize);
+  return webui::GetBitmapDataUrl(resized_image.AsBitmap());
 }
 
 size_t GetIndexOfProfileWithEmailAndName(const ProfileInfoCache& info_cache,
@@ -109,14 +124,26 @@ size_t GetIndexOfProfileWithEmailAndName(const ProfileInfoCache& info_cache,
                                          const base::string16& name) {
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     if (info_cache.GetUserNameOfProfileAtIndex(i) == email &&
-        info_cache.GetNameOfProfileAtIndex(i) == name) {
+        (name.empty() || info_cache.GetNameOfProfileAtIndex(i) == name)) {
       return i;
     }
   }
   return std::string::npos;
 }
 
-} // namespace
+extensions::ScreenlockPrivateEventRouter* GetScreenlockRouter(
+    const std::string& email) {
+  ProfileInfoCache& info_cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  const size_t profile_index = GetIndexOfProfileWithEmailAndName(
+      info_cache, base::UTF8ToUTF16(email), base::string16());
+  Profile* profile = g_browser_process->profile_manager()
+      ->GetProfileByPath(info_cache.GetPathOfProfileAtIndex(profile_index));
+  return extensions::ScreenlockPrivateEventRouter::GetFactoryInstance()->Get(
+      profile);
+}
+
+}  // namespace
 
 // ProfileUpdateObserver ------------------------------------------------------
 
@@ -186,13 +213,81 @@ UserManagerScreenHandler::UserManagerScreenHandler()
 }
 
 UserManagerScreenHandler::~UserManagerScreenHandler() {
+  ScreenlockBridge::Get()->SetLockHandler(NULL);
+}
+
+void UserManagerScreenHandler::ShowBannerMessage(const std::string& message) {
+  web_ui()->CallJavascriptFunction(
+      "login.AccountPickerScreen.showBannerMessage",
+      base::StringValue(message));
+}
+
+void UserManagerScreenHandler::ShowUserPodCustomIcon(
+    const std::string& user_email,
+    const gfx::Image& icon) {
+  gfx::ImageSkia icon_skia = icon.AsImageSkia();
+  base::DictionaryValue icon_representations;
+  icon_representations.SetString(
+      "scale1x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(1.0f).sk_bitmap()));
+  icon_representations.SetString(
+      "scale2x",
+      webui::GetBitmapDataUrl(icon_skia.GetRepresentation(2.0f).sk_bitmap()));
+  web_ui()->CallJavascriptFunction(
+      "login.AccountPickerScreen.showUserPodCustomIcon",
+      base::StringValue(user_email),
+      icon_representations);
+}
+
+void UserManagerScreenHandler::HideUserPodCustomIcon(
+    const std::string& user_email) {
+  web_ui()->CallJavascriptFunction(
+      "login.AccountPickerScreen.hideUserPodCustomIcon",
+      base::StringValue(user_email));
+}
+
+void UserManagerScreenHandler::EnableInput() {
+  // Nothing here because UI is not disabled when starting to authenticate.
+}
+
+void UserManagerScreenHandler::SetAuthType(
+    const std::string& user_email,
+    ScreenlockBridge::LockHandler::AuthType auth_type,
+    const std::string& auth_value) {
+  user_auth_type_map_[user_email] = auth_type;
+  web_ui()->CallJavascriptFunction(
+      "login.AccountPickerScreen.setAuthType",
+      base::StringValue(user_email),
+      base::FundamentalValue(auth_type),
+      base::StringValue(auth_value));
+}
+
+ScreenlockBridge::LockHandler::AuthType UserManagerScreenHandler::GetAuthType(
+      const std::string& user_email) const {
+  UserAuthTypeMap::const_iterator it = user_auth_type_map_.find(user_email);
+  if (it == user_auth_type_map_.end())
+    return ScreenlockBridge::LockHandler::OFFLINE_PASSWORD;
+  return it->second;
+}
+
+void UserManagerScreenHandler::Unlock(const std::string& user_email) {
+  ProfileInfoCache& info_cache =
+      g_browser_process->profile_manager()->GetProfileInfoCache();
+  const size_t profile_index = GetIndexOfProfileWithEmailAndName(
+      info_cache, base::UTF8ToUTF16(user_email), base::string16());
+  DCHECK_LT(profile_index, info_cache.GetNumberOfProfiles());
+
+  authenticating_profile_index_ = profile_index;
+  ReportAuthenticationResult(true, ProfileMetrics::AUTH_LOCAL);
 }
 
 void UserManagerScreenHandler::HandleInitialize(const base::ListValue* args) {
   SendUserList();
   web_ui()->CallJavascriptFunction("cr.ui.Oobe.showUserManagerScreen");
   desktop_type_ = chrome::GetHostDesktopTypeForNativeView(
-      web_ui()->GetWebContents()->GetView()->GetNativeView());
+      web_ui()->GetWebContents()->GetNativeView());
+
+  ScreenlockBridge::Get()->SetLockHandler(this);
 }
 
 void UserManagerScreenHandler::HandleAddUser(const base::ListValue* args) {
@@ -259,9 +354,10 @@ void UserManagerScreenHandler::HandleRemoveUser(const base::ListValue* args) {
   if (!base::GetValueAsFilePath(*profile_path_value, &profile_path))
     return;
 
-  // This handler could have been called in managed mode, for example because
-  // the user fiddled with the web inspector. Silently return in this case.
-  if (Profile::FromWebUI(web_ui())->IsManaged())
+  // This handler could have been called for a supervised user, for example
+  // because the user fiddled with the web inspector. Silently return in this
+  // case.
+  if (Profile::FromWebUI(web_ui())->IsSupervised())
     return;
 
   if (!profiles::IsMultipleProfilesEnabled())
@@ -316,6 +412,13 @@ void UserManagerScreenHandler::HandleLaunchUser(const base::ListValue* args) {
                             ProfileMetrics::SWITCH_PROFILE_MANAGER);
 }
 
+void UserManagerScreenHandler::HandleAttemptUnlock(
+    const base::ListValue* args) {
+  std::string email;
+  CHECK(args->GetString(0, &email));
+  GetScreenlockRouter(email)->OnAuthAttempted(GetAuthType(email), "");
+}
+
 void UserManagerScreenHandler::OnClientLoginSuccess(
     const ClientLoginResult& result) {
   chrome::SetLocalAuthCredentials(authenticating_profile_index_,
@@ -357,6 +460,9 @@ void UserManagerScreenHandler::RegisterMessages() {
                  base::Unretained(this)));
   web_ui()->RegisterMessageCallback(kJsApiUserManagerRemoveUser,
       base::Bind(&UserManagerScreenHandler::HandleRemoveUser,
+                 base::Unretained(this)));
+  web_ui()->RegisterMessageCallback(kJsApiUserManagerAttemptUnlock,
+      base::Bind(&UserManagerScreenHandler::HandleAttemptUnlock,
                  base::Unretained(this)));
 
   const content::WebUI::MessageCallback& kDoNothingCallback =
@@ -412,8 +518,48 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("removeUserWarningButtonTitle",
       l10n_util::GetStringUTF16(IDS_LOGIN_POD_USER_REMOVE_WARNING_BUTTON));
   localized_strings->SetString("removeUserWarningText",
+      l10n_util::GetStringUTF16(IDS_LOGIN_POD_USER_REMOVE_WARNING));
+  localized_strings->SetString("removeSupervisedUserWarningText",
+      l10n_util::GetStringFUTF16(
+          IDS_LOGIN_POD_SUPERVISED_USER_REMOVE_WARNING,
+          base::UTF8ToUTF16(chrome::kSupervisedUserManagementDisplayURL)));
+
+  // Strings needed for the User Manager tutorial slides.
+  localized_strings->SetString("tutorialStart",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_START));
+  localized_strings->SetString("tutorialSkip",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SKIP));
+  localized_strings->SetString("tutorialNext",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_NEXT));
+  localized_strings->SetString("tutorialDone",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_DONE));
+  localized_strings->SetString("slideWelcomeTitle",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_INTRO_TITLE));
+  localized_strings->SetString("slideWelcomeText",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_INTRO_TEXT));
+  localized_strings->SetString("slideYourChromeTitle",
       l10n_util::GetStringUTF16(
-           IDS_LOGIN_POD_USER_REMOVE_WARNING));
+          IDS_USER_MANAGER_TUTORIAL_SLIDE_YOUR_CHROME_TITLE));
+  localized_strings->SetString("slideYourChromeText", l10n_util::GetStringUTF16(
+      IDS_USER_MANAGER_TUTORIAL_SLIDE_YOUR_CHROME_TEXT));
+  localized_strings->SetString("slideGuestsTitle",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_GUEST_TITLE));
+  localized_strings->SetString("slideGuestsText",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_GUEST_TEXT));
+  localized_strings->SetString("slideFriendsTitle",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_FRIENDS_TITLE));
+  localized_strings->SetString("slideFriendsText",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_FRIENDS_TEXT));
+  localized_strings->SetString("slideCompleteTitle",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_TITLE));
+  localized_strings->SetString("slideCompleteText",
+      l10n_util::GetStringUTF16(IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_TEXT));
+  localized_strings->SetString("slideCompleteUserNotFound",
+      l10n_util::GetStringUTF16(
+          IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_USER_NOT_FOUND));
+  localized_strings->SetString("slideCompleteAddUser",
+      l10n_util::GetStringUTF16(
+          IDS_USER_MANAGER_TUTORIAL_SLIDE_OUTRO_ADD_USER));
 
   // Strings needed for the user_pod_template public account div, but not ever
   // actually displayed for desktop users.
@@ -421,8 +567,14 @@ void UserManagerScreenHandler::GetLocalizedValues(
   localized_strings->SetString("publicAccountEnter", base::string16());
   localized_strings->SetString("publicAccountEnterAccessibleName",
                                base::string16());
-  localized_strings->SetString("multiple-signin-banner-text",
+  localized_strings->SetString("signinBannerText", base::string16());
+  localized_strings->SetString("launchAppButton", base::string16());
+  localized_strings->SetString("multiProfilesRestrictedPolicyTitle",
                                base::string16());
+  localized_strings->SetString("multiProfilesNotAllowedPolicyMsg",
+                                base::string16());
+  localized_strings->SetString("multiProfilesPrimaryOnlyPolicyMsg",
+                                base::string16());
 }
 
 void UserManagerScreenHandler::SendUserList() {
@@ -432,9 +584,11 @@ void UserManagerScreenHandler::SendUserList() {
   const ProfileInfoCache& info_cache =
       g_browser_process->profile_manager()->GetProfileInfoCache();
 
-  // If the active user is a managed user, then they may not perform
+  user_auth_type_map_.clear();
+
+  // If the active user is a supervised user, then they may not perform
   // certain actions (i.e. delete another user).
-  bool active_user_is_managed = Profile::FromWebUI(web_ui())->IsManaged();
+  bool active_user_is_supervised = Profile::FromWebUI(web_ui())->IsSupervised();
   for (size_t i = 0; i < info_cache.GetNumberOfProfiles(); ++i) {
     base::DictionaryValue* profile_value = new base::DictionaryValue();
 
@@ -449,12 +603,13 @@ void UserManagerScreenHandler::SendUserList() {
         kKeyDisplayName, info_cache.GetNameOfProfileAtIndex(i));
     profile_value->SetString(kKeyProfilePath, profile_path.MaybeAsASCII());
     profile_value->SetBoolean(kKeyPublicAccount, false);
-    profile_value->SetBoolean(kKeyLocallyManagedUser, false);
+    profile_value->SetBoolean(
+        kKeyLocallyManagedUser, info_cache.ProfileIsSupervisedAtIndex(i));
     profile_value->SetBoolean(kKeySignedIn, is_active_user);
     profile_value->SetBoolean(
         kKeyNeedsSignin, info_cache.ProfileIsSigninRequiredAtIndex(i));
     profile_value->SetBoolean(kKeyIsOwner, false);
-    profile_value->SetBoolean(kKeyCanRemove, !active_user_is_managed);
+    profile_value->SetBoolean(kKeyCanRemove, !active_user_is_supervised);
     profile_value->SetBoolean(kKeyIsDesktop, true);
     profile_value->SetString(
         kKeyAvatarUrl, GetAvatarImageAtIndex(i, info_cache));

@@ -7,6 +7,7 @@
 
 #include "ash/ash_export.h"
 #include "ash/display/display_controller.h"
+#include "ash/shell_observer.h"
 #include "base/basictypes.h"
 #include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
@@ -18,8 +19,6 @@
 #include "ui/gfx/image/image_skia.h"
 
 typedef unsigned int SkColor;
-
-class CommandLine;
 
 namespace aura {
 class Window;
@@ -38,37 +37,21 @@ enum WallpaperLayout {
   // desktop's size.
   WALLPAPER_LAYOUT_STRETCH,
   // Tile the wallpaper over the background without scaling it.
-  WALLPAPER_LAYOUT_TILE,
-};
-
-enum WallpaperResolution {
-  WALLPAPER_RESOLUTION_LARGE,
-  WALLPAPER_RESOLUTION_SMALL
+  WALLPAPER_LAYOUT_TILE
 };
 
 const SkColor kLoginWallpaperColor = 0xFEFEFE;
 
-// The width and height of small/large resolution wallpaper. When screen size is
-// smaller than |kSmallWallpaperMaxWidth| and |kSmallWallpaperMaxHeight|, the
-// small resolution wallpaper should be used. Otherwise, uses the large
-// resolution wallpaper.
-ASH_EXPORT extern const int kSmallWallpaperMaxWidth;
-ASH_EXPORT extern const int kSmallWallpaperMaxHeight;
-ASH_EXPORT extern const int kLargeWallpaperMaxWidth;
-ASH_EXPORT extern const int kLargeWallpaperMaxHeight;
-
-// The width and heigh of wallpaper thumbnails.
-ASH_EXPORT extern const int kWallpaperThumbnailWidth;
-ASH_EXPORT extern const int kWallpaperThumbnailHeight;
-
 class DesktopBackgroundControllerObserver;
 class WallpaperResizer;
 
-// Loads selected desktop wallpaper from file system asynchronously and updates
-// background layer if loaded successfully.
+// Updates background layer if necessary.
 class ASH_EXPORT DesktopBackgroundController
-    : public DisplayController::Observer {
+    : public DisplayController::Observer,
+      public ShellObserver {
  public:
+  class TestAPI;
+
   enum BackgroundMode {
     BACKGROUND_NONE,
     BACKGROUND_IMAGE,
@@ -81,10 +64,6 @@ class ASH_EXPORT DesktopBackgroundController
     return desktop_background_mode_;
   }
 
-  void set_command_line_for_testing(CommandLine* command_line) {
-    command_line_for_testing_ = command_line;
-  }
-
   // Add/Remove observers.
   void AddObserver(DesktopBackgroundControllerObserver* observer);
   void RemoveObserver(DesktopBackgroundControllerObserver* observer);
@@ -95,32 +74,19 @@ class ASH_EXPORT DesktopBackgroundController
 
   WallpaperLayout GetWallpaperLayout() const;
 
-  // Initialize root window's background.
-  void OnRootWindowAdded(aura::Window* root_window);
-
-  // Loads builtin wallpaper asynchronously and sets to current wallpaper
-  // after loaded. Returns true if the controller started loading the
-  // wallpaper and false otherwise (i.e. the appropriate wallpaper was
-  // already loading or loaded).
-  bool SetDefaultWallpaper(bool is_guest);
-
-  // Sets the user selected custom wallpaper. Called when user selected a file
-  // from file system or changed the layout of wallpaper.
-  void SetCustomWallpaper(const gfx::ImageSkia& image, WallpaperLayout layout);
-
-  // Cancels |default_wallpaper_loader_| if non-NULL.
-  void CancelDefaultWallpaperLoader();
+  // Sets wallpaper. This is mostly called by WallpaperManager to set
+  // the default or user selected custom wallpaper.
+  // Returns true if new image was actually set. And false when duplicate set
+  // request detected.
+  bool SetWallpaperImage(const gfx::ImageSkia& image, WallpaperLayout layout);
 
   // Creates an empty wallpaper. Some tests require a wallpaper widget is ready
-  // when running. However, the wallpaper widgets are now created asynchronously
-  // . If loading a real wallpaper, there are cases that these tests crash
-  // because the required widget is not ready. This function synchronously
-  // creates an empty widget for those tests to prevent crashes. An example test
-  // is SystemGestureEventFilterTest.ThreeFingerSwipe.
+  // when running. However, the wallpaper widgets are now created
+  // asynchronously. If loading a real wallpaper, there are cases that these
+  // tests crash because the required widget is not ready. This function
+  // synchronously creates an empty widget for those tests to prevent
+  // crashes. An example test is SystemGestureEventFilterTest.ThreeFingerSwipe.
   void CreateEmptyWallpaper();
-
-  // Returns the appropriate wallpaper resolution for all root windows.
-  WallpaperResolution GetAppropriateResolution();
 
   // Move all desktop widgets to locked container.
   // Returns true if the desktop moved.
@@ -130,32 +96,33 @@ class ASH_EXPORT DesktopBackgroundController
   // Returns true if the desktop moved.
   bool MoveDesktopToUnlockedContainer();
 
-  // Overrides DisplayController::Observer:
+  // DisplayController::Observer:
   virtual void OnDisplayConfigurationChanged() OVERRIDE;
+
+  // ShellObserver:
+  virtual void OnRootWindowAdded(aura::Window* root_window) OVERRIDE;
+
+  // Returns the maximum size of all displays combined in native
+  // resolutions.  Note that this isn't the bounds of the display who
+  // has maximum resolutions. Instead, this returns the size of the
+  // maximum width of all displays, and the maximum height of all displays.
+  static gfx::Size GetMaxDisplaySizeInNative();
+
+  // Returns true if the specified wallpaper is already stored
+  // in |current_wallpaper_|.
+  // If |compare_layouts| is false, layout is ignored.
+  bool WallpaperIsAlreadyLoaded(const gfx::ImageSkia& image,
+                                bool compare_layouts,
+                                WallpaperLayout layout) const;
 
  private:
   friend class DesktopBackgroundControllerTest;
+  //  friend class chromeos::WallpaperManagerBrowserTestDefaultWallpaper;
   FRIEND_TEST_ALL_PREFIXES(DesktopBackgroundControllerTest, GetMaxDisplaySize);
-
-  // An operation to asynchronously loads wallpaper.
-  class WallpaperLoader;
-
-  // Returns true if the specified default wallpaper is already being
-  // loaded by |wallpaper_loader_| or stored in |current_wallpaper_|.
-  bool DefaultWallpaperIsAlreadyLoadingOrLoaded(
-      const base::FilePath& image_file, int image_resource_id) const;
-
-  // Returns true if the specified custom wallpaper is already stored
-  // in |current_wallpaper_|.
-  bool CustomWallpaperIsAlreadyLoaded(const gfx::ImageSkia& image) const;
 
   // Creates view for all root windows, or notifies them to repaint if they
   // already exist.
   void SetDesktopBackgroundImageMode();
-
-  // Creates a new background widget and sets the background mode to image mode.
-  // Called after a default wallpaper has been loaded successfully.
-  void OnDefaultWallpaperLoadCompleted(scoped_refptr<WallpaperLoader> loader);
 
   // Creates and adds component for current mode (either Widget or Layer) to
   // |root_window|.
@@ -182,15 +149,6 @@ class ASH_EXPORT DesktopBackgroundController
     wallpaper_reload_delay_ = value;
   }
 
-  // Returns the maximum size of all displays combined in native
-  // resolutions.  Note that this isn't the bounds of the display who
-  // has maximum resolutions. Instead, this returns the size of the
-  // maximum width of all displays, and the maximum height of all displays.
-  static gfx::Size GetMaxDisplaySizeInNative();
-
-  // If non-NULL, used in place of the real command line.
-  CommandLine* command_line_for_testing_;
-
   // Can change at runtime.
   bool locked_;
 
@@ -203,18 +161,7 @@ class ASH_EXPORT DesktopBackgroundController
   // The current wallpaper.
   scoped_ptr<WallpaperResizer> current_wallpaper_;
 
-  // If a default wallpaper is stored in |current_wallpaper_|, the path and
-  // resource ID that were passed to WallpaperLoader when loading it.
-  // Otherwise, empty and -1, respectively.
-  base::FilePath current_default_wallpaper_path_;
-  int current_default_wallpaper_resource_id_;
-
   gfx::Size current_max_display_size_;
-
-  // Loads default wallpaper from disk.
-  scoped_refptr<WallpaperLoader> default_wallpaper_loader_;
-
-  base::WeakPtrFactory<DesktopBackgroundController> weak_ptr_factory_;
 
   base::OneShotTimer<DesktopBackgroundController> timer_;
 

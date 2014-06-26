@@ -8,10 +8,12 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/time/time.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/login/screens/network_screen_actor.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
+#include "chromeos/ime/component_extension_ime_manager.h"
+#include "chromeos/ime/input_method_manager.h"
 #include "ui/gfx/point.h"
 
 class PrefRegistrySimple;
@@ -26,7 +28,9 @@ struct NetworkScreenHandlerOnLanguageChangedCallbackData;
 // WebUI implementation of NetworkScreenActor. It is used to interact with
 // the welcome screen (part of the page) of the OOBE.
 class NetworkScreenHandler : public NetworkScreenActor,
-                             public BaseScreenHandler {
+                             public BaseScreenHandler,
+                             public ComponentExtensionIMEManager::Observer,
+                             public input_method::InputMethodManager::Observer {
  public:
   explicit NetworkScreenHandler(CoreOobeActor* core_oobe_actor);
   virtual ~NetworkScreenHandler();
@@ -50,8 +54,18 @@ class NetworkScreenHandler : public NetworkScreenActor,
   // WebUIMessageHandler implementation:
   virtual void RegisterMessages() OVERRIDE;
 
+  // ComponentExtensionIMEManager::Observer implementation:
+  virtual void OnImeComponentExtensionInitialized() OVERRIDE;
+
+  // InputMethodManager::Observer implementation:
+  virtual void InputMethodChanged(input_method::InputMethodManager* manager,
+                                  bool show_message) OVERRIDE;
+
   // Registers the preference for derelict state.
   static void RegisterPrefs(PrefRegistrySimple* registry);
+
+  // Reloads localized contents.
+  void ReloadLocalizedContent();
 
  private:
   // Handles moving off the screen.
@@ -76,14 +90,9 @@ class NetworkScreenHandler : public NetworkScreenActor,
   // Callback when the system timezone settings is changed.
   void OnSystemTimezoneChanged();
 
-  // Idle detection related methods.
-  void StartIdleDetection();
-  void OnIdle();
-  void SetupTimeouts();
-
   // Returns available languages. Caller gets the ownership. Note, it does
   // depend on the current locale.
-  static base::ListValue* GetLanguageList();
+  base::ListValue* GetLanguageList();
 
   // Returns available input methods. Caller gets the ownership. Note, it does
   // depend on the current locale.
@@ -97,9 +106,6 @@ class NetworkScreenHandler : public NetworkScreenActor,
 
   bool is_continue_enabled_;
 
-  // Flag set if we believe this is an abandoned machine.
-  bool is_derelict_;
-
   // Keeps whether screen should be shown right after initialization.
   bool show_on_init_;
 
@@ -108,12 +114,12 @@ class NetworkScreenHandler : public NetworkScreenActor,
 
   scoped_ptr<CrosSettings::ObserverSubscription> timezone_subscription_;
 
-  scoped_ptr<IdleDetector> detector_;
+  // True if should reinitialize language and keyboard list once the page
+  // is ready.
+  bool should_reinitialize_language_keyboard_list_;
 
-  // Timeout to detect if the machine is in a derelict state.
-  base::TimeDelta derelict_detection_timeout_;
-  // Timeout before showing our demo up if the machine is in a derelict state.
-  base::TimeDelta derelict_idle_timeout_;
+  // The exact language code selected by user in the menu.
+  std::string selected_language_code_;
 
   base::WeakPtrFactory<NetworkScreenHandler> weak_ptr_factory_;
 

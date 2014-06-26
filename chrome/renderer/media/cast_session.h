@@ -14,13 +14,16 @@
 #include "net/base/ip_endpoint.h"
 
 namespace base {
+class BinaryValue;
+class DictionaryValue;
 class MessageLoopProxy;
 }  // namespace base
 
 namespace media {
 class VideoFrame;
 namespace cast {
-class FrameInput;
+class AudioFrameInput;
+class VideoFrameInput;
 struct AudioSenderConfig;
 struct VideoSenderConfig;
 }  // namespace cast
@@ -37,24 +40,51 @@ class CastSessionDelegate;
 // CastSessionDelegate on the IO thread.
 class CastSession : public base::RefCounted<CastSession> {
  public:
-  typedef
-  base::Callback<void(const scoped_refptr<media::cast::FrameInput>&)>
-  FrameInputAvailableCallback;
+  typedef base::Callback<void(const scoped_refptr<
+      media::cast::AudioFrameInput>&)> AudioFrameInputAvailableCallback;
+  typedef base::Callback<void(const scoped_refptr<
+      media::cast::VideoFrameInput>&)> VideoFrameInputAvailableCallback;
   typedef base::Callback<void(const std::vector<char>&)> SendPacketCallback;
+  typedef base::Callback<void(scoped_ptr<base::BinaryValue>)> EventLogsCallback;
+  typedef base::Callback<void(scoped_ptr<base::DictionaryValue>)> StatsCallback;
+  typedef base::Callback<void(const std::string&)> ErrorCallback;
 
   CastSession();
 
   // Start encoding of audio and video using the provided configuration.
   //
   // When Cast sender is started and ready to be used
-  // media::cast::FrameInput will be given through the callback. The
-  // callback will be made on the main thread.
+  // media::cast::FrameInput will be given through |callback|.
+  // If it encounters an error, |error_callback| will be invoked with the
+  // error message. Both |callback| and |error_callback| will be made on
+  // the main thread.
+  // |StartUDP()| must be called before these methods.
   void StartAudio(const media::cast::AudioSenderConfig& config,
-                  const FrameInputAvailableCallback& callback);
+                  const AudioFrameInputAvailableCallback& callback,
+                  const ErrorCallback& error_callback);
   void StartVideo(const media::cast::VideoSenderConfig& config,
-                  const FrameInputAvailableCallback& callback);
-  void StartUDP(const net::IPEndPoint& local_endpoint,
-                const net::IPEndPoint& remote_endpoint);
+                  const VideoFrameInputAvailableCallback& callback,
+                  const ErrorCallback& error_callback);
+
+  // This will create the Cast transport and connect to |remote_endpoint|.
+  // Must be called before initialization of audio or video.
+  void StartUDP(const net::IPEndPoint& remote_endpoint);
+
+  // Creates or destroys event subscriber for the audio or video stream.
+  // |is_audio|: true if the event subscriber is for audio. Video otherwise.
+  // |enable|: If true, creates an event subscriber. Otherwise destroys
+  // existing subscriber and discards logs.
+  void ToggleLogging(bool is_audio, bool enable);
+
+  // Returns raw event logs in serialized format for either the audio or video
+  // stream since last call and returns result in |callback|. Also attaches
+  // |extra_data| to the log.
+  void GetEventLogsAndReset(bool is_audio,
+      const std::string& extra_data, const EventLogsCallback& callback);
+
+  // Returns stats in a DictionaryValue format for either the audio or video
+  // stream since last call and returns result in |callback|.
+  void GetStatsAndReset(bool is_audio, const StatsCallback& callback);
 
  private:
   friend class base::RefCounted<CastSession>;

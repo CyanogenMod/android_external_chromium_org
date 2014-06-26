@@ -18,8 +18,8 @@
 #include "chrome/test/chromedriver/chrome/status.h"
 #include "chrome/test/chromedriver/chrome/ui_events.h"
 #include "chrome/test/chromedriver/chrome/web_view.h"
-#include "chrome/test/chromedriver/chrome/zip.h"
 #include "chrome/test/chromedriver/key_converter.h"
+#include "third_party/zlib/google/zip.h"
 
 std::string GenerateId() {
   uint64 msb = base::RandUint64();
@@ -90,7 +90,7 @@ Status UnzipArchive(const base::FilePath& unzip_dir,
 
   base::FilePath archive = dir.path().AppendASCII("temp.zip");
   int length = bytes.length();
-  if (file_util::WriteFile(archive, bytes.c_str(), length) != length)
+  if (base::WriteFile(archive, bytes.c_str(), length) != length)
     return Status(kUnknownError, "could not write file to temp dir");
 
   if (!zip::Unzip(archive, unzip_dir))

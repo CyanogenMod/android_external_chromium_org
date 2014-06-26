@@ -32,6 +32,11 @@ public class ChromeWebContentsDelegateAndroid extends WebContentsDelegateAndroid
         return false;
     }
 
+    @CalledByNative
+    public void webContentsCreated(long sourceWebContents, long opener_render_frame_id,
+            String frameName, String targetUrl, long newWebContents) {
+    }
+
     // Helper functions used to create types that are part of the public interface
     @CalledByNative
     private static Rect createRect(int x, int y, int right, int bottom) {
@@ -54,7 +59,7 @@ public class ChromeWebContentsDelegateAndroid extends WebContentsDelegateAndroid
     @CalledByNative
     private static FindMatchRectsDetails createFindMatchRectsDetails(
             int version, int numRects, RectF activeRect) {
-        return new FindMatchRectsDetails(version, new RectF[numRects], activeRect);
+        return new FindMatchRectsDetails(version, numRects, activeRect);
     }
 
     @CalledByNative

@@ -6,7 +6,6 @@
 
 import optparse
 import os
-import subprocess
 import sys
 
 from util import build_utils
@@ -30,24 +29,28 @@ def DoGcc(options):
   build_utils.CheckOutput(gcc_cmd)
 
 
-def main(argv):
+def main():
   parser = optparse.OptionParser()
+  build_utils.AddDepfileOption(parser)
+
   parser.add_option('--include-path', help='Include path for gcc.')
   parser.add_option('--template', help='Path to template.')
   parser.add_option('--output', help='Path for generated file.')
   parser.add_option('--stamp', help='Path to touch on success.')
   parser.add_option('--defines', help='Pre-defines macros', action='append')
 
-  # TODO(newt): remove this once http://crbug.com/177552 is fixed in ninja.
-  parser.add_option('--ignore', help='Ignored.')
-
   options, _ = parser.parse_args()
 
   DoGcc(options)
+
+  if options.depfile:
+    build_utils.WriteDepfile(
+        options.depfile,
+        build_utils.GetPythonDependencies())
 
   if options.stamp:
     build_utils.Touch(options.stamp)
 
 
 if __name__ == '__main__':
-  sys.exit(main(sys.argv))
+  sys.exit(main())

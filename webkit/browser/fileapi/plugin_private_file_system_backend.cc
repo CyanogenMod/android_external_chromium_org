@@ -143,13 +143,12 @@ bool PluginPrivateFileSystemBackend::CanHandleType(FileSystemType type) const {
 void PluginPrivateFileSystemBackend::Initialize(FileSystemContext* context) {
 }
 
-void PluginPrivateFileSystemBackend::OpenFileSystem(
-    const GURL& origin_url,
-    FileSystemType type,
+void PluginPrivateFileSystemBackend::ResolveURL(
+    const FileSystemURL& url,
     OpenFileSystemMode mode,
     const OpenFileSystemCallback& callback) {
   // We never allow opening a new plugin-private filesystem via usual
-  // OpenFileSystem.
+  // ResolveURL.
   base::MessageLoopProxy::current()->PostTask(
       FROM_HERE,
       base::Bind(callback, GURL(), std::string(),
@@ -177,6 +176,11 @@ FileSystemOperation* PluginPrivateFileSystemBackend::CreateFileSystemOperation(
   scoped_ptr<FileSystemOperationContext> operation_context(
       new FileSystemOperationContext(context));
   return FileSystemOperation::Create(url, context, operation_context.Pass());
+}
+
+bool PluginPrivateFileSystemBackend::SupportsStreaming(
+    const fileapi::FileSystemURL& url) const {
+  return false;
 }
 
 scoped_ptr<webkit_blob::FileStreamReader>

@@ -119,6 +119,8 @@ def _CheckLicenseHeaders(excluded_dirs_list, whitelisted_files):
   excluded_dirs_list.append('out/Release')
   # 'Copyright' appears in license agreements
   excluded_dirs_list.append('chrome/app/resources')
+  # Quickoffice js files from internal src used on buildbots. crbug.com/350472.
+  excluded_dirs_list.append('chrome/browser/resources/chromeos/quickoffice')
   # This is a test output directory
   excluded_dirs_list.append('chrome/tools/test/reference_build')
   # blink style copy right headers.
@@ -176,12 +178,16 @@ def _CheckLicenseHeaders(excluded_dirs_list, whitelisted_files):
   stale = set(whitelisted_files) - set(offending_files)
   if stale:
     print 'The following files are whitelisted unnecessarily. You must ' \
-          ' remove the following files from the whitelist.\n%s' % \
+          'remove the following files from the whitelist.\n%s' % \
           '\n'.join(sorted(stale))
+  missing = [f for f in whitelisted_files if not os.path.exists(f)]
+  if missing:
+    print 'The following files are whitelisted, but do not exist.\n%s' % \
+        '\n'.join(sorted(missing))
 
   if unknown:
     return ScanResult.Errors
-  elif stale:
+  elif stale or missing:
     return ScanResult.Warnings
   else:
     return ScanResult.Ok
@@ -208,6 +214,9 @@ def _FindThirdPartyDirs():
   # as they will end up included in Android WebView snapshot.
   # Instead, add them into known_issues.py.
   prune_paths = [
+    # Temporary until we figure out how not to check out quickoffice on the
+    # Android license check bot. Tracked in crbug.com/350472.
+    os.path.join('chrome', 'browser', 'resources', 'chromeos', 'quickoffice'),
     # Placeholder directory, no third-party code.
     os.path.join('third_party', 'adobe'),
     # Apache 2.0 license. See
@@ -221,7 +230,7 @@ def _FindThirdPartyDirs():
     os.path.join('third_party', 'widevine'),
     # third_party directories in this tree aren't actually third party, but
     # provide a way to shadow experimental buildfiles into those directories.
-    os.path.join('tools', 'gn', 'secondary'),
+    os.path.join('build', 'secondary'),
     # Not shipped, Chromium code
     os.path.join('tools', 'swarming_client'),
   ]
@@ -288,6 +297,13 @@ def GenerateNoticeFile():
   return '\n'.join(content)
 
 
+def _ProcessIncompatibleResult(incompatible_directories):
+  if incompatible_directories:
+    print ("Incompatibly licensed directories found:\n" +
+           "\n".join(sorted(incompatible_directories)))
+    return ScanResult.Errors
+  return ScanResult.Ok
+
 def main():
   class FormatterWithNewLines(optparse.IndentedHelpFormatter):
     def format_description(self, description):
@@ -299,10 +315,13 @@ def main():
                                  usage='%prog [options]')
   parser.description = (__doc__ +
                        '\nCommands:\n' \
-                       '  scan  Check licenses.\n' \
-                       '  notice Generate Android NOTICE file on stdout. \n' \
+                       '  scan Check licenses.\n' \
+                       '  notice Generate Android NOTICE file on stdout.\n' \
                        '  incompatible_directories Scan for incompatibly'
-                       ' licensed directories.')
+                       ' licensed directories.\n'
+                       '  all_incompatible_directories Scan for incompatibly'
+                       ' licensed directories (even those in'
+                       ' known_issues.py).\n')
   (_, args) = parser.parse_args()
   if len(args) != 1:
     parser.print_help()
@@ -317,13 +336,9 @@ def main():
     print GenerateNoticeFile()
     return ScanResult.Ok
   elif args[0] == 'incompatible_directories':
-    incompatible_directories = GetUnknownIncompatibleDirectories()
-    if incompatible_directories:
-      print ("Incompatibly licensed directories found:\n" +
-             "\n".join(sorted(incompatible_directories)))
-      return ScanResult.Errors
-    return ScanResult.Ok
-
+    return _ProcessIncompatibleResult(GetUnknownIncompatibleDirectories())
+  elif args[0] == 'all_incompatible_directories':
+    return _ProcessIncompatibleResult(GetIncompatibleDirectories())
   parser.print_help()
   return ScanResult.Errors
 

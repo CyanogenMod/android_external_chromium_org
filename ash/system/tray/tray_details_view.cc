@@ -15,7 +15,6 @@
 #include "ui/views/layout/box_layout.h"
 
 namespace ash {
-namespace internal {
 
 class ScrollSeparator : public views::View {
  public:
@@ -28,7 +27,7 @@ class ScrollSeparator : public views::View {
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     canvas->FillRect(gfx::Rect(0, height() / 2, width(), 1), kBorderLightColor);
   }
-  virtual gfx::Size GetPreferredSize() OVERRIDE {
+  virtual gfx::Size GetPreferredSize() const OVERRIDE {
     return gfx::Size(1, kTrayPopupScrollSeparatorHeight);
   }
 
@@ -127,26 +126,31 @@ void TrayDetailsView::TransitionToDefaultView() {
 }
 
 void TrayDetailsView::Layout() {
-  if (!scroller_ || !footer_ || bounds().IsEmpty()) {
+  if (bounds().IsEmpty()) {
     views::View::Layout();
     return;
   }
 
-  scroller_->set_fixed_size(gfx::Size());
-  gfx::Size size = GetPreferredSize();
+  if (scroller_) {
+    scroller_->set_fixed_size(gfx::Size());
+    gfx::Size size = GetPreferredSize();
 
-  // Set the scroller to fill the space above the bottom row, so that the
-  // bottom row of the detailed view will always stay just above the footer.
-  gfx::Size scroller_size = scroll_content_->GetPreferredSize();
-  scroller_->set_fixed_size(gfx::Size(
-      width() + scroller_->GetScrollBarWidth(),
-      scroller_size.height() - (size.height() - height())));
+    // Set the scroller to fill the space above the bottom row, so that the
+    // bottom row of the detailed view will always stay just above the footer.
+    gfx::Size scroller_size = scroll_content_->GetPreferredSize();
+    scroller_->set_fixed_size(
+        gfx::Size(width() + scroller_->GetScrollBarWidth(),
+                  scroller_size.height() - (size.height() - height())));
+  }
 
   views::View::Layout();
-  // Always make sure the footer element is bottom aligned.
-  gfx::Rect fbounds = footer_->bounds();
-  fbounds.set_y(height() - footer_->height());
-  footer_->SetBoundsRect(fbounds);
+
+  if (footer_) {
+    // Always make sure the footer element is bottom aligned.
+    gfx::Rect fbounds = footer_->bounds();
+    fbounds.set_y(height() - footer_->height());
+    footer_->SetBoundsRect(fbounds);
+  }
 }
 
 void TrayDetailsView::OnPaintBorder(gfx::Canvas* canvas) {
@@ -161,5 +165,4 @@ void TrayDetailsView::OnPaintBorder(gfx::Canvas* canvas) {
   views::View::OnPaintBorder(canvas);
 }
 
-}  // namespace internal
 }  // namespace ash

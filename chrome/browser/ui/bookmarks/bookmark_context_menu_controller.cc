@@ -8,9 +8,9 @@
 #include "base/compiler_specific.h"
 #include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client_factory.h"
 #include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_editor.h"
@@ -22,6 +22,9 @@
 #include "chrome/browser/undo/bookmark_undo_service_factory.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/browser/bookmark_client.h"
+#include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_utils.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/user_metrics.h"
 #include "grit/generated_resources.h"
@@ -109,6 +112,8 @@ void BookmarkContextMenuController::BuildMenu() {
     AddCheckboxItem(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT,
                     IDS_BOOKMARK_BAR_SHOW_APPS_SHORTCUT);
   }
+  AddCheckboxItem(IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS,
+                  IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS_DEFAULT_NAME);
   AddCheckboxItem(IDC_BOOKMARK_BAR_ALWAYS_SHOW, IDS_SHOW_BOOKMARK_BAR);
 }
 
@@ -128,12 +133,6 @@ void BookmarkContextMenuController::AddCheckboxItem(int id,
 void BookmarkContextMenuController::ExecuteCommand(int id, int event_flags) {
   if (delegate_)
     delegate_->WillExecuteCommand(id, selection_);
-
-  if (ExecutePlatformCommand(id, event_flags)) {
-    if (delegate_)
-      delegate_->DidExecuteCommand(id);
-    return;
-  }
 
   switch (id) {
     case IDC_BOOKMARK_BAR_OPEN_ALL:
@@ -252,6 +251,14 @@ void BookmarkContextMenuController::ExecuteCommand(int id, int event_flags) {
       break;
     }
 
+    case IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS: {
+      PrefService* prefs = profile_->GetPrefs();
+      prefs->SetBoolean(
+          prefs::kShowManagedBookmarksInBookmarkBar,
+          !prefs->GetBoolean(prefs::kShowManagedBookmarksInBookmarkBar));
+      break;
+    }
+
     case IDC_BOOKMARK_MANAGER: {
       content::RecordAction(UserMetricsAction("ShowBookmarkManager"));
       if (selection_.size() != 1)
@@ -295,7 +302,8 @@ void BookmarkContextMenuController::ExecuteCommand(int id, int event_flags) {
 bool BookmarkContextMenuController::IsItemForCommandIdDynamic(int command_id)
     const {
   return command_id == IDC_BOOKMARK_BAR_UNDO ||
-         command_id == IDC_BOOKMARK_BAR_REDO;
+         command_id == IDC_BOOKMARK_BAR_REDO ||
+         command_id == IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS;
 }
 
 base::string16 BookmarkContextMenuController::GetLabelForCommandId(
@@ -308,6 +316,12 @@ base::string16 BookmarkContextMenuController::GetLabelForCommandId(
     return BookmarkUndoServiceFactory::GetForProfile(profile_)->
         undo_manager()->GetRedoLabel();
   }
+  if (command_id == IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS) {
+    ChromeBookmarkClient* client =
+        ChromeBookmarkClientFactory::GetForProfile(profile_);
+    return l10n_util::GetStringFUTF16(IDS_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS,
+                                      client->managed_node()->GetTitle());
+  }
 
   NOTREACHED();
   return base::string16();
@@ -317,23 +331,24 @@ bool BookmarkContextMenuController::IsCommandIdChecked(int command_id) const {
   PrefService* prefs = profile_->GetPrefs();
   if (command_id == IDC_BOOKMARK_BAR_ALWAYS_SHOW)
     return prefs->GetBoolean(prefs::kShowBookmarkBar);
+  if (command_id == IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS)
+    return prefs->GetBoolean(prefs::kShowManagedBookmarksInBookmarkBar);
 
   DCHECK_EQ(IDC_BOOKMARK_BAR_SHOW_APPS_SHORTCUT, command_id);
   return prefs->GetBoolean(prefs::kShowAppsShortcutInBookmarkBar);
 }
 
 bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
-  bool enabled = false;
-  if (IsPlatformCommandIdEnabled(command_id, &enabled))
-    return enabled;
-
   PrefService* prefs = profile_->GetPrefs();
 
   bool is_root_node = selection_.size() == 1 &&
                       selection_[0]->parent() == model_->root_node();
-  bool can_edit = prefs->GetBoolean(prefs::kEditBookmarksEnabled);
+  bool can_edit =
+      prefs->GetBoolean(prefs::kEditBookmarksEnabled) &&
+      bookmark_utils::CanAllBeEditedByUser(model_->client(), selection_);
   IncognitoModePrefs::Availability incognito_avail =
       IncognitoModePrefs::GetAvailability(prefs);
+
   switch (command_id) {
     case IDC_BOOKMARK_BAR_OPEN_INCOGNITO:
       return !profile_->IsOffTheRecord() &&
@@ -370,8 +385,9 @@ bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
 
     case IDC_BOOKMARK_BAR_NEW_FOLDER:
     case IDC_BOOKMARK_BAR_ADD_NEW_BOOKMARK:
-      return can_edit && bookmark_utils::GetParentForNewNodes(
-          parent_, selection_, NULL) != NULL;
+      return can_edit && model_->client()->CanBeEditedByUser(parent_) &&
+             bookmark_utils::GetParentForNewNodes(parent_, selection_, NULL) !=
+                 NULL;
 
     case IDC_BOOKMARK_BAR_ALWAYS_SHOW:
       return !prefs->IsManagedPreference(prefs::kShowBookmarkBar);
@@ -388,9 +404,21 @@ bool BookmarkContextMenuController::IsCommandIdEnabled(int command_id) const {
       // Paste to selection from the Bookmark Bar, to parent_ everywhere else
       return can_edit &&
              ((!selection_.empty() &&
-               bookmark_utils::CanPasteFromClipboard(selection_[0])) ||
-              bookmark_utils::CanPasteFromClipboard(parent_));
+               bookmark_utils::CanPasteFromClipboard(model_, selection_[0])) ||
+              bookmark_utils::CanPasteFromClipboard(model_, parent_));
   }
+  return true;
+}
+
+bool BookmarkContextMenuController::IsCommandIdVisible(int command_id) const {
+  if (command_id == IDC_BOOKMARK_BAR_SHOW_MANAGED_BOOKMARKS) {
+    // The option to hide the Managed Bookmarks folder is only available if
+    // there are any managed bookmarks configured at all.
+    ChromeBookmarkClient* client =
+        ChromeBookmarkClientFactory::GetForProfile(profile_);
+    return !client->managed_node()->empty();
+  }
+
   return true;
 }
 
@@ -399,21 +427,6 @@ bool BookmarkContextMenuController::GetAcceleratorForCommandId(
     ui::Accelerator* accelerator) {
   return false;
 }
-
-#if !defined(OS_WIN)
-bool BookmarkContextMenuController::IsPlatformCommandIdEnabled(
-    int command_id,
-    bool* enabled) const {
-  // By default, there are no platform-specific enabled or disabled commands.
-  return false;
-}
-
-bool BookmarkContextMenuController::ExecutePlatformCommand(int id,
-                                                           int event_flags) {
-  // By default, there are no platform-specific commands.
-  return false;
-}
-#endif  // OS_WIN
 
 void BookmarkContextMenuController::BookmarkModelChanged() {
   if (delegate_)

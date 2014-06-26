@@ -14,7 +14,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/sys_info.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/login/users/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chromeos/chromeos_switches.h"
@@ -193,6 +193,8 @@ void KioskAppsHandler::OnKioskAppDataLoadFailure(const std::string& app_id) {
   base::StringValue app_id_value(app_id);
   web_ui()->CallJavascriptFunction("extensions.KioskAppsOverlay.showError",
                                    app_id_value);
+
+  kiosk_app_manager_->RemoveApp(app_id);
 }
 
 
@@ -234,6 +236,8 @@ void KioskAppsHandler::SendKioskAppSettings() {
 
   base::DictionaryValue settings;
   settings.SetBoolean("disableBailout", !enable_bailout_shortcut);
+  settings.SetBoolean("hasAutoLaunchApp",
+                      !kiosk_app_manager_->GetAutoLaunchApp().empty());
 
   KioskAppManager::Apps apps;
   kiosk_app_manager_->GetApps(&apps);

@@ -26,6 +26,7 @@ namespace net {
 class AuthChallengeInfo;
 class AuthCredentials;
 class CookieOptions;
+class CookieStore;
 class Filter;
 class HttpRequestHeaders;
 class HttpResponseInfo;
@@ -156,6 +157,13 @@ class NET_EXPORT URLRequestJob
   // The default implementation inspects the response_info_.
   virtual bool IsRedirectResponse(GURL* location, int* http_status_code);
 
+  // Called to determine if it is okay to copy the reference fragment from the
+  // original URL (if existent) to the redirection target when the redirection
+  // target has no reference fragment.
+  //
+  // The default implementation returns true.
+  virtual bool CopyFragmentOnRedirect(const GURL& location) const;
+
   // Called to determine if it is okay to redirect this job to the specified
   // location.  This may be used to implement protocol-specific restrictions.
   // If this function returns false, then the URLRequest will fail
@@ -238,6 +246,9 @@ class NET_EXPORT URLRequestJob
   // Delegates to URLRequest::Delegate.
   bool CanEnablePrivacyMode() const;
 
+  // Returns the cookie store to be used for the request.
+  CookieStore* GetCookieStore() const;
+
   // Notifies the job that the network is about to be used.
   void NotifyBeforeNetworkStart(bool* defer);
 
@@ -289,6 +300,11 @@ class NET_EXPORT URLRequestJob
   // the stream.
   virtual void DoneReading();
 
+  // Called to tell the job that the body won't be read because it's a redirect.
+  // This is needed so that redirect headers can be cached even though their
+  // bodies are never read.
+  virtual void DoneReadingRedirectResponse();
+
   // Informs the filter that data has been read into its buffer
   void FilteredDataRead(int bytes_read);
 
@@ -316,6 +332,9 @@ class NET_EXPORT URLRequestJob
 
   // Set the status of the job.
   void SetStatus(const URLRequestStatus& status);
+
+  // Set the proxy server that was used, if any.
+  void SetProxyServer(const HostPortPair& proxy_server);
 
   // The number of bytes read before passing to the filter.
   int prefilter_bytes_read() const { return prefilter_bytes_read_; }

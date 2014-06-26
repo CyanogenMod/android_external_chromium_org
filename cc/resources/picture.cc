@@ -21,7 +21,9 @@
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkDrawFilter.h"
 #include "third_party/skia/include/core/SkPaint.h"
+#include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkStream.h"
+#include "third_party/skia/include/utils/SkNullCanvas.h"
 #include "third_party/skia/include/utils/SkPictureUtils.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
@@ -84,12 +86,13 @@ bool DecodeBitmap(const void* buffer, size_t size, SkBitmap* bm) {
 scoped_refptr<Picture> Picture::Create(
     const gfx::Rect& layer_rect,
     ContentLayerClient* client,
-    const SkTileGridPicture::TileGridInfo& tile_grid_info,
+    const SkTileGridFactory::TileGridInfo& tile_grid_info,
     bool gather_pixel_refs,
-    int num_raster_threads) {
+    int num_raster_threads,
+    RecordingMode recording_mode) {
   scoped_refptr<Picture> picture = make_scoped_refptr(new Picture(layer_rect));
 
-  picture->Record(client, tile_grid_info);
+  picture->Record(client, tile_grid_info, recording_mode);
   if (gather_pixel_refs)
     picture->GatherPixelRefs(tile_grid_info);
   picture->CloneForDrawing(num_raster_threads);
@@ -189,14 +192,37 @@ Picture::~Picture() {
 }
 
 Picture* Picture::GetCloneForDrawingOnThread(unsigned thread_index) {
+  // We don't need clones to draw from multiple threads with SkRecord.
+  if (playback_) {
+    return this;
+  }
+
   // SkPicture is not thread-safe to rasterize with, this returns a clone
   // to rasterize with on a specific thread.
   CHECK_GE(clones_.size(), thread_index);
   return thread_index == clones_.size() ? this : clones_[thread_index].get();
 }
 
+bool Picture::IsSuitableForGpuRasterization() const {
+  DCHECK(picture_);
+
+  // TODO(alokp): SkPicture::suitableForGpuRasterization needs a GrContext.
+  // Ideally this GrContext should be the same as that for rasterizing this
+  // picture. But we are on the main thread while the rasterization context
+  // may be on the compositor or raster thread.
+  // SkPicture::suitableForGpuRasterization is not implemented yet.
+  // Pass a NULL context for now and discuss with skia folks if the context
+  // is really needed.
+  return picture_->suitableForGpuRasterization(NULL);
+}
+
 void Picture::CloneForDrawing(int num_threads) {
   TRACE_EVENT1("cc", "Picture::CloneForDrawing", "num_threads", num_threads);
+
+  // We don't need clones to draw from multiple threads with SkRecord.
+  if (playback_) {
+    return;
+  }
 
   DCHECK(picture_);
   DCHECK(clones_.empty());
@@ -223,20 +249,53 @@ void Picture::CloneForDrawing(int num_threads) {
 }
 
 void Picture::Record(ContentLayerClient* painter,
-                     const SkTileGridPicture::TileGridInfo& tile_grid_info) {
-  TRACE_EVENT1("cc", "Picture::Record",
-               "data", AsTraceableRecordData());
+                     const SkTileGridFactory::TileGridInfo& tile_grid_info,
+                     RecordingMode recording_mode) {
+  TRACE_EVENT2("cc",
+               "Picture::Record",
+               "data",
+               AsTraceableRecordData(),
+               "recording_mode",
+               recording_mode);
 
   DCHECK(!picture_);
   DCHECK(!tile_grid_info.fTileInterval.isEmpty());
-  picture_ = skia::AdoptRef(new SkTileGridPicture(
-      layer_rect_.width(), layer_rect_.height(), tile_grid_info));
 
-  SkCanvas* canvas = picture_->beginRecording(
-      layer_rect_.width(),
-      layer_rect_.height(),
-      SkPicture::kUsePathBoundsForClip_RecordingFlag |
-      SkPicture::kOptimizeForClippedPlayback_RecordingFlag);
+  SkTileGridFactory factory(tile_grid_info);
+  SkPictureRecorder recorder;
+
+  scoped_ptr<EXPERIMENTAL::SkRecording> recording;
+
+  skia::RefPtr<SkCanvas> canvas;
+  canvas = skia::SharePtr(recorder.beginRecording(
+      layer_rect_.width(), layer_rect_.height(), &factory));
+
+  ContentLayerClient::GraphicsContextStatus graphics_context_status =
+      ContentLayerClient::GRAPHICS_CONTEXT_ENABLED;
+
+  switch (recording_mode) {
+    case RECORD_NORMALLY:
+      // Already setup for normal recording.
+      break;
+    case RECORD_WITH_SK_NULL_CANVAS:
+      canvas = skia::AdoptRef(SkCreateNullCanvas());
+      break;
+    case RECORD_WITH_PAINTING_DISABLED:
+      // We pass a disable flag through the paint calls when perfromance
+      // testing (the only time this case should ever arise) when we want to
+      // prevent the Blink GraphicsContext object from consuming any compute
+      // time.
+      canvas = skia::AdoptRef(SkCreateNullCanvas());
+      graphics_context_status = ContentLayerClient::GRAPHICS_CONTEXT_DISABLED;
+      break;
+    case RECORD_WITH_SKRECORD:
+      recording.reset(new EXPERIMENTAL::SkRecording(layer_rect_.width(),
+                                                    layer_rect_.height()));
+      canvas = skia::SharePtr(recording->canvas());
+      break;
+    default:
+      NOTREACHED();
+  }
 
   canvas->save();
   canvas->translate(SkFloatToScalar(-layer_rect_.x()),
@@ -249,11 +308,19 @@ void Picture::Record(ContentLayerClient* painter,
   canvas->clipRect(layer_skrect);
 
   gfx::RectF opaque_layer_rect;
-
-  painter->PaintContents(canvas, layer_rect_, &opaque_layer_rect);
+  painter->PaintContents(
+      canvas.get(), layer_rect_, &opaque_layer_rect, graphics_context_status);
 
   canvas->restore();
-  picture_->endRecording();
+  picture_ = skia::AdoptRef(recorder.endRecording());
+  DCHECK(picture_);
+
+  if (recording) {
+    // SkRecording requires it's the only one holding onto canvas before we
+    // may call releasePlayback().  (This helps enforce thread-safety.)
+    canvas.clear();
+    playback_.reset(recording->releasePlayback());
+  }
 
   opaque_rect_ = gfx::ToEnclosedRect(opaque_layer_rect);
 
@@ -261,7 +328,7 @@ void Picture::Record(ContentLayerClient* painter,
 }
 
 void Picture::GatherPixelRefs(
-    const SkTileGridPicture::TileGridInfo& tile_grid_info) {
+    const SkTileGridFactory::TileGridInfo& tile_grid_info) {
   TRACE_EVENT2("cc", "Picture::GatherPixelRefs",
                "width", layer_rect_.width(),
                "height", layer_rect_.height());
@@ -321,7 +388,8 @@ int Picture::Raster(
     SkDrawPictureCallback* callback,
     const Region& negated_content_region,
     float contents_scale) {
-  DCHECK(raster_thread_checker_.CalledOnValidThread());
+  if (!playback_)
+    DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN1(
       "cc",
       "Picture::Raster",
@@ -337,7 +405,11 @@ int Picture::Raster(
 
   canvas->scale(contents_scale, contents_scale);
   canvas->translate(layer_rect_.x(), layer_rect_.y());
-  picture_->draw(canvas, callback);
+  if (playback_) {
+    playback_->draw(canvas);
+  } else {
+    picture_->draw(canvas, callback);
+  }
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   canvas->restore();
@@ -348,11 +420,16 @@ int Picture::Raster(
 }
 
 void Picture::Replay(SkCanvas* canvas) {
-  DCHECK(raster_thread_checker_.CalledOnValidThread());
+  if (!playback_)
+    DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
   DCHECK(picture_);
 
-  picture_->draw(canvas);
+  if (playback_) {
+    playback_->draw(canvas);
+  } else {
+    picture_->draw(canvas);
+  }
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   TRACE_EVENT_END1("cc", "Picture::Replay",
@@ -362,8 +439,20 @@ void Picture::Replay(SkCanvas* canvas) {
 scoped_ptr<base::Value> Picture::AsValue() const {
   SkDynamicMemoryWStream stream;
 
-  // Serialize the picture.
-  picture_->serialize(&stream, &EncodeBitmap);
+  if (playback_) {
+    // SkPlayback can't serialize itself, so re-record into an SkPicture.
+    SkPictureRecorder recorder;
+    skia::RefPtr<SkCanvas> canvas(skia::SharePtr(recorder.beginRecording(
+        layer_rect_.width(),
+        layer_rect_.height(),
+        NULL)));  // Default (no) bounding-box hierarchy is fastest.
+    playback_->draw(canvas.get());
+    skia::RefPtr<SkPicture> picture(skia::AdoptRef(recorder.endRecording()));
+    picture->serialize(&stream, &EncodeBitmap);
+  } else {
+    // Serialize the picture.
+    picture_->serialize(&stream, &EncodeBitmap);
+  }
 
   // Encode the picture as base64.
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
@@ -381,13 +470,18 @@ scoped_ptr<base::Value> Picture::AsValue() const {
 }
 
 void Picture::EmitTraceSnapshot() const {
-  TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(TRACE_DISABLED_BY_DEFAULT("cc.debug"),
-      "cc::Picture", this, TracedPicture::AsTraceablePicture(this));
+  TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
+      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
+          "devtools.timeline.picture"),
+      "cc::Picture",
+      this,
+      TracedPicture::AsTraceablePicture(this));
 }
 
 void Picture::EmitTraceSnapshotAlias(Picture* original) const {
   TRACE_EVENT_OBJECT_SNAPSHOT_WITH_ID(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug"),
+      TRACE_DISABLED_BY_DEFAULT("cc.debug") "," TRACE_DISABLED_BY_DEFAULT(
+          "devtools.timeline.picture"),
       "cc::Picture",
       this,
       TracedPicture::AsTraceablePictureAlias(original));
@@ -505,8 +599,7 @@ scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRecordData() const {
   scoped_ptr<base::DictionaryValue> record_data(new base::DictionaryValue());
   record_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
-  record_data->SetInteger("width", layer_rect_.width());
-  record_data->SetInteger("height", layer_rect_.height());
+  record_data->Set("layer_rect", MathUtil::AsValue(layer_rect_).release());
   return TracedValue::FromValue(record_data.release());
 }
 

@@ -2,48 +2,61 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""The Endure benchmarks measure memory performance over a period of time.
+
+In each Endure benchmark, one page action is performed repeatedly and memory
+usage is measured periodically. The specific page actions are defined in the
+page sets, and the statistics that are gathered are determined by the Endure
+measurement class.
+"""
+
 from telemetry import test
 
 from measurements import endure
+import page_sets
 
 
 class _EndureBenchmark(test.Test):
+  """Base class which sets options for endure benchmarks below."""
   test = endure.Endure
   # Default options for endure benchmarks. Could be overridden in subclasses.
   options = {
-      'skip_navigate_on_repeat': True,
-      'page_repeat_secs': 7200,
-      'perf_stats_interval': '100s'
+      # Depending on the page and the actions performed on the page,
+      # 1000 iterations should be between 30 and 60 minutes.
+      'page_repeat': 1000,
+      # One sample per 10 iterations -> 200 points per run.
+      'perf_stats_interval': 10
   }
 
+
 class EndureCalendarForwardBackward(_EndureBenchmark):
-  page_set = 'page_sets/calendar_forward_backward.json'
+  page_set = page_sets.CalendarForwardBackwardPageSet
 
 
 class EndureBrowserControl(_EndureBenchmark):
-  page_set = 'page_sets/browser_control.json'
+  page_set = page_sets.BrowserControlPageSet
 
 
 class EndureBrowserControlClick(_EndureBenchmark):
-  page_set = 'page_sets/browser_control_click.json'
+  page_set = page_sets.BrowserControlClickPageSet
 
 
 class EndureGmailAltThreadlistConversation(_EndureBenchmark):
-  page_set = 'page_sets/gmail_alt_threadlist_conversation.json'
+  page_set = page_sets.GmailAltThreadlistConversationPageSet
 
 
 class EndureGmailAltTwoLabels(_EndureBenchmark):
-  page_set = 'page_sets/gmail_alt_two_labels.json'
+  page_set = page_sets.GmailAltTwoLabelsPageSet
 
 
 class EndureGmailExpandCollapseConversation(_EndureBenchmark):
-  page_set = 'page_sets/gmail_expand_collapse_conversation.json'
+  page_set = page_sets.GmailExpandCollapseConversationPageSet
 
 
 class EndureIndexedDBOffline(_EndureBenchmark):
-  page_set = 'page_sets/indexeddb_offline.json'
+  page_set = page_sets.IndexeddbOfflinePageSet
 
 
 class EndurePlusAltPostsPhotos(_EndureBenchmark):
-  page_set = 'page_sets/plus_alt_posts_photos.json'
+  page_set = page_sets.PlusAltPostsPhotosPageSet
 

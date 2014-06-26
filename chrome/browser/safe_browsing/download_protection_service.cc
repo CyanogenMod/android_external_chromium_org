@@ -16,12 +16,15 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/time/time.h"
+#include "chrome/browser/history/history_service.h"
+#include "chrome/browser/history/history_service_factory.h"
+#include "chrome/browser/safe_browsing/binary_feature_extractor.h"
 #include "chrome/browser/safe_browsing/download_feedback_service.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/safe_browsing/sandboxed_zip_analyzer.h"
-#include "chrome/browser/safe_browsing/signature_util.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
@@ -45,7 +48,7 @@
 using content::BrowserThread;
 
 namespace {
-static const int64 kDownloadRequestTimeoutMs = 3000;
+static const int64 kDownloadRequestTimeoutMs = 7000;
 }  // namespace
 
 namespace safe_browsing {
@@ -91,6 +94,9 @@ enum MaliciousExtensionType {
   EXTENSION_OTHER,  // Groups all other extensions into one bucket.
   EXTENSION_CRX,
   EXTENSION_APK,
+  EXTENSION_DMG,
+  EXTENSION_PKG,
+  EXTENSION_TORRENT,
   EXTENSION_MAX,
 };
 
@@ -115,6 +121,10 @@ MaliciousExtensionType GetExtensionType(const base::FilePath& f) {
   if (f.MatchesExtension(FILE_PATH_LITERAL(".grp"))) return EXTENSION_GRP;
   if (f.MatchesExtension(FILE_PATH_LITERAL(".crx"))) return EXTENSION_CRX;
   if (f.MatchesExtension(FILE_PATH_LITERAL(".apk"))) return EXTENSION_APK;
+  if (f.MatchesExtension(FILE_PATH_LITERAL(".dmg"))) return EXTENSION_DMG;
+  if (f.MatchesExtension(FILE_PATH_LITERAL(".pkg"))) return EXTENSION_PKG;
+  if (f.MatchesExtension(FILE_PATH_LITERAL(".torrent")))
+    return EXTENSION_TORRENT;
   return EXTENSION_OTHER;
 }
 
@@ -280,14 +290,16 @@ class DownloadProtectionService::CheckClientDownloadRequest
       const CheckDownloadCallback& callback,
       DownloadProtectionService* service,
       const scoped_refptr<SafeBrowsingDatabaseManager>& database_manager,
-      SignatureUtil* signature_util)
+      BinaryFeatureExtractor* binary_feature_extractor)
       : item_(item),
         url_chain_(item->GetUrlChain()),
         referrer_url_(item->GetReferrerUrl()),
+        tab_url_(item->GetTabUrl()),
+        tab_referrer_url_(item->GetTabReferrerUrl()),
         zipped_executable_(false),
         callback_(callback),
         service_(service),
-        signature_util_(signature_util),
+        binary_feature_extractor_(binary_feature_extractor),
         database_manager_(database_manager),
         pingback_enabled_(service_->enabled()),
         finished_(false),
@@ -335,7 +347,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
     } else {
       DCHECK(!download_protection_util::IsArchiveFile(
           item_->GetTargetFilePath()));
-      StartExtractSignatureFeatures();
+      StartExtractFileFeatures();
     }
   }
 
@@ -347,6 +359,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
       // Request has already been cancelled.
       return;
     }
+    timeout_start_time_ = base::TimeTicks::Now();
     BrowserThread::PostDelayedTask(
         BrowserThread::UI,
         FROM_HERE,
@@ -442,6 +455,8 @@ class DownloadProtectionService::CheckClientDownloadRequest
     fetcher_.reset();
     UMA_HISTOGRAM_TIMES("SBClientDownload.DownloadRequestDuration",
                         base::TimeTicks::Now() - start_time_);
+    UMA_HISTOGRAM_TIMES("SBClientDownload.DownloadRequestNetworkDuration",
+                        base::TimeTicks::Now() - request_start_time_);
     FinishRequest(result, reason);
   }
 
@@ -496,21 +511,21 @@ class DownloadProtectionService::CheckClientDownloadRequest
         base::Bind(&CheckClientDownloadRequest::StartTimeout, this));
   }
 
-  void StartExtractSignatureFeatures() {
+  void StartExtractFileFeatures() {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
     DCHECK(item_);  // Called directly from Start(), item should still exist.
     // Since we do blocking I/O, offload this to a worker thread.
     // The task does not need to block shutdown.
     BrowserThread::GetBlockingPool()->PostWorkerTaskWithShutdownBehavior(
         FROM_HERE,
-        base::Bind(&CheckClientDownloadRequest::ExtractSignatureFeatures,
+        base::Bind(&CheckClientDownloadRequest::ExtractFileFeatures,
                    this, item_->GetFullPath()),
         base::SequencedWorkerPool::CONTINUE_ON_SHUTDOWN);
   }
 
-  void ExtractSignatureFeatures(const base::FilePath& file_path) {
+  void ExtractFileFeatures(const base::FilePath& file_path) {
     base::TimeTicks start_time = base::TimeTicks::Now();
-    signature_util_->CheckSignature(file_path, &signature_info_);
+    binary_feature_extractor_->CheckSignature(file_path, &signature_info_);
     bool is_signed = (signature_info_.certificate_chain_size() > 0);
     if (is_signed) {
       VLOG(2) << "Downloaded a signed binary: " << file_path.value();
@@ -520,6 +535,11 @@ class DownloadProtectionService::CheckClientDownloadRequest
     }
     UMA_HISTOGRAM_BOOLEAN("SBClientDownload.SignedBinaryDownload", is_signed);
     UMA_HISTOGRAM_TIMES("SBClientDownload.ExtractSignatureFeaturesTime",
+                        base::TimeTicks::Now() - start_time);
+
+    start_time = base::TimeTicks::Now();
+    binary_feature_extractor_->ExtractImageHeaders(file_path, &image_headers_);
+    UMA_HISTOGRAM_TIMES("SBClientDownload.ExtractImageHeadersTime",
                         base::TimeTicks::Now() - start_time);
 
     OnFileFeatureExtractionDone();
@@ -602,11 +622,47 @@ class DownloadProtectionService::CheckClientDownloadRequest
       BrowserThread::PostTask(
           BrowserThread::UI,
           FROM_HERE,
-          base::Bind(&CheckClientDownloadRequest::SendRequest, this));
+          base::Bind(&CheckClientDownloadRequest::GetTabRedirects, this));
 #else
       PostFinishTask(SAFE, REASON_OS_NOT_SUPPORTED);
 #endif
     }
+  }
+
+  void GetTabRedirects() {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    if (!tab_url_.is_valid()) {
+      SendRequest();
+      return;
+    }
+
+    Profile* profile = Profile::FromBrowserContext(item_->GetBrowserContext());
+    HistoryService* history =
+        HistoryServiceFactory::GetForProfile(profile, Profile::EXPLICIT_ACCESS);
+    if (!history) {
+      SendRequest();
+      return;
+    }
+
+    history->QueryRedirectsTo(
+        tab_url_,
+        base::Bind(&CheckClientDownloadRequest::OnGotTabRedirects,
+                   base::Unretained(this),
+                   tab_url_),
+        &request_tracker_);
+  }
+
+  void OnGotTabRedirects(const GURL& url,
+                         const history::RedirectList* redirect_list) {
+    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+    DCHECK_EQ(url, tab_url_);
+
+    if (!redirect_list->empty()) {
+      tab_redirects_.insert(
+          tab_redirects_.end(), redirect_list->rbegin(), redirect_list->rend());
+    }
+
+    SendRequest();
   }
 
   void SendRequest() {
@@ -628,19 +684,42 @@ class DownloadProtectionService::CheckClientDownloadRequest
         // The last URL in the chain is the download URL.
         resource->set_type(ClientDownloadRequest::DOWNLOAD_URL);
         resource->set_referrer(item_->GetReferrerUrl().spec());
+        DVLOG(2) << "dl url " << resource->url();
         if (!item_->GetRemoteAddress().empty()) {
           resource->set_remote_ip(item_->GetRemoteAddress());
+          DVLOG(2) << "  dl url remote addr: " << resource->remote_ip();
         }
+        DVLOG(2) << "dl referrer " << resource->referrer();
       } else {
+        DVLOG(2) << "dl redirect " << i << " " << resource->url();
         resource->set_type(ClientDownloadRequest::DOWNLOAD_REDIRECT);
       }
       // TODO(noelutz): fill out the remote IP addresses.
     }
+    // TODO(mattm): fill out the remote IP addresses for tab resources.
+    for (size_t i = 0; i < tab_redirects_.size(); ++i) {
+      ClientDownloadRequest::Resource* resource = request.add_resources();
+      DVLOG(2) << "tab redirect " << i << " " << tab_redirects_[i].spec();
+      resource->set_url(tab_redirects_[i].spec());
+      resource->set_type(ClientDownloadRequest::TAB_REDIRECT);
+    }
+    if (tab_url_.is_valid()) {
+      ClientDownloadRequest::Resource* resource = request.add_resources();
+      resource->set_url(tab_url_.spec());
+      DVLOG(2) << "tab url " << resource->url();
+      resource->set_type(ClientDownloadRequest::TAB_URL);
+      if (tab_referrer_url_.is_valid()) {
+        resource->set_referrer(tab_referrer_url_.spec());
+        DVLOG(2) << "tab referrer " << resource->referrer();
+      }
+    }
+
     request.set_user_initiated(item_->HasUserGesture());
     request.set_file_basename(
         item_->GetTargetFilePath().BaseName().AsUTF8Unsafe());
     request.set_download_type(type_);
     request.mutable_signature()->CopyFrom(signature_info_);
+    request.mutable_image_headers()->CopyFrom(image_headers_);
     if (!request.SerializeToString(&client_download_request_data_)) {
       FinishRequest(SAFE, REASON_INVALID_REQUEST_PROTO);
       return;
@@ -657,6 +736,7 @@ class DownloadProtectionService::CheckClientDownloadRequest
     fetcher_->SetRequestContext(service_->request_context_getter_.get());
     fetcher_->SetUploadData("application/octet-stream",
                             client_download_request_data_);
+    request_start_time_ = base::TimeTicks::Now();
     UMA_HISTOGRAM_COUNTS("SBClientDownload.DownloadRequestPayloadSize",
                          client_download_request_data_.size());
     fetcher_->Start();
@@ -681,6 +761,20 @@ class DownloadProtectionService::CheckClientDownloadRequest
     // Ensure the timeout task is cancelled while we still have a non-zero
     // refcount. (crbug.com/240449)
     weakptr_factory_.InvalidateWeakPtrs();
+    if (!request_start_time_.is_null()) {
+      UMA_HISTOGRAM_ENUMERATION("SBClientDownload.DownloadRequestNetworkStats",
+                                reason,
+                                REASON_MAX);
+    }
+    if (!timeout_start_time_.is_null()) {
+      UMA_HISTOGRAM_ENUMERATION("SBClientDownload.DownloadRequestTimeoutStats",
+                                reason,
+                                REASON_MAX);
+      if (reason != REASON_REQUEST_CANCELED) {
+        UMA_HISTOGRAM_TIMES("SBClientDownload.DownloadRequestTimeoutDuration",
+                            base::TimeTicks::Now() - timeout_start_time_);
+      }
+    }
     if (service_) {
       VLOG(2) << "SafeBrowsing download verdict for: "
               << item_->DebugString(true) << " verdict:" << reason;
@@ -747,13 +841,19 @@ class DownloadProtectionService::CheckClientDownloadRequest
   // Copies of data from |item_| for access on other threads.
   std::vector<GURL> url_chain_;
   GURL referrer_url_;
+  // URL chain of redirects leading to (but not including) |tab_url|.
+  std::vector<GURL> tab_redirects_;
+  // URL and referrer of the window the download was started from.
+  GURL tab_url_;
+  GURL tab_referrer_url_;
 
   bool zipped_executable_;
   ClientDownloadRequest_SignatureInfo signature_info_;
+  ClientDownloadRequest_ImageHeaders image_headers_;
   CheckDownloadCallback callback_;
   // Will be NULL if the request has been canceled.
   DownloadProtectionService* service_;
-  scoped_refptr<SignatureUtil> signature_util_;
+  scoped_refptr<BinaryFeatureExtractor> binary_feature_extractor_;
   scoped_refptr<SafeBrowsingDatabaseManager> database_manager_;
   const bool pingback_enabled_;
   scoped_ptr<net::URLFetcher> fetcher_;
@@ -762,8 +862,11 @@ class DownloadProtectionService::CheckClientDownloadRequest
   bool finished_;
   ClientDownloadRequest::DownloadType type_;
   std::string client_download_request_data_;
+  base::CancelableTaskTracker request_tracker_;  // For HistoryService lookup.
   base::WeakPtrFactory<CheckClientDownloadRequest> weakptr_factory_;
   base::TimeTicks start_time_;  // Used for stats.
+  base::TimeTicks timeout_start_time_;
+  base::TimeTicks request_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(CheckClientDownloadRequest);
 };
@@ -773,7 +876,7 @@ DownloadProtectionService::DownloadProtectionService(
     net::URLRequestContextGetter* request_context_getter)
     : request_context_getter_(request_context_getter),
       enabled_(false),
-      signature_util_(new SignatureUtil()),
+      binary_feature_extractor_(new BinaryFeatureExtractor()),
       download_request_timeout_ms_(kDownloadRequestTimeoutMs),
       feedback_service_(new DownloadFeedbackService(
           request_context_getter, BrowserThread::GetBlockingPool())) {
@@ -805,7 +908,8 @@ void DownloadProtectionService::CheckClientDownload(
     const CheckDownloadCallback& callback) {
   scoped_refptr<CheckClientDownloadRequest> request(
       new CheckClientDownloadRequest(item, callback, this,
-                                     database_manager_, signature_util_.get()));
+                                     database_manager_,
+                                     binary_feature_extractor_.get()));
   download_requests_.insert(request);
   request->Start();
 }

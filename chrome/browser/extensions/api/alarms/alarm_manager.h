@@ -11,23 +11,25 @@
 #include <vector>
 
 #include "base/callback.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
+#include "base/scoped_observer.h"
 #include "base/timer/timer.h"
-#include "chrome/browser/extensions/api/profile_keyed_api_factory.h"
 #include "chrome/common/extensions/api/alarms.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "extensions/browser/extension_function.h"
-
-class Profile;
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
 
 namespace base {
 class Clock;
 }  // namespace base
 
-namespace extensions {
+namespace content {
+class BrowserContext;
+}  // namespace content
 
+namespace extensions {
 class ExtensionAlarmsSchedulingTest;
+class ExtensionRegistry;
 
 struct Alarm {
   Alarm();
@@ -51,10 +53,9 @@ struct Alarm {
 
 // Manages the currently pending alarms for every extension in a profile.
 // There is one manager per virtual Profile.
-class AlarmManager
-    : public ProfileKeyedAPI,
-      public content::NotificationObserver,
-      public base::SupportsWeakPtr<AlarmManager> {
+class AlarmManager : public BrowserContextKeyedAPI,
+                     public ExtensionRegistryObserver,
+                     public base::SupportsWeakPtr<AlarmManager> {
  public:
   typedef std::vector<Alarm> AlarmList;
 
@@ -66,7 +67,7 @@ class AlarmManager
                          const Alarm& alarm) = 0;
   };
 
-  explicit AlarmManager(Profile* profile);
+  explicit AlarmManager(content::BrowserContext* context);
   virtual ~AlarmManager();
 
   // Override the default delegate. Callee assumes onwership. Used for testing.
@@ -108,11 +109,11 @@ class AlarmManager
   // Replaces AlarmManager's owned clock with |clock| and takes ownership of it.
   void SetClockForTesting(base::Clock* clock);
 
-  // ProfileKeyedAPI implementation.
-  static ProfileKeyedAPIFactory<AlarmManager>* GetFactoryInstance();
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<AlarmManager>* GetFactoryInstance();
 
-  // Convenience method to get the AlarmManager for a profile.
-  static AlarmManager* Get(Profile* profile);
+  // Convenience method to get the AlarmManager for a content::BrowserContext.
+  static AlarmManager* Get(content::BrowserContext* browser_context);
 
  private:
   friend void RunScheduleNextPoll(AlarmManager*);
@@ -126,7 +127,7 @@ class AlarmManager
                            DifferentMinimumGranularities);
   FRIEND_TEST_ALL_PREFIXES(ExtensionAlarmsSchedulingTest,
                            RepeatingAlarmsScheduledPredictably);
-  friend class ProfileKeyedAPIFactory<AlarmManager>;
+  friend class BrowserContextKeyedAPIFactory<AlarmManager>;
 
   typedef std::string ExtensionId;
   typedef std::map<ExtensionId, AlarmList> AlarmMap;
@@ -200,21 +201,25 @@ class AlarmManager
   // alarm data has been synced from the storage.
   void RunWhenReady(const std::string& extension_id, const ReadyAction& action);
 
-  // NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE;
 
-  // ProfileKeyedAPI implementation.
+  // BrowserContextKeyedAPI implementation.
   static const char* service_name() {
     return "AlarmManager";
   }
   static const bool kServiceHasOwnInstanceInIncognito = true;
 
-  Profile* const profile_;
+  content::BrowserContext* const browser_context_;
   scoped_ptr<base::Clock> clock_;
-  content::NotificationRegistrar registrar_;
   scoped_ptr<Delegate> delegate_;
+
+  // Listen to extension load notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // The timer for this alarm manager.
   base::OneShotTimer<AlarmManager> timer_;

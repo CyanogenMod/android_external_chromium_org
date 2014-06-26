@@ -10,22 +10,22 @@
 #include "base/logging.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
-namespace {
-
 const CGFloat kGap = 6.0;  // gap between icon and text.
 const CGFloat kMinimumHeight = 27.0;  // Enforced minimum height for text cells.
 
-}  // namespace
-
-@interface AutofillTextFieldCell (Internal)
-
+@interface AutofillTextFieldCell ()
 - (NSRect)textFrameForFrame:(NSRect)frame;
+@end
 
+@interface AutofillTextField ()
+// Resize to accommodate contents, but keep width fixed.
+- (void)resizeToText;
 @end
 
 @implementation AutofillTextField
 
 @synthesize inputDelegate = inputDelegate_;
+@synthesize isMultiline = isMultiline_;
 
 + (Class)cellClass {
   return [AutofillTextFieldCell class];
@@ -77,12 +77,52 @@ const CGFloat kMinimumHeight = 27.0;  // Enforced minimum height for text cells.
     [inputDelegate_ didChange:self];
 }
 
+- (BOOL)control:(NSControl*)control
+               textView:(NSTextView*)textView
+    doCommandBySelector:(SEL)commandSelector {
+  // No special command handling for single line inputs.
+  if (![self isMultiline])
+    return NO;
+
+  if (commandSelector == @selector(insertNewline:) ||
+      commandSelector == @selector(insertNewlineIgnoringFieldEditor:)) {
+    // Only allow newline at end of text.
+    NSRange selectionRange = [textView selectedRange];
+    if (selectionRange.location < [[textView string] length])
+      return YES;
+
+    // Only allow newline on a non-empty line.
+    NSRange lineRange = [[textView string] lineRangeForRange:selectionRange];
+    if (lineRange.length == 0)
+      return YES;
+
+    // Insert a line-break character without ending editing.
+    [textView insertNewlineIgnoringFieldEditor:self];
+
+    [self resizeToText];
+    return YES;
+  }
+  return NO;
+}
+
+- (void)resizeToText {
+  NSSize size = [[self cell] cellSize];
+  size.width = NSWidth([self frame]);
+  [self setFrameSize:size];
+
+  id delegate = [[self window] windowController];
+  if ([delegate respondsToSelector:@selector(requestRelayout)])
+    [delegate performSelector:@selector(requestRelayout)];
+}
+
 - (NSString*)fieldValue {
   return [[self cell] fieldValue];
 }
 
 - (void)setFieldValue:(NSString*)fieldValue {
   [[self cell] setFieldValue:fieldValue];
+  if ([self isMultiline])
+    [self resizeToText];
 }
 
 - (NSString*)defaultValue {
@@ -215,10 +255,6 @@ const CGFloat kMinimumHeight = 27.0;  // Enforced minimum height for text cells.
 - (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
   NSRect textFrame = [self textFrameForFrame:cellFrame];
   [super drawInteriorWithFrame:textFrame inView:controlView];
-}
-
-- (void)drawWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
-  [super drawWithFrame:cellFrame inView:controlView];
 
   if (icon_) {
     NSRect iconFrame = [self decorationFrameForFrame:cellFrame];
@@ -229,6 +265,14 @@ const CGFloat kMinimumHeight = 27.0;  // Enforced minimum height for text cells.
        respectFlipped:YES
                 hints:nil];
   }
+}
+
+- (void)drawWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
+  // If the control is disabled and doesn't have text, don't draw it.
+  if (![self isEnabled]  && ([[self stringValue] length] == 0))
+    return;
+
+  [super drawWithFrame:cellFrame inView:controlView];
 
   if (invalid_) {
     gfx::ScopedNSGraphicsContextSaveGState state;

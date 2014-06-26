@@ -12,14 +12,19 @@
 #include "base/metrics/sparse_histogram.h"
 #include "base/prefs/pref_registry_simple.h"
 #include "base/prefs/pref_service.h"
+#include "base/sys_info.h"
+#include "base/task_runner_util.h"
+#include "base/timer/elapsed_timer.h"
 #include "base/version.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/network_time/network_time_tracker.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/metrics/metrics_state_manager.h"
+#include "components/network_time/network_time_tracker.h"
+#include "components/pref_registry/pref_registry_syncable.h"
 #include "components/variations/proto/variations_seed.pb.h"
 #include "components/variations/variations_seed_processor.h"
+#include "components/variations/variations_seed_simulator.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -32,6 +37,10 @@
 #include "net/url_request/url_request_status.h"
 #include "ui/base/device_form_factor.h"
 #include "url/gurl.h"
+
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+#include "chrome/browser/upgrade_detector_impl.h"
+#endif
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/settings/cros_settings.h"
@@ -105,6 +114,21 @@ std::string GetPlatformString() {
 #endif
 }
 
+// Gets the version number to use for variations seed simulation. Must be called
+// on a thread where IO is allowed.
+base::Version GetVersionForSimulation() {
+#if !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+  const base::Version installed_version =
+      UpgradeDetectorImpl::GetCurrentlyInstalledVersion();
+  if (installed_version.IsValid())
+    return installed_version;
+#endif  // !defined(OS_ANDROID) && !defined(OS_IOS) && !defined(OS_CHROMEOS)
+
+  // TODO(asvitkine): Get the version that will be used on restart instead of
+  // the current version on Android, iOS and ChromeOS.
+  return base::Version(chrome::VersionInfo().Version());
+}
+
 // Gets the restrict parameter from |policy_pref_service| or from Chrome OS
 // settings in the case of that platform.
 std::string GetRestrictParameterPref(PrefService* policy_pref_service) {
@@ -156,7 +180,7 @@ ResourceRequestsAllowedState ResourceRequestStateToHistogramValue(
 }
 
 
-// Get current form factor and convert it from enum DeviceFormFactor to enum
+// Gets current form factor and converts it from enum DeviceFormFactor to enum
 // Study_FormFactor.
 Study_FormFactor GetCurrentFormFactor() {
   switch (ui::GetDeviceFormFactor()) {
@@ -171,27 +195,57 @@ Study_FormFactor GetCurrentFormFactor() {
   return Study_FormFactor_DESKTOP;
 }
 
+// Gets the hardware class and returns it as a string. This returns an empty
+// string if the client is not ChromeOS.
+std::string GetHardwareClass() {
+#if defined(OS_CHROMEOS)
+  return base::SysInfo::GetLsbReleaseBoard();
+#endif  // OS_CHROMEOS
+  return std::string();
+}
+
+// Returns the date that should be used by the VariationsSeedProcessor to do
+// expiry and start date checks.
+base::Time GetReferenceDateForExpiryChecks(PrefService* local_state) {
+  const int64 date_value = local_state->GetInt64(prefs::kVariationsSeedDate);
+  const base::Time seed_date = base::Time::FromInternalValue(date_value);
+  const base::Time build_time = base::GetBuildTime();
+  // Use the build time for date checks if either the seed date is invalid or
+  // the build time is newer than the seed date.
+  base::Time reference_date = seed_date;
+  if (seed_date.is_null() || seed_date < build_time)
+    reference_date = build_time;
+  return reference_date;
+}
+
 }  // namespace
 
-VariationsService::VariationsService(PrefService* local_state)
+VariationsService::VariationsService(
+    PrefService* local_state,
+    metrics::MetricsStateManager* state_manager)
     : local_state_(local_state),
+      state_manager_(state_manager),
       policy_pref_service_(local_state),
       seed_store_(local_state),
       create_trials_from_seed_called_(false),
       initial_request_completed_(false),
-      resource_request_allowed_notifier_(
-          new ResourceRequestAllowedNotifier) {
+      resource_request_allowed_notifier_(new ResourceRequestAllowedNotifier),
+      weak_ptr_factory_(this) {
   resource_request_allowed_notifier_->Init(this);
 }
 
-VariationsService::VariationsService(ResourceRequestAllowedNotifier* notifier,
-                                     PrefService* local_state)
+VariationsService::VariationsService(
+    ResourceRequestAllowedNotifier* notifier,
+    PrefService* local_state,
+    metrics::MetricsStateManager* state_manager)
     : local_state_(local_state),
+      state_manager_(state_manager),
       policy_pref_service_(local_state),
       seed_store_(local_state),
       create_trials_from_seed_called_(false),
       initial_request_completed_(false),
-      resource_request_allowed_notifier_(notifier) {
+      resource_request_allowed_notifier_(notifier),
+      weak_ptr_factory_(this) {
   resource_request_allowed_notifier_->Init(this);
 }
 
@@ -205,15 +259,6 @@ bool VariationsService::CreateTrialsFromSeed() {
   if (!seed_store_.LoadSeed(&seed))
     return false;
 
-  const int64 date_value = local_state_->GetInt64(prefs::kVariationsSeedDate);
-  const base::Time seed_date = base::Time::FromInternalValue(date_value);
-  const base::Time build_time = base::GetBuildTime();
-  // Use the build time for date checks if either the seed date is invalid or
-  // the build time is newer than the seed date.
-  base::Time reference_date = seed_date;
-  if (seed_date.is_null() || seed_date < build_time)
-    reference_date = build_time;
-
   const chrome::VersionInfo current_version_info;
   if (!current_version_info.is_valid())
     return false;
@@ -223,8 +268,9 @@ bool VariationsService::CreateTrialsFromSeed() {
     return false;
 
   VariationsSeedProcessor().CreateTrialsFromSeed(
-      seed, g_browser_process->GetApplicationLocale(), reference_date,
-      current_version, GetChannelForVariations(), GetCurrentFormFactor());
+      seed, g_browser_process->GetApplicationLocale(),
+      GetReferenceDateForExpiryChecks(local_state_), current_version,
+      GetChannelForVariations(), GetCurrentFormFactor(), GetHardwareClass());
 
   // Log the "freshness" of the seed that was just used. The freshness is the
   // time between the last successful seed download and now.
@@ -333,7 +379,10 @@ void VariationsService::RegisterProfilePrefs(
 }
 
 // static
-VariationsService* VariationsService::Create(PrefService* local_state) {
+scoped_ptr<VariationsService> VariationsService::Create(
+    PrefService* local_state,
+    metrics::MetricsStateManager* state_manager) {
+  scoped_ptr<VariationsService> result;
 #if !defined(GOOGLE_CHROME_BUILD)
   // Unless the URL was provided, unsupported builds should return NULL to
   // indicate that the service should not be used.
@@ -341,10 +390,11 @@ VariationsService* VariationsService::Create(PrefService* local_state) {
           switches::kVariationsServerURL)) {
     DVLOG(1) << "Not creating VariationsService in unofficial build without --"
              << switches::kVariationsServerURL << " specified.";
-    return NULL;
+    return result.Pass();
   }
 #endif
-  return new VariationsService(local_state);
+  result.reset(new VariationsService(local_state, state_manager));
+  return result.Pass();
 }
 
 void VariationsService::DoActualFetch() {
@@ -370,6 +420,29 @@ void VariationsService::DoActualFetch() {
                               time_since_last_fetch.InMinutes(), 0,
                               base::TimeDelta::FromDays(7).InMinutes(), 50);
   last_request_started_time_ = now;
+}
+
+void VariationsService::StoreSeed(const std::string& seed_data,
+                                  const std::string& seed_signature,
+                                  const base::Time& date_fetched) {
+  scoped_ptr<VariationsSeed> seed(new VariationsSeed);
+  if (!seed_store_.StoreSeedData(seed_data, seed_signature, date_fetched,
+                                 seed.get())) {
+    return;
+  }
+  RecordLastFetchTime();
+
+  // Perform seed simulation only if |state_manager_| is not-NULL. The state
+  // manager may be NULL for some unit tests.
+  if (!state_manager_)
+    return;
+
+  base::PostTaskAndReplyWithResult(
+      content::BrowserThread::GetBlockingPool(),
+      FROM_HERE,
+      base::Bind(&GetVersionForSimulation),
+      base::Bind(&VariationsService::PerformSimulationWithVersion,
+                 weak_ptr_factory_.GetWeakPtr(), base::Passed(&seed)));
 }
 
 void VariationsService::FetchVariationsSeed() {
@@ -424,10 +497,11 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
     DCHECK(success || response_date.is_null());
 
     if (!response_date.is_null()) {
-      NetworkTimeTracker::BuildNotifierUpdateCallback().Run(
+      g_browser_process->network_time_tracker()->UpdateNetworkTime(
           response_date,
           base::TimeDelta::FromMilliseconds(kServerTimeResolutionMs),
-          latency);
+          latency,
+          base::TimeTicks::Now());
     }
   }
 
@@ -435,18 +509,13 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
     DVLOG(1) << "Variations server request returned non-HTTP_OK response code: "
              << response_code;
     if (response_code == net::HTTP_NOT_MODIFIED) {
-      UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchNotModifiedLatency", latency);
       RecordLastFetchTime();
       // Update the seed date value in local state (used for expiry check on
       // next start up), since 304 is a successful response.
-      local_state_->SetInt64(prefs::kVariationsSeedDate,
-                             response_date.ToInternalValue());
-    } else {
-      UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchOtherLatency", latency);
+      seed_store_.UpdateSeedDateAndLogDayChange(response_date);
     }
     return;
   }
-  UMA_HISTOGRAM_MEDIUM_TIMES("Variations.FetchSuccessLatency", latency);
 
   std::string seed_data;
   bool success = request->GetResponseAsString(&seed_data);
@@ -456,8 +525,7 @@ void VariationsService::OnURLFetchComplete(const net::URLFetcher* source) {
   request->GetResponseHeaders()->EnumerateHeader(NULL,
                                                  "X-Seed-Signature",
                                                  &seed_signature);
-  if (seed_store_.StoreSeedData(seed_data, seed_signature, response_date))
-    RecordLastFetchTime();
+  StoreSeed(seed_data, seed_signature, response_date);
 }
 
 void VariationsService::OnResourceRequestsAllowed() {
@@ -474,6 +542,33 @@ void VariationsService::OnResourceRequestsAllowed() {
   // This service must have created a scheduler in order for this to be called.
   DCHECK(request_scheduler_.get());
   request_scheduler_->Reset();
+}
+
+void VariationsService::PerformSimulationWithVersion(
+    scoped_ptr<VariationsSeed> seed,
+    const base::Version& version) {
+  if (version.IsValid())
+    return;
+
+  const base::ElapsedTimer timer;
+
+  scoped_ptr<const base::FieldTrial::EntropyProvider> entropy_provider =
+      state_manager_->CreateEntropyProvider();
+  VariationsSeedSimulator seed_simulator(*entropy_provider);
+
+  VariationsSeedSimulator::Result result = seed_simulator.SimulateSeedStudies(
+      *seed, g_browser_process->GetApplicationLocale(),
+      GetReferenceDateForExpiryChecks(local_state_), version,
+      GetChannelForVariations(), GetCurrentFormFactor(), GetHardwareClass());
+
+  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.NormalChanges",
+                           result.normal_group_change_count);
+  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.KillBestEffortChanges",
+                           result.kill_best_effort_group_change_count);
+  UMA_HISTOGRAM_COUNTS_100("Variations.SimulateSeed.KillCriticalChanges",
+                           result.kill_critical_group_change_count);
+
+  UMA_HISTOGRAM_TIMES("Variations.SimulateSeed.Duration", timer.Elapsed());
 }
 
 void VariationsService::RecordLastFetchTime() {

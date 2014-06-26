@@ -11,9 +11,7 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension_icon_set.h"
 #include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
-#include "chrome/common/extensions/manifest_handlers/icons_handler.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
@@ -23,8 +21,12 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "extensions/common/permissions/permission_set.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 namespace extensions {
 
@@ -42,7 +44,7 @@ class ExtensionFromWebAppTest
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE {
-    if (type == chrome::NOTIFICATION_EXTENSION_INSTALLED) {
+    if (type == chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED) {
       const Extension* extension =
           content::Details<const InstalledExtensionInfo>(details)->extension;
       if (extension->id() == expected_extension_id_) {
@@ -61,11 +63,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, DISABLED_Basic) {
     return;
 #endif
 
-  browser()->profile()->GetExtensionService()->set_show_extensions_prompts(
-      false);
+  ExtensionService* service =
+      ExtensionSystem::Get(browser()->profile())->extension_service();
+  service->set_show_extensions_prompts(false);
 
   content::NotificationRegistrar registrar;
-  registrar.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
+  registrar.Add(this,
+                chrome::NOTIFICATION_EXTENSION_INSTALLED_DEPRECATED,
                 content::NotificationService::AllSources());
 
   expected_extension_id_ = "ffnmbohohhobhkjpfbefbjifapgcmpaa";
@@ -88,7 +92,11 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, DISABLED_Basic) {
             AppLaunchInfo::GetLaunchWebURL(installed_extension_));
   EXPECT_EQ(LAUNCH_CONTAINER_TAB,
             AppLaunchInfo::GetLaunchContainer(installed_extension_));
-  EXPECT_EQ(0u, installed_extension_->GetActivePermissions()->apis().size());
+  EXPECT_EQ(0u,
+            installed_extension_->permissions_data()
+                ->active_permissions()
+                ->apis()
+                .size());
   EXPECT_EQ(0u, IconsInfo::GetIcons(installed_extension_).map().size());
 }
 

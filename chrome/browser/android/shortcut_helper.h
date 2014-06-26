@@ -5,16 +5,16 @@
 #ifndef CHROME_BROWSER_ANDROID_SHORTCUT_HELPER_H_
 #define CHROME_BROWSER_ANDROID_SHORTCUT_HELPER_H_
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
 #include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/android/tab_android.h"
 #include "content/public/browser/web_contents_observer.h"
 
-namespace chrome {
-struct FaviconBitmapResult;
-}  // namespace chrome
+namespace favicon_base {
+struct FaviconRawBitmapResult;
+}  // namespace favicon_base
 
 namespace content {
 class WebContents;
@@ -52,12 +52,12 @@ class ShortcutBuilder : public content::WebContentsObserver {
                                       bool is_apple_mobile_webapp_capable,
                                       const GURL& expected_url);
 
-  void FinishAddingShortcut(const chrome::FaviconBitmapResult& bitmap_result);
+  void FinishAddingShortcut(
+      const favicon_base::FaviconRawBitmapResult& bitmap_result);
 
   // WebContentsObserver
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebContentsDestroyed(content::WebContents* web_contents)
-      OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
  private:
   void Destroy();
@@ -84,7 +84,7 @@ class ShortcutHelper {
       const GURL& url,
       const base::string16& title,
       ShortcutBuilder::ShortcutType shortcut_type,
-      const chrome::FaviconBitmapResult& bitmap_result);
+      const favicon_base::FaviconRawBitmapResult& bitmap_result);
 
   // Registers JNI hooks.
   static bool RegisterShortcutHelper(JNIEnv* env);

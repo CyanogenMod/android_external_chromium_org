@@ -18,6 +18,7 @@ class MockSessionManagerClient : public SessionManagerClient {
   virtual ~MockSessionManagerClient();
 
   MOCK_METHOD1(Init, void(dbus::Bus* bus));
+  MOCK_METHOD1(SetStubDelegate, void(StubDelegate* delegate));
   MOCK_METHOD1(AddObserver, void(Observer*));
   MOCK_METHOD1(RemoveObserver, void(Observer*));
   MOCK_METHOD1(HasObserver, bool(Observer*));
@@ -41,9 +42,8 @@ class MockSessionManagerClient : public SessionManagerClient {
   MOCK_METHOD2(StoreDevicePolicy,
                void(const std::string&,
                     const StorePolicyCallback&));
-  MOCK_METHOD4(StorePolicyForUser,
+  MOCK_METHOD3(StorePolicyForUser,
                void(const std::string&,
-                    const std::string&,
                     const std::string&,
                     const StorePolicyCallback&));
   MOCK_METHOD3(StoreDeviceLocalAccountPolicy,
@@ -53,6 +53,7 @@ class MockSessionManagerClient : public SessionManagerClient {
   MOCK_METHOD2(SetFlagsForUser,
                void(const std::string&,
                     const std::vector<std::string>&));
+  MOCK_METHOD1(GetServerBackedStateKeys, void(const StateKeysCallback&));
 };
 
 }  // namespace chromeos

@@ -9,21 +9,23 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/managed_mode/managed_mode_url_filter.h"
-#include "chrome/browser/managed_mode/managed_user_service.h"
-#include "chrome/browser/managed_mode/managed_user_service_factory.h"
 #include "chrome/browser/search/instant_service.h"
 #include "chrome/browser/search/instant_service_factory.h"
 #include "chrome/browser/search/search.h"
-#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/search_engines/ui_thread_search_terms_data.h"
+#include "chrome/browser/supervised_user/supervised_user_service.h"
+#include "chrome/browser/supervised_user/supervised_user_service_factory.h"
+#include "chrome/browser/supervised_user/supervised_user_url_filter.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/google/core/browser/google_switches.h"
+#include "components/search_engines/search_engines_switches.h"
 #include "components/variations/entropy_provider.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
@@ -182,10 +184,10 @@ class SearchTest : public BrowserWithTestWindowTest {
     data.alternate_urls.push_back("http://foo.com/alt#quux={searchTerms}");
     data.search_terms_replacement_key = "strk";
 
-    TemplateURL* template_url = new TemplateURL(profile(), data);
+    TemplateURL* template_url = new TemplateURL(data);
     // Takes ownership of |template_url|.
     template_url_service->Add(template_url);
-    template_url_service->SetDefaultSearchProvider(template_url);
+    template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
   }
 
   // Build an Instant URL with or without a valid search terms replacement key
@@ -206,10 +208,10 @@ class SearchTest : public BrowserWithTestWindowTest {
         kInstantURLWithStrk : kInstantURLNoStrk);
     data.search_terms_replacement_key = "strk";
 
-    TemplateURL* template_url = new TemplateURL(profile(), data);
+    TemplateURL* template_url = new TemplateURL(data);
     // Takes ownership of |template_url|.
     template_url_service->Add(template_url);
-    template_url_service->SetDefaultSearchProvider(template_url);
+    template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
   }
 
   bool InInstantProcess(const content::WebContents* contents) {
@@ -552,10 +554,10 @@ TEST_F(SearchTest, UseLocalNTPIfNTPURLIsNotSet) {
 
 TEST_F(SearchTest, UseLocalNTPIfNTPURLIsBlockedForSupervisedUser) {
   // Block access to foo.com in the URL filter.
-  ManagedUserService* managed_user_service =
-      ManagedUserServiceFactory::GetForProfile(profile());
-  ManagedModeURLFilter* url_filter =
-      managed_user_service->GetURLFilterForUIThread();
+  SupervisedUserService* supervised_user_service =
+      SupervisedUserServiceFactory::GetForProfile(profile());
+  SupervisedUserURLFilter* url_filter =
+      supervised_user_service->GetURLFilterForUIThread();
   std::map<std::string, bool> hosts;
   hosts["foo.com"] = false;
   url_filter->SetManualHosts(&hosts);
@@ -588,6 +590,13 @@ TEST_F(SearchTest, GetInstantURL) {
   // Disable suggest. No Instant URL.
   profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, false);
   EXPECT_EQ(GURL(), GetInstantURL(profile(), kDisableStartMargin, false));
+
+  // Use alternate Instant search base URL.
+  profile()->GetPrefs()->SetBoolean(prefs::kSearchSuggestEnabled, true);
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
+  EXPECT_EQ(GURL("https://foo.com/search?foo=foo&qbp=1#foo=foo&strk"),
+            GetInstantURL(profile(), kDisableStartMargin, false));
 }
 
 TEST_F(SearchTest, StartMarginCGI) {
@@ -624,10 +633,10 @@ TEST_F(SearchTest, CommandLineOverrides) {
   data.SetURL("{google:baseURL}search?q={searchTerms}");
   data.instant_url = "{google:baseURL}webhp?strk";
   data.search_terms_replacement_key = "strk";
-  TemplateURL* template_url = new TemplateURL(profile(), data);
+  TemplateURL* template_url = new TemplateURL(data);
   // Takes ownership of |template_url|.
   template_url_service->Add(template_url);
-  template_url_service->SetDefaultSearchProvider(template_url);
+  template_url_service->SetUserSelectedDefaultSearchProvider(template_url);
 
   // By default, Instant Extended forces the instant URL to be HTTPS, so even if
   // we set a Google base URL that is HTTP, we should get an HTTPS URL.
@@ -693,9 +702,75 @@ TEST_F(SearchTest, ShouldPrefetchSearchResults_EnabledViaCommandLine) {
       switches::kPrefetchSearchResults);
   // Command-line enable should override Finch.
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch",
-      "Group1 espv:80 prefetch_results:0"));
+      "EmbeddedSearch", "Group1 espv:80 prefetch_results:0"));
   EXPECT_TRUE(ShouldPrefetchSearchResults());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest,
+       ShouldAllowPrefetchNonDefaultMatch_PrefetchResultsFlagDisabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:0 allow_prefetch_non_default_match:1"));
+  EXPECT_FALSE(ShouldAllowPrefetchNonDefaultMatch());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldAllowPrefetchNonDefaultMatch_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:89 prefetch_results:1 allow_prefetch_non_default_match:0"));
+  EXPECT_FALSE(ShouldAllowPrefetchNonDefaultMatch());
+  EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldAllowPrefetchNonDefaultMatch_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:1 allow_prefetch_non_default_match:1"));
+  EXPECT_TRUE(ShouldAllowPrefetchNonDefaultMatch());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest, ShouldUseAltInstantURL_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:0"));
+  EXPECT_FALSE(ShouldUseAltInstantURL());
+}
+
+TEST_F(SearchTest, ShouldUseAltInstantURL_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch", "Group1 espv:8 use_alternate_instant_url:1"));
+  EXPECT_TRUE(ShouldUseAltInstantURL());
+}
+
+TEST_F(SearchTest,
+       ShouldPrerenderInstantUrlOnOmniboxFocus_PrefetchResultsFlagDisabled) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:0 "
+      "prerender_instant_url_on_omnibox_focus:1"));
+  EXPECT_FALSE(ShouldPrerenderInstantUrlOnOmniboxFocus());
+  EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest,
+       ShouldPrerenderInstantUrlOnOmniboxFocus_DisabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:89 prefetch_results:1 "
+      "prerender_instant_url_on_omnibox_focus:0"));
+  EXPECT_FALSE(ShouldPrerenderInstantUrlOnOmniboxFocus());
+  EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
+}
+
+TEST_F(SearchTest,
+       ShouldPrerenderInstantUrlOnOmniboxFocus_EnabledViaFieldTrial) {
+  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
+      "EmbeddedSearch",
+      "Group1 espv:80 prefetch_results:1 "
+      "prerender_instant_url_on_omnibox_focus:1"));
+  EXPECT_TRUE(ShouldPrerenderInstantUrlOnOmniboxFocus());
   EXPECT_EQ(80ul, EmbeddedSearchPageVersion());
 }
 
@@ -747,7 +822,7 @@ TEST_F(SearchTest, ShouldReuseInstantSearchBasePage_EnabledViaCommandLine) {
   // Command-line enable should override Finch.
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch",
-      "Group1 espv:89 prefetch_results:0 reuse_instant_search_base_page:0"));
+      "Group1 espv:89 prefetch_results:0 reuse_instant_search_base_page:1"));
   EXPECT_TRUE(ShouldPrefetchSearchResults());
   EXPECT_TRUE(ShouldReuseInstantSearchBasePage());
   EXPECT_EQ(89ul, EmbeddedSearchPageVersion());
@@ -827,8 +902,8 @@ TEST_F(SearchTest, ExtractSearchTermsFromURL) {
     const ExtractSearchTermsTestCase& test = kTestCases[i];
     EXPECT_EQ(
         test.expected_result,
-        UTF16ToASCII(chrome::ExtractSearchTermsFromURL(profile(),
-                                                       GURL(test.url))))
+        base::UTF16ToASCII(chrome::ExtractSearchTermsFromURL(profile(),
+                                                             GURL(test.url))))
             << test.url << " " << test.comment;
   }
 }
@@ -868,20 +943,22 @@ class SearchURLTest : public SearchTest {
     data.SetURL("{google:baseURL}search?"
                 "{google:instantExtendedEnabledParameter}q={searchTerms}");
     data.search_terms_replacement_key = "espv";
-    template_url_ = new TemplateURL(profile(), data);
+    template_url_ = new TemplateURL(data);
     // |template_url_service| takes ownership of |template_url_|.
     template_url_service->Add(template_url_);
-    template_url_service->SetDefaultSearchProvider(template_url_);
+    template_url_service->SetUserSelectedDefaultSearchProvider(template_url_);
   }
 
   TemplateURL* template_url_;
 };
 
 TEST_F(SearchURLTest, QueryExtractionEnabled) {
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.google.com/");
   EnableQueryExtractionForTesting();
   EXPECT_TRUE(IsQueryExtractionEnabled());
   TemplateURLRef::SearchTermsArgs search_terms_args(base::ASCIIToUTF16("foo"));
-  GURL result(template_url_->url_ref().ReplaceSearchTerms(search_terms_args));
+  GURL result(template_url_->url_ref().ReplaceSearchTerms(
+      search_terms_args, UIThreadSearchTermsData(profile())));
   ASSERT_TRUE(result.is_valid());
   // Query extraction is enabled. Make sure
   // {google:instantExtendedEnabledParameter} is set in the search URL.
@@ -889,9 +966,11 @@ TEST_F(SearchURLTest, QueryExtractionEnabled) {
 }
 
 TEST_F(SearchURLTest, QueryExtractionDisabled) {
+  UIThreadSearchTermsData::SetGoogleBaseURL("http://www.google.com/");
   EXPECT_FALSE(IsQueryExtractionEnabled());
   TemplateURLRef::SearchTermsArgs search_terms_args(base::ASCIIToUTF16("foo"));
-  GURL result(template_url_->url_ref().ReplaceSearchTerms(search_terms_args));
+  GURL result(template_url_->url_ref().ReplaceSearchTerms(
+      search_terms_args, UIThreadSearchTermsData(profile())));
   ASSERT_TRUE(result.is_valid());
   // Query extraction is disabled. Make sure
   // {google:instantExtendedEnabledParameter} is not set in the search URL.
@@ -1082,162 +1161,62 @@ TEST_F(OriginChipTest, NotSet) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:2"));
   EXPECT_FALSE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipCondition());
 }
 
 TEST_F(OriginChipTest, Disabled) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:2 origin_chip:0"));
   EXPECT_FALSE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipCondition());
 }
 
-TEST_F(OriginChipTest, OriginChipLeadingLocationBar) {
+TEST_F(OriginChipTest, Always) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:2 origin_chip:1"));
   EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_LEADING_LOCATION_BAR, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_ALWAYS, GetOriginChipCondition());
 }
 
-TEST_F(OriginChipTest, OriginChipTrailingLocationBar) {
+TEST_F(OriginChipTest, OnSrp) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:2 origin_chip:2"));
   EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_TRAILING_LOCATION_BAR, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_ON_SRP, GetOriginChipCondition());
 }
 
-TEST_F(OriginChipTest, OriginChipLeadingMenuButton) {
+TEST_F(OriginChipTest, InvalidValue) {
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:2 origin_chip:3"));
-  EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_LEADING_MENU_BUTTON, GetOriginChipPosition());
-}
-
-TEST_F(OriginChipTest, OriginChipInvalidValue) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip:4"));
   EXPECT_FALSE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipCondition());
 }
 
 TEST_F(OriginChipTest, CommandLineDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kDisableOriginChip);
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kDisableOriginChip);
   EXPECT_FALSE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipCondition());
 
   // Command-line disable should override the field trial.
   ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
       "EmbeddedSearch", "Group1 espv:2 origin_chip:1"));
   EXPECT_FALSE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipCondition());
 }
 
-TEST_F(OriginChipTest, CommandLineOriginChip) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableOriginChip);
+TEST_F(OriginChipTest, CommandLineAlways) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableOriginChipAlways);
   EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_TRAILING_LOCATION_BAR, GetOriginChipPosition());
+  EXPECT_EQ(ORIGIN_CHIP_ALWAYS, GetOriginChipCondition());
+}
 
-  // Command-line enable should override the field trial.
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip:0"));
+TEST_F(OriginChipTest, CommandLineOnSrp) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kEnableOriginChipOnSrp);
   EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_TRAILING_LOCATION_BAR, GetOriginChipPosition());
-}
-
-TEST_F(OriginChipTest, CommandLineOriginChipLeadingLocationBar) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableOriginChipLeadingLocationBar);
-  EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_LEADING_LOCATION_BAR, GetOriginChipPosition());
-}
-
-TEST_F(OriginChipTest, CommandLineOriginChipTrailingLocationBar) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableOriginChipTrailingLocationBar);
-  EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_TRAILING_LOCATION_BAR, GetOriginChipPosition());
-}
-
-TEST_F(OriginChipTest, CommandLineOriginChipLeadingMenuButton) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableOriginChipLeadingMenuButton);
-  EXPECT_TRUE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_LEADING_MENU_BUTTON, GetOriginChipPosition());
-}
-
-typedef SearchTest OriginChipV2Test;
-
-TEST_F(OriginChipV2Test, NotSet) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2"));
-  EXPECT_FALSE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_DISABLED, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, Disabled) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip_v2:0"));
-  EXPECT_FALSE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_DISABLED, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, HideOnMouseRelease) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip_v2:1"));
-  EXPECT_TRUE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, HideOnUserInput) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip_v2:2"));
-  EXPECT_TRUE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_HIDE_ON_USER_INPUT, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, InvalidValue) {
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip_v2:3"));
-  EXPECT_FALSE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_DISABLED, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, BothVersions) {
-  // With both the original and v2 origin chip experiments enabled, v2 should
-  // disable the original.
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip:1 origin_chip_v2:1"));
-  EXPECT_FALSE(ShouldDisplayOriginChip());
-  EXPECT_EQ(ORIGIN_CHIP_DISABLED, GetOriginChipPosition());
-  EXPECT_TRUE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, CommandLineDisabled) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kDisableOriginChipV2);
-  EXPECT_FALSE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_DISABLED, GetOriginChipV2HideTrigger());
-
-  // Command-line disable should override the field trial.
-  ASSERT_TRUE(base::FieldTrialList::CreateFieldTrial(
-      "EmbeddedSearch", "Group1 espv:2 origin_chip_v2:1"));
-  EXPECT_FALSE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_DISABLED, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, CommandLineHideOnMouseRelease) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableOriginChipV2HideOnMouseRelease);
-  EXPECT_TRUE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE, GetOriginChipV2HideTrigger());
-}
-
-TEST_F(OriginChipV2Test, CommandLineHideOnUserInput) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableOriginChipV2HideOnUserInput);
-  EXPECT_TRUE(ShouldDisplayOriginChipV2());
-  EXPECT_EQ(ORIGIN_CHIP_V2_HIDE_ON_USER_INPUT, GetOriginChipV2HideTrigger());
+  EXPECT_EQ(ORIGIN_CHIP_ON_SRP, GetOriginChipCondition());
 }
 
 }  // namespace chrome

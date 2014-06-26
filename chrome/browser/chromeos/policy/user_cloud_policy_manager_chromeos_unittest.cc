@@ -20,9 +20,9 @@
 #include "chrome/browser/prefs/browser_prefs.h"
 #include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/signin/fake_profile_oauth2_token_service.h"
-#include "chrome/browser/signin/fake_profile_oauth2_token_service_wrapper.h"
-#include "chrome/browser/signin/profile_oauth2_token_service.h"
+#include "chrome/browser/signin/fake_profile_oauth2_token_service_builder.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
@@ -34,6 +34,8 @@
 #include "components/policy/core/common/external_data_fetcher.h"
 #include "components/policy/core/common/mock_configuration_policy_provider.h"
 #include "components/policy/core/common/schema_registry.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -93,7 +95,7 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     TestingProfile::TestingFactories factories;
     factories.push_back(
         std::make_pair(ProfileOAuth2TokenServiceFactory::GetInstance(),
-                       FakeProfileOAuth2TokenServiceWrapper::Build));
+                       BuildFakeProfileOAuth2TokenService));
     profile_ = profile_manager_->CreateTestingProfile(
         chrome::kInitialProfile, scoped_ptr<PrefServiceSyncable>(),
         base::UTF8ToUTF16("testing_profile"), 0, std::string(), factories);
@@ -109,9 +111,13 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
     chrome::RegisterLocalState(prefs_.registry());
 
     // Set up a policy map for testing.
-    policy_map_.Set("HomepageLocation",
+    policy_map_.Set(key::kHomepageLocation,
                     POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
-                    base::Value::CreateStringValue("http://chromium.org"),
+                    new base::StringValue("http://chromium.org"),
+                    NULL);
+    policy_map_.Set(key::kChromeOsMultiProfileUserBehavior,
+                    POLICY_LEVEL_MANDATORY, POLICY_SCOPE_USER,
+                    new base::StringValue("primary-only"),
                     NULL);
     expected_bundle_.Get(PolicyNamespace(POLICY_DOMAIN_CHROME, std::string()))
         .CopyFrom(policy_map_);
@@ -180,8 +186,12 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
       ProfileOAuth2TokenService* token_service =
           ProfileOAuth2TokenServiceFactory::GetForProfile(profile_);
       ASSERT_TRUE(token_service);
+      SigninManagerBase* signin_manager =
+          SigninManagerFactory::GetForProfile(profile_);
+      ASSERT_TRUE(signin_manager);
       token_forwarder_.reset(
-          new UserCloudPolicyTokenForwarder(manager_.get(), token_service));
+          new UserCloudPolicyTokenForwarder(manager_.get(), token_service,
+                                            signin_manager));
     }
   }
 
@@ -250,8 +260,7 @@ class UserCloudPolicyManagerChromeOSTest : public testing::Test {
       EXPECT_TRUE(token_service);
       OAuth2TokenService::ScopeSet scopes;
       scopes.insert(GaiaConstants::kDeviceManagementServiceOAuth);
-      scopes.insert(
-          GaiaUrls::GetInstance()->oauth_wrap_bridge_user_info_scope());
+      scopes.insert(GaiaConstants::kOAuthWrapBridgeUserInfoScope);
       token_service->IssueTokenForScope(
           scopes, "5678",
           base::Time::Now() + base::TimeDelta::FromSeconds(3600));
@@ -535,7 +544,10 @@ TEST_F(UserCloudPolicyManagerChromeOSTest, NonBlockingFirstFetch) {
     static_cast<FakeProfileOAuth2TokenService*>(
         ProfileOAuth2TokenServiceFactory::GetForProfile(profile_));
   ASSERT_TRUE(token_service);
-  const std::string account_id = token_service->GetPrimaryAccountId();
+  SigninManagerBase* signin_manager =
+      SigninManagerFactory::GetForProfile(profile_);
+  ASSERT_TRUE(signin_manager);
+  const std::string& account_id = signin_manager->GetAuthenticatedAccountId();
   EXPECT_FALSE(token_service->RefreshTokenIsAvailable(account_id));
   token_service->UpdateCredentials(account_id, "refresh_token");
   EXPECT_TRUE(token_service->RefreshTokenIsAvailable(account_id));

@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "gin/modules/module_runner_delegate.h"
-#include "mojo/public/system/core.h"
+#include "mojo/public/c/system/core.h"
 
 namespace mojo {
 namespace apps {
@@ -21,7 +21,7 @@ class MojoRunnerDelegate : public gin::ModuleRunnerDelegate {
 
  private:
   // From ModuleRunnerDelegate:
-  virtual void UnhandledException(gin::Runner* runner,
+  virtual void UnhandledException(gin::ShellRunner* runner,
                                   gin::TryCatch& try_catch) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(MojoRunnerDelegate);

@@ -11,9 +11,8 @@
 #include "content/browser/browser_process_sub_thread.h"
 #include "content/public/browser/browser_main_runner.h"
 
-class CommandLine;
-
 namespace base {
+class CommandLine;
 class FilePath;
 class HighResolutionTimerManager;
 class MessageLoop;
@@ -45,13 +44,15 @@ class MediaStreamManager;
 class ResourceDispatcherHostImpl;
 class SpeechRecognitionManagerImpl;
 class StartupTaskRunner;
-class SystemMessageWindowWin;
+class TimeZoneMonitor;
 struct MainFunctionParams;
 
 #if defined(OS_LINUX)
 class DeviceMonitorLinux;
 #elif defined(OS_MACOSX)
 class DeviceMonitorMac;
+#elif defined(OS_WIN)
+class SystemMessageWindowWin;
 #endif
 
 // Implements the main browser loop stages called from BrowserMainRunner.
@@ -68,7 +69,9 @@ class CONTENT_EXPORT BrowserMainLoop {
   void Init();
 
   void EarlyInitialization();
-  void InitializeToolkit();
+  // Initializes the toolkit. Returns whether the toolkit initialization was
+  // successful or not.
+  bool InitializeToolkit();
   void MainMessageLoopStart();
 
   // Create and start running the tasks we need to complete startup. Note that
@@ -101,6 +104,12 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   bool is_tracing_startup() const { return is_tracing_startup_; }
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  DeviceMonitorMac* device_monitor_mac() const {
+    return device_monitor_mac_.get();
+  }
+#endif
+
  private:
   class MemoryObserver;
   // For ShutdownThreadsAndCleanUp.
@@ -121,12 +130,12 @@ class CONTENT_EXPORT BrowserMainLoop {
 
   void MainMessageLoopRun();
 
-  void InitStartupTracing(const CommandLine& command_line);
+  void InitStartupTracing(const base::CommandLine& command_line);
   void EndStartupTracing(const base::FilePath& trace_file);
 
   // Members initialized on construction ---------------------------------------
   const MainFunctionParams& parameters_;
-  const CommandLine& parsed_command_line_;
+  const base::CommandLine& parsed_command_line_;
   int result_code_;
   // True if the non-UI threads were created.
   bool created_threads_;
@@ -166,6 +175,7 @@ class CONTENT_EXPORT BrowserMainLoop {
   // Members initialized in |BrowserThreadsStarted()| --------------------------
   scoped_ptr<ResourceDispatcherHostImpl> resource_dispatcher_host_;
   scoped_ptr<SpeechRecognitionManagerImpl> speech_recognition_manager_;
+  scoped_ptr<TimeZoneMonitor> time_zone_monitor_;
 
   // Members initialized in |RunMainMessageLoopParts()| ------------------------
   scoped_ptr<BrowserProcessSubThread> db_thread_;

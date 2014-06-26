@@ -5,10 +5,10 @@
 #import "chrome/browser/ui/cocoa/browser/edit_search_engine_cocoa_controller.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/search_engines/template_url.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -84,8 +84,6 @@ class EditSearchEngineControllerTest : public CocoaProfileTest {
     CocoaProfileTest::SetUp();
     ASSERT_TRUE(profile());
 
-    TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-        profile(), &TemplateURLServiceFactory::BuildInstanceFor);
     controller_ =
        [[FakeEditSearchEngineController alloc] initWithProfile:profile()
                                                       delegate:nil
@@ -240,7 +238,7 @@ TEST_F(EditSearchEngineControllerTest, EditTemplateURL) {
   std::string urlString = TemplateURLRef::DisplayURLToURLRef(
       base::ASCIIToUTF16("http://foo-bar.com"));
   data.SetURL(urlString);
-  TemplateURL url(profile(), data);
+  TemplateURL url(data);
   FakeEditSearchEngineController *controller =
       [[FakeEditSearchEngineController alloc] initWithProfile:profile()
                                                      delegate:nil

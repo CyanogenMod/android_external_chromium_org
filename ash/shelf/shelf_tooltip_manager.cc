@@ -13,8 +13,8 @@
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/insets.h"
@@ -25,7 +25,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 namespace {
 const int kTooltipTopBottomMargin = 3;
 const int kTooltipLeftRightMargin = 10;
@@ -61,7 +60,7 @@ class ShelfTooltipManager::ShelfTooltipBubble
   virtual void WindowClosing() OVERRIDE;
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
 
   ShelfTooltipManager* host_;
   views::Label* label_;
@@ -74,8 +73,6 @@ ShelfTooltipManager::ShelfTooltipBubble::ShelfTooltipBubble(
     views::BubbleBorder::Arrow arrow,
     ShelfTooltipManager* host)
     : views::BubbleDelegateView(anchor, arrow), host_(host) {
-  // Make sure that the bubble follows the animation of the shelf.
-  set_move_with_anchor(true);
   gfx::Insets insets = gfx::Insets(kArrowOffsetTopBottom,
                                    kArrowOffsetLeftRight,
                                    kArrowOffsetTopBottom,
@@ -99,7 +96,7 @@ ShelfTooltipManager::ShelfTooltipBubble::ShelfTooltipBubble(
     aura::Window* root_window =
         anchor->GetWidget()->GetNativeView()->GetRootWindow();
     set_parent_window(ash::Shell::GetInstance()->GetContainer(
-        root_window, ash::internal::kShellWindowId_SettingBubbleContainer));
+        root_window, ash::kShellWindowId_SettingBubbleContainer));
   }
   label_ = new views::Label;
   label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -127,7 +124,7 @@ void ShelfTooltipManager::ShelfTooltipBubble::WindowClosing() {
     host_->OnBubbleClosed(this);
 }
 
-gfx::Size ShelfTooltipManager::ShelfTooltipBubble::GetPreferredSize() {
+gfx::Size ShelfTooltipManager::ShelfTooltipBubble::GetPreferredSize() const {
   gfx::Size pref_size = views::BubbleDelegateView::GetPreferredSize();
   if (pref_size.height() < kTooltipMinHeight)
     pref_size.set_height(kTooltipMinHeight);
@@ -324,8 +321,8 @@ void ShelfTooltipManager::CancelHidingAnimation() {
     return;
 
   gfx::NativeView native_view = widget_->GetNativeView();
-  views::corewm::SetWindowVisibilityAnimationTransition(
-      native_view, views::corewm::ANIMATE_NONE);
+  wm::SetWindowVisibilityAnimationTransition(
+      native_view, wm::ANIMATE_NONE);
 }
 
 void ShelfTooltipManager::CloseSoon() {
@@ -359,10 +356,10 @@ void ShelfTooltipManager::CreateBubble(views::View* anchor,
   view_->SetText(text_);
 
   gfx::NativeView native_view = widget_->GetNativeView();
-  views::corewm::SetWindowVisibilityAnimationType(
-      native_view, views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_VERTICAL);
-  views::corewm::SetWindowVisibilityAnimationTransition(
-      native_view, views::corewm::ANIMATE_HIDE);
+  wm::SetWindowVisibilityAnimationType(
+      native_view, wm::WINDOW_VISIBILITY_ANIMATION_TYPE_VERTICAL);
+  wm::SetWindowVisibilityAnimationTransition(
+      native_view, wm::ANIMATE_HIDE);
 }
 
 void ShelfTooltipManager::CreateTimer(int delay_in_ms) {
@@ -375,5 +372,4 @@ void ShelfTooltipManager::CreateTimer(int delay_in_ms) {
   timer_.reset(new_timer);
 }
 
-}  // namespace internal
 }  // namespace ash

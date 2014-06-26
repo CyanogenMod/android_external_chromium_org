@@ -22,9 +22,11 @@ class GURL;
 namespace base {
 class MessageLoop;
 class MessageLoopProxy;
+class WaitableEvent;
 }
 
 namespace IPC {
+class MessageFilter;
 class SyncChannel;
 class SyncMessageFilter;
 }
@@ -37,6 +39,7 @@ namespace content {
 
 class RenderProcessObserver;
 class ResourceDispatcherDelegate;
+class ServiceRegistry;
 
 class CONTENT_EXPORT RenderThread : public IPC::Sender {
  public:
@@ -60,8 +63,8 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   virtual int GenerateRoutingID() = 0;
 
   // These map to IPC::ChannelProxy methods.
-  virtual void AddFilter(IPC::ChannelProxy::MessageFilter* filter) = 0;
-  virtual void RemoveFilter(IPC::ChannelProxy::MessageFilter* filter) = 0;
+  virtual void AddFilter(IPC::MessageFilter* filter) = 0;
+  virtual void RemoveFilter(IPC::MessageFilter* filter) = 0;
 
   // Add/remove observers for the process.
   virtual void AddObserver(RenderProcessObserver* observer) = 0;
@@ -77,9 +80,11 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
 
   // Sends over a base::UserMetricsAction to be recorded by user metrics as
   // an action. Once a new user metric is added, run
-  //   tools/metrics/actions/extract_actions.py --hash
-  // to generate a new mapping of [action hashes -> metric names] and send it
-  // out for review to be updated.
+  //   tools/metrics/actions/extract_actions.py
+  // to add the metric to actions.xml, then update the <owner>s and
+  // <description> sections. Make sure to include the actions.xml file when you
+  // upload your code for review!
+  //
   // WARNING: When using base::UserMetricsAction, base::UserMetricsAction
   // and a string literal parameter must be on the same line, e.g.
   //   RenderThread::Get()->RecordAction(
@@ -121,6 +126,9 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   // proxy servers.
   virtual bool ResolveProxy(const GURL& url, std::string* proxy_list) = 0;
 
+  // Gets the shutdown event for the process.
+  virtual base::WaitableEvent* GetShutdownEvent() = 0;
+
 #if defined(OS_WIN)
   // Request that the given font be loaded by the browser so it's cached by the
   // OS. Please see ChildProcessHost::PreCacheFont for details.
@@ -129,6 +137,9 @@ class CONTENT_EXPORT RenderThread : public IPC::Sender {
   // Release cached font.
   virtual void ReleaseCachedFonts() = 0;
 #endif
+
+  // Returns the ServiceRegistry for this thread.
+  virtual ServiceRegistry* GetServiceRegistry() = 0;
 };
 
 }  // namespace content

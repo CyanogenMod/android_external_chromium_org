@@ -15,6 +15,7 @@
         '../../../base/base.gyp:base',
         '../../../chrome/chrome.gyp:common',
         '../../../ipc/ipc.gyp:ipc',
+        '../../../media/cast/cast.gyp:cast_transport',
       ],
       'sources': [
         'replay.cc',
@@ -23,6 +24,9 @@
       ],
       'include_dirs': [
         '../../..',
+      ],
+      'defines': [
+        'USE_CUPS',
       ],
     },
   ],

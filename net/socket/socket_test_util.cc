@@ -24,6 +24,7 @@
 #include "net/socket/client_socket_pool_histograms.h"
 #include "net/socket/socket.h"
 #include "net/ssl/ssl_cert_request_info.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 #include "net/ssl/ssl_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -169,27 +170,27 @@ StaticSocketDataProvider::StaticSocketDataProvider(MockRead* reads,
 StaticSocketDataProvider::~StaticSocketDataProvider() {}
 
 const MockRead& StaticSocketDataProvider::PeekRead() const {
-  DCHECK(!at_read_eof());
+  CHECK(!at_read_eof());
   return reads_[read_index_];
 }
 
 const MockWrite& StaticSocketDataProvider::PeekWrite() const {
-  DCHECK(!at_write_eof());
+  CHECK(!at_write_eof());
   return writes_[write_index_];
 }
 
 const MockRead& StaticSocketDataProvider::PeekRead(size_t index) const {
-  DCHECK_LT(index, read_count_);
+  CHECK_LT(index, read_count_);
   return reads_[index];
 }
 
 const MockWrite& StaticSocketDataProvider::PeekWrite(size_t index) const {
-  DCHECK_LT(index, write_count_);
+  CHECK_LT(index, write_count_);
   return writes_[index];
 }
 
 MockRead StaticSocketDataProvider::GetNextRead() {
-  DCHECK(!at_read_eof());
+  CHECK(!at_read_eof());
   reads_[read_index_].time_stamp = base::Time::Now();
   return reads_[read_index_++];
 }
@@ -199,7 +200,12 @@ MockWriteResult StaticSocketDataProvider::OnWrite(const std::string& data) {
     // Not using mock writes; succeed synchronously.
     return MockWriteResult(SYNCHRONOUS, data.length());
   }
-  DCHECK(!at_write_eof());
+  EXPECT_FALSE(at_write_eof());
+  if (at_write_eof()) {
+    // Show what the extra write actually consists of.
+    EXPECT_EQ("<unexpected write>", data);
+    return MockWriteResult(SYNCHRONOUS, ERR_UNEXPECTED);
+  }
 
   // Check that what we are writing matches the expectation.
   // Then give the mocked return value.
@@ -270,7 +276,12 @@ SSLSocketDataProvider::SSLSocketDataProvider(IoMode mode, int result)
       protocol_negotiated(kProtoUnknown),
       client_cert_sent(false),
       cert_request_info(NULL),
-      channel_id_sent(false) {
+      channel_id_sent(false),
+      connection_status(0) {
+  SSLConnectionStatusSetVersion(SSL_CONNECTION_VERSION_TLS1_2,
+                                &connection_status);
+  // Set to TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+  SSLConnectionStatusSetCipherSuite(0xcc14, &connection_status);
 }
 
 SSLSocketDataProvider::~SSLSocketDataProvider() {
@@ -708,12 +719,12 @@ MockClientSocket::MockClientSocket(const BoundNetLog& net_log)
   peer_addr_ = IPEndPoint(ip, 0);
 }
 
-bool MockClientSocket::SetReceiveBufferSize(int32 size) {
-  return true;
+int MockClientSocket::SetReceiveBufferSize(int32 size) {
+  return OK;
 }
 
-bool MockClientSocket::SetSendBufferSize(int32 size) {
-  return true;
+int MockClientSocket::SetSendBufferSize(int32 size) {
+  return OK;
 }
 
 void MockClientSocket::Disconnect() {
@@ -775,6 +786,12 @@ MockClientSocket::GetNextProto(std::string* proto, std::string* server_protos) {
   proto->clear();
   server_protos->clear();
   return SSLClientSocket::kNextProtoUnsupported;
+}
+
+scoped_refptr<X509Certificate>
+MockClientSocket::GetUnverifiedServerCertificateChain() const {
+  NOTREACHED();
+  return NULL;
 }
 
 MockClientSocket::~MockClientSocket() {}
@@ -1151,12 +1168,12 @@ int DeterministicMockUDPClientSocket::Read(
   return helper_.Read(buf, buf_len, callback);
 }
 
-bool DeterministicMockUDPClientSocket::SetReceiveBufferSize(int32 size) {
-  return true;
+int DeterministicMockUDPClientSocket::SetReceiveBufferSize(int32 size) {
+  return OK;
 }
 
-bool DeterministicMockUDPClientSocket::SetSendBufferSize(int32 size) {
-  return true;
+int DeterministicMockUDPClientSocket::SetSendBufferSize(int32 size) {
+  return OK;
 }
 
 void DeterministicMockUDPClientSocket::Close() {
@@ -1366,6 +1383,7 @@ bool MockSSLClientSocket::GetSSLInfo(SSLInfo* ssl_info) {
   ssl_info->cert = data_->cert;
   ssl_info->client_cert_sent = data_->client_cert_sent;
   ssl_info->channel_id_sent = data_->channel_id_sent;
+  ssl_info->connection_status = data_->connection_status;
   return true;
 }
 
@@ -1497,12 +1515,12 @@ int MockUDPClientSocket::Write(IOBuffer* buf, int buf_len,
   return write_result.result;
 }
 
-bool MockUDPClientSocket::SetReceiveBufferSize(int32 size) {
-  return true;
+int MockUDPClientSocket::SetReceiveBufferSize(int32 size) {
+  return OK;
 }
 
-bool MockUDPClientSocket::SetSendBufferSize(int32 size) {
-  return true;
+int MockUDPClientSocket::SetSendBufferSize(int32 size) {
+  return OK;
 }
 
 void MockUDPClientSocket::Close() {
@@ -1529,7 +1547,7 @@ const BoundNetLog& MockUDPClientSocket::NetLog() const {
 int MockUDPClientSocket::Connect(const IPEndPoint& address) {
   connected_ = true;
   peer_addr_ = address;
-  return OK;
+  return data_->connect_data().result;
 }
 
 void MockUDPClientSocket::OnReadComplete(const MockRead& data) {

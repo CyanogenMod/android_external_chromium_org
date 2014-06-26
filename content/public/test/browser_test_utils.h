@@ -27,8 +27,6 @@
 #include "base/win/scoped_handle.h"
 #endif
 
-class CommandLine;
-
 namespace base {
 class RunLoop;
 }
@@ -80,6 +78,9 @@ void SimulateMouseEvent(WebContents* web_contents,
                         blink::WebInputEvent::Type type,
                         const gfx::Point& point);
 
+// Taps the screen at |point|.
+void SimulateTapAt(WebContents* web_contents, const gfx::Point& point);
+
 // Sends a key press asynchronously.
 // The native code of the key event will be set to InvalidNativeKeycode().
 // |key_code| alone is good enough for scenarios that only need the char
@@ -113,72 +114,62 @@ void SimulateKeyPressWithCode(WebContents* web_contents,
                               bool alt,
                               bool command);
 
-// Allow ExecuteScript* methods to target either a WebContents or a
-// RenderViewHost.  Targetting a WebContents means executing script in the
-// RenderViewHost returned by WebContents::GetRenderViewHost(), which is the
-// "current" RenderViewHost.  Pass a specific RenderViewHost to target, for
-// example, a "swapped-out" RenderViewHost.
 namespace internal {
-class ToRenderViewHost {
+// Allow ExecuteScript* methods to target either a WebContents or a
+// RenderFrameHost.  Targetting a WebContents means executing the script in the
+// RenderFrameHost returned by WebContents::GetMainFrame(), which is the
+// main frame.  Pass a specific RenderFrameHost to target it.
+class ToRenderFrameHost {
  public:
-  ToRenderViewHost(WebContents* web_contents);
-  ToRenderViewHost(RenderViewHost* render_view_host);
+  ToRenderFrameHost(WebContents* web_contents);
+  ToRenderFrameHost(RenderViewHost* render_view_host);
+  ToRenderFrameHost(RenderFrameHost* render_frame_host);
 
-  RenderViewHost* render_view_host() const { return render_view_host_; }
+  RenderFrameHost* render_frame_host() const { return render_frame_host_; }
 
  private:
-  RenderViewHost* render_view_host_;
+  RenderFrameHost* render_frame_host_;
 };
 }  // namespace internal
 
-// Executes the passed |script| in the frame pointed to by |frame_xpath| (use
-// empty string for main frame).  The |script| should not invoke
-// domAutomationController.send(); otherwise, your test will hang or be flaky.
-// If you want to extract a result, use one of the below functions.
+// Executes the passed |script| in the specified frame. The |script| should not
+// invoke domAutomationController.send(); otherwise, your test will hang or be
+// flaky. If you want to extract a result, use one of the below functions.
 // Returns true on success.
-bool ExecuteScriptInFrame(const internal::ToRenderViewHost& adapter,
-                          const std::string& frame_xpath,
-                          const std::string& script) WARN_UNUSED_RESULT;
-
-// The following methods executes the passed |script| in the frame pointed to by
-// |frame_xpath| (use empty string for main frame) and sets |result| to the
-// value passed to "window.domAutomationController.send" by the executed script.
-// They return true on success, false if the script execution failed or did not
-// evaluate to the expected type.
-bool ExecuteScriptInFrameAndExtractInt(
-    const internal::ToRenderViewHost& adapter,
-    const std::string& frame_xpath,
-    const std::string& script,
-    int* result) WARN_UNUSED_RESULT;
-bool ExecuteScriptInFrameAndExtractBool(
-    const internal::ToRenderViewHost& adapter,
-    const std::string& frame_xpath,
-    const std::string& script,
-    bool* result) WARN_UNUSED_RESULT;
-bool ExecuteScriptInFrameAndExtractString(
-    const internal::ToRenderViewHost& adapter,
-    const std::string& frame_xpath,
-    const std::string& script,
-    std::string* result) WARN_UNUSED_RESULT;
-
-// Top-frame script execution helpers (a.k.a., the common case):
-bool ExecuteScript(const internal::ToRenderViewHost& adapter,
+bool ExecuteScript(const internal::ToRenderFrameHost& adapter,
                    const std::string& script) WARN_UNUSED_RESULT;
-bool ExecuteScriptAndExtractInt(const internal::ToRenderViewHost& adapter,
+
+// The following methods executes the passed |script| in the specified frame and
+// sets |result| to the value passed to "window.domAutomationController.send" by
+// the executed script. They return true on success, false if the script
+// execution failed or did not evaluate to the expected type.
+bool ExecuteScriptAndExtractInt(const internal::ToRenderFrameHost& adapter,
                                 const std::string& script,
                                 int* result) WARN_UNUSED_RESULT;
-bool ExecuteScriptAndExtractBool(const internal::ToRenderViewHost& adapter,
+bool ExecuteScriptAndExtractBool(const internal::ToRenderFrameHost& adapter,
                                  const std::string& script,
                                  bool* result) WARN_UNUSED_RESULT;
-bool ExecuteScriptAndExtractString(const internal::ToRenderViewHost& adapter,
+bool ExecuteScriptAndExtractString(const internal::ToRenderFrameHost& adapter,
                                    const std::string& script,
                                    std::string* result) WARN_UNUSED_RESULT;
+
+// Walks the frame tree of the specified WebContents and returns the sole frame
+// that matches the specified predicate function. This function will DCHECK if
+// no frames match the specified predicate, or if more than one frame matches.
+RenderFrameHost* FrameMatchingPredicate(
+    WebContents* web_contents,
+    const base::Callback<bool(RenderFrameHost*)>& predicate);
+
+// Predicates for use with FrameMatchingPredicate.
+bool FrameMatchesName(const std::string& name, RenderFrameHost* frame);
+bool FrameIsChildOfMainFrame(RenderFrameHost* frame);
+bool FrameHasSourceUrl(const GURL& url, RenderFrameHost* frame);
 
 // Executes the WebUI resource test runner injecting each resource ID in
 // |js_resource_ids| prior to executing the tests.
 //
 // Returns true if tests ran successfully, false otherwise.
-bool ExecuteWebUIResourceTest(const internal::ToRenderViewHost& adapter,
+bool ExecuteWebUIResourceTest(WebContents* web_contents,
                               const std::vector<int>& js_resource_ids);
 
 // Returns the cookies for the given url.
@@ -235,7 +226,7 @@ class WebContentsDestroyedWatcher : public WebContentsObserver {
 
  private:
   // Overridden WebContentsObserver methods.
-  virtual void WebContentsDestroyed(WebContents* web_contents) OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
   scoped_refptr<MessageLoopRunner> message_loop_runner_;
 
@@ -289,7 +280,7 @@ class DOMMessageQueue : public NotificationObserver {
   void ClearQueue();
 
   // Wait for the next message to arrive. |message| will be set to the next
-  // message, if not null. Returns true on success.
+  // message. Returns true on success.
   bool WaitForMessage(std::string* message) WARN_UNUSED_RESULT;
 
   // Overridden NotificationObserver methods.
@@ -300,7 +291,6 @@ class DOMMessageQueue : public NotificationObserver {
  private:
   NotificationRegistrar registrar_;
   std::queue<std::string> message_queue_;
-  bool waiting_for_message_;
   scoped_refptr<MessageLoopRunner> message_loop_runner_;
 
   DISALLOW_COPY_AND_ASSIGN(DOMMessageQueue);

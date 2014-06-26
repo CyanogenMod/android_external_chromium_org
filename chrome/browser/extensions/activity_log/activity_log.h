@@ -10,18 +10,17 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/memory/singleton.h"
 #include "base/observer_list_threadsafe.h"
+#include "base/scoped_observer.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/extensions/activity_log/activity_actions.h"
 #include "chrome/browser/extensions/activity_log/activity_log_policy.h"
-#include "chrome/browser/extensions/install_observer.h"
 #include "chrome/browser/extensions/tab_helper.h"
-#include "chrome/common/extensions/dom_action_types.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
 #include "extensions/browser/api_activity_monitor.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/common/dom_action_types.h"
 
 class Profile;
 
@@ -35,14 +34,21 @@ class PrefRegistrySyncable;
 
 namespace extensions {
 class Extension;
-class InstallTracker;
+class ExtensionRegistry;
 
 // A utility for tracing interesting activity for each extension.
 // It writes to an ActivityDatabase on a separate thread to record the activity.
-class ActivityLog : public BrowserContextKeyedService,
+// Each profile has different extensions, so we keep a different database for
+// each profile.
+//
+// TODO(thestig) Remove ENABLE_EXTENSIONS checks when ActivityLog is no longer
+// built on platforms that do not support extensions.
+class ActivityLog : public BrowserContextKeyedAPI,
                     public ApiActivityMonitor,
+#if defined(ENABLE_EXTENSIONS)
                     public TabHelper::ScriptExecutionObserver,
-                    public InstallObserver {
+#endif
+                    public ExtensionRegistryObserver {
  public:
   // Observers can listen for activity events. There is probably only one
   // observer: the activityLogPrivate API.
@@ -51,8 +57,10 @@ class ActivityLog : public BrowserContextKeyedService,
     virtual void OnExtensionActivity(scoped_refptr<Action> activity) = 0;
   };
 
-  // ActivityLog is a singleton, so don't instantiate it with the constructor;
-  // use GetInstance instead.
+  static BrowserContextKeyedAPIFactory<ActivityLog>* GetFactoryInstance();
+
+  // ActivityLog is a KeyedService, so don't instantiate it with
+  // the constructor; use GetInstance instead.
   static ActivityLog* GetInstance(content::BrowserContext* context);
 
   // Add/remove observer: the activityLogPrivate API only listens when the
@@ -79,25 +87,19 @@ class ActivityLog : public BrowserContextKeyedService,
       const base::Callback
           <void(scoped_ptr<std::vector<scoped_refptr<Action> > >)>& callback);
 
-  // Extension::InstallObserver
+  // ExtensionRegistryObserver.
   // We keep track of whether the whitelisted extension is installed; if it is,
   // we want to recompute whether to have logging enabled.
-  virtual void OnExtensionInstalled(const Extension* extension) OVERRIDE {}
-  virtual void OnExtensionLoaded(const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUnloaded(const Extension* extension) OVERRIDE;
-  virtual void OnExtensionUninstalled(const Extension* extension) OVERRIDE;
-  // We also have to list the following from InstallObserver.
-  virtual void OnBeginExtensionInstall(
-      const ExtensionInstallParams& params) OVERRIDE {}
-  virtual void OnDownloadProgress(const std::string& extension_id,
-                                  int percent_downloaded) OVERRIDE {}
-  virtual void OnInstallFailure(const std::string& extension_id) OVERRIDE {}
-  virtual void OnAppsReordered() OVERRIDE {}
-  virtual void OnAppInstalledToAppList(
-      const std::string& extension_id) OVERRIDE {}
-  virtual void OnShutdown() OVERRIDE {}
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+  virtual void OnExtensionUninstalled(content::BrowserContext* browser_context,
+                                      const Extension* extension) OVERRIDE;
 
-  // ApiActivityMonitor
+  // ApiActivityMonitor.
   virtual void OnApiEventDispatched(
       const std::string& extension_id,
       const std::string& event_name,
@@ -106,9 +108,6 @@ class ActivityLog : public BrowserContextKeyedService,
       const std::string& extension_id,
       const std::string& api_name,
       scoped_ptr<base::ListValue> event_args) OVERRIDE;
-
-  // BrowserContextKeyedService
-  virtual void Shutdown() OVERRIDE;
 
   static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
@@ -126,30 +125,31 @@ class ActivityLog : public BrowserContextKeyedService,
   // Deletes the database associated with the policy that's currently in use.
   void DeleteDatabase();
 
- private:
-  friend class ActivityLogFactory;
-  friend class ActivityLogTest;
-  friend class RenderViewActivityLogTest;
+  // If we're in a browser test, we need to pretend that the watchdog app is
+  // active.
+  void SetWatchdogAppActiveForTesting(bool active);
 
-  explicit ActivityLog(Profile* profile);
+ private:
+  friend class ActivityLogTest;
+  friend class BrowserContextKeyedAPIFactory<ActivityLog>;
+
+  explicit ActivityLog(content::BrowserContext* context);
   virtual ~ActivityLog();
 
   // Specifies if the Watchdog app is active (installed & enabled).
   // If so, we need to log to the database and stream to the API.
   bool IsWatchdogAppActive();
-  // If we're in a browser test, we need to pretend that the watchdog app is
-  // active.
-  void SetWatchdogAppActive(bool active);
 
   // Specifies if we need to record actions to the db. If so, we need to log to
   // the database. This is true if the Watchdog app is active *or* the
   // --enable-extension-activity-logging flag is set.
   bool IsDatabaseEnabled();
 
-  // Delayed initialization of Install Tracker which waits until after the
+  // Delayed initialization of ExtensionRegistry which waits until after the
   // ExtensionSystem/ExtensionService are done with their own setup.
-  void InitInstallTracker();
+  void StartObserving();
 
+#if defined(ENABLE_EXTENSIONS)
   // TabHelper::ScriptExecutionObserver implementation.
   // Fires when a ContentScript is executed.
   virtual void OnScriptsExecuted(
@@ -157,6 +157,7 @@ class ActivityLog : public BrowserContextKeyedService,
       const ExecutingScriptsMap& extension_ids,
       int32 page_id,
       const GURL& on_url) OVERRIDE;
+#endif
 
   // At the moment, ActivityLog will use only one policy for summarization.
   // These methods are used to choose and set the most appropriate policy.
@@ -164,6 +165,11 @@ class ActivityLog : public BrowserContextKeyedService,
   // done for unit tests.
   void ChooseDatabasePolicy();
   void SetDatabasePolicy(ActivityLogPolicy::PolicyType policy_type);
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() { return "ActivityLog"; }
+  static const bool kServiceRedirectedInIncognito = true;
+  static const bool kServiceIsCreatedWithBrowserContext = false;
 
   typedef ObserverListThreadSafe<Observer> ObserverList;
   scoped_refptr<ObserverList> observers_;
@@ -199,7 +205,9 @@ class ActivityLog : public BrowserContextKeyedService,
 
   // Used to track whether the whitelisted extension is installed. If it's
   // added or removed, enabled_ may change.
-  InstallTracker* tracker_;
+  ScopedObserver<extensions::ExtensionRegistry,
+                 extensions::ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   // Set if the watchdog app is installed and enabled. Maintained by
   // kWatchdogExtensionActive pref variable. Since there are multiple valid
@@ -215,31 +223,8 @@ class ActivityLog : public BrowserContextKeyedService,
   DISALLOW_COPY_AND_ASSIGN(ActivityLog);
 };
 
-// Each profile has different extensions, so we keep a different database for
-// each profile.
-class ActivityLogFactory : public BrowserContextKeyedServiceFactory {
- public:
-  static ActivityLog* GetForBrowserContext(content::BrowserContext* context) {
-    return static_cast<ActivityLog*>(
-        GetInstance()->GetServiceForBrowserContext(context, true));
-  }
-
-  static ActivityLogFactory* GetInstance();
-
- private:
-  friend struct DefaultSingletonTraits<ActivityLogFactory>;
-  ActivityLogFactory();
-  virtual ~ActivityLogFactory();
-
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
-      content::BrowserContext* profile) const OVERRIDE;
-
-  virtual content::BrowserContext* GetBrowserContextToUse(
-      content::BrowserContext* context) const OVERRIDE;
-
-  DISALLOW_COPY_AND_ASSIGN(ActivityLogFactory);
-};
-
+template <>
+void BrowserContextKeyedAPIFactory<ActivityLog>::DeclareFactoryDependencies();
 
 }  // namespace extensions
 

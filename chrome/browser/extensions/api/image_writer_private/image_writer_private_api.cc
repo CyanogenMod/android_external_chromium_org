@@ -7,6 +7,7 @@
 #include "chrome/browser/extensions/api/image_writer_private/error_messages.h"
 #include "chrome/browser/extensions/api/image_writer_private/image_writer_private_api.h"
 #include "chrome/browser/extensions/api/image_writer_private/operation_manager.h"
+#include "chrome/browser/profiles/profile.h"
 
 namespace image_writer_api = extensions::api::image_writer_private;
 
@@ -20,7 +21,7 @@ ImageWriterPrivateWriteFromUrlFunction::
     ~ImageWriterPrivateWriteFromUrlFunction() {
 }
 
-bool ImageWriterPrivateWriteFromUrlFunction::RunImpl() {
+bool ImageWriterPrivateWriteFromUrlFunction::RunAsync() {
   scoped_ptr<image_writer_api::WriteFromUrl::Params> params(
       image_writer_api::WriteFromUrl::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -31,17 +32,6 @@ bool ImageWriterPrivateWriteFromUrlFunction::RunImpl() {
     return false;
   }
 
-#if defined(OS_CHROMEOS)
-  // The Chrome OS temporary partition is too small for Chrome OS images, thus
-  // we must always use the downloads folder.
-  bool save_image_as_download = true;
-#else
-  bool save_image_as_download = false;
-  if (params->options.get() && params->options->save_as_download.get()) {
-    save_image_as_download = true;
-  }
-#endif
-
   std::string hash;
   if (params->options.get() && params->options->image_hash.get()) {
     hash = *params->options->image_hash;
@@ -50,9 +40,7 @@ bool ImageWriterPrivateWriteFromUrlFunction::RunImpl() {
   image_writer::OperationManager::Get(GetProfile())->StartWriteFromUrl(
       extension_id(),
       url,
-      render_view_host(),
       hash,
-      save_image_as_download,
       params->storage_unit_id,
       base::Bind(&ImageWriterPrivateWriteFromUrlFunction::OnWriteStarted,
                  this));
@@ -77,7 +65,7 @@ ImageWriterPrivateWriteFromFileFunction::
     ~ImageWriterPrivateWriteFromFileFunction() {
 }
 
-bool ImageWriterPrivateWriteFromFileFunction::RunImpl() {
+bool ImageWriterPrivateWriteFromFileFunction::RunAsync() {
   std::string filesystem_name;
   std::string filesystem_path;
   std::string storage_unit_id;
@@ -89,11 +77,11 @@ bool ImageWriterPrivateWriteFromFileFunction::RunImpl() {
   base::FilePath path;
 
   if (!extensions::app_file_handler_util::ValidateFileEntryAndGetPath(
-      filesystem_name,
-      filesystem_path,
-      render_view_host_,
-      &path,
-      &error_))
+           filesystem_name,
+           filesystem_path,
+           render_view_host(),
+           &path,
+           &error_))
     return false;
 
   image_writer::OperationManager::Get(GetProfile())->StartWriteFromFile(
@@ -121,7 +109,7 @@ ImageWriterPrivateCancelWriteFunction::
     ~ImageWriterPrivateCancelWriteFunction() {
 }
 
-bool ImageWriterPrivateCancelWriteFunction::RunImpl() {
+bool ImageWriterPrivateCancelWriteFunction::RunAsync() {
   image_writer::OperationManager::Get(GetProfile())->CancelWrite(
       extension_id(),
       base::Bind(&ImageWriterPrivateCancelWriteFunction::OnWriteCancelled,
@@ -146,7 +134,7 @@ ImageWriterPrivateDestroyPartitionsFunction::
     ~ImageWriterPrivateDestroyPartitionsFunction() {
 }
 
-bool ImageWriterPrivateDestroyPartitionsFunction::RunImpl() {
+bool ImageWriterPrivateDestroyPartitionsFunction::RunAsync() {
   scoped_ptr<image_writer_api::DestroyPartitions::Params> params(
       image_writer_api::DestroyPartitions::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -178,7 +166,7 @@ ImageWriterPrivateListRemovableStorageDevicesFunction::
   ~ImageWriterPrivateListRemovableStorageDevicesFunction() {
 }
 
-bool ImageWriterPrivateListRemovableStorageDevicesFunction::RunImpl() {
+bool ImageWriterPrivateListRemovableStorageDevicesFunction::RunAsync() {
   RemovableStorageProvider::GetAllDevices(
     base::Bind(
       &ImageWriterPrivateListRemovableStorageDevicesFunction::OnDeviceListReady,

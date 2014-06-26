@@ -15,18 +15,19 @@
 #include "chrome/browser/custom_home_pages_table_model.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
+#include "components/metrics/proto/omnibox_event.pb.h"
+#include "components/url_fixer/url_fixer.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 
 namespace options {
 
-StartupPagesHandler::StartupPagesHandler() {}
+StartupPagesHandler::StartupPagesHandler() {
+}
 
 StartupPagesHandler::~StartupPagesHandler() {
-
 }
 
 void StartupPagesHandler::GetLocalizedValues(
@@ -153,7 +154,7 @@ void StartupPagesHandler::AddStartupPage(const base::ListValue* args) {
   std::string url_string;
   CHECK(args->GetString(0, &url_string));
 
-  GURL url = URLFixerUpper::FixupURL(url_string, std::string());
+  GURL url = url_fixer::FixupURL(url_string, std::string());
   if (!url.is_valid())
     return;
 
@@ -167,6 +168,7 @@ void StartupPagesHandler::AddStartupPage(const base::ListValue* args) {
 
 void StartupPagesHandler::EditStartupPage(const base::ListValue* args) {
   std::string url_string;
+  GURL fixed_url;
   int index;
   CHECK_EQ(args->GetSize(), 2U);
   CHECK(args->GetInteger(0, &index));
@@ -177,9 +179,14 @@ void StartupPagesHandler::EditStartupPage(const base::ListValue* args) {
     return;
   }
 
-  std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
-  urls[index] = URLFixerUpper::FixupURL(url_string, std::string());
-  startup_custom_pages_table_model_->SetURLs(urls);
+  fixed_url = url_fixer::FixupURL(url_string, std::string());
+  if (!fixed_url.is_empty()) {
+    std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
+    urls[index] = fixed_url;
+    startup_custom_pages_table_model_->SetURLs(urls);
+  } else {
+    startup_custom_pages_table_model_->Remove(index);
+  }
 }
 
 void StartupPagesHandler::DragDropStartupPage(const base::ListValue* args) {
@@ -230,8 +237,8 @@ void StartupPagesHandler::RequestAutocompleteSuggestions(
 
   autocomplete_controller_->Start(AutocompleteInput(
       input, base::string16::npos, base::string16(), GURL(),
-      AutocompleteInput::INVALID_SPEC, true,
-      false, false, AutocompleteInput::ALL_MATCHES));
+      metrics::OmniboxEventProto::INVALID_SPEC, true, false, false, true,
+      Profile::FromWebUI(web_ui())));
 }
 
 void StartupPagesHandler::OnResultChanged(bool default_match_changed) {

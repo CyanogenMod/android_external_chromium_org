@@ -13,6 +13,7 @@
 #include "base/version.h"
 #include "chrome/installer/util/util_constants.h"
 
+class AppRegistrationData;
 class BrowserDistribution;
 
 namespace installer {
@@ -31,7 +32,16 @@ class GoogleUpdateSettings {
     AUTOMATIC_UPDATES   = 1,
     MANUAL_UPDATES_ONLY = 2,
     AUTO_UPDATES_ONLY   = 3,
+    UPDATE_POLICIES_COUNT
   };
+
+  static const wchar_t kPoliciesKey[];
+  static const wchar_t kUpdatePolicyValue[];
+  static const wchar_t kUpdateOverrideValuePrefix[];
+  static const wchar_t kCheckPeriodOverrideMinutes[];
+  static const int kCheckPeriodOverrideMinutesDefault;
+  static const int kCheckPeriodOverrideMinutesMax;
+  static const GoogleUpdateSettings::UpdatePolicy kDefaultUpdatePolicy;
 
   // Defines product data that is tracked/used by Google Update.
   struct ProductData {
@@ -117,7 +127,7 @@ class GoogleUpdateSettings {
   // assigned to a partner. Returns false if the information is not available.
   //
   // NOTE: This function is Windows only.  If the code you are writing is not
-  // specifically for Windows, prefer calling google_util::GetBrand().
+  // specifically for Windows, prefer calling google_brand::GetBrand().
   static bool GetBrand(std::wstring* brand);
 
   // Returns in |brand| the RLZ reactivation brand code or distribution tag
@@ -126,7 +136,7 @@ class GoogleUpdateSettings {
   //
   // NOTE: This function is Windows only.  If the code you are writing is not
   // specifically for Windows, prefer calling
-  // google_util::GetReactivationBrand().
+  // google_brand::GetReactivationBrand().
   static bool GetReactivationBrand(std::wstring* brand);
 
   // Returns in |client| the google_update client field, which is currently
@@ -145,20 +155,21 @@ class GoogleUpdateSettings {
   // true if this operation succeeded.
   static bool ClearReferral();
 
-  // Set did_run "dr" in the client state value. This is used to measure
-  // active users. Returns false if writting to the registry failed.
-  static bool UpdateDidRunState(bool did_run, bool system_level);
+  // Set did_run "dr" in the client state value for app specified by
+  // |app_reg_data|. This is used to measure active users. Returns false if
+  // registry write fails.
+  static bool UpdateDidRunStateForApp(const AppRegistrationData& app_reg_data,
+                                      bool did_run);
 
-  // Set did_run "dr" in the client state value for |dist|. This is used to
-  // measure active users. Returns false if writting to the registry failed.
-  static bool UpdateDidRunStateForDistribution(BrowserDistribution* dist,
-                                               bool did_run,
-                                               bool system_level);
+  // Convenience routine: UpdateDidRunStateForApp() specialized for the current
+  // BrowserDistribution, and also updates Chrome Binary's did_run if the
+  // current distribution is multi-install.
+  static bool UpdateDidRunState(bool did_run, bool system_level);
 
   // Returns only the channel name: "" (stable), "dev", "beta", "canary", or
   // "unknown" if unknown. This value will not be modified by "-m" for a
   // multi-install. See kChromeChannel* in util_constants.h
-  static std::wstring GetChromeChannel(bool system_install);
+  static base::string16 GetChromeChannel(bool system_install);
 
   // Return a human readable modifier for the version string, e.g.
   // the channel (dev, beta, stable). Returns true if this operation succeeded,
@@ -226,6 +237,26 @@ class GoogleUpdateSettings {
   // true if an app-specific policy override is in force, or false otherwise.
   static UpdatePolicy GetAppUpdatePolicy(const std::wstring& app_guid,
                                          bool* is_overridden);
+
+  // Returns true if the app indicated by |app_guid| should be updated
+  // automatically by Google Update based on current autoupdate settings. This
+  // is distinct from GetApUpdatePolicy which checks only a subset of things
+  // that can cause an app not to update.
+  static bool AreAutoupdatesEnabled(const base::string16& app_guid);
+
+  // Attempts to reenable auto-updates for |app_guid| by removing
+  // any group policy settings that would block updates from occurring. This is
+  // a superset of the things checked by GetAppUpdatePolicy() as
+  // GetAppUpdatePolicy() does not check Omaha's AutoUpdateCheckPeriodMinutes
+  // setting which will be reset by this method. Will need to be called from an
+  // elevated process since those settings live in HKLM. Returns true if there
+  // is a reasonable belief that updates are not disabled by policy when this
+  // method returns, false otherwise. Note that for Chromium builds, this
+  // returns true since Chromium is assumed not to autoupdate.
+  static bool ReenableAutoupdatesForApp(const base::string16& app_guid);
+
+  // Records UMA stats about Chrome's update policy.
+  static void RecordChromeUpdatePolicyHistograms();
 
   // Returns Google Update's uninstall command line, or an empty string if none
   // is found.

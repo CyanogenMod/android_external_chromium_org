@@ -5,8 +5,6 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_RULES_REGISTRY_H__
 #define CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_RULES_REGISTRY_H__
 
-#include "chrome/browser/extensions/api/declarative/rules_registry.h"
-
 #include <map>
 #include <set>
 #include <string>
@@ -198,7 +196,7 @@ class RulesRegistry : public base::RefCountedThreadSafe<RulesRegistry> {
   typedef std::map<ExtensionId, ProcessChangedRulesState> ProcessStateMap;
 
   base::WeakPtr<RulesRegistry> GetWeakPtr() {
-    DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+    DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
     return weak_ptr_factory_.GetWeakPtr();
   }
 

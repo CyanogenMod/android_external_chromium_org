@@ -13,15 +13,15 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/policy/core/common/cloud/cloud_policy_client.h"
 #include "components/policy/core/common/cloud/cloud_policy_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
 class PrefService;
 class Profile;
-class SigninManager;
 
 namespace net {
 class URLRequestContextGetter;
@@ -44,10 +44,11 @@ class UserCloudPolicyManager;
 //
 // Finally, if the user signs out, this class is responsible for shutting down
 // the policy infrastructure to ensure that any cached policy is cleared.
-class UserPolicySigninServiceBase : public BrowserContextKeyedService,
+class UserPolicySigninServiceBase : public KeyedService,
                                     public CloudPolicyClient::Observer,
                                     public CloudPolicyService::Observer,
-                                    public content::NotificationObserver {
+                                    public content::NotificationObserver,
+                                    public SigninManagerBase::Observer {
  public:
   // The callback invoked once policy registration is complete. Passed
   // |dm_token| and |client_id| parameters are empty if policy registration
@@ -81,6 +82,9 @@ class UserPolicySigninServiceBase : public BrowserContextKeyedService,
       scoped_refptr<net::URLRequestContextGetter> profile_request_context,
       const PolicyFetchCallback& callback);
 
+  // SigninManagerBase::Observer implementation:
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
+
   // content::NotificationObserver implementation:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -94,7 +98,7 @@ class UserPolicySigninServiceBase : public BrowserContextKeyedService,
   virtual void OnRegistrationStateChanged(CloudPolicyClient* client) OVERRIDE;
   virtual void OnClientError(CloudPolicyClient* client) OVERRIDE;
 
-  // BrowserContextKeyedService implementation:
+  // KeyedService implementation:
   virtual void Shutdown() OVERRIDE;
 
   void SetSystemRequestContext(
@@ -104,10 +108,6 @@ class UserPolicySigninServiceBase : public BrowserContextKeyedService,
   net::URLRequestContextGetter* system_request_context() {
     return system_request_context_;
   }
-
-  // Returns true if policy should be loaded even when Gaia reports that the
-  // account doesn't have management enabled.
-  static bool ShouldForceLoadPolicy();
 
   // Returns a CloudPolicyClient to perform a registration with the DM server,
   // or NULL if |username| shouldn't register for policy management.

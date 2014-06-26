@@ -16,7 +16,6 @@
 
 class Pickle;
 class PickleIterator;
-class PrefService;
 
 namespace autofill {
 struct PasswordForm;
@@ -34,23 +33,29 @@ class ObjectProxy;
 // NativeBackend implementation using KWallet.
 class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
  public:
-  NativeBackendKWallet(LocalProfileId id, PrefService* prefs);
+  explicit NativeBackendKWallet(LocalProfileId id);
 
   virtual ~NativeBackendKWallet();
 
   virtual bool Init() OVERRIDE;
 
   // Implements NativeBackend interface.
-  virtual bool AddLogin(const autofill::PasswordForm& form) OVERRIDE;
-  virtual bool UpdateLogin(const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList AddLogin(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual bool UpdateLogin(
+      const autofill::PasswordForm& form,
+      password_manager::PasswordStoreChangeList* changes) OVERRIDE;
   virtual bool RemoveLogin(const autofill::PasswordForm& form) OVERRIDE;
   virtual bool RemoveLoginsCreatedBetween(
-      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
+      base::Time delete_begin,
+      base::Time delete_end,
+      password_manager::PasswordStoreChangeList* changes) OVERRIDE;
+  virtual bool RemoveLoginsSyncedBetween(
+      base::Time delete_begin,
+      base::Time delete_end,
+      password_manager::PasswordStoreChangeList* changes) OVERRIDE;
   virtual bool GetLogins(const autofill::PasswordForm& form,
                          PasswordFormList* forms) OVERRIDE;
-  virtual bool GetLoginsCreatedBetween(const base::Time& get_begin,
-                                       const base::Time& get_end,
-                                       PasswordFormList* forms) OVERRIDE;
   virtual bool GetAutofillableLogins(PasswordFormList* forms) OVERRIDE;
   virtual bool GetBlacklistLogins(PasswordFormList* forms) OVERRIDE;
 
@@ -73,6 +78,11 @@ class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
     PERMANENT_FAIL   // Init failed, and is not likely to work later either.
   };
 
+  enum TimestampToCompare {
+    CREATION_TIMESTAMP,
+    SYNC_TIMESTAMP,
+  };
+
   // Initialization.
   bool StartKWalletd();
   InitResult InitWallet();
@@ -90,12 +100,6 @@ class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
                      bool autofillable,
                      int wallet_handle);
 
-  // Reads PasswordForms from the wallet created in the given time range.
-  bool GetLoginsList(PasswordFormList* forms,
-                     const base::Time& begin,
-                     const base::Time& end,
-                     int wallet_handle);
-
   // Helper for some of the above GetLoginsList() methods.
   bool GetAllLogins(PasswordFormList* forms, int wallet_handle);
 
@@ -105,6 +109,13 @@ class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
   bool SetLoginsList(const PasswordFormList& forms,
                      const std::string& signon_realm,
                      int wallet_handle);
+
+  // Removes password created/synced in the time interval. Returns |true| if the
+  // operation succeeded. |changes| will contain the changes applied.
+  bool RemoveLoginsBetween(base::Time delete_begin,
+                           base::Time delete_end,
+                           TimestampToCompare date_to_compare,
+                           password_manager::PasswordStoreChangeList* changes);
 
   // Opens the wallet and ensures that the "Chrome Form Data" folder exists.
   // Returns kInvalidWalletHandle on error.
@@ -121,30 +132,21 @@ class NativeBackendKWallet : public PasswordStoreX::NativeBackend {
   // when reading old pickles that fail to deserialize using the native size.
   static bool DeserializeValueSize(const std::string& signon_realm,
                                    const PickleIterator& iter,
-                                   bool size_32, bool warn_only,
+                                   int version, bool size_32, bool warn_only,
                                    PasswordFormList* forms);
 
   // In case the fields in the pickle ever change, version them so we can try to
   // read old pickles. (Note: do not eat old pickles past the expiration date.)
-  static const int kPickleVersion = 1;
+  static const int kPickleVersion = 3;
 
   // Generates a profile-specific folder name based on profile_id_.
   std::string GetProfileSpecificFolderName() const;
 
-  // Migrates non-profile-specific logins to be profile-specific.
-  void MigrateToProfileSpecificLogins();
-
   // The local profile id, used to generate the folder name.
   const LocalProfileId profile_id_;
 
-  // The pref service to use for persistent migration settings.
-  PrefService* prefs_;
-
   // The KWallet folder name, possibly based on the local profile id.
   std::string folder_name_;
-
-  // True once MigrateToProfileSpecificLogins() has been attempted.
-  bool migrate_tried_;
 
   // DBus handle for communication with klauncher and kwalletd.
   scoped_refptr<dbus::Bus> session_bus_;

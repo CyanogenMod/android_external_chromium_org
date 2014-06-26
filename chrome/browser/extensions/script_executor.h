@@ -13,6 +13,7 @@
 #include "extensions/common/user_script.h"
 
 class GURL;
+struct ExtensionMsg_ExecuteCode_Params;
 
 namespace base {
 class ListValue;
@@ -49,6 +50,13 @@ class ScriptExecutor {
     ALL_FRAMES,
   };
 
+  // Whether to insert the script in about: frames when its origin matches
+  // the extension's host permissions.
+  enum MatchAboutBlank {
+    DONT_MATCH_ABOUT_BLANK,
+    MATCH_ABOUT_BLANK,
+  };
+
   // The type of world to inject into (main world, or its own isolated world).
   enum WorldType {
     MAIN_WORLD,
@@ -83,10 +91,13 @@ class ScriptExecutor {
                      ScriptType script_type,
                      const std::string& code,
                      FrameScope frame_scope,
+                     MatchAboutBlank match_about_blank,
                      UserScript::RunLocation run_at,
                      WorldType world_type,
                      ProcessType process_type,
+                     const GURL& webview_src,
                      const GURL& file_url,
+                     bool user_gesture,
                      ResultType result_type,
                      const ExecuteScriptCallback& callback);
 

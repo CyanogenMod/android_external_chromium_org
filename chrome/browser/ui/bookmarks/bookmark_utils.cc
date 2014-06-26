@@ -8,8 +8,8 @@
 #include "base/logging.h"
 #include "base/prefs/pref_service.h"
 #include "base/strings/string_number_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/extensions/api/commands/command_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/app_list/app_list_util.h"
@@ -21,8 +21,11 @@
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/bookmarks/browser/bookmark_model.h"
 #include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension_set.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "net/base/net_util.h"
@@ -33,6 +36,13 @@ namespace chrome {
 int num_bookmark_urls_before_prompting = 15;
 
 namespace {
+
+// The ways in which extensions may customize the bookmark shortcut.
+enum BookmarkShortcutDisposition {
+  BOOKMARK_SHORTCUT_DISPOSITION_UNCHANGED,
+  BOOKMARK_SHORTCUT_DISPOSITION_REMOVED,
+  BOOKMARK_SHORTCUT_DISPOSITION_OVERRIDDEN
+};
 
 // Iterator that iterates through a set of BookmarkNodes returning the URLs
 // for nodes that are urls, or the URLs for the children of non-url urls.
@@ -138,6 +148,39 @@ void GetURLsForOpenTabs(Browser* browser,
                              &(entry.first), &(entry.second));
     urls->push_back(entry);
   }
+}
+
+// Indicates how the bookmark shortcut has been changed by extensions associated
+// with |profile|, if at all.
+BookmarkShortcutDisposition GetBookmarkShortcutDisposition(Profile* profile) {
+  extensions::CommandService* command_service =
+      extensions::CommandService::Get(profile);
+
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  if (!registry)
+    return BOOKMARK_SHORTCUT_DISPOSITION_UNCHANGED;
+
+  const extensions::ExtensionSet& extension_set =
+      registry->enabled_extensions();
+
+  // This flag tracks whether any extension wants the disposition to be
+  // removed.
+  bool removed = false;
+  for (extensions::ExtensionSet::const_iterator i = extension_set.begin();
+       i != extension_set.end();
+       ++i) {
+    // Use the overridden disposition if any extension wants it.
+    if (command_service->OverridesBookmarkShortcut(*i))
+      return BOOKMARK_SHORTCUT_DISPOSITION_OVERRIDDEN;
+
+    if (!removed && extensions::CommandService::RemovesBookmarkShortcut(*i))
+      removed = true;
+  }
+
+  if (removed)
+    return BOOKMARK_SHORTCUT_DISPOSITION_REMOVED;
+  return BOOKMARK_SHORTCUT_DISPOSITION_UNCHANGED;
 }
 
 }  // namespace
@@ -275,9 +318,9 @@ base::string16 FormatBookmarkURLForDisplay(const GURL& url,
 
 bool IsAppsShortcutEnabled(Profile* profile,
                            chrome::HostDesktopType host_desktop_type) {
-  // Managed users can not have apps installed currently so there's no need to
-  // show the apps shortcut.
-  if (profile->IsManaged())
+  // Supervised users can not have apps installed currently so there's no need
+  // to show the apps shortcut.
+  if (profile->IsSupervised())
     return false;
 
   // Don't show the apps shortcut in ash since the app launcher is enabled.
@@ -292,6 +335,30 @@ bool ShouldShowAppsShortcutInBookmarkBar(
   chrome::HostDesktopType host_desktop_type) {
   return IsAppsShortcutEnabled(profile, host_desktop_type) &&
       profile->GetPrefs()->GetBoolean(prefs::kShowAppsShortcutInBookmarkBar);
+}
+
+bool ShouldRemoveBookmarkThisPageUI(Profile* profile) {
+  return GetBookmarkShortcutDisposition(profile) ==
+         BOOKMARK_SHORTCUT_DISPOSITION_REMOVED;
+}
+
+bool ShouldRemoveBookmarkOpenPagesUI(Profile* profile) {
+  extensions::ExtensionRegistry* registry =
+      extensions::ExtensionRegistry::Get(profile);
+  if (!registry)
+    return false;
+
+  const extensions::ExtensionSet& extension_set =
+      registry->enabled_extensions();
+
+  for (extensions::ExtensionSet::const_iterator i = extension_set.begin();
+       i != extension_set.end();
+       ++i) {
+    if (extensions::CommandService::RemovesBookmarkOpenPagesShortcut(*i))
+      return true;
+  }
+
+  return false;
 }
 
 }  // namespace chrome

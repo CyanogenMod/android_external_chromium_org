@@ -88,11 +88,6 @@ NSTimeInterval g_scroll_duration = 0.18;
 // Moves the selection by |indexDelta| items.
 - (BOOL)moveSelectionByDelta:(int)indexDelta;
 
-// -[NSCollectionView frameForItemAtIndex:] misreports the frame origin of an
-// item when the method is called during a scroll animation provided by the
-// NSScrollView. This returns the correct value.
-- (NSRect)trueFrameForItemAtIndex:(size_t)itemIndex;
-
 @end
 
 namespace app_list {
@@ -191,7 +186,7 @@ class AppsGridDelegateBridge : public AppListItemListObserver {
   if (delegate_) {
     app_list::AppListModel* oldModel = delegate_->GetModel();
     if (oldModel)
-      oldModel->item_list()->RemoveObserver(bridge_.get());
+      oldModel->top_level_item_list()->RemoveObserver(bridge_.get());
   }
 
   // Since the old model may be getting deleted, and the AppKit objects might
@@ -212,9 +207,10 @@ class AppsGridDelegateBridge : public AppListItemListObserver {
   if (!newModel)
     return;
 
-  newModel->item_list()->AddObserver(bridge_.get());
-  for (size_t i = 0; i < newModel->item_list()->item_count(); ++i) {
-    app_list::AppListItem* itemModel = newModel->item_list()->item_at(i);
+  newModel->top_level_item_list()->AddObserver(bridge_.get());
+  for (size_t i = 0; i < newModel->top_level_item_list()->item_count(); ++i) {
+    app_list::AppListItem* itemModel =
+        newModel->top_level_item_list()->item_at(i);
     [items_ insertObject:[NSValue valueWithPointer:itemModel]
                  atIndex:i];
   }
@@ -490,7 +486,6 @@ class AppsGridDelegateBridge : public AppListItemListObserver {
         [pageView itemAtIndex:i]);
     [gridItem setModel:static_cast<app_list::AppListItem*>(
         [[pageContent objectAtIndex:i] pointerValue])];
-    [gridItem setInitialFrameRect:[self trueFrameForItemAtIndex:i]];
   }
 }
 
@@ -526,7 +521,7 @@ class AppsGridDelegateBridge : public AppListItemListObserver {
   if (itemIndex == modelIndex)
     return;
 
-  app_list::AppListItemList* itemList = [self model]->item_list();
+  app_list::AppListItemList* itemList = [self model]->top_level_item_list();
   itemList->RemoveObserver(bridge_.get());
   itemList->MoveItem(itemIndex, modelIndex);
   itemList->AddObserver(bridge_.get());
@@ -618,15 +613,6 @@ class AppsGridDelegateBridge : public AppListItemListObserver {
 
   [self selectItemAtIndex:oldIndex + indexDelta];
   return YES;
-}
-
-- (NSRect)trueFrameForItemAtIndex:(size_t)itemIndex {
-  size_t column = itemIndex % kFixedColumns;
-  size_t row = itemIndex % kItemsPerPage / kFixedColumns;
-  return NSMakeRect(column * kPreferredTileWidth,
-                    row * kPreferredTileHeight,
-                    kPreferredTileWidth,
-                    kPreferredTileHeight);
 }
 
 - (void)selectItemAtIndex:(NSUInteger)index {

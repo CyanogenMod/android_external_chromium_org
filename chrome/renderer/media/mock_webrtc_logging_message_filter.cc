@@ -5,6 +5,7 @@
 #include "chrome/renderer/media/mock_webrtc_logging_message_filter.h"
 
 #include "base/logging.h"
+#include "base/message_loop/message_loop_proxy.h"
 
 MockWebRtcLoggingMessageFilter::MockWebRtcLoggingMessageFilter(
     const scoped_refptr<base::MessageLoopProxy>& io_message_loop)
@@ -15,9 +16,11 @@ MockWebRtcLoggingMessageFilter::MockWebRtcLoggingMessageFilter(
 MockWebRtcLoggingMessageFilter::~MockWebRtcLoggingMessageFilter() {
 }
 
-void MockWebRtcLoggingMessageFilter::AddLogMessage(const std::string& message) {
+void MockWebRtcLoggingMessageFilter::AddLogMessages(
+    const std::vector<WebRtcLoggingMessageData>& messages) {
   CHECK(io_message_loop_->BelongsToCurrentThread());
-  log_buffer_ += message + "\n";
+  for (size_t i = 0; i < messages.size(); ++i)
+    log_buffer_ += messages[i].message + "\n";
 }
 
 void MockWebRtcLoggingMessageFilter::LoggingStopped() {

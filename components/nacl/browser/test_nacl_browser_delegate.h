@@ -22,9 +22,8 @@ class TestNaClBrowserDelegate : public NaClBrowserDelegate {
  public:
   TestNaClBrowserDelegate();
   virtual ~TestNaClBrowserDelegate();
-  virtual void ShowNaClInfobar(int render_process_id,
-                               int render_view_id,
-                               int error_id) OVERRIDE;
+  virtual void ShowMissingArchInfobar(int render_process_id,
+                                      int render_view_id) OVERRIDE;
   virtual bool DialogsAreSuppressed() OVERRIDE;
   virtual bool GetCacheDirectory(base::FilePath* cache_dir) OVERRIDE;
   virtual bool GetPluginDirectory(base::FilePath* plugin_dir) OVERRIDE;
@@ -35,11 +34,14 @@ class TestNaClBrowserDelegate : public NaClBrowserDelegate {
       content::BrowserPpapiHost* ppapi_host) OVERRIDE;
   virtual bool MapUrlToLocalFilePath(const GURL& url,
                                      bool use_blocking_api,
+                                     const base::FilePath& profile_directory,
                                      base::FilePath* file_path) OVERRIDE;
   virtual void SetDebugPatterns(std::string debug_patterns) OVERRIDE;
   virtual bool URLMatchesDebugPatterns(const GURL& manifest_url) OVERRIDE;
   virtual content::BrowserPpapiHost::OnKeepaliveCallback
       GetOnKeepaliveCallback() OVERRIDE;
+  virtual bool IsNonSfiModeAllowed(const base::FilePath& profile_directory,
+                                   const GURL& manifest_url) OVERRIDE;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestNaClBrowserDelegate);

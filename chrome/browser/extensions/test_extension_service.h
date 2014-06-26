@@ -31,7 +31,6 @@ class TestExtensionService : public ExtensionServiceInterface {
       const std::string& id,
       const base::FilePath& path,
       bool file_ownership_passed,
-      const GURL& download_url,
       extensions::CrxInstaller** out_crx_installer) OVERRIDE;
   virtual const extensions::Extension* GetExtensionById(
       const std::string& id, bool include_disabled) const OVERRIDE;
@@ -42,8 +41,6 @@ class TestExtensionService : public ExtensionServiceInterface {
   virtual void FinishDelayedInstallation(
       const std::string& extension_id) OVERRIDE;
   virtual bool IsExtensionEnabled(
-      const std::string& extension_id) const OVERRIDE;
-  virtual bool IsExternalExtensionUninstalled(
       const std::string& extension_id) const OVERRIDE;
 
   virtual void CheckManagementPolicy() OVERRIDE;

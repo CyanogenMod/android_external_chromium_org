@@ -15,12 +15,12 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "chrome/browser/extensions/active_tab_permission_granter.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
 #include "chrome/common/web_application_info.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/stack_frame.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
@@ -28,6 +28,7 @@ class FaviconDownloader;
 
 namespace content {
 struct LoadCommittedDetails;
+class RenderFrameHost;
 }
 
 namespace gfx {
@@ -35,6 +36,7 @@ class Image;
 }
 
 namespace extensions {
+class BookmarkAppHelper;
 class Extension;
 class LocationBarController;
 class ScriptExecutor;
@@ -42,7 +44,7 @@ class WebstoreInlineInstallerFactory;
 
 // Per-tab extension helper. Also handles non-extension apps.
 class TabHelper : public content::WebContentsObserver,
-                  public ExtensionFunctionDispatcher::Delegate,
+                  public extensions::ExtensionFunctionDispatcher::Delegate,
                   public base::SupportsWeakPtr<TabHelper>,
                   public content::NotificationObserver,
                   public content::WebContentsUserData<TabHelper> {
@@ -86,21 +88,6 @@ class TabHelper : public content::WebContentsObserver,
     TabHelper* tab_helper_;
   };
 
-  // This finds the closest not-smaller bitmap in |bitmaps| for each size in
-  // |sizes| and resizes it to that size. This returns a map of sizes to bitmaps
-  // which contains only bitmaps of a size in |sizes| and at most one bitmap of
-  // each size.
-  static std::map<int, SkBitmap> ConstrainBitmapsToSizes(
-      const std::vector<SkBitmap>& bitmaps,
-      const std::set<int>& sizes);
-
-  // Adds a square container icon of |output_size| pixels to |bitmaps| by
-  // centering the biggest smaller icon in |bitmaps| and drawing a rounded
-  // rectangle with strip of the that icon's dominant color at the bottom.
-  // Does nothing if an icon of |output_size| already exists in |bitmaps|.
-  static void GenerateContainerIcon(std::map<int, SkBitmap>* bitmaps,
-                                    int output_size);
-
   virtual ~TabHelper();
 
   void AddScriptExecutionObserver(ScriptExecutionObserver* observer) {
@@ -114,6 +101,7 @@ class TabHelper : public content::WebContentsObserver,
   void CreateApplicationShortcuts();
   void CreateHostedAppFromWebContents();
   bool CanCreateApplicationShortcuts() const;
+  bool CanCreateBookmarkApp() const;
 
   void set_pending_web_app_action(WebAppAction action) {
     pending_web_app_action_ = action;
@@ -180,11 +168,9 @@ class TabHelper : public content::WebContentsObserver,
   explicit TabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<TabHelper>;
 
-  // Creates a hosted app for the current tab. Requires the |web_app_info_| to
-  // be populated.
-  void CreateHostedApp();
-  void FinishCreateHostedApp(
-      bool success, const std::map<GURL, std::vector<SkBitmap> >& bitmaps);
+  // Displays UI for completion of creating a bookmark hosted app.
+  void FinishCreateBookmarkApp(const extensions::Extension* extension,
+                               const WebApplicationInfo& web_app_info);
 
   // content::WebContentsObserver overrides.
   virtual void RenderViewCreated(
@@ -193,11 +179,14 @@ class TabHelper : public content::WebContentsObserver,
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual bool OnMessageReceived(
+      const IPC::Message& message,
+      content::RenderFrameHost* render_frame_host) OVERRIDE;
   virtual void DidCloneToNewWebContents(
       content::WebContents* old_web_contents,
       content::WebContents* new_web_contents) OVERRIDE;
 
-  // ExtensionFunctionDispatcher::Delegate overrides.
+  // extensions::ExtensionFunctionDispatcher::Delegate overrides.
   virtual extensions::WindowController* GetExtensionWindowController()
       const OVERRIDE;
   virtual content::WebContents* GetAssociatedWebContents() const OVERRIDE;
@@ -207,7 +196,8 @@ class TabHelper : public content::WebContentsObserver,
   void OnInlineWebstoreInstall(int install_id,
                                int return_route_id,
                                const std::string& webstore_item_id,
-                               const GURL& requestor_url);
+                               const GURL& requestor_url,
+                               int listeners_mask);
   void OnGetAppInstallState(const GURL& requestor_url,
                             int return_route_id,
                             int callback_id);
@@ -266,7 +256,7 @@ class TabHelper : public content::WebContentsObserver,
   SkBitmap extension_app_icon_;
 
   // Process any extension messages coming from the tab.
-  ExtensionFunctionDispatcher extension_function_dispatcher_;
+  extensions::ExtensionFunctionDispatcher extension_function_dispatcher_;
 
   // Cached web app info data.
   WebApplicationInfo web_app_info_;
@@ -283,7 +273,7 @@ class TabHelper : public content::WebContentsObserver,
 
   scoped_ptr<ActiveTabPermissionGranter> active_tab_permission_granter_;
 
-  scoped_ptr<FaviconDownloader> favicon_downloader_;
+  scoped_ptr<BookmarkAppHelper> bookmark_app_helper_;
 
   Profile* profile_;
 

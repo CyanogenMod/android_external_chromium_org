@@ -10,9 +10,6 @@
 #include "chromeos/login/login_state.h"
 #include "chromeos/settings/cros_settings_names.h"
 #include "content/public/browser/render_process_host.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_widget_host.h"
-#include "content/public/browser/render_widget_host_iterator.h"
 
 namespace chromeos {
 
@@ -66,16 +63,6 @@ void SystemSettingsProvider::TimezoneChanged(const icu::TimeZone& timezone) {
   timezone_value_.reset(new base::StringValue(
       system::TimezoneSettings::GetTimezoneID(timezone)));
   NotifyObservers(kSystemTimezone);
-
-  // Notify renderers
-  scoped_ptr<content::RenderWidgetHostIterator> widgets(
-      content::RenderWidgetHost::GetRenderWidgetHosts());
-  while (content::RenderWidgetHost* widget = widgets->GetNextHost()) {
-    if (widget->IsRenderView()) {
-      content::RenderViewHost* view = content::RenderViewHost::From(widget);
-      view->NotifyTimezoneChange();
-    }
-  }
 }
 
 }  // namespace chromeos

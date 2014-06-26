@@ -25,17 +25,14 @@
 #include "ui/views/layout/box_layout.h"
 
 namespace ash {
-namespace internal {
-
 namespace tray {
-
 namespace {
 
 // Updates bluetooth device |device| in the |list|. If it is new, append to the
 // end of the |list|; otherwise, keep it at the same place, but update the data
 // with new device info provided by |device|.
-void UpdateBluetoothDeviceList(BluetoothDeviceList* list,
-                               const BluetoothDeviceInfo& device) {
+void UpdateBluetoothDeviceListHelper(BluetoothDeviceList* list,
+                                     const BluetoothDeviceInfo& device) {
   for (BluetoothDeviceList::iterator it = list->begin(); it != list->end();
        ++it) {
     if ((*it).address == device.address) {
@@ -105,10 +102,8 @@ class BluetoothDetailedView : public TrayDetailsView,
         login_(login),
         manage_devices_(NULL),
         toggle_bluetooth_(NULL),
-        enable_bluetooth_(NULL),
-        bluetooth_discovering_(false) {
+        enable_bluetooth_(NULL) {
     CreateItems();
-    Update();
   }
 
   virtual ~BluetoothDetailedView() {
@@ -118,7 +113,7 @@ class BluetoothDetailedView : public TrayDetailsView,
 
   void Update() {
     BluetoothStartDiscovering();
-    UpdateBlueToothDeviceList();
+    UpdateBluetoothDeviceList();
 
     // Update UI.
     UpdateDeviceScrollList();
@@ -137,27 +132,27 @@ class BluetoothDetailedView : public TrayDetailsView,
     ash::SystemTrayDelegate* delegate =
         ash::Shell::GetInstance()->system_tray_delegate();
     bool bluetooth_enabled = delegate->GetBluetoothEnabled();
-    if (!bluetooth_discovering_ && bluetooth_enabled) {
-      bluetooth_discovering_ = true;
-      delegate->BluetoothStartDiscovering();
+    bool bluetooth_discovering = delegate->GetBluetoothDiscovering();
+    if (bluetooth_discovering) {
       throbber_->Start();
-    } else if(!bluetooth_enabled) {
-      bluetooth_discovering_ = false;
-      throbber_->Stop();
+      return;
+    }
+    throbber_->Stop();
+    if (bluetooth_enabled) {
+      delegate->BluetoothStartDiscovering();
     }
   }
 
   void BluetoothStopDiscovering() {
     ash::SystemTrayDelegate* delegate =
         ash::Shell::GetInstance()->system_tray_delegate();
-    if (delegate && bluetooth_discovering_) {
-      bluetooth_discovering_ = false;
+    if (delegate && delegate->GetBluetoothDiscovering()) {
       delegate->BluetoothStopDiscovering();
       throbber_->Stop();
     }
   }
 
-  void UpdateBlueToothDeviceList() {
+  void UpdateBluetoothDeviceList() {
     std::set<std::string> new_connecting_devices;
     std::set<std::string> new_connected_devices;
     std::set<std::string> new_paired_not_connected_devices;
@@ -171,16 +166,18 @@ class BluetoothDetailedView : public TrayDetailsView,
         list[i].display_name = l10n_util::GetStringFUTF16(
             IDS_ASH_STATUS_TRAY_BLUETOOTH_CONNECTING, list[i].display_name);
         new_connecting_devices.insert(list[i].address);
-        UpdateBluetoothDeviceList(&connecting_devices_, list[i]);
+        UpdateBluetoothDeviceListHelper(&connecting_devices_, list[i]);
       } else if (list[i].connected && list[i].paired) {
         new_connected_devices.insert(list[i].address);
-        UpdateBluetoothDeviceList(&connected_devices_, list[i]);
+        UpdateBluetoothDeviceListHelper(&connected_devices_, list[i]);
       } else if (list[i].paired) {
         new_paired_not_connected_devices.insert(list[i].address);
-        UpdateBluetoothDeviceList(&paired_not_connected_devices_, list[i]);
+        UpdateBluetoothDeviceListHelper(
+            &paired_not_connected_devices_, list[i]);
       } else {
         new_discovered_not_paired_devices.insert(list[i].address);
-        UpdateBluetoothDeviceList(&discovered_not_paired_devices_, list[i]);
+        UpdateBluetoothDeviceListHelper(
+            &discovered_not_paired_devices_, list[i]);
       }
     }
     RemoveObsoleteBluetoothDevicesFromList(&connecting_devices_,
@@ -297,10 +294,14 @@ class BluetoothDetailedView : public TrayDetailsView,
 
   // Add settings entries.
   void AppendSettingsEntries() {
+    if (!ash::Shell::GetInstance()->
+            system_tray_delegate()->ShouldShowSettings()) {
+      return;
+    }
+
     // Add bluetooth device requires a browser window, hide it for non logged in
     // user.
-    if (login_ == user::LOGGED_IN_NONE ||
-        login_ == user::LOGGED_IN_LOCKED)
+    if (login_ == user::LOGGED_IN_NONE || login_ == user::LOGGED_IN_LOCKED)
       return;
 
     ash::SystemTrayDelegate* delegate =
@@ -309,6 +310,7 @@ class BluetoothDetailedView : public TrayDetailsView,
     HoverHighlightView* container = new HoverHighlightView(this);
     container->AddLabel(
         rb.GetLocalizedString(IDS_ASH_STATUS_TRAY_BLUETOOTH_MANAGE_DEVICES),
+        gfx::ALIGN_LEFT,
         gfx::Font::NORMAL);
     container->SetEnabled(delegate->GetBluetoothAvailable());
     AddChildView(container);
@@ -399,7 +401,6 @@ class BluetoothDetailedView : public TrayDetailsView,
   BluetoothDeviceList connecting_devices_;
   BluetoothDeviceList paired_not_connected_devices_;
   BluetoothDeviceList discovered_not_paired_devices_;
-  bool bluetooth_discovering_;
 
   DISALLOW_COPY_AND_ASSIGN(BluetoothDetailedView);
 };
@@ -435,6 +436,7 @@ views::View* TrayBluetooth::CreateDetailedView(user::LoginStatus status) {
       ash::UMA_STATUS_AREA_DETAILED_BLUETOOTH_VIEW);
   CHECK(detailed_ == NULL);
   detailed_ = new tray::BluetoothDetailedView(this, status);
+  detailed_->Update();
   return detailed_;
 }
 
@@ -465,5 +467,4 @@ void TrayBluetooth::OnBluetoothDiscoveringChanged() {
   detailed_->Update();
 }
 
-}  // namespace internal
 }  // namespace ash

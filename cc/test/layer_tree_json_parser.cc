@@ -69,8 +69,7 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
     scoped_refptr<NinePatchLayer> nine_patch_layer = NinePatchLayer::Create();
 
     SkBitmap bitmap;
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config, image_width, image_height);
-    bitmap.allocPixels(NULL, NULL);
+    bitmap.allocN32Pixels(image_width, image_height);
     bitmap.setImmutable();
     nine_patch_layer->SetBitmap(bitmap);
     nine_patch_layer->SetAperture(
@@ -87,7 +86,6 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
   } else {  // Type "Layer" or "unknown"
     new_layer = Layer::Create();
   }
-  new_layer->SetAnchorPoint(gfx::Point());
   new_layer->SetPosition(gfx::PointF(position_x, position_y));
   new_layer->SetBounds(gfx::Size(width, height));
   new_layer->SetIsDrawable(draws_content);
@@ -126,6 +124,16 @@ scoped_refptr<Layer> ParseTreeFromValue(base::Value* val,
   bool wheel_handler;
   if (dict->GetBoolean("WheelHandler", &wheel_handler))
     new_layer->SetHaveWheelEventHandlers(wheel_handler);
+
+  bool scroll_handler;
+  if (dict->GetBoolean("ScrollHandler", &scroll_handler))
+    new_layer->SetHaveScrollEventHandlers(scroll_handler);
+
+  bool is_3d_sorted;
+  if (dict->GetBoolean("Is3DSorted", &is_3d_sorted)) {
+    // A non-zero context ID will put the layer into a 3D sorting context
+    new_layer->Set3dSortingContextId(is_3d_sorted ? 1 : 0);
+  }
 
   if (dict->HasKey("TouchRegion")) {
     success &= dict->GetList("TouchRegion", &list);

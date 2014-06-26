@@ -7,12 +7,14 @@
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "grit/ui_strings.h"
+#include "third_party/skia/include/core/SkPath.h"
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/speech_ui_model.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/path.h"
 #include "ui/views/animation/bounds_animator.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
@@ -34,6 +36,8 @@ const int kLogoMarginLeft = 30;
 const int kLogoMarginTop = 28;
 const int kLogoWidth = 104;
 const int kLogoHeight = 36;
+const int kIndicatorCenterOffsetY = -1;
+const int kIndicatorRadiusMinOffset = -3;
 const int kIndicatorRadiusMax = 100;
 const int kIndicatorAnimationDuration = 100;
 const SkColor kShadowColor = SkColorSetARGB(0.3 * 255, 0, 0, 0);
@@ -48,7 +52,7 @@ class SoundLevelIndicator : public views::View {
 
  private:
   // Overridden from views::View:
-  virtual void Paint(gfx::Canvas* canvas) OVERRIDE;
+  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(SoundLevelIndicator);
 };
@@ -57,10 +61,11 @@ SoundLevelIndicator::SoundLevelIndicator() {}
 
 SoundLevelIndicator::~SoundLevelIndicator() {}
 
-void SoundLevelIndicator::Paint(gfx::Canvas* canvas) {
+void SoundLevelIndicator::OnPaint(gfx::Canvas* canvas) {
   SkPaint paint;
   paint.setStyle(SkPaint::kFill_Style);
   paint.setColor(kSoundLevelIndicatorColor);
+  paint.setAntiAlias(true);
   canvas->DrawCircle(bounds().CenterPoint(), width() / 2, paint);
 }
 
@@ -72,7 +77,9 @@ class MicButton : public views::ImageButton {
 
  private:
   // Overridden from views::View:
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
+  virtual bool HasHitTestMask() const OVERRIDE;
+  virtual void GetHitTestMask(views::View::HitTestSource source,
+                              gfx::Path* mask) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(MicButton);
 };
@@ -82,14 +89,22 @@ MicButton::MicButton(views::ButtonListener* listener)
 
 MicButton::~MicButton() {}
 
-bool MicButton::HitTestRect(const gfx::Rect& rect) const {
-  if (!views::ImageButton::HitTestRect(rect))
-    return false;
+bool MicButton::HasHitTestMask() const {
+  return true;
+}
 
+void MicButton::GetHitTestMask(views::View::HitTestSource source,
+                               gfx::Path* mask) const {
+  DCHECK(mask);
+
+  // The mic button icon is a circle. |source| doesn't matter.
   gfx::Rect local_bounds = GetLocalBounds();
-  int radius = local_bounds.width() / 2;
-  return (rect.origin() - local_bounds.CenterPoint()).LengthSquared() <
-      radius * radius;
+  int radius = local_bounds.width() / 2 + kIndicatorRadiusMinOffset;
+  gfx::Point center = local_bounds.CenterPoint();
+  center.set_y(center.y() + kIndicatorCenterOffsetY);
+  mask->addCircle(SkIntToScalar(center.x()),
+                  SkIntToScalar(center.y()),
+                  SkIntToScalar(radius));
 }
 
 }  // namespace
@@ -150,16 +165,11 @@ SpeechView::~SpeechView() {
 }
 
 void SpeechView::Reset() {
-  ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
-  speech_result_->SetText(l10n_util::GetStringUTF16(
-      IDS_APP_LIST_SPEECH_HINT_TEXT));
-  speech_result_->SetEnabledColor(kHintTextColor);
-  mic_button_->SetImage(views::Button::STATE_NORMAL,
-                        bundle.GetImageSkiaNamed(IDR_APP_LIST_SPEECH_MIC_ON));
+  OnSpeechRecognitionStateChanged(delegate_->GetSpeechUI()->state());
 }
 
 int SpeechView::GetIndicatorRadius(uint8 level) {
-  int radius_min = mic_button_->width() / 2;
+  int radius_min = mic_button_->width() / 2 + kIndicatorRadiusMinOffset;
   int range = kIndicatorRadiusMax - radius_min;
   return level * range / kuint8max + radius_min;
 }
@@ -188,7 +198,7 @@ void SpeechView::Layout() {
       speech_height);
 }
 
-gfx::Size SpeechView::GetPreferredSize() {
+gfx::Size SpeechView::GetPreferredSize() const {
   return gfx::Size(0, kSpeechViewMaxHeight);
 }
 
@@ -197,12 +207,13 @@ void SpeechView::ButtonPressed(views::Button* sender, const ui::Event& event) {
 }
 
 void SpeechView::OnSpeechSoundLevelChanged(uint8 level) {
-  if (!visible())
+  if (!visible() ||
+      delegate_->GetSpeechUI()->state() == SPEECH_RECOGNITION_NETWORK_ERROR)
     return;
 
   gfx::Point origin = mic_button_->bounds().CenterPoint();
   int radius = GetIndicatorRadius(level);
-  origin.Offset(-radius, -radius);
+  origin.Offset(-radius, -radius + kIndicatorCenterOffsetY);
   gfx::Rect indicator_bounds =
       gfx::Rect(origin, gfx::Size(radius * 2, radius * 2));
   if (indicator_->visible()) {
@@ -226,6 +237,15 @@ void SpeechView::OnSpeechRecognitionStateChanged(
     resource_id = IDR_APP_LIST_SPEECH_MIC_ON;
   else if (new_state == SPEECH_RECOGNITION_IN_SPEECH)
     resource_id = IDR_APP_LIST_SPEECH_MIC_RECORDING;
+
+  int text_resource_id = IDS_APP_LIST_SPEECH_HINT_TEXT;
+
+  if (new_state == SPEECH_RECOGNITION_NETWORK_ERROR) {
+    text_resource_id = IDS_APP_LIST_SPEECH_NETWORK_ERROR_HINT_TEXT;
+    indicator_->SetVisible(false);
+  }
+  speech_result_->SetText(l10n_util::GetStringUTF16(text_resource_id));
+  speech_result_->SetEnabledColor(kHintTextColor);
 
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
   mic_button_->SetImage(views::Button::STATE_NORMAL,

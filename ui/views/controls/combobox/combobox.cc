@@ -9,7 +9,7 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/events/event.h"
@@ -19,6 +19,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/text_utils.h"
+#include "ui/native_theme/common_theme.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/background.h"
 #include "ui/views/color_constants.h"
@@ -26,6 +27,7 @@
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/combobox/combobox_listener.h"
 #include "ui/views/controls/focusable_border.h"
+#include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/menu/menu_runner_handler.h"
 #include "ui/views/controls/menu/submenu_view.h"
@@ -90,6 +92,11 @@ class TransparentButton : public CustomButton {
     SetAnimationDuration(LabelButton::kHoverAnimationDurationMs);
   }
   virtual ~TransparentButton() {}
+
+  virtual bool OnMousePressed(const ui::MouseEvent& mouse_event) OVERRIDE {
+    parent()->RequestFocus();
+    return true;
+  }
 
   double GetAnimationValue() const {
     return hover_animation_->GetCurrentValue();
@@ -225,8 +232,6 @@ Combobox::Combobox(ui::ComboboxModel* model)
       listener_(NULL),
       selected_index_(model_->GetDefaultIndex()),
       invalid_(false),
-      disclosure_arrow_(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-          IDR_MENU_DROPARROW).ToImageSkia()),
       dropdown_open_(false),
       text_button_(new TransparentButton(this)),
       arrow_button_(new TransparentButton(this)),
@@ -348,7 +353,8 @@ void Combobox::Layout() {
     }
     case STYLE_ACTION: {
       arrow_button_width = GetDisclosureArrowLeftPadding() +
-          disclosure_arrow_->width() + GetDisclosureArrowRightPadding();
+          ArrowSize().width() +
+          GetDisclosureArrowRightPadding();
       text_button_width = width() - arrow_button_width;
       break;
     }
@@ -372,7 +378,7 @@ void Combobox::ExecuteCommand(int id) {
   OnPerformAction();
 }
 
-bool Combobox::GetAccelerator(int id, ui::Accelerator* accel) {
+bool Combobox::GetAccelerator(int id, ui::Accelerator* accel) const {
   return false;
 }
 
@@ -385,7 +391,10 @@ int Combobox::GetSelectedRow() {
 }
 
 void Combobox::SetSelectedRow(int row) {
+  int prev_index = selected_index_;
   SetSelectedIndex(row);
+  if (selected_index_ != prev_index)
+    OnPerformAction();
 }
 
 base::string16 Combobox::GetTextForRow(int row) {
@@ -396,16 +405,13 @@ base::string16 Combobox::GetTextForRow(int row) {
 ////////////////////////////////////////////////////////////////////////////////
 // Combobox, View overrides:
 
-gfx::Size Combobox::GetPreferredSize() {
-  if (content_size_.IsEmpty())
-    UpdateFromModel();
-
+gfx::Size Combobox::GetPreferredSize() const {
   // The preferred size will drive the local bounds which in turn is used to set
   // the minimum width for the dropdown list.
   gfx::Insets insets = GetInsets();
   int total_width = std::max(kMinComboboxWidth, content_size_.width()) +
       insets.width() + GetDisclosureArrowLeftPadding() +
-      disclosure_arrow_->width() + GetDisclosureArrowRightPadding();
+      ArrowSize().width() + GetDisclosureArrowRightPadding();
   return gfx::Size(total_width, content_size_.height() + insets.height());
 }
 
@@ -542,8 +548,8 @@ void Combobox::OnBlur() {
   SchedulePaint();
 }
 
-void Combobox::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_COMBOBOX;
+void Combobox::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_COMBO_BOX;
   state->name = accessible_name_;
   state->value = model_->GetItemAt(selected_index_);
   state->index = selected_index_;
@@ -556,6 +562,9 @@ void Combobox::OnComboboxModelChanged(ui::ComboboxModel* model) {
 }
 
 void Combobox::ButtonPressed(Button* sender, const ui::Event& event) {
+  if (!enabled())
+    return;
+
   RequestFocus();
 
   if (sender == text_button_) {
@@ -586,9 +595,14 @@ void Combobox::UpdateFromModel() {
 
   int num_items = model()->GetItemCount();
   int width = 0;
+  bool text_item_appended = false;
   for (int i = 0; i < num_items; ++i) {
+    // When STYLE_ACTION is used, the first item and the following separators
+    // are not added to the dropdown menu. It is assumed that the first item is
+    // always selected and rendered on the top of the action button.
     if (model()->IsItemSeparatorAt(i)) {
-      menu->AppendSeparator();
+      if (text_item_appended || style_ != STYLE_ACTION)
+        menu->AppendSeparator();
       continue;
     }
 
@@ -598,7 +612,10 @@ void Combobox::UpdateFromModel() {
     // text is displayed correctly in right-to-left UIs.
     base::i18n::AdjustStringForLocaleDirection(&text);
 
-    menu->AppendMenuItem(i + kFirstMenuItemId, text, MenuItemView::NORMAL);
+    if (style_ != STYLE_ACTION || i > 0) {
+      menu->AppendMenuItem(i + kFirstMenuItemId, text, MenuItemView::NORMAL);
+      text_item_appended = true;
+    }
 
     if (style_ != STYLE_ACTION || i == selected_index_)
       width = std::max(width, gfx::GetStringWidth(text, font_list));
@@ -638,7 +655,8 @@ void Combobox::PaintText(gfx::Canvas* canvas) {
     selected_index_ = 0;
   base::string16 text = model()->GetItemAt(selected_index_);
 
-  int disclosure_arrow_offset = width() - disclosure_arrow_->width() -
+  gfx::Size arrow_size = ArrowSize();
+  int disclosure_arrow_offset = width() - arrow_size.width() -
       GetDisclosureArrowLeftPadding() - GetDisclosureArrowRightPadding();
 
   const gfx::FontList& font_list = Combobox::GetFontList();
@@ -652,12 +670,24 @@ void Combobox::PaintText(gfx::Canvas* canvas) {
 
   int arrow_x = disclosure_arrow_offset + GetDisclosureArrowLeftPadding();
   gfx::Rect arrow_bounds(arrow_x,
-                         height() / 2 - disclosure_arrow_->height() / 2,
-                         disclosure_arrow_->width(),
-                         disclosure_arrow_->height());
+                         height() / 2 - arrow_size.height() / 2,
+                         arrow_size.width(),
+                         arrow_size.height());
   AdjustBoundsForRTLUI(&arrow_bounds);
 
-  canvas->DrawImageInt(*disclosure_arrow_, arrow_bounds.x(), arrow_bounds.y());
+  // TODO(estade): hack alert! Remove this direct call into CommonTheme. For now
+  // STYLE_ACTION isn't properly themed so we have to override the NativeTheme
+  // behavior. See crbug.com/384071
+  if (style_ == STYLE_ACTION) {
+    ui::CommonThemePaintComboboxArrow(canvas->sk_canvas(), arrow_bounds);
+  } else {
+    ui::NativeTheme::ExtraParams ignored;
+    GetNativeTheme()->Paint(canvas->sk_canvas(),
+                            ui::NativeTheme::kComboboxArrow,
+                            ui::NativeTheme::kNormal,
+                            arrow_bounds,
+                            ignored);
+  }
 }
 
 void Combobox::PaintButtons(gfx::Canvas* canvas) {
@@ -750,8 +780,8 @@ void Combobox::ShowDropDownMenu(ui::MenuSourceType source_type) {
     arrow_button_->SetState(Button::STATE_PRESSED);
   }
   dropdown_open_ = true;
-  MenuItemView::AnchorPosition anchor_position =
-      style_ == STYLE_ACTION ? MenuItemView::TOPRIGHT : MenuItemView::TOPLEFT;
+  MenuAnchorPosition anchor_position =
+      style_ == STYLE_ACTION ? MENU_ANCHOR_TOPRIGHT : MENU_ANCHOR_TOPLEFT;
   if (dropdown_list_menu_runner_->RunMenuAt(GetWidget(), NULL, bounds,
                                             anchor_position, source_type,
                                             MenuRunner::COMBOBOX) ==
@@ -770,7 +800,7 @@ void Combobox::ShowDropDownMenu(ui::MenuSourceType source_type) {
 }
 
 void Combobox::OnPerformAction() {
-  NotifyAccessibilityEvent(ui::AccessibilityTypes::EVENT_VALUE_CHANGED, false);
+  NotifyAccessibilityEvent(ui::AX_EVENT_VALUE_CHANGED, false);
   SchedulePaint();
 
   // This combobox may be deleted by the listener.
@@ -810,6 +840,24 @@ int Combobox::GetDisclosureArrowRightPadding() const {
   }
   NOTREACHED();
   return 0;
+}
+
+gfx::Size Combobox::ArrowSize() const {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // TODO(estade): hack alert! This should always use GetNativeTheme(). For now
+  // STYLE_ACTION isn't properly themed so we have to override the NativeTheme
+  // behavior. See crbug.com/384071
+  const ui::NativeTheme* native_theme_for_arrow = style_ == STYLE_ACTION ?
+      ui::NativeTheme::instance() :
+      GetNativeTheme();
+#else
+  const ui::NativeTheme* native_theme_for_arrow = GetNativeTheme();
+#endif
+
+  ui::NativeTheme::ExtraParams ignored;
+  return native_theme_for_arrow->GetPartSize(ui::NativeTheme::kComboboxArrow,
+                                             ui::NativeTheme::kNormal,
+                                             ignored);
 }
 
 }  // namespace views

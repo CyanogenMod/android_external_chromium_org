@@ -52,7 +52,7 @@ class WebNotificationTrayTest : public InProcessBrowserTest {
     virtual void Close(bool by_user) OVERRIDE {}
     virtual void Click() OVERRIDE {}
     virtual std::string id() const OVERRIDE { return id_; }
-    virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE {
+    virtual content::WebContents* GetWebContents() const OVERRIDE {
       return NULL;
     }
 
@@ -96,6 +96,11 @@ class WebNotificationTrayTest : public InProcessBrowserTest {
     g_browser_process->notification_ui_manager()->CancelById(id);
   }
 
+  bool HasNotification(message_center::MessageCenter* message_center,
+                       const std::string& id) {
+    return message_center->FindVisibleNotificationById(id) != NULL;
+  }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(WebNotificationTrayTest);
 };
@@ -103,47 +108,40 @@ class WebNotificationTrayTest : public InProcessBrowserTest {
 }  // namespace
 
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-// TODO(erg): linux_aura bringup: http://crbug.com/163931
-#define MAYBE_WebNotifications DISABLED_WebNotifications
-#else
-#define MAYBE_WebNotifications WebNotifications
-#endif
-
 // TODO(dewittj): More exhaustive testing.
-IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, MAYBE_WebNotifications) {
+IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, WebNotifications) {
   message_center::MessageCenter* message_center =
       message_center::MessageCenter::Get();
 
   // Add a notification.
   AddNotification("test_id1", "replace_id1");
   EXPECT_EQ(1u, message_center->NotificationCount());
-  EXPECT_TRUE(message_center->HasNotification("test_id1"));
-  EXPECT_FALSE(message_center->HasNotification("test_id2"));
+  EXPECT_TRUE(HasNotification(message_center, "test_id1"));
+  EXPECT_FALSE(HasNotification(message_center, "test_id2"));
   AddNotification("test_id2", "replace_id2");
   AddNotification("test_id2", "replace_id2");
   EXPECT_EQ(2u, message_center->NotificationCount());
-  EXPECT_TRUE(message_center->HasNotification("test_id2"));
+  EXPECT_TRUE(HasNotification(message_center, "test_id1"));
 
   // Ensure that updating a notification does not affect the count.
   UpdateNotification("replace_id2", "test_id3");
   UpdateNotification("replace_id2", "test_id3");
   EXPECT_EQ(2u, message_center->NotificationCount());
-  EXPECT_FALSE(message_center->HasNotification("test_id2"));
+  EXPECT_FALSE(HasNotification(message_center, "test_id2"));
 
   // Ensure that Removing the first notification removes it from the tray.
   RemoveNotification("test_id1");
-  EXPECT_FALSE(message_center->HasNotification("test_id1"));
+  EXPECT_FALSE(HasNotification(message_center, "test_id1"));
   EXPECT_EQ(1u, message_center->NotificationCount());
 
   // Remove the remaining notification.
   RemoveNotification("test_id3");
   EXPECT_EQ(0u, message_center->NotificationCount());
-  EXPECT_FALSE(message_center->HasNotification("test_id3"));
+  EXPECT_FALSE(HasNotification(message_center, "test_id1"));
 }
 
 IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, WebNotificationPopupBubble) {
-  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray());
+  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray(NULL));
   tray->message_center();
 
   // Adding a notification should show the popup bubble.
@@ -169,7 +167,7 @@ using message_center::NotificationList;
 // Flaky, see http://crbug.com/222500 .
 IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest,
                        DISABLED_ManyMessageCenterNotifications) {
-  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray());
+  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray(NULL));
   message_center::MessageCenter* message_center = tray->message_center();
 
   // Add the max visible notifications +1, ensure the correct visible number.
@@ -189,15 +187,8 @@ IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest,
             tray->message_center_delegate_->NumMessageViewsForTest());
 }
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(USE_AURA)
-// TODO(erg): linux_aura bringup: http://crbug.com/163931
-#define MAYBE_ManyPopupNotifications DISABLED_ManyPopupNotifications
-#else
-#define MAYBE_ManyPopupNotifications ManyPopupNotifications
-#endif
-
-IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, MAYBE_ManyPopupNotifications) {
-  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray());
+IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, ManyPopupNotifications) {
+  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray(NULL));
   message_center::MessageCenter* message_center = tray->message_center();
 
   // Add the max visible popup notifications +1, ensure the correct num visible.
@@ -221,7 +212,6 @@ IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, MAYBE_ManyPopupNotifications) {
 IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest,
                        ManuallyCloseMessageCenter) {
   NotificationUIManager* manager = g_browser_process->notification_ui_manager();
-  ASSERT_TRUE(manager->DelegatesToMessageCenter());
   MessageCenterNotificationManager* mc_manager =
       static_cast<MessageCenterNotificationManager*>(manager);
 
@@ -242,4 +232,23 @@ IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest,
     EXPECT_TRUE(tray->message_center_delegate_->GetWidget()->IsClosed());
 }
 
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#define MAYBE_StatusIconBehavior DISABLED_StatusIconBehavior
+#else
+#define MAYBE_StatusIconBehavior StatusIconBehavior
+#endif
+IN_PROC_BROWSER_TEST_F(WebNotificationTrayTest, MAYBE_StatusIconBehavior) {
+  scoped_ptr<WebNotificationTray> tray(new WebNotificationTray(NULL));
+
+  EXPECT_TRUE(tray->status_icon_ == NULL);
+  tray->OnMessageCenterTrayChanged();
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(tray->status_icon_ == NULL);
+  AddNotification("test_id", "replace_id");
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(tray->status_icon_ != NULL);
+  RemoveNotification("test_id");
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(tray->status_icon_ != NULL);
+}
 }  // namespace message_center

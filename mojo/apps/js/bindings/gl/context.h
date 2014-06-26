@@ -12,8 +12,8 @@
 #include "gin/public/wrapper_info.h"
 #include "gin/runner.h"
 #include "gin/wrappable.h"
-#include "mojo/apps/js/bindings/handle.h"
-#include "mojo/public/gles2/gles2.h"
+#include "mojo/bindings/js/handle.h"
+#include "mojo/public/c/gles2/gles2.h"
 #include "v8/include/v8.h"
 
 namespace gin {

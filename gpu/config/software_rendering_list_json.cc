@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "7.0",
+  "version": "8.6",
   "entries": [
     {
       "id": 1,
@@ -68,8 +68,8 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 5,
-      "description": "ATI/AMD cards with older or third-party drivers in Linux are crash-prone",
-      "cr_bugs": [71381, 76428, 73910, 101225, 136240],
+      "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
+      "cr_bugs": [71381, 76428, 73910, 101225, 136240, 357314],
       "os": {
         "type": "linux"
       },
@@ -84,6 +84,16 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
             "op": ">=",
             "style": "lexical",
             "value": "8.98"
+          }
+        },
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
           }
         }
       ],
@@ -152,12 +162,20 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 17,
-      "description": "Intel mesa drivers are crash-prone",
-      "cr_bugs": [76703, 164555, 225200],
+      "description": "Older Intel mesa drivers are crash-prone",
+      "cr_bugs": [76703, 164555, 225200, 340886],
       "os": {
         "type": "linux"
       },
       "vendor_id": "0x8086",
+      "driver_vendor": {
+        "op": "=",
+        "value": "Mesa"
+      },
+      "driver_version": {
+        "op": "<",
+        "value": "10.1"
+      },
       "exceptions": [
         {
           "device_id": ["0x0102", "0x0106", "0x0112", "0x0116", "0x0122", "0x0126", "0x010a", "0x0152", "0x0156", "0x015a", "0x0162", "0x0166"],
@@ -185,6 +203,13 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           "driver_version": {
             "op": ">=",
             "value": "9.1"
+          }
+        },
+        {
+          "device_id": ["0x0a16", "0x0a26"],
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.1"
           }
         }
       ],
@@ -244,7 +269,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 27,
       "description": "ATI/AMD cards with older drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973, 136240],
+      "cr_bugs": [95934, 94973, 136240, 357314],
       "os": {
         "type": "linux"
       },
@@ -263,6 +288,16 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
             "style": "lexical",
             "value": "8.98"
           }
+        },
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
         }
       ],
       "features": [
@@ -272,7 +307,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 28,
       "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973],
+      "cr_bugs": [95934, 94973, 357314],
       "os": {
         "type": "linux"
       },
@@ -284,6 +319,18 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "contains",
         "value": "AMD"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -291,7 +338,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     {
       "id": 29,
       "description": "ATI/AMD cards with third-party drivers in Linux are crash-prone",
-      "cr_bugs": [95934, 94973],
+      "cr_bugs": [95934, 94973, 357314],
       "os": {
         "type": "linux"
       },
@@ -303,6 +350,18 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "op": "contains",
         "value": "ATI"
       },
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.0.4"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -378,12 +437,28 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
     },
     {
       "id": 37,
-      "description": "Drivers are unreliable for Optimus on Linux",
-      "cr_bugs": [131308],
+      "description": "Older drivers are unreliable for Optimus on Linux",
+      "cr_bugs": [131308, 363418],
       "os": {
         "type": "linux"
       },
       "multi_gpu_style": "optimus",
+      "exceptions": [
+        {
+          "driver_vendor": {
+            "op": "=",
+            "value": "Mesa"
+          },
+          "driver_version": {
+            "op": ">=",
+            "value": "10.1"
+          },
+          "gl_vendor": {
+            "op": "beginwith",
+            "value": "Intel"
+          }
+        }
+      ],
       "features": [
         "all"
       ]
@@ -620,7 +695,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "value": "NVIDIA"
       },
       "features": [
-        "accelerated_video",
         "accelerated_video_decode",
         "flash_3d",
         "flash_stage3d"
@@ -898,12 +972,7 @@ LONG_STRING_CONST(
           "value": "4.1.2"
         }
       },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "GT-N7100"
-        }
-      },
+      "machine_model_name": ["GT-N7100"],
       "features": [
         "accelerated_video_decode"
       ]
@@ -915,12 +984,7 @@ LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "machine_model": {
-        "name": {
-          "op": "=",
-          "value": "SCH-I545"
-        }
-      },
+      "machine_model_name": ["SCH-I545"],
       "features": [
         "accelerated_video_decode"
       ]
@@ -1019,6 +1083,115 @@ LONG_STRING_CONST(
       },
       "features": [
         "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 92,
+      "description": "Accelerated video decode does not work with the discrete GPU on AMD switchables",
+      "cr_bugs": [298968],
+      "os": {
+        "type": "win"
+      },
+      "multi_gpu_style": "amd_switchable_discrete",
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 93,
+      "description": "GLX indirect rendering (X remoting) is not supported",
+      "cr_bugs": [72373],
+      "os": {
+        "type": "linux"
+      },
+      "direct_rendering": false,
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 94,
+      "description": "Intel driver version 8.15.10.1749 causes GPU process hangs.",
+      "cr_bugs": [350566],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "=",
+        "value": "8.15.10.1749"
+      },
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 95,
+      "description": "AMD driver version 13.101 is unstable on linux.",
+      "cr_bugs": [363378],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "driver_vendor": {
+        "op": "contains",
+        "value": "AMD"
+      },
+      "driver_version": {
+        "op": "=",
+        "value": "13.101"
+      },
+      "features": [
+        "all"
+      ]
+    },
+    {
+      "id": 96,
+      "description": "GPU rasterization is whitelisted on N4, N5, N7 and Moto X",
+      "cr_bugs": [362779],
+      "exceptions": [
+        {
+          "os": {
+            "type": "android"
+          },
+          "machine_model_name": ["Nexus 4", "Nexus 5", "Nexus 7",
+                                 "XT1049", "XT1050", "XT1052", "XT1053",
+                                 "XT1055", "XT1056", "XT1058", "XT1060"]
+        },
+        {
+          "os": {
+            "type": "android",
+            "version": {
+              "op": ">",
+              "value": "4.4.3"
+            }
+          }
+        }
+      ],
+      "features": [
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 97,
+      "description": "Additional GPU rasterization whitelist for field trial",
+      "cr_bugs": [380694],
+      "exceptions": [
+        {
+          "os": {
+            "type": "android"
+          },
+          "machine_model_name": ["HTC One",
+                                 "C5303", "C6603", "C6903",
+                                 "GT-I8262", "GT-I8552", "GT-I9195", "GT-I9300",
+                                 "GT-I9500", "GT-I9505", "GT-N7100",
+                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
+                                 "SM-N900", "SM-N9005", "SPH-L720",
+                                 "XT907", "XT1032", "XT1033", "XT1080"]
+        }
+      ],
+      "features": [
+        "gpu_rasterization_field_trial"
       ]
     }
   ]

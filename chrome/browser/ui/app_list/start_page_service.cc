@@ -9,13 +9,16 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/user_metrics.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/media/media_stream_infobar_delegate.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/hotword_service_factory.h"
 #include "chrome/browser/ui/app_list/recommended_apps.h"
 #include "chrome/browser/ui/app_list/start_page_observer.h"
 #include "chrome/browser/ui/app_list/start_page_service_factory.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
@@ -100,31 +103,8 @@ StartPageService::StartPageService(Profile* profile)
       state_(app_list::SPEECH_RECOGNITION_OFF),
       speech_button_toggled_manually_(false),
       speech_result_obtained_(false) {
-#if defined(OS_CHROMEOS)
-  // Updates the default state to hotword listening, because this is
-  // the default behavior. This will be updated when the page is loaded and
-  // the nacl module is loaded.
-  if (app_list::switches::IsVoiceSearchEnabled())
-    state_ = app_list::SPEECH_RECOGNITION_HOTWORD_LISTENING;
-#endif
-
-  contents_.reset(content::WebContents::Create(
-      content::WebContents::CreateParams(profile_)));
-  contents_delegate_.reset(new StartPageWebContentsDelegate());
-  contents_->SetDelegate(contents_delegate_.get());
-
-  GURL url(chrome::kChromeUIAppListStartPageURL);
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(::switches::kAppListStartPageURL)) {
-    url = GURL(
-        command_line->GetSwitchValueASCII(::switches::kAppListStartPageURL));
-  }
-
-  contents_->GetController().LoadURL(
-      url,
-      content::Referrer(),
-      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
-      std::string());
+  if (app_list::switches::IsExperimentalAppListEnabled())
+    LoadContents();
 }
 
 StartPageService::~StartPageService() {}
@@ -137,19 +117,50 @@ void StartPageService::RemoveObserver(StartPageObserver* observer) {
   observers_.RemoveObserver(observer);
 }
 
+void StartPageService::AppListShown() {
+  if (!contents_) {
+    LoadContents();
+  } else {
+    contents_->GetWebUI()->CallJavascriptFunction(
+        "appList.startPage.onAppListShown",
+        base::FundamentalValue(HotwordEnabled()));
+  }
+}
+
+void StartPageService::AppListHidden() {
+  contents_->GetWebUI()->CallJavascriptFunction(
+      "appList.startPage.onAppListHidden");
+  if (!app_list::switches::IsExperimentalAppListEnabled())
+    UnloadContents();
+}
+
 void StartPageService::ToggleSpeechRecognition() {
   speech_button_toggled_manually_ = true;
   contents_->GetWebUI()->CallJavascriptFunction(
       "appList.startPage.toggleSpeechRecognition");
 }
 
+bool StartPageService::HotwordEnabled() {
+#if defined(OS_CHROMEOS)
+  return HotwordServiceFactory::IsServiceAvailable(profile_) &&
+      profile_->GetPrefs()->GetBoolean(prefs::kHotwordSearchEnabled);
+#else
+  return false;
+#endif
+}
+
 content::WebContents* StartPageService::GetStartPageContents() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
-      ::switches::kShowAppListStartPage) ? contents_.get() : NULL;
+  return app_list::switches::IsExperimentalAppListEnabled() ? contents_.get()
+                                                            : NULL;
 }
 
 content::WebContents* StartPageService::GetSpeechRecognitionContents() {
-  return app_list::switches::IsVoiceSearchEnabled() ? contents_.get() : NULL;
+  if (app_list::switches::IsVoiceSearchEnabled()) {
+    if (!contents_)
+      LoadContents();
+    return contents_.get();
+  }
+  return NULL;
 }
 
 void StartPageService::OnSpeechResult(
@@ -191,6 +202,30 @@ void StartPageService::OnSpeechRecognitionStateChanged(
 }
 
 void StartPageService::Shutdown() {
+  UnloadContents();
+}
+
+void StartPageService::LoadContents() {
+  contents_.reset(content::WebContents::Create(
+      content::WebContents::CreateParams(profile_)));
+  contents_delegate_.reset(new StartPageWebContentsDelegate());
+  contents_->SetDelegate(contents_delegate_.get());
+
+  GURL url(chrome::kChromeUIAppListStartPageURL);
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  if (command_line->HasSwitch(::switches::kAppListStartPageURL)) {
+    url = GURL(
+        command_line->GetSwitchValueASCII(::switches::kAppListStartPageURL));
+  }
+
+  contents_->GetController().LoadURL(
+      url,
+      content::Referrer(),
+      content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+      std::string());
+}
+
+void StartPageService::UnloadContents() {
   contents_.reset();
 }
 

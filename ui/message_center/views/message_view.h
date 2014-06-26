@@ -53,6 +53,9 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
               const base::string16& display_source);
   virtual ~MessageView();
 
+  // Updates this view with the new data contained in the notification.
+  virtual void UpdateWithNotification(const Notification& notification);
+
   // Returns the insets for the shadow it will have for rich notification.
   static gfx::Insets GetShadowInsets();
 
@@ -67,7 +70,7 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
   }
 
   // Overridden from views::View:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;

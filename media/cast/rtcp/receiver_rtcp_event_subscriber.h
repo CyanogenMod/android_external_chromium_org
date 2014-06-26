@@ -12,10 +12,6 @@
 #include "media/cast/logging/raw_event_subscriber.h"
 #include "media/cast/rtcp/rtcp_defines.h"
 
-namespace base {
-class SingleThreadTaskRunner;
-}
-
 namespace media {
 namespace cast {
 
@@ -30,12 +26,7 @@ namespace cast {
 //   timestamp) up to the size limit.
 class ReceiverRtcpEventSubscriber : public RawEventSubscriber {
  public:
-  // Identifies whether the subscriber will process audio or video related
-  // frame events.
-  enum Type {
-    kAudioEventSubscriber,  // Only processes audio events
-    kVideoEventSubscriber   // Only processes video events
-  };
+  typedef std::multimap<RtpTimestamp, RtcpEvent> RtcpEventMultiMap;
 
   // |max_size_to_retain|: The object will keep up to |max_size_to_retain|
   // events
@@ -43,20 +34,18 @@ class ReceiverRtcpEventSubscriber : public RawEventSubscriber {
   // RTP timestamp will be removed.
   // |type|: Determines whether the subscriber will process only audio or video
   // events.
-  ReceiverRtcpEventSubscriber(const size_t max_size_to_retain, Type type);
+  ReceiverRtcpEventSubscriber(const size_t max_size_to_retain,
+      EventMediaType type);
 
   virtual ~ReceiverRtcpEventSubscriber();
 
   // RawEventSubscriber implementation.
   virtual void OnReceiveFrameEvent(const FrameEvent& frame_event) OVERRIDE;
   virtual void OnReceivePacketEvent(const PacketEvent& packet_event) OVERRIDE;
-  virtual void OnReceiveGenericEvent(const GenericEvent& generic_event)
-      OVERRIDE;
 
-  // Converts all collected events since last invocation into
-  // a RtcpReceiverFrameLogMessage, assigns it to |receiver_log|, and clears
-  // |rtcp_events_|.
-  void GetReceiverLogMessageAndReset(RtcpReceiverLogMessage* receiver_log);
+  // Assigns events collected to |rtcp_events| and clears them from this
+  // object.
+  void GetRtcpEventsAndReset(RtcpEventMultiMap* rtcp_events);
 
  private:
   // If |rtcp_events_.size()| exceeds |max_size_to_retain_|, remove an oldest
@@ -64,17 +53,19 @@ class ReceiverRtcpEventSubscriber : public RawEventSubscriber {
   // |max_size_to_retain_|.
   void TruncateMapIfNeeded();
 
-  // Returns |true| if events of |event_type| should be processed.
-  bool ShouldProcessEvent(CastLoggingEvent event_type);
+  // Returns |true| if events of |event_type| and |media_type|
+  // should be processed.
+  bool ShouldProcessEvent(CastLoggingEvent event_type,
+      EventMediaType media_type);
 
   const size_t max_size_to_retain_;
-  Type type_;
+  EventMediaType type_;
 
   // The key should really be something more than just a RTP timestamp in order
   // to differentiate between video and audio frames, but since the
   // implementation doesn't mix audio and video frame events, RTP timestamp
   // only as key is fine.
-  std::multimap<RtpTimestamp, RtcpEvent> rtcp_events_;
+  RtcpEventMultiMap rtcp_events_;
 
   // Ensures methods are only called on the main thread.
   base::ThreadChecker thread_checker_;

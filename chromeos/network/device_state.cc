@@ -8,12 +8,15 @@
 #include "base/metrics/histogram.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chromeos/network/network_event_log.h"
+#include "chromeos/network/shill_property_util.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
 namespace chromeos {
 
 DeviceState::DeviceState(const std::string& path)
     : ManagedState(MANAGED_TYPE_DEVICE, path),
+      allow_roaming_(false),
       provider_requires_roaming_(false),
       support_network_scan_(false),
       scanning_(false),
@@ -38,31 +41,13 @@ bool DeviceState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &scanning_);
   } else if (key == shill::kSupportNetworkScanProperty) {
     return GetBooleanValue(key, value, &support_network_scan_);
+  } else if (key == shill::kCellularAllowRoamingProperty) {
+    return GetBooleanValue(key, value, &allow_roaming_);
   } else if (key == shill::kProviderRequiresRoamingProperty) {
     return GetBooleanValue(key, value, &provider_requires_roaming_);
   } else if (key == shill::kHomeProviderProperty) {
-    const base::DictionaryValue* dict = NULL;
-    if (!value.GetAsDictionary(&dict))
-      return false;
-    std::string home_provider_country;
-    std::string home_provider_name;
-    dict->GetStringWithoutPathExpansion(shill::kOperatorCountryKey,
-                                        &home_provider_country);
-    dict->GetStringWithoutPathExpansion(shill::kOperatorNameKey,
-                                        &home_provider_name);
-    // Set home_provider_id_
-    if (!home_provider_name.empty() && !home_provider_country.empty()) {
-      home_provider_id_ = base::StringPrintf(
-          "%s (%s)",
-          home_provider_name.c_str(),
-          home_provider_country.c_str());
-    } else {
-      dict->GetStringWithoutPathExpansion(shill::kOperatorCodeKey,
-                                          &home_provider_id_);
-      LOG(WARNING) << "Carrier ID not defined, using code instead: "
-                   << home_provider_id_;
-    }
-    return true;
+    return shill_property_util::GetHomeProviderFromProperty(
+        value, &home_provider_id_);
   } else if (key == shill::kTechnologyFamilyProperty) {
     return GetStringValue(key, value, &technology_family_);
   } else if (key == shill::kCarrierProperty) {
@@ -118,6 +103,12 @@ bool DeviceState::PropertyChanged(const std::string& key,
     return GetBooleanValue(key, value, &sim_present_);
   } else if (key == shill::kEapAuthenticationCompletedProperty) {
     return GetBooleanValue(key, value, &eap_authentication_completed_);
+  } else if (key == shill::kIPConfigsProperty) {
+    // If kIPConfigsProperty changes, clear any previous ip_configs_.
+    // ShillPropertyhandler will request the IPConfig objects which will trigger
+    // calls to IPConfigPropertiesChanged.
+    ip_configs_.Clear();
+    return false;  // No actual state change.
   }
   return false;
 }
@@ -132,16 +123,20 @@ bool DeviceState::InitialPropertiesReceived(
   return false;
 }
 
-std::string DeviceState::GetFormattedMacAddress() const {
-  if (mac_address_.size() % 2 != 0)
-    return mac_address_;
-  std::string result;
-  for (size_t i = 0; i < mac_address_.size(); ++i) {
-    if ((i != 0) && (i % 2 == 0))
-      result.push_back(':');
-    result.push_back(mac_address_[i]);
+void DeviceState::IPConfigPropertiesChanged(
+    const std::string& ip_config_path,
+    const base::DictionaryValue& properties) {
+  base::DictionaryValue* ip_config = NULL;
+  if (ip_configs_.GetDictionaryWithoutPathExpansion(
+          ip_config_path, &ip_config)) {
+    NET_LOG_EVENT("IPConfig Updated: " + ip_config_path, path());
+    ip_config->Clear();
+  } else {
+    NET_LOG_EVENT("IPConfig Added: " + ip_config_path, path());
+    ip_config = new base::DictionaryValue;
+    ip_configs_.SetWithoutPathExpansion(ip_config_path, ip_config);
   }
-  return result;
+  ip_config->MergeDictionary(&properties);
 }
 
 bool DeviceState::IsSimAbsent() const {

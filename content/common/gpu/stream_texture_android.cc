@@ -23,12 +23,10 @@ using gpu::gles2::TextureManager;
 using gpu::gles2::TextureRef;
 
 // static
-int32 StreamTexture::Create(
+bool StreamTexture::Create(
     GpuCommandBufferStub* owner_stub,
-    uint32 client_texture_id) {
-  GpuChannel* channel = owner_stub->channel();
-  int32 route_id = channel->GenerateRouteID();
-
+    uint32 client_texture_id,
+    int stream_id) {
   GLES2Decoder* decoder = owner_stub->decoder();
   TextureManager* texture_manager =
       decoder->GetContextGroup()->texture_manager();
@@ -40,7 +38,7 @@ int32 StreamTexture::Create(
     // TODO: Ideally a valid image id was returned to the client so that
     // it could then call glBindTexImage2D() for doing the following.
     scoped_refptr<gfx::GLImage> gl_image(
-        new StreamTexture(owner_stub, route_id, texture->service_id()));
+        new StreamTexture(owner_stub, stream_id, texture->service_id()));
     gfx::Size size = gl_image->GetSize();
     texture_manager->SetTarget(texture, GL_TEXTURE_EXTERNAL_OES);
     texture_manager->SetLevelInfo(texture,
@@ -56,16 +54,16 @@ int32 StreamTexture::Create(
                                   true);
     texture_manager->SetLevelImage(
         texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image);
-    return route_id;
+    return true;
   }
 
-  return 0;
+  return false;
 }
 
 StreamTexture::StreamTexture(GpuCommandBufferStub* owner_stub,
                              int32 route_id,
                              uint32 texture_id)
-    : surface_texture_(new gfx::SurfaceTexture(texture_id)),
+    : surface_texture_(gfx::SurfaceTexture::Create(texture_id)),
       size_(0, 0),
       has_valid_frame_(false),
       has_pending_frame_(false),
@@ -133,7 +131,9 @@ void StreamTexture::WillUseTexImage() {
       const gpu::gles2::TextureUnit& active_unit =
           state->texture_units[state->active_texture_unit];
       glBindTexture(GL_TEXTURE_EXTERNAL_OES,
-                    active_unit.bound_texture_external_oes->service_id());
+                    active_unit.bound_texture_external_oes
+                        ? active_unit.bound_texture_external_oes->service_id()
+                        : 0);
     }
   }
 
@@ -191,6 +191,15 @@ void StreamTexture::OnEstablishPeer(int32 primary_id, int32 secondary_id) {
 
   SurfaceTexturePeer::GetInstance()->EstablishSurfaceTexturePeer(
       process, surface_texture_, primary_id, secondary_id);
+}
+
+bool StreamTexture::BindTexImage(unsigned target) {
+  NOTREACHED();
+  return false;
+}
+
+void StreamTexture::ReleaseTexImage(unsigned target) {
+  NOTREACHED();
 }
 
 }  // namespace content

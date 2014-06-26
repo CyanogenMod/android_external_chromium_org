@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_SIGNIN_PROFILE_OAUTH2_TOKEN_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "components/browser_context_keyed_service/browser_context_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class ProfileOAuth2TokenService;
 class Profile;
@@ -17,13 +17,7 @@ class AndroidProfileOAuth2TokenService;
 class MutableProfileOAuth2TokenService;
 #endif
 
-// A wrapper of ProfileOAuth2TokenService so we can use it as a BCKS.
-class ProfileOAuth2TokenServiceWrapper : public BrowserContextKeyedService {
- public:
-  virtual ProfileOAuth2TokenService* GetProfileOAuth2TokenService() = 0;
-};
-
-/// Singleton that owns all ProfileOAuth2TokenServices and associates them with
+// Singleton that owns all ProfileOAuth2TokenServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated ProfileOAuth2TokenService.
 class ProfileOAuth2TokenServiceFactory
@@ -52,7 +46,6 @@ class ProfileOAuth2TokenServiceFactory
 
  private:
   friend struct DefaultSingletonTraits<ProfileOAuth2TokenServiceFactory>;
-  friend class ProfileOAuth2TokenServiceWrapperImpl;
 
 #if defined(OS_ANDROID)
   typedef AndroidProfileOAuth2TokenService PlatformSpecificOAuth2TokenService;
@@ -64,7 +57,7 @@ class ProfileOAuth2TokenServiceFactory
   virtual ~ProfileOAuth2TokenServiceFactory();
 
   // BrowserContextKeyedServiceFactory implementation.
-  virtual BrowserContextKeyedService* BuildServiceInstanceFor(
+  virtual KeyedService* BuildServiceInstanceFor(
       content::BrowserContext* context) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ProfileOAuth2TokenServiceFactory);

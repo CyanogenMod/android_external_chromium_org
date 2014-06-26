@@ -51,7 +51,7 @@ GlobalErrorBubbleViewBase* GlobalErrorBubbleViewBase::ShowStandardBubbleView(
                                 browser,
                                 error);
   views::BubbleDelegateView::CreateBubble(bubble_view);
-  bubble_view->StartFade(true);
+  bubble_view->GetWidget()->Show();
   return bubble_view;
 }
 
@@ -156,6 +156,11 @@ GlobalErrorBubbleView::GlobalErrorBubbleView(
   // Adjust the message label size in case buttons are too long.
   for (size_t i = 0; i < message_labels.size(); ++i)
     message_labels[i]->SizeToFit(layout->GetPreferredSize(this).width());
+
+  // These bubbles show at times where activation is sporadic (like at startup,
+  // or a new window opening). Make sure the bubble doesn't disappear before the
+  // user sees it, if the bubble needs to be acknowledged.
+  set_close_on_deactivate(error_->ShouldCloseOnDeactivate());
 }
 
 GlobalErrorBubbleView::~GlobalErrorBubbleView() {

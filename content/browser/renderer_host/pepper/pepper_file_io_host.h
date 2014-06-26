@@ -10,8 +10,8 @@
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/files/file.h"
+#include "base/files/file_proxy.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_platform_file.h"
@@ -33,8 +33,7 @@ class PepperFileSystemBrowserHost;
 class PepperFileIOHost : public ppapi::host::ResourceHost,
                          public base::SupportsWeakPtr<PepperFileIOHost> {
  public:
-  typedef base::Callback<void (base::File::Error)>
-      NotifyCloseFileCallback;
+  typedef base::Callback<void(base::File::Error)> NotifyCloseFileCallback;
 
   PepperFileIOHost(BrowserPpapiHostImpl* host,
                    PP_Instance instance,
@@ -52,6 +51,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
     base::ProcessId resolved_render_process_id;
     scoped_refptr<fileapi::FileSystemContext> file_system_context;
   };
+
  private:
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,
                         PP_Resource file_ref_resource,
@@ -78,29 +78,25 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   void ExecutePlatformGeneralCallback(
       ppapi::host::ReplyMessageContext reply_context,
       base::File::Error error_code);
-  void ExecutePlatformOpenFileCallback(
-      ppapi::host::ReplyMessageContext reply_context,
-      base::File::Error error_code,
-      base::PassPlatformFile file,
-      bool unused_created);
+
+  void OnOpenProxyCallback(ppapi::host::ReplyMessageContext reply_context,
+                           base::File::Error error_code);
 
   void GotUIThreadStuffForInternalFileSystems(
       ppapi::host::ReplyMessageContext reply_context,
       int platform_file_flags,
       UIThreadStuff ui_thread_stuff);
-  void DidOpenInternalFile(
-      ppapi::host::ReplyMessageContext reply_context,
-      base::File::Error result,
-      base::PlatformFile file,
-      const base::Closure& on_close_callback);
+  void DidOpenInternalFile(ppapi::host::ReplyMessageContext reply_context,
+                           base::File file,
+                           const base::Closure& on_close_callback);
   void GotResolvedRenderProcessId(
       ppapi::host::ReplyMessageContext reply_context,
       base::FilePath path,
-      int platform_file_flags,
+      int file_flags,
       base::ProcessId resolved_render_process_id);
 
   void DidOpenQuotaFile(ppapi::host::ReplyMessageContext reply_context,
-                        base::PlatformFile file,
+                        base::File file,
                         int64_t max_written_offset);
   bool CallSetLength(ppapi::host::ReplyMessageContext reply_context,
                      int64_t length);
@@ -120,7 +116,7 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   int render_process_id_;
   base::ProcessId resolved_render_process_id_;
 
-  base::PlatformFile file_;
+  base::FileProxy file_;
   int32_t open_flags_;
 
   // The file system type specified in the Open() call. This will be
@@ -137,10 +133,6 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   bool check_quota_;
 
   ppapi::FileIOStateManager state_manager_;
-
-  scoped_refptr<base::MessageLoopProxy> file_message_loop_;
-
-  base::WeakPtrFactory<PepperFileIOHost> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFileIOHost);
 };

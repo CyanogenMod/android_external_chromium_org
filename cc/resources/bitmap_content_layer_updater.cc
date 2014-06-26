@@ -64,18 +64,19 @@ void BitmapContentLayerUpdater::PrepareToUpdate(
     devtools_instrumentation::ScopedLayerTask paint_setup(
         devtools_instrumentation::kPaintSetup, layer_id_);
     canvas_size_ = content_rect.size();
-    bitmap_backing_.setConfig(
-        SkBitmap::kARGB_8888_Config,
-        canvas_size_.width(), canvas_size_.height(),
-        0, layer_is_opaque_ ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
-    bitmap_backing_.allocPixels();
+    bool alloc = bitmap_backing_.allocN32Pixels(
+        canvas_size_.width(), canvas_size_.height(), layer_is_opaque_);
+    // TODO(danak): Remove when skia does the check for us: crbug.com/360384
+    CHECK(alloc);
     canvas_ = skia::AdoptRef(new SkCanvas(bitmap_backing_));
+    DCHECK_EQ(content_rect.width(), canvas_->getBaseLayerSize().width());
+    DCHECK_EQ(content_rect.height(), canvas_->getBaseLayerSize().height());
   }
 
   base::TimeTicks start_time =
       rendering_stats_instrumentation_->StartRecording();
   PaintContents(canvas_.get(),
-                content_rect.origin(),
+                content_rect,
                 contents_width_scale,
                 contents_height_scale,
                 resulting_opaque_rect);

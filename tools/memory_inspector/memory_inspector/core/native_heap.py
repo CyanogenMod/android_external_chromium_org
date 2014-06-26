@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 from memory_inspector.core import stacktrace
+from memory_inspector.core import symbol
 
 
 class NativeHeap(object):
@@ -13,10 +14,26 @@ class NativeHeap(object):
 
   def __init__(self):
     self.allocations = []
+    self.stack_frames = {}  # absolute_address (int) -> |stacktrace.Frame|.
 
   def Add(self, allocation):
     assert(isinstance(allocation, Allocation))
     self.allocations += [allocation]
+
+  def GetStackFrame(self, absolute_addr):
+    assert(isinstance(absolute_addr, int))
+    stack_frame = self.stack_frames.get(absolute_addr)
+    if not stack_frame:
+      stack_frame = stacktrace.Frame(absolute_addr)
+      self.stack_frames[absolute_addr] = stack_frame
+    return stack_frame
+
+  def SymbolizeUsingSymbolDB(self, symbols):
+    assert(isinstance(symbols, symbol.Symbols))
+    for stack_frame in self.stack_frames.itervalues():
+      sym = symbols.Lookup(stack_frame.exec_file_rel_path, stack_frame.offset)
+      if sym:
+        stack_frame.SetSymbolInfo(sym)
 
 
 class Allocation(object):

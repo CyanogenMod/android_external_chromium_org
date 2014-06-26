@@ -4,13 +4,10 @@
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
-#include "chrome/browser/extensions/extension_host.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/notifications/balloon.h"
-#include "chrome/browser/notifications/balloon_collection.h"
-#include "chrome/browser/notifications/balloon_host.h"
 #include "chrome/browser/notifications/notification.h"
 #include "chrome/browser/notifications/notification_delegate.h"
+#include "chrome/browser/notifications/notification_ui_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -21,20 +18,15 @@
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/url_constants.h"
+#include "extensions/browser/extension_host.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/process_manager.h"
 #include "extensions/browser/process_map.h"
+#include "extensions/common/constants.h"
 #include "ui/message_center/message_center.h"
-#include "ui/message_center/message_center_switches.h"
-#include "ui/message_center/message_center_util.h"
 #include "ui/message_center/notification_list.h"
-
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/notifications/notification_ui_manager.h"
-#else
-#include "chrome/browser/notifications/balloon_notification_ui_manager.h"
-#endif
 
 using content::NavigationController;
 using content::WebContents;
@@ -56,7 +48,8 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
   virtual size_t CountBalloons() = 0;
 
   ExtensionService* GetExtensionService() {
-    return browser()->profile()->GetExtensionService();
+    return extensions::ExtensionSystem::Get(browser()->profile())->
+        extension_service();
   }
 
   extensions::ProcessManager* GetProcessManager() {
@@ -64,19 +57,21 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
         process_manager();
   }
 
+  ExtensionRegistry* GetExtensionRegistry() {
+    return ExtensionRegistry::Get(browser()->profile());
+  }
+
   size_t GetEnabledExtensionCount() {
-    ExtensionRegistry* registry = ExtensionRegistry::Get(browser()->profile());
-    return registry->enabled_extensions().size();
+    return GetExtensionRegistry()->enabled_extensions().size();
   }
 
   size_t GetTerminatedExtensionCount() {
-    ExtensionRegistry* registry = ExtensionRegistry::Get(browser()->profile());
-    return registry->terminated_extensions().size();
+    return GetExtensionRegistry()->terminated_extensions().size();
   }
 
-  void CrashExtension(std::string extension_id) {
-    const Extension* extension =
-        GetExtensionService()->GetExtensionById(extension_id, false);
+  void CrashExtension(const std::string& extension_id) {
+    const Extension* extension = GetExtensionRegistry()->GetExtensionById(
+        extension_id, ExtensionRegistry::ENABLED);
     ASSERT_TRUE(extension);
     extensions::ExtensionHost* extension_host = GetProcessManager()->
         GetBackgroundHostForExtension(extension_id);
@@ -92,9 +87,9 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
     base::MessageLoop::current()->RunUntilIdle();
   }
 
-  void CheckExtensionConsistency(std::string extension_id) {
-    const Extension* extension =
-        GetExtensionService()->extensions()->GetByID(extension_id);
+  void CheckExtensionConsistency(const std::string& extension_id) {
+    const Extension* extension = GetExtensionRegistry()->GetExtensionById(
+        extension_id, ExtensionRegistry::ENABLED);
     ASSERT_TRUE(extension);
     extensions::ExtensionHost* extension_host = GetProcessManager()->
         GetBackgroundHostForExtension(extension_id);
@@ -133,73 +128,36 @@ class ExtensionCrashRecoveryTestBase : public ExtensionBrowserTest {
   std::string second_extension_id_;
 };
 
-class MAYBE_ExtensionCrashRecoveryTest
-    : public ExtensionCrashRecoveryTestBase {
+class MAYBE_ExtensionCrashRecoveryTest : public ExtensionCrashRecoveryTestBase {
  protected:
   virtual void AcceptNotification(size_t index) OVERRIDE {
-    if (message_center::IsRichNotificationEnabled()) {
-      message_center::MessageCenter* message_center =
-          message_center::MessageCenter::Get();
-      ASSERT_GT(message_center->NotificationCount(), index);
-      message_center::NotificationList::Notifications::reverse_iterator it =
-          message_center->GetVisibleNotifications().rbegin();
-      for (size_t i=0; i < index; ++i)
-        it++;
-      std::string id = (*it)->id();
-      message_center->ClickOnNotification(id);
-#if !defined(OS_CHROMEOS)
-    } else {
-      Balloon* balloon = GetNotificationDelegate(index);
-      ASSERT_TRUE(balloon);
-      balloon->OnClick();
-#endif
-    }
+    message_center::MessageCenter* message_center =
+        message_center::MessageCenter::Get();
+    ASSERT_GT(message_center->NotificationCount(), index);
+    message_center::NotificationList::Notifications::reverse_iterator it =
+        message_center->GetVisibleNotifications().rbegin();
+    for (size_t i = 0; i < index; ++i)
+      ++it;
+    std::string id = (*it)->id();
+    message_center->ClickOnNotification(id);
     WaitForExtensionLoad();
   }
 
   virtual void CancelNotification(size_t index) OVERRIDE {
-    if (message_center::IsRichNotificationEnabled()) {
-      message_center::MessageCenter* message_center =
-          message_center::MessageCenter::Get();
-      ASSERT_GT(message_center->NotificationCount(), index);
-      message_center::NotificationList::Notifications::reverse_iterator it =
-          message_center->GetVisibleNotifications().rbegin();
-      for (size_t i=0; i < index; i++) { it++; }
-      ASSERT_TRUE(g_browser_process->notification_ui_manager()->
-          CancelById((*it)->id()));
-#if !defined(OS_CHROMEOS)
-    } else {
-      Balloon* balloon = GetNotificationDelegate(index);
-      ASSERT_TRUE(balloon);
-      std::string id = balloon->notification().notification_id();
-      ASSERT_TRUE(g_browser_process->notification_ui_manager()->CancelById(id));
-#endif
-    }
+    message_center::MessageCenter* message_center =
+        message_center::MessageCenter::Get();
+    ASSERT_GT(message_center->NotificationCount(), index);
+    message_center::NotificationList::Notifications::reverse_iterator it =
+        message_center->GetVisibleNotifications().rbegin();
+    for (size_t i = 0; i < index; ++i)
+      ++it;
+    ASSERT_TRUE(g_browser_process->notification_ui_manager()->
+        CancelById((*it)->id()));
   }
 
   virtual size_t CountBalloons() OVERRIDE {
-    if (message_center::IsRichNotificationEnabled())
-      return message_center::MessageCenter::Get()->NotificationCount();
-
-#if defined(OS_CHROMEOS)
-    CHECK(false);
-    return 0;
-#else
-    return BalloonNotificationUIManager::GetInstanceForTesting()->
-        balloon_collection()->GetActiveBalloons().size();
-#endif
+    return message_center::MessageCenter::Get()->NotificationCount();
   }
-
- private:
-#if !defined(OS_CHROMEOS)
-  Balloon* GetNotificationDelegate(size_t index) {
-    BalloonNotificationUIManager* manager =
-        BalloonNotificationUIManager::GetInstanceForTesting();
-    BalloonCollection::Balloons balloons =
-        manager->balloon_collection()->GetActiveBalloons();
-    return index < balloons.size() ? balloons.at(index) : NULL;
-  }
-#endif
 };
 
 // Flaky: http://crbug.com/242167.
@@ -555,7 +513,7 @@ IN_PROC_BROWSER_TEST_F(MAYBE_ExtensionCrashRecoveryTest,
 
 // Fails a DCHECK on Aura and Linux: http://crbug.com/169622
 // Failing on Windows: http://crbug.com/232340
-#if defined(USE_AURA) || defined(OS_WIN) || defined(OS_LINUX)
+#if defined(USE_AURA)
 #define MAYBE_ReloadTabsWithBackgroundPage DISABLED_ReloadTabsWithBackgroundPage
 #else
 #define MAYBE_ReloadTabsWithBackgroundPage ReloadTabsWithBackgroundPage
@@ -573,9 +531,10 @@ IN_PROC_BROWSER_TEST_F(MAYBE_ExtensionCrashRecoveryTest,
 
   // Open a tab extension.
   chrome::NewTab(browser());
-  ui_test_utils::NavigateToURL(
-      browser(),
-      GURL("chrome-extension://" + first_extension_id_ + "/background.html"));
+  ui_test_utils::NavigateToURL(browser(),
+                               GURL(std::string(extensions::kExtensionScheme) +
+                                   url::kStandardSchemeSeparator +
+                                   first_extension_id_ + "/background.html"));
 
   const int tabs_before = tab_strip->count();
   CrashExtension(first_extension_id_);

@@ -204,22 +204,23 @@ void FontSettingsEventRouter::OnFontPrefChanged(
       pref_name);
 }
 
-FontSettingsAPI::FontSettingsAPI(Profile* profile)
-    : font_settings_event_router_(new FontSettingsEventRouter(profile)) {
-}
+FontSettingsAPI::FontSettingsAPI(content::BrowserContext* context)
+    : font_settings_event_router_(
+          new FontSettingsEventRouter(Profile::FromBrowserContext(context))) {}
 
 FontSettingsAPI::~FontSettingsAPI() {
 }
 
-static base::LazyInstance<ProfileKeyedAPIFactory<FontSettingsAPI> >
-g_factory = LAZY_INSTANCE_INITIALIZER;
+static base::LazyInstance<BrowserContextKeyedAPIFactory<FontSettingsAPI> >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
 
 // static
-ProfileKeyedAPIFactory<FontSettingsAPI>* FontSettingsAPI::GetFactoryInstance() {
+BrowserContextKeyedAPIFactory<FontSettingsAPI>*
+FontSettingsAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
 
-bool FontSettingsClearFontFunction::RunImpl() {
+bool FontSettingsClearFontFunction::RunSync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = kSetFromIncognitoError;
     return false;
@@ -241,7 +242,7 @@ bool FontSettingsClearFontFunction::RunImpl() {
   return true;
 }
 
-bool FontSettingsGetFontFunction::RunImpl() {
+bool FontSettingsGetFontFunction::RunSync() {
   scoped_ptr<fonts::GetFont::Params> params(
       fonts::GetFont::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
@@ -272,7 +273,7 @@ bool FontSettingsGetFontFunction::RunImpl() {
   return true;
 }
 
-bool FontSettingsSetFontFunction::RunImpl() {
+bool FontSettingsSetFontFunction::RunSync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = kSetFromIncognitoError;
     return false;
@@ -297,7 +298,7 @@ bool FontSettingsSetFontFunction::RunImpl() {
   return true;
 }
 
-bool FontSettingsGetFontListFunction::RunImpl() {
+bool FontSettingsGetFontListFunction::RunAsync() {
   content::GetFontListAsync(
       Bind(&FontSettingsGetFontListFunction::FontListHasLoaded, this));
   return true;
@@ -342,7 +343,7 @@ bool FontSettingsGetFontListFunction::CopyFontsToResult(
   return true;
 }
 
-bool ClearFontPrefExtensionFunction::RunImpl() {
+bool ClearFontPrefExtensionFunction::RunSync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = kSetFromIncognitoError;
     return false;
@@ -353,7 +354,7 @@ bool ClearFontPrefExtensionFunction::RunImpl() {
   return true;
 }
 
-bool GetFontPrefExtensionFunction::RunImpl() {
+bool GetFontPrefExtensionFunction::RunSync() {
   PrefService* prefs = GetProfile()->GetPrefs();
   const PrefService::Preference* pref = prefs->FindPreference(GetPrefName());
   EXTENSION_FUNCTION_VALIDATE(pref);
@@ -373,7 +374,7 @@ bool GetFontPrefExtensionFunction::RunImpl() {
   return true;
 }
 
-bool SetFontPrefExtensionFunction::RunImpl() {
+bool SetFontPrefExtensionFunction::RunSync() {
   if (GetProfile()->IsOffTheRecord()) {
     error_ = kSetFromIncognitoError;
     return false;

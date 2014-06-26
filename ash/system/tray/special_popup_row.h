@@ -13,8 +13,6 @@ class Label;
 }
 
 namespace ash {
-namespace internal {
-
 class ThrobberView;
 class TrayItemView;
 class TrayPopupHeaderButton;
@@ -37,8 +35,8 @@ class SpecialPopupRow : public views::View {
 
  private:
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual int GetHeightForWidth(int width) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual int GetHeightForWidth(int width) const OVERRIDE;
   virtual void Layout() OVERRIDE;
 
   views::View* content_;
@@ -48,7 +46,6 @@ class SpecialPopupRow : public views::View {
   DISALLOW_COPY_AND_ASSIGN(SpecialPopupRow);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_SPECIAL_POPUP_ROW_H_

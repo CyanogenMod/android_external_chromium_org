@@ -138,6 +138,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_DRAWER;
     case blink::WebAXRoleEditableText:
       return ui::AX_ROLE_EDITABLE_TEXT;
+    case blink::WebAXRoleEmbeddedObject:
+      return ui::AX_ROLE_EMBEDDED_OBJECT;
     case blink::WebAXRoleFooter:
       return ui::AX_ROLE_FOOTER;
     case blink::WebAXRoleForm:
@@ -154,6 +156,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_HELP_TAG;
     case blink::WebAXRoleHorizontalRule:
       return ui::AX_ROLE_HORIZONTAL_RULE;
+    case blink::WebAXRoleIframe:
+      return ui::AX_ROLE_IFRAME;
     case blink::WebAXRoleIgnored:
       return ui::AX_ROLE_IGNORED;
     case blink::WebAXRoleImage:
@@ -304,10 +308,11 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_WEB_AREA;
     case blink::WebAXRoleWindow:
       return ui::AX_ROLE_WINDOW;
+    default:
+      // We can't add an assertion here, that prevents us
+      // from adding new role enums in Blink.
+      return static_cast<ui::AXRole>(-1);
   }
-
-  NOTREACHED();
-  return static_cast<ui::AXRole>(-1);
 }
 
 ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
@@ -343,13 +348,15 @@ ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
     case blink::WebAXEventMenuListItemSelected:
       return ui::AX_EVENT_MENU_LIST_ITEM_SELECTED;
     case blink::WebAXEventMenuListValueChanged:
-      return ui::AX_EVENT_MENU_LIST_VALUE_CHANGED;
+        return ui::AX_EVENT_MENU_LIST_VALUE_CHANGED;
     case blink::WebAXEventRowCollapsed:
       return ui::AX_EVENT_ROW_COLLAPSED;
     case blink::WebAXEventRowCountChanged:
       return ui::AX_EVENT_ROW_COUNT_CHANGED;
     case blink::WebAXEventRowExpanded:
       return ui::AX_EVENT_ROW_EXPANDED;
+    case blink::WebAXEventScrollPositionChanged:
+      return ui::AX_EVENT_SCROLL_POSITION_CHANGED;
     case blink::WebAXEventScrolledToAnchor:
       return ui::AX_EVENT_SCROLLED_TO_ANCHOR;
     case blink::WebAXEventSelectedChildrenChanged:
@@ -366,10 +373,11 @@ ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
       return ui::AX_EVENT_TEXT_REMOVED;
     case blink::WebAXEventValueChanged:
       return ui::AX_EVENT_VALUE_CHANGED;
+    default:
+      // We can't add an assertion here, that prevents us
+      // from adding new event enums in Blink.
+      return ui::AX_EVENT_NONE;
   }
-
-  NOTREACHED();
-  return static_cast<ui::AXEvent>(-1);
 }
 
 ui::AXTextDirection AXTextDirectionFromBlink(

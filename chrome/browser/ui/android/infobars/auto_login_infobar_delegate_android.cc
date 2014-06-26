@@ -1,16 +1,17 @@
-// Copyright 2013 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/android/infobars/auto_login_infobar_delegate_android.h"
 
 #include "base/android/jni_android.h"
-#include "base/android/jni_helper.h"
 #include "base/android/jni_string.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/strings/utf_string_conversions.h"
-#include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/browser/ui/auto_login_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
@@ -67,6 +68,7 @@ bool AutoLoginInfoBarDelegateAndroid::Accept() {
                                reinterpret_cast<intptr_t>(this));
   // Do not close the infobar on accept, it will be closed as part
   // of the log in callback.
+  RecordHistogramAction(ACCEPTED);
   return false;
 }
 
@@ -77,6 +79,7 @@ bool AutoLoginInfoBarDelegateAndroid::Cancel() {
   DCHECK(delegate.obj());
   Java_AutoLoginDelegate_cancelLogIn(env, delegate.obj(),
                                      reinterpret_cast<intptr_t>(this));
+  RecordHistogramAction(REJECTED);
   return true;
 }
 
@@ -88,7 +91,8 @@ void AutoLoginInfoBarDelegateAndroid::LoginSuccess(JNIEnv* env,
 
   // TODO(miguelg): Test whether the Stop() and RemoveInfoBar() calls here are
   // necessary, or whether OpenURL() will do this for us.
-  content::WebContents* contents = web_contents();
+  content::WebContents* contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
   contents->Stop();
   infobar()->RemoveSelf();
   // WARNING: |this| may be deleted at this point!  Do not access any members!
@@ -105,8 +109,11 @@ void AutoLoginInfoBarDelegateAndroid::LoginFailed(JNIEnv* env, jobject obj) {
   // TODO(miguelg): Using SimpleAlertInfoBarDelegate::Create() animates in a new
   // infobar while we animate the current one closed.  It would be better to use
   // ReplaceInfoBar().
+  InfoBarService* infobar_service = InfoBarService::FromWebContents(
+      InfoBarService::WebContentsFromInfoBar(infobar()));
+  DCHECK(infobar_service);
   SimpleAlertInfoBarDelegate::Create(
-      infobar()->owner(), IDR_INFOBAR_WARNING,
+      infobar_service, IDR_INFOBAR_WARNING,
       l10n_util::GetStringUTF16(IDS_AUTO_LOGIN_FAILED), false);
   infobar()->RemoveSelf();
 }

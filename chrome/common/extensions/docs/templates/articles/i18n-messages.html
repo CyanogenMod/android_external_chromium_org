@@ -7,7 +7,7 @@ file named <code>messages.json</code>
 that provides locale-specific strings.
 This page describes the format of <code>messages.json</code> files.
 For information on how to internationalize and localize,
-see the <a href="i18n.html">Internationalization</a> page.
+see the <a href="i18n">Internationalization</a> page.
 </p>
 
 <h2 id="overview"> Field summary </h2>
@@ -84,7 +84,7 @@ that can appear in a <code>messages.json</code> file.
 For details on how the messages file is used &mdash;
 for example, what happens when a locale doesn't define
 all the messages &mdash;
-see <a href="i18n.html">Internationalization</a>.
+see <a href="i18n">Internationalization</a>.
 </p>
 
 
@@ -116,7 +116,7 @@ The name can include the following characters:
 <b>Note:</b>
 Don't define names that begin with "@@".
 Those names are reserved for
-<a href="i18n.html#overview-predefined">predefined messages</a>.
+<a href="i18n#overview-predefined">predefined messages</a>.
 </p>
 
 <p>
@@ -138,7 +138,7 @@ taken from the <a href="#example">Example</a> section:
 
 <p>
 For more examples of using names, see the
-<a href="i18n.html">Internationalization</a> page.
+<a href="i18n">Internationalization</a> page.
 </p>
 
 
@@ -182,7 +182,7 @@ For example, use the following code to specify the message
 Although placeholders such as <code>$USER$</code> are
 the preferred way of referring to <em>substitution strings</em>
 (strings specified using the <em>substitutions</em> parameter of
-$ref:i18n.getMessage)
+$(ref:i18n.getMessage))
 you can also refer to substitution strings directly
 within the message.
 For example, the following message
@@ -266,7 +266,7 @@ as a <a href="#name">message name</a>.
 The "content" item's value is a string
 that can refer to substitution strings, which are
 specified using the
-$ref:i18n.getMessage method's
+$(ref:i18n.getMessage) method's
 <em>substitutions</em> parameter.
 The value of a "content" item is typically something like
 "Example.com" or "$1".

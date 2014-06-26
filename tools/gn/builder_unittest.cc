@@ -18,6 +18,7 @@ class MockLoader : public Loader {
 
   // Loader implementation:
   virtual void Load(const SourceFile& file,
+                    const LocationRange& origin,
                     const Label& toolchain_name) OVERRIDE {
     files_.push_back(file);
   }
@@ -35,20 +36,8 @@ class MockLoader : public Loader {
     return files_.empty();
   }
 
-  // Returns true if one load has been requested and it matches the given
+  // Returns true if two loads have been requested and they match the given
   // file. This will clear the records so it will be empty for the next call.
-  bool HasLoadedOne(const SourceFile& f) {
-    if (files_.size() != 1u) {
-      files_.clear();
-      return false;
-    }
-
-    bool match = (files_[0] == f);
-    files_.clear();
-    return match;
-  }
-
-  // Like HasLoadedOne above. Accepts any ordering.
   bool HasLoadedTwo(const SourceFile& a, const SourceFile& b) {
     if (files_.size() != 2u) {
       files_.clear();
@@ -57,7 +46,7 @@ class MockLoader : public Loader {
 
     bool match = (
         (files_[0] == a && files_[1] == b) ||
-        (files_[0] == b && files_[0] == a));
+        (files_[0] == b && files_[1] == a));
     files_.clear();
     return match;
   }
@@ -190,7 +179,7 @@ TEST_F(BuilderTest, ShouldGenerate) {
   DefineToolchain();
 
   // Define a secondary toolchain.
-  Settings settings2(&build_settings_, "secondary");
+  Settings settings2(&build_settings_, "secondary/");
   Label toolchain_label2(SourceDir("//tc/"), "secondary");
   settings2.set_toolchain_label(toolchain_label2);
   Toolchain* tc2 = new Toolchain(&settings2, toolchain_label2);

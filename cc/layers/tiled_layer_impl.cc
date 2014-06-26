@@ -9,12 +9,12 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/layers/append_quads_data.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/quads/checkerboard_draw_quad.h"
 #include "cc/quads/debug_border_draw_quad.h"
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/resources/layer_tiling_data.h"
+#include "cc/trees/occlusion_tracker.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/quad_f.h"
@@ -151,16 +151,21 @@ bool TiledLayerImpl::WillDraw(DrawMode draw_mode,
   return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                 AppendQuadsData* append_quads_data) {
+void TiledLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const OcclusionTracker<LayerImpl>& occlusion_tracker,
+    AppendQuadsData* append_quads_data) {
   DCHECK(tiler_);
   DCHECK(!tiler_->has_empty_bounds());
   DCHECK(!visible_content_rect().IsEmpty());
 
   gfx::Rect content_rect = visible_content_rect();
   SharedQuadState* shared_quad_state =
-      quad_sink->UseSharedQuadState(CreateSharedQuadState());
-  AppendDebugBorderQuad(quad_sink, shared_quad_state, append_quads_data);
+      render_pass->CreateAndAppendSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
+
+  AppendDebugBorderQuad(
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
 
   int left, top, right, bottom;
   tiler_->ContentRectToTileIndices(content_rect, &left, &top, &right, &bottom);
@@ -170,6 +175,7 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
       for (int i = left; i <= right; ++i) {
         DrawableTile* tile = TileAt(i, j);
         gfx::Rect tile_rect = tiler_->tile_bounds(i, j);
+        gfx::Rect visible_tile_rect = tile_rect;
         SkColor border_color;
         float border_width;
 
@@ -182,10 +188,12 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
         }
         scoped_ptr<DebugBorderDrawQuad> debug_border_quad =
             DebugBorderDrawQuad::Create();
-        debug_border_quad->SetNew(
-            shared_quad_state, tile_rect, border_color, border_width);
-        quad_sink->Append(debug_border_quad.PassAs<DrawQuad>(),
-                          append_quads_data);
+        debug_border_quad->SetNew(shared_quad_state,
+                                  tile_rect,
+                                  visible_tile_rect,
+                                  border_color,
+                                  border_width);
+        render_pass->AppendDrawQuad(debug_border_quad.PassAs<DrawQuad>());
       }
     }
   }
@@ -204,6 +212,11 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
       if (tile_rect.IsEmpty())
         continue;
 
+      gfx::Rect visible_tile_rect =
+          occlusion_tracker.UnoccludedContentRect(tile_rect, draw_transform());
+      if (visible_tile_rect.IsEmpty())
+        continue;
+
       if (!tile || !tile->resource_id()) {
         SkColor checker_color;
         if (ShowDebugBorders()) {
@@ -217,11 +230,9 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
         scoped_ptr<CheckerboardDrawQuad> checkerboard_quad =
             CheckerboardDrawQuad::Create();
         checkerboard_quad->SetNew(
-            shared_quad_state, tile_rect, checker_color);
-        if (quad_sink->Append(checkerboard_quad.PassAs<DrawQuad>(),
-                              append_quads_data))
-          append_quads_data->num_missing_tiles++;
-
+            shared_quad_state, tile_rect, visible_tile_rect, checker_color);
+        render_pass->AppendDrawQuad(checkerboard_quad.PassAs<DrawQuad>());
+        append_quads_data->num_missing_tiles++;
         continue;
       }
 
@@ -244,11 +255,12 @@ void TiledLayerImpl::AppendQuads(QuadSink* quad_sink,
       quad->SetNew(shared_quad_state,
                    tile_rect,
                    tile_opaque_rect,
+                   visible_tile_rect,
                    tile->resource_id(),
                    tex_coord_rect,
                    texture_size,
                    tile->contents_swizzled());
-      quad_sink->Append(quad.PassAs<DrawQuad>(), append_quads_data);
+      render_pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
     }
   }
 }

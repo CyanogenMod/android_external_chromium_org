@@ -6,8 +6,6 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
@@ -20,6 +18,8 @@
 #include "chrome/test/base/test_launcher_utils.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/gpu_data_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
@@ -27,6 +27,7 @@
 #include "content/public/common/page_transition_types.h"
 #include "content/public/test/browser_test_utils.h"
 #include "gpu/config/gpu_test_config.h"
+#include "grit/theme_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_implementation.h"
 
@@ -131,8 +132,9 @@ IN_PROC_BROWSER_TEST_F(WebGLInfoBarTest, DISABLED_ContextLossInfoBarReload) {
   InfoBarService* infobar_service = InfoBarService::FromWebContents(
       browser()->tab_strip_model()->GetActiveWebContents());
   ASSERT_EQ(1u, infobar_service->infobar_count());
-  InfoBarDelegate* delegate = infobar_service->infobar_at(0)->delegate();
-  ASSERT_TRUE(delegate->AsThreeDAPIInfoBarDelegate());
+  infobars::InfoBarDelegate* delegate =
+      infobar_service->infobar_at(0)->delegate();
+  ASSERT_EQ(IDR_INFOBAR_3D_BLOCKED, delegate->GetIconID());
   delegate->AsConfirmInfoBarDelegate()->Cancel();
 
   // The page should reload and another message sent to the

@@ -12,11 +12,13 @@
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/net/chrome_cookie_notification_details.h"
 #include "chrome/browser/net/evicted_domain_cookie_counter.h"
+#include "chrome/browser/prerender/prerender_manager.h"
+#include "chrome/browser/prerender/prerender_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_switches.h"
-#include "components/webdata/encryptor/encryptor.h"
+#include "components/os_crypt/os_crypt.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/cookie_crypto_delegate.h"
 #include "content/public/browser/cookie_store_factory.h"
@@ -49,6 +51,13 @@ class ChromeCookieMonsterDelegate : public net::CookieMonsterDelegate {
                    this, cookie, removed, cause));
   }
 
+  virtual void OnLoaded() OVERRIDE {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&ChromeCookieMonsterDelegate::OnLoadedAsyncHelper,
+                   this));
+  }
+
  private:
   virtual ~ChromeCookieMonsterDelegate() {}
 
@@ -70,6 +79,16 @@ class ChromeCookieMonsterDelegate : public net::CookieMonsterDelegate {
           chrome::NOTIFICATION_COOKIE_CHANGED,
           content::Source<Profile>(profile),
           content::Details<ChromeCookieDetails>(&cookie_details));
+    }
+  }
+
+  void OnLoadedAsyncHelper() {
+    Profile* profile = profile_getter_.Run();
+    if (profile) {
+      prerender::PrerenderManager* prerender_manager =
+          prerender::PrerenderManagerFactory::GetForProfile(profile);
+      if (prerender_manager)
+        prerender_manager->OnCookieStoreLoaded();
     }
   }
 
@@ -107,7 +126,7 @@ namespace {
 // because ChromeOS and Android already protect the entire profile contents.
 //
 // TODO(bcwhite): Enable on MACOSX -- requires all Cookie tests to call
-// Encryptor::UseMockKeychain or will hang waiting for user input.
+// OSCrypt::UseMockKeychain or will hang waiting for user input.
 class CookieOSCryptoDelegate : public content::CookieCryptoDelegate {
  public:
   virtual bool EncryptString(const std::string& plaintext,
@@ -118,12 +137,12 @@ class CookieOSCryptoDelegate : public content::CookieCryptoDelegate {
 
 bool CookieOSCryptoDelegate::EncryptString(const std::string& plaintext,
                                            std::string* ciphertext) {
-  return Encryptor::EncryptString(plaintext, ciphertext);
+  return OSCrypt::EncryptString(plaintext, ciphertext);
 }
 
 bool CookieOSCryptoDelegate::DecryptString(const std::string& ciphertext,
                                            std::string* plaintext) {
-  return Encryptor::DecryptString(ciphertext, plaintext);
+  return OSCrypt::DecryptString(ciphertext, plaintext);
 }
 
 // Using a LazyInstance is safe here because this class is stateless and

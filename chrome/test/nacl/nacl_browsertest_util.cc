@@ -14,12 +14,13 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/webplugininfo.h"
 #include "net/base/net_util.h"
 
-typedef TestMessageHandler::MessageResponse MessageResponse;
+typedef content::TestMessageHandler::MessageResponse MessageResponse;
 
 MessageResponse StructuredMessageHandler::HandleMessage(
     const std::string& json) {
@@ -168,6 +169,7 @@ MessageResponse NaClIntegrationMessageHandler::HandleStructuredMessage(
 //             nacl_test_data/
 //                            newlib/
 //                            glibc/
+//                            pnacl/
 static bool GetNaClVariantRoot(const base::FilePath::StringType& variant,
                                base::FilePath* document_root) {
   if (!ui_test_utils::GetRelativeBuildDirectory(document_root))
@@ -201,11 +203,11 @@ NaClBrowserTestBase::NaClBrowserTestBase() {
 NaClBrowserTestBase::~NaClBrowserTestBase() {
 }
 
-void NaClBrowserTestBase::SetUpCommandLine(CommandLine* command_line) {
+void NaClBrowserTestBase::SetUpCommandLine(base::CommandLine* command_line) {
   command_line->AppendSwitch(switches::kEnableNaCl);
 }
 
-void NaClBrowserTestBase::SetUpInProcessBrowserTestFixture() {
+void NaClBrowserTestBase::SetUpOnMainThread() {
   // Sanity check.
   base::FilePath plugin_lib;
   ASSERT_TRUE(PathService::Get(chrome::FILE_NACL_PLUGIN, &plugin_lib));
@@ -233,10 +235,11 @@ GURL NaClBrowserTestBase::TestURL(
   return test_server_->GetURL(expanded_url.MaybeAsASCII());
 }
 
-bool NaClBrowserTestBase::RunJavascriptTest(const GURL& url,
-                                            TestMessageHandler* handler) {
-  JavascriptTestObserver observer(
-      browser()->tab_strip_model()->GetActiveWebContents()->GetRenderViewHost(),
+bool NaClBrowserTestBase::RunJavascriptTest(
+    const GURL& url,
+    content::TestMessageHandler* handler) {
+  content::JavascriptTestObserver observer(
+      browser()->tab_strip_model()->GetActiveWebContents(),
       handler);
   ui_test_utils::NavigateToURL(browser(), url);
   return observer.Run();
@@ -259,7 +262,7 @@ void NaClBrowserTestBase::RunLoadTest(
 }
 
 void NaClBrowserTestBase::RunNaClIntegrationTest(
-    const base::FilePath::StringType& url_fragment) {
+    const base::FilePath::StringType& url_fragment, bool full_url) {
   NaClIntegrationMessageHandler handler;
   base::FilePath::StringType url_fragment_with_pnacl = url_fragment;
   if (IsAPnaclTest()) {
@@ -269,7 +272,10 @@ void NaClBrowserTestBase::RunNaClIntegrationTest(
   if (IsPnaclDisabled()) {
     AddPnaclDisabledParm(url_fragment_with_pnacl, &url_fragment_with_both);
   }
-  bool ok = RunJavascriptTest(TestURL(url_fragment_with_both), &handler);
+  bool ok = RunJavascriptTest(full_url
+                              ? GURL(url_fragment_with_both)
+                              : TestURL(url_fragment_with_both),
+                              &handler);
   ASSERT_TRUE(ok) << handler.error_message();
   ASSERT_TRUE(handler.test_passed()) << "Test failed.";
 }
@@ -313,9 +319,20 @@ bool NaClBrowserTestPnaclDisabled::IsAPnaclTest() {
 bool NaClBrowserTestPnaclDisabled::IsPnaclDisabled() {
   return true;
 }
-void NaClBrowserTestPnaclDisabled::SetUpCommandLine(CommandLine* command_line) {
+void NaClBrowserTestPnaclDisabled::SetUpCommandLine(
+    base::CommandLine* command_line) {
   NaClBrowserTestBase::SetUpCommandLine(command_line);
   command_line->AppendSwitch(switches::kDisablePnacl);
+}
+
+base::FilePath::StringType NaClBrowserTestNonSfiMode::Variant() {
+  return FILE_PATH_LITERAL("libc-free");
+}
+
+void NaClBrowserTestNonSfiMode::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestBase::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
 }
 
 base::FilePath::StringType NaClBrowserTestStatic::Variant() {
@@ -325,4 +342,32 @@ base::FilePath::StringType NaClBrowserTestStatic::Variant() {
 bool NaClBrowserTestStatic::GetDocumentRoot(base::FilePath* document_root) {
   *document_root = base::FilePath(FILE_PATH_LITERAL("chrome/test/data/nacl"));
   return true;
+}
+
+base::FilePath::StringType NaClBrowserTestPnaclNonSfi::Variant() {
+  return FILE_PATH_LITERAL("nonsfi");
+}
+
+void NaClBrowserTestPnaclNonSfi::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestBase::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
+}
+
+void NaClBrowserTestNewlibExtension::SetUpCommandLine(
+    CommandLine* command_line) {
+  NaClBrowserTestBase::SetUpCommandLine(command_line);
+  base::FilePath src_root;
+  ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &src_root));
+
+  // Extension-based tests should specialize the GetDocumentRoot() / Variant()
+  // to point at the isolated the test extension directory.
+  // Otherwise, multiple NaCl extensions tests will end up sharing the
+  // same directory when loading the extension files.
+  base::FilePath document_root;
+  ASSERT_TRUE(GetDocumentRoot(&document_root));
+
+  // Document root is relative to source root, and source root may not be CWD.
+  command_line->AppendSwitchPath(switches::kLoadExtension,
+                                 src_root.Append(document_root));
 }

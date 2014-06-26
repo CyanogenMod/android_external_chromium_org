@@ -99,7 +99,7 @@ namespace {
 const base::char16 kJobDescription[] = L"Chrome Component Updater";
 
 // How often the code looks for changes in the BITS job state.
-const int kJobPollingIntervalSec = 10;
+const int kJobPollingIntervalSec = 4;
 
 // How long BITS waits before retrying a job after the job encountered
 // a transient error. If this value is not set, the BITS default is 10 minutes.
@@ -128,8 +128,8 @@ int GetHttpStatusFromBitsError(HRESULT error) {
   // BITS errors are defined in bitsmsg.h. Although not documented, it is
   // clear that all errors corresponding to http status code have the high
   // word equal to 0x8019 and the low word equal to the http status code.
-  const int kHttpStatusFirst = 100;    // Continue.
-  const int kHttpStatusLast  = 505;    // Version not supported.
+  const int kHttpStatusFirst = 100;  // Continue.
+  const int kHttpStatusLast = 505;   // Version not supported.
   bool is_valid = HIWORD(error) == 0x8019 &&
                   LOWORD(error) >= kHttpStatusFirst &&
                   LOWORD(error) <= kHttpStatusLast;
@@ -151,7 +151,7 @@ HRESULT GetFilesInJob(IBackgroundCopyJob* job,
 
   for (ULONG i = 0; i != num_files; ++i) {
     ScopedComPtr<IBackgroundCopyFile> file;
-    if (enum_files->Next(1, file.Receive(), NULL) == S_OK)
+    if (enum_files->Next(1, file.Receive(), NULL) == S_OK && file)
       files->push_back(file);
   }
 
@@ -164,6 +164,9 @@ HRESULT GetJobFileProperties(IBackgroundCopyFile* file,
                              base::string16* local_name,
                              base::string16* remote_name,
                              BG_FILE_PROGRESS* progress) {
+  if (!file)
+    return E_FAIL;
+
   HRESULT hr = S_OK;
 
   if (local_name) {
@@ -197,10 +200,10 @@ HRESULT GetJobFileProperties(IBackgroundCopyFile* file,
 // in the job. If the values are not known or if an error has occurred,
 // a value of -1 is reported.
 HRESULT GetJobByteCount(IBackgroundCopyJob* job,
-                        int64* bytes_downloaded,
-                        int64* bytes_total) {
-  *bytes_downloaded = -1;
-  *bytes_total = -1;
+                        int64* downloaded_bytes,
+                        int64* total_bytes) {
+  *downloaded_bytes = -1;
+  *total_bytes = -1;
 
   if (!job)
     return E_FAIL;
@@ -211,11 +214,11 @@ HRESULT GetJobByteCount(IBackgroundCopyJob* job,
     return hr;
 
   if (job_progress.BytesTransferred <= kint64max)
-    *bytes_downloaded = job_progress.BytesTransferred;
+    *downloaded_bytes = job_progress.BytesTransferred;
 
   if (job_progress.BytesTotal <= kint64max &&
       job_progress.BytesTotal != BG_SIZE_UNKNOWN)
-    *bytes_total = job_progress.BytesTotal;
+    *total_bytes = job_progress.BytesTotal;
 
   return S_OK;
 }
@@ -248,7 +251,7 @@ HRESULT GetJobError(IBackgroundCopyJob* job, HRESULT* error_code_out) {
 // Finds the component updater jobs matching the given predicate.
 // Returns S_OK if the function has found at least one job, returns S_FALSE if
 // no job was found, and it returns an error otherwise.
-template<class Predicate>
+template <class Predicate>
 HRESULT FindBitsJobIf(Predicate pred,
                       IBackgroundCopyManager* bits_manager,
                       std::vector<ScopedComPtr<IBackgroundCopyJob> >* jobs) {
@@ -300,9 +303,9 @@ bool JobCreationOlderThanDays::operator()(IBackgroundCopyJob* job,
 
 // Compares the url of a file in a job and returns true if the remote name
 // of any file in a job matches the argument.
-struct JobFileUrlEqual
-    : public std::binary_function<IBackgroundCopyJob*, const base::string16&,
-                                  bool> {
+struct JobFileUrlEqual : public std::binary_function<IBackgroundCopyJob*,
+                                                     const base::string16&,
+                                                     bool> {
   bool operator()(IBackgroundCopyJob* job,
                   const base::string16& remote_name) const;
 };
@@ -329,8 +332,6 @@ HRESULT GetBitsManager(IBackgroundCopyManager** bits_manager) {
   ScopedComPtr<IBackgroundCopyManager> object;
   HRESULT hr = object.CreateInstance(__uuidof(BackgroundCopyManager));
   if (FAILED(hr)) {
-    VLOG(1) << "Failed to instantiate BITS." << std::hex << hr;
-    // TODO: add UMA pings.
     return hr;
   }
   *bits_manager = object.Detach();
@@ -357,8 +358,8 @@ HRESULT CleanupStaleJobs(
 
   static base::Time last_sweep;
 
-  const base::TimeDelta time_delta(base::TimeDelta::FromDays(
-      kPurgeStaleJobsIntervalBetweenChecksDays));
+  const base::TimeDelta time_delta(
+      base::TimeDelta::FromDays(kPurgeStaleJobsIntervalBetweenChecksDays));
   const base::Time current_time(base::Time::Now());
   if (last_sweep + time_delta > current_time)
     return S_OK;
@@ -386,9 +387,8 @@ HRESULT CleanupStaleJobs(
 BackgroundDownloader::BackgroundDownloader(
     scoped_ptr<CrxDownloader> successor,
     net::URLRequestContextGetter* context_getter,
-    scoped_refptr<base::SequencedTaskRunner> task_runner,
-    const DownloadCallback& download_callback)
-    : CrxDownloader(successor.Pass(), download_callback),
+    scoped_refptr<base::SequencedTaskRunner> task_runner)
+    : CrxDownloader(successor.Pass()),
       context_getter_(context_getter),
       task_runner_(task_runner),
       is_completed_(false) {
@@ -415,11 +415,10 @@ void BackgroundDownloader::DoStartDownload(const GURL& url) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   BrowserThread::PostTask(
-        BrowserThread::FILE,
-        FROM_HERE,
-        base::Bind(&BackgroundDownloader::BeginDownload,
-                   base::Unretained(this),
-                   url));
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(
+          &BackgroundDownloader::BeginDownload, base::Unretained(this), url));
 }
 
 // Called once when this class is asked to do a download. Creates or opens
@@ -483,9 +482,9 @@ void BackgroundDownloader::OnDownloading() {
       return;
 
     case BG_JOB_STATE_QUEUED:
-      // Fall through.
+    // Fall through.
     case BG_JOB_STATE_CONNECTING:
-      // Fall through.
+    // Fall through.
     case BG_JOB_STATE_SUSPENDED:
       OnStateQueued();
       break;
@@ -515,34 +514,13 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
 
   const base::Time download_end_time(base::Time::Now());
   const base::TimeDelta download_time =
-    download_end_time >= download_start_time_ ?
-    download_end_time - download_start_time_ : base::TimeDelta();
+      download_end_time >= download_start_time_
+          ? download_end_time - download_start_time_
+          : base::TimeDelta();
 
-  int64 bytes_downloaded = -1;
-  int64 bytes_total = -1;
-  GetJobByteCount(job_, &bytes_downloaded, &bytes_total);
-
-  base::FilePath response;
-  if (SUCCEEDED(error)) {
-    DCHECK(job_);
-    std::vector<ScopedComPtr<IBackgroundCopyFile> > files;
-    GetFilesInJob(job_, &files);
-    DCHECK(files.size() == 1);
-    base::string16 local_name;
-    BG_FILE_PROGRESS progress = {0};
-    HRESULT hr = GetJobFileProperties(files[0], &local_name, NULL, &progress);
-    if (SUCCEEDED(hr)) {
-      // Sanity check the post-conditions of a successful download, including
-      // the file and job invariants. The byte counts for a job and its file
-      // must match as a job only contains one file.
-      DCHECK(progress.Completed);
-      DCHECK(bytes_downloaded == static_cast<int64>(progress.BytesTransferred));
-      DCHECK(bytes_total == static_cast<int64>(progress.BytesTotal));
-      response = base::FilePath(local_name);
-    } else {
-      error = hr;
-    }
-  }
+  int64 downloaded_bytes = -1;
+  int64 total_bytes = -1;
+  GetJobByteCount(job_, &downloaded_bytes, &total_bytes);
 
   if (FAILED(error) && job_) {
     job_->Cancel();
@@ -551,10 +529,13 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
 
   job_ = NULL;
 
+  CleanupStaleJobs(bits_manager_);
+  bits_manager_ = NULL;
+
   // Consider the url handled if it has been successfully downloaded or a
   // 5xx has been received.
-  const bool is_handled = SUCCEEDED(error) ||
-                          IsHttpServerError(GetHttpStatusFromBitsError(error));
+  const bool is_handled =
+      SUCCEEDED(error) || IsHttpServerError(GetHttpStatusFromBitsError(error));
 
   const int error_to_report = SUCCEEDED(error) ? 0 : error;
 
@@ -562,26 +543,22 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
   download_metrics.url = url();
   download_metrics.downloader = DownloadMetrics::kBits;
   download_metrics.error = error_to_report;
-  download_metrics.bytes_downloaded = bytes_downloaded;
-  download_metrics.bytes_total = bytes_total;
+  download_metrics.downloaded_bytes = downloaded_bytes;
+  download_metrics.total_bytes = total_bytes;
   download_metrics.download_time_ms = download_time.InMilliseconds();
-
-  // Clean up stale jobs before invoking the callback.
-  CleanupStaleJobs(bits_manager_);
-
-  bits_manager_ = NULL;
 
   Result result;
   result.error = error_to_report;
-  result.response = response;
-  BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&BackgroundDownloader::OnDownloadComplete,
-                   base::Unretained(this),
-                   is_handled,
-                   result,
-                   download_metrics));
+  result.response = response_;
+  result.downloaded_bytes = downloaded_bytes;
+  result.total_bytes = total_bytes;
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&BackgroundDownloader::OnDownloadComplete,
+                                     base::Unretained(this),
+                                     is_handled,
+                                     result,
+                                     download_metrics));
 
   // Once the task is posted to the the UI thread, this object may be deleted
   // by its owner. It is not safe to access members of this object on the
@@ -593,10 +570,7 @@ void BackgroundDownloader::EndDownload(HRESULT error) {
 // BITS job by removing it from the BITS queue and making the download
 // available to the caller.
 void BackgroundDownloader::OnStateTransferred() {
-  HRESULT hr = job_->Complete();
-  if (SUCCEEDED(hr) || hr == BG_S_UNABLE_TO_DELETE_FILES)
-    hr = S_OK;
-  EndDownload(hr);
+  EndDownload(CompleteJob());
 }
 
 // Called when the job has encountered an error and no further progress can
@@ -633,13 +607,29 @@ void BackgroundDownloader::OnStateTransientError() {
 
 void BackgroundDownloader::OnStateQueued() {
   if (IsStuck())
-    EndDownload(E_ABORT);      // Return a generic error for now.
+    EndDownload(E_ABORT);  // Return a generic error for now.
 }
 
 void BackgroundDownloader::OnStateTransferring() {
   // Resets the baseline for detecting a stuck job since the job is transferring
   // data and it is making progress.
   job_stuck_begin_time_ = base::Time::Now();
+
+  int64 downloaded_bytes = -1;
+  int64 total_bytes = -1;
+  HRESULT hr = GetJobByteCount(job_, &downloaded_bytes, &total_bytes);
+  if (FAILED(hr))
+    return;
+
+  Result result;
+  result.downloaded_bytes = downloaded_bytes;
+  result.total_bytes = total_bytes;
+
+  BrowserThread::PostTask(BrowserThread::UI,
+                          FROM_HERE,
+                          base::Bind(&BackgroundDownloader::OnDownloadProgress,
+                                     base::Unretained(this),
+                                     result));
 }
 
 // Called when the download was cancelled. Since the observer should have
@@ -693,10 +683,8 @@ HRESULT BackgroundDownloader::CreateOrOpenJob(const GURL& url) {
   // display name is initialized later on.
   GUID guid = {0};
   ScopedComPtr<IBackgroundCopyJob> job;
-  hr = bits_manager_->CreateJob(kJobDescription,
-                                BG_JOB_TYPE_DOWNLOAD,
-                                &guid,
-                                job.Receive());
+  hr = bits_manager_->CreateJob(
+      kJobDescription, BG_JOB_TYPE_DOWNLOAD, &guid, job.Receive());
   if (FAILED(hr))
     return hr;
 
@@ -708,14 +696,12 @@ HRESULT BackgroundDownloader::InitializeNewJob(const GURL& url) {
   const base::string16 filename(base::SysUTF8ToWide(url.ExtractFileName()));
 
   base::FilePath tempdir;
-  if (!base::CreateNewTempDirectory(
-      FILE_PATH_LITERAL("chrome_BITS_"),
-      &tempdir))
+  if (!base::CreateNewTempDirectory(FILE_PATH_LITERAL("chrome_BITS_"),
+                                    &tempdir))
     return E_FAIL;
 
-  HRESULT hr = job_->AddFile(
-      base::SysUTF8ToWide(url.spec()).c_str(),
-      tempdir.Append(filename).AsUTF16Unsafe().c_str());
+  HRESULT hr = job_->AddFile(base::SysUTF8ToWide(url.spec()).c_str(),
+                             tempdir.Append(filename).AsUTF16Unsafe().c_str());
   if (FAILED(hr))
     return hr;
 
@@ -749,5 +735,34 @@ bool BackgroundDownloader::IsStuck() {
   return job_stuck_begin_time_ + job_stuck_timeout < base::Time::Now();
 }
 
-}  // namespace component_updater
+HRESULT BackgroundDownloader::CompleteJob() {
+  HRESULT hr = job_->Complete();
+  if (FAILED(hr) && hr != BG_S_UNABLE_TO_DELETE_FILES)
+    return hr;
 
+  std::vector<ScopedComPtr<IBackgroundCopyFile> > files;
+  hr = GetFilesInJob(job_, &files);
+  if (FAILED(hr))
+    return hr;
+
+  if (files.empty())
+    return E_UNEXPECTED;
+
+  base::string16 local_name;
+  BG_FILE_PROGRESS progress = {0};
+  hr = GetJobFileProperties(files.front(), &local_name, NULL, &progress);
+  if (FAILED(hr))
+    return hr;
+
+  // Sanity check the post-conditions of a successful download, including
+  // the file and job invariants. The byte counts for a job and its file
+  // must match as a job only contains one file.
+  DCHECK(progress.Completed);
+  DCHECK_EQ(progress.BytesTotal, progress.BytesTransferred);
+
+  response_ = base::FilePath(local_name);
+
+  return S_OK;
+}
+
+}  // namespace component_updater

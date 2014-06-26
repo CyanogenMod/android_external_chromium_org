@@ -14,7 +14,6 @@
 #include "sync/internal_api/public/change_record.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 #include "sync/internal_api/public/util/sync_string_conversions.h"
-#include "sync/js/js_arg_list.h"
 #include "sync/js/js_event_details.h"
 #include "sync/js/js_event_handler.h"
 
@@ -59,6 +58,9 @@ void JsSyncManagerObserver::OnActionableError(
   HandleJsEvent(FROM_HERE, "onActionableError",
                 JsEventDetails(&details));
 }
+
+void JsSyncManagerObserver::OnProtocolEvent(
+    const ProtocolEvent& event) { }
 
 void JsSyncManagerObserver::OnMigrationRequested(ModelTypeSet types) { }
 

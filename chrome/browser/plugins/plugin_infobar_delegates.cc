@@ -8,8 +8,6 @@
 #include "base/path_service.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
-#include "chrome/browser/google/google_util.h"
-#include "chrome/browser/infobars/infobar.h"
 #include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/plugins/chrome_plugin_service_filter.h"
@@ -18,6 +16,8 @@
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/url_constants.h"
+#include "components/google/core/browser/google_util.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -57,16 +57,19 @@ PluginInfoBarDelegate::~PluginInfoBarDelegate() {
 }
 
 bool PluginInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL(GetLearnMoreURL()), content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL(GetLearnMoreURL()), content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 
 void PluginInfoBarDelegate::LoadBlockedPlugins() {
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
   ChromePluginServiceFilter::GetInstance()->AuthorizeAllPlugins(
-      web_contents(), true, identifier_);
+      web_contents, true, identifier_);
 }
 
 int PluginInfoBarDelegate::GetIconID() const {
@@ -145,7 +148,7 @@ bool UnauthorizedPluginInfoBarDelegate::Accept() {
 
 bool UnauthorizedPluginInfoBarDelegate::Cancel() {
   content::RecordAction(UserMetricsAction("BlockedPluginInfobar.AlwaysAllow"));
-  const GURL& url = web_contents()->GetURL();
+  const GURL& url = InfoBarService::WebContentsFromInfoBar(infobar())->GetURL();
   content_settings_->AddExceptionForURL(url, url, CONTENT_SETTINGS_TYPE_PLUGINS,
                                         CONTENT_SETTING_ALLOW);
   LoadBlockedPlugins();
@@ -238,10 +241,12 @@ bool OutdatedPluginInfoBarDelegate::Accept() {
   // result in deleting ourselves. Accordingly, we make sure to
   // not pass a reference to an object that can go away.
   GURL plugin_url(plugin_metadata_->plugin_url());
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
   if (plugin_metadata_->url_for_display())
-    installer()->OpenDownloadURL(plugin_url, web_contents());
+    installer()->OpenDownloadURL(plugin_url, web_contents);
   else
-    installer()->StartInstalling(plugin_url, web_contents());
+    installer()->StartInstalling(plugin_url, web_contents);
   return false;
 }
 
@@ -323,9 +328,8 @@ void PluginInstallerInfoBarDelegate::Create(
               name)))));
 }
 
-
 void PluginInstallerInfoBarDelegate::Replace(
-    InfoBar* infobar,
+    infobars::InfoBar* infobar,
     PluginInstaller* installer,
     scoped_ptr<PluginMetadata> plugin_metadata,
     bool new_install,
@@ -389,13 +393,14 @@ bool PluginInstallerInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
   GURL url(plugin_metadata_->help_url());
   if (url.is_empty()) {
-    url = google_util::AppendGoogleLocaleParam(GURL(
-        "https://www.google.com/support/chrome/bin/answer.py?answer=142064"));
+    url = GURL(
+        "https://www.google.com/support/chrome/bin/answer.py?answer=142064");
   }
-  web_contents()->OpenURL(content::OpenURLParams(
-      url, content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          url, content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 
@@ -515,13 +520,14 @@ bool PluginMetroModeInfoBarDelegate::LinkClicked(
   // TODO(shrikant): We may need to change language a little at following
   // support URLs. With new approach we will just restart for both missing
   // and not missing mode.
-  web_contents()->OpenURL(content::OpenURLParams(
-      GURL((mode_ == MISSING_PLUGIN) ?
-          "https://support.google.com/chrome/?p=ib_display_in_desktop" :
-          "https://support.google.com/chrome/?p=ib_redirect_to_desktop"),
-      content::Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false));
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL((mode_ == MISSING_PLUGIN) ?
+              "https://support.google.com/chrome/?p=ib_display_in_desktop" :
+              "https://support.google.com/chrome/?p=ib_redirect_to_desktop"),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 

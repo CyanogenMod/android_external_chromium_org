@@ -15,7 +15,6 @@
 #include "ash/system/tray/tray_popup_label_button.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
-#include "chromeos/network/shill_property_util.h"
 #include "grit/ash_strings.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -27,8 +26,6 @@ using chromeos::NetworkStateHandler;
 using chromeos::NetworkTypePattern;
 
 namespace ash {
-namespace internal {
-
 namespace tray {
 
 class VpnDefaultView : public TrayItemMore,
@@ -176,5 +173,4 @@ void TrayVPN::NetworkServiceChanged(const chromeos::NetworkState* network) {
     detailed_->NetworkServiceChanged(network);
 }
 
-}  // namespace internal
 }  // namespace ash

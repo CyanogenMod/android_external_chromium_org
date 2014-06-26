@@ -5,12 +5,16 @@
 #include "chrome/browser/signin/about_signin_internals_factory.h"
 
 #include "base/prefs/pref_service.h"
-#include "chrome/browser/signin/about_signin_internals.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
 #include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
-#include "chrome/browser/signin/signin_internals_util.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
 #include "chrome/common/pref_names.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
-#include "components/user_prefs/pref_registry_syncable.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/pref_registry/pref_registry_syncable.h"
+#include "components/signin/core/browser/about_signin_internals.h"
+#include "components/signin/core/browser/signin_internals_util.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "google_apis/gaia/gaia_constants.h"
 
 using namespace signin_internals_util;
@@ -21,6 +25,7 @@ AboutSigninInternalsFactory::AboutSigninInternalsFactory()
         BrowserContextDependencyManager::GetInstance()) {
   DependsOn(SigninManagerFactory::GetInstance());
   DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
+  DependsOn(ChromeSigninClientFactory::GetInstance());
 }
 
 AboutSigninInternalsFactory::~AboutSigninInternalsFactory() {}
@@ -64,10 +69,12 @@ void AboutSigninInternalsFactory::RegisterProfilePrefs(
   }
 }
 
-BrowserContextKeyedService*
-AboutSigninInternalsFactory::BuildServiceInstanceFor(
-    content::BrowserContext* profile) const {
-  AboutSigninInternals* service = new AboutSigninInternals();
-  service->Initialize(static_cast<Profile*>(profile));
+KeyedService* AboutSigninInternalsFactory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
+  Profile* profile = Profile::FromBrowserContext(context);
+  AboutSigninInternals* service = new AboutSigninInternals(
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile),
+      SigninManagerFactory::GetForProfile(profile));
+  service->Initialize(ChromeSigninClientFactory::GetForProfile(profile));
   return service;
 }

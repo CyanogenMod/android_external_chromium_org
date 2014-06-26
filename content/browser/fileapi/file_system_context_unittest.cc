@@ -7,13 +7,13 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/quota/mock_quota_manager.h"
+#include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "webkit/browser/fileapi/external_mount_points.h"
 #include "webkit/browser/fileapi/file_system_backend.h"
 #include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/quota/mock_quota_manager.h"
-#include "webkit/browser/quota/mock_special_storage_policy.h"
 
 #define FPL(x) FILE_PATH_LITERAL(x)
 
@@ -27,7 +27,6 @@ using fileapi::ExternalMountPoints;
 using fileapi::FileSystemBackend;
 using fileapi::FileSystemContext;
 using fileapi::FileSystemMountOption;
-using fileapi::FileSystemType;
 using fileapi::FileSystemURL;
 using fileapi::IsolatedContext;
 
@@ -53,10 +52,10 @@ class FileSystemContextTest : public testing::Test {
   virtual void SetUp() {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
 
-    storage_policy_ = new quota::MockSpecialStoragePolicy();
+    storage_policy_ = new MockSpecialStoragePolicy();
 
     mock_quota_manager_ =
-        new quota::MockQuotaManager(false /* is_incognito */,
+        new MockQuotaManager(false /* is_incognito */,
                                     data_dir_.path(),
                                     base::MessageLoopProxy::current().get(),
                                     base::MessageLoopProxy::current().get(),
@@ -66,21 +65,23 @@ class FileSystemContextTest : public testing::Test {
  protected:
   FileSystemContext* CreateFileSystemContextForTest(
       fileapi::ExternalMountPoints* external_mount_points) {
-    return new FileSystemContext(base::MessageLoopProxy::current().get(),
-                                 base::MessageLoopProxy::current().get(),
-                                 external_mount_points,
-                                 storage_policy_.get(),
-                                 mock_quota_manager_->proxy(),
-                                 ScopedVector<FileSystemBackend>(),
-                                 data_dir_.path(),
-                                 CreateAllowFileAccessOptions());
+    return new FileSystemContext(
+        base::MessageLoopProxy::current().get(),
+        base::MessageLoopProxy::current().get(),
+        external_mount_points,
+        storage_policy_.get(),
+        mock_quota_manager_->proxy(),
+        ScopedVector<FileSystemBackend>(),
+        std::vector<fileapi::URLRequestAutoMountHandler>(),
+        data_dir_.path(),
+        CreateAllowFileAccessOptions());
   }
 
   // Verifies a *valid* filesystem url has expected values.
   void ExpectFileSystemURLMatches(const FileSystemURL& url,
                                   const GURL& expect_origin,
-                                  FileSystemType expect_mount_type,
-                                  FileSystemType expect_type,
+                                  fileapi::FileSystemType expect_mount_type,
+                                  fileapi::FileSystemType expect_type,
                                   const base::FilePath& expect_path,
                                   const base::FilePath& expect_virtual_path,
                                   const std::string& expect_filesystem_id) {
@@ -98,7 +99,7 @@ class FileSystemContextTest : public testing::Test {
   base::ScopedTempDir data_dir_;
   base::MessageLoop message_loop_;
   scoped_refptr<quota::SpecialStoragePolicy> storage_policy_;
-  scoped_refptr<quota::MockQuotaManager> mock_quota_manager_;
+  scoped_refptr<MockQuotaManager> mock_quota_manager_;
 };
 
 // It is not valid to pass NULL ExternalMountPoints to FileSystemContext on
@@ -113,6 +114,7 @@ TEST_F(FileSystemContextTest, NullExternalMountPoints) {
   std::string isolated_id =
       IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeLocal,
+          std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")),
           &isolated_name);
   // Register system external mount point.
@@ -202,6 +204,7 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
   const std::string kIsolatedFileSystemID =
       IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeLocal,
+          std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")),
           &isolated_file_system_name);
   // Register system external mount point.
@@ -240,8 +243,8 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
 
     // Expected test results.
     bool expect_is_valid;
-    FileSystemType expect_mount_type;
-    FileSystemType expect_type;
+    fileapi::FileSystemType expect_mount_type;
+    fileapi::FileSystemType expect_type;
     const base::FilePath::CharType* expect_path;
     std::string expect_filesystem_id;
   };
@@ -356,6 +359,7 @@ TEST_F(FileSystemContextTest, CanServeURLRequest) {
   std::string isolated_fs_id =
       IsolatedContext::GetInstance()->RegisterFileSystemForPath(
           fileapi::kFileSystemTypeNativeLocal,
+          std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")),
           &isolated_fs_name);
   cracked_url = context->CrackURL(

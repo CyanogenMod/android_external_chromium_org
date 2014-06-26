@@ -4,9 +4,11 @@
 
 from telemetry import test
 from measurements import memory_pressure
+import page_sets
 
+
+@test.Enabled('has tabs')
 class MemoryPressure(test.Test):
   test = memory_pressure.MemoryPressure
-  page_set = 'page_sets/typical_25.json'
-  options = {'cold': True,
-             'pageset_repeat_iters': 6}
+  page_set = page_sets.Typical25PageSet
+  options = {'pageset_repeat': 6}

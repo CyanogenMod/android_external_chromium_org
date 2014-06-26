@@ -38,7 +38,7 @@ SyncedDeviceTracker::SyncedDeviceTracker(syncer::UserShare* user_share,
 SyncedDeviceTracker::~SyncedDeviceTracker() {
 }
 
-void SyncedDeviceTracker::StartImpl(Profile* profile) { }
+void SyncedDeviceTracker::StartImpl() { }
 
 void SyncedDeviceTracker::ApplyChangesFromSyncModel(
       const syncer::BaseTransaction* trans,
@@ -104,8 +104,7 @@ void SyncedDeviceTracker::GetAllSyncedDeviceInfo(
   syncer::ReadTransaction trans(FROM_HERE, user_share_);
   syncer::ReadNode root_node(&trans);
 
-  if (root_node.InitByTagLookup(
-          syncer::ModelTypeToRootTag(syncer::DEVICE_INFO)) !=
+  if (root_node.InitTypeRoot(syncer::DEVICE_INFO) !=
       syncer::BaseNode::INIT_OK) {
     return;
   }
@@ -129,7 +128,6 @@ void SyncedDeviceTracker::GetAllSyncedDeviceInfo(
                        specifics.chrome_version(),
                        specifics.sync_user_agent(),
                        specifics.device_type()));
-
   }
 }
 
@@ -179,11 +177,11 @@ void SyncedDeviceTracker::WriteDeviceInfo(
   if (node.InitByClientTagLookup(syncer::DEVICE_INFO, tag) ==
       syncer::BaseNode::INIT_OK) {
     node.SetDeviceInfoSpecifics(specifics);
-    node.SetTitle(base::UTF8ToWide(specifics.client_name()));
+    node.SetTitle(specifics.client_name());
   } else {
     syncer::ReadNode type_root(&trans);
     syncer::BaseNode::InitByLookupResult type_root_lookup_result =
-        type_root.InitByTagLookup(ModelTypeToRootTag(syncer::DEVICE_INFO));
+        type_root.InitTypeRoot(syncer::DEVICE_INFO);
     DCHECK_EQ(syncer::BaseNode::INIT_OK, type_root_lookup_result);
 
     syncer::WriteNode new_node(&trans);
@@ -193,7 +191,7 @@ void SyncedDeviceTracker::WriteDeviceInfo(
                                       tag);
     DCHECK_EQ(syncer::WriteNode::INIT_SUCCESS, create_result);
     new_node.SetDeviceInfoSpecifics(specifics);
-    new_node.SetTitle(base::UTF8ToWide(specifics.client_name()));
+    new_node.SetTitle(specifics.client_name());
   }
 }
 

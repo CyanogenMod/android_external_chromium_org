@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_TOOLBAR_BROWSER_ACTIONS_CONTAINER_H_
 #define CHROME_BROWSER_UI_VIEWS_TOOLBAR_BROWSER_ACTIONS_CONTAINER_H_
 
+#include "base/observer_list.h"
 #include "chrome/browser/extensions/extension_keybinding_registry.h"
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/ui/views/chrome_views_export.h"
@@ -12,6 +13,7 @@
 #include "chrome/browser/ui/views/extensions/extension_keybinding_registry_views.h"
 #include "chrome/browser/ui/views/extensions/extension_popup.h"
 #include "chrome/browser/ui/views/toolbar/browser_action_view.h"
+#include "chrome/browser/ui/views/toolbar/browser_actions_container_observer.h"
 #include "content/public/browser/notification_observer.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/tween.h"
@@ -28,6 +30,8 @@ class ExtensionPopup;
 
 namespace extensions {
 class ActiveTabPermissionGranter;
+class Command;
+class Extension;
 }
 
 namespace gfx {
@@ -115,7 +119,7 @@ class BrowserActionsContainer
       public views::MenuButtonListener,
       public views::ResizeAreaDelegate,
       public gfx::AnimationDelegate,
-      public ExtensionToolbarModel::Observer,
+      public extensions::ExtensionToolbarModel::Observer,
       public BrowserActionOverflowMenuController::Observer,
       public views::WidgetObserver,
       public BrowserActionView::Delegate,
@@ -156,11 +160,27 @@ class BrowserActionsContainer
   // Delete all browser action views.
   void DeleteBrowserActionViews();
 
-  // Returns how many browser actions are visible.
+  // Returns how many browser actions are currently visible. If the intent is
+  // to find how many are visible once the container finishes animation, see
+  // VisibleBrowserActionsAfterAnimation() below.
   size_t VisibleBrowserActions() const;
 
+  // Returns how many browser actions will be visible once the container
+  // finishes animating to a new size, or (if not animating) the currently
+  // visible icons.
+  size_t VisibleBrowserActionsAfterAnimation() const;
+
+  // Executes |command| registered by |extension|.
+  void ExecuteExtensionCommand(const extensions::Extension* extension,
+                               const extensions::Command& command);
+
+  // Add or remove an observer.
+  void AddObserver(BrowserActionsContainerObserver* observer);
+  void RemoveObserver(BrowserActionsContainerObserver* observer);
+
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  virtual gfx::Size GetMinimumSize() const OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool GetDropFormats(int* formats,
       std::set<ui::OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
@@ -170,7 +190,7 @@ class BrowserActionsContainer
   virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void OnDragExited() OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // Overridden from views::MenuButtonListener:
   virtual void OnMenuButtonClicked(views::View* source,
@@ -205,7 +225,6 @@ class BrowserActionsContainer
   virtual int GetCurrentTabId() const OVERRIDE;
   virtual void OnBrowserActionExecuted(BrowserActionButton* button) OVERRIDE;
   virtual void OnBrowserActionVisibilityChanged() OVERRIDE;
-  virtual gfx::Point GetViewContentOffset() const OVERRIDE;
 
   // Overridden from extension::ExtensionKeybindingRegistry::Delegate:
   virtual extensions::ActiveTabPermissionGranter*
@@ -213,6 +232,13 @@ class BrowserActionsContainer
 
   // Moves a browser action with |id| to |new_index|.
   void MoveBrowserAction(const std::string& extension_id, size_t new_index);
+
+  // Shows the popup for |extension| if possible. Returns true if a new popup
+  // was shown. Showing the popup will grant tab permissions if
+  // |grant_tab_permissions| is true. Only pass true for this argument for
+  // popups triggered interactively, not popups triggered by an API.
+  bool ShowPopup(const extensions::Extension* extension,
+                 bool grant_tab_permissions);
 
   // Hide the current popup.
   void HidePopup();
@@ -241,7 +267,7 @@ class BrowserActionsContainer
   virtual void OnThemeChanged() OVERRIDE;
 
  private:
-  friend class BrowserActionView;  // So it can access IconHeight().
+  friend class BrowserActionView;  // So it can access IconWidth().
   friend class ShowFolderMenuTask;
 
   typedef std::vector<BrowserActionView*> BrowserActionViews;
@@ -252,7 +278,7 @@ class BrowserActionsContainer
   // Returns the height of an icon.
   static int IconHeight();
 
-  // ExtensionToolbarModel::Observer implementation.
+  // extensions::ExtensionToolbarModel::Observer implementation.
   virtual void BrowserActionAdded(const extensions::Extension* extension,
                                   int index) OVERRIDE;
   virtual void BrowserActionRemoved(
@@ -262,6 +288,7 @@ class BrowserActionsContainer
   virtual bool BrowserActionShowPopup(
       const extensions::Extension* extension) OVERRIDE;
   virtual void VisibleCountChanged() OVERRIDE;
+  virtual void HighlightModeChanged(bool is_highlighting) OVERRIDE;
 
   void LoadImages();
 
@@ -298,7 +325,7 @@ class BrowserActionsContainer
   // still show it.  This assumes a visible chevron because the only way we
   // would not have a chevron when shrinking down this far is if there were no
   // icons, in which case the container wouldn't be shown at all.
-  int ContainerMinSize() const;
+  int MinimumNonemptyWidth() const;
 
   // Animate to the target size (unless testing, in which case we go straight to
   // the target size).  This also saves the target number of visible icons in
@@ -312,11 +339,12 @@ class BrowserActionsContainer
   bool ShouldDisplayBrowserAction(const extensions::Extension* extension);
 
   // Show a popup. Returns true if a new popup was shown. Showing the popup will
-  // grant tab permissions if |should_grant| is true. Popup's shown via an API
-  // should not grant permissions.
+  // grant tab permissions if |grant_tab_permissions| is true. Only pass true
+  // for this argument for popups triggered interactively, not popups triggered
+  // by an API.
   bool ShowPopup(BrowserActionButton* button,
                  ExtensionPopup::ShowAction show_action,
-                 bool should_grant);
+                 bool grant_tab_permissions);
 
   // The vector of browser actions (icons/image buttons for each action). Note
   // that not every BrowserAction in the ToolbarModel will necessarily be in
@@ -339,7 +367,7 @@ class BrowserActionsContainer
   BrowserActionButton* popup_button_;
 
   // The model that tracks the order of the toolbar icons.
-  ExtensionToolbarModel* model_;
+  extensions::ExtensionToolbarModel* model_;
 
   // The current width of the container.
   int container_width_;
@@ -349,6 +377,9 @@ class BrowserActionsContainer
 
   // The chevron for accessing the overflow items.
   views::MenuButton* chevron_;
+
+  // The painter used when we are highlighting a subset of extensions.
+  scoped_ptr<views::Painter> highlight_painter_;
 
   // The menu to show for the overflow button (chevron). This class manages its
   // own lifetime so that it can stay alive during drag and drop operations.
@@ -379,6 +410,8 @@ class BrowserActionsContainer
 
   // Handles delayed showing of the overflow menu when hovering.
   base::WeakPtrFactory<BrowserActionsContainer> show_menu_task_factory_;
+
+  ObserverList<BrowserActionsContainerObserver> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserActionsContainer);
 };

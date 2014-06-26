@@ -15,6 +15,8 @@
 #include "components/storage_monitor/removable_device_constants.h"
 #include "device/media_transfer_protocol/mtp_storage_info.pb.h"
 
+namespace storage_monitor {
+
 namespace {
 
 // Device root path constant.
@@ -92,12 +94,15 @@ base::string16 GetDeviceLabelFromStorageInfo(
 }
 
 // Helper function to get the device storage details such as device id, label
-// and location. On success and fills in |id|, |label| and |location|.
+// and location. On success and fills in |id|, |label|, |location|,
+// |vendor_name|, and |product_name|.
 void GetStorageInfo(const std::string& storage_name,
                     device::MediaTransferProtocolManager* mtp_manager,
                     std::string* id,
                     base::string16* label,
-                    std::string* location) {
+                    std::string* location,
+                    base::string16* vendor_name,
+                    base::string16* product_name) {
   DCHECK(!storage_name.empty());
   const MtpStorageInfo* storage_info =
       mtp_manager->GetStorageInfo(storage_name);
@@ -108,6 +113,8 @@ void GetStorageInfo(const std::string& storage_name,
   *id = GetDeviceIdFromStorageInfo(*storage_info);
   *label = GetDeviceLabelFromStorageInfo(*storage_info);
   *location = GetDeviceLocationFromStorageName(storage_name);
+  *vendor_name = base::UTF8ToUTF16(storage_info->vendor());
+  *product_name = base::UTF8ToUTF16(storage_info->product());
 }
 
 }  // namespace
@@ -188,21 +195,25 @@ void MediaTransferProtocolDeviceObserverLinux::StorageChanged(
   // New storage is attached.
   if (is_attached) {
     std::string device_id;
-    base::string16 device_name;
+    base::string16 storage_label;
     std::string location;
+    base::string16 vendor_name;
+    base::string16 product_name;
     get_storage_info_func_(storage_name, mtp_manager_,
-                           &device_id, &device_name, &location);
+                           &device_id, &storage_label, &location,
+                           &vendor_name, &product_name);
 
     // Keep track of device id and device name to see how often we receive
     // empty values.
-    MediaStorageUtil::RecordDeviceInfoHistogram(false, device_id, device_name);
-    if (device_id.empty() || device_name.empty())
+    MediaStorageUtil::RecordDeviceInfoHistogram(false, device_id,
+                                                storage_label);
+    if (device_id.empty() || storage_label.empty())
       return;
 
     DCHECK(!ContainsKey(storage_map_, location));
 
-    StorageInfo storage_info(device_id, device_name, location, device_name,
-                             base::string16(), base::string16(), 0);
+    StorageInfo storage_info(device_id, location, storage_label,
+                             vendor_name, product_name, 0);
     storage_map_[location] = storage_info;
     notifications_->ProcessAttach(storage_info);
   } else {
@@ -237,3 +248,5 @@ bool MediaTransferProtocolDeviceObserverLinux::GetLocationForDeviceId(
 
   return false;
 }
+
+}  // namespace storage_monitor

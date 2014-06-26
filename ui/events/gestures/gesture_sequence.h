@@ -7,6 +7,7 @@
 
 #include "base/timer/timer.h"
 #include "ui/events/event_constants.h"
+#include "ui/events/gesture_event_details.h"
 #include "ui/events/gestures/gesture_point.h"
 #include "ui/events/gestures/gesture_recognizer.h"
 #include "ui/gfx/rect.h"
@@ -206,6 +207,8 @@ class EVENTS_EXPORT GestureSequence {
                            Gestures* gestures);
 
   void StopTimersIfRequired(const TouchEvent& event);
+
+  void StartRailFreeScroll(const GesturePoint& point, Gestures* gestures);
 
   // Current state of gesture recognizer.
   GestureState state_;

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/chromeos/power/idle_action_warning_observer.h"
 
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/power/idle_action_warning_dialog_view.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 
@@ -19,9 +20,14 @@ IdleActionWarningObserver::~IdleActionWarningObserver() {
     warning_dialog_->CloseDialog();
 }
 
-void IdleActionWarningObserver::IdleActionImminent() {
-  if (!warning_dialog_)
-    warning_dialog_ = new IdleActionWarningDialogView;
+void IdleActionWarningObserver::IdleActionImminent(
+    const base::TimeDelta& time_until_idle_action) {
+  const base::TimeTicks idle_action_time =
+      base::TimeTicks::Now() + time_until_idle_action;
+  if (warning_dialog_)
+    warning_dialog_->Update(idle_action_time);
+  else
+    warning_dialog_ = new IdleActionWarningDialogView(idle_action_time);
 }
 
 void IdleActionWarningObserver::IdleActionDeferred() {

@@ -5,9 +5,12 @@
 #include "chrome/browser/policy/cloud/user_cloud_policy_invalidator.h"
 
 #include "base/bind.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/time/default_clock.h"
 #include "chrome/browser/chrome_notification_types.h"
-#include "chrome/browser/invalidation/invalidation_service_factory.h"
+#include "chrome/browser/invalidation/profile_invalidation_provider_factory.h"
+#include "components/invalidation/profile_invalidation_provider.h"
 #include "components/policy/core/common/cloud/cloud_policy_manager.h"
 #include "content/public/browser/notification_source.h"
 
@@ -18,7 +21,8 @@ UserCloudPolicyInvalidator::UserCloudPolicyInvalidator(
     CloudPolicyManager* policy_manager)
     : CloudPolicyInvalidator(
           policy_manager->core(),
-          base::MessageLoopProxy::current()),
+          base::MessageLoopProxy::current(),
+          scoped_ptr<base::Clock>(new base::DefaultClock())),
       profile_(profile) {
   DCHECK(profile);
 
@@ -45,10 +49,10 @@ void UserCloudPolicyInvalidator::Observe(
   // Initialize now that profile creation is complete and the invalidation
   // service can safely be initialized.
   DCHECK(type == chrome::NOTIFICATION_PROFILE_ADDED);
-  invalidation::InvalidationService* invalidation_service =
-      invalidation::InvalidationServiceFactory::GetForProfile(profile_);
-  if (invalidation_service)
-    Initialize(invalidation_service);
+  invalidation::ProfileInvalidationProvider* invalidation_provider =
+      invalidation::ProfileInvalidationProviderFactory::GetForProfile(profile_);
+  if (invalidation_provider)
+    Initialize(invalidation_provider->GetInvalidationService());
 }
 
 }  // namespace policy

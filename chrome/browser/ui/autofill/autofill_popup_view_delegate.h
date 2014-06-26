@@ -12,13 +12,9 @@ class Point;
 class Rect;
 }
 
-namespace ui {
-class MouseEvent;
-}
-
 namespace autofill {
 
-// Base class for Controllers of Autofill style popups. This interface is
+// Base class for Controllers of Autofill-style popups. This interface is
 // used by the relevant views to communicate with the controller.
 class AutofillPopupViewDelegate {
  public:
@@ -33,19 +29,13 @@ class AutofillPopupViewDelegate {
   // must be in popup coordinates.
   virtual void SetSelectionAtPoint(const gfx::Point& point) = 0;
 
-  // The user has accpeted the selection at |point|, e.g. by clicking on it
-  // using the mouse. |point| must be in popup coordinates.
-  virtual void AcceptSelectionAtPoint(const gfx::Point& point) = 0;
+  // The user has accepted the currently selected line. Returns whether there
+  // was a selection to accept.
+  virtual bool AcceptSelectedLine() = 0;
 
   // The user cleared the current selection, e.g. by moving the mouse cursor
   // out of the popup bounds.
   virtual void SelectionCleared() = 0;
-
-  // Whether |event| should be reposted to the native window management.
-  virtual bool ShouldRepostEvent(const ui::MouseEvent& event) = 0;
-
-  // Whether the view should be hidden on outside mouse presses.
-  virtual bool ShouldHideOnOutsideClick() const = 0;
 
   // The actual bounds of the popup.
   virtual const gfx::Rect& popup_bounds() const = 0;

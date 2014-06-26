@@ -35,13 +35,6 @@ bool NotInSchemaMap(const scoped_refptr<SchemaMap> schema_map,
   return schema_map->GetSchema(PolicyNamespace(domain, component_id)) == NULL;
 }
 
-bool ToPolicyNamespaceKey(const PolicyNamespace& ns, PolicyNamespaceKey* key) {
-  if (!ComponentCloudPolicyStore::GetPolicyType(ns.domain, &key->first))
-    return false;
-  key->second = ns.component_id;
-  return true;
-}
-
 bool ToPolicyNamespace(const PolicyNamespaceKey& key, PolicyNamespace* ns) {
   if (!ComponentCloudPolicyStore::GetPolicyDomain(key.first, &ns->domain))
     return false;
@@ -107,7 +100,7 @@ class ComponentCloudPolicyService::Backend
   scoped_ptr<ExternalPolicyDataFetcher> external_policy_data_fetcher_;
   ComponentCloudPolicyStore store_;
   scoped_ptr<ComponentCloudPolicyUpdater> updater_;
-  scoped_refptr<SchemaMap> schema_map_;
+  bool initialized_;
 
   DISALLOW_COPY_AND_ASSIGN(Backend);
 };
@@ -123,7 +116,8 @@ ComponentCloudPolicyService::Backend::Backend(
       service_task_runner_(service_task_runner),
       cache_(cache.Pass()),
       external_policy_data_fetcher_(external_policy_data_fetcher.Pass()),
-      store_(this, cache_.get()) {}
+      store_(this, cache_.get()),
+      initialized_(false) {}
 
 ComponentCloudPolicyService::Backend::~Backend() {}
 
@@ -140,7 +134,7 @@ void ComponentCloudPolicyService::Backend::SetCredentials(
 
 void ComponentCloudPolicyService::Backend::Init(
     scoped_refptr<SchemaMap> schema_map) {
-  DCHECK(!schema_map_);
+  DCHECK(!initialized_);
 
   OnSchemasUpdated(schema_map, scoped_ptr<PolicyNamespaceList>());
 
@@ -153,7 +147,6 @@ void ComponentCloudPolicyService::Backend::Init(
   store_.Load();
   scoped_ptr<PolicyBundle> bundle(new PolicyBundle);
   bundle->CopyFrom(store_.policy());
-  schema_map_->FilterBundle(bundle.get());
 
   // Start downloading any pending data.
   updater_.reset(new ComponentCloudPolicyUpdater(
@@ -164,6 +157,8 @@ void ComponentCloudPolicyService::Backend::Init(
       base::Bind(&ComponentCloudPolicyService::OnBackendInitialized,
                  service_,
                  base::Passed(&bundle)));
+
+  initialized_ = true;
 }
 
 void ComponentCloudPolicyService::Backend::UpdateExternalPolicy(
@@ -173,14 +168,13 @@ void ComponentCloudPolicyService::Backend::UpdateExternalPolicy(
 
 void ComponentCloudPolicyService::Backend::
     OnComponentCloudPolicyStoreUpdated() {
-  if (!schema_map_) {
+  if (!initialized_) {
     // Ignore notifications triggered by the initial Purge or Clear.
     return;
   }
 
   scoped_ptr<PolicyBundle> bundle(new PolicyBundle);
   bundle->CopyFrom(store_.policy());
-  schema_map_->FilterBundle(bundle.get());
   service_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&ComponentCloudPolicyService::OnPolicyUpdated,
@@ -198,10 +192,6 @@ void ComponentCloudPolicyService::Backend::OnSchemasUpdated(
     store_.Purge(domain->first,
                  base::Bind(&NotInSchemaMap, schema_map, domain->first));
   }
-
-  // Set |schema_map_| after purging so that the notifications from the store
-  // are ignored on the first OnSchemasUpdated() call from Init().
-  schema_map_ = schema_map;
 
   if (removed) {
     for (size_t i = 0; i < removed->size(); ++i)
@@ -224,6 +214,7 @@ ComponentCloudPolicyService::ComponentCloudPolicyService(
       backend_task_runner_(backend_task_runner),
       io_task_runner_(io_task_runner),
       current_schema_map_(new SchemaMap),
+      unfiltered_policy_(new PolicyBundle),
       started_loading_initial_policy_(false),
       loaded_initial_policy_(false),
       is_registered_for_cloud_policy_(false),
@@ -248,6 +239,11 @@ ComponentCloudPolicyService::ComponentCloudPolicyService(
   // policies.
   if (core_->store()->is_initialized())
     OnStoreLoaded(core_->store());
+
+  // Start observing the core and tracking the state of the client.
+  core_->AddObserver(this);
+  if (core_->client())
+    OnCoreConnected(core_);
 }
 
 ComponentCloudPolicyService::~ComponentCloudPolicyService() {
@@ -293,7 +289,12 @@ void ComponentCloudPolicyService::OnSchemaRegistryUpdated(
   if (!loaded_initial_policy_)
     return;
 
-  SetCurrentSchema();
+  ReloadSchema();
+
+  // Filter the |unfiltered_policy_| again, now that |current_schema_map_| has
+  // been updated. We must make sure we never serve invalid policy; we must
+  // also filter again if an invalid Schema has now been loaded.
+  OnPolicyUpdated(unfiltered_policy_.Pass());
 }
 
 void ComponentCloudPolicyService::OnCoreConnected(CloudPolicyCore* core) {
@@ -302,13 +303,14 @@ void ComponentCloudPolicyService::OnCoreConnected(CloudPolicyCore* core) {
 
   core_->client()->AddObserver(this);
 
-  // Immediately load any PolicyFetchResponses that the client may already
-  // have.
-  OnPolicyFetched(core_->client());
+  // Register the supported policy domains at the client.
+  core_->client()->AddNamespaceToFetch(
+      PolicyNamespaceKey(dm_protocol::kChromeExtensionPolicyType, ""));
 
-  // Register the current namespaces at the client.
-  current_schema_map_ = new SchemaMap();
-  SetCurrentSchema();
+  // Immediately load any PolicyFetchResponses that the client may already
+  // have if the backend is ready.
+  if (loaded_initial_policy_)
+    OnPolicyFetched(core_->client());
 }
 
 void ComponentCloudPolicyService::OnCoreDisconnecting(CloudPolicyCore* core) {
@@ -318,15 +320,8 @@ void ComponentCloudPolicyService::OnCoreDisconnecting(CloudPolicyCore* core) {
   core_->client()->RemoveObserver(this);
 
   // Remove all the namespaces from the client.
-  scoped_refptr<SchemaMap> empty = new SchemaMap();
-  PolicyNamespaceList removed;
-  PolicyNamespaceList added;
-  empty->GetChanges(current_schema_map_, &removed, &added);
-  for (size_t i = 0; i < removed.size(); ++i) {
-    PolicyNamespaceKey key;
-    if (ToPolicyNamespaceKey(removed[i], &key))
-      core_->client()->RemoveNamespaceToFetch(key);
-  }
+  core_->client()->RemoveNamespaceToFetch(
+      PolicyNamespaceKey(dm_protocol::kChromeExtensionPolicyType, ""));
 }
 
 void ComponentCloudPolicyService::OnRefreshSchedulerStarted(
@@ -435,6 +430,7 @@ void ComponentCloudPolicyService::InitializeIfReady() {
       !core_->store()->is_initialized()) {
     return;
   }
+
   // The initial list of components is ready. Initialize the backend now, which
   // will call back to OnBackendInitialized.
   backend_task_runner_->PostTask(FROM_HERE,
@@ -451,23 +447,15 @@ void ComponentCloudPolicyService::OnBackendInitialized(
 
   loaded_initial_policy_ = true;
 
+  // Send the current schema to the backend, in case it has changed while the
+  // backend was initializing.
+  ReloadSchema();
+
   // We're now ready to serve the initial policy; notify the policy observers.
   OnPolicyUpdated(initial_policy.Pass());
-
-  // Start observing the core and tracking the state of the client.
-  core_->AddObserver(this);
-
-  if (core_->client()) {
-    OnCoreConnected(core_);
-  } else {
-    // Send the current schema to the backend, in case it has changed while the
-    // backend was initializing. OnCoreConnected() also does this if a client is
-    // already connected.
-    SetCurrentSchema();
-  }
 }
 
-void ComponentCloudPolicyService::SetCurrentSchema() {
+void ComponentCloudPolicyService::ReloadSchema() {
   DCHECK(CalledOnValidThread());
 
   scoped_ptr<PolicyNamespaceList> removed(new PolicyNamespaceList);
@@ -478,37 +466,35 @@ void ComponentCloudPolicyService::SetCurrentSchema() {
 
   current_schema_map_ = new_schema_map;
 
-  if (core_->client()) {
-    for (size_t i = 0; i < removed->size(); ++i) {
-      PolicyNamespaceKey key;
-      if (ToPolicyNamespaceKey((*removed)[i], &key))
-        core_->client()->RemoveNamespaceToFetch(key);
-    }
-
-    bool added_namespaces_to_client = false;
-    for (size_t i = 0; i < added.size(); ++i) {
-      PolicyNamespaceKey key;
-      if (ToPolicyNamespaceKey(added[i], &key)) {
-        core_->client()->AddNamespaceToFetch(key);
-        added_namespaces_to_client = true;
-      }
-    }
-
-    if (added_namespaces_to_client)
-      core_->RefreshSoon();
-  }
-
+  // Send the updated SchemaMap and a list of removed components to the
+  // backend.
   backend_task_runner_->PostTask(FROM_HERE,
                                  base::Bind(&Backend::OnSchemasUpdated,
                                             base::Unretained(backend_.get()),
                                             current_schema_map_,
                                             base::Passed(&removed)));
+
+  // Have another look at the client if the core is already connected.
+  // The client may have already fetched policy for some component and it was
+  // previously ignored because the component wasn't listed in the schema map.
+  // There's no point in fetching policy from the server again; the server
+  // always pushes all the components it knows about.
+  if (core_->client())
+    OnPolicyFetched(core_->client());
 }
 
 void ComponentCloudPolicyService::OnPolicyUpdated(
     scoped_ptr<PolicyBundle> policy) {
   DCHECK(CalledOnValidThread());
-  policy_.Swap(policy.get());
+
+  // Store the current unfiltered policies.
+  unfiltered_policy_ = policy.Pass();
+
+  // Make a copy in |policy_| and filter it; this is what's passed to the
+  // outside world.
+  policy_.CopyFrom(*unfiltered_policy_);
+  current_schema_map_->FilterBundle(&policy_);
+
   delegate_->OnComponentCloudPolicyUpdated();
 }
 

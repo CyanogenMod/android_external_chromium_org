@@ -14,20 +14,20 @@
 #include "ash/shell_window_ids.h"
 #include "base/command_line.h"
 #include "ui/app_list/app_list_constants.h"
+#include "ui/app_list/app_list_switches.h"
 #include "ui/app_list/pagination_model.h"
 #include "ui/app_list/views/app_list_view.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event.h"
 #include "ui/gfx/transform_util.h"
+#include "ui/keyboard/keyboard_controller.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // Duration for show/hide animation in milliseconds.
@@ -43,6 +43,9 @@ const int kMaxOverScrollShift = 48;
 // the screen with 8 pixels spacing on the left / right. This constant is a
 // result of minimal bubble arrow sizes and offsets.
 const int kMinimalAnchorPositionOffset = 57;
+
+// The minimal margin (in pixels) around the app list when in centered mode.
+const int kMinimalCenteredAppListMargin = 10;
 
 ui::Layer* GetLayer(views::Widget* widget) {
   return widget->GetNativeView()->layer();
@@ -114,28 +117,60 @@ gfx::Vector2d GetAnchorPositionOffsetToShelf(
   }
 }
 
+// Gets the point at the center of the display that a particular view is on.
+// This calculation excludes the virtual keyboard area. If the height of the
+// display area is less than |minimum_height|, its bottom will be extended to
+// that height (so that the app list never starts above the top of the screen).
+gfx::Point GetCenterOfDisplayForView(const views::View* view,
+                                     int minimum_height) {
+  gfx::Rect bounds = Shell::GetScreen()->GetDisplayNearestWindow(
+      view->GetWidget()->GetNativeView()).bounds();
+
+  // If the virtual keyboard is active, subtract it from the display bounds, so
+  // that the app list is centered in the non-keyboard area of the display.
+  // (Note that work_area excludes the keyboard, but it doesn't get updated
+  // until after this function is called.)
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller && keyboard_controller->keyboard_visible())
+    bounds.Subtract(keyboard_controller->current_keyboard_bounds());
+
+  // Apply the |minimum_height|.
+  if (bounds.height() < minimum_height)
+    bounds.set_height(minimum_height);
+
+  return bounds.CenterPoint();
+}
+
+// Gets the minimum height of the rectangle to center the app list in.
+int GetMinimumBoundsHeightForAppList(const app_list::AppListView* app_list) {
+  return app_list->bounds().height() + 2 * kMinimalCenteredAppListMargin;
+}
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
 // AppListController, public:
 
 AppListController::AppListController()
-    : pagination_model_(new app_list::PaginationModel),
-      is_visible_(false),
+    : is_visible_(false),
+      is_centered_(false),
       view_(NULL),
+      current_apps_page_(-1),
       should_snap_back_(false) {
   Shell::GetInstance()->AddShellObserver(this);
-  pagination_model_->AddObserver(this);
 }
 
 AppListController::~AppListController() {
   // Ensures app list view goes before the controller since pagination model
   // lives in the controller and app list view would access it on destruction.
-  if (view_ && view_->GetWidget())
-    view_->GetWidget()->CloseNow();
+  if (view_) {
+    view_->GetAppsPaginationModel()->RemoveObserver(this);
+    if (view_->GetWidget())
+      view_->GetWidget()->CloseNow();
+  }
 
   Shell::GetInstance()->RemoveShellObserver(this);
-  pagination_model_->RemoveObserver(this);
 }
 
 void AppListController::SetVisible(bool visible, aura::Window* window) {
@@ -166,40 +201,44 @@ void AppListController::SetVisible(bool visible, aura::Window* window) {
     aura::Window* root_window = window->GetRootWindow();
     aura::Window* container = GetRootWindowController(root_window)->
         GetContainer(kShellWindowId_AppListContainer);
-    if (ash::switches::UseAlternateShelfLayout()) {
-      gfx::Rect applist_button_bounds = Shelf::ForWindow(container)->
-          GetAppListButtonView()->GetBoundsInScreen();
+    views::View* applist_button =
+        Shelf::ForWindow(container)->GetAppListButtonView();
+    is_centered_ = view->ShouldCenterWindow();
+    if (is_centered_) {
+      // Note: We can't center the app list until we have its dimensions, so we
+      // init at (0, 0) and then reset its anchor point.
+      view->InitAsBubbleAtFixedLocation(container,
+                                        current_apps_page_,
+                                        gfx::Point(),
+                                        views::BubbleBorder::FLOAT,
+                                        true /* border_accepts_events */);
+      // The experimental app list is centered over the display of the app list
+      // button that was pressed (if triggered via keyboard, this is the display
+      // with the currently focused window).
+      view->SetAnchorPoint(GetCenterOfDisplayForView(
+          applist_button, GetMinimumBoundsHeightForAppList(view)));
+    } else {
+      gfx::Rect applist_button_bounds = applist_button->GetBoundsInScreen();
       // We need the location of the button within the local screen.
       applist_button_bounds = ScreenUtil::ConvertRectFromScreen(
           root_window,
           applist_button_bounds);
       view->InitAsBubbleAttachedToAnchor(
           container,
-          pagination_model_.get(),
+          current_apps_page_,
           Shelf::ForWindow(container)->GetAppListButtonView(),
-          GetAnchorPositionOffsetToShelf(applist_button_bounds,
-              Shelf::ForWindow(container)->GetAppListButtonView()->
-                  GetWidget()),
+          GetAnchorPositionOffsetToShelf(
+              applist_button_bounds,
+              Shelf::ForWindow(container)->GetAppListButtonView()->GetWidget()),
           GetBubbleArrow(container),
           true /* border_accepts_events */);
       view->SetArrowPaintType(views::BubbleBorder::PAINT_NONE);
-    } else {
-      view->InitAsBubbleAttachedToAnchor(
-          container,
-          pagination_model_.get(),
-          Shelf::ForWindow(container)->GetAppListButtonView(),
-          gfx::Vector2d(),
-          GetBubbleArrow(container),
-          true /* border_accepts_events */);
     }
     SetView(view);
     // By setting us as DnD recipient, the app list knows that we can
     // handle items.
-    if (!CommandLine::ForCurrentProcess()->HasSwitch(
-            switches::kAshDisableDragAndDropAppListToLauncher)) {
-      SetDragAndDropHostOfCurrentAppList(
-          Shelf::ForWindow(window)->GetDragAndDropHostForAppList());
-    }
+    SetDragAndDropHostOfCurrentAppList(
+        Shelf::ForWindow(window)->GetDragAndDropHostForAppList());
   }
   // Update applist button status when app list visibility is changed.
   Shelf::ForWindow(window)->GetAppListButtonView()->SchedulePaint();
@@ -229,10 +268,16 @@ void AppListController::SetView(app_list::AppListView* view) {
   view_ = view;
   views::Widget* widget = view_->GetWidget();
   widget->AddObserver(this);
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller)
+    keyboard_controller->AddObserver(this);
   Shell::GetInstance()->AddPreTargetHandler(this);
   Shelf::ForWindow(widget->GetNativeWindow())->AddIconObserver(this);
   widget->GetNativeView()->GetRootWindow()->AddObserver(this);
   aura::client::GetFocusClient(widget->GetNativeView())->AddObserver(this);
+
+  view_->GetAppsPaginationModel()->AddObserver(this);
 
   view_->ShowWhenReady();
 }
@@ -244,10 +289,17 @@ void AppListController::ResetView() {
   views::Widget* widget = view_->GetWidget();
   widget->RemoveObserver(this);
   GetLayer(widget)->GetAnimator()->RemoveObserver(this);
+  keyboard::KeyboardController* keyboard_controller =
+      keyboard::KeyboardController::GetInstance();
+  if (keyboard_controller)
+    keyboard_controller->RemoveObserver(this);
   Shell::GetInstance()->RemovePreTargetHandler(this);
   Shelf::ForWindow(widget->GetNativeWindow())->RemoveIconObserver(this);
   widget->GetNativeView()->GetRootWindow()->RemoveObserver(this);
   aura::client::GetFocusClient(widget->GetNativeView())->RemoveObserver(this);
+
+  view_->GetAppsPaginationModel()->RemoveObserver(this);
+
   view_ = NULL;
 }
 
@@ -279,6 +331,9 @@ void AppListController::ScheduleAnimation() {
 }
 
 void AppListController::ProcessLocatedEvent(ui::LocatedEvent* event) {
+  if (!view_ || !is_visible_)
+    return;
+
   // If the event happened on a menu, then the event should not close the app
   // list.
   aura::Window* target = static_cast<aura::Window*>(event->target());
@@ -286,32 +341,31 @@ void AppListController::ProcessLocatedEvent(ui::LocatedEvent* event) {
     RootWindowController* root_controller =
         GetRootWindowController(target->GetRootWindow());
     if (root_controller) {
-      aura::Window* menu_container = root_controller->GetContainer(
-          internal::kShellWindowId_MenuContainer);
+      aura::Window* menu_container =
+          root_controller->GetContainer(kShellWindowId_MenuContainer);
       if (menu_container->Contains(target))
         return;
       aura::Window* keyboard_container = root_controller->GetContainer(
-          internal::kShellWindowId_VirtualKeyboardContainer);
+          kShellWindowId_VirtualKeyboardContainer);
       if (keyboard_container->Contains(target))
         return;
     }
   }
 
-  if (view_ && is_visible_) {
-    aura::Window* window = view_->GetWidget()->GetNativeView();
-    gfx::Point window_local_point(event->root_location());
-    aura::Window::ConvertPointToTarget(window->GetRootWindow(),
-                                       window,
-                                       &window_local_point);
-    // Use HitTest to respect the hit test mask of the bubble.
-    if (!window->HitTest(window_local_point))
-      SetVisible(false, window);
-  }
+  aura::Window* window = view_->GetWidget()->GetNativeView()->parent();
+  if (!window->Contains(target))
+    SetVisible(false, window);
 }
 
 void AppListController::UpdateBounds() {
-  if (view_ && is_visible_)
-    view_->UpdateBounds();
+  if (!view_ || !is_visible_)
+    return;
+
+  view_->UpdateBounds();
+
+  if (is_centered_)
+    view_->SetAnchorPoint(GetCenterOfDisplayForView(
+        view_, GetMinimumBoundsHeightForAppList(view_)));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -372,6 +426,13 @@ void AppListController::OnWidgetDestroying(views::Widget* widget) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// AppListController, keyboard::KeyboardControllerObserver implementation:
+
+void AppListController::OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) {
+  UpdateBounds();
+}
+
+////////////////////////////////////////////////////////////////////////////////
 // AppListController, ShellObserver implementation:
 void AppListController::OnShelfAlignmentChanged(aura::Window* root_window) {
   if (view_)
@@ -393,6 +454,7 @@ void AppListController::TotalPagesChanged() {
 
 void AppListController::SelectedPageChanged(int old_selected,
                                             int new_selected) {
+  current_apps_page_ = new_selected;
 }
 
 void AppListController::TransitionStarted() {
@@ -403,20 +465,22 @@ void AppListController::TransitionChanged() {
   if (!view_)
     return;
 
+  app_list::PaginationModel* pagination_model = view_->GetAppsPaginationModel();
+
   const app_list::PaginationModel::Transition& transition =
-      pagination_model_->transition();
-  if (pagination_model_->is_valid_page(transition.target_page))
+      pagination_model->transition();
+  if (pagination_model->is_valid_page(transition.target_page))
     return;
 
   views::Widget* widget = view_->GetWidget();
   ui::LayerAnimator* widget_animator = GetLayer(widget)->GetAnimator();
-  if (!pagination_model_->IsRevertingCurrentTransition()) {
+  if (!pagination_model->IsRevertingCurrentTransition()) {
     // Update cached |view_bounds_| if it is the first over-scroll move and
     // widget does not have running animations.
     if (!should_snap_back_ && !widget_animator->is_animating())
       view_bounds_ = widget->GetWindowBoundsInScreen();
 
-    const int current_page = pagination_model_->selected_page();
+    const int current_page = pagination_model->selected_page();
     const int dir = transition.target_page > current_page ? -1 : 1;
 
     const double progress = 1.0 - pow(1.0 - transition.progress, 4);
@@ -435,5 +499,4 @@ void AppListController::TransitionChanged() {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

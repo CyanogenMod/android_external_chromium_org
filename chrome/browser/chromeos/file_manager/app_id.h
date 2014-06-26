@@ -13,6 +13,12 @@ namespace file_manager {
 // name like kAppId would be cryptic inside "file_manager" namespace.
 const char kFileManagerAppId[] = "hhaomjibdihmijegdhdafkllkbggdgoj";
 
+// The video player's app ID.
+const char kVideoPlayerAppId[] = "jcgeabjmjgoblfofpppfkcoakmfobdko";
+
+// The gallery's app ID.
+const char kGalleryAppId[] = "nlkncpkkdoccmpiclbokaimcnedabhhm";
+
 }  // namespace file_manager
 
 #endif  // CHROME_BROWSER_CHROMEOS_FILE_MANAGER_APP_ID_H_

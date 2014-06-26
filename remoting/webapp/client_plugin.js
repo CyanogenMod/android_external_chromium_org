@@ -55,6 +55,8 @@ remoting.ClientPlugin = function(plugin, onExtensionMessage) {
   /** @param {!Array.<string>} capabilities The negotiated capabilities. */
   this.onSetCapabilitiesHandler = function (capabilities) {};
   this.fetchPinHandler = function (supportsPairing) {};
+  /** @param {string} data Remote gnubbyd data. */
+  this.onGnubbyAuthHandler = function(data) {};
 
   /** @type {remoting.MediaSourceRenderer} */
   this.mediaSourceRenderer_ = null;
@@ -82,7 +84,10 @@ remoting.ClientPlugin = function(plugin, onExtensionMessage) {
   this.plugin.addEventListener('message', function(event) {
       that.handleMessage_(event.data);
     }, false);
-  window.setTimeout(this.showPluginForClickToPlay_.bind(this), 500);
+
+  if (remoting.settings.CLIENT_PLUGIN_TYPE == 'native') {
+    window.setTimeout(this.showPluginForClickToPlay_.bind(this), 500);
+  }
 };
 
 /**
@@ -102,7 +107,8 @@ remoting.ClientPlugin.Feature = {
   TRAP_KEY: 'trapKey',
   PINLESS_AUTH: 'pinlessAuth',
   EXTENSION_MESSAGE: 'extensionMessage',
-  MEDIA_SOURCE_RENDERING: 'mediaSourceRendering'
+  MEDIA_SOURCE_RENDERING: 'mediaSourceRendering',
+  VIDEO_CONTROL: 'videoControl'
 };
 
 /**
@@ -166,9 +172,8 @@ remoting.ClientPlugin.prototype.handleMessageMethod_ = function(message) {
   };
 
   if (message.method == 'hello') {
-    // Reset the size in case we had to enlarge it to support click-to-play.
-    this.plugin.width = 0;
-    this.plugin.height = 0;
+    // Resize in case we had to enlarge it to support click-to-play.
+    this.hidePluginForClickToPlay_();
     this.pluginApiVersion_ = getNumberAttr(message.data, 'apiVersion');
     this.pluginApiMinVersion_ = getNumberAttr(message.data, 'apiMinVersion');
 
@@ -292,9 +297,12 @@ remoting.ClientPlugin.prototype.handleMessageMethod_ = function(message) {
     this.onPairingComplete_(clientId, sharedSecret);
 
   } else if (message.method == 'extensionMessage') {
-    var extMsgType = getStringAttr(message, 'type');
-    var extMsgData = getStringAttr(message, 'data');
+    var extMsgType = getStringAttr(message.data, 'type');
+    var extMsgData = getStringAttr(message.data, 'data');
     switch (extMsgType) {
+      case 'gnubby-auth':
+        this.onGnubbyAuthHandler(extMsgData);
+        break;
       case 'test-echo-reply':
         console.log('Got echo reply: ' + extMsgData);
         break;
@@ -321,8 +329,10 @@ remoting.ClientPlugin.prototype.handleMessageMethod_ = function(message) {
       console.error('Unexpected mediaSourceData.');
       return;
     }
+    // keyframe flag may be absent from the message.
+    var keyframe = !!message.data['keyframe'];
     this.mediaSourceRenderer_.onIncomingData(
-        (/** @type {ArrayBuffer} */ message.data['buffer']));
+        (/** @type {ArrayBuffer} */ message.data['buffer']), keyframe);
   }
 };
 
@@ -419,6 +429,12 @@ remoting.ClientPlugin.prototype.connect = function(
     hostJid, hostPublicKey, localJid, sharedSecret,
     authenticationMethods, authenticationTag,
     clientPairingId, clientPairedSecret) {
+  var keyFilter = '';
+  if (navigator.platform.indexOf('Mac') == -1) {
+    keyFilter = 'mac';
+  } else if (navigator.userAgent.match(/\bCrOS\b/)) {
+    keyFilter = 'cros';
+  }
   this.plugin.postMessage(JSON.stringify(
     { method: 'connect', data: {
         hostJid: hostJid,
@@ -429,7 +445,8 @@ remoting.ClientPlugin.prototype.connect = function(
         authenticationTag: authenticationTag,
         capabilities: this.capabilities_.join(" "),
         clientPairingId: clientPairingId,
-        clientPairedSecret: clientPairedSecret
+        clientPairedSecret: clientPairedSecret,
+        keyFilter: keyFilter
       }
     }));
 };
@@ -536,11 +553,13 @@ remoting.ClientPlugin.prototype.notifyClientResolution =
  */
 remoting.ClientPlugin.prototype.pauseVideo =
     function(pause) {
-  if (!this.hasFeature(remoting.ClientPlugin.Feature.PAUSE_VIDEO)) {
-    return;
+  if (this.hasFeature(remoting.ClientPlugin.Feature.VIDEO_CONTROL)) {
+    this.plugin.postMessage(JSON.stringify(
+        { method: 'videoControl', data: { pause: pause }}));
+  } else if (this.hasFeature(remoting.ClientPlugin.Feature.PAUSE_VIDEO)) {
+    this.plugin.postMessage(JSON.stringify(
+        { method: 'pauseVideo', data: { pause: pause }}));
   }
-  this.plugin.postMessage(JSON.stringify(
-      { method: 'pauseVideo', data: { pause: pause }}));
 };
 
 /**
@@ -555,6 +574,34 @@ remoting.ClientPlugin.prototype.pauseAudio =
   }
   this.plugin.postMessage(JSON.stringify(
       { method: 'pauseAudio', data: { pause: pause }}));
+};
+
+/**
+ * Requests that the host configure the video codec for lossless encode.
+ *
+ * @param {boolean} wantLossless True to request lossless encoding.
+ */
+remoting.ClientPlugin.prototype.setLosslessEncode =
+    function(wantLossless) {
+  if (!this.hasFeature(remoting.ClientPlugin.Feature.VIDEO_CONTROL)) {
+    return;
+  }
+  this.plugin.postMessage(JSON.stringify(
+      { method: 'videoControl', data: { losslessEncode: wantLossless }}));
+};
+
+/**
+ * Requests that the host configure the video codec for lossless color.
+ *
+ * @param {boolean} wantLossless True to request lossless color.
+ */
+remoting.ClientPlugin.prototype.setLosslessColor =
+    function(wantLossless) {
+  if (!this.hasFeature(remoting.ClientPlugin.Feature.VIDEO_CONTROL)) {
+    return;
+  }
+  this.plugin.postMessage(JSON.stringify(
+      { method: 'videoControl', data: { losslessColor: wantLossless }}));
 };
 
 /**
@@ -617,7 +664,7 @@ remoting.ClientPlugin.prototype.requestPairing =
  * Send an extension message to the host.
  *
  * @param {string} type The message type.
- * @param {Object} message The message payload.
+ * @param {string} message The message payload.
  */
 remoting.ClientPlugin.prototype.sendClientMessage =
     function(type, message) {
@@ -625,8 +672,8 @@ remoting.ClientPlugin.prototype.sendClientMessage =
     return;
   }
   this.plugin.postMessage(JSON.stringify(
-    { method: 'extensionMessage',
-      data: { type: type, data: JSON.stringify(message) } }));
+      { method: 'extensionMessage',
+        data: { type: type, data: message } }));
 
 };
 
@@ -655,13 +702,25 @@ remoting.ClientPlugin.prototype.showPluginForClickToPlay_ = function() {
   if (!this.helloReceived_) {
     var width = 200;
     var height = 200;
-    this.plugin.width = width;
-    this.plugin.height = height;
+    this.plugin.style.width = width + 'px';
+    this.plugin.style.height = height + 'px';
     // Center the plugin just underneath the "Connnecting..." dialog.
-    var parentNode = this.plugin.parentNode;
     var dialog = document.getElementById('client-dialog');
     var dialogRect = dialog.getBoundingClientRect();
-    parentNode.style.top = (dialogRect.bottom + 16) + 'px';
-    parentNode.style.left = (window.innerWidth - width) / 2 + 'px';
+    this.plugin.style.top = (dialogRect.bottom + 16) + 'px';
+    this.plugin.style.left = (window.innerWidth - width) / 2 + 'px';
+    this.plugin.style.position = 'fixed';
   }
+};
+
+/**
+ * Undo the CSS rules needed to make the plugin clickable for click-to-play.
+ * @private
+ */
+remoting.ClientPlugin.prototype.hidePluginForClickToPlay_ = function() {
+  this.plugin.style.width = '';
+  this.plugin.style.height = '';
+  this.plugin.style.top = '';
+  this.plugin.style.left = '';
+  this.plugin.style.position = '';
 };

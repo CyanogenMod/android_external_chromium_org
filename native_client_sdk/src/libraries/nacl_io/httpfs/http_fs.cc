@@ -17,10 +17,10 @@
 
 #include <ppapi/c/pp_errors.h>
 
-#include "nacl_io/dbgprint.h"
 #include "nacl_io/dir_node.h"
 #include "nacl_io/httpfs/http_fs_node.h"
 #include "nacl_io/kernel_handle.h"
+#include "nacl_io/log.h"
 #include "nacl_io/osinttypes.h"
 #include "nacl_io/osunistd.h"
 #include "sdk_util/string_util.h"
@@ -200,7 +200,8 @@ HttpFs::HttpFs()
     : allow_cors_(false),
       allow_credentials_(false),
       cache_stat_(true),
-      cache_content_(true) {}
+      cache_content_(true) {
+}
 
 Error HttpFs::Init(const FsInitArgs& args) {
   Error error = Filesystem::Init(args);
@@ -248,7 +249,8 @@ Error HttpFs::Init(const FsInitArgs& args) {
   return 0;
 }
 
-void HttpFs::Destroy() {}
+void HttpFs::Destroy() {
+}
 
 Error HttpFs::FindOrCreateDir(const Path& path, ScopedNode* out_node) {
   out_node->reset(NULL);
@@ -266,7 +268,7 @@ Error HttpFs::FindOrCreateDir(const Path& path, ScopedNode* out_node) {
     return error;
 
   // If not the root node, find the parent node and add it to the parent
-  if (!path.Top()) {
+  if (!path.IsRoot()) {
     ScopedNode parent;
     error = FindOrCreateDir(path.Parent(), &parent);
     if (error)
@@ -319,7 +321,7 @@ Error HttpFs::ParseManifest(const char* text) {
           mode = S_IFCHR;
           break;
         default:
-          dbgprintf("Unable to parse type %s for %s.\n",
+          LOG_ERROR("Unable to parse type %s for %s.",
                     modestr.c_str(),
                     name.c_str());
           return EINVAL;
@@ -332,7 +334,7 @@ Error HttpFs::ParseManifest(const char* text) {
           mode |= S_IRUSR | S_IRGRP | S_IROTH;
           break;
         default:
-          dbgprintf("Unable to parse read %s for %s.\n",
+          LOG_ERROR("Unable to parse read %s for %s.",
                     modestr.c_str(),
                     name.c_str());
           return EINVAL;
@@ -345,7 +347,7 @@ Error HttpFs::ParseManifest(const char* text) {
           mode |= S_IWUSR | S_IWGRP | S_IWOTH;
           break;
         default:
-          dbgprintf("Unable to parse write %s for %s.\n",
+          LOG_ERROR("Unable to parse write %s for %s.",
                     modestr.c_str(),
                     name.c_str());
           return EINVAL;
@@ -390,7 +392,7 @@ Error HttpFs::LoadManifest(const std::string& manifest_name,
   if (error)
     return error;
 
-  size_t size;
+  off_t size;
   error = manifest_node->GetSize(&size);
   if (error)
     return error;

@@ -7,6 +7,7 @@
 
 #include "build/build_config.h"
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util_proxy.h"
 #include "base/memory/ref_counted.h"
@@ -20,8 +21,6 @@
 #include "net/socket/socket_descriptor.h"
 #include "ppapi/shared_impl/ppapi_permissions.h"
 #include "url/gurl.h"
-
-class CommandLine;
 
 namespace content {
 class BrowserChildProcessHost;
@@ -47,9 +46,11 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
  public:
   // manifest_url: the URL of the manifest of the Native Client plugin being
   // executed.
+  // permissions: PPAPI permissions, to control access to private APIs.
   // render_view_id: RenderView routing id, to control access to private APIs.
   // permission_bits: controls which interfaces the NaCl plugin can use.
   // uses_irt: whether the launched process should use the IRT.
+  // uses_nonsfi_mode: whether the program should be loaded under non-SFI mode.
   // enable_dyncode_syscalls: whether the launched process should allow dyncode
   //                          and mmap with PROT_EXEC.
   // enable_exception_handling: whether the launched process should allow
@@ -61,9 +62,12 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // off_the_record: was the process launched from an incognito renderer?
   // profile_directory: is the path of current profile directory.
   NaClProcessHost(const GURL& manifest_url,
+                  base::File nexe_file,
+                  ppapi::PpapiPermissions permissions,
                   int render_view_id,
                   uint32 permission_bits,
                   bool uses_irt,
+                  bool uses_nonsfi_mode,
                   bool enable_dyncode_syscalls,
                   bool enable_exception_handling,
                   bool enable_crash_throttling,
@@ -75,6 +79,9 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
 
   // Do any minimal work that must be done at browser startup.
   static void EarlyStartup();
+
+  // Specifies throttling time in milliseconds for PpapiHostMsg_Keepalive IPCs.
+  static void SetPpapiKeepAliveThrottleForTesting(unsigned milliseconds);
 
   // Initialize the new NaCl process. Result is returned by sending ipc
   // message reply_msg.
@@ -103,12 +110,22 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
 
   bool LaunchNaClGdb();
 
+  // Mark the process as using a particular GDB debug stub port and notify
+  // listeners (if the port is not kGdbDebugStubPortUnknown).
+  void SetDebugStubPort(int port);
+
 #if defined(OS_POSIX)
   // Create bound TCP socket in the browser process so that the NaCl GDB debug
   // stub can use it to accept incoming connections even when the Chrome sandbox
   // is enabled.
   net::SocketDescriptor GetDebugStubSocketHandle();
 #endif
+
+#if defined(OS_WIN)
+  // Called when the debug stub port has been selected.
+  void OnDebugStubPortSelected(uint16_t debug_stub_port);
+#endif
+
   bool LaunchSelLdr();
 
   // BrowserChildProcessHostDelegate implementation:
@@ -122,7 +139,10 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
 
   // Sends the reply message to the renderer who is waiting for the plugin
   // to load. Returns true on success.
-  bool ReplyToRenderer(const IPC::ChannelHandle& channel_handle);
+  bool ReplyToRenderer(
+      const IPC::ChannelHandle& ppapi_channel_handle,
+      const IPC::ChannelHandle& trusted_channel_handle,
+      const IPC::ChannelHandle& manifest_service_channel_handle);
 
   // Sends the reply with error message to the renderer.
   void SendErrorToRenderer(const std::string& error_message);
@@ -135,10 +155,6 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // Sends the message to the NaCl process to load the plugin. Returns true
   // on success.
   bool StartNaClExecution();
-
-  // Called once all initialization is complete and the NaCl process is
-  // ready to go. Returns true on success.
-  bool SendStart();
 
   // Does post-process-launching tasks for starting the NaCl process once
   // we have a connection.
@@ -153,7 +169,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
                           IPC::Message* reply_msg);
   void FileResolved(const base::FilePath& file_path,
                     IPC::Message* reply_msg,
-                    const base::PlatformFile& file);
+                    base::File file);
 
 #if defined(OS_WIN)
   // Message handler for Windows hardware exception handling.
@@ -167,9 +183,13 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   // created.
   void OnPpapiChannelsCreated(
       const IPC::ChannelHandle& browser_channel_handle,
-      const IPC::ChannelHandle& renderer_channel_handle);
+      const IPC::ChannelHandle& ppapi_renderer_channel_handle,
+      const IPC::ChannelHandle& trusted_renderer_channel_handle,
+      const IPC::ChannelHandle& manifest_service_channel_handle);
 
   GURL manifest_url_;
+  base::File nexe_file_;
+
   ppapi::PpapiPermissions permissions_;
 
 #if defined(OS_WIN)
@@ -202,6 +222,7 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   scoped_ptr<content::BrowserChildProcessHost> process_;
 
   bool uses_irt_;
+  bool uses_nonsfi_mode_;
 
   bool enable_debug_stub_;
   bool enable_dyncode_syscalls_;
@@ -218,6 +239,9 @@ class NaClProcessHost : public content::BrowserChildProcessHostDelegate {
   scoped_ptr<content::BrowserPpapiHost> ppapi_host_;
 
   int render_view_id_;
+
+  // Throttling time in milliseconds for PpapiHostMsg_Keepalive IPCs.
+  static unsigned keepalive_throttle_interval_milliseconds_;
 
   DISALLOW_COPY_AND_ASSIGN(NaClProcessHost);
 };

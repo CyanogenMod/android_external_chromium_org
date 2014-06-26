@@ -6,28 +6,24 @@
 
 #include "ash/display/display_controller.h"
 #include "ash/shell.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/extension_function_dispatcher.h"
+#include "chrome/browser/extensions/chrome_extension_web_contents_observer.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_web_contents_observer.h"
 #include "chrome/browser/media/media_capture_devices_dispatcher.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/common/extensions/api/virtual_keyboard_private.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/view_type_utils.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension_messages.h"
 #include "ipc/ipc_message_macros.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/ime/input_method.h"
-#include "ui/base/ime/text_input_client.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/keyboard/keyboard_controller.h"
 
@@ -113,9 +109,10 @@ void AshKeyboardControllerProxy::RequestAudioInput(
 void AshKeyboardControllerProxy::SetupWebContents(
     content::WebContents* contents) {
   extension_function_dispatcher_.reset(
-      new ExtensionFunctionDispatcher(GetBrowserContext(), this));
+      new extensions::ExtensionFunctionDispatcher(GetBrowserContext(), this));
   extensions::SetViewType(contents, extensions::VIEW_TYPE_VIRTUAL_KEYBOARD);
-  extensions::ExtensionWebContentsObserver::CreateForWebContents(contents);
+  extensions::ChromeExtensionWebContentsObserver::CreateForWebContents(
+      contents);
   Observe(contents);
 }
 
@@ -150,22 +147,11 @@ void AshKeyboardControllerProxy::ShowKeyboardContainer(
   KeyboardControllerProxy::ShowKeyboardContainer(container);
 }
 
-void AshKeyboardControllerProxy::EnsureCaretInWorkArea() {
-  // GetTextInputClient may return NULL when keyboard-usability-experiment
-  // flag is set.
-  if (GetInputMethod()->GetTextInputClient()) {
-    gfx::Rect showing_area =
-        ash::Shell::GetScreen()->GetPrimaryDisplay().work_area();
-    GetInputMethod()->GetTextInputClient()->EnsureCaretInRect(showing_area);
-  }
-}
-
 void AshKeyboardControllerProxy::SetUpdateInputType(ui::TextInputType type) {
   // TODO(bshe): Need to check the affected window's profile once multi-profile
   // is supported.
   content::BrowserContext* context = GetBrowserContext();
-  extensions::EventRouter* router =
-      extensions::ExtensionSystem::Get(context)->event_router();
+  extensions::EventRouter* router = extensions::EventRouter::Get(context);
 
   if (!router->HasEventListener(
           virtual_keyboard_private::OnTextInputBoxFocused::kEventName)) {

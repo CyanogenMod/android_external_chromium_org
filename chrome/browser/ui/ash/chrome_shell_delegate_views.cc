@@ -4,6 +4,8 @@
 
 #include "chrome/browser/ui/ash/chrome_shell_delegate.h"
 
+#include <vector>
+
 #include "ash/accessibility_delegate.h"
 #include "ash/magnifier/magnifier_constants.h"
 #include "ash/media_delegate.h"
@@ -11,12 +13,16 @@
 #include "ash/wm/window_util.h"
 #include "base/command_line.h"
 #include "chrome/browser/accessibility/accessibility_events.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/ui/ash/caps_lock_delegate_views.h"
+#include "chrome/browser/signin/signin_error_notifier_factory_ash.h"
+#include "chrome/browser/sync/sync_error_notifier_factory_ash.h"
 #include "chrome/browser/ui/ash/chrome_new_window_delegate.h"
 #include "chrome/browser/ui/ash/session_state_delegate_views.h"
+#include "chrome/browser/ui/ash/solid_color_user_wallpaper_delegate.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
@@ -30,7 +36,10 @@
 
 #if defined(OS_WIN)
 #include "chrome/browser/ui/ash/system_tray_delegate_win.h"
-#include "chrome/browser/ui/ash/user_wallpaper_delegate_win.h"
+#endif
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+#include "chrome/browser/ui/ash/system_tray_delegate_linux.h"
 #endif
 
 namespace {
@@ -56,6 +65,10 @@ class MediaDelegateImpl : public ash::MediaDelegate {
   virtual void HandleMediaNextTrack() OVERRIDE {}
   virtual void HandleMediaPlayPause() OVERRIDE {}
   virtual void HandleMediaPrevTrack() OVERRIDE {}
+  virtual ash::MediaCaptureState GetMediaCaptureState(
+      content::BrowserContext* context) OVERRIDE {
+    return ash::MEDIA_CAPTURE_NONE;
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MediaDelegateImpl);
@@ -120,6 +133,8 @@ class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
     return false;
   }
 
+  virtual bool IsBrailleDisplayConnected() const OVERRIDE { return false; }
+
   virtual void SilenceSpokenFeedback() const OVERRIDE {
   }
 
@@ -138,7 +153,7 @@ class EmptyAccessibilityDelegate : public ash::AccessibilityDelegate {
     return ash::A11Y_ALERT_NONE;
   }
 
-  base::TimeDelta PlayShutdownSound() const OVERRIDE {
+  virtual base::TimeDelta PlayShutdownSound() const OVERRIDE {
     return base::TimeDelta();
   }
 
@@ -155,7 +170,7 @@ bool ChromeShellDelegate::IsFirstRunAfterBoot() const {
 void ChromeShellDelegate::PreInit() {
 }
 
-void ChromeShellDelegate::Shutdown() {
+void ChromeShellDelegate::PreShutdown() {
 }
 
 ash::NewWindowDelegate* ChromeShellDelegate::CreateNewWindowDelegate() {
@@ -166,10 +181,6 @@ ash::MediaDelegate* ChromeShellDelegate::CreateMediaDelegate() {
   return new MediaDelegateImpl;
 }
 
-ash::CapsLockDelegate* ChromeShellDelegate::CreateCapsLockDelegate() {
-  return new CapsLockDelegate();
-}
-
 ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
   return new SessionStateDelegate;
 }
@@ -177,6 +188,8 @@ ash::SessionStateDelegate* ChromeShellDelegate::CreateSessionStateDelegate() {
 ash::SystemTrayDelegate* ChromeShellDelegate::CreateSystemTrayDelegate() {
 #if defined(OS_WIN)
   return CreateWindowsSystemTrayDelegate();
+#elif defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  return CreateLinuxSystemTrayDelegate();
 #else
   return new ash::DefaultSystemTrayDelegate;
 #endif
@@ -187,18 +200,30 @@ ash::AccessibilityDelegate* ChromeShellDelegate::CreateAccessibilityDelegate() {
 }
 
 ash::UserWallpaperDelegate* ChromeShellDelegate::CreateUserWallpaperDelegate() {
-#if defined(OS_WIN)
-  return ::CreateUserWallpaperDelegate();
-#else
-  return NULL;
-#endif
+  return CreateSolidColorUserWallpaperDelegate();
 }
 
 void ChromeShellDelegate::Observe(int type,
                                   const content::NotificationSource& source,
                                   const content::NotificationDetails& details) {
   switch (type) {
+    case chrome::NOTIFICATION_PROFILE_ADDED: {
+      // Start the error notifier services to show sync/auth notifications.
+      Profile* profile = content::Source<Profile>(source).ptr();
+      SigninErrorNotifierFactory::GetForProfile(profile);
+      SyncErrorNotifierFactory::GetForProfile(profile);
+      break;
+    }
     case chrome::NOTIFICATION_ASH_SESSION_STARTED: {
+      // Start the error notifier services for the already loaded profiles.
+      const std::vector<Profile*> profiles =
+          g_browser_process->profile_manager()->GetLoadedProfiles();
+      for (std::vector<Profile*>::const_iterator it = profiles.begin();
+           it != profiles.end(); ++it) {
+        SigninErrorNotifierFactory::GetForProfile(*it);
+        SyncErrorNotifierFactory::GetForProfile(*it);
+      }
+
 #if defined(OS_WIN)
       // If we are launched to service a windows 8 search request then let the
       // IPC which carries the search string create the browser and initiate
@@ -252,6 +277,9 @@ void ChromeShellDelegate::Observe(int type,
 
 void ChromeShellDelegate::PlatformInit() {
 #if defined(OS_WIN)
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_PROFILE_ADDED,
+                 content::NotificationService::AllSources());
   registrar_.Add(this,
                  chrome::NOTIFICATION_ASH_SESSION_STARTED,
                  content::NotificationService::AllSources());

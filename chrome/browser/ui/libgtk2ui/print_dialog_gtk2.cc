@@ -6,6 +6,8 @@
 
 #include <gtk/gtkunixprint.h>
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -17,10 +19,12 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/ui/libgtk2ui/gtk2_util.h"
 #include "chrome/browser/ui/libgtk2ui/printing_gtk2_util.h"
 #include "printing/metafile.h"
 #include "printing/print_job_constants.h"
 #include "printing/print_settings.h"
+#include "ui/aura/window.h"
 
 using content::BrowserThread;
 using printing::PageRanges;
@@ -33,6 +37,53 @@ const char kCUPSDuplex[] = "cups-Duplex";
 const char kDuplexNone[] = "None";
 const char kDuplexTumble[] = "DuplexTumble";
 const char kDuplexNoTumble[] = "DuplexNoTumble";
+
+int kPaperSizeTresholdMicrons = 100;
+int kMicronsInMm = 1000;
+
+// Checks whether gtk_paper_size can be used to represent user selected media.
+// In fuzzy match mode checks that paper sizes are "close enough" (less than
+// 1mm difference). In the exact mode, looks for the paper with the same PPD
+// name and "close enough" size.
+bool PaperSizeMatch(GtkPaperSize* gtk_paper_size,
+                    const PrintSettings::RequestedMedia& media,
+                    bool fuzzy_match) {
+  if (!gtk_paper_size) {
+    return false;
+  }
+  gfx::Size paper_size_microns(
+      static_cast<int>(gtk_paper_size_get_width(gtk_paper_size, GTK_UNIT_MM) *
+                       kMicronsInMm + 0.5),
+      static_cast<int>(gtk_paper_size_get_height(gtk_paper_size, GTK_UNIT_MM) *
+                       kMicronsInMm + 0.5));
+  int diff = std::max(
+      std::abs(paper_size_microns.width() - media.size_microns.width()),
+      std::abs(paper_size_microns.height() - media.size_microns.height()));
+  if (fuzzy_match) {
+    return diff <= kPaperSizeTresholdMicrons;
+  }
+  return !media.vendor_id.empty() &&
+         media.vendor_id == gtk_paper_size_get_ppd_name(gtk_paper_size) &&
+         diff <= kPaperSizeTresholdMicrons;
+}
+
+// Looks up a paper size matching (in terms of PaperSizeMatch) the user selected
+// media in the paper size list reported by GTK. Returns NULL if there's no
+// match found.
+GtkPaperSize* FindPaperSizeMatch(GList* gtk_paper_sizes,
+                                 const PrintSettings::RequestedMedia& media) {
+  GtkPaperSize* first_fuzzy_match = NULL;
+  for (GList* p = gtk_paper_sizes; p && p->data; p = g_list_next(p)) {
+    GtkPaperSize* gtk_paper_size = static_cast<GtkPaperSize*>(p->data);
+    if (PaperSizeMatch(gtk_paper_size, media, false)) {
+      return gtk_paper_size;
+    }
+    if (!first_fuzzy_match && PaperSizeMatch(gtk_paper_size, media, true)) {
+      first_fuzzy_match = gtk_paper_size;
+    }
+  }
+  return first_fuzzy_match;
+}
 
 class StickyPrintSettingGtk {
  public:
@@ -120,7 +171,7 @@ class GtkPrinterList {
 // static
 printing::PrintDialogGtkInterface* PrintDialogGtk2::CreatePrintDialog(
     PrintingContextLinux* context) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   return new PrintDialogGtk2(context);
 }
 
@@ -133,9 +184,14 @@ PrintDialogGtk2::PrintDialogGtk2(PrintingContextLinux* context)
 }
 
 PrintDialogGtk2::~PrintDialogGtk2() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   if (dialog_) {
+    aura::Window* parent = libgtk2ui::GetAuraTransientParent(dialog_);
+    if (parent) {
+      parent->RemoveObserver(this);
+      libgtk2ui::ClearAuraTransientParent(dialog_);
+    }
     gtk_widget_destroy(dialog_);
     dialog_ = NULL;
   }
@@ -217,6 +273,40 @@ bool PrintDialogGtk2::UpdateSettings(printing::PrintSettings* settings) {
   if (!page_setup_)
     page_setup_ = gtk_page_setup_new();
 
+  if (page_setup_ && !settings->requested_media().IsDefault()) {
+    const PrintSettings::RequestedMedia& requested_media =
+        settings->requested_media();
+    GtkPaperSize* gtk_current_paper_size =
+        gtk_page_setup_get_paper_size(page_setup_);
+    if (!PaperSizeMatch(gtk_current_paper_size, requested_media,
+                        true /*fuzzy_match*/)) {
+      GList* gtk_paper_sizes =
+          gtk_paper_size_get_paper_sizes(false /*include_custom*/);
+      if (gtk_paper_sizes) {
+        GtkPaperSize* matching_gtk_paper_size =
+            FindPaperSizeMatch(gtk_paper_sizes, requested_media);
+        if (matching_gtk_paper_size) {
+          VLOG(1) << "Using listed paper size";
+          gtk_page_setup_set_paper_size(page_setup_, matching_gtk_paper_size);
+        } else {
+          VLOG(1) << "Using custom paper size";
+          GtkPaperSize* custom_size = gtk_paper_size_new_custom(
+              requested_media.vendor_id.c_str(),
+              requested_media.vendor_id.c_str(),
+              requested_media.size_microns.width() / kMicronsInMm,
+              requested_media.size_microns.height() / kMicronsInMm,
+              GTK_UNIT_MM);
+          gtk_page_setup_set_paper_size(page_setup_, custom_size);
+          gtk_paper_size_free(custom_size);
+        }
+        g_list_free_full(gtk_paper_sizes,
+                         reinterpret_cast<GDestroyNotify>(gtk_paper_size_free));
+      }
+    } else {
+      VLOG(1) << "Using default paper size";
+    }
+  }
+
   gtk_print_settings_set_orientation(
       gtk_settings_,
       settings->landscape() ? GTK_PAGE_ORIENTATION_LANDSCAPE :
@@ -232,8 +322,10 @@ void PrintDialogGtk2::ShowDialog(
     const PrintingContextLinux::PrintSettingsCallback& callback) {
   callback_ = callback;
 
-  // TODO(mukai): take care of parent as select_file_dialog_impl_gtk2.
   dialog_ = gtk_print_unix_dialog_new(NULL, NULL);
+  libgtk2ui::SetGtkTransientForAura(dialog_, parent_view);
+  if (parent_view)
+    parent_view->AddObserver(this);
   g_signal_connect(dialog_, "delete-event",
                    G_CALLBACK(gtk_widget_hide_on_delete), NULL);
 
@@ -385,7 +477,7 @@ void PrintDialogGtk2::OnResponse(GtkWidget* dialog, int response_id) {
 
 void PrintDialogGtk2::SendDocumentToPrinter(
     const base::string16& document_name) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // If |printer_| is NULL then somehow the GTK printer list changed out under
   // us. In which case, just bail out.
@@ -431,4 +523,12 @@ void PrintDialogGtk2::OnJobCompleted(GtkPrintJob* print_job, GError* error) {
 void PrintDialogGtk2::InitPrintSettings(PrintSettings* settings) {
   InitPrintSettingsGtk(gtk_settings_, page_setup_, settings);
   context_->InitWithSettings(*settings);
+}
+
+void PrintDialogGtk2::OnWindowDestroying(aura::Window* window) {
+  DCHECK_EQ(libgtk2ui::GetAuraTransientParent(dialog_), window);
+
+  libgtk2ui::ClearAuraTransientParent(dialog_);
+  window->RemoveObserver(this);
+  Release();
 }

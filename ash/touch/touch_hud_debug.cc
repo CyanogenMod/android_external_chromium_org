@@ -12,7 +12,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/events/event.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/canvas.h"
@@ -27,11 +27,10 @@
 #include <X11/extensions/XInput2.h>
 #include <X11/Xlib.h>
 
-#include "ui/events/x/device_data_manager.h"
+#include "ui/events/x/device_data_manager_x11.h"
 #endif
 
 namespace ash {
-namespace internal {
 
 const int kPointRadius = 20;
 const SkColor kColors[] = {
@@ -74,10 +73,10 @@ int GetTrackingId(const ui::TouchEvent& event) {
   if (!event.HasNativeEvent())
     return 0;
 #if defined(USE_XI2_MT)
-  ui::DeviceDataManager* manager = ui::DeviceDataManager::GetInstance();
+  ui::DeviceDataManagerX11* manager = ui::DeviceDataManagerX11::GetInstance();
   double tracking_id;
   if (manager->GetEventData(*event.native_event(),
-                            ui::DeviceDataManager::DT_TOUCH_TRACKING_ID,
+                            ui::DeviceDataManagerX11::DT_TOUCH_TRACKING_ID,
                             &tracking_id)) {
     return static_cast<int>(tracking_id);
   }
@@ -353,9 +352,8 @@ TouchHudDebug::TouchHudDebug(aura::Window* initial_root)
   for (int i = 0; i < kMaxTouchPoints; ++i) {
     touch_labels_[i] = new views::Label;
     touch_labels_[i]->SetBackgroundColor(SkColorSetARGB(0, 255, 255, 255));
-    touch_labels_[i]->SetShadowColors(SK_ColorWHITE,
-                                      SK_ColorWHITE);
-    touch_labels_[i]->SetShadowOffset(1, 1);
+    touch_labels_[i]->set_shadows(gfx::ShadowValues(1,
+        gfx::ShadowValue(gfx::Point(1, 1), 0, SK_ColorWHITE)));
     label_container_->AddChildView(touch_labels_[i]);
   }
   label_container_->SetX(0);
@@ -374,8 +372,8 @@ scoped_ptr<base::DictionaryValue> TouchHudDebug::GetAllAsDictionary() {
   aura::Window::Windows roots = Shell::GetInstance()->GetAllRootWindows();
   for (aura::Window::Windows::iterator iter = roots.begin();
       iter != roots.end(); ++iter) {
-    internal::RootWindowController* controller = GetRootWindowController(*iter);
-    internal::TouchHudDebug* hud = controller->touch_hud_debug();
+    RootWindowController* controller = GetRootWindowController(*iter);
+    TouchHudDebug* hud = controller->touch_hud_debug();
     if (hud) {
       scoped_ptr<base::ListValue> list = hud->GetLogAsList();
       if (!list->empty())
@@ -466,10 +464,11 @@ void TouchHudDebug::OnTouchEvent(ui::TouchEvent* event) {
   label_container_->SetSize(label_container_->GetPreferredSize());
 }
 
-void TouchHudDebug::OnDisplayBoundsChanged(const gfx::Display& display) {
-  TouchObserverHUD::OnDisplayBoundsChanged(display);
+void TouchHudDebug::OnDisplayMetricsChanged(const gfx::Display& display,
+                                            uint32_t metrics) {
+  TouchObserverHUD::OnDisplayMetricsChanged(display, metrics);
 
-  if (display.id() != display_id())
+  if (display.id() != display_id() || !(metrics & DISPLAY_METRIC_BOUNDS))
     return;
   const gfx::Size& size = display.size();
   canvas_->SetSize(size);
@@ -486,5 +485,4 @@ void TouchHudDebug::UnsetHudForRootWindowController(
   controller->set_touch_hud_debug(NULL);
 }
 
-}  // namespace internal
 }  // namespace ash

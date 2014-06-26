@@ -11,9 +11,8 @@ const char kViewTypeBackgroundPage[] = "BACKGROUND";
 const char kViewTypePopup[] = "POPUP";
 const char kViewTypePanel[] = "PANEL";
 const char kViewTypeInfobar[] = "INFOBAR";
-const char kViewTypeNotification[] = "NOTIFICATION";
 const char kViewTypeExtensionDialog[] = "EXTENSION_DIALOG";
-const char kViewTypeAppShell[] = "SHELL";
+const char kViewTypeAppWindow[] = "APP_WINDOW";
 const char kViewTypeAll[] = "ALL";
 
 }  // namespace extensions

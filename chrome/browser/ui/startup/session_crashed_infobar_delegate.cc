@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/startup/session_crashed_infobar_delegate.h"
 
-#include "chrome/browser/infobars/infobar.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search/search.h"
 #include "chrome/browser/sessions/session_restore.h"
@@ -12,6 +12,7 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/storage_partition.h"
 #include "grit/chromium_strings.h"
@@ -71,21 +72,9 @@ base::string16 SessionCrashedInfoBarDelegate::GetButtonLabel(
 }
 
 bool SessionCrashedInfoBarDelegate::Accept() {
-  uint32 behavior = 0;
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
-  if (browser->tab_strip_model()->count() == 1) {
-    const content::WebContents* active_tab =
-        browser->tab_strip_model()->GetWebContentsAt(0);
-    if (active_tab->GetURL() == GURL(chrome::kChromeUINewTabURL) ||
-        chrome::IsInstantNTP(active_tab)) {
-      // There is only one tab and its the new tab page, make session restore
-      // clobber it.
-      behavior = SessionRestore::CLOBBER_CURRENT_TAB;
-    }
-  }
-  SessionRestore::RestoreSession(browser->profile(), browser,
-                                 browser->host_desktop_type(), behavior,
-                                 std::vector<GURL>());
+  Browser* browser = chrome::FindBrowserWithWebContents(
+      InfoBarService::WebContentsFromInfoBar(infobar()));
+  SessionRestore::RestoreSessionAfterCrash(browser);
   accepted_ = true;
   return true;
 }

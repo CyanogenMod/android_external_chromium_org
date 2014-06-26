@@ -5,6 +5,7 @@
 #import "ui/app_list/cocoa/app_list_view_controller.h"
 
 #include "base/mac/foundation_util.h"
+#include "base/mac/mac_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -12,10 +13,8 @@
 #include "ui/app_list/app_list_model.h"
 #include "ui/app_list/app_list_view_delegate.h"
 #include "ui/app_list/app_list_view_delegate_observer.h"
-#include "ui/app_list/signin_delegate.h"
 #import "ui/app_list/cocoa/app_list_pager_view.h"
 #import "ui/app_list/cocoa/apps_grid_controller.h"
-#import "ui/app_list/cocoa/signin_view_controller.h"
 #import "ui/base/cocoa/flipped_view.h"
 #include "ui/app_list/search_box_model.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -199,9 +198,12 @@ void AppListModelObserverBridge::OnProfilesChanged() {
   contentsView_.reset([[FlippedView alloc] initWithFrame:contentsRect]);
 
   // The contents view contains animations both from an NSCollectionView and the
-  // app list's own transitive drag layers. Ensure the subviews have access to
-  // a compositing layer they can share.
-  [contentsView_ setWantsLayer:YES];
+  // app list's own transitive drag layers. On Mavericks, the subviews need to
+  // have access to a compositing layer they can share. Otherwise the compositor
+  // makes tearing artifacts. However, doing this on Mountain Lion or earler
+  // results in flickering whilst an item is installing.
+  if (base::mac::IsOSMavericksOrLater())
+    [contentsView_ setWantsLayer:YES];
 
   backgroundView_.reset(
       [[BackgroundView alloc] initWithFrame:
@@ -334,7 +336,7 @@ void AppListModelObserverBridge::OnProfilesChanged() {
     return;
 
   base::string16 query;
-  TrimWhitespace(searchBoxModel->text(), TRIM_ALL, &query);
+  base::TrimWhitespace(searchBoxModel->text(), base::TRIM_ALL, &query);
   BOOL shouldShowSearch = !query.empty();
   [self revealSearchResults:shouldShowSearch];
   if (shouldShowSearch)
@@ -360,24 +362,6 @@ void AppListModelObserverBridge::OnProfilesChanged() {
 
 - (void)onProfilesChanged {
   [appsSearchBoxController_ rebuildMenu];
-  app_list::SigninDelegate* signinDelegate =
-      delegate_ ? delegate_->GetSigninDelegate() : NULL;
-  BOOL showSigninView = signinDelegate && signinDelegate->NeedSignin();
-
-  [[signinViewController_ view] removeFromSuperview];
-  signinViewController_.reset();
-
-  if (!showSigninView) {
-    [backgroundView_ setHidden:NO];
-    return;
-  }
-
-  [backgroundView_ setHidden:YES];
-  signinViewController_.reset(
-      [[SigninViewController alloc] initWithFrame:[backgroundView_ frame]
-                                     cornerRadius:kBubbleCornerRadius
-                                         delegate:signinDelegate]);
-  [[self view] addSubview:[signinViewController_ view]];
 }
 
 @end

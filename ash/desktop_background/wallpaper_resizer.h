@@ -26,10 +26,6 @@ class ASH_EXPORT WallpaperResizer {
   // is modified, its ID will change.
   static uint32_t GetImageId(const gfx::ImageSkia& image);
 
-  WallpaperResizer(int image_resource_id,
-                   const gfx::Size& target_size,
-                   WallpaperLayout layout);
-
   WallpaperResizer(const gfx::ImageSkia& image,
                    const gfx::Size& target_size,
                    WallpaperLayout layout);

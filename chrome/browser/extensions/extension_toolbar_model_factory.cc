@@ -6,10 +6,12 @@
 
 #include "chrome/browser/extensions/extension_toolbar_model.h"
 #include "chrome/browser/profiles/profile.h"
-#include "components/browser_context_keyed_service/browser_context_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_prefs_factory.h"
 #include "extensions/browser/extensions_browser_client.h"
+
+namespace extensions {
 
 // static
 ExtensionToolbarModel* ExtensionToolbarModelFactory::GetForProfile(
@@ -27,23 +29,21 @@ ExtensionToolbarModelFactory::ExtensionToolbarModelFactory()
     : BrowserContextKeyedServiceFactory(
         "ExtensionToolbarModel",
         BrowserContextDependencyManager::GetInstance()) {
-  DependsOn(extensions::ExtensionPrefsFactory::GetInstance());
+  DependsOn(ExtensionPrefsFactory::GetInstance());
 }
 
 ExtensionToolbarModelFactory::~ExtensionToolbarModelFactory() {}
 
-BrowserContextKeyedService*
-    ExtensionToolbarModelFactory::BuildServiceInstanceFor(
-        content::BrowserContext* context) const {
+KeyedService* ExtensionToolbarModelFactory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
   return new ExtensionToolbarModel(
       Profile::FromBrowserContext(context),
-      extensions::ExtensionPrefsFactory::GetForBrowserContext(context));
+      ExtensionPrefsFactory::GetForBrowserContext(context));
 }
 
 content::BrowserContext* ExtensionToolbarModelFactory::GetBrowserContextToUse(
     content::BrowserContext* context) const {
-  return extensions::ExtensionsBrowserClient::Get()->
-      GetOriginalContext(context);
+  return ExtensionsBrowserClient::Get()->GetOriginalContext(context);
 }
 
 bool ExtensionToolbarModelFactory::ServiceIsCreatedWithBrowserContext() const {
@@ -53,3 +53,5 @@ bool ExtensionToolbarModelFactory::ServiceIsCreatedWithBrowserContext() const {
 bool ExtensionToolbarModelFactory::ServiceIsNULLWhileTesting() const {
   return true;
 }
+
+}  // namespace extensions

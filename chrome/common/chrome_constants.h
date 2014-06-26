@@ -24,6 +24,10 @@ extern const base::FilePath::CharType kHelperProcessExecutableNameChromium[];
 extern const base::FilePath::CharType kBrowserProcessExecutablePathChromium[];
 extern const base::FilePath::CharType kHelperProcessExecutablePathChromium[];
 #if defined(OS_MACOSX)
+// NOTE: if you change the value of kFrameworkName, please don't forget to
+// update components/test/run_all_unittests.cc as well.
+// TODO(tfarina): Remove the comment above, when you fix components to use plist
+// on Mac.
 extern const base::FilePath::CharType kFrameworkName[];
 
 // The helper .app bundle name and executable name may have one of these
@@ -52,7 +56,6 @@ extern const wchar_t kBrowserResourcesDll[];
 extern const base::FilePath::CharType kAndroidCacheFilename[];
 #endif
 extern const base::FilePath::CharType kArchivedHistoryFilename[];
-extern const base::FilePath::CharType kBookmarksFileName[];
 extern const base::FilePath::CharType kCacheDirname[];
 extern const base::FilePath::CharType kCookieFilename[];
 extern const base::FilePath::CharType kCRLSetFilename[];
@@ -67,19 +70,21 @@ extern const base::FilePath::CharType kJumpListIconDirname[];
 extern const base::FilePath::CharType kLocalStateFilename[];
 extern const base::FilePath::CharType kLocalStorePoolName[];
 extern const base::FilePath::CharType kLoginDataFileName[];
-extern const base::FilePath::CharType kManagedUserSettingsFilename[];
 extern const base::FilePath::CharType kMediaCacheDirname[];
 extern const base::FilePath::CharType kNewTabThumbnailsFilename[];
 extern const base::FilePath::CharType kOBCertFilename[];
 extern const base::FilePath::CharType kPreferencesFilename[];
+extern const base::FilePath::CharType kProtectedPreferencesFilenameDeprecated[];
 extern const base::FilePath::CharType kReadmeFilename[];
 extern const base::FilePath::CharType kResetPromptMementoFilename[];
 extern const base::FilePath::CharType kSafeBrowsingBaseFilename[];
+extern const base::FilePath::CharType kSecurePreferencesFilename[];
 extern const base::FilePath::CharType kServiceStateFileName[];
 extern const base::FilePath::CharType kShortcutsDatabaseName[];
 extern const base::FilePath::CharType kSingletonCookieFilename[];
 extern const base::FilePath::CharType kSingletonLockFilename[];
 extern const base::FilePath::CharType kSingletonSocketFilename[];
+extern const base::FilePath::CharType kSupervisedUserSettingsFilename[];
 extern const base::FilePath::CharType kSyncCredentialsFilename[];
 extern const base::FilePath::CharType kThemePackFilename[];
 extern const base::FilePath::CharType kThumbnailsFilename[];
@@ -120,8 +125,6 @@ extern const int kHighestRendererOomScore;
 #endif
 
 #if defined(OS_WIN)
-// Used by Metro Chrome to create the profile under a custom subdirectory.
-extern const wchar_t kMetroChromeUserDataSubDir[];
 // Used by Metro Chrome to initiate navigation and search requests.
 extern const wchar_t kMetroNavigationAndSearchMessage[];
 // Used by Metro Chrome to get information about the current tab.

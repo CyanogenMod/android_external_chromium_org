@@ -6,13 +6,16 @@
 
 #include <string>
 
+#include "base/logging.h"
+#include "base/command_line.h"
 #include "base/strings/stringprintf.h"
-#include "content/shell/renderer/test_runner/AccessibilityController.h"
-#include "content/shell/renderer/test_runner/EventSender.h"
-#include "content/shell/renderer/test_runner/TestRunner.h"
-#include "content/shell/renderer/test_runner/WebTestProxy.h"
+#include "content/shell/common/shell_switches.h"
+#include "content/shell/renderer/test_runner/accessibility_controller.h"
+#include "content/shell/renderer/test_runner/event_sender.h"
 #include "content/shell/renderer/test_runner/gamepad_controller.h"
 #include "content/shell/renderer/test_runner/text_input_controller.h"
+#include "content/shell/renderer/test_runner/test_runner.h"
+#include "content/shell/renderer/test_runner/web_test_proxy.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/web/WebCache.h"
@@ -23,17 +26,19 @@
 using namespace blink;
 using namespace std;
 
-namespace WebTestRunner {
+namespace content {
 
 TestInterfaces::TestInterfaces()
     : m_accessibilityController(new AccessibilityController())
     , m_eventSender(new EventSender(this))
-    , m_gamepadController(new content::GamepadController())
-    , m_textInputController(new content::TextInputController())
+    , m_gamepadController(new GamepadController())
+    , m_textInputController(new TextInputController())
     , m_testRunner(new TestRunner(this))
     , m_delegate(0)
 {
     blink::setLayoutTestMode(true);
+    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kEnableFontAntialiasing))
+        blink::setFontAntialiasingEnabledForTest(true);
 
     // NOTE: please don't put feature specific enable flags here,
     // instead add them to RuntimeEnabledFeatures.in
@@ -43,53 +48,52 @@ TestInterfaces::TestInterfaces()
 
 TestInterfaces::~TestInterfaces()
 {
-    m_accessibilityController->setWebView(0);
-    m_eventSender->setWebView(0);
+    m_accessibilityController->SetWebView(0);
+    m_eventSender->SetWebView(0);
     // m_gamepadController doesn't depend on WebView.
     m_textInputController->SetWebView(NULL);
-    m_testRunner->setWebView(0, 0);
+    m_testRunner->SetWebView(0, 0);
 
-    m_accessibilityController->setDelegate(0);
-    m_eventSender->setDelegate(0);
+    m_accessibilityController->SetDelegate(0);
+    m_eventSender->SetDelegate(0);
     m_gamepadController->SetDelegate(0);
     // m_textInputController doesn't depend on WebTestDelegate.
-    m_testRunner->setDelegate(0);
+    m_testRunner->SetDelegate(0);
 }
 
 void TestInterfaces::setWebView(WebView* webView, WebTestProxyBase* proxy)
 {
     m_proxy = proxy;
-    m_accessibilityController->setWebView(webView);
-    m_eventSender->setWebView(webView);
+    m_accessibilityController->SetWebView(webView);
+    m_eventSender->SetWebView(webView);
     // m_gamepadController doesn't depend on WebView.
     m_textInputController->SetWebView(webView);
-    m_testRunner->setWebView(webView, proxy);
+    m_testRunner->SetWebView(webView, proxy);
 }
 
 void TestInterfaces::setDelegate(WebTestDelegate* delegate)
 {
-    m_accessibilityController->setDelegate(delegate);
-    m_eventSender->setDelegate(delegate);
+    m_accessibilityController->SetDelegate(delegate);
+    m_eventSender->SetDelegate(delegate);
     m_gamepadController->SetDelegate(delegate);
     // m_textInputController doesn't depend on WebTestDelegate.
-    m_testRunner->setDelegate(delegate);
+    m_testRunner->SetDelegate(delegate);
     m_delegate = delegate;
 }
 
 void TestInterfaces::bindTo(WebFrame* frame)
 {
-    m_accessibilityController->bindToJavascript(frame, WebString::fromUTF8("accessibilityController"));
-    m_eventSender->bindToJavascript(frame, WebString::fromUTF8("eventSender"));
+    m_accessibilityController->Install(frame);
+    m_eventSender->Install(frame);
     m_gamepadController->Install(frame);
     m_textInputController->Install(frame);
-    m_testRunner->bindToJavascript(frame, WebString::fromUTF8("testRunner"));
-    m_testRunner->bindToJavascript(frame, WebString::fromUTF8("layoutTestController"));
+    m_testRunner->Install(frame);
 }
 
 void TestInterfaces::resetTestHelperControllers()
 {
-    m_accessibilityController->reset();
-    m_eventSender->reset();
+    m_accessibilityController->Reset();
+    m_eventSender->Reset();
     m_gamepadController->Reset();
     // m_textInputController doesn't have any state to reset.
     WebCache::clear();
@@ -98,12 +102,12 @@ void TestInterfaces::resetTestHelperControllers()
 void TestInterfaces::resetAll()
 {
     resetTestHelperControllers();
-    m_testRunner->reset();
+    m_testRunner->Reset();
 }
 
 void TestInterfaces::setTestIsRunning(bool running)
 {
-    m_testRunner->setTestIsRunning(running);
+    m_testRunner->SetTestIsRunning(running);
 }
 
 void TestInterfaces::configureForTestWithURL(const WebURL& testURL, bool generatePixels)
@@ -129,7 +133,7 @@ void TestInterfaces::configureForTestWithURL(const WebURL& testURL, bool generat
                 "{\"lastActivePanel\":\"\\\"%s\\\"\"}",
                 test_path.substr(0, slash_index).c_str());
         }
-        m_testRunner->showDevTools(settings);
+        m_testRunner->showDevTools(settings, string());
     }
     if (spec.find("/viewsource/") != string::npos) {
         m_testRunner->setShouldEnableViewSource(true);
@@ -147,7 +151,7 @@ void TestInterfaces::windowClosed(WebTestProxyBase* proxy)
 {
     vector<WebTestProxyBase*>::iterator pos = find(m_windowList.begin(), m_windowList.end(), proxy);
     if (pos == m_windowList.end()) {
-        BLINK_ASSERT_NOT_REACHED();
+        NOTREACHED();
         return;
     }
     m_windowList.erase(pos);
@@ -185,7 +189,7 @@ const vector<WebTestProxyBase*>& TestInterfaces::windowList()
 
 WebThemeEngine* TestInterfaces::themeEngine()
 {
-    if (!m_testRunner->useMockTheme())
+    if (!m_testRunner->UseMockTheme())
         return 0;
 #if defined(__APPLE__)
     if (!m_themeEngine.get())
@@ -197,4 +201,4 @@ WebThemeEngine* TestInterfaces::themeEngine()
     return m_themeEngine.get();
 }
 
-}
+}  // namespace content

@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_PLUGINS_PLUGIN_INFOBAR_DELEGATES_H_
 
 #include "base/callback.h"
-#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "components/infobars/core/confirm_infobar_delegate.h"
 #include "url/gurl.h"
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
@@ -139,7 +139,7 @@ class PluginInstallerInfoBarDelegate : public ConfirmInfoBarDelegate,
 
   // Replaces |infobar|, which must currently be owned, with an infobar asking
   // the user to install or update a particular plugin.
-  static void Replace(InfoBar* infobar,
+  static void Replace(infobars::InfoBar* infobar,
                       PluginInstaller* installer,
                       scoped_ptr<PluginMetadata> plugin_metadata,
                       bool new_install,

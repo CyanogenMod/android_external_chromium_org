@@ -9,14 +9,15 @@
 #include "cc/output/context_provider.h"
 #include "cc/output/output_surface.h"
 #include "cc/trees/layer_tree_host.h"
-#include "mojo/examples/compositor_app/mojo_context_provider.h"
+#include "mojo/cc/context_provider_mojo.h"
 
 namespace mojo {
 namespace examples {
 
-CompositorHost::CompositorHost(ScopedMessagePipeHandle gl_pipe)
-    : gl_pipe_(gl_pipe.Pass()), compositor_thread_("compositor") {
-  DCHECK(gl_pipe_.is_valid());
+CompositorHost::CompositorHost(ScopedMessagePipeHandle command_buffer_handle)
+    : command_buffer_handle_(command_buffer_handle.Pass()),
+      compositor_thread_("compositor") {
+  DCHECK(command_buffer_handle_.is_valid());
   bool started = compositor_thread_.Start();
   DCHECK(started);
 
@@ -28,10 +29,9 @@ CompositorHost::CompositorHost(ScopedMessagePipeHandle gl_pipe)
 
 CompositorHost::~CompositorHost() {}
 
-void CompositorHost::SetSize(gfx::Size viewport_size) {
+void CompositorHost::SetSize(const gfx::Size& viewport_size) {
   tree_->SetViewportSize(viewport_size);
   tree_->SetLayerTreeHostClientReady();
-  tree_->InitializeOutputSurfaceIfNeeded();
 }
 
 void CompositorHost::SetupScene() {
@@ -73,19 +73,17 @@ void CompositorHost::ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
 scoped_ptr<cc::OutputSurface> CompositorHost::CreateOutputSurface(
     bool fallback) {
   return make_scoped_ptr(
-      new cc::OutputSurface(new MojoContextProvider(gl_pipe_.Pass())));
+      new cc::OutputSurface(
+          new ContextProviderMojo(command_buffer_handle_.Pass())));
 }
 
-void CompositorHost::DidInitializeOutputSurface(bool success) {}
+void CompositorHost::DidInitializeOutputSurface() {
+}
 
 void CompositorHost::WillCommit() {}
 void CompositorHost::DidCommit() {}
 void CompositorHost::DidCommitAndDrawFrame() {}
 void CompositorHost::DidCompleteSwapBuffers() {}
-
-scoped_refptr<cc::ContextProvider> CompositorHost::OffscreenContextProvider() {
-  return NULL;
-}
 
 }  // namespace examples
 }  // namespace mojo

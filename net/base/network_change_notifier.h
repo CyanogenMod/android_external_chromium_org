@@ -5,7 +5,10 @@
 #ifndef NET_BASE_NETWORK_CHANGE_NOTIFIER_H_
 #define NET_BASE_NETWORK_CHANGE_NOTIFIER_H_
 
+#include <vector>
+
 #include "base/basictypes.h"
+#include "base/gtest_prod_util.h"
 #include "base/observer_list_threadsafe.h"
 #include "base/time/time.h"
 #include "net/base/net_export.h"
@@ -17,6 +20,8 @@ namespace net {
 struct DnsConfig;
 class HistogramWatcher;
 class NetworkChangeNotifierFactory;
+struct NetworkInterface;
+typedef std::vector<NetworkInterface> NetworkInterfaceList;
 class URLRequest;
 
 #if defined(OS_LINUX)
@@ -32,16 +37,19 @@ class AddressTrackerLinux;
 // destroyed on the same thread.
 class NET_EXPORT NetworkChangeNotifier {
  public:
-  // Using the terminology of the Network Information API:
-  // http://www.w3.org/TR/netinfo-api.
+  // This is a superset of the connection types in the NetInfo v3 specification:
+  // http://w3c.github.io/netinfo/.
   enum ConnectionType {
-    CONNECTION_UNKNOWN = 0, // A connection exists, but its type is unknown.
+    CONNECTION_UNKNOWN = 0,  // A connection exists, but its type is unknown.
+                             // Also used as a default value.
     CONNECTION_ETHERNET = 1,
     CONNECTION_WIFI = 2,
     CONNECTION_2G = 3,
     CONNECTION_3G = 4,
     CONNECTION_4G = 5,
-    CONNECTION_NONE = 6     // No connection.
+    CONNECTION_NONE = 6,     // No connection.
+    CONNECTION_BLUETOOTH = 7,
+    CONNECTION_LAST = CONNECTION_BLUETOOTH
   };
 
   class NET_EXPORT IPAddressObserver {
@@ -209,9 +217,14 @@ class NET_EXPORT NetworkChangeNotifier {
   static void RemoveNetworkChangeObserver(NetworkChangeObserver* observer);
 
   // Allow unit tests to trigger notifications.
-  static void NotifyObserversOfIPAddressChangeForTests() {
-    NotifyObserversOfIPAddressChange();
-  }
+  static void NotifyObserversOfIPAddressChangeForTests();
+  static void NotifyObserversOfConnectionTypeChangeForTests(
+      ConnectionType type);
+
+  // Enable or disable notifications from the host. After setting to true, be
+  // sure to pump the RunLoop until idle to finish any preexisting
+  // notifications.
+  static void SetTestNotificationsOnly(bool test_only);
 
   // Return a string equivalent to |type|.
   static const char* ConnectionTypeToString(ConnectionType type);
@@ -224,7 +237,16 @@ class NET_EXPORT NetworkChangeNotifier {
 
   // Register the Observer callbacks for producing histogram data.  This
   // should be called from the network thread to avoid race conditions.
+  // ShutdownHistogramWatcher() must be called prior to NetworkChangeNotifier
+  // destruction.
   static void InitHistogramWatcher();
+
+  // Unregister the Observer callbacks for producing histogram data.  This
+  // should be called from the network thread to avoid race conditions.
+  static void ShutdownHistogramWatcher();
+
+  // Log the |NCN.NetworkOperatorMCCMNC| histogram.
+  static void LogOperatorCodeHistogram(ConnectionType type);
 
   // Allows a second NetworkChangeNotifier to be created for unit testing, so
   // the test suite can create a MockNetworkChangeNotifier, but platform
@@ -288,14 +310,30 @@ class NET_EXPORT NetworkChangeNotifier {
   // Stores |config| in NetworkState and notifies observers.
   static void SetDnsConfig(const DnsConfig& config);
 
+  // Infer connection type from |GetNetworkList|. If all network interfaces have
+  // the same type, return it, otherwise return CONNECTION_UNKNOWN.
+  static ConnectionType ConnectionTypeFromInterfaces();
+
  private:
   friend class HostResolverImplDnsTest;
   friend class NetworkChangeNotifierAndroidTest;
   friend class NetworkChangeNotifierLinuxTest;
   friend class NetworkChangeNotifierWinTest;
+  FRIEND_TEST_ALL_PREFIXES(NetworkChangeNotifierTest,
+                           InterfacesToConnectionType);
 
   class NetworkState;
   class NetworkChangeCalculator;
+
+  // Infer connection type from |interfaces|. If all network interfaces have
+  // the same type, return it, otherwise return CONNECTION_UNKNOWN.
+  static ConnectionType ConnectionTypeFromInterfaceList(
+      const NetworkInterfaceList& interfaces);
+
+  void NotifyObserversOfIPAddressChangeImpl();
+  void NotifyObserversOfConnectionTypeChangeImpl(ConnectionType type);
+  void NotifyObserversOfDNSChangeImpl();
+  void NotifyObserversOfNetworkChangeImpl(ConnectionType type);
 
   const scoped_refptr<ObserverListThreadSafe<IPAddressObserver> >
       ip_address_observer_list_;
@@ -314,6 +352,9 @@ class NET_EXPORT NetworkChangeNotifier {
 
   // Computes NetworkChange signal from IPAddress and ConnectionType signals.
   scoped_ptr<NetworkChangeCalculator> network_change_calculator_;
+
+  // Set true to disable non-test notifications (to prevent flakes in tests).
+  bool test_notifications_only_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkChangeNotifier);
 };

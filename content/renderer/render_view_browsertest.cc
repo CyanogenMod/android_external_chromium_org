@@ -9,6 +9,8 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
+#include "content/child/request_extra_data.h"
+#include "content/child/service_worker/service_worker_network_provider.h"
 #include "content/common/frame_messages.h"
 #include "content/common/ssl_status_serialization.h"
 #include "content/common/view_messages.h"
@@ -19,15 +21,21 @@
 #include "content/public/common/page_zoom.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/common/url_utils.h"
+#include "content/public/renderer/content_renderer_client.h"
 #include "content/public/renderer/document_state.h"
-#include "content/public/renderer/history_item_serialization.h"
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/render_view_test.h"
 #include "content/public/test/test_utils.h"
+#include "content/renderer/accessibility/renderer_accessibility.h"
+#include "content/renderer/accessibility/renderer_accessibility_complete.h"
+#include "content/renderer/accessibility/renderer_accessibility_focus_only.h"
+#include "content/renderer/history_controller.h"
+#include "content/renderer/history_serialization.h"
 #include "content/renderer/render_view_impl.h"
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_browser_context.h"
+#include "content/test/frame_load_waiter.h"
 #include "content/test/mock_keyboard.h"
 #include "net/base/net_errors.h"
 #include "net/cert/cert_status_flags.h"
@@ -37,18 +45,14 @@
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebDataSource.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebHistoryItem.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebRuntimeFeatures.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "third_party/WebKit/public/web/WebWindowFeatures.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/range/range.h"
-
-#if defined(OS_LINUX) && !defined(USE_AURA)
-#include "ui/base/gtk/event_synthesis_gtk.h"
-#endif
 
 #if defined(USE_AURA)
 #include "ui/events/event.h"
@@ -67,6 +71,7 @@
 
 using blink::WebFrame;
 using blink::WebInputEvent;
+using blink::WebLocalFrame;
 using blink::WebMouseEvent;
 using blink::WebRuntimeFeatures;
 using blink::WebString;
@@ -76,6 +81,8 @@ using blink::WebURLError;
 namespace content {
 
 namespace {
+
+static const int kProxyRoutingId = 13;
 
 #if (defined(USE_AURA) && defined(USE_X11)) || defined(USE_OZONE)
 // Converts MockKeyboard::Modifiers to ui::EventFlags.
@@ -263,39 +270,6 @@ class RenderViewImplTest : public RenderViewTest {
                                      flags);
     output->assign(1, static_cast<base::char16>(c));
     return 1;
-#elif defined(TOOLKIT_GTK)
-    // We ignore |layout|, which means we are only testing the layout of the
-    // current locale. TODO(estade): fix this to respect |layout|.
-    std::vector<GdkEvent*> events;
-    ui::SynthesizeKeyPressEvents(
-        NULL, static_cast<ui::KeyboardCode>(key_code),
-        modifiers & (MockKeyboard::LEFT_CONTROL | MockKeyboard::RIGHT_CONTROL),
-        modifiers & (MockKeyboard::LEFT_SHIFT | MockKeyboard::RIGHT_SHIFT),
-        modifiers & (MockKeyboard::LEFT_ALT | MockKeyboard::RIGHT_ALT),
-        &events);
-
-    guint32 unicode_key = 0;
-    for (size_t i = 0; i < events.size(); ++i) {
-      // Only send the up/down events for key press itself (skip the up/down
-      // events for the modifier keys).
-      if ((i + 1) == (events.size() / 2) || i == (events.size() / 2)) {
-        unicode_key = gdk_keyval_to_unicode(events[i]->key.keyval);
-        NativeWebKeyboardEvent webkit_event(events[i]);
-        SendNativeKeyEvent(webkit_event);
-
-        // Need to add a char event after the key down.
-        if (webkit_event.type == blink::WebInputEvent::RawKeyDown) {
-          NativeWebKeyboardEvent char_event = webkit_event;
-          char_event.type = blink::WebInputEvent::Char;
-          char_event.skip_in_browser = true;
-          SendNativeKeyEvent(char_event);
-        }
-      }
-      gdk_event_free(events[i]);
-    }
-
-    output->assign(1, static_cast<base::char16>(unicode_key));
-    return 1;
 #else
     NOTIMPLEMENTED();
     return L'\0';
@@ -362,9 +336,9 @@ TEST_F(RenderViewImplTest, OnNavigationHttpPost) {
 
   // Check post data sent to browser matches
   EXPECT_TRUE(host_nav_params.a.page_state.IsValid());
-  const blink::WebHistoryItem item = PageStateToHistoryItem(
-      host_nav_params.a.page_state);
-  blink::WebHTTPBody body = item.httpBody();
+  scoped_ptr<HistoryEntry> entry =
+      PageStateToHistoryEntry(host_nav_params.a.page_state);
+  blink::WebHTTPBody body = entry->root().httpBody();
   blink::WebHTTPBody::Element element;
   bool successful = body.elementAt(0, element);
   EXPECT_TRUE(successful);
@@ -496,7 +470,7 @@ TEST_F(RenderViewImplTest, DecideNavigationPolicyForWebUI) {
   RenderViewImpl* new_view = RenderViewImpl::FromWebView(new_web_view);
   policy = static_cast<RenderFrameImpl*>(new_view->GetMainRenderFrame())->
       decidePolicyForNavigation(
-          new_web_view->mainFrame(),
+          new_web_view->mainFrame()->toWebLocalFrame(),
           &state,
           popup_request,
           blink::WebNavigationTypeLinkClicked,
@@ -516,22 +490,22 @@ TEST_F(RenderViewImplTest, SendSwapOutACK) {
   int initial_page_id = view()->GetPageId();
 
   // Respond to a swap out request.
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
 
   // Ensure the swap out commits synchronously.
   EXPECT_NE(initial_page_id, view()->GetPageId());
 
   // Check for a valid OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_SwapOut_ACK::ID);
+      FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg);
 
   // It is possible to get another swap out request.  Ensure that we send
   // an ACK, even if we don't have to do anything else.
   render_thread_->sink().ClearMessages();
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
   const IPC::Message* msg2 = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_SwapOut_ACK::ID);
+      FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg2);
 
   // If we navigate back to this RenderView, ensure we don't send a state
@@ -565,9 +539,10 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param params;
+  ViewHostMsg_UpdateState::Read(msg_A, &params);
+  int page_id_A = params.a;
+  PageState state_A = params.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -584,11 +559,11 @@ TEST_F(RenderViewImplTest, ReloadWhileSwappedOut) {
   ProcessPendingMessages();
 
   // Respond to a swap out request.
-  view()->OnSwapOut();
+  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
 
   // Check for a OnSwapOutACK.
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
-      ViewHostMsg_SwapOut_ACK::ID);
+      FrameHostMsg_SwapOut_ACK::ID);
   ASSERT_TRUE(msg);
   render_thread_->sink().ClearMessages();
 
@@ -637,9 +612,10 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param param;
+  ViewHostMsg_UpdateState::Read(msg_A, &param);
+  int page_id_A = param.a;
+  PageState state_A = param.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -651,9 +627,9 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_B);
-  int page_id_B;
-  PageState state_B;
-  ViewHostMsg_UpdateState::Read(msg_B, &page_id_B, &state_B);
+  ViewHostMsg_UpdateState::Read(msg_B, &param);
+  int page_id_B = param.a;
+  PageState state_B = param.b;
   EXPECT_EQ(2, page_id_B);
   EXPECT_NE(state_A, state_B);
   render_thread_->sink().ClearMessages();
@@ -666,9 +642,9 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg_C = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_C);
-  int page_id_C;
-  PageState state_C;
-  ViewHostMsg_UpdateState::Read(msg_C, &page_id_C, &state_C);
+  ViewHostMsg_UpdateState::Read(msg_C, &param);
+  int page_id_C = param.a;
+  PageState state_C = param.b;
   EXPECT_EQ(3, page_id_C);
   EXPECT_NE(state_B, state_C);
   render_thread_->sink().ClearMessages();
@@ -718,9 +694,9 @@ TEST_F(RenderViewImplTest,  DISABLED_LastCommittedUpdateState) {
   const IPC::Message* msg = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg);
-  int page_id;
-  PageState state;
-  ViewHostMsg_UpdateState::Read(msg, &page_id, &state);
+  ViewHostMsg_UpdateState::Read(msg, &param);
+  int page_id = param.a;
+  PageState state = param.b;
   EXPECT_EQ(page_id_C, page_id);
   EXPECT_NE(state_A, state);
   EXPECT_NE(state_B, state);
@@ -748,9 +724,10 @@ TEST_F(RenderViewImplTest, StaleNavigationsIgnored) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param param;
+  ViewHostMsg_UpdateState::Read(msg_A, &param);
+  int page_id_A = param.a;
+  PageState state_A = param.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -813,9 +790,10 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
   const IPC::Message* msg_A = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_A);
-  int page_id_A;
-  PageState state_A;
-  ViewHostMsg_UpdateState::Read(msg_A, &page_id_A, &state_A);
+  ViewHostMsg_UpdateState::Param param;
+  ViewHostMsg_UpdateState::Read(msg_A, &param);
+  int page_id_A = param.a;
+  PageState state_A = param.b;
   EXPECT_EQ(1, page_id_A);
   render_thread_->sink().ClearMessages();
 
@@ -830,9 +808,9 @@ TEST_F(RenderViewImplTest, DontIgnoreBackAfterNavEntryLimit) {
   const IPC::Message* msg_B = render_thread_->sink().GetUniqueMessageMatching(
       ViewHostMsg_UpdateState::ID);
   ASSERT_TRUE(msg_B);
-  int page_id_B;
-  PageState state_B;
-  ViewHostMsg_UpdateState::Read(msg_B, &page_id_B, &state_B);
+  ViewHostMsg_UpdateState::Read(msg_B, &param);
+  int page_id_B = param.a;
+  PageState state_B = param.b;
   EXPECT_EQ(2, page_id_B);
   render_thread_->sink().ClearMessages();
 
@@ -919,19 +897,16 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to activate IMEs.
-    view()->UpdateTextInputType();
+    view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
     const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
-    ui::TextInputType type;
-    bool can_compose_inline = false;
-    ui::TextInputMode input_mode = ui::TEXT_INPUT_MODE_DEFAULT;
-    ViewHostMsg_TextInputTypeChanged::Read(msg,
-                                           &type,
-                                           &input_mode,
-                                           &can_compose_inline);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, type);
-    EXPECT_EQ(true, can_compose_inline);
+    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+    ViewHostMsg_TextInputStateChanged::Param params;
+    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
+    ViewHostMsg_TextInputState_Params p = params.a;
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_TEXT, p.type);
+    EXPECT_EQ(true, p.can_compose_inline);
 
     // Move the input focus to the second <input> element, where we should
     // de-activate IMEs.
@@ -941,38 +916,34 @@ TEST_F(RenderViewImplTest, OnImeTypeChanged) {
 
     // Update the IME status and verify if our IME backend sends an IPC message
     // to de-activate IMEs.
-    view()->UpdateTextInputType();
+    view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
     msg = render_thread_->sink().GetMessageAt(0);
     EXPECT_TRUE(msg != NULL);
-    EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
-    ViewHostMsg_TextInputTypeChanged::Read(msg,
-                                           &type,
-                                           &input_mode,
-                                           &can_compose_inline);
-    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, type);
+    EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+    ViewHostMsg_TextInputStateChanged::Read(msg, &params);
+    EXPECT_EQ(ui::TEXT_INPUT_TYPE_PASSWORD, params.a.type);
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kInputModeTestCases); i++) {
-      const InputModeTestCase* test_case = &kInputModeTestCases[i];
+    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kInputModeTestCases); j++) {
+      const InputModeTestCase* test_case = &kInputModeTestCases[j];
       std::string javascript =
           base::StringPrintf("document.getElementById('%s').focus();",
                              test_case->input_id);
       // Move the input focus to the target <input> element, where we should
       // activate IMEs.
-      ExecuteJavaScriptAndReturnIntValue(base::ASCIIToUTF16(javascript), NULL);
+      ExecuteJavaScript(javascript.c_str());
       ProcessPendingMessages();
       render_thread_->sink().ClearMessages();
 
       // Update the IME status and verify if our IME backend sends an IPC
       // message to activate IMEs.
-      view()->UpdateTextInputType();
-      const IPC::Message* msg = render_thread_->sink().GetMessageAt(0);
+      view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
+      msg = render_thread_->sink().GetMessageAt(0);
       EXPECT_TRUE(msg != NULL);
-      EXPECT_EQ(ViewHostMsg_TextInputTypeChanged::ID, msg->type());
-      ViewHostMsg_TextInputTypeChanged::Read(msg,
-                                            &type,
-                                            &input_mode,
-                                            &can_compose_inline);
-      EXPECT_EQ(test_case->expected_mode, input_mode);
+      EXPECT_EQ(ViewHostMsg_TextInputStateChanged::ID, msg->type());
+      ViewHostMsg_TextInputStateChanged::Read(msg, &params);
+      EXPECT_EQ(test_case->expected_mode, params.a.mode);
     }
   }
 }
@@ -1078,7 +1049,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
 
       case IME_SETCOMPOSITION:
         view()->OnImeSetComposition(
-            base::WideToUTF16Hack(ime_message->ime_string),
+            base::WideToUTF16(ime_message->ime_string),
             std::vector<blink::WebCompositionUnderline>(),
             ime_message->selection_start,
             ime_message->selection_end);
@@ -1086,7 +1057,7 @@ TEST_F(RenderViewImplTest, ImeComposition) {
 
       case IME_CONFIRMCOMPOSITION:
         view()->OnImeConfirmComposition(
-            base::WideToUTF16Hack(ime_message->ime_string),
+            base::WideToUTF16(ime_message->ime_string),
             gfx::Range::InvalidRange(),
             false);
         break;
@@ -1101,7 +1072,8 @@ TEST_F(RenderViewImplTest, ImeComposition) {
 
     // Update the status of our IME back-end.
     // TODO(hbono): we should verify messages to be sent from the back-end.
-    view()->UpdateTextInputType();
+    view()->UpdateTextInputState(
+        RenderWidget::NO_SHOW_IME, RenderWidget::FROM_NON_IME);
     ProcessPendingMessages();
     render_thread_->sink().ClearMessages();
 
@@ -1109,9 +1081,9 @@ TEST_F(RenderViewImplTest, ImeComposition) {
       // Retrieve the content of this page and compare it with the expected
       // result.
       const int kMaxOutputCharacters = 128;
-      std::wstring output = base::UTF16ToWideHack(
-          GetMainFrame()->contentAsText(kMaxOutputCharacters));
-      EXPECT_EQ(output, ime_message->result);
+      base::string16 output =
+          GetMainFrame()->contentAsText(kMaxOutputCharacters);
+      EXPECT_EQ(base::WideToUTF16(ime_message->result), output);
     }
   }
 }
@@ -1158,9 +1130,8 @@ TEST_F(RenderViewImplTest, OnSetTextDirection) {
     // Copy the document content to std::wstring and compare with the
     // expected result.
     const int kMaxOutputCharacters = 16;
-    std::wstring output = base::UTF16ToWideHack(
-        GetMainFrame()->contentAsText(kMaxOutputCharacters));
-    EXPECT_EQ(output, kTextDirection[i].expected_result);
+    base::string16 output = GetMainFrame()->contentAsText(kMaxOutputCharacters);
+    EXPECT_EQ(base::WideToUTF16(kTextDirection[i].expected_result), output);
   }
 }
 
@@ -1538,9 +1509,8 @@ TEST_F(RenderViewImplTest, MAYBE_InsertCharacters) {
     // text created from a virtual-key code, a character code, and the
     // modifier-key status.
     const int kMaxOutputCharacters = 4096;
-    std::wstring output = base::UTF16ToWideHack(
-        GetMainFrame()->contentAsText(kMaxOutputCharacters));
-    EXPECT_EQ(kLayouts[i].expected_result, output);
+    base::string16 output = GetMainFrame()->contentAsText(kMaxOutputCharacters);
+    EXPECT_EQ(base::WideToUTF16(kLayouts[i].expected_result), output);
   }
 #else
   NOTIMPLEMENTED();
@@ -1554,7 +1524,7 @@ TEST_F(RenderViewImplTest, DISABLED_DidFailProvisionalLoadWithErrorForError) {
   error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = net::ERR_FILE_NOT_FOUND;
   error.unreachableURL = GURL("http://foo");
-  WebFrame* web_frame = GetMainFrame();
+  WebLocalFrame* web_frame = GetMainFrame();
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
@@ -1576,7 +1546,7 @@ TEST_F(RenderViewImplTest, DidFailProvisionalLoadWithErrorForCancellation) {
   error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = net::ERR_ABORTED;
   error.unreachableURL = GURL("http://foo");
-  WebFrame* web_frame = GetMainFrame();
+  WebLocalFrame* web_frame = GetMainFrame();
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
@@ -1615,8 +1585,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   EXPECT_EQ(-1, view()->history_page_ids_[1]);
   ClearHistory();
 
+  blink::WebHistoryItem item;
+  item.initialize();
+
   // No history to merge and a committed page to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
   view()->OnSetHistoryLengthAndPrune(0, expected_page_id);
   EXPECT_EQ(1, view()->history_list_length_);
@@ -1625,7 +1600,9 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // No history to merge and a committed page to be pruned.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
   view()->OnSetHistoryLengthAndPrune(0, expected_page_id + 1);
   EXPECT_EQ(0, view()->history_list_length_);
@@ -1633,7 +1610,9 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // No history to merge and a committed page that the browser was unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
   view()->OnSetHistoryLengthAndPrune(0, -1);
   EXPECT_EQ(1, view()->history_list_length_);
@@ -1642,7 +1621,9 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // History to merge and a committed page to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
   view()->OnSetHistoryLengthAndPrune(2, expected_page_id);
   EXPECT_EQ(3, view()->history_list_length_);
@@ -1653,7 +1634,9 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // History to merge and a committed page to be pruned.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
   view()->OnSetHistoryLengthAndPrune(2, expected_page_id + 1);
   EXPECT_EQ(2, view()->history_list_length_);
@@ -1663,7 +1646,9 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // History to merge and a committed page that the browser was unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
   view()->OnSetHistoryLengthAndPrune(2, -1);
   EXPECT_EQ(3, view()->history_list_length_);
@@ -1676,9 +1661,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   int expected_page_id_2 = -1;
 
   // No history to merge and two committed pages, both to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id_2 = view()->page_id_;
   EXPECT_GT(expected_page_id_2, expected_page_id);
   view()->OnSetHistoryLengthAndPrune(0, expected_page_id);
@@ -1689,9 +1678,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // No history to merge and two committed pages, and only the second is kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id_2 = view()->page_id_;
   EXPECT_GT(expected_page_id_2, expected_page_id);
   view()->OnSetHistoryLengthAndPrune(0, expected_page_id_2);
@@ -1702,9 +1695,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
 
   // No history to merge and two committed pages, both of which the browser was
   // unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id_2 = view()->page_id_;
   EXPECT_GT(expected_page_id_2, expected_page_id);
   view()->OnSetHistoryLengthAndPrune(0, -1);
@@ -1715,9 +1712,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // History to merge and two committed pages, both to be kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id_2 = view()->page_id_;
   EXPECT_GT(expected_page_id_2, expected_page_id);
   view()->OnSetHistoryLengthAndPrune(2, expected_page_id);
@@ -1730,9 +1731,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
   ClearHistory();
 
   // History to merge and two committed pages, and only the second is kept.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id_2 = view()->page_id_;
   EXPECT_GT(expected_page_id_2, expected_page_id);
   view()->OnSetHistoryLengthAndPrune(2, expected_page_id_2);
@@ -1745,9 +1750,13 @@ TEST_F(RenderViewImplTest, SetHistoryLengthAndPrune) {
 
   // History to merge and two committed pages, both of which the browser was
   // unaware of.
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id = view()->page_id_;
-  frame()->didCommitProvisionalLoad(GetMainFrame(), true);
+  frame()->didCommitProvisionalLoad(GetMainFrame(),
+                                    item,
+                                    blink::WebStandardCommit);
   expected_page_id_2 = view()->page_id_;
   EXPECT_GT(expected_page_id_2, expected_page_id);
   view()->OnSetHistoryLengthAndPrune(2, -1);
@@ -1784,7 +1793,8 @@ TEST_F(RenderViewImplTest, ContextMenu) {
 
 TEST_F(RenderViewImplTest, TestBackForward) {
   LoadHTML("<div id=pagename>Page A</div>");
-  blink::WebHistoryItem page_a_item = GetMainFrame()->currentHistoryItem();
+  PageState page_a_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
   int was_page_a = -1;
   base::string16 check_page_a =
       base::ASCIIToUTF16(
@@ -1800,6 +1810,9 @@ TEST_F(RenderViewImplTest, TestBackForward) {
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
+  PageState back_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+
   LoadHTML("<div id=pagename>Page C</div>");
   int was_page_c = -1;
   base::string16 check_page_c =
@@ -1808,30 +1821,35 @@ TEST_F(RenderViewImplTest, TestBackForward) {
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_c, &was_page_c));
   EXPECT_EQ(1, was_page_b);
 
-  blink::WebHistoryItem forward_item = GetMainFrame()->currentHistoryItem();
-  GoBack(GetMainFrame()->previousHistoryItem());
+  PageState forward_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+  GoBack(back_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
-  GoForward(forward_item);
+  PageState back_state2 =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+
+  GoForward(forward_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_c, &was_page_c));
   EXPECT_EQ(1, was_page_c);
 
-  GoBack(GetMainFrame()->previousHistoryItem());
+  GoBack(back_state2);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 
-  forward_item = GetMainFrame()->currentHistoryItem();
-  GoBack(page_a_item);
+  forward_state =
+      HistoryEntryToPageState(view()->history_controller()->GetCurrentEntry());
+  GoBack(page_a_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_a, &was_page_a));
   EXPECT_EQ(1, was_page_a);
 
-  GoForward(forward_item);
+  GoForward(forward_state);
   EXPECT_TRUE(ExecuteJavaScriptAndReturnIntValue(check_page_b, &was_page_b));
   EXPECT_EQ(1, was_page_b);
 }
 
-#if defined(OS_MACOSX) || defined(OS_WIN) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA)
 TEST_F(RenderViewImplTest, GetCompositionCharacterBoundsTest) {
 
 #if defined(OS_WIN)
@@ -1946,15 +1964,15 @@ TEST_F(RenderViewImplTest, SetEditableSelectionAndComposition) {
            "</body>"
            "</html>");
   ExecuteJavaScript("document.getElementById('test1').focus();");
-  view()->OnSetEditableSelectionOffsets(4, 8);
+  frame()->OnSetEditableSelectionOffsets(4, 8);
   const std::vector<blink::WebCompositionUnderline> empty_underline;
-  view()->OnSetCompositionFromExistingText(7, 10, empty_underline);
+  frame()->OnSetCompositionFromExistingText(7, 10, empty_underline);
   blink::WebTextInputInfo info = view()->webview()->textInputInfo();
   EXPECT_EQ(4, info.selectionStart);
   EXPECT_EQ(8, info.selectionEnd);
   EXPECT_EQ(7, info.compositionStart);
   EXPECT_EQ(10, info.compositionEnd);
-  view()->OnUnselect();
+  frame()->OnUnselect();
   info = view()->webview()->textInputInfo();
   EXPECT_EQ(0, info.selectionStart);
   EXPECT_EQ(0, info.selectionEnd);
@@ -1971,14 +1989,14 @@ TEST_F(RenderViewImplTest, OnExtendSelectionAndDelete) {
            "</body>"
            "</html>");
   ExecuteJavaScript("document.getElementById('test1').focus();");
-  view()->OnSetEditableSelectionOffsets(10, 10);
-  view()->OnExtendSelectionAndDelete(3, 4);
+  frame()->OnSetEditableSelectionOffsets(10, 10);
+  frame()->OnExtendSelectionAndDelete(3, 4);
   blink::WebTextInputInfo info = view()->webview()->textInputInfo();
   EXPECT_EQ("abcdefgopqrstuvwxyz", info.value);
   EXPECT_EQ(7, info.selectionStart);
   EXPECT_EQ(7, info.selectionEnd);
-  view()->OnSetEditableSelectionOffsets(4, 8);
-  view()->OnExtendSelectionAndDelete(2, 5);
+  frame()->OnSetEditableSelectionOffsets(4, 8);
+  frame()->OnExtendSelectionAndDelete(2, 5);
   info = view()->webview()->textInputInfo();
   EXPECT_EQ("abuvwxyz", info.value);
   EXPECT_EQ(2, info.selectionStart);
@@ -2001,14 +2019,15 @@ TEST_F(RenderViewImplTest, NavigateFrame) {
   nav_params.page_id = -1;
   nav_params.frame_to_navigate = "frame";
   frame()->OnNavigate(nav_params);
-  ProcessPendingMessages();
+  FrameLoadWaiter(
+      RenderFrame::FromWebFrame(frame()->GetWebFrame()->firstChild())).Wait();
 
   // Copy the document content to std::wstring and compare with the
   // expected result.
   const int kMaxOutputCharacters = 256;
-  std::wstring output = base::UTF16ToWideHack(
+  std::string output = base::UTF16ToUTF8(
       GetMainFrame()->contentAsText(kMaxOutputCharacters));
-  EXPECT_EQ(output, L"hello \n\nworld");
+  EXPECT_EQ(output, "hello \n\nworld");
 }
 
 // This test ensures that a RenderFrame object is created for the top level
@@ -2020,7 +2039,7 @@ TEST_F(RenderViewImplTest, BasicRenderFrame) {
 TEST_F(RenderViewImplTest, GetSSLStatusOfFrame) {
   LoadHTML("<!DOCTYPE html><html><body></body></html>");
 
-  WebFrame* frame = GetMainFrame();
+  WebLocalFrame* frame = GetMainFrame();
   SSLStatus ssl_status = view()->GetSSLStatusOfFrame(frame);
   EXPECT_FALSE(net::IsCertStatusError(ssl_status.cert_status));
 
@@ -2047,7 +2066,7 @@ TEST_F(RenderViewImplTest, MessageOrderInDidChangeSelection) {
 
   for (size_t i = 0; i < render_thread_->sink().message_count(); ++i) {
     const uint32 type = render_thread_->sink().GetMessageAt(i)->type();
-    if (type == ViewHostMsg_TextInputTypeChanged::ID) {
+    if (type == ViewHostMsg_TextInputStateChanged::ID) {
       is_input_type_called = true;
       last_input_type = i;
     } else if (type == ViewHostMsg_SelectionChanged::ID) {
@@ -2065,9 +2084,8 @@ TEST_F(RenderViewImplTest, MessageOrderInDidChangeSelection) {
 
 class SuppressErrorPageTest : public RenderViewTest {
  public:
-  virtual void SetUp() OVERRIDE {
-    SetRendererClientForTesting(&client_);
-    RenderViewTest::SetUp();
+  virtual ContentRendererClient* CreateContentRendererClient() OVERRIDE {
+    return new TestContentRendererClient;
   }
 
   RenderViewImpl* view() {
@@ -2097,8 +2115,6 @@ class SuppressErrorPageTest : public RenderViewTest {
         *error_html = "A suffusion of yellow.";
     }
   };
-
-  TestContentRendererClient client_;
 };
 
 #if defined(OS_ANDROID)
@@ -2113,7 +2129,7 @@ TEST_F(SuppressErrorPageTest, MAYBE_Suppresses) {
   error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = net::ERR_FILE_NOT_FOUND;
   error.unreachableURL = GURL("http://example.com/suppress");
-  WebFrame* web_frame = GetMainFrame();
+  WebLocalFrame* web_frame = GetMainFrame();
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
@@ -2126,7 +2142,8 @@ TEST_F(SuppressErrorPageTest, MAYBE_Suppresses) {
   // An error occurred.
   view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
   const int kMaxOutputCharacters = 22;
-  EXPECT_EQ("", UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
+  EXPECT_EQ("",
+            base::UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
 }
 
 #if defined(OS_ANDROID)
@@ -2141,7 +2158,7 @@ TEST_F(SuppressErrorPageTest, MAYBE_DoesNotSuppress) {
   error.domain = WebString::fromUTF8(net::kErrorDomain);
   error.reason = net::ERR_FILE_NOT_FOUND;
   error.unreachableURL = GURL("http://example.com/dont-suppress");
-  WebFrame* web_frame = GetMainFrame();
+  WebLocalFrame* web_frame = GetMainFrame();
 
   // Start a load that will reach provisional state synchronously,
   // but won't complete synchronously.
@@ -2153,10 +2170,11 @@ TEST_F(SuppressErrorPageTest, MAYBE_DoesNotSuppress) {
 
   // An error occurred.
   view()->main_render_frame()->didFailProvisionalLoad(web_frame, error);
-  ProcessPendingMessages();
+  // The error page itself is loaded asynchronously.
+  FrameLoadWaiter(frame()).Wait();
   const int kMaxOutputCharacters = 22;
   EXPECT_EQ("A suffusion of yellow.",
-            UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
+            base::UTF16ToASCII(web_frame->contentAsText(kMaxOutputCharacters)));
 }
 
 // Tests if IME API's candidatewindow* events sent from browser are handled
@@ -2241,13 +2259,82 @@ TEST_F(RenderViewImplTest, FocusElementCallsFocusedNodeChanged) {
   EXPECT_TRUE(params.a);
   render_thread_->sink().ClearMessages();
 
-  view()->webview()->clearFocusedNode();
+  view()->webview()->clearFocusedElement();
   const IPC::Message* msg3 = render_thread_->sink().GetFirstMessageMatching(
         ViewHostMsg_FocusedNodeChanged::ID);
   EXPECT_TRUE(msg3);
   ViewHostMsg_FocusedNodeChanged::Read(msg3, &params);
   EXPECT_FALSE(params.a);
   render_thread_->sink().ClearMessages();
+}
+
+TEST_F(RenderViewImplTest, ServiceWorkerNetworkProviderSetup) {
+  ServiceWorkerNetworkProvider* provider = NULL;
+  RequestExtraData* extra_data = NULL;
+
+  // Make sure each new document has a new provider and
+  // that the main request is tagged with the provider's id.
+  LoadHTML("<b>A Document</b>");
+  ASSERT_TRUE(GetMainFrame()->dataSource());
+  provider = ServiceWorkerNetworkProvider::FromDocumentState(
+      DocumentState::FromDataSource(GetMainFrame()->dataSource()));
+  ASSERT_TRUE(provider);
+  extra_data = static_cast<RequestExtraData*>(
+      GetMainFrame()->dataSource()->request().extraData());
+  ASSERT_TRUE(extra_data);
+  EXPECT_EQ(extra_data->service_worker_provider_id(),
+            provider->provider_id());
+  int provider1_id = provider->provider_id();
+
+  LoadHTML("<b>New Document B Goes Here</b>");
+  ASSERT_TRUE(GetMainFrame()->dataSource());
+  provider = ServiceWorkerNetworkProvider::FromDocumentState(
+      DocumentState::FromDataSource(GetMainFrame()->dataSource()));
+  ASSERT_TRUE(provider);
+  EXPECT_NE(provider1_id, provider->provider_id());
+  extra_data = static_cast<RequestExtraData*>(
+      GetMainFrame()->dataSource()->request().extraData());
+  ASSERT_TRUE(extra_data);
+  EXPECT_EQ(extra_data->service_worker_provider_id(),
+            provider->provider_id());
+
+  // See that subresource requests are also tagged with the provider's id.
+  EXPECT_EQ(frame(), RenderFrameImpl::FromWebFrame(GetMainFrame()));
+  blink::WebURLRequest request(GURL("http://foo.com"));
+  request.setTargetType(blink::WebURLRequest::TargetIsSubresource);
+  blink::WebURLResponse redirect_response;
+  frame()->willSendRequest(GetMainFrame(), 0, request, redirect_response);
+  extra_data = static_cast<RequestExtraData*>(request.extraData());
+  ASSERT_TRUE(extra_data);
+  EXPECT_EQ(extra_data->service_worker_provider_id(),
+            provider->provider_id());
+}
+
+TEST_F(RenderViewImplTest, OnSetAccessibilityMode) {
+  ASSERT_EQ(AccessibilityModeOff, view()->accessibility_mode());
+  ASSERT_EQ((RendererAccessibility*) NULL, view()->renderer_accessibility());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeTreeOnly);
+  ASSERT_EQ(AccessibilityModeTreeOnly, view()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(RendererAccessibilityTypeComplete,
+            view()->renderer_accessibility()->GetType());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeOff);
+  ASSERT_EQ(AccessibilityModeOff, view()->accessibility_mode());
+  ASSERT_EQ((RendererAccessibility*) NULL, view()->renderer_accessibility());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeComplete);
+  ASSERT_EQ(AccessibilityModeComplete, view()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(RendererAccessibilityTypeComplete,
+            view()->renderer_accessibility()->GetType());
+
+  view()->OnSetAccessibilityMode(AccessibilityModeEditableTextOnly);
+  ASSERT_EQ(AccessibilityModeEditableTextOnly, view()->accessibility_mode());
+  ASSERT_NE((RendererAccessibility*) NULL, view()->renderer_accessibility());
+  ASSERT_EQ(RendererAccessibilityTypeFocusOnly,
+            view()->renderer_accessibility()->GetType());
 }
 
 }  // namespace content

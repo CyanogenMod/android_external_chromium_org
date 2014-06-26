@@ -12,12 +12,14 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
+#include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_list.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/widget/widget.h"
@@ -28,10 +30,6 @@
 #include "ui/base/win/shell.h"
 #include "ui/gfx/path_win.h"
 #include "ui/views/win/hwnd_util.h"
-#endif
-
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
 #endif
 
 namespace {
@@ -311,16 +309,15 @@ void PanelFrameView::Init() {
   title_label_->SetAutoColorReadabilityEnabled(false);
   AddChildView(title_label_);
 
-#if defined(USE_AURA)
   // Compute the thickness of the client area that needs to be counted towards
   // mouse resizing.
+  // TODO(tdanderson): Remove this if possible (crbug.com/344924).
   int thickness_for_mouse_resizing =
       PanelView::kResizeInsideBoundsSize - BorderThickness();
   aura::Window* window = panel_view_->GetNativePanelWindow();
   window->set_hit_test_bounds_override_inner(
       gfx::Insets(thickness_for_mouse_resizing, thickness_for_mouse_resizing,
                   thickness_for_mouse_resizing, thickness_for_mouse_resizing));
-#endif
 }
 
 void PanelFrameView::UpdateTitle() {
@@ -492,7 +489,7 @@ void PanelFrameView::UpdateWindowTitle() {
   title_label_->SetText(panel_view_->panel()->GetWindowTitle());
 }
 
-gfx::Size PanelFrameView::GetPreferredSize() {
+gfx::Size PanelFrameView::GetPreferredSize() const {
   gfx::Size pref_size =
       panel_view_->window()->client_view()->GetPreferredSize();
   gfx::Rect bounds(0, 0, pref_size.width(), pref_size.height());
@@ -504,11 +501,11 @@ const char* PanelFrameView::GetClassName() const {
   return kViewClassName;
 }
 
-gfx::Size PanelFrameView::GetMinimumSize() {
+gfx::Size PanelFrameView::GetMinimumSize() const {
   return panel_view_->GetMinimumSize();
 }
 
-gfx::Size PanelFrameView::GetMaximumSize() {
+gfx::Size PanelFrameView::GetMaximumSize() const {
   return panel_view_->GetMaximumSize();
 }
 
@@ -577,10 +574,18 @@ bool PanelFrameView::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 bool PanelFrameView::OnMouseDragged(const ui::MouseEvent& event) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Converting the mouse location to screen coordinates returns an incorrect
+  // location while the panel is moving. See crbug.com/353393 for more details.
+  // TODO(pkotwicz): Fix conversion to screen coordinates
+  gfx::Screen* screen = gfx::Screen::GetNativeScreen();
+  gfx::Point mouse_location = screen->GetCursorScreenPoint();
+#else
   // |event.location| is in the view's coordinate system. Convert it to the
   // screen coordinate system.
   gfx::Point mouse_location = event.location();
   views::View::ConvertPointToScreen(this, &mouse_location);
+#endif
 
   if (panel_view_->OnTitlebarMouseDragged(mouse_location))
     return true;

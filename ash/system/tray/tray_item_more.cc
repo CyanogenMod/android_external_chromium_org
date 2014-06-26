@@ -8,7 +8,7 @@
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_constants.h"
 #include "grit/ash_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/image_view.h"
@@ -16,7 +16,6 @@
 #include "ui/views/layout/box_layout.h"
 
 namespace ash {
-namespace internal {
 
 TrayItemMore::TrayItemMore(SystemTrayItem* owner, bool show_more)
     : owner_(owner),
@@ -98,10 +97,9 @@ void TrayItemMore::Layout() {
   }
 }
 
-void TrayItemMore::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+void TrayItemMore::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_BUTTON;
   state->name = accessible_name_;
 }
 
-}  // namespace internal
 }  // namespace ash

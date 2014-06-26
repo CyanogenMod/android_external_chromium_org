@@ -25,10 +25,16 @@ class Thread;
 namespace content {
 class BrowserChildProcessHostImpl;
 
+typedef base::Thread* (*UtilityMainThreadFactoryFunction)(
+    const std::string& id);
+
 class CONTENT_EXPORT UtilityProcessHostImpl
     : public NON_EXPORTED_BASE(UtilityProcessHost),
       public BrowserChildProcessHostDelegate {
  public:
+  static void RegisterUtilityMainThreadFactory(
+      UtilityMainThreadFactoryFunction create);
+
   UtilityProcessHostImpl(UtilityProcessHostClient* client,
                          base::SequencedTaskRunner* client_task_runner);
   virtual ~UtilityProcessHostImpl();
@@ -76,10 +82,8 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   // Whether to pass switches::kNoSandbox to the child.
   bool no_sandbox_;
 
-#if defined(OS_WIN)
   // Whether to launch the process with elevated privileges.
   bool run_elevated_;
-#endif
 
   // Flags defined in ChildProcessHost with which to start the process.
   int child_flags_;

@@ -6,11 +6,12 @@
 
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/shell.h"
+#include "ui/wm/core/window_animations.h"
 
 namespace ash {
 
 int DefaultUserWallpaperDelegate::GetAnimationType() {
-  return views::corewm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE;
+  return wm::WINDOW_VISIBILITY_ANIMATION_TYPE_FADE;
 }
 
 int DefaultUserWallpaperDelegate::GetAnimationDurationOverride() {
@@ -25,7 +26,7 @@ bool DefaultUserWallpaperDelegate::ShouldShowInitialAnimation() {
   return false;
 }
 
-void DefaultUserWallpaperDelegate::UpdateWallpaper() {
+void DefaultUserWallpaperDelegate::UpdateWallpaper(bool clear_cache) {
 }
 
 void DefaultUserWallpaperDelegate::InitializeWallpaper() {

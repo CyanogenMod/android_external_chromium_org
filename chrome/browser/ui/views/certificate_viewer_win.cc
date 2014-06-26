@@ -10,13 +10,10 @@
 
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
-#include "net/cert/x509_certificate.h"
-
-#if defined(USE_AURA)
 #include "chrome/browser/ui/host_desktop.h"
-#include "ui/aura/root_window.h"
+#include "net/cert/x509_certificate.h"
 #include "ui/aura/window.h"
-#endif
+#include "ui/aura/window_tree_host.h"
 
 namespace {
 
@@ -55,7 +52,6 @@ void ShowCertificateViewerImpl(content::WebContents* web_contents,
 
 }  // namespace
 
-#if defined(USE_AURA)
 void ShowCertificateViewer(content::WebContents* web_contents,
                            gfx::NativeWindow parent,
                            net::X509Certificate* cert) {
@@ -63,15 +59,8 @@ void ShowCertificateViewer(content::WebContents* web_contents,
       chrome::HOST_DESKTOP_TYPE_ASH) {
     ShowCertificateViewerImpl(
         web_contents,
-        parent->GetDispatcher()->host()->GetAcceleratedWidget(), cert);
+        parent->GetHost()->GetAcceleratedWidget(), cert);
   } else {
     NOTIMPLEMENTED();
   }
 }
-#else
-void ShowCertificateViewer(content::WebContents* web_contents,
-                           gfx::NativeWindow parent,
-                           net::X509Certificate* cert) {
-  ShowCertificateViewerImpl(web_contents, parent, cert);
-}
-#endif

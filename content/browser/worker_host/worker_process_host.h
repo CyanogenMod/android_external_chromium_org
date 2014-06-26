@@ -170,7 +170,7 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
   bool Init(int render_process_id, int render_frame_id);
 
   // Creates a worker object in the process.
-  void CreateWorker(const WorkerInstance& instance);
+  void CreateWorker(const WorkerInstance& instance, bool pause_on_start);
 
   // Returns true iff the given message from a renderer process was forwarded to
   // the worker.
@@ -224,9 +224,9 @@ class WorkerProcessHost : public BrowserChildProcessHostDelegate,
                        const base::string16& display_name,
                        unsigned long estimated_size,
                        bool* result);
-  void OnAllowFileSystem(int worker_route_id,
-                         const GURL& url,
-                         bool* result);
+  void OnRequestFileSystemAccessSync(int worker_route_id,
+                                     const GURL& url,
+                                     bool* result);
   void OnAllowIndexedDB(int worker_route_id,
                         const GURL& url,
                         const base::string16& name,

@@ -20,6 +20,8 @@
 
 namespace cc {
 
+template <typename LayerType>
+class OcclusionTracker;
 class PictureLayerTiling;
 
 class CC_EXPORT PictureLayerTilingClient {
@@ -45,6 +47,77 @@ class CC_EXPORT PictureLayerTilingClient {
 
 class CC_EXPORT PictureLayerTiling {
  public:
+  class CC_EXPORT TilingRasterTileIterator {
+   public:
+    TilingRasterTileIterator();
+    TilingRasterTileIterator(PictureLayerTiling* tiling, WhichTree tree);
+    ~TilingRasterTileIterator();
+
+    operator bool() const { return !!current_tile_; }
+    Tile* operator*() { return current_tile_; }
+    TilePriority::PriorityBin get_type() const { return type_; }
+
+    TilingRasterTileIterator& operator++();
+
+    gfx::Rect TileBounds() const {
+      DCHECK(*this);
+      if (type_ == TilePriority::NOW) {
+        return tiling_->tiling_data_.TileBounds(visible_iterator_.index_x(),
+                                                visible_iterator_.index_y());
+      }
+      return tiling_->tiling_data_.TileBounds(spiral_iterator_.index_x(),
+                                              spiral_iterator_.index_y());
+    }
+
+   private:
+    void AdvancePhase();
+    bool TileNeedsRaster(Tile* tile) const {
+      RasterMode mode = tile->DetermineRasterModeForTree(tree_);
+      return tile->NeedsRasterForMode(mode);
+    }
+
+    PictureLayerTiling* tiling_;
+
+    TilePriority::PriorityBin type_;
+    gfx::Rect visible_rect_in_content_space_;
+    gfx::Rect skewport_in_content_space_;
+    gfx::Rect eventually_rect_in_content_space_;
+    gfx::Rect soon_border_rect_in_content_space_;
+    WhichTree tree_;
+
+    Tile* current_tile_;
+    TilingData::Iterator visible_iterator_;
+    TilingData::SpiralDifferenceIterator spiral_iterator_;
+    bool skewport_processed_;
+  };
+
+  class CC_EXPORT TilingEvictionTileIterator {
+   public:
+    TilingEvictionTileIterator();
+    TilingEvictionTileIterator(PictureLayerTiling* tiling,
+                               TreePriority tree_priority);
+    ~TilingEvictionTileIterator();
+
+    operator bool();
+    Tile* operator*();
+    TilingEvictionTileIterator& operator++();
+    TilePriority::PriorityBin get_type() {
+      DCHECK(*this);
+      const TilePriority& priority =
+          (*tile_iterator_)->priority_for_tree_priority(tree_priority_);
+      return priority.priority_bin;
+    }
+
+   private:
+    void Initialize();
+    bool IsValid() const { return is_valid_; }
+
+    bool is_valid_;
+    PictureLayerTiling* tiling_;
+    TreePriority tree_priority_;
+    std::vector<Tile*>::iterator tile_iterator_;
+  };
+
   ~PictureLayerTiling();
 
   // Create a tiling with no tiles.  CreateTiles must be called to add some.
@@ -55,22 +128,25 @@ class CC_EXPORT PictureLayerTiling {
   gfx::Size layer_bounds() const { return layer_bounds_; }
   void SetLayerBounds(const gfx::Size& layer_bounds);
   void Invalidate(const Region& layer_region);
+  void RemoveTilesInRegion(const Region& layer_region);
   void CreateMissingTilesInLiveTilesRect();
-
-  void SetCanUseLCDText(bool can_use_lcd_text);
 
   void SetClient(PictureLayerTilingClient* client);
   void set_resolution(TileResolution resolution) { resolution_ = resolution; }
   TileResolution resolution() const { return resolution_; }
 
-  gfx::Rect ContentRect() const;
-  gfx::SizeF ContentSizeF() const;
+  gfx::Rect TilingRect() const;
   gfx::Rect live_tiles_rect() const { return live_tiles_rect_; }
   gfx::Size tile_size() const { return tiling_data_.max_texture_size(); }
   float contents_scale() const { return contents_scale_; }
 
+  Tile* TileAt(int i, int j) const {
+    TileMap::const_iterator iter = tiles_.find(TileMapKey(i, j));
+    return (iter == tiles_.end()) ? NULL : iter->second.get();
+  }
+
   void CreateAllTilesForTesting() {
-    SetLiveTilesRect(gfx::Rect(tiling_data_.total_size()));
+    SetLiveTilesRect(tiling_data_.tiling_rect());
   }
 
   std::vector<Tile*> AllTilesForTesting() const {
@@ -80,8 +156,6 @@ class CC_EXPORT PictureLayerTiling {
       all_tiles.push_back(it->second.get());
     return all_tiles;
   }
-
-  Tile* TileAt(int i, int j) const;
 
   // Iterate over all tiles to fill content_rect.  Even if tiles are invalid
   // (i.e. no valid resource) this tiling should still iterate over them.
@@ -132,14 +206,16 @@ class CC_EXPORT PictureLayerTiling {
     friend class PictureLayerTiling;
   };
 
-  Region OpaqueRegionInContentRect(const gfx::Rect& content_rect) const;
-
   void Reset();
 
-  void UpdateTilePriorities(WhichTree tree,
-                            const gfx::Rect& visible_layer_rect,
-                            float layer_contents_scale,
-                            double current_frame_time_in_seconds);
+  void UpdateTilePriorities(
+      WhichTree tree,
+      const gfx::Rect& visible_layer_rect,
+      float layer_contents_scale,
+      double current_frame_time_in_seconds,
+      const OcclusionTracker<LayerImpl>* occlusion_tracker,
+      const LayerImpl* render_target,
+      const gfx::Transform& draw_transform);
 
   // Copies the src_tree priority into the dst_tree priority for all tiles.
   // The src_tree priority is reset to the lowest priority possible.  This
@@ -183,6 +259,10 @@ class CC_EXPORT PictureLayerTiling {
   }
 
  protected:
+  friend class CoverageIterator;
+  friend class TilingRasterTileIterator;
+  friend class TilingEvictionTileIterator;
+
   typedef std::pair<int, int> TileMapKey;
   typedef base::hash_map<TileMapKey, scoped_refptr<Tile> > TileMap;
 
@@ -190,7 +270,7 @@ class CC_EXPORT PictureLayerTiling {
                      const gfx::Size& layer_bounds,
                      PictureLayerTilingClient* client);
   void SetLiveTilesRect(const gfx::Rect& live_tiles_rect);
-  void CreateTile(int i, int j, const PictureLayerTiling* twin_tiling);
+  Tile* CreateTile(int i, int j, const PictureLayerTiling* twin_tiling);
 
   // Computes a skewport. The calculation extrapolates the last visible
   // rect and the current visible rect to expand the skewport to where it
@@ -199,6 +279,9 @@ class CC_EXPORT PictureLayerTiling {
   gfx::Rect ComputeSkewport(double current_frame_time_in_seconds,
                             const gfx::Rect& visible_rect_in_content_space)
       const;
+
+  void UpdateEvictionCacheIfNeeded(TreePriority tree_priority);
+  void DoInvalidate(const Region& layer_region, bool recreate_tiles);
 
   // Given properties.
   float contents_scale_;
@@ -213,9 +296,16 @@ class CC_EXPORT PictureLayerTiling {
 
   // State saved for computing velocities based upon finite differences.
   double last_impl_frame_time_in_seconds_;
-  gfx::RectF last_visible_rect_in_content_space_;
+  gfx::Rect last_visible_rect_in_content_space_;
 
-  friend class CoverageIterator;
+  gfx::Rect current_visible_rect_in_content_space_;
+  gfx::Rect current_skewport_;
+  gfx::Rect current_eventually_rect_;
+  gfx::Rect current_soon_border_rect_;
+
+  std::vector<Tile*> eviction_tiles_cache_;
+  bool eviction_tiles_cache_valid_;
+  TreePriority eviction_cache_tree_priority_;
 
  private:
   DISALLOW_ASSIGN(PictureLayerTiling);

@@ -36,8 +36,7 @@ class GpuMessageFilter : public BrowserMessageFilter {
                    RenderWidgetHelper* render_widget_helper);
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 bool* message_was_ok) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // This set of API is used to subscribe to frame presentation events.
   // See RenderWidgetHostViewFrameSubscriber for more details.
@@ -60,13 +59,14 @@ class GpuMessageFilter : public BrowserMessageFilter {
   void OnCreateViewCommandBuffer(
       int32 surface_id,
       const GPUCreateCommandBufferConfig& init_params,
+      int32 route_id,
       IPC::Message* reply);
   // Helper callbacks for the message handlers.
   void EstablishChannelCallback(scoped_ptr<IPC::Message> reply,
                                 const IPC::ChannelHandle& channel,
                                 const gpu::GPUInfo& gpu_info);
   void CreateCommandBufferCallback(scoped_ptr<IPC::Message> reply,
-                                   int32 route_id);
+                                   bool succeeded);
 
   void BeginAllFrameSubscriptions();
   void EndAllFrameSubscriptions();
@@ -77,7 +77,6 @@ class GpuMessageFilter : public BrowserMessageFilter {
 
   int gpu_process_id_;
   int render_process_id_;
-  bool share_contexts_;
 
   scoped_refptr<RenderWidgetHelper> render_widget_helper_;
 

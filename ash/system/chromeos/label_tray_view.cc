@@ -14,7 +14,6 @@
 #include "ui/views/layout/fill_layout.h"
 
 namespace ash {
-namespace internal {
 
 LabelTrayView::LabelTrayView(ViewClickListener* click_listener,
                              int icon_resource_id)
@@ -53,7 +52,7 @@ views::View* LabelTrayView::CreateChildView(
     child->text_label()->SetMultiLine(true);
     child->text_label()->SizeToFit(kTrayNotificationContentsWidth);
   } else {
-    child->AddLabel(message, gfx::Font::NORMAL);
+    child->AddLabel(message, gfx::ALIGN_LEFT, gfx::Font::NORMAL);
     child->text_label()->SetMultiLine(true);
     child->text_label()->SizeToFit(kTrayNotificationContentsWidth +
                                    kNotificationIconWidth);
@@ -64,5 +63,4 @@ views::View* LabelTrayView::CreateChildView(
   return child;
 }
 
-}  // namespace internal
 }  // namespace ash

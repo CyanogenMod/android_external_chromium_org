@@ -14,54 +14,93 @@
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/settings_window_manager.h"
+#include "chrome/browser/ui/settings_window_manager_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/web_applications/web_app.h"
 #include "content/public/browser/web_contents.h"
-#include "ui/aura/client/activation_client.h"
-#include "ui/aura/root_window.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "grit/ash_resources.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/public/activation_client.h"
 
-BrowserStatusMonitor::LocalWebContentsObserver::LocalWebContentsObserver(
-    content::WebContents* contents,
-    BrowserStatusMonitor* monitor)
-    : content::WebContentsObserver(contents),
-      monitor_(monitor) {
-}
+// This class monitors the WebContent of the all tab and notifies a navigation
+// to the BrowserStatusMonitor.
+class BrowserStatusMonitor::LocalWebContentsObserver
+    : public content::WebContentsObserver {
+ public:
+  LocalWebContentsObserver(content::WebContents* contents,
+                           BrowserStatusMonitor* monitor)
+      : content::WebContentsObserver(contents),
+        monitor_(monitor) {}
 
-BrowserStatusMonitor::LocalWebContentsObserver::~LocalWebContentsObserver() {
-}
+  virtual ~LocalWebContentsObserver() {}
 
-void BrowserStatusMonitor::LocalWebContentsObserver::DidNavigateMainFrame(
-    const content::LoadCommittedDetails& details,
-    const content::FrameNavigateParams& params) {
-  Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
-  ChromeLauncherController::AppState state =
-      ChromeLauncherController::APP_STATE_INACTIVE;
-  if (browser->window()->IsActive() &&
-      browser->tab_strip_model()->GetActiveWebContents() == web_contents())
-    state = ChromeLauncherController::APP_STATE_WINDOW_ACTIVE;
-  else if (browser->window()->IsActive())
-    state = ChromeLauncherController::APP_STATE_ACTIVE;
+  // content::WebContentsObserver
+  virtual void DidNavigateMainFrame(
+      const content::LoadCommittedDetails& details,
+      const content::FrameNavigateParams& params) OVERRIDE {
+    Browser* browser = chrome::FindBrowserWithWebContents(web_contents());
+    ChromeLauncherController::AppState state =
+        ChromeLauncherController::APP_STATE_INACTIVE;
+    if (browser->window()->IsActive() &&
+        browser->tab_strip_model()->GetActiveWebContents() == web_contents())
+      state = ChromeLauncherController::APP_STATE_WINDOW_ACTIVE;
+    else if (browser->window()->IsActive())
+      state = ChromeLauncherController::APP_STATE_ACTIVE;
 
-  monitor_->UpdateAppItemState(web_contents(), state);
-  monitor_->UpdateBrowserItemState();
+    monitor_->UpdateAppItemState(web_contents(), state);
+    monitor_->UpdateBrowserItemState();
 
-  // Navigating may change the ShelfID associated with the WebContents.
-  if (browser->tab_strip_model()->GetActiveWebContents() == web_contents()) {
-    ash::SetShelfIDForWindow(
-        monitor_->GetShelfIDForWebContents(web_contents()),
-        browser->window()->GetNativeWindow());
+    // Navigating may change the ShelfID associated with the WebContents.
+    if (browser->tab_strip_model()->GetActiveWebContents() == web_contents())
+      monitor_->SetShelfIDForBrowserWindowContents(browser, web_contents());
   }
-}
+
+  virtual void WebContentsDestroyed() OVERRIDE {
+    // We can only come here when there was a non standard termination like
+    // an app got un-installed while running, etc.
+    monitor_->WebContentsDestroyed(web_contents());
+    // |this| is gone now.
+  }
+
+ private:
+  BrowserStatusMonitor* monitor_;
+
+  DISALLOW_COPY_AND_ASSIGN(LocalWebContentsObserver);
+};
+
+// Observes any new settings windows and sets their shelf icon (since they
+// are excluded from BrowserShortcutLauncherItem).
+class BrowserStatusMonitor::SettingsWindowObserver
+    : public chrome::SettingsWindowManagerObserver {
+ public:
+  SettingsWindowObserver() {}
+  virtual ~SettingsWindowObserver() {}
+
+  // SettingsWindowManagerObserver
+  virtual void OnNewSettingsWindow(Browser* settings_browser) OVERRIDE {
+    ash::SetShelfItemDetailsForDialogWindow(
+        settings_browser->window()->GetNativeWindow(),
+        IDR_ASH_SHELF_ICON_SETTINGS);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SettingsWindowObserver);
+};
 
 BrowserStatusMonitor::BrowserStatusMonitor(
     ChromeLauncherController* launcher_controller)
     : launcher_controller_(launcher_controller),
       observed_activation_clients_(this),
-      observed_root_windows_(this) {
+      observed_root_windows_(this),
+      settings_window_observer_(new SettingsWindowObserver) {
   DCHECK(launcher_controller_);
   BrowserList::AddObserver(this);
+  chrome::SettingsWindowManager::GetInstance()->AddObserver(
+      settings_window_observer_.get());
 
   // This check needs for win7_aura. Without this, all tests in
   // ChromeLauncherController will fail in win7_aura.
@@ -106,9 +145,11 @@ void BrowserStatusMonitor::UpdateAppItemState(
     ChromeLauncherController::AppState app_state) {
   DCHECK(contents);
   // It is possible to come here from Browser::SwapTabContent where the contents
-  // cannot be associated with a browser.
+  // cannot be associated with a browser. A removal however should be properly
+  // processed.
   Browser* browser = chrome::FindBrowserWithWebContents(contents);
-  if (browser && launcher_controller_->IsBrowserFromActiveUser(browser))
+  if (app_state == ChromeLauncherController::APP_STATE_REMOVED ||
+      (browser && launcher_controller_->IsBrowserFromActiveUser(browser)))
     launcher_controller_->UpdateAppState(contents, app_state);
 }
 
@@ -183,11 +224,6 @@ void BrowserStatusMonitor::OnBrowserRemoved(Browser* browser) {
   UpdateBrowserItemState();
 }
 
-void BrowserStatusMonitor::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-  // Do nothing here.
-}
-
 void BrowserStatusMonitor::OnDisplayAdded(const gfx::Display& new_display) {
   // Add a new RootWindow and its ActivationClient to observed list.
   aura::Window* root_window = ash::Shell::GetInstance()->
@@ -205,6 +241,11 @@ void BrowserStatusMonitor::OnDisplayRemoved(const gfx::Display& old_display) {
   // When this is called, RootWindow of |old_display| is already removed.
   // Instead, we can remove RootWindow and its ActivationClient in the
   // OnWindowRemoved().
+  // Do nothing here.
+}
+
+void BrowserStatusMonitor::OnDisplayMetricsChanged(const gfx::Display&,
+                                                   uint32_t) {
   // Do nothing here.
 }
 
@@ -235,8 +276,7 @@ void BrowserStatusMonitor::ActiveTabChanged(content::WebContents* old_contents,
         ChromeLauncherController::APP_STATE_ACTIVE;
     UpdateAppItemState(new_contents, state);
     UpdateBrowserItemState();
-    ash::SetShelfIDForWindow(GetShelfIDForWebContents(new_contents),
-                             browser->window()->GetNativeWindow());
+    SetShelfIDForBrowserWindowContents(browser, new_contents);
   }
 }
 
@@ -262,10 +302,8 @@ void BrowserStatusMonitor::TabReplacedAt(TabStripModel* tab_strip_model,
   UpdateAppItemState(new_contents, state);
   UpdateBrowserItemState();
 
-  if (tab_strip_model->GetActiveWebContents() == new_contents) {
-    ash::SetShelfIDForWindow(GetShelfIDForWebContents(new_contents),
-                             browser->window()->GetNativeWindow());
-  }
+  if (tab_strip_model->GetActiveWebContents() == new_contents)
+    SetShelfIDForBrowserWindowContents(browser, new_contents);
 
   AddWebContentsObserver(new_contents);
 }
@@ -285,6 +323,12 @@ void BrowserStatusMonitor::TabClosingAt(TabStripModel* tab_strip_mode,
                                         int index) {
   UpdateAppItemState(contents,
                      ChromeLauncherController::APP_STATE_REMOVED);
+  RemoveWebContentsObserver(contents);
+}
+
+void BrowserStatusMonitor::WebContentsDestroyed(
+    content::WebContents* contents) {
+  UpdateAppItemState(contents, ChromeLauncherController::APP_STATE_REMOVED);
   RemoveWebContentsObserver(contents);
 }
 
@@ -336,4 +380,11 @@ void BrowserStatusMonitor::RemoveWebContentsObserver(
 ash::ShelfID BrowserStatusMonitor::GetShelfIDForWebContents(
     content::WebContents* contents) {
   return launcher_controller_->GetShelfIDForWebContents(contents);
+}
+
+void BrowserStatusMonitor::SetShelfIDForBrowserWindowContents(
+    Browser* browser,
+    content::WebContents* web_contents) {
+  launcher_controller_->GetBrowserShortcutLauncherItemController()->
+      SetShelfIDForBrowserWindowContents(browser, web_contents);
 }

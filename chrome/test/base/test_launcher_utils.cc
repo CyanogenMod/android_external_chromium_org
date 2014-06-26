@@ -12,9 +12,10 @@
 #include "base/strings/string_number_conversions.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "components/os_crypt/os_crypt_switches.h"
 
 #if defined(USE_AURA)
-#include "ui/views/corewm/corewm_switches.h"
+#include "ui/wm/core/wm_core_switches.h"
 #endif
 
 namespace test_launcher_utils {
@@ -51,7 +52,7 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
   // Disable window animations under Ash as the animations effect the
   // coordinates returned and result in flake.
   command_line->AppendSwitch(
-      views::corewm::switches::kWindowAnimationsDisabled);
+      wm::switches::kWindowAnimationsDisabled);
 #endif
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_CHROMEOS)
@@ -65,7 +66,7 @@ void PrepareBrowserCommandLineForTests(CommandLine* command_line) {
 
 #if defined(OS_MACOSX)
   // Use mock keychain on mac to prevent blocking permissions dialogs.
-  command_line->AppendSwitch(switches::kUseMockKeychain);
+  command_line->AppendSwitch(os_crypt::switches::kUseMockKeychain);
 #endif
 
   command_line->AppendSwitch(switches::kDisableComponentUpdate);

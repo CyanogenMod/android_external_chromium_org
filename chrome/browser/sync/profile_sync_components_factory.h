@@ -7,9 +7,12 @@
 
 #include <string>
 
+#include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
+#include "components/invalidation/invalidation_service.h"
 #include "components/sync_driver/data_type_controller.h"
 #include "components/sync_driver/data_type_error_handler.h"
+#include "components/sync_driver/sync_api_component_factory.h"
 #include "sync/api/sync_merge_result.h"
 #include "sync/internal_api/public/util/unrecoverable_error_handler.h"
 #include "sync/internal_api/public/util/weak_handle.h"
@@ -27,11 +30,13 @@ class DataTypeManager;
 class DataTypeManagerObserver;
 class FailedDataTypesHandler;
 class GenericChangeProcessor;
-class SharedChangeProcessor;
 class SyncBackendHost;
-class SyncPrefs;
 class DataTypeErrorHandler;
 }  // namespace browser_sync
+
+namespace sync_driver {
+class SyncPrefs;
+}
 
 namespace syncer {
 class DataTypeDebugInfoListener;
@@ -43,7 +48,8 @@ class HistoryBackend;
 }
 
 // Factory class for all profile sync related classes.
-class ProfileSyncComponentsFactory {
+class ProfileSyncComponentsFactory
+    : public browser_sync::SyncApiComponentFactory {
  public:
   // The various factory methods for the data type model associators
   // and change processors all return this struct.  This is needed
@@ -66,7 +72,7 @@ class ProfileSyncComponentsFactory {
         : model_associator(ma), change_processor(cp) {}
   };
 
-  virtual ~ProfileSyncComponentsFactory() {}
+  virtual ~ProfileSyncComponentsFactory() OVERRIDE {}
 
   // Creates and registers enabled datatypes with the provided
   // ProfileSyncService.
@@ -88,38 +94,17 @@ class ProfileSyncComponentsFactory {
   virtual browser_sync::SyncBackendHost* CreateSyncBackendHost(
       const std::string& name,
       Profile* profile,
-      const base::WeakPtr<browser_sync::SyncPrefs>& sync_prefs) = 0;
-
-  // Creating this in the factory helps us mock it out in testing.
-  virtual browser_sync::GenericChangeProcessor* CreateGenericChangeProcessor(
-      ProfileSyncService* profile_sync_service,
-      browser_sync::DataTypeErrorHandler* error_handler,
-      const base::WeakPtr<syncer::SyncableService>& local_service,
-      const base::WeakPtr<syncer::SyncMergeResult>& merge_result) = 0;
-
-  virtual browser_sync::SharedChangeProcessor*
-      CreateSharedChangeProcessor() = 0;
-
-  // Returns a weak pointer to the syncable service specified by |type|.
-  // Weak pointer may be unset if service is already destroyed.
-  // Note: Should only be called on the same thread on which a datatype resides.
-  virtual base::WeakPtr<syncer::SyncableService> GetSyncableServiceForType(
-      syncer::ModelType type) = 0;
+      invalidation::InvalidationService* invalidator,
+      const base::WeakPtr<sync_driver::SyncPrefs>& sync_prefs,
+      const base::FilePath& sync_folder) = 0;
 
   // Legacy datatypes that need to be converted to the SyncableService API.
   virtual SyncComponents CreateBookmarkSyncComponents(
       ProfileSyncService* profile_sync_service,
       browser_sync::DataTypeErrorHandler* error_handler) = 0;
-  virtual SyncComponents CreatePasswordSyncComponents(
-      ProfileSyncService* profile_sync_service,
-      PasswordStore* password_store,
-      browser_sync::DataTypeErrorHandler* error_handler) = 0;
   virtual SyncComponents CreateTypedUrlSyncComponents(
       ProfileSyncService* profile_sync_service,
       history::HistoryBackend* history_backend,
-      browser_sync::DataTypeErrorHandler* error_handler) = 0;
-  virtual SyncComponents CreateSessionSyncComponents(
-      ProfileSyncService* profile_sync_service,
       browser_sync::DataTypeErrorHandler* error_handler) = 0;
 };
 

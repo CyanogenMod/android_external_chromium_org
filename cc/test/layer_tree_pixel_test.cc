@@ -64,10 +64,6 @@ scoped_ptr<OutputSurface> LayerTreePixelTest::CreateOutputSurface(
   return output_surface.PassAs<OutputSurface>();
 }
 
-scoped_refptr<ContextProvider> LayerTreePixelTest::OffscreenContextProvider() {
-  return scoped_refptr<ContextProvider>(new TestInProcessContextProvider);
-}
-
 void LayerTreePixelTest::CommitCompleteOnThread(LayerTreeHostImpl* impl) {
   LayerTreeImpl* commit_tree =
       impl->pending_tree() ? impl->pending_tree() : impl->active_tree();
@@ -109,7 +105,6 @@ void LayerTreePixelTest::AfterTest() {
   CommandLine* cmd = CommandLine::ForCurrentProcess();
   if (cmd->HasSwitch(switches::kCCRebaselinePixeltests))
     EXPECT_TRUE(WritePNGFile(*result_bitmap_, ref_file_path, true));
-
   EXPECT_TRUE(MatchesPNGFile(*result_bitmap_,
                              ref_file_path,
                              *pixel_comparator_));
@@ -119,7 +114,6 @@ scoped_refptr<SolidColorLayer> LayerTreePixelTest::CreateSolidColorLayer(
     const gfx::Rect& rect, SkColor color) {
   scoped_refptr<SolidColorLayer> layer = SolidColorLayer::Create();
   layer->SetIsDrawable(true);
-  layer->SetAnchorPoint(gfx::PointF());
   layer->SetBounds(rect.size());
   layer->SetPosition(rect.origin());
   layer->SetBackgroundColor(color);
@@ -178,7 +172,6 @@ scoped_refptr<TextureLayer> LayerTreePixelTest::CreateTextureLayer(
     const gfx::Rect& rect, const SkBitmap& bitmap) {
   scoped_refptr<TextureLayer> layer = TextureLayer::CreateForMailbox(NULL);
   layer->SetIsDrawable(true);
-  layer->SetAnchorPoint(gfx::PointF());
   layer->SetBounds(rect.size());
   layer->SetPosition(rect.origin());
 
@@ -268,12 +261,8 @@ scoped_ptr<SkBitmap> LayerTreePixelTest::CopyTextureMailboxToBitmap(
   gl->DeleteTextures(1, &texture_id);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    size.width(),
-                    size.height());
-  bitmap->allocPixels();
+  bitmap->allocN32Pixels(size.width(), size.height());
 
-  scoped_ptr<SkAutoLockPixels> lock(new SkAutoLockPixels(*bitmap));
   uint8* out_pixels = static_cast<uint8*>(bitmap->getPixels());
 
   size_t row_bytes = size.width() * 4;
@@ -324,7 +313,7 @@ void LayerTreePixelTest::CopyBitmapToTextureMailboxAsTexture(
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
   gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-  DCHECK_EQ(SkBitmap::kARGB_8888_Config, bitmap.getConfig());
+  DCHECK_EQ(kPMColor_SkColorType, bitmap.colorType());
 
   {
     SkAutoLockPixels lock(bitmap);

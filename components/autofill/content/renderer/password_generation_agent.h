@@ -12,7 +12,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "content/public/renderer/render_view_observer.h"
 #include "third_party/WebKit/public/web/WebInputElement.h"
-#include "third_party/WebKit/public/web/WebPasswordGeneratorClient.h"
 #include "url/gurl.h"
 
 namespace blink {
@@ -28,8 +27,7 @@ struct PasswordForm;
 // This class is responsible for controlling communication for password
 // generation between the browser (which shows the popup and generates
 // passwords) and WebKit (shows the generation icon in the password field).
-class PasswordGenerationAgent : public content::RenderViewObserver,
-                                public blink::WebPasswordGeneratorClient {
+class PasswordGenerationAgent : public content::RenderViewObserver {
  public:
   explicit PasswordGenerationAgent(content::RenderView* render_view);
   virtual ~PasswordGenerationAgent();
@@ -37,6 +35,9 @@ class PasswordGenerationAgent : public content::RenderViewObserver,
   // Returns true if the field being changed is one where a generated password
   // is being offered. Updates the state of the popup if necessary.
   bool TextDidChangeInTextField(const blink::WebInputElement& element);
+
+  // Returns true if the newly focused node caused the generation UI to show.
+  bool FocusedNodeHasChanged(const blink::WebNode& node);
 
  protected:
   // Returns true if this document is one that we should consider analyzing.
@@ -51,12 +52,8 @@ class PasswordGenerationAgent : public content::RenderViewObserver,
 
  private:
   // RenderViewObserver:
-  virtual void DidFinishDocumentLoad(blink::WebFrame* frame) OVERRIDE;
-  virtual void DidFinishLoad(blink::WebFrame* frame) OVERRIDE;
-  virtual void FocusedNodeChanged(const blink::WebNode& node) OVERRIDE;
-
-  // WebPasswordGeneratorClient:
-  virtual void openPasswordGenerator(blink::WebInputElement& element) OVERRIDE;
+  virtual void DidFinishDocumentLoad(blink::WebLocalFrame* frame) OVERRIDE;
+  virtual void DidFinishLoad(blink::WebLocalFrame* frame) OVERRIDE;
 
   // Message handlers.
   void OnFormNotBlacklisted(const PasswordForm& form);

@@ -32,6 +32,7 @@ class AppSyncData {
   AppSyncData(const Extension& extension,
               bool enabled,
               bool incognito_enabled,
+              bool remote_install,
               const syncer::StringOrdinal& app_launch_ordinal,
               const syncer::StringOrdinal& page_ordinal,
               extensions::LaunchType launch_type);
@@ -61,6 +62,14 @@ class AppSyncData {
     return launch_type_;
   }
 
+  const std::string& bookmark_app_url() const {
+    return bookmark_app_url_;
+  }
+
+  const std::string& bookmark_app_description() const {
+    return bookmark_app_description_;
+  }
+
  private:
   // Convert an AppSyncData back out to a sync structure.
   void PopulateAppSpecifics(sync_pb::AppSpecifics* specifics) const;
@@ -74,6 +83,8 @@ class AppSyncData {
   syncer::StringOrdinal app_launch_ordinal_;
   syncer::StringOrdinal page_ordinal_;
   extensions::LaunchType launch_type_;
+  std::string bookmark_app_url_;
+  std::string bookmark_app_description_;
 };
 
 }  // namespace extensions

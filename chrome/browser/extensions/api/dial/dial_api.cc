@@ -39,14 +39,14 @@ namespace dial = api::dial;
 DialAPI::DialAPI(Profile* profile)
     : RefcountedBrowserContextKeyedService(BrowserThread::IO),
       profile_(profile) {
-  ExtensionSystem::Get(profile)->event_router()->RegisterObserver(
-      this, dial::OnDeviceList::kEventName);
+  EventRouter::Get(profile)
+      ->RegisterObserver(this, dial::OnDeviceList::kEventName);
 }
 
 DialAPI::~DialAPI() {}
 
 DialRegistry* DialAPI::dial_registry() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (!dial_registry_.get()) {
     dial_registry_.reset(new DialRegistry(this,
         TimeDelta::FromSeconds(kDialRefreshIntervalSecs),
@@ -57,45 +57,45 @@ DialRegistry* DialAPI::dial_registry() {
 }
 
 void DialAPI::OnListenerAdded(const EventListenerInfo& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&DialAPI::NotifyListenerAddedOnIOThread, this));
 }
 
 void DialAPI::OnListenerRemoved(const EventListenerInfo& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
       base::Bind(&DialAPI::NotifyListenerRemovedOnIOThread, this));
 }
 
 void DialAPI::NotifyListenerAddedOnIOThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   VLOG(1) << "DIAL device event listener added.";
   dial_registry()->OnListenerAdded();
 }
 
 void DialAPI::NotifyListenerRemovedOnIOThread() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   VLOG(1) << "DIAL device event listener removed";
   dial_registry()->OnListenerRemoved();
 }
 
 void DialAPI::OnDialDeviceEvent(const DialRegistry::DeviceList& devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&DialAPI::SendEventOnUIThread, this, devices));
 }
 
 void DialAPI::OnDialError(const DialRegistry::DialErrorCode code) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
       base::Bind(&DialAPI::SendErrorOnUIThread, this, code));
 }
 
 void DialAPI::SendEventOnUIThread(const DialRegistry::DeviceList& devices) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   std::vector<linked_ptr<api::dial::DialDevice> > args;
   for (DialRegistry::DeviceList::const_iterator it = devices.begin();
@@ -108,12 +108,11 @@ void DialAPI::SendEventOnUIThread(const DialRegistry::DeviceList& devices) {
   scoped_ptr<base::ListValue> results = api::dial::OnDeviceList::Create(args);
   scoped_ptr<Event> event(
       new Event(dial::OnDeviceList::kEventName, results.Pass()));
-  extensions::ExtensionSystem::Get(profile_)->event_router()->
-      BroadcastEvent(event.Pass());
+  EventRouter::Get(profile_)->BroadcastEvent(event.Pass());
 }
 
 void DialAPI::SendErrorOnUIThread(const DialRegistry::DialErrorCode code) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   api::dial::DialError dial_error;
   switch (code) {
@@ -139,8 +138,7 @@ void DialAPI::SendErrorOnUIThread(const DialRegistry::DialErrorCode code) {
 
   scoped_ptr<base::ListValue> results = api::dial::OnError::Create(dial_error);
   scoped_ptr<Event> event(new Event(dial::OnError::kEventName, results.Pass()));
-  extensions::ExtensionSystem::Get(profile_)->event_router()->
-      BroadcastEvent(event.Pass());
+  EventRouter::Get(profile_)->BroadcastEvent(event.Pass());
 }
 
 void DialAPI::ShutdownOnUIThread() {}
@@ -152,19 +150,19 @@ DialDiscoverNowFunction::DialDiscoverNowFunction()
 }
 
 bool DialDiscoverNowFunction::Prepare() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(GetProfile());
-  dial_ = DialAPIFactory::GetForProfile(GetProfile()).get();
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  DCHECK(browser_context());
+  dial_ = DialAPIFactory::GetForBrowserContext(browser_context()).get();
   return true;
 }
 
 void DialDiscoverNowFunction::Work() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   result_ = dial_->dial_registry()->DiscoverNow();
 }
 
 bool DialDiscoverNowFunction::Respond() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (!result_)
     error_ = kDialServiceError;
 

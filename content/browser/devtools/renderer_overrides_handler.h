@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
@@ -40,14 +41,17 @@ class CONTENT_EXPORT RendererOverridesHandler
 
  private:
   void InnerSwapCompositorFrame();
-  void ParseCaptureParameters(DevToolsProtocol::Command* command,
-                              std::string* format, int* quality,
-                              double* scale);
 
   // DOM domain.
   scoped_refptr<DevToolsProtocol::Response>
       GrantPermissionsForSetFileInputFiles(
           scoped_refptr<DevToolsProtocol::Command> command);
+
+  // Network domain.
+  scoped_refptr<DevToolsProtocol::Response> ClearBrowserCache(
+      scoped_refptr<DevToolsProtocol::Command> command);
+  scoped_refptr<DevToolsProtocol::Response> ClearBrowserCookies(
+      scoped_refptr<DevToolsProtocol::Command> command);
 
   // Page domain.
   scoped_refptr<DevToolsProtocol::Response> PageDisable(
@@ -75,6 +79,10 @@ class CONTENT_EXPORT RendererOverridesHandler
 
   void ScreenshotCaptured(
       scoped_refptr<DevToolsProtocol::Command> command,
+      const unsigned char* png_data,
+      size_t png_size);
+
+  void ScreencastFrameCaptured(
       const std::string& format,
       int quality,
       const cc::CompositorFrameMetadata& metadata,

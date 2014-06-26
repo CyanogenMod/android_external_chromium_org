@@ -85,7 +85,6 @@ SpdyStream::SpdyStream(SpdyStreamType type,
                        int32 initial_recv_window_size,
                        const BoundNetLog& net_log)
     : type_(type),
-      weak_ptr_factory_(this),
       stream_id_(0),
       url_(url),
       priority_(priority),
@@ -103,7 +102,9 @@ SpdyStream::SpdyStream(SpdyStreamType type,
       net_log_(net_log),
       raw_received_bytes_(0),
       send_bytes_(0),
-      recv_bytes_(0) {
+      recv_bytes_(0),
+      write_handler_guard_(false),
+      weak_ptr_factory_(this) {
   CHECK(type_ == SPDY_BIDIRECTIONAL_STREAM ||
         type_ == SPDY_REQUEST_RESPONSE_STREAM ||
         type_ == SPDY_PUSH_STREAM);
@@ -112,6 +113,7 @@ SpdyStream::SpdyStream(SpdyStreamType type,
 }
 
 SpdyStream::~SpdyStream() {
+  CHECK(!write_handler_guard_);
   UpdateHistograms();
 }
 
@@ -121,7 +123,8 @@ void SpdyStream::SetDelegate(Delegate* delegate) {
   delegate_ = delegate;
 
   CHECK(io_state_ == STATE_IDLE ||
-        io_state_ == STATE_HALF_CLOSED_LOCAL_UNCLAIMED);
+        io_state_ == STATE_HALF_CLOSED_LOCAL_UNCLAIMED ||
+        io_state_ == STATE_RESERVED_REMOTE);
 
   if (io_state_ == STATE_HALF_CLOSED_LOCAL_UNCLAIMED) {
     DCHECK_EQ(type_, SPDY_PUSH_STREAM);
@@ -415,11 +418,12 @@ int SpdyStream::OnInitialResponseHeadersReceived(
       // Push streams transition to a locally half-closed state upon headers.
       // We must continue to buffer data while waiting for a call to
       // SetDelegate() (which may not ever happen).
-      // TODO(jgraettinger): When PUSH_PROMISE is added, Handle RESERVED_REMOTE
-      // cases here depending on whether the delegate is already set.
-      CHECK_EQ(io_state_, STATE_IDLE);
-      DCHECK(!delegate_);
-      io_state_ = STATE_HALF_CLOSED_LOCAL_UNCLAIMED;
+      CHECK_EQ(io_state_, STATE_RESERVED_REMOTE);
+      if (!delegate_) {
+        io_state_ = STATE_HALF_CLOSED_LOCAL_UNCLAIMED;
+      } else {
+        io_state_ = STATE_HALF_CLOSED_LOCAL;
+      }
       break;
   }
 
@@ -449,6 +453,16 @@ int SpdyStream::OnAdditionalResponseHeadersReceived(
   return MergeWithResponseHeaders(additional_response_headers);
 }
 
+void SpdyStream::OnPushPromiseHeadersReceived(const SpdyHeaderBlock& headers) {
+  CHECK(!request_headers_.get());
+  CHECK_EQ(io_state_, STATE_IDLE);
+  CHECK_EQ(type_, SPDY_PUSH_STREAM);
+  DCHECK(!delegate_);
+
+  io_state_ = STATE_RESERVED_REMOTE;
+  request_headers_.reset(new SpdyHeaderBlock(headers));
+}
+
 void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   DCHECK(session_->IsStreamActive(stream_id_));
 
@@ -457,7 +471,6 @@ void SpdyStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   // PushedStreamReplayData().
   if (io_state_ == STATE_HALF_CLOSED_LOCAL_UNCLAIMED) {
     DCHECK_EQ(type_, SPDY_PUSH_STREAM);
-    CHECK(!delegate_);
     // It should be valid for this to happen in the server push case.
     // We'll return received data when delegate gets attached to the stream.
     if (buffer) {
@@ -545,12 +558,14 @@ void SpdyStream::OnFrameWriteComplete(SpdyFrameType frame_type,
   CHECK(delegate_);
   {
     base::WeakPtr<SpdyStream> weak_this = GetWeakPtr();
+    write_handler_guard_ = true;
     if (frame_type == SYN_STREAM) {
       delegate_->OnRequestHeadersSent();
     } else {
       delegate_->OnDataSent();
     }
     CHECK(weak_this);
+    write_handler_guard_ = false;
   }
 
   if (io_state_ == STATE_CLOSED) {
@@ -715,6 +730,10 @@ bool SpdyStream::IsOpen() const {
   return io_state_ == STATE_OPEN;
 }
 
+bool SpdyStream::IsReservedRemote() const {
+  return io_state_ == STATE_RESERVED_REMOTE;
+}
+
 NextProto SpdyStream::GetProtocol() const {
   return session_->protocol();
 }
@@ -727,13 +746,11 @@ bool SpdyStream::GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const {
 }
 
 GURL SpdyStream::GetUrlFromHeaders() const {
-  if (type_ != SPDY_PUSH_STREAM && !request_headers_)
+  if (!request_headers_)
     return GURL();
 
-  const SpdyHeaderBlock& headers =
-      (type_ == SPDY_PUSH_STREAM) ? response_headers_ : *request_headers_;
-  return GetUrlFromHeaderBlock(headers, GetProtocolVersion(),
-                               type_ == SPDY_PUSH_STREAM);
+  return GetUrlFromHeaderBlock(
+      *request_headers_, GetProtocolVersion(), type_ == SPDY_PUSH_STREAM);
 }
 
 bool SpdyStream::HasUrlFromHeaders() const {

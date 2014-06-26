@@ -6,11 +6,11 @@ import logging
 import os
 import re
 
-from pylib import android_commands
 from pylib import constants
 from pylib import pexpect
 from pylib.base import base_test_result
 from pylib.base import base_test_runner
+from pylib.device import device_errors
 from pylib.perf import perf_control
 
 
@@ -53,29 +53,25 @@ class TestRunner(base_test_runner.BaseTestRunner):
 
     self._timeout = timeout * self.tool.GetTimeoutScale()
     if _TestSuiteRequiresHighPerfMode(self.test_package.suite_name):
-      self._perf_controller = perf_control.PerfControl(self.adb)
+      self._perf_controller = perf_control.PerfControl(self.device)
 
   #override
   def InstallTestPackage(self):
-    self.test_package.Install(self.adb)
-
-  def GetAllTests(self):
-    """Install test package and get a list of all tests."""
-    self.test_package.Install(self.adb)
-    return self.test_package.GetAllTests(self.adb)
+    self.test_package.Install(self.device)
 
   #override
   def PushDataDeps(self):
-    self.adb.WaitForSdCardReady(20)
+    self.device.WaitUntilFullyBooted(timeout=20)
     self.tool.CopyFiles()
     if os.path.exists(constants.ISOLATE_DEPS_DIR):
-      device_dir = self.adb.GetExternalStorage()
       # TODO(frankf): linux_dumper_unittest_helper needs to be in the same dir
       # as breakpad_unittests exe. Find a better way to do this.
       if self.test_package.suite_name == 'breakpad_unittests':
         device_dir = constants.TEST_EXECUTABLE_DIR
+      else:
+        device_dir = self.device.GetExternalStoragePath()
       for p in os.listdir(constants.ISOLATE_DEPS_DIR):
-        self.adb.PushIfNeeded(
+        self.device.old_interface.PushIfNeeded(
             os.path.join(constants.ISOLATE_DEPS_DIR, p),
             os.path.join(device_dir, p))
 
@@ -133,9 +129,9 @@ class TestRunner(base_test_runner.BaseTestRunner):
       logging.error('Test terminated - EOF')
       # We're here because either the device went offline, or the test harness
       # crashed without outputting the CRASHED marker (crbug.com/175538).
-      if not self.adb.IsOnline():
-        raise android_commands.errors.DeviceUnresponsiveError(
-            'Device %s went offline.' % self.device)
+      if not self.device.IsOnline():
+        raise device_errors.DeviceUnreachableError(
+            'Device %s went offline.' % self.device.old_interface.GetDevice())
       if full_test_name:
         results.AddResult(base_test_result.BaseTestResult(
             full_test_name, base_test_result.ResultType.CRASH,
@@ -150,7 +146,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
     finally:
       p.close()
 
-    ret_code = self.test_package.GetGTestReturnCode(self.adb)
+    ret_code = self.test_package.GetGTestReturnCode(self.device)
     if ret_code:
       logging.critical(
           'gtest exit code: %d\npexpect.before: %s\npexpect.after: %s',
@@ -165,11 +161,11 @@ class TestRunner(base_test_runner.BaseTestRunner):
       return test_results, None
 
     try:
-      self.test_package.ClearApplicationState(self.adb)
+      self.test_package.ClearApplicationState(self.device)
       self.test_package.CreateCommandLineFileOnDevice(
-          self.adb, test, self._test_arguments)
+          self.device, test, self._test_arguments)
       test_results = self._ParseTestOutput(
-          self.test_package.SpawnTestProcess(self.adb))
+          self.test_package.SpawnTestProcess(self.device))
     finally:
       self.CleanupSpawningServerState()
     # Calculate unknown test results.
@@ -196,7 +192,7 @@ class TestRunner(base_test_runner.BaseTestRunner):
   def TearDown(self):
     """Cleans up the test enviroment for the test suite."""
     if _TestSuiteRequiresHighPerfMode(self.test_package.suite_name):
-      self._perf_controller.RestoreOriginalPerfMode()
-    self.test_package.ClearApplicationState(self.adb)
+      self._perf_controller.SetDefaultPerfMode()
+    self.test_package.ClearApplicationState(self.device)
     self.tool.CleanUpEnvironment()
     super(TestRunner, self).TearDown()

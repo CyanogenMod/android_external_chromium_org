@@ -15,6 +15,7 @@
 #include "content/public/renderer/content_renderer_client.h"
 #include "ipc/ipc_channel_proxy.h"
 
+class ChromeExtensionsDispatcherDelegate;
 class ChromeRenderProcessObserver;
 class PrescientNetworkingDispatcher;
 class RendererNetPredictor;
@@ -71,7 +72,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual std::string GetDefaultEncoding() OVERRIDE;
   virtual bool OverrideCreatePlugin(
       content::RenderFrame* render_frame,
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebPluginParams& params,
       blink::WebPlugin** plugin) OVERRIDE;
   virtual blink::WebPlugin* CreatePluginReplacement(
@@ -107,9 +108,6 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                                       v8::Handle<v8::Context> context,
                                       int extension_group,
                                       int world_id) OVERRIDE;
-  virtual void WillReleaseScriptContext(blink::WebFrame* frame,
-                                        v8::Handle<v8::Context> context,
-                                        int world_id) OVERRIDE;
   virtual unsigned long long VisitedLinkHash(const char* canonical_url,
                                              size_t length) OVERRIDE;
   virtual bool IsLinkVisited(unsigned long long link_hash) OVERRIDE;
@@ -117,8 +115,6 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual bool ShouldOverridePageVisibilityState(
       const content::RenderFrame* render_frame,
       blink::WebPageVisibilityState* override_state) OVERRIDE;
-  virtual bool AllowBrowserPlugin(
-      blink::WebPluginContainer* container) OVERRIDE;
   virtual const void* CreatePPAPIInterface(
       const std::string& interface_name) OVERRIDE;
   virtual bool IsExternalPepperPlugin(const std::string& module_name) OVERRIDE;
@@ -134,35 +130,27 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
   virtual void AddKeySystems(
       std::vector<content::KeySystemInfo>* key_systems) OVERRIDE;
 
-  // For testing.
-  void SetExtensionDispatcher(extensions::Dispatcher* extension_dispatcher);
+  // Takes ownership.
+  void SetExtensionDispatcherForTest(
+      extensions::Dispatcher* extension_dispatcher);
+  extensions::Dispatcher* GetExtensionDispatcherForTest();
 
 #if defined(ENABLE_SPELLCHECK)
-  // Sets a new |spellcheck|. Used for low-mem restart and testing only.
+  // Sets a new |spellcheck|. Used for testing only.
   // Takes ownership of |spellcheck|.
   void SetSpellcheck(SpellCheck* spellcheck);
 #endif
 
-  // Called in low-memory conditions to dump the memory used by the spellchecker
-  // and start over.
-  void OnPurgeMemory();
-
   static blink::WebPlugin* CreatePlugin(
       content::RenderFrame* render_frame,
-      blink::WebFrame* frame,
+      blink::WebLocalFrame* frame,
       const blink::WebPluginParams& params,
       const ChromeViewHostMsg_GetPluginInfo_Output& output);
 
   static bool IsExtensionOrSharedModuleWhitelisted(
       const GURL& url, const std::set<std::string>& whitelist);
 
-  // TODO(mpcomplete): remove after we collect histogram data.
-  // http://crbug.com/100411
-  static bool IsAdblockInstalled();
-  static bool IsAdblockPlusInstalled();
-  static bool IsAdblockWithWebRequestInstalled();
-  static bool IsAdblockPlusWithWebRequestInstalled();
-  static bool IsOtherExtensionWithWebRequestInstalled();
+  static bool WasWebRequestUsedBySomeExtensions();
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ChromeContentRendererClientTest, NaClRestriction);
@@ -194,6 +182,7 @@ class ChromeContentRendererClient : public content::ContentRendererClient {
                             blink::WebPluginParams* params);
 
   scoped_ptr<ChromeRenderProcessObserver> chrome_observer_;
+  scoped_ptr<ChromeExtensionsDispatcherDelegate> extension_dispatcher_delegate_;
   scoped_ptr<extensions::Dispatcher> extension_dispatcher_;
   scoped_ptr<extensions::RendererPermissionsPolicyDelegate>
       permissions_policy_delegate_;

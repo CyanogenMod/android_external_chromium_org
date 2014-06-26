@@ -23,7 +23,6 @@
 using message_center::Notification;
 
 namespace ash {
-namespace internal {
 namespace {
 
 bool g_use_timer = true;
@@ -212,7 +211,8 @@ void ResolutionNotificationController::CreateOrUpdateNotification(
         l10n_util::GetStringUTF16(IDS_ASH_DISPLAY_RESOLUTION_CHANGE_ACCEPT)));
     timeout_message = l10n_util::GetStringFUTF16(
         IDS_ASH_DISPLAY_RESOLUTION_TIMEOUT,
-        ui::TimeFormat::TimeDurationLong(
+        ui::TimeFormat::Simple(
+            ui::TimeFormat::FORMAT_DURATION, ui::TimeFormat::LENGTH_LONG,
             base::TimeDelta::FromSeconds(change_info_->timeout_count)));
   }
   data.buttons.push_back(message_center::ButtonInfo(
@@ -285,10 +285,6 @@ void ResolutionNotificationController::RevertResolutionChange() {
       display_id, old_resolution);
 }
 
-void ResolutionNotificationController::OnDisplayBoundsChanged(
-    const gfx::Display& display) {
-}
-
 void ResolutionNotificationController::OnDisplayAdded(
     const gfx::Display& new_display) {
 }
@@ -297,6 +293,10 @@ void ResolutionNotificationController::OnDisplayRemoved(
     const gfx::Display& old_display) {
   if (change_info_ && change_info_->display_id == old_display.id())
     RevertResolutionChange();
+}
+
+void ResolutionNotificationController::OnDisplayMetricsChanged(
+    const gfx::Display&, uint32_t) {
 }
 
 void ResolutionNotificationController::OnDisplayConfigurationChanged() {
@@ -319,5 +319,4 @@ void ResolutionNotificationController::SuppressTimerForTest() {
   g_use_timer = false;
 }
 
-}  // namespace internal
 }  // namespace ash

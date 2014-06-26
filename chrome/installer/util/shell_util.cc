@@ -48,6 +48,7 @@
 #include "chrome/installer/util/master_preferences.h"
 #include "chrome/installer/util/master_preferences_constants.h"
 #include "chrome/installer/util/util_constants.h"
+#include "chrome/installer/util/work_item.h"
 
 #include "installer_util_strings.h"  // NOLINT
 
@@ -152,7 +153,7 @@ UserSpecificRegistrySuffix::UserSpecificRegistrySuffix() {
   }
   COMPILE_ASSERT(sizeof(base::MD5Digest) == 16, size_of_MD5_not_as_expected_);
   base::MD5Digest md5_digest;
-  std::string user_sid_ascii(UTF16ToASCII(user_sid));
+  std::string user_sid_ascii(base::UTF16ToASCII(user_sid));
   base::MD5Sum(user_sid_ascii.c_str(), user_sid_ascii.length(), &md5_digest);
   const base::string16 base32_md5(
       ShellUtil::ByteArrayToBase32(md5_digest.a, arraysize(md5_digest.a)));
@@ -296,7 +297,7 @@ class RegistryEntry {
     entries->push_back(new RegistryEntry(
         chrome_html_prog_id, dist->GetBrowserProgIdDesc()));
     entries->push_back(new RegistryEntry(
-        chrome_html_prog_id, ShellUtil::kRegUrlProtocol, L""));
+        chrome_html_prog_id, ShellUtil::kRegUrlProtocol, base::string16()));
     entries->push_back(new RegistryEntry(
         chrome_html_prog_id + ShellUtil::kRegDefaultIcon, icon_path));
     entries->push_back(new RegistryEntry(
@@ -473,7 +474,7 @@ class RegistryEntry {
     // so IE, explorer and other apps will route it to our handler.
     // <root hkey>\Software\Classes\<protocol>\URL Protocol
     entries->push_back(new RegistryEntry(url_key,
-        ShellUtil::kRegUrlProtocol, L""));
+        ShellUtil::kRegUrlProtocol, base::string16()));
 
     // <root hkey>\Software\Classes\<protocol>\DefaultIcon
     base::string16 icon_key = url_key + ShellUtil::kRegDefaultIcon;
@@ -485,7 +486,7 @@ class RegistryEntry {
 
     // <root hkey>\Software\Classes\<protocol>\shell\open\ddeexec
     base::string16 dde_key = url_key + L"\\shell\\open\\ddeexec";
-    entries->push_back(new RegistryEntry(dde_key, L""));
+    entries->push_back(new RegistryEntry(dde_key, base::string16()));
 
     // <root hkey>\Software\Classes\<protocol>\shell\@
     base::string16 protocol_shell_key = url_key + ShellUtil::kRegShellPath;
@@ -531,11 +532,13 @@ class RegistryEntry {
   // Generate work_item tasks required to create current registry entry and
   // add them to the given work item list.
   void AddToWorkItemList(HKEY root, WorkItemList *items) const {
-    items->AddCreateRegKeyWorkItem(root, key_path_);
+    items->AddCreateRegKeyWorkItem(root, key_path_, WorkItem::kWow64Default);
     if (is_string_) {
-      items->AddSetRegValueWorkItem(root, key_path_, name_, value_, true);
+      items->AddSetRegValueWorkItem(
+          root, key_path_, WorkItem::kWow64Default, name_, value_, true);
     } else {
-      items->AddSetRegValueWorkItem(root, key_path_, name_, int_value_, true);
+      items->AddSetRegValueWorkItem(
+          root, key_path_, WorkItem::kWow64Default, name_, int_value_, true);
     }
   }
 
@@ -709,7 +712,9 @@ bool ElevateAndRegisterChrome(BrowserDistribution* dist,
   if (!base::PathExists(exe_path)) {
     HKEY reg_root = InstallUtil::IsPerUserInstall(chrome_exe.c_str()) ?
         HKEY_CURRENT_USER : HKEY_LOCAL_MACHINE;
-    RegKey key(reg_root, dist->GetUninstallRegPath().c_str(), KEY_READ);
+    RegKey key(reg_root,
+               dist->GetUninstallRegPath().c_str(),
+               KEY_READ | KEY_WOW64_32KEY);
     base::string16 uninstall_string;
     key.ReadValue(installer::kUninstallStringField, &uninstall_string);
     CommandLine command_line = CommandLine::FromString(uninstall_string);
@@ -1020,7 +1025,8 @@ void RemoveRunVerbOnWindows8(BrowserDistribution* dist,
     run_verb_key.append(ShellUtil::kRegShellPath);
     run_verb_key.push_back(base::FilePath::kSeparators[0]);
     run_verb_key.append(ShellUtil::kRegVerbRun);
-    InstallUtil::DeleteRegistryKey(root_key, run_verb_key);
+    InstallUtil::DeleteRegistryKey(root_key, run_verb_key,
+                                   WorkItem::kWow64Default);
   }
 }
 
@@ -1048,6 +1054,7 @@ bool ShortNameFromPath(const base::FilePath& path, base::string16* short_path) {
 // did not perform validation on the ProgID registered as the current default.
 // As a result, stale ProgIDs could be returned, leading to false positives.
 ShellUtil::DefaultState ProbeCurrentDefaultHandlers(
+    const base::FilePath& chrome_exe,
     const wchar_t* const* protocols,
     size_t num_protocols) {
   base::win::ScopedComPtr<IApplicationAssociationRegistration> registration;
@@ -1057,11 +1064,6 @@ ShellUtil::DefaultState ProbeCurrentDefaultHandlers(
     return ShellUtil::UNKNOWN_DEFAULT;
 
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  base::FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return ShellUtil::UNKNOWN_DEFAULT;
-  }
   base::string16 prog_id(dist->GetBrowserProgIdPrefix());
   prog_id += ShellUtil::GetCurrentInstallationSuffix(dist, chrome_exe.value());
 
@@ -1079,6 +1081,7 @@ ShellUtil::DefaultState ProbeCurrentDefaultHandlers(
 // Probe using IApplicationAssociationRegistration::QueryAppIsDefault (Vista and
 // Windows 7); see ProbeProtocolHandlers.
 ShellUtil::DefaultState ProbeAppIsDefaultHandlers(
+    const base::FilePath& chrome_exe,
     const wchar_t* const* protocols,
     size_t num_protocols) {
   base::win::ScopedComPtr<IApplicationAssociationRegistration> registration;
@@ -1088,11 +1091,6 @@ ShellUtil::DefaultState ProbeAppIsDefaultHandlers(
     return ShellUtil::UNKNOWN_DEFAULT;
 
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  base::FilePath chrome_exe;
-  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
-    NOTREACHED();
-    return ShellUtil::UNKNOWN_DEFAULT;
-  }
   base::string16 app_name(
       ShellUtil::GetApplicationName(dist, chrome_exe.value()));
 
@@ -1111,18 +1109,12 @@ ShellUtil::DefaultState ProbeAppIsDefaultHandlers(
 // Probe the current commands registered to handle the shell "open" verb for
 // |protocols| (Windows XP); see ProbeProtocolHandlers.
 ShellUtil::DefaultState ProbeOpenCommandHandlers(
+    const base::FilePath& chrome_exe,
     const wchar_t* const* protocols,
     size_t num_protocols) {
-  // Get the path to the current exe (Chrome).
-  base::FilePath app_path;
-  if (!PathService::Get(base::FILE_EXE, &app_path)) {
-    LOG(ERROR) << "Error getting app exe path";
-    return ShellUtil::UNKNOWN_DEFAULT;
-  }
-
   // Get its short (8.3) form.
   base::string16 short_app_path;
-  if (!ShortNameFromPath(app_path, &short_app_path))
+  if (!ShortNameFromPath(chrome_exe, &short_app_path))
     return ShellUtil::UNKNOWN_DEFAULT;
 
   const HKEY root_key = HKEY_CLASSES_ROOT;
@@ -1158,22 +1150,23 @@ ShellUtil::DefaultState ProbeOpenCommandHandlers(
 // Chrome is the default handler for |protocols|.  Returns IS_DEFAULT
 // only if Chrome is the default for all specified protocols.
 ShellUtil::DefaultState ProbeProtocolHandlers(
+    const base::FilePath& chrome_exe,
     const wchar_t* const* protocols,
     size_t num_protocols) {
+#if DCHECK_IS_ON
   DCHECK(!num_protocols || protocols);
-  if (DCHECK_IS_ON()) {
-    for (size_t i = 0; i < num_protocols; ++i)
-      DCHECK(protocols[i] && *protocols[i]);
-  }
+  for (size_t i = 0; i < num_protocols; ++i)
+    DCHECK(protocols[i] && *protocols[i]);
+#endif
 
   const base::win::Version windows_version = base::win::GetVersion();
 
   if (windows_version >= base::win::VERSION_WIN8)
-    return ProbeCurrentDefaultHandlers(protocols, num_protocols);
+    return ProbeCurrentDefaultHandlers(chrome_exe, protocols, num_protocols);
   else if (windows_version >= base::win::VERSION_VISTA)
-    return ProbeAppIsDefaultHandlers(protocols, num_protocols);
+    return ProbeAppIsDefaultHandlers(chrome_exe, protocols, num_protocols);
 
-  return ProbeOpenCommandHandlers(protocols, num_protocols);
+  return ProbeOpenCommandHandlers(chrome_exe, protocols, num_protocols);
 }
 
 // (Windows 8+) Finds and stores an app shortcuts folder path in *|path|.
@@ -1766,11 +1759,23 @@ base::string16 ShellUtil::BuildAppModelId(
     }
   }
   // No spaces are allowed in the AppUserModelId according to MSDN.
-  base::ReplaceChars(app_id, L" ", L"_", &app_id);
+  base::ReplaceChars(app_id, base::ASCIIToUTF16(" "), base::ASCIIToUTF16("_"),
+                     &app_id);
   return app_id;
 }
 
 ShellUtil::DefaultState ShellUtil::GetChromeDefaultState() {
+  base::FilePath app_path;
+  if (!PathService::Get(base::FILE_EXE, &app_path)) {
+    NOTREACHED();
+    return ShellUtil::UNKNOWN_DEFAULT;
+  }
+
+  return GetChromeDefaultStateFromPath(app_path);
+}
+
+ShellUtil::DefaultState ShellUtil::GetChromeDefaultStateFromPath(
+    const base::FilePath& chrome_exe) {
   BrowserDistribution* distribution = BrowserDistribution::GetDistribution();
   if (distribution->GetDefaultBrowserControlPolicy() ==
       BrowserDistribution::DEFAULT_BROWSER_UNSUPPORTED) {
@@ -1786,7 +1791,9 @@ ShellUtil::DefaultState ShellUtil::GetChromeDefaultState() {
   // flag. There is doubtless some other key we can hook into to cause "Repair"
   // to show up in Add/Remove programs for us.
   static const wchar_t* const kChromeProtocols[] = { L"http", L"https" };
-  return ProbeProtocolHandlers(kChromeProtocols, arraysize(kChromeProtocols));
+  return ProbeProtocolHandlers(chrome_exe,
+                               kChromeProtocols,
+                               arraysize(kChromeProtocols));
 }
 
 ShellUtil::DefaultState ShellUtil::GetChromeDefaultProtocolClientState(
@@ -1800,8 +1807,16 @@ ShellUtil::DefaultState ShellUtil::GetChromeDefaultProtocolClientState(
   if (protocol.empty())
     return UNKNOWN_DEFAULT;
 
+  base::FilePath chrome_exe;
+  if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
+    NOTREACHED();
+    return ShellUtil::UNKNOWN_DEFAULT;
+  }
+
   const wchar_t* const protocols[] = { protocol.c_str() };
-  return ProbeProtocolHandlers(protocols, arraysize(protocols));
+  return ProbeProtocolHandlers(chrome_exe,
+                               protocols,
+                               arraysize(protocols));
 }
 
 // static
@@ -2043,8 +2058,8 @@ bool ShellUtil::RegisterChromeBrowser(BrowserDistribution* dist,
     result = (AddRegistryEntries(root, progid_and_appreg_entries) &&
               AddRegistryEntries(root, shell_entries));
   } else if (elevate_if_not_admin &&
-             base::win::GetVersion() >= base::win::VERSION_VISTA &&
-             ElevateAndRegisterChrome(dist, chrome_exe, suffix, L"")) {
+      base::win::GetVersion() >= base::win::VERSION_VISTA &&
+      ElevateAndRegisterChrome(dist, chrome_exe, suffix, base::string16())) {
     // If the user is not an admin and OS is between Vista and Windows 7
     // inclusively, try to elevate and register. This is only intended for
     // user-level installs as system-level installs should always be run with

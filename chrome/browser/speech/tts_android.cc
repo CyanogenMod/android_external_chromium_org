@@ -44,9 +44,6 @@ bool TtsPlatformImplAndroid::Speak(
     const VoiceData& voice,
     const UtteranceContinuousParameters& params) {
   JNIEnv* env = AttachCurrentThread();
-  if (!Java_TtsPlatformImpl_isInitialized(env, java_ref_.obj()))
-    return false;
-
   jboolean success = Java_TtsPlatformImpl_speak(
       env, java_ref_.obj(),
       utterance_id,

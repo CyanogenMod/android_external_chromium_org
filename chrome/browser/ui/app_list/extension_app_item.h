@@ -8,10 +8,10 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/extension_icon_image.h"
 #include "chrome/browser/ui/app_list/app_context_menu_delegate.h"
 #include "chrome/browser/ui/app_list/app_list_syncable_service.h"
 #include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
+#include "extensions/browser/extension_icon_image.h"
 #include "ui/app_list/app_list_item.h"
 #include "ui/gfx/image/image_skia.h"
 
@@ -51,9 +51,6 @@ class ExtensionAppItem : public app_list::AppListItem,
   // it gray.
   void UpdateIcon();
 
-  // Only updates the icon if the overlay needs to be added/removed.
-  void UpdateIconOverlay();
-
   // Update page and app launcher ordinals to put the app in between |prev| and
   // |next|. Note that |prev| and |next| could be NULL when the app is put at
   // the beginning or at the end.
@@ -92,6 +89,8 @@ class ExtensionAppItem : public app_list::AppListItem,
   // Overridden from AppListItem:
   virtual void Activate(int event_flags) OVERRIDE;
   virtual ui::MenuModel* GetContextMenuModel() OVERRIDE;
+  // Updates the icon if the overlay needs to be added/removed.
+  virtual void OnExtensionPreferenceChanged() OVERRIDE;
   virtual const char* GetItemType() const OVERRIDE;
 
   // Overridden from app_list::AppContextMenuDelegate:

@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/chrome_version_info.h"
 #include "content/public/common/content_switches.h"
 #include "media/base/media_switches.h"
 
@@ -34,15 +35,23 @@ void SetCommandLineSwitchASCII(const std::string& switch_string,
 }  // namespace
 
 void SetChromeSpecificCommandLineFlags() {
-  // Turn on autologin.
-  SetCommandLineSwitch(switches::kEnableAutologin);
+  // Enable prerender with holdback.
+  SetCommandLineSwitchASCII(switches::kPrerenderMode,
+                            switches::kPrerenderModeSwitchValueAuto);
 
   // Enable prerender for the omnibox.
-  SetCommandLineSwitchASCII(
-      switches::kPrerenderMode, switches::kPrerenderModeSwitchValueEnabled);
-  SetCommandLineSwitchASCII(
-      switches::kPrerenderFromOmnibox,
-      switches::kPrerenderFromOmniboxSwitchValueEnabled);
+  SetCommandLineSwitchASCII(switches::kPrerenderFromOmnibox,
+                            switches::kPrerenderFromOmniboxSwitchValueEnabled);
+
+  // Disable syncing favicons on low end devices.
   if (base::android::SysUtils::IsLowEndDevice())
-    SetCommandLineSwitch(switches::kDisableSyncFavicons);
+    SetCommandLineSwitchASCII(switches::kDisableSyncTypes, "Favicon Images");
+
+  // Enable DOM Distiller on local builds, canary and dev-channel.
+  chrome::VersionInfo::Channel channel = chrome::VersionInfo::GetChannel();
+  if (channel == chrome::VersionInfo::CHANNEL_UNKNOWN ||
+      channel == chrome::VersionInfo::CHANNEL_CANARY ||
+      channel == chrome::VersionInfo::CHANNEL_DEV) {
+    SetCommandLineSwitch(switches::kEnableDomDistiller);
+  }
 }

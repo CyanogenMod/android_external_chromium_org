@@ -7,7 +7,9 @@
 #include "base/strings/string_util.h"
 
 namespace chromeos {
+
 namespace {
+
 const char kExtensionIMEPrefix[] = "_ext_ime_";
 const int kExtensionIMEPrefixLength =
     sizeof(kExtensionIMEPrefix) / sizeof(kExtensionIMEPrefix[0]) - 1;
@@ -16,9 +18,11 @@ const int kComponentExtensionIMEPrefixLength =
     sizeof(kComponentExtensionIMEPrefix) /
         sizeof(kComponentExtensionIMEPrefix[0]) - 1;
 const int kExtensionIdLength = 32;
+
 }  // namespace
 
 namespace extension_ime_util {
+
 std::string GetInputMethodID(const std::string& extension_id,
                              const std::string& engine_id) {
   DCHECK(!extension_id.empty());
@@ -50,6 +54,38 @@ std::string GetExtensionIDFromInputMethodID(
   return "";
 }
 
+std::string GetInputMethodIDByEngineID(const std::string& engine_id) {
+  if (StartsWithASCII(engine_id, kComponentExtensionIMEPrefix, true) ||
+      StartsWithASCII(engine_id, kExtensionIMEPrefix, true)) {
+    return engine_id;
+  }
+  if (StartsWithASCII(engine_id, "xkb:", true))
+    return GetComponentInputMethodID(kXkbExtensionId, engine_id);
+  if (StartsWithASCII(engine_id, "vkd_", true))
+    return GetComponentInputMethodID(kM17nExtensionId, engine_id);
+  if (StartsWithASCII(engine_id, "nacl_mozc_", true))
+    return GetComponentInputMethodID(kMozcExtensionId, engine_id);
+  if (StartsWithASCII(engine_id, "hangul_", true))
+    return GetComponentInputMethodID(kHangulExtensionId, engine_id);
+
+  if (StartsWithASCII(engine_id, "zh-", true) &&
+      engine_id.find("pinyin") != std::string::npos) {
+    return GetComponentInputMethodID(kChinesePinyinExtensionId, engine_id);
+  }
+  if (StartsWithASCII(engine_id, "zh-", true) &&
+      engine_id.find("zhuyin") != std::string::npos) {
+    return GetComponentInputMethodID(kChineseZhuyinExtensionId, engine_id);
+  }
+  if (StartsWithASCII(engine_id, "zh-", true) &&
+      engine_id.find("cangjie") != std::string::npos) {
+    return GetComponentInputMethodID(kChineseCangjieExtensionId, engine_id);
+  }
+  if (engine_id.find("-t-i0-") != std::string::npos)
+    return GetComponentInputMethodID(kT13nExtensionId, engine_id);
+
+  return engine_id;
+}
+
 bool IsExtensionIME(const std::string& input_method_id) {
   return StartsWithASCII(input_method_id,
                          kExtensionIMEPrefix,
@@ -67,6 +103,20 @@ bool IsMemberOfExtension(const std::string& input_method_id,
   return StartsWithASCII(input_method_id,
                          kExtensionIMEPrefix + extension_id,
                          true);  // Case sensitive.
+}
+
+bool IsKeyboardLayoutExtension(const std::string& input_method_id) {
+  std::string prefix = kComponentExtensionIMEPrefix;
+  return StartsWithASCII(input_method_id, prefix + kXkbExtensionId, true);
+}
+
+std::string MaybeGetLegacyXkbId(const std::string& input_method_id) {
+  if (IsKeyboardLayoutExtension(input_method_id)) {
+    size_t pos = input_method_id.find("xkb:");
+    if (pos != std::string::npos)
+      return input_method_id.substr(pos);
+  }
+  return input_method_id;
 }
 
 }  // namespace extension_ime_util

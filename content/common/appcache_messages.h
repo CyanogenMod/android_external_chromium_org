@@ -5,14 +5,18 @@
 // Multiply-included message file, hence no include guard.
 
 #include "ipc/ipc_message_macros.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
+#include "content/common/appcache_interfaces.h"
 
 #define IPC_MESSAGE_START AppCacheMsgStart
 
-IPC_ENUM_TRAITS_MAX_VALUE(appcache::EventID, appcache::EVENT_ID_LAST)
-IPC_ENUM_TRAITS_MAX_VALUE(appcache::Status, appcache::STATUS_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::AppCacheEventID,
+                          content::APPCACHE_EVENT_ID_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::AppCacheStatus,
+                          content::APPCACHE_STATUS_LAST)
+IPC_ENUM_TRAITS_MAX_VALUE(content::AppCacheErrorReason,
+    content::APPCACHE_ERROR_REASON_LAST)
 
-IPC_STRUCT_TRAITS_BEGIN(appcache::AppCacheInfo)
+IPC_STRUCT_TRAITS_BEGIN(content::AppCacheInfo)
   IPC_STRUCT_TRAITS_MEMBER(manifest_url)
   IPC_STRUCT_TRAITS_MEMBER(creation_time)
   IPC_STRUCT_TRAITS_MEMBER(last_update_time)
@@ -24,7 +28,7 @@ IPC_STRUCT_TRAITS_BEGIN(appcache::AppCacheInfo)
   IPC_STRUCT_TRAITS_MEMBER(is_complete)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(appcache::AppCacheResourceInfo)
+IPC_STRUCT_TRAITS_BEGIN(content::AppCacheResourceInfo)
   IPC_STRUCT_TRAITS_MEMBER(url)
   IPC_STRUCT_TRAITS_MEMBER(size)
   IPC_STRUCT_TRAITS_MEMBER(is_master)
@@ -32,6 +36,14 @@ IPC_STRUCT_TRAITS_BEGIN(appcache::AppCacheResourceInfo)
   IPC_STRUCT_TRAITS_MEMBER(is_fallback)
   IPC_STRUCT_TRAITS_MEMBER(is_foreign)
   IPC_STRUCT_TRAITS_MEMBER(is_explicit)
+IPC_STRUCT_TRAITS_END()
+
+IPC_STRUCT_TRAITS_BEGIN(content::AppCacheErrorDetails)
+IPC_STRUCT_TRAITS_MEMBER(message)
+IPC_STRUCT_TRAITS_MEMBER(reason)
+IPC_STRUCT_TRAITS_MEMBER(url)
+IPC_STRUCT_TRAITS_MEMBER(status)
+IPC_STRUCT_TRAITS_MEMBER(is_cross_origin)
 IPC_STRUCT_TRAITS_END()
 
 // AppCache messages sent from the child process to the browser.
@@ -58,7 +70,7 @@ IPC_MESSAGE_CONTROL2(AppCacheHostMsg_SetSpawningHostId,
 // 'host_id' indentifies a specific document or worker
 // 'document_url' the url of the main resource
 // 'appcache_document_was_loaded_from' the id of the appcache the main
-//     resource was loaded from or kNoCacheId
+//     resource was loaded from or kAppCacheNoCacheId
 // 'opt_manifest_url' the manifest url specified in the <html> tag if any
 IPC_MESSAGE_CONTROL4(AppCacheHostMsg_SelectCache,
                      int /* host_id */,
@@ -84,7 +96,7 @@ IPC_MESSAGE_CONTROL3(AppCacheHostMsg_MarkAsForeignEntry,
 // Returns the status of the appcache associated with host_id.
 IPC_SYNC_MESSAGE_CONTROL1_1(AppCacheHostMsg_GetStatus,
                             int /* host_id */,
-                            appcache::Status)
+                            content::AppCacheStatus)
 
 // Initiates an update of the appcache associated with host_id.
 IPC_SYNC_MESSAGE_CONTROL1_1(AppCacheHostMsg_StartUpdate,
@@ -99,7 +111,7 @@ IPC_SYNC_MESSAGE_CONTROL1_1(AppCacheHostMsg_SwapCache,
 // Gets resource list from appcache synchronously.
 IPC_SYNC_MESSAGE_CONTROL1_1(AppCacheHostMsg_GetResourceList,
                             int /* host_id in*/,
-                            std::vector<appcache::AppCacheResourceInfo>
+                            std::vector<content::AppCacheResourceInfo>
                             /* resources out */)
 
 
@@ -109,18 +121,18 @@ IPC_SYNC_MESSAGE_CONTROL1_1(AppCacheHostMsg_GetResourceList,
 // a particular host. This is sent in reply to AppCacheHostMsg_SelectCache.
 IPC_MESSAGE_CONTROL2(AppCacheMsg_CacheSelected,
                      int /* host_id */,
-                     appcache::AppCacheInfo)
+                     content::AppCacheInfo)
 
 // Notifies the renderer of an AppCache status change.
 IPC_MESSAGE_CONTROL2(AppCacheMsg_StatusChanged,
                      std::vector<int> /* host_ids */,
-                     appcache::Status)
+                     content::AppCacheStatus)
 
 // Notifies the renderer of an AppCache event other than the
 // progress event which has a seperate message.
 IPC_MESSAGE_CONTROL2(AppCacheMsg_EventRaised,
                      std::vector<int> /* host_ids */,
-                     appcache::EventID)
+                     content::AppCacheEventID)
 
 // Notifies the renderer of an AppCache progress event.
 IPC_MESSAGE_CONTROL4(AppCacheMsg_ProgressEventRaised,
@@ -132,7 +144,7 @@ IPC_MESSAGE_CONTROL4(AppCacheMsg_ProgressEventRaised,
 // Notifies the renderer of an AppCache error event.
 IPC_MESSAGE_CONTROL2(AppCacheMsg_ErrorEventRaised,
                      std::vector<int> /* host_ids */,
-                     std::string /* error_message */)
+                     content::AppCacheErrorDetails)
 
 // Notifies the renderer of an AppCache logging message.
 IPC_MESSAGE_CONTROL3(AppCacheMsg_LogMessage,
