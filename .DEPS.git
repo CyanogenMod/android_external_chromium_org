@@ -9,7 +9,7 @@ vars = {
     'git_url':
          'https://chromium.googlesource.com',
     'webkit_rev':
-         '@826a0d8b9c97cfa795e1cb440e3212bcf45b3e42',
+         '@1fb3fad6edd7666859357062465fb2f65ddc9f0f',
     'angle_revision':
          '961d5e9878ddb892b650b6e14f2362b26ce34b40'
 }
@@ -94,7 +94,7 @@ deps = {
     'src/third_party/libsrtp':
         Var('git_url') + '/chromium/deps/libsrtp.git@2f2e557b809dc1dd7977098ad354a540f04beb4e',
     'src/third_party/libvpx':
-        Var('git_url') + '/chromium/deps/libvpx.git@5af0e8d8c7ada5c4ac33188a1260d6bcd57192b8',
+        Var('git_url') + '/chromium/deps/libvpx.git@b1d97aced142e7d9abd287fa0496243862904389',
     'src/third_party/libwebm/source':
         Var('git_url') + '/webm/libwebm.git@8be63972fdd7ae8c041778f8ba674ade903395c9',
     'src/third_party/libyuv':
