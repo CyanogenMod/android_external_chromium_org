@@ -28,7 +28,7 @@
 #include "android_webview/native/java_browser_view_renderer_helper.h"
 #include "android_webview/native/permission/aw_permission_request.h"
 #include "android_webview/native/permission/permission_request_handler.h"
-#include "android_webview/native/permission/protected_media_id_permission_request.h"
+#include "android_webview/native/permission/simple_permission_request.h"
 #include "android_webview/native/state_serializer.h"
 #include "android_webview/public/browser/draw_gl.h"
 #include "base/android/jni_android.h"
@@ -358,7 +358,6 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
 
   if (!shared_renderer_state_.IsHardwareAllowed()) {
     hardware_renderer_.reset();
-    shared_renderer_state_.SetHardwareInitialized(false);
     return;
   }
 
@@ -366,9 +365,7 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
     return;
 
   if (!hardware_renderer_) {
-    DCHECK(!shared_renderer_state_.IsHardwareInitialized());
     hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
-    shared_renderer_state_.SetHardwareInitialized(true);
   }
 
   if (hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
@@ -598,14 +595,45 @@ void AwContents::RequestProtectedMediaIdentifierPermission(
     const GURL& origin,
     const base::Callback<void(bool)>& callback) {
   permission_request_handler_->SendRequest(
-      scoped_ptr<AwPermissionRequestDelegate>(
-          new ProtectedMediaIdPermissionRequest(origin, callback)));
+      scoped_ptr<AwPermissionRequestDelegate>(new SimplePermissionRequest(
+          origin, AwPermissionRequest::ProtectedMediaId, callback)));
 }
 
 void AwContents::CancelProtectedMediaIdentifierPermissionRequests(
     const GURL& origin) {
   permission_request_handler_->CancelRequest(
       origin, AwPermissionRequest::ProtectedMediaId);
+}
+
+void AwContents::RequestGeolocationPermission(
+    const GURL& origin,
+    const base::Callback<void(bool)>& callback) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  if (Java_AwContents_useLegacyGeolocationPermissionAPI(env, obj.obj())) {
+    ShowGeolocationPrompt(origin, callback);
+    return;
+  }
+  permission_request_handler_->SendRequest(
+      scoped_ptr<AwPermissionRequestDelegate>(new SimplePermissionRequest(
+          origin, AwPermissionRequest::Geolocation, callback)));
+}
+
+void AwContents::CancelGeolocationPermissionRequests(const GURL& origin) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_ref_.get(env);
+  if (obj.is_null())
+    return;
+
+  if (Java_AwContents_useLegacyGeolocationPermissionAPI(env, obj.obj())) {
+    HideGeolocationPrompt(origin);
+    return;
+  }
+  permission_request_handler_->CancelRequest(
+      origin, AwPermissionRequest::Geolocation);
 }
 
 void AwContents::FindAllAsync(JNIEnv* env, jobject obj, jstring search_string) {
@@ -835,7 +863,7 @@ void AwContents::OnDetachedFromWindow(JNIEnv* env, jobject obj) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   shared_renderer_state_.SetHardwareAllowed(false);
 
-  bool hardware_initialized = shared_renderer_state_.IsHardwareInitialized();
+  bool hardware_initialized = browser_view_renderer_.hardware_enabled();
   if (hardware_initialized) {
     bool draw_functor_succeeded = RequestDrawGL(NULL, true);
     if (!draw_functor_succeeded) {
@@ -1107,10 +1135,6 @@ void AwContents::TrimMemory(JNIEnv* env,
                             jint level,
                             jboolean visible) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  if (!shared_renderer_state_.IsHardwareInitialized())
-    return;
-
   browser_view_renderer_.TrimMemory(level, visible);
 }
 

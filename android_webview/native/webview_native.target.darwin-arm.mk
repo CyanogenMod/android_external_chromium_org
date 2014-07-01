@@ -57,7 +57,7 @@ LOCAL_SRC_FILES := \
 	android_webview/native/permission/media_access_permission_request.cc \
 	android_webview/native/permission/permission_request_handler.cc \
 	android_webview/native/permission/permission_request_handler_client.cc \
-	android_webview/native/permission/protected_media_id_permission_request.cc \
+	android_webview/native/permission/simple_permission_request.cc \
 	android_webview/native/state_serializer.cc \
 	android_webview/native/external_video_surface_container_impl.cc
 

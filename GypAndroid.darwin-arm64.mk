@@ -263,6 +263,7 @@ include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.darwin-arm64.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/openssl/openssl.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.darwin-arm64.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.darwin-arm64.mk

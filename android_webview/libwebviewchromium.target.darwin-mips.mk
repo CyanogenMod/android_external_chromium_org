@@ -152,6 +152,7 @@ GYP_TARGET_DEPENDENCIES := \
 	$(call intermediates-dir-for,GYP,v8_tools_gyp_generate_trig_table_$(TARGET_$(GYP_VAR_PREFIX)ARCH)_host_gyp,true,,$(GYP_HOST_VAR_PREFIX))/generate_trig_table.stamp \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_platform_make_platform_generated_gyp,,,$(GYP_VAR_PREFIX))/make_platform_generated.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_iccjpeg_iccjpeg_gyp,,,$(GYP_VAR_PREFIX))/third_party_iccjpeg_iccjpeg_gyp.a \
+	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_openmax_dl_dl_openmax_dl_gyp,,,$(GYP_VAR_PREFIX))/third_party_openmax_dl_dl_openmax_dl_gyp.a \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_web_blink_web_gyp,,,$(GYP_VAR_PREFIX))/third_party_WebKit_Source_web_blink_web_gyp.a \
 	$(call intermediates-dir-for,GYP,third_party_WebKit_Source_core_webcore_gyp,,,$(GYP_VAR_PREFIX))/webcore.stamp \
 	$(call intermediates-dir-for,STATIC_LIBRARIES,third_party_WebKit_Source_core_webcore_dom_gyp,,,$(GYP_VAR_PREFIX))/third_party_WebKit_Source_core_webcore_dom_gyp.a \
@@ -697,6 +698,7 @@ LOCAL_STATIC_LIBRARIES := \
 	v8_tools_gyp_v8_libbase_gyp \
 	v8_tools_gyp_v8_snapshot_gyp \
 	third_party_iccjpeg_iccjpeg_gyp \
+	third_party_openmax_dl_dl_openmax_dl_gyp \
 	third_party_WebKit_Source_web_blink_web_gyp \
 	third_party_WebKit_Source_core_webcore_dom_gyp \
 	third_party_libxml_libxml_gyp \

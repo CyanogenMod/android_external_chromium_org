@@ -210,6 +210,7 @@ void FFmpegAudioDecoder::DecodeBuffer(
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK_NE(state_, kError);
+
   DCHECK(buffer);
 
   // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
@@ -218,6 +219,16 @@ void FFmpegAudioDecoder::DecodeBuffer(
     DVLOG(1) << "Received a buffer without timestamps!";
     decode_cb.Run(kDecodeError);
     return;
+  }
+
+  if (!buffer->end_of_stream() && !discard_helper_->initialized() &&
+      codec_context_->codec_id == AV_CODEC_ID_VORBIS &&
+      buffer->timestamp() < base::TimeDelta()) {
+    // Dropping frames for negative timestamps as outlined in section A.2
+    // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
+    const int discard_frames =
+        discard_helper_->TimeDeltaToFrames(-buffer->timestamp());
+    discard_helper_->Reset(discard_frames);
   }
 
   bool has_produced_frame;

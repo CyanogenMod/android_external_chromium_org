@@ -263,6 +263,7 @@ include $(LOCAL_PATH)/third_party/lzma_sdk/lzma_sdk.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/mesa/mesa_headers.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/modp_b64/modp_b64.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/npapi/npapi.target.linux-arm64.mk
+include $(LOCAL_PATH)/third_party/openmax_dl/dl/openmax_dl.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/openssl/openssl.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/opus/opus.target.linux-arm64.mk
 include $(LOCAL_PATH)/third_party/ots/ots.target.linux-arm64.mk

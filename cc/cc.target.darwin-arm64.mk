@@ -183,6 +183,7 @@ LOCAL_SRC_FILES := \
 	cc/resources/pixel_buffer_raster_worker_pool.cc \
 	cc/resources/prioritized_resource.cc \
 	cc/resources/prioritized_resource_manager.cc \
+	cc/resources/prioritized_tile_set.cc \
 	cc/resources/priority_calculator.cc \
 	cc/resources/raster_mode.cc \
 	cc/resources/raster_worker_pool.cc \
