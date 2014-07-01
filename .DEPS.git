@@ -11,7 +11,9 @@ vars = {
     'webkit_rev':
          '@1fb3fad6edd7666859357062465fb2f65ddc9f0f',
     'angle_revision':
-         '961d5e9878ddb892b650b6e14f2362b26ce34b40'
+         '961d5e9878ddb892b650b6e14f2362b26ce34b40',
+    'webtech_devx_url':
+         'https://webtech-devx.qualcomm.com/swe/packages',
 }
 
 deps = {
@@ -157,6 +159,8 @@ deps = {
         Var('git_url') + '/external/swarming.client.git@c333224ef8cf5cc41ab91f6ee9cb1fdbe3689f19',
     'src/v8':
         Var('git_url') + '/external/v8.git@9b642a254ebb96c4ef991160fd10481e47a8913a',
+    'src/third_party/llvm-snapdragon':
+        Var('webtech_devx_url') + '/llvm-snapdragon.git@40653a45a211c6037e2f0635916dce34a73bc9da',
 }
 
 deps_os = {
