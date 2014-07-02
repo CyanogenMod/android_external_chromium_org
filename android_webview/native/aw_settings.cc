@@ -348,23 +348,25 @@ void AwSettings::PopulateWebPreferencesLocked(
   web_prefs->text_autosizing_enabled =
       Java_AwSettings_getTextAutosizingEnabledLocked(env, obj);
 
+
   int text_size_percent = Java_AwSettings_getTextSizePercentLocked(env, obj);
+
   if (web_prefs->text_autosizing_enabled) {
     web_prefs->font_scale_factor = text_size_percent / 100.0f;
     web_prefs->force_enable_zoom = text_size_percent >= 130;
     // Use the default zoom factor value when Text Autosizer is turned on.
     render_view_host_ext->SetTextZoomFactor(1);
-//SWE-feature-default-zoom
-  }  else if (Java_AwSettings_getForceUserScalableLocked(env, obj)) {
-      web_prefs->force_enable_zoom = true;
-      render_view_host_ext->SetTextZoomFactor(content::ZoomFactorToZoomLevel(
-        text_size_percent / 100.0f));
-//SWE-feature-default-zoom
   } else {
     web_prefs->force_enable_zoom = false;
     render_view_host_ext->SetTextZoomFactor(text_size_percent / 100.0f);
   }
-
+//SWE-feature-default-zoom
+  //force_enable_zoom should always be set to true when AwSettings
+  //setForceUserScallable is set to true.
+  if (Java_AwSettings_getForceUserScalableLocked(env, obj)) {
+      web_prefs->force_enable_zoom = true;
+  }
+//SWE-feature-default-zoom
   web_prefs->standard_font_family_map[content::kCommonScript] =
       ConvertJavaStringToUTF16(
           Java_AwSettings_getStandardFontFamilyLocked(env, obj));

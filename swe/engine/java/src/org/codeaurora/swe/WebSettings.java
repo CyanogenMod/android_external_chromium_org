@@ -588,8 +588,7 @@ public class WebSettings {
             mDefaultZoom = zoom;
             //SetInitial scale doesn't take the screen density into account.
             //Multiply ZoomDensity value with DIPScale to get appropriate value.
-            //SWE-FIXME
-           // mAwSettings.setInitialPageScale((float) (zoom.value * mAwSettings.getDIPScale()));
+            mAwSettings.setInitialPageScale((float) (zoom.value * mAwSettings.getDIPScale()));
         }
     }
 
@@ -726,8 +725,7 @@ public class WebSettings {
      * @param flag Whether or not to forceably enable user scalable.
      */
     public void setForceUserScalable(boolean forceEnableUserScalable) {
-        //SWE-FIXME
-        //mAwSettings.setForceUserScalable(forceEnableUserScalable);
+        mAwSettings.setForceUserScalable(forceEnableUserScalable);
     }
 
     /**
@@ -742,8 +740,6 @@ public class WebSettings {
      * @param doubleTapZoom A percent value for increasing or decreasing the double-tap zoom.
      */
     public void setDoubleTapZoom(int doubleTapZoom) {
-        //SWE-FIXME
-        //mAwSettings.setDoubleTapZoom(doubleTapZoom);
     }
 
     public void setHTTPRequestHeaders(String headers) {
