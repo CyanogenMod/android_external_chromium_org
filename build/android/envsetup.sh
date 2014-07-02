@@ -20,7 +20,7 @@ android_envsetup_main() {
   local CURRENT_DIR="$(readlink -f "${SCRIPT_DIR}/../../")"
   if [[ -z "${CHROME_SRC}" ]]; then
     # If $CHROME_SRC was not set, assume current directory is CHROME_SRC.
-    local CHROME_SRC="${CURRENT_DIR}"
+    export CHROME_SRC="${CURRENT_DIR}"
   fi
 
   if [[ "${CURRENT_DIR/"${CHROME_SRC}"/}" == "${CURRENT_DIR}" ]]; then
