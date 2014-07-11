@@ -161,13 +161,10 @@ gfx::GLFence* CreateFence(bool flush) {
   DCHECK(gfx::GLContext::GetCurrent())
       << "Trying to create fence with no context";
 
-// XXX: Android WebView Workaround for b/16031015
-#if 0
   // Prefer ARB_sync which supports server-side wait.
   if (gfx::g_driver_gl.ext.b_GL_ARB_sync ||
       gfx::GLContext::GetCurrent()->GetVersionInfo()->is_es3)
     return new GLFenceARBSync(flush);
-#endif
 #if !defined(OS_MACOSX)
   if (gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync)
     return new EGLFenceSync(flush);
