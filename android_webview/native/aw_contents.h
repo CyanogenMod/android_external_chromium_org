@@ -120,17 +120,14 @@ class AwContents : public FindHelper::Listener,
               jint visible_left,
               jint visible_top,
               jint visible_right,
-              jint visible_bottom,
-              jint clip_left,
-              jint clip_top,
-              jint clip_right,
-              jint clip_bottom);
+              jint visible_bottom);
   jlong GetAwDrawGLViewContext(JNIEnv* env, jobject obj);
   jlong CapturePicture(JNIEnv* env, jobject obj, int width, int height);
   void EnableOnNewPicture(JNIEnv* env, jobject obj, jboolean enabled);
   void ClearView(JNIEnv* env, jobject obj);
   void SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
                              jstring url, jstring extra_headers);
+  void SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj);
 
   void DrawGL(AwDrawGLInfo* draw_info);
 

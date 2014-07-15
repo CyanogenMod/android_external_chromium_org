@@ -86,7 +86,7 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
     audio_converter_.RemoveInput(this);
   }
 
-  void Push(media::AudioBus* audio_source) {
+  void Push(const media::AudioBus* audio_source) {
     // Called on the audio thread, which is the capture audio thread for
     // |MediaStreamAudioProcessor::capture_converter_|, and render audio thread
     // for |MediaStreamAudioProcessor::render_converter_|.
@@ -95,7 +95,7 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
     fifo_->Push(audio_source);
   }
 
-  bool Convert(webrtc::AudioFrame* out) {
+  bool Convert(webrtc::AudioFrame* out, bool audio_mirroring) {
     // Called on the audio thread, which is the capture audio thread for
     // |MediaStreamAudioProcessor::capture_converter_|, and render audio thread
     // for |MediaStreamAudioProcessor::render_converter_|.
@@ -110,10 +110,18 @@ class MediaStreamAudioProcessor::MediaStreamAudioConverter
 
     // Convert data to the output format, this will trigger ProvideInput().
     audio_converter_.Convert(audio_wrapper_.get());
+    DCHECK_EQ(audio_wrapper_->frames(), sink_params_.frames_per_buffer());
+
+    // Swap channels before interleaving the data if |audio_mirroring| is
+    // set to true.
+    if (audio_mirroring &&
+        sink_params_.channel_layout() == media::CHANNEL_LAYOUT_STEREO) {
+      // Swap the first and second channels.
+      audio_wrapper_->SwapChannels(0, 1);
+    }
 
     // TODO(xians): Figure out a better way to handle the interleaved and
     // deinterleaved format switching.
-    DCHECK_EQ(audio_wrapper_->frames(), sink_params_.frames_per_buffer());
     audio_wrapper_->ToInterleaved(audio_wrapper_->frames(),
                                   sink_params_.bits_per_sample() / 8,
                                   out->data_);
@@ -173,7 +181,8 @@ MediaStreamAudioProcessor::MediaStreamAudioProcessor(
     : render_delay_ms_(0),
       playout_data_source_(playout_data_source),
       audio_mirroring_(false),
-      typing_detected_(false) {
+      typing_detected_(false),
+      stopped_(false) {
   capture_thread_checker_.DetachFromThread();
   render_thread_checker_.DetachFromThread();
   InitializeAudioProcessingModule(constraints, effects);
@@ -189,11 +198,7 @@ MediaStreamAudioProcessor::MediaStreamAudioProcessor(
 
 MediaStreamAudioProcessor::~MediaStreamAudioProcessor() {
   DCHECK(main_thread_checker_.CalledOnValidThread());
-  if (aec_dump_message_filter_) {
-    aec_dump_message_filter_->RemoveDelegate(this);
-    aec_dump_message_filter_ = NULL;
-  }
-  StopAudioProcessing();
+  Stop();
 }
 
 void MediaStreamAudioProcessor::OnCaptureFormatChanged(
@@ -209,19 +214,13 @@ void MediaStreamAudioProcessor::OnCaptureFormatChanged(
   capture_thread_checker_.DetachFromThread();
 }
 
-void MediaStreamAudioProcessor::PushCaptureData(media::AudioBus* audio_source) {
+void MediaStreamAudioProcessor::PushCaptureData(
+    const media::AudioBus* audio_source) {
   DCHECK(capture_thread_checker_.CalledOnValidThread());
   DCHECK_EQ(audio_source->channels(),
             capture_converter_->source_parameters().channels());
   DCHECK_EQ(audio_source->frames(),
             capture_converter_->source_parameters().frames_per_buffer());
-
-  if (audio_mirroring_ &&
-      capture_converter_->source_parameters().channel_layout() ==
-          media::CHANNEL_LAYOUT_STEREO) {
-    // Swap the first and second channels.
-    audio_source->SwapChannels(0, 1);
-  }
 
   capture_converter_->Push(audio_source);
 }
@@ -232,7 +231,7 @@ bool MediaStreamAudioProcessor::ProcessAndConsumeData(
   DCHECK(capture_thread_checker_.CalledOnValidThread());
   TRACE_EVENT0("audio", "MediaStreamAudioProcessor::ProcessAndConsumeData");
 
-  if (!capture_converter_->Convert(&capture_frame_))
+  if (!capture_converter_->Convert(&capture_frame_, audio_mirroring_))
     return false;
 
   *new_volume = ProcessData(&capture_frame_, capture_delay, volume,
@@ -240,6 +239,29 @@ bool MediaStreamAudioProcessor::ProcessAndConsumeData(
   *out = capture_frame_.data_;
 
   return true;
+}
+
+void MediaStreamAudioProcessor::Stop() {
+  DCHECK(main_thread_checker_.CalledOnValidThread());
+  if (stopped_)
+    return;
+
+  stopped_ = true;
+
+  if (aec_dump_message_filter_) {
+    aec_dump_message_filter_->RemoveDelegate(this);
+    aec_dump_message_filter_ = NULL;
+  }
+
+  if (!audio_processing_.get())
+    return;
+
+  StopEchoCancellationDump(audio_processing_.get());
+
+  if (playout_data_source_) {
+    playout_data_source_->RemovePlayoutSink(this);
+    playout_data_source_ = NULL;
+  }
 }
 
 const media::AudioParameters& MediaStreamAudioProcessor::InputFormat() const {
@@ -290,7 +312,7 @@ void MediaStreamAudioProcessor::OnPlayoutData(media::AudioBus* audio_bus,
                                     audio_bus->frames());
 
   render_converter_->Push(audio_bus);
-  while (render_converter_->Convert(&render_frame_))
+  while (render_converter_->Convert(&render_frame_, false))
     audio_processing_->AnalyzeReverseStream(&render_frame_);
 }
 
@@ -514,18 +536,6 @@ int MediaStreamAudioProcessor::ProcessData(webrtc::AudioFrame* audio_frame,
   // volume.
   return (agc->stream_analog_level() == volume) ?
       0 : agc->stream_analog_level();
-}
-
-void MediaStreamAudioProcessor::StopAudioProcessing() {
-  if (!audio_processing_.get())
-    return;
-
-  StopEchoCancellationDump(audio_processing_.get());
-
-  if (playout_data_source_)
-    playout_data_source_->RemovePlayoutSink(this);
-
-  audio_processing_.reset();
 }
 
 }  // namespace content

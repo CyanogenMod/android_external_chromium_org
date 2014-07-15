@@ -191,11 +191,11 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
+	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -293,7 +293,7 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
+	-Os \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \

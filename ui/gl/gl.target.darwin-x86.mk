@@ -158,9 +158,9 @@ MY_CFLAGS_Debug := \
 	-fno-stack-protector \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \

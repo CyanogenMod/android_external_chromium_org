@@ -182,6 +182,7 @@ MY_CFLAGS_Debug := \
 	-pipe \
 	-fPIC \
 	-Wno-unused-local-typedefs \
+	-O3 \
 	-Wno-format \
 	-fno-tree-sra \
 	-fno-partial-inlining \
@@ -207,11 +208,10 @@ MY_CFLAGS_Debug := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \
@@ -299,6 +299,7 @@ MY_CFLAGS_Release := \
 	-pipe \
 	-fPIC \
 	-Wno-unused-local-typedefs \
+	-O3 \
 	-Wno-format \
 	-fno-tree-sra \
 	-fno-partial-inlining \
@@ -324,7 +325,6 @@ MY_CFLAGS_Release := \
 	-Wno-format-security \
 	-Wno-return-type \
 	-Wno-sequence-point \
-	-O3 \
 	-fno-ident \
 	-fdata-sections \
 	-ffunction-sections \

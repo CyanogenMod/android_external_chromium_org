@@ -263,9 +263,9 @@ MY_CFLAGS_Debug := \
 	-Wno-format \
 	-Os \
 	-g \
-	-fomit-frame-pointer \
 	-fdata-sections \
 	-ffunction-sections \
+	-fomit-frame-pointer \
 	-funwind-tables
 
 MY_DEFS_Debug := \

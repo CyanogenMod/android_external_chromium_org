@@ -39,6 +39,7 @@
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
+#include "components/sync_driver/pref_names.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "extensions/browser/pref_names.h"
@@ -177,10 +178,15 @@ const PrefHashFilter::TrackedPreferenceMetadata kTrackedPrefs[] = {
     PrefHashFilter::ENFORCE_ON_LOAD,
     PrefHashFilter::TRACKING_STRATEGY_ATOMIC
   },
+  {
+    17, sync_driver::prefs::kSyncRemainingRollbackTries,
+    PrefHashFilter::ENFORCE_ON_LOAD,
+    PrefHashFilter::TRACKING_STRATEGY_ATOMIC
+  },
 };
 
 // The count of tracked preferences IDs across all platforms.
-const size_t kTrackedPrefsReportingIDsCount = 17;
+const size_t kTrackedPrefsReportingIDsCount = 18;
 COMPILE_ASSERT(kTrackedPrefsReportingIDsCount >= arraysize(kTrackedPrefs),
                need_to_increment_ids_count);
 
@@ -229,11 +235,16 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
       GROUP_ENFORCE_ALWAYS_WITH_EXTENSIONS_AND_DSE },
   };
 
-  // Use the no enforcement setting in the absence of a field trial
-  // config. Remember to update the OFFICIAL_BUILD section of
+  // Use the strongest enforcement setting in the absence of a field trial
+  // config on Windows. Remember to update the OFFICIAL_BUILD section of
   // extension_startup_browsertest.cc when updating the default value below.
-  // TODO(gab): Change this to the strongest enforcement on all platforms.
-  SettingsEnforcementGroup enforcement_group = GROUP_NO_ENFORCEMENT;
+  // TODO(gab): Enforce this on all platforms.
+  SettingsEnforcementGroup enforcement_group =
+#if defined(OS_WIN)
+      GROUP_ENFORCE_DEFAULT;
+#else
+      GROUP_NO_ENFORCEMENT;
+#endif
   bool group_determined_from_trial = false;
   base::FieldTrial* trial =
       base::FieldTrialList::Find(

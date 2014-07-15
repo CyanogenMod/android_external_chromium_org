@@ -368,11 +368,9 @@ void AwContents::DrawGL(AwDrawGLInfo* draw_info) {
     hardware_renderer_.reset(new HardwareRenderer(&shared_renderer_state_));
   }
 
-  if (hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
-                                 state_restore.framebuffer_binding_ext(),
-                                 draw_info)) {
-    browser_view_renderer_.DidDrawDelegated();
-  }
+  hardware_renderer_->DrawGL(state_restore.stencil_enabled(),
+                             state_restore.framebuffer_binding_ext(),
+                             draw_info);
 }
 
 namespace {
@@ -935,11 +933,7 @@ bool AwContents::OnDraw(JNIEnv* env,
                         jint visible_left,
                         jint visible_top,
                         jint visible_right,
-                        jint visible_bottom,
-                        jint clip_left,
-                        jint clip_top,
-                        jint clip_right,
-                        jint clip_bottom) {
+                        jint visible_bottom) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (is_hardware_accelerated)
     InitializeHardwareDrawIfNeeded();
@@ -950,9 +944,7 @@ bool AwContents::OnDraw(JNIEnv* env,
       gfx::Rect(visible_left,
                 visible_top,
                 visible_right - visible_left,
-                visible_bottom - visible_top),
-      gfx::Rect(
-          clip_left, clip_top, clip_right - clip_left, clip_bottom - clip_top));
+                visible_bottom - visible_top));
 }
 
 void AwContents::SetPendingWebContentsForPopup(
@@ -1121,6 +1113,11 @@ void AwContents::SetExtraHeadersForUrl(JNIEnv* env, jobject obj,
       GetResourceContext());
   resource_context->SetExtraHeaders(GURL(ConvertJavaStringToUTF8(env, url)),
                                     extra_headers);
+}
+
+void AwContents::SendCheckRenderThreadResponsiveness(JNIEnv* env, jobject obj) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  render_view_host_ext_->SendCheckRenderThreadResponsiveness();
 }
 
 void AwContents::SetJsOnlineProperty(JNIEnv* env,
