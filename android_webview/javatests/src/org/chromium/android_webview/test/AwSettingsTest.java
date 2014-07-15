@@ -1940,7 +1940,7 @@ public class AwSettingsTest extends AwTestBase {
                 createAwTestContainerViewOnMainSync(contentClient);
         final AwContents awContents = testContainer.getAwContents();
         final AwSettings awSettings = getAwSettingsOnUiThread(awContents);
-        CallbackHelper callback = new CallbackHelper();
+        final CallbackHelper callback = new CallbackHelper();
         awSettings.setJavaScriptEnabled(true);
 
         TestWebServer webServer = null;
@@ -1956,8 +1956,13 @@ public class AwSettingsTest extends AwTestBase {
                     "onerror=\"AudioEvent.onError();\" /> </body></html>";
             // Actual test. Blocking should trigger onerror handler.
             awSettings.setBlockNetworkLoads(true);
-            awContents.addPossiblyUnsafeJavascriptInterface(
-                    new AudioEvent(callback), "AudioEvent", null);
+            runTestOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    awContents.addPossiblyUnsafeJavascriptInterface(
+                            new AudioEvent(callback), "AudioEvent", null);
+                }
+            });
             int count = callback.getCallCount();
             loadDataSync(awContents, contentClient.getOnPageFinishedHelper(), pageHtml,
                     "text/html", false);
