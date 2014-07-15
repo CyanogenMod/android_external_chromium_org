@@ -82,6 +82,7 @@ LOCAL_SRC_FILES := \
 	content/common/android/address_parser.cc \
 	content/common/android/address_parser_internal.cc \
 	content/common/android/common_jni_registrar.cc \
+	content/common/android/gin_java_bridge_errors.cc \
 	content/common/android/gin_java_bridge_value.cc \
 	content/common/android/hash_set.cc \
 	content/common/android/surface_texture_lookup.cc \

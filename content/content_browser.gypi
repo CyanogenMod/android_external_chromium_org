@@ -1287,6 +1287,8 @@
       'browser/renderer_host/java/gin_java_bound_object.h',
       'browser/renderer_host/java/gin_java_bound_object_delegate.cc',
       'browser/renderer_host/java/gin_java_bound_object_delegate.h',
+      'browser/renderer_host/java/gin_java_bridge_dispatcher_host.cc',
+      'browser/renderer_host/java/gin_java_bridge_dispatcher_host.h',
       'browser/renderer_host/java/gin_java_method_invocation_helper.cc',
       'browser/renderer_host/java/gin_java_method_invocation_helper.h',
       'browser/renderer_host/java/gin_java_script_to_java_types_coercion.cc',
