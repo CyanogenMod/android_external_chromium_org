@@ -510,18 +510,18 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/p2p/socket_host_throttler.cc \
 	content/browser/renderer_host/p2p/socket_host_udp.cc \
 	content/browser/renderer_host/p2p/socket_dispatcher_host.cc \
-	content/browser/renderer_host/java/gin_java_bound_object.cc \
-	content/browser/renderer_host/java/gin_java_bound_object_delegate.cc \
-	content/browser/renderer_host/java/gin_java_bridge_dispatcher_host.cc \
-	content/browser/renderer_host/java/gin_java_method_invocation_helper.cc \
-	content/browser/renderer_host/java/gin_java_script_to_java_types_coercion.cc \
-	content/browser/renderer_host/java/java_bound_object.cc \
-	content/browser/renderer_host/java/java_bridge_channel_host.cc \
-	content/browser/renderer_host/java/java_bridge_dispatcher_host.cc \
-	content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.cc \
-	content/browser/renderer_host/java/java_method.cc \
-	content/browser/renderer_host/java/java_type.cc \
-	content/browser/renderer_host/java/jni_helper.cc \
+	content/browser/android/java/gin_java_bound_object.cc \
+	content/browser/android/java/gin_java_bound_object_delegate.cc \
+	content/browser/android/java/gin_java_bridge_dispatcher_host.cc \
+	content/browser/android/java/gin_java_method_invocation_helper.cc \
+	content/browser/android/java/gin_java_script_to_java_types_coercion.cc \
+	content/browser/android/java/java_bound_object.cc \
+	content/browser/android/java/java_bridge_channel_host.cc \
+	content/browser/android/java/java_bridge_dispatcher_host.cc \
+	content/browser/android/java/java_bridge_dispatcher_host_manager.cc \
+	content/browser/android/java/java_method.cc \
+	content/browser/android/java/java_type.cc \
+	content/browser/android/java/jni_helper.cc \
 	content/browser/media/cdm/browser_cdm_manager.cc \
 	content/browser/media/media_web_contents_observer.cc
 
