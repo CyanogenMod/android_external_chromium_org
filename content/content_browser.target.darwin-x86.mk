@@ -512,6 +512,7 @@ LOCAL_SRC_FILES := \
 	content/browser/renderer_host/p2p/socket_dispatcher_host.cc \
 	content/browser/renderer_host/java/gin_java_bound_object.cc \
 	content/browser/renderer_host/java/gin_java_bound_object_delegate.cc \
+	content/browser/renderer_host/java/gin_java_bridge_dispatcher_host.cc \
 	content/browser/renderer_host/java/gin_java_method_invocation_helper.cc \
 	content/browser/renderer_host/java/gin_java_script_to_java_types_coercion.cc \
 	content/browser/renderer_host/java/java_bound_object.cc \
